@@ -90,6 +90,17 @@ test('internal owner refuses shared or unrelated inherited flock descriptions', 
     await assert.rejects(lstat(join(root, 'data/control.sqlite')), { code: 'ENOENT' });
   }
 });
+test('controller verifies its own flock on configured persistent storage without accepting another process owner', { timeout: 15000 }, async t => {
+  const root = await mkdtemp(join(process.env.FACTORY_TEST_ROOT ?? tmpdir(), 'factory-storage-lock-'));
+  await prepareController(root);
+  const owner = launch(root);
+  t.after(async () => { owner.child.kill('SIGTERM'); await owner.ended; await rm(root, { recursive: true, force: true }); });
+  assert.equal((await status(root, owner.child)).dispatch, 'closed');
+  const bypass = spawnSync(process.execPath, [resolve('dist/src/entrypoints/controller/owner.js'), root], { encoding: 'utf8', timeout: 3000 });
+  assert.equal(bypass.status, 3, 'the held lock must belong to this process, not merely exist');
+  const contender = launch(root);
+  assert.equal(await contender.ended, 73);
+});
 
 test('SIGKILL releases the owner lock and a restart preserves acknowledged pause', { timeout: 15000 }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'factory-crash-'));

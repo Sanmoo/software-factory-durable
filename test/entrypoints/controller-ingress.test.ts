@@ -25,15 +25,23 @@ test('lost ACK is queryable and concurrent identical ingress commits only once; 
   const root = await mkdtemp(join(tmpdir(), 'factory-ingress-'));
   await prepareController(root);
   const owner = spawn(process.execPath, [resolve('dist/src/entrypoints/cli.js'), 'run', '--root', root], { stdio: 'ignore' });
-  const ended = new Promise(resolve => owner.once('exit', resolve));
+  let spawnFailed = false;
+  owner.once('error', () => { spawnFailed = true; });
+  const ended = new Promise(resolve => { owner.once('exit', resolve); owner.once('error', resolve); });
   t.after(async () => { owner.kill('SIGTERM'); await ended; await rm(root, { recursive: true, force: true }); });
   const endpoint = join(root, 'run/control.sock');
   let status: Envelope | undefined;
-  for (let attempt = 0; attempt < 100; attempt++) {
+  const readinessDeadline = performance.now() + 5000;
+  let attempts = 0;
+  while (performance.now() < readinessDeadline) {
+    assert.equal(spawnFailed, false, 'controller process could not be spawned');
+    assert.equal(owner.exitCode, null, 'controller exited before socket readiness');
+    assert.equal(owner.signalCode, null, 'controller was signalled before socket readiness');
+    attempts++;
     try { status = await exchange(endpoint, request('inspect', { kind: 'status' }, 'status', null)); break; }
     catch { await delay(10); }
   }
-  assert.ok(status?.controller_run_id);
+  assert.ok(status?.controller_run_id, `controller readiness deadline exceeded; attempts=${attempts}, exit=${owner.exitCode}, signal=${owner.signalCode}`);
   const run = status.controller_run_id;
   const mutation = request('accept', { request_id: 'lost', operation: 'pause', origin: 'local-cli' }, 'lost', run);
   // Only delivery is observed here; no ACK is read or inferred from write's callback.
