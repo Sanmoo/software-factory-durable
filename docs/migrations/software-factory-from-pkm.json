@@ -1,0 +1,752 @@
+{
+  "schemaVersion": 1,
+  "sourceRepository": "Sanmoo/pkm",
+  "sourceSnapshot": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+  "destinationRepository": "Sanmoo/software-factory-durable",
+  "tracker": "local-markdown",
+  "counts": {
+    "tickets": 26,
+    "effortDocuments": 40,
+    "sharedTrackerDocuments": 2,
+    "researchReports": 7
+  },
+  "preservation": "Question/Comments/Answer and tracker semantics retained; only listed link rewrites and provenance annotations applied.",
+  "files": [
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/acceptance-and-incremental-plan.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/acceptance-and-incremental-plan.md",
+      "sourceGitBlob": "fc48766750f802631d93e492bbbb8c5b2c69f035",
+      "sourceSha256": "03f2859d22e13243292b7918fe6ed013223fae39e53b939e13252479d4a2d474",
+      "destinationPath": ".scratch/software-factory/acceptance-and-incremental-plan.md",
+      "destinationSha256": "dc3fe08d54225f7c0c09e32ab3be1afde029773153d6ffb50119fea50a6d5911",
+      "linkRewrites": [
+        {
+          "from": "../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "prd.md"
+        },
+        {
+          "from": "../../tecnologia/software-factory-0.0.1-prd.md#4-jornada-principal",
+          "to": "prd.md#4-jornada-principal"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/architecture-cross-review.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/architecture-cross-review.md",
+      "sourceGitBlob": "d0b2e750d5035102be4337629278dbc3cd5a4ede",
+      "sourceSha256": "4ae71313f6860b3d9e9c384d625069daed985291c63155ade7d700803576e732",
+      "destinationPath": ".scratch/software-factory/architecture-cross-review.md",
+      "destinationSha256": "4ae71313f6860b3d9e9c384d625069daed985291c63155ade7d700803576e732",
+      "linkRewrites": [],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/durability-comparison.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/durability-comparison.md",
+      "sourceGitBlob": "8a892c05305cf038a66d885afe2d2fc62b521837",
+      "sourceSha256": "0192fcd0c0748f90f23c2f5904f7378e328706d22f144306ebdf8508e6387755",
+      "destinationPath": ".scratch/software-factory/durability-comparison.md",
+      "destinationSha256": "1b665eb53a5de30a8694833f1ec9f47ffb8ab80d5e175507dd237226c950c51c",
+      "linkRewrites": [
+        {
+          "from": "../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "prd.md"
+        },
+        {
+          "from": "../agent-orchestration/research/restate.md",
+          "to": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/agent-orchestration/research/restate.md"
+        },
+        {
+          "from": "../agent-orchestration/results/30-engine-battery-restate-2026-10-11.md",
+          "to": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/agent-orchestration/results/30-engine-battery-restate-2026-10-11.md"
+        },
+        {
+          "from": "../agent-orchestration/research/temporal.md",
+          "to": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/agent-orchestration/research/temporal.md"
+        },
+        {
+          "from": "../agent-orchestration/research/hatchet.md",
+          "to": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/agent-orchestration/research/hatchet.md"
+        }
+      ],
+      "annotations": [
+        {
+          "from": "| Restate | **D** journal, estado por chave, mensagens/esperas duráveis; efeito externo pode repetir entre sucesso e registro. **E** bateria anterior com executor simulado passou em reservas, mensagens duplicadas, pergunta, crash e upgrade patch. [R][B] | Controlador de domínio sobre estado/mensagens do motor + serviço Restate persistente + runtime/supervisor. A bateria usou deduplicação permanente, contadores e reconciliação próprios, não semântica pronta da fábrica. | A evidência já permite comparação documental. Não demonstra builder real, GitHub nem Docker, nem migração arbitrária de schema. Desenho precisa contabilizar deployments e modelo de mensagens, não assumir que Q2 elimina compatibilidade de journal. [R][B] |",
+          "to": "| Restate | **D** journal, estado por chave, mensagens/esperas duráveis; efeito externo pode repetir entre sucesso e registro. **E** bateria anterior com executor simulado passou em reservas, mensagens duplicadas, pergunta, crash e upgrade patch. [R] [B] | Controlador de domínio sobre estado/mensagens do motor + serviço Restate persistente + runtime/supervisor. A bateria usou deduplicação permanente, contadores e reconciliação próprios, não semântica pronta da fábrica. | A evidência já permite comparação documental. Não demonstra builder real, GitHub nem Docker, nem migração arbitrária de schema. Desenho precisa contabilizar deployments e modelo de mensagens, não assumir que Q2 elimina compatibilidade de journal. [R] [B] |"
+        }
+      ]
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/01-control-authority.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/01-control-authority.md",
+      "sourceGitBlob": "fb4e5b8754f526f9367e4b4e44e0faeac8b4a813",
+      "sourceSha256": "5722f9d94b6d2fd1dd3555b8492ae3fe989f8d803a90e52c06d88e7f0e9f9a7d",
+      "destinationPath": ".scratch/software-factory/issues/01-control-authority.md",
+      "destinationSha256": "fb2196613e95997e747649c637b5ef79f95b8f4fb7c0a636ced1a682664b5518",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/02-durability-strategy.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/02-durability-strategy.md",
+      "sourceGitBlob": "4ebfb38e6d5be9458ae0fcbb87ffc6e87ec060e1",
+      "sourceSha256": "e496b99c101abc246bc11cafc61565068f1049814c9a5bc05d3895eb7db565d0",
+      "destinationPath": ".scratch/software-factory/issues/02-durability-strategy.md",
+      "destinationSha256": "46f400c7c834c9a7a51d7e8e4053c9f1cdc6fa0a4cecde22d2a7e3c774470f36",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/03-agent-runtime-research.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/03-agent-runtime-research.md",
+      "sourceGitBlob": "334e7bcd714ddb7cf9dbefd91dbed1d32a622eba",
+      "sourceSha256": "f4599ce0e64ed13e6fc97b86ee4c2a1ff73087445b3c021f8fffb585358a6ec0",
+      "destinationPath": ".scratch/software-factory/issues/03-agent-runtime-research.md",
+      "destinationSha256": "56a1a09ecf7a2186ad2bf5a7c3f9b5f0045f729a6beec21f357017b732b29b0f",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": [
+        {
+          "from": "\nType: research\nLabel: wayfinder:research",
+          "to": "\nLocal report: [Relatório preservado](../research/agent-runtimes.md)\nType: research\nLabel: wayfinder:research"
+        }
+      ]
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/04-linux-docker-research.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/04-linux-docker-research.md",
+      "sourceGitBlob": "1697b6cc549e88bc8066727ed17a2e51dd5ba3ae",
+      "sourceSha256": "9966f0f7372ead6747d85ba53f02377f3c8484a70b3fd66af3259eb85944c7c8",
+      "destinationPath": ".scratch/software-factory/issues/04-linux-docker-research.md",
+      "destinationSha256": "d68a418f2e267b328ab02acd5084d76d391dea485f55fb76780e765e6c17e4ab",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": [
+        {
+          "from": "\nType: research\nLabel: wayfinder:research",
+          "to": "\nLocal report: [Relatório preservado](../research/linux-docker-isolation.md)\nType: research\nLabel: wayfinder:research"
+        }
+      ]
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/05-github-capabilities.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/05-github-capabilities.md",
+      "sourceGitBlob": "3a4f5f8ca8c0b0854e2d9480dc9329dd8f0893f7",
+      "sourceSha256": "4bae905503a8cf62c3feed181fc468d58fc03c09d2de0d75706ad5988d1011c2",
+      "destinationPath": ".scratch/software-factory/issues/05-github-capabilities.md",
+      "destinationSha256": "7fea7a6ec9291bc5c6d0ca51117737fac631d95f58595843e7fefa2b896a75e1",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": [
+        {
+          "from": "\nType: research\nLabel: wayfinder:research",
+          "to": "\nLocal report: [Relatório preservado](../research/github-capabilities.md)\nType: research\nLabel: wayfinder:research"
+        }
+      ]
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/06-agent-runtime-choice.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/06-agent-runtime-choice.md",
+      "sourceGitBlob": "9dbd4beb3177cd46e8eb48e79a12cc53d7f64c78",
+      "sourceSha256": "e41b029059af51c31acea3f9552a415bb4ecd6802b89b82bd2245d3d6a6d98d9",
+      "destinationPath": ".scratch/software-factory/issues/06-agent-runtime-choice.md",
+      "destinationSha256": "2274cc9c58b929c9f63535504965ff57398166ecf99709fbe5d7e35bbff64e53",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/07-isolation-choice.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/07-isolation-choice.md",
+      "sourceGitBlob": "3cc8a46edc8d28a07473de8a4bbfce87b69d62a1",
+      "sourceSha256": "d164356c3327892e5ce475e737356349574749406c6bdba0508ce5e5e084d1a2",
+      "destinationPath": ".scratch/software-factory/issues/07-isolation-choice.md",
+      "destinationSha256": "8d725031e1b5199b122d0888a46c29e07ba316a5f6a7e6ebf6e38df921c3de67",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/08-state-and-effects-contract.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/08-state-and-effects-contract.md",
+      "sourceGitBlob": "e538078db9cb5b80d455eda82ffdb3ef8604a81c",
+      "sourceSha256": "4ef22250550dd328d5c45f7389be197e12c4fa0b6106af1fd03f79c202327b46",
+      "destinationPath": ".scratch/software-factory/issues/08-state-and-effects-contract.md",
+      "destinationSha256": "0ee70acfa1f4449365153635ef9c11401bb8b766def433ed3a3c0b9fc90d7702",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/09-dependency-compatibility.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/09-dependency-compatibility.md",
+      "sourceGitBlob": "790a123e7c126f39177befea84072db4420d71c5",
+      "sourceSha256": "158443cced06f0c007c0c1125a3bb79aba47e3012d4cbbe41b9ec7424016fd71",
+      "destinationPath": ".scratch/software-factory/issues/09-dependency-compatibility.md",
+      "destinationSha256": "32c2b6f8854db3f94628b482110da7020dfcdc4b9d849254773d8a75f1b48a09",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/10-readiness-checks-contract.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/10-readiness-checks-contract.md",
+      "sourceGitBlob": "e0129ac88b3fc3b2688ccc6f7b7b9e8ccc735f45",
+      "sourceSha256": "1f6352e11f361d89323807f495e6632f83b963b65ebdeafbcaf89a4712539d1d",
+      "destinationPath": ".scratch/software-factory/issues/10-readiness-checks-contract.md",
+      "destinationSha256": "7e333fc54aa0541ca070e29b8c78d33a41cea0d5d7dae6326971d3fed1eef054",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/11-github-app-contract.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/11-github-app-contract.md",
+      "sourceGitBlob": "40c31c861a3246f9592cac09f03117f5287e2362",
+      "sourceSha256": "4a14c40a97abc47365155309d711692bba0025e56160d82ce76be5cab1036f5b",
+      "destinationPath": ".scratch/software-factory/issues/11-github-app-contract.md",
+      "destinationSha256": "a2ccfa994ef36a57b69738e4ae7819773141a26d4b37a8f3c6bcf4fbd83b54dd",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/12-dbos-control-research.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/12-dbos-control-research.md",
+      "sourceGitBlob": "f83808521030604bec52d957a9912e35ddedaffa",
+      "sourceSha256": "9bc344c8bae878353ba367e12a225d97deb374562c0f30869ff83a347b84471a",
+      "destinationPath": ".scratch/software-factory/issues/12-dbos-control-research.md",
+      "destinationSha256": "c45cae6382554982880321f45126f22772850a0a2be7f146d220606cb08b7ee1",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": [
+        {
+          "from": "\nType: research\nLabel: wayfinder:research",
+          "to": "\nLocal report: [Relatório preservado](../research/dbos-control.md)\nType: research\nLabel: wayfinder:research"
+        }
+      ]
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/13-agent-control-durability-research.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/13-agent-control-durability-research.md",
+      "sourceGitBlob": "dbbb6d562da253ec2629d6df64db4f5637e88817",
+      "sourceSha256": "712d7c0379aebe124c25f4688d75c8dc2905626a20726f88d2b7a487e7a7b08f",
+      "destinationPath": ".scratch/software-factory/issues/13-agent-control-durability-research.md",
+      "destinationSha256": "299dfdc390e695443cd6e0e8e3a3fcae988e6f1e504bec3fff82e6d05380f167",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": [
+        {
+          "from": "\nType: research\nLabel: wayfinder:research",
+          "to": "\nLocal report: [Relatório preservado](../research/agent-control-durability.md)\nType: research\nLabel: wayfinder:research"
+        }
+      ]
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/14-local-controller-persistence-research.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/14-local-controller-persistence-research.md",
+      "sourceGitBlob": "acbd48ff2fa793e22c257fc035477f7ed38ca058",
+      "sourceSha256": "0c356a94f3d4b73ed65b7d40c2636810934a3abc69c46f164f24d3c763ba82d7",
+      "destinationPath": ".scratch/software-factory/issues/14-local-controller-persistence-research.md",
+      "destinationSha256": "deb5971d9244a6cbf945e55ddc85ea4c99b5cca85c6672e39d0ced0450e34dd2",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": [
+        {
+          "from": "\nType: research\nLabel: wayfinder:research",
+          "to": "\nLocal report: [Relatório preservado](../research/local-controller-persistence.md)\nType: research\nLabel: wayfinder:research"
+        }
+      ]
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/15-controller-worker-protocol.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/15-controller-worker-protocol.md",
+      "sourceGitBlob": "0e625f9ec8ede461cd21d19eba5d2aca9ae6377e",
+      "sourceSha256": "e8419dafee09a71c52a98faa12c6847c603a7178d883ff301f196202d93ac07a",
+      "destinationPath": ".scratch/software-factory/issues/15-controller-worker-protocol.md",
+      "destinationSha256": "3c5625abe19cd26fee8c656bd0a177e99c5844aa0a8b8f2ef8ef371424752492",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/16-specification-snapshot-contract.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/16-specification-snapshot-contract.md",
+      "sourceGitBlob": "93c22ac033e802b212840b690baa52fe5156dd37",
+      "sourceSha256": "be83dfa40041d53e5f2844318ac721a6c32a83d45d974981d15348c29400cd1d",
+      "destinationPath": ".scratch/software-factory/issues/16-specification-snapshot-contract.md",
+      "destinationSha256": "d633ef271cb2b869dbc63e6ef3c67982ba61c72a8e1d23a7fcc755296beb33d2",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/17-skills-and-review-contract.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/17-skills-and-review-contract.md",
+      "sourceGitBlob": "48f9ee9053db548d4883c441410b5c43f0c53b2f",
+      "sourceSha256": "cab849bbf8bec3b11a447addf61bc7654f3caee55c2ac454008ff28fdd559d92",
+      "destinationPath": ".scratch/software-factory/issues/17-skills-and-review-contract.md",
+      "destinationSha256": "883c7241e99501577f71b0c786d3cfc194e5b02f70d3e27a3ba4c47b338dcc73",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/18-gondolin-isolation-research.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/18-gondolin-isolation-research.md",
+      "sourceGitBlob": "19619bc14ad785639cbb25405b9c6964a0b207a8",
+      "sourceSha256": "8215efd7d27898ca46398ac28abb39a75cb5553ff1c64c6708a226a37bd49db2",
+      "destinationPath": ".scratch/software-factory/issues/18-gondolin-isolation-research.md",
+      "destinationSha256": "acfcaa4805c83d7691e7f6f308c7eae639a4588d4bfc2d6171206bf016ece738",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": [
+        {
+          "from": "\nType: research\nLabel: wayfinder:research",
+          "to": "\nLocal report: [Relatório preservado](../research/gondolin-isolation.md)\nType: research\nLabel: wayfinder:research"
+        }
+      ]
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/19-gondolin-adapter-contract.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/19-gondolin-adapter-contract.md",
+      "sourceGitBlob": "c64c11b8b6798df5e634be0b0898feaef05ab582",
+      "sourceSha256": "36211cfcfec816d9ec287aa00ca1bcd72619c8f2a1fb97279fd5ced41f9affe1",
+      "destinationPath": ".scratch/software-factory/issues/19-gondolin-adapter-contract.md",
+      "destinationSha256": "e4bd5aee115f932ee9bf420943ae1adf5f16b4287c223e34d8a2bb764970fa8c",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/20-pr-maintenance-contract.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/20-pr-maintenance-contract.md",
+      "sourceGitBlob": "0f58e6ad2fdf783aa54b9ff897e55ceccfc6aa03",
+      "sourceSha256": "8a45cc4667c321ce5b88b80d571d49d517c6f70355fdf0f3350ecc961e85860b",
+      "destinationPath": ".scratch/software-factory/issues/20-pr-maintenance-contract.md",
+      "destinationSha256": "26c8c63125ad5cec747cb39d54e698595b8253b63ba385bcfa0d4f7accf2bb45",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/21-installation-operations-contract.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/21-installation-operations-contract.md",
+      "sourceGitBlob": "5ed01f001ffbaaeecc15bdb88563d74c55c5ed9f",
+      "sourceSha256": "f0d3e66baac5299d138ee0f6131a09408f4e17665a36933cdeb6f4fbb704aa32",
+      "destinationPath": ".scratch/software-factory/issues/21-installation-operations-contract.md",
+      "destinationSha256": "510b2c08cf6790bc2ad08fcc43316e9720fe8d65687a24dc5e3859f148064d2e",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/22-observability-retention-contract.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/22-observability-retention-contract.md",
+      "sourceGitBlob": "427450587cc7c08f1309c110e5cacc5ec09dd3fb",
+      "sourceSha256": "4cae6283866c9919bf8767f1f3b0bfaaa3f5fea1fc9856f35c81baf50bbc4fe8",
+      "destinationPath": ".scratch/software-factory/issues/22-observability-retention-contract.md",
+      "destinationSha256": "2b1b1da7f604061891025fcb86dfbcc9471ac7e683381d82836fcf7339b928c0",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/23-architecture-cross-review.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/23-architecture-cross-review.md",
+      "sourceGitBlob": "2566771d13b57d6030428dae611574ebaace9115",
+      "sourceSha256": "6d6fd3d83950057b2a9890b409a15b5b98420e31ef26bae2e19eb2bd94a5c2d2",
+      "destinationPath": ".scratch/software-factory/issues/23-architecture-cross-review.md",
+      "destinationSha256": "6d6fd3d83950057b2a9890b409a15b5b98420e31ef26bae2e19eb2bd94a5c2d2",
+      "linkRewrites": [],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/24-acceptance-and-incremental-plan.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/24-acceptance-and-incremental-plan.md",
+      "sourceGitBlob": "9f44e70f13d2854164e4d8a712652aff2609c491",
+      "sourceSha256": "41c80f34e20868a57af39c7c95217aad8db378bde673c44e5affc12fc61596f2",
+      "destinationPath": ".scratch/software-factory/issues/24-acceptance-and-incremental-plan.md",
+      "destinationSha256": "41c80f34e20868a57af39c7c95217aad8db378bde673c44e5affc12fc61596f2",
+      "linkRewrites": [],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/25-consolidate-technical-spec.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/25-consolidate-technical-spec.md",
+      "sourceGitBlob": "bab5a72666b536200b860a32b9178acaecb0416e",
+      "sourceSha256": "0465616ebe755c1ef135ea900fa32217f83b5b08833dd2d4faeee8b7e8b79eef",
+      "destinationPath": ".scratch/software-factory/issues/25-consolidate-technical-spec.md",
+      "destinationSha256": "0465616ebe755c1ef135ea900fa32217f83b5b08833dd2d4faeee8b7e8b79eef",
+      "linkRewrites": [],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/issues/26-implementation-stack-and-application-architecture.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/issues/26-implementation-stack-and-application-architecture.md",
+      "sourceGitBlob": "4c524269df9be37e1d7cc06a76ad1014beea5c93",
+      "sourceSha256": "a0aa14708fe441c4e1bbbac51a4a2bb0f9ed969d0009e2a5bd56a0b0e1cd1ebe",
+      "destinationPath": ".scratch/software-factory/issues/26-implementation-stack-and-application-architecture.md",
+      "destinationSha256": "a0aa14708fe441c4e1bbbac51a4a2bb0f9ed969d0009e2a5bd56a0b0e1cd1ebe",
+      "linkRewrites": [],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/map.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/map.md",
+      "sourceGitBlob": "a931fef1b83a163586214aae07f038d21d0f03ab",
+      "sourceSha256": "cf4e83ad24d7158c2b6645eb563ab252370c847f02ca2402d3ff86f685883f35",
+      "destinationPath": ".scratch/software-factory/map.md",
+      "destinationSha256": "a2e66d30210a0dbd14c8eadfe57989bd1aa0e5beaa206d7ff29aa4621906c2bf",
+      "linkRewrites": [
+        {
+          "from": "../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "prd.md"
+        }
+      ],
+      "annotations": [
+        {
+          "from": "## Notes\n\n",
+          "to": "## Notes\n\n- Localização atual: `Sanmoo/software-factory-durable`, com tracker Markdown local.\n  [Proveniência e limites da migração](../../docs/migrations/software-factory-from-pkm.md) explicam os arquivos importados e os relatórios preservados.\n  Commits, branches, worktrees e destinos do PKM citados nos registros anteriores são contexto histórico; trabalhos futuros usam este repositório.\n\n"
+        }
+      ]
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/module-public-interfaces.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/module-public-interfaces.md",
+      "sourceGitBlob": "21dbb2af6c6bb918d987d15e300b322c7c7b8333",
+      "sourceSha256": "312401221a3795197f6fad3f91813dec0e750c5b32c471fe1ca3f2ddf3296298",
+      "destinationPath": ".scratch/software-factory/module-public-interfaces.md",
+      "destinationSha256": "312401221a3795197f6fad3f91813dec0e750c5b32c471fe1ca3f2ddf3296298",
+      "linkRewrites": [],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": ".scratch/software-factory/spec.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/.scratch/software-factory/spec.md",
+      "sourceGitBlob": "b0170b0638ac4f49f04ef20c5e11fef87aa15695",
+      "sourceSha256": "bef9ebd6d394d02eac9eb6f2f7d52f56064bcd7dad2a8835bf4be3cce4a13778",
+      "destinationPath": ".scratch/software-factory/spec.md",
+      "destinationSha256": "06fbdaecdb3f3871b7943d464c2b43cc69cc74487f763b075037f3445f9ff49f",
+      "linkRewrites": [
+        {
+          "from": "../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "prd.md"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": "tecnologia/software-factory-0.0.1-prd.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/tecnologia/software-factory-0.0.1-prd.md",
+      "sourceGitBlob": "5fca74cb20f4175211f9b90ffa1e7f7842522239",
+      "sourceSha256": "4cd91587b42c2a6efefa8d50f99ab6295ae2b95d29c13bc253b275c177a8d2a6",
+      "destinationPath": ".scratch/software-factory/prd.md",
+      "destinationSha256": "4cd91587b42c2a6efefa8d50f99ab6295ae2b95d29c13bc253b275c177a8d2a6",
+      "linkRewrites": [],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": "docs/agents/issue-tracker.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/docs/agents/issue-tracker.md",
+      "sourceGitBlob": "79adb256dbd77f800dedf668e809a64da29bf579",
+      "sourceSha256": "525b9cbf287f167220b7bed48a9823fa931cc266d0410dd96d53c36a13e56e02",
+      "destinationPath": "docs/agents/issue-tracker.md",
+      "destinationSha256": "525b9cbf287f167220b7bed48a9823fa931cc266d0410dd96d53c36a13e56e02",
+      "linkRewrites": [],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1da4f5fac781bfdbd0b761ea9731e248429a55eb",
+      "sourcePath": "docs/agents/triage-labels.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1da4f5fac781bfdbd0b761ea9731e248429a55eb/docs/agents/triage-labels.md",
+      "sourceGitBlob": "c0595229325b4791d0b9b57b0bfd8cc847fb8807",
+      "sourceSha256": "5c81440a445c78967a44bf0b7bfd94802567d875ac4b2423c8edacccda2d44fc",
+      "destinationPath": "docs/agents/triage-labels.md",
+      "destinationSha256": "5c81440a445c78967a44bf0b7bfd94802567d875ac4b2423c8edacccda2d44fc",
+      "linkRewrites": [],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "0cb8c80ad7b708f31a9fc905f58a62d7a1a0299b",
+      "sourcePath": ".scratch/software-factory/research/agent-runtimes.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/0cb8c80ad7b708f31a9fc905f58a62d7a1a0299b/.scratch/software-factory/research/agent-runtimes.md",
+      "sourceGitBlob": "4286423a5613bd72d38f2df56607016094e6eb15",
+      "sourceSha256": "547772d166bcf1d3d787c847868c0030103d720972611bd51cb7e6b312f16efe",
+      "destinationPath": ".scratch/software-factory/research/agent-runtimes.md",
+      "destinationSha256": "a6e328c14a41bedd777435c9d709a9c00487b0f182efe4383da5e3e7c4a02813",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        },
+        {
+          "from": "../../agent-orchestration/issues/12-pi-durable-compatibility.md",
+          "to": "https://github.com/Sanmoo/pkm/blob/0cb8c80ad7b708f31a9fc905f58a62d7a1a0299b/.scratch/agent-orchestration/issues/12-pi-durable-compatibility.md"
+        },
+        {
+          "from": "../../agentic-factory-options/research/comparison.md",
+          "to": "https://github.com/Sanmoo/pkm/blob/0cb8c80ad7b708f31a9fc905f58a62d7a1a0299b/.scratch/agentic-factory-options/research/comparison.md"
+        },
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "1d60fd540f4d68a66a47f340c4b4f5b32f29e8b8",
+      "sourcePath": ".scratch/software-factory/research/local-controller-persistence.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/1d60fd540f4d68a66a47f340c4b4f5b32f29e8b8/.scratch/software-factory/research/local-controller-persistence.md",
+      "sourceGitBlob": "adf978af2762cb4c1a42f575bd113c416eb7c1b6",
+      "sourceSha256": "a84d2636796a32b5ce7ffaeb7a3da17d3e3af08129c881c9b482bbdc0e0aa5e9",
+      "destinationPath": ".scratch/software-factory/research/local-controller-persistence.md",
+      "destinationSha256": "a84d2636796a32b5ce7ffaeb7a3da17d3e3af08129c881c9b482bbdc0e0aa5e9",
+      "linkRewrites": [],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "3f928a4ff4eeae3268661d8921b722cdee714b7a",
+      "sourcePath": ".scratch/software-factory/research/gondolin-isolation.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/3f928a4ff4eeae3268661d8921b722cdee714b7a/.scratch/software-factory/research/gondolin-isolation.md",
+      "sourceGitBlob": "4134f61f827928a06de79666865432e9f6c1cd9c",
+      "sourceSha256": "c50ed736f1c8040f489e591acb8eb1c6b48610a19f7c53ddf3e6ee4d647f0715",
+      "destinationPath": ".scratch/software-factory/research/gondolin-isolation.md",
+      "destinationSha256": "c50ed736f1c8040f489e591acb8eb1c6b48610a19f7c53ddf3e6ee4d647f0715",
+      "linkRewrites": [],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "8bad2459743f16d4724bcb730af7a648ab45ec2f",
+      "sourcePath": ".scratch/software-factory/research/agent-control-durability.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/8bad2459743f16d4724bcb730af7a648ab45ec2f/.scratch/software-factory/research/agent-control-durability.md",
+      "sourceGitBlob": "c4a49849b8844ff636b9fb853c92d348cb6ff23d",
+      "sourceSha256": "708ac6caf11ec12227df1f8dd59b7561564f2f017c9d56d059f77c50e1377356",
+      "destinationPath": ".scratch/software-factory/research/agent-control-durability.md",
+      "destinationSha256": "250792daa7562df3286a47fb053ce4460ca1d9c93ca7714459fd5102d78e9dda",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "9d2994e3befd386495282fb8d96b28a3b98220ff",
+      "sourcePath": ".scratch/software-factory/research/linux-docker-isolation.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/9d2994e3befd386495282fb8d96b28a3b98220ff/.scratch/software-factory/research/linux-docker-isolation.md",
+      "sourceGitBlob": "e5cd9ffb51972a50f5eaf4866a1fb61cdacd1274",
+      "sourceSha256": "efb7cf2c8e025f2651095ebf48333d753ce605e059b690b115f40358658a265b",
+      "destinationPath": ".scratch/software-factory/research/linux-docker-isolation.md",
+      "destinationSha256": "b2ecc56f8d27afbf9d8ae9c159d589470e01702058ab619b0a10d959ab0e5072",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "b61cd35a7e95dac95c543ab510c255524e30c54d",
+      "sourcePath": ".scratch/software-factory/research/dbos-control.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/b61cd35a7e95dac95c543ab510c255524e30c54d/.scratch/software-factory/research/dbos-control.md",
+      "sourceGitBlob": "c9519bd9f36d310fd8d0e327a8b3a25e60065596",
+      "sourceSha256": "3d036f064861c8de3d17fd4fb2c6735c107868eb85d08154e42ed924c6800492",
+      "destinationPath": ".scratch/software-factory/research/dbos-control.md",
+      "destinationSha256": "1f73b76f34c963c102e320d109dfe497c957c40269c68e3127e4802a43aecf39",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "sourceRepository": "Sanmoo/pkm",
+      "sourceCommit": "c4c46ed436570c457e19d5e2a31cb59921b89dcd",
+      "sourcePath": ".scratch/software-factory/research/github-capabilities.md",
+      "sourceUrl": "https://github.com/Sanmoo/pkm/blob/c4c46ed436570c457e19d5e2a31cb59921b89dcd/.scratch/software-factory/research/github-capabilities.md",
+      "sourceGitBlob": "820e94e1d0ae910b74504c6b8c2889739051fee6",
+      "sourceSha256": "bab2f3127410b7aad4cb461c268b1501775932d53c31d8a3fb0a9eb9927da8c6",
+      "destinationPath": ".scratch/software-factory/research/github-capabilities.md",
+      "destinationSha256": "809ca5ff3d8093770c76daefe503d00db5ba9aee7dd05308388ad06f9b6a6cdd",
+      "linkRewrites": [
+        {
+          "from": "../../../tecnologia/software-factory-0.0.1-prd.md",
+          "to": "../prd.md"
+        }
+      ],
+      "annotations": []
+    }
+  ]
+}
