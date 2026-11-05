@@ -1,0 +1,169 @@
+{
+  "disposition": "BLOCKED",
+  "date": "2026-11-05",
+  "versions": {
+    "node": "24.21.0",
+    "npm": "11.19.0",
+    "gh": "2.46.0 (2025-12-17 Ubuntu 2.46.0-1ubuntu0.3)",
+    "qemu": "11.1.2"
+  },
+  "requestedRestVersion": "2026-03-10",
+  "transport": "actual /usr/bin/gh, structured arguments, explicit environment, transparent allowlisted metadata observer; not a substituted GitHub response",
+  "appIdVerified": false,
+  "installationIdVerified": false,
+  "tokenIssuanceRequests": 0,
+  "repositoryRequests": 0,
+  "remoteMutations": 0,
+  "sourceMetadata": {
+    "mode": "0600",
+    "uid": 1000,
+    "gid": 1000,
+    "nlink": 1,
+    "size": 1675,
+    "type": "regular",
+    "ancestors": "root/current-user owned; no symlinks or group/other writes",
+    "unchangedAcrossRuns": true
+  },
+  "localJwtVerification": {
+    "rsaBits": 2048,
+    "signatureVerified": true,
+    "issuerMatchesConfiguredApp": true,
+    "iatSkewSeconds": 60,
+    "validitySeconds": 600,
+    "remoteIdentityNotProven": true
+  },
+  "syntheticLoopbackProbe": {
+    "binary": "/usr/bin/gh",
+    "scheme": "token",
+    "syntheticTokenMatches": true,
+    "exit": 0,
+    "realCredentialUsed": false,
+    "githubRequest": false
+  },
+  "runs": [
+    {
+      "root": "/home/sanmoo/software-factory-test/ticket04-zVWp3b",
+      "at": "2026-11-05T21:43:25.402Z",
+      "node": "v24.21.0",
+      "unavailableExit": 3,
+      "doctorExit": 3,
+      "report": {
+        "kind": "access",
+        "scope": "authenticated",
+        "results": [
+          {
+            "tracker": {
+              "status": "blocked",
+              "code": "GITHUB_ACCESS_DENIED",
+              "completeness": "incomplete",
+              "nextStep": "Operator must verify the named repository, App/installation, private key, explicit Workflows setting, permissions and REST compatibility; no personal fallback or repair.",
+              "observedAt": "2026-11-05T21:43:24.238Z",
+              "repository": "Sanmoo/java-springboot-event-sourcing",
+              "source": "github-rest",
+              "purpose": "tracker",
+              "certifiesMergeSafety": false
+            },
+            "repository": {
+              "status": "blocked",
+              "code": "GITHUB_ACCESS_DENIED",
+              "completeness": "incomplete",
+              "nextStep": "Operator must verify the named repository, App/installation, private key, explicit Workflows setting, permissions and REST compatibility; no personal fallback or repair.",
+              "observedAt": "2026-11-05T21:43:24.761Z",
+              "repository": "Sanmoo/java-springboot-event-sourcing",
+              "source": "github-rest",
+              "purpose": "repository",
+              "certifiesMergeSafety": false
+            }
+          }
+        ]
+      },
+      "historyLength": 0,
+      "requests": [
+        {
+          "at": "2026-11-05T21:43:24.756Z",
+          "method": "GET",
+          "endpoint": "/app",
+          "exit": 1,
+          "formatted": true,
+          "status": 401,
+          "app": {}
+        },
+        {
+          "at": "2026-11-05T21:43:25.261Z",
+          "method": "GET",
+          "endpoint": "/app",
+          "exit": 1,
+          "formatted": true,
+          "status": 401,
+          "app": {}
+        }
+      ]
+    },
+    {
+      "root": "/home/sanmoo/software-factory-test/ticket04-noUQeC",
+      "at": "2026-11-05T21:44:29.320Z",
+      "node": "v24.21.0",
+      "unavailableExit": 3,
+      "doctorExit": 3,
+      "report": {
+        "kind": "access",
+        "scope": "authenticated",
+        "results": [
+          {
+            "tracker": {
+              "status": "blocked",
+              "code": "GITHUB_ACCESS_DENIED",
+              "completeness": "incomplete",
+              "nextStep": "Operator must verify the named repository, App/installation, private key, explicit Workflows setting, permissions and REST compatibility; no personal fallback or repair.",
+              "observedAt": "2026-11-05T21:44:28.119Z",
+              "repository": "Sanmoo/java-springboot-event-sourcing",
+              "source": "github-rest",
+              "purpose": "tracker",
+              "certifiesMergeSafety": false
+            },
+            "repository": {
+              "status": "blocked",
+              "code": "GITHUB_ACCESS_DENIED",
+              "completeness": "incomplete",
+              "nextStep": "Operator must verify the named repository, App/installation, private key, explicit Workflows setting, permissions and REST compatibility; no personal fallback or repair.",
+              "observedAt": "2026-11-05T21:44:28.631Z",
+              "repository": "Sanmoo/java-springboot-event-sourcing",
+              "source": "github-rest",
+              "purpose": "repository",
+              "certifiesMergeSafety": false
+            }
+          }
+        ]
+      },
+      "historyLength": 0,
+      "requests": [
+        {
+          "at": "2026-11-05T21:44:28.626Z",
+          "method": "GET",
+          "endpoint": "/app",
+          "exit": 1,
+          "formatted": true,
+          "status": 401,
+          "serverDate": "Thu, 05 Nov 2026 21:44:28 GMT",
+          "errorHints": [
+            "decode"
+          ],
+          "app": {}
+        },
+        {
+          "at": "2026-11-05T21:44:29.159Z",
+          "method": "GET",
+          "endpoint": "/app",
+          "exit": 1,
+          "formatted": true,
+          "status": 401,
+          "serverDate": "Thu, 05 Nov 2026 21:44:29 GMT",
+          "errorHints": [
+            "decode"
+          ],
+          "app": {}
+        }
+      ]
+    }
+  ]
+}

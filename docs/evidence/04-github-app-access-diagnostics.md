@@ -123,11 +123,12 @@ Isso corrige a compatibilidade local do pedido e a falsa premissa do fixture;
 **não comprova emissão, redução ou autenticação reais por gh/GitHub**. Ticket 04
 continua BLOCKED para aceite autenticado, sem checkbox ou resolução alterados.
 
-## Falta exata para aceite real
+## Lacuna anterior ao ensaio real (histórico do checkpoint F1)
 
-**Ticket permanece aberto; não há Answer/resolução nem homologação real.**
-Nenhuma credencial/identidade pessoal foi lida/usada, nenhuma App/token real foi
-emitida, nenhuma chamada GitHub ou mutação remota foi realizada.
+**Naquele checkpoint**, ticket permanecia aberto, sem Answer/resolução nem
+homologação real. Nenhuma credencial/identidade pessoal havia sido lida/usada,
+nenhum token real emitido e nenhuma chamada GitHub ou mutação remota realizada.
+O ensaio autorizado abaixo substitui esse estado histórico; não o aceite.
 
 Requer autorização específica e configuração de teste pelo operador para executar
 o doctor composto com o `gh` real, App/instalação/repos/base explícitos e chave
@@ -141,3 +142,127 @@ merge/base/CI nem cobrar provas negativas delas. V-03 completo (renovação,
 revogação/crash, guest/SDK/streaming), V-05 completo (grafo/visibilidades/piloto) e
 V-16 completo (release/atualização) continuam fora deste incremento e não estão
 implicitamente aceitos.
+
+## Ensaio real autorizado de 2026-11-05 — BLOCKED em App JWT / gh
+
+**Ticket 04 não resolvido; critérios reais incompletos.** Continuado HEAD
+`71287cf`, sem refazer F1. A integração local estava em `b591ec7`, já ancestral;
+`git rebase integration/software-factory-mvp` informou up to date. Nenhum merge,
+push, escrita em main/integração ou identidade pessoal. O operador autorizou
+apenas observações remotas e emissão de teste neste primeiro ensaio; a emissão
+não chegou a ocorrer.
+
+### Segurança e composição efetivamente executadas
+
+Revalidados por metadados a chave exata autorizada e **todos os ancestrais**:
+arquivo regular da conta, **0600**, uid/gid 1000, um link, 1675 bytes; diretórios
+ancestrais sem symlinks nem escrita de grupo/outros, donos root/conta atual.
+Leitura com `O_NOFOLLOW`, conferência do descritor e cópia `wx`/0600 somente em
+`credentials/app.pem` dentro de cada instalação própria 0700 sob
+`/home/sanmoo/software-factory-test`. A raiz compartilhada preexistente é 0755,
+sem escrita alheia, e não foi alterada; instalações/chaves permanecem privadas.
+Fonte nunca modificada, com inode/modo/mtime conferidos após os ensaios. Cópias
+privadas de teste foram removidas individualmente após encerrar os controladores;
+nenhum material emissor foi colocado no Git ou neste relatório.
+
+Um primeiro início local falhou antes de qualquer uso da credencial/API. A
+[correção pré-requisito do flock real em Btrfs](04-controller-lock-prerequisite.md)
+foi explicitamente aprovada, testada RED/GREEN e commitada separadamente em
+`76ff8f1`; requer revisão independente do seam de ticket 02.
+
+Dois ensaios seguintes iniciaram **o controlador real**, observaram status pelo
+socket, executaram `doctor --authenticated --json` e encerraram o controlador
+com SIGTERM/exit **0**. Sem proprietário, doctor retornou exit **3**. Configuração:
+App **5569788**, instalação candidata **177599217**, repo
+`Sanmoo/java-springboot-event-sourcing`, base `main`, operador `Sanmoo`,
+**Workflows false explícito**. Modelos foram configurados como `unused`, sem
+qualquer chamada; nenhuma VM foi necessária ou iniciada.
+
+O transporte usou o binário real `/usr/bin/gh` com argv estruturado e HOME/config
+temporários privados, sem herdar configuração/token pessoal. Um observador
+transparente executou esse binário sem substituir respostas, reteve stdout HTTP
+somente no pipe de memória destinado ao controlador e gravou apenas uma projeção
+allowlisted de metadados. Stderr cru não foi encaminhado. Token/JWT somente em
+memória/ambiente, nunca argv, artefato ou log; nenhum `GH_DEBUG` real foi usado.
+Os controladores registraram **historyLength 0**: diagnóstico, não comando durável.
+
+### Resultado remoto real (não confundir com fixture)
+
+[Artefato JSON sanitizado com resultados e requisições](04-real-github-access-2026-11-05.json).
+
+| Horário UTC | Finalidade | Requisição real | Resultado |
+| --- | --- | --- | --- |
+| 21:43:24.756 | tracker | GET /app | HTTP 401, gh exit 1 |
+| 21:43:25.261 | repository | GET /app | HTTP 401, gh exit 1 |
+| 21:44:28.626 | tracker | GET /app | HTTP 401, gh exit 1 |
+| 21:44:29.159 | repository | GET /app | HTTP 401, gh exit 1 |
+
+Ambos os doctors: exit **3**, ambos os adapters `GITHUB_ACCESS_DENIED`,
+`completeness: incomplete`, `certifiesMergeSafety: false`, com ação explícita e
+sem resposta externa crua. A formatação HTTP real de `gh --include` foi analisada
+com sucesso nos quatro casos. No segundo ensaio, header Date real coincidiu com
+o relógio da máquina, e classificador de palavras fixas encontrou somente
+`decode` no erro (não persistiu mensagem crua).
+
+**Zero** consultas de instalação/repo/base/issues/dependências, **zero** pedidos
+`access_tokens`, concessões, escritas remotas ou push. App e instalação fornecidas
+**não foram autenticadas**; IDs continuam candidatos, não fatos confirmados.
+REST `2026-03-10` foi enviado explicitamente, mas nenhuma resposta 2xx/versão
+selecionada comprovou suporte. Repositório, base, permissões, escopo e validade de
+grant continuam não observados. Acesso negado não autoriza inferir falta de
+permissões de repo/instalação: falhou **antes** dessa etapa.
+
+### Incompatibilidade concreta e limite da correção
+
+Versão instalada: `gh version 2.46.0 (2025-12-17 Ubuntu 2.46.0-1ubuntu0.3)`.
+Fonte pública exata de referência:
+[`api/http_client.go`, tag v2.46.0, AddAuthTokenHeader](https://github.com/cli/cli/blob/v2.46.0/api/http_client.go)
+formata `Authorization: token <valor>` a partir do token de ambiente. A
+[documentação oficial de JWT GitHub App](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app)
+exige **Authorization: Bearer** para JWT, diferentemente de installation tokens.
+[`gh api` http.go nessa tag](https://github.com/cli/cli/blob/v2.46.0/pkg/cmd/api/http.go)
+recebe overrides de headers por argumentos, não uma projeção de segredo por stdin.
+
+Prova separada com **o binário instalado**: servidor HTTP somente loopback,
+credencial sintética, HOME/config isolados; `/usr/bin/gh api` enviou esquema
+**token**, valor sintético esperado, exit 0. Isso confirma o comportamento do
+binário, **não** a fronteira GitHub nem a aceitação de um JWT real. Nenhum segredo
+real entrou nesse probe. Também verificada localmente, sem imprimir valores, a
+chave RSA **2048 bits**, assinatura RS256 e verify com chave pública derivada,
+issuer configurado, iat 60s no passado e duração de claims 600s. Essa verificação
+local não comprova que a chave pertence à App configurada.
+
+O fixture anterior validava assinatura/claims e ambiente, mas **não** o header
+HTTP que gh real produz. Por isso seu sucesso não detectou esta incompatibilidade.
+Não adicionamos falso teste verde nem alteramos o fixture para reivindicar uma
+fronteira não exercitada. O erro 401 mais documentação/probe estabelecem uma
+incompatibilidade de esquema; não provam ausência de eventual erro adicional de
+App/chave. Sua identidade só poderá ser confirmada após transporte compatível.
+
+Não foi contornado o contrato com segredo em `-H`/argv, perfil pessoal, proxy,
+novo serviço ou HTTPS nativo. Esse trade-off volta ao operador: escolher um modo
+aprovado de autenticação App que preserve segredo fora de argv e o contrato gh,
+ou autorizar mudança explícita de desenho. Nenhuma ampliação de permissão corrige
+a autenticação JWT deste transporte. Não há lacuna de direitos remotos comprovada
+para recomendar; **não solicitar grants mais amplos por suposição**.
+
+Após corrigir essa incompatibilidade, ainda será necessário autenticar App e
+instalação **antes** de emitir, e conferir o retorno exato de repo/permissões/
+validade. Pedidos previstos permanecem: tracker `metadata:read, issues:write`;
+repository `metadata:read, contents:read, pull_requests:write, checks:read,
+statuses:read, actions:read, administration:read`, um repo por finalidade,
+**Workflows ausente**. Esses são pedidos do contrato, não permissões instaladas
+observadas nem direitos de escrita exercitados. Nenhum merge/base/CI/bypass,
+piloto humano, renovação/revogação ou contenção de cópia foi certificado.
+
+### Gate final
+
+Node **24.21.0**, npm **11.19.0**, QEMU/qemu-img **11.1.2** (somente versões).
+`npm ci`, `npm run typecheck`, suíte completa `npm test` com
+`FACTORY_TEST_ROOT=/home/sanmoo/software-factory-test` **duas vezes**: arquitetura
+44 módulos/157 dependências, ESLint, build e **63/63** testes, zero falhas/skips.
+`git diff --check` passou. Os dois fracassos prévios de readiness sob concorrência,
+o probe isolado verde e a correção de teste aprovada estão preservados no relatório
+do pré-requisito, não ocultados por rerun. `npm ci`: cinco vulnerabilidades
+moderadas transitivas e avisos de aprovação de scripts, sem atualização fora de
+escopo. O gate local final verde não remove o bloqueio remoto do ticket.

@@ -48,3 +48,15 @@ Publicação é planejamento aprovado, não autorização de construção, uso d
   Consulta apenas à documentação pública; sem credenciais, `gh api`, emissão real
   ou mutação remota. **BLOCKED para aceite autenticado permanece**; critérios e
   resolução inalterados.
+- 2026-11-05 — Retomada autorizada com fonte privada 0600 e QEMU instalado:
+  **BLOCKED agora por incompatibilidade real App JWT/gh**, não mais por falta de
+  autorização/permissões locais. Controlador real + gh 2.46.0 executaram quatro
+  GET `/app`, todos HTTP 401; nenhum pedido de instalação/token/repo/mutação.
+  Fonte pública e probe loopback sintético do binário confirmam esquema `token`
+  onde GitHub exige `Bearer` para JWT; não contornado com segredo em argv nem
+  transporte novo. App/instalação, escopo, direitos e validade continuam não
+  verificados, sem inferir ou ampliar permissões. Correção pré-requisito do
+  flock/Btrfs em `76ff8f1` aprovada separadamente; gate final typecheck + suíte
+  completa **63/63 duas vezes**. [Evidência real e lacunas](../../../docs/evidence/04-github-app-access-diagnostics.md#ensaio-real-autorizado-de-2026-11-05--blocked-em-app-jwt--gh).
+  Critérios não marcados; ticket não resolvido. Decisão de transporte retorna ao
+  operador, sem certificação de escrita/barreiras de merge/base/CI.
