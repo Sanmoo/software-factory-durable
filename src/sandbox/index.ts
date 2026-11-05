@@ -3,6 +3,8 @@ import { constants } from 'node:fs';
 import { platform, arch } from 'node:os';
 import type { Diagnostic } from '../contracts/index.js';
 import { canAccess, inspectStorage, versionOf } from '../platform/host/index.js';
+import { inspectGuestAssets, type GuestAssetPin } from './guest-assets.js';
+export type { GuestAssetPin } from './guest-assets.js';
 
 // Development profile identity only: no distributed assets or qualified release yet.
 const configurationSchema = z.strictObject({
@@ -25,11 +27,16 @@ function validateConfiguration(configuration: unknown) {
   return { valid: true as const, effective: parsed.data };
 }
 
-export function createSandbox({ root }: { root: string }) {
+export function createSandbox({ root, guestAssets }: { root: string; guestAssets?: GuestAssetPin }) {
   return {
     async validate(configuration: unknown) {
       const validated = validateConfiguration(configuration);
-      const checks: Diagnostic[] = [];
+      const checks: Diagnostic[] = [
+        ...await inspectGuestAssets(guestAssets),
+        { id: 'sandbox-release', status: 'unverified',
+          message: 'Development profile only; no distributed release or real sandbox qualification is available.',
+          nextStep: 'Build and qualify the fixed Arch x86_64/QEMU/KVM/Alpine/Docker vfs composition before operation.' },
+      ];
       const versions: Record<string, string | null> = {};
       for (const command of ['qemu-system-x86_64', 'qemu-img', 'systemctl']) {
         const version = versionOf(command);

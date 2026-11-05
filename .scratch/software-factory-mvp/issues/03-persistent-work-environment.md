@@ -26,3 +26,21 @@
 ## Autorização e limites
 
 Publicação é planejamento aprovado, não autorização de construção, uso de host/credenciais/GitHub/modelos reais, injeção de falhas ou piloto. Obter autorização pertinente antes da execução. Não alterar decisões aprovadas silenciosamente; lacuna de desenho volta ao operador. Merge e avaliação humana não são delegados aos agentes.
+
+## Implementation checkpoint — BLOCKED
+
+Desenvolvimento local autorizado; nenhum aceite acima está concluído. Após inspeção read-only,
+QEMU/qemu-img não foram encontrados no PATH e nenhum perfil/asset de release foi fornecido.
+Boot de VM, instalação, alteração de serviços e falha de proprietário não foram autorizados.
+O supervisor aprovou um recorte parcial coerente apenas em `Sandbox.validate`, sem stubs de lifecycle.
+
+Implementado diagnóstico de integridade com diretório explícito e SHA256 esperado do manifesto,
+fornecidos pela composição confiável (não YAML); arquivos locais reais nos testes, sem boot,
+download de imagem, descoberta de cache pessoal ou SDK irrestrito. Configuração válida não
+é confundida com ambiente qualificado. Nenhuma prova de KVM, RealFSProvider/FUSE, systemd,
+cessação ou persistência foi substituída por dublê.
+
+[Evidência e lista completa das lacunas por critério](../../../docs/evidence/03-sandbox-validation-checkpoint.md).
+Faltam o restante do lifecycle e todas as provas reais de V-02/V-12/V-14 pertinentes;
+6 testes locais de validação e a suíte local verde não resolvem este ticket.
+Status permanece não resolvido; preservar o checkpoint na branch local até autorização/pré-requisitos.
