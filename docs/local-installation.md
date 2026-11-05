@@ -118,3 +118,20 @@ A prova de release autocontida/manifestos/assets e atualização não foi realiz
 
 `run`, status operacional e demais comandos da spec ainda não são implementados
 neste ticket: são recusados com `INVALID_ARGUMENTS`, não simulados com sucesso.
+
+## Diagnóstico autenticado pelo proprietário (incremento 04)
+
+Com o controlador disponível, `factory doctor --authenticated --root <raiz>
+--json` verifica acesso operacional pela App configurada. A CLI não lê a chave,
+abre SQLite ou usa identidade pessoal; sem proprietário retorna
+`CONTROLLER_UNAVAILABLE` (exit 3). Saída `access` contém resultados separados de
+tracker/repositório com origem, instante, identidade, completude, limitações,
+metadados de concessão sem segredo, causa/ação e espera de rate limit quando
+pertinente. Resultado bloqueado retorna exit 3; observações bem-sucedidas retornam
+0, **sem qualificar escrita não exercida, runtime ou barreiras de merge/CI**.
+Sem `--authenticated`, o doctor conserva o comportamento offline acima.
+
+Esse caminho lê a chave protegida e emite concessões somente no controlador;
+usá-lo com recursos reais requer autorização e configuração explícitas.
+A implementação foi validada apenas com fronteira gh/GitHub substituída por
+fixture local e segredos sintéticos; o [aceite real permanece bloqueado](evidence/04-github-app-access-diagnostics.md).

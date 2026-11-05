@@ -8,12 +8,12 @@ import { pathToFileURL } from 'node:url';
 import { setup, firstHumanLogin } from './setup.js';
 import { doctor } from './doctor.js';
 
-const usage = 'factory <setup|doctor|run|status|pause|unpause|request <id>> [--root <installation>] [--json] [--request-id <id>]; factory login --root <canonical-absolute-installation>';
+const usage = 'factory <setup|doctor|run|status|pause|unpause|request <id>> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated]; factory login --root <canonical-absolute-installation>';
 
 async function exchange(root: string, kind: 'inspect' | 'accept', payload: Envelope['payload'], id: string, runId: string | null) {
   const endpoint = resolve(await realpath(root), 'run', 'control.sock');
   const channel = await connect(endpoint, 'local-operator');
-  const timeout = setTimeout(() => channel.close(), 5000);
+  const timeout = setTimeout(() => channel.close(), payload.kind === 'access' ? 120000 : 5000);
   try {
     await channel.send({ protocol_version: protocolVersion, controller_run_id: runId, message_id: id, reply_to: null, kind, payload });
     for await (const response of channel.messages) {
@@ -33,10 +33,14 @@ async function operational(root: string, command: string, requestId: string | un
     const status = await exchange(root, 'inspect', { kind: 'status' }, randomUUID(), null);
     if (status.kind !== 'view') throw new Error('INVALID_RESPONSE');
     const response = command === 'status' ? status : await exchange(root, mutable ? 'accept' : 'inspect',
-      mutable ? { request_id: id, operation: command, origin: 'local-cli' } : { kind: 'request', request_id: requested! },
+      mutable ? { request_id: id, operation: command, origin: 'local-cli' } : command === 'doctor' ? { kind: 'access' } : { kind: 'request', request_id: requested! },
       mutable ? id : randomUUID(), status.controller_run_id);
     console.log(json ? JSON.stringify(response.payload) : JSON.stringify(response.payload, null, 2));
     if (response.kind === 'error') return response.payload.outcome === 'indeterminate' ? 4 : 2;
+    if (response.payload.kind === 'access' && Array.isArray(response.payload.results) &&
+      response.payload.results.some(result => !result || typeof result !== 'object' || Array.isArray(result) ||
+        !result.tracker || typeof result.tracker !== 'object' || Array.isArray(result.tracker) || result.tracker.status !== 'ok' ||
+        !result.repository || typeof result.repository !== 'object' || Array.isArray(result.repository) || result.repository.status !== 'ok')) return 3;
     return response.payload.kind === 'refused' ? 2 : 0;
   } catch {
     console.error(JSON.stringify({ code: mutable ? 'REQUEST_INDETERMINATE' : 'CONTROLLER_UNAVAILABLE',
@@ -69,13 +73,15 @@ export async function main(args: string[]): Promise<number> {
   }
   let root = resolve('.');
   let json = false;
+  let authenticated = false;
   let rootSeen = false;
   let valid = ['setup', 'doctor', 'run', 'status', 'pause', 'unpause', 'request'].includes(command ?? '');
   let requestId: string | undefined;
   const requested = command === 'request' ? args[1] : undefined;
   if (command === 'request' && !requested?.match(/^[a-zA-Z0-9_-]{1,128}$/)) valid = false;
   for (let index = command === 'request' ? 2 : 1; index < args.length; index++) {
-    if (args[index] === '--json' && !json) json = true;
+    if (args[index] === '--authenticated' && command === 'doctor' && !authenticated) authenticated = true;
+    else if (args[index] === '--json' && !json) json = true;
     else if (args[index] === '--root' && !rootSeen && args[index + 1] && !args[index + 1]?.startsWith('-')) {
       root = resolve(args[++index]!);
       rootSeen = true;
@@ -92,6 +98,7 @@ export async function main(args: string[]): Promise<number> {
     if (command === 'status' || command === 'pause' || command === 'unpause' || command === 'request') {
       return await operational(root, command, requestId, requested, json);
     }
+    if (command === 'doctor' && authenticated) return await operational(root, command, undefined, undefined, json);
     if (command === 'doctor') {
       const report = await doctor(root);
       const errors = !report.configuration.valid ? report.configuration.errors.map(error => `${error.code}: ${error.path}`).join('\n') + '\n' : '';

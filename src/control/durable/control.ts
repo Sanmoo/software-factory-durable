@@ -4,7 +4,7 @@ import { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node';
 import { createSession, defineDoc, defineDocFamily } from '@earendil-works/pi-durable';
 import { SqliteStorage } from '@earendil-works/pi-durable/storage/sqlite';
 import { z } from 'zod';
-import type { Control, ControlInput, ControlReceipt } from '../types.js';
+import type { AccessDependencies, Control, ControlInput, ControlReceipt } from '../types.js';
 
 const inputSchema = z.strictObject({
   request_id: z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/),
@@ -19,7 +19,7 @@ const requests = defineDocFamily<{ input: ControlInput | null; receipt: ControlR
 });
 
 /** Bootstrap must already hold the stable canonical-storage flock for this owner's entire lifetime. */
-export async function openControl(options: { storagePath: string; runtimeInventory: 'empty' | 'unknown' }): Promise<Control> {
+export async function openControl(options: { storagePath: string; runtimeInventory: 'empty' | 'unknown'; access?: AccessDependencies }): Promise<Control> {
   // Closed before any storage open; this increment exposes no scheduler, task, or external-effect entrypoint.
   let dispatchReason: 'RECONCILIATION_REQUIRED' | 'EXECUTION_NOT_ENABLED' = 'RECONCILIATION_REQUIRED';
   const controller_run_id = randomUUID();
@@ -73,6 +73,16 @@ export async function openControl(options: { storagePath: string; runtimeInvento
       }, BACKGROUND_CONTEXT);
     },
     async inspect(query) {
+      if (query.kind === 'access') {
+        if (!options.access) throw new Error('AUTHENTICATED_DIAGNOSTICS_UNAVAILABLE');
+        const results = [];
+        // In-memory observations only: no token or issuer result enters a durable task/commit.
+        for (const repo of options.access.repositories) results.push({
+          tracker: await options.access.tracker.checkAccess(repo),
+          repository: await options.access.repository.checkAccess(repo, repo.base),
+        });
+        return { kind: 'access', scope: 'authenticated', results };
+      }
       if (query.kind === 'request') {
         if (!inputSchema.shape.request_id.safeParse(query.request_id).success) throw new Error('INVALID_REQUEST_ID');
         const request = await state.snapshot(requests, query.request_id, BACKGROUND_CONTEXT);

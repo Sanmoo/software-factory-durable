@@ -5,10 +5,13 @@ import { openControl, type ControlInput } from '../../control/index.js';
 import { listen, protocolVersion, type Envelope } from '../../protocol/index.js';
 import { controllerPaths, verifyControllerLock, controllerRuntimeInventory } from '../../platform/host/index.js';
 import { readConfiguration } from '../configuration.js';
+import { createGitHubAccess } from '../../platform/github/index.js';
+import { createIssueTracker } from '../../issue-tracker/index.js';
+import { createCodeRepository } from '../../code-repository/index.js';
 
 const command = z.strictObject({ request_id: z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/),
   operation: z.enum(['pause', 'unpause']), origin: z.literal('local-cli') });
-const query = z.discriminatedUnion('kind', [z.strictObject({ kind: z.literal('status') }),
+const query = z.discriminatedUnion('kind', [z.strictObject({ kind: z.literal('status') }), z.strictObject({ kind: z.literal('access') }),
   z.strictObject({ kind: z.literal('request'), request_id: z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/) })]);
 
 async function own(root: string): Promise<number> {
@@ -32,7 +35,10 @@ async function own(root: string): Promise<number> {
   const terminate = () => stop.abort();
   process.on('SIGINT', terminate);
   process.on('SIGTERM', terminate);
-  const control = await openControl({ storagePath: paths.storagePath, runtimeInventory: await controllerRuntimeInventory(paths.root) });
+  const effective = validated.configuration.effective;
+  const github = createGitHubAccess({ root: paths.root, ...effective.githubApp });
+  const control = await openControl({ storagePath: paths.storagePath, runtimeInventory: await controllerRuntimeInventory(paths.root),
+    access: { tracker: createIssueTracker({ github }), repository: createCodeRepository({ github }), repositories: effective.repositories } });
   const status = await control.inspect({ kind: 'status' });
   if (!('controller_run_id' in status)) throw new Error('INVALID_CONTROL_STATUS');
   const runId = status.controller_run_id;
@@ -61,7 +67,8 @@ async function own(root: string): Promise<number> {
       } else if (envelope.kind === 'inspect') {
         const parsed = query.safeParse(envelope.payload);
         if (!parsed.success) { await reply('error', { code: 'INVALID_QUERY' }); return; }
-        result = await control.inspect(parsed.data);
+        try { result = await control.inspect(parsed.data); }
+        catch { await reply('error', { code: 'DIAGNOSTIC_UNAVAILABLE' }); return; }
         responseKind = 'view';
       } else { await reply('error', { code: 'INVALID_COMMAND' }); return; }
       // Transport loss after a successful commit does NOT fail the authority or undo that commit.

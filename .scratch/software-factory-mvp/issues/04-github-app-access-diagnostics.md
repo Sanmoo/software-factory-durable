@@ -25,3 +25,14 @@
 ## Autorização e limites
 
 Publicação é planejamento aprovado, não autorização de construção, uso de host/credenciais/GitHub/modelos reais, injeção de falhas ou piloto. Obter autorização pertinente antes da execução. Não alterar decisões aprovadas silenciosamente; lacuna de desenho volta ao operador. Merge e avaliação humana não são delegados aos agentes.
+
+## Comments
+
+- 2026-11-05 — Incremento local implementado em `implement/software-factory-mvp-04`:
+  [evidência e lacunas explícitas](../../../docs/evidence/04-github-app-access-diagnostics.md).
+  `checkAccess` distintos, emissor/transporte privados e `doctor --authenticated`
+  pelo controlador; fixture local/sintético não comprova gh/GitHub real.
+  **BLOCKED para aceite autenticado**: faltam autorização/configuração próprias
+  da App/instalação/repos/base e execução real pertinente. Nenhuma credencial
+  pessoal, emissão de token real, chamada/mutação GitHub ou prova de bypass foi
+  usada. Critérios não marcados e ticket não resolvido.
