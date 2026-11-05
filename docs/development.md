@@ -1,9 +1,11 @@
-# Desenvolvimento local — ticket 01
+# Desenvolvimento local — tickets 01–02
 
-Este incremento implementa **somente** preparação/diagnóstico offline e o gate da
-própria Factory. Não admite Tickets, abre storage operacional, cria sockets,
-inicia workers/VMs, registra serviços nem usa GitHub/modelos. Não é uma release
-autocontida homologada. Autoridade: [spec](../.scratch/software-factory/spec.md),
+Os incrementos implementam preparação/diagnóstico offline, o gate da própria
+Factory e controlador exclusivo com pausa/pedidos duráveis por socket privado.
+Não admitem Tickets, iniciam workers/VMs, registram serviços nem usam GitHub/modelos.
+Despacho permanece fechado, inclusive após `unpause`; não existe scheduler paralelo.
+Não é uma release autocontida homologada. Evidências e limites do controlador:
+[controller-evidence.md](controller-evidence.md). Autoridade: [spec](../.scratch/software-factory/spec.md),
 [interfaces](../.scratch/software-factory/module-public-interfaces.md), decisões
 [operacionais](../.scratch/software-factory/issues/21-installation-operations-contract.md)
 e [do adapter](../.scratch/software-factory/issues/19-gondolin-adapter-contract.md).
@@ -15,6 +17,9 @@ e [do adapter](../.scratch/software-factory/issues/19-gondolin-adapter-contract.
   local; nenhum comando deste projeto instala Node ou modifica o sistema.
 - TypeScript **6.0.3**, `@types/node` **24.19.2**, ESM/NodeNext estrito, saída ES2023.
 - Runtime: YAML **2.9.1**, Zod **4.6.7**. Nada de parser YAML próprio.
+- Controle: Pi Durable **1.5.0** e Chord **1.5.0**, por suas exportações públicas;
+  `Session`/`SqliteStorage` reais, adapter Node público configurado/verificado FULL.
+  Node fixado embarca SQLite **3.53.4** (correção WAL-reset presente).
 - Gate estático: dependency-cruiser **18.7.2**; ESLint **10.14.0** e parser TypeScript
   **8.72.1** para carregamento opaco e relógios/I/O ambientes nas regras puras.
 - Versões/integridades transitivas: `package-lock.json`. Isto não fixa nem prova
@@ -42,6 +47,8 @@ npm run check:architecture
 npm run typecheck
 npm run build
 node --test dist/test/entrypoints/doctor.test.js
+node --test 'dist/test/entrypoints/controller*.test.js' dist/test/entrypoints/control-public.test.js
+node --test dist/test/protocol/protocol.test.js
 node --test --test-name-pattern 'alias' dist/test/architecture/architecture-gate.test.js
 npm run watch
 # Em outro terminal, após a primeira emissão do watch:

@@ -54,7 +54,9 @@ test('importing public modules cannot write, spawn probes, or read a personal pr
   const root = await mkdtemp(join(tmpdir(), 'factory-import-'));
   try {
     const script = `await import(${JSON.stringify(pathToFileURL(cli).href)});\n` +
-      `await import(${JSON.stringify(pathToFileURL(resolve('dist/src/sandbox/index.js')).href)});`;
+      `await import(${JSON.stringify(pathToFileURL(resolve('dist/src/sandbox/index.js')).href)});\n` +
+      `await import(${JSON.stringify(pathToFileURL(resolve('dist/src/control/index.js')).href)});\n` +
+      `await import(${JSON.stringify(pathToFileURL(resolve('dist/src/protocol/index.js')).href)});`;
     const result = spawnSync(process.execPath, ['--permission', `--allow-fs-read=${resolve('.')}`, '--input-type=module', '-e', script], {
       cwd: root, encoding: 'utf8', env: { HOME: join(root, 'forbidden-profile'), GH_TOKEN: 'synthetic-not-to-inherit' },
     });

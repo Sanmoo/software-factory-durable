@@ -1,0 +1,29 @@
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { controllerPaths, prepareControllerLock } from '../platform/host/index.js';
+
+async function launch(root: string): Promise<number> {
+  const paths = await controllerPaths(root);
+  if (Buffer.byteLength(paths.endpoint) > 103) throw new Error('SOCKET_PATH_TOO_LONG');
+  await prepareControllerLock(paths.lockPath);
+  const owner = spawn('flock', ['--exclusive', '--nonblock', '--no-fork', '--conflict-exit-code', '73',
+    paths.lockPath, process.execPath, fileURLToPath(new URL('./controller/owner.js', import.meta.url)), paths.root],
+  { stdio: 'inherit', env: { PATH: process.env.PATH ?? '', LANG: 'C', LC_ALL: 'C' } });
+  const interrupt = () => owner.kill('SIGINT');
+  const terminate = () => owner.kill('SIGTERM');
+  process.on('SIGINT', interrupt);
+  process.on('SIGTERM', terminate);
+  try {
+    const code = await new Promise<number>((resolve, reject) => {
+      owner.once('error', reject);
+      owner.once('exit', (code, signal) => resolve(code ?? (signal ? 1 : 0)));
+    });
+    if (code === 73) console.error(JSON.stringify({ code: 'CONTROLLER_ALREADY_RUNNING', message: 'Canonical storage already has an owner; do not remove the lock file.' }));
+    return code;
+  } finally { process.off('SIGINT', interrupt); process.off('SIGTERM', terminate); }
+}
+try { process.exitCode = await launch(process.argv[2] ?? '.'); }
+catch {
+  console.error(JSON.stringify({ code: 'CONTROLLER_START_FAILED', message: 'Check private installation paths and flock prerequisites; no takeover or repair.' }));
+  process.exitCode = 3;
+}

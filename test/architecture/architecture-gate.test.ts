@@ -42,6 +42,22 @@ async function rejects(files: Record<string, string>, rule: string, from: string
     && (to === undefined || violation.to === to)), JSON.stringify(result.violations));
 }
 
+test('controller composition permits only the approved shared configuration bootstrap, not private module imports', async () => {
+  const result = await analyze({
+    'src/entrypoints/configuration.ts': 'export const readConfiguration = () => ({});',
+    'src/entrypoints/controller/owner.ts': "export { readConfiguration } from '../configuration.js';",
+  });
+  assert.equal(result.status, 0, JSON.stringify(result.violations));
+  await rejects({
+    'src/control/durable/private.ts': 'export const secret = 1;',
+    'src/entrypoints/controller/owner.ts': "export { secret } from '../../control/durable/private.js';",
+  }, 'public-entry:control', 'src/entrypoints/controller/owner.ts', 'src/control/durable/private.ts');
+  await rejects({
+    'src/entrypoints/configuration.ts': 'export const readConfiguration = () => ({});',
+    'src/entrypoints/worker.ts': "export { readConfiguration } from './configuration.js';",
+  }, 'composition:worker', 'src/entrypoints/worker.ts', 'src/entrypoints/configuration.ts');
+});
+
 test('architecture gate rejects deep imports through relative paths', async () => {
   await rejects({
     'src/records/private.ts': 'export const secret = 1;',

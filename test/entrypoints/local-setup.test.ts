@@ -64,7 +64,7 @@ test('setup includes prerequisite diagnostics without treating its incomplete in
 test('CLI rejects unknown commands and malformed arguments without filesystem changes', async () => {
   const root = await mkdtemp(join(tmpdir(), 'factory-arguments-'));
   try {
-    for (const args of [['run'], ['setup', '--unknown'], ['setup', '--root'], ['doctor', '--root', '--json'], ['setup', 'extra']]) {
+    for (const args of [['unknown'], ['setup', '--unknown'], ['setup', '--root'], ['doctor', '--root', '--json'], ['setup', 'extra']]) {
       const result = spawnSync(process.execPath, [cli, ...args], { cwd: root, encoding: 'utf8' });
       assert.equal(result.status, 2, args.join(' '));
       assert.match(result.stderr, /INVALID_ARGUMENTS/);

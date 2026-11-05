@@ -30,7 +30,7 @@ module.exports = {
       to: { pathNot: '^src/(contracts/|control/(rules/|types\\.ts$))' } },
     ...Object.entries(compositions).map(([role, destinations]) => ({ name: `composition:${role}`, severity: 'error',
       from: { path: entrypoint(role) },
-      to: { path: '^src/', pathNot: `^src/(${destinations.join('|')})/|${entrypoint(role)}` } })),
+      to: { path: '^src/', pathNot: `^src/(${destinations.join('|')})/|${entrypoint(role)}${role === 'controller' ? '|^src/entrypoints/configuration\\.ts$' : ''}` } })),
     { name: 'cli-control-types-only', severity: 'error', from: { path: entrypoint('cli') },
       to: { path: '^src/control/', dependencyTypesNot: ['type-only'] } },
     { name: 'control-contracts-only', severity: 'error',

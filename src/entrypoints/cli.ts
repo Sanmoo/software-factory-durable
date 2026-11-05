@@ -1,9 +1,59 @@
 import { resolve } from 'node:path';
+import { realpath } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { connect, protocolVersion, type Envelope } from '../protocol/index.js';
 import { pathToFileURL } from 'node:url';
 import { setup } from './setup.js';
 import { doctor } from './doctor.js';
 
-const usage = 'factory <setup|doctor> [--root <installation>] [--json]';
+const usage = 'factory <setup|doctor|run|status|pause|unpause|request <id>> [--root <installation>] [--json] [--request-id <id>]';
+
+async function exchange(root: string, kind: 'inspect' | 'accept', payload: Envelope['payload'], id: string, runId: string | null) {
+  const endpoint = resolve(await realpath(root), 'run', 'control.sock');
+  const channel = await connect(endpoint, 'local-operator');
+  const timeout = setTimeout(() => channel.close(), 5000);
+  try {
+    await channel.send({ protocol_version: protocolVersion, controller_run_id: runId, message_id: id, reply_to: null, kind, payload });
+    for await (const response of channel.messages) {
+      if (response.reply_to !== id || !response.controller_run_id) throw new Error('INVALID_RESPONSE');
+      return response;
+    }
+    throw new Error('CONNECTION_LOST');
+  } finally { clearTimeout(timeout); channel.close(); }
+}
+
+async function operational(root: string, command: string, requestId: string | undefined, requested: string | undefined, json: boolean) {
+  const mutable = command === 'pause' || command === 'unpause';
+  const id = requestId ?? randomUUID();
+  // Present identity BEFORE sending; stdout remains a single machine-readable result.
+  if (mutable) console.error(JSON.stringify({ code: 'REQUEST_IDENTIFIED', request_id: id }));
+  try {
+    const status = await exchange(root, 'inspect', { kind: 'status' }, randomUUID(), null);
+    if (status.kind !== 'view') throw new Error('INVALID_RESPONSE');
+    const response = command === 'status' ? status : await exchange(root, mutable ? 'accept' : 'inspect',
+      mutable ? { request_id: id, operation: command, origin: 'local-cli' } : { kind: 'request', request_id: requested! },
+      mutable ? id : randomUUID(), status.controller_run_id);
+    console.log(json ? JSON.stringify(response.payload) : JSON.stringify(response.payload, null, 2));
+    if (response.kind === 'error') return response.payload.outcome === 'indeterminate' ? 4 : 2;
+    return response.payload.kind === 'refused' ? 2 : 0;
+  } catch {
+    console.error(JSON.stringify({ code: mutable ? 'REQUEST_INDETERMINATE' : 'CONTROLLER_UNAVAILABLE',
+      ...(mutable ? { request_id: id } : {}), message: mutable ? 'Query or repeat this same request identity and content; do not invent a replacement ID.' : 'Start the controller; operational inspection never opens SQLite offline.' }));
+    return mutable ? 4 : 3;
+  }
+}
+
+async function launch(root: string): Promise<number> {
+  const child = spawn(process.execPath, [fileURLToPath(new URL('./controller.js', import.meta.url)), root], { stdio: 'inherit' });
+  const terminate = () => child.kill('SIGTERM');
+  const interrupt = () => child.kill('SIGINT');
+  process.on('SIGTERM', terminate); process.on('SIGINT', interrupt);
+  try { return await new Promise<number>((resolve, reject) => {
+    child.once('error', reject); child.once('exit', code => resolve(code ?? 1));
+  }); } finally { process.off('SIGTERM', terminate); process.off('SIGINT', interrupt); }
+}
 
 export async function main(args: string[]): Promise<number> {
   if (args.length === 1 && args[0] === '--help') { console.log(usage); return 0; }
@@ -11,19 +61,28 @@ export async function main(args: string[]): Promise<number> {
   let root = resolve('.');
   let json = false;
   let rootSeen = false;
-  let valid = command === 'setup' || command === 'doctor';
-  for (let index = 1; index < args.length; index++) {
+  let valid = ['setup', 'doctor', 'run', 'status', 'pause', 'unpause', 'request'].includes(command ?? '');
+  let requestId: string | undefined;
+  const requested = command === 'request' ? args[1] : undefined;
+  if (command === 'request' && !requested?.match(/^[a-zA-Z0-9_-]{1,128}$/)) valid = false;
+  for (let index = command === 'request' ? 2 : 1; index < args.length; index++) {
     if (args[index] === '--json' && !json) json = true;
     else if (args[index] === '--root' && !rootSeen && args[index + 1] && !args[index + 1]?.startsWith('-')) {
       root = resolve(args[++index]!);
       rootSeen = true;
-    } else { valid = false; break; }
+    } else if (args[index] === '--request-id' && !requestId && (command === 'pause' || command === 'unpause') &&
+      args[index + 1]?.match(/^[a-zA-Z0-9_-]{1,128}$/)) requestId = args[++index];
+    else { valid = false; break; }
   }
   if (!valid) {
     console.error(JSON.stringify({ code: 'INVALID_ARGUMENTS', message: usage }));
     return 2;
   }
   try {
+    if (command === 'run') return await launch(root);
+    if (command === 'status' || command === 'pause' || command === 'unpause' || command === 'request') {
+      return await operational(root, command, requestId, requested, json);
+    }
     if (command === 'doctor') {
       const report = await doctor(root);
       const errors = !report.configuration.valid ? report.configuration.errors.map(error => `${error.code}: ${error.path}`).join('\n') + '\n' : '';
