@@ -36,3 +36,15 @@ Publicação é planejamento aprovado, não autorização de construção, uso d
   da App/instalação/repos/base e execução real pertinente. Nenhuma credencial
   pessoal, emissão de token real, chamada/mutação GitHub ou prova de bypass foi
   usada. Critérios não marcados e ticket não resolvido.
+- Correção local da revisão **F1/P1** do checkpoint `4da6ad2`: fonte REST oficial
+  pública confirma `repositories: [name]` (ou `repository_ids`), não
+  `repository_names`. Fixture corrigido primeiro, com instalação de dois repos,
+  recusa de seletor ausente/não suportado e grant apenas para o repo explicitado;
+  RED significativo (`blocked` em vez de `ok`), depois GREEN com troca mínima do
+  campo no emissor. Validação do escopo devolvido preservada e coberta também para
+  lista ausente/múltiplos repos. `npm run typecheck`, `npm test` (62/62, arquitetura
+  e build inclusos) e `git diff --check` passaram com Node `24.21.0` no PATH.
+  [Comandos, fonte, limites e resultados exatos](../../../docs/evidence/04-github-app-access-diagnostics.md#correção-local-f1p1--seletor-rest-de-repositório).
+  Consulta apenas à documentação pública; sem credenciais, `gh api`, emissão real
+  ou mutação remota. **BLOCKED para aceite autenticado permanece**; critérios e
+  resolução inalterados.

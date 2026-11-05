@@ -72,6 +72,57 @@ completa, 59 testes), `git diff --check`. Gate e testes anteriores preservados.
 `npm ci` informou cinco vulnerabilidades moderadas transitivas preexistentes;
 nenhuma atualização fora de escopo ou `audit fix` foi aplicada.
 
+## Correção local F1/P1 — seletor REST de repositório
+
+Revisão independente do checkpoint `4da6ad2` identificou que o pedido de emissão
+usava `repository_names`, também exigido pelo fixture. Corrigido **somente F1**:
+`src/platform/github/index.ts` envia agora `{ repositories: [name], permissions: required }`.
+A validação de escopo/identidade/permissões/validade devolvidos permanece intacta.
+
+Fonte independente consultada por HTTPS público, sem autenticação:
+[Create an installation access token for an app](https://docs.github.com/en/rest/apps/apps?apiVersion=2026-03-10#create-an-installation-access-token-for-an-app),
+versão REST `2026-03-10`. A tabela Body parameters especifica `repositories`
+(array de nomes) ou `repository_ids` (array de IDs), não `repository_names`;
+o exemplo oficial envia `{"repositories":["Hello-World"],"permissions":{"issues":"write","contents":"read"}}`.
+A documentação informa que omitir ambos herda todos os repositórios da instalação.
+A consulta usou apenas `curl -q` para docs.github.com (artigo Markdown público e
+página HTML), **não** `gh api`, api.github.com, credenciais ou emissão real.
+
+Seams já aprovadas e preservadas: `IssueTracker.checkAccess(scope)` e
+`CodeRepository.checkAccess(repo, base)`, com adapters/emissor reais e substituição
+somente da fronteira externa gh/GitHub. O fixture modela agora instalação com
+`acme/project` (ID 3) e `acme/other` (ID 4), selecionando a resposta a partir do
+seletor REST explícito em vez de devolver sempre o repo desejado. Teste direto do
+executável sintético confirma que nomes e IDs selecionam somente o repo pedido,
+e que `repository_names`, ausência de seletor e lista vazia são recusados sem
+emitir resposta de grant. **Essa recusa é uma guarda deliberadamente mais estrita
+do fixture**, não afirma que o servidor GitHub rejeita ausência/campos desconhecidos:
+justamente impede que herança implícita do teto pareça redução explícita no teste.
+
+RED → GREEN observado, nesta ordem, com PATH
+`/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin:$PATH`:
+
+```sh
+npm run build && node --test --test-name-pattern='local GitHub fixture requires explicit REST selectors|IssueTracker.checkAccess explicitly narrows' dist/test/entrypoints/github-access.test.js
+```
+
+- **RED (exit 1):** fixture corrigido antes do código de produção; 2 testes,
+  1 passou (contrato independente do fixture) e 1 falhou (`checkAccess` retornou
+  `blocked`, esperado `ok`). O fixture recusou o seletor não suportado da
+  implementação do checkpoint, em vez de fabricar grant de um só repo.
+- **GREEN (exit 0):** alterado apenas `repository_names` → `repositories` na
+  emissão; mesmo comando, 2/2 passaram. O diagnóstico público só consegue sucesso
+  se a resposta do fixture tiver exatamente o repo solicitado.
+- Preservados negativos de permissões mais amplas/outro repo e adicionados
+  negativos de escopo devolvido ausente (`INVALID_CREDENTIAL_GRANT`) e múltiplos
+  repos (`CREDENTIAL_SCOPE_MISMATCH`), sem sucesso parcial ou vazamento sintético.
+- Gate após correção: `npm run typecheck` passou; `npm test` passou (arquitetura,
+  ESLint, build e **62/62** testes, zero skips/falhas); `git diff --check` passou.
+
+Isso corrige a compatibilidade local do pedido e a falsa premissa do fixture;
+**não comprova emissão, redução ou autenticação reais por gh/GitHub**. Ticket 04
+continua BLOCKED para aceite autenticado, sem checkbox ou resolução alterados.
+
 ## Falta exata para aceite real
 
 **Ticket permanece aberto; não há Answer/resolução nem homologação real.**

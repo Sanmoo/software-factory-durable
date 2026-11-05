@@ -143,7 +143,7 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
         if (installation.data.permissions[permission] === 'write') throw new AccessFailure('UNSAFE_APP_PERMISSIONS');
       }
       const issued = z.object({ token: z.string().min(1).max(1024).regex(/^[a-zA-Z0-9_-]+$/), expires_at: z.iso.datetime(), permissions: permissionSchema, repositories: z.array(repositorySchema) })
-        .safeParse((await request(jwt, `/app/installations/${scope.installationId}/access_tokens`, 'POST', { repository_names: [name], permissions: required })).body);
+        .safeParse((await request(jwt, `/app/installations/${scope.installationId}/access_tokens`, 'POST', { repositories: [name], permissions: required })).body);
       if (!issued.success) throw new AccessFailure('INVALID_CREDENTIAL_GRANT');
       const grant = issued.data;
       const expiry = Date.parse(grant.expires_at);

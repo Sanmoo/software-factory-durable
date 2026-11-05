@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { generateKeyPairSync } from 'node:crypto';
+import { generateKeyPairSync, sign } from 'node:crypto';
 import { mkdtemp, mkdir, writeFile, readFile, rm, chmod, symlink } from 'node:fs/promises';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { resolve } from 'node:path';
 import { prepareController } from './controller-configuration.js';
@@ -38,6 +38,10 @@ if (args[0]!=='api' || !args.includes('--include') || (endpoint.endsWith('/acces
 const expected = ['PATH','LANG','LC_ALL','GH_TOKEN','GH_HOST','GH_CONFIG_DIR','HOME','XDG_CONFIG_HOME','GH_PROMPT_DISABLED','GH_NO_UPDATE_NOTIFIER','GH_NO_EXTENSION_UPDATE_NOTIFIER','NO_COLOR'];
 if (!process.env.GH_TOKEN || Object.keys(process.env).some(k => !expected.includes(k)) || args.some(a => a.includes(process.env.GH_TOKEN)) || !args.includes('X-GitHub-Api-Version: 2026-03-10') || args[args.indexOf('--hostname')+1] !== 'github.com') process.exit(9);
 let permissions = ${JSON.stringify(scenario === 'repository' ? { metadata: 'read', contents: 'read', pull_requests: 'write', checks: 'read', statuses: 'read', actions: 'read', administration: 'read' } : { metadata: 'read', issues: 'write' })};
+const installedRepositories = [
+ {id:3,full_name:'acme/project',owner:{login:'acme'}},
+ {id:4,full_name:'acme/other',owner:{login:'acme'}},
+];
 let body, status=200, headers='';
 if (endpoint === '/app') body = {id:1};
 else if (endpoint === '/app/installations/2') body = {id:2, app_id:1, account:{login:'acme'}, suspended_at:null, permissions:{...permissions,contents:'write',pull_requests:'write',checks:'read',statuses:'read',actions:'read',administration:'read'}};
@@ -45,8 +49,17 @@ else if (endpoint === '/app/installations/2/access_tokens' && method === 'POST')
  let input=''; for await (const data of process.stdin) input+=data;
  const request=JSON.parse(input);
  if (${JSON.stringify(scenario)} === 'controller' && !request.permissions.issues) permissions={metadata:'read',contents:'read',pull_requests:'write',checks:'read',statuses:'read',actions:'read',administration:'read'};
- if (JSON.stringify(request.repository_names)!=='["project"]' || JSON.stringify(request.permissions)!==JSON.stringify(permissions)) process.exit(10);
- body={token:'synthetic-installation-secret', expires_at:new Date(Date.now()+3600000).toISOString(),permissions,repositories:[{id:3,full_name:'acme/project',owner:{login:'acme'}}]};
+ // https://docs.github.com/en/rest/apps/apps#create-an-installation-access-token-for-an-app
+ // Official REST contract: repositories (names) or repository_ids, never repository_names.
+ // This security fixture deliberately rejects omitted selectors rather than minting the installation ceiling.
+ if (Object.keys(request).some(key => !['repositories','repository_ids','permissions'].includes(key)) ||
+     (request.repositories === undefined) === (request.repository_ids === undefined) ||
+     JSON.stringify(request.permissions)!==JSON.stringify(permissions)) process.exit(10);
+ const selector=request.repositories ?? request.repository_ids;
+ if (!Array.isArray(selector) || selector.length===0 || selector.some(value => request.repositories !== undefined ? typeof value!=='string' : !Number.isSafeInteger(value))) process.exit(10);
+ const repositories=installedRepositories.filter(repo => selector.includes(request.repositories !== undefined ? repo.full_name.split('/')[1] : repo.id));
+ if (repositories.length!==selector.length) process.exit(10);
+ body={token:'synthetic-installation-secret', expires_at:new Date(Date.now()+3600000).toISOString(),permissions,repositories};
 } else if (endpoint === '/repos/acme/project') body={id:3,full_name:'acme/project',owner:{login:'acme'}};
 else if (endpoint === '/repos/acme/project/branches/main') body={name:'main',commit:{sha:'a'.repeat(40)}};
 else if (endpoint.startsWith('/repos/acme/project/issues/1/dependencies/blocked_by') && ${JSON.stringify(scenario)} === 'dependency-denied') {status=403;body={message:'synthetic-installation-secret'};}
@@ -55,6 +68,8 @@ else if (endpoint.startsWith('/repos/acme/project/issues')) body=[];
 else process.exit(11);
 if (scenario==='wide-grant' && endpoint.endsWith('/access_tokens')) body.permissions.contents='write';
 if (scenario==='wrong-repository' && endpoint.endsWith('/access_tokens')) body.repositories[0].id=88,body.repositories[0].full_name='acme/other';
+if (scenario==='missing-repositories' && endpoint.endsWith('/access_tokens')) delete body.repositories;
+if (scenario==='multiple-repositories' && endpoint.endsWith('/access_tokens')) body.repositories=installedRepositories;
 if (scenario==='malformed-token' && endpoint.endsWith('/access_tokens')) body.token='synthetic-secret\\nheader';
 if (scenario==='rate-limit' && endpoint.includes('/issues')) {status=403;headers='retry-after: 37\\r\\nx-ratelimit-remaining: 0\\r\\n';body={message:'synthetic-installation-secret'};}
 if (scenario==='later-page' && endpoint.includes('/issues?')) {
@@ -71,7 +86,31 @@ process.exit(status===200?0:1);
 }
 const scope = { repository: 'acme/project', installationId: 2, workflows: false, label: 'ready-for-agent' };
 
-test('IssueTracker.checkAccess uses only reduced Factory identity and reports read access without certifying merge barriers', async t => {
+test('local GitHub fixture requires explicit REST selectors and grants only selected repositories from a multi-repository installation', async t => {
+  const { root, executable } = await fixture(t);
+  const unsigned = `${Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url')}.${Buffer.from(JSON.stringify({ iss: '1', iat: 1, exp: 601 })).toString('base64url')}`;
+  const jwt = `${unsigned}.${sign('RSA-SHA256', Buffer.from(unsigned), await readFile(join(root, 'credentials/app.pem'))).toString('base64url')}`;
+  const request = (selector: object) => spawnSync(executable, ['api', '--hostname', 'github.com', '--method', 'POST', '--include', '-H', 'X-GitHub-Api-Version: 2026-03-10', '--input', '-', '--', '/app/installations/2/access_tokens'], {
+    input: JSON.stringify({ ...selector, permissions: { metadata: 'read', issues: 'write' } }),
+    encoding: 'utf8', env: { GH_TOKEN: jwt }, timeout: 5000,
+  });
+  for (const selector of [{}, { repository_names: ['project'] }, { repositories: [] }]) {
+    const rejected = request(selector);
+    assert.equal(rejected.status, 10, `must reject ${JSON.stringify(selector)}`);
+    assert.equal(rejected.stdout, '', 'rejected selection must not issue a grant');
+  }
+  for (const [selector, expected] of [
+    [{ repositories: ['project'] }, 'acme/project'],
+    [{ repository_ids: [4] }, 'acme/other'],
+  ] as const) {
+    const granted = request(selector);
+    assert.equal(granted.status, 0, granted.stderr);
+    const body = JSON.parse(granted.stdout.split('\r\n\r\n')[1]!);
+    assert.deepEqual(body.repositories.map((repo: { full_name: string }) => repo.full_name), [expected]);
+  }
+});
+
+test('IssueTracker.checkAccess explicitly narrows a multi-repository installation and reports read access without certifying merge barriers', async t => {
   const options = await fixture(t);
   const tracker = createIssueTracker({ github: createGitHubAccess({ ...options, appId: 1, privateKeyFile: 'credentials/app.pem' }) });
   const report = await tracker.checkAccess(scope);
@@ -161,6 +200,8 @@ test('IssueTracker.checkAccess does not claim native dependency support after a 
 for (const [scenario, code] of [
   ['wide-grant', 'CREDENTIAL_SCOPE_MISMATCH'],
   ['wrong-repository', 'CREDENTIAL_SCOPE_MISMATCH'],
+  ['missing-repositories', 'INVALID_CREDENTIAL_GRANT'],
+  ['multiple-repositories', 'CREDENTIAL_SCOPE_MISMATCH'],
   ['malformed-token', 'INVALID_CREDENTIAL_GRANT'],
   ['later-page', 'GITHUB_QUERY_FAILED'],
   ['off-host-page', 'INVALID_PAGINATION'],
