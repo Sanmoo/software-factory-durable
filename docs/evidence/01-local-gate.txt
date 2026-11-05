@@ -1,0 +1,73 @@
+Node 24.21.0; npm 11.19.0.
+$ npm ci
+
+added 133 packages, and audited 134 packages in 2s
+
+38 packages are looking for funding
+  run `npm fund` for details
+
+5 moderate severity vulnerabilities
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+
+$ npm test
+
+> software-factory-durable@0.0.0 test
+> npm run check:architecture && npm run build && node --test "dist/test/**/*.test.js"
+
+
+> software-factory-durable@0.0.0 check:architecture
+> depcruise --config .dependency-cruiser.cjs --output-type err-long . && eslint . --max-warnings 0
+
+
+✔ no dependency violations found (22 modules, 46 dependencies cruised)
+
+
+> software-factory-durable@0.0.0 build
+> npm run clean && tsc -p tsconfig.json
+
+
+> software-factory-durable@0.0.0 clean
+> node --input-type=module -e "import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })"
+
+✔ architecture gate permits a public records import from platform/github including type-only imports (676.994041ms)
+✔ architecture gate rejects deep imports through relative paths (615.551366ms)
+✔ architecture gate rejects dependency inversion even through a public export (507.88263ms)
+✔ architecture gate detects cross-zone cycles made only of types (496.524893ms)
+✔ architecture gate resolves tsconfig aliases and rejects alias bypass of public entries (510.746506ms)
+✔ architecture gate rejects SQLite outside its durable Control owner (507.110448ms)
+✔ architecture gate rejects previously unclassified authored source, even when orphaned (504.040884ms)
+✔ architecture gate forbids Control from importing injected implementations as values (491.661873ms)
+✔ architecture gate enforces worker composition and CLI type-only access to Control (990.900743ms)
+✔ architecture syntax gate rejects real clocks in pure Control rules (331.650471ms)
+✔ architecture syntax gate rejects opaque computed loading while permitting literal dynamic imports (640.529107ms)
+✔ architecture gate rejects I/O imports in pure Control rules (480.846858ms)
+✔ architecture gate keeps SDK ownership rules sensitive to resolved package imports, not missing dependencies (1919.993745ms)
+✔ architecture gate permits injected contracts, the tools type projection, and SQLite in its owning implementation (494.281038ms)
+✔ architecture gate detects unclassified authored source outside src as well (475.767678ms)
+✔ pure-rule clock restriction also applies to authored ESM JavaScript (323.522759ms)
+✔ doctor validates complete YAML and reports only approved defaults and explicit role models (158.273757ms)
+✔ invalid configuration is rejected as a whole without echoing secrets or exposing partial effective settings (2634.589399ms)
+✔ doctor accepts explicit overrides including Workflows permission, limits, timeout and adapter resources (137.486972ms)
+✔ model credentials are installation file references, never inline values or personal paths (553.280473ms)
+✔ explicitly empty operators authorizes no remote operator rather than inheriting an identity (131.590041ms)
+✔ offline doctor reports paths, versions, permissions, KVM/systemd/storage/socket without changing state (336.724919ms)
+✔ doctor rejects a socket pathname that cannot fit Linux sockaddr_un without creating a socket (169.004257ms)
+✔ importing public modules cannot write, spawn probes, or read a personal profile (140.36305ms)
+✔ doctor refuses a symlinked configuration and reports permission issues without repairing them (178.00055ms)
+✔ offline version probes accept integer systemd versions and do not inherit personal credentials (263.254539ms)
+✔ setup is repeatable, starts with no repositories, and preserves existing private material (348.454179ms)
+✔ setup refuses preexisting symlinks and incompatible paths before creating installation children (163.726829ms)
+✔ setup includes prerequisite diagnostics without treating its incomplete initial example as operational (171.207693ms)
+✔ CLI rejects unknown commands and malformed arguments without filesystem changes (642.703507ms)
+ℹ tests 30
+ℹ suites 0
+ℹ pass 30
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 10021.347334

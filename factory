@@ -1,0 +1,4 @@
+#!/bin/sh
+# Development launcher; a self-contained release supplies its private Node.
+root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exit 1
+exec node "$root/dist/src/entrypoints/cli.js" "$@"

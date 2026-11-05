@@ -1,0 +1,49 @@
+import { constants, lstat, realpath, access } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import type { Diagnostic } from '../contracts/index.js';
+import { readConfiguration } from './configuration.js';
+
+export async function doctor(root: string) {
+  const canonicalRoot = await realpath(root).catch(() => resolve(root));
+  const { configuration, checks, versions } = await readConfiguration(canonicalRoot);
+  const paths = { root: canonicalRoot, config: join(canonicalRoot, 'config.yaml'),
+    storage: join(canonicalRoot, 'data'), socket: join(canonicalRoot, 'run', 'factory.sock') };
+  for (const name of ['', 'credentials', 'data', 'environments', 'run']) {
+    let safe = false;
+    try {
+      const path = join(canonicalRoot, name);
+      const info = await lstat(path);
+      await access(path, constants.R_OK | constants.W_OK | constants.X_OK);
+      safe = info.isDirectory() && !info.isSymbolicLink() && info.uid === process.getuid?.() && (info.mode & 0o077) === 0;
+    } catch { /* A missing/inaccessible path is a diagnostic, never repaired. */ }
+    checks.push({ id: `permissions:${name || 'root'}`, status: safe ? 'ok' : 'blocked',
+      message: safe ? 'Account-owned private directory accessible.' : 'Missing, non-private, non-owned, symlinked or inaccessible directory.',
+      nextStep: 'Administrator must inspect the named installation directory; no recursive chmod or automatic repair.' });
+  }
+  for (const [id, path] of [['config', paths.config], ...(configuration.valid ? [
+    ['githubApp', join(canonicalRoot, configuration.effective.githubApp.privateKeyFile)],
+    ...Object.entries(configuration.effective.models).flatMap(([role, model]) => model.credentialFile
+      ? [[`models.${role}`, join(canonicalRoot, model.credentialFile)]] : []),
+  ] : [])]) {
+    let safe = false;
+    try {
+      const info = await lstat(path!);
+      await access(path!, constants.R_OK);
+      const parent = id === 'config' ? undefined : await lstat(join(canonicalRoot, 'credentials'));
+      safe = info.isFile() && !info.isSymbolicLink() && info.uid === process.getuid?.() && (info.mode & 0o077) === 0
+        && (!parent || (parent.isDirectory() && !parent.isSymbolicLink() && parent.uid === process.getuid?.() && (parent.mode & 0o077) === 0));
+    } catch { /* References are inspected, never read or repaired. */ }
+    checks.push({ id: id === 'config' ? 'permissions:config.yaml' : `credential-file:${id}`,
+      status: safe ? 'ok' : 'blocked', message: safe ? 'Private regular file reference accessible; content not authenticated.' : 'Missing, non-private, non-owned or symlinked file/reference parent.',
+      nextStep: 'Administrator must provide an account-owned private file under the installation; doctor never reads credential values.' });
+  }
+  // Linux sun_path is 108 bytes including the terminating NUL.
+  const socketFits = Buffer.byteLength(paths.socket) <= 107;
+  checks.push({ id: 'socket-path', status: socketFits ? 'ok' : 'blocked',
+    message: `${Buffer.byteLength(paths.socket)} bytes; Linux pathname limit is 107 bytes. No socket was created.`,
+    nextStep: 'Choose a shorter canonical installation root if necessary; relocations require environment/reference validation.' });
+  const code = !configuration.valid ? 'INVALID_CONFIGURATION'
+    : checks.some(check => check.status === 'blocked') ? 'PREREQUISITES_MISSING' : 'RUNTIME_UNQUALIFIED';
+  return { code, scope: 'offline' as const, paths, versions: { node: process.versions.node, ...versions }, configuration,
+    checks: checks satisfies Diagnostic[] };
+}

@@ -18,7 +18,12 @@ Os 26 tickets do mapa estão resolvidos; a migração preserva esse estado, não
 
 ## Estado do projeto
 
-Este repositório começa com o planejamento aprovado. A Factory ainda não foi implementada nem homologada;
-a spec e o plano de aceite descrevem contratos e provas futuras, não comandos já disponíveis ou testes executados.
+O primeiro incremento implementa setup/doctor offline e o gate local de desenvolvimento.
+A Factory operacional e a release autocontida ainda não foram implementadas nem homologadas;
+a spec e o plano de aceite continuam descrevendo as demais provas futuras.
+
+- [Comandos de desenvolvimento e arquitetura executável](docs/development.md).
+- [Preparação/configuração e diagnóstico offline](docs/local-installation.md).
+- [Evidências do ticket 01 e limites de V-16](docs/evidence/01-local-setup-and-development-gate.md).
 
 [Proveniência, escopo e verificações da migração](docs/migrations/software-factory-from-pkm.md).

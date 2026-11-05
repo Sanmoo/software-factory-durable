@@ -1,0 +1,371 @@
+Ticket 01 — captured red/green output excerpts. Commands used Node 24.21.0.
+Focused tests: npm run build && node --test [--test-name-pattern <slice>] dist/test/{entrypoints,architecture}/*.test.js.
+Full commands/results are in the companion evidence document.
+
+=== setup ===
+RED:
+✖ setup is repeatable, starts with no repositories, and preserves existing private material (33.025757ms)
+ℹ pass 0
+ℹ fail 1
+✖ failing tests:
+✖ setup is repeatable, starts with no repositories, and preserves existing private material (33.025757ms)
+  AssertionError [ERR_ASSERTION]: node:internal/modules/cjs/loader:1568
+  Error: Cannot find module '/home/sanmoo/dev/github.com/Sanmoo/software-factory-durable/.worktrees/software-factory-mvp-01/dist/src/entrypoints/cli.js'
+  1 !== 0
+GREEN:
+✔ setup is repeatable, starts with no repositories, and preserves existing private material (78.298626ms)
+ℹ pass 1
+ℹ fail 0
+
+=== config ===
+RED:
+✖ doctor validates complete YAML and reports only approved defaults and explicit role models (35.187735ms)
+ℹ pass 0
+ℹ fail 1
+✖ failing tests:
+✖ doctor validates complete YAML and reports only approved defaults and explicit role models (35.187735ms)
+  AssertionError [ERR_ASSERTION]: {"code":"LOCAL_SETUP_FAILED","message":"Check installation paths and permissions; no automatic repair."}
+GREEN:
+✔ doctor validates complete YAML and reports only approved defaults and explicit role models (126.214218ms)
+ℹ pass 1
+ℹ fail 0
+
+=== invalid-config ===
+RED:
+✔ doctor validates complete YAML and reports only approved defaults and explicit role models (122.499989ms)
+✖ invalid configuration is rejected as a whole without echoing secrets or exposing partial effective settings (700.847858ms)
+ℹ pass 1
+ℹ fail 1
+✖ failing tests:
+✖ invalid configuration is rejected as a whole without echoing secrets or exposing partial effective settings (700.847858ms)
+  AssertionError [ERR_ASSERTION]: invalid ref
+  0 !== 2
+GREEN:
+✔ doctor validates complete YAML and reports only approved defaults and explicit role models (121.096023ms)
+✔ invalid configuration is rejected as a whole without echoing secrets or exposing partial effective settings (2097.065411ms)
+ℹ pass 2
+ℹ fail 0
+
+=== doctor ===
+RED:
+✖ offline doctor reports paths, versions, permissions, KVM/systemd/storage/socket without changing state (224.628653ms)
+✖ doctor rejects a socket pathname that cannot fit Linux sockaddr_un without creating a socket (105.455844ms)
+ℹ pass 0
+ℹ fail 2
+✖ failing tests:
+✖ offline doctor reports paths, versions, permissions, KVM/systemd/storage/socket without changing state (224.628653ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + undefined
+    actual: undefined,
+✖ doctor rejects a socket pathname that cannot fit Linux sockaddr_un without creating a socket (105.455844ms)
+  TypeError: Cannot read properties of undefined (reading 'find')
+GREEN:
+✔ doctor validates complete YAML and reports only approved defaults and explicit role models (151.962232ms)
+✔ invalid configuration is rejected as a whole without echoing secrets or exposing partial effective settings (2240.116741ms)
+✔ offline doctor reports paths, versions, permissions, KVM/systemd/storage/socket without changing state (273.279658ms)
+✔ doctor rejects a socket pathname that cannot fit Linux sockaddr_un without creating a socket (115.094193ms)
+✔ setup is repeatable, starts with no repositories, and preserves existing private material (232.303212ms)
+ℹ pass 5
+ℹ fail 0
+
+=== deep ===
+RED:
+✔ architecture gate permits a public records import from platform/github including type-only imports (440.710172ms)
+✖ architecture gate rejects deep imports through relative paths (440.467598ms)
+ℹ pass 1
+ℹ fail 1
+✖ failing tests:
+✖ architecture gate rejects deep imports through relative paths (440.467598ms)
+  AssertionError [ERR_ASSERTION]: Fixture unexpectedly passed: public-entry:records
+GREEN:
+✔ architecture gate permits a public records import from platform/github including type-only imports (440.903413ms)
+✖ architecture gate rejects deep imports through relative paths (431.379645ms)
+ℹ pass 1
+ℹ fail 1
+✖ failing tests:
+✖ architecture gate rejects deep imports through relative paths (431.379645ms)
+  AssertionError [ERR_ASSERTION]: Fixture unexpectedly passed: public-entry:records
+
+=== inversion ===
+RED:
+✔ architecture gate permits a public records import from platform/github including type-only imports (436.982961ms)
+✔ architecture gate rejects deep imports through relative paths (440.674021ms)
+✖ architecture gate rejects dependency inversion even through a public export (428.795178ms)
+ℹ pass 2
+ℹ fail 1
+✖ failing tests:
+✖ architecture gate rejects dependency inversion even through a public export (428.795178ms)
+  AssertionError [ERR_ASSERTION]: Fixture unexpectedly passed: zone:protocol
+GREEN:
+✔ architecture gate permits a public records import from platform/github including type-only imports (448.398952ms)
+✔ architecture gate rejects deep imports through relative paths (448.616314ms)
+✔ architecture gate rejects dependency inversion even through a public export (440.000738ms)
+ℹ pass 3
+ℹ fail 0
+
+=== cycle ===
+RED:
+✔ architecture gate permits a public records import from platform/github including type-only imports (462.715484ms)
+✔ architecture gate rejects deep imports through relative paths (455.904261ms)
+✔ architecture gate rejects dependency inversion even through a public export (455.019408ms)
+✖ architecture gate detects cross-zone cycles made only of types (463.23742ms)
+ℹ pass 3
+ℹ fail 1
+✖ failing tests:
+✖ architecture gate detects cross-zone cycles made only of types (463.23742ms)
+  AssertionError [ERR_ASSERTION]: [{"type":"dependency","from":"src/contracts/index.ts","to":"src/records/index.ts","unresolvedTo":"../records/index.js","dependencyTypes":["local","type-only","import"],"rule":{"severity":"error","name":"zone:contracts"}}]
+GREEN:
+✔ architecture gate permits a public records import from platform/github including type-only imports (469.861788ms)
+✔ architecture gate rejects deep imports through relative paths (450.134419ms)
+✔ architecture gate rejects dependency inversion even through a public export (448.612287ms)
+✔ architecture gate detects cross-zone cycles made only of types (450.853373ms)
+ℹ pass 4
+ℹ fail 0
+
+=== sdk ===
+RED:
+✔ architecture gate permits a public records import from platform/github including type-only imports (452.945206ms)
+✔ architecture gate rejects deep imports through relative paths (446.877074ms)
+✔ architecture gate rejects dependency inversion even through a public export (436.396052ms)
+✔ architecture gate detects cross-zone cycles made only of types (442.801205ms)
+✔ architecture gate resolves tsconfig aliases and rejects alias bypass of public entries (453.544082ms)
+✖ architecture gate rejects SQLite outside its durable Control owner (427.227234ms)
+ℹ pass 5
+ℹ fail 1
+✖ failing tests:
+✖ architecture gate rejects SQLite outside its durable Control owner (427.227234ms)
+  AssertionError [ERR_ASSERTION]: Fixture unexpectedly passed: sdk:sqlite-owner
+GREEN:
+✔ architecture gate permits a public records import from platform/github including type-only imports (456.291103ms)
+✔ architecture gate rejects deep imports through relative paths (470.0578ms)
+✔ architecture gate rejects dependency inversion even through a public export (461.613824ms)
+✔ architecture gate detects cross-zone cycles made only of types (453.329911ms)
+✔ architecture gate resolves tsconfig aliases and rejects alias bypass of public entries (448.893262ms)
+✔ architecture gate rejects SQLite outside its durable Control owner (436.422154ms)
+ℹ pass 6
+ℹ fail 0
+
+=== unclassified ===
+RED:
+✔ architecture gate permits a public records import from platform/github including type-only imports (467.291478ms)
+✔ architecture gate rejects deep imports through relative paths (443.844529ms)
+✔ architecture gate rejects dependency inversion even through a public export (444.529125ms)
+✔ architecture gate detects cross-zone cycles made only of types (461.490962ms)
+✔ architecture gate resolves tsconfig aliases and rejects alias bypass of public entries (444.816233ms)
+✔ architecture gate rejects SQLite outside its durable Control owner (453.827807ms)
+✖ architecture gate rejects previously unclassified authored source, even when orphaned (449.464839ms)
+ℹ pass 6
+ℹ fail 1
+✖ failing tests:
+✖ architecture gate rejects previously unclassified authored source, even when orphaned (449.464839ms)
+  AssertionError [ERR_ASSERTION]: Fixture unexpectedly passed: classified-source
+GREEN:
+✔ architecture gate permits a public records import from platform/github including type-only imports (452.324487ms)
+✔ architecture gate rejects deep imports through relative paths (472.051955ms)
+✔ architecture gate rejects dependency inversion even through a public export (470.015483ms)
+✔ architecture gate detects cross-zone cycles made only of types (453.625633ms)
+✔ architecture gate resolves tsconfig aliases and rejects alias bypass of public entries (457.492686ms)
+✔ architecture gate rejects SQLite outside its durable Control owner (464.271192ms)
+✔ architecture gate rejects previously unclassified authored source, even when orphaned (450.308265ms)
+ℹ pass 7
+ℹ fail 0
+
+=== contracts-only ===
+RED:
+✖ architecture gate forbids Control from importing injected implementations as values (478.791583ms)
+ℹ pass 0
+ℹ fail 1
+✖ failing tests:
+✖ architecture gate forbids Control from importing injected implementations as values (478.791583ms)
+  AssertionError [ERR_ASSERTION]: Fixture unexpectedly passed: control-contracts-only
+GREEN:
+✔ architecture gate forbids Control from importing injected implementations as values (460.80773ms)
+ℹ pass 1
+ℹ fail 0
+
+=== composition ===
+RED:
+✖ architecture gate enforces worker composition and CLI type-only access to Control (492.96096ms)
+ℹ pass 0
+ℹ fail 1
+✖ failing tests:
+✖ architecture gate enforces worker composition and CLI type-only access to Control (492.96096ms)
+  AssertionError [ERR_ASSERTION]: Fixture unexpectedly passed: composition:worker
+GREEN:
+✔ architecture gate enforces worker composition and CLI type-only access to Control (936.021666ms)
+ℹ pass 1
+ℹ fail 0
+
+=== clock ===
+RED:
+✖ architecture syntax gate rejects real clocks in pure Control rules (135.501291ms)
+ℹ pass 0
+ℹ fail 1
+✖ failing tests:
+✖ architecture syntax gate rejects real clocks in pure Control rules (135.501291ms)
+  AssertionError [ERR_ASSERTION]:
+GREEN:
+✔ architecture syntax gate rejects real clocks in pure Control rules (483.914061ms)
+ℹ pass 1
+ℹ fail 0
+
+=== opaque ===
+RED:
+✖ architecture syntax gate rejects opaque computed loading while permitting literal dynamic imports (292.024345ms)
+ℹ pass 0
+ℹ fail 1
+✖ failing tests:
+✖ architecture syntax gate rejects opaque computed loading while permitting literal dynamic imports (292.024345ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  0 !== 1
+GREEN:
+✔ architecture syntax gate rejects real clocks in pure Control rules (309.91098ms)
+✔ architecture syntax gate rejects opaque computed loading while permitting literal dynamic imports (618.495866ms)
+ℹ pass 2
+ℹ fail 0
+
+=== io ===
+RED:
+✖ architecture gate rejects I/O imports in pure Control rules (485.03997ms)
+ℹ pass 0
+ℹ fail 1
+✖ failing tests:
+✖ architecture gate rejects I/O imports in pure Control rules (485.03997ms)
+  AssertionError [ERR_ASSERTION]: Fixture unexpectedly passed: pure-rules-imports
+GREEN:
+✔ architecture gate rejects I/O imports in pure Control rules (479.76506ms)
+ℹ pass 1
+ℹ fail 0
+
+=== symlink ===
+RED:
+✖ setup refuses preexisting symlinks and incompatible paths before creating installation children (111.35998ms)
+ℹ pass 0
+ℹ fail 1
+✖ failing tests:
+✖ setup refuses preexisting symlinks and incompatible paths before creating installation children (111.35998ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+GREEN:
+✔ setup refuses preexisting symlinks and incompatible paths before creating installation children (113.499894ms)
+ℹ pass 1
+ℹ fail 0
+
+=== setup-diag ===
+RED:
+✖ setup includes prerequisite diagnostics without treating its incomplete initial example as operational (108.837973ms)
+ℹ pass 0
+ℹ fail 1
+✖ failing tests:
+✖ setup includes prerequisite diagnostics without treating its incomplete initial example as operational (108.837973ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + undefined
+    actual: undefined,
+GREEN:
+✔ setup includes prerequisite diagnostics without treating its incomplete initial example as operational (130.572608ms)
+ℹ pass 1
+ℹ fail 0
+
+=== arguments ===
+RED:
+✖ CLI rejects unknown commands and malformed arguments without filesystem changes (110.793665ms)
+ℹ pass 0
+ℹ fail 1
+✖ failing tests:
+✖ CLI rejects unknown commands and malformed arguments without filesystem changes (110.793665ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /INVALID_ARGUMENTS/. Input:
+  '{"code":"LOCAL_SETUP_FAILED","message":"Check installation paths and permissions; no automatic repair."}\n'
+    actual: '{"code":"LOCAL_SETUP_FAILED","message":"Check installation paths and permissions; no automatic repair."}\n',
+    expected: /INVALID_ARGUMENTS/,
+GREEN:
+✔ CLI rejects unknown commands and malformed arguments without filesystem changes (538.452106ms)
+ℹ pass 1
+ℹ fail 0
+
+=== private-config ===
+RED:
+✔ offline doctor reports paths, versions, permissions, KVM/systemd/storage/socket without changing state (263.087446ms)
+✔ doctor rejects a socket pathname that cannot fit Linux sockaddr_un without creating a socket (110.039689ms)
+✔ importing public modules cannot write, spawn probes, or read a personal profile (106.410408ms)
+✖ doctor refuses a symlinked configuration and reports permission issues without repairing them (124.917647ms)
+ℹ pass 3
+ℹ fail 1
+✖ failing tests:
+✖ doctor refuses a symlinked configuration and reports permission issues without repairing them (124.917647ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + 'CONFIGURATION_INVALID'
+  - 'CONFIGURATION_UNREADABLE'
+    actual: 'CONFIGURATION_INVALID',
+GREEN:
+✔ offline doctor reports paths, versions, permissions, KVM/systemd/storage/socket without changing state (258.314239ms)
+✔ doctor rejects a socket pathname that cannot fit Linux sockaddr_un without creating a socket (114.797033ms)
+✔ importing public modules cannot write, spawn probes, or read a personal profile (113.511511ms)
+✔ doctor refuses a symlinked configuration and reports permission issues without repairing them (117.849443ms)
+ℹ pass 4
+ℹ fail 0
+
+=== credential-ref ===
+RED:
+✖ model credentials are installation file references, never inline values or personal paths (134.025396ms)
+ℹ pass 0
+ℹ fail 1
+✖ failing tests:
+✖ model credentials are installation file references, never inline values or personal paths (134.025396ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  false !== true
+GREEN:
+✔ model credentials are installation file references, never inline values or personal paths (521.462311ms)
+ℹ pass 1
+ℹ fail 0
+
+=== version ===
+RED:
+✖ offline version probes accept integer systemd versions and do not inherit personal credentials (195.242208ms)
+ℹ pass 0
+ℹ fail 1
+✖ failing tests:
+✖ offline version probes accept integer systemd versions and do not inherit personal credentials (195.242208ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  null !== '777'
+GREEN:
+✔ offline version probes accept integer systemd versions and do not inherit personal credentials (193.73514ms)
+ℹ pass 1
+ℹ fail 0
+
+=== empty-operators ===
+RED:
+✖ explicitly empty operators authorizes no remote operator rather than inheriting an identity (130.127877ms)
+ℹ pass 0
+ℹ fail 1
+✖ failing tests:
+✖ explicitly empty operators authorizes no remote operator rather than inheriting an identity (130.127877ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  false !== true
+GREEN:
+✔ explicitly empty operators authorizes no remote operator rather than inheriting an identity (128.762866ms)
+ℹ pass 1
+ℹ fail 0
+
+=== pure-esm ===
+RED:
+✖ pure-rule clock restriction also applies to authored ESM JavaScript (300.452683ms)
+ℹ pass 0
+ℹ fail 1
+✖ failing tests:
+✖ pure-rule clock restriction also applies to authored ESM JavaScript (300.452683ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  0 !== 1
+GREEN:
+✔ pure-rule clock restriction also applies to authored ESM JavaScript (309.239446ms)
+ℹ pass 1
+ℹ fail 0
+
+=== Independent actual err-long reporter rejection ===
+fixture: public Control type imported by Protocol (forbidden inversion)
+reporter: err-long
+exit: 1
+
+  error zone:protocol: src/protocol/index.ts → src/control/index.ts
+    -
+
+
+x 1 dependency violations (1 errors, 0 warnings). 2 modules, 1 dependencies cruised.
