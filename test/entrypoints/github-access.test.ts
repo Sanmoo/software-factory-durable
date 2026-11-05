@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { installNativeAppFixture } from './native-app-fixture.js';
+import { pathToFileURL } from 'node:url';
 import { generateKeyPairSync, sign } from 'node:crypto';
 import { mkdtemp, mkdir, writeFile, readFile, rm, chmod, symlink } from 'node:fs/promises';
 import { spawn, spawnSync } from 'node:child_process';
@@ -34,8 +36,9 @@ if (appToken.split('.').length===3) {
 const endpoint = args.at(-1);
 const method = args[args.indexOf('--method') + 1];
 if (args[0]!=='api' || !args.includes('--include') || (endpoint.endsWith('/access_tokens') ? method!=='POST' : method!=='GET') ||
- (endpoint.startsWith('/app') ? appToken.split('.').length!==3 : appToken!=='synthetic-installation-secret')) process.exit(13);
-const expected = ['PATH','LANG','LC_ALL','GH_TOKEN','GH_HOST','GH_CONFIG_DIR','HOME','XDG_CONFIG_HOME','GH_PROMPT_DISABLED','GH_NO_UPDATE_NOTIFIER','GH_NO_EXTENSION_UPDATE_NOTIFIER','NO_COLOR'];
+ (endpoint.startsWith('/app') ? appToken.split('.').length!==3 : appToken!==(scenario==='opaque-token'?'synthetic-installation-secret+/==':'synthetic-installation-secret'))) process.exit(13);
+if (endpoint.startsWith('/app') && process.env.NATIVE_FIXTURE!=='1') process.exit(14);
+const expected = ['NATIVE_FIXTURE','PATH','LANG','LC_ALL','GH_TOKEN','GH_HOST','GH_CONFIG_DIR','HOME','XDG_CONFIG_HOME','GH_PROMPT_DISABLED','GH_NO_UPDATE_NOTIFIER','GH_NO_EXTENSION_UPDATE_NOTIFIER','NO_COLOR'];
 if (!process.env.GH_TOKEN || Object.keys(process.env).some(k => !expected.includes(k)) || args.some(a => a.includes(process.env.GH_TOKEN)) || !args.includes('X-GitHub-Api-Version: 2026-03-10') || args[args.indexOf('--hostname')+1] !== 'github.com') process.exit(9);
 let permissions = ${JSON.stringify(scenario === 'repository' ? { metadata: 'read', contents: 'read', pull_requests: 'write', checks: 'read', statuses: 'read', actions: 'read', administration: 'read' } : { metadata: 'read', issues: 'write' })};
 const installedRepositories = [
@@ -60,12 +63,15 @@ else if (endpoint === '/app/installations/2/access_tokens' && method === 'POST')
  const repositories=installedRepositories.filter(repo => selector.includes(request.repositories !== undefined ? repo.full_name.split('/')[1] : repo.id));
  if (repositories.length!==selector.length) process.exit(10);
  body={token:'synthetic-installation-secret', expires_at:new Date(Date.now()+3600000).toISOString(),permissions,repositories};
+ status=201;
 } else if (endpoint === '/repos/acme/project') body={id:3,full_name:'acme/project',owner:{login:'acme'}};
 else if (endpoint === '/repos/acme/project/branches/main') body={name:'main',commit:{sha:'a'.repeat(40)}};
 else if (endpoint.startsWith('/repos/acme/project/issues/1/dependencies/blocked_by') && ${JSON.stringify(scenario)} === 'dependency-denied') {status=403;body={message:'synthetic-installation-secret'};}
 else if (endpoint.startsWith('/repos/acme/project/issues?') && ${JSON.stringify(scenario)} === 'dependency-denied') body=[{id:4,number:1,repository_url:'https://api.github.com/repos/acme/project'}];
 else if (endpoint.startsWith('/repos/acme/project/issues')) body=[];
 else process.exit(11);
+if (scenario==='opaque-token' && endpoint.endsWith('/access_tokens')) body.token='synthetic-installation-secret+/==';
+if (scenario==='missing-rights' && endpoint==='/app/installations/2') {delete body.permissions.checks; delete body.permissions.statuses; delete body.permissions.actions; delete body.permissions.administration;}
 if (scenario==='wide-grant' && endpoint.endsWith('/access_tokens')) body.permissions.contents='write';
 if (scenario==='wrong-repository' && endpoint.endsWith('/access_tokens')) body.repositories[0].id=88,body.repositories[0].full_name='acme/other';
 if (scenario==='missing-repositories' && endpoint.endsWith('/access_tokens')) delete body.repositories;
@@ -80,9 +86,21 @@ if (scenario==='off-host-page' && endpoint.includes('/issues?')) headers='link: 
 if (scenario==='bad-payload' && endpoint.includes('/issues')) body=[{id:1}];
 if (scenario==='denied' && endpoint.includes('/issues')) {status=403; body={message:'synthetic-installation-secret'};}
 process.stdout.write('HTTP/2.0 '+status+' Test\\r\\nx-github-api-version-selected: 2026-03-10\\r\\n'+headers+'\\r\\n'+JSON.stringify(body));
-process.exit(status===200?0:1);
+process.exit(status>=200&&status<300?0:1);
 `, { mode: 0o700 });
+  const preload = join(root, 'native-fixture.mjs');
+  await writeFile(preload, `import { installNativeAppFixture } from ${JSON.stringify(pathToFileURL(resolve('dist/test/entrypoints/native-app-fixture.js')).href)}; installNativeAppFixture(${JSON.stringify(executable)},${JSON.stringify(scenario)});`);
+  await writeFile(join(root, 'flock'), `#!${process.execPath}
+import { spawn } from 'node:child_process';
+const args=process.argv.slice(2); args.splice(7,0,'--import',${JSON.stringify(preload)});
+const child=spawn('/usr/bin/flock',args,{stdio:'inherit'});
+process.on('SIGTERM',()=>child.kill('SIGTERM')); process.on('SIGINT',()=>child.kill('SIGINT'));
+child.on('exit',code=>{process.exitCode=code??1;});
+`, { mode: 0o700 });
+  const restore = installNativeAppFixture(executable, scenario);
+  t.after(async () => { restore(); });
   return { root, executable };
+
 }
 const scope = { repository: 'acme/project', installationId: 2, workflows: false, label: 'ready-for-agent' };
 
@@ -92,7 +110,7 @@ test('local GitHub fixture requires explicit REST selectors and grants only sele
   const jwt = `${unsigned}.${sign('RSA-SHA256', Buffer.from(unsigned), await readFile(join(root, 'credentials/app.pem'))).toString('base64url')}`;
   const request = (selector: object) => spawnSync(executable, ['api', '--hostname', 'github.com', '--method', 'POST', '--include', '-H', 'X-GitHub-Api-Version: 2026-03-10', '--input', '-', '--', '/app/installations/2/access_tokens'], {
     input: JSON.stringify({ ...selector, permissions: { metadata: 'read', issues: 'write' } }),
-    encoding: 'utf8', env: { GH_TOKEN: jwt }, timeout: 5000,
+    encoding: 'utf8', env: { GH_TOKEN: jwt, NATIVE_FIXTURE: '1' }, timeout: 5000,
   });
   for (const selector of [{}, { repository_names: ['project'] }, { repositories: [] }]) {
     const rejected = request(selector);
@@ -145,7 +163,7 @@ test('IssueTracker.checkAccess fails closed on denied reads without exposing res
 });
 
 function invoke(root: string, args: string[], fixturePath: string) {
-  const child = spawn(process.execPath, [resolve('dist/src/entrypoints/cli.js'), ...args, '--root', root, '--json'], {
+  const child = spawn(process.execPath, ['--import', join(fixturePath, 'native-fixture.mjs'), resolve('dist/src/entrypoints/cli.js'), ...args, '--root', root, '--json'], {
     env: { PATH: `${fixturePath}:${process.env.PATH ?? ''}`, GH_TOKEN: 'synthetic-personal-not-authorized', HOME: '/forbidden-personal-profile' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -231,4 +249,36 @@ for (const unsafe of ['permissions', 'symlink']) test(`IssueTracker.checkAccess 
   assert.equal(report.status, 'blocked');
   assert.notEqual(report.code, 'GITHUB_TRANSPORT_UNAVAILABLE');
   assert.doesNotMatch(JSON.stringify(report), /PRIVATE KEY/);
+});
+
+for (const [scenario, code] of [
+  ['uncertain-post', 'GITHUB_TOKEN_ISSUANCE_UNKNOWN'],
+  ['known-post-rejected', 'GITHUB_ACCESS_DENIED'],
+  ['native-redirect', 'GITHUB_QUERY_FAILED'],
+  ['native-version', 'GITHUB_API_VERSION_MISMATCH'],
+  ['native-incomplete', 'GITHUB_TRANSPORT_UNAVAILABLE'],
+  ['native-status', 'GITHUB_QUERY_FAILED'],
+  ['native-duplicate', 'GITHUB_TRANSPORT_UNAVAILABLE'],
+  ['native-oversize', 'GITHUB_TRANSPORT_UNAVAILABLE'],
+]) test(`IssueTracker.checkAccess native contract rejects ${scenario} with sanitized failure`, async t => {
+  const options = await fixture(t, scenario);
+  const report = await createIssueTracker({ github: createGitHubAccess({ ...options, appId: 1, privateKeyFile: 'credentials/app.pem' }) }).checkAccess(scope);
+  assert.equal(report.status, 'blocked');
+  assert.equal(report.code, code);
+  if (scenario === 'uncertain-post') assert.match(report.nextStep, /outcome is unknown.*Do not repeat POST automatically/);
+  assert.doesNotMatch(JSON.stringify(report), /synthetic-secret|synthetic-installation-secret|PRIVATE KEY/);
+});
+
+test('IssueTracker.checkAccess accepts an opaque RFC 6750 token without leaking it to argv or reports', async t => {
+  const options = await fixture(t, 'opaque-token');
+  const report = await createIssueTracker({ github: createGitHubAccess({ ...options, appId: 1, privateKeyFile: 'credentials/app.pem' }) }).checkAccess(scope);
+  assert.equal(report.status, 'ok');
+  assert.doesNotMatch(JSON.stringify(report), /synthetic-installation-secret/);
+});
+
+test('CodeRepository.checkAccess reports only the exact missing minimum rights before issuance', async t => {
+  const options = await fixture(t, 'missing-rights');
+  const report = await createCodeRepository({ github: createGitHubAccess({ ...options, appId: 1, privateKeyFile: 'credentials/app.pem' }) }).checkAccess(scope, 'main');
+  assert.equal(report.code, 'INSUFFICIENT_APP_PERMISSIONS');
+  assert.equal(report.nextStep, 'Operator must provide only the missing minimum installation permissions for repository: checks:read, statuses:read, actions:read, administration:read. Do not widen Workflows or retry issuance before correction.');
 });

@@ -1,3 +1,4 @@
+import https from 'node:https';
 import { execFile } from 'node:child_process';
 import { constants } from 'node:fs';
 import { lstat, open, mkdtemp, rm } from 'node:fs/promises';
@@ -15,7 +16,12 @@ type Purpose = keyof typeof permissions;
 const repositorySchema = z.object({ id: z.number().int().positive().safe(), full_name: z.string(), owner: z.object({ login: z.string() }) });
 const permissionSchema = z.record(z.string(), z.enum(['read', 'write']));
 class AccessFailure extends Error {
-  constructor(readonly code: string, readonly waitSeconds?: number) { super(code); }
+  constructor(readonly code: string, readonly waitSeconds?: number, readonly nextStep?: string) { super(code); }
+}
+class TokenIssuanceFailure extends AccessFailure {
+  constructor(readonly outcome: 'known-rejected' | 'unknown', code: string) {
+    super(code, undefined, outcome === 'unknown' ? 'Token issuance outcome is unknown. Do not repeat POST automatically; operator must reconcile the possible live grant and expiry before a deliberate new issuance.' : undefined);
+  }
 }
 export class InvalidGitHubObservation extends Error {
   constructor() { super('INVALID_GITHUB_PAYLOAD'); }
@@ -68,10 +74,10 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
       secrets.add(jwt);
       directory = await mkdtemp(join(options.root, 'run', 'github-'));
       const privateDirectory = directory;
-      async function request(token: string, endpoint: string, method = 'GET', input?: unknown): Promise<{ body: unknown; next?: string }> {
+      async function request(token: string, endpoint: string): Promise<{ body: unknown; next?: string }> {
         if (!endpoint.startsWith('/') || endpoint.startsWith('//') || /[\r\n#\\]/.test(endpoint)) throw new AccessFailure('INVALID_ENDPOINT');
-        const argv = ['api', '--hostname', 'github.com', '--method', method, '--include', '-H', 'Accept: application/vnd.github+json', '-H', `X-GitHub-Api-Version: ${version}`,
-          ...(input === undefined ? [] : ['--input', '-']), '--', endpoint];
+        const argv = ['api', '--hostname', 'github.com', '--method', 'GET', '--include', '-H', 'Accept: application/vnd.github+json', '-H', `X-GitHub-Api-Version: ${version}`,
+          '--', endpoint];
         const output = await new Promise<{ stdout: string; failed: boolean }>((resolve, reject) => {
           const child = execFile(options.executable ?? 'gh', argv, { cwd: privateDirectory, encoding: 'utf8', timeout: 15000, maxBuffer: 2 * 1024 * 1024, shell: false,
             env: { PATH: process.env.PATH ?? '', LANG: 'C', LC_ALL: 'C', GH_TOKEN: token, GH_HOST: 'github.com', GH_CONFIG_DIR: privateDirectory,
@@ -81,8 +87,11 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
             resolve({ stdout, failed: Boolean(error) });
           });
           child.stdin?.on('error', () => {});
-          child.stdin?.end(input === undefined ? undefined : JSON.stringify(input));
+          child.stdin?.end();
         });
+        return parseResponse(output, endpoint);
+      }
+      function parseResponse(output: { stdout: string; failed: boolean }, endpoint: string): { body: unknown; next?: string } {
         const match = /^HTTP\/[\d.]+ (\d{3})[^\r\n]*\r?\n([\s\S]*?)\r?\n\r?\n([\s\S]*)$/.exec(output.stdout);
         if (!match) throw new AccessFailure('INVALID_GITHUB_RESPONSE');
         const status = Number(match[1]);
@@ -127,23 +136,81 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
         }
         return { body, ...(next ? { next } : {}) };
       }
-      const app = z.object({ id: z.literal(options.appId) }).safeParse((await request(jwt, '/app')).body);
+      // Only this closed operation set may carry the App JWT. No caller supplies a URL.
+      async function appRequest(operation: 'identity' | 'installation' | 'issue', input?: unknown): Promise<{ body: unknown; next?: string }> {
+        const issuing = operation === 'issue';
+        const endpoint = operation === 'identity' ? '/app' : `/app/installations/${scope.installationId}${issuing ? '/access_tokens' : ''}`;
+        let knownRejected = false;
+        try {
+          const output = await new Promise<{ stdout: string; failed: boolean }>((resolve, reject) => {
+            let settled = false;
+            let timer: ReturnType<typeof setTimeout>;
+            const fail = () => { if (!settled) { settled = true; clearTimeout(timer); reject(new AccessFailure('GITHUB_TRANSPORT_UNAVAILABLE')); } };
+            const payload = input === undefined ? undefined : JSON.stringify(input);
+            const req = https.request({ protocol: 'https:', hostname: 'api.github.com', port: 443,
+              method: issuing ? 'POST' : 'GET', path: endpoint, rejectUnauthorized: true, agent: false, maxHeaderSize: 16384,
+              headers: { Authorization: `Bearer ${jwt}`, Accept: 'application/vnd.github+json',
+                'X-GitHub-Api-Version': version, 'User-Agent': 'software-factory-controller',
+                ...(payload === undefined ? {} : { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }) } }, response => {
+              const chunks: Buffer[] = [];
+              let size = 0;
+              response.on('error', fail);
+              response.on('aborted', fail);
+              response.on('data', (chunk: Buffer) => {
+                size += chunk.length;
+                if (size > 2 * 1024 * 1024) { fail(); req.destroy(); return; }
+                chunks.push(chunk);
+              });
+              response.on('end', () => {
+                if (settled) return;
+                if (!response.complete || !response.statusCode || response.rawHeaders.length % 2) { fail(); return; }
+                const headers: string[] = [];
+                const names = new Set<string>();
+                let contentType: string | undefined;
+                for (let i = 0; i < response.rawHeaders.length; i += 2) {
+                  const name = response.rawHeaders[i]!.toLowerCase(), value = response.rawHeaders[i + 1]!;
+                  if (!/^[a-z0-9-]+$/.test(name) || /[\r\n]/.test(value) || names.has(name)) { fail(); return; }
+                  names.add(name); headers.push(`${name}: ${value}`);
+                  if (name === 'content-type') contentType = value;
+                }
+                if (contentType === undefined || !/^application\/json(?:;|$)/i.test(contentType)) { fail(); return; }
+                knownRejected = response.statusCode >= 400 && response.statusCode < 500;
+                settled = true; clearTimeout(timer);
+                resolve({ stdout: `HTTP/1.1 ${response.statusCode} Response\r\n${headers.join('\r\n')}\r\n\r\n${Buffer.concat(chunks).toString('utf8')}`, failed: false });
+              });
+            });
+            req.on('error', fail);
+            timer = setTimeout(() => { fail(); req.destroy(); }, 15000);
+            req.end(payload);
+          });
+          const status = Number(/^HTTP\/1\.1 (\d{3}) /.exec(output.stdout)?.[1]);
+          if (status >= 200 && status < 300 && status !== (issuing ? 201 : 200)) throw new AccessFailure('GITHUB_QUERY_FAILED');
+          return parseResponse(output, endpoint);
+        } catch (error) {
+          if (issuing) throw new TokenIssuanceFailure(knownRejected ? 'known-rejected' : 'unknown', knownRejected && error instanceof AccessFailure ? error.code : 'GITHUB_TOKEN_ISSUANCE_UNKNOWN');
+          throw error instanceof AccessFailure ? error : new AccessFailure('GITHUB_TRANSPORT_UNAVAILABLE');
+        }
+      }
+      const app = z.object({ id: z.literal(options.appId) }).safeParse((await appRequest('identity')).body);
       if (!app.success) throw new AccessFailure('APP_IDENTITY_MISMATCH');
       const installation = z.object({ id: z.literal(scope.installationId), app_id: z.literal(options.appId), account: z.object({ login: z.string() }),
-        suspended_at: z.null(), permissions: permissionSchema }).safeParse((await request(jwt, `/app/installations/${scope.installationId}`)).body);
+        suspended_at: z.null(), permissions: permissionSchema }).safeParse((await appRequest('installation')).body);
       const [owner, name] = scope.repository.split('/');
       if (!installation.success || installation.data.account.login.toLowerCase() !== owner!.toLowerCase()) throw new AccessFailure('INSTALLATION_IDENTITY_MISMATCH');
       const required = permissions[purpose];
-      for (const [permission, level] of Object.entries(required)) {
+      const missing = Object.entries(required).filter(([permission, level]) => {
         const installed = installation.data.permissions[permission];
-        if (!installed || (level === 'write' && installed !== 'write')) throw new AccessFailure('INSUFFICIENT_APP_PERMISSIONS');
-      }
+        return !installed || (level === 'write' && installed !== 'write');
+      });
+      if (missing.length) throw new AccessFailure('INSUFFICIENT_APP_PERMISSIONS', undefined,
+        `Operator must provide only the missing minimum installation permissions for ${purpose}: ${missing.map(([permission, level]) => `${permission}:${level}`).join(', ')}. Do not widen Workflows or retry issuance before correction.`);
       if (scope.workflows && installation.data.permissions.workflows !== 'write') throw new AccessFailure('WORKFLOWS_PERMISSION_MISSING');
       for (const permission of ['checks', 'statuses', 'actions', 'administration', 'secrets', 'environments', 'deployments']) {
         if (installation.data.permissions[permission] === 'write') throw new AccessFailure('UNSAFE_APP_PERMISSIONS');
       }
-      const issued = z.object({ token: z.string().min(1).max(1024).regex(/^[a-zA-Z0-9_-]+$/), expires_at: z.iso.datetime(), permissions: permissionSchema, repositories: z.array(repositorySchema) })
-        .safeParse((await request(jwt, `/app/installations/${scope.installationId}/access_tokens`, 'POST', { repositories: [name], permissions: required })).body);
+      // Installation tokens are opaque RFC 6750 token68, not an alphanumeric identifier.
+      const issued = z.object({ token: z.string().min(1).max(1024).regex(/^[a-zA-Z0-9._~+/-]+=*$/), expires_at: z.iso.datetime(), permissions: permissionSchema, repositories: z.array(repositorySchema) })
+        .safeParse((await appRequest('issue', { repositories: [name], permissions: required })).body);
       if (!issued.success) throw new AccessFailure('INVALID_CREDENTIAL_GRANT');
       const grant = issued.data;
       const expiry = Date.parse(grant.expires_at);
@@ -177,7 +244,7 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
     } catch (error) {
       return result({ status: 'blocked', code: error instanceof AccessFailure ? error.code : error instanceof InvalidGitHubObservation ? 'INVALID_GITHUB_PAYLOAD' : 'GITHUB_DIAGNOSTIC_FAILED', completeness: 'incomplete',
         ...(error instanceof AccessFailure && error.waitSeconds !== undefined ? { waitSeconds: error.waitSeconds } : {}),
-        nextStep: error instanceof AccessFailure && error.code === 'GITHUB_RATE_LIMITED' ? 'Wait the reported seconds before retrying this repository/purpose; no automatic retry.' : 'Operator must verify the named repository, App/installation, private key, explicit Workflows setting, permissions and REST compatibility; no personal fallback or repair.' });
+        nextStep: error instanceof AccessFailure && error.nextStep ? error.nextStep : error instanceof AccessFailure && error.code === 'GITHUB_RATE_LIMITED' ? 'Wait the reported seconds before retrying this repository/purpose; no automatic retry.' : 'Operator must verify the named repository, App/installation, private key, explicit Workflows setting, permissions and REST compatibility; no personal fallback or repair.' });
     } finally { if (directory) await rm(directory, { recursive: true, force: true }); }
   } };
 }

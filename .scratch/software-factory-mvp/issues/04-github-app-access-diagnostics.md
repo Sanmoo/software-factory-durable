@@ -60,3 +60,22 @@ Publicação é planejamento aprovado, não autorização de construção, uso d
   completa **63/63 duas vezes**. [Evidência real e lacunas](../../../docs/evidence/04-github-app-access-diagnostics.md#ensaio-real-autorizado-de-2026-11-05--blocked-em-app-jwt--gh).
   Critérios não marcados; ticket não resolvido. Decisão de transporte retorna ao
   operador, sem certificação de escrita/barreiras de merge/base/CI.
+- 2026-11-05 — **Nova aprovação explícita do operador**, continuação de `d54b95f`:
+  HTTPS Node privado somente GET `/app`, GET instalação configurada e POST de seu
+  access token; **demais operações conservam gh api com tokens reduzidos**.
+  Proveniência: instrução “NEW OPERATOR DESIGN APPROVAL” desta execução e
+  `/tmp/software-factory-mvp-test-authorization.md`; adendo no contrato canônico
+  `software-factory/issues/11-github-app-contract.md`, spec e interfaces. Sem ADR,
+  transporte global novo, fallback ou Workflows. RED/GREEN nos seams aprovados,
+  gate final Node 24.21.0 **73/73** + arquitetura/lint/build/typecheck.
+  **App 5569788 e instalação 177599217/Sanmoo agora confirmadas** por HTTPS real;
+  tracker token exato (um repo, metadata R/issues W) emitido 201 e leituras gh reais
+  200; tracker completo com limitações declaradas. CodeRepository continua bloqueado
+  antes de emissão: faltam exatamente **checks R, statuses R, actions R,
+  administration R** no teto observado. Sem ampliar grants automaticamente; base
+  não consultada. Doctor exit 3, histórico 0, proprietário encerra 0. Sem mutações,
+  push, modelos/VM/sandbox03 ou prova de barreiras. Token opaco real exigiu correção
+  token68 com RED/GREEN; ensaios anteriores e limitações preservados na
+  [evidência](../../../docs/evidence/04-github-app-access-diagnostics.md#continuação-com-https-app-explicitamente-aprovado--2026-11-05).
+  **BLOCKED/PARTIAL; ticket não resolvido, critérios sem marcação** até prova de
+  todos os critérios com permissões mínimas corrigidas pelo operador.

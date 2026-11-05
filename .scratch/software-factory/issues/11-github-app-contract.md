@@ -218,3 +218,26 @@ Não reintroduzir nessas validações a certificação de base/merge, provas neg
 
 Esta resolução decide o contrato, não demonstra sua implementação. Nenhuma App, token real, regra, workflow,
 VM, serviço ou modelo foi criado/alterado/executado nesta sessão. A spec final e os demais tickets permanecem abertos.
+
+
+### Adendo aprovado — HTTPS privado de autenticação App (2026-11-05)
+
+Proveniência: aprovação explícita do operador na continuação do ticket MVP 04,
+registrada em `/tmp/software-factory-mvp-test-authorization.md` e na instrução
+“NEW OPERATOR DESIGN APPROVAL” desta sessão (checkpoint inicial `d54b95f`).
+Exceção estreita ao transporte gh: somente o controlador usa HTTPS nativo Node
+para **GET /app**, **GET /app/installations/{configured-id}** e
+**POST /app/installations/{configured-id}/access_tokens**. A instalação é a
+configurada, não um parâmetro arbitrário fornecido pelo modelo. Endpoint fixo
+`https://api.github.com:443`, TLS validado, REST `2026-03-10`, JWT Bearer somente
+em memória. Sem redirects, proxy, descoberta de auth/ambiente, fallback ou
+interface genérica de rede para agentes. Limites de 15s e 2 MiB, validação de
+status/headers/completude/payload, erros sanitizados e distinção tipada de emissão
+rejeitada conhecida versus resultado desconhecido; POST incerto nunca é repetido
+automaticamente. Chave/JWT/token são protegidos e registrados para filtragem
+antes do uso. **Todas as demais operações conservam gh api com installation
+tokens reduzidos**, inclusive leituras dos adapters distintos Tracker e
+CodeRepository. Não é substituição global de transporte nem serviço emissor
+novo. Workflows permanece explicitamente proibido no ensaio autorizado.
+Fixture da fronteira HTTPS não comprova GitHub real; evidência real e lacunas
+ficam em `docs/evidence/04-github-app-access-diagnostics.md`.

@@ -266,3 +266,117 @@ o probe isolado verde e a correção de teste aprovada estão preservados no rel
 do pré-requisito, não ocultados por rerun. `npm ci`: cinco vulnerabilidades
 moderadas transitivas e avisos de aprovação de scripts, sem atualização fora de
 escopo. O gate local final verde não remove o bloqueio remoto do ticket.
+
+## Continuação com HTTPS App explicitamente aprovado — 2026-11-05
+
+**Resultado: BLOCKED/PARTIAL, não resolvido.** Continuação do HEAD limpo `d54b95f`,
+na branch/worktree 04 existente; nenhum commit anterior refeito. A nova aprovação
+do operador está registrada no adendo canônico de
+[11 — contrato GitHub App](../../.scratch/software-factory/issues/11-github-app-contract.md)
+(seção “Adendo aprovado — HTTPS privado de autenticação App”), na spec e no contrato
+de interfaces. Proveniência: instrução desta execução e autorização atualizada em
+`/tmp/software-factory-mvp-test-authorization.md`. A exceção permite somente os
+três endpoints App configurados; **todas as demais operações continuam gh api**.
+Nenhuma ADR/glossário global, serviço emissor, proxy ou interface de URL para modelo.
+
+### Implementação e regressões
+
+HTTPS Node privado no controlador: host/porta fixos `api.github.com:443`, TLS
+validado, `agent: false`, JWT Bearer em memória, versão `2026-03-10`, deadline total
+15s, corpo até 2 MiB e headers até 16 KiB. Valida 200 em GET/201 em emissão,
+JSON/content-type, headers únicos, resposta completa, identidades, escopo e validade.
+Sem redirects, retry automático, fallback ou descoberta de credenciais do ambiente.
+Falha POST distingue rejeição conhecida de emissão desconhecida; o diagnóstico de
+resultado desconhecido exige reconciliação antes de uma nova emissão deliberada.
+Chave/JWT/token são registrados para filtro antes de uso; corpos de erro nunca
+são encaminhados. As superfícies Tracker e CodeRepository continuam distintas.
+
+Seams: `IssueTracker.checkAccess`, `CodeRepository.checkAccess` e doctor autenticado
+através do controlador. Fixture HTTPS substitui **a fronteira externa** do Node,
+não adapters/emissor; exige independentemente os três pares método/path, host,
+porta, TLS, agent, Bearer, versão, Accept e User-Agent. O executável gh sintético
+rejeita chamadas App fora dessa simulação e JWT em leituras de repo; testa ambiente
+privado, argv sem token, redução exata por finalidade/repo e schemas REST próprios.
+Preload/launcher de fixture ficam só em testes; produção não ganhou opção de
+transporte, endpoint ou bypass TLS. **Esse dublê não é prova HTTPS/GitHub real.**
+
+RED inicial: `npm run build` + teste `dist/test/entrypoints/github-access.test.js`,
+17 falhas significativas (gh recusa JWT/App e seam retorna bloqueado em vez de ok),
+antes do transporte nativo. GREEN subsequente exigiu também corrigir propagação
+do preload apenas no launcher sintético do controlador. Primeiro gate detectou
+import dinâmico não permitido; corrigido com helper de teste importado estaticamente,
+sem relaxar arquitetura/lint. RED adicional: token opaco válido e ação exata de
+permissões falharam; GREEN com gramática RFC 6750 token68 e mínimos explícitos.
+RED de status 202 mostrou falso sucesso; GREEN exigiu status REST exato. A fixture
+foi corrigida para retornar 201 na emissão, conforme contrato oficial, não 200.
+Regressões adicionais: POST incerto e rejeitado conhecido, redirect, versão errada,
+resposta incompleta, header duplicado e corpo excessivo; nenhum erro cru vaza.
+Logs locais sanitizados: `/tmp/04-native-red.log`, `04-native-red-token.log`,
+`04-native-green-token.log`, `04-native-red-status.log`, `04-native-final-gate.log`.
+
+### Prova real (não fixture)
+
+[Artefato sanitizado completo, inclusive ensaios prévios](04-native-real-github-access-2026-11-05.json).
+Fonte autorizada revalidada antes de **cada** ensaio por ancestrais e descritor:
+regular 0600, uid da conta, nlink 1, sem symlink ou ancestral gravável por terceiros.
+Cópias `wx` 0600 somente em quatro raízes próprias `native04-*` 0700 dentro de
+`/home/sanmoo/software-factory-test`; todas removidas após encerramento. Fonte
+reconferida sem leitura de conteúdo após os ensaios e não modificada.
+
+Controlador proprietário real sob `/usr/bin/flock` + owner compilado, socket real,
+doctor real; preload observador **transparente**, sem substituir nenhuma resposta,
+persistiu somente projeção allowlisted de metadados. O launcher foi composto
+explicitamente com `--import` para observar o processo proprietário; o launcher CLI
+normal foi exercitado no teste sintético do controlador. gh observado é o binário
+real `/usr/bin/gh` 2.46.0; wrapper encaminha stdout somente pelo pipe ao controlador,
+retém stderr e grava apenas método/path/status/exit. Nem chave nem JWT/token foram
+colocados em argv, logs, sessão ou arquivos (exceto cópia protegida da chave).
+Node **24.21.0**, npm **11.19.0**; nenhum perfil/token pessoal herdado.
+
+Quatro ensaios deliberados, todos com POST de resultado **conhecido 201 completo**,
+nunca retry de emissão incerta. Os dois primeiros pararam no schema antigo de token:
+GitHub devolveu token opaco de 390 caracteres que a allowlist alfanumérica rejeitava.
+Somente booleans/length de formato foram observados, nunca caracteres do segredo.
+Gramática token68 corrigida com RED/GREEN sintético antes dos dois ensaios finais.
+
+Nos ensaios finais:
+- GET `/app` **200**, App **5569788** confirmada.
+- GET `/app/installations/177599217` **200**, mesma App, owner **Sanmoo**, não suspensa.
+- POST exato para instalação configurada, `repositories: [java-springboot-event-sourcing]`,
+  `permissions: {metadata: read, issues: write}`: **201**, repo **1256893534**,
+  `Sanmoo/java-springboot-event-sourcing`, somente permissões pedidas, validade
+  aproximadamente uma hora. Workflows ausente. TLS/respostas nativas completas,
+  versão selecionada **2026-03-10**.
+- gh real: GET repo, lista issues, dependências nativas de issue acessível e comentários,
+  todos **200 / exit 0**; tracker **ok / complete**, com limitações explícitas:
+  leituras não são snapshot atômico; prova de dependências é de uma issue acessível,
+  não de relações ocultas/outros repos; escritas não exercitadas.
+- CodeRepository bloqueia **antes de emitir**: instalação observada tem somente
+  `contents:write, issues:write, metadata:read, pull_requests:write`. Mínimos ausentes
+  **checks:read, statuses:read, actions:read, administration:read**, sem exigir
+  escrita/Workflows ou ampliar direitos automaticamente. Base `main` e demais leituras
+  de CodeRepository não foram alcançadas; **nenhum token repository emitido**.
+- Doctor exit **3**, historyLength **0**, controlador exit **0** em todos os ensaios;
+  doctor sem controlador exit **3**. Identidade agora comprovada, não se atribui o
+  antigo 401 exclusivamente ao esquema de auth. Nenhuma mutação de repo/push,
+  chamada de modelo, VM, sandbox/harness03, merge, deploy ou certificação de barreiras.
+
+### Gate e lacunas restantes
+
+Gate final desta worktree 04, após inspeção de todos os testes conhecidos (sem
+fixtures sandbox03): `npm run typecheck`; `timeout 180 npm test`: arquitetura,
+ESLint, build, **73/73**, zero falhas/skips, Node 24.21.0 fixado no PATH.
+`git diff --check` passou. A suíte inicial executou inadvertidamente com Node
+24.14.0 antes de localizar o binário fixado; **não** é contada como gate final.
+O deadline de 15s está implementado, mas não foi forçado por teste de relógio nem
+por falha de rede real; falha de transporte/POST incerto é simulada na fronteira.
+Não houve prova real de rate limit, grant excessivo, revogação ou expiração;
+regressões negativas existentes usam valores sintéticos. Quatro tokens tracker
+conhecidamente emitidos podem continuar válidos até o último `expiresAt` do JSON;
+nenhuma revogação remota foi tentada (ensaio de leitura, sem ampliar operações).
+
+Aceite completo de 04 permanece bloqueado pelos quatro mínimos acima; não houve
+pedido de aumento ao GitHub nem assunção de acesso à base. Após correção explícita
+pelo operador, repetir diagnóstico CodeRepository com redução exata de finalidade,
+sem Workflows e sem mutação; isso ainda não certifica merge/base/CI/bypass nem
+piloto humano. Nenhum critério foi marcado como provado integralmente.
