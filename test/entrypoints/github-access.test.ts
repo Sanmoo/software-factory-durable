@@ -23,8 +23,12 @@ async function fixture(t: { after(fn: () => Promise<void>): void }, scenario = '
   const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
   await writeFile(join(root, 'credentials/app.pem'), privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 });
   const executable = join(root, 'gh');
+  const ghTraceFile = join(root, 'operational-gh-trace');
+  await writeFile(ghTraceFile, '');
   await writeFile(executable, `#!${process.execPath}
 import { verify } from 'node:crypto';
+import { appendFileSync } from 'node:fs';
+if (process.env.NATIVE_FIXTURE!=='1') appendFileSync(${JSON.stringify(ghTraceFile)}, 'gh api\\n');
 const args = process.argv.slice(2);
 const scenario=${JSON.stringify(scenario)};
 const appToken=process.env.GH_TOKEN ?? '';
@@ -36,7 +40,7 @@ if (appToken.split('.').length===3) {
 const endpoint = args.at(-1);
 const method = args[args.indexOf('--method') + 1];
 if (args[0]!=='api' || !args.includes('--include') || (endpoint.endsWith('/access_tokens') ? method!=='POST' : method!=='GET') ||
- (endpoint.startsWith('/app') ? appToken.split('.').length!==3 : appToken!==(scenario==='opaque-token'?'synthetic-installation-secret+/==':'synthetic-installation-secret'))) process.exit(13);
+ (endpoint.startsWith('/app') ? appToken.split('.').length!==3 : appToken!==(scenario==='opaque-token'?'synthetic-installation-secret._~+/==':'synthetic-installation-secret'))) process.exit(13);
 if (endpoint.startsWith('/app') && process.env.NATIVE_FIXTURE!=='1') process.exit(14);
 const expected = ['NATIVE_FIXTURE','PATH','LANG','LC_ALL','GH_TOKEN','GH_HOST','GH_CONFIG_DIR','HOME','XDG_CONFIG_HOME','GH_PROMPT_DISABLED','GH_NO_UPDATE_NOTIFIER','GH_NO_EXTENSION_UPDATE_NOTIFIER','NO_COLOR'];
 if (!process.env.GH_TOKEN || Object.keys(process.env).some(k => !expected.includes(k)) || args.some(a => a.includes(process.env.GH_TOKEN)) || !args.includes('X-GitHub-Api-Version: 2026-03-10') || args[args.indexOf('--hostname')+1] !== 'github.com') process.exit(9);
@@ -70,13 +74,15 @@ else if (endpoint.startsWith('/repos/acme/project/issues/1/dependencies/blocked_
 else if (endpoint.startsWith('/repos/acme/project/issues?') && ${JSON.stringify(scenario)} === 'dependency-denied') body=[{id:4,number:1,repository_url:'https://api.github.com/repos/acme/project'}];
 else if (endpoint.startsWith('/repos/acme/project/issues')) body=[];
 else process.exit(11);
-if (scenario==='opaque-token' && endpoint.endsWith('/access_tokens')) body.token='synthetic-installation-secret+/==';
+if (scenario==='opaque-token' && endpoint.endsWith('/access_tokens')) body.token='synthetic-installation-secret._~+/==';
 if (scenario==='missing-rights' && endpoint==='/app/installations/2') {delete body.permissions.checks; delete body.permissions.statuses; delete body.permissions.actions; delete body.permissions.administration;}
 if (scenario==='wide-grant' && endpoint.endsWith('/access_tokens')) body.permissions.contents='write';
 if (scenario==='wrong-repository' && endpoint.endsWith('/access_tokens')) body.repositories[0].id=88,body.repositories[0].full_name='acme/other';
 if (scenario==='missing-repositories' && endpoint.endsWith('/access_tokens')) delete body.repositories;
 if (scenario==='multiple-repositories' && endpoint.endsWith('/access_tokens')) body.repositories=installedRepositories;
 if (scenario==='malformed-token' && endpoint.endsWith('/access_tokens')) body.token='synthetic-secret\\nheader';
+const tokenSuffixes={'token-trailing-lf':'\\n','token-trailing-cr':'\\r','token-trailing-crlf':'\\r\\n','token-tab':'\\t','token-nul':'\\0','token-del':'\\u007f'};
+if (tokenSuffixes[scenario]!==undefined && endpoint.endsWith('/access_tokens')) body.token='synthetic-installation-secret'+tokenSuffixes[scenario];
 if (scenario==='rate-limit' && endpoint.includes('/issues')) {status=403;headers='retry-after: 37\\r\\nx-ratelimit-remaining: 0\\r\\n';body={message:'synthetic-installation-secret'};}
 if (scenario==='later-page' && endpoint.includes('/issues?')) {
  if (endpoint.includes('page=2')) {status=503;body={message:'synthetic-installation-secret'};}
@@ -99,7 +105,7 @@ child.on('exit',code=>{process.exitCode=code??1;});
 `, { mode: 0o700 });
   const restore = installNativeAppFixture(executable, scenario);
   t.after(async () => { restore(); });
-  return { root, executable };
+  return { root, executable, native: restore.observation, ghTrace: () => readFile(ghTraceFile, 'utf8') };
 
 }
 const scope = { repository: 'acme/project', installationId: 2, workflows: false, label: 'ready-for-agent' };
@@ -251,6 +257,24 @@ for (const unsafe of ['permissions', 'symlink']) test(`IssueTracker.checkAccess 
   assert.doesNotMatch(JSON.stringify(report), /PRIVATE KEY/);
 });
 
+for (const scenario of ['post-rate-limit-429', 'post-rate-limit-403']) {
+  test(`IssueTracker.checkAccess preserves the wait on known rejected issuance: ${scenario}`, async t => {
+    const options = await fixture(t, scenario);
+    const report = await createIssueTracker({ github: createGitHubAccess({ ...options, appId: 1, privateKeyFile: 'credentials/app.pem' }) }).checkAccess(scope);
+    assert.equal(report.status, 'blocked');
+    assert.equal(report.code, 'GITHUB_RATE_LIMITED');
+    assert.equal(report.waitSeconds, 37);
+    assert.equal(report.repository, 'acme/project');
+    assert.equal(report.purpose, 'tracker');
+    assert.doesNotMatch(JSON.stringify(report), /synthetic-installation-secret|PRIVATE KEY|eyJ/);
+    assert.doesNotMatch(report.nextStep ?? '', /unknown|reconcile/);
+    assert.equal(options.native.tokenPosts, 1);
+    assert.deepEqual(options.native.trace, ['GET /app', 'GET /app/installations/2', 'POST /app/installations/2/access_tokens']);
+    assert.equal(await options.ghTrace(), '', 'known rejection must not reach operational gh');
+    t.diagnostic(JSON.stringify({ ...options.native, operationalGhCalls: 0 }));
+  });
+}
+
 for (const [scenario, code] of [
   ['uncertain-post', 'GITHUB_TOKEN_ISSUANCE_UNKNOWN'],
   ['known-post-rejected', 'GITHUB_ACCESS_DENIED'],
@@ -265,15 +289,39 @@ for (const [scenario, code] of [
   const report = await createIssueTracker({ github: createGitHubAccess({ ...options, appId: 1, privateKeyFile: 'credentials/app.pem' }) }).checkAccess(scope);
   assert.equal(report.status, 'blocked');
   assert.equal(report.code, code);
-  if (scenario === 'uncertain-post') assert.match(report.nextStep, /outcome is unknown.*Do not repeat POST automatically/);
+  if (scenario === 'uncertain-post') {
+    assert.match(report.nextStep, /outcome is unknown.*Do not repeat POST automatically/);
+    assert.equal(report.waitSeconds, undefined);
+  }
+  if (scenario === 'uncertain-post' || scenario === 'known-post-rejected') {
+    assert.equal(options.native.tokenPosts, 1);
+    assert.deepEqual(options.native.trace, ['GET /app', 'GET /app/installations/2', 'POST /app/installations/2/access_tokens']);
+    assert.equal(await options.ghTrace(), '');
+    t.diagnostic(JSON.stringify({ ...options.native, operationalGhCalls: 0 }));
+  }
   assert.doesNotMatch(JSON.stringify(report), /synthetic-secret|synthetic-installation-secret|PRIVATE KEY/);
 });
+
+for (const scenario of ['token-trailing-lf', 'token-trailing-cr', 'token-trailing-crlf', 'token-tab', 'token-nul', 'token-del']) {
+  test(`IssueTracker.checkAccess rejects invalid token68 before operational gh use: ${scenario}`, async t => {
+    const options = await fixture(t, scenario);
+    const report = await createIssueTracker({ github: createGitHubAccess({ ...options, appId: 1, privateKeyFile: 'credentials/app.pem' }) }).checkAccess(scope);
+    assert.equal(report.status, 'blocked');
+    assert.equal(report.code, 'INVALID_CREDENTIAL_GRANT');
+    assert.doesNotMatch(JSON.stringify(report), /synthetic-installation-secret|PRIVATE KEY|eyJ/);
+    assert.equal(options.native.tokenPosts, 1);
+    assert.deepEqual(options.native.trace, ['GET /app', 'GET /app/installations/2', 'POST /app/installations/2/access_tokens']);
+    assert.equal(await options.ghTrace(), '', 'invalid token must never reach operational gh');
+    t.diagnostic(JSON.stringify({ ...options.native, operationalGhCalls: 0 }));
+  });
+}
 
 test('IssueTracker.checkAccess accepts an opaque RFC 6750 token without leaking it to argv or reports', async t => {
   const options = await fixture(t, 'opaque-token');
   const report = await createIssueTracker({ github: createGitHubAccess({ ...options, appId: 1, privateKeyFile: 'credentials/app.pem' }) }).checkAccess(scope);
   assert.equal(report.status, 'ok');
   assert.doesNotMatch(JSON.stringify(report), /synthetic-installation-secret/);
+  assert.equal(await options.ghTrace(), 'gh api\ngh api\ngh api\n', 'valid punctuation and padding must reach operational gh');
 });
 
 test('CodeRepository.checkAccess reports only the exact missing minimum rights before issuance', async t => {

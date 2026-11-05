@@ -4,9 +4,12 @@ import { spawnSync } from 'node:child_process';
 import type { ClientRequest, IncomingMessage } from 'node:http';
 
 /** Synthetic external boundary only; never used with real credentials or as GitHub proof. */
-export function installNativeAppFixture(executable: string, scenario: string): () => void {
+export function installNativeAppFixture(executable: string, scenario: string) {
   const original = https.request;
+  const observation = { tokenPosts: 0, trace: [] as string[] };
   const substitute = (options: https.RequestOptions, callback: (response: IncomingMessage) => void) => {
+    if (options.method === 'POST') observation.tokenPosts++;
+    observation.trace.push(`${options.method} ${options.path}`);
     const allowed: Record<string, string> = { '/app': 'GET', '/app/installations/2': 'GET', '/app/installations/2/access_tokens': 'POST' };
     const headers = options.headers as Record<string, string>;
     if (options.hostname !== 'api.github.com' || options.port !== 443 || options.protocol !== 'https:' || options.rejectUnauthorized !== true || options.agent !== false || options.maxHeaderSize !== 16384 || allowed[options.path!] !== options.method || headers.Authorization?.split(' ')[0] !== 'Bearer' || headers['X-GitHub-Api-Version'] !== '2026-03-10' || headers.Accept !== 'application/vnd.github+json' || !headers['User-Agent']) throw Error('INVALID_NATIVE_CONTRACT');
@@ -26,6 +29,10 @@ export function installNativeAppFixture(executable: string, scenario: string): (
         if (scenario === 'native-redirect') response.statusCode = 302;
         if (scenario === 'native-version') response.rawHeaders[1] = 'wrong';
         if (scenario === 'known-post-rejected' && options.method === 'POST') response.statusCode = 403;
+        if (['post-rate-limit-429', 'post-rate-limit-403'].includes(scenario) && options.method === 'POST') {
+          response.statusCode = scenario === 'post-rate-limit-429' ? 429 : 403;
+          response.rawHeaders.push('retry-after', '37');
+        }
         if (scenario === 'native-status') response.statusCode = 202;
         if (scenario === 'native-duplicate') response.rawHeaders.push('content-type', 'application/json');
         if (scenario === 'native-oversize') { callback(response); response.emit('data', Buffer.alloc(2097153)); response.emit('end'); return; }
@@ -37,5 +44,5 @@ export function installNativeAppFixture(executable: string, scenario: string): (
     return request;
   };
   https.request = substitute as typeof https.request;
-  return () => { https.request = original; };
+  return Object.assign(() => { https.request = original; }, { observation });
 }

@@ -79,3 +79,18 @@ Publicação é planejamento aprovado, não autorização de construção, uso d
   [evidência](../../../docs/evidence/04-github-app-access-diagnostics.md#continuação-com-https-app-explicitamente-aprovado--2026-11-05).
   **BLOCKED/PARTIAL; ticket não resolvido, critérios sem marcação** até prova de
   todos os critérios com permissões mínimas corrigidas pelo operador.
+- Revisão local do HTTPS sobre `c05977f`: **F1/P2 corrigido**, preservando a espera
+  sanitizada de rejeição conhecida da emissão. RED público 429/403 com
+  `Retry-After: 37` falhou `undefined !== 37`; GREEN 2/2 após alteração mínima.
+  Fixture independente confirma POST único/trace sem replay e zero gh operacional,
+  também para emissão incerta (orientação de reconciliação inalterada). **P3 não
+  reproduzido no Node 24.21.0**: regex sem `m` já rejeita LF/CR/CRLF; seis novos
+  negativos passam antes de alteração de produção e confirmam zero gh, incluindo
+  TAB/NUL/DEL. Regex preservado por decisão de supervisão; sem alegar RED/fix de
+  P3. Pontuação token68/padding legítimos continuam aceitos. Gate nesta worktree
+  04: foco **35/35**, `npm test` **81/81** + arquitetura/lint/build,
+  `npm run typecheck`, `git diff --check` passam. [Evidência precisa e limites](../../../docs/evidence/04-github-app-access-diagnostics.md#revisão-https-local--f1p2-corrigido-p3-não-reproduzido).
+  Nenhum GitHub/credencial/chave/modelo/VM real nem suite de outra worktree.
+  **BLOCKED/PARTIAL permanece**, direitos mínimos pendentes do operador e repo/base
+  não verificados; sem resolução, integração ou publicação. Revisão independente
+  da correção ainda necessária.

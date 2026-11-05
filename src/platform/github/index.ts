@@ -19,8 +19,8 @@ class AccessFailure extends Error {
   constructor(readonly code: string, readonly waitSeconds?: number, readonly nextStep?: string) { super(code); }
 }
 class TokenIssuanceFailure extends AccessFailure {
-  constructor(readonly outcome: 'known-rejected' | 'unknown', code: string) {
-    super(code, undefined, outcome === 'unknown' ? 'Token issuance outcome is unknown. Do not repeat POST automatically; operator must reconcile the possible live grant and expiry before a deliberate new issuance.' : undefined);
+  constructor(readonly outcome: 'known-rejected' | 'unknown', code: string, waitSeconds?: number) {
+    super(code, waitSeconds, outcome === 'unknown' ? 'Token issuance outcome is unknown. Do not repeat POST automatically; operator must reconcile the possible live grant and expiry before a deliberate new issuance.' : undefined);
   }
 }
 export class InvalidGitHubObservation extends Error {
@@ -187,7 +187,7 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
           if (status >= 200 && status < 300 && status !== (issuing ? 201 : 200)) throw new AccessFailure('GITHUB_QUERY_FAILED');
           return parseResponse(output, endpoint);
         } catch (error) {
-          if (issuing) throw new TokenIssuanceFailure(knownRejected ? 'known-rejected' : 'unknown', knownRejected && error instanceof AccessFailure ? error.code : 'GITHUB_TOKEN_ISSUANCE_UNKNOWN');
+          if (issuing) throw new TokenIssuanceFailure(knownRejected ? 'known-rejected' : 'unknown', knownRejected && error instanceof AccessFailure ? error.code : 'GITHUB_TOKEN_ISSUANCE_UNKNOWN', knownRejected && error instanceof AccessFailure ? error.waitSeconds : undefined);
           throw error instanceof AccessFailure ? error : new AccessFailure('GITHUB_TRANSPORT_UNAVAILABLE');
         }
       }

@@ -380,3 +380,76 @@ pedido de aumento ao GitHub nem assunção de acesso à base. Após correção e
 pelo operador, repetir diagnóstico CodeRepository com redução exata de finalidade,
 sem Workflows e sem mutação; isso ainda não certifica merge/base/CI/bypass nem
 piloto humano. Nenhum critério foi marcado como provado integralmente.
+
+## Revisão HTTPS local — F1/P2 corrigido; P3 não reproduzido
+
+Base revisada: `c05977f47c30e6120e286c24eb1dcd7660b99ca7`, somente na branch
+`implement/software-factory-mvp-04` e worktree `software-factory-mvp-04` existente.
+Revisão recebida: `review-approved-app-https.md` (run
+`9107994b-bfbf-4ce2-b1bb-f4bd5e97b245`). Seam aprovado: `IssueTracker.checkAccess`;
+sem acesso a funções privadas. Fixtures substituem somente as fronteiras externas
+HTTPS/gh; não são prova de TLS, GitHub ou gh real.
+
+### F1/P2 — espera de rate limit na rejeição conhecida do POST
+
+- **RED significativo:** fixtures independentes retornam 429 e 403 completos com
+  `Retry-After: 37` no POST de emissão. Ambos os testes públicos falharam com
+  `undefined !== 37` antes da alteração de produção (2 falhas esperadas).
+- **Correção mínima:** `TokenIssuanceFailure` preserva `waitSeconds` já sanitizado
+  por `parseResponse` somente ao embrulhar a rejeição conhecida. Classificação,
+  orientação de reconciliação e ausência de espera para resultado desconhecido
+  permanecem inalteradas; não há retry/fallback ou nova operação.
+- **GREEN:** ambos passam com `GITHUB_RATE_LIMITED`, `waitSeconds: 37`,
+  `repository: acme/project`, `purpose: tracker`, sem chave/JWT/token no relatório.
+  O fixture conta as tentativas de POST independentemente do resultado e emite
+  somente contadores e método/caminho seguros:
+  `tokenPosts: 1`, trace `[GET /app, GET /app/installations/2,
+  POST /app/installations/2/access_tokens]`, `operationalGhCalls: 0`.
+  Os casos existentes de rejeição 403 simples e emissão incerta também verificam
+  esse trace exato/POST único e zero gh operacional. O caso incerto continua
+  exigindo reconciliação e proíbe repetição automática.
+
+### P3 — premissa do anchor não reproduzida no runtime fixado
+
+**Não declarar RED nem correção de defeito para P3.** No Node `24.21.0`, o regex
+atual `/^[a-zA-Z0-9._~+/-]+=*$/`, sem flag `m`, retorna `false` para `abc` seguido
+de LF. Os seis novos casos no seam público (LF, CR, CRLF, TAB, NUL e DEL finais)
+já passaram **antes de qualquer mudança no regex de produção**: todos retornam
+`INVALID_CREDENTIAL_GRANT`, com POST único e **zero execução de gh operacional**.
+A decisão de supervisão foi preservar o regex correto, sem alteração especulativa,
+e manter a cobertura negativa. P3 foi avaliado/não reproduzido, não “corrigido”.
+O caso positivo agora inclui toda pontuação `._~+/-` e padding `==`; permanece
+`ok` e confirma três chamadas gh operacionais, validando também o contador negativo.
+O caso anterior de newline interior permanece na suíte.
+
+### Comandos e resultados deste incremento
+
+Todos os comandos rodaram **somente nesta worktree 04**, com
+`export PATH=/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin:$PATH`
+e `node --version` = `v24.21.0`.
+
+| Comando | Resultado |
+| --- | --- |
+| `npm run build && node --test --test-name-pattern='preserves the wait on known rejected issuance' dist/test/entrypoints/github-access.test.js` antes da correção | build passa; RED esperado 0/2, `undefined !== 37` |
+| mesmo comando após correção | GREEN 2/2; trace independente com um POST |
+| `npm run build && node --test --test-name-pattern='rejects invalid token68' dist/test/entrypoints/github-access.test.js` sem alterar regex | 6/6; não houve RED de P3 |
+| `npm run build && node --test dist/test/entrypoints/github-access.test.js` | 35/35 |
+| `npm test` | 81/81; arquitetura (47 módulos, 164 dependências), lint e build passam |
+| `npm run typecheck` | exit 0 |
+| `git diff --check` | exit 0 |
+
+Logs locais sem segredos: `/tmp/fix-04-https-f1-red.log`,
+`/tmp/fix-04-https-f1-green.log`, `/tmp/fix-04-https-p3-red.log`
+(nome de tentativa, **conteúdo GREEN 6/6**), `/tmp/fix-04-https-focused.log`,
+`/tmp/fix-04-https-full-gate.log`, `/tmp/fix-04-https-typecheck.log`.
+Antes do gate completo, foram inspecionados o script `npm test`, a lista de testes
+04 e seus processos/sinais: somente fixtures locais e filhos próprios; nenhum
+harness sandbox03/VM, Docker, QEMU ou teste de outra worktree foi executado.
+
+**Aceite autenticado segue BLOCKED/PARTIAL**: faltam no teto real observado
+`checks:read`, `statuses:read`, `actions:read`, `administration:read`; correção é
+pendência do operador, não autorização para alargar grants/reemitir tokens.
+Repo/base continuam não verificados. Este incremento não consumiu credenciais
+reais, chave real, rede/GitHub, modelos ou VM03; não invalida nem repete o histórico
+de emissões reais registrado acima. Sem fechamento, integração, main, remote ou
+limpeza de worktree. Requer revisão independente da correção antes de aceite.
