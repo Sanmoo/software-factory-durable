@@ -1,0 +1,28 @@
+# 30: Aplicar retenção e cleanup explícito sem perder contexto necessário
+
+**What to build:** O operador vê e controla a remoção de detalhes e recursos sem perder contexto necessário ou apagar Trabalho não entregue automaticamente. Retenção e cleanup explícito preservam evidências protegidas e revalidam segurança no momento da remoção.
+
+**Blocked by:** [17: Confirmar entrega e limpar somente recursos próprios](17-confirmed-delivery-and-owned-cleanup.md); [25: Operar retirada de autorização, cancelamento e novos ciclos](25-authorization-withdrawal-and-work-cycles.md)
+
+**Status:** ready-for-agent
+
+## Acceptance criteria
+
+- [ ] Varredura de boot após reconciliação e diária torna logs/sessões de entregue elegíveis por padrão 30 dias após merge confirmado, configurável, sem daemon adicional.
+- [ ] Não entregues, inclusive bloqueados/cancelados/PR fechado sem merge, conservam detalhes até limpeza explícita; prazo não autoriza apagar para abrir espaço.
+- [ ] Evidência necessária a pendência/efeito/cleanup e recurso em uso são protegidos mesmo após prazo; fim da pendência torna elegível na próxima varredura, sem novos 30 dias.
+- [ ] Resumo/histórico/referências/revisões/decisões ficam até exclusão explícita e não somem com ambiente; preservar evidências necessárias precede remoção de origem.
+- [ ] Cleanup explícito seleciona recursos/logs/sessões, apresenta plano de perdas e exige confirmação, inclusive modo de automação com mesmas verificações.
+- [ ] Plano é revalidado ao executar por ownership, cessação, estado, uso e necessidade de recuperação; recurso que se tornou ativo/protegido não é apagado por plano antigo.
+- [ ] Destruir ambiente/contexto de Trabalho aberto exige cancelamento prévio; aviso explica quando remover sessão/log inviabiliza retomada, sem presumir recriação por resume ou cancelar implicitamente.
+- [ ] Regras com relógio controlado e integração real de armazenamento/disparo/remoção cobrem prazo, proteção, falha parcial e seleção obsoleta; CLI explica arquivos removidos/expirados em vez de vazio.
+
+## Referências e validação
+
+- Autoridade: [spec técnica aprovada](../../software-factory/spec.md), seções 12.1, 12.3, 12.4; [PRD](../../software-factory/prd.md) e decisões canônicas vinculadas pela spec.
+- Cenários: V-14, V-15 da [matriz de aceite](../../software-factory/acceptance-and-incremental-plan.md); registrar subcasos, nível fiel, expectativa/observado, lacunas e evidências da composição efetivamente testada. Dublê não comprova fronteira substituída.
+- Aplicar o gate de desenvolvimento da spec: arquitetura estática, compilação/typecheck, suíte local completa e evidências reais pertinentes à mudança, sem adiar a prova da fronteira alterada para a release.
+
+## Autorização e limites
+
+Publicação é planejamento aprovado, não autorização de construção, uso de host/credenciais/GitHub/modelos reais, injeção de falhas ou piloto. Obter autorização pertinente antes da execução. Não alterar decisões aprovadas silenciosamente; lacuna de desenho volta ao operador. Merge e avaliação humana não são delegados aos agentes.
