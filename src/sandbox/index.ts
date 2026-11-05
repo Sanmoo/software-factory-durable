@@ -1,34 +1,22 @@
-import { z } from 'zod';
 import { constants } from 'node:fs';
 import { platform, arch } from 'node:os';
 import type { Diagnostic } from '../contracts/index.js';
 import { canAccess, inspectStorage, versionOf } from '../platform/host/index.js';
 import { inspectGuestAssets, type GuestAssetPin } from './guest-assets.js';
+import { validateConfiguration } from './configuration.js';
+import { prepareEnvironment, type PrepareResult } from './prepare.js';
+export type { EnvironmentRef, PrepareResult } from './prepare.js';
 export type { GuestAssetPin } from './guest-assets.js';
 
-// Development profile identity only: no distributed assets or qualified release yet.
-const configurationSchema = z.strictObject({
-  schemaVersion: z.literal(1),
-  profile: z.literal('gondolin-qemu-alpine-dev-v1'),
-  memoryMiB: z.number().int().positive().safe().default(2048),
-  vcpus: z.number().int().positive().safe().default(2),
-  diskGiB: z.number().int().positive().safe().default(40),
-  shutdownGraceSeconds: z.number().int().positive().safe().default(30),
-  minFreeSpaceGiB: z.number().int().positive().safe().default(4),
-});
-
-function validateConfiguration(configuration: unknown) {
-  const parsed = configurationSchema.safeParse(configuration);
-  if (!parsed.success) {
-    return { valid: false as const, errors: parsed.error.issues.map(issue => ({
-      code: 'SANDBOX_CONFIGURATION_INVALID', path: ['sandbox', ...issue.path].join('.'),
-    })) };
-  }
-  return { valid: true as const, effective: parsed.data };
-}
 
 export function createSandbox({ root, guestAssets }: { root: string; guestAssets?: GuestAssetPin }) {
   return {
+    async prepare({ workId, configuration }: { workId: string; configuration: unknown }): Promise<PrepareResult> {
+      const parsed = validateConfiguration(configuration);
+      if (!parsed.valid) return { status: 'failure', code: 'SANDBOX_CONFIGURATION_INVALID' };
+      try { return await prepareEnvironment(root, guestAssets, workId, parsed.effective); }
+      catch { return { status: 'indeterminate', code: 'ENVIRONMENT_PREPARATION_UNAVAILABLE' }; }
+    },
     async validate(configuration: unknown) {
       const validated = validateConfiguration(configuration);
       const checks: Diagnostic[] = [

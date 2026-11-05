@@ -1,4 +1,7 @@
-# 03 — persistent work environment: BLOCKED checkpoint
+# 03 — persistent work environment: PARTIAL checkpoint
+
+Current continuation and all remaining criteria are recorded in **2026-11-05 continuation** below.
+The original validation-only blocked checkpoint is preserved as historical evidence.
 
 This is a tested **partial implementation**, not acceptance of ticket 03 or a supported sandbox release.
 No ticket acceptance checkbox is complete. The supervisor approved limiting this checkpoint to
@@ -148,3 +151,160 @@ Minimum eventual operator actions, **not executed**:
 
 Until then: preserve this coherent local checkpoint branch, do not resolve ticket 03, and do not
 integrate it as proof that dependent operational features are available.
+
+## 2026-11-05 continuation — PARTIAL, not ticket acceptance
+
+Supersedes only the old current-prerequisite list. The validation-only commit was
+retained (rebased as `7abfc63`) onto integration prerequisite `b591ec7`. No
+control/protocol/CLI02 implementation was replaced. Subsequent explicit authorization
+allows real QEMU/KVM, rootless asset construction/downloads, and temporary owned
+systemd USER units under `/home/sanmoo/software-factory-test`. No deployment,
+host package/service/permission changes, personal cache discovery, credentials or
+model calls occurred. The development dispatch gate remains closed.
+
+### Public increment
+
+`Sandbox.prepare({ workId, configuration })` verifies strict effective configuration
+and pinned assets, records adapter-owned resource identity before disk effects,
+creates private workspace/artifact directories and a **standalone** qcow2 copy using
+real qemu-img, then sets exact configured virtual capacity. File/directory fsync
+precedes readiness. Source-copy estimate plus the configured free-space floor is
+checked before copying. Repetition returns the same opaque reference; incompatible
+reuse is refused. Partial preparation remains indeterminate and identifiable; it is
+not blindly retried/repaired. This is resource ownership, not another domain store
+or scheduler. The single unchanged configuration schema moved to `configuration.ts`.
+
+No public start/observe/stop/remove/tool dispatch or lifecycle stubs were added.
+`test/sandbox/sandbox-prepare.test.ts` tests the public seam with real qemu-img on
+explicitly synthetic nonbootable raw bytes. It is opt-in because QEMU and authorized
+persistent storage are real prerequisites. Successful prepare is not boot readiness.
+
+### Actual profile, sources and build
+
+- Node **24.21.0**, npm **11.19.0**, exact npm Gondolin **0.14.0** with lockfile
+  integrity; upstream source **6b381a9fd1c353e80cc9b4cf35474b6909703a16**.
+- Arch x86_64, host kernel **7.1.9-arch1-2**, systemd **262.1-1-arch**, QEMU/qemu-img
+  **11.1.2**. Each serial VM: **2048 MiB/2 vCPU**, 40 GiB virtual disk, explicit
+  paths, rootDiskDeleteOnClose:false and tmpfs:{}. Real guest execution observed
+  `-accel kvm`, never TCG.
+- Registry fetched explicitly from immutable source commit above at
+  `https://raw.githubusercontent.com/earendil-works/gondolin/6b381a9fd1c353e80cc9b4cf35474b6909703a16/builtin-image-registry.json`.
+  Selected **alpine-base:0.4.0 x86_64**, not latest; buildId
+  **f59d9a69-1f62-57e0-a392-6800d3dd021d**. Archive URL:
+  `https://github.com/earendil-works/gondolin/releases/download/image-alpine-base--0.4.0/gondolin-image-alpine-base-0.4.0-x86_64.tar.gz`.
+  SHA256 **45cc0dd93181380b2c4b0bc2ea7496c961f39f8259122cd519f9efecf14fcaeb**
+  verified before extraction. Its authenticated manifest SHA256 is
+  **7b56e7234722541172922626b0d136b5924ae847ce39dcbd09cbe3079e091340**;
+  not an untrusted self-pin. Guest Alpine **3.23.7**, kernel **6.18.58-0-virt**.
+- **Actual rootless native SDK build succeeded**: getDefaultBuildConfig plus
+  git/github-cli/docker; Alpine3.23.7 at `https://dl-cdn.alpinelinux.org/alpine`;
+  work/output/cache/tmp all explicit under ticket03. Helper registry URL uses the
+  same immutable commit and `builtin-sandbox-helper-registry.json`. No OCI,
+  forced-container build, postBuild chroot, host Docker daemon or host installation.
+  SDK also fetched its build-time libkrunfw v5.2.1 artifact, not a runtime fallback.
+- Built manifest SHA256 **8ed20af25142e25d852deb000c12dcf26beadd802db6576f0790d440132a40e2**,
+  buildId **5f358cb8-3857-5e6f-9b92-60f2a0ba69dd**, kernel **6.18.60-0-virt**.
+  **This custom image did not reach guest readiness within 60 seconds in the
+  real test. Build success does not qualify image/packages/Docker.** Its failed
+  disk is retained; downloadable-image success is not a silent replacement.
+- Full resolved build config and **113** source/cache hashes (APK archives/indexes,
+  helper manifests, build/probe scripts) remain in `ticket03/build/build-config.json`
+  and `ticket03/logs/source-sha256.txt` under the authorized root. Inventory SHA256:
+  **8b1ca1f16b7d2f17d4f7f8caa1f72636b3ad06a4c0d0f3f7a0e540001c272d99**.
+  Alpine indexes are time-specific inputs, not a reproducible signed-release claim.
+  No assets or credentials entered Git.
+
+### Real boundary observations and limitations
+
+Owned transient user unit `factory-ticket03-persistence-20261105b` ran public
+prepare with pinned bootable assets, then its trusted driver composed actual SDK
+options. **Two distinct SDK session IDs/new boots** preserved identical markers in
+/root, /tmp and RealFS workspace. Recorded QEMU argv and guest df show KVM and
+38.1G ext4 on /dev/vda after resize. The initial unit without suffix b inspected
+the lazy VM PID before start, failed before boot, and is not counted as proof.
+
+Committed **external SDK seam** probe `test/sandbox/gondolin.test.ts` repeats this
+cycle and performs real qemu-img check between/after closes. That test plus public
+prepare test passed **2/2** in `factory-ticket03-real-tests-20261105`. This is NOT
+a public Sandbox lifecycle proof: those methods remain absent. The same SDK test
+against newly built assets failed at readiness in
+`factory-ticket03-built-tests-20261105`, separately recorded. Networking was disabled;
+no HTTP/TLS, Docker daemon/vfs, container, GitHub, secret or model proof. RealFS
+ordinary persistence is not path/symlink/alias escape isolation proof.
+
+All five test units were identified before effects in
+`ticket03/logs/resource-inventory.txt`: the initial failed probe, successful b probe,
+`factory-ticket03-build-20261105`, real-tests and built-tests units. RuntimeMaxSec=180,
+KillMode=control-group; VM units had TimeoutStopSec=15. Final host observations show
+empty ControlGroup and inactive/dead or failed states for every owned unit; a
+targeted /proc scan found **zero own QEMU processes**. This is real test-unit
+cessation evidence, not a product observer or owner-crash reconciliation proof.
+No PID-null/exit-code-only cessation inference. No existing resource was stopped.
+
+### Validation/reproduction
+
+Pinned Node PATH throughout. Red: typecheck failed because prepare was absent.
+Green: real public prepare test passed. Final architecture/typecheck pass.
+`npm test` twice: **50 pass/1 fail/2 opt-in skips**, unchanged ticket02
+`controller-ingress.test.ts:43` readiness assertion. Bounded b591ec7 baseline from
+git archive under the test root passes ingress in isolation (no installation).
+Full suite `node --test --test-concurrency=1 'dist/test/**/*.test.js'` passes
+**51/51**, two explicit real-test skips; this does not make the default parallel
+gate green. Supervisor explicitly permits coherent partial checkpoint commit;
+ticket04 owns prerequisite readiness/host-lock correction, not duplicated here.
+
+Repeat real tests only in an explicitly newly owned transient systemd USER unit,
+new inventory identity, WorkingDirectory=this task worktree, RuntimeMaxSec=180,
+KillMode=control-group, TimeoutStopSec=15 and pinned Node PATH. Pass these explicit
+values through systemd-run --setenv (no default personal SDK cache discovery):
+
+```text
+FACTORY_SANDBOX_TEST_ROOT=/home/sanmoo/software-factory-test/ticket03
+FACTORY_SANDBOX_REAL_ASSETS=/home/sanmoo/software-factory-test/ticket03/assets
+FACTORY_SANDBOX_MANIFEST_SHA256=7b56e7234722541172922626b0d136b5924ae847ce39dcbd09cbe3079e091340
+TMPDIR=/home/sanmoo/software-factory-test/ticket03/tmp
+XDG_CACHE_HOME=/home/sanmoo/software-factory-test/ticket03/cache
+GONDOLIN_SESSIONS_DIR=/home/sanmoo/software-factory-test/ticket03/sessions
+node --test dist/test/sandbox/gondolin.test.js dist/test/sandbox/sandbox-prepare.test.js
+```
+
+Complete stdout/stderr retained in ticket03/logs: prepare-red.txt, full-gate.txt,
+full-gate-retry.txt, full-suite-serial.txt, real-tests.txt, built-tests.txt, build.txt,
+persistence-b.txt, baseline-ingress.txt, final-units.txt. Exact build/probe drivers
+remain under ticket03/build with source inventory hashes.
+
+### All eight acceptance criteria remain incomplete — exact remaining work
+
+1. **Public lifecycle:** validate+prepare implemented; implement/publicly test real
+   start, authorized tools, observe, stop, remove with typed outcomes/references and
+   resource reconciliation. No lifecycle stubs.
+2. **Profile:** real pinned downloadable KVM boot/hash proof exists; diagnose custom
+   image failure, finish explicit release manifest/compatibility/qualification.
+   No supported release asserted.
+3. **Persistence:** disk,/root,/tmp,RealFS workspace survived two boots; prove expected
+   package/cache/Docker data persistence on qualified custom assets, not only files.
+4. **RealFS isolation:** actual guest path/symlink/alias escapes toward home,
+   controller, records, Git cache and another Work remain untested. Hash/path
+   integrity inspection and ordinary workspace writes do not satisfy this.
+5. **Supervision:** real temporary user cgroups worked; implement persisted adapter/
+   worker/subprocess identities and host observe/stop after owner death, plus
+   noninterference with a second environment.
+6. **Stop:** clean SDK close and disk-container checks only. Implement daemon/
+   container shutdown/sync, graceful deadline then targeted force, independent
+   cessation and filesystem checks before reusing forcibly stopped disks.
+7. **Storage:** prepare copy estimate/floor and exact virtual size exist; add public
+   effective/physical/virtual/workspace/free observations, preboot checks, pressure/
+   failure tests, no-cleanup/no-live-kill behavior. No reservation promise.
+8. **Real proofs:** serial KVM persistence and actual build demonstrated; full public
+   lifecycle, owner-death recovery and two-environment isolation remain unproved.
+   No substitutes counted as boundary proof.
+
+Final inventory: **3,187,781,632 physical bytes** across the exclusive root (below
+80GiB; includes other authorized ticket artifacts), zero active owned VMs. Preserved
+successful environment at
+`ticket03/runtime/environments/env-50ba694d7c2a015c9216d74521b67ab2c7d1df7a8f1b67ae3e310166cf09878c/`;
+failed custom disk at `ticket03/gondolin-persistence-EH32Oz/`. Archives, built assets,
+caches, logs/drivers and bounded baseline snapshot remain under ticket03. No
+credentials were read/copied/used. Next: incorporate reviewed prerequisite gate fix,
+diagnose custom-image boot and implement persisted systemd adapter start/observe/stop,
+then failure/isolation proofs. Ticket remains **unresolved**.

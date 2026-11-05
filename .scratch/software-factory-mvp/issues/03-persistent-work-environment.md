@@ -44,3 +44,29 @@ cessação ou persistência foi substituída por dublê.
 Faltam o restante do lifecycle e todas as provas reais de V-02/V-12/V-14 pertinentes;
 6 testes locais de validação e a suíte local verde não resolvem este ticket.
 Status permanece não resolvido; preservar o checkpoint na branch local até autorização/pré-requisitos.
+
+## Continuation checkpoint — PARTIAL (2026-11-05)
+
+Autorização posterior e QEMU instalado permitiram continuar sem refazer o commit
+anterior; rebase local sobre `b591ec7` preservou Controle/protocolo/CLI02. Implementado
+`Sandbox.prepare` real, idempotente por Trabalho/configuração/pin, com identidade
+registrada antes de efeitos, diretórios privados e cópia qcow2 standalone via
+qemu-img. Sem stubs nem implementação pública de start/observe/stop/remove.
+
+Prova real externa do SDK Gondolin0.14.0 em unit temporária systemd USER: dois boots
+KVM distintos do asset upstream fixado preservam /root,/tmp e workspace RealFS;
+teste opt-in do SDK + preparo público passou2/2. Isso NÃO comprova lifecycle público
+completo, isolamento de paths ou cessação após morte do proprietário. Build nativo
+rootless dos assets Alpine+git/gh/docker concluiu, mas seu boot real falhou no prazo
+de60s para readiness; não foi declarado imagem homologada/Docker funcional.
+
+Gate arquitetural/typecheck e suíte completa serial passam; `npm test` paralelo
+falha no teste inalterado de readiness do ticket02 (linha43). Supervisor autorizou
+commit parcial explícito; correção de pré-requisito pertence ao ticket04. Nenhuma
+integração/resolução ou checkbox de aceite concluído. Zero VMs próprias vivas ao
+checkpoint; assets/discos/logs identificados preservados somente no root autorizado.
+
+[Evidência atual, inventário, hashes, comandos/resultados e os oito critérios ainda
+incompletos](../../../docs/evidence/03-sandbox-validation-checkpoint.md#2026-11-05-continuation--partial-not-ticket-acceptance).
+Próximo incremento: incorporar correção revisada do gate, diagnosticar boot da imagem
+customizada e implementar adapter systemd persistido com start/observe/stop reais.
