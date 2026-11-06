@@ -1,0 +1,254 @@
+{
+  "disposition": "BLOCKED/PARTIAL",
+  "startedAt": "2026-11-06T00:41:30.655Z",
+  "node": "v24.21.0",
+  "restVersion": "2026-03-10",
+  "workflows": false,
+  "requests": [
+    {
+      "at": "2026-11-06T00:41:31.343Z",
+      "transport": "native-https-real",
+      "method": "GET",
+      "endpoint": "/app",
+      "status": 200,
+      "date": "Fri, 06 Nov 2026 00:41:31 GMT",
+      "version": "2026-03-10",
+      "complete": true,
+      "identity": {
+        "appId": 5569788
+      }
+    },
+    {
+      "at": "2026-11-06T00:41:31.779Z",
+      "transport": "native-https-real",
+      "method": "GET",
+      "endpoint": "/app/installations/177599217",
+      "status": 200,
+      "date": "Fri, 06 Nov 2026 00:41:32 GMT",
+      "version": "2026-03-10",
+      "complete": true,
+      "installation": {
+        "id": 177599217,
+        "appId": 5569788,
+        "account": "Sanmoo",
+        "permissions": {
+          "actions": "read",
+          "checks": "read",
+          "contents": "write",
+          "issues": "write",
+          "metadata": "read",
+          "pull_requests": "write",
+          "statuses": "read"
+        },
+        "suspended": false
+      }
+    },
+    {
+      "at": "2026-11-06T00:41:32.508Z",
+      "transport": "native-https-real",
+      "method": "POST",
+      "endpoint": "/app/installations/177599217/access_tokens",
+      "status": 201,
+      "date": "Fri, 06 Nov 2026 00:41:32 GMT",
+      "version": "2026-03-10",
+      "complete": true,
+      "grant": {
+        "permissions": {
+          "issues": "write",
+          "metadata": "read"
+        },
+        "repositories": [
+          {
+            "id": 1256893534,
+            "full_name": "Sanmoo/java-springboot-event-sourcing",
+            "owner": "Sanmoo"
+          }
+        ],
+        "expiresAt": "2026-11-06T01:41:32Z",
+        "tokenPresent": true,
+        "expirySecondsFromObservation": 3599
+      }
+    },
+    {
+      "at": "2026-11-06T00:41:33.059Z",
+      "transport": "gh-real",
+      "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing",
+      "method": "GET",
+      "status": 200,
+      "exit": 0,
+      "observation": {
+        "id": 1256893534,
+        "full_name": "Sanmoo/java-springboot-event-sourcing",
+        "default_branch": "main",
+        "owner": "Sanmoo",
+        "private": false
+      }
+    },
+    {
+      "at": "2026-11-06T00:41:33.770Z",
+      "transport": "gh-real",
+      "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/issues?per_page=100&page=1",
+      "method": "GET",
+      "status": 200,
+      "exit": 0,
+      "observation": {
+        "count": 1
+      }
+    },
+    {
+      "at": "2026-11-06T00:41:34.557Z",
+      "transport": "gh-real",
+      "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/issues/1/dependencies/blocked_by?per_page=100&page=1",
+      "method": "GET",
+      "status": 200,
+      "exit": 0,
+      "observation": {
+        "count": 0
+      }
+    },
+    {
+      "at": "2026-11-06T00:41:35.108Z",
+      "transport": "gh-real",
+      "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/issues/comments?per_page=100&page=1",
+      "method": "GET",
+      "status": 200,
+      "exit": 0,
+      "observation": {
+        "count": 2
+      }
+    },
+    {
+      "at": "2026-11-06T00:41:35.828Z",
+      "transport": "native-https-real",
+      "method": "GET",
+      "endpoint": "/app",
+      "status": 200,
+      "date": "Fri, 06 Nov 2026 00:41:36 GMT",
+      "version": "2026-03-10",
+      "complete": true,
+      "identity": {
+        "appId": 5569788
+      }
+    },
+    {
+      "at": "2026-11-06T00:41:36.231Z",
+      "transport": "native-https-real",
+      "method": "GET",
+      "endpoint": "/app/installations/177599217",
+      "status": 200,
+      "date": "Fri, 06 Nov 2026 00:41:36 GMT",
+      "version": "2026-03-10",
+      "complete": true,
+      "installation": {
+        "id": 177599217,
+        "appId": 5569788,
+        "account": "Sanmoo",
+        "permissions": {
+          "checks": "read",
+          "issues": "write",
+          "actions": "read",
+          "contents": "write",
+          "metadata": "read",
+          "statuses": "read",
+          "pull_requests": "write"
+        },
+        "suspended": false
+      }
+    }
+  ],
+  "sourceMetadata": {
+    "mode": "0600",
+    "uid": 1000,
+    "nlink": 1,
+    "ancestors": "validated root/current-user owned, no symlinks/group-other writes"
+  },
+  "unavailableExit": 3,
+  "doctorExit": 3,
+  "report": {
+    "kind": "access",
+    "scope": "authenticated",
+    "results": [
+      {
+        "tracker": {
+          "limitations": [
+            "Reads are not an atomic remote snapshot.",
+            "Write operations are not exercised; authorization is checked against returned permissions.",
+            "Native dependencies probed on one accessible issue only; hidden relations and other repositories are not certified."
+          ],
+          "workflows": false,
+          "status": "ok",
+          "code": "OPERATIONAL_ACCESS_VERIFIED",
+          "completeness": "complete",
+          "identity": {
+            "appId": 5569788,
+            "installationId": 177599217,
+            "repositoryId": 1256893534
+          },
+          "grant": {
+            "role": "controller",
+            "purpose": "tracker",
+            "permissions": {
+              "metadata": "read",
+              "issues": "write"
+            },
+            "expiresAt": "2026-11-06T01:41:32Z"
+          },
+          "nextStep": "Operational reads and declared permissions only; no remote write, merge/base/CI certification or invisible-capability proof.",
+          "observedAt": "2026-11-06T00:41:31.339Z",
+          "repository": "Sanmoo/java-springboot-event-sourcing",
+          "source": "github-rest",
+          "purpose": "tracker",
+          "certifiesMergeSafety": false
+        },
+        "repository": {
+          "status": "blocked",
+          "code": "INSUFFICIENT_APP_PERMISSIONS",
+          "completeness": "incomplete",
+          "nextStep": "Operator must provide only the missing minimum installation permissions for repository: administration:read. Do not widen Workflows or retry issuance before correction.",
+          "observedAt": "2026-11-06T00:41:35.827Z",
+          "repository": "Sanmoo/java-springboot-event-sourcing",
+          "source": "github-rest",
+          "purpose": "repository",
+          "certifiesMergeSafety": false
+        }
+      }
+    ]
+  },
+  "historyLength": 0,
+  "controllerExit": 0,
+  "privateKeyCopyRemoved": true,
+  "finishedAt": "2026-11-06T00:41:36.782Z",
+  "repositoryMutations": 0,
+  "issuanceSummary": {
+    "knownCreatedTrackerGrants": 1,
+    "knownCreatedRepositoryGrants": 0,
+    "unknownOutcomes": 0,
+    "automaticRetries": 0,
+    "revocationClaimed": false,
+    "lastKnownExpiry": "2026-11-06T01:41:32Z"
+  },
+  "remainingBlocker": {
+    "permission": "administration:read",
+    "actualInstallationResponses": 2,
+    "repositoryPurposeIssuanceAttempted": false,
+    "baseRulesChecksStatusesActionsPullRequestsProbed": false
+  },
+  "harness": {
+    "root": "/home/sanmoo/software-factory-test/verify04-l4m9f771",
+    "controller": "dist/src/entrypoints/controller/owner.js via actual flock --exclusive --nonblock --no-fork",
+    "appTransport": "actual Node native HTTPS, TLS verification; observer records allowlisted metadata only",
+    "repositoryTransport": "actual /usr/bin/gh, transparent GET-only wrapper; no substituted responses",
+    "filesSha256": {
+      "driver.mjs": "7ac17810931e30973f82489d051ea1b35a0f0bc2c5fe4b44a77adb8fbebe47e1",
+      "observer.mjs": "e03bf78db55c9cfd4495ac2590d624341fccc3f76759a2128508015e96a77719",
+      "bin/gh": "e6ceaa8cc322b356cf4ba3dd3b85c5f478feefde0a7236c0c3436d9fb656a9a1"
+    }
+  },
+  "cleanupVerified": {
+    "controllerExit": 0,
+    "credentialDirectoryEmpty": true,
+    "runDirectoryEmpty": true,
+    "privateKeyCopyAbsent": true,
+    "sourceUnmodifiedByHarness": true
+  }
+}

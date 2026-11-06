@@ -453,3 +453,141 @@ Repo/base continuam não verificados. Este incremento não consumiu credenciais
 reais, chave real, rede/GitHub, modelos ou VM03; não invalida nem repete o histórico
 de emissões reais registrado acima. Sem fechamento, integração, main, remote ou
 limpeza de worktree. Requer revisão independente da correção antes de aceite.
+
+## Revalidação real após confirmação dos quatro reads — 2026-11-06 UTC
+
+**BLOCKED, não resolvido.** Continuação de `90d6b93`, sem refazer nem alterar a
+correção aprovada na revisão independente
+`outputs/e8534fe1-370d-4e02-98e9-2892f92ddfdb/rereview-04-rate-wait.md`.
+A autorização atualizada confirma a intenção do operador de conceder os quatro
+reads. A resposta real da instalação, porém, é a fonte da observação de direitos:
+**checks R, statuses R e actions R presentes; administration ainda ausente**.
+Não se presume que confirmação humana seja resposta da API, nem se remove a
+exigência mínima para fazer o diagnóstico passar.
+
+### Composição, execução e evidência
+
+- Registro sanitizado completo: [JSON deste ensaio](04-updated-permissions-real-github-access-2026-11-06.json).
+  Janela real `2026-11-06T00:41:30.655Z`–`00:41:36.782Z` (a data UTC já é 06/11).
+- Autorização: `/tmp/software-factory-mvp-test-authorization.md`, seção
+  `UPDATED OPERATOR CONFIRMATION`, e instrução explícita desta continuação;
+  limites nativos/gh aprovados permanecem os mesmos.
+- Nova raiz exclusiva `/home/sanmoo/software-factory-test/verify04-l4m9f771`,
+  0700; reutilização do driver real anterior com observadores transparentes
+  ampliados apenas para metadados de repo/base/listas. Driver, preload HTTPS e
+  wrapper gh permanecem nessa raiz, com SHA-256 no JSON. Não são fixtures de
+  respostas: chamam HTTPS real e `/usr/bin/gh` real, sem substituir resultados.
+- `node /home/sanmoo/software-factory-test/verify04-l4m9f771/driver.mjs`, executado
+  nesta worktree após build do gate, abriu o proprietário real via
+  `/usr/bin/flock --exclusive --nonblock --no-fork` e
+  `dist/src/entrypoints/controller/owner.js`. CLI `doctor --authenticated`
+  consultou o controlador pelo socket real. Antes do proprietário, doctor
+  retornou 3; com proprietário, retornou 3 por permissão incompleta. Histórico
+  permaneceu 0. Nenhuma composição de sandbox foi carregada/executada.
+- A chave fonte foi aberta com `O_NOFOLLOW | O_NONBLOCK`, validada por descritor
+  (arquivo regular, UID 1000, 0600, nlink 1, tamanho limitado), com ancestrais
+  validados sem symlinks/escrita group-other e somente root/UID corrente.
+  Foi copiada com criação exclusiva 0600 para `credentials/app.pem`, nunca para
+  evidência/Git/sessão/argv. JWT/token permaneceram em memória; GH_TOKEN foi
+  entregue somente pelo ambiente privado do subprocesso gh. Não se usou login
+  pessoal ou fallback. Observadores persistem campos allowlisted, não headers
+  Authorization, corpos brutos, segredos ou stderr.
+- O guard do observador HTTPS admite somente os três pares método/path
+  aprovados, host fixo/TLS verificado. O wrapper gh admite somente GET no repo
+  configurado. Não houve alterações em transporte, escopo ou produto.
+
+### Expectativa versus observado na fronteira real
+
+| Operação | Observado |
+| --- | --- |
+| GET `/app` (2 vezes) | 200, versão `2026-03-10`, corpo completo, App **5569788** |
+| GET `/app/installations/177599217` (2 vezes) | 200 completo, App correta, conta **Sanmoo**, sem suspensão |
+| Teto efetivo nas duas respostas | `metadata:read`, `issues:write`, `contents:write`, `pull_requests:write`, **`checks:read`, `statuses:read`, `actions:read`**; **sem administration e sem workflows** |
+| POST access_tokens | **1** pedido deliberado conhecido, 201; finalidade tracker, nenhum replay |
+| Escopo devolvido | Exatamente `metadata:read`, `issues:write`; um repo **1256893534**, `Sanmoo/java-springboot-event-sourcing`, owner Sanmoo |
+| Validade devolvida | `2026-11-06T01:41:32Z`, 3599 segundos da observação; dentro da janela validada pelo emissor |
+| gh GET repo | 200; mesmo ID/owner/full_name; default `main`, repo público |
+| gh GET issues | 200, uma issue |
+| gh GET issue 1 dependencies/blocked_by | 200, lista vazia; não certifica relações ocultas/outros repos |
+| gh GET issues/comments | 200, dois comentários |
+| Resultado tracker | `ok`, `OPERATIONAL_ACCESS_VERIFIED`, completo no escopo declarado, com limitações explícitas |
+| Resultado CodeRepository | `blocked`, `INSUFFICIENT_APP_PERMISSIONS`, incompleto; ação exata **administration:read** |
+| Emissão repository / base / rules / checks / statuses / Actions / PR | **Não executadas**: bloqueio anterior à emissão, sem token de repo-purpose |
+
+Contagem: **9 requests observados**, quatro GET HTTPS, um POST HTTPS, quatro GET
+gh; todos HTTP 200/201. Não houve erro de transporte, emissão de resultado
+incerto, retry, redirect/fallback, ampliação automática ou mutação do repositório.
+O POST é criação conhecida de credencial temporária, não escrita de conteúdo do
+repo. A escolha de Workflows continua **false**, sem grant/request dessa permissão.
+Repo/default branch são fatos observados pelo tracker; **não** são prova de acesso
+à base `main` pelo CodeRepository nem de suas regras/checks/PR.
+
+### Casos negados, parciais e incompatíveis — nível da prova
+
+- **Real neste ensaio:** a instalação é acessível mas insuficiente; diagnóstico
+  agregado parcial (tracker completo, CodeRepository incompleto). Ação exata é
+  corrigir **somente administration:read** na App e aprovar na instalação
+  177599217. Não há inferência de privilégios por ser Sanmoo/admin do repo.
+- **Real histórico, não repetido aqui:** os HTTP 401 do transporte JWT/gh e o
+  bloqueio anterior pelos quatro reads permanecem nas seções/JSON anteriores;
+  não se apresentam como novas falhas nem como incompatibilidade atual do HTTPS.
+- **Sintético, rerodado neste gate:** `test/entrypoints/github-access.test.ts`
+  verifica read negado (`GITHUB_ACCESS_DENIED`, incompleto), probe nativo negado
+  (`GITHUB_ACCESS_DENIED`, sem afirmar suporte), falha de página posterior
+  (sem sucesso parcial), versão/status/payload/headers incompatíveis, paginação
+  off-host e grants amplos/repo errado. Os testes rate-limit de read e POST
+  conhecido preservam a espera; POST incerto conserva reconciliação explícita,
+  um único POST, zero gh operacional e nenhuma repetição automática. Isso prova
+  tratamento local, **não** simula que esses casos tenham ocorrido no GitHub real.
+- **Ainda sem prova real:** base/regras/checks/statuses/Actions/PR e eventual
+  ausência de amostra PR. Não chamar isso de suporte nem de falta de suporte;
+  essas consultas sequer aconteceram por causa do bloqueio de permissão.
+
+### Gate e critérios restantes
+
+Nesta worktree 04, `PATH=/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin:$PATH`:
+
+1. `node --version` = **v24.21.0**; `npm --version` = **11.19.0**.
+2. `npm ci` — exit 0; 222 pacotes instalados; auditoria informou **5 moderate**
+   e dois scripts sem aprovação (`@google/genai`, `protobufjs`); não se aprovou
+   script, atualizou dependência ou executou `audit fix`.
+3. `npm test` — exit 0; arquitetura (47 módulos/164 dependências), lint, build,
+   **81/81**, 0 fail/skip. Logs `/tmp/verify-real04-test.log` e
+   `/tmp/verify-real04-npm-ci.log`; não contém suíte sandbox03.
+4. `npm run typecheck` — exit 0, sem diagnósticos;
+   `/tmp/verify-real04-typecheck.log`.
+5. `node --check` do driver, execução real acima, validação estrutural do JSON
+   sanitizado e `git diff --check` — passaram. Não houve alteração de produção
+   ou teste a exigir RED/GREEN: a API confirmou um bloqueio de configuração,
+   não uma incompatibilidade de implementação.
+
+| Critério 04 | Evidência / lacuna para aceite |
+| --- | --- |
+| Doctor/controlador/App/install/repo/base/permissões/Workflows | Identidade/repo/Workflows reais; **base e direitos mínimos completos faltam**, portanto não satisfeito integralmente |
+| Emissor/chave/redução/repo/papel/finalidade/retorno | Tracker real exato e chave protegida; **grant repository real não emitido/verificado** |
+| gh estruturado, ambiente privado, sem fallback | Fonte/testes e quatro GET reais; não supera as lacunas dos outros critérios |
+| Payload/status/headers/paginação/completude/espera | Fluxo tracker real + negativos sintéticos; **fronteira repo/base continua sem prova** |
+| Segredos em memória/filtragem | Fonte/testes sintéticos; nenhuma persistência de segredo pelos observadores; não é certificação contra host malicioso |
+| Contratos separados | Fonte e arquitetura passaram, sem adapter consultar o outro |
+| Sem mutação/certificação de barreiras | Preservado; sem push/CI/deploy/modelos/VM/sandbox03 nem prova negativa de bypass/merge |
+
+Não se marca nenhum checkbox nem se acrescenta `Answer`/resolução parcial:
+a conjunção de critérios não foi satisfeita. Próximo passo é o operador conferir
+**administration:read** salva na App e aprovada na instalação, não recriar chave,
+reinstalar, elevar para write ou ampliar Workflows. Supervisão determinou encerrar
+este checkpoint sem novas emissões/reruns reais até a correção.
+
+### Cessação, credenciais e limites finais
+
+O proprietário recebeu SIGTERM somente por seu handle recém-criado e **encerrou
+com 0 antes da remoção da cópia da chave**. Verificação posterior: diretórios
+`credentials/` e `run/` vazios, sem socket ou chave; a fonte continua regular,
+0600, UID1000/nlink1 e não foi escrita pelo harness. A raiz exclusiva com código
+observador e evidência sanitizada permanece como proveniência, sem credenciais;
+nenhum recurso preexistente foi removido. Nenhuma emissão repository ocorreu.
+
+O único token tracker conhecido não foi revogado: não se adicionou operação fora
+da allowlist, e não se afirma revogação por apagar chave/encerrar processo. Pode
+continuar válido até **01:41:32Z**, dentro do risco residual já aprovado. Nenhum
+resultado incerto foi observado; não há justificativa para replay automático.
+Sem mudanças em main/integração, merge/push ou alterações de settings remotas.

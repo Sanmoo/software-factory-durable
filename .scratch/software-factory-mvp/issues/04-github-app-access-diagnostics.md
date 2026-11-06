@@ -94,3 +94,22 @@ Publicação é planejamento aprovado, não autorização de construção, uso d
   **BLOCKED/PARTIAL permanece**, direitos mínimos pendentes do operador e repo/base
   não verificados; sem resolução, integração ou publicação. Revisão independente
   da correção ainda necessária.
+- 2026-11-06 UTC — Revalidação real autorizada após confirmação dos quatro reads,
+  a partir de `90d6b93` com revisão local aprovada: **BLOCKED exato ainda por
+  administration:read ausente nas duas respostas 200 da instalação 177599217**.
+  Checks/statuses/Actions R agora confirmados; sem Workflows. App5569788/Sanmoo
+  válidas; uma emissão tracker 201 conhecida, repo1256893534 único e escopo exato
+  metadata R/issues W, validade até 01:41:32Z; quatro GET gh reais 200, repo
+  default main, issues/dependências/comentários. Tracker completo com limitações;
+  repository bloqueado **antes de emissão**, portanto base/rules/checks/statuses/
+  Actions/PR não consultados e não certificados. Doctor exit3, histórico0, owner
+  exit0; só depois removida a cópia privada da chave, credentials/run vazios.
+  Sem retry, resultado incerto, ampliação automática, mutações/push/CI/deploy,
+  modelos/VM/sandbox03, merge ou integração. Gate Node24.21.0/npm11.19.0:
+  `npm ci`, `npm test` **81/81** + arquitetura/lint/build e `npm run typecheck`
+  passam. Sem correção de código necessária; somente evidência adicionada.
+  [Observações, escopo, negativos sintéticos e lacunas](../../../docs/evidence/04-github-app-access-diagnostics.md#revalidação-real-após-confirmação-dos-quatro-reads--2026-11-06-utc).
+  Critérios permanecem desmarcados, **sem Answer/resolução**; próximo passo do
+  operador é salvar/aprovar somente administration R efetiva na App/instalação,
+  sem recriar chave/reinstalar nem elevar direitos. Nenhum novo ensaio real até
+  correção explícita; token tracker não declarado revogado, expiração registrada.
