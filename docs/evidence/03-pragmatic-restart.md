@@ -76,3 +76,41 @@ Implementar e validar o lifecycle pela interface pública da Sandbox: iniciar,
 observar e parar um ambiente próprio, depois comprovar reinício preservando dados.
 Essa prova e os critérios de isolamento/cessação ainda estão pendentes. Não
 integrar o incremento parcial nem declarar o ticket resolvido por estes testes.
+
+## Primeiro incremento: observação pela interface pública
+
+`Sandbox.observe` foi acrescentado diretamente ao módulo do produto, sem runner
+ou controlador adicional. Valida referências e metadados privados/versionados,
+consulta somente a unit derivada do boot próprio e correlaciona invocação,
+cgroup e início do processo. Não usa PID isolado como prova de cessação nem
+converte métricas indisponíveis em zero. Metadados antigos/incompletos ou aliases
+não são adotados.
+
+TDD no seam público Q5: os quatro testes inicialmente falharam com operação
+inexistente (TS2339 e TypeError); após implementação passaram em 0,14s.
+Cobrem ambiente desconhecido, alias de diretório, host boot diferente e evidência
+incompleta, preservando arquivos e resultado indeterminado. Typecheck,
+compilação e arquitetura/lint passaram novamente.
+
+A reexecução conjunta com o novo incremento teve 21 casos: 20 passaram, uma
+prova de VM continuou ignorada e nenhuma falha, em 5,93 segundos.
+
+A revisão independente apontou dois problemas concretos e ambos foram corrigidos:
+
+- Metadados agora são abertos com `O_NONBLOCK` antes de verificar por fstat que
+  são arquivos regulares. A regressão pública com FIFO sem escritor falhou antes
+  por timeout do subprocesso local recém-criado (1,5s) e passou após a correção
+  em 0,11s; nenhum processo de VM foi alvo desse timeout.
+- Ausência de `cgroup.events` não basta: a observação exige cgroup v2, mount da
+  hierarquia completa, fonte de controllers legível e namespaces de cgroup/mount
+  iguais aos registrados. Grupo existente sem eventos legíveis é indeterminado;
+  ausência do grupo só vale após revalidar a disponibilidade da hierarquia.
+  Essa correção foi analisada como fonte; não é prova de cessação de VM real.
+
+Após as correções: typecheck, compilação e arquitetura/lint passaram; 22 casos
+focados, 21 passaram, 1 prova de VM ignorada e nenhuma falha, em 6,03s.
+
+Os ramos que retornam ativo/parado têm implementação real de consulta ao
+systemd e `/proc`/cgroup; ainda não foram qualificados com uma VM real neste
+incremento. Os testes negativos não substituem essa prova. `start`, `stop`,
+reinício persistente e demais critérios continuam pendentes.

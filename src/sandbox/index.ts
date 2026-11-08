@@ -7,10 +7,15 @@ import { validateConfiguration } from './configuration.js';
 import { prepareEnvironment, type PrepareResult } from './prepare.js';
 export type { EnvironmentRef, PrepareResult } from './prepare.js';
 export type { GuestAssetPin } from './guest-assets.js';
-
+import { observeEnvironment, type BootRef } from './lifecycle.js';
+import type { EnvironmentRef } from './prepare.js';
+export type { BootRef, Observation } from './lifecycle.js';
 
 export function createSandbox({ root, guestAssets }: { root: string; guestAssets?: GuestAssetPin }) {
   return {
+    async observe({ environment, boot }: { environment: EnvironmentRef; boot?: BootRef }) {
+      return observeEnvironment(root, environment, boot);
+    },
     async prepare({ workId, configuration }: { workId: string; configuration: unknown }): Promise<PrepareResult> {
       const parsed = validateConfiguration(configuration);
       if (!parsed.valid) return { status: 'failure', code: 'SANDBOX_CONFIGURATION_INVALID' };

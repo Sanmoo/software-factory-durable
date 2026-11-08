@@ -83,3 +83,10 @@ Typecheck, compilação, arquitetura/lint e16 testes focados passaram; a prova d
 VM está explicitamente desabilitada. Lifecycle público, persistência entre boots,
 isolamento e cessação ainda precisam de implementação/validação. Ticket não
 resolvido e nenhum critério acima marcado como concluído.
+
+Incremento seguinte: `Sandbox.observe` acrescentado ao módulo do produto, com
+metadados privados/versionados, correlação de identidade e leitura do supervisor.
+Cinco casos locais de recusa passaram; a revisão independente levou a correções
+de FIFO e disponibilidade da hierarquia cgroup. A suíte focada atual passa21 casos
+com uma prova de VM ignorada. Retornos ativo/parado ainda não qualificados com
+VM real; início/parada/reinício persistente continuam pendentes.
