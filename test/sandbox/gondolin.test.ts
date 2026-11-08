@@ -11,9 +11,10 @@ const assets = process.env.FACTORY_SANDBOX_REAL_ASSETS;
 const manifestSha256 = process.env.FACTORY_SANDBOX_MANIFEST_SHA256;
 
 // External SDK seam probe, deliberately not acceptance of unimplemented Sandbox.start/stop.
-// Run only under an explicitly owned, bounded systemd user unit with isolated SDK caches.
+// VM qualification stays quarantined during the local-tooling restart. Environment
+// variables alone must not enable it; the local timeout policy does not cover VMs.
 test('pinned Gondolin KVM preserves disk and RealFS workspace across two distinct boots', {
-  skip: !root || !assets || !manifestSha256, timeout: 150_000,
+  skip: true, timeout: 150_000,
 }, async () => {
   for (const name of ['TMPDIR', 'XDG_CACHE_HOME', 'GONDOLIN_SESSIONS_DIR']) {
     assert.ok(process.env[name]?.startsWith(`${root}/`), `${name} must be confined to the explicit test root`);

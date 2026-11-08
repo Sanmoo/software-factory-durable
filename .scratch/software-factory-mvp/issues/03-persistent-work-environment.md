@@ -70,3 +70,16 @@ checkpoint; assets/discos/logs identificados preservados somente no root autoriz
 incompletos](../../../docs/evidence/03-sandbox-validation-checkpoint.md#2026-11-05-continuation--partial-not-ticket-acceptance).
 Próximo incremento: incorporar correção revisada do gate, diagnosticar boot da imagem
 customizada e implementar adapter systemd persistido com start/observe/stop reais.
+
+## Retomada simplificada — parcial
+
+O operador aprovou voltar a comandos normais de validação local, com timeout
+limitado aos processos recém-criados pelos próprios comandos. Os recursos e
+registros anteriores são preservados, sem retomar o harness experimental.
+
+A [retomada pragmática](../../../docs/evidence/03-pragmatic-restart.md) parte da
+integração01/02 e reaproveita apenas validação de assets e preparo idempotente.
+Typecheck, compilação, arquitetura/lint e16 testes focados passaram; a prova de
+VM está explicitamente desabilitada. Lifecycle público, persistência entre boots,
+isolamento e cessação ainda precisam de implementação/validação. Ticket não
+resolvido e nenhum critério acima marcado como concluído.
