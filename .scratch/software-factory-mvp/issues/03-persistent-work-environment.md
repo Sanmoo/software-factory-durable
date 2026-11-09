@@ -99,5 +99,16 @@ limitados em bytes e recusa anterior à intenção. Testes locais passam29 casos
 com uma prova de VM ignorada; oito são recusas de start. Nenhuma VM/unit foi
 iniciada/parada neste incremento; não é prova positiva de start. Reinício fica
 explicitamente bloqueado até verificação do filesystem preservado. `stop`
-público, reinício e provas reais seguem pendentes, sem aceite ou integração03.
-Detalhes na evidência da retomada pragmática.
+público, reinício e provas reais continuavam pendentes nesse checkpoint, sem aceite
+ou integração03. Detalhes na evidência da retomada pragmática.
+
+Incremento de fonte seguinte: `Sandbox.stop` implementado com identidade privada,
+invocação/cgroup/namespaces e pedido durável antes do efeito; só confirma cessação
+pela observação existente. Uma revisão encontrou retry sem nova barreira de sync;
+corrigido com fsync de arquivo seguro e diretório também no pedido já existente.
+Três regressões foram RED e GREEN após a correção; dois casos adicionais impedem
+atuação quando o novo sync falha. Esses cinco usam dublê externo do manager, sem
+fallback para comando real, não uma prova de cessação de VM. Seis recusas anteriores
+seguem passando. Rodada focada completa: 40 passaram, uma prova de VM ignorada,
+nenhuma falha. Primeiro boot/parada reais, reinício/checagem de filesystem,
+isolamento e demais critérios continuam pendentes; nenhum checkbox concluído.

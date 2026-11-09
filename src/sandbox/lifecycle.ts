@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, open, readFile, readlink, realpath, statfs } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { z } from 'zod';
 import { configurationSchema } from './configuration.js';
@@ -26,7 +26,7 @@ const readySchema = z.strictObject({ environment: environmentRef });
 export const currentSchema = z.strictObject({ version: z.literal(1), environment: environmentRef, boot: bootRef });
 export const identitySchema = z.strictObject({ version: z.literal(1), environment: environmentRef, boot: bootRef,
   unit: z.string(), hostBoot: z.uuid(), configuration: configurationSchema });
-const startedSchema = z.strictObject({ version: z.literal(1), boot: bootRef,
+export const startedSchema = z.strictObject({ version: z.literal(1), boot: bootRef,
   unit: z.string(), invocation: z.string().regex(/^[a-f0-9]{32}$/), cgroup: z.string(),
   cgroupNamespace: z.string().regex(/^cgroup:\[[0-9]+\]$/),
   mountNamespace: z.string().regex(/^mnt:\[[0-9]+\]$/) });
@@ -43,7 +43,7 @@ export async function privateDirectory(path: string) {
   }
 }
 
-export async function metadata<T>(path: string, schema: z.ZodType<T>): Promise<T> {
+export async function metadata<T>(path: string, schema: z.ZodType<T>, options?: { durable: true }): Promise<T> {
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const before = await file.stat();
@@ -57,7 +57,27 @@ export async function metadata<T>(path: string, schema: z.ZodType<T>): Promise<T
       throw new Error('RESOURCE_METADATA_CHANGED');
     }
     const text = new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, bytesRead));
-    return schema.parse(JSON.parse(text));
+    const parsed = schema.parse(JSON.parse(text));
+    if (options?.durable) {
+      const directory = await open(dirname(path), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+      try {
+        const parent = await directory.stat();
+        if (!parent.isDirectory() || parent.uid !== process.getuid?.() || (parent.mode & 0o077)) {
+          throw new Error('PRIVATE_ENVIRONMENT_DIRECTORY_REQUIRED');
+        }
+        // A readable existing record may belong to a publisher whose sync failed
+        // or is still pending. Establish our own barrier on this validated FD.
+        await file.sync();
+        await directory.sync();
+        const published = await lstat(path);
+        const current = await file.stat();
+        if (!published.isFile() || published.nlink !== 1 || published.dev !== before.dev || published.ino !== before.ino ||
+            current.size !== before.size || current.mtimeMs !== before.mtimeMs || current.ctimeMs !== before.ctimeMs) {
+          throw new Error('RESOURCE_METADATA_CHANGED');
+        }
+      } finally { await directory.close(); }
+    }
+    return parsed;
   } finally { await file.close(); }
 }
 
@@ -99,7 +119,7 @@ export async function supervisionHierarchy(started: Pick<z.infer<typeof startedS
 export async function unitState(unit: string) {
   // Read-only query of the exact name derived from a validated boot, never a caller-supplied command.
   const { stdout } = await run('systemctl', ['--user', 'show', unit,
-    '--property=LoadState,ActiveState,SubState,InvocationID,ControlGroup,MainPID'], { timeout: 10000, maxBuffer: 16384 });
+    '--property=LoadState,ActiveState,SubState,InvocationID,ControlGroup,MainPID,Result'], { timeout: 10000, maxBuffer: 16384 });
   const result: Record<string, string> = {};
   for (const line of stdout.trim().split('\n')) {
     const index = line.indexOf('=');

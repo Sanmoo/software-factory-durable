@@ -12,11 +12,16 @@ import type { EnvironmentRef } from './prepare.js';
 export type { BootRef, Observation } from './lifecycle.js';
 import { startEnvironment, type StartResult } from './start.js';
 export type { StartResult } from './start.js';
+import { stopEnvironment } from './stop.js';
+export type { StopResult } from './stop.js';
 // Trusted process composition only; never projected as a worker tool.
 export { runSandboxAdapter } from './adapter.js';
 
 export function createSandbox({ root, guestAssets }: { root: string; guestAssets?: GuestAssetPin }) {
   return {
+    async stop({ environment, boot, reason }: { environment: EnvironmentRef; boot: BootRef; reason: string }) {
+      return stopEnvironment(root, environment, boot, reason);
+    },
     async start({ environment, configuration }: { environment: EnvironmentRef; configuration: unknown }): Promise<StartResult> {
       const parsed = validateConfiguration(configuration);
       if (!parsed.valid) return { status: 'failure', code: 'SANDBOX_CONFIGURATION_INVALID' };

@@ -180,6 +180,60 @@ passa8/8. Nova sondagem LSP de start/adapter: nenhum erro retornado, ambos
 inconclusivos por silêncio do servidor; typecheck é a confirmação de compilação.
 
 A revisão recomendou corrigir os dois pontos antes do commit; não foi convertida
-em aprovação operacional nem relançada como cadeia de revisões. `stop`, reinício
-persistente e qualificação real seguem pendentes. Não houve integração nem
-resolução do ticket03.
+em aprovação operacional nem relançada como cadeia de revisões. Nesse checkpoint,
+`stop`, reinício persistente e qualificação real continuavam pendentes. Não houve
+integração nem resolução do ticket03.
+
+## Terceiro incremento: parada pública e pedido durável
+
+`Sandbox.stop({ environment, boot, reason })` valida propriedade privada, boot do
+host, unit derivada, invocação, cgroup e namespaces antes de solicitar parada.
+Não depende do objeto SDK anterior e não sinaliza por PID ou prefixo global.
+O pedido de parada é registrado antes do efeito; a configuração de unit no
+`start` define `KillMode=mixed`, `SendSIGKILL=yes` e o prazo de parada. A resposta positiva exige a
+cessação observada separadamente pelo caminho de supervisor/cgroup existente,
+não apenas sucesso de `systemctl --no-block stop`.
+
+`guestFinalization: observed` significa somente marcador válido de finalização do
+guest. `termination: forced` é usado para resultado de timeout/OOM do manager;
+outros resultados permanecem `unconfirmed`. Não se declara parada graciosa a
+partir de sync, exit code ou `VM.close()`.
+
+A primeira regressão pública foi RED com TS2339 (`stop` inexistente). Após
+implementação, seis casos de recusa passaram: ambiente desconhecido, motivo
+inválido, referência de boot inválida e divergências de host/cgroup/namespace.
+
+A única revisão independente do stop, `f9f96ecf`, apontou um P2 no retry: ler um
+JSON existente não confirma que o primeiro publisher terminou seus fsyncs. A
+correção exige uma barreira própria de arquivo e diretório também no `EEXIST`.
+O arquivo permanece aberto no FD validado com NOFOLLOW/NONBLOCK; após as
+sincronizações, são rechecados inode publicado e estabilidade. Qualquer erro
+impede a solicitação e retorna indeterminado. A leitura normal de `observe`
+continua sem essa opção de sincronização.
+
+Três regressões no seam público demonstraram RED antes da correção: retry após
+falha de sync do arquivo, retry após falha de sync do diretório e segunda chamada
+com o primeiro publisher ainda bloqueado antes do sync. O log do dublê mostrava
+`stop` sem ambas as barreiras. Após a correção, os três passaram, exigindo a ordem
+`file-synced → directory-synced → stop`. Dois casos adicionais verificam que uma
+nova falha de sync de pedido existente não permite atuação.
+
+Esses cinco testes substituem **somente a fronteira externa do manager** por um
+executável Node local e injetam falhas/bloqueio na fronteira filesystem. `PATH`
+contém exclusivamente o diretório do dublê, sem fallback para `systemctl` real;
+nenhum SDK, unit, VM ou serviço é iniciado/parado. Fsyncs que não foram injetados
+executam nos arquivos locais reais. Sucesso/cessação sintéticos do dublê não são
+provas de cessação de VM, correlação systemd real ou sobrevivência a perda de
+energia. Nenhuma flag ou seam de teste foi adicionado à API do produto.
+
+Validação final: typecheck, compilação, arquitetura/ESLint (56 módulos, 235
+dependências) e `git diff --check` passaram. **41 casos: 40 passaram, uma prova de
+VM ignorada, nenhuma falha, 7,46s**. Stop passa11/11, incluindo os cinco casos com
+dublê descritos acima. Sondagem LSP dos quatro arquivos não retornou erros, mas
+os quatro resultados foram inconclusivos por silêncio do servidor; o typecheck
+estrito é a confirmação de compilação.
+
+Reinício ainda está bloqueado até implementar/verificar o filesystem preservado.
+Qualificação positiva de primeiro boot/parada, parada graciosa, ciclo persistente,
+isolamento, recuperação, remoção e transporte de ferramentas continuam pendentes.
+Este incremento não integra nem resolve o ticket03.
