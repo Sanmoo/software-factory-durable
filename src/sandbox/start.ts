@@ -1,0 +1,146 @@
+import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { constants } from 'node:fs';
+import { lstat, mkdir, open, readFile, readlink, realpath, rename, rmdir } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+import { inspectStorage } from '../platform/host/index.js';
+import { inspectGuestAssets, type GuestAssetPin } from './guest-assets.js';
+import type { SandboxConfiguration } from './configuration.js';
+import type { EnvironmentRef } from './prepare.js';
+import { currentSchema, identitySchema, metadata, observeEnvironment, ownedEnvironment, privateDirectory,
+  supervisionHierarchy, type BootRef } from './lifecycle.js';
+
+export type StartResult = { status: 'success'; boot: BootRef } |
+  { status: 'failure' | 'indeterminate'; code: string; boot?: BootRef };
+const run = promisify(execFile);
+
+/** Fixed SDK 0.14 socket composition; no caller-provided mounts or free flags. */
+export function bootRuntimePaths(root: string, boot: BootRef) {
+  identitySchema.shape.boot.parse(boot);
+  // Lossless UUID encoding: a short private directory for this boot, never shared.
+  const tag = Buffer.from(boot.slice(5).replaceAll('-', ''), 'hex').toString('base64url');
+  const directory = join(root, 'r', tag);
+  const sockets = { virtioSocketPath: join(directory, 'v'), virtioFsSocketPath: join(directory, 'f'),
+    virtioSshSocketPath: join(directory, 'h'), virtioIngressSocketPath: join(directory, 'i'), netSocketPath: join(directory, 'n') };
+  const sessions = join(directory, 's');
+  const sessionSocket = join(sessions, '00000000-0000-4000-8000-000000000000.sock');
+  if ([...Object.values(sockets), sessionSocket].some(path => Buffer.byteLength(path) > 107)) {
+    throw new Error('SANDBOX_RUNTIME_PATH_TOO_LONG');
+  }
+  return { directory, sockets, sessions, temporary: join(directory, 't'), cache: join(directory, 'c') };
+}
+
+export async function durableJson(path: string, value: unknown) {
+  const text = JSON.stringify(value);
+  if (Buffer.byteLength(text) > 65536) throw new Error('RESOURCE_RECORD_TOO_LARGE');
+  const file = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+  try { await file.writeFile(text); await file.sync(); } finally { await file.close(); }
+  await syncDirectory(dirname(path));
+}
+
+async function syncDirectory(path: string) {
+  const directory = await open(path, 'r');
+  try { await directory.sync(); } finally { await directory.close(); }
+}
+
+/** Only the first boot is enabled here; restart needs a separate preserved-disk check. */
+export async function startEnvironment(root: string, pin: GuestAssetPin | undefined,
+  environment: EnvironmentRef, configuration: SandboxConfiguration): Promise<StartResult> {
+  let boot: BootRef | undefined;
+  try {
+    const { directory, owner } = await ownedEnvironment(root, environment);
+    if (owner.configuration.profile !== configuration.profile || owner.configuration.diskGiB !== configuration.diskGiB ||
+        owner.configuration.minFreeSpaceGiB !== configuration.minFreeSpaceGiB) {
+      return { status: 'failure', code: 'ENVIRONMENT_CONFIGURATION_MISMATCH' };
+    }
+    if (!pin || pin.directory !== owner.guestAssets.directory || pin.manifestSha256 !== owner.guestAssets.manifestSha256) {
+      return { status: 'failure', code: 'GUEST_ASSET_PIN_MISMATCH' };
+    }
+    const lock = join(directory, 'lifecycle-lock');
+    try { await mkdir(lock, { mode: 0o700 }); }
+    catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'EEXIST') {
+        return { status: 'indeterminate', code: 'ENVIRONMENT_LIFECYCLE_BUSY' };
+      }
+      throw error;
+    }
+    try {
+      let previous;
+      try { previous = await metadata(join(directory, 'current.json'), currentSchema); }
+      catch (error) {
+        if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+      }
+      if (previous) {
+        if (previous.environment !== environment) throw new Error('ENVIRONMENT_OWNERSHIP_MISMATCH');
+        const observed = await observeEnvironment(root, environment, previous.boot as BootRef);
+        if (!observed.cessationConfirmed) return { status: 'indeterminate', code: 'PREVIOUS_BOOT_NOT_STOPPED', boot: previous.boot as BootRef };
+        return { status: 'failure', code: 'PRESERVED_DISK_CHECK_REQUIRED', boot: previous.boot as BootRef };
+      }
+      for (const name of ['workspace', 'artifacts']) await privateDirectory(join(directory, name));
+      const disk = join(directory, 'root.qcow2');
+      const diskInfo = await lstat(disk);
+      if (!diskInfo.isFile() || diskInfo.isSymbolicLink() || diskInfo.nlink !== 1 ||
+          diskInfo.uid !== process.getuid?.() || (diskInfo.mode & 0o077)) throw new Error('UNSAFE_ROOT_DISK');
+      const canonicalRoot = await realpath(root);
+      const candidateBoot = `boot-${randomUUID()}` as BootRef;
+      let runtime;
+      try { runtime = bootRuntimePaths(canonicalRoot, candidateBoot); }
+      catch { return { status: 'failure', code: 'SANDBOX_RUNTIME_PATH_TOO_LONG' }; }
+      const storage = await inspectStorage(directory);
+      if (!storage || storage.unsuitable || BigInt(storage.availableBytes) < BigInt(configuration.minFreeSpaceGiB) * 1073741824n) {
+        return { status: 'failure', code: 'INSUFFICIENT_STORAGE_FOR_BOOT' };
+      }
+      if ((await inspectGuestAssets(pin)).some(check => check.status !== 'ok')) return { status: 'failure', code: 'GUEST_ASSETS_INVALID' };
+      const info = JSON.parse((await run('qemu-img', ['info', '-f', 'qcow2', '--output=json', disk],
+        { timeout: 10000, maxBuffer: 16384 })).stdout);
+      if (info.format !== 'qcow2' || info['backing-filename'] || info['format-specific']?.data?.['data-file'] ||
+          BigInt(info['virtual-size']) !== BigInt(configuration.diskGiB) * 1073741824n) throw new Error('INCOMPATIBLE_ROOT_DISK');
+      await run('qemu-img', ['check', '-f', 'qcow2', disk], { timeout: 30000, maxBuffer: 16384 });
+      const namespaces = { cgroupNamespace: await readlink('/proc/self/ns/cgroup'), mountNamespace: await readlink('/proc/self/ns/mnt') };
+      await supervisionHierarchy(namespaces);
+      boot = candidateBoot;
+      const path = join(directory, boot);
+      const unit = `factory-sandbox-${boot}.service`;
+      await mkdir(path, { mode: 0o700 });
+      await durableJson(join(path, 'identity.json'), { version: 1, environment, boot, unit,
+        hostBoot: (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim(), configuration });
+      const runtimeParent = dirname(runtime.directory);
+      await mkdir(runtimeParent, { recursive: true, mode: 0o700 });
+      await privateDirectory(runtimeParent);
+      // Exclusive creation, never adopt an old runtime or expose another boot to SDK GC.
+      await mkdir(runtime.directory, { mode: 0o700 });
+      for (const path of [runtime.temporary, runtime.cache, runtime.sessions]) await mkdir(path, { mode: 0o700 });
+      await durableJson(join(runtime.directory, 'owner.json'), { version: 1, environment, boot });
+      await syncDirectory(runtimeParent);
+      // Publish intent before manager actuation. A failed/ambiguous launch never permits a blind retry.
+      const next = join(directory, `current-${boot}.json`);
+      await durableJson(next, { version: 1, environment, boot });
+      await rename(next, join(directory, 'current.json'));
+      await syncDirectory(directory);
+      const uid = process.getuid?.();
+      await run('systemd-run', ['--user', `--unit=${unit}`, '--slice=app.slice',
+        '--service-type=exec', '--property=Restart=no', '--property=KillMode=mixed',
+        '--property=SendSIGKILL=yes', `--property=TimeoutStopSec=${configuration.shutdownGraceSeconds}s`,
+        '--property=UMask=0077', '--property=StandardOutput=null', '--property=StandardError=null',
+        '/usr/bin/env', '-i', `PATH=${dirname(process.execPath)}:/usr/bin:/bin`, 'LANG=C', 'LC_ALL=C',
+        `XDG_RUNTIME_DIR=/run/user/${uid}`, `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus`,
+        `TMPDIR=${runtime.temporary}`, `XDG_CACHE_HOME=${runtime.cache}`,
+        `GONDOLIN_SESSIONS_DIR=${runtime.sessions}`, 'NODE_DISABLE_COMPILE_CACHE=1',
+        process.execPath, fileURLToPath(new URL('../entrypoints/adapter.js', import.meta.url)), canonicalRoot, environment, boot],
+      { timeout: 10000, maxBuffer: 16384 });
+      const deadline = Date.now() + 60000;
+      while (Date.now() < deadline) {
+        const observed = await observeEnvironment(root, environment, boot);
+        if (observed.condition === 'active') return { status: 'success', boot };
+        if (observed.cessationConfirmed) return { status: 'failure', code: 'BOOT_ENDED_BEFORE_OPERATIONAL_CONFIRMATION', boot };
+        await delay(250);
+      }
+      return { status: 'indeterminate', code: 'BOOT_OPERATIONAL_STATE_UNCONFIRMED', boot };
+    } finally { await rmdir(lock); }
+  } catch {
+    return { status: 'indeterminate', code: 'ENVIRONMENT_START_UNCONFIRMED', ...(boot ? { boot } : {}) };
+  }
+}

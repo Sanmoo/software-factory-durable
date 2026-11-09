@@ -10,9 +10,18 @@ export type { GuestAssetPin } from './guest-assets.js';
 import { observeEnvironment, type BootRef } from './lifecycle.js';
 import type { EnvironmentRef } from './prepare.js';
 export type { BootRef, Observation } from './lifecycle.js';
+import { startEnvironment, type StartResult } from './start.js';
+export type { StartResult } from './start.js';
+// Trusted process composition only; never projected as a worker tool.
+export { runSandboxAdapter } from './adapter.js';
 
 export function createSandbox({ root, guestAssets }: { root: string; guestAssets?: GuestAssetPin }) {
   return {
+    async start({ environment, configuration }: { environment: EnvironmentRef; configuration: unknown }): Promise<StartResult> {
+      const parsed = validateConfiguration(configuration);
+      if (!parsed.valid) return { status: 'failure', code: 'SANDBOX_CONFIGURATION_INVALID' };
+      return startEnvironment(root, guestAssets, environment, parsed.effective);
+    },
     async observe({ environment, boot }: { environment: EnvironmentRef; boot?: BootRef }) {
       return observeEnvironment(root, environment, boot);
     },

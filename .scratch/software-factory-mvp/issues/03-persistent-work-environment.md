@@ -89,4 +89,15 @@ metadados privados/versionados, correlação de identidade e leitura do supervis
 Cinco casos locais de recusa passaram; a revisão independente levou a correções
 de FIFO e disponibilidade da hierarquia cgroup. A suíte focada atual passa21 casos
 com uma prova de VM ignorada. Retornos ativo/parado ainda não qualificados com
-VM real; início/parada/reinício persistente continuam pendentes.
+VM real; início/parada/reinício persistente continuam pendentes nesse checkpoint.
+
+Próximo incremento de fonte: `Sandbox.start` e proprietário Gondolin por boot sob
+systemd implementados, com sucesso condicionado a readiness Alpine/Docker-vfs e
+correlação VMM/supervisão. Uma revisão apontou paths Unix longos e GC de registry
+compartilhado; corrigidos com runtime exclusivo por boot, sockets explícitos
+limitados em bytes e recusa anterior à intenção. Testes locais passam29 casos,
+com uma prova de VM ignorada; oito são recusas de start. Nenhuma VM/unit foi
+iniciada/parada neste incremento; não é prova positiva de start. Reinício fica
+explicitamente bloqueado até verificação do filesystem preservado. `stop`
+público, reinício e provas reais seguem pendentes, sem aceite ou integração03.
+Detalhes na evidência da retomada pragmática.

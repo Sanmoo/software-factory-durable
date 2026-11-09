@@ -23,8 +23,8 @@ const ownerSchema = z.strictObject({
   guestAssets: z.strictObject({ directory: z.string(), manifestSha256: z.string().regex(/^[a-f0-9]{64}$/) }),
 });
 const readySchema = z.strictObject({ environment: environmentRef });
-const currentSchema = z.strictObject({ version: z.literal(1), environment: environmentRef, boot: bootRef });
-const identitySchema = z.strictObject({ version: z.literal(1), environment: environmentRef, boot: bootRef,
+export const currentSchema = z.strictObject({ version: z.literal(1), environment: environmentRef, boot: bootRef });
+export const identitySchema = z.strictObject({ version: z.literal(1), environment: environmentRef, boot: bootRef,
   unit: z.string(), hostBoot: z.uuid(), configuration: configurationSchema });
 const startedSchema = z.strictObject({ version: z.literal(1), boot: bootRef,
   unit: z.string(), invocation: z.string().regex(/^[a-f0-9]{32}$/), cgroup: z.string(),
@@ -36,14 +36,14 @@ const operationalSchema = z.strictObject({ version: z.literal(1), boot: bootRef,
 const run = promisify(execFile);
 const metadataLimit = 65536;
 
-async function privateDirectory(path: string) {
+export async function privateDirectory(path: string) {
   const info = await lstat(path);
   if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid?.() || (info.mode & 0o077)) {
     throw new Error('PRIVATE_ENVIRONMENT_DIRECTORY_REQUIRED');
   }
 }
 
-async function metadata<T>(path: string, schema: z.ZodType<T>): Promise<T> {
+export async function metadata<T>(path: string, schema: z.ZodType<T>): Promise<T> {
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const before = await file.stat();
@@ -61,7 +61,7 @@ async function metadata<T>(path: string, schema: z.ZodType<T>): Promise<T> {
   } finally { await file.close(); }
 }
 
-async function environmentDirectory(root: string, environment: EnvironmentRef) {
+export async function ownedEnvironment(root: string, environment: EnvironmentRef) {
   environmentRef.parse(environment);
   const parent = join(await realpath(root), 'environments');
   const directory = join(parent, environment);
@@ -73,10 +73,10 @@ async function environmentDirectory(root: string, environment: EnvironmentRef) {
   if (owner.environment !== environment || ready.environment !== environment || expected !== environment) {
     throw new Error('ENVIRONMENT_OWNERSHIP_MISMATCH');
   }
-  return directory;
+  return { directory, owner };
 }
 
-async function supervisionHierarchy(started: z.infer<typeof startedSchema>) {
+export async function supervisionHierarchy(started: Pick<z.infer<typeof startedSchema>, 'cgroupNamespace' | 'mountNamespace'>) {
   const root = '/sys/fs/cgroup';
   if (await readlink('/proc/self/ns/cgroup') !== started.cgroupNamespace ||
       await readlink('/proc/self/ns/mnt') !== started.mountNamespace) throw new Error('SUPERVISION_NAMESPACE_CHANGED');
@@ -96,10 +96,10 @@ async function supervisionHierarchy(started: z.infer<typeof startedSchema>) {
   if (!fullRoot) throw new Error('CGROUP_V2_ROOT_UNAVAILABLE');
 }
 
-async function unitState(unit: string) {
+export async function unitState(unit: string) {
   // Read-only query of the exact name derived from a validated boot, never a caller-supplied command.
   const { stdout } = await run('systemctl', ['--user', 'show', unit,
-    '--property=LoadState,ActiveState,SubState,InvocationID,ControlGroup'], { timeout: 10000, maxBuffer: 16384 });
+    '--property=LoadState,ActiveState,SubState,InvocationID,ControlGroup,MainPID'], { timeout: 10000, maxBuffer: 16384 });
   const result: Record<string, string> = {};
   for (const line of stdout.trim().split('\n')) {
     const index = line.indexOf('=');
@@ -109,7 +109,7 @@ async function unitState(unit: string) {
   return result;
 }
 
-function processStartTicks(value: string) {
+export function processStartTicks(value: string) {
   const end = value.lastIndexOf(') ');
   if (end < 0) throw new Error('INVALID_PROCESS_OBSERVATION');
   const ticks = value.slice(end + 2).split(' ')[19];
@@ -121,7 +121,7 @@ function processStartTicks(value: string) {
 export async function observeEnvironment(root: string, environment: EnvironmentRef, boot?: BootRef): Promise<Observation> {
   const unknown: Observation = { condition: 'indeterminate', cessationConfirmed: false, consumption: 'unavailable' };
   try {
-    const directory = await environmentDirectory(root, environment);
+    const { directory } = await ownedEnvironment(root, environment);
     if (boot === undefined) {
       const current = await metadata(join(directory, 'current.json'), currentSchema);
       if (current.environment !== environment) return unknown;

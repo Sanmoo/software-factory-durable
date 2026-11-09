@@ -112,5 +112,74 @@ focados, 21 passaram, 1 prova de VM ignorada e nenhuma falha, em 6,03s.
 
 Os ramos que retornam ativo/parado têm implementação real de consulta ao
 systemd e `/proc`/cgroup; ainda não foram qualificados com uma VM real neste
-incremento. Os testes negativos não substituem essa prova. `start`, `stop`,
-reinício persistente e demais critérios continuam pendentes.
+incremento. Os testes negativos não substituem essa prova. Nesse checkpoint,
+`start`, `stop`, reinício persistente e demais critérios continuavam pendentes.
+
+## Segundo incremento: fonte do primeiro boot supervisionado
+
+Acrescentados `Sandbox.start` e o entrypoint do proprietário Gondolin por boot.
+O caminho de primeiro boot valida propriedade/configuração/pin, diretórios e
+arquivo de disco próprios, espaço livre, integridade dos assets, formato e
+container qcow2. Não instala componentes, baixa imagem, migra disco ou usa TCG.
+
+Um lock de recurso por ambiente impede dois starts concorrentes. Lock preexistente
+não é removido nem adotado. Identidade/intenção do novo boot são fsynced antes do
+pedido ao systemd; erro ambíguo mantém a referência para observação, sem retry
+cego. A unit usa nome derivado do boot, sem restart automático, e executa um único
+proprietário Node com ambiente explícito, não o ambiente inteiro do host.
+
+O proprietário confirma MainPID/invocação/cgroup/host boot antes de importar o SDK.
+Usa KVM, disco standalone preservado, `tmpfs: {}` e somente workspace/artefatos
+próprios por RealFSProvider. Só publica operacional após readiness do SDK e
+verificação guest de Alpine/Docker-vfs, correlacionando o VMM com seu grupo e início
+no `/proc`. Rede permanece desabilitada neste recorte: nenhuma chamada remota é
+necessária ou foi feita.
+
+Existe tratamento de TERM/INT para tentar finalizar Docker/sincronizar antes de
+`VM.close`; isso **não é** API pública de stop, prova de parada graciosa ou de
+cessação. A responsabilidade da supervisão permanece no systemd. O código não
+foi exercitado com VM ou serviço real neste incremento.
+
+Limite intencional: boot anterior ativo/indeterminado bloqueia substituição; até
+boot anterior com cessação confirmada retorna `PRESERVED_DISK_CHECK_REQUIRED`.
+Verificação do filesystem preservado e reinício serão implementados no próximo
+recorte, sem usar apenas `qemu-img check` como prova de integridade do ext4.
+
+A primeira regressão pública falhou com TS2339 (`start` inexistente) antes da
+implementação e passou depois. Os sete casos locais de recusa passaram em 0,14s:
+configuração inválida, ambiente não preparado, disco/configuração incompatíveis,
+pin diferente, boot anterior ambíguo, lock preexistente e alias de disco. São
+testes negativos com metadados deliberadamente incompletos; não são provas de
+start positivo, KVM, Docker, isolamento de VM ou parada.
+
+Compilação/typecheck e arquitetura/lint passaram. Sondagem LSP ativa nos seis
+arquivos não retornou erros: dois confirmados limpos e quatro inconclusivos no
+protocolo do servidor; não substitui o typecheck.
+
+A única revisão independente encontrou dois P2, corrigidos diretamente:
+
+- Os sockets agora têm paths explícitos e curtos, calculados antes de publicar
+  intenção; todos os endereços efetivos, incluindo o UUID de sessão SDK, devem
+  caber em 107 bytes. Root incompatível retorna `SANDBOX_RUNTIME_PATH_TOO_LONG`
+  sem criar runtime/boot ou chamar o manager. A regressão pública foi RED
+  (retornava `GUEST_ASSETS_INVALID` sem esse preflight) e GREEN após a correção;
+  ela não reproduz um boot, mas verifica a recusa antecipada e preservação.
+- O runtime é `<root>/r/<UUID-do-boot-em-base64url>`, criado exclusivamente, com
+  registro privado de ambiente/boot. `TMPDIR`, cache e registry SDK são privados
+  desse runtime. Antes de importar o SDK, o adapter verifica diretórios, registro
+  e ambiente efetivo; os sockets explícitos são os mesmos paths verificados.
+  O GC implícito do SDK passa a alcançar somente o registry desse boot, nunca
+  um diretório comum a outros Trabalhos. Isso é correção de composição analisada
+  em fonte, não prova de isolamento entre VMs reais. Nenhum registry antigo foi
+  varrido, adotado ou removido.
+
+Validação final após correções: typecheck, compilação, arquitetura/ESLint
+(54 módulos, 217 dependências) e `git diff --check` passaram. **30 casos: 29
+passaram, uma prova de VM ignorada, nenhuma falha, 6,34s**. O teste focado de start
+passa8/8. Nova sondagem LSP de start/adapter: nenhum erro retornado, ambos
+inconclusivos por silêncio do servidor; typecheck é a confirmação de compilação.
+
+A revisão recomendou corrigir os dois pontos antes do commit; não foi convertida
+em aprovação operacional nem relançada como cadeia de revisões. `stop`, reinício
+persistente e qualificação real seguem pendentes. Não houve integração nem
+resolução do ticket03.
