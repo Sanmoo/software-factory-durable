@@ -201,3 +201,19 @@ ok. Coorte58/906 arquivos/cinco módulos de boot verificados. P1 de registro APK
 corrigido; isso não determina causa r3 nem prova Docker/boot/TLS/persistência/parada
 ativa. `runtimeAccepted:false`. Nova VM exige autorização própria; ticket03
 continua sem aceite, integração, push ou cleanup.
+
+Com autorização própria, [tentativa única s3 com a imagem corrigida](../../../docs/evidence/03-s3-lifecycle-failed.md),
+fonte `45e830c`, prepare passou e witness real KVM/2048M/2CPU/disco próprio foi
+capturado. Novamente `vm-start/GUEST_READINESS_TIMEOUT`, sem operacional/check
+Docker. Unit rodou32s e saiu1. Cessação correlacionada por invocation/hostBoot/NS,
+cgroup exato ausente e observação pública; antes de stop já estava parado, não
+parada ativa/graciosa. `activeBeforeStop:false`, `accepted:false`. Sem retry.
+
+Comparação read-only do qcow2 com o template retornou0, avisando diferença de
+capacidade e considerando tail de zeros: nenhuma diferença lógica persistida
+detectada, não prova de que o guest nunca rodou. Diagnóstico não identifica
+último estágio de kernel/init/control/VFS; console/debug atuais são desativados.
+Próximo sinal necessário: marcadores de boot privados/limitados, sem conteúdo
+bruto de guest. Não atribuir causa ao kernel/Docker nem trocar imagem/aumentar
+timeout às cegas. Autorização consumida; nenhum outro VM/start autorizado. s3,
+disco, failed unit e evidências preservados; ticket03 continua incompleto.

@@ -118,3 +118,7 @@ liberação das reservas UNKNOWN anteriores.
 Destino `integration/software-factory-mvp` permanece em `b591ec7`; ticket03 não
 aceito/integrado, sem push/cleanup. `lc03`, `p3`, `q3`, `r3`, assets29, caches/discos/
 failed units e UNKNOWN/noRetry históricos permanecem preservados.
+
+Etapa posterior com autorização própria:
+[tentativa pública s3 reprovada por readiness do SDK](03-s3-lifecycle-failed.md).
+A verificação de empacotamento acima não foi convertida em aceite de runtime.
