@@ -236,3 +236,26 @@ novo, declarando variante/pin/proveniência e demais parâmetros fixos. Ainda n�
 montada/autorizada; não é fallback para rootfs sem Docker. Outra VM exige nova
 decisão, autorização t3 consumida. Instrumentação temporária não é liberada para
 workers/integração; ticket03 segue incompleto, sem push/merge/cleanup.
+
+O operador autorizou a variante e UMA VM e pediu critério de saída. Foi fixado
+**último ensaio discriminante**: negativo/inconclusivo encerra boots/variantes e
+leva à reavaliação; positivo congela composição e encerra exploração de imagem.
+[u3 passou a fatia nominal](../../../docs/evidence/03-u3-initramfs-comparison.md),
+fonte8a78de5, pin4b6e90d356b2f93a2f7ec014f2778c1ce2fea8cfd8a19894fdb8112aa95038c1,
+só checksum de asset initramfs mudou, kernel58/rootfs novo Docker-vfs idênticos.
+Prepare/start success, comando real Alpine/Docker-vfs/sync, VMM KVM2048M2CPU,
+antes de stop active, depois stopped/cessationtrue. `result.accepted:true` é
+somente o predicado nominal desse driver, **não o aceite do ticket03**.
+Stop ainda terminationunconfirmed/guestFinalizationunavailable: sem prova de
+parada graciosa. Manager coletou unit de sucesso; show not-found/CIDvazio não
+prova exit status/consumo. Nova observe correlacionou metadados prévios próprios,
+host/NS/full-root/controller-v2 e cgroup exato ausente; recursos preservados.
+
+Congelar referência assets32/assets com initramfs publicado58; parar variações
+kernel/imagem/flags/timeout. Causa interna da diferença de archive desconhecida,
+sem repetibilidade/release comprovada. Não há motivo observado para abandonar
+agora SDK/KVM; próximo trabalho é fechar finalização graciosa,
+filesystem/crescimento/restart/persistência/isolamento/owner-loss/tools/remove e
+retirar debug temporário antes de workers. Nenhum novo boot nesta autorização;
+qualificação futura precisa escopo/critério/orçamento fechados, não outra série
+exploratória. Integração b591ec7 intocada, ticket03 incompleto, sem push/cleanup.

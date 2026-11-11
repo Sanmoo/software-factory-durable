@@ -29,3 +29,25 @@ Receitas, comandos, transformações e tentativas preservadas:
 `/home/sanmoo/software-factory-test/assets30/`.
 Evidência: `docs/evidence/03-apk-rootless-image.md` nesta worktree.
 Nenhum build/teste desses arquivos autoriza ou inicia VM.
+
+## Referência nominal congelada após u3
+
+A receita nativa acima produziu um initramfs que não completou readiness em
+s3/t3. Não continuar regenerando archives ou alterando timeout/flags a partir
+desses resultados. O último ensaio discriminante autorizado, u3, passou boot
+Alpine/Docker-vfs e parada de ambiente ativo com cessação confirmada, trocando
+**somente o archive initramfs** pelo publicado da mesma coorte58.
+
+Referência selecionada: `/home/sanmoo/software-factory-test/assets32/assets`, pin
+`4b6e90d356b2f93a2f7ec014f2778c1ce2fea8cfd8a19894fdb8112aa95038c1`.
+Kernel/rootfs novo com banco APK74/Docker-vfs são byte-idênticos aos de assets30;
+NÃO é fallback para o rootfs antigo sem Docker. A seleção está declarada em
+`assets32/provenance.json`/`assemble-variant.mjs`, não reproduzida pelo JSON nativo
+sozinho. Não alterar esse fato para aparentar build completo ou release.
+
+Congelar a composição, não abrir outra série de boots. A causa interna do delta
+entre archives continua desconhecida. Um ensaio nominal não comprova parada
+graciosa, restart/persistência/crescimento do filesystem, isolamento ou release;
+console/debug temporários ainda exigem remoção ou buffering seguro antes de
+workers/integração. Evidência e regra de saída:
+`docs/evidence/03-u3-initramfs-comparison.md`.
