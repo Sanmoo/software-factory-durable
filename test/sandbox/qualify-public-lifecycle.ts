@@ -5,12 +5,12 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createSandbox } from '../../src/sandbox/index.js';
 
-const root = '/home/sanmoo/software-factory-test/t3';
+const root = '/home/sanmoo/software-factory-test/u3';
 const source = process.argv[2];
 if (!source || !/^[a-f0-9]{40}$/.test(source)) throw new Error('EXACT_SOURCE_COMMIT_REQUIRED');
 const guestAssets = {
-  directory: '/home/sanmoo/software-factory-test/assets30/assets-final',
-  manifestSha256: '960b256c7c9f22a97428edf986ad6ff83affd5253e4fb6ba0c1579a0768c5d80',
+  directory: '/home/sanmoo/software-factory-test/assets32/assets',
+  manifestSha256: '4b6e90d356b2f93a2f7ec014f2778c1ce2fea8cfd8a19894fdb8112aa95038c1',
 };
 const configuration = { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1',
   memoryMiB: 2048, vcpus: 2, diskGiB: 40, shutdownGraceSeconds: 30, minFreeSpaceGiB: 4 };
@@ -40,13 +40,15 @@ async function qualify() {
       { root: '/home/sanmoo/software-factory-test/q3', outcome: 'failed after 33s without operational evidence; version-only witness rejected', preserved: true },
       { root: '/home/sanmoo/software-factory-test/r3', outcome: 'real KVM witness; vm-start/GUEST_READINESS_TIMEOUT before Docker check; already ceased before stop', preserved: true },
       { root: '/home/sanmoo/software-factory-test/s3', outcome: 'same corrected image failed SDK readiness; no operational/active-stop proof; correlated cessation confirmed', preserved: true },
+      { root: '/home/sanmoo/software-factory-test/t3', outcome: 'private console/acpi observations delivered; SDK readiness still failed; own cessation confirmed', preserved: true },
     ],
     sessionSocketBytes: Buffer.byteLength(root) + 69,
     startupDiagnostics: 'Temporary cold-boot console-text markers only; no raw guest data, agents or credentials. Markers never establish readiness or cause.',
-    knownRisk: 'Same pinned image as failed s3. Only console/diagnostic observation changes; no new image, timeout increase, retry or fallback.',
+    knownRisk: 'Explicit variant changes only initramfs to historical coherent58 archive. Kernel and new Docker-vfs rootfs bytes unchanged. No compatibility/boot claim, timeout increase, retry or fallback.',
+    stopRule: 'Last discriminating attempt of this approach. On failure or inconclusive result stop boots/image swaps and reassess strategy. Marker-only progress does not authorize another attempt.',
     expected: 'operational first boot followed by confirmed cessation; any failure remains a failure' });
   const sandbox = createSandbox({ root, guestAssets });
-  const prepared = await sandbox.prepare({ workId: 'public-lifecycle-qualification-t3', configuration });
+  const prepared = await sandbox.prepare({ workId: 'public-lifecycle-qualification-u3', configuration });
   await record('prepare', prepared);
   if (prepared.status !== 'success') { process.exitCode = 1; return; }
   const environment = prepared.environment;
