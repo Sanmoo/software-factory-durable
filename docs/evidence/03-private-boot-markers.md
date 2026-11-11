@@ -72,3 +72,6 @@ compilação estrita/build/arquitetura/ESLint (65 módulos/274 dependências) e 
 LSP6 arquivos sem achados retornados, mas todos inconclusivos (push-only);
 compilação estrita confirma os tipos. A única tentativa real continua pendente
 neste checkpoint de fonte.
+
+Execução posterior autorizada: [t3 entregou marcadores reais, mas falhou readiness](03-t3-diagnostic-failed.md).
+O sinal capturado não foi convertido em diagnóstico causal ou aceite do lifecycle.

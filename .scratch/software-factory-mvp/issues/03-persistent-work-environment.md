@@ -217,3 +217,22 @@ Próximo sinal necessário: marcadores de boot privados/limitados, sem conteúdo
 bruto de guest. Não atribuir causa ao kernel/Docker nem trocar imagem/aumentar
 timeout às cegas. Autorização consumida; nenhum outro VM/start autorizado. s3,
 disco, failed unit e evidências preservados; ticket03 continua incompleto.
+
+Nova autorização executada em [diagnóstico único t3](../../../docs/evidence/03-t3-diagnostic-failed.md),
+fonte `c5c9377`, mesma imagem960b256c/timeout30/recursos. Observador privado
+revisado (9a6d7806, sem P1/P2 no recorte temporário), 62pass/1VMskip/strictgates.
+Marcadores reais: console-text-observed/acpi-text, callbacks100/oversized0; nada
+bruto gravado. Sem marcador Rootinit/sandboxfs, mas ausência não prova ausência de
+execução nem causa ACPI. VMM real KVM/2048M/2CPU capturado; novamente SDKtimeout,
+sem operacional/check Docker. Cessação própria revalidada por CID/NS/CG e facade,
+antes de stop já parado; `accepted:false`. Discos/failed units/evidências retidos.
+
+Comparação apenas read-only com prova antiga: microvm/KVM/CPUhost/2CPU/2048M e
+opções básicas coincidem, assim como kernel58, init de initramfs, BusyBox/musl e
+cinco ELF de módulos após descompressão; archives completos/metadados diferem.
+Não há fundamento observado para acpi=off. Próxima proposta é variar SOMENTE o
+archive initramfs58 da prova antiga, mantendo kernel58 idêntico e rootfs Docker-vfs
+novo, declarando variante/pin/proveniência e demais parâmetros fixos. Ainda não
+montada/autorizada; não é fallback para rootfs sem Docker. Outra VM exige nova
+decisão, autorização t3 consumida. Instrumentação temporária não é liberada para
+workers/integração; ticket03 segue incompleto, sem push/merge/cleanup.
