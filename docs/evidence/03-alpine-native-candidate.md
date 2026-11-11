@@ -110,7 +110,7 @@ somente de Alpine, **não executados**, `apk-tools-static-3.0.9-r0.apk` (SHA-256
 `apk-tools-doc-3.0.9-r0.apk` (SHA-256
 `9f1baac957144a030441d1bd0dd5080ce03f112c56158f8331103d5eb4ea3b98`).
 Manpages extraídos em `tool-inputs/`: `--root` seleciona outro filesystem;
-`--scripts=false` impede scripts; `--usermode` tem limites explícitos e não deve
+`--scripts` desativado impede scripts; `--usermode` tem limites explícitos e não deve
 ser equiparado sem prova à instalação root do guest. `--force-no-chroot` é
 explicitamente perigoso para o host e não é um fallback aprovado.
 
@@ -126,3 +126,7 @@ hook foi executado. Revisão única concluída, sem cadeia de revisões. Evidên
 v1/v2 e falhas de inspeção anteriores permanecem. `lc03`, `p3`, `q3`, `r3`, failed
 units e UNKNOWN/noRetry históricos não foram limpos ou liberados. Ticket03
 continua incompleto, sem integração, push ou limpeza de worktree.
+
+Continuação com nova autorização de execução da ferramenta:
+[transação APK rootless e candidato corrigido, ainda sem runtime](03-apk-rootless-image.md).
+O registro de falha de assets29 permanece; a correção produziu outro artefato.

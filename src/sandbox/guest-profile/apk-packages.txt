@@ -1,0 +1,12 @@
+rng-tools
+bash
+ca-certificates
+ca-certificates-bundle
+curl
+nodejs
+npm
+uv
+python3
+git
+github-cli
+docker

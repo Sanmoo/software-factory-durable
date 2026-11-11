@@ -7,20 +7,7 @@
     "mirror": "https://dl-cdn.alpinelinux.org/alpine",
     "kernelPackage": "linux-virt",
     "kernelImage": "vmlinuz-virt",
-    "rootfsPackages": [
-      "rng-tools",
-      "bash",
-      "ca-certificates",
-      "ca-certificates-bundle",
-      "curl",
-      "nodejs",
-      "npm",
-      "uv",
-      "python3",
-      "git",
-      "github-cli",
-      "docker"
-    ],
+    "rootfsPackages": [],
     "initramfsPackages": []
   },
   "init": {
@@ -28,6 +15,10 @@
   },
   "postBuild": {
     "copy": [
+      {
+        "src": "/home/sanmoo/software-factory-test/assets30/payload",
+        "dest": "/"
+      },
       {
         "src": "/home/sanmoo/software-factory-test/assets29/iso-boot/vmlinuz-virt",
         "dest": "/boot/vmlinuz-virt"

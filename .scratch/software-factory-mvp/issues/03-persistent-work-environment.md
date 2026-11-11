@@ -185,3 +185,19 @@ Próximo: transação APK real, não DB fabricado/forkSDK. APK estático oficial
 baixados como inputs, NÃO executados; avaliar ferramenta adicional rootless em
 namespace exige decisão de execução fora do escopo de apenas aquisição/build
 nativo. Nenhum avanço de aceite03, nova VM, integração, push ou limpeza.
+
+Após autorização adicional, [empacotamento APK real corrigido](../../../docs/evidence/03-apk-rootless-image.md)
+em `assets30`, sem VM/hostinstall/sudo. Ferramenta APK com assinatura validada,
+namespace rootless/offline, scripts/hooks desativados; transação limpa74 pacotes,
+inclusive duas dependências condicionais que faltavam no cache. SDK extrator
+bypassado, assembly nativo mantido com payload/banco genuínos. Corrigidos ownership
+raw paraUID/GID0 e modos de diretórios; finalização limitada aos dois tmp sticky
+em nova cópia do raw, seguida de manifesto SDK recalculado. Originais/falhas retidos.
+
+Final `assets30/assets-final`, pin `960b256c...`: banco/versões/digests reais de
+Docker/Git/zlib conferidos, audit APK system+permissions sem achados (exclui configs
+protegidas/arquivos Factory não gerenciados), e2fsck read-only0 e integrity pública
+ok. Coorte58/906 arquivos/cinco módulos de boot verificados. P1 de registro APK
+corrigido; isso não determina causa r3 nem prova Docker/boot/TLS/persistência/parada
+ativa. `runtimeAccepted:false`. Nova VM exige autorização própria; ticket03
+continua sem aceite, integração, push ou cleanup.

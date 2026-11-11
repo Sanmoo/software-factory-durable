@@ -15,13 +15,19 @@ test('guest recipe uses one explicit ISO kernel/module cohort without a second k
   assert.equal(recipe.alpine.version, '3.23.7');
   assert.equal(recipe.alpine.branch, 'v3.23');
   assert.equal(recipe.alpine.mirror, 'https://dl-cdn.alpinelinux.org/alpine');
-  assert.ok(recipe.alpine.rootfsPackages.includes('docker'));
-  assert.equal(recipe.alpine.rootfsPackages.some((name: string) => name.startsWith('linux-')), false);
+  // The real APK transaction owns package installation and its database, not
+  // the SDK's extraction-only installer. SDK remains the final image assembler.
+  assert.deepEqual(recipe.alpine.rootfsPackages, []);
+  const requested = readFileSync(join(directory, 'apk-packages.txt'), 'utf8').trim().split('\n');
+  assert.ok(requested.includes('docker') && requested.includes('git'));
+  assert.equal(requested.some(name => name.startsWith('linux-')), false);
+  assert.ok(requested.every(name => /^[a-z0-9][a-z0-9+.-]*$/.test(name)));
   assert.deepEqual(recipe.alpine.initramfsPackages, []);
   assert.equal(recipe.oci, undefined);
   assert.equal(recipe.container, undefined);
   assert.equal(recipe.postBuild.commands, undefined);
   assert.deepEqual(recipe.postBuild.copy, [
+    { src: '/home/sanmoo/software-factory-test/assets30/payload', dest: '/' },
     { src: '/home/sanmoo/software-factory-test/assets29/iso-boot/vmlinuz-virt', dest: '/boot/vmlinuz-virt' },
     { src: '/home/sanmoo/software-factory-test/assets29/cohort/6.18.58-0-virt', dest: '/lib/modules/6.18.58-0-virt' },
     { src: 'docker-daemon.json', dest: '/etc/docker/daemon.json' },
@@ -29,6 +35,12 @@ test('guest recipe uses one explicit ISO kernel/module cohort without a second k
   for (const name of ['sandboxd', 'sandboxfs', 'sandboxssh', 'sandboxingress']) {
     assert.equal(recipe[name + 'Path'], '/home/sanmoo/software-factory-test/assets29/helpers/' + name);
   }
+});
+
+test('offline filesystem finalization is limited to the two sticky temporary directories', () => {
+  assert.deepEqual(JSON.parse(readFileSync(join(directory, 'filesystem-modes.json'), 'utf8')), {
+    '/tmp': '1777', '/var/tmp': '1777',
+  });
 });
 
 test('Docker-vfs profile uses guest cgroupfs and a guest-local Unix socket only', () => {
