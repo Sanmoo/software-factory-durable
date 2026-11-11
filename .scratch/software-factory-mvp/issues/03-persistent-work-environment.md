@@ -112,3 +112,14 @@ fallback para comando real, não uma prova de cessação de VM. Seis recusas ant
 seguem passando. Rodada focada completa: 40 passaram, uma prova de VM ignorada,
 nenhuma falha. Primeiro boot/parada reais, reinício/checagem de filesystem,
 isolamento e demais critérios continuam pendentes; nenhum checkbox concluído.
+
+O operador autorizou uma única VM própria para qualificar primeiro boot/parada.
+Preflight de capacidade/integridade passou; `lc03` foi recusado antes de unit por
+socket longo e preservado. `p3` criou unit, mas terminou antes de operacional;
+observe real confirmou cessação e stop reconheceu ambiente já parado, não parada
+ativa. Diagnóstico local encontrou erro na composição: SDK0.14 com
+`autoStart:false` rejeita start antes de enviar boot (`sandbox is stopped`).
+Corrigido para true, com start explícito/SDK privado/autoRestartfalse e guards
+preservados. Uma revisão independente confirmou a correção sem qualificar asset.
+Driver manual Q5 com root novo q3 está pronto para o primeiro boot efetivo;
+nenhuma evidência negativa anterior foi apagada ou convertida em aceite.

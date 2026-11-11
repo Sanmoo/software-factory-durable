@@ -42,7 +42,9 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
   let finished!: () => void;
   const stopped = new Promise<void>(resolve => { finished = resolve; });
   const booting = (async () => {
-    vm = await VM.create({ autoStart: false, memory: `${identity.configuration.memoryMiB}M`, cpus: identity.configuration.vcpus,
+    // SDK 0.14 also consults autoStart inside explicit start(); false rejects a
+    // stopped VM before sending boot. Ownership is established above, not by this flag.
+    vm = await VM.create({ autoStart: true, memory: `${identity.configuration.memoryMiB}M`, cpus: identity.configuration.vcpus,
       tmpfs: {}, startTimeoutMs: 30000, sessionLabel: boot, debugLog: null,
       sandbox: { vmm: 'qemu', qemuPath: '/usr/bin/qemu-system-x86_64', accel: 'kvm', cpu: 'host',
         imagePath: owner.guestAssets.directory, rootDiskPath: join(directory, 'root.qcow2'), rootDiskFormat: 'qcow2',

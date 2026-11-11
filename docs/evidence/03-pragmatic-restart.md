@@ -237,3 +237,57 @@ Reinício ainda está bloqueado até implementar/verificar o filesystem preserva
 Qualificação positiva de primeiro boot/parada, parada graciosa, ciclo persistente,
 isolamento, recuperação, remoção e transporte de ferramentas continuam pendentes.
 Este incremento não integra nem resolve o ticket03.
+
+## Qualificação autorizada — correções antes do primeiro guest
+
+O operador autorizou uma única VM própria, 2048 MiB/2 vCPU/40 GiB virtual sob
+`/home/sanmoo/software-factory-test`, preservando discos/evidências e recursos
+anteriores. Preflight somente de leitura: 8.228.511.744 bytes de uso físico no
+root de testes, cerca de 604 GB disponíveis no filesystem e 8,57 GB de memória
+available. Nenhum QEMU apareceu no inventário naquele momento; isso não libera
+reservas UNKNOWN históricas nem prova cessação universal do host.
+
+Os dois manifestos preservados e seus kernel/initramfs/rootfs passaram novamente
+pela integridade pública. A imagem base de pin `7b56e723...` não tem
+`/usr/bin/docker` (debugfs read-only); não foi usada como fallback. A imagem
+customizada de pin `8ed20af2...` contém Docker, mas mantém o risco histórico de
+readiness/kernel6.18.60. Não há novo boot bem-sucedido atribuído a essa imagem.
+
+- `lc03`: prepare real passou, mas start retornou
+  `SANDBOX_RUNTIME_PATH_TOO_LONG`. Root tem39 bytes; socket de sessão teria108,
+  acima de107. Não houve publicação de boot/unit. Disco e três registros de fase
+  ficaram preservados. O erro de escolha de path foi corrigido dentro da etapa,
+  sem converter a recusa em sucesso.
+- `p3`: root37 bytes/socket106; prepare passou e a nova unit
+  `factory-sandbox-boot-6d5317d6-6220-4d92-9995-345c4ab01645.service` entrou no
+  entrypoint e gravou `started.json`. Em cerca de2s o processo saiu1; start retornou
+  `BOOT_ENDED_BEFORE_OPERATIONAL_CONFIRMATION`. Sem `operational.json` ou witness
+  de VMM. Observe real confirmou cessação e stop retornou sucesso de ambiente
+  **já parado**, `termination: unconfirmed`, finalização indisponível. Isso não é
+  parada ativa nem boot operacional. `result.json` preserva `accepted:false`.
+  A unit manteve a invocação `6b1a70570aa64496b586b6142dfc5765`, failed/exit-code,
+  MainPID0/ControlGroup vazio; grupo exato ausente, hierarquia/namespaces
+  disponíveis. Nenhum recurso anterior foi sinalizado ou removido.
+
+O diagnóstico local descartou falha de import SDK, construção com autoStartfalse
+(sem chamar start) e `qemu --version` no ambiente explícito. O repro mínimo depois
+chamou `start()` **com autoStartfalse** e obteve `sandbox is stopped`,
+`bootMessageSent:false`. A fonte SDK0.14 em `VM.ensureRunning`, core.js1245–1253,
+lança nesse estado antes de `ensureBoot`. Construtor e server.start não iniciam
+VMM; portanto esse caminho impede o guest antes da mensagem boot. A falha de p3
+não é atribuída ao kernel e não constitui um boot de VM consumido como prova.
+
+Corrigida a composição para `autoStart:true`, mantendo start explícito, SDK
+privado, autoRestartfalse e gates anteriores à construção. Revisão independente
+`d0efd3c7` confirmou a semântica e não encontrou bloqueadores no delta/driver;
+não converteu isso em GO de asset nem evidência de VM. A regressão pública é o
+driver manual `test/sandbox/qualify-public-lifecycle.ts`, não descoberto por
+`node --test`, com root novo `q3`, uma chamada start, stop público em finally e
+OID completo da fonte obrigatório. Não cria supervisor/launcher ou seam de teste
+novo; somente chama Q5 e registra um witness read-only independente.
+
+Após a correção: typecheck/build/arquitetura/ESLint57 módulos239 dependências e
+41 casos (40 passaram, uma VM ignorada, nenhuma falha) em11,52s. LSP não retornou
+erros nos dois arquivos, ambos inconclusivos por silêncio do servidor. A prova
+de **primeiro boot efetivo** continua pendente até executar o driver corrigido,
+sem rerodar roots consumidos e sem substituir assets.
