@@ -167,3 +167,21 @@ remove restrições `=versão` e o cache só tem linux-virt6.18.60: não promete
 apenas mudando uma string. Correção exige inputs/receita coerentes, sem misturar
 assets ou repetir VM sem alteração fundamentada; investigação ainda não resolveu
 o readiness.
+
+Com autorização somente para fontes Alpine/build nativo, preparados inputs e
+[candidatos experimentais](../../../docs/evidence/03-alpine-native-candidate.md)
+em `assets29`, sem VM/hostinstall. Kernel e módulos58 vieram da mesma ISO oficial
+3.23.7, checksum publicado conferido, kernel idêntico à base conhecida; hook
+Docker-vfs/cgroup acrescentado via API nativa. Corrigido no staging um link de
+boot absolutizado pelo extrator; v1 preservada. V2 pin `72060acb...` passou hashes,
+comparação de906 arquivos regulares de módulos e e2fsck read-only; initrd tem
+cinco `.ko`, sem alegar ABI completa/runtime ou filesystem40GiB.
+
+**Bloqueador P1 da revisão única:** SDK extrai pacotes mas não atualiza o banco
+APK. No ext4 final, Docker/Git não registrados e zlibDB1.3.2 difere de libz1.4.
+`validation-v2/result.json`: `BLOCKED_APK_DATABASE_NOT_COHERENT`, `accepted:false`.
+Gates locais:53pass/1VMskip, typecheck/build/arquitetura/lint; não qualificam imagem.
+Próximo: transação APK real, não DB fabricado/forkSDK. APK estático oficial e docs
+baixados como inputs, NÃO executados; avaliar ferramenta adicional rootless em
+namespace exige decisão de execução fora do escopo de apenas aquisição/build
+nativo. Nenhum avanço de aceite03, nova VM, integração, push ou limpeza.

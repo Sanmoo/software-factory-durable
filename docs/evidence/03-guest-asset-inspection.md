@@ -77,3 +77,8 @@ conjunto com o builder nativo e o hook suportado, deixando os conjuntos antigos
 intactos. Obter inputs oficiais ausentes no cache requer decisão de aquisição;
 outra VM exige autorização própria. Não se recomenda repetir o mesmo ensaio
 inalterado ou aumentar timeout como correção.
+
+Continuação posterior autorizada, sem VM:
+[inputs oficiais e candidato nativo ainda bloqueado pelo banco APK](03-alpine-native-candidate.md).
+A autorização de aquisição/build não tornou o artefato qualificado nem resolveu
+retrospectivamente o timeout de r3.

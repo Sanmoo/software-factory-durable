@@ -1,0 +1,49 @@
+{
+  "arch": "x86_64",
+  "distro": "alpine",
+  "alpine": {
+    "version": "3.23.7",
+    "branch": "v3.23",
+    "mirror": "https://dl-cdn.alpinelinux.org/alpine",
+    "kernelPackage": "linux-virt",
+    "kernelImage": "vmlinuz-virt",
+    "rootfsPackages": [
+      "rng-tools",
+      "bash",
+      "ca-certificates",
+      "ca-certificates-bundle",
+      "curl",
+      "nodejs",
+      "npm",
+      "uv",
+      "python3",
+      "git",
+      "github-cli",
+      "docker"
+    ],
+    "initramfsPackages": []
+  },
+  "init": {
+    "rootfsInitExtra": "alpine-docker-vfs.sh"
+  },
+  "postBuild": {
+    "copy": [
+      {
+        "src": "/home/sanmoo/software-factory-test/assets29/iso-boot/vmlinuz-virt",
+        "dest": "/boot/vmlinuz-virt"
+      },
+      {
+        "src": "/home/sanmoo/software-factory-test/assets29/cohort/6.18.58-0-virt",
+        "dest": "/lib/modules/6.18.58-0-virt"
+      },
+      {
+        "src": "docker-daemon.json",
+        "dest": "/etc/docker/daemon.json"
+      }
+    ]
+  },
+  "sandboxdPath": "/home/sanmoo/software-factory-test/assets29/helpers/sandboxd",
+  "sandboxfsPath": "/home/sanmoo/software-factory-test/assets29/helpers/sandboxfs",
+  "sandboxsshPath": "/home/sanmoo/software-factory-test/assets29/helpers/sandboxssh",
+  "sandboxingressPath": "/home/sanmoo/software-factory-test/assets29/helpers/sandboxingress"
+}
