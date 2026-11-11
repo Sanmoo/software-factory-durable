@@ -418,3 +418,57 @@ retroativamente. q3 segue **accepted:false**, causa real desconhecida. Não houv
 outro boot, sinal real, GitHub/modelos, cleanup anterior ou integração. A fonte
 agora melhora a captura numa futura prova, que exige nova autorização de VM;
 não resolve o primeiro boot operacional, reinício persistente ou o ticket03.
+
+## Nova tentativa autorizada com diagnóstico — r3 REPROVADO
+
+Após nova autorização explícita para uma única VM, foi selecionado o root novo
+`/home/sanmoo/software-factory-test/r3`, sem adotar/reexecutar q3. Fonte/driver:
+`dbbe0b277afb22839a920d13134e1c0a1bde0d8e` (diagnóstico de fc0f69f).
+Compilação, check de sintaxe sem execução e arquitetura/ESLint61/261 passaram
+antes do uso. O pin `8ed20af2...` foi mantido, sem downloads/fallback. Preflight:
+nenhum QEMU listado, uso físico9.854.144.512 bytes, memória available7.035.662.336
+bytes e filesystem available601.702.989.824 bytes. Socket previsto106 bytes.
+
+Prepare real passou para
+`env-673fe8b852e6351b41ad265b80aba9642d6d16cdd137cf6d52a54e82855e37cb`.
+Boot `boot-9a00cfd9-fbae-4554-ae56-ba5e0729d35a`, unit derivada e invocação
+`b0ed9aeaf5944edeb4ad783dd6eb13cb`. Desta vez o witness é um processo real de
+VMM, PID1945713/startTicks91138960, cgroup próprio correlacionado e argv com
+kernel/initrd do pin, disco próprio, **-accel kvm / -m2048M / -smp2**. O probe
+`--version` foi excluído. É evidência do VMM configurado, não homologação de KVM
+funcional/isolamento ou medida de RAM física reservada.
+
+O SDK não concluiu readiness: start retornou
+`BOOT_ENDED_BEFORE_OPERATIONAL_CONFIRMATION` com diagnóstico público
+`{ phase: vm-start, code: GUEST_READINESS_TIMEOUT }`. O mesmo diagnóstico foi
+persistido no `failure.json` privado, com versão/boot correlacionados e sem
+mensagem arbitrária. **A captura do diagnóstico foi exercitada numa tentativa
+real**; o guest não ficou operacional. A fase é anterior ao check guest de
+Alpine/Docker-vfs, que não foi alcançado. O timeout abrange a prontidão do SDK,
+incluindo handshake/VFS; não identifica sozinho kernel ou módulo defeituoso.
+
+A unit executou de22:58:46 a22:59:18 (UTC-03) e saiu1. Antes do stop público,
+observe já confirmou cessação. Stop reconheceu recurso já parado, finalização
+guest indisponível e terminationunconfirmed; depois continuou parado. Não é
+prova de parada ativa/graciosa. `result.json` mantém **accepted:false**, apesar
+de `qualifyingVmmWitness:true`; houve zero reboot/retry posterior.
+
+`r3/manager-final.json` guarda a confirmação independente: mesma invocação de
+started, failed/exit-code/ExecMainStatus1, MainPID0, ControlGroup vazio, grupo
+exato ausente, namespaces cgroup4026531835/mount4026531832 e hierarquia disponível.
+Observe público confirma cessação. Counters do escopo: MemoryPeak230.227.968 bytes,
+CPUUsage32.204.977.000ns; não são contagem de RAM guest/vCPU reservada. Nenhum QEMU
+listado depois; a prova é restrita ao escopo próprio, não ao host inteiro.
+
+Uso físico retido10.396.045.312 bytes, abaixo80GiB, margem livre acima4GiB.
+Discos/registros e a unit failed de r3 ficam preservados junto a lc03/p3/q3 e
+recursos antigos, sem reset-failed/remoção/sinalização de terceiros. O diagnóstico
+perdido de q3 continua ausente; não é preenchido a partir do resultado de r3.
+
+Inspeção somente de leitura dos antigos logs confirma o histórico de falha da
+imagem customizada; mensagens `Invalid ELF header` também aparecem no caso base
+que antes executou comandos, logo não são causa suficiente por si sós. Não foram
+reaplicados acpi=off, mistura de assets ou probes de VM antigos. O próximo trabalho
+é investigar a composição/compatibilidade do guest e seu handshake, não aumentar
+timeout ou repetir este ensaio sem alteração fundamentada. A autorização foi usada;
+outra VM exige nova autorização. Ticket03/integracão continuam pendentes.

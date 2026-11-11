@@ -143,4 +143,17 @@ antes da correção e GREEN depois, sem VM/sinais reais. Total novo: quatro test
 de produtor com fronteiras externas dubladas e seis de consumidor público.
 Validação local: 50 passam/uma VM ignorada, typecheck/build/arquitetura/lint verdes.
 Isso não preenche o diagnóstico perdido de q3, não muda `accepted:false` nem
-comprova o produtor numa VM. Qualificação positiva/causa real seguem pendentes.
+comprova o produtor numa VM nesse checkpoint. Qualificação positiva/causa real
+seguem pendentes.
+
+Com nova autorização explícita, executada uma única tentativa em r3, fonte
+dbbe0b2/diagnóstico fc0f69f, sem reusar q3. Prepare passou e foi capturado VMM
+real com kernel/initrd, disco próprio e flags KVM/2048M/2vCPU. Start falhou em
+`vm-start / GUEST_READINESS_TIMEOUT`, agora persistido e projetado no resultado
+público. Não chegou ao check de Docker-vfs. Unit saiu1 após~32s; observe confirmou
+cessação real do escopo próprio e stop reconheceu recurso já parado, não parada
+ativa/graciosa. `accepted:false`, nenhum reboot/retry. Diagnóstico/cessação deste
+caso comprovados; primeiro boot operacional/perfil não qualificados. Root r3 e
+anteriores preservados; autorização consumida. Próximo: investigar guest/handshake
+e composição dos assets, sem repetir VM sem nova autorização ou chamar timeout
+sozinho de prova de defeito no kernel. Nenhum checkbox ou integração03 concluído.
