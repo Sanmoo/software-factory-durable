@@ -59,9 +59,26 @@ syncBuiltinESMExports();
 
 const audit = (event: string) => fs.appendFileSync(join(root, 'audit'), `${event}\n`);
 const originalTermListeners = new Set(process.listeners('SIGTERM'));
+type Logger = ((component: string, message: string) => void) | null;
+let logger: Logger = null;
+let lateLogger: Logger = null;
+let execCalls = 0;
+const mode = process.env.ADAPTER_DIAGNOSTIC_FIXTURE_MODE;
 mock.module('@earendil-works/gondolin', { namedExports: {
-  VM: { async create() { return {
+  VM: { async create(options: { debugLog: Logger; sandbox: { console: string; debug: readonly string[] | boolean } }) {
+    logger = options.debugLog;
+    lateLogger = logger;
+    if (mode?.startsWith('markers-') && (options.sandbox.console !== 'stdio' ||
+        !Array.isArray(options.sandbox.debug) || !options.sandbox.debug.includes('protocol'))) {
+      throw new Error('EXPECTED_PRIVATE_BOOT_CONSOLE_OPTIONS');
+    }
+    return {
+    setDebugLog(next: Logger) { logger = next; },
     async start() {
+      logger?.('protocol', 'PRIVATE_TOKEN_CANARY');
+      logger?.('qemu', 'stdout: [    0.000000] Linux version PRIVATE_TOKEN_CANARY');
+      logger?.('qemu', 'stdout: [init] /dev entries:');
+      if (mode === 'markers-success') return;
       const listeners = process.listeners('SIGTERM').filter(listener => !originalTermListeners.has(listener));
       if (listeners.length !== 1) throw new Error('EXPECTED_ONE_ADAPTER_STOP_LISTENER');
       // Invoke only the newly registered adapter callback; no OS signal or broad emit.
@@ -71,7 +88,17 @@ mock.module('@earendil-works/gondolin', { namedExports: {
       });
     },
     async close() { audit('close'); },
-    async exec() { throw new Error('GUEST_EXEC_MUST_NOT_RUN'); },
+    async exec() {
+      if (mode !== 'markers-success') throw new Error('GUEST_EXEC_MUST_NOT_RUN');
+      if (++execCalls === 1) {
+        audit('guest-exec');
+        lateLogger?.('qemu', 'stdout: [init] starting sandboxd');
+        const listeners = process.listeners('SIGTERM').filter(listener => !originalTermListeners.has(listener));
+        if (listeners.length !== 1) throw new Error('EXPECTED_ONE_ADAPTER_STOP_LISTENER');
+        listeners[0]!('SIGTERM'); // Only the new callback, never an OS signal.
+      }
+      return { exitCode: 0 };
+    },
   }; } },
   RealFSProvider: class {},
 } });
@@ -82,8 +109,18 @@ const originalWrite = prototype.writeFile;
 const originalSync = prototype.sync;
 await probe.close();
 let publishing = false;
+let markerPublishing = false;
 mock.method(prototype, 'writeFile', async function(this: FileHandle, ...args: Parameters<FileHandle['writeFile']>) {
   const target = await readlink(`/proc/self/fd/${this.fd}`);
+  if (target === join(path, 'boot-markers.json') && mode?.startsWith('markers-')) {
+    markerPublishing = true;
+    audit('markers-begin');
+    await new Promise<void>(resolve => { setImmediate(resolve); });
+    if (mode === 'markers-write-fails') { audit('markers-failed'); throw new Error('INJECTED_MARKER_WRITE_FAILURE'); }
+    await originalWrite.apply(this, args);
+    audit('markers-written');
+    return;
+  }
   if (target !== join(path, 'failure.json')) return originalWrite.apply(this, args);
   publishing = true;
   audit('failure-begin');
@@ -98,6 +135,8 @@ mock.method(prototype, 'writeFile', async function(this: FileHandle, ...args: Pa
 mock.method(prototype, 'sync', async function(this: FileHandle) {
   const target = await readlink(`/proc/self/fd/${this.fd}`);
   await originalSync.call(this);
+  if (mode?.startsWith('markers-') && target === join(path, 'boot-markers.json')) audit('markers-file-synced');
+  if (markerPublishing && !publishing && target === path) { audit('markers-durable'); markerPublishing = false; }
   if (publishing && target === join(path, 'failure.json')) audit('failure-file-synced');
   if (publishing && target === path) audit('failure-durable');
 });

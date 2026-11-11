@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createSandbox } from '../../src/sandbox/index.js';
 
-const root = '/home/sanmoo/software-factory-test/s3';
+const root = '/home/sanmoo/software-factory-test/t3';
 const source = process.argv[2];
 if (!source || !/^[a-f0-9]{40}$/.test(source)) throw new Error('EXACT_SOURCE_COMMIT_REQUIRED');
 const guestAssets = {
@@ -39,12 +39,14 @@ async function qualify() {
       { root: '/home/sanmoo/software-factory-test/p3', outcome: 'SDK autoStart=false rejects before boot message', preserved: true },
       { root: '/home/sanmoo/software-factory-test/q3', outcome: 'failed after 33s without operational evidence; version-only witness rejected', preserved: true },
       { root: '/home/sanmoo/software-factory-test/r3', outcome: 'real KVM witness; vm-start/GUEST_READINESS_TIMEOUT before Docker check; already ceased before stop', preserved: true },
+      { root: '/home/sanmoo/software-factory-test/s3', outcome: 'same corrected image failed SDK readiness; no operational/active-stop proof; correlated cessation confirmed', preserved: true },
     ],
     sessionSocketBytes: Buffer.byteLength(root) + 69,
-    knownRisk: 'New kernel/module58 cohort and real APK packaging passed static checks only; no boot/Docker/active-stop qualification. No retry or fallback.',
+    startupDiagnostics: 'Temporary cold-boot console-text markers only; no raw guest data, agents or credentials. Markers never establish readiness or cause.',
+    knownRisk: 'Same pinned image as failed s3. Only console/diagnostic observation changes; no new image, timeout increase, retry or fallback.',
     expected: 'operational first boot followed by confirmed cessation; any failure remains a failure' });
   const sandbox = createSandbox({ root, guestAssets });
-  const prepared = await sandbox.prepare({ workId: 'public-lifecycle-qualification-s3', configuration });
+  const prepared = await sandbox.prepare({ workId: 'public-lifecycle-qualification-t3', configuration });
   await record('prepare', prepared);
   if (prepared.status !== 'success') { process.exitCode = 1; return; }
   const environment = prepared.environment;

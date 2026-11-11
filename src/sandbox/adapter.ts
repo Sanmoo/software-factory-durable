@@ -2,6 +2,7 @@ import type { VM as GondolinVM } from '@earendil-works/gondolin';
 import { readFile, readlink, realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { inspectGuestAssets } from './guest-assets.js';
+import { createBootMarkers } from './boot-markers.js';
 import { currentSchema, identitySchema, metadata, ownedEnvironment, privateDirectory, processStartTicks,
   startupFailureCodeSchema, supervisionHierarchy, unitState, type BootRef, type StartupFailure } from './lifecycle.js';
 import { bootRuntimePaths, durableJson } from './start.js';
@@ -38,6 +39,14 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
   let phase: StartupFailure['phase'] = 'runtime';
   let operational = false;
   let vm: GondolinVM | undefined;
+  const markers = createBootMarkers(boot);
+  let markerPublication: Promise<void> | undefined;
+  const publishMarkers = () => {
+    const snapshot = markers.seal();
+    try { vm?.setDebugLog(null); } catch { /* Never let optional diagnostics skip owned close. */ }
+    markerPublication ??= durableJson(join(path, 'boot-markers.json'), snapshot).catch(() => {});
+    return markerPublication;
+  };
   let shutdown: Promise<void> | undefined;
   let closing: Promise<void> | undefined;
   const closeVm = () => closing ??= Promise.resolve().then(() => vm?.close());
@@ -62,15 +71,21 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
     // SDK 0.14 also consults autoStart inside explicit start(); false rejects a
     // stopped VM before sending boot. Ownership is established above, not by this flag.
     vm = await VM.create({ autoStart: true, memory: `${identity.configuration.memoryMiB}M`, cpus: identity.configuration.vcpus,
-      tmpfs: {}, startTimeoutMs: 30000, sessionLabel: boot, debugLog: null,
+      // Temporary cold-boot diagnostic slice: no agents/credentials/workers.
+      // Only literal markers are retained. SDK internal console buffering is NOT
+      // bounded by our callback; do not ship this console mode to untrusted workers.
+      tmpfs: {}, startTimeoutMs: 30000, sessionLabel: boot, debugLog: markers.observe,
       sandbox: { vmm: 'qemu', qemuPath: '/usr/bin/qemu-system-x86_64', accel: 'kvm', cpu: 'host',
         imagePath: owner.guestAssets.directory, rootDiskPath: join(directory, 'root.qcow2'), rootDiskFormat: 'qcow2',
-        rootDiskReadOnly: false, rootDiskDeleteOnClose: false, netEnabled: false, autoRestart: false, console: 'none', debug: false,
+        rootDiskReadOnly: false, rootDiskDeleteOnClose: false, netEnabled: false, autoRestart: false,
+        console: 'stdio', debug: ['protocol'],
         ...runtime.sockets },
       vfs: { mounts: { '/workspace': new RealFSProvider(join(directory, 'workspace')),
         '/artifacts': new RealFSProvider(join(directory, 'artifacts')) } } });
     phase = 'vm-start';
     await vm.start();
+    // Freeze before any guest command; queued/late callbacks cannot add content.
+    await publishMarkers();
     phase = 'guest-profile';
     // The pinned image must provide Alpine and its own Docker daemon with vfs.
     // Networking remains disabled in this first-boot slice; no pulls or remote calls.
@@ -88,6 +103,9 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
     await durableJson(join(path, 'operational.json'), { version: 1, boot, session: vm.id, vmmPid: pid, vmmStartTicks: ticks });
     operational = true;
   })().catch(async error => {
+    // Shared startup rejection orders the bounded publication attempt before both
+    // normal close and a concurrent stop; failed writes do not suppress closure.
+    await publishMarkers();
     if (!operational) {
       try { await durableJson(join(path, 'failure.json'), { version: 1, boot, phase, code: startupCode(error) }); }
       catch { /* Diagnostic failure must not skip owned-resource shutdown or invent evidence. */ }
