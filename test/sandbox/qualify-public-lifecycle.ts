@@ -5,12 +5,12 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createSandbox } from '../../src/sandbox/index.js';
 
-const root = '/home/sanmoo/software-factory-test/r3';
+const root = '/home/sanmoo/software-factory-test/s3';
 const source = process.argv[2];
 if (!source || !/^[a-f0-9]{40}$/.test(source)) throw new Error('EXACT_SOURCE_COMMIT_REQUIRED');
 const guestAssets = {
-  directory: '/home/sanmoo/software-factory-test/ticket03/built-assets',
-  manifestSha256: '8ed20af25142e25d852deb000c12dcf26beadd802db6576f0790d440132a40e2',
+  directory: '/home/sanmoo/software-factory-test/assets30/assets-final',
+  manifestSha256: '960b256c7c9f22a97428edf986ad6ff83affd5253e4fb6ba0c1579a0768c5d80',
 };
 const configuration = { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1',
   memoryMiB: 2048, vcpus: 2, diskGiB: 40, shutdownGraceSeconds: 30, minFreeSpaceGiB: 4 };
@@ -38,12 +38,13 @@ async function qualify() {
       { root: '/home/sanmoo/software-factory-test/lc03', outcome: 'SANDBOX_RUNTIME_PATH_TOO_LONG', vmCreated: false, preserved: true },
       { root: '/home/sanmoo/software-factory-test/p3', outcome: 'SDK autoStart=false rejects before boot message', preserved: true },
       { root: '/home/sanmoo/software-factory-test/q3', outcome: 'failed after 33s without operational evidence; version-only witness rejected', preserved: true },
+      { root: '/home/sanmoo/software-factory-test/r3', outcome: 'real KVM witness; vm-start/GUEST_READINESS_TIMEOUT before Docker check; already ceased before stop', preserved: true },
     ],
     sessionSocketBytes: Buffer.byteLength(root) + 69,
-    knownRisk: 'This exact custom image previously failed readiness with kernel 6.18.60. No asset fallback or expectation downgrade.',
+    knownRisk: 'New kernel/module58 cohort and real APK packaging passed static checks only; no boot/Docker/active-stop qualification. No retry or fallback.',
     expected: 'operational first boot followed by confirmed cessation; any failure remains a failure' });
   const sandbox = createSandbox({ root, guestAssets });
-  const prepared = await sandbox.prepare({ workId: 'public-lifecycle-qualification-r3', configuration });
+  const prepared = await sandbox.prepare({ workId: 'public-lifecycle-qualification-s3', configuration });
   await record('prepare', prepared);
   if (prepared.status !== 'success') { process.exitCode = 1; return; }
   const environment = prepared.environment;
@@ -82,9 +83,12 @@ async function qualify() {
   const started = await launching;
   if (!('boot' in started) || !started.boot) { await record('start', started); process.exitCode = 1; return; }
   let stopped;
+  let activeBeforeStop = false;
   try {
     await record('start', started);
-    await record('before-stop', await sandbox.observe({ environment, boot: started.boot }));
+    const before = await sandbox.observe({ environment, boot: started.boot });
+    activeBeforeStop = before.condition === 'active' && !before.cessationConfirmed;
+    await record('before-stop', before);
   } finally {
     stopped = await sandbox.stop({ environment, boot: started.boot, reason: 'operator-authorized qualification' });
   }
@@ -92,10 +96,10 @@ async function qualify() {
   const after = await sandbox.observe({ environment, boot: started.boot });
   await record('after-stop', after);
   await record('result', { operationalBoot: started.status === 'success', cessationConfirmed: after.cessationConfirmed,
-    qualifyingVmmWitness,
-    accepted: started.status === 'success' && stopped.status === 'success' && after.cessationConfirmed && qualifyingVmmWitness,
+    qualifyingVmmWitness, activeBeforeStop,
+    accepted: started.status === 'success' && activeBeforeStop && stopped.status === 'success' && after.cessationConfirmed && qualifyingVmmWitness,
     restartAttempted: false, resourcesRemoved: false });
-  if (started.status !== 'success' || stopped.status !== 'success' || !after.cessationConfirmed || !qualifyingVmmWitness) process.exitCode = 1;
+  if (started.status !== 'success' || !activeBeforeStop || stopped.status !== 'success' || !after.cessationConfirmed || !qualifyingVmmWitness) process.exitCode = 1;
 }
 
 await qualify();
