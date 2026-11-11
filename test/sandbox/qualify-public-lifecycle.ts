@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createSandbox } from '../../src/sandbox/index.js';
 
-const root = '/home/sanmoo/software-factory-test/q3';
+const root = '/home/sanmoo/software-factory-test/r3';
 const source = process.argv[2];
 if (!source || !/^[a-f0-9]{40}$/.test(source)) throw new Error('EXACT_SOURCE_COMMIT_REQUIRED');
 const guestAssets = {
@@ -37,12 +37,13 @@ async function qualify() {
     priorPreparations: [
       { root: '/home/sanmoo/software-factory-test/lc03', outcome: 'SANDBOX_RUNTIME_PATH_TOO_LONG', vmCreated: false, preserved: true },
       { root: '/home/sanmoo/software-factory-test/p3', outcome: 'SDK autoStart=false rejects before boot message', preserved: true },
+      { root: '/home/sanmoo/software-factory-test/q3', outcome: 'failed after 33s without operational evidence; version-only witness rejected', preserved: true },
     ],
     sessionSocketBytes: Buffer.byteLength(root) + 69,
     knownRisk: 'This exact custom image previously failed readiness with kernel 6.18.60. No asset fallback or expectation downgrade.',
     expected: 'operational first boot followed by confirmed cessation; any failure remains a failure' });
   const sandbox = createSandbox({ root, guestAssets });
-  const prepared = await sandbox.prepare({ workId: 'public-lifecycle-qualification-q3', configuration });
+  const prepared = await sandbox.prepare({ workId: 'public-lifecycle-qualification-r3', configuration });
   await record('prepare', prepared);
   if (prepared.status !== 'success') { process.exitCode = 1; return; }
   const environment = prepared.environment;
