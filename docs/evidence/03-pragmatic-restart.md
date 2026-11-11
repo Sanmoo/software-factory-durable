@@ -291,3 +291,72 @@ Após a correção: typecheck/build/arquitetura/ESLint57 módulos239 dependênci
 erros nos dois arquivos, ambos inconclusivos por silêncio do servidor. A prova
 de **primeiro boot efetivo** continua pendente até executar o driver corrigido,
 sem rerodar roots consumidos e sem substituir assets.
+
+## Resultado da tentativa autorizada com política corrigida — REPROVADO
+
+Fonte executada: `d94ff1abae2577929caf4de4a05344047e07b635`, Node24.21.0,
+root novo `/home/sanmoo/software-factory-test/q3`; mesmo asset/pin customizado,
+2048 MiB/2 vCPU/40 GiB virtual, rede desabilitada. O driver foi chamado diretamente
+com esse OID, sem timeout que pudesse matar a unit e sem novo launcher. Nenhuma
+prova antiga em quarentena foi habilitada. Preflight imediatamente anterior:
+6.281.764.864 bytes de memória available e nenhum QEMU listado.
+
+Prepare público passou. Boot retornado:
+`boot-67f15b41-d851-4cd2-abed-459704d6ecd0`, ambiente
+`env-3c4c1c75273af3b220333a76f5bd5a34865976bae63a851b4650fa480aae4d67`.
+A unit própria tem invocação `40574fe1785840d294571b102209fb33`, igual à registrada
+em `started.json`, e executou de22:02:20 até22:02:53 (UTC-03), saindo1. **Start
+falhou** com `BOOT_ENDED_BEFORE_OPERATIONAL_CONFIRMATION`; não publicou
+`operational.json`, e `result.json` registra `operationalBoot:false` e
+`accepted:false`. Não houve reboot ou substituição de assets.
+
+Observe público antes do stop já retornava parado/cessação confirmada. Stop
+público retornou sucesso de recurso **já parado**, `termination:unconfirmed` e
+`guestFinalization:unavailable`; a observação posterior permaneceu parada.
+Isso é confirmação real de cessação do escopo próprio após falha, **não** prova
+de parada ativa, Docker operacional ou parada graciosa. O erro específico do
+SDK não foi preservado pelo entrypoint atual; não atribuímos esta nova falha ao
+kernel apenas por sua duração ou pela falha histórica do mesmo asset.
+
+### Correção da evidência de witness
+
+O coletor capturou `/usr/bin/qemu-system-x86_64 --version`, executado pelo check
+de disponibilidade do SDK. **Esse processo não é um VMM/guest.** O arquivo
+original `q3/vmm-witness.json` foi mantido intacto e `witness-assessment.json`
+registra sua insuficiência. Não prova aceleração KVM, recursos efetivos da VM,
+hello do guest ou sucesso de boot. A autorização não é reutilizada inferindo
+que faltou uma VM só porque não houve witness válido.
+
+O driver foi corrigido para excluir probes de versão/ajuda, exigir kernel/initrd,
+flags KVM/2048M/2 vCPU/disco próprio e witness válido como requisito adicional de
+aceite. Essa correção **não foi rerodada com VM** e não reescreve o resultado
+original. O diagnóstico posterior usou apenas o SDK com spawn de VMM bloqueado;
+argumentos calculados nesse dublê tampouco são prova de execução/aceleração.
+
+### Estado preservado e limite da prova
+
+`q3/manager-final.json` guarda consulta read-only de01:12:45Z: unit failed,
+Result=exit-code, ExecMainStatus1, mesma invocação, MainPID0, ControlGroup vazio;
+o grupo exato está ausente e a hierarquia completa está disponível. Namespaces
+cgroup4026531835/mount4026531832 correspondem aos registrados. Observe público
+nessa coleta confirma cessação. Não se usa apenas PID0/exit code/SDK.close como
+prova. Os counters da unit (MemoryPeak216.477.696 bytes/CPUUsage33.649.521.000ns)
+são do escopo, não medida qualificada da RAM guest nem demonstração de vCPUs.
+
+Root de testes usa9.854.144.512 bytes físicos (abaixo80GiB). `lc03`, `p3`, `q3`,
+seus discos/registros e as units failed ficam preservados. Não houve sinalização
+ou cleanup de recursos anteriores, download de assets, GitHub ou modelo. Nenhum
+QEMU apareceu na inspeção posterior; a afirmação de cessação é restrita ao grupo
+próprio verificado, sem liberar UNKNOWN/capacidade de ensaios históricos.
+
+Fica bloqueada a qualificação positiva: primeiro boot operacional e parada ativa
+não foram demonstrados. Antes de outro boot, é necessário preservar um diagnóstico
+seguro do erro de startup e obter autorização para nova tentativa. Ticket03 e
+integração continuam pendentes.
+
+Após corrigir apenas o coletor (sem rerodar a qualificação real), passaram
+typecheck, build, `node --check` do driver sem executá-lo, arquitetura/ESLint
+57 módulos239 dependências e `git diff --check`. Suíte local focada: 41 casos,
+40 passaram, uma prova de VM ignorada, nenhuma falha, 9,12s. LSP não retornou erro
+no driver, mas foi inconclusivo pelo protocolo do servidor. Essa rodada local
+verde não altera o resultado real **reprovado** nem comprova KVM.

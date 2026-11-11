@@ -123,3 +123,13 @@ Corrigido para true, com start explícito/SDK privado/autoRestartfalse e guards
 preservados. Uma revisão independente confirmou a correção sem qualificar asset.
 Driver manual Q5 com root novo q3 está pronto para o primeiro boot efetivo;
 nenhuma evidência negativa anterior foi apagada ou convertida em aceite.
+
+Executada a tentativa autorizada corrigida em q3, fonte d94ff1a, mesmo pin
+customizado: prepare passou; start falhou sem operacional, unit saiu1 após33s.
+Observe confirmou cessação real do escopo próprio; stop reconheceu ambiente já
+parado, não parada ativa/graciosa. O witness capturado era apenas `qemu --version`
+e foi explicitamente desqualificado, preservando o original; filtro corrigido
+sem rerodar VM. Resultado `accepted:false`, discos/units failed preservados.
+Não há novo diagnóstico conclusivo de kernel: o erro específico do SDK não foi
+preservado. É necessário diagnóstico seguro de startup antes de nova tentativa,
+que exige outra autorização de VM. Nenhum critério de aceite ou integração03.

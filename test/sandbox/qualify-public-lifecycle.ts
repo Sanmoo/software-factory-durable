@@ -47,6 +47,7 @@ async function qualify() {
   if (prepared.status !== 'success') { process.exitCode = 1; return; }
   const environment = prepared.environment;
   let settled = false;
+  let qualifyingVmmWitness = false;
   const launching = sandbox.start({ environment, configuration }).finally(() => { settled = true; });
   // Independent read-only witness of the new unit's VMM, not authority to signal it.
   while (!settled) {
@@ -60,10 +61,16 @@ async function qualify() {
         if (!/^[0-9]+$/.test(pid)) continue;
         const before = startTicks(await readFile(`/proc/${pid}/stat`, 'utf8'));
         const argv = (await readFile(`/proc/${pid}/cmdline`, 'utf8')).split('\0').filter(Boolean);
-        if (argv[0] !== '/usr/bin/qemu-system-x86_64') continue;
+        if (argv[0] !== '/usr/bin/qemu-system-x86_64' || argv.includes('--version') ||
+            argv.includes('--help') || argv.includes('-help') || !argv.includes('-kernel') || !argv.includes('-initrd')) continue;
+        // The SDK also runs qemu --version in this cgroup; that is not a VM.
+        if (argv[argv.indexOf('-accel') + 1] !== 'kvm' ||
+            argv[argv.indexOf('-m') + 1] !== '2048M' || argv[argv.indexOf('-smp') + 1] !== '2' ||
+            !argv.some(arg => arg.includes(join(root, 'environments', environment, 'root.qcow2')))) continue;
         if ((await readFile(`/proc/${pid}/cgroup`, 'utf8')).trim() !== `0::${group}` ||
             startTicks(await readFile(`/proc/${pid}/stat`, 'utf8')) !== before) continue;
         await record('vmm-witness', { boot: current.boot, pid: Number(pid), startTicks: before, group, argv });
+        qualifyingVmmWitness = true;
         captured = true;
         break;
       }
@@ -84,9 +91,10 @@ async function qualify() {
   const after = await sandbox.observe({ environment, boot: started.boot });
   await record('after-stop', after);
   await record('result', { operationalBoot: started.status === 'success', cessationConfirmed: after.cessationConfirmed,
-    accepted: started.status === 'success' && stopped.status === 'success' && after.cessationConfirmed,
+    qualifyingVmmWitness,
+    accepted: started.status === 'success' && stopped.status === 'success' && after.cessationConfirmed && qualifyingVmmWitness,
     restartAttempted: false, resourcesRemoved: false });
-  if (started.status !== 'success' || stopped.status !== 'success' || !after.cessationConfirmed) process.exitCode = 1;
+  if (started.status !== 'success' || stopped.status !== 'success' || !after.cessationConfirmed || !qualifyingVmmWitness) process.exitCode = 1;
 }
 
 await qualify();
