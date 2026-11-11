@@ -11,10 +11,10 @@ import { inspectGuestAssets, type GuestAssetPin } from './guest-assets.js';
 import type { SandboxConfiguration } from './configuration.js';
 import type { EnvironmentRef } from './prepare.js';
 import { currentSchema, identitySchema, metadata, observeEnvironment, ownedEnvironment, privateDirectory,
-  supervisionHierarchy, type BootRef } from './lifecycle.js';
+  startupFailureSchema, supervisionHierarchy, type BootRef, type StartupFailure } from './lifecycle.js';
 
 export type StartResult = { status: 'success'; boot: BootRef } |
-  { status: 'failure' | 'indeterminate'; code: string; boot?: BootRef };
+  { status: 'failure' | 'indeterminate'; code: string; boot?: BootRef; failure?: StartupFailure };
 const run = promisify(execFile);
 
 /** Fixed SDK 0.14 socket composition; no caller-provided mounts or free flags. */
@@ -44,6 +44,15 @@ export async function durableJson(path: string, value: unknown) {
 async function syncDirectory(path: string) {
   const directory = await open(path, 'r');
   try { await directory.sync(); } finally { await directory.close(); }
+}
+
+async function failedStart(status: 'failure' | 'indeterminate', code: string, boot: BootRef, path: string): Promise<StartResult> {
+  let failure: StartupFailure | undefined;
+  try {
+    const record = await metadata(join(path, 'failure.json'), startupFailureSchema);
+    if (record.boot === boot) failure = { phase: record.phase, code: record.code };
+  } catch { /* Missing, unsafe or uncorrelated evidence is not a diagnosis. */ }
+  return { status, code, boot, ...(failure ? { failure } : {}) };
 }
 
 /** Only the first boot is enabled here; restart needs a separate preserved-disk check. */
@@ -77,7 +86,7 @@ export async function startEnvironment(root: string, pin: GuestAssetPin | undefi
         if (previous.environment !== environment) throw new Error('ENVIRONMENT_OWNERSHIP_MISMATCH');
         const observed = await observeEnvironment(root, environment, previous.boot as BootRef);
         if (!observed.cessationConfirmed) return { status: 'indeterminate', code: 'PREVIOUS_BOOT_NOT_STOPPED', boot: previous.boot as BootRef };
-        return { status: 'failure', code: 'PRESERVED_DISK_CHECK_REQUIRED', boot: previous.boot as BootRef };
+        return await failedStart('failure', 'PRESERVED_DISK_CHECK_REQUIRED', previous.boot as BootRef, join(directory, previous.boot));
       }
       for (const name of ['workspace', 'artifacts']) await privateDirectory(join(directory, name));
       const disk = join(directory, 'root.qcow2');
@@ -135,10 +144,10 @@ export async function startEnvironment(root: string, pin: GuestAssetPin | undefi
       while (Date.now() < deadline) {
         const observed = await observeEnvironment(root, environment, boot);
         if (observed.condition === 'active') return { status: 'success', boot };
-        if (observed.cessationConfirmed) return { status: 'failure', code: 'BOOT_ENDED_BEFORE_OPERATIONAL_CONFIRMATION', boot };
+        if (observed.cessationConfirmed) return await failedStart('failure', 'BOOT_ENDED_BEFORE_OPERATIONAL_CONFIRMATION', boot, path);
         await delay(250);
       }
-      return { status: 'indeterminate', code: 'BOOT_OPERATIONAL_STATE_UNCONFIRMED', boot };
+      return await failedStart('indeterminate', 'BOOT_OPERATIONAL_STATE_UNCONFIRMED', boot, path);
     } finally { await rmdir(lock); }
   } catch {
     return { status: 'indeterminate', code: 'ENVIRONMENT_START_UNCONFIRMED', ...(boot ? { boot } : {}) };

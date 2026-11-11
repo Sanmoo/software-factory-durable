@@ -360,3 +360,61 @@ typecheck, build, `node --check` do driver sem executá-lo, arquitetura/ESLint
 40 passaram, uma prova de VM ignorada, nenhuma falha, 9,12s. LSP não retornou erro
 no driver, mas foi inconclusivo pelo protocolo do servidor. Essa rodada local
 verde não altera o resultado real **reprovado** nem comprova KVM.
+
+## Diagnóstico seguro de startup — fonte e regressões locais
+
+Para não perder novamente o erro de uma futura inicialização, o adapter agora
+publica `failure.json` privado e fechado por boot, depois dos gates de identidade
+/supervisão. O conteúdo é somente versão/boot/fase/código literal permitido.
+Fases cobrem runtime, assets, import SDK, construção, start, perfil guest e
+publicação operacional. `vm_start_timeout` é convertido em
+`GUEST_READINESS_TIMEOUT`; erro não reconhecido vira
+`UNCLASSIFIED_STARTUP_FAILURE`. Nunca se grava mensagem arbitrária, stack, env,
+stderr ou payload do guest. O estado operacional impede confundir erro de
+shutdown posterior a boot aceito com falha de startup.
+
+`Sandbox.start` pode anexar `{ failure: { phase, code } }` a resultado falhado ou
+indeterminado, inclusive ao explicar um boot anterior preservado. Lê pelo mesmo
+FD seguro/limite/schema estrito e exige o boot correlacionado. Evidência ausente,
+inválida, de outro boot ou com campos extras é omitida. Diagnóstico não confirma
+cessação, não transforma deadline em sucesso nem libera o disco sem verificação.
+O primeiro teste público foi RED por DTO ausente e GREEN após implementação;
+seis casos públicos com manager double validam consumidor/correlação/canários.
+
+A única revisão independente desse incremento, `9849d1c1`, encontrou P2 de
+ordenação: um stop concorrente podia fechar enquanto o catch principal ainda
+escrevia o diagnóstico. A publicação foi movida para a rejeição compartilhada de
+startup aguardada por ambos os caminhos; um único Promise de close também evita
+a chamada duplicada. Erro ao gravar é tolerado para não impedir encerramento.
+A ordem controlada é **tentativa de diagnóstico → close do adapter**; cleanup
+interno do SDK, prazo forçado do systemd, crash e perda de energia continuam
+independentes. Não se promete que a VM permaneça viva até o fsync nem que todo
+crash deixe diagnóstico completo.
+
+Duas regressões no entrypoint real, com fronteiras externas dubladas, foram RED:
+`close → failure-begin → ... → close`. Após correção, são GREEN:
+`failure-begin → failure-written → file-sync → directory-sync → close`, e, para
+falha injetada, `failure-begin → failure-failed → close`. Dois casos adicionais
+cobrem código/mensagem desconhecidos e falha de startup sem pedido de parada.
+O canário privado não aparece no arquivo nem em stdout/stderr.
+
+Esses quatro testes usam o CLI existente em subprocessos Node locais, mock do SDK
+externo, manager fake com PATH exclusivo, mapeamento de `/proc/self/cgroup` apenas
+no filesystem do processo de teste e atraso/falha na escrita por FileHandle.
+Invocam somente o callback recém-registrado do adapter: nenhum sinal OS real ou
+emit global. Há bloqueio adicional da fronteira spawn de VMM caso o mock falhe.
+Nenhuma VM ou unit/service real é criada. A flag experimental de module-mocks
+fica restrita aos filhos de teste, sem flag/método novo no produto.
+
+Validação final: typecheck/build, arquitetura/ESLint61 módulos261 dependências,
+`git diff --check` passaram. **51 casos: 50 passaram, uma VM em quarentena
+ignorada, nenhuma falha, 11,56s**. LSP nos sete arquivos não retornou erro, mas
+todos inconclusivos pelo protocolo push-only; typecheck estrito confirma a
+compilação. Os quatro testes do produtor e seis do consumidor são locais com
+dublês, não prova de diagnóstico numa VM real.
+
+O `failure.json` do antigo q3 continua ausente; não foi fabricado nem preenchido
+retroativamente. q3 segue **accepted:false**, causa real desconhecida. Não houve
+outro boot, sinal real, GitHub/modelos, cleanup anterior ou integração. A fonte
+agora melhora a captura numa futura prova, que exige nova autorização de VM;
+não resolve o primeiro boot operacional, reinício persistente ou o ticket03.

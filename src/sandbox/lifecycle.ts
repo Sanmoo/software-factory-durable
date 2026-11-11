@@ -30,6 +30,16 @@ export const startedSchema = z.strictObject({ version: z.literal(1), boot: bootR
   unit: z.string(), invocation: z.string().regex(/^[a-f0-9]{32}$/), cgroup: z.string(),
   cgroupNamespace: z.string().regex(/^cgroup:\[[0-9]+\]$/),
   mountNamespace: z.string().regex(/^mnt:\[[0-9]+\]$/) });
+export const startupFailureCodeSchema = z.enum([
+  'GUEST_READINESS_TIMEOUT', 'SDK_START_DISABLED', 'GUEST_PROFILE_NOT_OPERATIONAL',
+  'GUEST_ASSETS_INVALID', 'ADAPTER_RUNTIME_MISMATCH', 'VMM_IDENTITY_UNAVAILABLE', 'VMM_SUPERVISION_MISMATCH',
+  'ENOENT', 'EACCES', 'EPERM', 'ENAMETOOLONG', 'EADDRINUSE', 'ENOSPC', 'EIO', 'EINVAL',
+  'EMFILE', 'ENFILE', 'ECONNREFUSED', 'ECONNRESET', 'EPIPE', 'UNCLASSIFIED_STARTUP_FAILURE',
+]);
+export const startupFailureSchema = z.strictObject({ version: z.literal(1), boot: bootRef,
+  phase: z.enum(['runtime', 'assets', 'sdk-import', 'vm-create', 'vm-start', 'guest-profile', 'operational-evidence']),
+  code: startupFailureCodeSchema });
+export type StartupFailure = Pick<z.infer<typeof startupFailureSchema>, 'phase' | 'code'>;
 const operationalSchema = z.strictObject({ version: z.literal(1), boot: bootRef,
   session: z.string().min(1).max(256), vmmPid: z.number().int().positive().max(2147483647),
   vmmStartTicks: z.string().regex(/^[0-9]{1,20}$/) });

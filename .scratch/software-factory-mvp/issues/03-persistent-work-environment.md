@@ -133,3 +133,14 @@ sem rerodar VM. Resultado `accepted:false`, discos/units failed preservados.
 Não há novo diagnóstico conclusivo de kernel: o erro específico do SDK não foi
 preservado. É necessário diagnóstico seguro de startup antes de nova tentativa,
 que exige outra autorização de VM. Nenhum critério de aceite ou integração03.
+
+Diagnóstico de startup acrescentado na fonte: `failure.json` privado por boot,
+fase/código em allowlist, projeção correlacionada no resultado público de start,
+sem rawmessage/stack/env/stderr e sem relaxar cessação ou bloqueio de reuso. Uma
+revisão encontrou publicação concorrente com close; corrigida na Promise de
+startup compartilhada e fechamento único. Dois casos do entrypoint foram RED
+antes da correção e GREEN depois, sem VM/sinais reais. Total novo: quatro testes
+de produtor com fronteiras externas dubladas e seis de consumidor público.
+Validação local: 50 passam/uma VM ignorada, typecheck/build/arquitetura/lint verdes.
+Isso não preenche o diagnóstico perdido de q3, não muda `accepted:false` nem
+comprova o produtor numa VM. Qualificação positiva/causa real seguem pendentes.

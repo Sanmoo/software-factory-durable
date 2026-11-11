@@ -9,7 +9,7 @@ export type { EnvironmentRef, PrepareResult } from './prepare.js';
 export type { GuestAssetPin } from './guest-assets.js';
 import { observeEnvironment, type BootRef } from './lifecycle.js';
 import type { EnvironmentRef } from './prepare.js';
-export type { BootRef, Observation } from './lifecycle.js';
+export type { BootRef, Observation, StartupFailure } from './lifecycle.js';
 import { startEnvironment, type StartResult } from './start.js';
 export type { StartResult } from './start.js';
 import { stopEnvironment } from './stop.js';
