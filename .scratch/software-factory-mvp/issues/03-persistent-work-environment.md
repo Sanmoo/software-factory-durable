@@ -157,3 +157,13 @@ caso comprovados; primeiro boot operacional/perfil não qualificados. Root r3 e
 anteriores preservados; autorização consumida. Próximo: investigar guest/handshake
 e composição dos assets, sem repetir VM sem nova autorização ou chamar timeout
 sozinho de prova de defeito no kernel. Nenhum checkbox ou integração03 concluído.
+
+[Inspeção local dos assets](../../../docs/evidence/03-guest-asset-inspection.md),
+sem outro boot: rótulos de kernel/módulos rootfs/initramfs coincidem em cada
+conjunto; isso não prova ABI nem causa do timeout. O init extraído da customizada
+é idêntico ao da base e a receita não configura hook Docker/cgroup; só acrescenta
+pacotes. O builder tem `rootfsInitExtra` para essa composição. Seu resolver também
+remove restrições `=versão` e o cache só tem linux-virt6.18.60: não prometer pin58
+apenas mudando uma string. Correção exige inputs/receita coerentes, sem misturar
+assets ou repetir VM sem alteração fundamentada; investigação ainda não resolveu
+o readiness.
