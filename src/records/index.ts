@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, mkdir, open, readFile, rename, realpath, type FileHandle } from 'node:fs/promises';
+import { lstat, mkdir, open, rename, realpath, unlink, type FileHandle } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { types } from 'node:util';
 import { z } from 'zod';
 
 // A single delimiter absent from all registered values prevents replacement
@@ -35,13 +36,97 @@ async function privateDirectory(path: string, create = false) {
   const info = await lstat(path);
   if (!info.isDirectory() || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0) throw new RecordsError();
 }
-async function atomicJson(directory: string, name: string, value: unknown) {
+async function atomicJson(directory: string, name: string, value: unknown, validate = () => {}) {
   const temporary = join(directory, `${name}-${randomUUID()}.tmp`);
-  const file = await open(temporary, 'wx', 0o600);
-  try { await file.writeFile(JSON.stringify(value)); await file.sync(); } finally { await file.close(); }
-  await rename(temporary, join(directory, name));
-  const parent = await open(directory, 'r');
-  try { await parent.sync(); } finally { await parent.close(); }
+  const destination = join(directory, name);
+  let renamed = false;
+  let created = false;
+  try {
+    const file = await open(temporary, 'wx', 0o600);
+    created = true;
+    try { await file.writeFile(JSON.stringify(value)); await file.sync(); } finally { await file.close(); }
+    validate();
+    await rename(temporary, destination);
+    renamed = true;
+    validate();
+    const parent = await open(directory, 'r');
+    try { await parent.sync(); } finally { await parent.close(); }
+    validate();
+  } catch (error) {
+    // Only our exclusive temporary file and our published destination; never
+    // recursively clean a capture or touch another capture's artifacts.
+    if (renamed) await unlink(destination);
+    throw error;
+  } finally {
+    if (created) {
+      try { await unlink(temporary); }
+      catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error; }
+    }
+  }
+}
+
+async function privateJson(path: string): Promise<unknown> {
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const info = await file.stat();
+    if (!info.isFile() || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0 || info.size > outputLimits.chunkBytes) throw new RecordsError();
+    // A bounded read remains bounded even if the file grows after stat.
+    const data = Buffer.alloc(outputLimits.chunkBytes + 1);
+    let length = 0;
+    while (length < data.length) {
+      const { bytesRead } = await file.read(data, length, data.length - length, length);
+      if (bytesRead === 0) break;
+      length += bytesRead;
+    }
+    if (length > outputLimits.chunkBytes) throw new RecordsError();
+    return JSON.parse(data.toString('utf8', 0, length));
+  } finally { await file.close(); }
+}
+
+// Snapshot only bounded, plain JSON data before recursive schema validation,
+// redaction or serialization. No entries/keys array for a caller-sized object,
+// no getters/toJSON calls, and no copies of unbounded strings or containers.
+type JsonEvent = z.infer<ReturnType<typeof z.json>>;
+function boundedEvent(event: unknown): JsonEvent {
+  let nodes = 0;
+  let stringBytes = 0;
+  const active = new WeakSet<object>();
+  function string(value: string) {
+    if (value.length > outputLimits.chunkBytes) throw new RecordsError();
+    stringBytes += Buffer.byteLength(value);
+    if (stringBytes > outputLimits.chunkBytes) throw new RecordsError();
+    return value;
+  }
+  function visit(value: unknown, depth: number): JsonEvent {
+    if (++nodes > 8192 || depth > 32) throw new RecordsError();
+    if (typeof value === 'string') return string(value);
+    if (value === null || typeof value === 'boolean' || typeof value === 'number') return value;
+    if (typeof value !== 'object' || types.isProxy(value) || active.has(value)) throw new RecordsError();
+    active.add(value);
+    try {
+      if (Array.isArray(value)) {
+        if (value.length > 8192) throw new RecordsError();
+        const result: JsonEvent[] = [];
+        for (let i = 0; i < value.length; i++) {
+          const item = Object.getOwnPropertyDescriptor(value, String(i));
+          if (!item || !('value' in item)) throw new RecordsError();
+          result.push(visit(item.value, depth + 1));
+        }
+        return result;
+      }
+      const prototype = Object.getPrototypeOf(value);
+      if (prototype !== Object.prototype && prototype !== null) throw new RecordsError();
+      const result: Record<string, JsonEvent> = Object.create(null);
+      for (const key in value) {
+        const item = Object.getOwnPropertyDescriptor(value, key);
+        if (!item) continue;
+        if (!('value' in item)) throw new RecordsError();
+        result[string(key)] = visit(item.value, depth + 1);
+      }
+      return result;
+    } finally { active.delete(value); }
+  }
+  return visit(event, 0);
 }
 
 /** Host-only evidence storage. root must already be private and outside every guest mount. */
@@ -82,15 +167,22 @@ export async function createRecords({ root }: { root: string }) {
   const records = {
     async record(context: OutputContext, event: unknown): Promise<OutputReference> {
       try {
-        const parsed = z.json().parse(event);
+        const parsed = z.json().parse(boundedEvent(event));
+        context = contextSchema.parse(context);
         // Escape only after filtering string values/keys: a newline or quote in
         // a secret must not evade filtering by becoming a JSON escape sequence.
-        function redact(value: z.infer<ReturnType<typeof z.json>>, depth = 0): z.infer<ReturnType<typeof z.json>> {
+        function redact(value: JsonEvent, depth = 0): JsonEvent {
           if (depth > 32) throw new RecordsError();
           if (typeof value === 'string') return filter(value, true).text;
           if (Array.isArray(value)) return value.map(item => redact(item, depth + 1));
           if (value && typeof value === 'object') {
-            return Object.fromEntries(Object.entries(value).map(([key, item]) => [filter(key, true).text, redact(item, depth + 1)]));
+            const result: Record<string, JsonEvent> = Object.create(null);
+            for (const [key, item] of Object.entries(value)) {
+              const filtered = filter(key, true).text;
+              if (Object.hasOwn(result, filtered)) throw new RecordsError();
+              result[filtered] = redact(item, depth + 1);
+            }
+            return result;
           }
           return value;
         }
@@ -135,9 +227,16 @@ export async function createRecords({ root }: { root: string }) {
         let excerpt = '';
         let excerptBytes = 0;
         let truncated = false;
+        function validateOpen() {
+          if (state !== 'open') throw new RecordsError();
+        }
         async function fail(): Promise<never> {
+          if (state === 'closed') throw new RecordsError();
           state = 'failed'; pending = '';
           try { await handle.close(); } catch { /* No raw fallback, including error diagnostics. */ }
+          // Do not await finish here: it can itself be calling fail. Publication
+          // rechecks invalidation around rename/sync and removes a renamed marker.
+          try { await unlink(join(directory, 'complete.json')); } catch { /* Never recursively remove. */ }
           throw new RecordsError();
         }
         async function append(text: string) {
@@ -173,8 +272,11 @@ export async function createRecords({ root }: { root: string }) {
               const result = filter(pending + decoder.decode(), true);
               pending = '';
               await append(result.text);
+              validateOpen();
               await handle.sync(); await handle.close();
-              await atomicJson(directory, 'complete.json', safeMetadata({ version: 1, bytes, finishedAt: new Date().toISOString() }));
+              validateOpen();
+              await atomicJson(directory, 'complete.json', safeMetadata({ version: 1, bytes, finishedAt: new Date().toISOString() }), validateOpen);
+              validateOpen();
               state = 'closed';
               return { reference, tail: result.text, bytes, excerpt, truncated,
                 display: truncated ? `${excerpt}\n[DISPLAY TRUNCATED; protected output available by reference]` : excerpt };
@@ -194,13 +296,8 @@ export async function createRecords({ root }: { root: string }) {
         // Missing/corrupt correlation metadata is not an absent output or a
         // complete uncorrelated result, even when the output file survived.
         try {
-          const file = await open(join(directory, 'capture.json'), constants.O_RDONLY | constants.O_NOFOLLOW);
-          try {
-            const info = await file.stat();
-            if (!info.isFile() || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0 || info.size > 65536) throw new RecordsError();
-            const capture = captureSchema.parse(JSON.parse(await file.readFile('utf8')));
-            if (capture.reference.workId !== reference.workId || capture.reference.id !== reference.id || capture.context.workId !== reference.workId) throw new RecordsError();
-          } finally { await file.close(); }
+          const capture = captureSchema.parse(await privateJson(join(directory, 'capture.json')));
+          if (capture.reference.workId !== reference.workId || capture.reference.id !== reference.id || capture.context.workId !== reference.workId) throw new RecordsError();
         } catch { throw new RecordsError(); }
         const outputPath = join(directory, 'output');
         const info = await lstat(outputPath);
@@ -208,7 +305,7 @@ export async function createRecords({ root }: { root: string }) {
         let state: 'complete' | 'partial' = 'partial';
         try {
           const complete = z.strictObject({ version: z.literal(1), bytes: z.number().int().nonnegative(), finishedAt: z.iso.datetime() })
-            .parse(JSON.parse(await readFile(join(directory, 'complete.json'), 'utf8')));
+            .parse(await privateJson(join(directory, 'complete.json')));
           if (complete.bytes !== info.size) throw new RecordsError();
           state = 'complete';
         } catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error; }
