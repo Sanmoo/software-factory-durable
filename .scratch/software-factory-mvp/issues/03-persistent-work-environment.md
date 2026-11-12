@@ -375,3 +375,20 @@ Original permanece sem reparo, candidato não promovido, zero novos boots/cleanu
 Isso comprova reparo estrutural na cópia e amostras, não perda zero de todos os
 dados, boot funcional ou recuperação automática. Ticket ainda aberto; promoção/
 continuação física dependem de novo escopo, sem reaproveitar terceiroboot bloqueado.
+
+[Promoção/boots/cleanup W3 autorizados e concluídos](../../../docs/evidence/03-w3-recovered-boots-and-cleanup.md):
+fonte6c2b998, originalA arquivado com SHA/inode preservados (ctime pode mudar no
+rename), Boriginalpré-B2 copiado/verificado; qcow2 standalone da cópia reparada
+promovido sob locks/syncs, roundtripFS0/40GiB/cincohashes iguais. Exatos2novosboots
+B2/A2 KVM operacionais, cincohashes A apósboot iguais e engine-id B1/B2igual.
+A2parado/checks0/cessaçãoindep e remove público success quatrorecursos; B2 permaneceu
+active mesmoVMM/CID apóscleanupA. Depois B2parado/checks0/removido pelo público.
+Alvos/runtimes próprios W3 ausentes, owner/ready/current/boots/markers/histórico e
+originais/snapshots/evidências preservados; U3/V3/UNKNOWN anteriores intocados.
+Guestfinalizationobserved/terminationunconfirmed não são prova graciosa plena.
+Review63e43389 sem achados no cenário; ainda duas lacunas de aceite03: persistência
+compacta dos writablepaths/cache e workspace via guest/FUSE no perfil atual, e
+consumo físico/disco/workspace observável pela interface do produto. Não importar
+toda suíte05/06 nem declarar esses requisitos cumpridos por fixturehost ou JSON
+privado. Orçamento43 consumido; nenhum boot/falha/cleanup extra implícito. Ticket
+permanece aberto até fechar os dois gaps próprios, sem integração parcial.
