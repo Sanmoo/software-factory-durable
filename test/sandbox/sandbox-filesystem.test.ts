@@ -4,6 +4,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdir, open, readFile, readlink, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import fs from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { createSandbox, type BootRef } from '../../src/sandbox/index.js';
 
 const testRoot = process.env.FACTORY_SANDBOX_TEST_ROOT;
@@ -21,10 +23,11 @@ async function shortRoot() {
   throw new Error('NO_NEW_SHORT_FILESYSTEM_TEST_ROOT');
 }
 
-for (const variant of ['valid', 'corrupt', 'short-filesystem', 'backing-file', 'prior-unknown'] as const) {
-  test(`Sandbox.start validates preserved ext4 before manager actuation: ${variant} (real disks, no VM)`, { skip: !testRoot }, async () => {
+for (const variant of ['valid', 'corrupt', 'short-filesystem', 'backing-file', 'prior-unknown', 'low-space'] as const) {
+  test(`Sandbox.start validates preserved ext4 before manager actuation: ${variant} (real disks, no VM)`, { skip: !testRoot }, async t => {
     const root = await shortRoot();
     const previousPath = process.env.PATH;
+    let restoreStorage: (() => void) | undefined;
     try {
       const assets = join(root, 'assets');
       await mkdir(assets, { mode: 0o700 });
@@ -80,6 +83,15 @@ require('node:fs').writeFileSync(${JSON.stringify(join(root, 'manager-request'))
 process.exit(77);
 `, { mode: 0o700 });
       process.env.PATH = bin; // All disk helpers fixed paths; no real manager fallback.
+      if (variant === 'low-space') {
+        const statfs = fs.statfs;
+        const boundary = t.mock.method(fs, 'statfs', async (...args: Parameters<typeof fs.statfs>) => {
+          const actual = await Reflect.apply(statfs, fs, args);
+          return args[0] === root || args[0] === directory ? { ...actual, bavail: 0n } : actual;
+        });
+        syncBuiltinESMExports();
+        restoreStorage = () => { boundary.mock.restore(); syncBuiltinESMExports(); };
+      }
       const result = await sandbox.start({ environment, configuration });
       assert.equal(hash(await readFile(disk)), before, 'checking must never repair or rewrite preserved data');
       if (variant === 'valid') {
@@ -90,9 +102,11 @@ process.exit(77);
         assert.equal((await readdir(root)).includes('manager-request'), false);
         assert.deepEqual(JSON.parse(await readFile(join(directory, 'current.json'), 'utf8')), { version: 1, environment, boot: oldBoot });
         if (result.status === 'success') assert.fail('unverified filesystem must not start');
-        assert.equal(result.code, variant === 'prior-unknown' ? 'PREVIOUS_BOOT_NOT_STOPPED' : 'PRESERVED_DISK_CHECK_REQUIRED');
+        assert.equal(result.code, variant === 'prior-unknown' ? 'PREVIOUS_BOOT_NOT_STOPPED'
+          : variant === 'low-space' ? 'INSUFFICIENT_STORAGE_FOR_BOOT' : 'PRESERVED_DISK_CHECK_REQUIRED');
       }
     } finally {
+      restoreStorage?.();
       if (previousPath === undefined) delete process.env.PATH; else process.env.PATH = previousPath;
       await rm(root, { recursive: true, force: true });
     }

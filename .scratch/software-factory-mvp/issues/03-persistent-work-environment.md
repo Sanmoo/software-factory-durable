@@ -335,3 +335,15 @@ e FDread/write/reabertura legítimos preservados. Nenhum dado pessoal acessado.
 Review53c769a3 sem achados;101casos100pass1VMskip strictgates/arch72módulos321deps.
 Isso fecha o bug de fronteira testada, não substitui prova kernel/FUSE/hardware,
 isolamento entre ambientes ou perda do owner. Imagem4b6 e históricos intocados.
+
+[Admissão de storage](../../../docs/evidence/03-storage-admission-local.md): falta
+conhecida de espaço antes deixava owner sem disco e impossibilitava retry mesmo
+após espaço restaurado. Repro público RED corrigido movendo checks de capacidade/
+espaço de novos ambientes antes do mkdir por Work; intenção continua durável
+antes de todo efeito nativo, mkdirEXCL resolve corrida, existentes incompletos não
+são adotados. Reuso idempotente saudável sob pressão e novo prepare do MESMO Work
+após recuperar espaço passam, sem mudar disco de outro ambiente. Start baixo espaço
+recusa antes do manager e preserva current/SHA. Review38a5ebc9 sem achados;
+102casos101pass/1VMskip strictgates/arch72módulos323deps. Storage é admissão pontual,
+não quota/reserva ou teste ENOSPC real com ativo. Qualificação física restante
+precisa de concessão específica; orçamento v3 permanece consumido.

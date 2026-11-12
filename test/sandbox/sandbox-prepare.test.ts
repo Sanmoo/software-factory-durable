@@ -1,14 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile, lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { createSandbox } from '../../src/sandbox/index.js';
+import fs from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 
 const configuration = { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1', diskGiB: 1 };
 const testRoot = process.env.FACTORY_SANDBOX_TEST_ROOT;
-test('Sandbox.prepare creates a real standalone persistent disk idempotently and refuses incompatible reuse', { skip: !testRoot }, async () => {
+test('Sandbox.prepare creates a real standalone persistent disk idempotently and refuses incompatible reuse', { skip: !testRoot }, async t => {
   const root = await mkdtemp(join(testRoot!, 'factory-prepare-'));
   try {
     const assets = join(root, 'assets');
@@ -43,5 +45,24 @@ test('Sandbox.prepare creates a real standalone persistent disk idempotently and
       { status: 'failure', code: 'ENVIRONMENT_CONFIGURATION_MISMATCH' });
     assert.deepEqual(await sandbox.prepare({ workId: 'work-03', configuration: { ...configuration, accel: 'tcg' } }),
       { status: 'failure', code: 'SANDBOX_CONFIGURATION_INVALID' });
+    const statfs = fs.statfs;
+    let pressured = true;
+    const boundary = t.mock.method(fs, 'statfs', async () => {
+      const actual = await statfs(root, { bigint: true });
+      return pressured ? { ...actual, bavail: 0n } : actual;
+    });
+    syncBuiltinESMExports();
+    try {
+      const before = hash(await readFile(disk));
+      assert.equal((await sandbox.validate(configuration)).checks.find(c => c.id === 'storage')?.status, 'blocked');
+      assert.deepEqual(await sandbox.prepare({ workId: 'pressure-work', configuration }),
+        { status: 'failure', code: 'INSUFFICIENT_STORAGE_FOR_PREPARATION' });
+      const blocked = join(root, 'environments', `env-${hash('pressure-work')}`);
+      await assert.rejects(() => lstat(blocked), { code: 'ENOENT' }, 'known admission refusal must not strand an incomplete environment');
+      assert.deepEqual(await sandbox.prepare({ workId: 'work-03', configuration }), first, 'idempotent lookup needs no new allocation');
+      pressured = false;
+      assert.equal((await sandbox.prepare({ workId: 'pressure-work', configuration })).status, 'success');
+      assert.equal(hash(await readFile(disk)), before, 'no cleanup or rewrite of another environment to create free space');
+    } finally { boundary.mock.restore(); syncBuiltinESMExports(); }
   } finally { await rm(root, { recursive: true, force: true }); }
 });

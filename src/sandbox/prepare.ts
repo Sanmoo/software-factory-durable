@@ -44,9 +44,7 @@ export async function prepareEnvironment(root: string, pin: GuestAssetPin | unde
   const environment = `env-${createHash('sha256').update(workId).digest('hex')}` as EnvironmentRef;
   const directory = join(environments, environment);
   const identity = { version: 1, workId, environment, configuration, guestAssets: pin };
-  try { await mkdir(directory, { mode: 0o700 }); }
-  catch (error) {
-    if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error;
+  const existing = async (): Promise<PrepareResult> => {
     await privateDirectory(directory);
     if (await cleanupRequested(directory)) return { status: 'failure', code: 'ENVIRONMENT_CLEANUP_PENDING' };
     try {
@@ -62,11 +60,11 @@ export async function prepareEnvironment(root: string, pin: GuestAssetPin | unde
       await privateDirectory(join(directory, 'artifacts'));
       return { status: 'success', environment };
     } catch { return { status: 'indeterminate', code: 'ENVIRONMENT_PREPARATION_INCOMPLETE' }; }
-  }
-  // Record identity before any disk effects. An interrupted preparation is never blindly retried.
-  await durableJson(join(directory, 'owner.json'), identity);
-  await syncDirectory(directory);
-  await syncDirectory(environments);
+  };
+  // Reuse needs no new allocation. Never turn an incomplete existing preparation
+  // into permission to retry native effects, even after pressure recovers.
+  try { await lstat(directory); return existing(); }
+  catch (e) { if (!(e instanceof Error && 'code' in e && e.code === 'ENOENT')) throw e; }
   const manifest = JSON.parse(await readFile(join(pin.directory, 'manifest.json'), 'utf8'));
   const source = join(pin.directory, manifest.assets.rootfs);
   const sourceInfo = await lstat(source);
@@ -78,6 +76,18 @@ export async function prepareEnvironment(root: string, pin: GuestAssetPin | unde
   if (!storage || storage.unsuitable || BigInt(storage.availableBytes) < required) {
     return { status: 'failure', code: 'INSUFFICIENT_STORAGE_FOR_PREPARATION' };
   }
+  // Known admission refusals above create no per-Work intent to strand. Atomic
+  // mkdir still selects one initializer if another caller raced admission.
+  try { await mkdir(directory, { mode: 0o700 }); }
+  catch (e) {
+    if (!(e instanceof Error && 'code' in e && e.code === 'EEXIST')) throw e;
+    return existing();
+  }
+  // Identity remains durable before every native disk effect. Admission is only
+  // a point-in-time check; later I/O failures stay incomplete, never auto-repaired.
+  await durableJson(join(directory, 'owner.json'), identity);
+  await syncDirectory(directory);
+  await syncDirectory(environments);
   try {
     await mkdir(join(directory, 'workspace'), { mode: 0o700 });
     await mkdir(join(directory, 'artifacts'), { mode: 0o700 });
