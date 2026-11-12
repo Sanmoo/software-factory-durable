@@ -9,7 +9,7 @@ import { currentSchema, identitySchema, metadata, ownedEnvironment, privateDirec
   startupFailureCodeSchema, supervisionHierarchy, unitState, type BootRef, type StartupFailure } from './lifecycle.js';
 import { bootRuntimePaths, durableJson } from './start.js';
 import type { EnvironmentRef } from './prepare.js';
-import { serveReadTools, type ReadBinding } from './read-tools.js';
+import { serveReadToolBindings, type ReadBinding } from './read-tools.js';
 
 function startupCode(error: unknown): StartupFailure['code'] {
   if (!(error instanceof Error)) return 'UNCLASSIFIED_STARTUP_FAILURE';
@@ -45,7 +45,7 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
   let phase: StartupFailure['phase'] = 'runtime';
   let operational = false;
   let vm: GondolinVM | undefined;
-  let readTools: Awaited<ReturnType<typeof serveReadTools>> | undefined;
+  let readTools: Awaited<ReturnType<typeof serveReadToolBindings>> | undefined;
   const markers = createBootMarkers(boot);
   let markerPublication: Promise<void> | undefined;
   const publishMarkers = () => {
@@ -110,7 +110,7 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
     operational = true;
     // Host composition supplies only its already-authorised invocation. No
     // guest nonce/file or startup evidence can grant a role or change phase.
-    if (readBinding) readTools = await serveReadTools({ ...readBinding, vm, disconnected: terminate });
+    if (readBinding) readTools = await serveReadToolBindings([readBinding], vm);
   })().catch(async error => {
     // Shared startup rejection orders the bounded publication attempt before both
     // normal close and a concurrent stop; failed writes do not suppress closure.
@@ -187,7 +187,6 @@ sync`],
     })();
     void shutdown.catch(() => { process.exitCode = 1; });
   }
-  readBinding?.signal.addEventListener('abort', terminate, { once: true });
   process.on('SIGTERM', terminate);
   process.on('SIGINT', terminate);
   try { await booting; await stopped; await shutdown; }
@@ -197,7 +196,6 @@ sync`],
     throw new Error('ADAPTER_BOOT_FAILED');
   } finally {
     await readTools?.close();
-    readBinding?.signal.removeEventListener('abort', terminate);
     process.off('SIGTERM', terminate); process.off('SIGINT', terminate);
   }
 }

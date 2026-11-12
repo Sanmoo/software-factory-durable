@@ -37,7 +37,7 @@ function envelope(messageId: string, kind: string, payload: Envelope['payload'],
 
 /** Private component of the existing owner. Authority is a host snapshot with a
  * revocation signal, never a guest file, handshake claim, Records fact or current() callback. */
-export async function serveReadTools(options: ReadBinding & { vm: GuestOwner; disconnected?(): void }) {
+export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) {
   const bound = Object.freeze(contextSchema.parse(options.context));
   const lifetime = new AbortController();
   const signal = AbortSignal.any([options.signal, lifetime.signal]);
@@ -110,12 +110,27 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner; di
     })();
     active.add(task);
     try { await task; } finally { active.delete(task); }
-  }, closed() { lifetime.abort(); options.disconnected?.(); } }, 'local-operator');
+  }, closed() { lifetime.abort(); } }, 'local-operator');
   let closing: Promise<void> | undefined;
   return { endpoint: options.endpoint, close() {
     lifetime.abort();
     return closing ??= (async () => { await server.close(); await Promise.allSettled([...active]); })();
   } };
+}
+
+/** Private boot-owner collection. Invocation revocation never owns VM shutdown;
+ * the adapter closes this collection before disposing its existing VM. */
+export async function serveReadToolBindings(bindings: readonly ReadBinding[], vm: GuestOwner) {
+  const owners: Awaited<ReturnType<typeof serveReadTools>>[] = [];
+  let closing: Promise<void> | undefined;
+  const close = () => closing ??= Promise.all(owners.map(owner => owner.close())).then(() => {});
+  try {
+    for (const binding of bindings) owners.push(await serveReadTools({ ...binding, vm }));
+  } catch (error) {
+    await close();
+    throw error;
+  }
+  return { close };
 }
 
 /** One invocation-bound channel, kept alive across native access/stream operations. */
