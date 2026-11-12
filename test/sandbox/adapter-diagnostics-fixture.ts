@@ -289,6 +289,25 @@ async function registrationProbe() {
   const { connect, protocolVersion } = await import('../../src/protocol/index.js');
   const { readdir } = await import('node:fs/promises');
   const sandbox = createSandbox({ root });
+  // A technical launch request must remain closed even with the normal boot's
+  // gated context. No worker process, SDK or start receipt exists in this slice.
+  const launcher = await connect(join(runtime, 'owner'), 'local-operator');
+  const launches = launcher.messages[Symbol.asyncIterator]();
+  const binding = { workId, environmentRef: environment, bootRef: boot, invocationId: 'planned-review', role: 'standards' };
+  for (const [id, payload, code] of [
+    ['closed', binding, 'WORKER_EXECUTION_NOT_ENABLED'],
+    ['mismatch', { ...binding, workId: 'other-work' }, 'WORKER_BOOT_MISMATCH'],
+    ['secret', { ...binding, apiKey: 'SYNTHETIC_SECRET_MUST_NOT_BE_ACCEPTED' }, 'WORKER_LAUNCH_INVALID'],
+  ] as const) {
+    await launcher.send({ protocol_version: protocolVersion, controller_run_id: null, message_id: id, reply_to: null,
+      kind: 'launch-worker', payload });
+    const result = await launches.next();
+    assert.equal(result.value?.kind, 'worker-launch-result');
+    assert.equal(result.value?.reply_to, id);
+    assert.deepEqual(result.value?.payload, { status: 'failure', code });
+  }
+  launcher.close();
+  audit('worker-launch-closed');
   const standards = { workId, executionId: 'execution', invocationId: 'standards', role: 'standards' as const,
     environmentRef: environment, bootRef: boot, phaseId: 'review' };
   const spec = { ...standards, invocationId: 'spec', role: 'spec' as const };
@@ -314,6 +333,9 @@ async function registrationProbe() {
   const reply = await replies.next();
   assert.equal(reply.done, false);
   assert.equal(reply.value?.payload.code, 'INVALID_TOOL_CALL');
+  await worker.send({ protocol_version: protocolVersion, controller_run_id: null, message_id: 'worker-launch-admin', reply_to: null,
+    kind: 'launch-worker', payload: binding });
+  assert.equal((await replies.next()).value?.payload.code, 'INVALID_TOOL_CALL');
   worker.close();
   // Registration is a host-only endpoint association, not a role asserted in payload.
   const host = await connect(join(runtime, 'owner'), 'local-operator');

@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { planWorkerLaunch, type WorkerBootHost } from '../platform/host/index.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { connect, listen, protocolVersion, type Channel, type Envelope } from '../protocol/index.js';
@@ -14,7 +15,8 @@ function frame(id: string, kind: string, payload: Envelope['payload'], replyTo: 
 
 /** Private same-account host endpoint. Only this endpoint accepts registration;
  * worker projections get only a separately bound tool endpoint. Not admission. */
-export async function serveOwnerRegistration(root: string, identity: { workId: string; environmentRef: string; bootRef: BootRef }, vm: GuestOwner) {
+export async function serveOwnerRegistration(root: string, identity: { workId: string; environmentRef: string; bootRef: BootRef },
+  vm: GuestOwner, host: WorkerBootHost) {
   const directory = bootRuntimePaths(root, identity.bootRef).directory;
   const bindings = await serveReadToolBindings([], vm);
   const records = await createRecords({ root });
@@ -23,6 +25,18 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
   let sequence = 0;
   const server = await listen(join(directory, 'owner'), {
     async message(request, channel, peer) {
+      if (request.kind === 'launch-worker') {
+        // Closed technical boundary only: no profile/key/bootstrap is accepted.
+        // Host data comes from the adapter gates, never from the request.
+        let code = 'WORKER_EXECUTION_NOT_ENABLED';
+        try { planWorkerLaunch(host, request.payload); }
+        catch (error) {
+          code = error instanceof Error && ['WORKER_LAUNCH_INVALID', 'WORKER_BOOT_MISMATCH', 'WORKER_NODE24_REQUIRED'].includes(error.message)
+            ? error.message : 'WORKER_LAUNCH_INVALID';
+        }
+        await channel.send(frame(request.message_id, 'worker-launch-result', { status: 'failure', code }, request.message_id));
+        return;
+      }
       const parsed = z.strictObject({ context: contextSchema }).safeParse(request.payload);
       if (request.kind !== 'register-binding' || !parsed.success || lifetimes.has(channel)) {
         await channel.send(frame(request.message_id, 'binding-result', { status: 'failure', code: 'INVALID_REGISTRATION' }, request.message_id));

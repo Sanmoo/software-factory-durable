@@ -20,6 +20,6 @@ test('normal three-argument owner registers two host bindings on one VM and deni
     assert.equal(child.error, undefined, child.error?.message);
     assert.equal(child.status, 0, child.stderr);
     assert.deepEqual((await readFile(join(root, 'audit'), 'utf8')).trim().split('\n'),
-      ['vm-create', 'profile-ready', 'read', 'read', 'read', 'registration-isolated', 'guest-finalize', 'close']);
+      ['vm-create', 'profile-ready', 'worker-launch-closed', 'read', 'read', 'read', 'registration-isolated', 'guest-finalize', 'close']);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
