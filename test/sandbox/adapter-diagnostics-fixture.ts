@@ -1,5 +1,5 @@
-// Preload for a local entrypoint test. Every SDK export is doubled, and the
-// process-spawn boundary additionally forbids any real SDK VMM as a fail-safe.
+// Local entrypoint preload. VM is always doubled and VMM spawning forbidden.
+// The confinement mode uses actual SDK RealFS/RPC components on NEW fixtures only.
 import cp from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -7,6 +7,8 @@ import { mkdir, open, readFile, readlink, writeFile, type FileHandle } from 'nod
 import { join } from 'node:path';
 import { syncBuiltinESMExports } from 'node:module';
 import { mock } from 'node:test';
+import assert from 'node:assert/strict';
+import type { RealFSProvider as RealProviderType, FsRpcService as RpcServiceType } from '@earendil-works/gondolin';
 
 const [root, environment, boot] = process.argv.slice(2);
 if (!root || !environment || !boot) throw new Error('FIXTURE_ARGUMENTS_REQUIRED');
@@ -64,12 +66,77 @@ let logger: Logger = null;
 let lateLogger: Logger = null;
 let execCalls = 0;
 const mode = process.env.ADAPTER_DIAGNOSTIC_FIXTURE_MODE;
+if (mode === 'vfs-confinement') globalThis.fetch = async () => { throw new Error('NETWORK_FORBIDDEN_IN_FIXTURE'); };
+const actual = mode === 'vfs-confinement' ? await import('@earendil-works/gondolin') : undefined;
+if (actual) {
+  mock.method(actual.VM, 'create', async () => { throw new Error('REAL_VM_FORBIDDEN_IN_FIXTURE'); });
+  for (const area of ['workspace', 'artifacts']) {
+    await mkdir(join(directory, area), { mode: 0o700 });
+    await writeFile(join(directory, area, 'own'), `own ${area}`);
+  }
+  for (const zone of ['home', 'control', 'git-cache', 'other-work']) {
+    const foreign = join(root, 'protected', zone); await mkdir(foreign, { recursive: true, mode: 0o700 });
+    await writeFile(join(foreign, 'secret'), 'PRIVATE_TOKEN_CANARY');
+    await fs.promises.symlink('PRIVATE_TOKEN_CANARY', join(foreign, 'secret-link'));
+    for (const area of ['workspace', 'artifacts']) await fs.promises.symlink(foreign, join(directory, area, `escape-${zone}`));
+  }
+}
 mock.module('@earendil-works/gondolin', { namedExports: {
-  VM: { async create(options: { debugLog: Logger; sandbox: { console: string; debug: readonly string[] | boolean } }) {
+  VM: { async create(options: { debugLog: Logger; sandbox: { console: string; debug: readonly string[] | boolean };
+    vfs: { mounts: Record<string, RealProviderType> } }) {
     logger = options.debugLog;
     lateLogger = logger;
     if (options.sandbox.console !== 'none' || options.sandbox.debug !== false || options.debugLog !== null) {
       throw new Error('PRODUCTION_CONSOLE_MUST_BE_DISABLED');
+    }
+    if (actual) {
+      audit('vfs-probe');
+      assert.deepEqual(Object.keys(options.vfs.mounts).sort(), ['/artifacts', '/workspace']);
+      for (const area of ['/workspace', '/artifacts']) {
+        const provider = options.vfs.mounts[area]!;
+        assert.equal(provider.rootPath, await fs.promises.realpath(join(directory, area.slice(1))));
+        assert.equal(await provider.realpath('/own'), '/own');
+        await provider.symlink('own', '/inside-link');
+        assert.equal(await provider.readlink('/inside-link'), 'own');
+        assert.equal((await provider.lstat('/inside-link')).isSymbolicLink(), true);
+        const handle = await provider.open('/inside-link', 'r');
+        try {
+          const data = Buffer.alloc(64); const { bytesRead } = await handle.read(data, 0, data.length, 0);
+          assert.equal(data.subarray(0, bytesRead).toString(), `own ${area.slice(1)}`);
+        } finally { await handle.close(); }
+        const writer = await provider.open('/written', 'w');
+        try { const bytes = Buffer.from('persisted through native provider'); await writer.write(bytes, 0, bytes.length, 0); }
+        finally { await writer.close(); }
+        const reopened: RealProviderType = new actual.RealFSProvider(provider.rootPath);
+        const reader = await reopened.open('/written', 'r');
+        try {
+          const data = Buffer.alloc(64); const { bytesRead } = await reader.read(data, 0, data.length, 0);
+          assert.equal(data.subarray(0, bytesRead).toString(), 'persisted through native provider');
+        } finally { await reader.close(); }
+        for (const zone of ['home', 'control', 'git-cache', 'other-work']) {
+          const service: RpcServiceType = new actual.FsRpcService(provider);
+          try {
+            const parent: Awaited<ReturnType<RpcServiceType['handleRequest']>> = await service.handleRequest({ v: 1, t: 'fs_request', id: 1, p: { op: 'lookup', req: { parent_ino: 1, name: `escape-${zone}` } } });
+            assert.equal(parent.p.err, 0);
+            const entry = parent.p.res?.entry as { ino: number };
+            const escaped: Awaited<ReturnType<RpcServiceType['handleRequest']>> = await service.handleRequest({ v: 1, t: 'fs_request', id: 2,
+              p: { op: 'lookup', req: { parent_ino: entry.ino, name: 'secret' } } });
+            if (escaped.p.err === 0) audit('vfs-ancestor-escape-detected');
+            assert.notEqual(escaped.p.err, 0, 'forged RPC parent must not disclose outside metadata');
+            for (const target of [`/escape-${zone}/secret`, `../protected/${zone}/secret`]) {
+              await assert.rejects(() => provider.lstat(target));
+              assert.throws(() => provider.lstatSync(target));
+            }
+            await assert.rejects(() => provider.readlink(`/escape-${zone}/secret-link`));
+            assert.throws(() => provider.readlinkSync(`/escape-${zone}/secret-link`));
+            await assert.rejects(() => provider.open(`/escape-${zone}/secret`, 'r'));
+            await assert.rejects(() => provider.open(`/escape-${zone}/new`, 'w'));
+            await assert.rejects(() => provider.rename('/own', `/escape-${zone}/renamed`));
+            await assert.rejects(() => provider.unlink(`/escape-${zone}/secret`));
+          } finally { await service.close(); }
+        }
+      }
+      audit('vfs-confined');
     }
     return {
     setDebugLog(next: Logger) { logger = next; },
@@ -77,7 +144,7 @@ mock.module('@earendil-works/gondolin', { namedExports: {
       logger?.('protocol', 'PRIVATE_TOKEN_CANARY');
       logger?.('qemu', 'stdout: [    0.000000] Linux version PRIVATE_TOKEN_CANARY');
       logger?.('qemu', 'stdout: [init] /dev entries:');
-      if (mode === 'markers-success' || mode?.startsWith('shutdown-')) return;
+      if (mode === 'markers-success' || mode === 'vfs-confinement' || mode?.startsWith('shutdown-')) return;
       const listeners = process.listeners('SIGTERM').filter(listener => !originalTermListeners.has(listener));
       if (listeners.length !== 1) throw new Error('EXPECTED_ONE_ADAPTER_STOP_LISTENER');
       // Invoke only the newly registered adapter callback; no OS signal or broad emit.
@@ -113,7 +180,7 @@ mock.module('@earendil-works/gondolin', { namedExports: {
         audit('guest-finalize-ok');
         return { exitCode: 0 };
       }
-      if (mode !== 'markers-success') throw new Error('GUEST_EXEC_MUST_NOT_RUN');
+      if (mode !== 'markers-success' && mode !== 'vfs-confinement') throw new Error('GUEST_EXEC_MUST_NOT_RUN');
       if (++execCalls === 1) {
         audit('guest-exec');
         lateLogger?.('qemu', 'stdout: [init] starting sandboxd');
@@ -124,7 +191,14 @@ mock.module('@earendil-works/gondolin', { namedExports: {
       return { exitCode: 0 };
     },
   }; } },
-  RealFSProvider: class {},
+  RealFSProvider: actual?.RealFSProvider ?? class {
+    async lstat() { throw new Error('UNEXPECTED_FILESYSTEM_ACCESS'); }
+    lstatSync() { throw new Error('UNEXPECTED_FILESYSTEM_ACCESS'); }
+    async readlink() { throw new Error('UNEXPECTED_FILESYSTEM_ACCESS'); }
+    readlinkSync() { throw new Error('UNEXPECTED_FILESYSTEM_ACCESS'); }
+    async realpath() { throw new Error('UNEXPECTED_FILESYSTEM_ACCESS'); }
+    realpathSync() { throw new Error('UNEXPECTED_FILESYSTEM_ACCESS'); }
+  },
 } });
 
 const probe = await open(join(root, 'probe'), 'wx', 0o600);

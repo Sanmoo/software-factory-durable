@@ -323,3 +323,15 @@ recriado, hardlink-publication e final malformado recusado. Sem cadeia de revis�
 não provam cleanup real de VM; prepared-sem-boot/metadata insuficiente ainda
 recusado conservadoramente. Prosseguir confinamento RealFS e depois qualificação
 real de isolamento/owner-loss/cleanup com orçamento próprio; ticket ainda aberto.
+
+[Confinamento local RealFS](../../../docs/evidence/03-workspace-confinement-local.md):
+repro no entrypoint real usando RealFSProvider/FsRpcService REAIS e VMdobrada
+mostrou lookup RPC malformado por inode de symlink expondo metadata de fixture
+fora do workspace. Corrigido com validação do pai por realpath público antes de
+lstat/readlink async/sync, preservando provider/FD/mutações/fila serial nativos.
+Sem fork do SDK/engine ou nova flag/interface de worker. Ambos mounts privados
+conferidos, quatro classes de destino externo por mount negadas, symlink interno
+e FDread/write/reabertura legítimos preservados. Nenhum dado pessoal acessado.
+Review53c769a3 sem achados;101casos100pass1VMskip strictgates/arch72módulos321deps.
+Isso fecha o bug de fronteira testada, não substitui prova kernel/FUSE/hardware,
+isolamento entre ambientes ou perda do owner. Imagem4b6 e históricos intocados.

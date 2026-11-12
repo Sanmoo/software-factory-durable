@@ -23,6 +23,26 @@ async function shortRoot() {
   throw new Error('NO_NEW_SHORT_TEST_DIRECTORY_AVAILABLE');
 }
 
+test('Sandbox adapter confines actual SDK filesystem RPC and ancestor symlinks (VM doubled, no VM/network/signal)', async () => {
+  const root = await shortRoot();
+  try {
+    const child = spawnSync(process.execPath, ['--experimental-test-module-mocks', '--import',
+      fileURLToPath(new URL('./adapter-diagnostics-fixture.js', import.meta.url)),
+      fileURLToPath(new URL('../../src/entrypoints/adapter.js', import.meta.url)), root, environment, boot],
+    { timeout: 5000, maxBuffer: 16384, encoding: 'utf8', env: {
+      PATH: '', NODE_DISABLE_COMPILE_CACHE: '1', ADAPTER_DIAGNOSTIC_FIXTURE_MODE: 'vfs-confinement',
+    } });
+    assert.equal(child.error, undefined, child.error?.message);
+    const audit = (await readFile(join(root, 'audit'), 'utf8')).trim().split('\n');
+    assert.equal(child.status, 0, `${child.stderr}\nBoundary audit: ${JSON.stringify(audit)}`);
+    assert.deepEqual(audit, ['vfs-probe', 'vfs-confined', 'guest-exec', 'close']);
+    assert.equal(`${child.stdout}${child.stderr}`.includes('PRIVATE_TOKEN_CANARY'), false);
+    for (const zone of ['home', 'control', 'git-cache', 'other-work']) {
+      assert.equal(await readFile(join(root, 'protected', zone, 'secret'), 'utf8'), 'PRIVATE_TOKEN_CANARY');
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 for (const mode of ['shutdown-success', 'shutdown-concurrent', 'shutdown-nonzero', 'shutdown-exec-fails', 'shutdown-timeout', 'shutdown-write-fails'] as const) {
 test(`Sandbox operational adapter finalizes the direct Alpine daemon before close: ${mode} (external doubles, no VM/signal)`, async () => {
   const root = await shortRoot();

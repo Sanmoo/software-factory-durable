@@ -3,6 +3,7 @@ import { readFile, readlink, realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { inspectGuestAssets } from './guest-assets.js';
 import { createBootMarkers } from './boot-markers.js';
+import { createWorkspaceProvider } from './workspace-provider.js';
 import { currentSchema, identitySchema, metadata, ownedEnvironment, privateDirectory, processStartTicks,
   startupFailureCodeSchema, supervisionHierarchy, unitState, type BootRef, type StartupFailure } from './lifecycle.js';
 import { bootRuntimePaths, durableJson } from './start.js';
@@ -80,8 +81,8 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
         rootDiskReadOnly: false, rootDiskDeleteOnClose: false, netEnabled: false, autoRestart: false,
         console: 'none', debug: false,
         ...runtime.sockets },
-      vfs: { mounts: { '/workspace': new RealFSProvider(join(directory, 'workspace')),
-        '/artifacts': new RealFSProvider(join(directory, 'artifacts')) } } });
+      vfs: { mounts: { '/workspace': createWorkspaceProvider(RealFSProvider, join(directory, 'workspace')),
+        '/artifacts': createWorkspaceProvider(RealFSProvider, join(directory, 'artifacts')) } } });
     phase = 'vm-start';
     await vm.start();
     // Freeze before any guest command; queued/late callbacks cannot add content.
