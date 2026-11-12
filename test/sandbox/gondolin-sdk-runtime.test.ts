@@ -36,6 +36,7 @@ test('closed loader verifies every request before exact-entry substitution; synt
           export class RealFSProvider {
             constructor() { throw new Error('SYNTHETIC_PROVIDER_FORBIDDEN'); }
           }
+          export function createHttpHooks() { throw new Error('SYNTHETIC_HTTP_HOOKS_FORBIDDEN'); }
         ` };
       }
       if (url.includes('/gondolin/') || url.includes('/factory-development-gondolin-v1/')) throw new Error('UNLISTED_SDK_LOAD');
@@ -100,6 +101,7 @@ test('closed loader verifies every request before exact-entry substitution; synt
     const sdk = await loadDevelopmentGondolinSdk();
     assert.equal(typeof sdk.VM.create, 'function');
     assert.equal(typeof sdk.RealFSProvider, 'function');
+    assert.equal(typeof sdk.createHttpHooks, 'function');
     assert.equal(imports, 1);
     assert.deepEqual(await readFile(record), bytes);
     assert.equal((await stat(record)).mtimeMs, before.mtimeMs);
@@ -122,7 +124,8 @@ test('adapter routes at existing sdk-import gate; backend and lifecycle options 
   assert.ok(gate > source.indexOf('await inspectGuestAssets('));
   assert.ok(load > gate && load < source.indexOf("phase = 'vm-create'"));
   assert.equal(source.includes("await import('@earendil-works/gondolin')"), false);
-  for (const preserved of ['startTimeoutMs: 30000', 'AbortSignal.timeout(10000)', "accel: 'kvm'", 'netEnabled: false',
+  for (const preserved of ['startTimeoutMs: 30000', 'AbortSignal.timeout(10000)', "accel: 'kvm'", 'netEnabled: true, mitmCertDir',
+    'httpHooks, dns: { mode: \'synthetic\' }, allowWebSockets: false',
     'rootDiskReadOnly: false', 'rootDiskDeleteOnClose: false', 'debugLog: null', 'await vm.start()', 'vm?.close()']) {
     assert.ok(source.includes(preserved), preserved);
   }

@@ -1,6 +1,8 @@
 import type { VM as GondolinVM } from '@earendil-works/gondolin';
-import { readFile, readlink, realpath } from 'node:fs/promises';
+import { mkdir, readFile, readlink, realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { BlockList } from 'node:net';
+import { networkInterfaces } from 'node:os';
 import { inspectGuestAssets } from './guest-assets.js';
 import { createBootMarkers } from './boot-markers.js';
 import { createWorkspaceProvider } from './workspace-provider.js';
@@ -71,10 +73,24 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
     if ((await inspectGuestAssets(owner.guestAssets)).some(check => check.status !== 'ok')) throw new Error('GUEST_ASSETS_INVALID');
     phase = 'sdk-import';
     // Runtime SDK import stays after all ownership/supervision/runtime/asset gates.
-    const { VM, RealFSProvider } = await loadDevelopmentGondolinSdk();
+    const { VM, RealFSProvider, createHttpHooks } = await loadDevelopmentGondolinSdk();
     // Private provenance stamp ONLY after closed full-tree SDK selection. Tied
     // to this SAME VM below, never a worker/model claim or global registry.
     const profileOrigin = 'factory-development-gondolin-0.14.0-stdin-capacity-v1' as const;
+    // CA material belongs only to this already-owned/removable boot runtime.
+    // SDK creates it on real activation, never in a personal/default cache.
+    const mitmCertDir = join(runtime.directory, 'mitm-ca');
+    await mkdir(mitmCertDir, { mode: 0o700 });
+    await privateDirectory(mitmCertDir);
+    const hostAddresses = new BlockList();
+    for (const addresses of Object.values(networkInterfaces())) {
+      for (const address of addresses ?? []) hostAddresses.addAddress(address.address, address.family === 'IPv6' ? 'ipv6' : 'ipv4');
+    }
+    // Factory composes this exclusion AFTER its built-in internal-range guard.
+    // Snapshot covers known local interfaces, not every public host/Other Work endpoint.
+    const { httpHooks } = createHttpHooks({
+      isIpAllowed: info => !hostAddresses.check(info.ip, info.family === 6 ? 'ipv6' : 'ipv4'),
+    });
     phase = 'vm-create';
     // SDK 0.14 also consults autoStart inside explicit start(); false rejects a
     // stopped VM before sending boot. Ownership is established above, not by this flag.
@@ -83,9 +99,12 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
       // logging for operational callers: SDK serial buffering is not bounded by
       // our old marker callback. No worker flag can reactivate that diagnostic.
       tmpfs: {}, startTimeoutMs: 30000, sessionLabel: boot, debugLog: null,
+      // No fetch override: retain SDK native DNS/connect and redirect guards.
+      httpHooks, dns: { mode: 'synthetic' }, allowWebSockets: false,
+      // No SSH, raw TCP mappings or ingress; VM-local Docker ports remain separate.
       sandbox: { vmm: 'qemu', qemuPath: '/usr/bin/qemu-system-x86_64', accel: 'kvm', cpu: 'host',
         imagePath: owner.guestAssets.directory, rootDiskPath: join(directory, 'root.qcow2'), rootDiskFormat: 'qcow2',
-        rootDiskReadOnly: false, rootDiskDeleteOnClose: false, netEnabled: false, autoRestart: false,
+        rootDiskReadOnly: false, rootDiskDeleteOnClose: false, netEnabled: true, mitmCertDir, autoRestart: false,
         console: 'none', debug: false,
         ...runtime.sockets },
       vfs: { mounts: { '/workspace': createWorkspaceProvider(RealFSProvider, join(directory, 'workspace')),
@@ -96,7 +115,7 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
     await publishMarkers();
     phase = 'guest-profile';
     // The pinned image must provide Alpine and its own Docker daemon with vfs.
-    // Networking remains disabled in this first-boot slice; no pulls or remote calls.
+    // Readiness does not exercise mediated networking, pulls or layered TLS trust.
     const ready = await vm.exec(['/bin/sh', '-c', guestStorageReadiness(environment, boot)],
     { signal: AbortSignal.timeout(10000), stdout: 'ignore', stderr: 'ignore' });
     if (ready.exitCode !== 0) throw new Error('GUEST_PROFILE_NOT_OPERATIONAL');

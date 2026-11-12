@@ -23,6 +23,24 @@ async function shortRoot() {
   throw new Error('NO_NEW_SHORT_TEST_DIRECTORY_AVAILABLE');
 }
 
+test('Sandbox adapter configures native public HTTP mediation and private boot CA (real SDK hooks; no VM/DNS/fetch/CA generation)', async () => {
+  const root = await shortRoot();
+  try {
+    const child = spawnSync(process.execPath, ['--experimental-test-module-mocks', '--import',
+      fileURLToPath(new URL('./adapter-diagnostics-fixture.js', import.meta.url)),
+      fileURLToPath(new URL('../../src/entrypoints/adapter.js', import.meta.url)), root, environment, boot],
+    { timeout: 5000, maxBuffer: 16384, encoding: 'utf8', env: {
+      PATH: '', NODE_DISABLE_COMPILE_CACHE: '1', ADAPTER_DIAGNOSTIC_FIXTURE_MODE: 'http-policy',
+    } });
+    assert.equal(child.error, undefined, child.error?.message);
+    assert.equal(child.status, 1, child.stderr); // The VM double intentionally rejects start.
+    assert.match(await readFile(join(root, 'audit'), 'utf8'), /^network-policy-verified\n/);
+    assert.deepEqual(JSON.parse(await readFile(join(root, 'environments', environment, boot, 'failure.json'), 'utf8')),
+      { version: 1, boot, phase: 'vm-start', code: 'GUEST_READINESS_TIMEOUT' });
+    assert.equal(`${child.stdout}${child.stderr}`.includes('PRIVATE_TOKEN_CANARY'), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test('Sandbox adapter confines actual SDK filesystem RPC and ancestor symlinks (VM doubled, no VM/network/signal)', async () => {
   const root = await shortRoot();
   try {

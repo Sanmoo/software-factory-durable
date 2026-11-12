@@ -1,5 +1,10 @@
 # Ticket06 — preparação local parcial, não aceite Docker
 
+Checkpoint histórico `697749f`. A afirmação abaixo de rede desabilitada foi
+superada pelo [recorte local de mediação nativa HTTP(S)](06-native-public-http-local-partial.md);
+resultados142casos abaixo continuam históricos, não gate agregado atual.
+Ticket06 permanece parcial/aberto, sem aceite físico ou elegibilidade de merge.
+
 ## Estado e autoridade
 
 Base: integração `4e085bff` (03 integrado), branch

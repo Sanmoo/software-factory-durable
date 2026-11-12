@@ -123,9 +123,9 @@ export function createSandbox({ root, guestAssets, toolEndpoint }: { root: strin
       checks.push({ id: 'sandbox-tool-channel', status: 'blocked',
         message: 'The approved boot/invocation/role-bound executeTool channel is not implemented; fixed readiness commands are not a Builder tool interface.',
         nextStep: 'Implement the approved confined tool projection and adapter transport before Docker qualification; do not expose arbitrary guestExec or the Gondolin SDK.' });
-      checks.push({ id: 'sandbox-network-policy', status: 'blocked',
-        message: 'The current adapter disables guest networking; mediated public HTTPS and container trust paths are not implemented or qualified.',
-        nextStep: 'Implement the approved network policy and layered TLS trust before requesting a separately authorized Docker/Testcontainers/Ryuk qualification; do not enable unrestricted networking or insecure TLS.' });
+      checks.push({ id: 'sandbox-network-policy', status: 'unverified',
+        message: 'Native public HTTP(S) mediation, synthetic DNS, no WebSockets/SSH/raw TCP/ingress and a private per-boot CA path are configured, not runtime-qualified. Built-in private-range guards plus known host-interface address exclusions do not identify every public host/Other Work endpoint or special IP range.',
+        nextStep: 'Qualify DNS/connect/redirect isolation and guest/daemon/container TLS under separate authorization; Docker bridge/NAT/ports and container trust remain unproved. No unrestricted networking or insecure TLS fallback.' });
       checks.push({ id: 'docker-runtime', status: 'unverified', message: 'No VM boot, Docker or container/TLS test was performed.',
         nextStep: 'Run the authorized real Gondolin/Docker/TLS integration group; doctor is not that proof.' });
       return { configuration: validated, checks, versions };

@@ -57,9 +57,9 @@ test('Sandbox.validate exposes Docker qualification blockers without creating re
       nextStep: 'Implement the approved confined tool projection and adapter transport before Docker qualification; do not expose arbitrary guestExec or the Gondolin SDK.',
     });
     assert.deepEqual(report.checks.find(check => check.id === 'sandbox-network-policy'), {
-      id: 'sandbox-network-policy', status: 'blocked',
-      message: 'The current adapter disables guest networking; mediated public HTTPS and container trust paths are not implemented or qualified.',
-      nextStep: 'Implement the approved network policy and layered TLS trust before requesting a separately authorized Docker/Testcontainers/Ryuk qualification; do not enable unrestricted networking or insecure TLS.',
+      id: 'sandbox-network-policy', status: 'unverified',
+      message: 'Native public HTTP(S) mediation, synthetic DNS, no WebSockets/SSH/raw TCP/ingress and a private per-boot CA path are configured, not runtime-qualified. Built-in private-range guards plus known host-interface address exclusions do not identify every public host/Other Work endpoint or special IP range.',
+      nextStep: 'Qualify DNS/connect/redirect isolation and guest/daemon/container TLS under separate authorization; Docker bridge/NAT/ports and container trust remain unproved. No unrestricted networking or insecure TLS fallback.',
     });
     assert.equal(report.checks.find(check => check.id === 'docker-runtime')?.status, 'unverified');
     assert.deepEqual(await readdir(root), []);

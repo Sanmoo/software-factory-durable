@@ -39,6 +39,13 @@
 - Autorizações03/X3 consumidas; zero execução06 física autorizada. Sem mudança
   de assets, boot/rede/pull/install/credenciais/hostDocker ou piloto nesta rodada.
 
+- Recorte local subsequente: [HTTP(S) público nativo e CA privada por boot](../../../docs/evidence/06-native-public-http-local-partial.md).
+  Adapter configura Gondolin0.14 com fetch nativo, DNS sintético e exclusões de
+  endereços locais conhecidas compostas à política vendor; diagnóstico muda
+  somente rede de ausente/bloqueada para configurada/não verificada. Testes
+  locais com VM double/hook SDK real não demonstram DNS/TLS/Docker em runtime,
+  isolamento universal de host/Other Work nem fecham qualquer checkbox06.
+
 ## Autorização e limites
 
 Publicação é planejamento aprovado, não autorização de construção, uso de host/credenciais/GitHub/modelos reais, injeção de falhas ou piloto. Obter autorização pertinente antes da execução. Não alterar decisões aprovadas silenciosamente; lacuna de desenho volta ao operador. Merge e avaliação humana não são delegados aos agentes.

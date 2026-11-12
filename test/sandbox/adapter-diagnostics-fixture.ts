@@ -1,6 +1,7 @@
 // TEST ONLY loader-boundary double. VFS mode uses the audited actual Host JS
 // provider/RPC only; VM remains a double. No Guest/FUSE/kernel/durability proof.
 import cp from 'node:child_process';
+import os from 'node:os';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { mkdir, open, readFile, readlink, writeFile, type FileHandle } from 'node:fs/promises';
@@ -14,13 +15,24 @@ import { guardFixtureNetwork } from './adapter-fixture-network-guard.js';
 import { promisify } from 'node:util';
 import { mock } from 'node:test';
 import assert from 'node:assert/strict';
-import type { RealFSProvider as RealProviderType } from '@earendil-works/gondolin';
+import type { RealFSProvider as RealProviderType, VMOptions, createHttpHooks as CreateHttpHooks } from '@earendil-works/gondolin';
 
 const [root, environment, boot] = process.argv.slice(2);
 if (!root || !environment || !boot) throw new Error('FIXTURE_ARGUMENTS_REQUIRED');
 // Guard before application imports. Default remains SDK-deny-all. Only these
 // two exact entries and the pinned parent/specifier graph may evaluate in VFS mode.
 const actualVfs = process.env.ADAPTER_DIAGNOSTIC_FIXTURE_MODE === 'vfs-confinement';
+// http-policy mode only: the exact public SDK HTTP hook factory (no VM/root
+// index/QEMU modules) is evaluated BEFORE the deny-all guard, so the adapter's
+// composition is checked against the real built-in internal-range guard.
+// It never fetches/resolves here; the VM stays a double that rejects start.
+let actualCreateHttpHooks: typeof CreateHttpHooks | undefined;
+if (process.env.ADAPTER_DIAGNOSTIC_FIXTURE_MODE === 'http-policy') {
+  // eslint-disable-next-line no-restricted-syntax -- Test-only fixed installed SDK HTTP hooks entry, evaluated before the deny-all guard.
+  const hooksModule: { createHttpHooks: typeof CreateHttpHooks } = await import(new URL('../../../node_modules/@earendil-works/gondolin/dist/src/http/hooks.js', import.meta.url).href);
+  actualCreateHttpHooks = hooksModule.createHttpHooks;
+  assert.equal(typeof actualCreateHttpHooks, 'function');
+}
 const networkGuard = guardFixtureNetwork(root, false, actualVfs ? 'audited-owned-vfs' : 'deny-all');
 const sdkObserver = actualVfs ? observeSdkGlobals() : undefined;
 let ActualProvider: (new (root: string) => RealProviderType) | undefined;
@@ -256,21 +268,57 @@ syncBuiltinESMExports();
 
 const audit = (event: string) => fs.appendFileSync(join(root, 'audit'), `${event}\n`);
 const originalTermListeners = new Set(process.listeners('SIGTERM'));
-type Logger = ((component: string, message: string) => void) | null;
+type Logger = NonNullable<VMOptions['debugLog']> | null;
 let logger: Logger = null;
 let lateLogger: Logger = null;
 let execCalls = 0;
 const mode = process.env.ADAPTER_DIAGNOSTIC_FIXTURE_MODE;
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async () => { throw new Error('NETWORK_FORBIDDEN_IN_FIXTURE'); };
+if (mode === 'http-policy') {
+  mock.method(os, 'networkInterfaces', () => ({ fixture: [
+    { address: '93.184.216.34', family: 'IPv4', internal: false, netmask: '255.255.255.0', cidr: '93.184.216.34/24', mac: '00:00:00:00:00:00' },
+    { address: '2606:4700:4700::1111', family: 'IPv6', internal: false, netmask: 'ffff:ffff:ffff:ffff::', cidr: '2606:4700:4700::1111/64', mac: '00:00:00:00:00:00', scopeid: 0 },
+  ] }));
+  syncBuiltinESMExports();
+}
 const sdkDouble = {
-  VM: { async create(options: { debugLog: Logger; sandbox: { console: string; debug: readonly string[] | boolean };
-    vfs: { mounts: Record<string, RealProviderType> } }) {
+  createHttpHooks: actualCreateHttpHooks ?? (() => ({ httpHooks: {} })) as unknown as typeof CreateHttpHooks,
+  VM: { async create(options: VMOptions & { vfs: { mounts: Record<string, RealProviderType> } }) {
+    if (mode === 'http-policy') {
+      assert.equal(options.sandbox?.netEnabled, true);
+      assert.deepEqual(options.dns, { mode: 'synthetic' });
+      assert.equal(options.allowWebSockets, false);
+      for (const absent of ['fetch', 'ssh', 'tcp', 'ingress']) {
+        assert.equal(absent in options, false, absent);
+        assert.equal(absent in options.sandbox!, false, `sandbox.${absent}`);
+      }
+      const ca = join(runtime, 'mitm-ca');
+      assert.equal(options.sandbox?.mitmCertDir, ca);
+      assert.equal((await fs.promises.stat(ca)).mode & 0o777, 0o700);
+      assert.deepEqual(await fs.promises.readdir(ca), [], 'unit tests must never generate a CA');
+      const hooks = options.httpHooks!;
+      assert.equal(await hooks.isRequestAllowed!(new Request('https://arbitrary-public.example/path')), true);
+      assert.equal(await hooks.isRequestAllowed!(new Request('http://another-public.example/')), true);
+      // Request acceptance is not IP acceptance: factory IP checks guard actual connects.
+      for (const ip of ['0.0.0.0', '10.1.2.3', '127.0.0.1', '169.254.169.254', '172.16.0.1', '192.168.1.1', '100.64.0.1',
+        '255.0.0.1', '::', '::1', 'fc00::1', 'fe80::1', '::ffff:127.0.0.1',
+        '93.184.216.34', '::ffff:93.184.216.34', '2606:4700:4700:0:0:0:0:1111']) {
+        assert.equal(await hooks.isIpAllowed!({ hostname: 'arbitrary-public.example', ip,
+          family: ip.includes(':') ? 6 : 4, port: 443, protocol: 'https' }), false, ip);
+      }
+      for (const hostname of ['arbitrary-public.example', 'another-public.example']) {
+        assert.equal(await hooks.isIpAllowed!({ hostname, ip: '1.1.1.1', family: 4, port: 443, protocol: 'https' }), true);
+      }
+      // The same public hostname becoming private on a later check remains denied.
+      assert.equal(await hooks.isIpAllowed!({ hostname: 'another-public.example', ip: '10.0.0.1', family: 4, port: 80, protocol: 'http' }), false);
+      audit('network-policy-verified');
+    }
     if (mode === 'owner-registration' || nativeBash) audit('vm-create');
     if (actualVfs) await actualOwnedVfsProbe(options.vfs.mounts);
-    logger = options.debugLog;
+    logger = options.debugLog ?? null;
     lateLogger = logger;
-    if (options.sandbox.console !== 'none' || options.sandbox.debug !== false || options.debugLog !== null) {
+    if (options.sandbox?.console !== 'none' || options.sandbox?.debug !== false || options.debugLog !== null) {
       throw new Error('PRODUCTION_CONSOLE_MUST_BE_DISABLED');
     }
     return {
