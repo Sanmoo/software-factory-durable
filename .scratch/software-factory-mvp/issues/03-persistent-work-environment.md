@@ -283,3 +283,25 @@ sequenciais condicionados à finalização/FScheck do primeiro, estado Docker
 persistido verificado sem credenciais/agentes/retry, sem reabrir variantes. Ainda
 não autorizada. Projeção de ferramentas/isolamento/owner-loss/remove seguem
 pendentes; ticket03 continua incompleto, integração/push/cleanup não realizados.
+
+Nova autorização explícita e [qualificação v3 de dois boots](../../../docs/evidence/03-v3-two-boots-qualified-subset.md)
+executadas fontecb5ec0a, MESMO pin4b6/2GiB2CPU/disco40GiB/timeout30, um ambiente
+novo único e VMMs sequenciais distintos. Ambos start/perfil success, active antes
+de stop, guestFinalizationobserved, after stopped/cessationtrue. Verificações
+independentes após cada parada: ownhost/NS/full-root/controllers/CG/metadados,
+qcowcheck0/e2fsck-fn0 e ext4REAL42949672960B, original inalterado durante inspeção.
+Segundo boot só após todos os gates do primeiro, sem reprepare/recriar template.
+
+Estado não secreto criado pelo Docker (engine-id ausente no template) teve mesmo
+hash após os dois boots; identificador bruto/chaves/credenciais não capturados.
+Isso qualifica persistência DESSE estado, não todos os arquivos/pacotes/caches ou
+workspace. Terminationunconfirmed continua: sync/evidence não provam shutdown
+gracioso completo. Finalização agora observada em hardware; sem promover outros
+critérios. Fonte imutável, console serialnull real, sem agentes/pulls/rede/modelos.
+
+Um erro de contexto DBus no coletor read-only foi diagnosticado/corrigido com
+leituras; não houve retry de VM. Dois boots consumidos, nenhum terceiro/variante.
+R31416725504B retidos<80GiB; históricosUNKNOWN/noRetry/discos/units/runtimes/snapshots
+preservados, sem liberação por inventory. Ainda faltam remove/escapes RealFS,
+owner-loss/isolamento entre ambientes e demais provas do contrato. Checkboxes
+integrais continuam abertos; integração b591ec7 intocada, sem push/cleanup.

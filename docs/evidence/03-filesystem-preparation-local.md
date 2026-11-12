@@ -82,3 +82,8 @@ retornados, todos inconclusivos push-only; compilação estrita confirma os tipo
 Faltam qualificar hardware/guest finalization/restart/persistência e terminar
 isolamento/owner-loss/projeção de ferramentas/remove. Sem aceite completo03,
 integração/push/cleanup ou outro boot autorizado nesta rodada.
+
+Qualificação posterior explicitamente autorizada: [v3](03-v3-two-boots-qualified-subset.md)
+passou dois boots sequenciais com ext4 real40GiB, finalização guest observada e
+estado Docker persistido, usando console desligado. Não promove isso a todos os
+critérios03 nem a parada graciosa completa; orçamento posterior consumido.

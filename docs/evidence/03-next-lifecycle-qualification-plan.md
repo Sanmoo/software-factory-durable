@@ -3,6 +3,10 @@
 Preparar este plano/driver não inicia nem autoriza VM. Autorizações anteriores,
 incluindo u3, consumidas. Nenhum teste de imagem exploratório será retomado.
 
+**Execução posterior:** o operador autorizou explicitamente o orçamento proposto;
+os dois boots condicionais foram executados e encerrados. [Evidência v3](03-v3-two-boots-qualified-subset.md).
+Nenhum terceiro boot autorizado; este texto preserva o plano que precedeu a prova.
+
 ## Escopo a solicitar
 
 - Um ambiente novo `/home/sanmoo/software-factory-test/v3`, se ausente.

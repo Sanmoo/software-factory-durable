@@ -62,3 +62,11 @@ operacionais foram desligados (none/false/null), sem flag de worker para reativa
 Essas mudanças locais ainda exigem qualificação de hardware própria; não alteram
 retroativamente a prova u3. Ver `docs/evidence/03-filesystem-preparation-local.md`
 e `docs/evidence/03-guest-finalization-local.md`.
+
+Qualificação posterior v3, fontecb5ec0a: dois boots públicos sequenciais passaram
+com esse MESMO pin, console desligado, cópia por ambiente com ext4 real40GiB,
+finalização guest observada, cessação independente e estado Docker persistido.
+Sem reprepare/recriação entre boots. Não equivale a parada graciosa completa,
+containers/TLS/workspace/isolamento/owner-loss/remove ou release homologada.
+`docs/evidence/03-v3-two-boots-qualified-subset.md` registra fatos e limites;
+nenhum terceiro boot foi autorizado ou executado.
