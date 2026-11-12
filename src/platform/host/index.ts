@@ -1,4 +1,5 @@
-import { access, constants, statfs, lstat, realpath, open, readdir, readFile } from 'node:fs/promises';
+import { access, constants, statfs, stat, lstat, realpath, open, readdir, readFile } from 'node:fs/promises';
+import type { BigIntStats } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
@@ -33,17 +34,31 @@ export async function prepareControllerLock(lockPath: string): Promise<void> {
 /** Linux proof that this very process, after flock's no-fork exec, owns the stable lock. */
 export async function verifyControllerLock(lockPath: string): Promise<void> {
   const lock = await lstat(lockPath, { bigint: true });
-  const locks = await readFile('/proc/locks', 'utf8');
-  const owns = locks.split('\n').some(line => {
-    const fields = line.trim().split(/\s+/);
-    if (fields[1] !== 'FLOCK' || fields[3] !== 'WRITE' || fields[4] !== String(process.pid)) return false;
-    const [majorHex, minorHex, inode] = fields[5]?.split(':') ?? [];
-    if (!majorHex || !minorHex || inode !== String(lock.ino)) return false;
-    const major = BigInt(`0x${majorHex}`), minor = BigInt(`0x${minorHex}`);
-    const device = (minor & 0xffn) | ((major & 0xfffn) << 8n) | ((minor & ~0xffn) << 12n) | ((major & ~0xfffn) << 32n);
-    return device === lock.dev;
-  });
-  if (!owns) throw new Error('CONTROLLER_LOCK_REQUIRED');
+  const sameFile = (s: BigIntStats) => s.isFile() && s.dev === lock.dev && s.ino === lock.ino &&
+    s.nlink === 1n && s.uid === BigInt(process.getuid?.() ?? -1) && !(s.mode & 0o077n);
+  if (!sameFile(lock)) throw new Error('CONTROLLER_LOCK_REQUIRED');
+  // Btrfs st_dev is per-subvolume and may differ from the superblock device in
+  // /proc/locks. Correlate the lock-bearing inherited FD with the canonical file
+  // via stat in the SAME namespace, not by dropping the device/identity check.
+  // stat(fdpath) does not open/close/duplicate the inherited lock descriptor.
+  for (const fd of await readdir('/proc/self/fd')) {
+    if (!/^[0-9]+$/.test(fd)) continue;
+    const path = `/proc/self/fd/${fd}`;
+    try {
+      if (!sameFile(await stat(path, { bigint: true }))) continue;
+      const info = await readFile(`/proc/self/fdinfo/${fd}`, 'utf8');
+      if (info.match(/^ino:\s+([0-9]+)$/m)?.[1] !== String(lock.ino)) continue;
+      const owns = info.split('\n').some(line => {
+        if (!line.startsWith('lock:')) return false;
+        const fields = line.slice(5).trim().split(/\s+/);
+        return fields[1] === 'FLOCK' && fields[2] === 'ADVISORY' && fields[3] === 'WRITE' &&
+          fields[4] === String(process.pid) && fields[5]?.split(':')[2] === String(lock.ino) &&
+          fields[6] === '0' && fields[7] === 'EOF';
+      });
+      if (owns && sameFile(await stat(path, { bigint: true })) && sameFile(await lstat(lockPath, { bigint: true }))) return;
+    } catch { /* Closed/reused/inaccessible FD is not ownership evidence. */ }
+  }
+  throw new Error('CONTROLLER_LOCK_REQUIRED');
 }
 
 export async function controllerRuntimeInventory(root: string): Promise<'empty' | 'unknown'> {

@@ -74,6 +74,23 @@ test('canonical-root aliases share a stable exclusive lock, and internal owner r
   assert.deepEqual(persistence, { sqliteVersion: '3.53.4', sqliteSourceId: '2026-07-24 19:02:57 bf7c7f30031888f4e796e429ab3978879485813aaca6f641c7b33e4e09459bcc', journalMode: 'wal', synchronous: 'FULL' });
 });
 
+test('internal owner refuses shared or unrelated inherited flock descriptions', { timeout: 10000 }, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'factory-lock-kind-'));
+  await prepareController(root);
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const unrelated = join(root, 'data/unrelated.lock');
+  await writeFile(unrelated, '', { flag: 'wx', mode: 0o600 });
+  await writeFile(join(root, 'data/control.lock'), '', { flag: 'wx', mode: 0o600 });
+  for (const [kind, lockPath] of [['--shared', join(root, 'data/control.lock')], ['--exclusive', unrelated]]) {
+    const child = spawnSync('flock', [kind!, '--nonblock', '--no-fork', lockPath!, process.execPath,
+      resolve('dist/src/entrypoints/controller/owner.js'), root], { encoding: 'utf8', timeout: 3000 });
+    assert.equal(child.error, undefined, child.error?.message);
+    assert.equal(child.status, 3, 'a current-PID lock on an unrelated file or a shared lock is not authority');
+    assert.match(child.stderr, /CONTROLLER_START_FAILED/);
+    await assert.rejects(lstat(join(root, 'data/control.sqlite')), { code: 'ENOENT' });
+  }
+});
+
 test('SIGKILL releases the owner lock and a restart preserves acknowledged pause', { timeout: 15000 }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'factory-crash-'));
   await prepareController(root);
