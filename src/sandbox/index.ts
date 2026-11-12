@@ -22,6 +22,8 @@ import { removeEnvironment } from './remove.js';
 export type { RemoveResult, ResourceRemoval } from './remove.js';
 // Trusted process composition only; never projected as a worker tool.
 export { runSandboxAdapter } from './adapter.js';
+// Trusted owner composition and the restricted host-bound worker projection.
+export { serveReadTools, connectReadTools, type ToolContext } from './read-tools.js';
 
 export function createSandbox({ root, guestAssets }: { root: string; guestAssets?: GuestAssetPin }) {
   return {
