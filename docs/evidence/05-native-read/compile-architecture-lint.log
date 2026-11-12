@@ -1,0 +1,5 @@
+v24.21.0
+{"id":"factory-development-pi-1.5.2-read-operations-v1","version":"1.5.2","integrity":"sha512-mUWI04rqF1Vd/m1q+Ps1XeWsTXEVvRUnsmRa83I3Dzua0Tx5bYS93imeqtIfrXf7PkkaR6ERz+AuQhIJlom5yA==","upstreamSHA256":"e6159de5e4d94ae22968b6524237ef3d4f0374a107e2321ed5c29e93d66c8efc","upstreamTreeSHA256":"7d0961cce25f6c802b22aaa028206cd610de386442d2e6b732d71367ef006391","patchSHA256":"5e45a7c2953db293a14db0138bb31f8ac9e95eb13512afd42f1f49b77c98e066","resultSHA256":"06867a067ebbadca2e06f75ccb4e682cd7e37b9683d41a71562f770b3105a209","license":"MIT","upstreamPackage":"@earendil-works/pi-coding-agent"}
+
+✔ no dependency violations found (92 modules, 440 dependencies cruised)
+

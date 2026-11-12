@@ -1,0 +1,26 @@
+✔ architecture gate permits a public records import from platform/github including type-only imports (495.407182ms)
+✔ controller composition permits only the approved shared configuration bootstrap, not private module imports (1556.947543ms)
+✔ architecture gate rejects deep imports through relative paths (526.996611ms)
+✔ architecture gate rejects dependency inversion even through a public export (520.184486ms)
+✔ architecture gate detects cross-zone cycles made only of types (539.568123ms)
+✔ architecture gate resolves tsconfig aliases and rejects alias bypass of public entries (546.967907ms)
+✔ architecture gate rejects SQLite outside its durable Control owner (556.658488ms)
+✔ architecture gate rejects previously unclassified authored source, even when orphaned (531.790002ms)
+✔ architecture gate forbids Control from importing injected implementations as values (573.383886ms)
+✔ architecture gate enforces worker composition and CLI type-only access to Control (1096.927543ms)
+✔ architecture syntax gate rejects real clocks in pure Control rules (508.060614ms)
+✔ architecture syntax gate rejects opaque computed loading while permitting literal dynamic imports (1021.174204ms)
+✔ architecture gate rejects I/O imports in pure Control rules (544.944394ms)
+✔ architecture gate keeps SDK ownership rules sensitive to resolved package imports, not missing dependencies (2257.300944ms)
+✔ architecture gate permits injected contracts, the tools type projection, and SQLite in its owning implementation (533.54013ms)
+✔ architecture gate detects unclassified authored source outside src as well (530.921764ms)
+✔ pure-rule clock restriction also applies to authored ESM JavaScript (539.472117ms)
+✔ architecture syntax gate confines the private pinned SDK alias to Workers including type/reexport/dynamic loading (2639.246839ms)
+ℹ tests 18
+ℹ suites 0
+ℹ pass 18
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 15574.713951

@@ -9,12 +9,13 @@
   },
   "packageManager": "npm@11.19.0",
   "scripts": {
-    "build": "npm run clean && tsc -p tsconfig.json",
+    "build": "npm run clean && tsc -p tsconfig.json && npm run prepare:sdk",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "watch": "tsc -p tsconfig.json --watch",
     "check:architecture": "depcruise --config .dependency-cruiser.cjs --output-type err-long . && eslint . --max-warnings 0",
     "test": "npm run check:architecture && npm run build && node --test \"dist/test/**/*.test.js\"",
-    "clean": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\""
+    "clean": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\"",
+    "prepare:sdk": "node dist/src/workers/sdk-profile.js"
   },
   "dependencies": {
     "@earendil-works/chord": "1.5.0",
@@ -30,5 +31,11 @@
     "dependency-cruiser": "18.7.2",
     "eslint": "10.14.0",
     "typescript": "6.0.3"
+  },
+  "imports": {
+    "#factory-pi": {
+      "types": "@earendil-works/pi-coding-agent",
+      "default": "./.scratch/factory-development-sdk/sdk/dist/index.js"
+    }
   }
 }

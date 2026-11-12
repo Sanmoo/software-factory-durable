@@ -22,11 +22,23 @@ import { removeEnvironment } from './remove.js';
 export type { RemoveResult, ResourceRemoval } from './remove.js';
 // Trusted process composition only; never projected as a worker tool.
 export { runSandboxAdapter } from './adapter.js';
-// Trusted owner composition and the restricted host-bound worker projection.
-export { serveReadTools, connectReadTools, type ToolContext } from './read-tools.js';
+import { connectReadTools, type ReadCall, type ReadResult, type ToolContext } from './read-tools.js';
+export type { ToolContext, ReadCall, ReadResult, ToolProjection, ReadBinding } from './read-tools.js';
 
-export function createSandbox({ root, guestAssets }: { root: string; guestAssets?: GuestAssetPin }) {
+export function createSandbox({ root, guestAssets, toolEndpoint }: { root: string; guestAssets?: GuestAssetPin; toolEndpoint?: string }) {
+  let projection: Promise<Awaited<ReturnType<typeof connectReadTools>>> | undefined;
+  let binding: string | undefined;
   return {
+    async executeTool(context: ToolContext, call: ReadCall): Promise<ReadResult> {
+      if (!toolEndpoint) return { status: 'failure', code: 'TOOL_CHANNEL_UNAVAILABLE' };
+      const key = JSON.stringify(context);
+      if (binding !== undefined && binding !== key) return { status: 'failure', code: 'STALE_TOOL_CONTEXT' };
+      binding = key;
+      try {
+        projection ??= connectReadTools(toolEndpoint, context);
+        return await (await projection).executeTool(call);
+      } catch { return { status: 'failure', code: 'TOOL_CHANNEL_CLOSED' }; }
+    },
     async remove({ environment, cleanup }: { environment: EnvironmentRef; cleanup: unknown }) {
       return removeEnvironment(root, environment, cleanup);
     },

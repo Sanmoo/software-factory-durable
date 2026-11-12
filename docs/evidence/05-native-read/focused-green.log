@@ -1,0 +1,23 @@
+✔ Protocol delivers only complete JSON lines, including fragmented UTF-8 and coalesced frames (42.428683ms)
+✔ Protocol reports invalid version/fields, invalid UTF-8, truncated EOF and oversized frames without delivering them (13.569552ms)
+✔ Channel send means transport write only, never a fabricated durable ACK (10.151255ms)
+✔ Q5 host-bound reviewer receives a protected reference and paginable filtered whole source (64.717957ms)
+✔ self-asserted role, boot, invocation, phase and administrative calls cannot authorize Q5 (12.355339ms)
+✔ host revocation rejects new reads and late results, never confers authority from capture metadata (22.650778ms)
+✔ EOF revokes authority while guest read is pending, before the handler completes (20.150617ms)
+✔ capture rejection and guest failure never deliver raw exception or output text (19.40994ms)
+✔ streamed source larger than old head wrapper is complete and page frames stay bounded (40.76421ms)
+✔ supported image magic is not misreported as a complete text read (17.363141ms)
+✔ guest nonzero status and invalid UTF-8 are explicit errors, not successful or raw output (33.132331ms)
+✔ Q5 owner capture reaches native SDK pagination, beyond the old 16K wrapper, with split secrets filtered (263.676482ms)
+✔ Workers.activate uses real SDK/provider loop and native JSONL with only filtered guest tool content (195.875734ms)
+✔ private pinned SDK preparation is idempotent and refuses drift without overwriting it (4663.576239ms)
+✔ local SDK candidate preserves native read without host path probing for substituted operations (3086.026302ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 15
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4741.219317

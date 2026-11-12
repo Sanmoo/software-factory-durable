@@ -184,3 +184,13 @@ test('pure-rule clock restriction also applies to authored ESM JavaScript', asyn
   assert.equal(result.status, 1);
   assert.ok(result.messages.some(message => message.ruleId === 'no-restricted-syntax'));
 });
+
+test('architecture syntax gate confines the private pinned SDK alias to Workers including type/reexport/dynamic loading', async () => {
+  for (const source of ["import type { ResourceLoader } from '#factory-pi'; export type Loader = ResourceLoader;",
+    "export { createReadTool } from '#factory-pi';", "export * from '#factory-pi';", "export const load = () => import('#factory-pi');"]) {
+    const result = await syntaxViolations('src/sandbox/escape.ts', source);
+    assert.equal(result.status, 1, source);
+    assert.ok(result.messages.some(message => /private SDK alias/.test(message.message)));
+  }
+  assert.equal((await syntaxViolations('src/workers/read.ts', "export { createReadTool } from '#factory-pi';")).status, 0);
+});

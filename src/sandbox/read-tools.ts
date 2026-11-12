@@ -6,86 +6,127 @@ const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
 const contextSchema = z.strictObject({ workId: identifier, executionId: identifier, invocationId: identifier,
   role: z.enum(['standards', 'spec']), environmentRef: identifier, bootRef: identifier, phaseId: identifier });
 export type ToolContext = z.infer<typeof contextSchema>;
-const callSchema = z.strictObject({ name: z.literal('read'), path: z.string().min(1).max(4096), callId: identifier });
+const referenceSchema = z.strictObject({ workId: identifier, id: z.uuid() });
+const callSchema = z.discriminatedUnion('operation', [
+  z.strictObject({ name: z.literal('read'), operation: z.literal('capture'), path: z.string().min(1).max(4096), callId: identifier }),
+  z.strictObject({ name: z.literal('read'), operation: z.literal('page'), reference: referenceSchema,
+    offset: z.number().int().nonnegative(), callId: identifier }),
+]);
 export type ReadCall = z.infer<typeof callSchema>;
 const resultSchema = z.discriminatedUnion('status', [
-  z.strictObject({ status: z.literal('success'), display: z.string(), reference: z.strictObject({ workId: identifier, id: z.uuid() }),
-    truncated: z.boolean() }),
+  z.strictObject({ status: z.literal('success'), reference: referenceSchema, bytes: z.number().int().nonnegative(),
+    data: z.string(), nextOffset: z.number().int().nonnegative() }),
   z.strictObject({ status: z.literal('failure'), code: z.string() }),
 ]);
 export type ReadResult = z.infer<typeof resultSchema>;
-// Only the already-running native VM owner supplies this boundary. Never projected to a worker.
-type GuestOwner = { exec(argv: string[], options: { stdout: 'buffer'; stderr: 'ignore' }):
-  PromiseLike<{ exitCode: number; stdoutBuffer: Buffer }> };
-const readBytes = 16384;
+export interface ToolProjection { executeTool(context: ToolContext, call: ReadCall): Promise<ReadResult> }
+// Structural external VM boundary; the only production supplier is adapter.ts's existing instance.
+export type GuestOwner = { exec(argv: string[], options: { stdout: 'pipe'; stderr: 'ignore'; signal: AbortSignal; windowBytes: number }): {
+  output(): AsyncIterable<{ stream: 'stdout' | 'stderr'; data: Buffer }>;
+  result: Promise<{ exitCode: number }>;
+} };
+export type ReadBinding = { endpoint: string; context: ToolContext; signal: AbortSignal;
+  records: Awaited<ReturnType<typeof createRecords>> };
 const failure = (code: string): ReadResult => ({ status: 'failure', code });
-function sameContext(left: ToolContext | undefined, right: ToolContext): boolean {
-  return !!left && Object.keys(right).every(key => left[key as keyof ToolContext] === right[key as keyof ToolContext]);
+function sameContext(left: ToolContext, right: ToolContext): boolean {
+  return Object.keys(right).every(key => left[key as keyof ToolContext] === right[key as keyof ToolContext]);
 }
 function envelope(messageId: string, kind: string, payload: Envelope['payload'], replyTo: string | null = null): Envelope {
   return { protocol_version: protocolVersion, controller_run_id: null, message_id: messageId, reply_to: replyTo, kind, payload };
 }
 
-/** Trusted composition in the existing per-Work VM owner only. The host allocates a
- * private endpoint within this boot's directory, and binds one reviewer invocation.
- * current() reads host authority, not request data. Closing/revoking never boots or
- * adopts a VM. This read-only slice does not implement Builder tools or SDK read. */
-export async function serveReadTools(options: { endpoint: string; context: ToolContext; current(): ToolContext | undefined;
-  records: Awaited<ReturnType<typeof createRecords>>; vm: GuestOwner }): Promise<{ endpoint: string; close(): Promise<void> }> {
+/** Private component of the existing owner. Authority is a host snapshot with a
+ * revocation signal, never a guest file, handshake claim, Records fact or current() callback. */
+export async function serveReadTools(options: ReadBinding & { vm: GuestOwner; disconnected?(): void }) {
   const bound = Object.freeze(contextSchema.parse(options.context));
-  let closed = false;
-  const valid = () => !closed && sameContext(options.current(), bound);
+  const lifetime = new AbortController();
+  const signal = AbortSignal.any([options.signal, lifetime.signal]);
+  const valid = () => !signal.aborted;
+  const captures = new Set<string>();
   async function executeTool(context: ToolContext, call: ReadCall): Promise<ReadResult> {
     if (!sameContext(context, bound) || !valid()) return failure('STALE_TOOL_CONTEXT');
-    // Lexical selection is not a symlink jail: any symlink is resolved ONLY in
-    // the guest by the existing VM. No host fs/exec fallback exists here.
-    if (!/^\/(workspace|artifacts)\/[^\0]*$/.test(call.path) || call.path.split('/').includes('..')) return failure('READ_PATH_DENIED');
     try {
+      if (call.operation === 'page') {
+        if (call.reference.workId !== bound.workId || !captures.has(call.reference.id)) return failure('READ_REFERENCE_DENIED');
+        const page = await options.records.read({ reference: call.reference, offset: call.offset, limit: 24576 });
+        if (page.state !== 'complete') return failure('PROTECTED_READ_UNAVAILABLE');
+        if (!valid()) return failure('STALE_TOOL_CONTEXT');
+        return { status: 'success', reference: call.reference, bytes: page.bytes, data: page.data.toString('base64'), nextOffset: page.nextOffset };
+      }
+      if (!/^\/(workspace|artifacts)\/[^\0]*$/.test(call.path) || call.path.split('/').includes('..')) return failure('READ_PATH_DENIED');
       const { phaseId: _phaseId, ...captureContext } = bound;
       const output = await options.records.openOutput({ ...captureContext, callId: call.callId });
-      if (!valid()) { await output.finish(); return failure('STALE_TOOL_CONTEXT'); }
-      // argv only, never host execution or caller-provided shell; cap collection
-      // before the Records boundary. Discard guest error text rather than leak it.
-      let result: { exitCode: number; stdoutBuffer: Buffer };
+      let completed = false;
+      const commandLifetime = new AbortController();
       try {
-        result = await options.vm.exec(['/usr/bin/head', '-c', String(readBytes + 1), '--', call.path],
-          { stdout: 'buffer', stderr: 'ignore' });
-      } catch {
-        // Records has no abort operation: close the empty capture, do not leak an
-        // open handle or mistake it for evidence of a successful guest read.
-        await output.finish();
-        return failure('PROTECTED_READ_UNAVAILABLE');
+        if (!valid()) return failure('STALE_TOOL_CONTEXT');
+        // Guest-only argv, with real SDK pipe/backpressure. Never accumulate the source.
+        const process = options.vm.exec(['/bin/cat', '--', call.path], { stdout: 'pipe', stderr: 'ignore',
+          signal: AbortSignal.any([signal, commandLifetime.signal]), windowBytes: 65536 });
+        // Observe rejection immediately, even when the stream itself fails first.
+        void process.result.catch(() => {});
+        let prefix = Buffer.alloc(0);
+        let inspected = false;
+        const image = (bytes: Buffer) => bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ||
+          bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255])) || /^GIF8[79]a/.test(bytes.toString('ascii', 0, 6)) ||
+          (bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP');
+        for await (const chunk of process.output()) {
+          if (!valid()) return failure('STALE_TOOL_CONTEXT');
+          if (chunk.stream !== 'stdout') continue;
+          let data = chunk.data;
+          if (!inspected) {
+            const take = Math.min(12 - prefix.length, data.length);
+            prefix = Buffer.concat([prefix, data.subarray(0, take)]);
+            data = data.subarray(take);
+            if (prefix.length < 12) continue;
+            if (image(prefix)) return failure('READ_BINARY_UNSUPPORTED');
+            await output.write(prefix); inspected = true;
+          }
+          for (let offset = 0; offset < data.length; offset += 65536) await output.write(data.subarray(offset, offset + 65536));
+        }
+        if (!inspected) {
+          if (image(prefix)) return failure('READ_BINARY_UNSUPPORTED');
+          await output.write(prefix);
+        }
+        const result = await process.result;
+        if (result.exitCode !== 0) return failure('GUEST_READ_FAILED');
+        const capture = await output.finish(); completed = true;
+        if (!valid()) return failure('STALE_TOOL_CONTEXT');
+        captures.add(capture.reference.id);
+        return { status: 'success', reference: capture.reference, bytes: capture.bytes, data: '', nextOffset: 0 };
+      } finally {
+        commandLifetime.abort();
+        if (!completed) { try { await output.finish(); } catch { /* Failed/partial capture never becomes an SDK source. */ } }
       }
-      if (result.exitCode !== 0) { await output.finish(); return failure('GUEST_READ_FAILED'); }
-      await output.write(result.stdoutBuffer);
-      const filteredRecords = await output.finish();
-      if (!valid()) return failure('STALE_TOOL_CONTEXT');
-      return { status: 'success', display: filteredRecords.display, reference: filteredRecords.reference,
-        truncated: filteredRecords.truncated || result.stdoutBuffer.length > readBytes };
     } catch { return failure('PROTECTED_READ_UNAVAILABLE'); }
   }
+  const active = new Set<Promise<void>>();
   const server = await listen(options.endpoint, { async message(request, channel) {
-    const parsed = z.strictObject({ context: contextSchema, call: callSchema }).safeParse(request.payload);
-    const result = request.kind !== 'execute-tool' || !parsed.success || request.message_id !== parsed.data.call.callId
-      ? failure('INVALID_TOOL_CALL') : await executeTool(parsed.data.context, parsed.data.call);
-    await channel.send(envelope(request.message_id, 'tool-result', result, request.message_id));
-  } }, 'local-operator');
+    const task = (async () => {
+      const parsed = z.strictObject({ context: contextSchema, call: callSchema }).safeParse(request.payload);
+      const result = request.kind !== 'execute-tool' || !parsed.success || request.message_id !== parsed.data.call.callId
+        ? failure('INVALID_TOOL_CALL') : await executeTool(parsed.data.context, parsed.data.call);
+      await channel.send(envelope(request.message_id, 'tool-result', result, request.message_id));
+    })();
+    active.add(task);
+    try { await task; } finally { active.delete(task); }
+  }, closed() { lifetime.abort(); options.disconnected?.(); } }, 'local-operator');
   let closing: Promise<void> | undefined;
-  return { endpoint: options.endpoint, close() { closed = true; return closing ??= server.close(); } };
+  return { endpoint: options.endpoint, close() {
+    lifetime.abort();
+    return closing ??= (async () => { await server.close(); await Promise.allSettled([...active]); })();
+  } };
 }
 
-/** Host constructs this projection with its binding. Model input is ONLY the call;
- * changing a role/boot in a wire message never changes the owner's binding. */
-export async function connectReadTools(endpoint: string, context: ToolContext): Promise<{
-  executeTool(call: ReadCall): Promise<ReadResult>; close(): void;
-}> {
+/** One invocation-bound channel, kept alive across native access/stream operations. */
+export async function connectReadTools(endpoint: string, context: ToolContext) {
   const bound = Object.freeze(contextSchema.parse(context));
   const channel = await connect(endpoint, 'local-operator');
   const messages = channel.messages[Symbol.asyncIterator]();
   let closed = false;
   let busy = false;
   return {
-    async executeTool(input) {
+    async executeTool(input: ReadCall): Promise<ReadResult> {
       if (closed) return failure('TOOL_CHANNEL_CLOSED');
       if (busy) return failure('TOOL_CALL_IN_PROGRESS');
       const call = callSchema.safeParse(input);

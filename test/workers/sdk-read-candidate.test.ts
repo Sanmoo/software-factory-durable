@@ -37,7 +37,8 @@ test('local SDK candidate preserves native read without host path probing for su
     assert.match(candidate.stdout, /"hostProbes":0/);
     assert.match(candidate.stdout, /PASS custom operations/);
     assert.match(candidate.stdout, /PASS filtered bytes reach native SessionManager JSONL and reopened context without raw secret/);
-    // The installed package remains upstream; the candidate is never adopted.
+    // This regression copy leaves installed upstream untouched. The Factory
+    // development profile uses its own separately guarded private staging.
     assert.equal(source, await readFile(join(installed, 'dist/core/tools/read.js'), 'utf8'));
   } finally { await rm(root, { recursive: true, force: true }); }
 });

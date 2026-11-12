@@ -9,6 +9,7 @@ import { currentSchema, identitySchema, metadata, ownedEnvironment, privateDirec
   startupFailureCodeSchema, supervisionHierarchy, unitState, type BootRef, type StartupFailure } from './lifecycle.js';
 import { bootRuntimePaths, durableJson } from './start.js';
 import type { EnvironmentRef } from './prepare.js';
+import { serveReadTools, type ReadBinding } from './read-tools.js';
 
 function startupCode(error: unknown): StartupFailure['code'] {
   if (!(error instanceof Error)) return 'UNCLASSIFIED_STARTUP_FAILURE';
@@ -20,8 +21,11 @@ function startupCode(error: unknown): StartupFailure['code'] {
 }
 
 /** One systemd main process owns exactly one VM. Never invoked by a worker. */
-export async function runSandboxAdapter(root: string, environment: EnvironmentRef, boot: BootRef): Promise<void> {
+export async function runSandboxAdapter(root: string, environment: EnvironmentRef, boot: BootRef,
+  readBinding?: ReadBinding): Promise<void> {
   const { directory, owner } = await ownedEnvironment(root, environment);
+  if (readBinding && (readBinding.context.workId !== owner.workId || readBinding.context.environmentRef !== environment ||
+      readBinding.context.bootRef !== boot || readBinding.signal.aborted)) throw new Error('STALE_TOOL_CONTEXT');
   const path = join(directory, boot);
   // Boot input is checked before it is used to open any boot-relative file.
   if (!/^boot-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(boot)) throw new Error('INVALID_BOOT');
@@ -41,6 +45,7 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
   let phase: StartupFailure['phase'] = 'runtime';
   let operational = false;
   let vm: GondolinVM | undefined;
+  let readTools: Awaited<ReturnType<typeof serveReadTools>> | undefined;
   const markers = createBootMarkers(boot);
   let markerPublication: Promise<void> | undefined;
   const publishMarkers = () => {
@@ -103,6 +108,9 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
         processStartTicks(await readFile(`/proc/${pid}/stat`, 'utf8')) !== ticks) throw new Error('VMM_SUPERVISION_MISMATCH');
     await durableJson(join(path, 'operational.json'), { version: 1, boot, session: vm.id, vmmPid: pid, vmmStartTicks: ticks });
     operational = true;
+    // Host composition supplies only its already-authorised invocation. No
+    // guest nonce/file or startup evidence can grant a role or change phase.
+    if (readBinding) readTools = await serveReadTools({ ...readBinding, vm, disconnected: terminate });
   })().catch(async error => {
     // Shared startup rejection orders the bounded publication attempt before both
     // normal close and a concurrent stop; failed writes do not suppress closure.
@@ -115,8 +123,9 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
     // attempt before either requests close. SDK/manager cleanup remains independent.
     throw error;
   });
-  const terminate = () => {
+  function terminate() {
     stopping = true;
+    void readTools?.close().catch(() => { process.exitCode = 1; });
     shutdown ??= (async () => {
       try {
         await booting;
@@ -177,7 +186,8 @@ sync`],
       }
     })();
     void shutdown.catch(() => { process.exitCode = 1; });
-  };
+  }
+  readBinding?.signal.addEventListener('abort', terminate, { once: true });
   process.on('SIGTERM', terminate);
   process.on('SIGINT', terminate);
   try { await booting; await stopped; await shutdown; }
@@ -185,5 +195,9 @@ sync`],
     // Systemd retains responsibility for any surviving group members, not SDK.close alone.
     await closeVm();
     throw new Error('ADAPTER_BOOT_FAILED');
-  } finally { process.off('SIGTERM', terminate); process.off('SIGINT', terminate); }
+  } finally {
+    await readTools?.close();
+    readBinding?.signal.removeEventListener('abort', terminate);
+    process.off('SIGTERM', terminate); process.off('SIGINT', terminate);
+  }
 }

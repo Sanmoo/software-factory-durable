@@ -31,7 +31,7 @@ async function privateDirectory(endpoint: string): Promise<void> {
   }
 }
 
-function channel(socket: Socket): Channel {
+function channel(socket: Socket, onClosed?: (error: unknown) => void): Channel {
   let buffer = Buffer.alloc(0);
   const queue: { envelope: Envelope; bytes: number }[] = [];
   let queuedBytes = 0;
@@ -63,6 +63,7 @@ function channel(socket: Socket): Channel {
     ended = true;
     if (buffer.length && !failure) failure = new ProtocolError('INVALID_FRAME');
     wake();
+    onClosed?.(failure);
   });
   return {
     async send(envelope) {
@@ -96,13 +97,17 @@ export async function listen(endpoint: string,
   await privateDirectory(endpoint);
   const channels = new Set<Channel>();
   const server = createServer(socket => {
-    const connection = channel(socket);
+    let failure: unknown;
+    // EOF must reach the owner even while a message handler is awaiting guest
+    // I/O. Decode/truncated-EOF failures are established by channel first.
+    const connection = channel(socket, transportError => {
+      channels.delete(connection); handler.closed?.(failure ?? transportError, expectedPeers);
+    });
     channels.add(connection);
     void (async () => {
-      let failure: unknown;
       try { for await (const envelope of connection.messages) await handler.message(envelope, connection, expectedPeers); }
       catch (error) { failure = error; }
-      finally { connection.close(); channels.delete(connection); handler.closed?.(failure, expectedPeers); }
+      finally { connection.close(); }
     })();
   });
   await new Promise<void>((resolve, reject) => {
