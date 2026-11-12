@@ -83,7 +83,11 @@ test('Sandbox.observe confirms removed resources and cleanup is repeatable witho
   const f = await fixture();
   try {
     assert.equal((await f.sandbox.remove({ environment, cleanup })).status, 'success');
-    assert.deepEqual(await f.sandbox.observe({ environment }), { condition: 'removed', cessationConfirmed: true, consumption: 'unavailable' });
+    const { storage, ...lifecycle } = await f.sandbox.observe({ environment });
+    assert.deepEqual(lifecycle, { condition: 'removed', cessationConfirmed: true, consumption: 'unavailable' });
+    assert.deepEqual(storage?.disk, { status: 'absent' });
+    assert.deepEqual(storage?.workspace, { status: 'absent' });
+    assert.deepEqual(storage?.artifacts, { status: 'absent' });
     const repeated = await f.sandbox.remove({ environment, cleanup });
     assert.equal(repeated.status, 'success');
     assert.deepEqual(repeated.resources.map(r => r.status), ['absent', 'absent', 'absent', 'absent']);

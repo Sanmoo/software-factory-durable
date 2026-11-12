@@ -60,7 +60,9 @@ test('Sandbox.observe does not adopt boot records from a different host boot', a
       ? '00000000-0000-4000-8000-000000000001' : '00000000-0000-4000-8000-000000000000';
     const directory = await ownedMetadata(root, other);
     const before = await readFile(join(directory, boot, 'identity.json'), 'utf8');
-    assert.deepEqual(await createSandbox({ root }).observe({ environment }), unknown);
+    const { storage, ...lifecycle } = await createSandbox({ root }).observe({ environment });
+    assert.deepEqual(lifecycle, unknown);
+    assert.deepEqual(storage?.disk, { status: 'unavailable' });
     assert.equal(await readFile(join(directory, boot, 'identity.json'), 'utf8'), before);
     assert.deepEqual(await readdir(join(directory, boot)), ['identity.json']);
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -86,7 +88,9 @@ test('Sandbox.observe does not turn incomplete boot evidence into active or conf
   try {
     const hostBoot = (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim();
     const directory = await ownedMetadata(root, hostBoot);
-    assert.deepEqual(await createSandbox({ root }).observe({ environment }), unknown);
+    const { storage, ...lifecycle } = await createSandbox({ root }).observe({ environment });
+    assert.deepEqual(lifecycle, unknown);
+    assert.deepEqual(storage?.workspace, { status: 'unavailable' });
     assert.deepEqual(await readdir(join(directory, boot)), ['identity.json']);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

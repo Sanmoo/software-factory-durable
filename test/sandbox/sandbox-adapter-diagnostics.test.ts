@@ -36,6 +36,9 @@ test('Sandbox adapter confines actual SDK filesystem RPC and ancestor symlinks (
     const audit = (await readFile(join(root, 'audit'), 'utf8')).trim().split('\n');
     assert.equal(child.status, 0, `${child.stderr}\nBoundary audit: ${JSON.stringify(audit)}`);
     assert.deepEqual(audit, ['vfs-probe', 'vfs-confined', 'guest-exec', 'close']);
+    const syntax = spawnSync('/bin/sh', ['-n', join(root, 'guest-storage-command')],
+      { timeout: 1000, encoding: 'utf8', env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' } });
+    assert.equal(syntax.status, 0, syntax.stderr); // Parse only; NEVER execute guest commands on host.
     assert.equal(`${child.stdout}${child.stderr}`.includes('PRIVATE_TOKEN_CANARY'), false);
     for (const zone of ['home', 'control', 'git-cache', 'other-work']) {
       assert.equal(await readFile(join(root, 'protected', zone, 'secret'), 'utf8'), 'PRIVATE_TOKEN_CANARY');

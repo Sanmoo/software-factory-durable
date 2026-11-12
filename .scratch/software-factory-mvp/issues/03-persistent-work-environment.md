@@ -392,3 +392,28 @@ consumo físico/disco/workspace observável pela interface do produto. Não impo
 toda suíte05/06 nem declarar esses requisitos cumpridos por fixturehost ou JSON
 privado. Orçamento43 consumido; nenhum boot/falha/cleanup extra implícito. Ticket
 permanece aberto até fechar os dois gaps próprios, sem integração parcial.
+
+[Correções locais dos gaps](../../../docs/evidence/03-storage-observation-and-guest-smoke-local.md):
+observe público agora retorna storage físico/virtual/workspace/artifacts/freefloor
+com statuses observed/unavailable/absent, sem caminhos/PIDs ou inferir cessação;
+treewalk pinado por FD/NOFOLLOW contra races de guest, orçamento finito e medição
+nativa em fixtures reais. Readiness guest fixo, sem hook/flag de teste, escreve
+primeiro stamp em oito paths aprovados sem sobrescrevê-lo nos boots seguintes;
+renames/alias absoluto pelos dois mounts têm smoke privado e stdout/stderrignore.
+Área .factory-profile é operacional, fora do checkout/PR, não autoridade/recibo.
+Ambos RED/GREEN na interface pública aprovada; review43e70826 sem achados. Execução
+de shell/FUSE e stamps entre boots continuam PENDENTES de prova real nova, não
+confundir sh-n/VMdobrada com KVM. [Plano fechado](../../../docs/evidence/03-final-persistence-qualification-plan.md)
+pede um novo ambiente e até dois boots sequenciais, sem reprepare/reclone, imagem
+nova, falha/reparo ou cleanup histórico; ainda não autorizado.
+
+[Gate Btrfs de Controle](../../../docs/evidence/03-btrfs-controller-lock-gate.md):
+conferência de todos testes anteriores encontrou st_dev virtual55 versus
+/proc/locks device29 no mesmo FLOCK real, rejeitando owner legítimo. Corrigida
+correlação por descriptor herdado/canonicaldev+ino/fdinfoWRITEFLOCKPIDatualrange0EOF
+com rechecks, sem remover exclusão kernel ou criar autoridade por PID. Nova
+recusa real de shared/unrelated lock antes de SQLite; review8ae5f119 sem achados.
+Suíte completa23arquivos:141casos140pass/1VMskip0fail, strictbuild/typecheck/arch/
+ESLint75módulos344deps; TMPDIR curto nos testes de socket sem relaxar103bytes.
+Estas correções não iniciaram VMs, não mudaram imagem ou registros antigos e não
+concluem ainda a prova física de persistência do perfil estendido.

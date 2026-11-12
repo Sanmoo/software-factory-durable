@@ -9,7 +9,11 @@ export type { EnvironmentRef, PrepareResult } from './prepare.js';
 export type { GuestAssetPin } from './guest-assets.js';
 import { observeEnvironment, type BootRef } from './lifecycle.js';
 import type { EnvironmentRef } from './prepare.js';
-export type { BootRef, Observation, StartupFailure } from './lifecycle.js';
+export type { BootRef, StartupFailure } from './lifecycle.js';
+import type { Observation as LifecycleObservation } from './lifecycle.js';
+import { observeStorage, type StorageObservation } from './storage-observation.js';
+export type { StorageObservation } from './storage-observation.js';
+export type Observation = LifecycleObservation & { storage?: StorageObservation };
 import { startEnvironment, type StartResult } from './start.js';
 export type { StartResult } from './start.js';
 import { stopEnvironment } from './stop.js';
@@ -32,8 +36,10 @@ export function createSandbox({ root, guestAssets }: { root: string; guestAssets
       if (!parsed.valid) return { status: 'failure', code: 'SANDBOX_CONFIGURATION_INVALID' };
       return startEnvironment(root, guestAssets, environment, parsed.effective);
     },
-    async observe({ environment, boot }: { environment: EnvironmentRef; boot?: BootRef }) {
-      return observeEnvironment(root, environment, boot);
+    async observe({ environment, boot }: { environment: EnvironmentRef; boot?: BootRef }): Promise<Observation> {
+      const observation = await observeEnvironment(root, environment, boot);
+      const storage = await observeStorage(root, environment, observation.condition === 'removed');
+      return { ...observation, ...(storage ? { storage } : {}) };
     },
     async prepare({ workId, configuration }: { workId: string; configuration: unknown }): Promise<PrepareResult> {
       const parsed = validateConfiguration(configuration);

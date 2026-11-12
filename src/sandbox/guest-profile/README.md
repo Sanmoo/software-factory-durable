@@ -70,3 +70,30 @@ Sem reprepare/recriação entre boots. Não equivale a parada graciosa completa,
 containers/TLS/workspace/isolamento/owner-loss/remove ou release homologada.
 `docs/evidence/03-v3-two-boots-qualified-subset.md` registra fatos e limites;
 nenhum terceiro boot foi autorizado ou executado.
+
+## Smoke operacional de storage (fonte posterior, ainda sem nova VM)
+
+O adapter mantém o perfil/imagem acima e acrescenta um comando guest FIXO de
+readiness, sem flag de teste ou script fornecido por caller/worker. Verifica
+leitura/escrita dos paths persistentes aprovados e rename/symlink absoluto via
+ambos mounts guest. stdout/stderr continuam ignore, mesmo deadline10s; nunca
+executar o corpo no host (testes locais somente sh-n).
+
+`.factory-profile/storage-v1` é uma área RESERVADA operacional em /root,/tmp,
+/var/tmp,/var/cache,/var/log,/var/cache/apk,/workspace,/artifacts. O primeiro
+conteúdo env|boot é criado com noclobber somente se ausente; boots seguintes
+validam conteúdo limitado a160bytes sem sobrescrevê-lo. Uma recriação após perda
+recebe OUTRO boot, portanto a inspeção externa de dois boots pode detectar reset
+em vez de aceitar dado regenerado. Arquivos/symlinks inesperados falham o smoke;
+não são reparados ou apagados silenciosamente. Probes temporários de rename/
+alias têm nome do boot e são removidos, não a amostra persistente.
+
+A raiz /workspace é a área própria do Trabalho, não o checkout Git: checkouts
+ficam em filhos, mantendo esta área reservada fora do conteúdo de PR conforme
+contrato. /artifacts continua separado. A amostra NÃO é autoridade de domínio,
+recibo de início, integridade global, continuidade do modelo ou prova de cessação.
+Não confiar nela para liberar Slot, executar ferramenta ou autorizar recovery.
+
+Sem instalar APK ou mudar tmpfs/journal/assets. Permanecem pendentes provas de
+execução/persistência pelo guest no perfil atual com novo orçamento específico;
+comando esperado ou shellsyntax correto não são execução real de FUSE/Alpine.

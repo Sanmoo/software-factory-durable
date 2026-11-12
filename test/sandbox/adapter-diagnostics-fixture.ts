@@ -182,6 +182,17 @@ mock.module('@earendil-works/gondolin', { namedExports: {
       }
       if (mode !== 'markers-success' && mode !== 'vfs-confinement') throw new Error('GUEST_EXEC_MUST_NOT_RUN');
       if (++execCalls === 1) {
+        if (mode === 'vfs-confinement') {
+          fs.writeFileSync(join(root, 'guest-storage-command'), argv[2]!);
+          for (const required of ['/root', '/tmp', '/var/tmp', '/var/cache', '/var/log', '/var/cache/apk', '/workspace', '/artifacts']) {
+            assert.ok(argv[2]!.includes(required), `readiness must check approved persistent path ${required}`);
+          }
+          assert.ok(argv[2]!.includes('.factory-profile/storage-v1'));
+          assert.ok(argv[2]!.includes('set -C'), 'first-boot stamp must not overwrite an existing file');
+          assert.ok(argv[2]!.includes('head -c 160'), 'guest marker input is bounded before parsing');
+          assert.ok(argv[2]!.includes('ln -s') && argv[2]!.includes('mv '), 'guest must exercise actual alias/rename routing');
+          assert.ok(argv[2]!.includes(boot) && argv[2]!.includes(environment));
+        }
         audit('guest-exec');
         lateLogger?.('qemu', 'stdout: [init] starting sandboxd');
         const listeners = process.listeners('SIGTERM').filter(listener => !originalTermListeners.has(listener));

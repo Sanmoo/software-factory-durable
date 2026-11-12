@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { inspectGuestAssets } from './guest-assets.js';
 import { createBootMarkers } from './boot-markers.js';
 import { createWorkspaceProvider } from './workspace-provider.js';
+import { guestStorageReadiness } from './guest-storage.js';
 import { currentSchema, identitySchema, metadata, ownedEnvironment, privateDirectory, processStartTicks,
   startupFailureCodeSchema, supervisionHierarchy, unitState, type BootRef, type StartupFailure } from './lifecycle.js';
 import { bootRuntimePaths, durableJson } from './start.js';
@@ -90,8 +91,7 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
     phase = 'guest-profile';
     // The pinned image must provide Alpine and its own Docker daemon with vfs.
     // Networking remains disabled in this first-boot slice; no pulls or remote calls.
-    const ready = await vm.exec(['/bin/sh', '-c',
-      'set -eu; test -s /etc/alpine-release; test "$(docker info --format \'{{.Driver}}\')" = vfs; sync'],
+    const ready = await vm.exec(['/bin/sh', '-c', guestStorageReadiness(environment, boot)],
     { signal: AbortSignal.timeout(10000), stdout: 'ignore', stderr: 'ignore' });
     if (ready.exitCode !== 0) throw new Error('GUEST_PROFILE_NOT_OPERATIONAL');
     if (stopping) return;
