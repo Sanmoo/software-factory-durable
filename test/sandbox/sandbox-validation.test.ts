@@ -47,6 +47,25 @@ test('Sandbox.validate verifies explicitly pinned bytes without claiming release
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test('Sandbox.validate exposes Docker qualification blockers without creating resources or claiming runtime proof', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'factory-docker-diagnostic-'));
+  try {
+    const report = await createSandbox({ root }).validate(configuration);
+    assert.deepEqual(report.checks.find(check => check.id === 'sandbox-tool-channel'), {
+      id: 'sandbox-tool-channel', status: 'blocked',
+      message: 'The approved boot/invocation/role-bound executeTool channel is not implemented; fixed readiness commands are not a Builder tool interface.',
+      nextStep: 'Implement the approved confined tool projection and adapter transport before Docker qualification; do not expose arbitrary guestExec or the Gondolin SDK.',
+    });
+    assert.deepEqual(report.checks.find(check => check.id === 'sandbox-network-policy'), {
+      id: 'sandbox-network-policy', status: 'blocked',
+      message: 'The current adapter disables guest networking; mediated public HTTPS and container trust paths are not implemented or qualified.',
+      nextStep: 'Implement the approved network policy and layered TLS trust before requesting a separately authorized Docker/Testcontainers/Ryuk qualification; do not enable unrestricted networking or insecure TLS.',
+    });
+    assert.equal(report.checks.find(check => check.id === 'docker-runtime')?.status, 'unverified');
+    assert.deepEqual(await readdir(root), []);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test('Sandbox.validate distinguishes malformed, incomplete and incompatible pinned manifest metadata', async () => {
   const root = await mkdtemp(join(tmpdir(), 'factory-manifest-'));
   try {

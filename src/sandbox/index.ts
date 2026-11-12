@@ -120,6 +120,12 @@ export function createSandbox({ root, guestAssets, toolEndpoint }: { root: strin
       checks.push({ id: 'storage-lock-durability', status: 'unverified',
         message: 'Read-only diagnostics cannot prove filesystem lock/fsync/power-loss semantics.',
         nextStep: 'Qualify persistent storage and exclusive locking in the authorized storage integration group.' });
+      checks.push({ id: 'sandbox-tool-channel', status: 'blocked',
+        message: 'The approved boot/invocation/role-bound executeTool channel is not implemented; fixed readiness commands are not a Builder tool interface.',
+        nextStep: 'Implement the approved confined tool projection and adapter transport before Docker qualification; do not expose arbitrary guestExec or the Gondolin SDK.' });
+      checks.push({ id: 'sandbox-network-policy', status: 'blocked',
+        message: 'The current adapter disables guest networking; mediated public HTTPS and container trust paths are not implemented or qualified.',
+        nextStep: 'Implement the approved network policy and layered TLS trust before requesting a separately authorized Docker/Testcontainers/Ryuk qualification; do not enable unrestricted networking or insecure TLS.' });
       checks.push({ id: 'docker-runtime', status: 'unverified', message: 'No VM boot, Docker or container/TLS test was performed.',
         nextStep: 'Run the authorized real Gondolin/Docker/TLS integration group; doctor is not that proof.' });
       return { configuration: validated, checks, versions };
