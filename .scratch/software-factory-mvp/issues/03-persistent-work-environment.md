@@ -305,3 +305,21 @@ R31416725504B retidos<80GiB; históricosUNKNOWN/noRetry/discos/units/runtimes/sn
 preservados, sem liberação por inventory. Ainda faltam remove/escapes RealFS,
 owner-loss/isolamento entre ambientes e demais provas do contrato. Checkboxes
 integrais continuam abertos; integração b591ec7 intocada, sem push/cleanup.
+
+[Remoção local](../../../docs/evidence/03-remove-local.md) implementada no Q5:
+cleanup host vinculado ao Work encerrado/evidência preservada, lock de lifecycle,
+cessação de todos os boots antes de cada efeito, alvos próprios fixos e resultados
+individuais/parciais. Root aliases/mounts/hardlinks compartilhados recusados,
+links descendentes não seguidos. Histórico/identidades/evidências permanecem;
+cleanup pendente impede start/prepare recriarem recursos. Observe removed exige
+provas de cessação e ausência, não receipt isolado. Nenhum u3/v3/UNKNOWN removido.
+
+Revisão ab431421 encontrou dois P1 de retry: perda de owner interno após rm parcial
+e removed.json malformado por escrita interrompida. Corrigidos diretamente,
+identidade de runtime guardada fora da subárvore e publicação atômica exclusiva
+com recuperação estrita da janela link/unlink. RED2/GREEN2 + regressões de alias
+recriado, hardlink-publication e final malformado recusado. Sem cadeia de revisão.
+100casos99pass1VMskip, strictgates/arch71módulos318deps. Managerdoubles e dados novos
+não provam cleanup real de VM; prepared-sem-boot/metadata insuficiente ainda
+recusado conservadoramente. Prosseguir confinamento RealFS e depois qualificação
+real de isolamento/owner-loss/cleanup com orçamento próprio; ticket ainda aberto.

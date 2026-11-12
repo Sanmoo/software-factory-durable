@@ -14,11 +14,16 @@ import { startEnvironment, type StartResult } from './start.js';
 export type { StartResult } from './start.js';
 import { stopEnvironment } from './stop.js';
 export type { StopResult } from './stop.js';
+import { removeEnvironment } from './remove.js';
+export type { RemoveResult, ResourceRemoval } from './remove.js';
 // Trusted process composition only; never projected as a worker tool.
 export { runSandboxAdapter } from './adapter.js';
 
 export function createSandbox({ root, guestAssets }: { root: string; guestAssets?: GuestAssetPin }) {
   return {
+    async remove({ environment, cleanup }: { environment: EnvironmentRef; cleanup: unknown }) {
+      return removeEnvironment(root, environment, cleanup);
+    },
     async stop({ environment, boot, reason }: { environment: EnvironmentRef; boot: BootRef; reason: string }) {
       return stopEnvironment(root, environment, boot, reason);
     },

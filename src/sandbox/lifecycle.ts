@@ -1,16 +1,17 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, open, readFile, readlink, realpath, statfs } from 'node:fs/promises';
+import { lstat, open, readFile, readlink, readdir, realpath, statfs } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { z } from 'zod';
 import { configurationSchema } from './configuration.js';
+import { cleanupRequestSchema, cleanupRuntime, removedSchema } from './cleanup-records.js';
 import type { EnvironmentRef } from './prepare.js';
 
 export type BootRef = string & { readonly bootRef: unique symbol };
 export type Observation = {
-  condition: 'active' | 'stopped' | 'indeterminate';
+  condition: 'active' | 'stopped' | 'removed' | 'indeterminate';
   cessationConfirmed: boolean;
   consumption: 'unavailable';
 };
@@ -148,7 +149,7 @@ export function processStartTicks(value: string) {
 }
 
 /** Read-only ownership observation. Missing evidence is never confirmed cessation. */
-export async function observeEnvironment(root: string, environment: EnvironmentRef, boot?: BootRef): Promise<Observation> {
+export async function observeBootEnvironment(root: string, environment: EnvironmentRef, boot?: BootRef): Promise<Observation> {
   const unknown: Observation = { condition: 'indeterminate', cessationConfirmed: false, consumption: 'unavailable' };
   try {
     const { directory } = await ownedEnvironment(root, environment);
@@ -196,5 +197,38 @@ export async function observeEnvironment(root: string, environment: EnvironmentR
       await supervisionHierarchy(started);
     }
     return { condition: 'stopped', cessationConfirmed: true, consumption: 'unavailable' };
+  } catch { return unknown; }
+}
+
+/** Removal evidence is not cessation by itself: verify every recorded boot and absence. */
+export async function observeEnvironment(root: string, environment: EnvironmentRef, boot?: BootRef): Promise<Observation> {
+  const unknown: Observation = { condition: 'indeterminate', cessationConfirmed: false, consumption: 'unavailable' };
+  try {
+    const { directory, owner } = await ownedEnvironment(root, environment);
+    let removed;
+    try { removed = await metadata(join(directory, 'removed.json'), removedSchema); }
+    catch (e) {
+      if (!(e instanceof Error && 'code' in e && e.code === 'ENOENT')) return unknown;
+      return observeBootEnvironment(root, environment, boot);
+    }
+    const request = await metadata(join(directory, 'cleanup-request.json'), cleanupRequestSchema);
+    const current = await metadata(join(directory, 'current.json'), currentSchema);
+    const inventory = (await readdir(directory)).filter(name => name.startsWith('boot-')).sort();
+    if (current.environment !== environment || !removed.boots.includes(current.boot) ||
+        JSON.stringify(inventory) !== JSON.stringify(removed.boots)) return unknown;
+    if (removed.environment !== environment || removed.workId !== owner.workId || request.environment !== environment ||
+        request.workId !== owner.workId || JSON.stringify(removed.boots) !== JSON.stringify(request.boots) ||
+        (boot !== undefined && !removed.boots.includes(boot))) return unknown;
+    for (const ref of removed.boots) {
+      if (!(await observeBootEnvironment(root, environment, ref as BootRef)).cessationConfirmed) return unknown;
+    }
+    const canonical = await realpath(root);
+    const paths = ['root.qcow2', 'workspace', 'artifacts'].map(name => join(directory, name));
+    paths.push(...removed.boots.map(ref => cleanupRuntime(canonical, ref)));
+    for (const path of paths) {
+      try { await lstat(path); return unknown; }
+      catch (e) { if (!(e instanceof Error && 'code' in e && e.code === 'ENOENT')) return unknown; }
+    }
+    return { condition: 'removed', cessationConfirmed: true, consumption: 'unavailable' };
   } catch { return unknown; }
 }

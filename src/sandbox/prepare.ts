@@ -7,6 +7,7 @@ import { inspectStorage } from '../platform/host/index.js';
 import { inspectGuestAssets, type GuestAssetPin } from './guest-assets.js';
 import type { SandboxConfiguration } from './configuration.js';
 import { growFilesystemCopy } from './filesystem.js';
+import { cleanupRequested } from './cleanup-records.js';
 
 export type EnvironmentRef = string & { readonly environmentRef: unique symbol };
 export type PrepareResult = { status: 'success'; environment: EnvironmentRef } |
@@ -47,6 +48,7 @@ export async function prepareEnvironment(root: string, pin: GuestAssetPin | unde
   catch (error) {
     if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error;
     await privateDirectory(directory);
+    if (await cleanupRequested(directory)) return { status: 'failure', code: 'ENVIRONMENT_CLEANUP_PENDING' };
     try {
       const previous = JSON.parse(await readFile(join(directory, 'owner.json'), 'utf8'));
       if (JSON.stringify(previous) !== JSON.stringify(identity)) return { status: 'failure', code: 'ENVIRONMENT_CONFIGURATION_MISMATCH' };

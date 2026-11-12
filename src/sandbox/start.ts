@@ -11,6 +11,7 @@ import { inspectGuestAssets, type GuestAssetPin } from './guest-assets.js';
 import type { SandboxConfiguration } from './configuration.js';
 import type { EnvironmentRef } from './prepare.js';
 import { checkDiskFilesystem } from './filesystem.js';
+import { cleanupRequested } from './cleanup-records.js';
 import { currentSchema, identitySchema, metadata, observeEnvironment, ownedEnvironment, privateDirectory,
   startupFailureSchema, supervisionHierarchy, type BootRef, type StartupFailure } from './lifecycle.js';
 
@@ -78,6 +79,7 @@ export async function startEnvironment(root: string, pin: GuestAssetPin | undefi
       throw error;
     }
     try {
+      if (await cleanupRequested(directory)) return { status: 'failure', code: 'ENVIRONMENT_CLEANUP_PENDING' };
       let previous;
       try { previous = await metadata(join(directory, 'current.json'), currentSchema); }
       catch (error) {
