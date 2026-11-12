@@ -4,7 +4,7 @@
 
 **Blocked by:** [02: Operar um controlador exclusivo com pausa durável](02-exclusive-controller-and-durable-pause.md); [03: Preparar, iniciar e parar um ambiente persistente por Trabalho](03-persistent-work-environment.md)
 
-**Status:** ready-for-agent
+**Status:** needs-info
 
 ## Acceptance criteria
 
@@ -26,3 +26,10 @@
 ## Autorização e limites
 
 Publicação é planejamento aprovado, não autorização de construção, uso de host/credenciais/GitHub/modelos reais, injeção de falhas ou piloto. Obter autorização pertinente antes da execução. Não alterar decisões aprovadas silenciosamente; lacuna de desenho volta ao operador. Merge e avaliação humana não são delegados aos agentes.
+
+## Comments
+
+- Implementação **parcial**, não aceite: `docs/evidence/05-protected-output-and-sdk-candidate.md` descreve Records real/filesystem, filtragem incremental, paginação e o candidato SDK local. Nenhum AC integral foi marcado como comprovado.
+- Gap reproduzido em Pi coding-agent 1.5.2: `createReadTool` consulta o filesystem host antes das `ReadOperations` substituídas. Candidato mínimo versionado, somente em cópia privada de fixture, preserva leitura/paginação/imagem nativas; **não adotado** como fork/dependência runtime. Requer avaliação/decisão do responsável antes de uso operacional.
+- Permanecem não implementados ativação supervisionada, recibo específico de início/reserva, `executeTool`/transporte do proprietário existente, projeção por papel, cópia seletiva ao guest e parada por EOF. São trabalho local restante, não redesenho obrigatório nem provas por dublê.
+- Chamadas reais continuam retidas: falta provider/modelo suportado e mecanismo verificável de credencial independente + contabilização agregada/cap autorizado. O aceite com modelo real e as provas físicas pertinentes não foram executados nem inferidos dos testes locais. Ticket não resolvido; integração de partial/stub não constitui aceite.

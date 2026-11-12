@@ -1,0 +1,83 @@
+// Investigation fixture only. Imported package is an owned private SDK copy.
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
+import { join } from 'node:path';
+import { createReadTool, SessionManager } from './sdk/dist/index.js';
+import { createRecords } from '../../../../dist/src/records/index.js';
+const root = process.cwd();
+const requested = join(root, 'caf\u00e9.txt');
+const variant = requested.normalize('NFD');
+const guestPaths = [];
+let hostProbes = 0;
+let accessFails = false;
+let image = false;
+const originalAccess = fs.access;
+fs.access = async (...args) => { hostProbes++; return originalAccess(...args); };
+syncBuiltinESMExports();
+const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
+const tool = createReadTool(root, { autoResizeImages: false, operations: {
+  access: async path => { guestPaths.push(path); if (accessFails) throw new Error('SYNTHETIC_GUEST_DENIED'); },
+  readFile: async () => image ? png : Buffer.from('first\nsecond\nthird\nfourth\n'),
+  detectImageMimeType: async () => image ? 'image/png' : null,
+}});
+try {
+  const before = await tool.execute('before', { path: requested, offset: 2, limit: 1 });
+  await fs.writeFile(variant, 'owned harmless host sentinel');
+  const after = await tool.execute('after', { path: requested, offset: 2, limit: 1 });
+  const observed = { sdk: '1.5.2', hostProbes, guestPathKinds: guestPaths.map(path => path === requested ? 'requested' : 'host-variant') };
+  console.log(JSON.stringify(observed));
+  assert.equal(hostProbes, 0, 'substituted operations must not probe the host filesystem');
+  assert.deepEqual(guestPaths, [requested, requested]);
+  assert.match(before.content[0].text, /second/);
+  assert.doesNotMatch(before.content[0].text, /first|third/);
+  assert.deepEqual(after.content, before.content);
+  accessFails = true;
+  await assert.rejects(tool.execute('denied', { path: requested }), /SYNTHETIC_GUEST_DENIED/);
+  assert.equal(hostProbes, 0);
+  accessFails = false; image = true;
+  const result = await tool.execute('image', { path: requested });
+  assert.ok(result.content.some(block => block.type === 'image' && block.mimeType === 'image/png' && block.data === png.toString('base64')));
+  assert.equal(hostProbes, 0);
+  // Native-default behavior must still read the host fixture when operations are omitted.
+  await fs.writeFile(requested, 'native default sentinel\n');
+  const defaultTool = createReadTool(root);
+  const native = await defaultTool.execute('native', { path: requested });
+  assert.match(native.content[0].text, /native default sentinel/);
+  assert.ok(hostProbes > 0);
+  console.log('PASS custom operations: zero host probes; stable requested path; guest errors; native pagination/image; default host behavior unchanged');
+} finally {
+  fs.access = originalAccess;
+  syncBuiltinESMExports();
+}
+
+// This manually composes the actual Records and native SDK storage boundaries.
+// It is not a worker/model/VM integration or a claim of supervised activation.
+const recordsRoot = join(root, 'records');
+const sessionRoot = join(root, 'sessions');
+await fs.mkdir(recordsRoot, { mode: 0o700 });
+await fs.mkdir(sessionRoot, { mode: 0o700 });
+const records = await createRecords({ root: recordsRoot });
+records.registerSecret('synthetic-native-token');
+const context = { workId: 'work-05', executionId: 'execution-05', invocationId: 'invocation-05',
+  role: 'builder', environmentRef: 'environment-05', bootRef: 'boot-05', callId: 'native-fixture' };
+const output = await records.openOutput(context);
+let filtered = await output.write(Buffer.from('before synthetic-'));
+filtered += await output.write(Buffer.from('native-token after'));
+const finished = await output.finish();
+filtered += finished.tail;
+assert.equal(filtered, 'before █ after');
+const session = SessionManager.create('/workspace', sessionRoot);
+session.appendMessage({ role: 'user', content: 'Offline fixture; no model invocation.', timestamp: Date.now() });
+session.appendMessage({ role: 'toolResult', toolCallId: 'native-fixture', toolName: 'read',
+  content: [{ type: 'text', text: filtered }], isError: false, timestamp: Date.now() });
+const nativeFile = session.getSessionFile();
+const stored = await fs.readFile(nativeFile, 'utf8');
+assert.ok(!stored.includes('synthetic-native-token'));
+assert.ok(stored.includes('before █ after'));
+const entries = stored.trim().split('\n').map(line => JSON.parse(line));
+assert.equal(entries[0].type, 'session');
+assert.equal(entries[0].version, 3);
+const reopened = SessionManager.open(nativeFile, sessionRoot);
+assert.ok(reopened.buildSessionContext().messages.some(message => message.role === 'toolResult' && message.content[0].text === 'before █ after'));
+console.log('PASS filtered bytes reach native SessionManager JSONL and reopened context without raw secret');

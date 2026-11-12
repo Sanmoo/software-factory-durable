@@ -1,0 +1,198 @@
+
+> software-factory-durable@0.0.0 check:architecture
+> depcruise --config .dependency-cruiser.cjs --output-type err-long . && eslint . --max-warnings 0
+
+
+✔ no dependency violations found (82 modules, 385 dependencies cruised)
+
+
+> software-factory-durable@0.0.0 build
+> npm run clean && tsc -p tsconfig.json
+
+
+> software-factory-durable@0.0.0 clean
+> node --input-type=module -e "import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })"
+
+
+COMMAND: node --test --test-concurrency=1 dist/test/architecture/*.test.js dist/test/protocol/*.test.js dist/test/records/*.test.js dist/test/workers/*.test.js
+✔ architecture gate permits a public records import from platform/github including type-only imports (501.587508ms)
+✔ controller composition permits only the approved shared configuration bootstrap, not private module imports (1588.419212ms)
+✔ architecture gate rejects deep imports through relative paths (537.894216ms)
+✔ architecture gate rejects dependency inversion even through a public export (535.119357ms)
+✔ architecture gate detects cross-zone cycles made only of types (537.780702ms)
+✔ architecture gate resolves tsconfig aliases and rejects alias bypass of public entries (558.58457ms)
+✔ architecture gate rejects SQLite outside its durable Control owner (535.321606ms)
+✔ architecture gate rejects previously unclassified authored source, even when orphaned (560.95632ms)
+✔ architecture gate forbids Control from importing injected implementations as values (538.453451ms)
+✔ architecture gate enforces worker composition and CLI type-only access to Control (1191.171877ms)
+✔ architecture syntax gate rejects real clocks in pure Control rules (518.053924ms)
+✔ architecture syntax gate rejects opaque computed loading while permitting literal dynamic imports (1051.768295ms)
+✔ architecture gate rejects I/O imports in pure Control rules (567.02348ms)
+✔ architecture gate keeps SDK ownership rules sensitive to resolved package imports, not missing dependencies (2235.915163ms)
+✔ architecture gate permits injected contracts, the tools type projection, and SQLite in its owning implementation (555.170955ms)
+✔ architecture gate detects unclassified authored source outside src as well (548.350154ms)
+✔ pure-rule clock restriction also applies to authored ESM JavaScript (525.123793ms)
+✔ vendor skipLibCheck does not disable strict application or exact optional-property checking (494.25883ms)
+✔ Protocol delivers only complete JSON lines, including fragmented UTF-8 and coalesced frames (38.506314ms)
+✔ Protocol reports invalid version/fields, invalid UTF-8, truncated EOF and oversized frames without delivering them (10.56074ms)
+✔ Channel send means transport write only, never a fabricated durable ACK (10.828048ms)
+✔ Records refuses secret-bearing correlation metadata before creating any artifact (10.812386ms)
+✔ Records does not write a known secret that collides with capture/completion metadata (27.671307ms)
+✔ Records fails closed for invalid UTF-8 and cannot subsequently finalize or release a buffered secret (18.101964ms)
+✔ Records refuses nonprivate and symlinked roots and traversal references (5.925601ms)
+✔ Records filters every UTF-8 byte split, overlapping secrets and a registered rotation before downstream delivery (593.406533ms)
+✔ Records replacement boundaries cannot synthesize another registered secret (16.899525ms)
+✔ Records refuses corrupt correlation metadata instead of exposing an unverified capture as complete (18.537837ms)
+✔ Records captures large output incrementally and pages the protected copy with a prefix-only marked excerpt (126.786302ms)
+✔ Records publishes a complete correlated event durably and filters secrets before JSON escaping (38.585478ms)
+✔ Records never returns a complete result if critical completion publication fails (19.141467ms)
+✔ Records filters a known secret across chunks before returning or writing any output (34.450609ms)
+✔ local SDK candidate preserves native read without host path probing for substituted operations (3211.739461ms)
+ℹ tests 33
+ℹ suites 0
+ℹ pass 33
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 18713.338772
+
+COMMAND: node --test --test-concurrency=1 dist/test/entrypoints/*.test.js
+✔ doctor validates complete YAML and reports only approved defaults and explicit role models (188.496585ms)
+✔ invalid configuration is rejected as a whole without echoing secrets or exposing partial effective settings (3188.641585ms)
+✔ doctor accepts explicit overrides including Workflows permission, limits, timeout and adapter resources (176.720925ms)
+✔ model credentials are installation file references, never inline values or personal paths (719.343084ms)
+✔ explicitly empty operators authorizes no remote operator rather than inheriting an identity (178.238724ms)
+✔ Control.accept/inspect/run never expose dispatch or a raw Session, before or after unpause (252.001709ms)
+✔ a surviving real Node subprocess does not inherit the no-fork owner lock descriptor (256.468982ms)
+✔ lost ACK is queryable and concurrent identical ingress commits only once; conflicting content is refused (619.365684ms)
+✔ run refuses the incomplete setup configuration before creating operational storage (546.057675ms)
+✔ canonical-root aliases share a stable exclusive lock, and internal owner refuses to bypass flock (2247.096482ms)
+✔ internal owner refuses shared or unrelated inherited flock descriptions (634.157085ms)
+✔ SIGKILL releases the owner lock and a restart preserves acknowledged pause (1693.74697ms)
+✔ real file-size limit prevents a control commit from producing durable ACK or a half transition (2057.65182ms)
+✔ unpause cannot release dispatch with unknown environments resources; offline queries are explicit errors (1412.054712ms)
+✔ unpause cannot release dispatch with unknown run resources; offline queries are explicit errors (1319.766828ms)
+✔ CLI pause is durable across controller restart and a repeated request does not reapply it (2607.89061ms)
+✔ offline doctor reports paths, versions, permissions, KVM/systemd/storage/socket without changing state (404.403115ms)
+✔ doctor rejects a socket pathname that cannot fit Linux sockaddr_un without creating a socket (197.104819ms)
+✔ importing public modules cannot write, spawn probes, or read a personal profile (287.230841ms)
+✔ doctor refuses a symlinked configuration and reports permission issues without repairing them (203.011881ms)
+✔ offline version probes accept integer systemd versions and do not inherit personal credentials (278.559812ms)
+✔ setup is repeatable, starts with no repositories, and preserves existing private material (431.892762ms)
+✔ setup refuses preexisting symlinks and incompatible paths before creating installation children (167.767335ms)
+✔ setup includes prerequisite diagnostics without treating its incomplete initial example as operational (226.624287ms)
+✔ CLI rejects unknown commands and malformed arguments without filesystem changes (790.823955ms)
+ℹ tests 25
+ℹ suites 0
+ℹ pass 25
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 21543.479405
+
+COMMAND: node --test --test-concurrency=1 dist/test/sandbox/*.test.js
+﹣ pinned Gondolin KVM preserves disk and RealFS workspace across two distinct boots (0.688452ms) # SKIP
+✔ Sandbox adapter confines actual SDK filesystem RPC and ancestor symlinks (VM doubled, no VM/network/signal) (362.844845ms)
+✔ Sandbox operational adapter finalizes the direct Alpine daemon before close: shutdown-success (external doubles, no VM/signal) (210.612814ms)
+✔ Sandbox operational adapter finalizes the direct Alpine daemon before close: shutdown-concurrent (external doubles, no VM/signal) (172.725273ms)
+✔ Sandbox operational adapter finalizes the direct Alpine daemon before close: shutdown-nonzero (external doubles, no VM/signal) (174.82088ms)
+✔ Sandbox operational adapter finalizes the direct Alpine daemon before close: shutdown-exec-fails (external doubles, no VM/signal) (177.875551ms)
+✔ Sandbox operational adapter finalizes the direct Alpine daemon before close: shutdown-timeout (external doubles, no VM/signal) (985.987002ms)
+✔ Sandbox operational adapter finalizes the direct Alpine daemon before close: shutdown-write-fails (external doubles, no VM/signal) (192.411352ms)
+✔ Sandbox adapter entrypoint orders diagnostic attempt before owned close: slow-write (external doubles, no VM/signal) (177.777295ms)
+✔ Sandbox adapter entrypoint orders diagnostic attempt before owned close: write-fails (external doubles, no VM/signal) (190.376519ms)
+✔ Sandbox adapter entrypoint orders diagnostic attempt before owned close: unknown-error (external doubles, no VM/signal) (193.468746ms)
+✔ Sandbox adapter entrypoint orders diagnostic attempt before owned close: without-stop (external doubles, no VM/signal) (185.350146ms)
+✔ Sandbox adapter keeps console disabled and publishes an empty startup snapshot: markers-slow-write (no VM/signal) (188.665153ms)
+✔ Sandbox adapter keeps console disabled and publishes an empty startup snapshot: markers-write-fails (no VM/signal) (187.665231ms)
+✔ Sandbox adapter keeps console disabled and publishes an empty startup snapshot: markers-success (no VM/signal) (202.342186ms)
+✔ boot markers retain literal observations, never raw console or protocol payload (1.691944ms)
+✔ initramfs and panic observations do not manufacture root-mounted or SDK-ready proof (0.197806ms)
+✔ own marker state is bounded under repeats and oversized/unstructured callbacks (1.955952ms)
+✔ seal freezes diagnostic collection before guest commands and returns defensive snapshots (0.21569ms)
+✔ missing callbacks remain empty observations, not a diagnosis of no guest execution (0.195335ms)
+✔ Sandbox.start validates preserved ext4 before manager actuation: valid (real disks, no VM) (610.339758ms)
+✔ Sandbox.start validates preserved ext4 before manager actuation: corrupt (real disks, no VM) (663.986825ms)
+✔ Sandbox.start validates preserved ext4 before manager actuation: allocation-bitmap (real disks, no VM) (687.118262ms)
+✔ Sandbox.start validates preserved ext4 before manager actuation: short-filesystem (real disks, no VM) (647.238295ms)
+✔ Sandbox.start validates preserved ext4 before manager actuation: backing-file (real disks, no VM) (576.77397ms)
+✔ Sandbox.start validates preserved ext4 before manager actuation: prior-unknown (real disks, no VM) (445.308043ms)
+✔ Sandbox.start validates preserved ext4 before manager actuation: low-space (real disks, no VM) (522.527624ms)
+✔ guest recipe uses one explicit ISO kernel/module cohort without a second kernel package (2.491731ms)
+✔ offline filesystem finalization is limited to the two sticky temporary directories (0.353325ms)
+✔ Docker-vfs profile uses guest cgroupfs and a guest-local Unix socket only (0.38624ms)
+✔ guest-only hook has bounded readiness and is syntax-checked, never executed on host (5.553031ms)
+✔ Sandbox.observe treats an unknown environment as indeterminate without creating resources (10.818895ms)
+✔ Sandbox.observe rejects an environment-directory alias without reading or changing the target (8.955949ms)
+✔ Sandbox.observe does not adopt boot records from a different host boot (31.676786ms)
+✔ Sandbox.observe rejects a FIFO metadata file without waiting for a writer (165.061775ms)
+✔ Sandbox.observe does not turn incomplete boot evidence into active or confirmed stopped (9.395846ms)
+✔ Sandbox.prepare creates a real standalone persistent disk idempotently and refuses incompatible reuse (1503.118267ms)
+✔ Sandbox.remove deletes only stopped owned operational resources and preserves history (manager double) (339.736473ms)
+✔ Sandbox.observe confirms removed resources and cleanup is repeatable without losing boot evidence (manager double) (646.201618ms)
+✔ Sandbox.remove never calls a present runtime absent when its ownership record is missing (248.500024ms)
+✔ Sandbox.start and prepare cannot resurrect an environment after cleanup begins (309.394266ms)
+✔ Sandbox.remove rejects invalid host cleanup assertions without deleting data (5.929719ms)
+✔ Sandbox.remove rejects invalid host cleanup assertions without deleting data (5.727557ms)
+✔ Sandbox.remove rejects invalid host cleanup assertions without deleting data (7.325529ms)
+✔ Sandbox.remove rejects invalid host cleanup assertions without deleting data (8.65575ms)
+✔ Sandbox.remove refuses wrong-work before destructive effects (12.543536ms)
+✔ Sandbox.remove refuses uncertain-manager before destructive effects (45.952712ms)
+✔ Sandbox.remove refuses unknown-boot before destructive effects (51.388946ms)
+✔ Sandbox.remove reports alias refusal and completes only pending resources on retry (515.220687ms)
+✔ Sandbox.remove unlinks child symlinks without following them but refuses shared hardlinks (224.681701ms)
+✔ Sandbox.remove retries only after a fresh durable barrier following file sync failure (331.111487ms)
+✔ Sandbox.remove retries only after a fresh durable barrier following directory sync failure (346.566159ms)
+✔ Sandbox.remove stops destructive work when cessation becomes unavailable between resources (143.325568ms)
+✔ Sandbox.observe never trusts removal marker alone after resources or a boot reappear (328.851826ms)
+✔ Sandbox.remove recovers a partially removed runtime using retained identity, not an ownerless replacement (761.080408ms)
+✔ Sandbox.remove can complete after an interrupted completion write without publishing a malformed final marker (579.597505ms)
+✔ Sandbox.remove recovers an exclusive publication interrupted after linking the final record (578.671959ms)
+✔ Sandbox.remove refuses a genuinely malformed existing final record rather than overwriting it (283.712164ms)
+✔ Sandbox.remove rejects missing cleanup authorization before any resource effect (5.260443ms)
+✔ Sandbox.start reports a bounded previous-startup diagnostic without permitting disk reuse (manager double) (72.390331ms)
+✔ Sandbox.start omits missing diagnostics without echoing payload or weakening restart denial (manager double) (49.425238ms)
+✔ Sandbox.start omits another boot diagnostics without echoing payload or weakening restart denial (manager double) (44.115724ms)
+✔ Sandbox.start omits unrecognized code diagnostics without echoing payload or weakening restart denial (manager double) (47.494672ms)
+✔ Sandbox.start omits raw error payload diagnostics without echoing payload or weakening restart denial (manager double) (51.27973ms)
+✔ Sandbox.start omits unrecognized phase diagnostics without echoing payload or weakening restart denial (manager double) (54.795068ms)
+✔ Sandbox.start rejects invalid configuration without creating boot resources (8.604444ms)
+✔ Sandbox.start does not create or adopt an environment that was not prepared (4.336525ms)
+✔ Sandbox.start refuses an incompatible persistent disk configuration before boot effects (9.105533ms)
+✔ Sandbox.start refuses an asset pin different from trusted composition (9.009644ms)
+✔ Sandbox.start never replaces an ambiguous previous boot (10.737805ms)
+✔ Sandbox.start preserves a pre-existing lifecycle lock rather than taking ownership (3.291697ms)
+✔ Sandbox.start rejects a root disk alias without changing its target or publishing boot intent (9.232803ms)
+✔ Sandbox.start rejects an overlong runtime socket path before publishing intent or creating runtime resources (5.271386ms)
+✔ Sandbox.stop treats valid guest finalization as evidence, never graceful termination (manager double) (250.30114ms)
+✔ Sandbox.stop treats missing guest finalization as evidence, never graceful termination (manager double) (215.69945ms)
+✔ Sandbox.stop treats foreign-boot guest finalization as evidence, never graceful termination (manager double) (219.217094ms)
+✔ Sandbox.stop treats raw-fields guest finalization as evidence, never graceful termination (manager double) (231.968571ms)
+✔ Sandbox.stop retry re-establishes file and directory durability after file sync failure (manager double) (293.640063ms)
+✔ Sandbox.stop retry re-establishes file and directory durability after directory sync failure (manager double) (309.866391ms)
+✔ Sandbox.stop does not act when an existing request cannot complete file sync (manager double) (104.424688ms)
+✔ Sandbox.stop does not act when an existing request cannot complete directory sync (manager double) (82.159274ms)
+✔ Sandbox.stop concurrent retry independently syncs a still-publishing request before effect (manager double) (416.574415ms)
+✔ Sandbox.stop leaves an unknown environment untouched and never confirms cessation from missing records (1.366656ms)
+✔ Sandbox.stop rejects an invalid reason before effects (1.004921ms)
+✔ Sandbox.stop refuses an invalid boot reference without traversing it (0.753797ms)
+✔ Sandbox.stop refuses host mismatch before writing a request or signaling a service (3.832756ms)
+✔ Sandbox.stop refuses group mismatch before writing a request or signaling a service (3.938192ms)
+✔ Sandbox.stop refuses namespace mismatch before writing a request or signaling a service (3.109982ms)
+✔ Sandbox.observe exposes measured disk/workspace storage without boot or following aliases (458.001165ms)
+✔ Sandbox.validate keeps configuration validity separate from missing explicitly pinned assets (37.877194ms)
+✔ Sandbox.validate verifies explicitly pinned bytes without claiming release or boot qualification (46.692571ms)
+✔ Sandbox.validate distinguishes malformed, incomplete and incompatible pinned manifest metadata (183.990441ms)
+✔ Sandbox.validate reports missing and mismatched bytes independently, without repair (62.746432ms)
+✔ Sandbox.validate rejects path traversal, symlink and hardlink aliases with real local files (241.518046ms)
+✔ Sandbox.validate rejects missing, symlinked, oversized manifests and invalid explicit pins (145.665545ms)
+ℹ tests 95
+ℹ suites 0
+ℹ pass 94
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 20643.240439
