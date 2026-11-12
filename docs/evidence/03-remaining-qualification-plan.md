@@ -1,6 +1,10 @@
 # 03 — proposta fechada para owner-loss, isolamento e remoção reais
 
-**PENDENTE DE AUTORIZAÇÃO ESPECÍFICA. Nenhuma VM/sinal/remoção deste plano executada.**
+**Atualização2026-11-12: autorizado explicitamente e executado parcialmente.**
+Dois boots operacionais/uma falha ownerA confirmada; fsck4 de A bloqueou o terceiro
+boot e a remoção, B parado no finally, ambos preservados. [Resultado w3](03-w3-owner-loss-gated.md).
+Não há autorização automática para reparar/reusar A ou gastar o terceiro após
+falha. Texto abaixo preserva a proposta e seus gates anteriores à execução.
 Os dois boots v3 estão consumidos. Este documento não amplia aquela concessão.
 Fonte: commit que inclui este plano, worktree limpo; registrar OID exato antes de
 qualquer efeito. Sem nova imagem/SDK/flags/timeouts de startup ou experiência de

@@ -23,7 +23,7 @@ async function shortRoot() {
   throw new Error('NO_NEW_SHORT_FILESYSTEM_TEST_ROOT');
 }
 
-for (const variant of ['valid', 'corrupt', 'short-filesystem', 'backing-file', 'prior-unknown', 'low-space'] as const) {
+for (const variant of ['valid', 'corrupt', 'allocation-bitmap', 'short-filesystem', 'backing-file', 'prior-unknown', 'low-space'] as const) {
   test(`Sandbox.start validates preserved ext4 before manager actuation: ${variant} (real disks, no VM)`, { skip: !testRoot }, async t => {
     const root = await shortRoot();
     const previousPath = process.env.PATH;
@@ -54,6 +54,20 @@ for (const variant of ['valid', 'corrupt', 'short-filesystem', 'backing-file', '
         execFileSync('/usr/bin/qemu-img', ['convert', '-f', 'qcow2', '-O', 'raw', disk, damaged], native);
         const file = await open(damaged, 'r+');
         try { await file.write(Buffer.alloc(2), 0, 2, 1024 + 0x38); } finally { await file.close(); }
+        execFileSync('/usr/bin/qemu-img', ['convert', '-f', 'raw', '-O', 'qcow2', damaged, disk], native);
+      } else if (variant === 'allocation-bitmap') {
+        // New fixture ONLY: model an allocated metadata block missing from its
+        // allocation bitmap. Never modify/recover a retained qualification disk.
+        const damaged = join(root, 'bitmap-fixture.ext4');
+        execFileSync('/usr/bin/qemu-img', ['convert', '-f', 'qcow2', '-O', 'raw', disk, damaged], native);
+        const allocation = execFileSync('/usr/bin/debugfs', ['-R', 'testb 100', damaged], { ...native, encoding: 'utf8' });
+        assert.match(allocation, /marked in use/);
+        execFileSync('/usr/bin/debugfs', ['-w', '-R', 'freeb 100', damaged], native);
+        assert.throws(() => execFileSync('/usr/bin/e2fsck', ['-f', '-n', damaged], native), e => {
+          assert.ok(e instanceof Error && 'status' in e && e.status === 4);
+          assert.ok('stdout' in e && String(e.stdout).includes('Block bitmap differences'));
+          return true;
+        });
         execFileSync('/usr/bin/qemu-img', ['convert', '-f', 'raw', '-O', 'qcow2', damaged, disk], native);
       } else if (variant === 'backing-file') {
         await rm(disk);

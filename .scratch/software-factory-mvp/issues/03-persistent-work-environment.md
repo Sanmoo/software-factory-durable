@@ -347,3 +347,19 @@ recusa antes do manager e preserva current/SHA. Review38a5ebc9 sem achados;
 102casos101pass/1VMskip strictgates/arch72módulos323deps. Storage é admissão pontual,
 não quota/reserva ou teste ENOSPC real com ativo. Qualificação física restante
 precisa de concessão específica; orçamento v3 permanece consumido.
+
+[W3 autorizado e executado parcialmente](../../../docs/evidence/03-w3-owner-loss-gated.md),
+fonte719176a: A1/B1 reais KVM operacionais simultâneos, uma falha SIGKILL no ownerA1
+exato com identidade/cgroup/namespaces/manager correlacionados. Cessação A sem
+owner confirmada, stop público reconheceu já cessado, B manteve mesmos VMM/CID
+ativos após o fault. Snapshot A apresentou bitmapdiff/contadores e e2fsck-n4;
+gate do qualificador NÃO chamou A2 nem cleanup, sem reparo/retry/variante. B parado
+pelo público no finally, guestfinalizationobserved e cessação independente. Ambos
+originais/runtimes/snapshots/evidências mantidos. A não tem journal/notclean;
+repetição read-only mantém fsck4 e fonte estável. B fsck0 mas contadores reportados,
+logo não afirmar ausência de avisos. Não há persistência A1→A2 ou remoção real
+qualificada. Terceiro boot condicional não pode ser reposto/reaproveitado após
+falha sem nova decisão. Regressão com bitmap inconsistente em fixture NOVA real
+confirma recusa pública antes do manager, sem mutar disco/current. Ticket continua
+aberto, nenhum checkbox integral concluído nem integração; recuperação de A exige
+decisão/autorização explícita, não reabre exploração da imagem.
