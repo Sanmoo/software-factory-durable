@@ -33,6 +33,7 @@ await mkdir(path, { recursive: true, mode: 0o700 });
 await json(join(directory, 'owner.json'), { version: 1, workId, environment, configuration,
   guestAssets: { directory: assets, manifestSha256: sha(manifest) } });
 await json(join(directory, 'ready.json'), { environment });
+await json(join(directory, 'current.json'), { version: 1, environment, boot });
 await json(join(path, 'identity.json'), { version: 1, environment, boot, unit, configuration,
   hostBoot: (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim() });
 const tag = Buffer.from(boot.slice(5).replaceAll('-', ''), 'hex').toString('base64url');
@@ -84,6 +85,7 @@ if (actual) {
 mock.module('@earendil-works/gondolin', { namedExports: {
   VM: { async create(options: { debugLog: Logger; sandbox: { console: string; debug: readonly string[] | boolean };
     vfs: { mounts: Record<string, RealProviderType> } }) {
+    if (mode === 'owner-registration') audit('vm-create');
     logger = options.debugLog;
     lateLogger = logger;
     if (options.sandbox.console !== 'none' || options.sandbox.debug !== false || options.debugLog !== null) {
@@ -144,7 +146,7 @@ mock.module('@earendil-works/gondolin', { namedExports: {
       logger?.('protocol', 'PRIVATE_TOKEN_CANARY');
       logger?.('qemu', 'stdout: [    0.000000] Linux version PRIVATE_TOKEN_CANARY');
       logger?.('qemu', 'stdout: [init] /dev entries:');
-      if (mode === 'markers-success' || mode === 'vfs-confinement' || mode?.startsWith('shutdown-')) return;
+      if (mode === 'owner-registration' || mode === 'markers-success' || mode === 'vfs-confinement' || mode?.startsWith('shutdown-')) return;
       const listeners = process.listeners('SIGTERM').filter(listener => !originalTermListeners.has(listener));
       if (listeners.length !== 1) throw new Error('EXPECTED_ONE_ADAPTER_STOP_LISTENER');
       // Invoke only the newly registered adapter callback; no OS signal or broad emit.
@@ -156,8 +158,14 @@ mock.module('@earendil-works/gondolin', { namedExports: {
     async close() { audit('close'); },
     id: '77777777-2222-4333-8444-555555555555',
     getHostPid() { return process.pid; }, // External VM double, never a real VMM.
-    async exec(argv: string[], options: { signal: AbortSignal; stdout?: string; stderr?: string }) {
+    exec(argv: string[], options: { signal: AbortSignal; stdout?: string; stderr?: string }) {
+      if (mode === 'owner-registration' && argv[0] === '/bin/cat') {
+        audit('read');
+        return { async *output() { yield { stream: 'stdout', data: Buffer.from('owner-shared-VM') }; }, result: Promise.resolve({ exitCode: 0 }) };
+      }
+      return (async () => {
       if (options.stdout !== 'ignore' || options.stderr !== 'ignore') throw new Error('UNUSED_GUEST_OUTPUT_MUST_BE_IGNORED');
+      if (mode === 'owner-registration') { audit(++execCalls === 1 ? 'profile-ready' : 'guest-finalize'); return { exitCode: 0 }; }
       if (mode?.startsWith('shutdown-')) {
         if (++execCalls === 1) { audit('profile-ready'); return { exitCode: 0 }; }
         audit('guest-finalize');
@@ -200,6 +208,7 @@ mock.module('@earendil-works/gondolin', { namedExports: {
         listeners[0]!('SIGTERM'); // Only the new callback, never an OS signal.
       }
       return { exitCode: 0 };
+      })();
     },
   }; } },
   RealFSProvider: actual?.RealFSProvider ?? class {
@@ -223,7 +232,7 @@ let operationalPublishing = false;
 let syncedPublishing = false;
 mock.method(prototype, 'writeFile', async function(this: FileHandle, ...args: Parameters<FileHandle['writeFile']>) {
   const target = await readlink(`/proc/self/fd/${this.fd}`);
-  if (mode?.startsWith('shutdown-') && target === join(path, 'operational.json')) operationalPublishing = true;
+  if ((mode === 'owner-registration' || mode?.startsWith('shutdown-')) && target === join(path, 'operational.json')) operationalPublishing = true;
   if (mode?.startsWith('shutdown-') && target === join(path, 'guest-synced.json')) {
     syncedPublishing = true;
     audit('synced-begin');
@@ -258,6 +267,10 @@ mock.method(prototype, 'sync', async function(this: FileHandle) {
     setImmediate(() => {
       const listeners = process.listeners('SIGTERM').filter(listener => !originalTermListeners.has(listener));
       if (listeners.length !== 1) throw new Error('EXPECTED_ONE_ADAPTER_STOP_LISTENER');
+      if (mode === 'owner-registration') {
+        void registrationProbe().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => listeners[0]!('SIGTERM'));
+        return;
+      }
       audit('stop-request');
       listeners[0]!('SIGTERM'); // Only this new callback, no OS signal.
       if (mode === 'shutdown-concurrent') listeners[0]!('SIGTERM');
@@ -269,3 +282,47 @@ mock.method(prototype, 'sync', async function(this: FileHandle) {
   if (publishing && target === join(path, 'failure.json')) audit('failure-file-synced');
   if (publishing && target === path) audit('failure-durable');
 });
+
+async function registrationProbe() {
+  if (!root || !environment || !boot) throw new Error('FIXTURE_ARGUMENTS_REQUIRED');
+  const { createSandbox } = await import('../../src/sandbox/index.js');
+  const { connect, protocolVersion } = await import('../../src/protocol/index.js');
+  const { readdir } = await import('node:fs/promises');
+  const sandbox = createSandbox({ root });
+  const standards = { workId, executionId: 'execution', invocationId: 'standards', role: 'standards' as const,
+    environmentRef: environment, bootRef: boot, phaseId: 'review' };
+  const spec = { ...standards, invocationId: 'spec', role: 'spec' as const };
+  const read = { name: 'read' as const, operation: 'capture' as const, path: '/workspace/file', callId: 'read-one' };
+  const first = await sandbox.executeTool(standards, read);
+  assert.equal(first.status, 'success');
+  assert.equal((await sandbox.executeTool(spec, { ...read, callId: 'read-two' })).status, 'success');
+  assert.deepEqual(await sandbox.executeTool({ ...standards, phaseId: 'stale' }, read), { status: 'failure', code: 'STALE_TOOL_CONTEXT' });
+  assert.deepEqual(await sandbox.executeTool({ ...standards, invocationId: 'old-boot', bootRef: 'boot-77777777-2222-4333-8444-555555555555' }, read),
+    { status: 'failure', code: 'TOOL_CHANNEL_UNAVAILABLE' });
+  if (first.status === 'success') assert.deepEqual(await sandbox.executeTool(spec,
+    { name: 'read', operation: 'page', reference: first.reference, offset: 0, callId: 'foreign' }),
+  { status: 'failure', code: 'READ_REFERENCE_DENIED' });
+  const endpoint = (await readdir(runtime)).find(name => name === 'b1');
+  assert.ok(endpoint);
+  const worker = await connect(join(runtime, endpoint), 'local-operator');
+  const replies = worker.messages[Symbol.asyncIterator]();
+  await worker.send({ protocol_version: protocolVersion, controller_run_id: null, message_id: 'forged', reply_to: null,
+    kind: 'execute-tool', payload: { context: spec, call: { ...read, callId: 'forged' } } });
+  assert.equal((await replies.next()).value?.payload.code, 'STALE_TOOL_CONTEXT');
+  await worker.send({ protocol_version: protocolVersion, controller_run_id: null, message_id: 'admin', reply_to: null,
+    kind: 'register-binding', payload: { role: 'host-boot', context: spec } });
+  const reply = await replies.next();
+  assert.equal(reply.done, false);
+  assert.equal(reply.value?.payload.code, 'INVALID_TOOL_CALL');
+  worker.close();
+  // Registration is a host-only endpoint association, not a role asserted in payload.
+  const host = await connect(join(runtime, 'owner'), 'local-operator');
+  await host.send({ protocol_version: protocolVersion, controller_run_id: null, message_id: 'old-boot', reply_to: null,
+    kind: 'register-binding', payload: { context: { ...standards, invocationId: 'forged-boot', bootRef: 'old-boot' } } });
+  assert.equal((await host.messages[Symbol.asyncIterator]().next()).value?.payload.code, 'STALE_TOOL_CONTEXT');
+  host.close();
+  assert.deepEqual(await sandbox.executeTool(standards, { ...read, callId: 'after-standards-eof' }),
+    { status: 'failure', code: 'STALE_TOOL_CONTEXT' });
+  assert.equal((await sandbox.executeTool(spec, { ...read, callId: 'after-eof' })).status, 'success');
+  audit('registration-isolated');
+}

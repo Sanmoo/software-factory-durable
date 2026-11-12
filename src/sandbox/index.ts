@@ -23,21 +23,29 @@ export type { RemoveResult, ResourceRemoval } from './remove.js';
 // Trusted process composition only; never projected as a worker tool.
 export { runSandboxAdapter } from './adapter.js';
 import { connectReadTools, type ReadCall, type ReadResult, type ToolContext } from './read-tools.js';
+import { registerOwnerTools } from './owner-registration.js';
 export type { ToolContext, ReadCall, ReadResult, ToolProjection, ReadBinding } from './read-tools.js';
 
 export function createSandbox({ root, guestAssets, toolEndpoint }: { root: string; guestAssets?: GuestAssetPin; toolEndpoint?: string }) {
-  let projection: Promise<Awaited<ReturnType<typeof connectReadTools>>> | undefined;
-  let binding: string | undefined;
+  const projections = new Map<string, Promise<Awaited<ReturnType<typeof connectReadTools>>>>();
+  const bindings = new Map<string, string>();
   return {
     async executeTool(context: ToolContext, call: ReadCall): Promise<ReadResult> {
-      if (!toolEndpoint) return { status: 'failure', code: 'TOOL_CHANNEL_UNAVAILABLE' };
       const key = JSON.stringify(context);
-      if (binding !== undefined && binding !== key) return { status: 'failure', code: 'STALE_TOOL_CONTEXT' };
-      binding = key;
+      const previous = bindings.get(context.invocationId);
+      if (previous !== undefined && previous !== key) return { status: 'failure', code: 'STALE_TOOL_CONTEXT' };
       try {
-        projection ??= connectReadTools(toolEndpoint, context);
+        let projection = projections.get(key);
+        if (!projection) {
+          projection = toolEndpoint ? connectReadTools(toolEndpoint, context) : registerOwnerTools(root, context);
+          projections.set(key, projection);
+          bindings.set(context.invocationId, key);
+        }
         return await (await projection).executeTool(call);
-      } catch { return { status: 'failure', code: 'TOOL_CHANNEL_CLOSED' }; }
+      } catch (error) {
+        return { status: 'failure', code: error instanceof Error && error.message === 'STALE_TOOL_CONTEXT'
+          ? 'STALE_TOOL_CONTEXT' : toolEndpoint ? 'TOOL_CHANNEL_CLOSED' : 'TOOL_CHANNEL_UNAVAILABLE' };
+      }
     },
     async remove({ environment, cleanup }: { environment: EnvironmentRef; cleanup: unknown }) {
       return removeEnvironment(root, environment, cleanup);

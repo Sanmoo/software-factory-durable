@@ -15,6 +15,8 @@ const envelopeSchema = z.strictObject({
   payload: z.record(z.string(), z.json()),
 });
 export type Envelope = z.infer<typeof envelopeSchema>;
+/** Supplied by trusted host composition for this endpoint, never decoded from a frame. */
+export type ExpectedPeer = 'local-operator' | { kind: 'host-boot' | 'worker-tool'; binding: Readonly<Record<string, string>> };
 export interface Channel {
   send(envelope: Envelope): Promise<void>;
   readonly messages: AsyncIterable<Envelope>;
@@ -87,13 +89,14 @@ function channel(socket: Socket, onClosed?: (error: unknown) => void): Channel {
   };
 }
 
-/** This endpoint is the trusted local operator projection, not a worker handshake granting authority. */
-export async function listen(endpoint: string,
+/** Peer association comes from host-owned endpoint composition, never a frame or
+ * connect() role claim. Private same-account endpoints are the trust boundary. */
+export async function listen<P extends ExpectedPeer>(endpoint: string,
   handler: {
-    message(envelope: Envelope, channel: Channel, peer: 'local-operator'): Promise<void>;
-    closed?(error: unknown, peer: 'local-operator'): void;
+    message(envelope: Envelope, channel: Channel, peer: P): Promise<void>;
+    closed?(error: unknown, peer: P, channel: Channel): void;
   },
-  expectedPeers: 'local-operator') {
+  expectedPeers: P) {
   await privateDirectory(endpoint);
   const channels = new Set<Channel>();
   const server = createServer(socket => {
@@ -101,7 +104,7 @@ export async function listen(endpoint: string,
     // EOF must reach the owner even while a message handler is awaiting guest
     // I/O. Decode/truncated-EOF failures are established by channel first.
     const connection = channel(socket, transportError => {
-      channels.delete(connection); handler.closed?.(failure ?? transportError, expectedPeers);
+      channels.delete(connection); handler.closed?.(failure ?? transportError, expectedPeers, connection);
     });
     channels.add(connection);
     void (async () => {
@@ -124,7 +127,7 @@ export async function listen(endpoint: string,
   };
 }
 
-export async function connect(endpoint: string, _invocation: 'local-operator'): Promise<Channel> {
+export async function connect(endpoint: string, _invocation: ExpectedPeer): Promise<Channel> {
   await privateDirectory(endpoint);
   const info = await lstat(endpoint);
   if (!info.isSocket() || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0) {

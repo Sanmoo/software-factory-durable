@@ -3,7 +3,7 @@ import { connect, listen, protocolVersion, type Envelope } from '../protocol/ind
 import type { createRecords } from '../records/index.js';
 
 const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
-const contextSchema = z.strictObject({ workId: identifier, executionId: identifier, invocationId: identifier,
+export const contextSchema = z.strictObject({ workId: identifier, executionId: identifier, invocationId: identifier,
   role: z.enum(['standards', 'spec']), environmentRef: identifier, bootRef: identifier, phaseId: identifier });
 export type ToolContext = z.infer<typeof contextSchema>;
 const referenceSchema = z.strictObject({ workId: identifier, id: z.uuid() });
@@ -110,7 +110,7 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
     })();
     active.add(task);
     try { await task; } finally { active.delete(task); }
-  }, closed() { lifetime.abort(); } }, 'local-operator');
+  }, closed() { lifetime.abort(); } }, { kind: 'worker-tool', binding: bound });
   let closing: Promise<void> | undefined;
   return { endpoint: options.endpoint, close() {
     lifetime.abort();
@@ -124,19 +124,25 @@ export async function serveReadToolBindings(bindings: readonly ReadBinding[], vm
   const owners: Awaited<ReturnType<typeof serveReadTools>>[] = [];
   let closing: Promise<void> | undefined;
   const close = () => closing ??= Promise.all(owners.map(owner => owner.close())).then(() => {});
+  const add = async (binding: ReadBinding) => {
+    if (closing || binding.signal.aborted) throw new Error('STALE_TOOL_CONTEXT');
+    const owner = await serveReadTools({ ...binding, vm });
+    if (closing || binding.signal.aborted) { await owner.close(); throw new Error('STALE_TOOL_CONTEXT'); }
+    owners.push(owner);
+  };
   try {
-    for (const binding of bindings) owners.push(await serveReadTools({ ...binding, vm }));
+    for (const binding of bindings) await add(binding);
   } catch (error) {
     await close();
     throw error;
   }
-  return { close };
+  return { close, add };
 }
 
 /** One invocation-bound channel, kept alive across native access/stream operations. */
 export async function connectReadTools(endpoint: string, context: ToolContext) {
   const bound = Object.freeze(contextSchema.parse(context));
-  const channel = await connect(endpoint, 'local-operator');
+  const channel = await connect(endpoint, { kind: 'worker-tool', binding: bound });
   const messages = channel.messages[Symbol.asyncIterator]();
   let closed = false;
   let busy = false;

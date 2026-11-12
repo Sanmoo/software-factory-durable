@@ -9,7 +9,7 @@ import { currentSchema, identitySchema, metadata, ownedEnvironment, privateDirec
   startupFailureCodeSchema, supervisionHierarchy, unitState, type BootRef, type StartupFailure } from './lifecycle.js';
 import { bootRuntimePaths, durableJson } from './start.js';
 import type { EnvironmentRef } from './prepare.js';
-import { serveReadToolBindings, type ReadBinding } from './read-tools.js';
+import { serveOwnerRegistration } from './owner-registration.js';
 
 function startupCode(error: unknown): StartupFailure['code'] {
   if (!(error instanceof Error)) return 'UNCLASSIFIED_STARTUP_FAILURE';
@@ -21,11 +21,8 @@ function startupCode(error: unknown): StartupFailure['code'] {
 }
 
 /** One systemd main process owns exactly one VM. Never invoked by a worker. */
-export async function runSandboxAdapter(root: string, environment: EnvironmentRef, boot: BootRef,
-  readBinding?: ReadBinding): Promise<void> {
+export async function runSandboxAdapter(root: string, environment: EnvironmentRef, boot: BootRef): Promise<void> {
   const { directory, owner } = await ownedEnvironment(root, environment);
-  if (readBinding && (readBinding.context.workId !== owner.workId || readBinding.context.environmentRef !== environment ||
-      readBinding.context.bootRef !== boot || readBinding.signal.aborted)) throw new Error('STALE_TOOL_CONTEXT');
   const path = join(directory, boot);
   // Boot input is checked before it is used to open any boot-relative file.
   if (!/^boot-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(boot)) throw new Error('INVALID_BOOT');
@@ -45,7 +42,7 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
   let phase: StartupFailure['phase'] = 'runtime';
   let operational = false;
   let vm: GondolinVM | undefined;
-  let readTools: Awaited<ReturnType<typeof serveReadToolBindings>> | undefined;
+  let readTools: Awaited<ReturnType<typeof serveOwnerRegistration>> | undefined;
   const markers = createBootMarkers(boot);
   let markerPublication: Promise<void> | undefined;
   const publishMarkers = () => {
@@ -106,11 +103,9 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
     const ticks = processStartTicks(await readFile(`/proc/${pid}/stat`, 'utf8'));
     if ((await readFile(`/proc/${pid}/cgroup`, 'utf8')).trim() !== `0::${cgroup}` ||
         processStartTicks(await readFile(`/proc/${pid}/stat`, 'utf8')) !== ticks) throw new Error('VMM_SUPERVISION_MISMATCH');
+    readTools = await serveOwnerRegistration(await realpath(root), { workId: owner.workId, environmentRef: environment, bootRef: boot }, vm);
     await durableJson(join(path, 'operational.json'), { version: 1, boot, session: vm.id, vmmPid: pid, vmmStartTicks: ticks });
     operational = true;
-    // Host composition supplies only its already-authorised invocation. No
-    // guest nonce/file or startup evidence can grant a role or change phase.
-    if (readBinding) readTools = await serveReadToolBindings([readBinding], vm);
   })().catch(async error => {
     // Shared startup rejection orders the bounded publication attempt before both
     // normal close and a concurrent stop; failed writes do not suppress closure.
@@ -182,7 +177,9 @@ sync`],
         }
       } catch { /* No claim of graceful shutdown after a failed guest finalization. */ }
       finally {
-        try { await closeVm(); } finally { finished(); }
+        try { await readTools?.close(); } finally {
+          try { await closeVm(); } finally { finished(); }
+        }
       }
     })();
     void shutdown.catch(() => { process.exitCode = 1; });
@@ -192,7 +189,7 @@ sync`],
   try { await booting; await stopped; await shutdown; }
   catch {
     // Systemd retains responsibility for any surviving group members, not SDK.close alone.
-    await closeVm();
+    try { await readTools?.close(); } finally { await closeVm(); }
     throw new Error('ADAPTER_BOOT_FAILED');
   } finally {
     await readTools?.close();
