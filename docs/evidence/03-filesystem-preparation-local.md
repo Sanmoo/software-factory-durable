@@ -62,7 +62,11 @@ formal deles. Fixtures/dados novos de teste descartados; históricos preservados
 
 Composição operacional agora usa console:none/debug:false/debugLog:null. Teste
 na fronteira SDK exigiu isso (RED com stdio/protocol/callback antigo, GREEN após
-remoção). Não há flag de worker para reativar. Snapshots privados existentes do
+remoção). Não há flag de worker para reativar. Comandos internos de perfil e
+finalização também descartam stdout/stderr não usados, em vez de deixar o SDK
+bufferizar dados guest desnecessários. Regressão externa SDK RED antes de ignorar
+saída de perfil, GREEN depois; sem nova abstração ou exposição pública.
+Snapshots privados existentes do
 produtor passam a vazios: significam observação desligada, não guest que nunca
 executou. Casos puros de allowlist limitada ficam preservados, sem usá-los como
 prova de limite de heap do SDK. u3 permanece a prova histórica com instrumentação;

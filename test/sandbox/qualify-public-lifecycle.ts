@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createSandbox } from '../../src/sandbox/index.js';
 
-const root = '/home/sanmoo/software-factory-test/u3';
+// Prepared only: requires a new explicit operator authorization before execution.
+const root = '/home/sanmoo/software-factory-test/v3';
 const source = process.argv[2];
 if (!source || !/^[a-f0-9]{40}$/.test(source)) throw new Error('EXACT_SOURCE_COMMIT_REQUIRED');
 const guestAssets = {
@@ -41,14 +42,16 @@ async function qualify() {
       { root: '/home/sanmoo/software-factory-test/r3', outcome: 'real KVM witness; vm-start/GUEST_READINESS_TIMEOUT before Docker check; already ceased before stop', preserved: true },
       { root: '/home/sanmoo/software-factory-test/s3', outcome: 'same corrected image failed SDK readiness; no operational/active-stop proof; correlated cessation confirmed', preserved: true },
       { root: '/home/sanmoo/software-factory-test/t3', outcome: 'private console/acpi observations delivered; SDK readiness still failed; own cessation confirmed', preserved: true },
+      { root: '/home/sanmoo/software-factory-test/u3', outcome: 'nominal boot and active-before-stop passed once with published initramfs; finalization unavailable, restart not attempted', preserved: true },
     ],
     sessionSocketBytes: Buffer.byteLength(root) + 69,
-    startupDiagnostics: 'Temporary cold-boot console-text markers only; no raw guest data, agents or credentials. Markers never establish readiness or cause.',
-    knownRisk: 'Explicit variant changes only initramfs to historical coherent58 archive. Kernel and new Docker-vfs rootfs bytes unchanged. No compatibility/boot claim, timeout increase, retry or fallback.',
-    stopRule: 'Last discriminating attempt of this approach. On failure or inconclusive result stop boots/image swaps and reassess strategy. Marker-only progress does not authorize another attempt.',
+    startupDiagnostics: 'Console/debug disabled; empty marker snapshot means unobserved, not no guest execution. No raw guest data, agents or credentials.',
+    knownRisk: 'Same fixed image as u3; per-environment filesystem growth/check and direct-daemon finalization are locally tested only. No timeout increase, retry or fallback.',
+    plannedBootLimit: 2,
+    stopRule: 'This driver runs ONLY the first boot. A separately authorized second public boot of this SAME environment is conditional on operational/active-stop/finalization success plus independent filesystem and Docker-state evidence; otherwise stop. No third boot, retry or image variation.',
     expected: 'operational first boot followed by confirmed cessation; any failure remains a failure' });
   const sandbox = createSandbox({ root, guestAssets });
-  const prepared = await sandbox.prepare({ workId: 'public-lifecycle-qualification-u3', configuration });
+  const prepared = await sandbox.prepare({ workId: 'public-lifecycle-qualification-v3', configuration });
   await record('prepare', prepared);
   if (prepared.status !== 'success') { process.exitCode = 1; return; }
   const environment = prepared.environment;

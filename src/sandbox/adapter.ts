@@ -91,7 +91,7 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
     // Networking remains disabled in this first-boot slice; no pulls or remote calls.
     const ready = await vm.exec(['/bin/sh', '-c',
       'set -eu; test -s /etc/alpine-release; test "$(docker info --format \'{{.Driver}}\')" = vfs; sync'],
-    { signal: AbortSignal.timeout(10000) });
+    { signal: AbortSignal.timeout(10000), stdout: 'ignore', stderr: 'ignore' });
     if (ready.exitCode !== 0) throw new Error('GUEST_PROFILE_NOT_OPERATIONAL');
     if (stopping) return;
     phase = 'operational-evidence';

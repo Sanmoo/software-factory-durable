@@ -90,6 +90,7 @@ mock.module('@earendil-works/gondolin', { namedExports: {
     id: '77777777-2222-4333-8444-555555555555',
     getHostPid() { return process.pid; }, // External VM double, never a real VMM.
     async exec(argv: string[], options: { signal: AbortSignal; stdout?: string; stderr?: string }) {
+      if (options.stdout !== 'ignore' || options.stderr !== 'ignore') throw new Error('UNUSED_GUEST_OUTPUT_MUST_BE_IGNORED');
       if (mode?.startsWith('shutdown-')) {
         if (++execCalls === 1) { audit('profile-ready'); return { exitCode: 0 }; }
         audit('guest-finalize');
