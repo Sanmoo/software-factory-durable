@@ -1,11 +1,17 @@
 # 03 — proposta final limitada à persistência dos paths e mounts
 
-**NÃO AUTORIZADO AINDA. Nenhuma VM desta proposta iniciada.** O escopo43 executou
-seus dois boots e cleanup de W3; não há terceira tentativa ou reserva reutilizável.
-Módulos locais novos em [storage/smoke](03-storage-observation-and-guest-smoke-local.md)
-exigem esta prova na composição efetiva, não nova investigação de imagem.
+**AUTORIZADO explicitamente e EXECUTADO em2026-11-12.** Fonte limpa1c99baf,
+exatos2bootsX3 e publicremove próprio após gates/evidência/cessação; orçamento
+consumido, nenhum retry/terceiroboot implícito. [Resultado X3](03-x3-persistence-and-storage-qualified.md)
+e [reconciliação técnica](03-acceptance-reconciliation.md) registram limites e
+avaliação humana ainda separada; não é aceite automático nem autorização de merge.
 
-## Concessão a solicitar
+O escopo43 anterior executou seus dois boots e cleanup de W3; não há terceira
+tentativa ou reserva reutilizável. Módulos locais em
+[storage/smoke](03-storage-observation-and-guest-smoke-local.md) receberam a prova
+na composição efetiva, não nova investigação de imagem. Texto do escopo concedido:
+
+## Concessão concedida (histórico)
 
 - UM ambiente NOVO, root curto sugerido `/home/sanmoo/software-factory-test/x3`,
   somente se ausente. Nunca adotar/recriar os W3 já removidos ou recursos antigos.
@@ -19,8 +25,8 @@ exigem esta prova na composição efetiva, não nova investigação de imagem.
 - Falha/inconclusão interrompe boots/cleanup seguintes; finally solicita stop só
   dos novos próprios e guarda restantes. Sem retry/terceiro boot/fallback/tuning.
 
-Fonte exata será o OID limpo que incluir módulos revisados, registrado no intent
-exclusivo antes de efeitos. Orçamento retido80GiB/pressão79GiB/piso4GiB do root
+Fonte exata foi1c99baf1df8d4acad02d2e2dc6c1444c4d382d69, incluindo módulos
+revisados, registrada no intent exclusivo antes de efeitos. Orçamento retido80GiB/pressão79GiB/piso4GiB do root
 inclui todas as evidências antigas; observar espaço não libera UNKNOWN/noRetry.
 
 ## O que fecha a prova restante

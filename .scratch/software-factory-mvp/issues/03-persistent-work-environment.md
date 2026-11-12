@@ -417,3 +417,40 @@ Suíte completa23arquivos:141casos140pass/1VMskip0fail, strictbuild/typecheck/ar
 ESLint75módulos344deps; TMPDIR curto nos testes de socket sem relaxar103bytes.
 Estas correções não iniciaram VMs, não mudaram imagem ou registros antigos e não
 concluem ainda a prova física de persistência do perfil estendido.
+
+Após nova autorização explícita, [X3 executado](../../../docs/evidence/03-x3-persistence-and-storage-qualified.md)
+fonte limpa1c99baf: um ambiente novo, exatos2boots SEQUENCIAIS KVM do MESMO disco
+(dev55/inode31366008), mesmo pin4b6/recursos/deadlines, sem reprepare/reclone/reseed.
+O readiness FIXO escreveu110bytes em oito paths e fez write/rename/alias absoluto/
+read nos DOIS mounts pelos guests reais nos DOIS boots. Após paradas/cessação
+independente, seis stamps via snapshotroot + dois backing files host ESCRITOSPELO
+GUEST mantiveram env|PRIMEIROBOOT (SHAfd07c083...), mais mesmos5hashes APK/daemon/
+engine-id. Nenhum hostseed contado como prova. Nativeqco0/fsck-f-nexit0/40GiB após
+cada parada, original estável nas inspeções. PRIMEIRO fsck0 continha counterwarnings
+com Fixno, não chamar warning-free; segundo0 sem esses avisos. Sem reparo host ou
+bitmapdiff/exit4 omitido. Guestfinalizationobserved/terminationunconfirmed nos dois,
+sem fabricar teorema de graceful. HostBoot/NS/fullRootCG2/controllers/CID privado/
+manager/grupo exato ausente comprovam cessação, não ACK/close/PID/defaults isolados.
+
+Observe PÚBLICO efetivamente mediu40GiBvirtual/~630MBallocated, workspace/artifacts
+110Blogical/8192Ballocated por mount,4GiBfloor/freebytes. Depois de preservar e
+sincronizar dados/runtimes/evidências e revalidar todos boots cessados, publicremove
+success quatrorecursos somenteX3; ausência física própria verificada/histórico
+retido, storage.disk/workspace/artifactsABSENT nãozero. R37685022720B/free588902961152
+no fim; históricosU3/V3/W3/UNKNOWN/noRetry e arquivos/snapshots/candidatos intocados.
+OrçamentoX3consumido:2starts2op0fault0retry0repair0newimage. acceptedSubsettrue NÃO
+aceitehumano/integration: ver [oito critérios no nível fiel](../../../docs/evidence/03-acceptance-reconciliation.md).
+A revisão única deste incremento e avaliação do operador são separadas; não marcar
+checkboxes ou resolução/merge automaticamente. Destino b591ec7 continua intacto,
+fontes de produto iguais ao gate completo141casos140pass1VMskip/strictbuild/arch/
+ESLint75módulos344deps. Sem novo modelo/GitHub/credenciais/rede/hostinstall/mount,
+nenhum push/integração/limpeza de branch/worktree. MVP e tickets05/06 seguem pendentes.
+
+Revisão independente única1001f438 concluída: OK com notas para X3/matriz, nenhuma
+lacuna técnica P1 concreta identificada no recorte dos oito critérios. Achado P2
+apenas documental corrigido diretamente: gates completos1 às20:32:41.203Z, não o
+horário da amostragem.182Z; start-intent2 às.245Z confirma sequência. JSON originais
+conferidos, sem rerun/VM/re-review. Pronto para AVALIAÇÃO HUMANA dos oito critérios
+na matriz; não é resolução automática, aceite do MVP ou autorização de merge.
+Aguardar decisão do operador antes de marcar aceite/resolver/integrar localmente.
+Branch/worktree e evidências permanecem preservados; escopo físico X3 consumido.
