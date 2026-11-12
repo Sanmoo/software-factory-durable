@@ -363,3 +363,15 @@ falha sem nova decisão. Regressão com bitmap inconsistente em fixture NOVA rea
 confirma recusa pública antes do manager, sem mutar disco/current. Ticket continua
 aberto, nenhum checkbox integral concluído nem integração; recuperação de A exige
 decisão/autorização explícita, não reabre exploração da imagem.
+
+[Uma cópia descartável reparada](../../../docs/evidence/03-w3-copy-repair.md), com
+nova autorização explícita: qcow2A→raw esparso novo, baselinefsck4, uma execução
+fsck-f-y somente na cópia corrigiu bitmap/contadores (exit1), seguida de fsck-f-n0
+/headerclean/40GiB. Cinco hashes legíveis iguais antes/depois (engine-idDocker,
+configDaemon, world/repos/bancoAPK); os-releaseunavailable não foi promovido a
+verificado. SourceA/B SHA+metadados e snapshots raw metadados estáveis, pin4b6
+revalidado, ambos cessados independentemente; não alegar hash integral dos raw.
+Original permanece sem reparo, candidato não promovido, zero novos boots/cleanup.
+Isso comprova reparo estrutural na cópia e amostras, não perda zero de todos os
+dados, boot funcional ou recuperação automática. Ticket ainda aberto; promoção/
+continuação física dependem de novo escopo, sem reaproveitar terceiroboot bloqueado.

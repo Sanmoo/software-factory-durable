@@ -128,3 +128,7 @@ Retido final33928835072B, livre591399493632B; ambos w3 cessados. Dados, snapshot
 runtimes e failedunitA mantidos; u3/v3/UNKNOWN/históricos intocados. Nenhuma limpeza
 foi usada para criar espaço. Falta qualificação de remoção real e dos subcasos
 restantes de V-02/V-12/V-14; não marcar critérios integrais ou ticket resolvido.
+
+Atualização posterior, separadamente autorizada: [reparo em cópia descartável](03-w3-copy-repair.md)
+passou de fsck4 a fsck0 com cinco amostras legíveis iguais; original/snapshots
+inalterados, sem boot/promoção. Não reescreve o resultado negativo deste cenário.
