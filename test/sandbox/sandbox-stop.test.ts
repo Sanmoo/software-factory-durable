@@ -81,6 +81,22 @@ async function syncBoundary(t: TestContext, root: string, path: string, beforeSy
   });
 }
 
+for (const evidence of ['valid', 'missing', 'foreign-boot', 'raw-fields'] as const) {
+  test(`Sandbox.stop treats ${evidence} guest finalization as evidence, never graceful termination (manager double)`, async () => {
+    const fixture = await managerDouble();
+    try {
+      if (evidence !== 'missing') await writeFile(join(fixture.path, 'guest-synced.json'), JSON.stringify({
+        version: 1, boot: evidence === 'foreign-boot' ? 'boot-99999999-2222-4333-8444-555555555555' : boot,
+        ...(evidence === 'raw-fields' ? { message: 'PRIVATE_FINALIZATION_CANARY' } : {}),
+      }), { mode: 0o600 });
+      const stopped = await fixture.sandbox.stop({ environment, boot, reason: 'pause' });
+      assert.deepEqual(stopped, { status: 'success', cessationConfirmed: true,
+        termination: 'unconfirmed', guestFinalization: evidence === 'valid' ? 'observed' : 'unavailable' });
+      assert.equal(JSON.stringify(stopped).includes('PRIVATE_FINALIZATION_CANARY'), false);
+    } finally { await fixture.cleanup(); }
+  });
+}
+
 for (const failedSync of ['file', 'directory'] as const) {
   test(`Sandbox.stop retry re-establishes file and directory durability after ${failedSync} sync failure (manager double)`, { timeout: 5000 }, async t => {
     const fixture = await managerDouble();

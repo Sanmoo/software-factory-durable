@@ -15,7 +15,7 @@ const directory = join(root, 'environments', environment);
 const unit = `factory-sandbox-${boot}.service`;
 const uid = process.getuid?.();
 const group = `/user.slice/user-${uid}.slice/user@${uid}.service/app.slice/${unit}`;
-const configuration = { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1' };
+const configuration = { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1', shutdownGraceSeconds: 1 };
 const workId = 'producer-ordering-work';
 if (environment !== `env-${createHash('sha256').update(workId).digest('hex')}`) throw new Error('FIXTURE_IDENTITY_MISMATCH');
 const json = (name: string, value: unknown) => writeFile(name, JSON.stringify(value), { mode: 0o600 });
@@ -52,7 +52,7 @@ process.env.PATH = bin; // No real manager fallback.
 cp.spawn = () => { throw new Error('REAL_PROCESS_SPAWN_FORBIDDEN_IN_FIXTURE'); };
 const originalRead = fs.promises.readFile;
 fs.promises.readFile = (async (...args: Parameters<typeof originalRead>) => {
-  if (args[0] === '/proc/self/cgroup') return `0::${group}\n`;
+  if (args[0] === '/proc/self/cgroup' || args[0] === `/proc/${process.pid}/cgroup`) return `0::${group}\n`;
   return originalRead(...args);
 }) as typeof originalRead;
 syncBuiltinESMExports();
@@ -78,7 +78,7 @@ mock.module('@earendil-works/gondolin', { namedExports: {
       logger?.('protocol', 'PRIVATE_TOKEN_CANARY');
       logger?.('qemu', 'stdout: [    0.000000] Linux version PRIVATE_TOKEN_CANARY');
       logger?.('qemu', 'stdout: [init] /dev entries:');
-      if (mode === 'markers-success') return;
+      if (mode === 'markers-success' || mode?.startsWith('shutdown-')) return;
       const listeners = process.listeners('SIGTERM').filter(listener => !originalTermListeners.has(listener));
       if (listeners.length !== 1) throw new Error('EXPECTED_ONE_ADAPTER_STOP_LISTENER');
       // Invoke only the newly registered adapter callback; no OS signal or broad emit.
@@ -88,7 +88,31 @@ mock.module('@earendil-works/gondolin', { namedExports: {
       });
     },
     async close() { audit('close'); },
-    async exec() {
+    id: '77777777-2222-4333-8444-555555555555',
+    getHostPid() { return process.pid; }, // External VM double, never a real VMM.
+    async exec(argv: string[], options: { signal: AbortSignal; stdout?: string; stderr?: string }) {
+      if (mode?.startsWith('shutdown-')) {
+        if (++execCalls === 1) { audit('profile-ready'); return { exitCode: 0 }; }
+        audit('guest-finalize');
+        if (options.stdout !== 'ignore' || options.stderr !== 'ignore') throw new Error('FINALIZATION_OUTPUT_MUST_BE_IGNORED');
+        if (mode === 'shutdown-nonzero') { audit('guest-nonzero'); return { exitCode: 1 }; }
+        if (mode === 'shutdown-exec-fails') { audit('guest-exec-failed'); throw new Error('PRIVATE_TOKEN_CANARY'); }
+        if (mode === 'shutdown-timeout') {
+          if (options.signal.aborted) throw new Error('FINALIZATION_SIGNAL_ALREADY_ABORTED');
+          // Keep only this new test child alive: AbortSignal timers are unref'ed.
+          await new Promise<never>((_resolve, reject) => {
+            const pending = setInterval(() => {}, 100);
+            options.signal.addEventListener('abort', () => {
+              clearInterval(pending); audit('guest-timeout'); reject(options.signal.reason);
+            }, { once: true });
+          });
+        }
+        fs.writeFileSync(join(root, 'guest-finalization-command'), argv[2]!);
+        // Frozen Alpine guest has dockerd directly, not OpenRC/rc-service.
+        if (argv[2]!.includes('rc-service')) { audit('guest-command-missing'); return { exitCode: 127 }; }
+        audit('guest-finalize-ok');
+        return { exitCode: 0 };
+      }
       if (mode !== 'markers-success') throw new Error('GUEST_EXEC_MUST_NOT_RUN');
       if (++execCalls === 1) {
         audit('guest-exec');
@@ -110,8 +134,17 @@ const originalSync = prototype.sync;
 await probe.close();
 let publishing = false;
 let markerPublishing = false;
+let operationalPublishing = false;
+let syncedPublishing = false;
 mock.method(prototype, 'writeFile', async function(this: FileHandle, ...args: Parameters<FileHandle['writeFile']>) {
   const target = await readlink(`/proc/self/fd/${this.fd}`);
+  if (mode?.startsWith('shutdown-') && target === join(path, 'operational.json')) operationalPublishing = true;
+  if (mode?.startsWith('shutdown-') && target === join(path, 'guest-synced.json')) {
+    syncedPublishing = true;
+    audit('synced-begin');
+    await new Promise<void>(resolve => { setImmediate(resolve); });
+    if (mode === 'shutdown-write-fails') { syncedPublishing = false; audit('synced-failed'); throw new Error('INJECTED_SYNCED_WRITE_FAILURE'); }
+  }
   if (target === join(path, 'boot-markers.json') && mode?.startsWith('markers-')) {
     markerPublishing = true;
     audit('markers-begin');
@@ -135,6 +168,17 @@ mock.method(prototype, 'writeFile', async function(this: FileHandle, ...args: Pa
 mock.method(prototype, 'sync', async function(this: FileHandle) {
   const target = await readlink(`/proc/self/fd/${this.fd}`);
   await originalSync.call(this);
+  if (operationalPublishing && target === path) {
+    operationalPublishing = false;
+    setImmediate(() => {
+      const listeners = process.listeners('SIGTERM').filter(listener => !originalTermListeners.has(listener));
+      if (listeners.length !== 1) throw new Error('EXPECTED_ONE_ADAPTER_STOP_LISTENER');
+      audit('stop-request');
+      listeners[0]!('SIGTERM'); // Only this new callback, no OS signal.
+      if (mode === 'shutdown-concurrent') listeners[0]!('SIGTERM');
+    });
+  }
+  if (syncedPublishing && target === path) { audit('synced-durable'); syncedPublishing = false; }
   if (mode?.startsWith('markers-') && target === join(path, 'boot-markers.json')) audit('markers-file-synced');
   if (markerPublishing && !publishing && target === path) { audit('markers-durable'); markerPublishing = false; }
   if (publishing && target === join(path, 'failure.json')) audit('failure-file-synced');

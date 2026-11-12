@@ -121,8 +121,53 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
         await booting;
         if (vm) {
           const result = await vm.exec(['/bin/sh', '-c',
-            'set -eu; docker ps -q | xargs -r docker stop; rc-service docker stop; sync'],
-          { signal: AbortSignal.timeout(identity.configuration.shutdownGraceSeconds * 1000) });
+            // Guest-only, never executed on the host. This profile starts dockerd
+            // directly; no OpenRC service exists. Do not mask docker-ps failures in
+            // a pipeline, expand guest output as options/globs, or signal PID0/1.
+            `set -efu
+pid=$(cat /run/docker.pid)
+case "$pid" in ''|*[!0-9]*) exit 1;; esac
+test "$pid" -gt 1
+test "$(readlink /proc/"$pid"/exe)" = /usr/bin/dockerd
+snapshot() {
+  IFS= read -r info < "/proc/$pid/stat" || return 1
+  case "$info" in "$pid ("*") "*) ;; *) return 1;; esac
+  fields=\${info##*) }
+  set -- $fields
+  test "$#" -ge 20 || return 1
+  state=$1
+  shift 19
+  ticks=$1
+  case "$ticks" in ''|*[!0-9]*) return 1;; esac
+}
+snapshot
+original=$ticks
+ids=$(docker ps -q)
+for id in $ids; do
+  case "$id" in *[!0-9a-f]*) exit 1;; esac
+  docker stop "$id" >/dev/null
+done
+snapshot
+test "$ticks" = "$original"
+test "$(readlink /proc/"$pid"/exe)" = /usr/bin/dockerd
+kill -TERM "$pid"
+while test -d "/proc/$pid"; do
+  if ! snapshot; then
+    test -r /proc/self/stat
+    test ! -d "/proc/$pid"
+    break
+  fi
+  # A reused PID is not the daemon; a zombie has already exited. PID existence
+  # alone would wait forever when sandboxd has not reaped its inherited child.
+  test "$ticks" = "$original" || break
+  case "$state" in Z|X) break;; esac
+  sleep 0.1
+done
+sync`],
+          // Leave part of the manager's stop grace for evidence publication and
+          // SDK close. Expiration means unavailable, never successful finalization.
+          { signal: AbortSignal.timeout(Math.max(1, Math.floor(identity.configuration.shutdownGraceSeconds * 800))),
+            stdout: 'ignore', stderr: 'ignore' });
           if (result.exitCode === 0) await durableJson(join(path, 'guest-synced.json'), { version: 1, boot });
         }
       } catch { /* No claim of graceful shutdown after a failed guest finalization. */ }
