@@ -1,8 +1,9 @@
 # Ticket03 — reconciliação técnica dos oito critérios
 
 Fonte de produto1c99baf1df8d4acad02d2e2dc6c1444c4d382d69; evidência física
-X3 após nova autorização explícita. Esta é uma matriz para avaliação do operador,
-NÃO aceite humano, resolução automática, merge ou aceite de todo o MVP.
+X3 após nova autorização explícita. Esta matriz fundamenta a conclusão técnica
+registrada no Answer03; não é aceite humano, resolução automática pelo qualificador
+ou aceite de todo o MVP. A nova direção de integração local consta ao final.
 Ler os checkpoints antigos como cronologia, não como reescrita de falhas em passes.
 
 ## Escopo e gate
@@ -67,7 +68,7 @@ Artefato review-x3-persistence-and-ac03-reconciliation.md em outputs/
   confirmado. Retenção30dias, varredura/elegibilidade e gates do agregado são dos
   tickets posteriores; nenhum recurso histórico foi liberado/excluído.
 
-## Decisão pendente do operador
+## Decisão pendente do operador — registro histórico anterior à retomada
 
 Os dois gaps técnicos nomeados após W3 agora têm implementação e prova na fronteira
 real pertinente, com revisão técnica independente concluída e P2 documental
@@ -76,3 +77,25 @@ do operador; sem marcar automaticamente os checkboxes como aceite humano.
 O ticket diz que merge/avaliação humana não são delegados. Destino local registrado
 integration/software-factory-mvp continua b591ec7; branch/worktree03 e evidências
 permanecem preservados. Nenhum push, integração ou nova autorização de VM inferida.
+
+## Resolução técnica e supersessão do hold local
+
+Após o checkpoint histórico acima, o operador reafirmou explicitamente a skill
+implement-spec para toda a spec: merger separado integra tickets tecnicamente
+concluídos, sem nova aprovação humana de merge local por ticket. Essa direção
+SUPERA a espera local acima; não muda a política canônica de merge humano de PRs
+do PRODUTO nem significa aceite humano do MVP. O
+[Answer03](../../.scratch/software-factory-mvp/issues/03-persistent-work-environment.md#answer)
+registra Status resolved e os oito checks técnicos, com os limites desta matriz.
+Tip revisado68d9dbb, fonte1c99baf, sem mudança de produto ou repetição de testes/VM
+neste fechamento documental. Evidências físicas e checkpoints permanecem históricos:
+X3 primeiro fsck0 com counter warnings/Fixno; terminationunconfirmed; amostras
+limitadas; W3 inicial fsck4/acceptedfalse e recuperação MANUAL em outro inode.
+
+Destino original da operação do merger: `integration/software-factory-mvp` em
+`.worktrees/software-factory-mvp`, head b591ec7218563b5c73d9c885a6f9f28826b56b89.
+Só é permitida integração local FF-only após verificação de branch/head/clean e
+ancestry; este documento não antecipa seu sucesso. Worktree03 e todos os recursos
+históricos permanecem preservados até o cleanup final da skill. Preparação05/06
+somente após integração efetiva, a partir do novo tip, sem declarar seus critérios
+cumpridos. Nenhum push, merge de produto, piloto ou novo orçamento físico.

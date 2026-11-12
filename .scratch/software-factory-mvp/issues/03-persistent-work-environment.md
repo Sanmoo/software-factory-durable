@@ -4,18 +4,18 @@
 
 **Blocked by:** [01: Preparar a instalação local e o gate de desenvolvimento](01-local-setup-and-development-gate.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
-- [ ] Interface pública de Sandbox permite validar sem boot, preparar idempotentemente, iniciar com boot novo, observar, parar e remover recursos próprios; refs são opacas para Controle e resultados distinguem sucesso, falha e indeterminação.
-- [ ] Perfil fixado usa Arch x86_64, QEMU/KVM e Alpine com assets íntegros; configuração aprovada é validada sem coerção e sem flags livres, scripts/mounts arbitrários ou fallback de aceleração.
-- [ ] Disco próprio persistente, rootDiskDeleteOnClose desabilitado e configuração de tmpfs aprovada preservam arquivos/pacotes/caches esperados entre boots, sem prometer preservar processos/RAM.
-- [ ] RealFSProvider expõe apenas workspace/artefatos próprios; testes de paths, symlinks e aliases negam escape para home, controlador, registros, cache Git ou outro Trabalho.
-- [ ] Systemd supervisiona adapter/workers/VMM/subprocessos por identidade; observação e parada host funcionam sem adapter anterior e não afetam outro ambiente.
-- [ ] Parada tenta cessação graciosa e depois término forçado próprio; pedido/exit code isolado não comprova cessação, e disco forçadamente parado é verificado antes de reuso.
-- [ ] Piso livre, espaço físico/virtual e configuração efetiva são observáveis; falta de espaço impede operações afetadas sem apagar recursos para abrir espaço nem matar ativo automaticamente.
-- [ ] Provas reais incluem ciclo persistente, falha do proprietário e isolamento entre ambientes; não usam dublê como prova de KVM, filesystem ou cessação.
+- [x] Interface pública de Sandbox permite validar sem boot, preparar idempotentemente, iniciar com boot novo, observar, parar e remover recursos próprios; refs são opacas para Controle e resultados distinguem sucesso, falha e indeterminação.
+- [x] Perfil fixado usa Arch x86_64, QEMU/KVM e Alpine com assets íntegros; configuração aprovada é validada sem coerção e sem flags livres, scripts/mounts arbitrários ou fallback de aceleração.
+- [x] Disco próprio persistente, rootDiskDeleteOnClose desabilitado e configuração de tmpfs aprovada preservam arquivos/pacotes/caches esperados entre boots, sem prometer preservar processos/RAM.
+- [x] RealFSProvider expõe apenas workspace/artefatos próprios; testes de paths, symlinks e aliases negam escape para home, controlador, registros, cache Git ou outro Trabalho.
+- [x] Systemd supervisiona adapter/workers/VMM/subprocessos por identidade; observação e parada host funcionam sem adapter anterior e não afetam outro ambiente.
+- [x] Parada tenta cessação graciosa e depois término forçado próprio; pedido/exit code isolado não comprova cessação, e disco forçadamente parado é verificado antes de reuso.
+- [x] Piso livre, espaço físico/virtual e configuração efetiva são observáveis; falta de espaço impede operações afetadas sem apagar recursos para abrir espaço nem matar ativo automaticamente.
+- [x] Provas reais incluem ciclo persistente, falha do proprietário e isolamento entre ambientes; não usam dublê como prova de KVM, filesystem ou cessação.
 
 ## Referências e validação
 
@@ -454,3 +454,40 @@ conferidos, sem rerun/VM/re-review. Pronto para AVALIAÇÃO HUMANA dos oito crit
 na matriz; não é resolução automática, aceite do MVP ou autorização de merge.
 Aguardar decisão do operador antes de marcar aceite/resolver/integrar localmente.
 Branch/worktree e evidências permanecem preservados; escopo físico X3 consumido.
+
+## Answer
+
+Ticket03 tecnicamente concluído no recorte dos oito critérios, conforme a
+[matriz de reconciliação](../../../docs/evidence/03-acceptance-reconciliation.md),
+a fonte de produto1c99baf e o tip revisado68d9dbb. Checkboxes registram conclusão
+técnica, não um novo aceite humano do MVP. Gate local completo já registrado:
+23arquivos/141casos/140pass/1VMskip/0fail, typecheck/build/arquitetura/ESLint
+75módulos344deps. V3/W3/X3 fornecem as provas reais pertinentes; revisão única
+1001f438 sem lacuna técnica P1 concreta nos oito critérios, P2 de timestamp
+corrigido antes desta resolução. Nenhum teste ou VM foi repetido neste fechamento
+documental.
+
+## Comments
+
+### Supersessão explícita do processo de integração local
+
+Nesta retomada, o operador reafirmou **implement-spec para toda a spec**, com
+merger separado e integração local por ticket concluído, **sem exigir outra
+aprovação humana de merge local por ticket**. Essa direção SUPERA a espera do
+último checkpoint acima e as referências históricas equivalentes a um hold local.
+Destino registrado: `integration/software-factory-mvp`, checkout
+`.worktrees/software-factory-mvp`, head original
+`b591ec7218563b5c73d9c885a6f9f28826b56b89`; integração somente fast-forward do
+branch `implement/software-factory-mvp-03-pragmatic`, após commit desta resolução
+e verificação de branch/head/clean/ancestry pelo merger. Este registro não alega
+que o merge já ocorreu; o resultado Git é registrado pelo merger separadamente.
+
+Não altera a política canônica de merge humano de PRs do PRODUTO, não concede
+aceite humano do MVP/piloto nem fecha05/06 ou V-02/V-12/V-14 integrais. Permanecem
+os limites da matriz: primeiro fsck X3 exit0 com counter warnings/Fixno,
+terminationunconfirmed apesar de guestFinalizationobserved, amostras compactas
+(não perda zero), W3 inicial fsck4/acceptedfalse e recuperação MANUAL em inode
+novo. Nenhum orçamento físico é renovado; registros e recursos históricos ficam
+preservados, inclusive este worktree03 até o cleanup final da skill. Sem push,
+PR, alteração da base/main ou remoção de worktrees. Não existe mapa/spec no
+diretório MVP deste checkout; não foi inventado um para registrar a resolução.
