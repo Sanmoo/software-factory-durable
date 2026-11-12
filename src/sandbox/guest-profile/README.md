@@ -51,3 +51,14 @@ graciosa, restart/persistência/crescimento do filesystem, isolamento ou release
 console/debug temporários ainda exigem remoção ou buffering seguro antes de
 workers/integração. Evidência e regra de saída:
 `docs/evidence/03-u3-initramfs-comparison.md`.
+
+Consolidação local posterior: `prepare` passa a crescer e verificar uma cópia do
+ext4 por ambiente para sua capacidade configurada, sem alterar template/pin.
+`start` verifica snapshot privado do disco preservado com e2fsck-fn e capacidade
+real antes de nova intenção de boot; não monta/repara esse filesystem no host.
+Requer e2fsck/resize2fs nativos disponíveis; doctor nunca instala ferramentas.
+Discos históricos pequenos não são expandidos silenciosamente. Console/debug
+operacionais foram desligados (none/false/null), sem flag de worker para reativar.
+Essas mudanças locais ainda exigem qualificação de hardware própria; não alteram
+retroativamente a prova u3. Ver `docs/evidence/03-filesystem-preparation-local.md`
+e `docs/evidence/03-guest-finalization-local.md`.

@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { createSandbox } from '../../src/sandbox/index.js';
 
-const configuration = { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1' };
+const configuration = { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1', diskGiB: 1 };
 const testRoot = process.env.FACTORY_SANDBOX_TEST_ROOT;
 test('Sandbox.prepare creates a real standalone persistent disk idempotently and refuses incompatible reuse', { skip: !testRoot }, async () => {
   const root = await mkdtemp(join(testRoot!, 'factory-prepare-'));
@@ -14,7 +14,8 @@ test('Sandbox.prepare creates a real standalone persistent disk idempotently and
     const assets = join(root, 'assets');
     await mkdir(assets);
     // Real qemu-img input, deliberately not a bootable guest or isolation proof.
-    execFileSync('qemu-img', ['create', '-f', 'raw', join(assets, 'rootfs.ext4'), '4M']);
+    execFileSync('qemu-img', ['create', '-f', 'raw', join(assets, 'rootfs.ext4'), '32M']);
+    execFileSync('/usr/bin/mke2fs', ['-q', '-t', 'ext4', '-O', '^has_journal', '-F', join(assets, 'rootfs.ext4')]);
     await writeFile(join(assets, 'kernel'), 'kernel');
     await writeFile(join(assets, 'initrd'), 'initrd');
     const hash = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
@@ -25,6 +26,17 @@ test('Sandbox.prepare creates a real standalone persistent disk idempotently and
     const sandbox = createSandbox({ root, guestAssets: { directory: assets, manifestSha256: hash(manifest) } });
     const first = await sandbox.prepare({ workId: 'work-03', configuration });
     assert.equal(first.status, 'success');
+    if (first.status !== 'success') return;
+    const disk = join(root, 'environments', first.environment, 'root.qcow2');
+    const snapshot = join(root, 'checked.raw');
+    execFileSync('qemu-img', ['convert', '-f', 'qcow2', '-O', 'raw', disk, snapshot]);
+    execFileSync('/usr/bin/e2fsck', ['-f', '-n', snapshot], { stdio: 'pipe' });
+    const geometry = execFileSync('/usr/bin/dumpe2fs', ['-h', snapshot], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+      env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' } });
+    const blocks = BigInt(geometry.match(/^Block count:\s+(\d+)$/m)![1]!);
+    const blockSize = BigInt(geometry.match(/^Block size:\s+(\d+)$/m)![1]!);
+    assert.equal(blocks * blockSize, 1073741824n, 'actual ext4 capacity, not only QEMU virtual capacity');
+    assert.equal(hash(await readFile(join(assets, 'rootfs.ext4'))), JSON.parse(manifest).checksums.rootfs, 'pinned template unchanged');
     const repeated = await sandbox.prepare({ workId: 'work-03', configuration });
     assert.deepEqual(repeated, first);
     assert.deepEqual(await sandbox.prepare({ workId: 'work-03', configuration: { ...configuration, diskGiB: 41 } }),

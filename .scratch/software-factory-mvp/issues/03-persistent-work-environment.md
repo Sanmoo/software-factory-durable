@@ -259,3 +259,27 @@ filesystem/crescimento/restart/persistência/isolamento/owner-loss/tools/remove 
 retirar debug temporário antes de workers. Nenhum novo boot nesta autorização;
 qualificação futura precisa escopo/critério/orçamento fechados, não outra série
 exploratória. Integração b591ec7 intocada, ticket03 incompleto, sem push/cleanup.
+
+Continuação autônoma local: [finalização guest](../../../docs/evidence/03-guest-finalization-local.md)
+em78643f5 substitui rc-service ausente no perfil pelo daemon direto, valida
+PID/exe/starttime e drena containers sem pipeline que mascare erro. Reviewfb1b7c27
+achou P1 de zombie em kill-0; corrigido diretamente por estado stat Z/X/identidade,
+sem cadeia de revisão. Evidência de sync aguarda publicação antes de close;
+timeout/nonzero/writefailure não fabricam graceful. Gates73casos72pass1VMskip.
+
+[Filesystem e consolidação](../../../docs/evidence/03-filesystem-preparation-local.md):
+medição mostrou823132160B(~785MiB) de ext4 no template, não40GiB úteis. prepare
+agora cresce/verifica cópia por ambiente; pin/template4b6 intocados. Novo start
+exige snapshot privado + full read-only e2fsck + geometria real, original
+inalterado e cessação antes/depois; permite tentativa de novo boot só se válido.
+Corrupção/tamanho errado/backing/cessação desconhecida bloqueiam sem reparar ou
+substituir current. Console/debug temporários foram retirados (none/false/null),
+sem flag de worker. Review32d0bfff sem P1/P2;78casos77pass1VMskip, strictgates.
+Native helper tem30s por processo, não prazo global; storage livre não é reserva.
+
+Nenhuma VM desta continuação, nem novo dado real de graceful/restart/persistência.
+Próxima qualificação deve ser fixa/fechada: mesmo pin, ambiente novo, dois boots
+sequenciais condicionados à finalização/FScheck do primeiro, estado Docker
+persistido verificado sem credenciais/agentes/retry, sem reabrir variantes. Ainda
+não autorizada. Projeção de ferramentas/isolamento/owner-loss/remove seguem
+pendentes; ticket03 continua incompleto, integração/push/cleanup não realizados.

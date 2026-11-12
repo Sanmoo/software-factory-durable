@@ -68,9 +68,8 @@ mock.module('@earendil-works/gondolin', { namedExports: {
   VM: { async create(options: { debugLog: Logger; sandbox: { console: string; debug: readonly string[] | boolean } }) {
     logger = options.debugLog;
     lateLogger = logger;
-    if (mode?.startsWith('markers-') && (options.sandbox.console !== 'stdio' ||
-        !Array.isArray(options.sandbox.debug) || !options.sandbox.debug.includes('protocol'))) {
-      throw new Error('EXPECTED_PRIVATE_BOOT_CONSOLE_OPTIONS');
+    if (options.sandbox.console !== 'none' || options.sandbox.debug !== false || options.debugLog !== null) {
+      throw new Error('PRODUCTION_CONSOLE_MUST_BE_DISABLED');
     }
     return {
     setDebugLog(next: Logger) { logger = next; },

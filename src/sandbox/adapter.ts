@@ -71,14 +71,14 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
     // SDK 0.14 also consults autoStart inside explicit start(); false rejects a
     // stopped VM before sending boot. Ownership is established above, not by this flag.
     vm = await VM.create({ autoStart: true, memory: `${identity.configuration.memoryMiB}M`, cpus: identity.configuration.vcpus,
-      // Temporary cold-boot diagnostic slice: no agents/credentials/workers.
-      // Only literal markers are retained. SDK internal console buffering is NOT
-      // bounded by our callback; do not ship this console mode to untrusted workers.
-      tmpfs: {}, startTimeoutMs: 30000, sessionLabel: boot, debugLog: markers.observe,
+      // Diagnostic VM allowance is consumed. Do not bind guest console/protocol
+      // logging for operational callers: SDK serial buffering is not bounded by
+      // our old marker callback. No worker flag can reactivate that diagnostic.
+      tmpfs: {}, startTimeoutMs: 30000, sessionLabel: boot, debugLog: null,
       sandbox: { vmm: 'qemu', qemuPath: '/usr/bin/qemu-system-x86_64', accel: 'kvm', cpu: 'host',
         imagePath: owner.guestAssets.directory, rootDiskPath: join(directory, 'root.qcow2'), rootDiskFormat: 'qcow2',
         rootDiskReadOnly: false, rootDiskDeleteOnClose: false, netEnabled: false, autoRestart: false,
-        console: 'stdio', debug: ['protocol'],
+        console: 'none', debug: false,
         ...runtime.sockets },
       vfs: { mounts: { '/workspace': new RealFSProvider(join(directory, 'workspace')),
         '/artifacts': new RealFSProvider(join(directory, 'artifacts')) } } });

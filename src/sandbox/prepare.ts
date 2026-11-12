@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { lstat, mkdir, open, readFile, realpath } from 'node:fs/promises';
+import { lstat, mkdir, open, readFile, realpath, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { inspectStorage } from '../platform/host/index.js';
 import { inspectGuestAssets, type GuestAssetPin } from './guest-assets.js';
 import type { SandboxConfiguration } from './configuration.js';
+import { growFilesystemCopy } from './filesystem.js';
 
 export type EnvironmentRef = string & { readonly environmentRef: unique symbol };
 export type PrepareResult = { status: 'success'; environment: EnvironmentRef } |
@@ -67,8 +68,11 @@ export async function prepareEnvironment(root: string, pin: GuestAssetPin | unde
   const manifest = JSON.parse(await readFile(join(pin.directory, 'manifest.json'), 'utf8'));
   const source = join(pin.directory, manifest.assets.rootfs);
   const sourceInfo = await lstat(source);
+  const size = BigInt(configuration.diskGiB) * 1073741824n;
+  if (BigInt(sourceInfo.size) > size) return { status: 'failure', code: 'BASE_DISK_EXCEEDS_CONFIGURED_CAPACITY' };
   const storage = await inspectStorage(environments);
-  const required = BigInt(sourceInfo.size) + BigInt(configuration.minFreeSpaceGiB) * 1073741824n;
+  // Conservative space for the raw candidate and standalone conversion, not a quota.
+  const required = 2n * size + BigInt(configuration.minFreeSpaceGiB) * 1073741824n;
   if (!storage || storage.unsuitable || BigInt(storage.availableBytes) < required) {
     return { status: 'failure', code: 'INSUFFICIENT_STORAGE_FOR_PREPARATION' };
   }
@@ -76,14 +80,18 @@ export async function prepareEnvironment(root: string, pin: GuestAssetPin | unde
     await mkdir(join(directory, 'workspace'), { mode: 0o700 });
     await mkdir(join(directory, 'artifacts'), { mode: 0o700 });
     const disk = join(directory, 'root.qcow2');
+    const raw = join(directory, 'rootfs-preparing.ext4');
+    await growFilesystemCopy(source, raw, size);
     // Standalone copy: no temporary overlay, backing file or deletion-on-close dependency.
-    await run('qemu-img', ['convert', '-f', 'raw', '-O', 'qcow2', source, disk], { timeout: 120_000, maxBuffer: 65536 });
+    await run('qemu-img', ['convert', '-f', 'raw', '-O', 'qcow2', raw, disk], { timeout: 30000, maxBuffer: 65536 });
     const info = JSON.parse((await run('qemu-img', ['info', '--output=json', disk], { timeout: 10_000 })).stdout);
-    const size = BigInt(configuration.diskGiB) * 1073741824n;
     if (BigInt(info['virtual-size']) > size) return { status: 'failure', code: 'BASE_DISK_EXCEEDS_CONFIGURED_CAPACITY' };
     await run('qemu-img', ['resize', '-f', 'qcow2', disk, size.toString()], { timeout: 10_000, maxBuffer: 65536 });
     const file = await open(disk, 'r+');
     try { await file.chmod(0o600); await file.sync(); } finally { await file.close(); }
+    // Only the successful new intermediate is disposable; failed preparations
+    // retain their candidate and are never adopted/retried automatically.
+    await unlink(raw);
     await durableJson(join(directory, 'ready.json'), { environment });
     await syncDirectory(directory);
     return { status: 'success', environment };

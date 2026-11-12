@@ -52,6 +52,12 @@ export function createSandbox({ root, guestAssets }: { root: string; guestAssets
           message: version ? `Version ${version} found; not runtime qualification.` : 'Required executable unavailable or version unreadable.',
           nextStep: 'Administrator must provide the release-compatible executable; doctor never installs packages.' });
       }
+      const filesystemTools = (await Promise.all(['/usr/bin/e2fsck', '/usr/bin/resize2fs']
+        .map(path => canAccess(path, constants.X_OK)))).every(Boolean);
+      checks.push({ id: 'filesystem-tools', status: filesystemTools ? 'ok' : 'blocked',
+        message: filesystemTools ? 'Native ext4 check/growth utilities are executable; not filesystem or boot qualification.'
+          : 'Required native ext4 utilities are unavailable.',
+        nextStep: 'Administrator must provide e2fsck and resize2fs; the adapter never installs tools or mounts guest filesystems on the host.' });
       const kvm = await canAccess('/dev/kvm', constants.R_OK | constants.W_OK);
       checks.push({ id: 'kvm-access', status: kvm ? 'ok' : 'blocked',
         message: kvm ? '/dev/kvm is readable/writable by this account.' : '/dev/kvm is not readable/writable.',

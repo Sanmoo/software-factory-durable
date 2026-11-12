@@ -10,6 +10,7 @@ import { inspectStorage } from '../platform/host/index.js';
 import { inspectGuestAssets, type GuestAssetPin } from './guest-assets.js';
 import type { SandboxConfiguration } from './configuration.js';
 import type { EnvironmentRef } from './prepare.js';
+import { checkDiskFilesystem } from './filesystem.js';
 import { currentSchema, identitySchema, metadata, observeEnvironment, ownedEnvironment, privateDirectory,
   startupFailureSchema, supervisionHierarchy, type BootRef, type StartupFailure } from './lifecycle.js';
 
@@ -55,7 +56,7 @@ async function failedStart(status: 'failure' | 'indeterminate', code: string, bo
   return { status, code, boot, ...(failure ? { failure } : {}) };
 }
 
-/** Only the first boot is enabled here; restart needs a separate preserved-disk check. */
+/** A new boot requires prior cessation and a read-only full filesystem check. */
 export async function startEnvironment(root: string, pin: GuestAssetPin | undefined,
   environment: EnvironmentRef, configuration: SandboxConfiguration): Promise<StartResult> {
   let boot: BootRef | undefined;
@@ -86,28 +87,35 @@ export async function startEnvironment(root: string, pin: GuestAssetPin | undefi
         if (previous.environment !== environment) throw new Error('ENVIRONMENT_OWNERSHIP_MISMATCH');
         const observed = await observeEnvironment(root, environment, previous.boot as BootRef);
         if (!observed.cessationConfirmed) return { status: 'indeterminate', code: 'PREVIOUS_BOOT_NOT_STOPPED', boot: previous.boot as BootRef };
-        return await failedStart('failure', 'PRESERVED_DISK_CHECK_REQUIRED', previous.boot as BootRef, join(directory, previous.boot));
       }
-      for (const name of ['workspace', 'artifacts']) await privateDirectory(join(directory, name));
       const disk = join(directory, 'root.qcow2');
-      const diskInfo = await lstat(disk);
-      if (!diskInfo.isFile() || diskInfo.isSymbolicLink() || diskInfo.nlink !== 1 ||
-          diskInfo.uid !== process.getuid?.() || (diskInfo.mode & 0o077)) throw new Error('UNSAFE_ROOT_DISK');
+      try {
+        for (const name of ['workspace', 'artifacts']) await privateDirectory(join(directory, name));
+        const diskInfo = await lstat(disk);
+        if (!diskInfo.isFile() || diskInfo.isSymbolicLink() || diskInfo.nlink !== 1 ||
+            diskInfo.uid !== process.getuid?.() || (diskInfo.mode & 0o077)) throw new Error('UNSAFE_ROOT_DISK');
+      } catch (error) {
+        if (previous) return await failedStart('failure', 'PRESERVED_DISK_CHECK_REQUIRED', previous.boot as BootRef, join(directory, previous.boot));
+        throw error;
+      }
       const canonicalRoot = await realpath(root);
       const candidateBoot = `boot-${randomUUID()}` as BootRef;
       let runtime;
       try { runtime = bootRuntimePaths(canonicalRoot, candidateBoot); }
       catch { return { status: 'failure', code: 'SANDBOX_RUNTIME_PATH_TOO_LONG' }; }
       const storage = await inspectStorage(directory);
-      if (!storage || storage.unsuitable || BigInt(storage.availableBytes) < BigInt(configuration.minFreeSpaceGiB) * 1073741824n) {
+      const size = BigInt(configuration.diskGiB) * 1073741824n;
+      if (!storage || storage.unsuitable || BigInt(storage.availableBytes) < size + BigInt(configuration.minFreeSpaceGiB) * 1073741824n) {
         return { status: 'failure', code: 'INSUFFICIENT_STORAGE_FOR_BOOT' };
       }
       if ((await inspectGuestAssets(pin)).some(check => check.status !== 'ok')) return { status: 'failure', code: 'GUEST_ASSETS_INVALID' };
-      const info = JSON.parse((await run('qemu-img', ['info', '-f', 'qcow2', '--output=json', disk],
-        { timeout: 10000, maxBuffer: 16384 })).stdout);
-      if (info.format !== 'qcow2' || info['backing-filename'] || info['format-specific']?.data?.['data-file'] ||
-          BigInt(info['virtual-size']) !== BigInt(configuration.diskGiB) * 1073741824n) throw new Error('INCOMPATIBLE_ROOT_DISK');
-      await run('qemu-img', ['check', '-f', 'qcow2', disk], { timeout: 30000, maxBuffer: 16384 });
+      if (!await checkDiskFilesystem(directory, disk, size)) {
+        if (previous) return await failedStart('failure', 'PRESERVED_DISK_CHECK_REQUIRED', previous.boot as BootRef, join(directory, previous.boot));
+        return { status: 'failure', code: 'ROOT_FILESYSTEM_CHECK_FAILED' };
+      }
+      if (previous && !(await observeEnvironment(root, environment, previous.boot as BootRef)).cessationConfirmed) {
+        return { status: 'indeterminate', code: 'PREVIOUS_BOOT_NOT_STOPPED', boot: previous.boot as BootRef };
+      }
       const namespaces = { cgroupNamespace: await readlink('/proc/self/ns/cgroup'), mountNamespace: await readlink('/proc/self/ns/mnt') };
       await supervisionHierarchy(namespaces);
       boot = candidateBoot;

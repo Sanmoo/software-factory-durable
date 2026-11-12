@@ -91,7 +91,7 @@ for (const mode of ['slow-write', 'write-fails', 'unknown-error', 'without-stop'
 }
 
 for (const mode of ['markers-slow-write', 'markers-write-fails', 'markers-success'] as const) {
-  test(`Sandbox adapter publishes bounded markers before close/guest exec: ${mode} (no VM/signal)`, async () => {
+  test(`Sandbox adapter keeps console disabled and publishes an empty startup snapshot: ${mode} (no VM/signal)`, async () => {
     const root = await shortRoot();
     try {
       const child = spawnSync(process.execPath, ['--experimental-test-module-mocks', '--import',
@@ -115,7 +115,7 @@ for (const mode of ['markers-slow-write', 'markers-write-fails', 'markers-succes
       const content = await readFile(join(path, 'boot-markers.json'), 'utf8');
       if (mode === 'markers-write-fails') assert.equal(content, '');
       else assert.deepEqual(JSON.parse(content), { version: 1, boot,
-        stages: ['console-text-observed', 'kernel-version-text', 'root-init-text'], callbacks: 2, oversized: 0 });
+        stages: [], callbacks: 0, oversized: 0 });
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 }
