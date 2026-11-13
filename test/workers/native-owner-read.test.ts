@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { createSandbox, type ToolContext } from '../../src/sandbox/index.js';
 import { nativeOwner } from '../sandbox/native-owner.fixture.js';
 import { reviewerRead } from '../../src/workers/read.js';
-import { createWorkers } from '../../src/workers/index.js';
+import { createWorkerSession } from '../../src/workers/worker-session.js';
 import { sdkProfile } from '../../src/workers/sdk-profile.js';
 import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -29,7 +29,7 @@ test('Q5 owner capture reaches native SDK pagination, beyond the old 16K wrapper
   await assert.rejects(native.execute('read-2', { path: 'source.txt' }), /STALE_TOOL_CONTEXT|TOOL_CHANNEL_CLOSED/);
 });
 
-test('Workers.activate uses real SDK/provider loop and native JSONL with only filtered guest tool content', { timeout: 10000 }, async t => {
+test('Workers-private SDK component uses real provider loop and native JSONL with only filtered guest tool content', { timeout: 10000 }, async t => {
   const f = await nativeOwner(context, { exec() { return {
     async *output() { yield { stream: 'stdout' as const, data: Buffer.from('first\nsynthetic-') };
       yield { stream: 'stdout' as const, data: Buffer.from('secret\nthird\n') }; }, result: Promise.resolve({ exitCode: 0 }),
@@ -63,7 +63,7 @@ test('Workers.activate uses real SDK/provider loop and native JSONL with only fi
       created: 1, model: 'reader', choices: [choice] }) + '\n\n').join('');
     return new Response(events + 'data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } });
   });
-  const workers = createWorkers({ profile: { id: sdkProfile.id, directory, systemPrompt: 'Read-only Factory fixture. No personal resources.',
+  const workers = createWorkerSession({ profile: { id: sdkProfile.id, directory, systemPrompt: 'Read-only Factory fixture. No personal resources.',
     providerId: 'offline-fixture', modelId: 'reader', apiKey: 'synthetic-key', provider: { api: 'openai-completions', baseUrl: 'https://offline.invalid',
       models: [{ id: 'reader', name: 'Reader', reasoning: false, input: ['text'],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000 }] } }, records: f.records,
@@ -100,7 +100,7 @@ test('a critical owner capture failure aborts the real SDK instead of requesting
         function: { name: 'read', arguments: '{"path":"source.txt"}' } }] }, finish_reason: 'tool_calls' }] };
     return new Response('data: ' + JSON.stringify(chunk) + '\n\ndata: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } });
   });
-  const workers = createWorkers({ profile: { id: sdkProfile.id, directory, systemPrompt: 'Read-only Factory fixture.',
+  const workers = createWorkerSession({ profile: { id: sdkProfile.id, directory, systemPrompt: 'Read-only Factory fixture.',
     providerId: 'offline-fixture', modelId: 'reader', apiKey: 'synthetic-key', provider: { api: 'openai-completions',
       baseUrl: 'https://offline.invalid', models: [{ id: 'reader', name: 'Reader', reasoning: false, input: ['text'],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000 }] } },

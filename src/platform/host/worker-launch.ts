@@ -18,7 +18,7 @@ export type WorkerBootHost = z.infer<typeof hostSchema>;
 
 /** Non-executable plan ONLY. No spawn, bootstrap, SDK or receipt is implemented
  * here. In particular, this result must never be reported as worker-started.
- * The fixed worker.js target is reserved, not yet an executable release asset. */
+ * The fixed worker.js executable exists, but this plan does not launch it. */
 export function planWorkerLaunch(hostInput: unknown, bindingInput: unknown) {
   const host = hostSchema.safeParse(hostInput);
   const binding = bindingSchema.safeParse(bindingInput);
