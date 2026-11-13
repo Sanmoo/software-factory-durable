@@ -1,0 +1,948 @@
+{
+  "status": "partial",
+  "source": "/home/sanmoo/dev/github.com/Sanmoo/software-factory-durable/.worktrees/software-factory-mvp-05/node_modules/@earendil-works/gondolin",
+  "candidate": "/tmp/software-factory-gondolin-stdin-candidate-tIvRoY/sdk",
+  "version": "0.14.0",
+  "license": "Apache-2.0",
+  "scope": "Literal relative ESM import/export closure from root runtime and type entries; no source maps or computed dynamic targets. Not an audited executable closure. Static regex inventory is conservative, not a parser or import-side-effect audit.",
+  "dependencyUsage": "Listed only; no dependencies imported, copied, linked, installed, or written.",
+  "externalSpecifiers": [
+    "cbor2",
+    "fs",
+    "ssh2",
+    "undici"
+  ],
+  "entries": [
+    {
+      "path": "LICENSE",
+      "bytes": 10847,
+      "originalBefore": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+      "originalAfter": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+      "candidate": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+    },
+    {
+      "path": "dist/src/alpine/init-scripts.js",
+      "bytes": 14023,
+      "originalBefore": "ee5b7cef45f96f87741073c56ed450df5d2a132a824f362ab8626d90c68c7174",
+      "originalAfter": "ee5b7cef45f96f87741073c56ed450df5d2a132a824f362ab8626d90c68c7174",
+      "candidate": "ee5b7cef45f96f87741073c56ed450df5d2a132a824f362ab8626d90c68c7174"
+    },
+    {
+      "path": "dist/src/alpine/kernel-modules.js",
+      "bytes": 9358,
+      "originalBefore": "f0d7f4759dae68d281b8da3b82a8b35613c94f7cbc5fc7fc01c7631b16abea57",
+      "originalAfter": "f0d7f4759dae68d281b8da3b82a8b35613c94f7cbc5fc7fc01c7631b16abea57",
+      "candidate": "f0d7f4759dae68d281b8da3b82a8b35613c94f7cbc5fc7fc01c7631b16abea57"
+    },
+    {
+      "path": "dist/src/alpine/oci.js",
+      "bytes": 16617,
+      "originalBefore": "0d4bb2e0f4137a12bfe58212d30c8b3d690a107cdfd113bd9c540b147c86f195",
+      "originalAfter": "0d4bb2e0f4137a12bfe58212d30c8b3d690a107cdfd113bd9c540b147c86f195",
+      "candidate": "0d4bb2e0f4137a12bfe58212d30c8b3d690a107cdfd113bd9c540b147c86f195"
+    },
+    {
+      "path": "dist/src/alpine/packages.js",
+      "bytes": 12048,
+      "originalBefore": "616809a54a6090b9249afe4ffffe3b3f91c8619c21c6883b89670e1eba93a8f0",
+      "originalAfter": "616809a54a6090b9249afe4ffffe3b3f91c8619c21c6883b89670e1eba93a8f0",
+      "candidate": "616809a54a6090b9249afe4ffffe3b3f91c8619c21c6883b89670e1eba93a8f0"
+    },
+    {
+      "path": "dist/src/alpine/post-build-copy.js",
+      "bytes": 4267,
+      "originalBefore": "679bd06226a743057c5b1b31f13c150302f1fa51f6dedd8b680edb8df7464b57",
+      "originalAfter": "679bd06226a743057c5b1b31f13c150302f1fa51f6dedd8b680edb8df7464b57",
+      "candidate": "679bd06226a743057c5b1b31f13c150302f1fa51f6dedd8b680edb8df7464b57"
+    },
+    {
+      "path": "dist/src/alpine/rootfs.js",
+      "bytes": 9119,
+      "originalBefore": "f7dbc6cb7d737d96dd8ad7bb708cf13f939d431bba451a4ac1ef7ca5315d551d",
+      "originalAfter": "f7dbc6cb7d737d96dd8ad7bb708cf13f939d431bba451a4ac1ef7ca5315d551d",
+      "candidate": "f7dbc6cb7d737d96dd8ad7bb708cf13f939d431bba451a4ac1ef7ca5315d551d"
+    },
+    {
+      "path": "dist/src/alpine/tar.js",
+      "bytes": 9916,
+      "originalBefore": "7e66160890643959ddf17b87ee95b356630b57512fad8da8d464ee8c395c15ab",
+      "originalAfter": "7e66160890643959ddf17b87ee95b356630b57512fad8da8d464ee8c395c15ab",
+      "candidate": "7e66160890643959ddf17b87ee95b356630b57512fad8da8d464ee8c395c15ab"
+    },
+    {
+      "path": "dist/src/alpine/utils.js",
+      "bytes": 10184,
+      "originalBefore": "d35a4e8fa82e3c165a49faa5b2e10b4e40269a8a7159fac10f156531483b146a",
+      "originalAfter": "d35a4e8fa82e3c165a49faa5b2e10b4e40269a8a7159fac10f156531483b146a",
+      "candidate": "d35a4e8fa82e3c165a49faa5b2e10b4e40269a8a7159fac10f156531483b146a"
+    },
+    {
+      "path": "dist/src/assets.d.ts",
+      "bytes": 4181,
+      "originalBefore": "ed31adf68f7bcdbed4487ea95925d5962b59d1900cc0cc8e53404d6ad123b2fb",
+      "originalAfter": "ed31adf68f7bcdbed4487ea95925d5962b59d1900cc0cc8e53404d6ad123b2fb",
+      "candidate": "ed31adf68f7bcdbed4487ea95925d5962b59d1900cc0cc8e53404d6ad123b2fb"
+    },
+    {
+      "path": "dist/src/assets.js",
+      "bytes": 11376,
+      "originalBefore": "32dd2be874cee8ff659e0b38c9930afdd189f95212dbfa73050fabcf8dcc3410",
+      "originalAfter": "32dd2be874cee8ff659e0b38c9930afdd189f95212dbfa73050fabcf8dcc3410",
+      "candidate": "32dd2be874cee8ff659e0b38c9930afdd189f95212dbfa73050fabcf8dcc3410"
+    },
+    {
+      "path": "dist/src/build/alpine.js",
+      "bytes": 7291,
+      "originalBefore": "6690f6c14902bda7ea27bc513162fff8031022a78842189ae3b7ad47aa1cb872",
+      "originalAfter": "6690f6c14902bda7ea27bc513162fff8031022a78842189ae3b7ad47aa1cb872",
+      "candidate": "6690f6c14902bda7ea27bc513162fff8031022a78842189ae3b7ad47aa1cb872"
+    },
+    {
+      "path": "dist/src/build/config.d.ts",
+      "bytes": 6122,
+      "originalBefore": "5cb2f20137c15a28537a28e344cc579d1877b56328e006b32d4cae7a17b62b51",
+      "originalAfter": "5cb2f20137c15a28537a28e344cc579d1877b56328e006b32d4cae7a17b62b51",
+      "candidate": "5cb2f20137c15a28537a28e344cc579d1877b56328e006b32d4cae7a17b62b51"
+    },
+    {
+      "path": "dist/src/build/config.js",
+      "bytes": 8281,
+      "originalBefore": "51b61fee04bec77089a757e24a628d084b22092bafb09f110b9be3bc63c4bd9e",
+      "originalAfter": "51b61fee04bec77089a757e24a628d084b22092bafb09f110b9be3bc63c4bd9e",
+      "candidate": "51b61fee04bec77089a757e24a628d084b22092bafb09f110b9be3bc63c4bd9e"
+    },
+    {
+      "path": "dist/src/build/container.js",
+      "bytes": 7361,
+      "originalBefore": "18f2139245807f577560e34337160c86a81d8799ef17c4549792fdc67ff0145f",
+      "originalAfter": "18f2139245807f577560e34337160c86a81d8799ef17c4549792fdc67ff0145f",
+      "candidate": "18f2139245807f577560e34337160c86a81d8799ef17c4549792fdc67ff0145f"
+    },
+    {
+      "path": "dist/src/build/helpers.d.ts",
+      "bytes": 346,
+      "originalBefore": "31c40891fc99d729646081c32cf8d23fdc4f0c3f2155421ecac0e842498ac74e",
+      "originalAfter": "31c40891fc99d729646081c32cf8d23fdc4f0c3f2155421ecac0e842498ac74e",
+      "candidate": "31c40891fc99d729646081c32cf8d23fdc4f0c3f2155421ecac0e842498ac74e"
+    },
+    {
+      "path": "dist/src/build/helpers.js",
+      "bytes": 1645,
+      "originalBefore": "91b3948efd19fd246df64e1a82e53939a2105975c39769aa89e94cc8ccb32a59",
+      "originalAfter": "91b3948efd19fd246df64e1a82e53939a2105975c39769aa89e94cc8ccb32a59",
+      "candidate": "91b3948efd19fd246df64e1a82e53939a2105975c39769aa89e94cc8ccb32a59"
+    },
+    {
+      "path": "dist/src/build/index.d.ts",
+      "bytes": 542,
+      "originalBefore": "c7f34e6d3da2852b6d8f1ca39cd318553aa8f277d2429941e6006ef8a03435ea",
+      "originalAfter": "c7f34e6d3da2852b6d8f1ca39cd318553aa8f277d2429941e6006ef8a03435ea",
+      "candidate": "c7f34e6d3da2852b6d8f1ca39cd318553aa8f277d2429941e6006ef8a03435ea"
+    },
+    {
+      "path": "dist/src/build/index.js",
+      "bytes": 4463,
+      "originalBefore": "4b5729500324514fb7677a155041a7b027ef2564c8e26bed4ae70c38e80e4406",
+      "originalAfter": "4b5729500324514fb7677a155041a7b027ef2564c8e26bed4ae70c38e80e4406",
+      "candidate": "4b5729500324514fb7677a155041a7b027ef2564c8e26bed4ae70c38e80e4406"
+    },
+    {
+      "path": "dist/src/build/native.js",
+      "bytes": 28281,
+      "originalBefore": "50d2723e0c9c78b159c0bcfb0d3bffcf29301cc1d716bd20ffb241b24218a049",
+      "originalAfter": "50d2723e0c9c78b159c0bcfb0d3bffcf29301cc1d716bd20ffb241b24218a049",
+      "candidate": "50d2723e0c9c78b159c0bcfb0d3bffcf29301cc1d716bd20ffb241b24218a049"
+    },
+    {
+      "path": "dist/src/build/sandbox-helpers.js",
+      "bytes": 17813,
+      "originalBefore": "3f0591b6b46f6001ab1a8c0a9e59fb7e1376ac6088b31179a08ca774fd44c480",
+      "originalAfter": "3f0591b6b46f6001ab1a8c0a9e59fb7e1376ac6088b31179a08ca774fd44c480",
+      "candidate": "3f0591b6b46f6001ab1a8c0a9e59fb7e1376ac6088b31179a08ca774fd44c480"
+    },
+    {
+      "path": "dist/src/build/shared.d.ts",
+      "bytes": 3257,
+      "originalBefore": "8977b3c20ee72bc94c6f08f2872f68b91e1d7f91d0432b96087d9de2254cca23",
+      "originalAfter": "8977b3c20ee72bc94c6f08f2872f68b91e1d7f91d0432b96087d9de2254cca23",
+      "candidate": "8977b3c20ee72bc94c6f08f2872f68b91e1d7f91d0432b96087d9de2254cca23"
+    },
+    {
+      "path": "dist/src/build/shared.js",
+      "bytes": 14296,
+      "originalBefore": "066af64f7d93a1d275dc8399edf4f9d04a350611db3e11eb1dc191c7148a486b",
+      "originalAfter": "066af64f7d93a1d275dc8399edf4f9d04a350611db3e11eb1dc191c7148a486b",
+      "candidate": "066af64f7d93a1d275dc8399edf4f9d04a350611db3e11eb1dc191c7148a486b"
+    },
+    {
+      "path": "dist/src/build/trufflehog.js",
+      "bytes": 10606,
+      "originalBefore": "24d7a2400f5b9e54da0df8d1da19faa9a714df2bee6e9cc760a71a78ff9a0f39",
+      "originalAfter": "24d7a2400f5b9e54da0df8d1da19faa9a714df2bee6e9cc760a71a78ff9a0f39",
+      "candidate": "24d7a2400f5b9e54da0df8d1da19faa9a714df2bee6e9cc760a71a78ff9a0f39"
+    },
+    {
+      "path": "dist/src/cache.d.ts",
+      "bytes": 153,
+      "originalBefore": "ec0816beb6e56ed8b9bead98a05b168e0993fb08c3be5cdf7655f48686ce805f",
+      "originalAfter": "ec0816beb6e56ed8b9bead98a05b168e0993fb08c3be5cdf7655f48686ce805f",
+      "candidate": "ec0816beb6e56ed8b9bead98a05b168e0993fb08c3be5cdf7655f48686ce805f"
+    },
+    {
+      "path": "dist/src/cache.js",
+      "bytes": 307,
+      "originalBefore": "3d28b98dcae93063f0d48e50516bb449dbbb761dd0dd5acb009c3b95989980ff",
+      "originalAfter": "3d28b98dcae93063f0d48e50516bb449dbbb761dd0dd5acb009c3b95989980ff",
+      "candidate": "3d28b98dcae93063f0d48e50516bb449dbbb761dd0dd5acb009c3b95989980ff"
+    },
+    {
+      "path": "dist/src/checkpoint.d.ts",
+      "bytes": 2278,
+      "originalBefore": "e130f8c412ea07608570ad40eb3fbd92790b6b4c1859dc1e3d79d268ebd40a9b",
+      "originalAfter": "e130f8c412ea07608570ad40eb3fbd92790b6b4c1859dc1e3d79d268ebd40a9b",
+      "candidate": "e130f8c412ea07608570ad40eb3fbd92790b6b4c1859dc1e3d79d268ebd40a9b"
+    },
+    {
+      "path": "dist/src/checkpoint.js",
+      "bytes": 14314,
+      "originalBefore": "ecf2d679948ef8de92bb2d59a232db8e50178fa36c79b78530afcc0e3a2690bc",
+      "originalAfter": "ecf2d679948ef8de92bb2d59a232db8e50178fa36c79b78530afcc0e3a2690bc",
+      "candidate": "ecf2d679948ef8de92bb2d59a232db8e50178fa36c79b78530afcc0e3a2690bc"
+    },
+    {
+      "path": "dist/src/debug.d.ts",
+      "bytes": 1030,
+      "originalBefore": "098c3e9d67dda1e91b351f532977d2b6c2c41bad45df3bd44c6441008732be59",
+      "originalAfter": "098c3e9d67dda1e91b351f532977d2b6c2c41bad45df3bd44c6441008732be59",
+      "candidate": "098c3e9d67dda1e91b351f532977d2b6c2c41bad45df3bd44c6441008732be59"
+    },
+    {
+      "path": "dist/src/debug.js",
+      "bytes": 1972,
+      "originalBefore": "5555f14e0986b1ed2f693f5f2d4bc8e65b1373e3b0b51e276e7482bf9797ddfb",
+      "originalAfter": "5555f14e0986b1ed2f693f5f2d4bc8e65b1373e3b0b51e276e7482bf9797ddfb",
+      "candidate": "5555f14e0986b1ed2f693f5f2d4bc8e65b1373e3b0b51e276e7482bf9797ddfb"
+    },
+    {
+      "path": "dist/src/exec.d.ts",
+      "bytes": 6428,
+      "originalBefore": "bd3176d400947ecf0dfe7ae5a3636fba14ee5c3e9d3e12a2160dac29ff3333c9",
+      "originalAfter": "bd3176d400947ecf0dfe7ae5a3636fba14ee5c3e9d3e12a2160dac29ff3333c9",
+      "candidate": "bd3176d400947ecf0dfe7ae5a3636fba14ee5c3e9d3e12a2160dac29ff3333c9"
+    },
+    {
+      "path": "dist/src/exec.js",
+      "bytes": 25914,
+      "originalBefore": "78cdda0fff486c902d95cb812be6f3d2d2cd1d599604c69af65559694de80a7d",
+      "originalAfter": "78cdda0fff486c902d95cb812be6f3d2d2cd1d599604c69af65559694de80a7d",
+      "candidate": "78cdda0fff486c902d95cb812be6f3d2d2cd1d599604c69af65559694de80a7d"
+    },
+    {
+      "path": "dist/src/host/arch.d.ts",
+      "bytes": 667,
+      "originalBefore": "17415691cff07c69fb4f7a84c5c7541debb19e6f9440e29bd65f77f9bb56ce7b",
+      "originalAfter": "17415691cff07c69fb4f7a84c5c7541debb19e6f9440e29bd65f77f9bb56ce7b",
+      "candidate": "17415691cff07c69fb4f7a84c5c7541debb19e6f9440e29bd65f77f9bb56ce7b"
+    },
+    {
+      "path": "dist/src/host/arch.js",
+      "bytes": 2823,
+      "originalBefore": "1d715ebface187bcb5b15617cf9f85d42ad121bbf58a1dd596b08874a1e67b63",
+      "originalAfter": "1d715ebface187bcb5b15617cf9f85d42ad121bbf58a1dd596b08874a1e67b63",
+      "candidate": "1d715ebface187bcb5b15617cf9f85d42ad121bbf58a1dd596b08874a1e67b63"
+    },
+    {
+      "path": "dist/src/host/patterns.js",
+      "bytes": 998,
+      "originalBefore": "c66b8065248ac3ab95d5efc067bef8ce2065487e12a7400c3a0af4beb91c65ba",
+      "originalAfter": "c66b8065248ac3ab95d5efc067bef8ce2065487e12a7400c3a0af4beb91c65ba",
+      "candidate": "c66b8065248ac3ab95d5efc067bef8ce2065487e12a7400c3a0af4beb91c65ba"
+    },
+    {
+      "path": "dist/src/http/hooks.d.ts",
+      "bytes": 3874,
+      "originalBefore": "e622ef07bb6275d999745a15336b81f3396705c6f70dbb62f39317824ede2d5e",
+      "originalAfter": "e622ef07bb6275d999745a15336b81f3396705c6f70dbb62f39317824ede2d5e",
+      "candidate": "e622ef07bb6275d999745a15336b81f3396705c6f70dbb62f39317824ede2d5e"
+    },
+    {
+      "path": "dist/src/http/hooks.js",
+      "bytes": 25974,
+      "originalBefore": "980de24474a0bdba055a7fac1cffa170dc2dd6f61b9f33808bbcb337c787378a",
+      "originalAfter": "980de24474a0bdba055a7fac1cffa170dc2dd6f61b9f33808bbcb337c787378a",
+      "candidate": "980de24474a0bdba055a7fac1cffa170dc2dd6f61b9f33808bbcb337c787378a"
+    },
+    {
+      "path": "dist/src/http/utils.d.ts",
+      "bytes": 5753,
+      "originalBefore": "07d4dcc0a3ec6123f94f898f0a908fd31cba5f4621f60494126124b27c124203",
+      "originalAfter": "07d4dcc0a3ec6123f94f898f0a908fd31cba5f4621f60494126124b27c124203",
+      "candidate": "07d4dcc0a3ec6123f94f898f0a908fd31cba5f4621f60494126124b27c124203"
+    },
+    {
+      "path": "dist/src/http/utils.js",
+      "bytes": 22656,
+      "originalBefore": "13076a39aeca2f3242f1c4426bdcf1a89cb787bae36f4432587de03f81ba082e",
+      "originalAfter": "13076a39aeca2f3242f1c4426bdcf1a89cb787bae36f4432587de03f81ba082e",
+      "candidate": "13076a39aeca2f3242f1c4426bdcf1a89cb787bae36f4432587de03f81ba082e"
+    },
+    {
+      "path": "dist/src/image-ref.d.ts",
+      "bytes": 852,
+      "originalBefore": "8e5ae081c18e9e58fd3a4c4b2be1300940bc4bdf8c766216b76ffb630316b640",
+      "originalAfter": "8e5ae081c18e9e58fd3a4c4b2be1300940bc4bdf8c766216b76ffb630316b640",
+      "candidate": "8e5ae081c18e9e58fd3a4c4b2be1300940bc4bdf8c766216b76ffb630316b640"
+    },
+    {
+      "path": "dist/src/image-ref.js",
+      "bytes": 2431,
+      "originalBefore": "0b22d68990333c2344deaca528dff920542bf8c73845ad061b28a530966b2e17",
+      "originalAfter": "0b22d68990333c2344deaca528dff920542bf8c73845ad061b28a530966b2e17",
+      "candidate": "0b22d68990333c2344deaca528dff920542bf8c73845ad061b28a530966b2e17"
+    },
+    {
+      "path": "dist/src/images.d.ts",
+      "bytes": 3660,
+      "originalBefore": "0df96197c5a5ce41895a317267a561e9b3855b7964017b0fd2eaefb3e6446bea",
+      "originalAfter": "0df96197c5a5ce41895a317267a561e9b3855b7964017b0fd2eaefb3e6446bea",
+      "candidate": "0df96197c5a5ce41895a317267a561e9b3855b7964017b0fd2eaefb3e6446bea"
+    },
+    {
+      "path": "dist/src/images.js",
+      "bytes": 35995,
+      "originalBefore": "08e080c993bed488534ebe7713cd279dd7c839e5ede0d9318f4654569a988921",
+      "originalAfter": "08e080c993bed488534ebe7713cd279dd7c839e5ede0d9318f4654569a988921",
+      "candidate": "08e080c993bed488534ebe7713cd279dd7c839e5ede0d9318f4654569a988921"
+    },
+    {
+      "path": "dist/src/index.d.ts",
+      "bytes": 4392,
+      "originalBefore": "dac692418017803dcf2760ceee684bf067a16006d3a88864bbaa2939c7312923",
+      "originalAfter": "dac692418017803dcf2760ceee684bf067a16006d3a88864bbaa2939c7312923",
+      "candidate": "dac692418017803dcf2760ceee684bf067a16006d3a88864bbaa2939c7312923"
+    },
+    {
+      "path": "dist/src/index.js",
+      "bytes": 2433,
+      "originalBefore": "05d966933f43da7968ce0aefdcc0e044a331b52f59957bf2de9e8c51bf0d3695",
+      "originalAfter": "05d966933f43da7968ce0aefdcc0e044a331b52f59957bf2de9e8c51bf0d3695",
+      "candidate": "05d966933f43da7968ce0aefdcc0e044a331b52f59957bf2de9e8c51bf0d3695"
+    },
+    {
+      "path": "dist/src/ingress.d.ts",
+      "bytes": 7097,
+      "originalBefore": "1567d165a880184cb755eb46628be4a6499bd77193363a41468904ebf09fa96e",
+      "originalAfter": "1567d165a880184cb755eb46628be4a6499bd77193363a41468904ebf09fa96e",
+      "candidate": "1567d165a880184cb755eb46628be4a6499bd77193363a41468904ebf09fa96e"
+    },
+    {
+      "path": "dist/src/ingress.js",
+      "bytes": 50328,
+      "originalBefore": "8bd748bcb8419edf5f11c2082113dd74b6fb8869f2acbeea184077129d48624b",
+      "originalAfter": "8bd748bcb8419edf5f11c2082113dd74b6fb8869f2acbeea184077129d48624b",
+      "candidate": "8bd748bcb8419edf5f11c2082113dd74b6fb8869f2acbeea184077129d48624b"
+    },
+    {
+      "path": "dist/src/internal/http-conversion.js",
+      "bytes": 6710,
+      "originalBefore": "bb5d2423c4d0e391a74c236c375d1842f2904488e2dce0a28d64208c2b320db2",
+      "originalAfter": "bb5d2423c4d0e391a74c236c375d1842f2904488e2dce0a28d64208c2b320db2",
+      "candidate": "bb5d2423c4d0e391a74c236c375d1842f2904488e2dce0a28d64208c2b320db2"
+    },
+    {
+      "path": "dist/src/internal/http-types.d.ts",
+      "bytes": 677,
+      "originalBefore": "221955d8bf75a6db1247fdc1ab4764094f6a7f2d95c2e04677e794807df34d3d",
+      "originalAfter": "221955d8bf75a6db1247fdc1ab4764094f6a7f2d95c2e04677e794807df34d3d",
+      "candidate": "221955d8bf75a6db1247fdc1ab4764094f6a7f2d95c2e04677e794807df34d3d"
+    },
+    {
+      "path": "dist/src/mitm.js",
+      "bytes": 9636,
+      "originalBefore": "505ffa84876dac4862bbe40bd5765c703dc168fa977957f6599fda5c1309973c",
+      "originalAfter": "505ffa84876dac4862bbe40bd5765c703dc168fa977957f6599fda5c1309973c",
+      "candidate": "505ffa84876dac4862bbe40bd5765c703dc168fa977957f6599fda5c1309973c"
+    },
+    {
+      "path": "dist/src/qemu/contracts.d.ts",
+      "bytes": 4695,
+      "originalBefore": "6545cbb7215d795443efcb6e9962318565192fcf6022c6d075fdc27d609c58f2",
+      "originalAfter": "6545cbb7215d795443efcb6e9962318565192fcf6022c6d075fdc27d609c58f2",
+      "candidate": "6545cbb7215d795443efcb6e9962318565192fcf6022c6d075fdc27d609c58f2"
+    },
+    {
+      "path": "dist/src/qemu/contracts.js",
+      "bytes": 796,
+      "originalBefore": "ab7810ec01cd84678cfeab384a0aa7af3ce251e899eed7a29e818f981aa6a345",
+      "originalAfter": "ab7810ec01cd84678cfeab384a0aa7af3ce251e899eed7a29e818f981aa6a345",
+      "candidate": "ab7810ec01cd84678cfeab384a0aa7af3ce251e899eed7a29e818f981aa6a345"
+    },
+    {
+      "path": "dist/src/qemu/dns.js",
+      "bytes": 5277,
+      "originalBefore": "cf7e5da3e7bbd80d9ded73fca9539def133bb8df3a86ec111b5d12bf9971d69c",
+      "originalAfter": "cf7e5da3e7bbd80d9ded73fca9539def133bb8df3a86ec111b5d12bf9971d69c",
+      "candidate": "cf7e5da3e7bbd80d9ded73fca9539def133bb8df3a86ec111b5d12bf9971d69c"
+    },
+    {
+      "path": "dist/src/qemu/http.d.ts",
+      "bytes": 3954,
+      "originalBefore": "10b9354d216a9281e6142cc861c40be49b8baf559702881fc182d4dd17195036",
+      "originalAfter": "10b9354d216a9281e6142cc861c40be49b8baf559702881fc182d4dd17195036",
+      "candidate": "10b9354d216a9281e6142cc861c40be49b8baf559702881fc182d4dd17195036"
+    },
+    {
+      "path": "dist/src/qemu/http.js",
+      "bytes": 69704,
+      "originalBefore": "b954477a311c4863316ee6a8f3c43c50ddd709f2df24cbdab8e68aa7b147b9aa",
+      "originalAfter": "b954477a311c4863316ee6a8f3c43c50ddd709f2df24cbdab8e68aa7b147b9aa",
+      "candidate": "b954477a311c4863316ee6a8f3c43c50ddd709f2df24cbdab8e68aa7b147b9aa"
+    },
+    {
+      "path": "dist/src/qemu/icmp.js",
+      "bytes": 6089,
+      "originalBefore": "30ea3677ae4edd4189e4ccfa77c079009c87a923f559792c765e3b839bdd9ab5",
+      "originalAfter": "30ea3677ae4edd4189e4ccfa77c079009c87a923f559792c765e3b839bdd9ab5",
+      "candidate": "30ea3677ae4edd4189e4ccfa77c079009c87a923f559792c765e3b839bdd9ab5"
+    },
+    {
+      "path": "dist/src/qemu/img.js",
+      "bytes": 6052,
+      "originalBefore": "1d345833139c4ff5e556373173f038d4c4e536b277e9299f10963d613cf33704",
+      "originalAfter": "1d345833139c4ff5e556373173f038d4c4e536b277e9299f10963d613cf33704",
+      "candidate": "1d345833139c4ff5e556373173f038d4c4e536b277e9299f10963d613cf33704"
+    },
+    {
+      "path": "dist/src/qemu/net.d.ts",
+      "bytes": 6427,
+      "originalBefore": "0510795f4e92642ddfb3c0ac9d26fbd591fb7ee631cec3d43631927f39d935cf",
+      "originalAfter": "0510795f4e92642ddfb3c0ac9d26fbd591fb7ee631cec3d43631927f39d935cf",
+      "candidate": "0510795f4e92642ddfb3c0ac9d26fbd591fb7ee631cec3d43631927f39d935cf"
+    },
+    {
+      "path": "dist/src/qemu/net.js",
+      "bytes": 42599,
+      "originalBefore": "1be09caeba62938b6ab42eca82f95b92dc6caba968dc0afbc311b9840e9a3e31",
+      "originalAfter": "1be09caeba62938b6ab42eca82f95b92dc6caba968dc0afbc311b9840e9a3e31",
+      "candidate": "1be09caeba62938b6ab42eca82f95b92dc6caba968dc0afbc311b9840e9a3e31"
+    },
+    {
+      "path": "dist/src/qemu/network-stack.d.ts",
+      "bytes": 6748,
+      "originalBefore": "52114ef7639b1294570afdc3397ab0a22a92ea63a9949cdd7d82782c1e1a12ea",
+      "originalAfter": "52114ef7639b1294570afdc3397ab0a22a92ea63a9949cdd7d82782c1e1a12ea",
+      "candidate": "52114ef7639b1294570afdc3397ab0a22a92ea63a9949cdd7d82782c1e1a12ea"
+    },
+    {
+      "path": "dist/src/qemu/network-stack.js",
+      "bytes": 41877,
+      "originalBefore": "e4da0f953b7d003cf8fedd0b5820a8c8f360e1f47948d418795b8e93bf0bcaae",
+      "originalAfter": "e4da0f953b7d003cf8fedd0b5820a8c8f360e1f47948d418795b8e93bf0bcaae",
+      "candidate": "e4da0f953b7d003cf8fedd0b5820a8c8f360e1f47948d418795b8e93bf0bcaae"
+    },
+    {
+      "path": "dist/src/qemu/ssh.d.ts",
+      "bytes": 2345,
+      "originalBefore": "313ffd7242505f3ed0258c7538355108aa14a7e30c627f5f4bc1447ba78fbb44",
+      "originalAfter": "313ffd7242505f3ed0258c7538355108aa14a7e30c627f5f4bc1447ba78fbb44",
+      "candidate": "313ffd7242505f3ed0258c7538355108aa14a7e30c627f5f4bc1447ba78fbb44"
+    },
+    {
+      "path": "dist/src/qemu/ssh.js",
+      "bytes": 18446,
+      "originalBefore": "b125d0a587f2b6e4b69bafb8c436e116e6665e5bb130556212ecb5979f8e1162",
+      "originalAfter": "b125d0a587f2b6e4b69bafb8c436e116e6665e5bb130556212ecb5979f8e1162",
+      "candidate": "b125d0a587f2b6e4b69bafb8c436e116e6665e5bb130556212ecb5979f8e1162"
+    },
+    {
+      "path": "dist/src/qemu/tcp.d.ts",
+      "bytes": 458,
+      "originalBefore": "e283dd4f658eab7d4ad0b70dda38212b864659d573c8d91e40c60e9897f9497a",
+      "originalAfter": "e283dd4f658eab7d4ad0b70dda38212b864659d573c8d91e40c60e9897f9497a",
+      "candidate": "e283dd4f658eab7d4ad0b70dda38212b864659d573c8d91e40c60e9897f9497a"
+    },
+    {
+      "path": "dist/src/qemu/tcp.js",
+      "bytes": 4554,
+      "originalBefore": "954f657af7a6f2a59474b0d994a4a4646a713c8045fe13df6b96c2891dd4d2c7",
+      "originalAfter": "954f657af7a6f2a59474b0d994a4a4646a713c8045fe13df6b96c2891dd4d2c7",
+      "candidate": "954f657af7a6f2a59474b0d994a4a4646a713c8045fe13df6b96c2891dd4d2c7"
+    },
+    {
+      "path": "dist/src/qemu/tls-sni.js",
+      "bytes": 3531,
+      "originalBefore": "b6129e75f32290e8323e5de1e1b13d42829ec297ef0118000c809c8bb5b85082",
+      "originalAfter": "b6129e75f32290e8323e5de1e1b13d42829ec297ef0118000c809c8bb5b85082",
+      "candidate": "b6129e75f32290e8323e5de1e1b13d42829ec297ef0118000c809c8bb5b85082"
+    },
+    {
+      "path": "dist/src/qemu/ws.d.ts",
+      "bytes": 1737,
+      "originalBefore": "9828fc247f1f3d30c436c026dac24350ee3f4a9b714afc6656174f3bf47f83f8",
+      "originalAfter": "9828fc247f1f3d30c436c026dac24350ee3f4a9b714afc6656174f3bf47f83f8",
+      "candidate": "9828fc247f1f3d30c436c026dac24350ee3f4a9b714afc6656174f3bf47f83f8"
+    },
+    {
+      "path": "dist/src/qemu/ws.js",
+      "bytes": 11424,
+      "originalBefore": "51991ba9b67d12d08c3685b8521579101a767ce67900ad021af5aed697a851f2",
+      "originalAfter": "51991ba9b67d12d08c3685b8521579101a767ce67900ad021af5aed697a851f2",
+      "candidate": "51991ba9b67d12d08c3685b8521579101a767ce67900ad021af5aed697a851f2"
+    },
+    {
+      "path": "dist/src/registry.js",
+      "bytes": 7626,
+      "originalBefore": "1ead834591a81fab7fc39dad78f632bc19cdfd0203916f2a2d0297a92a0b61b5",
+      "originalAfter": "1ead834591a81fab7fc39dad78f632bc19cdfd0203916f2a2d0297a92a0b61b5",
+      "candidate": "1ead834591a81fab7fc39dad78f632bc19cdfd0203916f2a2d0297a92a0b61b5"
+    },
+    {
+      "path": "dist/src/sandbox/child-process.js",
+      "bytes": 4116,
+      "originalBefore": "1f3a2ff254f6b8550bf692b10d24d232040a29af02dda967933f9b69cb8e987d",
+      "originalAfter": "1f3a2ff254f6b8550bf692b10d24d232040a29af02dda967933f9b69cb8e987d",
+      "candidate": "1f3a2ff254f6b8550bf692b10d24d232040a29af02dda967933f9b69cb8e987d"
+    },
+    {
+      "path": "dist/src/sandbox/client.d.ts",
+      "bytes": 1088,
+      "originalBefore": "d67230c5152b47cd9037e71f7efb9f4c1d54f3664b6b921f63e3f09dd59a79de",
+      "originalAfter": "d67230c5152b47cd9037e71f7efb9f4c1d54f3664b6b921f63e3f09dd59a79de",
+      "candidate": "d67230c5152b47cd9037e71f7efb9f4c1d54f3664b6b921f63e3f09dd59a79de"
+    },
+    {
+      "path": "dist/src/sandbox/client.js",
+      "bytes": 889,
+      "originalBefore": "4f82baf3ded5525bd10e044be4d22a6f4bb9779ee4961cb51e949f88edc3147b",
+      "originalAfter": "4f82baf3ded5525bd10e044be4d22a6f4bb9779ee4961cb51e949f88edc3147b",
+      "candidate": "4f82baf3ded5525bd10e044be4d22a6f4bb9779ee4961cb51e949f88edc3147b"
+    },
+    {
+      "path": "dist/src/sandbox/control-protocol.d.ts",
+      "bytes": 4272,
+      "originalBefore": "54f6d5123f17027842a08d495423999f633384d1bb7db763179667d559d98d8f",
+      "originalAfter": "54f6d5123f17027842a08d495423999f633384d1bb7db763179667d559d98d8f",
+      "candidate": "54f6d5123f17027842a08d495423999f633384d1bb7db763179667d559d98d8f"
+    },
+    {
+      "path": "dist/src/sandbox/control-protocol.js",
+      "bytes": 820,
+      "originalBefore": "fde4a0ebb6f588a835ebf50a6879702bc70eaf99746e523355e63f8728e61379",
+      "originalAfter": "fde4a0ebb6f588a835ebf50a6879702bc70eaf99746e523355e63f8728e61379",
+      "candidate": "fde4a0ebb6f588a835ebf50a6879702bc70eaf99746e523355e63f8728e61379"
+    },
+    {
+      "path": "dist/src/sandbox/controller.d.ts",
+      "bytes": 2919,
+      "originalBefore": "0428278c9713a9722447feb6504c596261ab3a875894e90bd6f238f3c54591e7",
+      "originalAfter": "0428278c9713a9722447feb6504c596261ab3a875894e90bd6f238f3c54591e7",
+      "candidate": "0428278c9713a9722447feb6504c596261ab3a875894e90bd6f238f3c54591e7"
+    },
+    {
+      "path": "dist/src/sandbox/controller.js",
+      "bytes": 20336,
+      "originalBefore": "895890a7cb791cb9a7262a8dfabd6bba1fa28b0a4f3eeb2ee6bb577bbd8739e1",
+      "originalAfter": "895890a7cb791cb9a7262a8dfabd6bba1fa28b0a4f3eeb2ee6bb577bbd8739e1",
+      "candidate": "895890a7cb791cb9a7262a8dfabd6bba1fa28b0a4f3eeb2ee6bb577bbd8739e1"
+    },
+    {
+      "path": "dist/src/sandbox/krun-controller.js",
+      "bytes": 7185,
+      "originalBefore": "82b2887f2b2ed0aedb51f6d63eeb62ef9101904cc3a29a066b1fa6876987d1f4",
+      "originalAfter": "82b2887f2b2ed0aedb51f6d63eeb62ef9101904cc3a29a066b1fa6876987d1f4",
+      "candidate": "82b2887f2b2ed0aedb51f6d63eeb62ef9101904cc3a29a066b1fa6876987d1f4"
+    },
+    {
+      "path": "dist/src/sandbox/server-boot-config.js",
+      "bytes": 4275,
+      "originalBefore": "4f82b4d958917eab93725d0f45b2c89334318258f34a22bd37217de506a7851d",
+      "originalAfter": "4f82b4d958917eab93725d0f45b2c89334318258f34a22bd37217de506a7851d",
+      "candidate": "4f82b4d958917eab93725d0f45b2c89334318258f34a22bd37217de506a7851d"
+    },
+    {
+      "path": "dist/src/sandbox/server-ops.d.ts",
+      "bytes": 5186,
+      "originalBefore": "c6428de143676cbfd7a823ea178680f65877ad3e1a41765ffa96c143dcbc08bd",
+      "originalAfter": "c6428de143676cbfd7a823ea178680f65877ad3e1a41765ffa96c143dcbc08bd",
+      "candidate": "c6428de143676cbfd7a823ea178680f65877ad3e1a41765ffa96c143dcbc08bd"
+    },
+    {
+      "path": "dist/src/sandbox/server-ops.js",
+      "bytes": 48494,
+      "originalBefore": "07388a20ae4564255f11729e27fa2b55923cefea81d64cbeaaa4b3a5f8f95311",
+      "originalAfter": "07388a20ae4564255f11729e27fa2b55923cefea81d64cbeaaa4b3a5f8f95311",
+      "candidate": "07388a20ae4564255f11729e27fa2b55923cefea81d64cbeaaa4b3a5f8f95311"
+    },
+    {
+      "path": "dist/src/sandbox/server-options.d.ts",
+      "bytes": 10379,
+      "originalBefore": "fb2122edb4d283cb39138f234e5958ae95e54ee47b0adeaf76fa6f2ccae92d98",
+      "originalAfter": "fb2122edb4d283cb39138f234e5958ae95e54ee47b0adeaf76fa6f2ccae92d98",
+      "candidate": "fb2122edb4d283cb39138f234e5958ae95e54ee47b0adeaf76fa6f2ccae92d98"
+    },
+    {
+      "path": "dist/src/sandbox/server-options.js",
+      "bytes": 22068,
+      "originalBefore": "51215479d05fc37ff387a1f8fa64db16937cddfdada111ba73918cca37d3aacf",
+      "originalAfter": "51215479d05fc37ff387a1f8fa64db16937cddfdada111ba73918cca37d3aacf",
+      "candidate": "51215479d05fc37ff387a1f8fa64db16937cddfdada111ba73918cca37d3aacf"
+    },
+    {
+      "path": "dist/src/sandbox/server-transport.js",
+      "bytes": 8612,
+      "originalBefore": "390b0c8ca6db228700a52d0a60b29654bb974d07913d2f152196db205bad1a09",
+      "originalAfter": "390b0c8ca6db228700a52d0a60b29654bb974d07913d2f152196db205bad1a09",
+      "candidate": "390b0c8ca6db228700a52d0a60b29654bb974d07913d2f152196db205bad1a09"
+    },
+    {
+      "path": "dist/src/sandbox/server.d.ts",
+      "bytes": 4198,
+      "originalBefore": "b458f96920b83adb0f5b2e66f6dbc3086b4b9782e7444610e0508bde659cbce3",
+      "originalAfter": "b458f96920b83adb0f5b2e66f6dbc3086b4b9782e7444610e0508bde659cbce3",
+      "candidate": "b458f96920b83adb0f5b2e66f6dbc3086b4b9782e7444610e0508bde659cbce3"
+    },
+    {
+      "path": "dist/src/sandbox/server.js",
+      "bytes": 40684,
+      "originalBefore": "100bc33d55e69b07ec1dad9159351e8c34e47adc0b722d0d21f9ff923d447cf8",
+      "originalAfter": "100bc33d55e69b07ec1dad9159351e8c34e47adc0b722d0d21f9ff923d447cf8",
+      "candidate": "100bc33d55e69b07ec1dad9159351e8c34e47adc0b722d0d21f9ff923d447cf8"
+    },
+    {
+      "path": "dist/src/sandbox/tmpfs.d.ts",
+      "bytes": 1523,
+      "originalBefore": "8b2443ec32bdb8495e3e5ee35a841e9579308f6d909137552224c4f7c239540d",
+      "originalAfter": "8b2443ec32bdb8495e3e5ee35a841e9579308f6d909137552224c4f7c239540d",
+      "candidate": "8b2443ec32bdb8495e3e5ee35a841e9579308f6d909137552224c4f7c239540d"
+    },
+    {
+      "path": "dist/src/sandbox/tmpfs.js",
+      "bytes": 4259,
+      "originalBefore": "720320f131870b5edd6cb6419869b694534704c35fc0f71647106ef03152d7a3",
+      "originalAfter": "720320f131870b5edd6cb6419869b694534704c35fc0f71647106ef03152d7a3",
+      "candidate": "720320f131870b5edd6cb6419869b694534704c35fc0f71647106ef03152d7a3"
+    },
+    {
+      "path": "dist/src/sandbox/virtio-protocol.d.ts",
+      "bytes": 9886,
+      "originalBefore": "6a9658ced3fa9b24db35a1b5598a18d6c02436259bebf13814d36489c2b062be",
+      "originalAfter": "6a9658ced3fa9b24db35a1b5598a18d6c02436259bebf13814d36489c2b062be",
+      "candidate": "6a9658ced3fa9b24db35a1b5598a18d6c02436259bebf13814d36489c2b062be"
+    },
+    {
+      "path": "dist/src/sandbox/virtio-protocol.js",
+      "bytes": 4746,
+      "originalBefore": "21b46ce0e925eb7358f70e40a82fead75a343aa23c7882d68b8394a55201a302",
+      "originalAfter": "21b46ce0e925eb7358f70e40a82fead75a343aa23c7882d68b8394a55201a302",
+      "candidate": "21b46ce0e925eb7358f70e40a82fead75a343aa23c7882d68b8394a55201a302"
+    },
+    {
+      "path": "dist/src/secret-host-suggestions.d.ts",
+      "bytes": 1423,
+      "originalBefore": "0f0ffbbd4f106b281836f64370f65e902aab6d62680ec8ec5837ea4b325db865",
+      "originalAfter": "0f0ffbbd4f106b281836f64370f65e902aab6d62680ec8ec5837ea4b325db865",
+      "candidate": "0f0ffbbd4f106b281836f64370f65e902aab6d62680ec8ec5837ea4b325db865"
+    },
+    {
+      "path": "dist/src/secret-host-suggestions.js",
+      "bytes": 7472,
+      "originalBefore": "b2362834a4ab6455a1b004f4c8cbadb8bfca53b26155514fd903e13b7332d2c0",
+      "originalAfter": "b2362834a4ab6455a1b004f4c8cbadb8bfca53b26155514fd903e13b7332d2c0",
+      "candidate": "b2362834a4ab6455a1b004f4c8cbadb8bfca53b26155514fd903e13b7332d2c0"
+    },
+    {
+      "path": "dist/src/session-registry.d.ts",
+      "bytes": 2937,
+      "originalBefore": "68ca84f6137e9d2f97821698765c5e9016d683a5b776877c5f9611d0ec30d08b",
+      "originalAfter": "68ca84f6137e9d2f97821698765c5e9016d683a5b776877c5f9611d0ec30d08b",
+      "candidate": "68ca84f6137e9d2f97821698765c5e9016d683a5b776877c5f9611d0ec30d08b"
+    },
+    {
+      "path": "dist/src/session-registry.js",
+      "bytes": 20690,
+      "originalBefore": "8590c7ecb51ae75bacea8dde102550d332262dd5b0dd6c5b1c169a405cd29cd6",
+      "originalAfter": "8590c7ecb51ae75bacea8dde102550d332262dd5b0dd6c5b1c169a405cd29cd6",
+      "candidate": "8590c7ecb51ae75bacea8dde102550d332262dd5b0dd6c5b1c169a405cd29cd6"
+    },
+    {
+      "path": "dist/src/ssh/exec.d.ts",
+      "bytes": 1007,
+      "originalBefore": "b3c3ddf9aaaec28004c1a77b4764999a74fdd76306db1258a699c376a5400ee5",
+      "originalAfter": "b3c3ddf9aaaec28004c1a77b4764999a74fdd76306db1258a699c376a5400ee5",
+      "candidate": "b3c3ddf9aaaec28004c1a77b4764999a74fdd76306db1258a699c376a5400ee5"
+    },
+    {
+      "path": "dist/src/ssh/exec.js",
+      "bytes": 4382,
+      "originalBefore": "5eabad172ebdfb35d16e255739d3dded8f55b47de493f4f11335eef132b06445",
+      "originalAfter": "5eabad172ebdfb35d16e255739d3dded8f55b47de493f4f11335eef132b06445",
+      "candidate": "5eabad172ebdfb35d16e255739d3dded8f55b47de493f4f11335eef132b06445"
+    },
+    {
+      "path": "dist/src/ssh/types.d.ts",
+      "bytes": 270,
+      "originalBefore": "c4e0642a0f1ffa9e2a838f178ab0efdd33f34f6fcdbb34efe3e912c231630d6a",
+      "originalAfter": "c4e0642a0f1ffa9e2a838f178ab0efdd33f34f6fcdbb34efe3e912c231630d6a",
+      "candidate": "c4e0642a0f1ffa9e2a838f178ab0efdd33f34f6fcdbb34efe3e912c231630d6a"
+    },
+    {
+      "path": "dist/src/ssh/utils.js",
+      "bytes": 8416,
+      "originalBefore": "cb3202dc250d5aac53bbb5b347968f23f7a559f73f2c9193df983c83d30be8a6",
+      "originalAfter": "cb3202dc250d5aac53bbb5b347968f23f7a559f73f2c9193df983c83d30be8a6",
+      "candidate": "cb3202dc250d5aac53bbb5b347968f23f7a559f73f2c9193df983c83d30be8a6"
+    },
+    {
+      "path": "dist/src/utils/async.js",
+      "bytes": 1308,
+      "originalBefore": "338a52e736f343aea664c1ad71960dbb7b1a96aa66b4f53267db25257ac49f13",
+      "originalAfter": "338a52e736f343aea664c1ad71960dbb7b1a96aa66b4f53267db25257ac49f13",
+      "candidate": "338a52e736f343aea664c1ad71960dbb7b1a96aa66b4f53267db25257ac49f13"
+    },
+    {
+      "path": "dist/src/utils/buffer-iter.js",
+      "bytes": 1682,
+      "originalBefore": "76c3679a679e51f92229189b860da4b0b9126a561b99c6fccbd958c05a5da5e3",
+      "originalAfter": "76c3679a679e51f92229189b860da4b0b9126a561b99c6fccbd958c05a5da5e3",
+      "candidate": "76c3679a679e51f92229189b860da4b0b9126a561b99c6fccbd958c05a5da5e3"
+    },
+    {
+      "path": "dist/src/utils/dns.js",
+      "bytes": 2117,
+      "originalBefore": "5cc72d8f600f5520aa6809bf1261a42c699a2fe758e8ff6d24940404787f5b5b",
+      "originalAfter": "5cc72d8f600f5520aa6809bf1261a42c699a2fe758e8ff6d24940404787f5b5b",
+      "candidate": "5cc72d8f600f5520aa6809bf1261a42c699a2fe758e8ff6d24940404787f5b5b"
+    },
+    {
+      "path": "dist/src/utils/empty-initrd.js",
+      "bytes": 2402,
+      "originalBefore": "ce1f1276b3614b38099dd1378b2ca7a9d7276e4c1811acac03818ffbbdf6c5f8",
+      "originalAfter": "ce1f1276b3614b38099dd1378b2ca7a9d7276e4c1811acac03818ffbbdf6c5f8",
+      "candidate": "ce1f1276b3614b38099dd1378b2ca7a9d7276e4c1811acac03818ffbbdf6c5f8"
+    },
+    {
+      "path": "dist/src/utils/env.js",
+      "bytes": 1796,
+      "originalBefore": "9f72181fc0bf4861e20d47499f3484c23c0af68e14b1751edfa8432194731363",
+      "originalAfter": "9f72181fc0bf4861e20d47499f3484c23c0af68e14b1751edfa8432194731363",
+      "candidate": "9f72181fc0bf4861e20d47499f3484c23c0af68e14b1751edfa8432194731363"
+    },
+    {
+      "path": "dist/src/utils/error.js",
+      "bytes": 208,
+      "originalBefore": "208a87a1ab99cc9b92a96e59cdd2ebec1ed5e5411455d625c9d9b4eeb543cd71",
+      "originalAfter": "208a87a1ab99cc9b92a96e59cdd2ebec1ed5e5411455d625c9d9b4eeb543cd71",
+      "candidate": "208a87a1ab99cc9b92a96e59cdd2ebec1ed5e5411455d625c9d9b4eeb543cd71"
+    },
+    {
+      "path": "dist/src/utils/ip.js",
+      "bytes": 4837,
+      "originalBefore": "a9bc369cbab15d1fdede2e72b78be9ccbe4be55cf6e8e40b707374039219bed5",
+      "originalAfter": "a9bc369cbab15d1fdede2e72b78be9ccbe4be55cf6e8e40b707374039219bed5",
+      "candidate": "a9bc369cbab15d1fdede2e72b78be9ccbe4be55cf6e8e40b707374039219bed5"
+    },
+    {
+      "path": "dist/src/utils/path.js",
+      "bytes": 451,
+      "originalBefore": "f3d484b46cadb5202c79007e03d423f0921480ffb9da0512a4d41a795cf8d175",
+      "originalAfter": "f3d484b46cadb5202c79007e03d423f0921480ffb9da0512a4d41a795cf8d175",
+      "candidate": "f3d484b46cadb5202c79007e03d423f0921480ffb9da0512a4d41a795cf8d175"
+    },
+    {
+      "path": "dist/src/utils/tty-attach.js",
+      "bytes": 2474,
+      "originalBefore": "6b90ad6090277b4f5cf2e166a1fafa9fdd9a60014c3d1ec729b37b197a13ed24",
+      "originalAfter": "6b90ad6090277b4f5cf2e166a1fafa9fdd9a60014c3d1ec729b37b197a13ed24",
+      "candidate": "6b90ad6090277b4f5cf2e166a1fafa9fdd9a60014c3d1ec729b37b197a13ed24"
+    },
+    {
+      "path": "dist/src/utils/uuid.js",
+      "bytes": 1244,
+      "originalBefore": "162d1493131dd13bb9cd6a294ebcaef423b368d11760693dacd40923a20ee4e5",
+      "originalAfter": "162d1493131dd13bb9cd6a294ebcaef423b368d11760693dacd40923a20ee4e5",
+      "candidate": "162d1493131dd13bb9cd6a294ebcaef423b368d11760693dacd40923a20ee4e5"
+    },
+    {
+      "path": "dist/src/vfs/errors.js",
+      "bytes": 551,
+      "originalBefore": "5b8ca49650bf13721a62c0051cc96eef6e85a0c35bb9a0efb2d5de5b4db59e7c",
+      "originalAfter": "5b8ca49650bf13721a62c0051cc96eef6e85a0c35bb9a0efb2d5de5b4db59e7c",
+      "candidate": "5b8ca49650bf13721a62c0051cc96eef6e85a0c35bb9a0efb2d5de5b4db59e7c"
+    },
+    {
+      "path": "dist/src/vfs/linux-errno.js",
+      "bytes": 2485,
+      "originalBefore": "e2ce30178cdcc184ee040417844b7c8bedb14c313032da64160448625c31a0ab",
+      "originalAfter": "e2ce30178cdcc184ee040417844b7c8bedb14c313032da64160448625c31a0ab",
+      "candidate": "e2ce30178cdcc184ee040417844b7c8bedb14c313032da64160448625c31a0ab"
+    },
+    {
+      "path": "dist/src/vfs/mounts.js",
+      "bytes": 22298,
+      "originalBefore": "8f806ad69162834d99245b6d01a524f7bf16bdab2d60866a1d6d70c7fed40290",
+      "originalAfter": "8f806ad69162834d99245b6d01a524f7bf16bdab2d60866a1d6d70c7fed40290",
+      "candidate": "8f806ad69162834d99245b6d01a524f7bf16bdab2d60866a1d6d70c7fed40290"
+    },
+    {
+      "path": "dist/src/vfs/node/index.d.ts",
+      "bytes": 12516,
+      "originalBefore": "a962d9d34fcaa9d44d5978ea5755b82dd9151aae2664ef9dd53927963b876dbf",
+      "originalAfter": "a962d9d34fcaa9d44d5978ea5755b82dd9151aae2664ef9dd53927963b876dbf",
+      "candidate": "a962d9d34fcaa9d44d5978ea5755b82dd9151aae2664ef9dd53927963b876dbf"
+    },
+    {
+      "path": "dist/src/vfs/node/index.js",
+      "bytes": 898,
+      "originalBefore": "4070abcc60e94a93f0097f79ad152db6c26c282b6e30c9d24a57e347aec0dd60",
+      "originalAfter": "4070abcc60e94a93f0097f79ad152db6c26c282b6e30c9d24a57e347aec0dd60",
+      "candidate": "4070abcc60e94a93f0097f79ad152db6c26c282b6e30c9d24a57e347aec0dd60"
+    },
+    {
+      "path": "dist/src/vfs/provider.d.ts",
+      "bytes": 5405,
+      "originalBefore": "cd779632876cf0e0cd4dcd182148e9bf2f18b77d1440e7a3dcd2b508a4be474d",
+      "originalAfter": "cd779632876cf0e0cd4dcd182148e9bf2f18b77d1440e7a3dcd2b508a4be474d",
+      "candidate": "cd779632876cf0e0cd4dcd182148e9bf2f18b77d1440e7a3dcd2b508a4be474d"
+    },
+    {
+      "path": "dist/src/vfs/provider.js",
+      "bytes": 19463,
+      "originalBefore": "b8c650ccde8e24d3cfca96d21ad13820257585108cc60f7831fa26cd1cddfe09",
+      "originalAfter": "b8c650ccde8e24d3cfca96d21ad13820257585108cc60f7831fa26cd1cddfe09",
+      "candidate": "b8c650ccde8e24d3cfca96d21ad13820257585108cc60f7831fa26cd1cddfe09"
+    },
+    {
+      "path": "dist/src/vfs/readonly-virtual.d.ts",
+      "bytes": 2524,
+      "originalBefore": "5848e2272cf0e271217ee0753b36617b707b1e2f369b1a139607d2a7559164e8",
+      "originalAfter": "5848e2272cf0e271217ee0753b36617b707b1e2f369b1a139607d2a7559164e8",
+      "candidate": "5848e2272cf0e271217ee0753b36617b707b1e2f369b1a139607d2a7559164e8"
+    },
+    {
+      "path": "dist/src/vfs/readonly-virtual.js",
+      "bytes": 2951,
+      "originalBefore": "7f16a4dff31b0b6d9b8f82bbc5bfea131ff853c3c5255f5e47cd427b3da9568e",
+      "originalAfter": "7f16a4dff31b0b6d9b8f82bbc5bfea131ff853c3c5255f5e47cd427b3da9568e",
+      "candidate": "7f16a4dff31b0b6d9b8f82bbc5bfea131ff853c3c5255f5e47cd427b3da9568e"
+    },
+    {
+      "path": "dist/src/vfs/readonly.d.ts",
+      "bytes": 2724,
+      "originalBefore": "bfe4db664174de131cf64509ada6f705109c29864c07a58fd3eba7119e1fe0f7",
+      "originalAfter": "bfe4db664174de131cf64509ada6f705109c29864c07a58fd3eba7119e1fe0f7",
+      "candidate": "bfe4db664174de131cf64509ada6f705109c29864c07a58fd3eba7119e1fe0f7"
+    },
+    {
+      "path": "dist/src/vfs/readonly.js",
+      "bytes": 5079,
+      "originalBefore": "c065a0a70aca49f5e4d8db7a24510638a9747aff9bb11455ef732eae6c6673ad",
+      "originalAfter": "c065a0a70aca49f5e4d8db7a24510638a9747aff9bb11455ef732eae6c6673ad",
+      "candidate": "c065a0a70aca49f5e4d8db7a24510638a9747aff9bb11455ef732eae6c6673ad"
+    },
+    {
+      "path": "dist/src/vfs/rpc-service.d.ts",
+      "bytes": 2754,
+      "originalBefore": "40dbfccfa2b8a59c17058fbd19eb9b657d766f818336e89375aed45eca8d5a2f",
+      "originalAfter": "40dbfccfa2b8a59c17058fbd19eb9b657d766f818336e89375aed45eca8d5a2f",
+      "candidate": "40dbfccfa2b8a59c17058fbd19eb9b657d766f818336e89375aed45eca8d5a2f"
+    },
+    {
+      "path": "dist/src/vfs/rpc-service.js",
+      "bytes": 36577,
+      "originalBefore": "a009eed7cae5babfea8d26ac167838b54e92dc909454022adec43bcb9b886674",
+      "originalAfter": "a009eed7cae5babfea8d26ac167838b54e92dc909454022adec43bcb9b886674",
+      "candidate": "a009eed7cae5babfea8d26ac167838b54e92dc909454022adec43bcb9b886674"
+    },
+    {
+      "path": "dist/src/vfs/shadow.d.ts",
+      "bytes": 5806,
+      "originalBefore": "77bdc4e6229889794173ab059be69171cdc3902bad1a484da4c8ea8e3901baab",
+      "originalAfter": "77bdc4e6229889794173ab059be69171cdc3902bad1a484da4c8ea8e3901baab",
+      "candidate": "77bdc4e6229889794173ab059be69171cdc3902bad1a484da4c8ea8e3901baab"
+    },
+    {
+      "path": "dist/src/vfs/shadow.js",
+      "bytes": 25686,
+      "originalBefore": "e4f882daf017d619a81a90b820e18139016414033f9e680bb6bbff61d184a2ba",
+      "originalAfter": "e4f882daf017d619a81a90b820e18139016414033f9e680bb6bbff61d184a2ba",
+      "candidate": "e4f882daf017d619a81a90b820e18139016414033f9e680bb6bbff61d184a2ba"
+    },
+    {
+      "path": "dist/src/vfs/statfs.js",
+      "bytes": 2445,
+      "originalBefore": "87c692aa7fe2f6b1a85f4ff4e568fb9b3857d8aae990d5bf4496c192e14a9344",
+      "originalAfter": "87c692aa7fe2f6b1a85f4ff4e568fb9b3857d8aae990d5bf4496c192e14a9344",
+      "candidate": "87c692aa7fe2f6b1a85f4ff4e568fb9b3857d8aae990d5bf4496c192e14a9344"
+    },
+    {
+      "path": "dist/src/vfs/utils.d.ts",
+      "bytes": 1391,
+      "originalBefore": "06d366b377f886dbfefd907f712df8ed6e808861469d21883378f8a0c00fd9c9",
+      "originalAfter": "06d366b377f886dbfefd907f712df8ed6e808861469d21883378f8a0c00fd9c9",
+      "candidate": "06d366b377f886dbfefd907f712df8ed6e808861469d21883378f8a0c00fd9c9"
+    },
+    {
+      "path": "dist/src/vfs/utils.js",
+      "bytes": 2638,
+      "originalBefore": "9e5f0f0400c54fc320734bd3cc01b2e1bbea5c443b785c2811ae3bc18ecbff7a",
+      "originalAfter": "9e5f0f0400c54fc320734bd3cc01b2e1bbea5c443b785c2811ae3bc18ecbff7a",
+      "candidate": "9e5f0f0400c54fc320734bd3cc01b2e1bbea5c443b785c2811ae3bc18ecbff7a"
+    },
+    {
+      "path": "dist/src/vm/core.d.ts",
+      "bytes": 8942,
+      "originalBefore": "25e41db60ec0f2b1a77beea696198b55fdad34e0e7bf095100c5595af94e4cb8",
+      "originalAfter": "25e41db60ec0f2b1a77beea696198b55fdad34e0e7bf095100c5595af94e4cb8",
+      "candidate": "25e41db60ec0f2b1a77beea696198b55fdad34e0e7bf095100c5595af94e4cb8"
+    },
+    {
+      "path": "dist/src/vm/core.js",
+      "bytes": 66690,
+      "originalBefore": "6a0d99ed961020a9fbceb96bc538b97b5e6bd36715dc0a078822eb438fc94640",
+      "originalAfter": "6a0d99ed961020a9fbceb96bc538b97b5e6bd36715dc0a078822eb438fc94640",
+      "candidate": "6a0d99ed961020a9fbceb96bc538b97b5e6bd36715dc0a078822eb438fc94640"
+    },
+    {
+      "path": "dist/src/vm/fs.d.ts",
+      "bytes": 6370,
+      "originalBefore": "5c243f184f3d4a9bc3917432c94105433382b715b7e269cf45d4d3bf4da5b8d0",
+      "originalAfter": "5c243f184f3d4a9bc3917432c94105433382b715b7e269cf45d4d3bf4da5b8d0",
+      "candidate": "5c243f184f3d4a9bc3917432c94105433382b715b7e269cf45d4d3bf4da5b8d0"
+    },
+    {
+      "path": "dist/src/vm/fs.js",
+      "bytes": 23460,
+      "originalBefore": "14a5abe54af631c326cd340f8c79af8e0d295a9f700d893f55adcb8309617283",
+      "originalAfter": "14a5abe54af631c326cd340f8c79af8e0d295a9f700d893f55adcb8309617283",
+      "candidate": "14a5abe54af631c326cd340f8c79af8e0d295a9f700d893f55adcb8309617283"
+    },
+    {
+      "path": "dist/src/vm/mitm-vfs.js",
+      "bytes": 1313,
+      "originalBefore": "97b2ca7a6d362434d554c04171535c87ba9a29f16eb83282461d753fe0e796a1",
+      "originalAfter": "97b2ca7a6d362434d554c04171535c87ba9a29f16eb83282461d753fe0e796a1",
+      "candidate": "97b2ca7a6d362434d554c04171535c87ba9a29f16eb83282461d753fe0e796a1"
+    },
+    {
+      "path": "dist/src/vm/types.d.ts",
+      "bytes": 2637,
+      "originalBefore": "25b22cb3f75dda26d0f361e3462889bcba87fbcb478385c346da348ec617f8f1",
+      "originalAfter": "25b22cb3f75dda26d0f361e3462889bcba87fbcb478385c346da348ec617f8f1",
+      "candidate": "25b22cb3f75dda26d0f361e3462889bcba87fbcb478385c346da348ec617f8f1"
+    },
+    {
+      "path": "dist/src/x509.js",
+      "bytes": 13049,
+      "originalBefore": "fd694c22350e05ea244b7c5ccd3f62c59a3db58b06a387bfdc43360da87be0cd",
+      "originalAfter": "fd694c22350e05ea244b7c5ccd3f62c59a3db58b06a387bfdc43360da87be0cd",
+      "candidate": "fd694c22350e05ea244b7c5ccd3f62c59a3db58b06a387bfdc43360da87be0cd"
+    },
+    {
+      "path": "package.json",
+      "bytes": 1948,
+      "originalBefore": "89bbb6b730a4279a9a932273194a82359109d4de8a7fcbbde7dd0267d202d0ab",
+      "originalAfter": "89bbb6b730a4279a9a932273194a82359109d4de8a7fcbbde7dd0267d202d0ab",
+      "candidate": "89bbb6b730a4279a9a932273194a82359109d4de8a7fcbbde7dd0267d202d0ab"
+    }
+  ]
+}

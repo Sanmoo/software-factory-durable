@@ -1,0 +1,9 @@
+export declare const DEFAULT_MAX_STDIN_BYTES: number;
+export declare const DEFAULT_MAX_QUEUED_STDIN_BYTES: number;
+export declare const DEFAULT_MAX_TOTAL_QUEUED_STDIN_BYTES: number;
+/** Pure validation against already-resolved native limits, with shared defaults. */
+export declare function validateStdinCapacity(option: unknown, limits: {
+    maxStdinBytes?: number;
+    maxQueuedStdinBytes?: number;
+    maxTotalQueuedStdinBytes?: number;
+}): number;

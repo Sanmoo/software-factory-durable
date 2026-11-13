@@ -1,0 +1,66 @@
+{
+  "status": "partial",
+  "baselineCommit": "bf142b6b08a1e7e50930709b6eb18147936bf77a",
+  "baselinePatchBytes": 0,
+  "baselinePatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "originalInventorySha256": "03a1fc3d3f7a5d2f90b115f977885682727ca10337d153494cae7d28ad12b66b",
+  "patchSha256": "441621ba414e419cae9715e3ffbfa3059d4048247972515db8db4cf3cfdcca88",
+  "sourceFileCount": 9,
+  "files": [
+    {
+      "path": "dist/src/exec.d.ts",
+      "beforeSha256": "bd3176d400947ecf0dfe7ae5a3636fba14ee5c3e9d3e12a2160dac29ff3333c9",
+      "afterSha256": "523454703bdfedc1b97bc9051756a09f3a70da465818e630d71e67f8ff4ee2db",
+      "afterBytes": 7236
+    },
+    {
+      "path": "dist/src/sandbox/client.d.ts",
+      "beforeSha256": "d67230c5152b47cd9037e71f7efb9f4c1d54f3664b6b921f63e3f09dd59a79de",
+      "afterSha256": "c5bffecc2e1aa6d0b7b4a960207702a2c3d2aefec82928795e0bfb31a4248577",
+      "afterBytes": 1368
+    },
+    {
+      "path": "dist/src/sandbox/server-ops.d.ts",
+      "beforeSha256": "c6428de143676cbfd7a823ea178680f65877ad3e1a41765ffa96c143dcbc08bd",
+      "afterSha256": "5a68a78fe02130d226f6d3ffb7071bd2d81fec2ed9d18193d8db6ad46dad604b",
+      "afterBytes": 5342
+    },
+    {
+      "path": "dist/src/sandbox/server-ops.js",
+      "beforeSha256": "07388a20ae4564255f11729e27fa2b55923cefea81d64cbeaaa4b3a5f8f95311",
+      "afterSha256": "029bfdb8758b28114770e2f46ef621c6978352c80413e805f6e1df1713056c51",
+      "afterBytes": 51646
+    },
+    {
+      "path": "dist/src/sandbox/server-options.js",
+      "beforeSha256": "51215479d05fc37ff387a1f8fa64db16937cddfdada111ba73918cca37d3aacf",
+      "afterSha256": "b0316e4b2c2b38c73c96a112dbec5d5f9eaa4c27acbf75b41463d44dfba0973b",
+      "afterBytes": 22039
+    },
+    {
+      "path": "dist/src/sandbox/stdin-capacity.d.ts",
+      "beforeSha256": null,
+      "afterSha256": "fc75146dfaee87d6a8d096dfa80bf8a5118d78fa1d27b25a989abeff63b9bf96",
+      "afterBytes": 453
+    },
+    {
+      "path": "dist/src/sandbox/stdin-capacity.js",
+      "beforeSha256": null,
+      "afterSha256": "af81611b60dbe5853c2d0f4d05a901ab632c6792b6aaa5ecca6ccc7e5053ff8d",
+      "afterBytes": 995
+    },
+    {
+      "path": "dist/src/vm/core.d.ts",
+      "beforeSha256": "25e41db60ec0f2b1a77beea696198b55fdad34e0e7bf095100c5595af94e4cb8",
+      "afterSha256": "36365904e8cec96de83ed07b917828e1b0f44b38ed3c72ef847cb8ff6169eb22",
+      "afterBytes": 8973
+    },
+    {
+      "path": "dist/src/vm/core.js",
+      "beforeSha256": "6a0d99ed961020a9fbceb96bc538b97b5e6bd36715dc0a078822eb438fc94640",
+      "afterSha256": "d5824aa5071783600ff9c187f86841e26fd9e92b41ee5aeea4d40db8f1f5a105",
+      "afterBytes": 70085
+    }
+  ],
+  "addedPureRuntimeModules": 1
+}

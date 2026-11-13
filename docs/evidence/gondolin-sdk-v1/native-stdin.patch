@@ -1,0 +1,377 @@
+diff --git a/sdk/dist/src/exec.d.ts b/sdk/dist/src/exec.d.ts
+index 17dafce..5cebfe7 100644
+--- a/sdk/dist/src/exec.d.ts
++++ b/sdk/dist/src/exec.d.ts
+@@ -47,6 +47,16 @@ export type ExecOptions = {
+     cwd?: string;
+     /** stdin input (true enables manual write/end) */
+     stdin?: boolean | string | Buffer | Readable | AsyncIterable<Buffer>;
++    /**
++     * Opt-in native queue reservation before each AsyncIterable<Buffer> pull.
++     * Each Buffer must be nonempty and <= maxChunkBytes, which must fit native per-exec,
++     * total queue and message caps. The declaration is validated and captured
++     * before startup; other stdin forms are rejected in this mode.
++     * Source completion is required for success. Terminal settlement attempts
++     * iterator return without awaiting it; arbitrary blocked producers need not
++     * interrupt promptly. Manual write/end and default behavior are unchanged.
++     */
++    stdinCapacity?: { maxChunkBytes: number };
+     /** whether to allocate a pty */
+     pty?: boolean;
+     /** string encoding for decoded output (default: utf-8) */
+@@ -122,6 +132,12 @@ export type ExecSession = {
+     reject: (error: Error) => void;
+     resultPromise: Promise<ExecResult>;
+     stdinEnabled: boolean;
++    stdinSourceComplete?: boolean;
++    stdinCapacityChannel?: {
++        reserve: () => Promise<void>;
++        send: (data: Buffer, eof?: boolean) => void;
++        close: () => void;
++    };
+     encoding: BufferEncoding;
+     signal?: AbortSignal;
+     signalListener?: () => void;
+diff --git a/sdk/dist/src/sandbox/client.d.ts b/sdk/dist/src/sandbox/client.d.ts
+index 1cd60fc..8af896e 100644
+--- a/sdk/dist/src/sandbox/client.d.ts
++++ b/sdk/dist/src/sandbox/client.d.ts
+@@ -7,6 +7,12 @@ export type SandboxClient = {
+ export type SandboxConnection = {
+     /** send a control message to the guest */
+     send: (message: ClientMessage) => void;
++    /** Internal local native-queue admission used by VM's public stdinCapacity option. */
++    openStdinCapacity: (id: number, maxChunkBytes: number) => {
++        reserve: () => Promise<void>;
++        send: (data: Buffer, eof?: boolean) => void;
++        close: () => void;
++    };
+     /** close the underlying connection */
+     close: () => void;
+ };
+diff --git a/sdk/dist/src/sandbox/server-ops.d.ts b/sdk/dist/src/sandbox/server-ops.d.ts
+index e7a22e6..40d4365 100644
+--- a/sdk/dist/src/sandbox/server-ops.d.ts
++++ b/sdk/dist/src/sandbox/server-ops.d.ts
+@@ -89,6 +89,8 @@ export declare class SandboxServerOps {
+     rejectFileOperation(id: number, err: Error): void;
+     failFileOperations(message: string): void;
+     disconnectClient(client: SandboxClient): void;
++    openStdinCapacity(client: SandboxClient, id: number, bytes: number): ReturnType<SandboxConnection["openStdinCapacity"]>;
++    wakeStdinCapacity(): void;
+     clearQueuedStdin(id: number): void;
+     handleClientMessage(client: SandboxClient, message: ClientMessage): void;
+     handleBoot(client: SandboxClient, message: BootCommandMessage): Promise<void>;
+diff --git a/sdk/dist/src/sandbox/server-ops.js b/sdk/dist/src/sandbox/server-ops.js
+index beba7ff..beb025a 100644
+--- a/sdk/dist/src/sandbox/server-ops.js
++++ b/sdk/dist/src/sandbox/server-ops.js
+@@ -57,6 +57,7 @@ export class SandboxServerOps {
+         return {
+             send: (message) => this.handleClientMessage(client, message),
+             close: () => this.closeClient(client),
++            openStdinCapacity: (id, bytes) => this.openStdinCapacity(client, id, bytes),
+         };
+     }
+     /**
+@@ -624,13 +625,70 @@ export class SandboxServerOps {
+             this.execQueue = this.execQueue.filter((entry) => entry.client !== client);
+         }
+     }
++    openStdinCapacity(client, id, bytes) {
++        if (!Number.isSafeInteger(bytes) || bytes <= 0 ||
++            bytes > Math.min(this.options.maxStdinBytes, this.options.maxQueuedStdinBytes,
++                this.options.maxTotalQueuedStdinBytes))
++            throw new Error("invalid stdin capacity maxChunkBytes");
++        if (this.inflight.get(id) !== client || !this.stdinAllowed.has(id))
++            throw new Error("stdin capacity requires an active stdin exec");
++        this.stdinCapacity ??= new Map();
++        if (this.stdinCapacity.has(id)) throw new Error("stdin capacity already opened");
++        const entry = { bytes, reserved: 0, waiter: null, closed: false };
++        this.stdinCapacity.set(id, entry);
++        const close = () => {
++            if (entry.closed) return;
++            entry.closed = true;
++            this.stdinCapacity.delete(id);
++            entry.reserved = 0;
++            entry.waiter?.reject(new Error("stdin capacity closed"));
++            entry.waiter = null;
++            this.clearQueuedStdin(id);
++        };
++        entry.close = close;
++        return {
++            reserve: () => {
++                if (entry.closed) return Promise.reject(new Error("stdin capacity closed"));
++                if (entry.waiter || entry.reserved) return Promise.reject(new Error("stdin reservation already pending"));
++                const pending = Promise.withResolvers();
++                entry.waiter = pending;
++                this.wakeStdinCapacity();
++                return pending.promise;
++            },
++            send: (data, eof = false) => {
++                if (entry.closed || entry.reserved !== bytes) throw new Error("stdin capacity not reserved");
++                if (data.length > bytes) throw new Error("stdin chunk exceeds declared maxChunkBytes");
++                entry.reserved = 0;
++                this.handleStdin(client, { type: "stdin", id, data: data.toString("base64"), eof });
++                this.wakeStdinCapacity();
++            },
++            close,
++        };
++    }
++    wakeStdinCapacity() {
++        if (!this.stdinCapacity) return;
++        let reserved = 0;
++        for (const entry of this.stdinCapacity.values()) reserved += entry.reserved;
++        for (const [id, entry] of this.stdinCapacity) {
++            if (!entry.waiter) continue;
++            if ((this.queuedStdinBytes.get(id) ?? 0) + entry.bytes > this.options.maxQueuedStdinBytes ||
++                this.queuedStdinBytesTotal + reserved + entry.bytes > this.options.maxTotalQueuedStdinBytes) continue;
++            entry.reserved = entry.bytes;
++            reserved += entry.bytes;
++            const waiter = entry.waiter;
++            entry.waiter = null;
++            waiter.resolve();
++        }
++    }
+     clearQueuedStdin(id) {
++        this.stdinCapacity?.get(id)?.close();
+         const bytes = this.queuedStdinBytes.get(id) ?? 0;
+         if (bytes > 0) {
+             this.queuedStdinBytesTotal = Math.max(0, this.queuedStdinBytesTotal - bytes);
+         }
+         this.queuedStdin.delete(id);
+         this.queuedStdinBytes.delete(id);
++        this.wakeStdinCapacity();
+     }
+     handleClientMessage(client, message) {
+         if (!this.clients.has(client))
+@@ -959,9 +1017,11 @@ export class SandboxServerOps {
+             const queuedBytes = this.queuedStdinBytes.get(message.id) ?? 0;
+             const nextBytes = queuedBytes + data.length;
+             const nextTotal = this.queuedStdinBytesTotal + data.length;
+-            const overflowMessage = nextBytes > this.options.maxQueuedStdinBytes
++            let reserved = 0;
++            for (const entry of this.stdinCapacity?.values() ?? []) reserved += entry.reserved;
++            const overflowMessage = nextBytes + (this.stdinCapacity?.get(message.id)?.reserved ?? 0) > this.options.maxQueuedStdinBytes
+                 ? `queued stdin exceeds limit (${this.options.maxQueuedStdinBytes} bytes)`
+-                : nextTotal > this.options.maxTotalQueuedStdinBytes
++                : nextTotal + reserved > this.options.maxTotalQueuedStdinBytes
+                     ? `total queued stdin exceeds limit (${this.options.maxTotalQueuedStdinBytes} bytes)`
+                     : null;
+             if (overflowMessage) {
+@@ -1160,12 +1220,14 @@ export class SandboxServerOps {
+         if (removed >= list.length) {
+             this.queuedStdin.delete(id);
+             this.queuedStdinBytes.delete(id);
++            this.wakeStdinCapacity();
+             return true;
+         }
+         if (removed > 0) {
+             this.queuedStdin.set(id, list.slice(removed));
+         }
+         this.queuedStdinBytes.set(id, remainingBytes);
++        this.wakeStdinCapacity();
+         return false;
+     }
+     flushQueuedStdin() {
+diff --git a/sdk/dist/src/sandbox/server-options.js b/sdk/dist/src/sandbox/server-options.js
+index 60766fc..f4eedd7 100644
+--- a/sdk/dist/src/sandbox/server-options.js
++++ b/sdk/dist/src/sandbox/server-options.js
+@@ -12,10 +12,8 @@ import { DEFAULT_MAX_HTTP_BODY_BYTES, DEFAULT_MAX_HTTP_RESPONSE_BODY_BYTES, } fr
+ import { ensureEmptyInitrdFile, getDefaultKrunInitrdPath, } from "../utils/empty-initrd.js";
+ import { isPathWithin } from "../utils/path.js";
+ import { normalizeGuestTmpfs } from "./tmpfs.js";
++import { DEFAULT_MAX_STDIN_BYTES, DEFAULT_MAX_QUEUED_STDIN_BYTES, DEFAULT_MAX_TOTAL_QUEUED_STDIN_BYTES } from "./stdin-capacity.js";
+ const require = createRequire(import.meta.url);
+-const DEFAULT_MAX_STDIN_BYTES = 64 * 1024;
+-const DEFAULT_MAX_QUEUED_STDIN_BYTES = 8 * 1024 * 1024;
+-const DEFAULT_MAX_TOTAL_QUEUED_STDIN_BYTES = 32 * 1024 * 1024;
+ const DEFAULT_MAX_QUEUED_EXECS = 64;
+ const DEFAULT_DARWIN_HVF_IDLE_PAUSE_MS = 30_000;
+ /**
+diff --git a/sdk/dist/src/sandbox/stdin-capacity.d.ts b/sdk/dist/src/sandbox/stdin-capacity.d.ts
+new file mode 100644
+index 0000000..8c3a931
+--- /dev/null
++++ b/sdk/dist/src/sandbox/stdin-capacity.d.ts
+@@ -0,0 +1,9 @@
++export declare const DEFAULT_MAX_STDIN_BYTES: number;
++export declare const DEFAULT_MAX_QUEUED_STDIN_BYTES: number;
++export declare const DEFAULT_MAX_TOTAL_QUEUED_STDIN_BYTES: number;
++/** Pure validation against already-resolved native limits, with shared defaults. */
++export declare function validateStdinCapacity(option: unknown, limits: {
++    maxStdinBytes?: number;
++    maxQueuedStdinBytes?: number;
++    maxTotalQueuedStdinBytes?: number;
++}): number;
+diff --git a/sdk/dist/src/sandbox/stdin-capacity.js b/sdk/dist/src/sandbox/stdin-capacity.js
+new file mode 100644
+index 0000000..c4b1b5c
+--- /dev/null
++++ b/sdk/dist/src/sandbox/stdin-capacity.js
+@@ -0,0 +1,18 @@
++// Pure stdin constraints: shared with option resolution, without boot dependencies.
++export const DEFAULT_MAX_STDIN_BYTES = 64 * 1024;
++export const DEFAULT_MAX_QUEUED_STDIN_BYTES = 8 * 1024 * 1024;
++export const DEFAULT_MAX_TOTAL_QUEUED_STDIN_BYTES = 32 * 1024 * 1024;
++
++export function validateStdinCapacity(option, limits) {
++    if (option === null || typeof option !== "object" || Array.isArray(option)) {
++        throw new Error("stdinCapacity must be an object with maxChunkBytes");
++    }
++    const maxChunkBytes = option.maxChunkBytes;
++    if (!Number.isSafeInteger(maxChunkBytes) || maxChunkBytes <= 0 ||
++        maxChunkBytes > (limits.maxStdinBytes ?? DEFAULT_MAX_STDIN_BYTES) ||
++        maxChunkBytes > (limits.maxQueuedStdinBytes ?? DEFAULT_MAX_QUEUED_STDIN_BYTES) ||
++        maxChunkBytes > (limits.maxTotalQueuedStdinBytes ?? DEFAULT_MAX_TOTAL_QUEUED_STDIN_BYTES)) {
++        throw new Error("stdin capacity chunk declaration exceeds native limits");
++    }
++    return maxChunkBytes;
++}
+diff --git a/sdk/dist/src/vm/core.d.ts b/sdk/dist/src/vm/core.d.ts
+index ac2be47..f4d5943 100644
+--- a/sdk/dist/src/vm/core.d.ts
++++ b/sdk/dist/src/vm/core.d.ts
+@@ -214,6 +214,7 @@ export declare class VM {
+     private cleanupRootDiskSync;
+     private closeInternal;
+     private allocateId;
++    private pipeCapacityStdin;
+     private pipeStdin;
+     private markSessionReady;
+     private sendStdinData;
+diff --git a/sdk/dist/src/vm/core.js b/sdk/dist/src/vm/core.js
+index 6954662..2d2009e 100644
+--- a/sdk/dist/src/vm/core.js
++++ b/sdk/dist/src/vm/core.js
+@@ -25,6 +25,7 @@ import { MountRouterProvider, listMountPaths, normalizeMountMap, normalizeMountP
+ import { VmFsController } from "./fs.js";
+ import { ExecProcess, createExecSession, finishExecSession, rejectExecSession, resolveOutputMode, applyOutputChunk, normalizeCommand, toAsyncIterable, } from "../exec.js";
+ import { errorMessage } from "../utils/error.js";
++import { validateStdinCapacity } from "../sandbox/stdin-capacity.js";
+ const MAX_REQUEST_ID = 0xffffffff;
+ const DEFAULT_STDIN_CHUNK = 32 * 1024;
+ const DEFAULT_VM_START_TIMEOUT_MS = 120000;
+@@ -764,8 +765,14 @@ fi
+     }
+     execInternal(command, options) {
+         const { cmd, argv } = normalizeCommand(command, options);
+-        const id = this.allocateId();
+         const stdinSetting = options.stdin;
++        const capacityOption = options.stdinCapacity;
++        const maxChunkBytes = capacityOption === undefined ? undefined
++            : validateStdinCapacity(capacityOption, this.resolvedSandboxOptions);
++        if (maxChunkBytes !== undefined &&
++            (!stdinSetting || typeof stdinSetting[Symbol.asyncIterator] !== "function"))
++            throw new Error("stdinCapacity requires an AsyncIterable<Buffer>");
++        const id = this.allocateId();
+         const stdinEnabled = stdinSetting !== undefined && stdinSetting !== false;
+         const stdout = resolveOutputMode(options.stdout, options.buffer, "stdout");
+         const stderr = resolveOutputMode(options.stderr, options.buffer, "stderr");
+@@ -777,6 +784,19 @@ fi
+             stderr,
+             windowBytes: options.windowBytes,
+         });
++        let producerCleanup;
++        if (maxChunkBytes !== undefined) {
++            session.stdinSourceComplete = false;
++            const settle = () => {
++                session.stdinCapacityChannel?.close();
++                producerCleanup?.();
++            };
++            session.resultPromise.then(settle, settle);
++        }
++        const registerCleanup = cleanup => {
++            producerCleanup = cleanup;
++            if (!this.sessions.has(id)) cleanup();
++        };
+         // Setup abort handling
+         if (options.signal) {
+             const onAbort = () => {
+@@ -811,10 +831,10 @@ fi
+             cleanup: (id) => this.sessions.delete(id),
+         });
+         // Start the command asynchronously
+-        this.startExec(id, cmd, argv, options, session, stdinSetting);
++        this.startExec(id, cmd, argv, options, session, stdinSetting, maxChunkBytes, registerCleanup);
+         return proc;
+     }
+-    async startExec(id, cmd, argv, options, session, stdinSetting) {
++    async startExec(id, cmd, argv, options, session, stdinSetting, maxChunkBytes, registerCleanup) {
+         try {
+             await this.start();
+             const mergedEnv = mergeEnvInputs(this.defaultEnv, options.env);
+@@ -836,7 +856,12 @@ fi
+             if (session.stdinEnabled &&
+                 stdinSetting !== true &&
+                 stdinSetting !== undefined) {
+-                void this.pipeStdin(id, stdinSetting, session);
++                if (maxChunkBytes !== undefined) {
++                    if (!this.sessions.has(id)) return;
++                    session.stdinCapacityChannel = this.connection.openStdinCapacity(id, maxChunkBytes);
++                    void this.pipeCapacityStdin(id, stdinSetting, session, maxChunkBytes, registerCleanup);
++                }
++                else void this.pipeStdin(id, stdinSetting, session);
+             }
+         }
+         catch (err) {
+@@ -1084,6 +1109,46 @@ fi
+         }
+         throw new Error("no available request ids");
+     }
++    async pipeCapacityStdin(id, input, session, maxChunkBytes, registerCleanup) {
++        const channel = session.stdinCapacityChannel;
++        let iterator;
++        let cleaned = false;
++        const cleanup = () => {
++            if (cleaned) return;
++            cleaned = true;
++            // Keep successfully queued EOF until native delivery/settlement.
++            if (!session.stdinSourceComplete) channel.close();
++            // Cooperative iterators may release pending next immediately. This
++            // does not promise interruption of arbitrary async generators.
++            try { void Promise.resolve(iterator?.return?.()).catch(() => {}); } catch {}
++        };
++        try {
++            iterator = input[Symbol.asyncIterator]();
++            registerCleanup(cleanup);
++            while (this.sessions.has(id)) {
++                await channel.reserve();
++                if (!this.sessions.has(id)) return;
++                const item = await iterator.next();
++                if (!this.sessions.has(id)) return;
++                if (item.done) {
++                    session.stdinSourceComplete = true;
++                    channel.send(Buffer.alloc(0), true);
++                    return;
++                }
++                // Validate before any whole-chunk copy or base64 encoding.
++                if (!Buffer.isBuffer(item.value) || item.value.length === 0 || item.value.length > maxChunkBytes)
++                    throw new Error("stdin chunk exceeds declared maxChunkBytes or is not a Buffer");
++                channel.send(item.value);
++            }
++        }
++        catch (err) {
++            rejectExecSession(session, err instanceof Error ? err : new Error(String(err)));
++            this.sessions.delete(id);
++        }
++        finally {
++            cleanup();
++        }
++    }
+     async pipeStdin(id, input, session) {
+         if (!session.stdinEnabled)
+             return;
+@@ -1457,6 +1522,11 @@ fi
+         if (!session)
+             return;
+         this.sessions.delete(message.id);
++        if (session.stdinSourceComplete === false) {
++            session.stdinCapacityChannel?.close();
++            rejectExecSession(session, new Error("exec exited before stdin source completed"));
++            return;
++        }
+         finishExecSession(session, message.exit_code ?? 1, message.signal);
+     }
+     handleError(message) {
