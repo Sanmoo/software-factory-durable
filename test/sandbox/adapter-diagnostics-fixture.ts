@@ -330,6 +330,7 @@ const sdkDouble = {
         }, result: Promise.resolve({ exitCode: 0 }) };
       }
       if (nativeBuilder && argv[0] === '/usr/bin/python3') {
+        if (nativeCopy) audit('write-attempt');
         assert.ok(typeof options.stdin === 'string');
         assert.deepEqual(argv.slice(0, 4), ['/usr/bin/python3', '-I', '-S', '-c']);
         assert.equal(argv.length, 7); assert.deepEqual(options.env, {}); assert.equal(options.cwd, '/');
