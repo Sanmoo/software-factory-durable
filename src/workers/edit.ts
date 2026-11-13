@@ -64,7 +64,9 @@ export function builderEdit(context: ToolContext, sandbox: ToolProjection, onCri
   const metadataOptions: LexicalEditOptions = { mutationQueueMode: 'lexical',
     operations: { access: inactive, readFile: inactive, writeFile: inactive } };
   const definition = createEditTool('/workspace', metadataOptions);
+  // Fixed host composition: the shared channel admits one tool at a time.
   return { ...definition,
+    executionMode: 'sequential',
     prepareArguments(input) {
       const bounded = boundedInput(input);
       return boundedInput(definition.prepareArguments?.(bounded) ?? bounded) as ReturnType<NonNullable<typeof definition.prepareArguments>>;

@@ -28,7 +28,9 @@ export function builderWrite(context: ToolContext, sandbox: ToolProjection, onCr
     } };
     return createWriteTool(cwd, options);
   };
+  // Fixed host composition: the shared channel admits one tool at a time.
   return { name: 'write', label: 'write',
+    executionMode: 'sequential',
     description: 'Create or overwrite a regular file in the confined guest. All symlinks are denied. Non-atomic direct writes preserve existing inode/mode; truncation, partial data or directories may remain on failure, including empty writes. Development transport content limit: 8192 characters and 49152 encoded bytes.',
     parameters: native('/workspace').parameters,
     async execute(toolCallId, args, signal, onUpdate, ctx) {

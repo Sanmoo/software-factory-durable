@@ -35,7 +35,9 @@ export function builderBash(context: ToolContext, sandbox: ToolProjection, onCri
       return { exitCode: result.exitCode };
     } },
   });
+  // Fixed host composition: the shared channel admits one tool at a time.
   return { name: 'bash', label: 'bash',
+    executionMode: 'sequential',
     description: 'Run Bash in the bound Builder guest with empty environment and fixed /workspace cwd. UTF-8 text only; binary output unsupported. Host fullOutputPath is protected host metadata, not a guest path. Timeout/abort requests do not prove physical cessation.',
     parameters: native().parameters,
     async execute(callId, args, signal, onUpdate) {

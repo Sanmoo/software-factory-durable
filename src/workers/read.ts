@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { createReadTool, type ReadOperations } from '#factory-pi';
+import { createReadTool, type ReadOperations, type ToolDefinition } from '#factory-pi';
 import { detectSupportedImageMimeType } from '#factory-image-mime';
 import type { ToolContext, ToolProjection, ReadResult } from '../sandbox/index.js';
 
@@ -7,7 +7,9 @@ import type { ToolContext, ToolProjection, ReadResult } from '../sandbox/index.j
  * Q5 calls below are implementation operations, not additional model tools. */
 export function reviewerRead(context: ToolContext, sandbox: ToolProjection, criticalFailure = () => {}) {
   const definition = createReadTool('/workspace');
+  // Fixed host composition: the shared channel admits one tool at a time.
   return { ...definition,
+    executionMode: 'sequential',
     description: definition.description + '\nFactory development profile: PNG/JPEG/GIF/WebP require an explicit host source-byte budget. Other binary formats are not qualified.',
     async execute(...args: Parameters<typeof definition.execute>) {
       function failed(code: string): never {
@@ -81,5 +83,5 @@ export function reviewerRead(context: ToolContext, sandbox: ToolProjection, crit
         if (capture?.format === 'raw') criticalFailure();
         throw error;
       }
-  } };
+  } } satisfies ToolDefinition;
 }
