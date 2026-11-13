@@ -160,7 +160,7 @@ cp.spawn = ((command: string, args: string[], options: cp.SpawnOptions) => {
   if (nativeCopyRead) preload = new URL('./fixtures/adapter-copy-read-provider-preload.js', import.meta.url);
   const child = actualSpawn(command, ['--import', preload.pathname, ...args], options);
   if (nativeEdit) editChild = child;
-  child.on('message', message => {
+  const observeMessage = (message: unknown) => {
     audit('worker-message:' + JSON.stringify(message));
     if (message && typeof message === 'object' && 'kind' in message && message.kind === 'provider-request') {
       const work = join(root!, workId, 'evidence');
@@ -171,7 +171,22 @@ cp.spawn = ((command: string, args: string[], options: cp.SpawnOptions) => {
         } catch { return false; }
       }), 'protected start must be complete before any provider request');
     }
-  });
+  };
+  // Fixture telemetry is not part of the production child protocol. Consume its
+  // exact shape before EventEmitter dispatch, retaining the attempt/start audit.
+  // Every other message still reaches the unchanged strict production receiver.
+  const emit = child.emit.bind(child);
+  child.emit = (event: string | symbol, ...values: unknown[]) => {
+    const message = values[0];
+    if (event === 'message' && message !== null && typeof message === 'object' &&
+        Object.keys(message).length === 2 && 'kind' in message && message.kind === 'provider-request' &&
+        'count' in message && typeof message.count === 'number' && Number.isSafeInteger(message.count) && message.count > 0) {
+      observeMessage(message);
+      return true;
+    }
+    return emit(event, ...values);
+  };
+  child.on('message', observeMessage);
   child.on('exit', code => { audit('worker-exit:' + code); });
   return child;
 }) as typeof cp.spawn;
