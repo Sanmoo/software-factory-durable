@@ -15,7 +15,7 @@ const allowed = {
 const classified = `^(src|test)/(${zones.join('|')})/|^src/entrypoints/(cli|setup|doctor|configuration)\\.ts$|^src/entrypoints/(controller|worker|adapter)(\\.ts$|/)|^test/(entrypoints|architecture)/|^(\\.dependency-cruiser\\.cjs|eslint\\.config\\.mjs)$`;
 
 const compositions = {
-  cli: ['contracts', 'protocol', 'records', 'sandbox', 'control'],
+  cli: ['contracts', 'protocol', 'records', 'sandbox', 'control', 'workers'],
   controller: zones,
   worker: ['contracts', 'workers', 'protocol', 'records'],
   adapter: ['contracts', 'sandbox', 'protocol', 'records'],
@@ -31,6 +31,8 @@ module.exports = {
     ...Object.entries(compositions).map(([role, destinations]) => ({ name: `composition:${role}`, severity: 'error',
       from: { path: entrypoint(role) },
       to: { path: '^src/', pathNot: `^src/(${destinations.join('|')})/|${entrypoint(role)}${role === 'controller' ? '|^src/entrypoints/configuration\\.ts$' : ''}` } })),
+    { name: 'cli-workers-setup-only', severity: 'error', from: { path: '^src/entrypoints/(cli|doctor|configuration)\\.ts$' },
+      to: { path: '^src/workers/' } },
     { name: 'cli-control-types-only', severity: 'error', from: { path: entrypoint('cli') },
       to: { path: '^src/control/', dependencyTypesNot: ['type-only'] } },
     { name: 'control-contracts-only', severity: 'error',

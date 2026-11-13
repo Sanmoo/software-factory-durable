@@ -67,3 +67,6 @@ export async function runWorkerProcess(bootstrap: unknown, signal: AbortSignal) 
   const { run } = await import('./worker-process.js');
   return run(bootstrap, signal);
 }
+
+// Narrow standalone installation prerequisite; no arbitrary auth routing/CRUD.
+export { firstFactoryOAuthLogin } from './factory-oauth.js';

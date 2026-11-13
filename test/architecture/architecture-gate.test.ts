@@ -194,3 +194,19 @@ test('architecture syntax gate confines the private pinned SDK alias to Workers 
   }
   assert.equal((await syntaxViolations('src/workers/read.ts', "export { createReadTool } from '#factory-pi';")).status, 0);
 });
+
+test('fixed human login permits Workers public setup operation only through setup composition', async () => {
+  const result = await analyze({
+    'src/workers/index.ts': 'export const firstFactoryOAuthLogin = () => undefined;',
+    'src/entrypoints/setup.ts': "export { firstFactoryOAuthLogin } from '../workers/index.js';",
+  });
+  assert.equal(result.status, 0, JSON.stringify(result.violations));
+  await rejects({
+    'src/workers/factory-oauth.ts': 'export const privateLogin = () => undefined;',
+    'src/entrypoints/setup.ts': "export { privateLogin } from '../workers/factory-oauth.js';",
+  }, 'public-entry:workers', 'src/entrypoints/setup.ts', 'src/workers/factory-oauth.ts');
+  await rejects({
+    'src/workers/index.ts': 'export const firstFactoryOAuthLogin = () => undefined;',
+    'src/entrypoints/cli.ts': "export { firstFactoryOAuthLogin } from '../workers/index.js';",
+  }, 'cli-workers-setup-only', 'src/entrypoints/cli.ts', 'src/workers/index.ts');
+});

@@ -1,5 +1,9 @@
 import { lstat, mkdir, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { openSync, closeSync, writeSync, constants } from 'node:fs';
+import { isatty } from 'node:tty';
+import { createRecords } from '../records/index.js';
+import { firstFactoryOAuthLogin } from '../workers/index.js';
 
 const directories = ['releases', 'assets', 'credentials', 'data', 'environments', 'run'];
 const initialConfiguration = `# Complete explicit operators, models and GitHub App references before operation.
@@ -51,4 +55,35 @@ export async function setup(root: string): Promise<{ root: string; created: stri
     if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error;
   }
   return { root: canonicalRoot, created };
+}
+
+/** Human-only terminal adapter. No authorization URLs go through process stdio,
+ * Records, JSONL or sessions; no browser opener and no input/code capture. */
+export async function firstHumanLogin(root: string): Promise<number> {
+  let terminal: number | undefined;
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  try {
+    if (process.stdin.isTTY !== true) throw new Error('TTY_REQUIRED');
+    terminal = openSync('/dev/tty', constants.O_WRONLY | constants.O_NOCTTY);
+    if (!isatty(terminal)) throw new Error('TTY_REQUIRED');
+    const fd = terminal;
+    process.on('SIGINT', cancel); process.on('SIGTERM', cancel);
+    const records = await createRecords({ root }); // Register-only: no events/session/output capture.
+    await firstFactoryOAuthLogin({ factoryRoot: root, records, signal: controller.signal,
+      tty: { isTTY: true, authorizationURL(url) {
+        writeSync(fd, `Open this authorization URL in your browser on this host. Do not paste codes or URLs here.\n${url}\n`);
+      } } });
+    writeSync(fd, 'Factory OAuth credential created. Model access and runtime operation are not qualified.\n');
+    return 0;
+  } catch {
+    // Never serialize any native error, cause, stack, URL or response body.
+    if (terminal !== undefined) {
+      try { writeSync(terminal, 'Factory OAuth login unavailable. No automatic repair or retry.\n'); } catch { /* Closed. */ }
+    }
+    return 2;
+  } finally {
+    process.off('SIGINT', cancel); process.off('SIGTERM', cancel);
+    if (terminal !== undefined) { try { closeSync(terminal); } catch { /* Never expose raw terminal errors. */ } }
+  }
 }

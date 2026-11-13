@@ -5,10 +5,10 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { connect, protocolVersion, type Envelope } from '../protocol/index.js';
 import { pathToFileURL } from 'node:url';
-import { setup } from './setup.js';
+import { setup, firstHumanLogin } from './setup.js';
 import { doctor } from './doctor.js';
 
-const usage = 'factory <setup|doctor|run|status|pause|unpause|request <id>> [--root <installation>] [--json] [--request-id <id>]';
+const usage = 'factory <setup|doctor|run|status|pause|unpause|request <id>> [--root <installation>] [--json] [--request-id <id>]; factory login --root <canonical-absolute-installation>';
 
 async function exchange(root: string, kind: 'inspect' | 'accept', payload: Envelope['payload'], id: string, runId: string | null) {
   const endpoint = resolve(await realpath(root), 'run', 'control.sock');
@@ -58,6 +58,15 @@ async function launch(root: string): Promise<number> {
 export async function main(args: string[]): Promise<number> {
   if (args.length === 1 && args[0] === '--help') { console.log(usage); return 0; }
   const command = args[0];
+  if (command === 'login') {
+    // Strict explicit root only; never accept an auth file, provider, key, JSON
+    // output, environment/profile default or silently canonicalize aliases.
+    if (args.length !== 3 || args[1] !== '--root' || !args[2]?.startsWith('/') || resolve(args[2]) !== args[2]) {
+      console.error(JSON.stringify({ code: 'INVALID_ARGUMENTS' }));
+      return 2;
+    }
+    return firstHumanLogin(args[2]);
+  }
   let root = resolve('.');
   let json = false;
   let rootSeen = false;

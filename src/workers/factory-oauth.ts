@@ -1,5 +1,5 @@
-import { lstatSync, realpathSync, readFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
+import { lstatSync, realpathSync, readFileSync, mkdirSync, openSync, closeSync, writeFileSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { sdkProfile } from './sdk-profile.js';
 import { dirname, isAbsolute, join, parse, resolve, sep } from 'node:path';
@@ -244,4 +244,163 @@ export async function openFactoryOAuth(options: FactoryOAuthOptions): Promise<{ 
       },
     };
   } catch { throw unavailable(); }
+}
+
+/** Fixed standalone setup only. Not worker activation, auth CRUD or owner ACK.
+ * The trusted TTY adapter must deliver URLs only to the human terminal, never
+ * Records, captured stdio or a session. It has no input/code/token operation. */
+export type FirstFactoryOAuthLoginOptions = {
+  factoryRoot: string;
+  records: { registerSecret(value: string): void };
+  signal: AbortSignal;
+  tty: { isTTY: boolean; authorizationURL(url: string): void };
+};
+
+function privateSetupDirectory(path: string, create = false) {
+  if (create) {
+    try { mkdirSync(path, { mode: 0o700 }); }
+    catch (error) { requireCondition(error instanceof Error && 'code' in error && error.code === 'EEXIST'); }
+  }
+  let ancestor = path;
+  while (true) {
+    const info = lstatSync(ancestor);
+    requireCondition(info.isDirectory() && !info.isSymbolicLink() && realpathSync(ancestor) === ancestor);
+    if (ancestor === path) requireCondition(info.uid === process.getuid?.() && (info.mode & 0o7777) === 0o700);
+    if (ancestor === dirname(ancestor)) break;
+    ancestor = dirname(ancestor);
+  }
+}
+function absent(path: string) {
+  try { lstatSync(path); }
+  catch (error) { requireCondition(error instanceof Error && 'code' in error && error.code === 'ENOENT'); return; }
+  throw unavailable();
+}
+function privateSetupFile(path: string) {
+  const info = lstatSync(path);
+  requireCondition(info.isFile() && !info.isSymbolicLink() && info.uid === process.getuid?.() &&
+    info.nlink === 1 && (info.mode & 0o7777) === 0o600 && realpathSync(path) === path);
+}
+
+/** One native memory login, then one exclusive fixed-file native locked commit.
+ * Native writes in place: failures retain a private partial file, with no repair,
+ * retry, rollback or unlink. Return metadata only, never a credential/bearer. */
+export async function firstFactoryOAuthLogin(options: FirstFactoryOAuthLoginOptions): Promise<{
+  code: 'FACTORY_OAUTH_CREATED'; credentialPath: string;
+}> {
+  let runtime: ModelRuntime | undefined;
+  try {
+    requireCondition(options.tty.isTTY === true);
+    const uiAbort = new AbortController();
+    const signal = AbortSignal.any([options.signal, uiAbort.signal, AbortSignal.timeout(10 * 60_000)]);
+    signal.throwIfAborted();
+    const root = options.factoryRoot;
+    requireCondition(canonical(root) && root !== parse(root).root);
+    privateSetupDirectory(root);
+    const directory = join(root, 'credentials');
+    privateSetupDirectory(directory, true);
+    const path = join(directory, 'chatgpt.json');
+    absent(path); // Even an empty/malformed/symlink target refuses BEFORE login.
+    // Native reads this variable at module evaluation; no alternative bind host.
+    requireCondition(!process.env.PI_OAUTH_CALLBACK_HOST || process.env.PI_OAUTH_CALLBACK_HOST === '127.0.0.1');
+    const profile = join(directory, 'setup');
+    privateSetupDirectory(profile, true);
+    const devicePath = join(profile, 'device-id');
+    try {
+      const fd = openSync(devicePath, 'wx', 0o600);
+      try { writeFileSync(fd, randomUUID(), 'utf8'); } finally { closeSync(fd); }
+    } catch (error) { requireCondition(error instanceof Error && 'code' in error && error.code === 'EEXIST'); }
+    privateSetupFile(devicePath);
+    const deviceId = readFileSync(devicePath, 'utf8');
+    requireCondition(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(deviceId));
+    // Do not let the native cache writer follow an existing setup-cache symlink.
+    const modelsStorePath = join(profile, 'models-store.json');
+    try { privateSetupFile(modelsStorePath); }
+    catch (error) {
+      requireCondition(error instanceof Error && 'code' in error && error.code === 'ENOENT');
+    }
+    verifySelectedModules();
+    const native = await import('#factory-pi-auth-storage');
+    const memory = new native.InMemoryAuthStorageBackend();
+    const observe = (raw: string | undefined) => {
+      if (raw === undefined) return;
+      const c = documentCredential(raw);
+      for (const value of sensitive(c)) options.records.registerSecret(value);
+    };
+    // Thin observation BEFORE native memory commit and post-login synchronization.
+    const credentials = native.AuthStorage.fromStorage({
+      withLock(fn) {
+        return memory.withLock(raw => {
+          observe(raw);
+          const next = fn(raw);
+          observe(next.next);
+          return next;
+        });
+      },
+      withLockAsync(fn, operation) {
+        return memory.withLockAsync(async raw => {
+          observe(raw);
+          const next = await fn(raw);
+          observe(next.next);
+          return next;
+        }, operation);
+      },
+    });
+    const sdk = await import('#factory-pi-model-runtime');
+    signal.throwIfAborted();
+    runtime = await sdk.ModelRuntime.create({ credentials, modelsPath: null, modelsStorePath,
+      allowModelNetwork: false, refreshOnCreate: false, signal });
+    type Interaction = Parameters<ModelRuntime['login']>[2];
+    const interaction: Interaction = {
+      signal,
+      notify(event) {
+        if (event.type !== 'auth_url') return; // Never expose raw progress/error messages.
+        // Native establishes its cleanup try/finally AFTER notify and prompt.
+        // Do not throw out of either callback before native can enter that block.
+        try {
+          const url = new URL(event.url);
+          requireCondition(url.origin === 'https://auth.openai.com' && url.pathname === '/api/accounts/authorize' &&
+            url.username === '' && url.password === '' && url.hash === '' &&
+            url.searchParams.get('client_id') === 'dynamic_agent_client' &&
+            url.searchParams.get('redirect_uri') === 'http://127.0.0.1:1455/auth/callback' &&
+            url.searchParams.get('response_type') === 'code' && url.searchParams.get('code_challenge_method') === 'S256' &&
+            !!url.searchParams.get('state') && !!url.searchParams.get('code_challenge'));
+          signal.throwIfAborted();
+          options.tty.authorizationURL(url.href);
+        } catch { uiAbort.abort(); }
+      },
+      async prompt(prompt) {
+        // Native races this prompt with its loopback callback. Never read, echo,
+        // return or capture a manually pasted redirect/code. Deadline cancellation
+        // rejects this pending arm and runs native finally/listener close APIs.
+        requireCondition(prompt.type === 'manual_code');
+        const pending = AbortSignal.any([signal, ...(prompt.signal ? [prompt.signal] : [])]);
+        return new Promise<string>((_resolve, reject) => {
+          const stop = () => reject(unavailable());
+          if (pending.aborted) stop(); else pending.addEventListener('abort', stop, { once: true });
+        });
+      },
+    };
+    const issued = credential(await runtime.login('openai', 'oauth', interaction,
+      { getDeviceId: () => deviceId, agentName: 'Software Factory' }));
+    for (const value of sensitive(issued)) options.records.registerSecret(value);
+    signal.throwIfAborted();
+    privateSetupDirectory(root); privateSetupDirectory(directory); privateSetupDirectory(profile);
+    const fd = openSync(path, 'wx', 0o600); // Concurrent appearance fails, never overwrite.
+    closeSync(fd);
+    privateSetupFile(path);
+    const file = new native.FileAuthStorageBackend(path);
+    await file.withLockAsync(async raw => {
+      signal.throwIfAborted(); privateSetupDirectory(root); privateSetupDirectory(directory); privateSetupFile(path);
+      requireCondition(raw === '');
+      const next = JSON.stringify({ openai: issued });
+      observe(next); // BEFORE native locked private write.
+      return { result: undefined, next };
+    }, { signal });
+    privateSetupFile(path);
+    return { code: 'FACTORY_OAUTH_CREATED', credentialPath: path };
+  } catch { throw unavailable(); }
+  finally {
+    // This drains native credential writes, NOT proof of physical cessation.
+    try { await runtime?.settleCredentialWrites(); } catch { /* No raw native errors. */ }
+  }
 }
