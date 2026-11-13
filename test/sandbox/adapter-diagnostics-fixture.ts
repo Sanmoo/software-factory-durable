@@ -1,17 +1,25 @@
-// Local entrypoint preload. VM is always doubled and VMM spawning forbidden.
-// The confinement mode uses actual SDK RealFS/RPC components on NEW fixtures only.
+// TEST ONLY loader-boundary double. No profile verification or native VM proof.
+// Actual VFS/RPC mode is unavailable pending a bounded complete leaf audit.
 import cp from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { mkdir, open, readFile, readlink, writeFile, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
 import { syncBuiltinESMExports } from 'node:module';
+import { guardFixtureNetwork } from './adapter-fixture-network-guard.js';
+import { promisify } from 'node:util';
 import { mock } from 'node:test';
 import assert from 'node:assert/strict';
-import type { RealFSProvider as RealProviderType, FsRpcService as RpcServiceType } from '@earendil-works/gondolin';
+import type { RealFSProvider as RealProviderType } from '@earendil-works/gondolin';
 
 const [root, environment, boot] = process.argv.slice(2);
 if (!root || !environment || !boot) throw new Error('FIXTURE_ARGUMENTS_REQUIRED');
+// Guard before any application import or mock.module resolution. No original or
+// staged SDK module may evaluate (including root, VM, SSH/crypto, assets, probes).
+guardFixtureNetwork(root);
+if (process.env.ADAPTER_DIAGNOSTIC_FIXTURE_MODE === 'vfs-confinement') throw new Error('ACTUAL_VFS_LEAF_AUDIT_REQUIRED_UNRUN');
+const hostBoot = '11111111-2222-4333-8444-555555555555';
+const namespaces = { cgroup: 'cgroup:[12345]', mnt: 'mnt:[12345]' };
 const path = join(root, 'environments', environment, boot);
 const directory = join(root, 'environments', environment);
 const unit = `factory-sandbox-${boot}.service`;
@@ -35,7 +43,7 @@ await json(join(directory, 'owner.json'), { version: 1, workId, environment, con
 await json(join(directory, 'ready.json'), { environment });
 await json(join(directory, 'current.json'), { version: 1, environment, boot });
 await json(join(path, 'identity.json'), { version: 1, environment, boot, unit, configuration,
-  hostBoot: (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim() });
+  hostBoot });
 const tag = Buffer.from(boot.slice(5).replaceAll('-', ''), 'hex').toString('base64url');
 const runtime = join(root, 'r', tag);
 await mkdir(runtime, { recursive: true, mode: 0o700 });
@@ -44,14 +52,24 @@ await json(join(runtime, 'owner.json'), { version: 1, environment, boot });
 process.env.TMPDIR = join(runtime, 't');
 process.env.XDG_CACHE_HOME = join(runtime, 'c');
 process.env.GONDOLIN_SESSIONS_DIR = join(runtime, 's');
-const bin = join(root, 'bin');
-await mkdir(bin, { mode: 0o700 });
-await writeFile(join(bin, 'systemctl'), `#!${process.execPath}
-const args = process.argv.slice(2);
-if (args[0] !== '--user' || args[1] !== 'show' || args[2] !== ${JSON.stringify(unit)} || args.length !== 4) process.exit(77);
-process.stdout.write('LoadState=loaded\\nActiveState=active\\nInvocationID=${'a'.repeat(32)}\\nControlGroup=${group}\\nMainPID=' + process.ppid + '\\nResult=success\\n');
-`, { mode: 0o700 });
-process.env.PATH = bin; // No real manager fallback.
+// No PATH executable convention: only this exact read-only manager argv is doubled.
+const invocation = 'a'.repeat(32);
+const managerArgs = ['--user', 'show', unit, '--property=LoadState,ActiveState,SubState,InvocationID,ControlGroup,MainPID,Result'];
+const manager = (command: string, args: string[]) => {
+  assert.equal(command, 'systemctl'); assert.deepEqual(args, managerArgs);
+  return { stdout: `LoadState=loaded\nActiveState=active\nSubState=running\nInvocationID=${invocation}\nControlGroup=${group}\nMainPID=${process.pid}\nResult=success\n`, stderr: '' };
+};
+const execFileDouble = Object.assign(() => { throw new Error('CALLBACK_EXEC_FORBIDDEN'); }, {
+  [promisify.custom]: async (command: string, args: string[]) => manager(command, args),
+});
+const originalExecFile = cp.execFile;
+cp.execFile = execFileDouble as unknown as typeof cp.execFile;
+const deniedCommands = ['exec', 'execSync', 'execFileSync', 'spawnSync', 'fork'] as const;
+const originalCommands = deniedCommands.map(operation => cp[operation]);
+for (const operation of deniedCommands) {
+  Reflect.set(cp, operation, () => { throw new Error('OS_COMMAND_FORBIDDEN'); });
+}
+mock.method(process, 'kill', () => { throw new Error('HOST_SIGNAL_FORBIDDEN'); });
 const nativeEdit = process.env.TASK114_EDIT;
 let editSource = Buffer.from(nativeEdit === 'empty' ? '' : nativeEdit === 'secret' ? 'old synthetic-secret' : '\ufeffold\r\nsafe █\r\n');
 let editCommits = 0;
@@ -68,11 +86,18 @@ cp.spawn = ((command: string, args: string[], options: cp.SpawnOptions) => {
   if (process.env.ADAPTER_DIAGNOSTIC_FIXTURE_MODE !== 'normal-worker' || command !== process.execPath ||
       args.length !== 1 || args[0] !== worker || options.detached !== false ||
       JSON.stringify(options.stdio) !== JSON.stringify(['ignore', 'ignore', 'ignore', 'ipc'])) throw new Error('REAL_PROCESS_SPAWN_FORBIDDEN_IN_FIXTURE');
+  assert.equal(process.execPath, '/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node');
+  assert.deepEqual(Object.keys(options).sort(), ['detached', 'env', 'stdio']);
+  assert.deepEqual(Object.keys(options.env!).sort(), ['LANG', 'LC_ALL', 'NODE_DISABLE_COMPILE_CACHE', 'PATH', 'TMPDIR', 'XDG_CACHE_HOME']);
+  assert.equal(options.env!.PATH, '');
+  assert.equal(options.env!.LANG, 'C'); assert.equal(options.env!.LC_ALL, 'C');
+  assert.equal(options.env!.NODE_DISABLE_COMPILE_CACHE, '1');
+  for (const name of ['TMPDIR', 'XDG_CACHE_HOME']) assert.ok(options.env![name]?.startsWith(runtime + '/w-'));
   audit('worker-spawn');
-  let preload = new URL('../workers/fixtures/provider-preload.js', import.meta.url);
-  if (nativeBuilder) preload = new URL('../workers/fixtures/write-provider-preload.js', import.meta.url);
-  if (nativeBash) preload = new URL('../workers/fixtures/bash-provider-preload.js', import.meta.url);
-  if (nativeEdit) preload = new URL('../workers/fixtures/edit-provider-preload.js', import.meta.url);
+  let preload = new URL('./fixtures/adapter-read-provider-preload.js', import.meta.url);
+  if (nativeBuilder) preload = new URL('./fixtures/adapter-write-provider-preload.js', import.meta.url);
+  if (nativeBash) preload = new URL('./fixtures/adapter-bash-provider-preload.js', import.meta.url);
+  if (nativeEdit) preload = new URL('./fixtures/adapter-edit-provider-preload.js', import.meta.url);
   const child = actualSpawn(command, ['--import', preload.pathname, ...args], options);
   if (nativeEdit) editChild = child;
   child.on('message', message => {
@@ -91,10 +116,39 @@ cp.spawn = ((command: string, args: string[], options: cp.SpawnOptions) => {
   return child;
 }) as typeof cp.spawn;
 const originalRead = fs.promises.readFile;
-fs.promises.readFile = (async (...args: Parameters<typeof originalRead>) => {
-  if (args[0] === '/proc/self/cgroup' || args[0] === `/proc/${process.pid}/cgroup`) return `0::${group}\n`;
+mock.method(fs.promises, 'readFile', (async (...args: Parameters<typeof originalRead>) => {
+  const target = String(args[0]);
+  if (target === '/proc/self/cgroup' || target === `/proc/${process.pid}/cgroup`) return `0::${group}\n`;
+  if (target === '/proc/sys/kernel/random/boot_id') return hostBoot + '\n';
+  if (target === '/sys/fs/cgroup/cgroup.controllers') return 'cpu memory pids\n';
+  if (target === '/proc/self/mountinfo') return '1 0 0:1 / /sys/fs/cgroup rw - cgroup2 cgroup rw\n';
+  if (target === `/proc/${process.pid}/stat`) return `${process.pid} (fixture) ` + [...Array(19).fill('0'), '12345'].join(' ');
+  if (target.startsWith('/proc/') || target.startsWith('/sys/')) throw new Error('UNLISTED_HOST_READ');
   return originalRead(...args);
-}) as typeof originalRead;
+}) as typeof originalRead);
+const originalLink = fs.promises.readlink;
+mock.method(fs.promises, 'readlink', (async (...args: Parameters<typeof originalLink>) => {
+  const target = String(args[0]);
+  if (target === '/proc/self/ns/cgroup') return namespaces.cgroup;
+  if (target === '/proc/self/ns/mnt') return namespaces.mnt;
+  if (/^\/proc\/self\/fd\/[0-9]+$/.test(target)) {
+    const result = await originalLink(...args);
+    assert.ok(String(result) === root || String(result).startsWith(root + '/'), 'only owned fixture descriptors');
+    return result;
+  }
+  if (target.startsWith('/proc/') || target.startsWith('/sys/')) throw new Error('UNLISTED_HOST_LINK');
+  return originalLink(...args);
+}) as typeof originalLink);
+const originalLstat = fs.promises.lstat;
+mock.method(fs.promises, 'lstat', (async (...args: Parameters<typeof originalLstat>) => {
+  const target = String(args[0]);
+  if (target === '/sys/fs/cgroup') return { isDirectory: () => true, isSymbolicLink: () => false };
+  if (target.startsWith('/proc/') || target.startsWith('/sys/')) throw new Error('UNLISTED_HOST_STAT');
+  return Reflect.apply(originalLstat, fs.promises, args);
+}) as typeof originalLstat);
+mock.method(fs.promises, 'statfs', (async (target: unknown) => {
+  assert.equal(target, '/sys/fs/cgroup'); return { type: 0x63677270 };
+}) as typeof fs.promises.statfs);
 syncBuiltinESMExports();
 
 const audit = (event: string) => fs.appendFileSync(join(root, 'audit'), `${event}\n`);
@@ -104,22 +158,9 @@ let logger: Logger = null;
 let lateLogger: Logger = null;
 let execCalls = 0;
 const mode = process.env.ADAPTER_DIAGNOSTIC_FIXTURE_MODE;
-if (mode === 'vfs-confinement' || mode === 'normal-worker') globalThis.fetch = async () => { throw new Error('NETWORK_FORBIDDEN_IN_FIXTURE'); };
-const actual = mode === 'vfs-confinement' ? await import('@earendil-works/gondolin') : undefined;
-if (actual) {
-  mock.method(actual.VM, 'create', async () => { throw new Error('REAL_VM_FORBIDDEN_IN_FIXTURE'); });
-  for (const area of ['workspace', 'artifacts']) {
-    await mkdir(join(directory, area), { mode: 0o700 });
-    await writeFile(join(directory, area, 'own'), `own ${area}`);
-  }
-  for (const zone of ['home', 'control', 'git-cache', 'other-work']) {
-    const foreign = join(root, 'protected', zone); await mkdir(foreign, { recursive: true, mode: 0o700 });
-    await writeFile(join(foreign, 'secret'), 'PRIVATE_TOKEN_CANARY');
-    await fs.promises.symlink('PRIVATE_TOKEN_CANARY', join(foreign, 'secret-link'));
-    for (const area of ['workspace', 'artifacts']) await fs.promises.symlink(foreign, join(directory, area, `escape-${zone}`));
-  }
-}
-mock.module('@earendil-works/gondolin', { namedExports: {
+const originalFetch = globalThis.fetch;
+globalThis.fetch = async () => { throw new Error('NETWORK_FORBIDDEN_IN_FIXTURE'); };
+const sdkDouble = {
   VM: { async create(options: { debugLog: Logger; sandbox: { console: string; debug: readonly string[] | boolean };
     vfs: { mounts: Record<string, RealProviderType> } }) {
     if (mode === 'owner-registration' || nativeBash) audit('vm-create');
@@ -127,55 +168,6 @@ mock.module('@earendil-works/gondolin', { namedExports: {
     lateLogger = logger;
     if (options.sandbox.console !== 'none' || options.sandbox.debug !== false || options.debugLog !== null) {
       throw new Error('PRODUCTION_CONSOLE_MUST_BE_DISABLED');
-    }
-    if (actual) {
-      audit('vfs-probe');
-      assert.deepEqual(Object.keys(options.vfs.mounts).sort(), ['/artifacts', '/workspace']);
-      for (const area of ['/workspace', '/artifacts']) {
-        const provider = options.vfs.mounts[area]!;
-        assert.equal(provider.rootPath, await fs.promises.realpath(join(directory, area.slice(1))));
-        assert.equal(await provider.realpath('/own'), '/own');
-        await provider.symlink('own', '/inside-link');
-        assert.equal(await provider.readlink('/inside-link'), 'own');
-        assert.equal((await provider.lstat('/inside-link')).isSymbolicLink(), true);
-        const handle = await provider.open('/inside-link', 'r');
-        try {
-          const data = Buffer.alloc(64); const { bytesRead } = await handle.read(data, 0, data.length, 0);
-          assert.equal(data.subarray(0, bytesRead).toString(), `own ${area.slice(1)}`);
-        } finally { await handle.close(); }
-        const writer = await provider.open('/written', 'w');
-        try { const bytes = Buffer.from('persisted through native provider'); await writer.write(bytes, 0, bytes.length, 0); }
-        finally { await writer.close(); }
-        const reopened: RealProviderType = new actual.RealFSProvider(provider.rootPath);
-        const reader = await reopened.open('/written', 'r');
-        try {
-          const data = Buffer.alloc(64); const { bytesRead } = await reader.read(data, 0, data.length, 0);
-          assert.equal(data.subarray(0, bytesRead).toString(), 'persisted through native provider');
-        } finally { await reader.close(); }
-        for (const zone of ['home', 'control', 'git-cache', 'other-work']) {
-          const service: RpcServiceType = new actual.FsRpcService(provider);
-          try {
-            const parent: Awaited<ReturnType<RpcServiceType['handleRequest']>> = await service.handleRequest({ v: 1, t: 'fs_request', id: 1, p: { op: 'lookup', req: { parent_ino: 1, name: `escape-${zone}` } } });
-            assert.equal(parent.p.err, 0);
-            const entry = parent.p.res?.entry as { ino: number };
-            const escaped: Awaited<ReturnType<RpcServiceType['handleRequest']>> = await service.handleRequest({ v: 1, t: 'fs_request', id: 2,
-              p: { op: 'lookup', req: { parent_ino: entry.ino, name: 'secret' } } });
-            if (escaped.p.err === 0) audit('vfs-ancestor-escape-detected');
-            assert.notEqual(escaped.p.err, 0, 'forged RPC parent must not disclose outside metadata');
-            for (const target of [`/escape-${zone}/secret`, `../protected/${zone}/secret`]) {
-              await assert.rejects(() => provider.lstat(target));
-              assert.throws(() => provider.lstatSync(target));
-            }
-            await assert.rejects(() => provider.readlink(`/escape-${zone}/secret-link`));
-            assert.throws(() => provider.readlinkSync(`/escape-${zone}/secret-link`));
-            await assert.rejects(() => provider.open(`/escape-${zone}/secret`, 'r'));
-            await assert.rejects(() => provider.open(`/escape-${zone}/new`, 'w'));
-            await assert.rejects(() => provider.rename('/own', `/escape-${zone}/renamed`));
-            await assert.rejects(() => provider.unlink(`/escape-${zone}/secret`));
-          } finally { await service.close(); }
-        }
-      }
-      audit('vfs-confined');
     }
     return {
     setDebugLog(next: Logger) { logger = next; },
@@ -332,7 +324,7 @@ mock.module('@earendil-works/gondolin', { namedExports: {
       })();
     },
   }; } },
-  RealFSProvider: actual?.RealFSProvider ?? class {
+  RealFSProvider: class {
     async lstat() { throw new Error('UNEXPECTED_FILESYSTEM_ACCESS'); }
     lstatSync() { throw new Error('UNEXPECTED_FILESYSTEM_ACCESS'); }
     async readlink() { throw new Error('UNEXPECTED_FILESYSTEM_ACCESS'); }
@@ -340,7 +332,19 @@ mock.module('@earendil-works/gondolin', { namedExports: {
     async realpath() { throw new Error('UNEXPECTED_FILESYSTEM_ACCESS'); }
     realpathSync() { throw new Error('UNEXPECTED_FILESYSTEM_ACCESS'); }
   },
-} });
+};
+mock.module(new URL('../../src/sandbox/gondolin-sdk-runtime.js', import.meta.url).href, {
+  namedExports: { loadDevelopmentGondolinSdk: async () => sdkDouble },
+});
+
+process.once('exit', () => {
+  cp.spawn = actualSpawn;
+  cp.execFile = originalExecFile;
+  deniedCommands.forEach((operation, index) => Reflect.set(cp, operation, originalCommands[index]));
+  globalThis.fetch = originalFetch;
+  mock.restoreAll();
+  syncBuiltinESMExports();
+});
 
 const probe = await open(join(root, 'probe'), 'wx', 0o600);
 const prototype = Object.getPrototypeOf(probe) as FileHandle;
@@ -464,7 +468,7 @@ async function registrationProbe() {
   const spec = { ...standards, invocationId: 'spec', role: 'spec' as const };
   const read = { name: 'read' as const, operation: 'capture' as const, path: '/workspace/file', callId: 'read-one' };
   const first = await sandbox.executeTool(standards, read);
-  assert.equal(first.status, 'success', 'same Sandbox/context must rediscover the now-ready same-boot owner');
+  assert.equal(first.status, 'success', `same Sandbox/context must rediscover the now-ready same-boot owner: ${JSON.stringify(first)}`);
   audit('discovery-recovered');
   assert.equal((await sandbox.executeTool(spec, { ...read, callId: 'read-two' })).status, 'success');
   assert.deepEqual(await sandbox.executeTool({ ...standards, phaseId: 'stale' }, read), { status: 'failure', code: 'STALE_TOOL_CONTEXT' });

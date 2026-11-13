@@ -17,7 +17,7 @@ test('root-only client recovers pre-owner discovery failure on same boot and pre
     { timeout: 5000, maxBuffer: 16384, encoding: 'utf8', env: { PATH: '', NODE_DISABLE_COMPILE_CACHE: '1',
       ADAPTER_DIAGNOSTIC_FIXTURE_MODE: 'owner-registration' } });
     assert.equal(child.error, undefined, child.error?.message);
-    assert.equal(child.status, 0, child.stderr);
+    assert.equal(child.status, 0, child.stderr + '\n' + await readFile(join(root, 'audit'), 'utf8'));
     assert.deepEqual((await readFile(join(root, 'audit'), 'utf8')).trim().split('\n'),
       ['discovery-unavailable', 'vm-create', 'profile-ready', 'worker-launch-closed', 'read', 'discovery-recovered',
         'read', 'read', 'registration-isolated', 'guest-finalize', 'close']);
