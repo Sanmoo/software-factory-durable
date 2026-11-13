@@ -5,6 +5,7 @@ const text = z.string().min(1).max(4096);
 const cost = z.number().finite().nonnegative();
 export const workerBootstrapSchema = z.strictObject({
   version: z.literal(1),
+  editSourceMaxBytes: z.number().int().nonnegative().max(8192).optional(),
   imageSourceMaxBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
   context: z.strictObject({ workId: identifier, executionId: identifier, invocationId: identifier,
     role: z.enum(['standards', 'spec', 'builder']), environmentRef: identifier, bootRef: identifier, phaseId: identifier }),
@@ -21,5 +22,5 @@ export const workerBootstrapSchema = z.strictObject({
   }),
 });
 
-export const workerLaunchSchema = workerBootstrapSchema.pick({ context: true, knownSecrets: true, prompt: true, imageSourceMaxBytes: true }).extend({ profile: workerBootstrapSchema.shape.profile.omit({ directory: true }) }).strict();
+export const workerLaunchSchema = workerBootstrapSchema.pick({ context: true, knownSecrets: true, prompt: true, imageSourceMaxBytes: true, editSourceMaxBytes: true }).extend({ profile: workerBootstrapSchema.shape.profile.omit({ directory: true }) }).strict();
 export type WorkerLaunch = z.infer<typeof workerLaunchSchema>;

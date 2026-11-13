@@ -46,6 +46,7 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
         const endpoint = join(directory, `b${++sequence}`);
         try {
           await bindings.add({ endpoint, context, signal: lifetime.signal, records,
+            ...(parsed.data.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: parsed.data.editSourceMaxBytes }),
             ...(parsed.data.imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes: parsed.data.imageSourceMaxBytes }) });
           const worker = await launchWorker(host, { ...parsed.data, context }, endpoint, root, lifetime.signal);
           await channel.send(frame(request.message_id, 'worker-launch-result', { status: 'requested', worker: context.invocationId }, request.message_id));

@@ -1,11 +1,12 @@
 import { join } from 'node:path';
 import { createAgentSession, createExtensionRuntime, ModelRuntime, SessionManager, SettingsManager,
-  type ResourceLoader } from '#factory-pi';
+  type ResourceLoader, type ToolDefinition } from '#factory-pi';
 import type { ToolProjection } from '../sandbox/index.js';
 import type { createRecords, OutputReference } from '../records/index.js';
 import { reviewerRead } from './read.js';
 import { builderWrite } from './write.js';
 import { builderBash } from './bash.js';
+import { builderEdit } from './edit.js';
 import { startWorker, type ReviewerProfile, type Invocation } from './worker-start.js';
 
 type Options = { profile: ReviewerProfile; sandbox: ToolProjection; records: Awaited<ReturnType<typeof createRecords>> };
@@ -39,11 +40,17 @@ export async function executeSession(options: Options, invocation: Invocation, r
   let interrupted = false;
   let abortSession = () => {};
   const critical = () => { interrupted = true; abortSession(); };
-  const customTools = invocation.context.role === 'builder'
+  const editEnabled = invocation.context.role === 'builder' && invocation.editSourceMaxBytes !== undefined;
+  const customTools: ToolDefinition[] = invocation.context.role === 'builder'
     ? [builderWrite(invocation.context, options.sandbox, critical), builderBash(invocation.context, options.sandbox, critical)]
     : [reviewerRead(invocation.context, options.sandbox, critical)];
+  const tools = invocation.context.role === 'builder' ? ['write', 'bash'] : ['read'];
+  if (editEnabled) {
+    customTools.push(builderEdit(invocation.context, options.sandbox, critical));
+    tools.push('edit');
+  }
   const { session } = await createAgentSession({ cwd: '/workspace', agentDir: profile.directory, modelRuntime: runtime,
-    model, thinkingLevel: 'off', tools: invocation.context.role === 'builder' ? ['write', 'bash'] : ['read'], customTools, resourceLoader, sessionManager: manager,
+    model, thinkingLevel: 'off', tools, customTools, resourceLoader, sessionManager: manager,
     settingsManager: SettingsManager.inMemory({ retry: { enabled: false, provider: { maxRetries: 0 } },
       compaction: { enabled: false } }) });
   if (session.model?.provider !== profile.providerId || session.model.id !== profile.modelId) {

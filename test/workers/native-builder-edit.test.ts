@@ -472,12 +472,13 @@ test('fixed lexical native Edit routes host-owned EACCES path to guest double on
   }
 });
 
-test('private fixed typed native composition has no session/bootstrap enablement or host implementation backend', async () => {
+test('private fixed typed native adapter has no host implementation backend or bootstrap SDK construction', async () => {
   const { readFile } = await import('node:fs/promises');
   const source = await readFile('src/workers/edit.ts', 'utf8');
   assert.match(source, /type LexicalEditOptions = NonNullable<Parameters<typeof createEditTool>\[1\]> &/);
   assert.match(source, /const options: LexicalEditOptions = \{ mutationQueueMode: 'lexical', operations:/);
   assert.doesNotMatch(source, /\bany\b|process\.env|node:fs|realpath|generateEditDiff|normalizeToLF|Buffer\.concat/);
-  assert.doesNotMatch(await readFile('src/workers/worker-session.ts', 'utf8'), /builderEdit|createEditTool/);
+  // Host-gated normal composition is exercised through the real new Node in
+  // entrypoints/normal-edit.test.ts; no longer assert universal non-enablement.
   assert.doesNotMatch(await readFile('src/workers/worker-process.ts', 'utf8'), /builderEdit|createEditTool/);
 });

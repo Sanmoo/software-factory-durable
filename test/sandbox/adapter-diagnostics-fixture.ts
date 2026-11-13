@@ -52,6 +52,10 @@ if (args[0] !== '--user' || args[1] !== 'show' || args[2] !== ${JSON.stringify(u
 process.stdout.write('LoadState=loaded\\nActiveState=active\\nInvocationID=${'a'.repeat(32)}\\nControlGroup=${group}\\nMainPID=' + process.ppid + '\\nResult=success\\n');
 `, { mode: 0o700 });
 process.env.PATH = bin; // No real manager fallback.
+const nativeEdit = process.env.TASK114_EDIT;
+let editSource = Buffer.from(nativeEdit === 'empty' ? '' : nativeEdit === 'secret' ? 'old synthetic-secret' : '\ufeffold\r\nsafe █\r\n');
+let editCommits = 0;
+let editChild: cp.ChildProcess | undefined;
 const nativeBuilder = process.env.TASK83_NATIVE_BUILDER === '1';
 const nativeBash = process.env.TASK85_NATIVE_BASH === '1';
 // VM double only; these virtual files/sentinel do not establish kernel FD safety.
@@ -68,7 +72,9 @@ cp.spawn = ((command: string, args: string[], options: cp.SpawnOptions) => {
   let preload = new URL('../workers/fixtures/provider-preload.js', import.meta.url);
   if (nativeBuilder) preload = new URL('../workers/fixtures/write-provider-preload.js', import.meta.url);
   if (nativeBash) preload = new URL('../workers/fixtures/bash-provider-preload.js', import.meta.url);
+  if (nativeEdit) preload = new URL('../workers/fixtures/edit-provider-preload.js', import.meta.url);
   const child = actualSpawn(command, ['--import', preload.pathname, ...args], options);
+  if (nativeEdit) editChild = child;
   child.on('message', message => {
     audit('worker-message:' + JSON.stringify(message));
     if (message && typeof message === 'object' && 'kind' in message && message.kind === 'provider-request') {
@@ -190,6 +196,49 @@ mock.module('@earendil-works/gondolin', { namedExports: {
     id: '77777777-2222-4333-8444-555555555555',
     getHostPid() { return process.pid; }, // External VM double, never a real VMM.
     exec(argv: string[], options: { signal: AbortSignal; stdout?: string; stderr?: string; env?: Record<string, string>; cwd?: string; stdin?: string }) {
+      if (nativeEdit && argv[0] === '/usr/bin/python3') {
+        assert.deepEqual(argv.slice(0, 4), ['/usr/bin/python3', '-I', '-S', '-c']);
+        const operation = argv.length === 6 ? 'capture' : argv[5]!;
+        audit('edit-' + operation);
+        if (operation === 'capture') {
+          assert.equal(argv[5], '/workspace/source');
+          const captured = Buffer.from(editSource);
+          if (nativeEdit === 'cancel' || nativeEdit === 'eof') {
+            const cancelled = new Promise<void>(resolve => {
+              if (options.signal.aborted) resolve();
+              else options.signal.addEventListener('abort', () => resolve(), { once: true });
+            });
+            if (nativeEdit === 'cancel') editChild!.send({ kind: 'abort' });
+            else editChild!.disconnect();
+            return { async *output() { await cancelled; }, result: cancelled.then(() => ({ exitCode: 1 })) };
+          }
+          return { async *output() { yield { stream: 'stdout', data: captured }; }, result: Promise.resolve({ exitCode: 0 }) };
+        }
+        assert.deepEqual(options.env, {}); assert.equal(options.cwd, '/');
+        const evidence = join(root!, workId, 'evidence');
+        const events = fs.readdirSync(evidence).flatMap(id => {
+          if (!fs.existsSync(join(evidence, id, 'complete.json'))) return [];
+          try { const event = JSON.parse(fs.readFileSync(join(evidence, id, 'output'), 'utf8')).event; return event ? [event] : []; }
+          catch { return []; } // Captured source is text, not an event envelope.
+        });
+        assert.ok(events.some(e => e.kind === 'worker-start'));
+        assert.ok(events.some(e => e.kind === 'mutation-intent' && e.operation === operation));
+        let exitCode = 0;
+        if (operation === 'commit') {
+          assert.equal(argv[6], '/workspace/source');
+          assert.equal(Number(argv[7]), editSource.length);
+          assert.equal(argv[8], createHash('sha256').update(editSource).digest('hex'));
+          editCommits++;
+          if (nativeEdit === 'mismatch' && editCommits === 1) exitCode = 42;
+          else {
+            editSource = Buffer.from(options.stdin!);
+            assert.equal(editSource.toString(), '\ufeffnew\r\nsafe █\r\n');
+            if (nativeEdit === 'uncertain') exitCode = 1;
+          }
+          fs.writeFileSync(join(root!, 'edit-result'), editSource);
+        } else assert.ok(['mkdir', 'create'].includes(operation));
+        return { async *output() { yield { stream: 'stdout', data: Buffer.from('synthetic-secret synthetic-key') }; }, result: Promise.resolve({ exitCode }) };
+      }
       if (nativeBash && argv[0] === '/usr/bin/env') {
         audit('bash');
         assert.deepEqual(argv, ['/usr/bin/env', '-i', '/bin/bash', '-c', "printf 'syn''thetic-se''cret'; printf 'tail π' >&2"]);
@@ -304,6 +353,9 @@ let operationalPublishing = false;
 let syncedPublishing = false;
 mock.method(prototype, 'writeFile', async function(this: FileHandle, ...args: Parameters<FileHandle['writeFile']>) {
   const target = await readlink(`/proc/self/fd/${this.fd}`);
+  if (nativeEdit === 'persist' && String(args[0]).includes('"kind":"mutation-result"')) {
+    audit('edit-result-evidence-failed'); throw new Error('INJECTED_EDIT_RESULT_FAILURE');
+  }
   if ((mode === 'normal-worker' || mode === 'owner-registration' || mode?.startsWith('shutdown-')) && target === join(path, 'operational.json')) operationalPublishing = true;
   if (mode?.startsWith('shutdown-') && target === join(path, 'guest-synced.json')) {
     syncedPublishing = true;
@@ -339,6 +391,13 @@ mock.method(prototype, 'sync', async function(this: FileHandle) {
     setImmediate(() => {
       const listeners = process.listeners('SIGTERM').filter(listener => !originalTermListeners.has(listener));
       if (listeners.length !== 1) throw new Error('EXPECTED_ONE_ADAPTER_STOP_LISTENER');
+      if (mode === 'normal-worker' && nativeEdit) {
+        void import('../entrypoints/normal-edit.fixture.js').then(async ({ normalEdit }) => {
+          await json(join(root!, 'normal-worker-result.json'), await normalEdit(root!, { workId, environmentRef: environment!, bootRef: boot! }));
+          audit('normal-edit-passed');
+        }).catch(error => { console.error(error); process.exitCode = 1; }).finally(() => listeners[0]!('SIGTERM'));
+        return;
+      }
       if (mode === 'normal-worker' && nativeBash) {
         void import('../entrypoints/normal-bash.fixture.js').then(async ({ normalBash }) => {
           const result = await normalBash(root!, { workId, environmentRef: environment!, bootRef: boot! });

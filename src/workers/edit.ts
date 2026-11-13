@@ -36,7 +36,7 @@ function boundedInput(input: unknown) {
   return { path, edits, oldText: string(raw.oldText, 8192), newText: string(raw.newText, 8192) };
 }
 
-/** Private component only. Native Edit remains unregistered in normal sessions.
+/** Private adapter; normal Builder sessions require explicit trusted Host policy.
  * The SDK owns schema, lexical queue, matching, BOM/EOL engine and diff. Q5 owns
  * source identity, confined existing-FD comparison and mutation evidence. */
 export function builderEdit(context: ToolContext, sandbox: ToolProjection, onCritical: () => void = () => {}): ToolDefinition {

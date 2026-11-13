@@ -1,0 +1,15 @@
+# Host-gated normal Native Edit (offline technical slice)
+
+The public `Workers.activate` Host invocation accepts optional `editSourceMaxBytes`, an integer 0..8192. It is validated and copied before endpoint discovery/any await. Missing policy leaves Builder's Write/Bash default unchanged. Zero registers Edit but allows only empty source capture; this is not an empty-file native Edit parity promise. Standards/Spec keep only Read regardless of the budget.
+
+The private strict launch/bootstrap DTO carries the snapshot to the existing owner and fixed new Node worker. Owner registration independently validates the DTO and binds its budget to Q5. The worker independently validates bootstrap, preserves sourceVersion UUIDs in the existing result projection, and adds the native Edit definition and active name only for an explicitly enabled Builder. No model parameter, context claim, guest reference or hash supplies this policy. No Control admission/grant/reservation mechanism is added.
+
+Existing private SDK v3 ID, minimal environment, fixed executable, known-secret guard, native sequential composition, Edit-local bounded FIFO, source/replacement caps and owner same-FD helper remain unchanged. The existing session critical callback now also handles Edit: interruption aborts the actual loop, prevents queued Write and prevents the following provider request. Known source-changed-before-effect and native no-match remain ordinary errors permitting a fresh capture.
+
+## Evidence boundaries
+
+`test/entrypoints/normal-edit.test.ts` goes through public activation, normal boot owner, fixed new Node, real SDK/provider loop and native Edit, real Protocol/Records and JSONL reopen. Only external manager/VM boundaries and synthetic HTTP are doubled, plus a narrow protected result-write fault injection. The existing adapter fixture creates new private short temporary roots, never launches a real VM or forwards fetch, and never executes guest Python on Host. Virtual source comparison/effects are **not physical guest FD qualification**. Synthetic placeholder asset files are fixture-local, not installed assets.
+
+Cases cover BOM/CRLF/multibyte replacement and native diff, default tools without policy, invalid policy before child/guest calls, readonly roles despite budget, uncertain mutation, result-evidence failure, known source mismatch and no-match with fresh capture, model-supplied budget unable to override zero, empty-source capture with zero, lossy secret filtering denial, cancellation and IPC EOF. Mutation output containing synthetic secrets is drained and absent from native session/provider context. Public input mutation immediately after activate cannot change the snapshot. Literal `█` in the successful source is not claimed as proof of secret rewriting: Edit rejects non-lossless secret-bearing captures.
+
+Residual limits: all-symlink denial remains a gap; no real network/model/authentication/API, actual VM, kernel FD or physical cessation claim. Whole05/85, Task65's unanswered USD10 authorization, full symlink/BMP/guestcopy/Q10/19/20 and real-FD qualification stay open. No new authority is inferred from this offline slice.

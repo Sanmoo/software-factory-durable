@@ -20,11 +20,13 @@ export function createWorkers(configuration?: Configuration) {
     if (!configuration) throw new Error('WORKER_EXECUTION_NOT_ENABLED');
     const request = workerLaunchSchema.safeParse({ context: invocation.context, prompt: invocation.prompt,
       ...(invocation.imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes: invocation.imageSourceMaxBytes }),
+      ...(invocation.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: invocation.editSourceMaxBytes }),
       profile: configuration.profile, knownSecrets: configuration.knownSecrets });
     if (!request.success || invocation.signal.aborted) throw new Error('WORKER_LAUNCH_INVALID');
     const context = request.data.context;
-    const { imageSourceMaxBytes, ...baseRequest } = request.data;
-    const payload = { ...baseRequest, ...(imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes }) };
+    const { imageSourceMaxBytes, editSourceMaxBytes, ...baseRequest } = request.data;
+    const payload = { ...baseRequest, ...(imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes }),
+      ...(editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes }) };
     const endpoint = await workerOwnerEndpoint(configuration.root, context);
     const channel = await connect(endpoint, { kind: 'host-boot', binding: { workId: context.workId,
       environmentRef: context.environmentRef, bootRef: context.bootRef } });

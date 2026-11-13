@@ -9,7 +9,8 @@ type ReviewerModel = { id: string; name: string; reasoning: boolean; input: ('te
 export type ReviewerProfile = { id: typeof sdkProfile.id; directory: string; systemPrompt: string;
   providerId: string; modelId: string; apiKey: string;
   provider: { api: 'openai-completions'; baseUrl: string; models: ReviewerModel[] } };
-export type Invocation = { context: ToolContext; prompt: string; signal: AbortSignal; imageSourceMaxBytes?: number };
+/** Optional byte policies are trusted Host inputs, never model/context claims. */
+export type Invocation = { context: ToolContext; prompt: string; signal: AbortSignal; imageSourceMaxBytes?: number; editSourceMaxBytes?: number };
 
 /** Critical protected evidence, never admission or proof of group/FD isolation. */
 export async function startWorker(profile: ReviewerProfile, records: Awaited<ReturnType<typeof createRecords>>, invocation: Invocation) {

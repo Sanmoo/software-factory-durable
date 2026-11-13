@@ -15,7 +15,7 @@ const base64 = z.string().max(32768).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+
 const successSchema = z.strictObject({ status: z.literal('success'), reference, bytes: safeCount,
   encoding: z.literal('base64'), data: base64, nextOffset: safeCount });
 const readResultSchema = z.union([
-  successSchema.extend({ format: z.literal('text'), exitCode: z.number().int().min(0).max(255).optional(), progressFrames: safeCount.optional() }),
+  successSchema.extend({ format: z.literal('text'), sourceVersion: z.uuid().optional(), exitCode: z.number().int().min(0).max(255).optional(), progressFrames: safeCount.optional() }),
   successSchema.extend({ format: z.literal('raw'), imageSourceMaxBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }),
   z.strictObject({ status: z.literal('failure'), code: z.string().min(1).max(128) }),
 ]);
@@ -114,7 +114,8 @@ export async function run(input: unknown, signal: AbortSignal) {
   if (containsSecret({ prompt: bootstrap.prompt, profile: publicProfile })) {
     throw new Error('WORKER_BOOTSTRAP_INVALID');
   }
-  const invocation = { context: bootstrap.context, prompt: bootstrap.prompt, signal };
+  const invocation = { context: bootstrap.context, prompt: bootstrap.prompt, signal,
+    ...(bootstrap.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: bootstrap.editSourceMaxBytes }) };
   // Sync protected receipt before even importing/creating the native SDK runtime.
   const receipt = await startWorker(bootstrap.profile, records, invocation);
   const sender = process.send?.bind(process);
