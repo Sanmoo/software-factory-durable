@@ -125,6 +125,12 @@ for (const operation of deniedCommands) {
   Reflect.set(cp, operation, () => { throw new Error('OS_COMMAND_FORBIDDEN'); });
 }
 mock.method(process, 'kill', () => { throw new Error('HOST_SIGNAL_FORBIDDEN'); });
+const nativeOAuth = process.env.TASK178_OAUTH;
+if (nativeOAuth) {
+  await mkdir(join(root, 'credentials'), { mode: 0o700 });
+  await json(join(root, 'oauth-mode'), nativeOAuth);
+  if (nativeOAuth !== 'missing-store') await json(join(root, 'credentials', 'chatgpt.json'), { openai: { type: 'oauth', access: 'oauth-access-canary', refresh: 'oauth-refresh-canary', expires: nativeOAuth === 'rotation-ack-fail' ? 0 : Date.now() + 3600000, clientId: 'synthetic-client', scopes: ['chatgpt.tokens.use.direct'] } });
+}
 const nativeEdit = process.env.TASK114_EDIT;
 let editSource = Buffer.from(nativeEdit === 'empty' ? '' : nativeEdit === 'secret' ? 'old synthetic-secret' : '\ufeffold\r\nsafe █\r\n');
 let editCommits = 0;
@@ -158,11 +164,30 @@ cp.spawn = ((command: string, args: string[], options: cp.SpawnOptions) => {
   if (nativeEdit) preload = new URL('./fixtures/adapter-edit-provider-preload.js', import.meta.url);
   if (nativeCopy) preload = new URL('./fixtures/adapter-bash-copy-provider-preload.js', import.meta.url);
   if (nativeCopyRead) preload = new URL('./fixtures/adapter-copy-read-provider-preload.js', import.meta.url);
+  if (nativeOAuth) preload = new URL('./fixtures/adapter-oauth-provider-preload.js', import.meta.url);
   const child = actualSpawn(command, ['--import', preload.pathname, ...args], options);
   if (nativeEdit) editChild = child;
+  if (nativeOAuth) {
+    const send = child.send.bind(child);
+    let acknowledgements = 0;
+    child.send = ((message: unknown, ...args: unknown[]) => {
+      if (message && typeof message === 'object' && 'kind' in message && message.kind === 'worker-secret-ack') {
+        acknowledgements++;
+        audit('secret-ack-attempt'); // metadata ONLY, before assertions/delegate
+        if (nativeOAuth === 'held-ack') return true;
+        if (nativeOAuth === 'rotation-ack-fail' && JSON.parse(fs.readFileSync(join(root!, 'credentials', 'chatgpt.json'), 'utf8')).openai.access === 'oauth-access-rotated') {
+          audit('rotation-private-commit-before-failed-ack');
+          message = { ...message, kind: 'worker-secret-error', code: 'SECRET_SYNC_DENIED' };
+        }
+      }
+      return Reflect.apply(send, child, [message, ...args]);
+    }) as typeof child.send;
+  }
   const observeMessage = (message: unknown) => {
-    audit('worker-message:' + JSON.stringify(message));
+    if (nativeOAuth && message && typeof message === 'object' && 'kind' in message && message.kind === 'worker-secret-register') audit('secret-registration-metadata');
+    else audit('worker-message:' + JSON.stringify(message));
     if (message && typeof message === 'object' && 'kind' in message && message.kind === 'provider-request') {
+      if (nativeOAuth === 'abort') child.send({ kind: 'abort' });
       const work = join(root!, workId, 'evidence');
       assert.ok(fs.readdirSync(work).some(id => {
         try {
@@ -179,7 +204,8 @@ cp.spawn = ((command: string, args: string[], options: cp.SpawnOptions) => {
   child.emit = (event: string | symbol, ...values: unknown[]) => {
     const message = values[0];
     if (event === 'message' && message !== null && typeof message === 'object' &&
-        Object.keys(message).length === 2 && 'kind' in message && message.kind === 'provider-request' &&
+        Object.keys(message).length === 2 && 'kind' in message && (message.kind === 'provider-request' ||
+          (nativeCopyRead && (message.kind === 'provider-attempt' || message.kind === 'provider-validated'))) &&
         'count' in message && typeof message.count === 'number' && Number.isSafeInteger(message.count) && message.count > 0) {
       observeMessage(message);
       return true;
@@ -386,7 +412,7 @@ const sdkDouble = {
         if (mode === 'normal-worker') {
           assert.deepEqual(argv.slice(0, 4), ['/usr/bin/python3', '-I', '-S', '-c']);
           assert.equal(argv.length, 8); assert.equal(argv[5], '/workspace/source.txt');
-          const text = 'prefix\n'.repeat(5000) + 'synthetic-secret synthetic-key\ntarget\nlast';
+          const text = nativeOAuth ? (nativeOAuth === 'tool-result-overflow' ? 'x'.repeat(10000) : 'oauth-access-canary oauth-refresh-canary\nsafe source\n') : 'prefix\n'.repeat(5000) + 'synthetic-secret synthetic-key\ntarget\nlast';
           return { async *output() { for (let i = 0; i < text.length; i += 11) yield { stream: 'stdout', data: Buffer.from(text.slice(i, i + 11)) }; }, result: Promise.resolve({ exitCode: 0 }) };
         }
         return { async *output() { yield { stream: 'stdout', data: Buffer.from('owner-shared-VM') }; }, result: Promise.resolve({ exitCode: 0 }) };
@@ -510,6 +536,13 @@ mock.method(prototype, 'sync', async function(this: FileHandle) {
     setImmediate(() => {
       const listeners = process.listeners('SIGTERM').filter(listener => !originalTermListeners.has(listener));
       if (listeners.length !== 1) throw new Error('EXPECTED_ONE_ADAPTER_STOP_LISTENER');
+      if (mode === 'normal-worker' && nativeOAuth) {
+        void import('../entrypoints/normal-oauth.fixture.js').then(async ({ normalOAuth }) => {
+          await json(join(root!, 'normal-worker-result.json'), await normalOAuth(root!, { workId, environmentRef: environment!, bootRef: boot! }));
+          audit('normal-oauth-passed');
+        }).catch(error => { console.error(error); process.exitCode = 1; }).finally(() => listeners[0]!('SIGTERM'));
+        return;
+      }
       if (mode === 'normal-worker' && nativeEdit) {
         void import('../entrypoints/normal-edit.fixture.js').then(async ({ normalEdit }) => {
           await json(join(root!, 'normal-worker-result.json'), await normalEdit(root!, { workId, environmentRef: environment!, bootRef: boot! }));

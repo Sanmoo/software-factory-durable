@@ -46,7 +46,7 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
         invocations.add(context.invocationId);
         const lifetime = new AbortController();
         lifetimes.set(channel, lifetime);
-        for (const secret of [...parsed.data.knownSecrets, parsed.data.profile.apiKey]) records.registerSecret(secret);
+        for (const secret of [...parsed.data.knownSecrets, ...('apiKey' in parsed.data.profile ? [parsed.data.profile.apiKey] : [])]) records.registerSecret(secret);
         const endpoint = join(directory, `b${++sequence}`);
         try {
           await bindings.add({ ...privateCapabilities, copyOutput: parsed.data.copyOutput === true, endpoint, context, signal: lifetime.signal, records,

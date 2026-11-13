@@ -5,6 +5,7 @@ import { connect, protocolVersion } from '../protocol/index.js';
 import { createRecords } from '../records/index.js';
 import type { ReadResult, ToolContext, ToolProjection } from '../sandbox/index.js';
 import { startWorker } from './worker-start.js';
+import { oauthQualification } from './oauth-qualification.js';
 import { createSecretPublisher, workerBootstrapSchema } from '../platform/host/index.js';
 
 
@@ -86,11 +87,12 @@ async function toolProjection(endpoint: string, context: ToolContext, signal: Ab
  * IPC. No callbacks, SDK objects, environment bag or arbitrary executable input. */
 export async function run(input: unknown, parentSignal: AbortSignal) {
   const synchronizationLifetime = new AbortController();
-  const signal = AbortSignal.any([parentSignal, synchronizationLifetime.signal]);
+  let signal = AbortSignal.any([parentSignal, synchronizationLifetime.signal]);
   if (Buffer.byteLength(JSON.stringify(input) ?? '') > 65536) throw new Error('WORKER_BOOTSTRAP_INVALID');
   const parsed = workerBootstrapSchema.safeParse(input);
   if (!parsed.success) throw new Error('WORKER_BOOTSTRAP_INVALID');
   const bootstrap = parsed.data;
+  if (!('apiKey' in bootstrap.profile)) signal = AbortSignal.any([signal, AbortSignal.timeout(oauthQualification.deadlineMs)]);
   // Same explicit minimal projection as the existing closed Host launch plan.
   const { TMPDIR: temporary, XDG_CACHE_HOME: cache } = process.env;
   if (process.versions.node.split('.')[0] !== '24' || process.env.NODE_DISABLE_COMPILE_CACHE !== '1' ||
@@ -103,9 +105,9 @@ export async function run(input: unknown, parentSignal: AbortSignal) {
   }
   if (!isAbsolute(bootstrap.endpoint)) throw new Error('WORKER_BOOTSTRAP_INVALID');
   const records = await createRecords({ root: bootstrap.recordsRoot });
-  for (const secret of [...bootstrap.knownSecrets, bootstrap.profile.apiKey]) records.registerSecret(secret);
-  const { apiKey: _apiKey, ...publicProfile } = bootstrap.profile;
-  const secrets = [...bootstrap.knownSecrets, bootstrap.profile.apiKey];
+  const secrets = [...bootstrap.knownSecrets, ...('apiKey' in bootstrap.profile ? [bootstrap.profile.apiKey] : [])];
+  for (const secret of secrets) records.registerSecret(secret);
+  const publicProfile = 'apiKey' in bootstrap.profile ? (({ apiKey: _key, ...rest }) => rest)(bootstrap.profile) : bootstrap.profile;
   // Traverse only this schema-bounded public tree, before any JSON escaping.
   // Reject rather than rewrite the prompt or profile passed to the native SDK.
   const containsSecret = (value: unknown): boolean => {
@@ -129,12 +131,14 @@ export async function run(input: unknown, parentSignal: AbortSignal) {
     });
     if (signal.aborted) throw new Error('STALE_TOOL_CONTEXT');
     secretPublisher.protectedStarted();
-    // Future private OAuth composition can consume secretPublisher.acknowledgeSecrets.
-    // No OAuth producer/profile or credential access is activated in this slice.
+
     const tools = await toolProjection(bootstrap.endpoint, bootstrap.context, signal);
     try {
       const { executeSession } = await import('./worker-session.js');
-      return await executeSession({ profile: bootstrap.profile, records, sandbox: tools.sandbox }, invocation, receipt);
+      return await executeSession({ profile: bootstrap.profile, records, sandbox: tools.sandbox,
+        oauth: { factoryRoot: bootstrap.recordsRoot, acknowledgeSecrets: secretPublisher.acknowledgeSecrets,
+          publicInputIsSafe: () => !containsSecret({ prompt: bootstrap.prompt, profile: publicProfile }),
+          registerSecret(value) { records.registerSecret(value); if (!secrets.includes(value)) secrets.push(value); } } }, invocation, receipt);
     } finally { tools.close(); }
   } finally { secretPublisher.close(); }
 }

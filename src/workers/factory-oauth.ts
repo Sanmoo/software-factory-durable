@@ -109,7 +109,9 @@ function sensitive(c: Credential): readonly string[] {
   return [c.access, c.refresh, c.clientId as string];
 }
 
-/** Deep PRIVATE store seam. Never exported from Workers/index or selected by the active runtime. */
+/** Private Factory store, shared with the actual OAuth worker's native runtime.
+ * The optional getAuth helper is for deep component qualification only; worker
+ * composition consumes credentials directly and never exports a bearer. */
 export async function openFactoryOAuth(options: FactoryOAuthOptions): Promise<{ credentials: CredentialStore; getAuth(): Promise<{ apiKey: string }>; settleCredentialWrites(): Promise<void> }> {
   try {
     options.signal.throwIfAborted();
