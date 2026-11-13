@@ -133,13 +133,26 @@ export function boundStreamCopyTools(options: Options, valid: () => boolean, rev
     let output: Awaited<ReturnType<typeof options.records.openOutput>> | undefined;
     let completed = false;
     let published = false;
+    let failed = false;
+    const fail = () => {
+      if (failed) return;
+      failed = true;
+      revoke(); lifetime.abort();
+    };
     async function* stdin() {
-      for await (const chunk of projection.chunks) {
-        if (!valid() || signal.aborted || !Buffer.isBuffer(chunk) || chunk.length === 0 || chunk.length > 65536 ||
-            !Number.isSafeInteger(count + chunk.length)) throw new Error('copy source unavailable');
-        count += chunk.length;
-        hash.update(chunk);
-        yield chunk;
+      try {
+        for await (const chunk of projection.chunks) {
+          if (!valid() || signal.aborted || !Buffer.isBuffer(chunk) || chunk.length === 0 || chunk.length > 65536 ||
+              !Number.isSafeInteger(count + chunk.length)) throw new Error('copy source unavailable');
+          count += chunk.length;
+          hash.update(chunk);
+          yield chunk;
+        }
+      } catch (error) {
+        // SDK stdin consumption is independent of output/result settlement.
+        // Revoke admission and request abort before exposing a failed pull.
+        fail();
+        throw error;
       }
     }
     try {
@@ -150,7 +163,7 @@ export function boundStreamCopyTools(options: Options, valid: () => boolean, rev
       const process = options.vm.exec(['/usr/bin/env', '-i', '/usr/bin/python3', '-I', '-S', '-c', guestStreamProgram, 'stream', path], {
         stdout: 'pipe', stderr: 'pipe', signal, windowBytes: 65536, env: {}, cwd: '/', stdin: stdin(), stdinCapacity: { maxChunkBytes: 65536 },
       });
-      void process.result.catch(() => {});
+      void process.result.catch(fail);
       // Bounded validation buffer ONLY, never an output/source accumulator.
       let receiptBytes = Buffer.alloc(0);
       for await (const chunk of process.output()) {
@@ -182,7 +195,7 @@ export function boundStreamCopyTools(options: Options, valid: () => boolean, rev
     } catch {
       // Synchronous before uncertain evidence persistence: peers cannot enter
       // Write/Edit/Bash while that await is held. Abort is NOT a physical stop.
-      revoke(); lifetime.abort();
+      fail();
       if (attempted) {
         try { await options.records.record(evidence, { kind: 'mutation-result', phaseId, operation: 'copy-output',
           status: 'effects-unknown-no-retry' }); } catch { /* Still unknown. */ }
