@@ -1,0 +1,121 @@
+--- a/dist/core/tools/edit.d.ts
++++ b/dist/core/tools/edit.d.ts
+@@ -1,4 +1,5 @@
+ import { type Static, Type } from "typebox";
++import type { FileMutationQueueMode } from "./file-mutation-queue.js";
+ import type { ToolDefinition } from "../extensions/types.ts";
+ import { type EditRenderState } from "./renderers/edit.ts";
+ import { type TypeBoxAgentTool } from "./tool-definition-wrapper.ts";
+@@ -35,6 +36,11 @@
+     access: (absolutePath: string) => Promise<void>;
+ }
+ export interface EditToolOptions {
++    /** Host composition only. Default: host-realpath. Lexical avoids host realpath;
++     * normalized path keys are not authority and do not identify aliases/hardlinks.
++     * This remains cooperative process-local serialization, not a global writer lock.
++     */
++    mutationQueueMode?: FileMutationQueueMode;
+     /** Custom operations for file editing. Default: local filesystem */
+     operations?: EditOperations;
+ }
+--- a/dist/core/tools/edit.js
++++ b/dist/core/tools/edit.js
+@@ -77,6 +77,7 @@
+ }
+ export function createEditToolDefinition(cwd, options) {
+     const ops = options?.operations ?? defaultEditOperations;
++    const mutationQueueMode = options?.mutationQueueMode ?? "host-realpath";
+     return {
+         name: "edit",
+         label: "edit",
+@@ -135,7 +136,7 @@
+                     ],
+                     details: editDiff,
+                 };
+-            });
++            }, mutationQueueMode);
+         },
+         ...editRenderers,
+     };
+--- a/dist/core/tools/file-mutation-queue.d.ts
++++ b/dist/core/tools/file-mutation-queue.d.ts
+@@ -1,6 +1,8 @@
++/** Closed host-selected key policy; lexical keys do not grant filesystem authority. */
++export type FileMutationQueueMode = "host-realpath" | "lexical";
+ /**
+  * Serialize file mutation operations targeting the same file.
+  * Operations for different files still run in parallel.
+  */
+-export declare function withFileMutationQueue<T>(filePath: string, fn: () => Promise<T>): Promise<T>;
++export declare function withFileMutationQueue<T>(filePath: string, fn: () => Promise<T>, mode?: FileMutationQueueMode): Promise<T>;
+ //# sourceMappingURL=file-mutation-queue.d.ts.map
+\ No newline at end of file
+--- a/dist/core/tools/file-mutation-queue.js
++++ b/dist/core/tools/file-mutation-queue.js
+@@ -8,8 +8,14 @@
+         "code" in error &&
+         (error.code === "ENOENT" || error.code === "ENOTDIR"));
+ }
+-async function getMutationQueueKey(filePath) {
++async function getMutationQueueKey(filePath, mode) {
++    if (mode !== "host-realpath" && mode !== "lexical") {
++        throw new Error("Invalid mutation queue mode");
++    }
+     const resolvedPath = resolve(filePath);
++    if (mode === "lexical") {
++        return resolvedPath;
++    }
+     try {
+         return await realpath(resolvedPath);
+     }
+@@ -24,9 +30,9 @@
+  * Serialize file mutation operations targeting the same file.
+  * Operations for different files still run in parallel.
+  */
+-export async function withFileMutationQueue(filePath, fn) {
++export async function withFileMutationQueue(filePath, fn, mode = "host-realpath") {
+     const registration = registrationQueue.then(async () => {
+-        const key = await getMutationQueueKey(filePath);
++        const key = await getMutationQueueKey(filePath, mode);
+         const currentQueue = fileMutationQueues.get(key) ?? Promise.resolve();
+         let releaseNext;
+         const nextQueue = new Promise((resolveQueue) => {
+--- a/dist/core/tools/write.d.ts
++++ b/dist/core/tools/write.d.ts
+@@ -1,4 +1,5 @@
+ import { type Static, Type } from "typebox";
++import type { FileMutationQueueMode } from "./file-mutation-queue.js";
+ import type { ToolDefinition } from "../extensions/types.ts";
+ import { type TypeBoxAgentTool } from "./tool-definition-wrapper.ts";
+ declare const writeSchema: Type.TObject<{
+@@ -21,6 +22,11 @@
+     mkdir: (dir: string) => Promise<void>;
+ }
+ export interface WriteToolOptions {
++    /** Host composition only. Default: host-realpath. Lexical avoids host realpath;
++     * normalized path keys are not authority and do not identify aliases/hardlinks.
++     * This remains cooperative process-local serialization, not a global writer lock.
++     */
++    mutationQueueMode?: FileMutationQueueMode;
+     /** Custom operations for file writing. Default: local filesystem */
+     operations?: WriteOperations;
+ }
+--- a/dist/core/tools/write.js
++++ b/dist/core/tools/write.js
+@@ -19,6 +19,7 @@
+ };
+ export function createWriteToolDefinition(cwd, options) {
+     const ops = options?.operations ?? defaultWriteOperations;
++    const mutationQueueMode = options?.mutationQueueMode ?? "host-realpath";
+     return {
+         name: "write",
+         label: "write",
+@@ -50,7 +51,7 @@
+                     content: [{ type: "text", text: `Successfully wrote to ${path}` }],
+                     details: undefined,
+                 };
+-            });
++            }, mutationQueueMode);
+         },
+         ...writeRenderers,
+     };

@@ -9,7 +9,7 @@ import { SessionManager } from '#factory-pi';
  * fixture substitutes ONLY external manager/VM boundaries; FD hardware unproven. */
 export async function normalBuilder(root: string, context: { workId: string; environmentRef: string; bootRef: string }) {
   const workers = createWorkers({ root, knownSecrets: ['synthetic-secret'], profile: {
-    id: 'factory-development-pi-1.5.2-read-async-bash-v2', systemPrompt: 'Regular-file Builder write fixture.',
+    id: 'factory-development-pi-1.5.2-read-async-bash-lexical-v3', systemPrompt: 'Regular-file Builder write fixture.',
     providerId: 'offline-fixture', modelId: 'reader', apiKey: 'synthetic-key',
     provider: { api: 'openai-completions', baseUrl: 'https://offline.invalid', models: [
       { id: 'reader', name: 'Reader', reasoning: false, input: ['text'],

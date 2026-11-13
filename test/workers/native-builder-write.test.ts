@@ -110,3 +110,60 @@ test('actual native per-path mutation queue holds in-flight overwrite and uses c
   assert.equal(ids.length, 4); assert.equal(new Set(ids).size, 4);
   for (const id of ids) assert.match(id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 });
+
+test('Factory adapter fixed lexical mode routes owned EACCES path only to guest callbacks (not owner confinement)', async () => {
+  const { mkdtemp, mkdir, chmod, realpath, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { createWriteTool } = await import('#factory-pi');
+  assert.notEqual(process.getuid?.(), 0, 'permission negative requires non-root');
+  const root = await mkdtemp(join(tmpdir(), 'w105-'));
+  await chmod(root, 0o700);
+  const blocked = join(root, 'blocked');
+  const sentinel = join(blocked, 'sentinel');
+  const calls: { operation: string; path: string; content?: string }[] = [];
+  try {
+    await mkdir(blocked, { mode: 0o700 });
+    await writeFile(sentinel, 'HOST_UNTOUCHED', { mode: 0o600 });
+    await chmod(blocked, 0);
+    await assert.rejects(realpath(sentinel), { code: 'EACCES' });
+    // Actual native legacy custom operations still probe host; never use default host backend.
+    const legacy = createWriteTool(root, { operations: {
+      mkdir: async () => { assert.fail('legacy callback before EACCES'); },
+      writeFile: async () => { assert.fail('legacy callback before EACCES'); },
+    } });
+    await assert.rejects(legacy.execute('legacy', { path: sentinel, content: '' }), { code: 'EACCES' });
+    // Deliberate ToolProjection double: owned host fixture is NOT a guest-root path.
+    const tool = builderWrite(context, { async executeTool(bound, call) {
+      assert.equal(bound, context);
+      if (call.name !== 'write') assert.fail('write only');
+      calls.push(call);
+      return { status: 'success', format: 'text', reference: { workId: context.workId, id: 'fixture' }, bytes: 0,
+        encoding: 'base64', data: '', nextOffset: 0 };
+    } });
+    assert.doesNotMatch(JSON.stringify(tool.parameters), /mutationQueueMode/);
+    for (const mutationQueueMode of ['host-realpath', 'unknown-model-mode']) {
+      calls.length = 0;
+      const result = await tool.execute('lexical', { path: sentinel, content: 'GUEST_ONLY', mutationQueueMode },
+        undefined, undefined, { cwd: root, mutationQueueMode: 'invalid' } as never);
+      assert.deepEqual(calls.map(call => [call.operation, call.path, call.content]), [
+        ['mkdir', blocked, undefined], ['create', sentinel, 'GUEST_ONLY'],
+      ]);
+      assert.deepEqual(result.content, [{ type: 'text', text: `Successfully wrote to ${sentinel}` }]);
+    }
+  } finally {
+    try {
+      await chmod(blocked, 0o700);
+      assert.equal(await readFile(sentinel, 'utf8'), 'HOST_UNTOUCHED');
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }
+});
+
+test('Builder lexical composition is host-fixed with upstream typed extension and no edit enablement', async () => {
+  const source = await readFile('src/workers/write.ts', 'utf8');
+  assert.match(source, /type LexicalWriteOptions = NonNullable<Parameters<typeof createWriteTool>\[1\]> &/);
+  assert.match(source, /const options: LexicalWriteOptions = \{ mutationQueueMode: 'lexical', operations:/);
+  assert.match(source, /return createWriteTool\(cwd, options\)/);
+  assert.doesNotMatch(source, /\bany\b|process\.env|sdkProfile|input\.mutationQueueMode|ctx\??\.mutationQueueMode|createEditTool/);
+  const worker = await readFile('src/workers/worker-session.ts', 'utf8');
+  assert.doesNotMatch(worker, /createEditTool|builderEdit/);
+});

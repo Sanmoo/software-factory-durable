@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { mkdir, readFile, rename, symlink, unlink, writeFile } from 'node:fs/promises';
+import { link, lstat, mkdir, readFile, readdir, readlink, realpath, rename, symlink, unlink, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { execFile, fork } from 'node:child_process';
 import { once } from 'node:events';
 import { join } from 'node:path';
@@ -11,16 +12,16 @@ import { syncBuiltinESMExports } from 'node:module';
 import { setImmediate } from 'node:timers/promises';
 import { test } from 'node:test';
 import { builderBash } from '../../dist/src/workers/bash.js';
-import { prepareDevelopmentSdk, sdkProfile } from '../../dist/src/workers/sdk-profile.js';
+import { asyncBashFiles, imageMimeFacade, lexicalQueueFiles, prepareDevelopmentSdk, sdkProfile, sdkStagingDirectory } from '../../dist/src/workers/sdk-profile.js';
 import { connectReadTools } from '../../dist/src/sandbox/read-tools.js';
 import { nativeOwner } from '../../dist/test/sandbox/native-owner.fixture.js';
 
-const context = { workId: 'v2-work', executionId: 'v2-exec', invocationId: 'v2-invocation',
-  role: 'builder', environmentRef: 'v2-env', bootRef: 'v2-boot', phaseId: 'v2-phase' };
+const context = { workId: 'v3-work', executionId: 'v3-exec', invocationId: 'v3-invocation',
+  role: 'builder', environmentRef: 'v3-env', bootRef: 'v3-boot', phaseId: 'v3-phase' };
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 
-test('new private development profile v2 preserves prior read correction and MIME facade', { timeout: 15000 }, async () => {
-  assert.equal(sdkProfile.id, 'factory-development-pi-1.5.2-read-async-bash-v2');
+test('new private development profile v3 preserves prior read correction and MIME facade', { timeout: 15000 }, async () => {
+  assert.equal(sdkProfile.id, 'factory-development-pi-1.5.2-read-async-bash-lexical-v3');
   const evidence = await prepareDevelopmentSdk();
   assert.deepEqual(await prepareDevelopmentSdk(), evidence);
   assert.equal(evidence.license, 'MIT');
@@ -28,20 +29,26 @@ test('new private development profile v2 preserves prior read correction and MIM
   assert.equal(evidence.resultSHA256, '06867a067ebbadca2e06f75ccb4e682cd7e37b9683d41a71562f770b3105a209');
 });
 
-test('v2 preparation refuses unexpected bytes, unsafe links and missing metadata without repair', { timeout: 15000 }, async () => {
-  const root = '.scratch/factory-development-sdk-v2';
-  const extra = root + '/sdk/task95-unexpected';
+test('v3 preparation refuses unexpected bytes, unsafe links and missing metadata without repair', { timeout: 15000 }, async () => {
+  const root = '.scratch/factory-development-sdk-v3';
+  const extra = root + '/sdk/task105-unexpected';
   try {
     await writeFile(extra, 'OWNED_DRIFT', { flag: 'wx', mode: 0o600 });
     await assert.rejects(prepareDevelopmentSdk(), /SDK_STAGING_DRIFT/);
     assert.equal(await readFile(extra, 'utf8'), 'OWNED_DRIFT');
   } finally { await unlink(extra); }
   const readme = root + '/sdk/README.md';
-  await rename(readme, readme + '.task95-held');
+  await rename(readme, readme + '.task105-held');
   try {
     await symlink(process.cwd() + '/node_modules/@earendil-works/pi-coding-agent/README.md', readme);
     await assert.rejects(prepareDevelopmentSdk(), /SDK_STAGING_NOT_OWNED/);
-  } finally { await unlink(readme); await rename(readme + '.task95-held', readme); }
+  } finally { await unlink(readme); await rename(readme + '.task105-held', readme); }
+  await rename(readme, readme + '.task105-held');
+  try {
+    await link(readme + '.task105-held', readme);
+    await assert.rejects(prepareDevelopmentSdk(), /SDK_STAGING_NOT_OWNED/);
+    assert.equal((await lstat(readme)).nlink, 2, 'no repair of hardlinked file');
+  } finally { await unlink(readme); await rename(readme + '.task105-held', readme); }
   const profile = root + '/profile.json';
   const profileBytes = await readFile(profile);
   await unlink(profile);
@@ -121,7 +128,7 @@ for (const mode of ['release', 'abort', 'stream-error', 'bounded-resume']) {
     const controller = new AbortController();
     let settled = false, critical = 0;
     const tool = builderBash(context, { executeTool: (_context, call, onData, signal) => client.executeTool(call, onData, signal) }, () => { critical++; });
-    const running = tool.execute('v2-call', { command: 'FIXED_DATA_ONLY' }, controller.signal)
+    const running = tool.execute('v3-call', { command: 'FIXED_DATA_ONLY' }, controller.signal)
       .then(value => ({ value }), error => ({ error })).finally(() => { settled = true; });
     try {
       const entry = await held.promise;
@@ -173,7 +180,7 @@ for (const mode of ['release', 'abort', 'stream-error', 'bounded-resume']) {
 }
 
 for (const mode of ['release', 'abort', 'stream-error']) {
-  test(`new Node24 v2 worker projection/session JSONL: held native stream ${mode}`, { timeout: 12000 }, async t => {
+  test(`new Node24 v3 worker projection/session JSONL: held native stream ${mode}`, { timeout: 12000 }, async t => {
     const source = Buffer.from('head synthetic-secret π\n' + 'fixed-data\n'.repeat(8000) + 'tail π');
     const produced = deferred();
     const owner = await nativeOwner(context, { exec() {
@@ -206,7 +213,7 @@ for (const mode of ['release', 'abort', 'stream-error']) {
     try {
       child.send({ version: 1, context, endpoint: owner.owner.endpoint, recordsRoot, knownSecrets: ['synthetic-secret', 'synthetic-key'],
         prompt: mode === 'release' ? 'Run Bash output.' : 'blocked-bash output.',
-        profile: { id: sdkProfile.id, directory, systemPrompt: 'Private v2 bounded async Bash fixture.',
+        profile: { id: sdkProfile.id, directory, systemPrompt: 'Private v3 bounded async Bash fixture.',
           providerId: 'offline-fixture', modelId: 'reader', apiKey: 'synthetic-key',
           provider: { api: 'openai-completions', baseUrl: 'https://offline.invalid', models: [
             { id: 'reader', name: 'Reader', reasoning: false, input: ['text'],
@@ -246,3 +253,46 @@ for (const mode of ['release', 'abort', 'stream-error']) {
     }
   });
 }
+
+test('v3 entire copied tree has exactly eleven corrections and unchanged MIME facade', async t => {
+  const sha = bytes => createHash('sha256').update(bytes).digest('hex');
+  const upstream = 'node_modules/@earendil-works/pi-coding-agent';
+  const target = sdkStagingDirectory + '/sdk';
+  const corrected = { ...asyncBashFiles, ...lexicalQueueFiles,
+    'dist/core/tools/read.js': { before: sdkProfile.upstreamSHA256, after: sdkProfile.resultSHA256 } };
+  const changed = [];
+  const tree = createHash('sha256');
+  const root = await lstat(sdkStagingDirectory);
+  assert.equal(root.uid, process.getuid()); assert.equal(root.mode & 0o777, 0o700);
+  assert.equal(await realpath(sdkStagingDirectory), process.cwd() + '/' + sdkStagingDirectory);
+  async function verify(relative = '') {
+    const source = join(upstream, relative), dest = join(target, relative);
+    const original = await lstat(source), copy = await lstat(dest);
+    assert.equal(copy.uid, process.getuid());
+    if (original.isDirectory()) {
+      assert.equal(copy.isDirectory(), true); assert.equal(copy.isSymbolicLink(), false);
+      tree.update(JSON.stringify([relative, 'directory']) + '\n');
+      const names = (await readdir(source)).sort();
+      assert.deepEqual((await readdir(dest)).sort(), names);
+      for (const name of names) await verify(join(relative, name));
+    } else if (original.isSymbolicLink()) {
+      assert.equal(copy.isSymbolicLink(), true);
+      const link = await readlink(source); assert.equal(await readlink(dest), link);
+      tree.update(JSON.stringify([relative, 'symlink', link]) + '\n');
+    } else {
+      assert.equal(copy.isFile(), true); assert.equal(copy.nlink, 1);
+      const before = sha(await readFile(source)), after = sha(await readFile(dest));
+      if (corrected[relative]) {
+        assert.equal(before, corrected[relative].before); assert.equal(after, corrected[relative].after);
+      } else assert.equal(after, before);
+      if (before !== after) changed.push(relative);
+      tree.update(JSON.stringify([relative, 'file', after]) + '\n');
+    }
+  }
+  await verify();
+  assert.deepEqual(changed.sort(), Object.keys(corrected).sort());
+  assert.equal(sha(await readFile(join(sdkStagingDirectory, imageMimeFacade.file))), imageMimeFacade.sha256);
+  const resultTreeSHA256 = tree.digest('hex');
+  assert.equal(resultTreeSHA256, 'c64ed4dde34103f3829ffe3edb5de6a6bd886a6dab22e589f1cd8f2968713816');
+  t.diagnostic('verified entire v3 SDK tree SHA256=' + resultTreeSHA256 + '; exactly eleven corrected regular files');
+});
