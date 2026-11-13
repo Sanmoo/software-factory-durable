@@ -28,7 +28,12 @@ export type TextOutput = OutputChannel<string, TextCompletion>;
 export type RawOutput = OutputChannel<void, RawCompletion>;
 type ReadRequest = { reference: OutputReference; offset: number; limit: number };
 export type TextProjectionRequest = { context: OutputContext; reference: OutputReference; expectedBytes: number; signal?: AbortSignal };
-export type TextProjection = { readonly state: 'pending' | 'streaming' | 'complete' | 'failed'; chunks: AsyncGenerator<Buffer, void, unknown> };
+export type TextProjection = {
+  readonly state: 'pending' | 'streaming' | 'complete' | 'failed';
+  chunks: AsyncGenerator<Buffer, void, unknown>;
+  /** Point-in-time EOF, same-instance filter revision and signal check; not authorization or a filesystem snapshot. */
+  assertCompleteAndCurrent(): void;
+};
 type OutputPage = { state: 'complete' | 'partial'; data: Buffer<ArrayBuffer>; nextOffset: number; bytes: number }
   | { state: 'absent'; data: Buffer<ArrayBuffer>; nextOffset: number; bytes: number };
 type RawPage = OutputPage & { version: 2; format: 'raw' };
@@ -417,6 +422,11 @@ export async function createRecords({ root }: { root: string }) {
     return { chunks, get state() {
       if (state !== 'complete' && (revision !== registryRevision || signal?.aborted)) state = 'failed';
       return state;
+    }, assertCompleteAndCurrent() {
+      // Completion is historical. This guard neither rereads the source nor
+      // changes that state when a later registration/abort makes it stale.
+      if (state !== 'complete') throw new RecordsError();
+      validate();
     } };
   }
   async function readPage({ reference, offset, limit, format, context }: ReadRequest & { format?: 'raw'; context?: OutputContext }): Promise<OutputPage> {
