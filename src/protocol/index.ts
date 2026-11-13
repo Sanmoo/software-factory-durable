@@ -34,36 +34,65 @@ async function privateDirectory(endpoint: string): Promise<void> {
 }
 
 function channel(socket: Socket, onClosed?: (error: unknown) => void): Channel {
-  let buffer = Buffer.alloc(0);
+  // One bounded partial/candidate (including its newline), independent of the
+  // decoded queue. Unread bytes stay in Node's readable buffer, then the socket.
+  const buffer = Buffer.alloc(maxFrameBytes + 1);
+  let bufferedBytes = 0;
   const queue: { envelope: Envelope; bytes: number }[] = [];
   let queuedBytes = 0;
   let ended = false;
   let failure: unknown;
   let notify: (() => void) | undefined;
   const wake = () => { notify?.(); notify = undefined; };
-  const fail = (error: unknown) => { failure = error; socket.destroy(); wake(); };
-  socket.on('data', (chunk: Buffer) => {
-    buffer = Buffer.concat([buffer, chunk]);
-    while (true) {
-      const newline = buffer.indexOf(10);
-      if (newline < 0) break;
-      if (newline > maxFrameBytes) { fail(new ProtocolError('FRAME_TOO_LARGE')); return; }
-      const frame = buffer.subarray(0, newline);
-      buffer = buffer.subarray(newline + 1);
-      try {
-        const parsed = envelopeSchema.parse(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(frame)));
-        queuedBytes += frame.length;
-        if (queuedBytes > maxPendingBytes) throw new ProtocolError('FRAME_TOO_LARGE');
-        queue.push({ envelope: parsed, bytes: frame.length });
-        wake();
-      } catch (error) { fail(error instanceof ProtocolError ? error : new ProtocolError('INVALID_FRAME')); return; }
-    }
-    if (buffer.length > maxFrameBytes) fail(new ProtocolError('FRAME_TOO_LARGE'));
-  });
-  socket.on('error', error => { failure = error; wake(); });
+  const fail = (error: unknown) => { failure ??= error; socket.destroy(); wake(); };
+  let inputEnded = false;
+  let pumping = false;
+  const pump = () => {
+    if (pumping || failure || ended) return;
+    pumping = true;
+    try {
+      while (true) {
+        const newline = buffer.subarray(0, bufferedBytes).indexOf(10);
+        if (newline >= 0) {
+          // Leave the bounded candidate in place until the consumer frees space.
+          if (queuedBytes + newline > maxPendingBytes) return;
+          try {
+            const parsed = envelopeSchema.parse(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, newline))));
+            queuedBytes += newline;
+            if (queuedBytes > maxPendingBytes) throw new ProtocolError('FRAME_TOO_LARGE');
+            queue.push({ envelope: parsed, bytes: newline });
+            buffer.copyWithin(0, newline + 1, bufferedBytes);
+            bufferedBytes -= newline + 1;
+            wake();
+          } catch (error) { fail(error instanceof ProtocolError ? error : new ProtocolError('INVALID_FRAME')); return; }
+          continue;
+        }
+        if (bufferedBytes > maxFrameBytes) { fail(new ProtocolError('FRAME_TOO_LARGE')); return; }
+        if (inputEnded && socket.readableLength === 0) {
+          if (bufferedBytes) fail(new ProtocolError('INVALID_FRAME'));
+          else { ended = true; wake(); }
+          return;
+        }
+        // Reserve a whole possible frame before reading more. No data listener:
+        // read(n) cannot hand us an arbitrarily large coalesced chunk.
+        if (queuedBytes > maxPendingBytes - maxFrameBytes) return;
+        const bytes = Math.min(maxFrameBytes, socket.readableLength, buffer.length - bufferedBytes);
+        if (!bytes) { socket.read(0); return; }
+        const chunk: Buffer | null = socket.read(bytes) as Buffer | null;
+        if (!chunk) return;
+        chunk.copy(buffer, bufferedBytes);
+        bufferedBytes += chunk.length;
+      }
+    } finally { pumping = false; }
+  };
+  socket.on('readable', pump);
+  socket.on('end', () => { inputEnded = true; pump(); });
+  socket.on('error', error => { failure ??= error; wake(); });
   socket.on('close', () => {
-    ended = true;
-    if (buffer.length && !failure) failure = new ProtocolError('INVALID_FRAME');
+    if (!inputEnded) {
+      ended = true;
+      if (bufferedBytes && !failure) failure = new ProtocolError('INVALID_FRAME');
+    }
     wake();
     onClosed?.(failure);
   });
@@ -79,7 +108,7 @@ function channel(socket: Socket, onClosed?: (error: unknown) => void): Channel {
         while (true) {
           if (failure) throw failure;
           const item = queue.shift();
-          if (item) { queuedBytes -= item.bytes; yield item.envelope; }
+          if (item) { queuedBytes -= item.bytes; pump(); yield item.envelope; }
           else if (ended) return;
           else await new Promise<void>(resolve => { notify = resolve; });
         }

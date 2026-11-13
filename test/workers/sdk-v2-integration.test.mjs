@@ -73,10 +73,11 @@ test('Factory rejects actual unpatched native SDK before any tool RPC or guest e
   assert.equal(result.stderr, '');
 });
 
-for (const mode of ['release', 'abort', 'stream-error', 'protocol-overflow']) {
+for (const mode of ['release', 'abort', 'stream-error', 'bounded-resume']) {
   test(`Factory native async Bash + real Protocol/Records: held private stream ${mode}`, { timeout: 12000 }, async t => {
-    const source = Buffer.from('head synthetic-secret π\n' + 'fixed-data\n'.repeat(mode === 'protocol-overflow' ? 80000 : 8000) + 'tail π');
+    const source = Buffer.from('head synthetic-secret π\n' + 'fixed-data\n'.repeat(mode === 'bounded-resume' ? 80000 : 8000) + 'tail π');
     const produced = deferred();
+    const offered = deferred();
     const expected = source.toString().replace('synthetic-secret', '█');
     let guestCalls = 0;
     const owner = await nativeOwner(context, { exec(argv, options) {
@@ -85,8 +86,11 @@ for (const mode of ['release', 'abort', 'stream-error', 'protocol-overflow']) {
       assert.equal(options.windowBytes, 65536);
       return { async *output() {
         try {
-          for (let offset = 0; offset < source.length; offset += 8192) yield { stream: 'stdout', data: source.subarray(offset, offset + 8192) };
-        } finally { produced.resolve(); }
+          for (let offset = 0; offset < source.length; offset += 8192) {
+            if (offset >= 256 * 1024) offered.resolve();
+            yield { stream: 'stdout', data: source.subarray(offset, offset + 8192) };
+          }
+        } finally { offered.resolve(); produced.resolve(); }
       }, result: Promise.resolve({ exitCode: 0 }) };
     } });
     const client = await connectReadTools(owner.owner.endpoint, context);
@@ -128,8 +132,15 @@ for (const mode of ['release', 'abort', 'stream-error', 'protocol-overflow']) {
       await setImmediate();
       assert.equal(entry.writes.length, admitted, 'no further native admission while drain held');
       assert.ok(entry.stream.writableLength <= 40960);
-      if (mode === 'protocol-overflow') await produced.promise;
-      if (mode === 'release' || mode === 'protocol-overflow') entry.stream.uncork();
+      // Do not await the whole producer while capture is held: socket pressure
+      // is allowed to stop it. 256KiB source plus base64/envelopes exceeds
+      // Protocol's 256KiB wire-byte budget before releasing native capture.
+      if (mode === 'bounded-resume') {
+        await offered.promise;
+        assert.equal(settled, false);
+        assert.equal(entry.writes.length, admitted, 'capture stays paused while >budget valid data is offered');
+      }
+      if (mode === 'release' || mode === 'bounded-resume') entry.stream.uncork();
       else if (mode === 'abort') controller.abort();
       else entry.stream.destroy(new Error('FIXED_STREAM_FAILURE'));
       const outcome = await running;
@@ -137,7 +148,8 @@ for (const mode of ['release', 'abort', 'stream-error', 'protocol-overflow']) {
       assert.equal(guestCalls, 1);
       assert.ok(entry.writes.every(write => write.pending <= 40960), 'all native writes respect HWM + one application chunk');
       assert.equal(entry.stream.listenerCount('drain'), 0);
-      if (mode === 'release') {
+      if (mode === 'release' || mode === 'bounded-resume') {
+        await produced.promise;
         assert.equal(outcome.error, undefined);
         assert.equal(critical, 0);
         assert.match(JSON.stringify(outcome.value), /Full output:/);
@@ -148,7 +160,7 @@ for (const mode of ['release', 'abort', 'stream-error', 'protocol-overflow']) {
         await assert.rejects(tool.execute('later', { command: 'FIXED_DATA_ONLY' }), /BASH_INVOCATION_REVOKED/);
         assert.equal(guestCalls, 1);
       }
-      t.diagnostic(`source=${source.length}, native max pending=${Math.max(...entry.writes.map(write => write.pending))}; ${mode === 'protocol-overflow' ? 'overflow FAILS CLOSED, not lossless transport flow' : mode}`);
+      t.diagnostic(`source=${source.length}, native max pending=${Math.max(...entry.writes.map(write => write.pending))}; ${mode === 'bounded-resume' ? 'valid >256KiB stream resumes losslessly after held native capture' : mode}`);
     } finally {
       for (const { stream } of streams) stream.uncork();
       await running;
