@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { createConnection, type Socket } from 'node:net';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { createConnection, createServer, Socket } from 'node:net';
+import { chmod, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setImmediate, setTimeout as delay } from 'node:timers/promises';
@@ -98,6 +98,66 @@ test('Protocol waits for a deferred consumer across a valid stream larger than t
   await Promise.race([complete.promise, closed.promise]);
   assert.deepEqual(received, expected);
   assert.deepEqual(errors, []);
+});
+
+test('Protocol rejects a dequeue when its refill discovers an invalid frame behind the full pending budget', { timeout: 5000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pf-'));
+  const accepted = deferred();
+  const fullBudgetRead = deferred();
+  const malformedUnread = deferred();
+  let producer: Socket | undefined;
+  let receiver: Socket | undefined;
+  let consumed = 0;
+  const empty = { ...envelope, payload: { text: '' } };
+  const maximum = { ...empty, payload: { text: 'x'.repeat(maxFrameBytes - Buffer.byteLength(JSON.stringify(empty))) } };
+  const frame = Buffer.from(JSON.stringify(maximum) + '\n');
+  assert.equal(frame.length, 65537);
+  const fullWireBytes = 4 * frame.length;
+  const server = createServer(socket => { producer = socket; accepted.resolve(); });
+  const originalRead = Socket.prototype.read;
+  let client: Awaited<ReturnType<typeof connect>> | undefined;
+  // Scoped source-symptom observer only: count actual socket reads, not heap/RSS
+  // or universal liveness. The sole protocol receiver is identified by its first
+  // exact fixture prefix; the raw producer never reads. No production hooks.
+  const observeUnread = () => {
+    if (consumed === fullWireBytes && receiver?.readableLength === 3) malformedUnread.resolve();
+  };
+  try {
+    await new Promise<void>(resolve => { server.listen(join(root, 's'), resolve); });
+    await chmod(join(root, 's'), 0o600);
+    client = await connect(join(root, 's'), 'local-operator');
+    await accepted.promise;
+    Socket.prototype.read = function (size?: number) {
+      const chunk = originalRead.call(this, size) as Buffer | null;
+      if (!receiver && this !== producer && Buffer.isBuffer(chunk) && chunk.subarray(0, 32).equals(frame.subarray(0, 32))) {
+        receiver = this;
+        receiver.on('readable', observeUnread);
+      }
+      if (this === receiver && chunk) {
+        consumed += chunk.length;
+        if (consumed === fullWireBytes) fullBudgetRead.resolve();
+      }
+      return chunk;
+    };
+    producer!.write(Buffer.concat([frame, frame, frame, frame]));
+    await fullBudgetRead.promise;
+    // The read observer fires inside pump; this continuation runs after pump
+    // queues all four 65,536-byte frames (262,144 accounted bytes).
+    producer!.write('{}\n');
+    await malformedUnread.promise;
+    assert.equal(consumed, fullWireBytes, 'malformed tail is still unread behind the full decoded budget');
+    assert.equal(receiver?.readableLength, 3);
+    const iterator = client.messages[Symbol.asyncIterator]();
+    await assert.rejects(iterator.next(), { code: 'INVALID_FRAME' }, 'refill failure must win over a queued envelope');
+    assert.equal(consumed, fullWireBytes + 3, 'the rejecting dequeue actually read the malformed tail');
+  } finally {
+    Socket.prototype.read = originalRead;
+    receiver?.off('readable', observeUnread);
+    client?.close();
+    producer?.destroy();
+    await new Promise<void>((resolve, reject) => { server.close(error => error ? reject(error) : resolve()); });
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('Protocol preserves the exact maximum frame boundary', { timeout: 5000 }, async t => {

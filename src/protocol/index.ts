@@ -108,7 +108,7 @@ function channel(socket: Socket, onClosed?: (error: unknown) => void): Channel {
         while (true) {
           if (failure) throw failure;
           const item = queue.shift();
-          if (item) { queuedBytes -= item.bytes; pump(); yield item.envelope; }
+          if (item) { queuedBytes -= item.bytes; pump(); if (failure) throw failure; yield item.envelope; }
           else if (ended) return;
           else await new Promise<void>(resolve => { notify = resolve; });
         }
