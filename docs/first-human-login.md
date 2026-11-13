@@ -43,9 +43,13 @@ Do not run it until the operator approves a concrete finite operational manifest
 - Public canonical root: CLI `--root` only; fixed derived credential path, no discovery.
 - Stable nonsecret installation UUID: generated locally into
   `R/credentials/setup/device-id`, own `0600`; never imported from personal SDK state.
-- Native catalog cache: `R/credentials/setup/models-store.json`, own private setup
-  directory `0700`; `modelsPath:null`, explicit credentials, model network disabled,
-  `refreshOnCreate:false`. No personal/default profile is read or copied.
+- Native model catalog: in memory. With `modelsPath:null` and no explicit
+  `modelsStore`, the selected native runtime uses `InMemoryCodingAgentModelsStore`;
+  the supplied `modelsStorePath` is not used for persistence. The helper preflights
+  `R/credentials/setup/models-store.json` as a reserved pathname but does not create
+  or use that cache file in this configuration. Setup directory remains private
+  `0700`; explicit credentials, model network disabled, `refreshOnCreate:false`.
+  No personal/default profile is read or copied.
 - Authorization URL: native
   `https://auth.openai.com/api/accounts/authorize`, dynamic public-client authorization
   code + PKCE S256, resource `https://api.openai.com/v1`, direct scope
@@ -65,8 +69,10 @@ Do not run it until the operator approves a concrete finite operational manifest
 An existing target refuses before native activity. A concurrent target appearance
 fails exclusive creation without overwrite. Missing credentials/setup directories
 may be created privately; existing unsafe objects refuse, without repair. Own
-setup UUID/cache may remain after cancellation, but no credential reservation is
-created before login success. Native FileAuthStorageBackend performs the final
+setup UUID and directories may remain after cancellation, but no credential reservation is
+created before login success. The selected model catalog remains in memory; the
+reserved models-store pathname is only preflighted, not written by this setup.
+Native FileAuthStorageBackend performs the final
 locked **in-place** write, not atomic replacement. A failed/torn private commit
 retains the private empty/partial file and any already-written credential bytes;
 there is no rollback, deletion, rename, retry, or automatic repair. A later consumer

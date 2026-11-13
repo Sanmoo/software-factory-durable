@@ -312,7 +312,8 @@ export async function firstFactoryOAuthLogin(options: FirstFactoryOAuthLoginOpti
     privateSetupFile(devicePath);
     const deviceId = readFileSync(devicePath, 'utf8');
     requireCondition(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(deviceId));
-    // Do not let the native cache writer follow an existing setup-cache symlink.
+    // Preflight this reserved path. With modelsPath:null and no explicit modelsStore,
+    // the selected native runtime uses an in-memory catalog, not this cache file.
     const modelsStorePath = join(profile, 'models-store.json');
     try { privateSetupFile(modelsStorePath); }
     catch (error) {
