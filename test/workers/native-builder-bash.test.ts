@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { readFile, readdir, stat } from 'node:fs/promises';
+import { readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createSandbox, type ToolContext } from '../../src/sandbox/index.js';
 import { nativeOwner } from '../sandbox/native-owner.fixture.js';
@@ -11,21 +11,28 @@ const context: ToolContext = { workId: 'bash-work', executionId: 'bash-exec', in
 
 test('native Bash custom exec streams ordered protected UTF-8 fragments including finish tail', async t => {
   const source = Buffer.from('α synthetic-secret stderr π tail');
+  let streamFinished = false;
+  let liveUpdate = false;
   const f = await nativeOwner(context, { exec(argv, options) {
-    assert.deepEqual(argv, ['/bin/bash', '-c', 'model command is data']);
+    assert.deepEqual(argv, ['/usr/bin/env', '-i', '/bin/bash', '-c', 'model command is data']);
     assert.deepEqual(options.env, {}); assert.equal(options.cwd, '/workspace');
     assert.equal(options.stderr, 'pipe');
     return { async *output() { for (let i = 0; i < source.length; i++) yield {
       stream: i % 2 ? 'stderr' as const : 'stdout' as const, data: source.subarray(i, i + 1),
-    }; }, result: Promise.resolve({ exitCode: 7 }) };
+    }; streamFinished = true; }, result: Promise.resolve({ exitCode: 7 }) };
   } }); t.after(() => f.close());
+  const sentinel = join(f.root, 'host-model-sentinel'); await writeFile(sentinel, 'untouched', { mode: 0o600 });
   const updates: string[] = [];
   const native = builderBash(context, createSandbox({ root: f.root, toolEndpoint: f.owner.endpoint }));
   const result = await native.execute('bash-call', { command: 'model command is data' }, undefined,
-    update => { updates.push(JSON.stringify(update)); }, { cwd: '/host/model-sentinel' } as never);
+    update => {
+      updates.push(JSON.stringify(update));
+      if (!streamFinished && update.content.some(block => block.type === 'text' && block.text.length > 0)) liveUpdate = true;
+    }, { cwd: sentinel } as never);
+  assert.equal(await readFile(sentinel, 'utf8'), 'untouched');
   const text = JSON.stringify(result);
   assert.ok(text.includes('α █ stderr π tail')); assert.equal(text.includes('synthetic-secret'), false);
-  assert.equal(updates.join('').includes('synthetic-secret'), false);
+  assert.equal(updates.join('').includes('synthetic-secret'), false); assert.equal(liveUpdate, true);
   assert.equal(result.isError, true);
   assert.equal((result.structuredContent as { exit_code: number }).exit_code, 7);
 });
@@ -92,7 +99,7 @@ for (const mode of ['null-exit', 'timeout', 'abort', 'callback-failure'] as cons
     cancellation.signal, mode === 'callback-failure' ? update => {
       if (JSON.stringify(update).includes('safe output')) throw new Error('synthetic-secret');
     } : undefined, {} as never),
-    mode === 'timeout' ? /Command timed out/ : mode === 'abort' ? /Command aborted/ : /PROTECTED_BASH_RESULT_UNAVAILABLE/);
+    mode === 'timeout' ? /Command timed out/ : mode === 'abort' ? /Command aborted/ : /BASH_EFFECTS_OR_CAPTURE_UNKNOWN/);
   assert.ok(critical > 0);
   await assert.rejects(native.execute('dependent', { command: 'never retry' }, undefined, undefined, {} as never), /BASH_INVOCATION_REVOKED/);
   assert.equal(calls, 1);

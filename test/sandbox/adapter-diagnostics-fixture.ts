@@ -187,9 +187,9 @@ mock.module('@earendil-works/gondolin', { namedExports: {
     id: '77777777-2222-4333-8444-555555555555',
     getHostPid() { return process.pid; }, // External VM double, never a real VMM.
     exec(argv: string[], options: { signal: AbortSignal; stdout?: string; stderr?: string; env?: Record<string, string>; cwd?: string; stdin?: string }) {
-      if (nativeBash && argv[0] === '/bin/bash') {
+      if (nativeBash && argv[0] === '/usr/bin/env') {
         audit('bash');
-        assert.deepEqual(argv, ['/bin/bash', '-c', "printf 'syn''thetic-se''cret'; printf 'tail π' >&2"]);
+        assert.deepEqual(argv, ['/usr/bin/env', '-i', '/bin/bash', '-c', "printf 'syn''thetic-se''cret'; printf 'tail π' >&2"]);
         assert.deepEqual(options.env, {}); assert.equal(options.cwd, '/workspace');
         assert.equal(options.stdout, 'pipe'); assert.equal(options.stderr, 'pipe');
         const source = Buffer.from('head π synthetic-secret synthetic-key segredo-🔒-ação\n' + 'filtered output\n'.repeat(80000) + 'tail π');

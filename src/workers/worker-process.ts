@@ -72,7 +72,8 @@ async function toolProjection(endpoint: string, context: ToolContext, signal: Ab
         if (response.value.kind !== 'tool-result') throw new Error('TOOL_CHANNEL_CLOSED');
         const result = readResultSchema.parse(response.value.payload);
         if (call.name === 'bash' && result.status === 'success' && (result.format !== 'text' ||
-            result.exitCode === undefined || result.progressFrames !== sequence || result.bytes !== bytes)) throw new Error('INVALID_TOOL_RESULT');
+            result.exitCode === undefined || result.progressFrames !== sequence || result.bytes !== bytes ||
+            result.reference.workId !== context.workId || result.data !== '' || result.nextOffset !== 0)) throw new Error('INVALID_TOOL_RESULT');
         return result;
       }
     } catch { close(); return { status: 'failure', code: 'TOOL_CHANNEL_CLOSED' }; }

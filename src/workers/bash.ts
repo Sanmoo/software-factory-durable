@@ -41,8 +41,9 @@ export function builderBash(context: ToolContext, sandbox: ToolProjection, onCri
       try { return await native(callId).execute(callId, input, signal, onUpdate); }
       catch {
         critical();
-        throw new Error(signal?.aborted ? 'Command aborted (effects unknown)' : timeoutFailure
-          ? `Command timed out after ${input.timeout} seconds (effects unknown)` : 'PROTECTED_BASH_RESULT_UNAVAILABLE');
+        if (signal?.aborted) throw new Error('Command aborted (effects unknown)');
+        if (timeoutFailure) throw new Error(`Command timed out after ${input.timeout} seconds (effects unknown)`);
+        throw new Error('BASH_EFFECTS_OR_CAPTURE_UNKNOWN');
       }
     },
   };

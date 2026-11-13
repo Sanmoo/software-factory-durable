@@ -45,11 +45,15 @@ export function boundBashTools(options: ReadBinding & { vm: GuestOwner }, valid:
       if (!valid()) throw new Error('STALE_TOOL_CONTEXT');
       if (call.timeout !== undefined) timer = setTimeout(() => { timedOut = true; lifetime.abort(); }, call.timeout * 1000);
       attempted = true;
-      const process = options.vm.exec(['/bin/bash', '-c', call.command], { stdout: 'pipe', stderr: 'pipe',
+      // Gondolin merges env:{} with its VM default and omits an empty wire env;
+      // the guest daemon may retain gEnv. Clear it at the fixed guest exec boundary.
+      // Both guest executables are profile prerequisites, never host fallbacks.
+      const process = options.vm.exec(['/usr/bin/env', '-i', '/bin/bash', '-c', call.command], { stdout: 'pipe', stderr: 'pipe',
         signal: AbortSignal.any([options.signal, lifetime.signal]), windowBytes: 65536, env: {}, cwd: '/workspace', stdin: '' });
       void process.result.catch(() => {});
       // SDK's ordered output stream preserves stdout/stderr arrival order. Every
-      // release is durably captured BEFORE progress can reach native synchronous onData.
+      // release awaits protected Records.write BEFORE native synchronous onData.
+      // Capture completion, not each progress frame, establishes synced evidence.
       for await (const chunk of process.output()) {
         if (!valid() || lifetime.signal.aborted) throw new Error('BASH_ABORTED');
         for (let offset = 0; offset < chunk.data.length; offset += 65536) {
@@ -70,7 +74,8 @@ export function boundBashTools(options: ReadBinding & { vm: GuestOwner }, valid:
       // Abort requests are NOT proof of physical cessation. Never retry or claim
       // known non-effect after transport/capture failure or null exit.
       revoke(); lifetime.abort();
-      return failure(timedOut ? 'BASH_TIMEOUT_EFFECTS_UNKNOWN' : attempted ? 'BASH_EFFECTS_OR_CAPTURE_UNKNOWN' : 'PROTECTED_BASH_UNAVAILABLE');
+      if (timedOut) return failure('BASH_TIMEOUT_EFFECTS_UNKNOWN');
+      return failure(attempted ? 'BASH_EFFECTS_OR_CAPTURE_UNKNOWN' : 'PROTECTED_BASH_UNAVAILABLE');
     } finally {
       if (timer !== undefined) clearTimeout(timer);
       lifetime.abort();
