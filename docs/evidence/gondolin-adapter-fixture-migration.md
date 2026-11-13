@@ -32,6 +32,38 @@ Architecture18/pass18; dependency-cruiser164 modules/840 dependencies/no violati
 - The first migrated diagnostic subset failed10 before any audit entry. `mock.method(execFile, replacement)` retained original custom-promisify metadata rather than the intended synthetic `{stdout,stderr}` seam. It was replaced with direct assignment before reruns. PATH was empty and other command APIs were denied, but that initial run did not independently instrument the original promisified command syscall path; **do not claim a whole-turn zero-command-attempt counter**. No successful manager command, systemd state read, SDK evaluation or VM execution was observed. Final guards include an explicit negative promisified-command test.
 - Owner regression initially failed because the FD guard allowed only descendants, rejecting sync of the newly owned root directory itself. Root equality is now allowed; the existing owner expectations pass without production changes. Temporary diagnostic probing was removed.
 
+## Task141: closed Unix dispatch correction (base db505b2)
+
+Task138's P1 was a **static API-contract finding**, not an executed TCP bind: the old path check forwarded mixed options unchanged, and Node listen can select `port` over `path`. Do not read Task137's earlier transport claim as proof that every prior network call was denied.
+
+The test-only guard now captures an own **data** path once from a plain/null-prototype path-only options object (or a string), checks a normalized descendant of the caller's newly owned private root, and reconstructs `[path]` or `[path, callback]`. No original options or normalized argument array reaches underlying dispatch. Extra keys (including symbols/nonenumerable keys), inherited/custom-prototype shapes, accessors, port/host/fd/handle selectors and extra arguments are rejected. Only connect permits a closed Node normalized options/callback array; Node's absent-callback `null` is removed. Array accessors/extra selectors are rejected. This remains lexical confinement with a private-caller-root precondition, not a hostile same-UID OS guarantee. No production networking API/DI was introduced.
+
+Before any new transport execution, direct-assignment inert counting sentinels replaced **both** `net.Server.prototype.listen` and `net.Socket.prototype.connect`; the guard captured those sentinels, not native methods. Tests use `Object.create(prototype)` receivers; sentinels neither invoke callbacks nor construct sockets/bind/connect. Direct assignment intentionally survives the guard's existing `mock.restoreAll()`; tests assert guard restoration returns to the sentinels, then restore native functions in `finally` and synchronize builtin ESM exports. Guard restoration also removes its exit listener. Worker command/signal/DNS functions and exit listeners are checked restored.
+
+Genuine pre-fix P1 RED (compiled test, original guard):
+
+```text
+listen: underlying inert calls=1; native calls=0
+connect: underlying inert calls=1; native calls=0
+tests 1 / pass 0 / fail 1
+AssertionError: listen: mixed selectors must not reach underlying inert sentinel (1 !== 0)
+```
+
+Final current counterproof:
+
+```text
+approved=16; rejected=79; zeroUnderlyingForRejected=0; nativeDispatch=0 (inert sentinels only)
+listen: underlying inert calls=0; native calls=0
+connect: underlying inert calls=0; native calls=0
+tests 3 / pass 3 / fail 0
+```
+
+Approved string/object/callback and normalized connect forms reach the inert sentinel exactly once with the same path/callback and receiver. Every one of the 79 rejected current table cases reaches it zero times; the two separate mixed-selector P1 cases and plain TCP createConnection denial also reach it zero times. This is **current-case** proof, not a whole-history zero-effect attestation.
+
+Only after sentinel GREEN, bounded adapter/owner runs exercised actual new private-root Unix IPC. An initial integration run passed diagnostics but rejected the legitimate Node normalized absent-callback `null` (18/pass16/fail1/skip1). A dedicated inert countertest reproduced that compatibility rejection, then null removal fixed it; final adapter/owner run was 18/pass17/fail0/skip1. An intermediate compiler run also failed on assertion-function annotation/descriptor typing; fixed before GREEN. None of these failures invoked real TCP/UDP/DNS, manager programs, SDK roots or VM code.
+
+Final gates used absolute Node24.21.0 with NODE_OPTIONS/NODE_COMPILE_CACHE unset and NODE_DISABLE_COMPILE_CACHE=1, each command bounded60s: compiler; guard+diagnostics+owner 18/pass17/skip1; normal Read/Write/Bash 3/pass3; architecture 18/pass18; changed-two-file lint silent exit0; dependency-cruiser 166 modules/854 dependencies/no violations; active LSP both changed TS paths no warning/error diagnostics. Actual VFS/RPC remains explicitly **UNRUN/skip**, not toy-provider proof. No whole MVP test, SDK preparation/evaluation, VM boot, port authorization, production file edit or integration action was performed. The Task137 first-ten-failures original custom-promisify syscall-path observation limitation above remains unchanged.
+
 ## Retained limitations
 
 Raw FD inheritance, actual cgroup/systemd supervision, real SDK/VM/guest/socket persistence, physical cessation, copy readiness and whole05 remain unqualified. No production preparer/loader/adapter, pinned DATA, dependency lock, installed SDK, retained ignored profile or integration destination was changed. The prior stale candidate was not rerun or waived.
