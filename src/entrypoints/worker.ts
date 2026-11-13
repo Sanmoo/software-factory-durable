@@ -4,6 +4,10 @@ import { runWorkerProcess } from '../workers/index.js';
 // profile discovery. No SDK, Sandbox implementation, or raw diagnostics here.
 const lifetime = new AbortController();
 process.once('disconnect', () => lifetime.abort());
+const directive = (value: unknown) => {
+  if (value && typeof value === 'object' && Object.keys(value).length === 1 &&
+      'kind' in value && value.kind === 'abort') lifetime.abort();
+};
 
 async function send(message: Record<string, unknown>) {
   const sender = process.send?.bind(process);
@@ -25,6 +29,8 @@ try {
     process.once('message', message);
     process.once('disconnect', disconnected);
   });
+  // Bootstrap is consumed exactly once; only this invocation's abort remains.
+  process.on('message', directive);
   const result = await runWorkerProcess(input, lifetime.signal);
   await send({ kind: 'worker-result', ...result });
 } catch (error) {
@@ -37,5 +43,6 @@ try {
   try { await send({ kind: 'worker-error', code }); } catch { /* No raw fallback. */ }
   process.exitCode = 1;
 } finally {
+  process.removeListener('message', directive);
   if (process.connected) process.disconnect();
 }

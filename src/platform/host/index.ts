@@ -1,8 +1,9 @@
+export { workerBootstrapSchema, workerLaunchSchema, type WorkerLaunch } from './worker-bootstrap.js';
 import { access, constants, statfs, stat, lstat, realpath, open, readdir, readFile } from 'node:fs/promises';
 import type { BigIntStats } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-export { planWorkerLaunch, type WorkerBootHost } from './worker-launch.js';
+export { planWorkerLaunch, launchWorker, workerOwnerEndpoint, workerRuntimeDirectory, unitState, type WorkerBootHost } from './worker-launch.js';
 
 export async function controllerPaths(root: string) {
   const canonicalRoot = await realpath(root);

@@ -39,7 +39,7 @@ test('fixed worker entrypoint runs native SDK in a new Node process; private rec
       ] } } };
 
   for (const name of ['t', 'c']) await mkdir(join(f.root, name), { mode: 0o700 });
-  async function child(input: object) {
+  async function child(input: object, abortAfterStart = false) {
     const processChild = fork(fileURLToPath(new URL('../../src/entrypoints/worker.js', import.meta.url)), [], {
       execPath: process.execPath, execArgv: ['--import', fileURLToPath(new URL('./fixtures/provider-preload.js', import.meta.url))],
       env: { PATH: '', LANG: 'C', LC_ALL: 'C', NODE_DISABLE_COMPILE_CACHE: '1',
@@ -54,6 +54,7 @@ test('fixed worker entrypoint runs native SDK in a new Node process; private rec
     const checks: Promise<void>[] = [];
     processChild.on('message', message => {
       messages.push(message as Record<string, unknown>);
+      if (abortAfterStart && (message as { kind: string }).kind === 'worker-started') processChild.send({ kind: 'abort' });
       if ((message as { kind: string }).kind === 'provider-request') checks.push((async () => {
         const evidence = join(recordsRoot, context.workId, 'evidence');
         for (const id of await readdir(evidence)) {
@@ -105,6 +106,14 @@ test('fixed worker entrypoint runs native SDK in a new Node process; private rec
     assert.equal(rejected.code, 1);
     assert.deepEqual(rejected.messages, [{ kind: 'worker-error', code: 'WORKER_BOOTSTRAP_INVALID' }]);
   }
+
+  // The fixed entrypoint accepts only invocation-local abort after bootstrap.
+  // The independent existing owner and its other bindings remain intact.
+  const aborted = await child(bootstrap, true);
+  assert.equal(aborted.code, 1);
+  assert.equal(aborted.messages.filter(message => message.kind === 'provider-request').length, 0);
+  assert.equal(guestCalls, 1);
+  assert.equal(aborted.messages.find(message => message.kind === 'worker-error')?.code, 'STALE_TOOL_CONTEXT');
 
   // A structural metadata collision makes the critical Records publication fail.
   // It is real Records failure, not a callback replacing the SDK/start body.

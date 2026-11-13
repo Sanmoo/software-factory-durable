@@ -5,27 +5,9 @@ import { connect, protocolVersion } from '../protocol/index.js';
 import { createRecords } from '../records/index.js';
 import type { ReadResult, ToolContext, ToolProjection } from '../sandbox/index.js';
 import { startWorker } from './worker-start.js';
-import { sdkProfile } from './sdk-profile.js';
+import { workerBootstrapSchema } from '../platform/host/index.js';
 
 const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
-const text = z.string().min(1).max(4096);
-const cost = z.number().finite().nonnegative();
-const bootstrapSchema = z.strictObject({
-  version: z.literal(1),
-  context: z.strictObject({ workId: identifier, executionId: identifier, invocationId: identifier,
-    role: z.enum(['standards', 'spec']), environmentRef: identifier, bootRef: identifier, phaseId: identifier }),
-  endpoint: text, recordsRoot: text, knownSecrets: z.array(text).max(128), prompt: z.string().min(1).max(16384),
-  profile: z.strictObject({ id: z.literal(sdkProfile.id), directory: text, systemPrompt: text,
-    providerId: identifier, modelId: identifier, apiKey: text,
-    provider: z.strictObject({ api: z.literal('openai-completions'), baseUrl: z.url().max(4096),
-      models: z.array(z.strictObject({ id: identifier, name: text, reasoning: z.boolean(),
-        input: z.array(z.enum(['text', 'image'])).min(1).max(2),
-        cost: z.strictObject({ input: cost, output: cost, cacheRead: cost, cacheWrite: cost }),
-        contextWindow: z.number().int().positive(), maxTokens: z.number().int().positive(),
-      })).min(1).max(16),
-    }),
-  }),
-});
 const reference = z.strictObject({ workId: identifier, id: z.uuid() });
 const resultSchema = z.discriminatedUnion('status', [
   z.strictObject({ status: z.literal('success'), reference, bytes: z.number().int().nonnegative(),
@@ -73,7 +55,7 @@ async function toolProjection(endpoint: string, context: ToolContext, signal: Ab
  * IPC. No callbacks, SDK objects, environment bag or arbitrary executable input. */
 export async function run(input: unknown, signal: AbortSignal) {
   if (Buffer.byteLength(JSON.stringify(input) ?? '') > 65536) throw new Error('WORKER_BOOTSTRAP_INVALID');
-  const parsed = bootstrapSchema.safeParse(input);
+  const parsed = workerBootstrapSchema.safeParse(input);
   if (!parsed.success) throw new Error('WORKER_BOOTSTRAP_INVALID');
   const bootstrap = parsed.data;
   // Same explicit minimal projection as the existing closed Host launch plan.
@@ -97,6 +79,10 @@ export async function run(input: unknown, signal: AbortSignal) {
   const invocation = { context: bootstrap.context, prompt: bootstrap.prompt, signal };
   // Sync protected receipt before even importing/creating the native SDK runtime.
   const receipt = await startWorker(bootstrap.profile, records, invocation);
+  const sender = process.send?.bind(process);
+  if (sender) await new Promise<void>((resolve, reject) => {
+    sender({ kind: 'worker-started', receipt }, error => error ? reject(new Error('WORKER_CHANNEL_CLOSED')) : resolve());
+  });
   if (signal.aborted) throw new Error('STALE_TOOL_CONTEXT');
   const tools = await toolProjection(bootstrap.endpoint, bootstrap.context, signal);
   try {

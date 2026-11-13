@@ -52,7 +52,29 @@ if (args[0] !== '--user' || args[1] !== 'show' || args[2] !== ${JSON.stringify(u
 process.stdout.write('LoadState=loaded\\nActiveState=active\\nInvocationID=${'a'.repeat(32)}\\nControlGroup=${group}\\nMainPID=' + process.ppid + '\\nResult=success\\n');
 `, { mode: 0o700 });
 process.env.PATH = bin; // No real manager fallback.
-cp.spawn = () => { throw new Error('REAL_PROCESS_SPAWN_FORBIDDEN_IN_FIXTURE'); };
+const actualSpawn = cp.spawn;
+cp.spawn = ((command: string, args: string[], options: cp.SpawnOptions) => {
+  const worker = new URL('../../src/entrypoints/worker.js', import.meta.url).pathname;
+  if (process.env.ADAPTER_DIAGNOSTIC_FIXTURE_MODE !== 'normal-worker' || command !== process.execPath ||
+      args.length !== 1 || args[0] !== worker || options.detached !== false ||
+      JSON.stringify(options.stdio) !== JSON.stringify(['ignore', 'ignore', 'ignore', 'ipc'])) throw new Error('REAL_PROCESS_SPAWN_FORBIDDEN_IN_FIXTURE');
+  audit('worker-spawn');
+  const child = actualSpawn(command, ['--import', new URL('../workers/fixtures/provider-preload.js', import.meta.url).pathname, ...args], options);
+  child.on('message', message => {
+    audit('worker-message:' + JSON.stringify(message));
+    if (message && typeof message === 'object' && 'kind' in message && message.kind === 'provider-request') {
+      const work = join(root!, workId, 'evidence');
+      assert.ok(fs.readdirSync(work).some(id => {
+        try {
+          const stored = JSON.parse(fs.readFileSync(join(work, id, 'output'), 'utf8'));
+          return stored.event?.kind === 'worker-start' && fs.existsSync(join(work, id, 'complete.json'));
+        } catch { return false; }
+      }), 'protected start must be complete before any provider request');
+    }
+  });
+  child.on('exit', code => { audit('worker-exit:' + code); });
+  return child;
+}) as typeof cp.spawn;
 const originalRead = fs.promises.readFile;
 fs.promises.readFile = (async (...args: Parameters<typeof originalRead>) => {
   if (args[0] === '/proc/self/cgroup' || args[0] === `/proc/${process.pid}/cgroup`) return `0::${group}\n`;
@@ -67,7 +89,7 @@ let logger: Logger = null;
 let lateLogger: Logger = null;
 let execCalls = 0;
 const mode = process.env.ADAPTER_DIAGNOSTIC_FIXTURE_MODE;
-if (mode === 'vfs-confinement') globalThis.fetch = async () => { throw new Error('NETWORK_FORBIDDEN_IN_FIXTURE'); };
+if (mode === 'vfs-confinement' || mode === 'normal-worker') globalThis.fetch = async () => { throw new Error('NETWORK_FORBIDDEN_IN_FIXTURE'); };
 const actual = mode === 'vfs-confinement' ? await import('@earendil-works/gondolin') : undefined;
 if (actual) {
   mock.method(actual.VM, 'create', async () => { throw new Error('REAL_VM_FORBIDDEN_IN_FIXTURE'); });
@@ -146,7 +168,7 @@ mock.module('@earendil-works/gondolin', { namedExports: {
       logger?.('protocol', 'PRIVATE_TOKEN_CANARY');
       logger?.('qemu', 'stdout: [    0.000000] Linux version PRIVATE_TOKEN_CANARY');
       logger?.('qemu', 'stdout: [init] /dev entries:');
-      if (mode === 'owner-registration' || mode === 'markers-success' || mode === 'vfs-confinement' || mode?.startsWith('shutdown-')) return;
+      if (mode === 'normal-worker' || mode === 'owner-registration' || mode === 'markers-success' || mode === 'vfs-confinement' || mode?.startsWith('shutdown-')) return;
       const listeners = process.listeners('SIGTERM').filter(listener => !originalTermListeners.has(listener));
       if (listeners.length !== 1) throw new Error('EXPECTED_ONE_ADAPTER_STOP_LISTENER');
       // Invoke only the newly registered adapter callback; no OS signal or broad emit.
@@ -159,13 +181,18 @@ mock.module('@earendil-works/gondolin', { namedExports: {
     id: '77777777-2222-4333-8444-555555555555',
     getHostPid() { return process.pid; }, // External VM double, never a real VMM.
     exec(argv: string[], options: { signal: AbortSignal; stdout?: string; stderr?: string }) {
-      if (mode === 'owner-registration' && argv[0] === '/bin/cat') {
+      if ((mode === 'normal-worker' || mode === 'owner-registration') && argv[0] === '/bin/cat') {
         audit('read');
+        if (mode === 'normal-worker') {
+          assert.deepEqual(argv, ['/bin/cat', '--', '/workspace/source.txt']);
+          const text = 'prefix\n'.repeat(5000) + 'synthetic-secret synthetic-key\ntarget\nlast';
+          return { async *output() { for (let i = 0; i < text.length; i += 11) yield { stream: 'stdout', data: Buffer.from(text.slice(i, i + 11)) }; }, result: Promise.resolve({ exitCode: 0 }) };
+        }
         return { async *output() { yield { stream: 'stdout', data: Buffer.from('owner-shared-VM') }; }, result: Promise.resolve({ exitCode: 0 }) };
       }
       return (async () => {
       if (options.stdout !== 'ignore' || options.stderr !== 'ignore') throw new Error('UNUSED_GUEST_OUTPUT_MUST_BE_IGNORED');
-      if (mode === 'owner-registration') { audit(++execCalls === 1 ? 'profile-ready' : 'guest-finalize'); return { exitCode: 0 }; }
+      if (mode === 'normal-worker' || mode === 'owner-registration') { audit(++execCalls === 1 ? 'profile-ready' : 'guest-finalize'); return { exitCode: 0 }; }
       if (mode?.startsWith('shutdown-')) {
         if (++execCalls === 1) { audit('profile-ready'); return { exitCode: 0 }; }
         audit('guest-finalize');
@@ -232,7 +259,7 @@ let operationalPublishing = false;
 let syncedPublishing = false;
 mock.method(prototype, 'writeFile', async function(this: FileHandle, ...args: Parameters<FileHandle['writeFile']>) {
   const target = await readlink(`/proc/self/fd/${this.fd}`);
-  if ((mode === 'owner-registration' || mode?.startsWith('shutdown-')) && target === join(path, 'operational.json')) operationalPublishing = true;
+  if ((mode === 'normal-worker' || mode === 'owner-registration' || mode?.startsWith('shutdown-')) && target === join(path, 'operational.json')) operationalPublishing = true;
   if (mode?.startsWith('shutdown-') && target === join(path, 'guest-synced.json')) {
     syncedPublishing = true;
     audit('synced-begin');
@@ -267,6 +294,14 @@ mock.method(prototype, 'sync', async function(this: FileHandle) {
     setImmediate(() => {
       const listeners = process.listeners('SIGTERM').filter(listener => !originalTermListeners.has(listener));
       if (listeners.length !== 1) throw new Error('EXPECTED_ONE_ADAPTER_STOP_LISTENER');
+      if (mode === 'normal-worker') {
+        void import('../entrypoints/normal-worker.fixture.js').then(async ({ normalWorker }) => {
+          const result = await normalWorker(root!, { workId, environmentRef: environment!, bootRef: boot! });
+          await json(join(root!, 'normal-worker-result.json'), result);
+          audit('normal-worker-passed');
+        }).catch(error => { console.error(error); process.exitCode = 1; }).finally(() => listeners[0]!('SIGTERM'));
+        return;
+      }
       if (mode === 'owner-registration') {
         void registrationProbe().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => listeners[0]!('SIGTERM'));
         return;
@@ -288,14 +323,14 @@ async function registrationProbe() {
   const { connect, protocolVersion } = await import('../../src/protocol/index.js');
   const { readdir } = await import('node:fs/promises');
   const sandbox = registrationSandbox!;
-  // A technical launch request must remain closed even with the normal boot's
-  // gated context. No worker process, SDK or start receipt exists in this slice.
+  // Incomplete launch payloads remain closed even on the normal boot endpoint.
+  // The normal-worker mode separately exercises the full trusted projection.
   const launcher = await connect(join(runtime, 'owner'), 'local-operator');
   const launches = launcher.messages[Symbol.asyncIterator]();
   const binding = { workId, environmentRef: environment, bootRef: boot, invocationId: 'planned-review', role: 'standards' };
   for (const [id, payload, code] of [
-    ['closed', binding, 'WORKER_EXECUTION_NOT_ENABLED'],
-    ['mismatch', { ...binding, workId: 'other-work' }, 'WORKER_BOOT_MISMATCH'],
+    ['closed', binding, 'WORKER_LAUNCH_INVALID'],
+    ['mismatch', { ...binding, workId: 'other-work' }, 'WORKER_LAUNCH_INVALID'],
     ['secret', { ...binding, apiKey: 'SYNTHETIC_SECRET_MUST_NOT_BE_ACCEPTED' }, 'WORKER_LAUNCH_INVALID'],
   ] as const) {
     await launcher.send({ protocol_version: protocolVersion, controller_run_id: null, message_id: id, reply_to: null,

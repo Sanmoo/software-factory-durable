@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { planWorkerLaunch, type WorkerBootHost } from '../platform/host/index.js';
+import { workerLaunchSchema, launchWorker, type WorkerBootHost } from '../platform/host/index.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { connect, listen, protocolVersion, type Channel, type Envelope } from '../protocol/index.js';
@@ -26,15 +26,41 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
   const server = await listen(join(directory, 'owner'), {
     async message(request, channel, peer) {
       if (request.kind === 'launch-worker') {
-        // Closed technical boundary only: no profile/key/bootstrap is accepted.
-        // Host data comes from the adapter gates, never from the request.
-        let code = 'WORKER_EXECUTION_NOT_ENABLED';
-        try { planWorkerLaunch(host, request.payload); }
-        catch (error) {
-          code = error instanceof Error && ['WORKER_LAUNCH_INVALID', 'WORKER_BOOT_MISMATCH', 'WORKER_NODE24_REQUIRED'].includes(error.message)
-            ? error.message : 'WORKER_LAUNCH_INVALID';
+        const parsed = workerLaunchSchema.safeParse(request.payload);
+        if (!parsed.success || lifetimes.has(channel)) {
+          await channel.send(frame(request.message_id, 'worker-launch-result', { status: 'failure', code: 'WORKER_LAUNCH_INVALID' }, request.message_id));
+          return;
         }
-        await channel.send(frame(request.message_id, 'worker-launch-result', { status: 'failure', code }, request.message_id));
+        const context = Object.freeze({ ...parsed.data.context });
+        if (context.workId !== peer.binding.workId || context.environmentRef !== peer.binding.environmentRef ||
+            context.bootRef !== peer.binding.bootRef || invocations.has(context.invocationId)) {
+          await channel.send(frame(request.message_id, 'worker-launch-result', { status: 'failure', code: 'STALE_TOOL_CONTEXT' }, request.message_id));
+          return;
+        }
+        // Technical once-only claim, not an admission ledger. Never remove this
+        // tombstone on error/EOF; uncertain startup must not invite replacement.
+        invocations.add(context.invocationId);
+        const lifetime = new AbortController();
+        lifetimes.set(channel, lifetime);
+        for (const secret of [...parsed.data.knownSecrets, parsed.data.profile.apiKey]) records.registerSecret(secret);
+        const endpoint = join(directory, `b${++sequence}`);
+        try {
+          await bindings.add({ endpoint, context, signal: lifetime.signal, records });
+          const worker = await launchWorker(host, { ...parsed.data, context }, endpoint, root, lifetime.signal);
+          await channel.send(frame(request.message_id, 'worker-launch-result', { status: 'requested', worker: context.invocationId }, request.message_id));
+          // Request, durable start and completion are distinct observations.
+          void (async () => {
+            try {
+              const started = await worker.started;
+              await channel.send(frame(request.message_id, 'worker-started', started, request.message_id));
+              const completed = await worker.completed;
+              await channel.send(frame(request.message_id, 'worker-completed', completed, request.message_id));
+            } catch { lifetime.abort(); channel.close(); }
+          })();
+        } catch {
+          lifetime.abort();
+          await channel.send(frame(request.message_id, 'worker-launch-result', { status: 'failure', code: 'WORKER_LAUNCH_UNCERTAIN' }, request.message_id));
+        }
         return;
       }
       const parsed = z.strictObject({ context: contextSchema }).safeParse(request.payload);

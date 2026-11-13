@@ -1,3 +1,4 @@
+import { unitState } from '../platform/host/index.js';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
@@ -127,18 +128,7 @@ export async function supervisionHierarchy(started: Pick<z.infer<typeof startedS
   if (!fullRoot) throw new Error('CGROUP_V2_ROOT_UNAVAILABLE');
 }
 
-export async function unitState(unit: string) {
-  // Read-only query of the exact name derived from a validated boot, never a caller-supplied command.
-  const { stdout } = await run('systemctl', ['--user', 'show', unit,
-    '--property=LoadState,ActiveState,SubState,InvocationID,ControlGroup,MainPID,Result'], { timeout: 10000, maxBuffer: 16384 });
-  const result: Record<string, string> = {};
-  for (const line of stdout.trim().split('\n')) {
-    const index = line.indexOf('=');
-    if (index < 1 || Object.hasOwn(result, line.slice(0, index))) throw new Error('INVALID_MANAGER_OBSERVATION');
-    result[line.slice(0, index)] = line.slice(index + 1);
-  }
-  return result;
-}
+export { unitState } from '../platform/host/index.js';
 
 export function processStartTicks(value: string) {
   const end = value.lastIndexOf(') ');

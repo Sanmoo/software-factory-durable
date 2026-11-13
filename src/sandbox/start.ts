@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { inspectStorage } from '../platform/host/index.js';
+import { workerRuntimeDirectory, inspectStorage } from '../platform/host/index.js';
 import { inspectGuestAssets, type GuestAssetPin } from './guest-assets.js';
 import type { SandboxConfiguration } from './configuration.js';
 import type { EnvironmentRef } from './prepare.js';
@@ -23,8 +23,7 @@ const run = promisify(execFile);
 export function bootRuntimePaths(root: string, boot: BootRef) {
   identitySchema.shape.boot.parse(boot);
   // Lossless UUID encoding: a short private directory for this boot, never shared.
-  const tag = Buffer.from(boot.slice(5).replaceAll('-', ''), 'hex').toString('base64url');
-  const directory = join(root, 'r', tag);
+  const directory = workerRuntimeDirectory(root, boot);
   const sockets = { virtioSocketPath: join(directory, 'v'), virtioFsSocketPath: join(directory, 'f'),
     virtioSshSocketPath: join(directory, 'h'), virtioIngressSocketPath: join(directory, 'i'), netSocketPath: join(directory, 'n') };
   const sessions = join(directory, 's');
