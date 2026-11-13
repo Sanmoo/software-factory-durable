@@ -66,7 +66,9 @@ for (const mode of ['complete', 'binary', 'capture-failure', 'transport-loss', '
     const [code, signal] = await exited;
     assert.equal(signal, null); assert.equal(output, ''); assert.equal(guestCalls, 1);
     assert.equal(messages.filter(message => message.kind === 'provider-request').length, blocked ? 1 : 2);
-    if (mode === 'temp-failure' || mode === 'session-failure') {
+    // The adopted drain-aware native SDK catches spill open errors: capture
+    // failure interrupts the session rather than becoming an uncaught worker fault.
+    if (mode === 'session-failure') {
       assert.equal(code, 1);
       assert.deepEqual(messages.filter(message => message.kind === 'worker-error'), [{ kind: 'worker-error', code: 'WORKER_PROCESS_FAILED' }]);
       assert.equal(messages.some(message => message.kind === 'worker-result'), false);

@@ -17,7 +17,7 @@ const readCallSchema = z.union([
 export type ReadCall = z.infer<typeof readCallSchema>;
 const callSchema = z.union([readCallSchema, writeCallSchema, bashCallSchema]);
 export type ToolCall = ReadCall | WriteCall | BashCall;
-export interface ToolProjection { executeTool(context: ToolContext, call: ToolCall, onData?: (data: Buffer) => void, signal?: AbortSignal): Promise<ReadResult> }
+export interface ToolProjection { executeTool(context: ToolContext, call: ToolCall, onData?: (data: Buffer) => void | Promise<void>, signal?: AbortSignal): Promise<ReadResult> }
 // Guest-only constant program. Trusted kernel/proc/mount roots and interpreter/stdlib
 // are profile prerequisites, NOT established by this helper. Frozen runtime remains
 // unqualified. This authorizes the opened regular FD's resolved target at check time;
@@ -221,7 +221,7 @@ export async function connectReadTools(endpoint: string, context: ToolContext) {
   let closed = false;
   let busy = false;
   return {
-    async executeTool(input: ToolCall, onData?: (data: Buffer) => void, signal?: AbortSignal): Promise<ReadResult> {
+    async executeTool(input: ToolCall, onData?: (data: Buffer) => void | Promise<void>, signal?: AbortSignal): Promise<ReadResult> {
       if (closed) return failure('TOOL_CHANNEL_CLOSED');
       if (busy) return failure('TOOL_CALL_IN_PROGRESS');
       const call = callSchema.safeParse(input);
@@ -247,7 +247,7 @@ export async function connectReadTools(endpoint: string, context: ToolContext) {
                 chunk.length > 24576 || chunk.toString('base64') !== frame.data ||
                 frame.bytes !== bytes + chunk.length || !Number.isSafeInteger(frame.bytes)) throw new Error('INVALID_TOOL_PROGRESS');
             bytes = frame.bytes;
-            onData(chunk);
+            await onData(chunk);
             continue;
           }
           if (response.value.kind !== 'tool-result') throw new Error('TOOL_CHANNEL_CLOSED');

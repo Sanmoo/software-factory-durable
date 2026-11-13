@@ -35,11 +35,11 @@
   "imports": {
     "#factory-pi": {
       "types": "@earendil-works/pi-coding-agent",
-      "default": "./.scratch/factory-development-sdk/sdk/dist/index.js"
+      "default": "./.scratch/factory-development-sdk-v2/sdk/dist/index.js"
     },
     "#factory-image-mime": {
       "types": "./src/workers/image-mime.d.ts",
-      "default": "./.scratch/factory-development-sdk/image-mime.js"
+      "default": "./.scratch/factory-development-sdk-v2/image-mime.js"
     }
   }
 }

@@ -1,0 +1,360 @@
+--- a/dist/core/tools/bash.js
++++ b/dist/core/tools/bash.js
+@@ -245,14 +245,25 @@
+                 output.append(data);
+                 scheduleOutputUpdate();
+             };
++            let asyncOutput = false;
++            const handleDataAsync = async (data) => {
++                if (!acceptingOutput) throw new Error("Output is no longer accepted");
++                asyncOutput = true;
++                await output.appendAsync(data, signal);
++                scheduleOutputUpdate();
++            };
+             const finishOutput = async () => {
+                 acceptingOutput = false;
+-                output.finish();
+                 clearUpdateTimer();
+-                emitOutputUpdate();
+-                const snapshot = output.snapshot({ persistIfTruncated: true });
+-                await output.closeTempFile();
+-                return snapshot;
++                try {
++                    if (asyncOutput) await output.finishAsync(signal);
++                    else output.finish();
++                    emitOutputUpdate();
++                    return output.snapshot({ persistIfTruncated: true });
++                }
++                finally {
++                    await output.closeTempFile();
++                }
+             };
+             const formatOutput = (snapshot, emptyText = "(no output)") => {
+                 const truncation = snapshot.truncation;
+@@ -276,12 +287,14 @@
+                 return { text, details };
+             };
+             const appendStatus = (text, status) => `${text ? `${text}\n\n` : ""}${status}`;
++            const abortError = (snapshot) => new Error(appendStatus(formatOutput(snapshot, "").text, "Command aborted"));
+             const startedAt = performance.now();
+             try {
+                 let exitCode;
+                 try {
+                     const result = await ops.exec(spawnContext.command, spawnContext.cwd, {
+                         onData: handleData,
++                        onDataAsync: handleDataAsync,
+                         signal,
+                         timeout,
+                         env: spawnContext.env,
+@@ -289,11 +302,21 @@
+                     exitCode = result.exitCode;
+                 }
+                 catch (err) {
+-                    const snapshot = await finishOutput();
++                    let snapshot;
++                    try {
++                        snapshot = await finishOutput();
++                    }
++                    catch (finishError) {
++                        // An aborted async append is terminal, but still preserve
++                        // the native abort status after settling the owned stream.
++                        if (!(err instanceof Error && err.message === "aborted" &&
++                            finishError instanceof Error && finishError.message === "aborted")) throw finishError;
++                        snapshot = output.snapshot();
++                    }
++                    if (err instanceof Error && err.message === "aborted") {
++                        throw abortError(snapshot);
++                    }
+                     const { text } = formatOutput(snapshot, "");
+-                    if (err instanceof Error && err.message === "aborted") {
+-                        throw new Error(appendStatus(text, "Command aborted"));
+-                    }
+                     if (err instanceof Error && err.message.startsWith("timeout:")) {
+                         const timeoutSecs = err.message.split(":")[1];
+                         let status = `Command timed out after ${timeoutSecs} seconds`;
+@@ -306,7 +329,17 @@
+                     }
+                     throw err;
+                 }
+-                const snapshot = await finishOutput();
++                let snapshot;
++                try {
++                    snapshot = await finishOutput();
++                }
++                catch (err) {
++                    // finishOutput has settled the owned stream before formatting.
++                    if (err instanceof Error && err.message === "aborted") {
++                        throw abortError(output.snapshot());
++                    }
++                    throw err;
++                }
+                 const { text: outputText, details } = formatOutput(snapshot);
+                 if (exitCode === null) {
+                     throw new Error(appendStatus(outputText, "Command terminated without an exit code"));
+--- a/dist/core/tools/output-accumulator.js
++++ b/dist/core/tools/output-accumulator.js
+@@ -30,6 +30,10 @@
+     finished = false;
+     tempFilePath;
+     tempFileStream;
++    asyncMode = false;
++    asyncBusy = false;
++    failure;
++    streamClosed;
+     constructor(options = {}) {
+         this.maxLines = options.maxLines ?? DEFAULT_MAX_LINES;
+         this.maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
+@@ -37,6 +41,10 @@
+         this.tempFilePrefix = options.tempFilePrefix ?? "pi-output";
+     }
+     append(data) {
++        if (this.asyncMode) {
++            throw new Error("Cannot mix sync and async output appends");
++        }
++        this.throwIfFailed();
+         if (this.finished) {
+             throw new Error("Cannot append to a finished output accumulator");
+         }
+@@ -50,7 +58,123 @@
+             this.rawChunks.push(data);
+         }
+     }
++    /** Serialize and await calls. No payload queue is created for concurrent callers. */
++    async appendAsync(data, signal) {
++        if (this.asyncBusy) {
++            throw new Error("Concurrent async output append");
++        }
++        this.throwIfFailed();
++        if (this.finished) {
++            throw new Error("Cannot append to a finished output accumulator");
++        }
++        this.asyncMode = true;
++        this.asyncBusy = true;
++        try {
++            this.checkAbort(signal);
++            this.totalRawBytes += data.length;
++            this.appendDecodedText(this.decoder.decode(data, { stream: true }));
++            if (this.tempFileStream || this.shouldUseTempFile()) {
++                await this.persistRawAsync(signal);
++                await this.writeAsync(data, signal);
++            }
++            else if (data.length > 0) {
++                this.rawChunks.push(data);
++            }
++            this.checkAbort(signal);
++            this.throwIfFailed();
++        }
++        catch (error) {
++            this.fail(error);
++            throw this.failure;
++        }
++        finally {
++            this.asyncBusy = false;
++        }
++    }
++    async finishAsync(signal) {
++        if (this.asyncBusy) {
++            throw new Error("Cannot finish during async output append");
++        }
++        this.throwIfFailed();
++        if (this.finished) return;
++        this.asyncMode = true;
++        this.asyncBusy = true;
++        try {
++            this.checkAbort(signal);
++            this.finished = true;
++            this.appendDecodedText(this.decoder.decode());
++            if (this.shouldUseTempFile()) await this.persistRawAsync(signal);
++            this.throwIfFailed();
++        }
++        catch (error) {
++            this.fail(error);
++            throw this.failure;
++        }
++        finally {
++            this.asyncBusy = false;
++        }
++    }
++    throwIfFailed() {
++        if (this.failure) throw this.failure;
++    }
++    fail(error) {
++        this.failure ??= error;
++        // Lifetime error handling remains attached until close, including after abort.
++        this.tempFileStream?.destroy();
++    }
++    checkAbort(signal) {
++        if (signal?.aborted) {
++            this.fail(new Error("aborted"));
++            throw this.failure;
++        }
++    }
++    async persistRawAsync(signal) {
++        this.ensureTempFile(false);
++        // Remove each reference only after its write has drained. Never submit the
++        // remaining replay (or the incoming chunk) after a false write result.
++        while (this.rawChunks.length > 0) {
++            await this.writeAsync(this.rawChunks[0], signal);
++            this.rawChunks.shift();
++        }
++    }
++    async writeAsync(data, signal) {
++        this.checkAbort(signal);
++        this.throwIfFailed();
++        const stream = this.tempFileStream;
++        if (stream.write(data)) return;
++        await new Promise((resolve, reject) => {
++            const cleanup = () => {
++                stream.off("drain", onDrain);
++                stream.off("error", onError);
++                stream.off("close", onClose);
++                signal?.removeEventListener("abort", onAbort);
++            };
++            const settle = (error) => {
++                cleanup();
++                if (error) reject(error);
++                else resolve();
++            };
++            const onDrain = () => settle(this.failure);
++            const onError = (error) => settle(error);
++            const onClose = () => settle(this.failure ?? new Error("Output stream closed before drain"));
++            const onAbort = () => {
++                this.fail(new Error("aborted"));
++                settle(this.failure);
++            };
++            stream.once("drain", onDrain);
++            stream.once("error", onError);
++            stream.once("close", onClose);
++            signal?.addEventListener("abort", onAbort, { once: true });
++            // Both checks occur after listener installation: no missed drain/abort.
++            if (signal?.aborted) onAbort();
++            else if (this.failure || stream.destroyed) onClose();
++            else if (!stream.writableNeedDrain) onDrain();
++        });
++        this.throwIfFailed();
++    }
+     finish() {
++        if (this.asyncMode) throw new Error("Use finishAsync for async output");
++        this.throwIfFailed();
+         if (this.finished) {
+             return;
+         }
+@@ -78,7 +202,7 @@
+             maxLines: this.maxLines,
+             maxBytes: this.maxBytes,
+         };
+-        if (options.persistIfTruncated && truncation.truncated) {
++        if (options.persistIfTruncated && truncation.truncated && !this.asyncMode) {
+             this.ensureTempFile();
+         }
+         return {
+@@ -88,24 +212,13 @@
+         };
+     }
+     async closeTempFile() {
+-        if (!this.tempFileStream) {
+-            return;
+-        }
+         const stream = this.tempFileStream;
+-        this.tempFileStream = undefined;
+-        await new Promise((resolve, reject) => {
+-            const onError = (error) => {
+-                stream.off("finish", onFinish);
+-                reject(error);
+-            };
+-            const onFinish = () => {
+-                stream.off("error", onError);
+-                resolve();
+-            };
+-            stream.once("error", onError);
+-            stream.once("finish", onFinish);
+-            stream.end();
+-        });
++        if (stream) {
++            if (this.failure) stream.destroy();
++            else if (!stream.writableEnded) stream.end();
++            await this.streamClosed;
++        }
++        this.throwIfFailed();
+     }
+     /**
+      * The complete output, for callers that can take more than the display snapshot. Call after
+@@ -198,17 +311,28 @@
+     shouldUseTempFile() {
+         return (this.totalRawBytes > this.maxBytes || this.totalDecodedBytes > this.maxBytes || this.totalLines > this.maxLines);
+     }
+-    ensureTempFile() {
++    ensureTempFile(replay = true) {
+         if (this.tempFilePath) {
+             return;
+         }
+         const { path, stream } = createOutputFileStream(this.tempFilePrefix, ".log");
+         this.tempFilePath = path;
+         this.tempFileStream = stream;
+-        for (const chunk of this.rawChunks) {
+-            this.tempFileStream.write(chunk);
+-        }
+-        this.rawChunks = [];
++        const onError = (error) => this.fail(error);
++        stream.on("error", onError);
++        this.streamClosed = new Promise((resolve) => {
++            stream.once("close", () => {
++                if (!stream.writableFinished && !this.failure) {
++                    this.failure = new Error("Output stream closed before finish");
++                }
++                stream.off("error", onError);
++                resolve();
++            });
++        });
++        if (replay) {
++            for (const chunk of this.rawChunks) stream.write(chunk);
++            this.rawChunks = [];
++        }
+     }
+ }
+ //# sourceMappingURL=output-accumulator.js.map
+\ No newline at end of file
+--- a/dist/core/tools/bash.d.ts
++++ b/dist/core/tools/bash.d.ts
+@@ -43,6 +43,10 @@
+      */
+     exec: (command: string, cwd: string, options: {
+         onData: (data: Buffer) => void;
++        /** Native drain-aware path. Serialize and await each call; do not mix
++         * with onData. Bound caller chunks (e.g. <= 64 KiB) to bound admission.
++         * Rejects on abort, stream failure, or concurrent use. */
++        onDataAsync?: (data: Buffer) => Promise<void>;
+         signal?: AbortSignal;
+         timeout?: number;
+         env?: NodeJS.ProcessEnv;
+--- a/dist/core/tools/output-accumulator.d.ts
++++ b/dist/core/tools/output-accumulator.d.ts
+@@ -40,8 +40,15 @@
+     private finished;
+     private tempFilePath;
+     private tempFileStream;
++    private asyncMode;
++    private asyncBusy;
++    private failure;
++    private streamClosed;
+     constructor(options?: OutputAccumulatorOptions);
+     append(data: Buffer): void;
++    /** Serial, drain-aware alternative to append; callers bound chunk sizes. */
++    appendAsync(data: Buffer, signal?: AbortSignal): Promise<void>;
++    finishAsync(signal?: AbortSignal): Promise<void>;
+     finish(): void;
+     snapshot(options?: {
+         persistIfTruncated?: boolean;
+@@ -58,6 +65,11 @@
+     private trimTail;
+     private getSnapshotText;
+     private shouldUseTempFile;
++    private throwIfFailed;
++    private fail;
++    private checkAbort;
++    private persistRawAsync;
++    private writeAsync;
+     private ensureTempFile;
+ }
+ //# sourceMappingURL=output-accumulator.d.ts.map
+\ No newline at end of file

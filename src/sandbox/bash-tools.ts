@@ -52,7 +52,7 @@ export function boundBashTools(options: ReadBinding & { vm: GuestOwner }, valid:
         signal: AbortSignal.any([options.signal, lifetime.signal]), windowBytes: 65536, env: {}, cwd: '/workspace', stdin: '' });
       void process.result.catch(() => {});
       // SDK's ordered output stream preserves stdout/stderr arrival order. Every
-      // release awaits protected Records.write BEFORE native synchronous onData.
+      // release awaits protected Records.write BEFORE awaited native capture admission.
       // Capture completion, not each progress frame, establishes synced evidence.
       for await (const chunk of process.output()) {
         if (!valid() || lifetime.signal.aborted) throw new Error('BASH_ABORTED');

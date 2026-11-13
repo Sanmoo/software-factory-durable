@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { createBashTool, type ToolDefinition } from '#factory-pi';
+import { createBashTool, type BashOperations, type ToolDefinition } from '#factory-pi';
 import type { ToolContext, ToolProjection } from '../sandbox/index.js';
+
+// Private optional capability extension only: upstream SDK types remain truthful.
+type DrainAwareOptions = Parameters<BashOperations['exec']>[2] & {
+  onDataAsync?: (data: Buffer) => Promise<void>;
+};
 
 /** Native Bash with COMPLETE remote operations. Native host temp spill is expected;
  * its path is NOT guest-readable. Selective guest copy remains explicitly OPEN.
@@ -14,11 +19,12 @@ export function builderBash(context: ToolContext, sandbox: ToolProjection, onCri
     // Replace, never inherit the SDK's parent environment clone. Owner independently
     // selects EMPTY env and /workspace, regardless of this untrusted callback input.
     spawnHook: ({ command }) => ({ command, cwd: '/workspace', env: {} }),
-    operations: { async exec(command, _cwd, options) {
+    operations: { async exec(command, _cwd, options: DrainAwareOptions) {
+      if (typeof options.onDataAsync !== 'function') throw new Error('BASH_ASYNC_CAPTURE_REQUIRED');
       if (failed) throw new Error('BASH_INVOCATION_REVOKED');
       if (options.signal?.aborted) { critical(); throw new Error('aborted'); }
       const result = await sandbox.executeTool(context, { name: 'bash', command, callId: randomUUID(),
-        ...(options.timeout === undefined ? {} : { timeout: options.timeout }) }, options.onData, options.signal);
+        ...(options.timeout === undefined ? {} : { timeout: options.timeout }) }, options.onDataAsync, options.signal);
       if (result.status === 'failure') {
         if (!['BASH_ROLE_DENIED', 'INVALID_TOOL_CALL'].includes(result.code)) critical();
         if (options.signal?.aborted) throw new Error('aborted');

@@ -9,7 +9,7 @@ export const workerBootstrapSchema = z.strictObject({
   context: z.strictObject({ workId: identifier, executionId: identifier, invocationId: identifier,
     role: z.enum(['standards', 'spec', 'builder']), environmentRef: identifier, bootRef: identifier, phaseId: identifier }),
   endpoint: text, recordsRoot: text, knownSecrets: z.array(text).max(128), prompt: z.string().min(1).max(16384),
-  profile: z.strictObject({ id: z.literal('factory-development-pi-1.5.2-read-operations-v1'), directory: text, systemPrompt: text,
+  profile: z.strictObject({ id: z.literal('factory-development-pi-1.5.2-read-async-bash-v2'), directory: text, systemPrompt: text,
     providerId: identifier, modelId: identifier, apiKey: text,
     provider: z.strictObject({ api: z.literal('openai-completions'), baseUrl: z.url().max(4096),
       models: z.array(z.strictObject({ id: identifier, name: text, reasoning: z.boolean(),

@@ -66,7 +66,7 @@ async function toolProjection(endpoint: string, context: ToolContext, signal: Ab
               frame.sequence !== sequence++ || chunk.length > 24576 || chunk.toString('base64') !== frame.data ||
               frame.bytes !== bytes + chunk.length || !Number.isSafeInteger(frame.bytes)) throw new Error('INVALID_TOOL_PROGRESS');
           bytes = frame.bytes;
-          onData(chunk);
+          await onData(chunk);
           continue;
         }
         if (response.value.kind !== 'tool-result') throw new Error('TOOL_CHANNEL_CLOSED');

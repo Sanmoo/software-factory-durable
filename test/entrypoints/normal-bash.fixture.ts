@@ -9,7 +9,7 @@ import { SessionManager } from '#factory-pi';
  * external VM/manager/HTTP boundaries are doubled by the existing preload. */
 export async function normalBash(root: string, context: { workId: string; environmentRef: string; bootRef: string }) {
   const workers = createWorkers({ root, knownSecrets: ['synthetic-secret', 'segredo-🔒-ação'], profile: {
-    id: 'factory-development-pi-1.5.2-read-operations-v1', systemPrompt: 'UTF-8 Bash Builder fixture.',
+    id: 'factory-development-pi-1.5.2-read-async-bash-v2', systemPrompt: 'UTF-8 Bash Builder fixture.',
     providerId: 'offline-fixture', modelId: 'reader', apiKey: 'synthetic-key',
     provider: { api: 'openai-completions', baseUrl: 'https://offline.invalid', models: [
       { id: 'reader', name: 'Reader', reasoning: false, input: ['text'],
