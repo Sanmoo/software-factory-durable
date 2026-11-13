@@ -118,3 +118,54 @@ Self-review fixed the post-bootstrap abort listener, completion/receipt correlat
 pre-fork revalidation ordering and sanitized private JSON parsing. No known blocker
 to this bounded normal-path flow; asynchronous loss remains explicitly uncertain
 and requires external reconciliation, not blind replay.
+
+## Task71 P1 correction: escaped secrets in public SDK inputs
+
+The later static review identified a blocking P1 in the child input guard: searching
+JSON-encoded public payloads for unencoded secret values missed newline, quote and
+backslash characters. This corrects that finding; the historical normal-launch
+results above alone did not establish rejection of these inputs.
+
+The child now recursively checks the **original parsed string values** of the
+prompt and complete public profile (including nested provider/model arrays) against
+both `knownSecrets` and the explicit API key. The private API-key field itself is
+excluded from the public projection. This local traversal is bounded by the existing
+strict bootstrap schema, not a generic input framework. Matches reject with
+`WORKER_BOOTSTRAP_INVALID`; prompt/profile semantics are not rewritten. Rejection
+precedes protected start publication, tool connection, SDK import and session creation.
+Records registration/filtering remains unchanged.
+
+Inspected `createWorkers` public configuration, Host `workerLaunchSchema`, and
+`launchWorker` bootstrap construction: they have no duplicated secret-string guard.
+Normal activation still reaches the same fixed child entrypoint/guard; no alternative
+production SDK activation or compatibility fallback was added. The private SDK
+component seam remains for component tests, not a public Host activation path.
+
+TDD used the same explicit Node24 executable, environment clearing and <=60s command
+bounds recorded above, without install, clean/reset, rule changes or hook bypass:
+
+- Existing fixed-child baseline: `tests 1; pass 1; fail 0; duration_ms 3143.953017`.
+- RED: 18 new real NEW Node worker child cases: newline/quote/backslash ×
+  prompt/systemPrompt/nested `provider.models[0].name` × known secret/explicit API key
+  (the latter not duplicated in `knownSecrets`). All 18 failed on the retained guard;
+  children published starts and added native sessions instead of rejecting.
+  Exact runner summary: `tests 19; suites 0; pass 0; fail 19; cancelled 0;
+  skipped 0; todo 0; duration_ms 19054.814024` (includes the failed parent test).
+- GREEN after the guard fix: `tests 19; suites 0; pass 19; fail 0; cancelled 0;
+  skipped 0; todo 0; duration_ms 5175.82674`.
+- Final affected regression after strengthening existing-session byte comparisons:
+  the same 11-file / 47-original-test scope plus 18 cases: `tests 65; suites 0;
+  pass 65; fail 0; cancelled 0; skipped 0; todo 0; duration_ms 6297.346952`.
+  Each rejection asserts exactly the sanitized invalid-bootstrap error, zero provider
+  requests, unchanged guest-call count, unchanged evidence entries (no start), no new
+  native session and unchanged existing session bytes. The child helper also checks
+  empty stdout/stderr. Existing actual public owner launch/native SDK/filtered JSONL
+  and receipt-before-provider regressions remain intact.
+- Explicit TypeScript compilation passed. Architecture: `no dependency violations
+  found (107 modules, 530 dependencies cruised)`. Full ESLint `--max-warnings 0` and
+  `git diff --check` passed silently. Active changed-path LSP returned no diagnostics:
+  one confirmed clean, one inconclusive push-only result; compilation is authoritative.
+
+This closes only the escaped-secret input P1. Existing operational/physical isolation,
+real model/network/credentials, image/binary handling and Task65 user-grant limits
+above remain unchanged; no new grant, whole05 qualification or production run is claimed.

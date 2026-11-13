@@ -72,8 +72,15 @@ export async function run(input: unknown, signal: AbortSignal) {
   const records = await createRecords({ root: bootstrap.recordsRoot });
   for (const secret of [...bootstrap.knownSecrets, bootstrap.profile.apiKey]) records.registerSecret(secret);
   const { apiKey: _apiKey, ...publicProfile } = bootstrap.profile;
-  const exposed = JSON.stringify({ prompt: bootstrap.prompt, profile: publicProfile });
-  if ([...bootstrap.knownSecrets, bootstrap.profile.apiKey].some(secret => exposed.includes(secret))) {
+  const secrets = [...bootstrap.knownSecrets, bootstrap.profile.apiKey];
+  // Traverse only this schema-bounded public tree, before any JSON escaping.
+  // Reject rather than rewrite the prompt or profile passed to the native SDK.
+  const containsSecret = (value: unknown): boolean => {
+    if (typeof value === 'string') return secrets.some(secret => value.includes(secret));
+    if (value !== null && typeof value === 'object') return Object.values(value).some(containsSecret);
+    return false;
+  };
+  if (containsSecret({ prompt: bootstrap.prompt, profile: publicProfile })) {
     throw new Error('WORKER_BOOTSTRAP_INVALID');
   }
   const invocation = { context: bootstrap.context, prompt: bootstrap.prompt, signal };

@@ -13,7 +13,7 @@ import type { ToolContext } from '../../src/sandbox/index.js';
 const context: ToolContext = { workId: 'work-05', executionId: 'execution-05', invocationId: 'standards-05',
   role: 'standards', environmentRef: 'environment-05', bootRef: 'boot-05', phaseId: 'review-1' };
 
-test('fixed worker entrypoint runs native SDK in a new Node process; private receipt precedes filtered native JSONL', { timeout: 10000 }, async t => {
+test('fixed worker entrypoint runs native SDK in a new Node process; private receipt precedes filtered native JSONL', { timeout: 30000 }, async t => {
   let guestCalls = 0;
   const text = 'prefix\n'.repeat(5000) + 'synthetic-secret synthetic-key\ntarget\nlast';
   const f = await nativeOwner(context, { exec(argv) {
@@ -123,4 +123,42 @@ test('fixed worker entrypoint runs native SDK in a new Node process; private rec
   assert.deepEqual(failed.messages, [{ kind: 'worker-error', code: 'PROTECTED_CAPTURE_UNAVAILABLE' }]);
   assert.equal(guestCalls, 1, 'failed receipt must not execute guest tools');
   assert.equal((await readdir(join(directory, 'sessions'))).length, 1, 'failed receipt must not create another SDK session');
+
+  for (const [escape, secret] of [['newline', 'line\nsecret'], ['quote', 'quoted"secret'], ['backslash', 'back\\secret']] as const) {
+    for (const source of ['knownSecrets', 'apiKey']) {
+      for (const field of ['prompt', 'systemPrompt', 'modelName']) {
+        await t.test(`rejects ${escape} ${source} in original public ${field}`, async () => {
+          const input = structuredClone(bootstrap);
+          if (source === 'knownSecrets') input.knownSecrets.push(secret);
+          else input.profile.apiKey = secret; // Not duplicated in knownSecrets.
+          const publicText = `Public prefix ${secret} suffix`;
+          if (field === 'prompt') input.prompt = publicText;
+          else if (field === 'systemPrompt') input.profile.systemPrompt = publicText;
+          else input.profile.provider.models[0]!.name = publicText;
+          const sessionsBefore = await readdir(join(directory, 'sessions'));
+          const sessionContentsBefore = await Promise.all(sessionsBefore.map(name => readFile(join(directory, 'sessions', name), 'utf8')));
+          const evidenceBefore = await readdir(join(recordsRoot, context.workId, 'evidence'));
+          const callsBefore = guestCalls;
+          const rejected = await child(input);
+          assert.deepEqual({
+            code: rejected.code,
+            messages: rejected.messages,
+            providerRequests: rejected.messages.filter(message => message.kind === 'provider-request').length,
+            guestCalls: guestCalls - callsBefore,
+            sessions: await readdir(join(directory, 'sessions')),
+            evidence: await readdir(join(recordsRoot, context.workId, 'evidence')),
+          }, {
+            code: 1,
+            messages: [{ kind: 'worker-error', code: 'WORKER_BOOTSTRAP_INVALID' }],
+            providerRequests: 0,
+            guestCalls: 0,
+            sessions: sessionsBefore,
+            evidence: evidenceBefore,
+          }, 'reject before start publication, HTTP, guest execution or any native session/raw-secret persistence');
+          assert.deepEqual(await Promise.all(sessionsBefore.map(name => readFile(join(directory, 'sessions', name), 'utf8'))),
+            sessionContentsBefore, 'rejection must not append raw secrets to an existing native session');
+        });
+      }
+    }
+  }
 });
