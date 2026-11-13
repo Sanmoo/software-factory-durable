@@ -15,7 +15,7 @@
     "check:architecture": "depcruise --config .dependency-cruiser.cjs --output-type err-long . && eslint . --max-warnings 0",
     "test": "npm run check:architecture && npm run build && node --test \"dist/test/**/*.test.js\"",
     "clean": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\"",
-    "prepare:sdk": "node dist/src/workers/sdk-profile.js",
+    "prepare:sdk": "node dist/src/workers/sdk-profile.js && node dist/src/sandbox/gondolin-sdk-profile.js",
     "prepare:gondolin-sdk": "node dist/src/sandbox/gondolin-sdk-profile.js"
   },
   "dependencies": {

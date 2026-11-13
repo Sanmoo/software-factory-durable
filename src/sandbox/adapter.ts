@@ -10,6 +10,7 @@ import { currentSchema, identitySchema, metadata, ownedEnvironment, privateDirec
 import { bootRuntimePaths, durableJson } from './start.js';
 import type { EnvironmentRef } from './prepare.js';
 import { serveOwnerRegistration } from './owner-registration.js';
+import { loadDevelopmentGondolinSdk } from './gondolin-sdk-runtime.js';
 
 function startupCode(error: unknown): StartupFailure['code'] {
   if (!(error instanceof Error)) return 'UNCLASSIFIED_STARTUP_FAILURE';
@@ -70,7 +71,7 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
     if ((await inspectGuestAssets(owner.guestAssets)).some(check => check.status !== 'ok')) throw new Error('GUEST_ASSETS_INVALID');
     phase = 'sdk-import';
     // Runtime SDK import stays after all ownership/supervision/runtime/asset gates.
-    const { VM, RealFSProvider } = await import('@earendil-works/gondolin');
+    const { VM, RealFSProvider } = await loadDevelopmentGondolinSdk();
     phase = 'vm-create';
     // SDK 0.14 also consults autoStart inside explicit start(); false rejects a
     // stopped VM before sending boot. Ownership is established above, not by this flag.
