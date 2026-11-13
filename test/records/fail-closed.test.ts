@@ -62,3 +62,24 @@ test('Records refuses nonprivate and symlinked roots and traversal references', 
     await assert.rejects(records.read({ reference: { workId: '../escape', id: 'invalid' }, offset: 0, limit: 1 }), /PROTECTED_CAPTURE_UNAVAILABLE/);
   } finally { await rm(alias, { force: true }); await rm(root, { recursive: true, force: true }); }
 });
+
+test('Records abort idempotently invalidates output, discards filter tail and forbids completion', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'records-abort-'));
+  try {
+    const records = await createRecords({ root }); records.registerSecret('synthetic-secret');
+    const output = await records.openOutput(context);
+    await output.write(Buffer.from('safe text synthetic-'));
+    const aborted = output.abort();
+    assert.equal(output.abort(), aborted, 'overlapping abort returns the same invalidation promise');
+    await aborted; await output.abort();
+    await assert.rejects(output.finish(), /PROTECTED_CAPTURE_UNAVAILABLE/);
+    await assert.rejects(output.write(Buffer.from('secret')), /PROTECTED_CAPTURE_UNAVAILABLE/);
+    const page = await records.read({ reference: output.reference, offset: 0, limit: 100 });
+    assert.equal(page.state, 'partial'); assert.doesNotMatch(page.data.toString(), /synthetic-/);
+    const complete = await records.openOutput({ ...context, callId: 'completed-then-revoked' });
+    await complete.write(Buffer.from('safe'));
+    await complete.finish();
+    await complete.abort(); await complete.abort();
+    assert.equal((await records.read({ reference: complete.reference, offset: 0, limit: 100 })).state, 'partial');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

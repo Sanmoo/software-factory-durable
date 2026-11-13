@@ -18,7 +18,8 @@ test('fixed worker entrypoint runs native SDK in a new Node process; private rec
   const text = 'prefix\n'.repeat(5000) + 'synthetic-secret synthetic-key\ntarget\nlast';
   const f = await nativeOwner(context, { exec(argv) {
     guestCalls++;
-    assert.deepEqual(argv, ['/bin/cat', '--', '/workspace/source.txt']);
+    assert.deepEqual(argv.slice(0, 4), ['/usr/bin/python3', '-I', '-S', '-c']);
+    assert.equal(argv.length, 6); assert.equal(argv[5], '/workspace/source.txt');
     return { async *output() {
       for (let i = 0; i < text.length; i += 11) yield { stream: 'stdout' as const, data: Buffer.from(text.slice(i, i + 11)) };
     }, result: Promise.resolve({ exitCode: 0 }) };

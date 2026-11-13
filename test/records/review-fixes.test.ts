@@ -63,7 +63,7 @@ test('Records preflight rejects executable object traps before invoking caller c
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-for (const stage of ['temporary-sync', 'parent-sync'] as const) for (const call of ['write', 'finish'] as const) {
+for (const stage of ['temporary-sync', 'parent-sync'] as const) for (const call of ['write', 'finish', 'abort'] as const) {
   test(`Records invalidation by overlapping ${call} during ${stage} cannot publish completion`, async t => {
     const root = await mkdtemp(join(tmpdir(), 'records-review-'));
     let resume!: () => void;
@@ -88,7 +88,8 @@ for (const stage of ['temporary-sync', 'parent-sync'] as const) for (const call 
       // Attach rejection handling before releasing the external filesystem pause.
       const rejectedFinish = assert.rejects(finishing, unavailable);
       await publicationPaused;
-      await assert.rejects(call === 'write' ? output.write(Buffer.from('overlap')) : output.finish(), unavailable);
+      if (call === 'abort') await output.abort();
+      else await assert.rejects(call === 'write' ? output.write(Buffer.from('overlap')) : output.finish(), unavailable);
       assert.equal((await records.read({ reference: output.reference, offset: 0, limit: 1 })).state, 'partial');
       resume();
       await rejectedFinish;

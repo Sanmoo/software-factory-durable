@@ -27,6 +27,45 @@ export type GuestOwner = { exec(argv: string[], options: { stdout: 'pipe'; stder
 } };
 export type ReadBinding = { endpoint: string; context: ToolContext; signal: AbortSignal;
   records: Awaited<ReturnType<typeof createRecords>> };
+// Guest-only constant program. Trusted kernel/proc/mount roots and interpreter/stdlib
+// are profile prerequisites, NOT established by this helper. Frozen runtime remains
+// unqualified. This authorizes the opened regular FD's resolved target at check time;
+// it is not beneath-root traversal, no-magic-links, immutable content or continuous
+// membership enforcement. Never execute this body on the host.
+const guestReadProgram = `import os, stat, sys
+fd = None
+try:
+    path = sys.argv[1]
+    if (len(sys.argv) != 2 or not 0 < len(path) <= 4096
+            or not path.startswith(("/workspace/", "/artifacts/"))
+            or not path.isprintable() or ".." in path.split("/")):
+        raise ValueError()
+    if (os.O_RDONLY != 0 or os.O_NONBLOCK <= 0 or os.O_CLOEXEC <= 0
+            or os.O_NONBLOCK & os.O_CLOEXEC):
+        raise ValueError()
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
+    if not stat.S_ISREG(os.fstat(fd).st_mode):
+        raise ValueError()
+    target = os.readlink("/proc/self/fd/" + str(fd))
+    if (not target.startswith(("/workspace/", "/artifacts/"))
+            or not target.isprintable() or target.endswith(" (deleted)")
+            or any(part in ("", ".", "..") for part in target.split("/")[1:])):
+        raise ValueError()
+    while True:
+        data = os.read(fd, 65536)
+        if not data:
+            break
+        while data:
+            written = os.write(1, data)
+            if written <= 0:
+                raise OSError()
+            data = data[written:]
+except BaseException:
+    sys.exit(1)
+finally:
+    if fd is not None:
+        os.close(fd)
+`;
 const failure = (code: string): ReadResult => ({ status: 'failure', code });
 function sameContext(left: ToolContext, right: ToolContext): boolean {
   return Object.keys(right).every(key => left[key as keyof ToolContext] === right[key as keyof ToolContext]);
@@ -61,7 +100,7 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
       try {
         if (!valid()) return failure('STALE_TOOL_CONTEXT');
         // Guest-only argv, with real SDK pipe/backpressure. Never accumulate the source.
-        const process = options.vm.exec(['/bin/cat', '--', call.path], { stdout: 'pipe', stderr: 'ignore',
+        const process = options.vm.exec(['/usr/bin/python3', '-I', '-S', '-c', guestReadProgram, call.path], { stdout: 'pipe', stderr: 'ignore',
           signal: AbortSignal.any([signal, commandLifetime.signal]), windowBytes: 65536 });
         // Observe rejection immediately, even when the stream itself fails first.
         void process.result.catch(() => {});
@@ -90,13 +129,14 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
         }
         const result = await process.result;
         if (result.exitCode !== 0) return failure('GUEST_READ_FAILED');
-        const capture = await output.finish(); completed = true;
         if (!valid()) return failure('STALE_TOOL_CONTEXT');
-        captures.add(capture.reference.id);
+        const capture = await output.finish();
+        if (!valid()) return failure('STALE_TOOL_CONTEXT');
+        captures.add(capture.reference.id); completed = true;
         return { status: 'success', reference: capture.reference, bytes: capture.bytes, data: '', nextOffset: 0 };
       } finally {
         commandLifetime.abort();
-        if (!completed) { try { await output.finish(); } catch { /* Failed/partial capture never becomes an SDK source. */ } }
+        if (!completed) await output.abort();
       }
     } catch { return failure('PROTECTED_READ_UNAVAILABLE'); }
   }

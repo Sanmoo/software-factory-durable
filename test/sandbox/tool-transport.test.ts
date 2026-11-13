@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, readdir } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -27,7 +28,9 @@ async function fixture(t: { after(fn: () => Promise<void>): void }, exec: GuestO
 
 test('Q5 host-bound reviewer receives a protected reference and paginable filtered whole source', async t => {
   const f = await fixture(t, argv => {
-    assert.deepEqual(argv, ['/bin/cat', '--', '/workspace/README.md']);
+    assert.deepEqual(argv.slice(0, 4), ['/usr/bin/python3', '-I', '-S', '-c']);
+    assert.equal(argv.length, 6);
+    assert.equal(argv[5], '/workspace/README.md');
     return guest(Buffer.from('guest synthetic-secret content'));
   });
   f.records.registerSecret('synthetic-secret');
@@ -111,3 +114,69 @@ test('guest nonzero status and invalid UTF-8 are explicit errors, not successful
   assert.deepEqual(await f.execute(), { status: 'failure', code: 'GUEST_READ_FAILED' });
   assert.deepEqual(await f.execute(), { status: 'failure', code: 'PROTECTED_READ_UNAVAILABLE' });
 });
+
+// Static syntax/structure evidence only: the helper is DATA to the host parser.
+// No helper body (including open/read) is ever executed on the host.
+test('guest helper is constant argv data and parses with same-FD authorization before reads', async t => {
+  const invocations: string[][] = [];
+  const f = await fixture(t, (argv, options) => {
+    invocations.push(argv);
+    assert.equal(options.windowBytes, 65536);
+    assert.equal(options.stdout, 'pipe'); assert.equal(options.stderr, 'ignore');
+    return guest(Buffer.from('source'));
+  });
+  const path = '/artifacts/name\'";$(not-a-command).txt';
+  assert.equal((await f.execute({ ...read, path })).status, 'success');
+  assert.equal((await f.execute()).status, 'success');
+  const [first, second] = invocations;
+  assert.ok(first && second);
+  assert.deepEqual(first.slice(0, 4), ['/usr/bin/python3', '-I', '-S', '-c']);
+  assert.equal(first.length, 6); assert.equal(first[5], path);
+  assert.equal(first[4], second[4]);
+  const program = first[4]!;
+  const parsed = execFileSync('/usr/bin/python3', ['-I', '-S', '-c',
+    'import ast,sys; tree=ast.parse(sys.stdin.read()); print(ast.dump(tree))'],
+  { input: program, encoding: 'utf8', timeout: 5000 });
+  assert.match(parsed, /Module\(body=/);
+  assert.equal((program.match(/os\.open\(/g) ?? []).length, 1);
+  assert.match(program, /os\.open\(path, os\.O_RDONLY \| os\.O_NONBLOCK \| os\.O_CLOEXEC\)/);
+  for (const check of ['os.O_RDONLY != 0', 'os.O_NONBLOCK <= 0', 'os.O_CLOEXEC <= 0',
+    'stat.S_ISREG(os.fstat(fd).st_mode)', 'os.readlink("/proc/self/fd/" + str(fd))',
+    'target.startswith(("/workspace/", "/artifacts/"))', 'target.isprintable()',
+    'target.endswith(" (deleted)")', 'part in ("", ".", "..")']) {
+    assert.ok(program.includes(check), check);
+    assert.ok(program.indexOf(check) < program.indexOf('os.read(fd,'), check + ' before source read');
+  }
+  assert.match(program, /path = sys\.argv\[1\]/);
+  assert.match(program, /os\.read\(fd, 65536\)/);
+  assert.match(program, /while data:/);
+  assert.match(program, /written = os\.write\(1, data\)/);
+  assert.match(program, /if written <= 0:/);
+  assert.match(program, /data = data\[written:\]/);
+  assert.match(program, /os\.close\(fd\)/);
+  assert.doesNotMatch(program, /print\(|exec\(|eval\(|realpath|subprocess|cat|open\(target/);
+});
+
+for (const mode of ['nonzero', 'source-error', 'result-error', 'exec-error', 'revoked', 'binary', 'invalid-utf8', 'empty-nonzero'] as const) {
+  test(`failed ${mode} source leaves real Records partial and no reference`, async t => {
+    let revoke = () => {};
+    const f = await fixture(t, () => {
+      if (mode === 'exec-error') throw new Error('missing interpreter');
+      return { async *output() {
+        if (mode !== 'empty-nonzero') yield { stream: 'stdout', data: mode === 'invalid-utf8' ? Buffer.from([255]) :
+          Buffer.from(mode === 'binary' ? 'GIF89aABCDEFGHIJK' : 'partial source already streamed') };
+        if (mode === 'source-error') throw new Error('private source failure');
+        if (mode === 'revoked') revoke();
+      }, result: mode === 'result-error' ? Promise.reject(new Error('private result failure')) :
+        Promise.resolve({ exitCode: mode === 'nonzero' || mode === 'empty-nonzero' ? 1 : 0 }) };
+    });
+    revoke = () => f.authority.abort();
+    assert.equal((await f.execute()).status, 'failure');
+    await f.owner.close();
+    const ids = await readdir(join(f.root, 'records', context.workId, 'evidence'));
+    assert.equal(ids.length, 1);
+    const reference = { workId: context.workId, id: ids[0]! };
+    assert.equal((await f.records.read({ reference, offset: 0, limit: 100 })).state, 'partial');
+    assert.ok(!(await readdir(join(f.root, 'records', context.workId, 'evidence', reference.id))).includes('complete.json'));
+  });
+}

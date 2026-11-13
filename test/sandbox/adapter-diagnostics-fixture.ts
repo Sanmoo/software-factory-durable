@@ -181,10 +181,11 @@ mock.module('@earendil-works/gondolin', { namedExports: {
     id: '77777777-2222-4333-8444-555555555555',
     getHostPid() { return process.pid; }, // External VM double, never a real VMM.
     exec(argv: string[], options: { signal: AbortSignal; stdout?: string; stderr?: string }) {
-      if ((mode === 'normal-worker' || mode === 'owner-registration') && argv[0] === '/bin/cat') {
+      if ((mode === 'normal-worker' || mode === 'owner-registration') && argv[0] === '/usr/bin/python3') {
         audit('read');
         if (mode === 'normal-worker') {
-          assert.deepEqual(argv, ['/bin/cat', '--', '/workspace/source.txt']);
+          assert.deepEqual(argv.slice(0, 4), ['/usr/bin/python3', '-I', '-S', '-c']);
+          assert.equal(argv.length, 6); assert.equal(argv[5], '/workspace/source.txt');
           const text = 'prefix\n'.repeat(5000) + 'synthetic-secret synthetic-key\ntarget\nlast';
           return { async *output() { for (let i = 0; i < text.length; i += 11) yield { stream: 'stdout', data: Buffer.from(text.slice(i, i + 11)) }; }, result: Promise.resolve({ exitCode: 0 }) };
         }

@@ -28,14 +28,14 @@ test('one boot owns independent reviewer bindings: abort/EOF isolate pending rea
     let reads = 0;
     const vm: GuestOwner & { close(): void } = { close() { bootStops++; }, exec(argv, options) {
       reads++;
-      if (argv[2] === '/workspace/pending.txt') return { async *output() {
+      if (argv[5] === '/workspace/pending.txt') return { async *output() {
         entered();
         await new Promise<void>(resolve => {
           options.signal.addEventListener('abort', () => { aborted(); resolve(); }, { once: true });
         });
         yield { stream: 'stdout', data: Buffer.from('revoked output') };
       }, result: Promise.resolve({ exitCode: 0 }) };
-      assert.equal(argv[2], '/workspace/spec.txt');
+      assert.equal(argv[5], '/workspace/spec.txt');
       return { async *output() { yield { stream: 'stdout', data: Buffer.from('same boot spec') }; },
         result: Promise.resolve({ exitCode: 0 }) };
     } };

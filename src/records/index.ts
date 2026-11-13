@@ -230,13 +230,16 @@ export async function createRecords({ root }: { root: string }) {
         function validateOpen() {
           if (state !== 'open') throw new RecordsError();
         }
-        async function fail(): Promise<never> {
-          if (state === 'closed') throw new RecordsError();
+        async function invalidate(): Promise<void> {
           state = 'failed'; pending = '';
           try { await handle.close(); } catch { /* No raw fallback, including error diagnostics. */ }
           // Do not await finish here: it can itself be calling fail. Publication
           // rechecks invalidation around rename/sync and removes a renamed marker.
-          try { await unlink(join(directory, 'complete.json')); } catch { /* Never recursively remove. */ }
+          try { await unlink(join(directory, 'complete.json')); }
+          catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw new RecordsError(); }
+        }
+        async function fail(): Promise<never> {
+          if (state !== 'closed') await invalidate();
           throw new RecordsError();
         }
         async function append(text: string) {
@@ -250,8 +253,13 @@ export async function createRecords({ root }: { root: string }) {
             excerpt += character; excerptBytes += length;
           }
         }
+        let aborting: Promise<void> | undefined;
         return {
           reference,
+          // Failure/revocation discards buffered filter state and withdraws completion,
+          // including a finish whose publication raced with the caller's revocation.
+          // No alternate capture format: read() reports the existing partial state.
+          abort() { return aborting ??= invalidate(); },
           async write(chunk: Uint8Array): Promise<string> {
             if (state !== 'open' || busy) return fail();
             busy = true;
