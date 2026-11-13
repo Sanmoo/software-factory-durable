@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { createHash, randomUUID } from 'node:crypto';
-import { boundWriteTools, writeCallSchema, type WriteCall } from './write-tools.js';
+import { boundConditionalEditTools, boundWriteTools, writeCallSchema, type WriteCall } from './write-tools.js';
 import { boundBashTools, bashCallSchema, bashProgressSchema, type BashCall, type BashProgress } from './bash-tools.js';
 import { connect, listen, protocolVersion, type Envelope } from '../protocol/index.js';
 import type { TextOutput, RawOutput } from '../records/index.js';
@@ -22,6 +22,7 @@ const editSourceCallSchema = z.union([
   z.strictObject({ ...editSourceBinding, operation: z.literal('capture') }),
   z.strictObject({ ...editSourceVersion, operation: z.literal('page'), offset: z.number().int().nonnegative().max(8192) }),
   z.strictObject({ ...editSourceVersion, operation: z.literal('release') }),
+  z.strictObject({ ...editSourceVersion, operation: z.literal('commit'), replacement: z.string() }),
 ]);
 export type EditSourceCall = z.infer<typeof editSourceCallSchema>;
 const callSchema = z.union([readCallSchema, writeCallSchema, bashCallSchema, editSourceCallSchema]);
@@ -129,6 +130,7 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
     ? { format: 'raw' as const, encoding: 'base64' as const, imageSourceMaxBytes: imageSourceMaxBytes! }
     : { format: 'text' as const, encoding: 'base64' as const };
   const write = boundWriteTools({ ...options, signal }, valid, () => { mutationRevoked = true; });
+  const commit = boundConditionalEditTools({ ...options, signal }, valid, () => { mutationRevoked = true; });
   const bash = boundBashTools({ ...options, signal }, valid, () => { mutationRevoked = true; });
   async function executeTool(context: ToolContext, call: ToolCall, progress: (frame: BashProgress) => Promise<void>): Promise<ReadResult> {
     if (call.name === 'bash') return bash(context, call, progress);
@@ -141,6 +143,25 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
       const version = versions.get(call.sourceVersion);
       if (!version || version.path !== call.path || version.reference.id !== call.reference.id ||
           version.reference.workId !== call.reference.workId) return failure('EDIT_SOURCE_VERSION_DENIED');
+      if (call.operation === 'commit') {
+        if (Buffer.byteLength(call.replacement) > 8192 || Buffer.byteLength(JSON.stringify(call)) > 49152)
+          return failure('EDIT_SOURCE_PAYLOAD_TOO_LARGE');
+        // Reservation is synchronous and precedes the FIRST await. Pages,
+        // releases and competing channels can no longer find this version.
+        versions.delete(call.sourceVersion);
+        try {
+          const page = await options.records.read({ reference: version.reference, offset: 0, limit: 8192 });
+          if (!valid()) return failure('STALE_TOOL_CONTEXT');
+          if (page.state !== 'complete' || page.bytes !== version.bytes || page.nextOffset !== version.bytes ||
+              page.data.length !== version.bytes || createHash('sha256').update(page.data).digest('hex') !== version.digest)
+            throw new Error('protected source unavailable');
+        } catch {
+          mutationRevoked = true;
+          return failure('PROTECTED_EDIT_SOURCE_UNAVAILABLE');
+        }
+        return commit(context, { name: 'edit-source', operation: 'commit', path: version.path, callId: call.callId,
+          replacement: call.replacement, expectedBytes: version.bytes, expectedDigest: version.digest });
+      }
       if (call.operation === 'release') {
         versions.delete(call.sourceVersion);
         return { status: 'success', format: 'text', encoding: 'base64', reference: version.reference,

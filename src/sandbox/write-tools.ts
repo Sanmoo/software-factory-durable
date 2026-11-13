@@ -87,16 +87,65 @@ finally:
         os.close(fd)
 `;
 
+// Private owner-to-helper input. NEVER part of writeCallSchema or any wire schema.
+type ConditionalCommit = { name: 'edit-source'; operation: 'commit'; path: string; callId: string;
+  replacement: string; expectedBytes: number; expectedDigest: string };
+
+// Derive the existing helper's conditional branch, retaining its nofollow walk,
+// FD authorization and direct-write loop. The public helper bytes stay unchanged.
+// Exit 42 exists ONLY before any effect. Never execute either body on the host.
+// Guarantee: compare the observed bytes on this authorized writable FD against
+// the lossless capture, then modify that SAME FD. NOT atomic CAS, a coherent
+// snapshot, continuous root membership, guest-writer exclusion, equal-content
+// inode replacement detection or physical cessation. No rollback or retry.
+const guestConditionalProgram = guestWriteProgram.replace('import os, stat, sys', 'import os, stat, sys, hashlib\nclass SourceMismatch(Exception):\n    pass')
+  .replace('operation, path = sys.argv[1:]', 'operation, path = sys.argv[1:3]\n    expected_count = int(sys.argv[3])\n    expected_digest = sys.argv[4]\n    if not 0 <= expected_count <= 8192:\n        raise ValueError()')
+  .replace('("mkdir", "create")', '("commit",)')
+  .replace('(operation == "create" and len(parts) < 3)', '(operation == "commit" and len(parts) < 3)')
+  .replace('            authorize(parent)\n            os.mkdir(leaf, mode=0o700, dir_fd=parent)\n            child = os.open(leaf, flags, dir_fd=parent)', '            raise')
+  .replace('if operation == "create":', 'if operation == "commit":')
+  .replace('os.O_WRONLY | os.O_NONBLOCK', 'os.O_RDWR | os.O_NONBLOCK')
+  .replace('            authorize(parent)\n            fd = os.open(leaf, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=parent)', '            raise')
+  .replace('        os.ftruncate(fd, 0)', `        observed_count = 0
+        observed_digest = hashlib.sha256()
+        while observed_count <= expected_count:
+            data = os.read(fd, expected_count + 1 - observed_count)
+            if not data:
+                break
+            observed_count += len(data)
+            observed_digest.update(data)
+        if observed_count != expected_count or observed_digest.hexdigest() != expected_digest:
+            raise SourceMismatch()
+        authorize(fd, regular=True)
+        authorize(parent)
+        os.lseek(fd, 0, os.SEEK_SET)
+        os.ftruncate(fd, 0)`)
+  .replace('except BaseException:', 'except SourceMismatch:\n    sys.exit(42)\nexcept BaseException:');
+
 export function boundWriteTools(options: Options, valid: () => boolean, revoke: () => void) {
+  const execute = boundMutation(options, valid, revoke);
+  return (context: Context, call: WriteCall) => execute(context, call);
+}
+/** Internal owner seam only; expected identity comes exclusively from its spent capture. */
+export function boundConditionalEditTools(options: Options, valid: () => boolean, revoke: () => void) {
+  const execute = boundMutation(options, valid, revoke);
+  return (context: Context, call: ConditionalCommit) => execute(context, call);
+}
+function boundMutation(options: Options, valid: () => boolean, revoke: () => void) {
   const bound = Object.freeze({ ...options.context });
-  return async function execute(context: Context, call: WriteCall): Promise<Result> {
+  return async function execute(context: Context, call: WriteCall | ConditionalCommit): Promise<Result> {
+    const conditional = call.operation === 'commit';
+    const prefix = conditional ? 'EDIT_SOURCE' : 'WRITE';
+    let content = '';
+    if (conditional) content = call.replacement;
+    else if (call.operation === 'create') content = call.content;
     const failure = (code: string): Result => ({ status: 'failure', code });
     if (Object.keys(bound).some(key => bound[key as keyof Context] !== context[key as keyof Context]) || !valid()) return failure('STALE_TOOL_CONTEXT');
     if (bound.role !== 'builder') return failure('WRITE_ROLE_DENIED');
     if (!/^\/(workspace|artifacts)(\/[^\0]*)?$/.test(call.path) || /[\x00-\x1f\x7f]/.test(call.path) ||
         call.path.split('/').slice(1).some(part => ['', '.', '..'].includes(part)) ||
         (call.operation === 'create' && call.path.split('/').length < 3)) return failure('WRITE_PATH_DENIED');
-    if ((call.operation === 'create' && call.content.length > 8192) || Buffer.byteLength(JSON.stringify(call)) > 49152) return failure('WRITE_PAYLOAD_TOO_LARGE');
+    if (!conditional && ((call.operation === 'create' && call.content.length > 8192) || Buffer.byteLength(JSON.stringify(call)) > 49152)) return failure('WRITE_PAYLOAD_TOO_LARGE');
     const { phaseId, ...captureContext } = bound;
     const evidence = { ...captureContext, callId: call.callId };
     let attempted = false;
@@ -104,23 +153,36 @@ export function boundWriteTools(options: Options, valid: () => boolean, revoke: 
     const commandLifetime = new AbortController();
     try {
       await options.records.record(evidence, { kind: 'mutation-intent', phaseId, operation: call.operation, path: call.path,
-        semantics: 'regular-file-write-non-atomic', contentBytes: call.operation === 'create' ? Buffer.byteLength(call.content) : 0 });
+        semantics: conditional ? 'same-fd-source-compare-direct-write-non-atomic' : 'regular-file-write-non-atomic', contentBytes: Buffer.byteLength(content) });
       if (!valid()) return failure('STALE_TOOL_CONTEXT');
       attempted = true;
-      const process = options.vm.exec(['/usr/bin/python3', '-I', '-S', '-c', guestWriteProgram, call.operation, call.path], {
+      const argv = ['/usr/bin/python3', '-I', '-S', '-c', conditional ? guestConditionalProgram : guestWriteProgram, call.operation, call.path];
+      if (conditional) argv.push(String(call.expectedBytes), call.expectedDigest);
+      const process = options.vm.exec(argv, {
         stdout: 'pipe', stderr: 'ignore', signal: AbortSignal.any([options.signal, commandLifetime.signal]), windowBytes: 65536,
-        env: {}, cwd: '/', stdin: call.operation === 'create' ? call.content : '',
+        env: {}, cwd: '/', stdin: content,
       });
       void process.result.catch(() => {});
       // No guest-controlled error/output reaches SDK, evidence or display.
       for await (const _chunk of process.output()) { /* drain bounded transport */ }
       const result = await process.result;
       const complete = result.exitCode === 0 && valid();
+      const mismatch = conditional && result.exitCode === 42 && valid();
+      let outcome = 'effects-uncertain';
+      let effects = 'truncation-partial-file-or-directories-may-remain';
+      if (complete) {
+        outcome = 'complete';
+        effects = call.operation === 'mkdir' ? 'directories-may-have-been-created' : 'regular-file-written';
+      } else if (mismatch) {
+        outcome = 'not-applied';
+        effects = 'source-changed-before-effect';
+      }
       persistingResult = true;
-      const reference = await options.records.record(evidence, { kind: 'mutation-result', phaseId, operation: call.operation,
-        outcome: complete ? 'complete' : 'effects-uncertain', effects: complete
-          ? call.operation === 'create' ? 'regular-file-written' : 'directories-may-have-been-created' : 'truncation-partial-file-or-directories-may-remain' });
-      if (!complete) { revoke(); return failure('WRITE_EFFECTS_UNCERTAIN'); }
+      const reference = await options.records.record(evidence, { kind: 'mutation-result', phaseId, operation: call.operation, outcome, effects });
+      // A critical result await can overlap revocation; never publish late success.
+      if (!valid()) { revoke(); return failure(`${prefix}_EFFECTS_UNCERTAIN`); }
+      if (mismatch) return failure('EDIT_SOURCE_CHANGED');
+      if (!complete) { revoke(); return failure(`${prefix}_EFFECTS_UNCERTAIN`); }
       // Same protected-reference result envelope as read, with no file-content bytes.
       return { status: 'success', format: 'text', reference, bytes: 0, encoding: 'base64', data: '', nextOffset: 0 };
     } catch {
@@ -131,7 +193,7 @@ export function boundWriteTools(options: Options, valid: () => boolean, revoke: 
             outcome: 'effects-uncertain', effects: 'truncation-partial-file-or-directories-may-remain' });
         } catch { /* Critical capture failure: no raw fallback, success or mutation retry. */ }
       }
-      return failure(attempted ? 'WRITE_EVIDENCE_OR_EFFECTS_UNCERTAIN' : 'PROTECTED_WRITE_UNAVAILABLE');
+      return failure(attempted ? `${prefix}_EVIDENCE_OR_EFFECTS_UNCERTAIN` : `PROTECTED_${prefix}_UNAVAILABLE`);
     } finally { commandLifetime.abort(); }
   };
 }
