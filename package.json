@@ -38,6 +38,14 @@
       "types": "@earendil-works/pi-coding-agent",
       "default": "./.scratch/factory-development-sdk-v3/sdk/dist/index.js"
     },
+    "#factory-pi-auth-storage": {
+      "types": "./.scratch/factory-development-sdk-v3/sdk/dist/core/auth-storage.d.ts",
+      "default": "./.scratch/factory-development-sdk-v3/sdk/dist/core/auth-storage.js"
+    },
+    "#factory-pi-model-runtime": {
+      "types": "./.scratch/factory-development-sdk-v3/sdk/dist/core/model-runtime.d.ts",
+      "default": "./.scratch/factory-development-sdk-v3/sdk/dist/core/model-runtime.js"
+    },
     "#factory-image-mime": {
       "types": "./src/workers/image-mime.d.ts",
       "default": "./.scratch/factory-development-sdk-v3/image-mime.js"
