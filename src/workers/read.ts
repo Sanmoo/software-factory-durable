@@ -8,7 +8,7 @@ import type { ToolContext, ToolProjection, ReadResult } from '../sandbox/index.j
 export function reviewerRead(context: ToolContext, sandbox: ToolProjection, criticalFailure = () => {}) {
   const definition = createReadTool('/workspace');
   return { ...definition,
-    description: definition.description + '\nFactory development profile: PNG/JPEG require an explicit host source-byte budget. Other binary formats are not qualified.',
+    description: definition.description + '\nFactory development profile: PNG/JPEG/GIF/WebP require an explicit host source-byte budget. Other binary formats are not qualified.',
     async execute(...args: Parameters<typeof definition.execute>) {
       function failed(code: string): never {
         if (!['GUEST_READ_FAILED', 'READ_PATH_DENIED', 'READ_BINARY_UNSUPPORTED'].includes(code)) criticalFailure();
@@ -46,7 +46,7 @@ export function reviewerRead(context: ToolContext, sandbox: ToolProjection, crit
           // capture reaches the existing native classifier. No host path probes.
           const prefix = (await page(0)).data.subarray(0, 4100);
           const mime = detectSupportedImageMimeType(prefix);
-          if (mime !== 'image/png' && mime !== 'image/jpeg') return failed('READ_IMAGE_UNAVAILABLE');
+          if (mime !== 'image/png' && mime !== 'image/jpeg' && mime !== 'image/gif' && mime !== 'image/webp') return failed('READ_IMAGE_UNAVAILABLE');
           return mime;
         },
         async *createReadStream(_path, { signal }) {

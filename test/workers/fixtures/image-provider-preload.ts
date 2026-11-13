@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { png, jpeg, withMetadata } from './images.js';
+import { png, jpeg, gif, webp, withMetadata } from './images.js';
 
 // External HTTP boundary ONLY. No real fetch/DNS/model; never forwards any URL.
 assert.deepEqual(Object.keys(process.env).sort(), ['LANG', 'LC_ALL', 'NODE_DISABLE_COMPILE_CACHE', 'PATH', 'TMPDIR', 'XDG_CACHE_HOME']);
@@ -14,10 +14,12 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => 
   assert.doesNotMatch(body, /\"name\":\"(?:bash|write|edit)\"/);
   const blocked = body.includes('blocked-image');
   const user = JSON.parse(body).messages.find((message: { role: string }) => message.role === 'user');
-  const isJpeg = JSON.stringify(user).includes('JPEG');
-  const expected = withMetadata(isJpeg ? jpeg : png, Buffer.from('clean-local-metadata-'.repeat(2600)));
+  const description = JSON.stringify(user);
+  const [source, mime] = description.includes('JPEG') ? [jpeg, 'jpeg'] : description.includes('GIF') ? [gif, 'gif']
+    : description.includes('WebP') ? [webp, 'webp'] : [png, 'png'];
+  const expected = withMetadata(source, Buffer.from('clean-local-metadata-'.repeat(2600)));
   assert.ok(++requests <= (blocked ? 1 : 2), 'no model next turn after image protection failure');
-  if (requests === 2) assert.ok(body.includes(`data:image/${isJpeg ? 'jpeg' : 'png'};base64,${expected.toString('base64')}`));
+  if (requests === 2) assert.ok(body.includes(`data:image/${mime};base64,${expected.toString('base64')}`));
   process.send?.({ kind: 'provider-request', count: requests });
   const choices = requests === 1 ? [
     { index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'read-image', type: 'function',

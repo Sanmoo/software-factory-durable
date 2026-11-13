@@ -30,9 +30,9 @@ test('Q5 owner capture reaches native SDK pagination, beyond the old 16K wrapper
   await assert.rejects(native.execute('read-2', { path: 'source.txt' }), /STALE_TOOL_CONTEXT|TOOL_CHANNEL_CLOSED/);
 });
 
-test('Workers-private SDK component uses real provider loop and native JSONL with only filtered guest tool content', { timeout: 10000 }, async t => {
+test('Workers-private SDK component uses real provider loop and native JSONL with preserved file BOM and only filtered guest tool content', { timeout: 10000 }, async t => {
   const f = await nativeOwner(context, { exec() { return {
-    async *output() { yield { stream: 'stdout' as const, data: Buffer.from('first\nsynthetic-') };
+    async *output() { yield { stream: 'stdout' as const, data: Buffer.from('\uFEFFfirst\nsynthetic-') };
       yield { stream: 'stdout' as const, data: Buffer.from('secret\nthird\n') }; }, result: Promise.resolve({ exitCode: 0 }),
   }; } });
   t.after(() => f.close());
@@ -50,10 +50,10 @@ test('Workers-private SDK component uses real provider loop and native JSONL wit
     assert.doesNotMatch(body, /synthetic-secret/);
     assert.doesNotMatch(body, /\"name\":\"(?:bash|write|edit)\"/);
     requests++;
-    if (requests === 2) assert.match(body, /█/);
+    if (requests === 2) { assert.match(body, /█/); assert.ok(body.includes('\uFEFFfirst')); }
     const choices = requests === 1 ? [
       { index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'tool-call-1', type: 'function',
-        function: { name: 'read', arguments: JSON.stringify({ path: 'source.txt', offset: 2, limit: 1 }) } }] }, finish_reason: null },
+        function: { name: 'read', arguments: JSON.stringify({ path: 'source.txt', offset: 1, limit: 2 }) } }] }, finish_reason: null },
       { index: 0, delta: {}, finish_reason: 'tool_calls' },
     ] : [
       { index: 0, delta: { role: 'assistant', content: 'Local provider boundary completed.' }, finish_reason: null },
@@ -69,13 +69,13 @@ test('Workers-private SDK component uses real provider loop and native JSONL wit
       models: [{ id: 'reader', name: 'Reader', reasoning: false, input: ['text'],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000 }] } }, records: f.records,
     sandbox: createSandbox({ root: f.root, toolEndpoint: f.owner.endpoint }) });
-  const result = await workers.activate({ context, prompt: 'Use read at offset 2, limit 1.', signal: f.authority.signal });
+  const result = await workers.activate({ context, prompt: 'Use read at offset 1, limit 2.', signal: f.authority.signal });
   assert.equal(result.status, 'completed'); assert.equal(requests, 2);
   assert.ok(result.sessionFile);
   const stored = await readFile(result.sessionFile!, 'utf8');
   assert.doesNotMatch(stored, /synthetic-secret|synthetic-key/); assert.match(stored, /█/);
   const reopened = SessionManager.open(result.sessionFile!, join(directory, 'sessions'));
-  assert.ok(reopened.buildSessionContext().messages.some(message => message.role === 'toolResult' && JSON.stringify(message).includes('█')));
+  assert.ok(reopened.buildSessionContext().messages.some(message => message.role === 'toolResult' && JSON.stringify(message).includes('█') && JSON.stringify(message).includes('\uFEFFfirst')));
   f.records.registerSecret('standards-05');
   await assert.rejects(workers.activate({ context, prompt: 'Must not reach the provider.', signal: f.authority.signal }), /PROTECTED_CAPTURE_UNAVAILABLE/);
   assert.equal(requests, 2, 'critical start-capture failure precedes provider/model activity');

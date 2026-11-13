@@ -108,7 +108,7 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
       }
       if (!/^\/(workspace|artifacts)\/[^\0]*$/.test(call.path) || call.path.split('/').includes('..')) return failure('READ_PATH_DENIED');
       const { phaseId: _phaseId, ...captureContext } = bound;
-      let output: TextOutput | RawOutput = await options.records.openOutput({ ...captureContext, callId: call.callId });
+      let output: TextOutput | RawOutput = await options.records.openOutput({ ...captureContext, callId: call.callId }, { format: 'text', preserveBOM: true });
       let format: 'text' | 'raw' = 'text';
       let completed = false;
       const commandLifetime = new AbortController();
@@ -128,12 +128,13 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
             prefix.subarray(0, 3).equals(Buffer.from([255, 216, 255]));
           const otherImage = /^GIF8[79]a/.test(prefix.toString('ascii', 0, 6)) ||
             (prefix.toString('ascii', 0, 4) === 'RIFF' && prefix.toString('ascii', 8, 12) === 'WEBP');
-          if (otherImage || (pngOrJpeg && imageSourceMaxBytes === undefined)) return false;
-          if (pngOrJpeg) {
+          const imageCandidate = pngOrJpeg || otherImage;
+          if (imageCandidate && imageSourceMaxBytes === undefined) return false;
+          if (imageCandidate) {
             await output.abort();
             output = await options.records.openOutput({ ...captureContext, callId: call.callId }, { format: 'raw', maxBytes: imageSourceMaxBytes! });
           }
-          return pngOrJpeg ? 'raw' : 'text';
+          return imageCandidate ? 'raw' : 'text';
         };
         for await (const chunk of process.output()) {
           if (!valid()) return failure('STALE_TOOL_CONTEXT');

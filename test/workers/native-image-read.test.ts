@@ -12,7 +12,7 @@ import { createSandbox, type ToolContext } from '../../src/sandbox/index.js';
 
 const context: ToolContext = { workId: 'image-work', executionId: 'image-exec', invocationId: 'image-invocation',
   role: 'standards', environmentRef: 'image-env', bootRef: 'image-boot', phaseId: 'image-phase' };
-import { png, jpeg, withMetadata, widePng } from './fixtures/images.js';
+import { png, jpeg, gif, webp, withMetadata, widePng } from './fixtures/images.js';
 
 test('explicit host image budget delivers real native PNG image block from completed protected capture', async t => {
   const f = await nativeOwner(context, { exec() { return { async *output() {
@@ -24,7 +24,7 @@ test('explicit host image budget delivers real native PNG image block from compl
   assert.ok(result.content.some(block => block.type === 'image' && block.mimeType === 'image/png'));
 });
 
-for (const [name, source, mime] of [['PNG', png, 'image/png'], ['JPEG', jpeg, 'image/jpeg']] as const) {
+for (const [name, source, mime] of [['PNG', png, 'image/png'], ['JPEG', jpeg, 'image/jpeg'], ['GIF', gif, 'image/gif'], ['WebP', webp, 'image/webp']] as const) {
   const large = withMetadata(source, Buffer.from('clean-metadata-'.repeat(3700)));
   for (const delta of [-1, 0, 1]) test(`${name} >50000 native image uses explicit TEST source budget ${delta >= 0 ? '+' : ''}${delta}`, async t => {
     assert.ok(large.length > 50000);
@@ -92,7 +92,7 @@ for (const [name, source, mime] of [['PNG', png, 'image/png'], ['JPEG', jpeg, 'i
 }
 
 test('native image decode omission and native classifier rejection are failures, never raw text fallback', async t => {
-  for (const bad of [png.subarray(0, 35), Buffer.from([255, 216, 255, 247, 0, 0, 0, 0, 0, 0, 0, 0])]) {
+  for (const bad of [png.subarray(0, 35), gif.subarray(0, 16), webp.subarray(0, 16), Buffer.from([255, 216, 255, 247, 0, 0, 0, 0, 0, 0, 0, 0])]) {
     const f = await nativeOwner(context, { exec() { return { async *output() { yield { stream: 'stdout' as const, data: bad }; },
       result: Promise.resolve({ exitCode: 0 }) }; } }, { imageSourceMaxBytes: 1000 }); t.after(() => f.close());
     let critical = false;
@@ -102,7 +102,7 @@ test('native image decode omission and native classifier rejection are failures,
   }
 });
 
-for (const [name, source] of [['PNG', png], ['JPEG', jpeg]] as const) {
+for (const [name, source] of [['PNG', png], ['JPEG', jpeg], ['GIF', gif], ['WebP', webp]] as const) {
   test(`${name} split literal non-ASCII and ASCII metadata fail before source publish, SDK or transport`, async () => {
     for (const secret of ['synthetic-secret', 'segredo-🔒-ação']) {
       const bytes = Buffer.from(secret);
@@ -144,7 +144,7 @@ async function controlledFiles(directory: string): Promise<{ path: string; data:
   return files;
 }
 
-for (const [name, source, mime] of [['PNG', png, 'image/png'], ['JPEG', jpeg, 'image/jpeg']] as const) {
+for (const [name, source, mime] of [['PNG', png, 'image/png'], ['JPEG', jpeg, 'image/jpeg'], ['GIF', gif, 'image/gif'], ['WebP', webp, 'image/webp']] as const) {
   for (const contaminated of [false, true]) test(`${name} real native vision session ${contaminated ? 'aborts on literal metadata secret' : 'persists image and reopens it'}`, { timeout: 10000 }, async t => {
     const secret = 'segredo-🔒-ação';
     const image = withMetadata(source, Buffer.from(contaminated ? 'prefix-' + secret + '-suffix' : 'clean-local-metadata-'.repeat(2600)));
@@ -228,7 +228,7 @@ test('native auto-resize stays enabled and performs real PNG resize', async t =>
   assert.match(JSON.stringify(result.content), /2101|2000/);
 });
 
-test('configured image budget does not change text UTF8/page/BOM/redaction or whole-buffer fallback cap', async t => {
+test('configured image budget retains file BOM and preserves UTF8/page/redaction and whole-buffer fallback cap', async t => {
   const source = Buffer.from('\uFEFF' + 'x'.repeat(24574) + '🔒ação\nsynthetic-secret\nlast');
   const f = await nativeOwner(context, { exec() { return { async *output() {
     for (let offset = 0; offset < source.length; offset += 7) yield { stream: 'stdout' as const, data: source.subarray(offset, offset + 7) };
@@ -237,9 +237,8 @@ test('configured image budget does not change text UTF8/page/BOM/redaction or wh
   const result = await native.execute('unicode-text', { path: 'source.png' });
   assert.equal(result.content[0]?.type, 'text');
   assert.ok(JSON.stringify(result).includes('🔒ação\\n█\\nlast')); assert.doesNotMatch(JSON.stringify(result), /synthetic-secret|�/);
-  // Existing Records UTF8 capture consumes a leading BOM; this increment does
-  // not silently claim upstream BOM parity or change legacy text normalization.
-  assert.equal(JSON.stringify(result).includes('\uFEFF'), false);
+  // File reads opt in; ordinary Records evidence/event capture stays legacy.
+  assert.equal(JSON.stringify(result).includes('\uFEFF'), true);
   const big = await nativeOwner({ ...context, invocationId: 'large-text' }, { exec() { return { async *output() {
     yield { stream: 'stdout' as const, data: Buffer.from('x'.repeat(50001)) };
   }, result: Promise.resolve({ exitCode: 0 }) }; } }, { imageSourceMaxBytes: 100000 }); t.after(() => big.close());

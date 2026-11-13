@@ -19,6 +19,8 @@ const captureSchema = z.strictObject({ version: z.literal(1), context: contextSc
 const rawCaptureSchema = captureSchema.extend({ version: z.literal(2), format: z.literal('raw'), maxBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) });
 export type OutputReference = z.infer<typeof referenceSchema>;
 export type RawOutputOptions = { format: 'raw'; maxBytes: number };
+// Explicit file-read opt-in only; legacy evidence/event text keeps consuming BOM.
+export type FileTextOutputOptions = { format: 'text'; preserveBOM: true };
 type TextCompletion = { reference: OutputReference; tail: string; bytes: number; excerpt: string; truncated: boolean; display: string };
 type RawCompletion = { version: 2; format: 'raw'; reference: OutputReference; bytes: number };
 type OutputChannel<T, C> = { reference: OutputReference; abort(): Promise<void>; write(chunk: Uint8Array): Promise<T>; finish(): Promise<C> };
@@ -153,7 +155,8 @@ export async function createRecords({ root }: { root: string }) {
 
   function openOutput(input: OutputContext): Promise<TextOutput>;
   function openOutput(input: OutputContext, options: RawOutputOptions): Promise<RawOutput>;
-  function openOutput(input: OutputContext, options?: RawOutputOptions): Promise<TextOutput | RawOutput> {
+  function openOutput(input: OutputContext, options: FileTextOutputOptions): Promise<TextOutput>;
+  function openOutput(input: OutputContext, options?: RawOutputOptions | FileTextOutputOptions): Promise<TextOutput | RawOutput> {
     return openCapture(input, options);
   }
   function read(input: ReadRequest & { format: 'raw' }): Promise<RawPage>;
@@ -193,15 +196,17 @@ export async function createRecords({ root }: { root: string }) {
     await privateDirectory(directory);
     return directory;
   }
-  async function openCapture(input: OutputContext, options?: RawOutputOptions): Promise<TextOutput | RawOutput> {
+  async function openCapture(input: OutputContext, options?: RawOutputOptions | FileTextOutputOptions): Promise<TextOutput | RawOutput> {
     let file: FileHandle | undefined;
-    const raw = options !== undefined;
+    const raw = options?.format === 'raw';
     const revision = registryRevision;
     let releaseActive = () => {};
     let maxBytes = 0;
+    let preserveBOM = false;
     function validateRegistry() { if (raw && revision !== registryRevision) throw new RecordsError(); }
     try {
       if (raw) maxBytes = z.strictObject({ format: z.literal('raw'), maxBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }).parse(options).maxBytes;
+      else if (options !== undefined) preserveBOM = z.strictObject({ format: z.literal('text'), preserveBOM: z.literal(true) }).parse(options).preserveBOM;
       const context = contextSchema.parse(input);
       // Identities cannot be redacted without changing their meaning. Reject
       // secret-bearing metadata before even choosing a filesystem destination.
@@ -221,7 +226,7 @@ export async function createRecords({ root }: { root: string }) {
       validateRegistry();
       file = await open(join(directory, 'output'), 'wx', 0o600);
       const handle = file;
-      const decoder = new TextDecoder('utf-8', { fatal: true });
+      const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: preserveBOM });
       let pending = '';
       let rawPending: Buffer = Buffer.alloc(0);
       let received = 0;
