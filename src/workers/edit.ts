@@ -42,6 +42,21 @@ function boundedInput(input: unknown) {
 export function builderEdit(context: ToolContext, sandbox: ToolProjection, onCritical: () => void = () => {}): ToolDefinition {
   const bound = Object.freeze({ ...context });
   let revoked = false;
+  // Technical admission bound: at most 16 retained executions/captures (owner
+  // limit is 32), hence at most 15 FIFO waiters. No payload promise-chain.
+  let admitted = 0;
+  let rpcBusy = false;
+  const waiters: (() => void)[] = [];
+  const dispatch = async <T>(operation: () => Promise<T>): Promise<T> => {
+    if (rpcBusy) await new Promise<void>(resolve => { waiters.push(resolve); });
+    else rpcBusy = true;
+    try { return await operation(); }
+    finally {
+      const next = waiters.shift();
+      if (next) next();
+      else rpcBusy = false;
+    }
+  };
   const critical = () => { if (!revoked) { revoked = true; onCritical(); } };
   // Metadata/preparation only: even this never-executed native instance has no
   // default host filesystem callbacks. Actual operations are fresh below.
@@ -70,11 +85,15 @@ export function builderEdit(context: ToolContext, sandbox: ToolProjection, onCri
       const unavailable = (): never => { critical(); throw new Error('EDIT_SOURCE_UNAVAILABLE'); };
       const validReference = (result: Extract<ReadResult, { status: 'success' }>) =>
         result.reference?.workId === bound.workId && uuid.test(result.reference.id);
-      const rpc = async (call: Parameters<ToolProjection['executeTool']>[1]) => {
-        check();
+      const rpc = (call: Parameters<ToolProjection['executeTool']>[1]) => dispatch(async () => {
+        check(); // Recheck at dispatch, not merely when entering the FIFO.
+        // Consume only at dispatch; a denied queued commit still owns an unused
+        // capture. Once dispatched, never release, retry or replay that source.
+        if (call.name === 'edit-source' && call.operation === 'commit') spent = true;
         try { return await sandbox.executeTool(bound, call, undefined, signal); }
         catch (error) { critical(); throw error; }
-      };
+        finally { if (signal?.aborted) critical(); }
+      });
       const binding = (path: string) => {
         if (!capture || path !== capture.path || spent) return unavailable();
         return { name: 'edit-source' as const, path: capture.path, reference: capture.result.reference, sourceVersion: capture.result.sourceVersion };
@@ -111,7 +130,6 @@ export function builderEdit(context: ToolContext, sandbox: ToolProjection, onCri
           const call = { ...trusted, operation: 'commit' as const, replacement, callId: randomUUID() };
           if (Buffer.byteLength(JSON.stringify(call)) > 49152) throw new Error('EDIT_PAYLOAD_TOO_LARGE');
           check();
-          spent = true; // No release/replay/retry once commit might have been dispatched.
           const result = await rpc(call);
           check();
           if (result.status !== 'success') {
@@ -122,6 +140,8 @@ export function builderEdit(context: ToolContext, sandbox: ToolProjection, onCri
               result.data !== '' || result.nextOffset !== 0) return unavailable();
         },
       } };
+      if (admitted >= 16) throw new Error('EDIT_ADMISSION_FULL');
+      admitted++;
       try {
         const result = await createEditTool(ctx?.cwd || '/workspace', options).execute(callId, prepared, signal, onUpdate);
         check();
@@ -131,20 +151,23 @@ export function builderEdit(context: ToolContext, sandbox: ToolProjection, onCri
         if (signal?.aborted) critical();
         throw error;
       } finally {
-        if (capture && !spent) {
-          // Cleanup must survive caller abort; it releases ONLY this unused source,
-          // never cancels a shared VM. Channel loss already clears owner versions.
-          try {
-            const result = await sandbox.executeTool(bound, { ...binding(capture.path), operation: 'release', callId: randomUUID() });
-            if (result.status !== 'success' || result.format !== 'text' || result.sourceVersion !== capture.result.sourceVersion ||
-                result.reference.id !== capture.result.reference.id || result.reference.workId !== bound.workId ||
-                result.bytes !== capture.result.bytes || result.encoding !== 'base64' || result.data !== '' || result.nextOffset !== 0)
-              throw new Error('EDIT_RELEASE_UNAVAILABLE');
-          } catch (error) {
-            critical();
-            if (!originalError) throw error;
+        try {
+          if (capture && !spent) {
+            // Cleanup must survive caller abort; it releases ONLY this unused source,
+            // never cancels a shared VM. Channel loss already clears owner versions.
+            try {
+              const call = { ...binding(capture.path), operation: 'release' as const, callId: randomUUID() };
+              const result = await dispatch(() => sandbox.executeTool(bound, call));
+              if (result.status !== 'success' || result.format !== 'text' || result.sourceVersion !== capture.result.sourceVersion ||
+                  result.reference.id !== capture.result.reference.id || result.reference.workId !== bound.workId ||
+                  result.bytes !== capture.result.bytes || result.encoding !== 'base64' || result.data !== '' || result.nextOffset !== 0)
+                throw new Error('EDIT_RELEASE_UNAVAILABLE');
+            } catch (error) {
+              critical();
+              if (!originalError) throw error;
+            }
           }
-        }
+        } finally { admitted--; }
       }
     },
   };

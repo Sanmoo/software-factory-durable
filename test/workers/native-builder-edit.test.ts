@@ -17,6 +17,7 @@ async function fixture(t: { after(fn: () => Promise<void>): void }, original: st
   let partial = false;
   let onCommit = () => {};
   let onCapture = () => {};
+  let captureGate = Promise.resolve();
   const calls: string[][] = [];
   const f = await nativeOwner(context, { exec(argv, options) {
     calls.push(argv);
@@ -32,7 +33,7 @@ async function fixture(t: { after(fn: () => Promise<void>): void }, original: st
         if (partial) { virtual = virtual.subarray(0, 1); exitCode = 1; }
       }
     }
-    return { async *output() { if (!commit) yield { stream: 'stdout' as const, data: captured }; },
+    return { async *output() { if (!commit) { await captureGate; yield { stream: 'stdout' as const, data: captured }; } },
       result: Promise.resolve({ exitCode: commit ? exitCode : 0 }) };
   } }, { editSourceMaxBytes: 8192 });
   t.after(() => f.close());
@@ -44,8 +45,109 @@ async function fixture(t: { after(fn: () => Promise<void>): void }, original: st
   return { ...f, tool, sandbox, wire, calls, get critical() { return critical; }, get text() { return virtual.toString(); },
     change(text: string) { virtual = Buffer.from(text); }, outcome(code: number | null) { outcome = code; },
     partial() { partial = true; },
+    holdCapture(gate: Promise<void>) { captureGate = gate; },
     onCommit(fn: () => void) { onCommit = fn; }, onCapture(fn: () => void) { onCapture = fn; } };
 }
+
+test('real owner pending capture serializes different paths, releases unused sources and stays usable', async t => {
+  const f = await fixture(t);
+  let release!: () => void;
+  let enter!: () => void;
+  const entered = new Promise<void>(resolve => { enter = resolve; });
+  f.holdCapture(new Promise<void>(resolve => { release = resolve; }));
+  f.onCapture(enter);
+  const a = assert.rejects(run(f.tool, 'first', args('missing', 'new', 'first')), /Could not find/);
+  await entered;
+  const b = assert.rejects(run(f.tool, 'second', args('missing', 'new', 'second')), /Could not find/);
+  const both = Promise.all([a, b]);
+  // Attach before yielding so the baseline rejection is observed, not unhandled.
+  void both.catch(() => {});
+  try {
+    await new Promise<void>(resolve => setImmediate(resolve));
+  } finally { release(); }
+  await both;
+  assert.equal(f.critical, 0);
+  assert.equal(f.wire.filter(c => operation(c) === 'release').length, 2);
+  await run(f.tool, 'fresh', args());
+  assert.equal(f.text, 'new');
+});
+
+test('queued cancellation denies RPC, revokes following waiters, and cleanup waits for settlement', async t => {
+  const f = await fixture(t);
+  let release!: () => void;
+  let enter!: () => void;
+  const entered = new Promise<void>(resolve => { enter = resolve; });
+  f.holdCapture(new Promise<void>(resolve => { release = resolve; }));
+  f.onCapture(enter);
+  const first = assert.rejects(run(f.tool, 'first', args('missing', 'new', 'first')), /REVOKED/);
+  await entered;
+  const cancelled = new AbortController();
+  const second = assert.rejects(run(f.tool, 'cancel', args('missing', 'new', 'cancel'), cancelled.signal), /aborted/);
+  const third = assert.rejects(run(f.tool, 'third', args('missing', 'new', 'third')), /REVOKED/);
+  try {
+    await new Promise<void>(resolve => setImmediate(resolve));
+    cancelled.abort();
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.equal(f.wire.length, 1, 'no release or queued RPC before actual settlement');
+  } finally { release(); }
+  await Promise.all([first, second, third]);
+  assert.deepEqual(f.wire.map(operation), ['capture', 'release']);
+  assert.equal(f.critical, 1);
+});
+
+test('cancelled queued commit is not spent and releases its unused capture', async t => {
+  const f = await fixture(t);
+  let release!: () => void;
+  let enter!: () => void;
+  const entered = new Promise<void>(resolve => { enter = resolve; });
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let captures = 0;
+  f.onCapture(() => { if (++captures === 2) { f.holdCapture(gate); enter(); } });
+  const cancelled = new AbortController();
+  let blocker: Promise<void> | undefined;
+  let tool: ToolDefinition;
+  tool = builderEdit(context, { async executeTool(ctx, call, onData, signal) {
+    const result = await f.sandbox.executeTool(ctx, call, onData, signal);
+    if (call.name === 'edit-source' && call.operation === 'page' && call.path.endsWith('/first')) {
+      // Queue another path's capture ahead of this path's upcoming commit.
+      blocker = assert.rejects(run(tool, 'blocker', args('missing', 'new', 'blocker')), /REVOKED/);
+      await new Promise<void>(resolve => setImmediate(resolve));
+    }
+    return result;
+  } });
+  const first = assert.rejects(run(tool, 'first', args('old', 'new', 'first'), cancelled.signal), /aborted/);
+  await entered;
+  try {
+    await new Promise<void>(resolve => setImmediate(resolve));
+    cancelled.abort();
+    assert.deepEqual(f.wire.map(operation), ['capture', 'page', 'capture']);
+  } finally { release(); }
+  await Promise.all([first, blocker]);
+  assert.equal(f.wire.some(c => operation(c) === 'commit'), false);
+  assert.equal(f.wire.filter(c => operation(c) === 'release').length, 2);
+  assert.equal(f.text, 'old');
+});
+
+test('technical admission bound rejects before RPC without poisoning accepted executions', async t => {
+  const f = await fixture(t);
+  let release!: () => void;
+  let enter!: () => void;
+  const entered = new Promise<void>(resolve => { enter = resolve; });
+  f.holdCapture(new Promise<void>(resolve => { release = resolve; }));
+  f.onCapture(enter);
+  const pending = [assert.rejects(run(f.tool, 'first', args('missing', 'new', 'first')), /Could not find/)];
+  await entered;
+  try {
+    for (let i = 1; i < 16; i++) pending.push(assert.rejects(run(f.tool, String(i), args('missing', 'new', `path-${i}`)), /Could not find/));
+    await assert.rejects(run(f.tool, 'overflow', args('missing', 'new', 'overflow')), /EDIT_ADMISSION_FULL/);
+    assert.equal(f.wire.length, 1);
+    assert.equal(f.critical, 0);
+  } finally { release(); }
+  await Promise.all(pending);
+  assert.equal(f.wire.filter(c => operation(c) === 'release').length, 16);
+  assert.equal(f.critical, 0);
+  await run(f.tool, 'fresh', args());
+});
 
 test('actual Native Edit schema/diff, multiple edits, BOM/mixed EOL/multibyte and full replacement via real Q5', async t => {
   const original = '\uFEFFold\r\nkeep\n世界\r\nend';
@@ -188,13 +290,18 @@ test('concurrent independent paths keep their own capture binding and cancellati
   const a = run(tool, 'cancel', args('old', 'never', 'cancel'), cancelled.signal);
   const rejected = assert.rejects(a, /aborted/);
   await entered;
-  // A different path proceeds while the first native operation remains queued.
-  await run(tool, 'other', args('old', 'other', 'other'));
-  cancelled.abort(); release(); await rejected;
+  // Even a wrapper that has not settled retains RPC ownership. A different
+  // path waits; revocation must be checked again before its actual dispatch.
+  const other = assert.rejects(run(tool, 'other', args('old', 'other', 'other')), /REVOKED/);
+  try {
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.equal(f.wire.length, 2);
+  } finally { cancelled.abort(); release(); }
+  await Promise.all([rejected, other]);
   const releases = f.wire.filter(c => c.name === 'edit-source' && c.operation === 'release');
   assert.equal(releases.length, 1);
   assert.ok(releases[0]?.name === 'edit-source' && releases[0].path.endsWith('/cancel'));
-  assert.equal(f.text, 'other'); assert.equal(critical, 1);
+  assert.equal(f.text, 'old'); assert.equal(critical, 1);
   assert.ok(seenSignals.includes(cancelled.signal));
   assert.equal(seenSignals.at(-1), undefined, 'unused capture cleanup is not cancelled with original signal');
   const before = f.wire.length;
