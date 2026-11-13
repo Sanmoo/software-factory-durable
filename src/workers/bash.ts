@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { createBashTool, type ToolDefinition } from '#factory-pi';
 import type { ToolContext, ToolProjection } from '../sandbox/index.js';
 
@@ -8,7 +9,7 @@ export function builderBash(context: ToolContext, sandbox: ToolProjection, onCri
   let failed = false;
   let timeoutFailure = false;
   const critical = () => { failed = true; onCritical(); };
-  const native = (callId: string) => createBashTool('/workspace', {
+  const native = () => createBashTool('/workspace', {
     exposeSessionEnvironment: false,
     // Replace, never inherit the SDK's parent environment clone. Owner independently
     // selects EMPTY env and /workspace, regardless of this untrusted callback input.
@@ -16,7 +17,7 @@ export function builderBash(context: ToolContext, sandbox: ToolProjection, onCri
     operations: { async exec(command, _cwd, options) {
       if (failed) throw new Error('BASH_INVOCATION_REVOKED');
       if (options.signal?.aborted) { critical(); throw new Error('aborted'); }
-      const result = await sandbox.executeTool(context, { name: 'bash', command, callId,
+      const result = await sandbox.executeTool(context, { name: 'bash', command, callId: randomUUID(),
         ...(options.timeout === undefined ? {} : { timeout: options.timeout }) }, options.onData, options.signal);
       if (result.status === 'failure') {
         if (!['BASH_ROLE_DENIED', 'INVALID_TOOL_CALL'].includes(result.code)) critical();
@@ -30,7 +31,7 @@ export function builderBash(context: ToolContext, sandbox: ToolProjection, onCri
   });
   return { name: 'bash', label: 'bash',
     description: 'Run Bash in the bound Builder guest with empty environment and fixed /workspace cwd. UTF-8 text only; binary output unsupported. Host fullOutputPath is protected host metadata, not a guest path. Timeout/abort requests do not prove physical cessation.',
-    parameters: native('schema-only').parameters,
+    parameters: native().parameters,
     async execute(callId, args, signal, onUpdate) {
       if (context.role !== 'builder') throw new Error('BASH_ROLE_DENIED');
       if (failed) throw new Error('BASH_INVOCATION_REVOKED');
@@ -38,7 +39,7 @@ export function builderBash(context: ToolContext, sandbox: ToolProjection, onCri
       if (input.timeout !== undefined && (!Number.isFinite(input.timeout) || input.timeout <= 0 || input.timeout * 1000 > 2147483647)) {
         throw new Error('Invalid timeout: must be finite, positive and within native timer range');
       }
-      try { return await native(callId).execute(callId, input, signal, onUpdate); }
+      try { return await native().execute(callId, input, signal, onUpdate); }
       catch {
         critical();
         if (signal?.aborted) throw new Error('Command aborted (effects unknown)');

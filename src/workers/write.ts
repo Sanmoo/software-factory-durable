@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { createWriteTool, type ToolDefinition } from '#factory-pi';
 import type { ToolContext, ToolProjection } from '../sandbox/index.js';
 
@@ -6,7 +7,7 @@ import type { ToolContext, ToolProjection } from '../sandbox/index.js';
  * Callback cwd/env never grants authority; the owner independently binds context.
  */
 export function builderWrite(context: ToolContext, sandbox: ToolProjection, onCritical: () => void = () => {}): ToolDefinition {
-  const native = (toolCallId: string, cwd: string) => {
+  const native = (cwd: string) => {
     const operation = async (call: Parameters<ToolProjection['executeTool']>[1]) => {
       const result = await sandbox.executeTool(context, call);
       if (result.status === 'failure') {
@@ -16,13 +17,13 @@ export function builderWrite(context: ToolContext, sandbox: ToolProjection, onCr
       }
     };
     return createWriteTool(cwd, { operations: {
-      mkdir: path => operation({ name: 'write', operation: 'mkdir', path, callId: `${toolCallId}-mkdir` }),
-      writeFile: (path, content) => operation({ name: 'write', operation: 'create', path, content, callId: `${toolCallId}-create` }),
+      mkdir: path => operation({ name: 'write', operation: 'mkdir', path, callId: randomUUID() }),
+      writeFile: (path, content) => operation({ name: 'write', operation: 'create', path, content, callId: randomUUID() }),
     } });
   };
   return { name: 'write', label: 'write',
     description: 'Create a NEW regular file in the confined guest. Existing files and all symlinks are denied. Non-atomic; partial files/directories may remain on failure. Development transport content limit: 8192 characters and 49152 encoded bytes.',
-    parameters: native('schema-only', '/workspace').parameters,
+    parameters: native('/workspace').parameters,
     async execute(toolCallId, args, signal, onUpdate, ctx) {
       if (context.role !== 'builder') throw new Error('WRITE_ROLE_DENIED');
       const input = args as { path: string; content: string };
@@ -30,7 +31,7 @@ export function builderWrite(context: ToolContext, sandbox: ToolProjection, onCr
       if (typeof input.content !== 'string' || input.content.length > 8192 || Buffer.byteLength(JSON.stringify(input)) > 45056) {
         throw new Error('WRITE_PAYLOAD_TOO_LARGE');
       }
-      return native(toolCallId, ctx?.cwd || '/workspace').execute(toolCallId, input, signal, onUpdate);
+      return native(ctx?.cwd || '/workspace').execute(toolCallId, input, signal, onUpdate);
     },
   };
 }
