@@ -16,7 +16,18 @@ const contextSchema = z.strictObject({
 export type OutputContext = z.infer<typeof contextSchema>;
 const referenceSchema = z.strictObject({ workId: identifier, id: z.uuid() });
 const captureSchema = z.strictObject({ version: z.literal(1), context: contextSchema, reference: referenceSchema, startedAt: z.iso.datetime() });
+const rawCaptureSchema = captureSchema.extend({ version: z.literal(2), format: z.literal('raw'), maxBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) });
 export type OutputReference = z.infer<typeof referenceSchema>;
+export type RawOutputOptions = { format: 'raw'; maxBytes: number };
+type TextCompletion = { reference: OutputReference; tail: string; bytes: number; excerpt: string; truncated: boolean; display: string };
+type RawCompletion = { version: 2; format: 'raw'; reference: OutputReference; bytes: number };
+type OutputChannel<T, C> = { reference: OutputReference; abort(): Promise<void>; write(chunk: Uint8Array): Promise<T>; finish(): Promise<C> };
+export type TextOutput = OutputChannel<string, TextCompletion>;
+export type RawOutput = OutputChannel<void, RawCompletion>;
+type ReadRequest = { reference: OutputReference; offset: number; limit: number };
+type OutputPage = { state: 'complete' | 'partial'; data: Buffer<ArrayBuffer>; nextOffset: number; bytes: number }
+  | { state: 'absent'; data: Buffer<ArrayBuffer>; nextOffset: number; bytes: number };
+type RawPage = OutputPage & { version: 2; format: 'raw' };
 export const outputLimits = Object.freeze({ chunkBytes: 65536, pageBytes: 65536, excerptBytes: 4096,
   secretCharacters: 4096, secretCount: 128 });
 export class RecordsError extends Error {
@@ -134,6 +145,24 @@ export async function createRecords({ root }: { root: string }) {
   try { await privateDirectory(root); root = await realpath(root); }
   catch { throw new RecordsError(); }
   const secrets: string[] = [];
+  const encodedSecrets: Buffer[] = [];
+  let registryRevision = 0;
+  // Only active raw captures, not another evidence ledger. Entries also fence
+  // read() while a revoked finish is withdrawing a raced completion marker.
+  const activeRaw = new Map<string, () => void>();
+
+  function openOutput(input: OutputContext): Promise<TextOutput>;
+  function openOutput(input: OutputContext, options: RawOutputOptions): Promise<RawOutput>;
+  function openOutput(input: OutputContext, options?: RawOutputOptions): Promise<TextOutput | RawOutput> {
+    return openCapture(input, options);
+  }
+  function read(input: ReadRequest & { format: 'raw' }): Promise<RawPage>;
+  function read(input: ReadRequest): Promise<OutputPage>;
+  async function read(input: ReadRequest & { format?: 'raw' }): Promise<OutputPage | RawPage> {
+    const page = await readPage(input);
+    return input.format === 'raw' ? { ...page, version: 2, format: 'raw' } : page;
+  }
+
   function filter(input: string, final: boolean): { text: string; pending: string } {
     const retain = final ? 0 : Math.max(0, ...secrets.map(secret => secret.length - 1));
     const end = Math.max(0, input.length - retain);
@@ -164,7 +193,216 @@ export async function createRecords({ root }: { root: string }) {
     await privateDirectory(directory);
     return directory;
   }
+  async function openCapture(input: OutputContext, options?: RawOutputOptions): Promise<TextOutput | RawOutput> {
+    let file: FileHandle | undefined;
+    const raw = options !== undefined;
+    const revision = registryRevision;
+    let releaseActive = () => {};
+    let maxBytes = 0;
+    function validateRegistry() { if (raw && revision !== registryRevision) throw new RecordsError(); }
+    try {
+      if (raw) maxBytes = z.strictObject({ format: z.literal('raw'), maxBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }).parse(options).maxBytes;
+      const context = contextSchema.parse(input);
+      // Identities cannot be redacted without changing their meaning. Reject
+      // secret-bearing metadata before even choosing a filesystem destination.
+      if (Object.values(context).some(value => secrets.some(secret => value.includes(secret)))) throw new RecordsError();
+      const reference = { workId: context.workId, id: randomUUID() };
+      const capture = safeMetadata(raw
+        ? { version: 2, format: 'raw', maxBytes, context, reference, startedAt: new Date().toISOString() }
+        : { version: 1, context, reference, startedAt: new Date().toISOString() });
+      const workDirectory = join(root, context.workId);
+      await privateDirectory(workDirectory, true);
+      const evidence = join(workDirectory, 'evidence');
+      await privateDirectory(evidence, true);
+      const directory = join(evidence, reference.id);
+      await privateDirectory(directory, true);
+      validateRegistry();
+      await atomicJson(directory, 'capture.json', safeMetadata(capture), validateRegistry);
+      validateRegistry();
+      file = await open(join(directory, 'output'), 'wx', 0o600);
+      const handle = file;
+      const decoder = new TextDecoder('utf-8', { fatal: true });
+      let pending = '';
+      let rawPending: Buffer = Buffer.alloc(0);
+      let received = 0;
+      let state: 'open' | 'closed' | 'failed' = 'open';
+      let busy = false;
+      let withdrawn = false;
+      function releaseFailed() { if (state === 'failed' && withdrawn) releaseActive(); }
+      let bytes = 0;
+      let excerpt = '';
+      let excerptBytes = 0;
+      let truncated = false;
+      function validateOpen() {
+        validateRegistry();
+        if (state !== 'open') throw new RecordsError();
+      }
+      async function invalidate(): Promise<void> {
+        withdrawn = false;
+        state = 'failed'; pending = ''; rawPending = Buffer.alloc(0);
+        if (raw) activeRaw.set(reference.id, revokeRaw);
+        try { await handle.close(); } catch { /* No raw fallback, including error diagnostics. */ }
+        // Do not await finish here: it can itself be calling fail. Publication
+        // rechecks invalidation around rename/sync and removes a renamed marker.
+        try { await unlink(join(directory, 'complete.json')); }
+        catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw new RecordsError(); }
+        withdrawn = true;
+        if (!busy) releaseActive();
+      }
+      async function fail(): Promise<never> {
+        if (state !== 'closed') await invalidate();
+        throw new RecordsError();
+      }
+      async function appendRaw(data: Buffer) {
+        validateOpen();
+        if (!Number.isSafeInteger(bytes + data.length) || bytes + data.length > maxBytes) throw new RecordsError();
+        await handle.writeFile(data);
+        validateOpen();
+        bytes += data.length;
+      }
+      async function append(text: string) {
+        const data = Buffer.from(text);
+        await handle.writeFile(data);
+        bytes += data.length;
+        if (truncated) return;
+        for (const character of text) {
+          const length = Buffer.byteLength(character);
+          if (excerptBytes + length > outputLimits.excerptBytes) { truncated = true; break; }
+          excerpt += character; excerptBytes += length;
+        }
+      }
+      let aborting: Promise<void> | undefined;
+      function revokeRaw() {
+        // invalidate() closes state before its first await. Keep the read fence
+        // until any busy publication has observed that state and withdrawn.
+        void (aborting ??= invalidate()).catch(() => { /* Protected failure; keep fence. */ });
+      }
+      if (raw) {
+        activeRaw.set(reference.id, revokeRaw);
+        releaseActive = () => { activeRaw.delete(reference.id); };
+        validateOpen();
+      }
+      const channel = {
+        reference,
+        // Failure/revocation discards buffered filter state and withdraws completion,
+        // including a finish whose publication raced with the caller's revocation.
+        abort() { return aborting ??= invalidate(); },
+        async write(chunk: Uint8Array): Promise<string> {
+          if (state !== 'open' || busy) return fail();
+          busy = true;
+          try {
+            if (!(chunk instanceof Uint8Array) || chunk.byteLength > outputLimits.chunkBytes) return await fail();
+            validateOpen();
+            if (raw) {
+              // Count caller input BEFORE concat/allocation/append, including
+              // retained bytes. This budget is not a global reservation.
+              if (!Number.isSafeInteger(received + chunk.byteLength) || received + chunk.byteLength > maxBytes) return await fail();
+              received += chunk.byteLength;
+              const data = Buffer.concat([rawPending, chunk]);
+              if (encodedSecrets.some(secret => data.includes(secret))) return await fail();
+              const retain = Math.max(0, ...encodedSecrets.map(secret => secret.length - 1));
+              const end = Math.max(0, data.length - retain);
+              // Copy only the bounded tail, not the full backing allocation.
+              rawPending = Buffer.from(data.subarray(end));
+              await appendRaw(data.subarray(0, end));
+              return '';
+            }
+            const result = filter(pending + decoder.decode(chunk, { stream: true }), false);
+            pending = result.pending;
+            await append(result.text);
+            if (state !== 'open') return await fail();
+            return result.text;
+          } catch { return await fail(); }
+          finally { busy = false; releaseFailed(); }
+        },
+        async finish() {
+          if (state !== 'open' || busy) return fail();
+          busy = true;
+          try {
+            validateOpen();
+            const result = raw ? { text: '', pending: '' } : filter(pending + decoder.decode(), true);
+            pending = '';
+            if (raw) { await appendRaw(rawPending); rawPending = Buffer.alloc(0); }
+            else await append(result.text);
+            validateOpen();
+            await handle.sync(); await handle.close();
+            validateOpen();
+            await atomicJson(directory, 'complete.json', safeMetadata(raw ? { version: 2, format: 'raw', bytes, finishedAt: new Date().toISOString() } : { version: 1, bytes, finishedAt: new Date().toISOString() }), validateOpen);
+            validateOpen();
+            state = 'closed';
+            releaseActive();
+            return { reference, tail: result.text, bytes, excerpt, truncated,
+              display: truncated ? `${excerpt}\n[DISPLAY TRUNCATED; protected output available by reference]` : excerpt };
+          } catch { return await fail(); }
+          finally { busy = false; releaseFailed(); }
+        },
+      };
+      if (raw) return {
+        reference, abort: channel.abort,
+        async write(chunk) { await channel.write(chunk); },
+        async finish() { const result = await channel.finish(); return { version: 2, format: 'raw', reference, bytes: result.bytes }; },
+      };
+      return channel;
+    } catch {
+      releaseActive();
+      try { await file?.close(); } catch { /* Capture remains incomplete. */ }
+      throw new RecordsError();
+    }
+  }
+  async function readPage({ reference, offset, limit, format }: ReadRequest & { format?: 'raw' }): Promise<OutputPage> {
+    const readRevision = registryRevision;
+    try {
+      if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > outputLimits.pageBytes) throw new RecordsError();
+      const directory = await location(reference);
+      // Missing/corrupt correlation metadata is not an absent output or a
+      // complete uncorrelated result, even when the output file survived.
+      let raw = false;
+      let captureBudget = Number.MAX_SAFE_INTEGER;
+      try {
+        const capture = z.union([captureSchema, rawCaptureSchema]).parse(await privateJson(join(directory, 'capture.json')));
+        raw = capture.version === 2;
+        if (capture.version === 2) captureBudget = capture.maxBytes;
+        if (raw !== (format === 'raw')) throw new RecordsError();
+        if (capture.reference.workId !== reference.workId || capture.reference.id !== reference.id || capture.context.workId !== reference.workId) throw new RecordsError();
+      } catch { throw new RecordsError(); }
+      const outputPath = join(directory, 'output');
+      const info = await lstat(outputPath);
+      if (!info.isFile() || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0) throw new RecordsError();
+      if (raw && (!Number.isSafeInteger(info.size) || info.size < 0 || info.size > captureBudget || !Number.isSafeInteger(offset + limit) || offset > info.size)) throw new RecordsError();
+      let state: 'complete' | 'partial' = 'partial';
+      try {
+        const complete = z.union([
+          z.strictObject({ version: z.literal(1), bytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), finishedAt: z.iso.datetime() }),
+          z.strictObject({ version: z.literal(2), format: z.literal('raw'), bytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), finishedAt: z.iso.datetime() }),
+        ])
+          .parse(await privateJson(join(directory, 'complete.json')));
+        if ((complete.version === 2) !== raw || complete.bytes !== info.size) throw new RecordsError();
+        state = 'complete';
+      } catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error; }
+      if (raw && (state !== 'complete' || activeRaw.has(reference.id))) return { state: 'partial', data: Buffer.alloc(0), nextOffset: offset, bytes: info.size };
+      const file = await open(outputPath, 'r');
+      try {
+        const data = Buffer.alloc(limit);
+        const { bytesRead } = await file.read(data, 0, limit, offset);
+        if (raw) {
+          if (activeRaw.has(reference.id) || readRevision !== registryRevision) return { state: 'partial', data: Buffer.alloc(0), nextOffset: offset, bytes: info.size };
+          // An abort of an already completed channel may have started and
+          // withdrawn its marker while this read awaited the data syscall.
+          try { await privateJson(join(directory, 'complete.json')); }
+          catch { return { state: 'partial', data: Buffer.alloc(0), nextOffset: offset, bytes: info.size }; }
+          if (activeRaw.has(reference.id) || readRevision !== registryRevision) return { state: 'partial', data: Buffer.alloc(0), nextOffset: offset, bytes: info.size };
+        }
+        return { state, data: data.subarray(0, bytesRead), nextOffset: offset + bytesRead, bytes: info.size };
+      } finally { await file.close(); }
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+        return { state: 'absent' as const, data: Buffer.alloc(0), nextOffset: offset, bytes: 0 };
+      }
+      throw new RecordsError();
+    }
+  }
   const records = {
+    openOutput, read,
     async record(context: OutputContext, event: unknown): Promise<OutputReference> {
       try {
         const parsed = z.json().parse(boundedEvent(event));
@@ -199,137 +437,15 @@ export async function createRecords({ root }: { root: string }) {
       if (typeof value !== 'string' || !value || value.includes(redactionMarker) || value.length > outputLimits.secretCharacters) throw new RecordsError();
       if (secrets.includes(value)) return;
       if (secrets.length >= outputLimits.secretCount) throw new RecordsError();
+      // New registration/rotation invalidates every active raw snapshot BEFORE
+      // returning. No larger matcher window can be installed after a prefix was
+      // flushed. Old completed captures are not retroactively reclassified.
+      registryRevision++;
+      for (const invalidate of activeRaw.values()) invalidate();
+      encodedSecrets.push(Buffer.from(value, 'utf8'));
       secrets.push(value); secrets.sort((a, b) => b.length - a.length);
     },
-    async openOutput(input: OutputContext) {
-      let file: FileHandle | undefined;
-      try {
-        const context = contextSchema.parse(input);
-        // Identities cannot be redacted without changing their meaning. Reject
-        // secret-bearing metadata before even choosing a filesystem destination.
-        if (Object.values(context).some(value => secrets.some(secret => value.includes(secret)))) throw new RecordsError();
-        const reference = { workId: context.workId, id: randomUUID() };
-        const capture = safeMetadata({ version: 1, context, reference, startedAt: new Date().toISOString() });
-        const workDirectory = join(root, context.workId);
-        await privateDirectory(workDirectory, true);
-        const evidence = join(workDirectory, 'evidence');
-        await privateDirectory(evidence, true);
-        const directory = join(evidence, reference.id);
-        await privateDirectory(directory, true);
-        await atomicJson(directory, 'capture.json', capture);
-        file = await open(join(directory, 'output'), 'wx', 0o600);
-        const handle = file;
-        const decoder = new TextDecoder('utf-8', { fatal: true });
-        let pending = '';
-        let state: 'open' | 'closed' | 'failed' = 'open';
-        let busy = false;
-        let bytes = 0;
-        let excerpt = '';
-        let excerptBytes = 0;
-        let truncated = false;
-        function validateOpen() {
-          if (state !== 'open') throw new RecordsError();
-        }
-        async function invalidate(): Promise<void> {
-          state = 'failed'; pending = '';
-          try { await handle.close(); } catch { /* No raw fallback, including error diagnostics. */ }
-          // Do not await finish here: it can itself be calling fail. Publication
-          // rechecks invalidation around rename/sync and removes a renamed marker.
-          try { await unlink(join(directory, 'complete.json')); }
-          catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw new RecordsError(); }
-        }
-        async function fail(): Promise<never> {
-          if (state !== 'closed') await invalidate();
-          throw new RecordsError();
-        }
-        async function append(text: string) {
-          const data = Buffer.from(text);
-          await handle.writeFile(data);
-          bytes += data.length;
-          if (truncated) return;
-          for (const character of text) {
-            const length = Buffer.byteLength(character);
-            if (excerptBytes + length > outputLimits.excerptBytes) { truncated = true; break; }
-            excerpt += character; excerptBytes += length;
-          }
-        }
-        let aborting: Promise<void> | undefined;
-        return {
-          reference,
-          // Failure/revocation discards buffered filter state and withdraws completion,
-          // including a finish whose publication raced with the caller's revocation.
-          // No alternate capture format: read() reports the existing partial state.
-          abort() { return aborting ??= invalidate(); },
-          async write(chunk: Uint8Array): Promise<string> {
-            if (state !== 'open' || busy) return fail();
-            busy = true;
-            try {
-              if (!(chunk instanceof Uint8Array) || chunk.byteLength > outputLimits.chunkBytes) return await fail();
-              const result = filter(pending + decoder.decode(chunk, { stream: true }), false);
-              pending = result.pending;
-              await append(result.text);
-              if (state !== 'open') return await fail();
-              return result.text;
-            } catch { return await fail(); }
-            finally { busy = false; }
-          },
-          async finish() {
-            if (state !== 'open' || busy) return fail();
-            busy = true;
-            try {
-              const result = filter(pending + decoder.decode(), true);
-              pending = '';
-              await append(result.text);
-              validateOpen();
-              await handle.sync(); await handle.close();
-              validateOpen();
-              await atomicJson(directory, 'complete.json', safeMetadata({ version: 1, bytes, finishedAt: new Date().toISOString() }), validateOpen);
-              validateOpen();
-              state = 'closed';
-              return { reference, tail: result.text, bytes, excerpt, truncated,
-                display: truncated ? `${excerpt}\n[DISPLAY TRUNCATED; protected output available by reference]` : excerpt };
-            } catch { return await fail(); }
-            finally { busy = false; }
-          },
-        };
-      } catch {
-        try { await file?.close(); } catch { /* Capture remains incomplete. */ }
-        throw new RecordsError();
-      }
-    },
-    async read({ reference, offset, limit }: { reference: OutputReference; offset: number; limit: number }) {
-      try {
-        if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > outputLimits.pageBytes) throw new RecordsError();
-        const directory = await location(reference);
-        // Missing/corrupt correlation metadata is not an absent output or a
-        // complete uncorrelated result, even when the output file survived.
-        try {
-          const capture = captureSchema.parse(await privateJson(join(directory, 'capture.json')));
-          if (capture.reference.workId !== reference.workId || capture.reference.id !== reference.id || capture.context.workId !== reference.workId) throw new RecordsError();
-        } catch { throw new RecordsError(); }
-        const outputPath = join(directory, 'output');
-        const info = await lstat(outputPath);
-        if (!info.isFile() || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0) throw new RecordsError();
-        let state: 'complete' | 'partial' = 'partial';
-        try {
-          const complete = z.strictObject({ version: z.literal(1), bytes: z.number().int().nonnegative(), finishedAt: z.iso.datetime() })
-            .parse(await privateJson(join(directory, 'complete.json')));
-          if (complete.bytes !== info.size) throw new RecordsError();
-          state = 'complete';
-        } catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error; }
-        const file = await open(outputPath, 'r');
-        try {
-          const data = Buffer.alloc(limit);
-          const { bytesRead } = await file.read(data, 0, limit, offset);
-          return { state, data: data.subarray(0, bytesRead), nextOffset: offset + bytesRead, bytes: info.size };
-        } finally { await file.close(); }
-      } catch (error) {
-        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-          return { state: 'absent' as const, data: Buffer.alloc(0), nextOffset: offset, bytes: 0 };
-        }
-        throw new RecordsError();
-      }
-    },
+
   };
   return records;
 }
