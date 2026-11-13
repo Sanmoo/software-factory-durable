@@ -53,6 +53,7 @@ process.stdout.write('LoadState=loaded\\nActiveState=active\\nInvocationID=${'a'
 `, { mode: 0o700 });
 process.env.PATH = bin; // No real manager fallback.
 const nativeBuilder = process.env.TASK83_NATIVE_BUILDER === '1';
+const nativeBash = process.env.TASK85_NATIVE_BASH === '1';
 const virtualBuilderFiles = new Map<string, string>();
 const actualSpawn = cp.spawn;
 cp.spawn = ((command: string, args: string[], options: cp.SpawnOptions) => {
@@ -61,7 +62,9 @@ cp.spawn = ((command: string, args: string[], options: cp.SpawnOptions) => {
       args.length !== 1 || args[0] !== worker || options.detached !== false ||
       JSON.stringify(options.stdio) !== JSON.stringify(['ignore', 'ignore', 'ignore', 'ipc'])) throw new Error('REAL_PROCESS_SPAWN_FORBIDDEN_IN_FIXTURE');
   audit('worker-spawn');
-  const preload = nativeBuilder ? new URL('../workers/fixtures/write-provider-preload.js', import.meta.url) : new URL('../workers/fixtures/provider-preload.js', import.meta.url);
+  let preload = new URL('../workers/fixtures/provider-preload.js', import.meta.url);
+  if (nativeBuilder) preload = new URL('../workers/fixtures/write-provider-preload.js', import.meta.url);
+  if (nativeBash) preload = new URL('../workers/fixtures/bash-provider-preload.js', import.meta.url);
   const child = actualSpawn(command, ['--import', preload.pathname, ...args], options);
   child.on('message', message => {
     audit('worker-message:' + JSON.stringify(message));
@@ -110,7 +113,7 @@ if (actual) {
 mock.module('@earendil-works/gondolin', { namedExports: {
   VM: { async create(options: { debugLog: Logger; sandbox: { console: string; debug: readonly string[] | boolean };
     vfs: { mounts: Record<string, RealProviderType> } }) {
-    if (mode === 'owner-registration') audit('vm-create');
+    if (mode === 'owner-registration' || nativeBash) audit('vm-create');
     logger = options.debugLog;
     lateLogger = logger;
     if (options.sandbox.console !== 'none' || options.sandbox.debug !== false || options.debugLog !== null) {
@@ -184,6 +187,18 @@ mock.module('@earendil-works/gondolin', { namedExports: {
     id: '77777777-2222-4333-8444-555555555555',
     getHostPid() { return process.pid; }, // External VM double, never a real VMM.
     exec(argv: string[], options: { signal: AbortSignal; stdout?: string; stderr?: string; env?: Record<string, string>; cwd?: string; stdin?: string }) {
+      if (nativeBash && argv[0] === '/bin/bash') {
+        audit('bash');
+        assert.deepEqual(argv, ['/bin/bash', '-c', "printf 'syn''thetic-se''cret'; printf 'tail π' >&2"]);
+        assert.deepEqual(options.env, {}); assert.equal(options.cwd, '/workspace');
+        assert.equal(options.stdout, 'pipe'); assert.equal(options.stderr, 'pipe');
+        const source = Buffer.from('head π synthetic-secret synthetic-key segredo-🔒-ação\n' + 'filtered output\n'.repeat(80000) + 'tail π');
+        return { async *output() {
+          for (let offset = 0; offset < source.length; offset += 8191) yield {
+            stream: offset % 2 ? 'stderr' : 'stdout', data: source.subarray(offset, offset + 8191),
+          };
+        }, result: Promise.resolve({ exitCode: 0 }) };
+      }
       if (nativeBuilder && argv[0] === '/usr/bin/python3') {
         assert.deepEqual(argv.slice(0, 4), ['/usr/bin/python3', '-I', '-S', '-c']);
         assert.equal(argv.length, 7); assert.deepEqual(options.env, {}); assert.equal(options.cwd, '/');
@@ -320,6 +335,13 @@ mock.method(prototype, 'sync', async function(this: FileHandle) {
     setImmediate(() => {
       const listeners = process.listeners('SIGTERM').filter(listener => !originalTermListeners.has(listener));
       if (listeners.length !== 1) throw new Error('EXPECTED_ONE_ADAPTER_STOP_LISTENER');
+      if (mode === 'normal-worker' && nativeBash) {
+        void import('../entrypoints/normal-bash.fixture.js').then(async ({ normalBash }) => {
+          const result = await normalBash(root!, { workId, environmentRef: environment!, bootRef: boot! });
+          await json(join(root!, 'normal-worker-result.json'), result); audit('normal-bash-passed');
+        }).catch(error => { console.error(error); process.exitCode = 1; }).finally(() => listeners[0]!('SIGTERM'));
+        return;
+      }
       if (mode === 'normal-worker' && nativeBuilder) {
         void import('../entrypoints/normal-builder.fixture.js').then(async ({ normalBuilder }) => {
           const result = await normalBuilder(root!, { workId, environmentRef: environment!, bootRef: boot! });

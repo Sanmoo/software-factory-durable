@@ -10,7 +10,8 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => 
   assert.equal(headers.get('authorization'), 'Bearer synthetic-key');
   const body = input instanceof Request ? await input.text() : String(init?.body);
   assert.doesNotMatch(body, /synthetic-secret|synthetic-key/);
-  assert.doesNotMatch(body, /"name":"(?:bash|read|edit)"/);
+  assert.doesNotMatch(body, /"name":"(?:read|edit)"/);
+  assert.match(body, /"name":"bash"/);
   assert.match(body, /"name":"write"/);
   const blocked = body.includes('blocked-write');
   assert.ok(++requests <= (blocked ? 1 : 2), 'no next model turn after critical mutation failure');

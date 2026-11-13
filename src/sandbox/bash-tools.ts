@@ -1,0 +1,80 @@
+import { z } from 'zod';
+import type { ReadBinding, GuestOwner, ToolContext, ReadResult } from './tool-binding.js';
+
+// Match the native local backend's timer range; no invented global deadline.
+export const bashTimeout = z.number().finite().positive().max(2147483.647);
+export const bashCallSchema = z.strictObject({ name: z.literal('bash'), command: z.string().max(16384),
+  timeout: bashTimeout.optional(), callId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/) });
+export type BashCall = z.infer<typeof bashCallSchema>;
+const safeCount = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+export const bashProgressSchema = z.strictObject({ context: z.record(z.string(), z.string()),
+  sequence: safeCount, bytes: safeCount,
+  data: z.string().min(4).max(32768).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/) });
+export type BashProgress = z.infer<typeof bashProgressSchema>;
+
+/** Existing owner only. The callback's cwd/env never crosses this authority boundary.
+ * UTF-8 is intentionally fatal (Records default): arbitrary binary Bash is OPEN.
+ */
+export function boundBashTools(options: ReadBinding & { vm: GuestOwner }, valid: () => boolean, revoke: () => void) {
+  const bound = Object.freeze({ ...options.context });
+  return async (context: ToolContext, call: BashCall, progress: (frame: BashProgress) => Promise<void>): Promise<ReadResult> => {
+    const failure = (code: string): ReadResult => ({ status: 'failure', code });
+    if (!valid() || Object.keys(bound).some(key => bound[key as keyof ToolContext] !== context[key as keyof ToolContext])) return failure('STALE_TOOL_CONTEXT');
+    if (bound.role !== 'builder') return failure('BASH_ROLE_DENIED');
+    const lifetime = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
+    let attempted = false;
+    let output: Awaited<ReturnType<typeof options.records.openOutput>> | undefined;
+    let completed = false;
+    let sequence = 0;
+    let bytes = 0;
+    const emit = async (text: string) => {
+      const filtered = Buffer.from(text);
+      for (let offset = 0; offset < filtered.length; offset += 24576) {
+        if (!valid()) throw new Error('STALE_TOOL_CONTEXT');
+        const chunk = filtered.subarray(offset, offset + 24576);
+        bytes += chunk.length;
+        if (!Number.isSafeInteger(bytes) || !Number.isSafeInteger(sequence + 1)) throw new Error('BASH_PROGRESS_LIMIT');
+        await progress({ context: bound, sequence: sequence++, bytes, data: chunk.toString('base64') });
+      }
+    };
+    try {
+      const { phaseId: _phase, ...captureContext } = bound;
+      output = await options.records.openOutput({ ...captureContext, callId: call.callId });
+      if (!valid()) throw new Error('STALE_TOOL_CONTEXT');
+      if (call.timeout !== undefined) timer = setTimeout(() => { timedOut = true; lifetime.abort(); }, call.timeout * 1000);
+      attempted = true;
+      const process = options.vm.exec(['/bin/bash', '-c', call.command], { stdout: 'pipe', stderr: 'pipe',
+        signal: AbortSignal.any([options.signal, lifetime.signal]), windowBytes: 65536, env: {}, cwd: '/workspace', stdin: '' });
+      void process.result.catch(() => {});
+      // SDK's ordered output stream preserves stdout/stderr arrival order. Every
+      // release is durably captured BEFORE progress can reach native synchronous onData.
+      for await (const chunk of process.output()) {
+        if (!valid() || lifetime.signal.aborted) throw new Error('BASH_ABORTED');
+        for (let offset = 0; offset < chunk.data.length; offset += 65536) {
+          await emit(await output.write(chunk.data.subarray(offset, offset + 65536)));
+        }
+      }
+      const result = await process.result;
+      if (!valid() || lifetime.signal.aborted || !Number.isInteger(result.exitCode) || result.exitCode === null ||
+          result.exitCode < 0 || result.exitCode > 255) throw new Error('BASH_EFFECTS_UNKNOWN');
+      if (timer !== undefined) { clearTimeout(timer); timer = undefined; }
+      const capture = await output.finish();
+      await emit(capture.tail);
+      if (!valid()) throw new Error('STALE_TOOL_CONTEXT');
+      completed = true;
+      return { status: 'success', format: 'text', reference: capture.reference, bytes: capture.bytes, encoding: 'base64',
+        data: '', nextOffset: 0, exitCode: result.exitCode, progressFrames: sequence };
+    } catch {
+      // Abort requests are NOT proof of physical cessation. Never retry or claim
+      // known non-effect after transport/capture failure or null exit.
+      revoke(); lifetime.abort();
+      return failure(timedOut ? 'BASH_TIMEOUT_EFFECTS_UNKNOWN' : attempted ? 'BASH_EFFECTS_OR_CAPTURE_UNKNOWN' : 'PROTECTED_BASH_UNAVAILABLE');
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      lifetime.abort();
+      if (output && !completed) { try { await output.abort(); } catch { revoke(); } }
+    }
+  };
+}

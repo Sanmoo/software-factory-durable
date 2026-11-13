@@ -7,17 +7,19 @@ import type { ReadResult, ToolContext, ToolProjection } from '../sandbox/index.j
 import { startWorker } from './worker-start.js';
 import { workerBootstrapSchema } from '../platform/host/index.js';
 
+
 const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
 const reference = z.strictObject({ workId: identifier, id: z.uuid() });
-const successSchema = z.strictObject({ status: z.literal('success'), reference,
-  bytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), encoding: z.literal('base64'),
-  data: z.string().max(32768).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
-  nextOffset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) });
+const safeCount = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const base64 = z.string().max(32768).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/);
+const successSchema = z.strictObject({ status: z.literal('success'), reference, bytes: safeCount,
+  encoding: z.literal('base64'), data: base64, nextOffset: safeCount });
 const readResultSchema = z.union([
-  successSchema.extend({ format: z.literal('text') }),
+  successSchema.extend({ format: z.literal('text'), exitCode: z.number().int().min(0).max(255).optional(), progressFrames: safeCount.optional() }),
   successSchema.extend({ format: z.literal('raw'), imageSourceMaxBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }),
   z.strictObject({ status: z.literal('failure'), code: z.string().min(1).max(128) }),
 ]);
+const progressSchema = z.strictObject({ context: z.record(z.string(), z.string()), sequence: safeCount, bytes: safeCount, data: base64.min(4) });
 
 async function privateDirectory(path: string) {
   if (!isAbsolute(path) || await realpath(path) !== path) throw new Error('WORKER_PROFILE_NOT_PRIVATE');
@@ -36,21 +38,45 @@ async function toolProjection(endpoint: string, context: ToolContext, signal: Ab
   let closed = false;
   const close = () => { closed = true; channel.close(); };
   signal.addEventListener('abort', close, { once: true });
-  const sandbox: ToolProjection = { async executeTool(inputContext, call): Promise<ReadResult> {
+  const sandbox: ToolProjection = { async executeTool(inputContext, call, onData, callSignal): Promise<ReadResult> {
     if (closed || signal.aborted || Object.keys(context).some(key => context[key as keyof ToolContext] !== inputContext[key as keyof ToolContext])) {
       return { status: 'failure', code: 'STALE_TOOL_CONTEXT' };
     }
     if (busy) return { status: 'failure', code: 'TOOL_CALL_IN_PROGRESS' };
     busy = true;
+    callSignal?.addEventListener('abort', close, { once: true });
     try {
+      if (callSignal?.aborted) throw new Error('aborted');
+      // Optional undefined timeout is never serialized as a key.
+      const payload = z.record(z.string(), z.json()).parse({ context, call });
       await channel.send({ protocol_version: protocolVersion, controller_run_id: null,
-        message_id: call.callId, reply_to: null, kind: 'execute-tool', payload: { context, call } });
-      const response = await messages.next();
-      if (response.done || response.value.kind !== 'tool-result' || response.value.reply_to !== call.callId ||
-          response.value.message_id !== call.callId || response.value.controller_run_id !== null) throw new Error('TOOL_CHANNEL_CLOSED');
-      return readResultSchema.parse(response.value.payload);
+        message_id: call.callId, reply_to: null, kind: 'execute-tool', payload });
+      let sequence = 0;
+      let bytes = 0;
+      while (true) {
+        const response = await messages.next();
+        if (response.done || response.value.reply_to !== call.callId || response.value.message_id !== call.callId ||
+            response.value.controller_run_id !== null) throw new Error('TOOL_CHANNEL_CLOSED');
+        if (response.value.kind === 'tool-progress') {
+          if (call.name !== 'bash' || !onData) throw new Error('INVALID_TOOL_PROGRESS');
+          const frame = progressSchema.parse(response.value.payload);
+          const chunk = Buffer.from(frame.data, 'base64');
+          if (Object.keys(frame.context).length !== Object.keys(context).length ||
+              Object.keys(context).some(key => context[key as keyof ToolContext] !== frame.context[key]) ||
+              frame.sequence !== sequence++ || chunk.length > 24576 || chunk.toString('base64') !== frame.data ||
+              frame.bytes !== bytes + chunk.length || !Number.isSafeInteger(frame.bytes)) throw new Error('INVALID_TOOL_PROGRESS');
+          bytes = frame.bytes;
+          onData(chunk);
+          continue;
+        }
+        if (response.value.kind !== 'tool-result') throw new Error('TOOL_CHANNEL_CLOSED');
+        const result = readResultSchema.parse(response.value.payload);
+        if (call.name === 'bash' && result.status === 'success' && (result.format !== 'text' ||
+            result.exitCode === undefined || result.progressFrames !== sequence || result.bytes !== bytes)) throw new Error('INVALID_TOOL_RESULT');
+        return result;
+      }
     } catch { close(); return { status: 'failure', code: 'TOOL_CHANNEL_CLOSED' }; }
-    finally { busy = false; }
+    finally { callSignal?.removeEventListener('abort', close); busy = false; }
   } };
   return { sandbox, close() { signal.removeEventListener('abort', close); close(); } };
 }

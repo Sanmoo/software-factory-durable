@@ -31,7 +31,7 @@ export function createSandbox({ root, guestAssets, toolEndpoint }: { root: strin
   const projections = new Map<string, Promise<Awaited<ReturnType<typeof connectReadTools>>>>();
   const bindings = new Map<string, string>();
   return {
-    async executeTool(context: ToolContext, call: ToolCall): Promise<ReadResult> {
+    async executeTool(context: ToolContext, call: ToolCall, onData?: (data: Buffer) => void, signal?: AbortSignal): Promise<ReadResult> {
       const key = JSON.stringify(context);
       const previous = bindings.get(context.invocationId);
       if (previous !== undefined && previous !== key) return { status: 'failure', code: 'STALE_TOOL_CONTEXT' };
@@ -49,7 +49,7 @@ export function createSandbox({ root, guestAssets, toolEndpoint }: { root: strin
           projections.set(key, projection);
           bindings.set(context.invocationId, key);
         }
-        return await (await projection).executeTool(call);
+        return await (await projection).executeTool(call, onData, signal);
       } catch (error) {
         return { status: 'failure', code: error instanceof Error && error.message === 'STALE_TOOL_CONTEXT'
           ? 'STALE_TOOL_CONTEXT' : toolEndpoint ? 'TOOL_CHANNEL_CLOSED' : 'TOOL_CHANNEL_UNAVAILABLE' };

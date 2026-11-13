@@ -22,11 +22,12 @@ test('closed host launch plan inherits only the already correlated boot, fixed r
   assert.equal(plan.supervision.unit, unit);
   assert.equal(plan.supervision.invocation, 'b'.repeat(32));
   assert.equal(plan.binding.invocationId, 'review-1');
+  assert.equal(planWorkerLaunch(host, { ...request, role: 'builder' }).binding.role, 'builder');
 });
 
 test('host launch planning refuses cross-boot/work/environment, unsupported roles and arbitrary launch fields', () => {
   for (const changed of [{ bootRef: 'boot-77777777-2222-4333-8444-555555555555' }, { workId: 'other' },
-    { environmentRef: `env-${'c'.repeat(64)}` }, { role: 'builder' }, { argv: ['--eval', 'bad'] }, { env: { NODE_OPTIONS: 'bad' } }]) {
+    { environmentRef: `env-${'c'.repeat(64)}` }, { role: 'administrator' }, { argv: ['--eval', 'bad'] }, { env: { NODE_OPTIONS: 'bad' } }]) {
     assert.throws(() => planWorkerLaunch(host, { ...request, ...changed }), /WORKER_LAUNCH_INVALID|WORKER_BOOT_MISMATCH/);
   }
   assert.throws(() => planWorkerLaunch({ ...host, unit: 'different.service' }, request), /WORKER_BOOT_MISMATCH/);

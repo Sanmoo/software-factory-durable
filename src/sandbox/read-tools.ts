@@ -1,13 +1,13 @@
 import { z } from 'zod';
 import { boundWriteTools, writeCallSchema, type WriteCall } from './write-tools.js';
+import { boundBashTools, bashCallSchema, bashProgressSchema, type BashCall, type BashProgress } from './bash-tools.js';
 import { connect, listen, protocolVersion, type Envelope } from '../protocol/index.js';
-import type { TextOutput, RawOutput, createRecords } from '../records/index.js';
+import type { TextOutput, RawOutput } from '../records/index.js';
+import { contextSchema, referenceSchema, readResultSchema, type ToolContext, type ReadResult, type GuestOwner, type ReadBinding } from './tool-binding.js';
+export { contextSchema } from './tool-binding.js';
+export type { ToolContext, ReadResult, GuestOwner, ReadBinding } from './tool-binding.js';
 
 const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
-export const contextSchema = z.strictObject({ workId: identifier, executionId: identifier, invocationId: identifier,
-  role: z.enum(['standards', 'spec', 'builder']), environmentRef: identifier, bootRef: identifier, phaseId: identifier });
-export type ToolContext = z.infer<typeof contextSchema>;
-const referenceSchema = z.strictObject({ workId: identifier, id: z.uuid() });
 const pageCall = z.strictObject({ name: z.literal('read'), operation: z.literal('page'), reference: referenceSchema,
   offset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), callId: identifier });
 const readCallSchema = z.union([
@@ -15,26 +15,9 @@ const readCallSchema = z.union([
   pageCall, pageCall.extend({ format: z.literal('raw') }),
 ]);
 export type ReadCall = z.infer<typeof readCallSchema>;
-const callSchema = z.union([readCallSchema, writeCallSchema]);
-export type ToolCall = ReadCall | WriteCall;
-const successSchema = z.strictObject({ status: z.literal('success'), reference: referenceSchema,
-  bytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), encoding: z.literal('base64'),
-  data: z.string().max(32768).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
-  nextOffset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) });
-const readResultSchema = z.union([
-  successSchema.extend({ format: z.literal('text') }),
-  successSchema.extend({ format: z.literal('raw'), imageSourceMaxBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }),
-  z.strictObject({ status: z.literal('failure'), code: z.string().min(1).max(128) }),
-]);
-export type ReadResult = z.infer<typeof readResultSchema>;
-export interface ToolProjection { executeTool(context: ToolContext, call: ToolCall): Promise<ReadResult> }
-// Structural external VM boundary; the only production supplier is adapter.ts's existing instance.
-export type GuestOwner = { exec(argv: string[], options: { stdout: 'pipe'; stderr: 'ignore'; signal: AbortSignal; windowBytes: number; env?: Record<string, string>; cwd?: string; stdin?: string }): {
-  output(): AsyncIterable<{ stream: 'stdout' | 'stderr'; data: Buffer }>;
-  result: Promise<{ exitCode: number }>;
-} };
-export type ReadBinding = { endpoint: string; context: ToolContext; signal: AbortSignal;
-  records: Awaited<ReturnType<typeof createRecords>>; imageSourceMaxBytes?: number };
+const callSchema = z.union([readCallSchema, writeCallSchema, bashCallSchema]);
+export type ToolCall = ReadCall | WriteCall | BashCall;
+export interface ToolProjection { executeTool(context: ToolContext, call: ToolCall, onData?: (data: Buffer) => void, signal?: AbortSignal): Promise<ReadResult> }
 // Guest-only constant program. Trusted kernel/proc/mount roots and interpreter/stdlib
 // are profile prerequisites, NOT established by this helper. Frozen runtime remains
 // unqualified. This authorizes the opened regular FD's resolved target at check time;
@@ -78,8 +61,9 @@ const failure = (code: string): ReadResult => ({ status: 'failure', code });
 function sameContext(left: ToolContext, right: ToolContext): boolean {
   return Object.keys(right).every(key => left[key as keyof ToolContext] === right[key as keyof ToolContext]);
 }
-function envelope(messageId: string, kind: string, payload: Envelope['payload'], replyTo: string | null = null): Envelope {
-  return { protocol_version: protocolVersion, controller_run_id: null, message_id: messageId, reply_to: replyTo, kind, payload };
+function envelope(messageId: string, kind: string, payload: unknown, replyTo: string | null = null): Envelope {
+  return { protocol_version: protocolVersion, controller_run_id: null, message_id: messageId, reply_to: replyTo, kind,
+    payload: z.record(z.string(), z.json()).parse(payload) };
 }
 
 /** Private component of the existing owner. Authority is a host snapshot with a
@@ -97,7 +81,9 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
     ? { format: 'raw' as const, encoding: 'base64' as const, imageSourceMaxBytes: imageSourceMaxBytes! }
     : { format: 'text' as const, encoding: 'base64' as const };
   const write = boundWriteTools({ ...options, signal }, valid, () => { mutationRevoked = true; });
-  async function executeTool(context: ToolContext, call: ToolCall): Promise<ReadResult> {
+  const bash = boundBashTools({ ...options, signal }, valid, () => { mutationRevoked = true; });
+  async function executeTool(context: ToolContext, call: ToolCall, progress: (frame: BashProgress) => Promise<void>): Promise<ReadResult> {
+    if (call.name === 'bash') return bash(context, call, progress);
     if (call.name === 'write') return write(context, call);
     if (bound.role === 'builder') return failure('READ_ROLE_DENIED');
     if (!sameContext(context, bound) || !valid()) return failure('STALE_TOOL_CONTEXT');
@@ -183,7 +169,9 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
     const task = (async () => {
       const parsed = z.strictObject({ context: contextSchema, call: callSchema }).safeParse(request.payload);
       const result = request.kind !== 'execute-tool' || !parsed.success || request.message_id !== parsed.data.call.callId
-        ? failure('INVALID_TOOL_CALL') : await executeTool(parsed.data.context, parsed.data.call);
+        ? failure('INVALID_TOOL_CALL') : await executeTool(parsed.data.context, parsed.data.call, async frame => {
+          await channel.send(envelope(request.message_id, 'tool-progress', frame, request.message_id));
+        });
       await channel.send(envelope(request.message_id, 'tool-result', result, request.message_id));
     })();
     active.add(task);
@@ -233,19 +221,43 @@ export async function connectReadTools(endpoint: string, context: ToolContext) {
   let closed = false;
   let busy = false;
   return {
-    async executeTool(input: ToolCall): Promise<ReadResult> {
+    async executeTool(input: ToolCall, onData?: (data: Buffer) => void, signal?: AbortSignal): Promise<ReadResult> {
       if (closed) return failure('TOOL_CHANNEL_CLOSED');
       if (busy) return failure('TOOL_CALL_IN_PROGRESS');
       const call = callSchema.safeParse(input);
       if (!call.success) return failure('INVALID_TOOL_CALL');
       busy = true;
+      const abort = () => { closed = true; channel.close(); };
+      signal?.addEventListener('abort', abort, { once: true });
       try {
+        if (signal?.aborted) throw new Error('aborted');
         await channel.send(envelope(call.data.callId, 'execute-tool', { context: bound, call: call.data }));
-        const response = await messages.next();
-        if (response.done || response.value.kind !== 'tool-result' || response.value.reply_to !== call.data.callId) throw new Error('TOOL_CHANNEL_CLOSED');
-        return readResultSchema.parse(response.value.payload);
+        let sequence = 0;
+        let bytes = 0;
+        while (true) {
+          const response = await messages.next();
+          if (response.done || response.value.reply_to !== call.data.callId || response.value.message_id !== call.data.callId ||
+              response.value.controller_run_id !== null) throw new Error('TOOL_CHANNEL_CLOSED');
+          if (response.value.kind === 'tool-progress') {
+            if (call.data.name !== 'bash' || !onData) throw new Error('INVALID_TOOL_PROGRESS');
+            const frame = bashProgressSchema.parse(response.value.payload);
+            const chunk = Buffer.from(frame.data, 'base64');
+            if (Object.keys(frame.context).length !== Object.keys(bound).length ||
+                Object.keys(bound).some(key => bound[key as keyof ToolContext] !== frame.context[key]) || frame.sequence !== sequence++ ||
+                chunk.length > 24576 || chunk.toString('base64') !== frame.data ||
+                frame.bytes !== bytes + chunk.length || !Number.isSafeInteger(frame.bytes)) throw new Error('INVALID_TOOL_PROGRESS');
+            bytes = frame.bytes;
+            onData(chunk);
+            continue;
+          }
+          if (response.value.kind !== 'tool-result') throw new Error('TOOL_CHANNEL_CLOSED');
+          const result = readResultSchema.parse(response.value.payload);
+          if (call.data.name === 'bash' && result.status === 'success' && (result.format !== 'text' ||
+              result.exitCode === undefined || result.progressFrames !== sequence || result.bytes !== bytes)) throw new Error('INVALID_TOOL_RESULT');
+          return result;
+        }
       } catch { closed = true; channel.close(); return failure('TOOL_CHANNEL_CLOSED'); }
-      finally { busy = false; }
+      finally { signal?.removeEventListener('abort', abort); busy = false; }
     },
     close() { closed = true; channel.close(); },
   };

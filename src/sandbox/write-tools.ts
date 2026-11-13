@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import type { createRecords } from '../records/index.js';
+import type { GuestOwner } from './tool-binding.js';
 
 type Context = { workId: string; executionId: string; invocationId: string; role: 'builder' | 'standards' | 'spec'; environmentRef: string; bootRef: string; phaseId: string };
 type Options = { context: Context; signal: AbortSignal; records: Awaited<ReturnType<typeof createRecords>>;
-  vm: { exec(argv: string[], options: { stdout: 'pipe'; stderr: 'ignore'; signal: AbortSignal; windowBytes: number; env: Record<string, string>; cwd: string; stdin: string }): {
-    output(): AsyncIterable<{ stream: 'stdout' | 'stderr'; data: Buffer }>; result: Promise<{ exitCode: number }> } } };
+  vm: GuestOwner };
 type Result = { status: 'failure'; code: string } | { status: 'success'; format: 'text'; reference: { workId: string; id: string }; bytes: number; encoding: 'base64'; data: string; nextOffset: number };
 
 const path = z.string().min(1).max(4096);
