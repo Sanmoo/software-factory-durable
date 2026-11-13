@@ -1,24 +1,29 @@
 import { z } from 'zod';
 import { connect, listen, protocolVersion, type Envelope } from '../protocol/index.js';
-import type { createRecords } from '../records/index.js';
+import type { TextOutput, RawOutput, createRecords } from '../records/index.js';
 
 const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
 export const contextSchema = z.strictObject({ workId: identifier, executionId: identifier, invocationId: identifier,
   role: z.enum(['standards', 'spec']), environmentRef: identifier, bootRef: identifier, phaseId: identifier });
 export type ToolContext = z.infer<typeof contextSchema>;
 const referenceSchema = z.strictObject({ workId: identifier, id: z.uuid() });
-const callSchema = z.discriminatedUnion('operation', [
+const pageCall = z.strictObject({ name: z.literal('read'), operation: z.literal('page'), reference: referenceSchema,
+  offset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), callId: identifier });
+const callSchema = z.union([
   z.strictObject({ name: z.literal('read'), operation: z.literal('capture'), path: z.string().min(1).max(4096), callId: identifier }),
-  z.strictObject({ name: z.literal('read'), operation: z.literal('page'), reference: referenceSchema,
-    offset: z.number().int().nonnegative(), callId: identifier }),
+  pageCall, pageCall.extend({ format: z.literal('raw') }),
 ]);
 export type ReadCall = z.infer<typeof callSchema>;
-const resultSchema = z.discriminatedUnion('status', [
-  z.strictObject({ status: z.literal('success'), reference: referenceSchema, bytes: z.number().int().nonnegative(),
-    data: z.string(), nextOffset: z.number().int().nonnegative() }),
-  z.strictObject({ status: z.literal('failure'), code: z.string() }),
+const successSchema = z.strictObject({ status: z.literal('success'), reference: referenceSchema,
+  bytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), encoding: z.literal('base64'),
+  data: z.string().max(32768).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
+  nextOffset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) });
+const readResultSchema = z.union([
+  successSchema.extend({ format: z.literal('text') }),
+  successSchema.extend({ format: z.literal('raw'), imageSourceMaxBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }),
+  z.strictObject({ status: z.literal('failure'), code: z.string().min(1).max(128) }),
 ]);
-export type ReadResult = z.infer<typeof resultSchema>;
+export type ReadResult = z.infer<typeof readResultSchema>;
 export interface ToolProjection { executeTool(context: ToolContext, call: ReadCall): Promise<ReadResult> }
 // Structural external VM boundary; the only production supplier is adapter.ts's existing instance.
 export type GuestOwner = { exec(argv: string[], options: { stdout: 'pipe'; stderr: 'ignore'; signal: AbortSignal; windowBytes: number }): {
@@ -26,7 +31,7 @@ export type GuestOwner = { exec(argv: string[], options: { stdout: 'pipe'; stder
   result: Promise<{ exitCode: number }>;
 } };
 export type ReadBinding = { endpoint: string; context: ToolContext; signal: AbortSignal;
-  records: Awaited<ReturnType<typeof createRecords>> };
+  records: Awaited<ReturnType<typeof createRecords>>; imageSourceMaxBytes?: number };
 // Guest-only constant program. Trusted kernel/proc/mount roots and interpreter/stdlib
 // are profile prerequisites, NOT established by this helper. Frozen runtime remains
 // unqualified. This authorizes the opened regular FD's resolved target at check time;
@@ -78,23 +83,33 @@ function envelope(messageId: string, kind: string, payload: Envelope['payload'],
  * revocation signal, never a guest file, handshake claim, Records fact or current() callback. */
 export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) {
   const bound = Object.freeze(contextSchema.parse(options.context));
+  const imageSourceMaxBytes = options.imageSourceMaxBytes === undefined ? undefined
+    : z.number().int().positive().max(Number.MAX_SAFE_INTEGER).parse(options.imageSourceMaxBytes);
   const lifetime = new AbortController();
   const signal = AbortSignal.any([options.signal, lifetime.signal]);
   const valid = () => !signal.aborted;
-  const captures = new Set<string>();
+  const captures = new Map<string, 'text' | 'raw'>();
+  const details = (format: 'text' | 'raw') => format === 'raw'
+    ? { format: 'raw' as const, encoding: 'base64' as const, imageSourceMaxBytes: imageSourceMaxBytes! }
+    : { format: 'text' as const, encoding: 'base64' as const };
   async function executeTool(context: ToolContext, call: ReadCall): Promise<ReadResult> {
     if (!sameContext(context, bound) || !valid()) return failure('STALE_TOOL_CONTEXT');
     try {
       if (call.operation === 'page') {
         if (call.reference.workId !== bound.workId || !captures.has(call.reference.id)) return failure('READ_REFERENCE_DENIED');
-        const page = await options.records.read({ reference: call.reference, offset: call.offset, limit: 24576 });
-        if (page.state !== 'complete') return failure('PROTECTED_READ_UNAVAILABLE');
+        const format = captures.get(call.reference.id)!;
+        if ((format === 'raw') !== ('format' in call && call.format === 'raw')) return failure('READ_REFERENCE_DENIED');
+        const request = { reference: call.reference, offset: call.offset, limit: 24576 };
+        const page = format === 'raw' ? await options.records.read({ ...request, format: 'raw' }) : await options.records.read(request);
+        if (page.state !== 'complete' || (format === 'raw' && (call.offset > page.bytes || page.nextOffset > page.bytes ||
+            page.nextOffset !== call.offset + page.data.length))) return failure('PROTECTED_READ_UNAVAILABLE');
         if (!valid()) return failure('STALE_TOOL_CONTEXT');
-        return { status: 'success', reference: call.reference, bytes: page.bytes, data: page.data.toString('base64'), nextOffset: page.nextOffset };
+        return { status: 'success', ...details(format), reference: call.reference, bytes: page.bytes, data: page.data.toString('base64'), nextOffset: page.nextOffset };
       }
       if (!/^\/(workspace|artifacts)\/[^\0]*$/.test(call.path) || call.path.split('/').includes('..')) return failure('READ_PATH_DENIED');
       const { phaseId: _phaseId, ...captureContext } = bound;
-      const output = await options.records.openOutput({ ...captureContext, callId: call.callId });
+      let output: TextOutput | RawOutput = await options.records.openOutput({ ...captureContext, callId: call.callId });
+      let format: 'text' | 'raw' = 'text';
       let completed = false;
       const commandLifetime = new AbortController();
       try {
@@ -106,9 +121,20 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
         void process.result.catch(() => {});
         let prefix = Buffer.alloc(0);
         let inspected = false;
-        const image = (bytes: Buffer) => bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ||
-          bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255])) || /^GIF8[79]a/.test(bytes.toString('ascii', 0, 6)) ||
-          (bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP');
+        // Existing coarse magic routes capture format ONLY; native Workers MIME
+        // detection of completed protected bytes remains authoritative.
+        const routePrefix = async (): Promise<'text' | 'raw' | false> => {
+          const pngOrJpeg = prefix.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ||
+            prefix.subarray(0, 3).equals(Buffer.from([255, 216, 255]));
+          const otherImage = /^GIF8[79]a/.test(prefix.toString('ascii', 0, 6)) ||
+            (prefix.toString('ascii', 0, 4) === 'RIFF' && prefix.toString('ascii', 8, 12) === 'WEBP');
+          if (otherImage || (pngOrJpeg && imageSourceMaxBytes === undefined)) return false;
+          if (pngOrJpeg) {
+            await output.abort();
+            output = await options.records.openOutput({ ...captureContext, callId: call.callId }, { format: 'raw', maxBytes: imageSourceMaxBytes! });
+          }
+          return pngOrJpeg ? 'raw' : 'text';
+        };
         for await (const chunk of process.output()) {
           if (!valid()) return failure('STALE_TOOL_CONTEXT');
           if (chunk.stream !== 'stdout') continue;
@@ -118,22 +144,26 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
             prefix = Buffer.concat([prefix, data.subarray(0, take)]);
             data = data.subarray(take);
             if (prefix.length < 12) continue;
-            if (image(prefix)) return failure('READ_BINARY_UNSUPPORTED');
+            const routed = await routePrefix();
+            if (!routed) return failure('READ_BINARY_UNSUPPORTED');
+            format = routed;
             await output.write(prefix); inspected = true;
           }
           for (let offset = 0; offset < data.length; offset += 65536) await output.write(data.subarray(offset, offset + 65536));
         }
         if (!inspected) {
-          if (image(prefix)) return failure('READ_BINARY_UNSUPPORTED');
+          const routed = await routePrefix();
+          if (!routed) return failure('READ_BINARY_UNSUPPORTED');
+          format = routed;
           await output.write(prefix);
         }
         const result = await process.result;
-        if (result.exitCode !== 0) return failure('GUEST_READ_FAILED');
+        if (result.exitCode !== 0) return failure(format === 'raw' ? 'PROTECTED_READ_UNAVAILABLE' : 'GUEST_READ_FAILED');
         if (!valid()) return failure('STALE_TOOL_CONTEXT');
         const capture = await output.finish();
         if (!valid()) return failure('STALE_TOOL_CONTEXT');
-        captures.add(capture.reference.id); completed = true;
-        return { status: 'success', reference: capture.reference, bytes: capture.bytes, data: '', nextOffset: 0 };
+        captures.set(capture.reference.id, format); completed = true;
+        return { status: 'success', ...details(format), reference: capture.reference, bytes: capture.bytes, data: '', nextOffset: 0 };
       } finally {
         commandLifetime.abort();
         if (!completed) await output.abort();
@@ -205,7 +235,7 @@ export async function connectReadTools(endpoint: string, context: ToolContext) {
         await channel.send(envelope(call.data.callId, 'execute-tool', { context: bound, call: call.data }));
         const response = await messages.next();
         if (response.done || response.value.kind !== 'tool-result' || response.value.reply_to !== call.data.callId) throw new Error('TOOL_CHANNEL_CLOSED');
-        return resultSchema.parse(response.value.payload);
+        return readResultSchema.parse(response.value.payload);
       } catch { closed = true; channel.close(); return failure('TOOL_CHANNEL_CLOSED'); }
       finally { busy = false; }
     },

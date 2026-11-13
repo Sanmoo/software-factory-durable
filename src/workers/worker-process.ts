@@ -9,9 +9,13 @@ import { workerBootstrapSchema } from '../platform/host/index.js';
 
 const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
 const reference = z.strictObject({ workId: identifier, id: z.uuid() });
-const resultSchema = z.discriminatedUnion('status', [
-  z.strictObject({ status: z.literal('success'), reference, bytes: z.number().int().nonnegative(),
-    data: z.string().max(32768), nextOffset: z.number().int().nonnegative() }),
+const successSchema = z.strictObject({ status: z.literal('success'), reference,
+  bytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), encoding: z.literal('base64'),
+  data: z.string().max(32768).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
+  nextOffset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) });
+const readResultSchema = z.union([
+  successSchema.extend({ format: z.literal('text') }),
+  successSchema.extend({ format: z.literal('raw'), imageSourceMaxBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }),
   z.strictObject({ status: z.literal('failure'), code: z.string().min(1).max(128) }),
 ]);
 
@@ -44,7 +48,7 @@ async function toolProjection(endpoint: string, context: ToolContext, signal: Ab
       const response = await messages.next();
       if (response.done || response.value.kind !== 'tool-result' || response.value.reply_to !== call.callId ||
           response.value.message_id !== call.callId || response.value.controller_run_id !== null) throw new Error('TOOL_CHANNEL_CLOSED');
-      return resultSchema.parse(response.value.payload);
+      return readResultSchema.parse(response.value.payload);
     } catch { close(); return { status: 'failure', code: 'TOOL_CHANNEL_CLOSED' }; }
     finally { busy = false; }
   } };

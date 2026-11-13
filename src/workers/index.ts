@@ -19,9 +19,12 @@ export function createWorkers(configuration?: Configuration) {
   return { async activate(invocation: Invocation) {
     if (!configuration) throw new Error('WORKER_EXECUTION_NOT_ENABLED');
     const request = workerLaunchSchema.safeParse({ context: invocation.context, prompt: invocation.prompt,
+      ...(invocation.imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes: invocation.imageSourceMaxBytes }),
       profile: configuration.profile, knownSecrets: configuration.knownSecrets });
     if (!request.success || invocation.signal.aborted) throw new Error('WORKER_LAUNCH_INVALID');
     const context = request.data.context;
+    const { imageSourceMaxBytes, ...baseRequest } = request.data;
+    const payload = { ...baseRequest, ...(imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes }) };
     const endpoint = await workerOwnerEndpoint(configuration.root, context);
     const channel = await connect(endpoint, { kind: 'host-boot', binding: { workId: context.workId,
       environmentRef: context.environmentRef, bootRef: context.bootRef } });
@@ -31,7 +34,7 @@ export function createWorkers(configuration?: Configuration) {
       if (invocation.signal.aborted) throw new Error('WORKER_LAUNCH_INVALID');
       const id = randomUUID();
       await channel.send({ protocol_version: protocolVersion, controller_run_id: null, message_id: id, reply_to: null,
-        kind: 'launch-worker', payload: request.data });
+        kind: 'launch-worker', payload });
       const messages = channel.messages[Symbol.asyncIterator]();
       const receive = async (kind: string) => {
         const response = await messages.next();

@@ -10,6 +10,12 @@ export const sdkProfile = Object.freeze({ id: 'factory-development-pi-1.5.2-read
   patchSHA256: '5e45a7c2953db293a14db0138bb31f8ac9e95eb13512afd42f1f49b77c98e066',
   resultSHA256: '06867a067ebbadca2e06f75ccb4e682cd7e37b9683d41a71562f770b3105a209' });
 
+// Factory-owned composition, not an additional SDK source patch or index export.
+export const imageMimeFacade = Object.freeze({ file: 'image-mime.js',
+  bytes: 'export { detectSupportedImageMimeType } from "./sdk/dist/utils/mime.js";\n',
+  sha256: '514aaf1a9e0ba039af4a07b1dfed53f9e6935ced7b1cd70a08b3fdc0ab46a669',
+  provenance: '@earendil-works/pi-coding-agent@1.5.2/dist/utils/mime.js#detectSupportedImageMimeType' });
+
 async function ownedTree(path: string, root = path): Promise<void> {
   const info = await lstat(path);
   if (info.uid !== process.getuid?.()) throw new Error('SDK_STAGING_NOT_OWNED');
@@ -51,7 +57,7 @@ export async function prepareDevelopmentSdk() {
   const staging = join(scratch, 'factory-development-sdk');
   await mkdir(staging, { mode: 0o700 }).catch(error => { if (error.code !== 'EEXIST') throw error; });
   await ownedTree(staging);
-  if ((await readdir(staging)).some(name => !['sdk', 'profile.json'].includes(name))) throw new Error('SDK_STAGING_DRIFT');
+  if ((await readdir(staging)).some(name => !['sdk', 'profile.json', imageMimeFacade.file].includes(name))) throw new Error('SDK_STAGING_DRIFT');
   if (await realpath(staging) !== staging || ((await lstat(staging)).mode & 0o077)) throw new Error('SDK_STAGING_NOT_PRIVATE');
   const target = join(staging, 'sdk');
   let exists = true;
@@ -75,6 +81,15 @@ export async function prepareDevelopmentSdk() {
   } else {
     await cp(installed, target, { recursive: true, errorOnExist: true, force: false, verbatimSymlinks: true });
     await writeFile(join(target, 'dist/core/tools/read.js'), patched);
+  }
+  if (sha(imageMimeFacade.bytes) !== imageMimeFacade.sha256) throw new Error('SDK_FACADE_DRIFT');
+  const facadePath = join(staging, imageMimeFacade.file);
+  try { await writeFile(facadePath, imageMimeFacade.bytes, { mode: 0o600, flag: 'wx' }); }
+  catch (error) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error;
+    const info = await lstat(facadePath);
+    if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || (info.mode & 0o077) ||
+        sha(await readFile(facadePath)) !== imageMimeFacade.sha256) throw new Error('SDK_FACADE_DRIFT');
   }
   const evidence = { ...sdkProfile, resultSHA256, license: manifest.license, upstreamPackage: manifest.name };
   const profilePath = join(staging, 'profile.json');

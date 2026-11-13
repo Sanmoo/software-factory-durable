@@ -5,11 +5,11 @@ import { createRecords } from '../../src/records/index.js';
 import { serveReadTools, type GuestOwner, type ToolContext } from '../../src/sandbox/read-tools.js';
 
 /** Sandbox-owned fixture: real owner transport and Records, external VM only substituted. */
-export async function nativeOwner(context: ToolContext, vm: GuestOwner) {
+export async function nativeOwner(context: ToolContext, vm: GuestOwner, options: { imageSourceMaxBytes?: number } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'nr-'));
   const recordsRoot = join(root, 'records'); await mkdir(recordsRoot, { mode: 0o700 });
   const records = await createRecords({ root: recordsRoot }); records.registerSecret('synthetic-secret');
   const authority = new AbortController();
-  const owner = await serveReadTools({ endpoint: join(root, 'read.sock'), context, signal: authority.signal, records, vm });
+  const owner = await serveReadTools({ endpoint: join(root, 'read.sock'), context, signal: authority.signal, records, vm, ...options });
   return { root, authority, records, owner, async close() { await owner.close(); await rm(root, { recursive: true, force: true }); } };
 }

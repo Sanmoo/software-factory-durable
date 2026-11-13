@@ -45,7 +45,8 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
         for (const secret of [...parsed.data.knownSecrets, parsed.data.profile.apiKey]) records.registerSecret(secret);
         const endpoint = join(directory, `b${++sequence}`);
         try {
-          await bindings.add({ endpoint, context, signal: lifetime.signal, records });
+          await bindings.add({ endpoint, context, signal: lifetime.signal, records,
+            ...(parsed.data.imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes: parsed.data.imageSourceMaxBytes }) });
           const worker = await launchWorker(host, { ...parsed.data, context }, endpoint, root, lifetime.signal);
           await channel.send(frame(request.message_id, 'worker-launch-result', { status: 'requested', worker: context.invocationId }, request.message_id));
           // Request, durable start and completion are distinct observations.
