@@ -12,7 +12,7 @@ const successSchema = z.strictObject({ status: z.literal('success'), reference: 
   nextOffset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) });
 export const readResultSchema = z.union([
   successSchema.extend({ format: z.literal('text'), exitCode: z.number().int().min(0).max(255).optional(),
-    progressFrames: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional() }),
+    progressFrames: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(), sourceVersion: z.uuid().optional() }),
   successSchema.extend({ format: z.literal('raw'), imageSourceMaxBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }),
   z.strictObject({ status: z.literal('failure'), code: z.string().min(1).max(128) }),
 ]);
@@ -24,4 +24,6 @@ export type GuestOwner = { exec(argv: string[], options: { stdout: 'pipe'; stder
   result: Promise<{ exitCode: number | null }>;
 } };
 export type ReadBinding = { endpoint: string; context: ToolContext; signal: AbortSignal;
-  records: Awaited<ReturnType<typeof createRecords>>; imageSourceMaxBytes?: number };
+  records: Awaited<ReturnType<typeof createRecords>>; imageSourceMaxBytes?: number;
+  /** Host-only technical whole-source bound; absent disables edit-source. Not a product reservation. */
+  editSourceMaxBytes?: number };

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { createHash, randomUUID } from 'node:crypto';
 import { boundWriteTools, writeCallSchema, type WriteCall } from './write-tools.js';
 import { boundBashTools, bashCallSchema, bashProgressSchema, type BashCall, type BashProgress } from './bash-tools.js';
 import { connect, listen, protocolVersion, type Envelope } from '../protocol/index.js';
@@ -15,8 +16,16 @@ const readCallSchema = z.union([
   pageCall, pageCall.extend({ format: z.literal('raw') }),
 ]);
 export type ReadCall = z.infer<typeof readCallSchema>;
-const callSchema = z.union([readCallSchema, writeCallSchema, bashCallSchema]);
-export type ToolCall = ReadCall | WriteCall | BashCall;
+const editSourceBinding = { name: z.literal('edit-source'), path: z.string().min(1).max(4096), callId: identifier };
+const editSourceVersion = { ...editSourceBinding, reference: referenceSchema, sourceVersion: z.uuid() };
+const editSourceCallSchema = z.union([
+  z.strictObject({ ...editSourceBinding, operation: z.literal('capture') }),
+  z.strictObject({ ...editSourceVersion, operation: z.literal('page'), offset: z.number().int().nonnegative().max(8192) }),
+  z.strictObject({ ...editSourceVersion, operation: z.literal('release') }),
+]);
+export type EditSourceCall = z.infer<typeof editSourceCallSchema>;
+const callSchema = z.union([readCallSchema, writeCallSchema, bashCallSchema, editSourceCallSchema]);
+export type ToolCall = ReadCall | WriteCall | BashCall | EditSourceCall;
 export interface ToolProjection { executeTool(context: ToolContext, call: ToolCall, onData?: (data: Buffer) => void | Promise<void>, signal?: AbortSignal): Promise<ReadResult> }
 // Guest-only constant program. Trusted kernel/proc/mount roots and interpreter/stdlib
 // are profile prerequisites, NOT established by this helper. Frozen runtime remains
@@ -57,6 +66,37 @@ finally:
     if fd is not None:
         os.close(fd)
 `;
+// Closed edit-source mode shares the SAME stdout/read loop with legacy read.
+// Only FD acquisition/authorization changes; no filesystem writes. Trusted guest
+// TCB prerequisite, not a coherent snapshot or continuous-root guarantee.
+const guestEditSourceProgram = guestReadProgram.replace('fd = None', 'fd = None\nfds = []').replace(
+  '    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)',
+  `    parts = path.split("/")
+    if any(part in ("", ".", "..") for part in parts[1:]):
+        raise ValueError()
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    def authorize_parent(parent):
+        target = os.readlink("/proc/self/fd/" + str(parent))
+        if (not stat.S_ISDIR(os.fstat(parent).st_mode) or not target.isprintable()
+                or target.endswith(" (deleted)")
+                or not (target in ("/workspace", "/artifacts") or target.startswith(("/workspace/", "/artifacts/")))
+                or any(part in ("", ".", "..") for part in target.split("/")[1:])):
+            raise ValueError()
+    base = os.open("/", flags)
+    fds.append(base)
+    parent = os.open(parts[1], flags, dir_fd=base)
+    fds.append(parent)
+    authorize_parent(parent)
+    for leaf in parts[2:-1]:
+        authorize_parent(parent)
+        parent = os.open(leaf, flags, dir_fd=parent)
+        fds.append(parent)
+        authorize_parent(parent)
+    authorize_parent(parent)
+    fd = os.open(parts[-1], os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)`,
+).replace('    while True:', '    authorize_parent(parent)\n    while True:').replace(
+  '        os.close(fd)', '        os.close(fd)\n    for parent in reversed(fds):\n        os.close(parent)',
+);
 const failure = (code: string): ReadResult => ({ status: 'failure', code });
 function sameContext(left: ToolContext, right: ToolContext): boolean {
   return Object.keys(right).every(key => left[key as keyof ToolContext] === right[key as keyof ToolContext]);
@@ -72,11 +112,19 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
   const bound = Object.freeze(contextSchema.parse(options.context));
   const imageSourceMaxBytes = options.imageSourceMaxBytes === undefined ? undefined
     : z.number().int().positive().max(Number.MAX_SAFE_INTEGER).parse(options.imageSourceMaxBytes);
+  // Snapshot trusted policy before first await. Call schemas cannot override it.
+  const editSourceMaxBytes = options.editSourceMaxBytes === undefined ? undefined
+    : z.number().int().nonnegative().max(8192).parse(options.editSourceMaxBytes);
   const lifetime = new AbortController();
   const signal = AbortSignal.any([options.signal, lifetime.signal]);
   let mutationRevoked = false;
   const valid = () => !signal.aborted && !mutationRevoked;
   const captures = new Map<string, 'text' | 'raw'>();
+  // Context/phase/owner lifetime are implicit in this private closure. Technical
+  // hashes are not grants. Capture does not reserve or authorize mutation.
+  const versions = new Map<string, { path: string; reference: { workId: string; id: string }; bytes: number; digest: string }>();
+  let pendingSources = 0;
+  signal.addEventListener('abort', () => { versions.clear(); }, { once: true });
   const details = (format: 'text' | 'raw') => format === 'raw'
     ? { format: 'raw' as const, encoding: 'base64' as const, imageSourceMaxBytes: imageSourceMaxBytes! }
     : { format: 'text' as const, encoding: 'base64' as const };
@@ -85,8 +133,34 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
   async function executeTool(context: ToolContext, call: ToolCall, progress: (frame: BashProgress) => Promise<void>): Promise<ReadResult> {
     if (call.name === 'bash') return bash(context, call, progress);
     if (call.name === 'write') return write(context, call);
-    if (bound.role === 'builder') return failure('READ_ROLE_DENIED');
+    const editSource = call.name === 'edit-source';
+    if (!editSource && bound.role === 'builder') return failure('READ_ROLE_DENIED');
     if (!sameContext(context, bound) || !valid()) return failure('STALE_TOOL_CONTEXT');
+    if (editSource && (bound.role !== 'builder' || editSourceMaxBytes === undefined)) return failure('EDIT_SOURCE_DENIED');
+    if (editSource && call.operation !== 'capture') {
+      const version = versions.get(call.sourceVersion);
+      if (!version || version.path !== call.path || version.reference.id !== call.reference.id ||
+          version.reference.workId !== call.reference.workId) return failure('EDIT_SOURCE_VERSION_DENIED');
+      if (call.operation === 'release') {
+        versions.delete(call.sourceVersion);
+        return { status: 'success', format: 'text', encoding: 'base64', reference: version.reference,
+          bytes: version.bytes, data: '', nextOffset: 0, sourceVersion: call.sourceVersion };
+      }
+      try {
+        const page = await options.records.read({ reference: version.reference, offset: call.offset, limit: 8192 });
+        if (!valid() || versions.get(call.sourceVersion) !== version) return failure('EDIT_SOURCE_VERSION_DENIED');
+        if (page.state !== 'complete' || page.bytes !== version.bytes || call.offset > page.bytes ||
+            page.nextOffset !== call.offset + page.data.length || page.nextOffset > page.bytes ||
+            (call.offset === 0 && (page.nextOffset !== page.bytes || createHash('sha256').update(page.data).digest('hex') !== version.digest))) {
+          versions.delete(call.sourceVersion);
+          return failure('PROTECTED_READ_UNAVAILABLE');
+        }
+        return { status: 'success', format: 'text', encoding: 'base64', reference: version.reference, sourceVersion: call.sourceVersion,
+          bytes: page.bytes, data: page.data.toString('base64'), nextOffset: page.nextOffset };
+      } catch { versions.delete(call.sourceVersion); return failure('PROTECTED_READ_UNAVAILABLE'); }
+    }
+    if (editSource && versions.size + pendingSources >= 32) return failure('EDIT_SOURCE_LIMIT');
+    if (editSource) pendingSources++;
     try {
       if (call.operation === 'page') {
         if (call.reference.workId !== bound.workId || !captures.has(call.reference.id)) return failure('READ_REFERENCE_DENIED');
@@ -99,7 +173,8 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
         if (!valid()) return failure('STALE_TOOL_CONTEXT');
         return { status: 'success', ...details(format), reference: call.reference, bytes: page.bytes, data: page.data.toString('base64'), nextOffset: page.nextOffset };
       }
-      if (!/^\/(workspace|artifacts)\/[^\0]*$/.test(call.path) || call.path.split('/').includes('..')) return failure('READ_PATH_DENIED');
+      if (!/^\/(workspace|artifacts)\/[^\0]*$/.test(call.path) || call.path.split('/').includes('..') ||
+          (editSource && (call.path.split('/').slice(1).some(part => part === '' || part === '.') || /[\x00-\x1f\x7f]/.test(call.path)))) return failure('READ_PATH_DENIED');
       const { phaseId: _phaseId, ...captureContext } = bound;
       let output: TextOutput | RawOutput = await options.records.openOutput({ ...captureContext, callId: call.callId }, { format: 'text', preserveBOM: true });
       let format: 'text' | 'raw' = 'text';
@@ -108,7 +183,18 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
       try {
         if (!valid()) return failure('STALE_TOOL_CONTEXT');
         // Guest-only argv, with real SDK pipe/backpressure. Never accumulate the source.
-        const process = options.vm.exec(['/usr/bin/python3', '-I', '-S', '-c', guestReadProgram, call.path], { stdout: 'pipe', stderr: 'ignore',
+        const sourceHash = createHash('sha256');
+        const protectedHash = createHash('sha256');
+        let sourceBytes = 0;
+        let protectedBytes = 0;
+        const append = async (data: Buffer) => {
+          const text = await output.write(data);
+          if (editSource) {
+            if (typeof text !== 'string') throw new Error('EDIT_SOURCE_NOT_TEXT');
+            protectedHash.update(text, 'utf8'); protectedBytes += Buffer.byteLength(text);
+          }
+        };
+        const process = options.vm.exec(['/usr/bin/python3', '-I', '-S', '-c', editSource ? guestEditSourceProgram : guestReadProgram, call.path], { stdout: 'pipe', stderr: 'ignore',
           signal: AbortSignal.any([signal, commandLifetime.signal]), windowBytes: 65536 });
         // Observe rejection immediately, even when the stream itself fails first.
         void process.result.catch(() => {});
@@ -122,7 +208,7 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
           const otherImage = /^GIF8[79]a/.test(prefix.toString('ascii', 0, 6)) ||
             (prefix.toString('ascii', 0, 4) === 'RIFF' && prefix.toString('ascii', 8, 12) === 'WEBP');
           const imageCandidate = pngOrJpeg || otherImage;
-          if (imageCandidate && imageSourceMaxBytes === undefined) return false;
+          if (imageCandidate && (editSource || imageSourceMaxBytes === undefined)) return false;
           if (imageCandidate) {
             await output.abort();
             output = await options.records.openOutput({ ...captureContext, callId: call.callId }, { format: 'raw', maxBytes: imageSourceMaxBytes! });
@@ -133,6 +219,13 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
           if (!valid()) return failure('STALE_TOOL_CONTEXT');
           if (chunk.stream !== 'stdout') continue;
           let data = chunk.data;
+          if (editSource) {
+            sourceBytes += data.length;
+            // Every original stdout FD byte, not the decoded input or excerpt.
+            sourceHash.update(data);
+            if (sourceBytes > editSourceMaxBytes! || data.some(byte => byte < 32 && byte !== 9 && byte !== 10 && byte !== 13 || byte === 127))
+              return failure('EDIT_SOURCE_NOT_LOSSLESS');
+          }
           if (!inspected) {
             const take = Math.min(12 - prefix.length, data.length);
             prefix = Buffer.concat([prefix, data.subarray(0, take)]);
@@ -141,21 +234,33 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
             const routed = await routePrefix();
             if (!routed) return failure('READ_BINARY_UNSUPPORTED');
             format = routed;
-            await output.write(prefix); inspected = true;
+            await append(prefix); inspected = true;
           }
-          for (let offset = 0; offset < data.length; offset += 65536) await output.write(data.subarray(offset, offset + 65536));
+          for (let offset = 0; offset < data.length; offset += 65536) await append(data.subarray(offset, offset + 65536));
         }
         if (!inspected) {
           const routed = await routePrefix();
           if (!routed) return failure('READ_BINARY_UNSUPPORTED');
           format = routed;
-          await output.write(prefix);
+          await append(prefix);
         }
         const result = await process.result;
         if (result.exitCode !== 0) return failure(format === 'raw' ? 'PROTECTED_READ_UNAVAILABLE' : 'GUEST_READ_FAILED');
         if (!valid()) return failure('STALE_TOOL_CONTEXT');
         const capture = await output.finish();
         if (!valid()) return failure('STALE_TOOL_CONTEXT');
+        if (editSource) {
+          if (!('tail' in capture)) return failure('EDIT_SOURCE_NOT_LOSSLESS');
+          protectedHash.update(capture.tail, 'utf8'); protectedBytes += Buffer.byteLength(capture.tail);
+          const digest = sourceHash.digest('hex');
+          if (sourceBytes !== protectedBytes || protectedBytes !== capture.bytes || digest !== protectedHash.digest('hex'))
+            return failure('EDIT_SOURCE_NOT_LOSSLESS');
+          const sourceVersion = randomUUID();
+          versions.set(sourceVersion, { path: call.path, reference: capture.reference, bytes: capture.bytes, digest });
+          completed = true;
+          return { status: 'success', format: 'text', encoding: 'base64', reference: capture.reference, bytes: capture.bytes,
+            sourceVersion, data: '', nextOffset: 0 };
+        }
         captures.set(capture.reference.id, format); completed = true;
         return { status: 'success', ...details(format), reference: capture.reference, bytes: capture.bytes, data: '', nextOffset: 0 };
       } finally {
@@ -163,6 +268,7 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
         if (!completed) await output.abort();
       }
     } catch { return failure('PROTECTED_READ_UNAVAILABLE'); }
+    finally { if (editSource) pendingSources--; }
   }
   const active = new Set<Promise<void>>();
   const server = await listen(options.endpoint, { async message(request, channel) {
