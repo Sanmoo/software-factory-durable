@@ -66,11 +66,12 @@ function verifySelectedModules() {
 function validatePath(options: FactoryOAuthOptions): string {
   const root = options.factoryRoot;
   requireCondition(canonical(root) && root !== parse(root).root);
+  const credentialsDirectory = join(root, 'credentials');
   const excluded = [options.excludedRoots.source, options.excludedRoots.guest, ...options.excludedRoots.profiles];
   requireCondition(options.excludedRoots.profiles.length > 0);
   for (const path of excluded) requireCondition(canonical(path) && realpathSync(path) === path &&
-    lstatSync(path).isDirectory() && !intersects(root, path));
-  const path = join(root, 'credentials', 'chatgpt.json');
+    lstatSync(path).isDirectory() && !intersects(credentialsDirectory, path));
+  const path = join(credentialsDirectory, 'chatgpt.json');
   let ancestor = path;
   while (true) {
     const info = lstatSync(ancestor);
@@ -196,7 +197,7 @@ export async function openFactoryOAuth(options: FactoryOAuthOptions): Promise<{ 
       active();
       if (!creating) creating = (async () => {
         const profile = options.profileDirectory;
-        requireCondition(canonical(profile) && !intersects(options.factoryRoot, profile) &&
+        requireCondition(canonical(profile) && !intersects(join(options.factoryRoot, 'credentials'), profile) &&
           options.excludedRoots.profiles.some(root => profile === root || profile.startsWith(root + sep)));
         let ancestor = profile;
         while (true) {

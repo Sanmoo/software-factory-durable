@@ -52,19 +52,22 @@ globalThis.fetch = async (input, init) => {
 const roots: string[] = [];
 const initial = { type: 'oauth' as const, access: 'synthetic-access-old', refresh: 'synthetic-refresh-old',
   expires: 0, clientId: 'synthetic-client', scopes: ['chatgpt.tokens.use.direct'] };
-async function fixture() {
+async function fixture(installationLayout = false) {
   const root = await mkdtemp(join(tmpdir(), 'fo-')); roots.push(root);
   await mkdir(join(root, 'credentials'), { mode: 0o700 });
   const path = join(root, 'credentials', 'chatgpt.json');
   await writeFile(path, JSON.stringify({ openai: initial }), { mode: 0o600 });
   const recordsRoot = join(root, 'records'); await mkdir(recordsRoot, { mode: 0o700 });
   const records = await createRecords({ root: recordsRoot });
-  const profileDirectory = `${root}-profiles`;
-  for (const directory of [`${root}-source`, `${root}-guest`, profileDirectory]) {
-    await mkdir(directory, { mode: 0o700 }); roots.push(directory);
+  const source = installationLayout ? join(root, 'releases', 'version') : `${root}-source`;
+  const guest = installationLayout ? join(root, 'environments', 'environment', 'guest') : `${root}-guest`;
+  const profileDirectory = installationLayout ? join(root, 'r', 'worker', 'profile') : `${root}-profiles`;
+  for (const directory of [source, guest, profileDirectory]) {
+    await mkdir(directory, { mode: 0o700, recursive: true });
+    if (!installationLayout) roots.push(directory);
   }
   const controller = new AbortController();
-  const options = { factoryRoot: root, excludedRoots: { source: `${root}-source`, guest: `${root}-guest`, profiles: [`${root}-profiles`] },
+  const options = { factoryRoot: root, excludedRoots: { source, guest, profiles: [profileDirectory] },
     records, acknowledgeSecrets: async (_values: readonly string[]) => {}, signal: controller.signal, profileDirectory };
   return { root, path, records, controller, options };
 }
@@ -108,6 +111,21 @@ test('two native runtimes reuse a single locked synthetic refresh and persist be
   assert.deepEqual(second, first);
   await Promise.all([a.settleCredentialWrites(), b.settleCredentialWrites()]);
   assert.equal(JSON.parse(await readFile(f.path, 'utf8')).openai.refresh, 'synthetic-refresh-new');
+});
+
+test('canonical installation siblings open and resolve native fake-only auth; OWN profile membership stays exact', async () => {
+  const f = await fixture(true);
+  const before = attempts.token;
+  const auth = await openFactoryOAuth(f.options);
+  assert.deepEqual(await auth.getAuth(), { apiKey: 'synthetic-access-new' });
+  await auth.settleCredentialWrites();
+  assert.equal(attempts.token - before, 1); // Actual native refresh; not the fake owner observer.
+  assert.equal(JSON.parse(await readFile(f.path, 'utf8')).openai.refresh, 'synthetic-refresh-new');
+  const nonmember = `${f.options.profileDirectory}-other`;
+  await mkdir(nonmember, { mode: 0o700 });
+  const other = await openFactoryOAuth({ ...f.options, profileDirectory: nonmember });
+  await assert.rejects(other.getAuth(), closed);
+  assert.equal(attempts.token - before, 1);
 });
 
 test('current credential owner ACK precedes SDK modify callback use', async () => {
@@ -269,9 +287,16 @@ test('rejects unsafe private fixture modes, hardlinks, symlinks, noncanonical ro
     await assert.rejects(openFactoryOAuth({ ...f.options, factoryRoot: `${f.root}/../${f.root.split('/').at(-1)}` }), closed);
   }
   for (const field of ['source', 'guest', 'profiles'] as const) {
-    const f = await fixture();
-    const excludedRoots = { ...f.options.excludedRoots, [field]: field === 'profiles' ? [join(f.root, 'worker')] : join(f.root, 'excluded') };
-    await assert.rejects(openFactoryOAuth({ ...f.options, excludedRoots }), closed);
+    for (const overlap of ['inside', 'equal', 'ancestor'] as const) {
+      const f = await fixture();
+      const directory = join(f.root, 'credentials');
+      const excluded = overlap === 'inside' ? join(directory, 'excluded') : overlap === 'equal' ? directory : f.root;
+      if (overlap === 'inside') await mkdir(excluded, { mode: 0o700 });
+      assert.ok((await lstat(excluded)).isDirectory()); // Existing real directory, never ENOENT-as-overlap.
+      assert.equal(fs.realpathSync(excluded), excluded);
+      const excludedRoots = { ...f.options.excludedRoots, [field]: field === 'profiles' ? [excluded] : excluded };
+      await assert.rejects(openFactoryOAuth({ ...f.options, excludedRoots }), closed);
+    }
   }
   assert.equal(attempts.fetch, before);
 });
