@@ -21,7 +21,7 @@ for (const [name, source, mime, role] of [['PNG', png, 'image/png', 'standards']
     let guestCalls = 0;
     const f = await nativeOwner(context, { exec(argv, options) {
       guestCalls++; assert.deepEqual(argv.slice(0, 4), ['/usr/bin/python3', '-I', '-S', '-c']);
-      assert.equal(argv.length, 6); assert.equal(argv[5], '/workspace/renamed.txt'); assert.equal(options.windowBytes, 65536);
+      assert.equal(argv.length, 8); assert.equal(argv[5], '/workspace/renamed.txt'); assert.equal(options.windowBytes, 65536);
       return { async *output() {
         yield { stream: 'stdout' as const, data: image.subarray(0, cut) };
         yield { stream: 'stdout' as const, data: image.subarray(cut) };

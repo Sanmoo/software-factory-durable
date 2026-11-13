@@ -158,7 +158,7 @@ test('Factory adapter fixed lexical mode routes owned EACCES path only to guest 
   }
 });
 
-test('Builder composition has host-fixed lexical Write and host-gated Edit', async () => {
+test('Builder composition has host-fixed lexical Write and independent host-gated Read/Edit', async () => {
   const source = await readFile('src/workers/write.ts', 'utf8');
   assert.match(source, /type LexicalWriteOptions = NonNullable<Parameters<typeof createWriteTool>\[1\]> &/);
   assert.match(source, /const options: LexicalWriteOptions = \{ mutationQueueMode: 'lexical', operations:/);
@@ -172,10 +172,14 @@ test('Builder composition has host-fixed lexical Write and host-gated Edit', asy
     ? [builderWrite(invocation.context, options.sandbox, critical), builderBash(invocation.context, options.sandbox, critical, copyOutput)]
     : [reviewerRead(invocation.context, options.sandbox, critical)];
   const tools = invocation.context.role === 'builder' ? ['write', 'bash'] : ['read'];
+  if (invocation.context.role === 'builder' && copyOutput) {
+    customTools.push(reviewerRead(invocation.context, options.sandbox, critical));
+    tools.push('read');
+  }
   if (editEnabled) {
     customTools.push(builderEdit(invocation.context, options.sandbox, critical));
     tools.push('edit');
-  }`), 'default tools and both Edit additions must stay inside the exact host gate');
+  }`), 'default tools and independent Read/Edit additions must stay inside their exact host gates');
   // No second, unguarded adapter construction or active Edit name elsewhere.
   assert.equal(worker.match(/\bbuilderEdit\s*\(/g)?.length, 1);
   assert.equal(worker.match(/['"]edit['"]/g)?.length, 1);

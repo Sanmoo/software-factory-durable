@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+test('normal Host -> same qualified owner -> new Node24 native Bash copy/Read; fresh Builder denied, reviewers explicitly selected only', async () => {
+  const root = await mkdtemp('/tmp/p149-');
+  try {
+    const environment = `env-${createHash('sha256').update('producer-ordering-work').digest('hex')}`;
+    const child = spawnSync(process.execPath, ['--experimental-test-module-mocks', '--import', fileURLToPath(new URL('../sandbox/adapter-diagnostics-fixture.js', import.meta.url)),
+      fileURLToPath(new URL('../../src/entrypoints/adapter.js', import.meta.url)), root, environment, 'boot-66666666-2222-4333-8444-555555555555'], {
+      timeout: 25000, maxBuffer: 32768, encoding: 'utf8', env: { PATH: '', NODE_DISABLE_COMPILE_CACHE: '1', ADAPTER_DIAGNOSTIC_FIXTURE_MODE: 'normal-worker', TASK83_NATIVE_BUILDER: '1', TASK85_NATIVE_BASH: '1', TASK145_COPY: 'ok', TASK149_READ: '1' },
+    });
+    assert.equal(child.error, undefined, child.error?.message);
+    const audit = (await readFile(join(root, 'audit'), 'utf8')).trim().split('\n');
+    assert.equal(child.status, 0, child.stderr + '\n' + audit.join('\n'));
+    assert.equal(audit.filter(l => l === 'vm-create').length, 1);
+    assert.equal(audit.filter(l => l === 'worker-spawn').length, 5);
+    assert.equal(audit.filter(l => l.startsWith('worker-message:{"kind":"provider-attempt"')).length, 12);
+    assert.equal(audit.filter(l => l.startsWith('worker-message:{"kind":"provider-validated"')).length, 12);
+    assert.equal(audit.filter(l => l === 'copy-output').length, 1);
+    assert.equal(audit.filter(l => l === 'read-attempt').length, 3);
+    assert.equal(audit.filter(l => l === 'read-validated').length, 3);
+    assert.ok(!audit.some(l => l.startsWith('write-')));
+    assert.ok(audit.includes('normal-copy-read-passed'));
+    const bytes = await readFile(join(root, 'copy-double-bytes')); assert.ok(bytes.length > 1000000);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

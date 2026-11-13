@@ -19,12 +19,13 @@ export type BashProgress = z.infer<typeof bashProgressSchema>;
 /** Existing owner only. The callback's cwd/env never crosses this authority boundary.
  * UTF-8 is intentionally fatal (Records default): arbitrary binary Bash is OPEN.
  */
-export function boundBashTools(options: ReadBinding & { vm: GuestOwner }, valid: () => boolean, revoke: () => void) {
+export function boundBashTools(options: ReadBinding & { vm: GuestOwner }, valid: () => boolean, revoke: () => void,
+  publishedCopies = new Set<string>()) {
   const bound = Object.freeze({ ...options.context });
   // Trusted host snapshot precedes any await. JSON cannot qualify a VM or
   // select policy. Host must select native-truncated output; no second truncator.
   const copyAllowed = options.copyOutput === true && options.profileOrigin === 'factory-development-gondolin-0.14.0-stdin-capacity-v1';
-  const copy = boundStreamCopyTools(options, valid, revoke);
+  const copy = boundStreamCopyTools(options, valid, revoke, publishedCopies);
   let latest: { reference: { workId: string; id: string }; bytes: number; callId: string } | undefined;
   let running = false;
   return async (context: ToolContext, call: BashCall, progress: (frame: BashProgress) => Promise<void>): Promise<ReadResult> => {
@@ -32,7 +33,7 @@ export function boundBashTools(options: ReadBinding & { vm: GuestOwner }, valid:
     if (!valid() || Object.keys(bound).some(key => bound[key as keyof ToolContext] !== context[key as keyof ToolContext])) return failure('STALE_TOOL_CONTEXT');
     if (bound.role !== 'builder') return failure('BASH_ROLE_DENIED');
     if ('operation' in call) {
-      if (!copyAllowed || running || !latest || latest.callId === call.callId ||
+      if (!copyAllowed || publishedCopies.size >= 32 || running || !latest || latest.callId === call.callId ||
           latest.reference.id !== call.reference.id || latest.reference.workId !== call.reference.workId) return failure('BASH_COPY_DENIED');
       const capture = latest;
       latest = undefined; // Spend synchronously before the FIRST await; no retry.

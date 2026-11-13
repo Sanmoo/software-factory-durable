@@ -30,4 +30,6 @@ export type ReadBinding = { endpoint: string; context: ToolContext; signal: Abor
   /** Private same-VM adapter qualification, never accepted from tool JSON. */
   profileOrigin?: 'factory-development-gondolin-0.14.0-stdin-capacity-v1';
   /** Trusted host precondition: selected native truncated Bash output. Default deny. */
-  copyOutput?: boolean };
+  copyOutput?: boolean;
+  /** Exact Host-selected reviewer copies; absent is empty, never Builder authority. */
+  selectedOutputCopies?: readonly string[] };

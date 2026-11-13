@@ -116,7 +116,8 @@ const guestStreamProgram = guestWriteProgram.replace('import os, stat, sys', 'im
 /** Private closed stream-copy variant of the owner mutation engine. No caller
  * source/destination/count/hash grants: all inputs come from the spent Bash slot.
  * Receipt proves an observation, NOT physical FD cessation or durable storage. */
-export function boundStreamCopyTools(options: Options, valid: () => boolean, revoke: () => void) {
+export function boundStreamCopyTools(options: Options, valid: () => boolean, revoke: () => void,
+  publishedCopies: Set<string>) {
   const bound = Object.freeze({ ...options.context });
   return async (callId: string, capture: { reference: { workId: string; id: string }; bytes: number; callId: string }): Promise<Result> => {
     const failure = (): Result => ({ status: 'failure', code: 'BASH_COPY_EFFECTS_OR_CAPTURE_UNKNOWN' });
@@ -189,6 +190,9 @@ export function boundStreamCopyTools(options: Options, valid: () => boolean, rev
       // await below it. Historical EOF alone is insufficient after a late secret.
       if (!valid() || signal.aborted) throw new Error('stale');
       projection.assertCompleteAndCurrent();
+      // Binding-private permission publication. All asynchronous evidence and
+      // current-secret fences precede this; successful return has no later await.
+      publishedCopies.add(path);
       published = true;
       return { status: 'success', format: 'text', reference: protectedReceipt.reference, bytes: protectedReceipt.bytes,
         encoding: 'base64', data: Buffer.from(metadata).toString('base64'), nextOffset: protectedReceipt.bytes };

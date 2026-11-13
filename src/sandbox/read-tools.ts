@@ -98,6 +98,21 @@ const guestEditSourceProgram = guestReadProgram.replace('fd = None', 'fd = None\
 ).replace('    while True:', '    authorize_parent(parent)\n    while True:').replace(
   '        os.close(fd)', '        os.close(fd)\n    for parent in reversed(fds):\n        os.close(parent)',
 );
+// Read-only derived mode; Edit's original FD/source/budget semantics above stay
+// byte-for-byte unchanged. Bounded Host data, never model-supplied Python code.
+const guestCopyAwareReadProgram = guestReadProgram.replace('import os, stat, sys', 'import os, stat, sys, json').replace(
+  'len(sys.argv) != 2', 'len(sys.argv) != 4',
+).replace('    while True:', `    selected = json.loads(sys.argv[3])
+    if (sys.argv[2] not in ("builder", "reviewer") or not isinstance(selected, list)
+            or len(selected) > 32 or any(not isinstance(item, str) for item in selected)):
+        raise ValueError()
+    if sys.argv[2] == "builder":
+        if path not in selected or target != path:
+            raise ValueError()
+    elif target.startswith("/artifacts/factory-output-") and target not in selected:
+        raise ValueError()
+    while True:`);
+const copyPath = z.string().regex(/^\/artifacts\/factory-output-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.txt$/);
 const failure = (code: string): ReadResult => ({ status: 'failure', code });
 function sameContext(left: ToolContext, right: ToolContext): boolean {
   return Object.keys(right).every(key => left[key as keyof ToolContext] === right[key as keyof ToolContext]);
@@ -116,6 +131,12 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
   // Snapshot trusted policy before first await. Call schemas cannot override it.
   const editSourceMaxBytes = options.editSourceMaxBytes === undefined ? undefined
     : z.number().int().nonnegative().max(8192).parse(options.editSourceMaxBytes);
+  const selectedCopies = new Set(z.array(copyPath).max(32).parse(options.selectedOutputCopies ?? []));
+  if (bound.role === 'builder' && options.selectedOutputCopies !== undefined) throw new Error('READ_SELECTION_ROLE_DENIED');
+  // Created ONLY here: no caller set/callback, Records receipt or persisted path
+  // can grant Builder access in this or a subsequent invocation.
+  const publishedCopies = new Set<string>();
+  const builderRead = options.copyOutput === true && options.profileOrigin === 'factory-development-gondolin-0.14.0-stdin-capacity-v1';
   const lifetime = new AbortController();
   const signal = AbortSignal.any([options.signal, lifetime.signal]);
   let mutationRevoked = false;
@@ -125,18 +146,19 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
   // hashes are not grants. Capture does not reserve or authorize mutation.
   const versions = new Map<string, { path: string; reference: { workId: string; id: string }; bytes: number; digest: string }>();
   let pendingSources = 0;
-  signal.addEventListener('abort', () => { versions.clear(); }, { once: true });
+  signal.addEventListener('abort', () => { versions.clear(); captures.clear(); publishedCopies.clear(); selectedCopies.clear(); }, { once: true });
+  const revoke = () => { mutationRevoked = true; publishedCopies.clear(); selectedCopies.clear(); captures.clear(); };
   const details = (format: 'text' | 'raw') => format === 'raw'
     ? { format: 'raw' as const, encoding: 'base64' as const, imageSourceMaxBytes: imageSourceMaxBytes! }
     : { format: 'text' as const, encoding: 'base64' as const };
-  const write = boundWriteTools({ ...options, signal }, valid, () => { mutationRevoked = true; });
-  const commit = boundConditionalEditTools({ ...options, signal }, valid, () => { mutationRevoked = true; });
-  const bash = boundBashTools({ ...options, signal }, valid, () => { mutationRevoked = true; });
+  const write = boundWriteTools({ ...options, signal }, valid, revoke);
+  const commit = boundConditionalEditTools({ ...options, signal }, valid, revoke);
+  const bash = boundBashTools({ ...options, signal }, valid, revoke, publishedCopies);
   async function executeTool(context: ToolContext, call: ToolCall, progress: (frame: BashProgress) => Promise<void>): Promise<ReadResult> {
     if (call.name === 'bash') return bash(context, call, progress);
     if (call.name === 'write') return write(context, call);
     const editSource = call.name === 'edit-source';
-    if (!editSource && bound.role === 'builder') return failure('READ_ROLE_DENIED');
+    if (!editSource && bound.role === 'builder' && !builderRead) return failure('READ_ROLE_DENIED');
     if (!sameContext(context, bound) || !valid()) return failure('STALE_TOOL_CONTEXT');
     if (editSource && (bound.role !== 'builder' || editSourceMaxBytes === undefined)) return failure('EDIT_SOURCE_DENIED');
     if (editSource && call.operation !== 'capture') {
@@ -156,7 +178,7 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
               page.data.length !== version.bytes || createHash('sha256').update(page.data).digest('hex') !== version.digest)
             throw new Error('protected source unavailable');
         } catch {
-          mutationRevoked = true;
+          revoke();
           return failure('PROTECTED_EDIT_SOURCE_UNAVAILABLE');
         }
         return commit(context, { name: 'edit-source', operation: 'commit', path: version.path, callId: call.callId,
@@ -196,6 +218,10 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
       }
       if (!/^\/(workspace|artifacts)\/[^\0]*$/.test(call.path) || call.path.split('/').includes('..') ||
           (editSource && (call.path.split('/').slice(1).some(part => part === '' || part === '.') || /[\x00-\x1f\x7f]/.test(call.path)))) return failure('READ_PATH_DENIED');
+      const copies = bound.role === 'builder' ? publishedCopies : selectedCopies;
+      if (!editSource && ((bound.role === 'builder' && !copies.has(call.path)) ||
+          (call.path.startsWith('/artifacts/factory-output-') && !copies.has(call.path)))) return failure('READ_PATH_DENIED');
+      const copyText = !editSource && copies.has(call.path);
       const { phaseId: _phaseId, ...captureContext } = bound;
       let output: TextOutput | RawOutput = await options.records.openOutput({ ...captureContext, callId: call.callId }, { format: 'text', preserveBOM: true });
       let format: 'text' | 'raw' = 'text';
@@ -215,7 +241,9 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
             protectedHash.update(text, 'utf8'); protectedBytes += Buffer.byteLength(text);
           }
         };
-        const process = options.vm.exec(['/usr/bin/python3', '-I', '-S', '-c', editSource ? guestEditSourceProgram : guestReadProgram, call.path], { stdout: 'pipe', stderr: 'ignore',
+        const argv = ['/usr/bin/python3', '-I', '-S', '-c', editSource ? guestEditSourceProgram : guestCopyAwareReadProgram, call.path];
+        if (!editSource) argv.push(bound.role === 'builder' ? 'builder' : 'reviewer', JSON.stringify([...copies]));
+        const process = options.vm.exec(argv, { stdout: 'pipe', stderr: 'ignore',
           signal: AbortSignal.any([signal, commandLifetime.signal]), windowBytes: 65536 });
         // Observe rejection immediately, even when the stream itself fails first.
         void process.result.catch(() => {});
@@ -228,7 +256,7 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
             prefix.subarray(0, 3).equals(Buffer.from([255, 216, 255]));
           const otherImage = /^GIF8[79]a/.test(prefix.toString('ascii', 0, 6)) ||
             (prefix.toString('ascii', 0, 4) === 'RIFF' && prefix.toString('ascii', 8, 12) === 'WEBP');
-          const imageCandidate = pngOrJpeg || otherImage;
+          const imageCandidate = !copyText && (pngOrJpeg || otherImage);
           if (imageCandidate && (editSource || imageSourceMaxBytes === undefined)) return false;
           if (imageCandidate) {
             await output.abort();

@@ -132,6 +132,7 @@ let editChild: cp.ChildProcess | undefined;
 const nativeBuilder = process.env.TASK83_NATIVE_BUILDER === '1';
 const nativeBash = process.env.TASK85_NATIVE_BASH === '1';
 const nativeCopy = process.env.TASK145_COPY;
+const nativeCopyRead = process.env.TASK149_READ === '1';
 let bashFinished = false;
 // VM double only; these virtual files/sentinel do not establish kernel FD safety.
 const virtualBuilderFiles = new Map<string, string>([
@@ -156,6 +157,7 @@ cp.spawn = ((command: string, args: string[], options: cp.SpawnOptions) => {
   if (nativeBash) preload = new URL('./fixtures/adapter-bash-provider-preload.js', import.meta.url);
   if (nativeEdit) preload = new URL('./fixtures/adapter-edit-provider-preload.js', import.meta.url);
   if (nativeCopy) preload = new URL('./fixtures/adapter-bash-copy-provider-preload.js', import.meta.url);
+  if (nativeCopyRead) preload = new URL('./fixtures/adapter-copy-read-provider-preload.js', import.meta.url);
   const child = actualSpawn(command, ['--import', preload.pathname, ...args], options);
   if (nativeEdit) editChild = child;
   child.on('message', message => {
@@ -268,9 +270,19 @@ const sdkDouble = {
           for await (const chunk of options.stdin) { assert.ok(chunk.length <= 65536); chunks.push(Buffer.from(chunk)); }
           const bytes = Buffer.concat(chunks);
           fs.writeFileSync(join(root!, 'copy-double-bytes'), bytes, { mode: 0o600 });
+          if (nativeCopyRead) virtualBuilderFiles.set(argv[8]!, bytes.toString());
           yield { stream: 'stdout', data: Buffer.from(JSON.stringify({ bytes: bytes.length,
             sha256: nativeCopy === 'fail' ? '0'.repeat(64) : createHash('sha256').update(bytes).digest('hex') })) };
         }, result: Promise.resolve({ exitCode: 0 }) };
+      }
+      if (nativeCopyRead && argv[0] === '/usr/bin/python3' && argv.length === 8) {
+        audit('read-attempt'); // BEFORE ALL assertions; owner catches errors.
+        assert.deepEqual(argv.slice(0, 4), ['/usr/bin/python3', '-I', '-S', '-c']);
+        const selected = JSON.parse(argv[7]!) as string[];
+        assert.ok(selected.includes(argv[5]!));
+        const text = virtualBuilderFiles.get(argv[5]!); assert.ok(text);
+        audit('read-validated');
+        return { async *output() { const bytes = Buffer.from(text); for (let i = 0; i < bytes.length; i += 65536) yield { stream: 'stdout', data: bytes.subarray(i, i + 65536) }; }, result: Promise.resolve({ exitCode: 0 }) };
       }
       if (nativeEdit && argv[0] === '/usr/bin/python3') {
         assert.ok(typeof options.stdin === 'string');
@@ -358,7 +370,7 @@ const sdkDouble = {
         audit('read');
         if (mode === 'normal-worker') {
           assert.deepEqual(argv.slice(0, 4), ['/usr/bin/python3', '-I', '-S', '-c']);
-          assert.equal(argv.length, 6); assert.equal(argv[5], '/workspace/source.txt');
+          assert.equal(argv.length, 8); assert.equal(argv[5], '/workspace/source.txt');
           const text = 'prefix\n'.repeat(5000) + 'synthetic-secret synthetic-key\ntarget\nlast';
           return { async *output() { for (let i = 0; i < text.length; i += 11) yield { stream: 'stdout', data: Buffer.from(text.slice(i, i + 11)) }; }, result: Promise.resolve({ exitCode: 0 }) };
         }
@@ -487,6 +499,13 @@ mock.method(prototype, 'sync', async function(this: FileHandle) {
         void import('../entrypoints/normal-edit.fixture.js').then(async ({ normalEdit }) => {
           await json(join(root!, 'normal-worker-result.json'), await normalEdit(root!, { workId, environmentRef: environment!, bootRef: boot! }));
           audit('normal-edit-passed');
+        }).catch(error => { console.error(error); process.exitCode = 1; }).finally(() => listeners[0]!('SIGTERM'));
+        return;
+      }
+      if (mode === 'normal-worker' && nativeCopyRead) {
+        void import('../entrypoints/normal-copy-read.fixture.js').then(async ({ normalCopyRead }) => {
+          await json(join(root!, 'normal-worker-result.json'), await normalCopyRead(root!, { workId, environmentRef: environment!, bootRef: boot! }));
+          audit('normal-copy-read-passed');
         }).catch(error => { console.error(error); process.exitCode = 1; }).finally(() => listeners[0]!('SIGTERM'));
         return;
       }

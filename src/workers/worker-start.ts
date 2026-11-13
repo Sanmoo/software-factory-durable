@@ -10,7 +10,7 @@ export type ReviewerProfile = { id: typeof sdkProfile.id; directory: string; sys
   providerId: string; modelId: string; apiKey: string;
   provider: { api: 'openai-completions'; baseUrl: string; models: ReviewerModel[] } };
 /** Optional tool policies are trusted Host inputs, never model/context claims. */
-export type Invocation = { context: ToolContext; prompt: string; signal: AbortSignal; imageSourceMaxBytes?: number; editSourceMaxBytes?: number; copyOutput?: boolean };
+export type Invocation = { context: ToolContext; prompt: string; signal: AbortSignal; imageSourceMaxBytes?: number; editSourceMaxBytes?: number; copyOutput?: boolean; selectedOutputCopies?: readonly string[] };
 
 /** Critical protected evidence, never admission or proof of group/FD isolation. */
 export async function startWorker(profile: ReviewerProfile, records: Awaited<ReturnType<typeof createRecords>>, invocation: Invocation) {

@@ -17,7 +17,9 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => 
   const enabled = body.includes('Task145 ok');
   assert.ok(attempts <= (failure ? 1 : 2));
   assert.match(body, /"name":"bash"/); assert.match(body, /"name":"write"/);
-  assert.doesNotMatch(body, /"name":"(?:read|edit)"/);
+  if (enabled || failure) assert.match(body, /"name":"read"/);
+  else assert.doesNotMatch(body, /"name":"read"/);
+  assert.doesNotMatch(body, /"name":"edit"/);
   const parsed = JSON.parse(body);
   const schema = parsed.tools.find((tool: { function: { name: string } }) => tool.function.name === 'bash').function.parameters;
   assert.deepEqual(Object.keys(schema.properties).sort(), ['command', 'timeout']);

@@ -3,8 +3,9 @@ import { createReadTool, type ReadOperations, type ToolDefinition } from '#facto
 import { detectSupportedImageMimeType } from '#factory-image-mime';
 import type { ToolContext, ToolProjection, ReadResult } from '../sandbox/index.js';
 
-/** Private Workers integration; only the native read schema is presented to Pi.
- * Q5 calls below are implementation operations, not additional model tools. */
+/** Shared confined native Read adapter (historical reviewerRead name). Owner,
+ * not this Worker, authorizes reviewer paths and Builder published copies.
+ * Only the native schema is presented to Pi; Q5 calls are private operations. */
 export function reviewerRead(context: ToolContext, sandbox: ToolProjection, criticalFailure = () => {}) {
   const definition = createReadTool('/workspace');
   // Fixed host composition: the shared channel admits one tool at a time.

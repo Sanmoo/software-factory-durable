@@ -103,7 +103,7 @@ export function builderBash(context: ToolContext, sandbox: ToolProjection, onCri
   // Fixed host composition: the shared channel admits one tool at a time.
   return { name: 'bash', label: 'bash',
     executionMode: 'sequential',
-    description: 'Run Bash in the bound Builder guest with empty environment and fixed /workspace cwd. UTF-8 text only; binary output unsupported. With explicit Host policy, completed native-truncated output is copied to a generated guest artifact; otherwise fullOutputPath is protected host metadata, not a guest path. No native Read capability is implied. Timeout/abort requests do not prove physical cessation.',
+    description: 'Run Bash in the bound Builder guest with empty environment and fixed /workspace cwd. UTF-8 text only; binary output unsupported. With explicit Host policy, completed native-truncated output is copied to a generated guest artifact; otherwise fullOutputPath is protected host metadata, not a guest path. With that policy, native Read is confined to copies published by this invocation. Timeout/abort requests do not prove physical cessation.',
     parameters: definition.parameters,
     ...(definition.outputSchema === undefined ? {} : { outputSchema: definition.outputSchema }),
     async execute(callId, args, signal, onUpdate) {

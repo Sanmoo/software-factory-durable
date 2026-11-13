@@ -3,9 +3,10 @@ import { z } from 'zod';
 const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
 const text = z.string().min(1).max(4096);
 const cost = z.number().finite().nonnegative();
-export const workerBootstrapSchema = z.strictObject({
+const bootstrap = z.strictObject({
   version: z.literal(1),
   copyOutput: z.boolean().optional(),
+  selectedOutputCopies: z.array(z.string().regex(/^\/artifacts\/factory-output-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.txt$/)).max(32).readonly().optional(),
   editSourceMaxBytes: z.number().int().nonnegative().max(8192).optional(),
   imageSourceMaxBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
   context: z.strictObject({ workId: identifier, executionId: identifier, invocationId: identifier,
@@ -23,5 +24,10 @@ export const workerBootstrapSchema = z.strictObject({
   }),
 });
 
-export const workerLaunchSchema = workerBootstrapSchema.pick({ context: true, knownSecrets: true, prompt: true, imageSourceMaxBytes: true, editSourceMaxBytes: true, copyOutput: true }).extend({ profile: workerBootstrapSchema.shape.profile.omit({ directory: true }) }).strict();
+function rolePolicies(input: { context: { role: string }; copyOutput?: boolean | undefined; selectedOutputCopies?: readonly string[] | undefined }) {
+  return !(input.context.role === 'builder' && input.selectedOutputCopies !== undefined) &&
+    !(input.context.role !== 'builder' && input.copyOutput === true);
+}
+export const workerBootstrapSchema = bootstrap.refine(rolePolicies, 'WORKER_POLICY_ROLE_DENIED');
+export const workerLaunchSchema = bootstrap.pick({ context: true, knownSecrets: true, prompt: true, imageSourceMaxBytes: true, editSourceMaxBytes: true, copyOutput: true, selectedOutputCopies: true }).extend({ profile: bootstrap.shape.profile.omit({ directory: true }) }).strict().refine(rolePolicies, 'WORKER_POLICY_ROLE_DENIED');
 export type WorkerLaunch = z.infer<typeof workerLaunchSchema>;

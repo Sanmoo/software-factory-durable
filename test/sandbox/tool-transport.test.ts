@@ -29,7 +29,7 @@ async function fixture(t: { after(fn: () => Promise<void>): void }, exec: GuestO
 test('Q5 host-bound reviewer receives a protected reference and paginable filtered whole source', async t => {
   const f = await fixture(t, argv => {
     assert.deepEqual(argv.slice(0, 4), ['/usr/bin/python3', '-I', '-S', '-c']);
-    assert.equal(argv.length, 6);
+    assert.equal(argv.length, 8);
     assert.equal(argv[5], '/workspace/README.md');
     return guest(Buffer.from('guest synthetic-secret content'));
   });
@@ -131,7 +131,8 @@ test('guest helper is constant argv data and parses with same-FD authorization b
   const [first, second] = invocations;
   assert.ok(first && second);
   assert.deepEqual(first.slice(0, 4), ['/usr/bin/python3', '-I', '-S', '-c']);
-  assert.equal(first.length, 6); assert.equal(first[5], path);
+  assert.equal(first.length, 8); assert.equal(first[5], path);
+  assert.deepEqual(first.slice(6), ['reviewer', '[]']);
   assert.equal(first[4], second[4]);
   const program = first[4]!;
   const parsed = execFileSync('/usr/bin/python3', ['-I', '-S', '-c',
