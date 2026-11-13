@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFile, readdir } from 'node:fs/promises';
+import { join } from 'node:path';
 import { createSandbox, type ToolContext } from '../../src/sandbox/index.js';
 import { nativeOwner } from '../sandbox/native-owner.fixture.js';
 import { builderWrite } from '../../src/workers/write.js';
@@ -37,7 +39,7 @@ test('reviewer mutation, forged builder, stale phase and admin calls cannot reac
   assert.equal((await sandbox.executeTool(reviewer, { ...call, name: 'remove' } as never)).status, 'failure');
 });
 
-test('new-file limits and denied host sentinel precede mkdir; cancellation after mkdir never implies no effects', async t => {
+test('write limits and denied host sentinel precede mkdir; cancellation after mkdir never implies no effects', async t => {
   const { readFile, writeFile } = await import('node:fs/promises');
   const { join } = await import('node:path');
   let calls = 0;
@@ -76,4 +78,35 @@ test('real protected intent/result persistence failure blocks dependent effects 
   const projection = createSandbox({ root: before.root, toolEndpoint: before.owner.endpoint });
   assert.deepEqual(await projection.executeTool({ ...context, invocationId: 'before-effect' },
     { name: 'write', operation: 'mkdir', path: '/workspace/new', callId: 'intent-fail' }), { status: 'failure', code: 'PROTECTED_WRITE_UNAVAILABLE' });
+});
+
+test('actual native per-path mutation queue holds in-flight overwrite and uses current UUID per callback', async t => {
+  let release!: () => void;
+  let entered!: () => void;
+  const held = new Promise<{ exitCode: number }>(resolve => { release = () => resolve({ exitCode: 0 }); });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const operations: string[] = [];
+  const f = await nativeOwner(context, { exec(argv) {
+    operations.push(argv[5]!);
+    const firstWrite = operations.length === 2;
+    if (firstWrite) entered();
+    return { async *output() {}, result: firstWrite ? held : Promise.resolve({ exitCode: 0 }) };
+  } }); t.after(async () => { release(); await f.close(); });
+  const native = builderWrite(context, createSandbox({ root: f.root, toolEndpoint: f.owner.endpoint }));
+  const execute = (id: string, content: string) => native.execute(id, { path: 'same.txt', content }, undefined, undefined, { cwd: '/workspace' } as never);
+  const first = execute('first', 'first replacement');
+  await started;
+  const second = execute('second', 'second replacement');
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.deepEqual(operations, ['mkdir', 'create'], 'second mkdir cannot pass in-flight native write');
+  release();
+  const results = await Promise.all([first, second]);
+  assert.ok(results.every(result => JSON.stringify(result).includes('Successfully wrote to same.txt')));
+  assert.deepEqual(operations, ['mkdir', 'create', 'mkdir', 'create']);
+  const evidence = join(f.root, 'records', context.workId, 'evidence');
+  const captures = await Promise.all((await readdir(evidence)).map(async id => JSON.parse(await readFile(join(evidence, id, 'output'), 'utf8'))));
+  const intents = captures.filter(capture => capture.event.kind === 'mutation-intent');
+  const ids = intents.map(capture => capture.context.callId);
+  assert.equal(ids.length, 4); assert.equal(new Set(ids).size, 4);
+  for (const id of ids) assert.match(id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 });

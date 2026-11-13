@@ -19,7 +19,7 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => 
   process.send?.({ kind: 'provider-request', count: requests });
   const choices = requests === 1 ? [
     { index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'write-new', type: 'function',
-      function: { name: 'write', arguments: JSON.stringify({ path: 'nested/new.txt', content: 'hello π\n' }) } }] }, finish_reason: null },
+      function: { name: 'write', arguments: JSON.stringify({ path: 'nested/new.txt', content: body.includes('overwrite-empty') ? '' : 'hello π\n' }) } }] }, finish_reason: null },
     { index: 0, delta: {}, finish_reason: 'tool_calls' },
   ] : [
     { index: 0, delta: { role: 'assistant', content: 'Offline new-file write complete.' }, finish_reason: null },

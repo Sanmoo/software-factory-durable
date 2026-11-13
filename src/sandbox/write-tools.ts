@@ -19,8 +19,9 @@ export type WriteCall = z.infer<typeof writeCallSchema>;
 // SOURCE ONLY, never host-executed. Trusted guest interpreter/kernel/proc/mount
 // prerequisites remain unchanged. FD authorization is instantaneous, not continuous
 // beneath-root membership against concurrent renames/mounts or malicious guest root.
-// Reject ALL symlinks including in-root links. Direct exclusive create is deliberately
-// non-atomic: partial bytes/new directories can survive failure. No unlink/retry.
+// Reject ALL symlinks including in-root links. Direct FD truncate/write or exclusive
+// create is non-atomic: truncation/partial bytes/directories can survive failure,
+// including empty content. Existing inode/mode are retained. No unlink/retry.
 const guestWriteProgram = `import os, stat, sys
 fds = []
 try:
@@ -32,11 +33,11 @@ try:
             or (operation == "create" and len(parts) < 3)):
         raise ValueError()
     flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
-    def authorize(fd):
+    def authorize(fd, regular=False):
         target = os.readlink("/proc/self/fd/" + str(fd))
-        if (not stat.S_ISDIR(os.fstat(fd).st_mode) or not target.isprintable()
+        if (not (stat.S_ISREG(os.fstat(fd).st_mode) if regular else stat.S_ISDIR(os.fstat(fd).st_mode)) or not target.isprintable()
                 or target.endswith(" (deleted)")
-                or not (target in ("/workspace", "/artifacts") or target.startswith(("/workspace/", "/artifacts/")))
+                or not ((not regular and target in ("/workspace", "/artifacts")) or target.startswith(("/workspace/", "/artifacts/")))
                 or any(part in ("", ".", "..") for part in target.split("/")[1:])):
             raise ValueError()
     base = os.open("/", flags)
@@ -61,10 +62,15 @@ try:
         leaf = parts[-1]
         if leaf in ("", ".", "..") or "/" in leaf:
             raise ValueError()
-        fd = os.open(leaf, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=parent)
+        try:
+            fd = os.open(leaf, os.O_WRONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+        except FileNotFoundError:
+            authorize(parent)
+            fd = os.open(leaf, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=parent)
         fds.append(fd)
-        if not stat.S_ISREG(os.fstat(fd).st_mode):
-            raise ValueError()
+        authorize(fd, regular=True)
+        authorize(parent)
+        os.ftruncate(fd, 0)
         while True:
             data = os.read(0, 65536)
             if not data:
@@ -98,7 +104,7 @@ export function boundWriteTools(options: Options, valid: () => boolean, revoke: 
     const commandLifetime = new AbortController();
     try {
       await options.records.record(evidence, { kind: 'mutation-intent', phaseId, operation: call.operation, path: call.path,
-        semantics: 'new-file-only-exclusive-non-atomic', contentBytes: call.operation === 'create' ? Buffer.byteLength(call.content) : 0 });
+        semantics: 'regular-file-write-non-atomic', contentBytes: call.operation === 'create' ? Buffer.byteLength(call.content) : 0 });
       if (!valid()) return failure('STALE_TOOL_CONTEXT');
       attempted = true;
       const process = options.vm.exec(['/usr/bin/python3', '-I', '-S', '-c', guestWriteProgram, call.operation, call.path], {
@@ -113,7 +119,7 @@ export function boundWriteTools(options: Options, valid: () => boolean, revoke: 
       persistingResult = true;
       const reference = await options.records.record(evidence, { kind: 'mutation-result', phaseId, operation: call.operation,
         outcome: complete ? 'complete' : 'effects-uncertain', effects: complete
-          ? call.operation === 'create' ? 'new-file-created' : 'directories-may-have-been-created' : 'partial-file-or-directories-may-exist' });
+          ? call.operation === 'create' ? 'regular-file-written' : 'directories-may-have-been-created' : 'truncation-partial-file-or-directories-may-remain' });
       if (!complete) { revoke(); return failure('WRITE_EFFECTS_UNCERTAIN'); }
       // Same protected-reference result envelope as read, with no file-content bytes.
       return { status: 'success', format: 'text', reference, bytes: 0, encoding: 'base64', data: '', nextOffset: 0 };
@@ -122,7 +128,7 @@ export function boundWriteTools(options: Options, valid: () => boolean, revoke: 
       if (attempted && !persistingResult) {
         try {
           await options.records.record(evidence, { kind: 'mutation-result', phaseId, operation: call.operation,
-            outcome: 'effects-uncertain', effects: 'partial-file-or-directories-may-exist' });
+            outcome: 'effects-uncertain', effects: 'truncation-partial-file-or-directories-may-remain' });
         } catch { /* Critical capture failure: no raw fallback, success or mutation retry. */ }
       }
       return failure(attempted ? 'WRITE_EVIDENCE_OR_EFFECTS_UNCERTAIN' : 'PROTECTED_WRITE_UNAVAILABLE');

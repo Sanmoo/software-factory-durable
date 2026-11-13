@@ -11,11 +11,14 @@ import { nativeOwner } from '../sandbox/native-owner.fixture.js';
 import { sdkProfile } from '../../src/workers/sdk-profile.js';
 import type { ToolContext } from '../../src/sandbox/index.js';
 
-for (const mode of ['complete', 'guest-failure', 'persist-failure'] as const) test(`new Node24 native Builder write/session: ${mode}`, { timeout: 15000 }, async t => {
-  const blocked = mode !== 'complete';
+for (const mode of ['complete', 'overwrite', 'overwrite-empty', 'guest-failure', 'persist-failure'] as const) test(`new Node24 native Builder write/session: ${mode}`, { timeout: 15000 }, async t => {
+  const blocked = mode === 'guest-failure' || mode === 'persist-failure';
+  const content = mode === 'overwrite-empty' ? '' : 'hello π\n';
   const context: ToolContext = { workId: 'write-work', executionId: 'write-exec', invocationId: 'write-invocation',
     role: 'builder', environmentRef: 'write-env', bootRef: 'write-boot', phaseId: 'write-phase' };
-  const virtualFiles = new Map<string, string>();
+  // External VM double only: no guest helper execution or kernel/inode proof.
+  const virtualFiles = new Map<string, string>(mode !== 'complete' ? [['/workspace/nested/new.txt', 'previous longer content']] : []);
+  virtualFiles.set('/outside/sentinel', 'untouched');
   let guestCalls = 0;
   const f = await nativeOwner(context, { exec(argv, options) {
     guestCalls++;
@@ -29,7 +32,9 @@ for (const mode of ['complete', 'guest-failure', 'persist-failure'] as const) te
     assert.deepEqual(options.env, {}); assert.equal(options.cwd, '/');
     assert.equal(argv[6], guestCalls === 1 ? '/workspace/nested' : '/workspace/nested/new.txt');
     if (argv[5] === 'create') {
-      virtualFiles.set(argv[6]!, options.stdin!);
+      if (mode !== 'complete') assert.equal(virtualFiles.get(argv[6]!), 'previous longer content');
+      assert.equal(options.stdin, content);
+      virtualFiles.set(argv[6]!, mode === 'guest-failure' ? '' : options.stdin!);
       if (mode === 'persist-failure') f.records.registerSecret(context.invocationId);
     }
     // VM virtual filesystem only: does NOT execute/qualify the FD helper.
@@ -41,8 +46,8 @@ for (const mode of ['complete', 'guest-failure', 'persist-failure'] as const) te
   const recordsRoot = join(f.root, 'worker-records');
   for (const path of [join(directory, 'sessions'), recordsRoot, join(f.root, 't'), join(f.root, 'c')]) await mkdir(path, { mode: 0o700 });
   const bootstrap = { version: 1, context, endpoint: f.owner.endpoint, recordsRoot,
-    knownSecrets: ['synthetic-secret', 'synthetic-key'], prompt: blocked ? 'blocked-write new file.' : 'Create new file.',
-    profile: { id: sdkProfile.id, directory, systemPrompt: 'Private new-file-only Builder fixture.', providerId: 'offline-fixture', modelId: 'reader',
+    knownSecrets: ['synthetic-secret', 'synthetic-key'], prompt: blocked ? 'blocked-write new file.' : mode === 'overwrite-empty' ? 'overwrite-empty file.' : 'Create or overwrite file.',
+    profile: { id: sdkProfile.id, directory, systemPrompt: 'Private regular-file Builder write fixture.', providerId: 'offline-fixture', modelId: 'reader',
       apiKey: 'synthetic-key', provider: { api: 'openai-completions', baseUrl: 'https://offline.invalid', models: [
         { id: 'reader', name: 'Reader', reasoning: false, input: ['text'],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000 },
@@ -59,7 +64,8 @@ for (const mode of ['complete', 'guest-failure', 'persist-failure'] as const) te
   const exited = once(child, 'exit'); child.send(bootstrap);
   const [code, signal] = await exited;
   assert.equal(signal, null); assert.equal(code, 0); assert.equal(output, '');
-  assert.equal(guestCalls, 2); assert.equal(virtualFiles.get('/workspace/nested/new.txt'), 'hello π\n');
+  assert.equal(guestCalls, 2); assert.equal(virtualFiles.get('/workspace/nested/new.txt'), mode === 'guest-failure' ? '' : content);
+  assert.equal(virtualFiles.get('/outside/sentinel'), 'untouched');
   assert.equal(messages.filter(message => message.kind === 'provider-request').length, blocked ? 1 : 2);
   const result = messages.find(message => message.kind === 'worker-result'); assert.ok(result);
   assert.equal(result.status, blocked ? 'interrupted' : 'completed');
@@ -69,7 +75,7 @@ for (const mode of ['complete', 'guest-failure', 'persist-failure'] as const) te
   const reopened = SessionManager.open(String(result.sessionFile), join(directory, 'sessions'));
   assert.ok(reopened.buildSessionContext().messages.some(message => message.role === 'toolResult' &&
     JSON.stringify(message).includes(mode === 'persist-failure' ? 'WRITE_EVIDENCE_OR_EFFECTS_UNCERTAIN' : blocked ? 'WRITE_EFFECTS_UNCERTAIN' : 'Successfully wrote to nested/new.txt'))); 
-  const events: Array<{ kind: string; contentBytes?: number }> = [];
+  const events: Array<{ kind: string; contentBytes?: number; semantics?: string; effects?: string }> = [];
   for (const entry of await readdir(f.root, { recursive: true, withFileTypes: true })) {
     if (!entry.isFile()) continue;
     const bytes = await readFile(join(entry.parentPath, entry.name));
@@ -82,4 +88,6 @@ for (const mode of ['complete', 'guest-failure', 'persist-failure'] as const) te
   }
   assert.equal(events.filter(event => event.kind === 'mutation-intent').length, 2);
   assert.equal(events.filter(event => event.kind === 'mutation-result').length, mode === 'persist-failure' ? 1 : 2);
+  assert.ok(events.filter(event => event.kind === 'mutation-intent').every(event => event.semantics === 'regular-file-write-non-atomic'));
+  if (!blocked) assert.ok(events.some(event => event.effects === 'regular-file-written'));
 });

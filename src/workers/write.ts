@@ -3,7 +3,7 @@ import { createWriteTool, type ToolDefinition } from '#factory-pi';
 import type { ToolContext, ToolProjection } from '../sandbox/index.js';
 
 /** Narrow Builder vertical: native schema/path normalization/queue/results, BOTH
- * local callbacks replaced. Only exclusive new files; not native overwrite parity.
+ * local callbacks replaced. New or existing regular files; all symlinks denied.
  * Callback cwd/env never grants authority; the owner independently binds context.
  */
 export function builderWrite(context: ToolContext, sandbox: ToolProjection, onCritical: () => void = () => {}): ToolDefinition {
@@ -22,7 +22,7 @@ export function builderWrite(context: ToolContext, sandbox: ToolProjection, onCr
     } });
   };
   return { name: 'write', label: 'write',
-    description: 'Create a NEW regular file in the confined guest. Existing files and all symlinks are denied. Non-atomic; partial files/directories may remain on failure. Development transport content limit: 8192 characters and 49152 encoded bytes.',
+    description: 'Create or overwrite a regular file in the confined guest. All symlinks are denied. Non-atomic direct writes preserve existing inode/mode; truncation, partial data or directories may remain on failure, including empty writes. Development transport content limit: 8192 characters and 49152 encoded bytes.',
     parameters: native('/workspace').parameters,
     async execute(toolCallId, args, signal, onUpdate, ctx) {
       if (context.role !== 'builder') throw new Error('WRITE_ROLE_DENIED');

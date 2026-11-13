@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
-test('public normal Builder activation -> same VM owner -> new Node24 -> native write result/session', { timeout: 15000 }, async t => {
+test('public normal Builder activation -> same VM owner -> new Node24 -> native regular overwrite result/session', { timeout: 15000 }, async t => {
   const root = await mkdtemp('/tmp/nw-');
   t.after(async () => { try { t.diagnostic(await readFile(join(root, 'audit'), 'utf8')); } catch { /* startup may fail */ } await rm(root, { recursive: true, force: true }); });
   const environment = `env-${createHash('sha256').update('producer-ordering-work').digest('hex')}`;
@@ -26,6 +26,7 @@ test('public normal Builder activation -> same VM owner -> new Node24 -> native 
   assert.equal(audit.filter(event => event.includes('"kind":"worker-error"')).length, 0);
   assert.equal(audit.filter(event => event === 'write-mkdir').length, 1);
   assert.equal(audit.filter(event => event === 'write-create').length, 2);
+  assert.equal(audit.filter(event => event === 'write-overwrite').length, 2);
   assert.equal(audit.filter(event => event === 'read').length, 0);
   assert.ok(audit.indexOf('normal-builder-passed') < audit.indexOf('close'));
   const result = JSON.parse(await readFile(join(root, 'normal-worker-result.json'), 'utf8'));

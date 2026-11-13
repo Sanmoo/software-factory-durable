@@ -9,7 +9,7 @@ import { createSandbox, type ToolContext } from '../../src/sandbox/index.js';
 const parser = `import ast, sys
 source = sys.stdin.read()
 tree = ast.parse(source)
-assert not any(isinstance(n, ast.Attribute) and n.attr in ("O_TRUNC", "rename", "replace", "unlink") for n in ast.walk(tree))
+assert not any(isinstance(n, ast.Attribute) and n.attr in ("O_TRUNC", "rename", "replace", "unlink", "chmod", "fchmod") for n in ast.walk(tree))
 opens = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "open"]
 creates = [n for n in opens if any(isinstance(a, ast.Attribute) and a.attr == "O_CREAT" for a in ast.walk(n))]
 assert len(creates) == 1
@@ -22,6 +22,27 @@ flags = next(n for n in ast.walk(tree) if isinstance(n, ast.Assign) and any(isin
 assert {"O_DIRECTORY", "O_NOFOLLOW", "O_CLOEXEC"} <= {n.attr for n in ast.walk(flags) if isinstance(n, ast.Attribute)}
 main = tree.body[2].body
 assert any(isinstance(n, ast.FunctionDef) and n.name == "authorize" for n in main)
+# Existing target is opened without create/truncate; only ENOENT can create.
+existing = [n for n in opens if any(isinstance(a, ast.Attribute) and a.attr == "O_WRONLY" for a in ast.walk(n)) and n is not create]
+assert len(existing) == 1
+assert {"O_WRONLY", "O_NONBLOCK", "O_NOFOLLOW", "O_CLOEXEC"} == {n.attr for n in ast.walk(existing[0]) if isinstance(n, ast.Attribute) and n.attr.startswith("O_")}
+assert any(k.arg == "dir_fd" and isinstance(k.value, ast.Name) and k.value.id == "parent" for k in existing[0].keywords)
+branch = next(n for n in main[-1].body if isinstance(n, ast.Try))
+assert len(branch.handlers) == 1 and isinstance(branch.handlers[0].type, ast.Name) and branch.handlers[0].type.id == "FileNotFoundError"
+assert create in list(ast.walk(branch.handlers[0]))
+assert len(branch.body) == 1 and existing[0] in list(ast.walk(branch.body[0]))
+assert not branch.orelse and not branch.finalbody
+assert len(branch.handlers[0].body) == 2
+assert ast.unparse(branch.handlers[0].body[0]) == 'authorize(parent)'
+assert create in list(ast.walk(branch.handlers[0].body[1]))
+assert not any(isinstance(n, (ast.Try, ast.While, ast.For)) for n in ast.walk(branch.handlers[0]))
+assert 'stat.S_ISREG(os.fstat(fd).st_mode) if regular else stat.S_ISDIR(os.fstat(fd).st_mode)' in source
+assert 'not regular and target in ("/workspace", "/artifacts")' in source
+assert 'target = os.readlink("/proc/self/fd/" + str(fd))' in source
+assert 'target.endswith(" (deleted)")' in source
+assert 'fds.append(fd)\\n        authorize(fd, regular=True)\\n        authorize(parent)\\n        os.ftruncate(fd, 0)\\n        while True:' in source
+assert source.count('os.ftruncate(') == 1
+assert source.index('os.ftruncate(fd, 0)') < source.index('os.read(0, 65536)') < source.index('os.write(fd, data)')
 # Directory root open must use the same nofollow flags, not a followed root.
 assert 'parent = os.open(parts[1], flags, dir_fd=base)' in source
 assert source.count('child = os.open(leaf, flags, dir_fd=parent)') == 2
@@ -37,7 +58,7 @@ print("static AST guards passed; guest BODY NOT executed")
 const context: ToolContext = { workId: 'guard-work', executionId: 'guard-exec', invocationId: 'guard-invocation',
   role: 'builder', environmentRef: 'guard-env', bootRef: 'guard-boot', phaseId: 'guard-phase' };
 
-test('guest write SOURCE statically guards authorized nofollow roots/parents before effects and exclusive final create', async t => {
+test('guest write SOURCE guards existing FD authority before truncation and ENOENT-only exclusive create', async t => {
   let source = '';
   const f = await nativeOwner(context, { exec(argv) {
     source = argv[4]!;
@@ -49,7 +70,10 @@ test('guest write SOURCE statically guards authorized nofollow roots/parents bef
   const valid = check(source);
   assert.equal(valid.status, 0, valid.stderr); assert.match(valid.stdout, /guest BODY NOT executed/);
   for (const adversarial of [source.replace('os.O_EXCL', 'os.O_TRUNC'), source.replace('parts[1], flags', 'parts[1], os.O_RDONLY'),
-    source.replace('authorize(parent)\n            os.mkdir', 'os.mkdir'), source.replace('dir_fd=parent)', 'dir_fd=base)')]) {
+    source.replace('authorize(parent)\n            os.mkdir', 'os.mkdir'), source.replace('dir_fd=parent)', 'dir_fd=base)'),
+    source.replace('os.O_NONBLOCK | ', ''), source.replace('except FileNotFoundError:\n            authorize(parent)\n            fd', 'except OSError:\n            authorize(parent)\n            fd'),
+    source.replace('authorize(fd, regular=True)', 'authorize(fd)'), source.replace('authorize(parent)\n        os.ftruncate', 'os.ftruncate'),
+    source.replace('os.ftruncate(fd, 0)', 'pass'), source.replace('target = os.readlink("/proc/self/fd/" + str(fd))', 'target = "/workspace/claimed"')]) {
     assert.notEqual(check(adversarial).status, 0, 'static guard must reject authorization/NO_TRUNC regression');
   }
 });

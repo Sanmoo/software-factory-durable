@@ -9,7 +9,7 @@ import { SessionManager } from '#factory-pi';
  * fixture substitutes ONLY external manager/VM boundaries; FD hardware unproven. */
 export async function normalBuilder(root: string, context: { workId: string; environmentRef: string; bootRef: string }) {
   const workers = createWorkers({ root, knownSecrets: ['synthetic-secret'], profile: {
-    id: 'factory-development-pi-1.5.2-read-operations-v1', systemPrompt: 'New-file-only Builder fixture.',
+    id: 'factory-development-pi-1.5.2-read-operations-v1', systemPrompt: 'Regular-file Builder write fixture.',
     providerId: 'offline-fixture', modelId: 'reader', apiKey: 'synthetic-key',
     provider: { api: 'openai-completions', baseUrl: 'https://offline.invalid', models: [
       { id: 'reader', name: 'Reader', reasoning: false, input: ['text'],
@@ -17,7 +17,7 @@ export async function normalBuilder(root: string, context: { workId: string; env
     ] },
   } });
   const invocation = { context: { ...context, executionId: 'execution-05', invocationId: 'builder-05', role: 'builder' as const, phaseId: 'build-1' },
-    prompt: 'Create a new file.', signal: new AbortController().signal };
+    prompt: 'Overwrite an existing regular file.', signal: new AbortController().signal };
   const worker = await workers.activate(invocation);
   try {
     const started = await worker.started;
@@ -45,8 +45,8 @@ export async function normalBuilder(root: string, context: { workId: string; env
       assert.deepEqual(await sandbox.executeTool({ ...reviewer, role: 'builder' }, mkdir), { status: 'failure', code: 'STALE_TOOL_CONTEXT' });
     }
     const builder = { ...invocation.context, invocationId: 'existing-file-05' };
-    assert.deepEqual(await sandbox.executeTool(builder, { name: 'write', operation: 'create', path: '/workspace/nested/new.txt', content: '', callId: 'exclusive' }),
-      { status: 'failure', code: 'WRITE_EFFECTS_UNCERTAIN' });
+    assert.equal((await sandbox.executeTool(builder, { name: 'write', operation: 'create', path: '/workspace/nested/new.txt', content: '', callId: 'overwrite-empty' })).status,
+      'success');
     return { receipt: started.receipt, pid: receipt.observedProcess.pid };
   } finally { worker.close(); }
 }

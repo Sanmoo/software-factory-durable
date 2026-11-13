@@ -54,7 +54,10 @@ process.stdout.write('LoadState=loaded\\nActiveState=active\\nInvocationID=${'a'
 process.env.PATH = bin; // No real manager fallback.
 const nativeBuilder = process.env.TASK83_NATIVE_BUILDER === '1';
 const nativeBash = process.env.TASK85_NATIVE_BASH === '1';
-const virtualBuilderFiles = new Map<string, string>();
+// VM double only; these virtual files/sentinel do not establish kernel FD safety.
+const virtualBuilderFiles = new Map<string, string>([
+  ['/workspace/nested/new.txt', 'previous longer regular-file content'], ['/outside/sentinel', 'untouched'],
+]);
 const actualSpawn = cp.spawn;
 cp.spawn = ((command: string, args: string[], options: cp.SpawnOptions) => {
   const worker = new URL('../../src/entrypoints/worker.js', import.meta.url).pathname;
@@ -213,13 +216,14 @@ mock.module('@earendil-works/gondolin', { namedExports: {
         });
         assert.ok(events.some(event => event.kind === 'worker-start'), 'durable child receipt before write');
         assert.ok(events.some(event => event.kind === 'mutation-intent' && event.operation === operation), 'intent before effect');
-        let exitCode = 0;
         if (operation === 'create') {
-          if (virtualBuilderFiles.has(target)) {
-            assert.equal(virtualBuilderFiles.get(target), 'hello π\n'); exitCode = 1;
-          } else { virtualBuilderFiles.set(target, options.stdin!); assert.equal(options.stdin, 'hello π\n'); }
+          assert.equal(virtualBuilderFiles.has(target), true, 'public native call overwrites virtual existing regular file');
+          audit('write-overwrite');
+          virtualBuilderFiles.set(target, options.stdin!);
+          assert.equal(virtualBuilderFiles.get('/outside/sentinel'), 'untouched');
+          assert.ok(options.stdin === 'hello π\n' || options.stdin === '');
         } else { assert.equal(operation, 'mkdir'); assert.equal(options.stdin, ''); }
-        return { async *output() {}, result: Promise.resolve({ exitCode }) };
+        return { async *output() {}, result: Promise.resolve({ exitCode: 0 }) };
       }
       if ((mode === 'normal-worker' || mode === 'owner-registration') && argv[0] === '/usr/bin/python3') {
         audit('read');
