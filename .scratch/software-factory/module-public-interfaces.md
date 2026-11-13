@@ -222,6 +222,7 @@ Não é banco de controle, cofre ou escritor alternativo de histórico/decisões
 | `openOutput(context)` | Chamada/ferramenta correlacionada → canal de saída filtrada | Recebe chunks, mantém estado entre fragmentos e finaliza captura com resumo/referência. Destinos SDK/exibição recebem somente saída filtrada; grande saída não é acumulada integralmente em memória. |
 | `preserve(evidence)` | Evidência própria que precisa sobreviver ao cleanup → referência protegida | Não é coletor documental nem saneamento universal de arquivos arbitrários. Conserva contexto/resultados/fontes necessários, sem inventar conteúdo faltante. |
 | `read(selection)` | Referências/filtros autorizados → página/trecho e estado da captura | Distingue íntegro, exibição truncada, captura parcial, removido/expirado/ausente e resultado desconhecido. Sem leitor operacional paralelo pela CLI. |
+| `projectText({context, reference, expectedBytes, signal?})` | Captura textual completa já autorizada pelo host → `{chunks, state}` | Projeção técnica incremental pelo mesmo filtro e leitor paginado; segredos atuais desta instância, UTF-8 fatal contínuo, BOM persistido preservado. Não concede acesso nem materializa cópia guest. `state: complete` somente após consumir até EOF/finalização; erro/cancelamento/fechamento antecipado não são saída íntegra. |
 | `remove(plan)` | Seleção concreta autorizada/revalidada pelo controlador → resultados individuais | Verifica recurso próprio/em uso; não decide elegibilidade de retenção, não apaga estado de domínio e não executa cleanup de VM/GitHub. |
 
 O canal de saída permite fornecer chunks e finalizar a captura; pode reter a cauda necessária à filtragem de segredos fragmentados.
@@ -233,6 +234,18 @@ Sessões continuam no formato nativo do SDK, configuradas em local protegido e c
 não se cria formato substituto de sessão nem cópia integral duplicada por padrão.
 A cópia de saída disponibilizada ao agente segue a interface de sandbox/área seletiva aprovada,
 não montagem de `data/records` ou nova ferramenta de logs; ela não vira autoridade do resultado do comando.
+
+`projectText` é somente o pré-requisito técnico da cópia seletiva (§12.2), não operação administrativa ou grant.
+O host continua responsável por autorizar proprietário/contexto completo/fase/referência; a comparação do contexto gravado não autoriza uma fase.
+`expectedBytes` é o total finito seguro da fonte completa, não tamanho da saída refiltrada. Chunks de bytes têm no máximo 65536 bytes
+(e podem partir UTF-8); consumidor deve drenar o iterador e verificar `state === 'complete'`, nunca interpretar fechamento antecipado como sucesso.
+A projeção não cria arquivo adicional nem modifica captura/semântica de `read`; usa um decoder contínuo e o filtro existente incluindo sua cauda final.
+Registro novo durante a projeção impede releases subsequentes e conclusão; duplicata não altera revisão. O fence é da mesma instância em memória,
+não coordenação entre processos, recall de bytes já liberados, erasure retroativa ou prova de cessação física.
+`AbortSignal` é verificado antes/depois das leituras e antes dos yields; consumidor fecha o iterador em `finally` se abandonar consumo.
+Não mantém descritor aberto durante yield. Cancelamento não interrompe syscall em andamento; fechamento/retomada descarta a cauda.
+Contagem/completude/contexto são revalidados por página e ao finalizar; não há snapshot imutável contra adulteração host de mesmo tamanho.
+Nenhuma boundedness de transporte Gondolin, escrita guest, nova ferramenta ou novo grant de invocação é inferida desta API.
 
 **Aprovado:** centralizar filtragem e operações de evidência, sem mover para cá autorização, orçamento, prontidão ou política de retenção.
 

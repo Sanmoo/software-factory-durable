@@ -27,6 +27,8 @@ type OutputChannel<T, C> = { reference: OutputReference; abort(): Promise<void>;
 export type TextOutput = OutputChannel<string, TextCompletion>;
 export type RawOutput = OutputChannel<void, RawCompletion>;
 type ReadRequest = { reference: OutputReference; offset: number; limit: number };
+export type TextProjectionRequest = { context: OutputContext; reference: OutputReference; expectedBytes: number; signal?: AbortSignal };
+export type TextProjection = { readonly state: 'pending' | 'streaming' | 'complete' | 'failed'; chunks: AsyncGenerator<Buffer, void, unknown> };
 type OutputPage = { state: 'complete' | 'partial'; data: Buffer<ArrayBuffer>; nextOffset: number; bytes: number }
   | { state: 'absent'; data: Buffer<ArrayBuffer>; nextOffset: number; bytes: number };
 type RawPage = OutputPage & { version: 2; format: 'raw' };
@@ -354,7 +356,70 @@ export async function createRecords({ root }: { root: string }) {
       throw new RecordsError();
     }
   }
-  async function readPage({ reference, offset, limit, format }: ReadRequest & { format?: 'raw' }): Promise<OutputPage> {
+  // Technical projection only: the host still authorizes owner/phase/reference.
+  // No capture is created and the existing matcher and bounded reader are reused.
+  function projectText(input: TextProjectionRequest): TextProjection {
+    const revision = registryRevision;
+    const { expectedBytes, signal } = input;
+    let state: TextProjection['state'] = 'pending';
+    // Snapshot identities before the first await; invalid input fails on iteration.
+    const context = contextSchema.safeParse(input.context);
+    const reference = referenceSchema.safeParse(input.reference);
+    function validate() {
+      if (revision !== registryRevision || signal?.aborted || state === 'failed') throw new RecordsError();
+    }
+    async function* stream(): AsyncGenerator<Buffer, void, unknown> {
+      let pending = '';
+      // Preserve the persisted BOM exactly; capture already applied its BOM policy.
+      const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+      try {
+        validate();
+        if (!context.success || !reference.success || !Number.isSafeInteger(expectedBytes) || expectedBytes < 0) throw new RecordsError();
+        state = 'streaming';
+        let offset = 0;
+        do {
+          validate();
+          const limit = Math.min(outputLimits.pageBytes, Math.max(1, expectedBytes - offset));
+          const page = await readPage({ reference: reference.data, offset, limit, context: context.data });
+          validate();
+          if (page.state !== 'complete' || page.bytes !== expectedBytes || page.data.length > limit
+            || page.nextOffset !== offset + page.data.length || page.nextOffset > expectedBytes
+            || (offset < expectedBytes && page.data.length === 0)) throw new RecordsError();
+          offset = page.nextOffset;
+          const result = filter(pending + decoder.decode(page.data, { stream: true }), false);
+          pending = result.pending;
+          const bytes = Buffer.from(result.text);
+          for (let start = 0; start < bytes.length; start += outputLimits.pageBytes) {
+            validate();
+            yield bytes.subarray(start, start + outputLimits.pageBytes);
+            validate();
+          }
+        } while (offset < expectedBytes);
+        const tail = Buffer.from(filter(pending + decoder.decode(), true).text);
+        pending = '';
+        if (tail.length) { validate(); yield tail; validate(); }
+        // Recheck completion/count after the last consumer suspension. This is
+        // not a filesystem snapshot or a promise against same-size host tampering.
+        validate();
+        const end = await readPage({ reference: reference.data, offset: expectedBytes, limit: 1, context: context.data });
+        validate();
+        if (end.state !== 'complete' || end.bytes !== expectedBytes || end.nextOffset !== expectedBytes || end.data.length !== 0) throw new RecordsError();
+        state = 'complete';
+      } catch { state = 'failed'; throw new RecordsError(); }
+      finally { pending = ''; if (state !== 'complete') state = 'failed'; }
+    }
+    const chunks = stream();
+    const close = chunks.return.bind(chunks);
+    const interrupt = chunks.throw.bind(chunks);
+    // Generator finally does not run when closed before the first next().
+    chunks.return = value => { if (state !== 'complete') state = 'failed'; return close(value); };
+    chunks.throw = error => { if (state !== 'complete') state = 'failed'; return interrupt(error); };
+    return { chunks, get state() {
+      if (state !== 'complete' && (revision !== registryRevision || signal?.aborted)) state = 'failed';
+      return state;
+    } };
+  }
+  async function readPage({ reference, offset, limit, format, context }: ReadRequest & { format?: 'raw'; context?: OutputContext }): Promise<OutputPage> {
     const readRevision = registryRevision;
     try {
       if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > outputLimits.pageBytes) throw new RecordsError();
@@ -365,6 +430,7 @@ export async function createRecords({ root }: { root: string }) {
       let captureBudget = Number.MAX_SAFE_INTEGER;
       try {
         const capture = z.union([captureSchema, rawCaptureSchema]).parse(await privateJson(join(directory, 'capture.json')));
+        if (context && Object.keys(contextSchema.shape).some(key => capture.context[key as keyof OutputContext] !== context[key as keyof OutputContext])) throw new RecordsError();
         raw = capture.version === 2;
         if (capture.version === 2) captureBudget = capture.maxBytes;
         if (raw !== (format === 'raw')) throw new RecordsError();
@@ -407,7 +473,7 @@ export async function createRecords({ root }: { root: string }) {
     }
   }
   const records = {
-    openOutput, read,
+    openOutput, read, projectText,
     async record(context: OutputContext, event: unknown): Promise<OutputReference> {
       try {
         const parsed = z.json().parse(boundedEvent(event));
