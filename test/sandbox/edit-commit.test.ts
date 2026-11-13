@@ -110,6 +110,40 @@ for (const outcome of [1, null]) test(`unknown result ${outcome} revokes future 
   assert.equal(f.calls.length, 2);
 });
 
+for (const outcome of [1, null]) test(`unknown result ${outcome} revokes peer effects before result persistence completes`, async t => {
+  const f = await fixture(t); f.setOutcome(outcome);
+  const peer = await connectReadTools(f.owner.endpoint, context);
+  const record = f.records.record;
+  let unblock!: () => void; let entered!: () => void;
+  const gate = new Promise<void>(resolve => { unblock = resolve; });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  let resultReference: Awaited<ReturnType<typeof record>> | undefined;
+  let commitRecords = 0;
+  f.records.record = async (...args) => {
+    if (args[0].callId === f.commit.callId && ++commitRecords === 2) {
+      entered(); await gate;
+      resultReference = await record(...args);
+      return resultReference;
+    }
+    return record(...args);
+  };
+  const pending = f.run(f.commit);
+  try {
+    await started;
+    assert.equal(f.calls.length, 2);
+    const result = await peer.executeTool({ name: 'write', operation: 'create', path: '/workspace/later', content: '', callId: 'peer' });
+    assert.equal(f.calls.length, 2, 'peer must not dispatch any additional VM exec while result persistence is held');
+    assert.deepEqual(result, { status: 'failure', code: 'STALE_TOOL_CONTEXT' });
+  } finally {
+    unblock();
+    try { await pending; } finally { peer.close(); }
+  }
+  assert.deepEqual(await pending, { status: 'failure', code: 'EDIT_SOURCE_EFFECTS_UNCERTAIN' });
+  assert.ok(resultReference);
+  const page = await f.records.read({ reference: resultReference, offset: 0, limit: 8192 });
+  assert.match(page.data.toString(), /effects-uncertain/);
+});
+
 test('intent persistence failure spends version, revokes owner and makes zero mutation guest calls', async t => {
   const f = await fixture(t);
   f.records.record = async () => { throw new Error('synthetic critical persistence failure'); };

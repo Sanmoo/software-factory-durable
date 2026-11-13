@@ -177,6 +177,8 @@ function boundMutation(options: Options, valid: () => boolean, revoke: () => voi
         outcome = 'not-applied';
         effects = 'source-changed-before-effect';
       }
+      // An uncertain conditional result must deny future effects even while evidence waits.
+      if (conditional && !complete && !mismatch) revoke();
       persistingResult = true;
       const reference = await options.records.record(evidence, { kind: 'mutation-result', phaseId, operation: call.operation, outcome, effects });
       // A critical result await can overlap revocation; never publish late success.
