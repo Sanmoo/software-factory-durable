@@ -11,7 +11,7 @@ const run = promisify(execFile);
 const bootRef = z.string().regex(/^boot-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/);
 const bindingSchema = z.strictObject({ workId: z.string().min(1).max(512),
   environmentRef: z.string().regex(/^env-[a-f0-9]{64}$/), bootRef,
-  invocationId: z.string().min(1).max(128), role: z.enum(['standards', 'spec']) });
+  invocationId: z.string().min(1).max(128), role: z.enum(['standards', 'spec', 'builder']) });
 const hostSchema = z.strictObject({ workId: z.string().min(1).max(512),
   environmentRef: z.string().regex(/^env-[a-f0-9]{64}$/), bootRef,
   unit: z.string(), invocation: z.string().regex(/^[a-f0-9]{32}$/), cgroup: z.string(),

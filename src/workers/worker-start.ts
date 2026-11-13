@@ -21,7 +21,7 @@ export async function startWorker(profile: ReviewerProfile, records: Awaited<Ret
     if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid?.() || (info.mode & 0o077)) throw new Error('WORKER_PROFILE_NOT_PRIVATE');
   }
   if (invocation.signal.aborted) throw new Error('STALE_TOOL_CONTEXT');
-  if (!['standards', 'spec'].includes(invocation.context.role)) throw new Error('WORKER_ROLE_UNSUPPORTED');
+  if (!['standards', 'spec', 'builder'].includes(invocation.context.role)) throw new Error('WORKER_ROLE_UNSUPPORTED');
   records.registerSecret(profile.apiKey);
   const { phaseId, ...context } = invocation.context;
   return records.record({ ...context, callId: 'worker-start' }, {

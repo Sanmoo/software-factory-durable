@@ -100,7 +100,7 @@ test('fixed worker entrypoint runs native SDK in a new Node process; private rec
     { ...bootstrap, unexpected: 'not allowed' },
     { ...bootstrap, version: 2 },
     { ...bootstrap, prompt: 'x'.repeat(65537) },
-    { ...bootstrap, context: { ...context, role: 'builder' } },
+    { ...bootstrap, context: { ...context, role: 'administrator' } },
     { ...bootstrap, profile: { ...bootstrap.profile, systemPrompt: 'Never persist synthetic-key' } },
   ]) {
     const rejected = await child(invalid);

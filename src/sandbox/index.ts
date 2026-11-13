@@ -22,15 +22,16 @@ import { removeEnvironment } from './remove.js';
 export type { RemoveResult, ResourceRemoval } from './remove.js';
 // Trusted process composition only; never projected as a worker tool.
 export { runSandboxAdapter } from './adapter.js';
-import { connectReadTools, type ReadCall, type ReadResult, type ToolContext } from './read-tools.js';
+import { connectReadTools, type ToolCall, type ReadResult, type ToolContext } from './read-tools.js';
 import { registerOwnerTools } from './owner-registration.js';
-export type { ToolContext, ReadCall, ReadResult, ToolProjection, ReadBinding } from './read-tools.js';
+export type { ToolContext, ToolCall, ReadCall, ReadResult, ToolProjection, ReadBinding } from './read-tools.js';
+export type { WriteCall } from './write-tools.js';
 
 export function createSandbox({ root, guestAssets, toolEndpoint }: { root: string; guestAssets?: GuestAssetPin; toolEndpoint?: string }) {
   const projections = new Map<string, Promise<Awaited<ReturnType<typeof connectReadTools>>>>();
   const bindings = new Map<string, string>();
   return {
-    async executeTool(context: ToolContext, call: ReadCall): Promise<ReadResult> {
+    async executeTool(context: ToolContext, call: ToolCall): Promise<ReadResult> {
       const key = JSON.stringify(context);
       const previous = bindings.get(context.invocationId);
       if (previous !== undefined && previous !== key) return { status: 'failure', code: 'STALE_TOOL_CONTEXT' };

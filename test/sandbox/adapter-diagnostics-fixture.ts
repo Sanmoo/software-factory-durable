@@ -52,6 +52,8 @@ if (args[0] !== '--user' || args[1] !== 'show' || args[2] !== ${JSON.stringify(u
 process.stdout.write('LoadState=loaded\\nActiveState=active\\nInvocationID=${'a'.repeat(32)}\\nControlGroup=${group}\\nMainPID=' + process.ppid + '\\nResult=success\\n');
 `, { mode: 0o700 });
 process.env.PATH = bin; // No real manager fallback.
+const nativeBuilder = process.env.TASK83_NATIVE_BUILDER === '1';
+const virtualBuilderFiles = new Map<string, string>();
 const actualSpawn = cp.spawn;
 cp.spawn = ((command: string, args: string[], options: cp.SpawnOptions) => {
   const worker = new URL('../../src/entrypoints/worker.js', import.meta.url).pathname;
@@ -59,7 +61,8 @@ cp.spawn = ((command: string, args: string[], options: cp.SpawnOptions) => {
       args.length !== 1 || args[0] !== worker || options.detached !== false ||
       JSON.stringify(options.stdio) !== JSON.stringify(['ignore', 'ignore', 'ignore', 'ipc'])) throw new Error('REAL_PROCESS_SPAWN_FORBIDDEN_IN_FIXTURE');
   audit('worker-spawn');
-  const child = actualSpawn(command, ['--import', new URL('../workers/fixtures/provider-preload.js', import.meta.url).pathname, ...args], options);
+  const preload = nativeBuilder ? new URL('../workers/fixtures/write-provider-preload.js', import.meta.url) : new URL('../workers/fixtures/provider-preload.js', import.meta.url);
+  const child = actualSpawn(command, ['--import', preload.pathname, ...args], options);
   child.on('message', message => {
     audit('worker-message:' + JSON.stringify(message));
     if (message && typeof message === 'object' && 'kind' in message && message.kind === 'provider-request') {
@@ -180,7 +183,29 @@ mock.module('@earendil-works/gondolin', { namedExports: {
     async close() { audit('close'); },
     id: '77777777-2222-4333-8444-555555555555',
     getHostPid() { return process.pid; }, // External VM double, never a real VMM.
-    exec(argv: string[], options: { signal: AbortSignal; stdout?: string; stderr?: string }) {
+    exec(argv: string[], options: { signal: AbortSignal; stdout?: string; stderr?: string; env?: Record<string, string>; cwd?: string; stdin?: string }) {
+      if (nativeBuilder && argv[0] === '/usr/bin/python3') {
+        assert.deepEqual(argv.slice(0, 4), ['/usr/bin/python3', '-I', '-S', '-c']);
+        assert.equal(argv.length, 7); assert.deepEqual(options.env, {}); assert.equal(options.cwd, '/');
+        assert.doesNotMatch(JSON.stringify(argv), /synthetic-secret|synthetic-key/);
+        const operation = argv[5]!; const target = argv[6]!;
+        assert.equal(target, operation === 'mkdir' ? '/workspace/nested' : '/workspace/nested/new.txt');
+        audit('write-' + operation);
+        const evidence = join(root!, workId, 'evidence');
+        const events = fs.readdirSync(evidence).flatMap(id => {
+          if (!fs.existsSync(join(evidence, id, 'complete.json'))) return [];
+          return [JSON.parse(fs.readFileSync(join(evidence, id, 'output'), 'utf8')).event];
+        });
+        assert.ok(events.some(event => event.kind === 'worker-start'), 'durable child receipt before write');
+        assert.ok(events.some(event => event.kind === 'mutation-intent' && event.operation === operation), 'intent before effect');
+        let exitCode = 0;
+        if (operation === 'create') {
+          if (virtualBuilderFiles.has(target)) {
+            assert.equal(virtualBuilderFiles.get(target), 'hello π\n'); exitCode = 1;
+          } else { virtualBuilderFiles.set(target, options.stdin!); assert.equal(options.stdin, 'hello π\n'); }
+        } else { assert.equal(operation, 'mkdir'); assert.equal(options.stdin, ''); }
+        return { async *output() {}, result: Promise.resolve({ exitCode }) };
+      }
       if ((mode === 'normal-worker' || mode === 'owner-registration') && argv[0] === '/usr/bin/python3') {
         audit('read');
         if (mode === 'normal-worker') {
@@ -295,6 +320,13 @@ mock.method(prototype, 'sync', async function(this: FileHandle) {
     setImmediate(() => {
       const listeners = process.listeners('SIGTERM').filter(listener => !originalTermListeners.has(listener));
       if (listeners.length !== 1) throw new Error('EXPECTED_ONE_ADAPTER_STOP_LISTENER');
+      if (mode === 'normal-worker' && nativeBuilder) {
+        void import('../entrypoints/normal-builder.fixture.js').then(async ({ normalBuilder }) => {
+          const result = await normalBuilder(root!, { workId, environmentRef: environment!, bootRef: boot! });
+          await json(join(root!, 'normal-worker-result.json'), result); audit('normal-builder-passed');
+        }).catch(error => { console.error(error); process.exitCode = 1; }).finally(() => listeners[0]!('SIGTERM'));
+        return;
+      }
       if (mode === 'normal-worker') {
         void import('../entrypoints/normal-worker.fixture.js').then(async ({ normalWorker }) => {
           const result = await normalWorker(root!, { workId, environmentRef: environment!, bootRef: boot! });

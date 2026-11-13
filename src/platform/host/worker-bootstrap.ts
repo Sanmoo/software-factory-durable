@@ -7,7 +7,7 @@ export const workerBootstrapSchema = z.strictObject({
   version: z.literal(1),
   imageSourceMaxBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
   context: z.strictObject({ workId: identifier, executionId: identifier, invocationId: identifier,
-    role: z.enum(['standards', 'spec']), environmentRef: identifier, bootRef: identifier, phaseId: identifier }),
+    role: z.enum(['standards', 'spec', 'builder']), environmentRef: identifier, bootRef: identifier, phaseId: identifier }),
   endpoint: text, recordsRoot: text, knownSecrets: z.array(text).max(128), prompt: z.string().min(1).max(16384),
   profile: z.strictObject({ id: z.literal('factory-development-pi-1.5.2-read-operations-v1'), directory: text, systemPrompt: text,
     providerId: identifier, modelId: identifier, apiKey: text,

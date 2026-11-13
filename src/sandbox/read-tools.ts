@@ -1,19 +1,22 @@
 import { z } from 'zod';
+import { boundWriteTools, writeCallSchema, type WriteCall } from './write-tools.js';
 import { connect, listen, protocolVersion, type Envelope } from '../protocol/index.js';
 import type { TextOutput, RawOutput, createRecords } from '../records/index.js';
 
 const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
 export const contextSchema = z.strictObject({ workId: identifier, executionId: identifier, invocationId: identifier,
-  role: z.enum(['standards', 'spec']), environmentRef: identifier, bootRef: identifier, phaseId: identifier });
+  role: z.enum(['standards', 'spec', 'builder']), environmentRef: identifier, bootRef: identifier, phaseId: identifier });
 export type ToolContext = z.infer<typeof contextSchema>;
 const referenceSchema = z.strictObject({ workId: identifier, id: z.uuid() });
 const pageCall = z.strictObject({ name: z.literal('read'), operation: z.literal('page'), reference: referenceSchema,
   offset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), callId: identifier });
-const callSchema = z.union([
+const readCallSchema = z.union([
   z.strictObject({ name: z.literal('read'), operation: z.literal('capture'), path: z.string().min(1).max(4096), callId: identifier }),
   pageCall, pageCall.extend({ format: z.literal('raw') }),
 ]);
-export type ReadCall = z.infer<typeof callSchema>;
+export type ReadCall = z.infer<typeof readCallSchema>;
+const callSchema = z.union([readCallSchema, writeCallSchema]);
+export type ToolCall = ReadCall | WriteCall;
 const successSchema = z.strictObject({ status: z.literal('success'), reference: referenceSchema,
   bytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), encoding: z.literal('base64'),
   data: z.string().max(32768).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
@@ -24,9 +27,9 @@ const readResultSchema = z.union([
   z.strictObject({ status: z.literal('failure'), code: z.string().min(1).max(128) }),
 ]);
 export type ReadResult = z.infer<typeof readResultSchema>;
-export interface ToolProjection { executeTool(context: ToolContext, call: ReadCall): Promise<ReadResult> }
+export interface ToolProjection { executeTool(context: ToolContext, call: ToolCall): Promise<ReadResult> }
 // Structural external VM boundary; the only production supplier is adapter.ts's existing instance.
-export type GuestOwner = { exec(argv: string[], options: { stdout: 'pipe'; stderr: 'ignore'; signal: AbortSignal; windowBytes: number }): {
+export type GuestOwner = { exec(argv: string[], options: { stdout: 'pipe'; stderr: 'ignore'; signal: AbortSignal; windowBytes: number; env?: Record<string, string>; cwd?: string; stdin?: string }): {
   output(): AsyncIterable<{ stream: 'stdout' | 'stderr'; data: Buffer }>;
   result: Promise<{ exitCode: number }>;
 } };
@@ -87,12 +90,16 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
     : z.number().int().positive().max(Number.MAX_SAFE_INTEGER).parse(options.imageSourceMaxBytes);
   const lifetime = new AbortController();
   const signal = AbortSignal.any([options.signal, lifetime.signal]);
-  const valid = () => !signal.aborted;
+  let mutationRevoked = false;
+  const valid = () => !signal.aborted && !mutationRevoked;
   const captures = new Map<string, 'text' | 'raw'>();
   const details = (format: 'text' | 'raw') => format === 'raw'
     ? { format: 'raw' as const, encoding: 'base64' as const, imageSourceMaxBytes: imageSourceMaxBytes! }
     : { format: 'text' as const, encoding: 'base64' as const };
-  async function executeTool(context: ToolContext, call: ReadCall): Promise<ReadResult> {
+  const write = boundWriteTools({ ...options, signal }, valid, () => { mutationRevoked = true; });
+  async function executeTool(context: ToolContext, call: ToolCall): Promise<ReadResult> {
+    if (call.name === 'write') return write(context, call);
+    if (bound.role === 'builder') return failure('READ_ROLE_DENIED');
     if (!sameContext(context, bound) || !valid()) return failure('STALE_TOOL_CONTEXT');
     try {
       if (call.operation === 'page') {
@@ -226,7 +233,7 @@ export async function connectReadTools(endpoint: string, context: ToolContext) {
   let closed = false;
   let busy = false;
   return {
-    async executeTool(input: ReadCall): Promise<ReadResult> {
+    async executeTool(input: ToolCall): Promise<ReadResult> {
       if (closed) return failure('TOOL_CHANNEL_CLOSED');
       if (busy) return failure('TOOL_CALL_IN_PROGRESS');
       const call = callSchema.safeParse(input);

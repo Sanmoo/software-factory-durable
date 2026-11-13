@@ -4,6 +4,7 @@ import { createAgentSession, createExtensionRuntime, ModelRuntime, SessionManage
 import type { ToolProjection } from '../sandbox/index.js';
 import type { createRecords, OutputReference } from '../records/index.js';
 import { reviewerRead } from './read.js';
+import { builderWrite } from './write.js';
 import { startWorker, type ReviewerProfile, type Invocation } from './worker-start.js';
 
 type Options = { profile: ReviewerProfile; sandbox: ToolProjection; records: Awaited<ReturnType<typeof createRecords>> };
@@ -36,9 +37,11 @@ export async function executeSession(options: Options, invocation: Invocation, r
   const manager = SessionManager.create('/workspace', join(profile.directory, 'sessions'));
   let interrupted = false;
   let abortSession = () => {};
-  const read = reviewerRead(invocation.context, options.sandbox, () => { interrupted = true; abortSession(); });
+  const critical = () => { interrupted = true; abortSession(); };
+  const tool = invocation.context.role === 'builder' ? builderWrite(invocation.context, options.sandbox, critical)
+    : reviewerRead(invocation.context, options.sandbox, critical);
   const { session } = await createAgentSession({ cwd: '/workspace', agentDir: profile.directory, modelRuntime: runtime,
-    model, thinkingLevel: 'off', tools: ['read'], customTools: [read], resourceLoader, sessionManager: manager,
+    model, thinkingLevel: 'off', tools: invocation.context.role === 'builder' ? ['write'] : ['read'], customTools: [tool], resourceLoader, sessionManager: manager,
     settingsManager: SettingsManager.inMemory({ retry: { enabled: false, provider: { maxRetries: 0 } },
       compaction: { enabled: false } }) });
   if (session.model?.provider !== profile.providerId || session.model.id !== profile.modelId) {
