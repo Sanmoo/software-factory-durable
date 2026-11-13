@@ -26,6 +26,20 @@ The new test uses the real three-argument executable, actual local Protocol sock
 
 Active LSP probe: seven changed TypeScript paths, zero reported diagnostics; three confirmed clean and four inconclusive push-only responses. Compiler success is the authoritative static validation here.
 
+## P2 follow-up: failed discovery setup cache (base fc358dc)
+
+The root-only client now evicts a rejected **setup** promise only if that exact promise is still the cached entry. Invocation-to-context association is retained. Established projections are not evicted on tool failure/EOF; owner invocation tombstones are unchanged. There is no internal retry loop or tool replay: a later explicit call may rediscover the same boot.
+
+Behavioral TDD uses the existing actual three-argument adapter entrypoint with real Protocol, filesystem and Records; only external VM and manager/proc observations are doubled. The preload creates valid current metadata, verifies the owner socket is absent, observes `TOOL_CHANNEL_UNAVAILABLE`, and denies changed context for that invocation. After the same boot publishes operational evidence, the **same** Sandbox/context successfully captures a read. Exact audit checks prove no pre-ready guest tool and no replay (three total reads), plus existing cross-binding, stale-context, EOF and administrative denials.
+
+- Initial baseline command setup failed because prescribed `TMPDIR=/home/sanmoo/software-factory-test` plus the generated fixture root exceeded the production 107-byte socket limit. This was **not** the P2 RED. Supervisor approved a newly owned private `/tmp/or-` fixture root, with normal fixture-only finally removal; command TMPDIR remains prescribed. No production path limit changed. Corrected pre-regression baseline: **1 passed, 0 failed**.
+- Behavioral RED, after adding the regression but before the production fix: **1 failed, 0 passed**, specifically `same Sandbox/context must rediscover the now-ready same-boot owner`, actual `failure`, expected `success`.
+- GREEN: `node --test dist/test/sandbox/owner-registration.test.js dist/test/sandbox/tool-transport.test.js dist/test/sandbox/invocation-isolation.test.js`: **10 passed, 0 failed**, duration 356.597082ms. Explicit `node node_modules/typescript/bin/tsc -p tsconfig.json` passed.
+- Architecture: `node node_modules/dependency-cruiser/bin/dependency-cruiser.mjs --config .dependency-cruiser.cjs --output-type err-long .`: **no dependency violations found (97 modules, 476 dependencies cruised)**. An initial command typo (`dependency-cruise.mjs`) failed before runner load; corrected without override.
+- `node node_modules/eslint/bin/eslint.js . --max-warnings 0` and `git diff --check` passed silently. Active LSP: zero diagnostics, two confirmed clean, one inconclusive; compilation is authoritative.
+
+All commands used the absolute Node 24.21.0 above, unset NODE_OPTIONS/NODE_COMPILE_CACHE, NODE_DISABLE_COMPILE_CACHE=1 and prescribed command TMPDIR; each command was bounded to 60 seconds. No full suite, VM, actual user unit, network, model, credentials, install, integration update or worker-process implementation was performed. Self-review: setup-only rejection handler, identity-conditional eviction, immutable invocation association and unchanged owner tombstones; no blockers found. Residual qualification limits below remain unchanged.
+
 ## Residual risks / deliberately not claimed
 
 - Host inputs are trusted technical projections, not durable admission/reservation authority. Control.dispatch stays closed; future 09 supplies admission and phase authority.

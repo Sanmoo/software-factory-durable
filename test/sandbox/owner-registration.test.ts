@@ -4,11 +4,10 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
-test('normal three-argument owner registers two host bindings on one VM and denies worker administration/stale context', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'or-'));
+test('root-only client recovers pre-owner discovery failure on same boot and preserves binding isolation', async () => {
+  const root = await mkdtemp('/tmp/or-');
   try {
     const environment = `env-${createHash('sha256').update('producer-ordering-work').digest('hex')}`;
     const child = spawnSync(process.execPath, ['--experimental-test-module-mocks', '--import',
@@ -20,6 +19,7 @@ test('normal three-argument owner registers two host bindings on one VM and deni
     assert.equal(child.error, undefined, child.error?.message);
     assert.equal(child.status, 0, child.stderr);
     assert.deepEqual((await readFile(join(root, 'audit'), 'utf8')).trim().split('\n'),
-      ['vm-create', 'profile-ready', 'worker-launch-closed', 'read', 'read', 'read', 'registration-isolated', 'guest-finalize', 'close']);
+      ['discovery-unavailable', 'vm-create', 'profile-ready', 'worker-launch-closed', 'read', 'discovery-recovered',
+        'read', 'read', 'registration-isolated', 'guest-finalize', 'close']);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

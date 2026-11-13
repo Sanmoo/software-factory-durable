@@ -285,10 +285,9 @@ mock.method(prototype, 'sync', async function(this: FileHandle) {
 
 async function registrationProbe() {
   if (!root || !environment || !boot) throw new Error('FIXTURE_ARGUMENTS_REQUIRED');
-  const { createSandbox } = await import('../../src/sandbox/index.js');
   const { connect, protocolVersion } = await import('../../src/protocol/index.js');
   const { readdir } = await import('node:fs/promises');
-  const sandbox = createSandbox({ root });
+  const sandbox = registrationSandbox!;
   // A technical launch request must remain closed even with the normal boot's
   // gated context. No worker process, SDK or start receipt exists in this slice.
   const launcher = await connect(join(runtime, 'owner'), 'local-operator');
@@ -308,12 +307,12 @@ async function registrationProbe() {
   }
   launcher.close();
   audit('worker-launch-closed');
-  const standards = { workId, executionId: 'execution', invocationId: 'standards', role: 'standards' as const,
-    environmentRef: environment, bootRef: boot, phaseId: 'review' };
+  const standards = registrationContext;
   const spec = { ...standards, invocationId: 'spec', role: 'spec' as const };
   const read = { name: 'read' as const, operation: 'capture' as const, path: '/workspace/file', callId: 'read-one' };
   const first = await sandbox.executeTool(standards, read);
-  assert.equal(first.status, 'success');
+  assert.equal(first.status, 'success', 'same Sandbox/context must rediscover the now-ready same-boot owner');
+  audit('discovery-recovered');
   assert.equal((await sandbox.executeTool(spec, { ...read, callId: 'read-two' })).status, 'success');
   assert.deepEqual(await sandbox.executeTool({ ...standards, phaseId: 'stale' }, read), { status: 'failure', code: 'STALE_TOOL_CONTEXT' });
   assert.deepEqual(await sandbox.executeTool({ ...standards, invocationId: 'old-boot', bootRef: 'boot-77777777-2222-4333-8444-555555555555' }, read),
@@ -347,4 +346,22 @@ async function registrationProbe() {
     { status: 'failure', code: 'STALE_TOOL_CONTEXT' });
   assert.equal((await sandbox.executeTool(spec, { ...read, callId: 'after-eof' })).status, 'success');
   audit('registration-isolated');
+}
+
+// Preload runs before the actual adapter entrypoint: metadata is valid, but
+// this boot's owner socket does not exist yet. Keep this exact client/context.
+const registrationSandbox = mode === 'owner-registration'
+  ? (await import('../../src/sandbox/index.js')).createSandbox({ root }) : undefined;
+const registrationContext = { workId, executionId: 'execution', invocationId: 'standards', role: 'standards' as const,
+  environmentRef: environment, bootRef: boot, phaseId: 'review' };
+if (registrationSandbox) {
+  assert.deepEqual(JSON.parse(await readFile(join(directory, 'current.json'), 'utf8')), { version: 1, environment, boot });
+  assert.equal(fs.existsSync(join(runtime, 'owner')), false);
+  const call = { name: 'read' as const, operation: 'capture' as const, path: '/workspace/file', callId: 'before-ready' };
+  assert.deepEqual(await registrationSandbox.executeTool(registrationContext, call),
+    { status: 'failure', code: 'TOOL_CHANNEL_UNAVAILABLE' });
+  assert.deepEqual(await registrationSandbox.executeTool({ ...registrationContext, phaseId: 'changed' }, call),
+    { status: 'failure', code: 'STALE_TOOL_CONTEXT' });
+  assert.equal(execCalls, 0, 'failed setup must not execute or replay a guest tool');
+  audit('discovery-unavailable');
 }

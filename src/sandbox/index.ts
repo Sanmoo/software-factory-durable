@@ -37,7 +37,14 @@ export function createSandbox({ root, guestAssets, toolEndpoint }: { root: strin
       try {
         let projection = projections.get(key);
         if (!projection) {
-          projection = toolEndpoint ? connectReadTools(toolEndpoint, context) : registerOwnerTools(root, context);
+          const setup = toolEndpoint ? connectReadTools(toolEndpoint, context) : registerOwnerTools(root, context);
+          const pending = setup.catch(error => {
+            // Retry only failed setup, never an established/revoked projection.
+            // Invocation context and owner-side reservations remain immutable.
+            if (projections.get(key) === pending) projections.delete(key);
+            throw error;
+          });
+          projection = pending;
           projections.set(key, projection);
           bindings.set(context.invocationId, key);
         }
