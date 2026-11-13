@@ -29,7 +29,9 @@ async function fixture(t: { after(fn: () => Promise<void>): void }, original: st
       onCommit();
       if (outcome === 0 && (Number(argv[7]) !== virtual.length || argv[8] !== createHash('sha256').update(virtual).digest('hex'))) exitCode = 42;
       if (exitCode === 0) {
-        virtual = Buffer.from(options.stdin!);
+        assert.equal(typeof options.stdin, 'string');
+        if (typeof options.stdin !== 'string') throw new Error('fixture expects text stdin');
+        virtual = Buffer.from(options.stdin);
         if (partial) { virtual = virtual.subarray(0, 1); exitCode = 1; }
       }
     }

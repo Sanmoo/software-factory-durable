@@ -19,11 +19,15 @@ export const readResultSchema = z.union([
 export type ReadResult = z.infer<typeof readResultSchema>;
 // Structural external VM boundary; production supplier is adapter.ts's SAME instance.
 export type GuestOwner = { exec(argv: string[], options: { stdout: 'pipe'; stderr: 'ignore' | 'pipe'; signal: AbortSignal;
-  windowBytes: number; env?: Record<string, string>; cwd?: string; stdin?: string }): {
+  windowBytes: number; env?: Record<string, string>; cwd?: string; stdin?: string | AsyncIterable<Buffer>; stdinCapacity?: { maxChunkBytes: number } }): {
   output(): AsyncIterable<{ stream: 'stdout' | 'stderr'; data: Buffer }>;
-  result: Promise<{ exitCode: number | null }>;
+  result: Promise<{ exitCode: number | null; signal?: number }>;
 } };
 export type ReadBinding = { endpoint: string; context: ToolContext; signal: AbortSignal;
   records: Awaited<ReturnType<typeof createRecords>>; imageSourceMaxBytes?: number;
   /** Host-only technical whole-source bound; absent disables edit-source. Not a product reservation. */
-  editSourceMaxBytes?: number };
+  editSourceMaxBytes?: number;
+  /** Private same-VM adapter qualification, never accepted from tool JSON. */
+  profileOrigin?: 'factory-development-gondolin-0.14.0-stdin-capacity-v1';
+  /** Trusted host precondition: selected native truncated Bash output. Default deny. */
+  copyOutput?: boolean };

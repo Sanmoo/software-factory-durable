@@ -1,10 +1,14 @@
 import { z } from 'zod';
-import type { ReadBinding, GuestOwner, ToolContext, ReadResult } from './tool-binding.js';
+import { referenceSchema, type ReadBinding, type GuestOwner, type ToolContext, type ReadResult } from './tool-binding.js';
+import { boundStreamCopyTools } from './write-tools.js';
 
 // Match the native local backend's timer range; no invented global deadline.
 export const bashTimeout = z.number().finite().positive().max(2147483.647);
-export const bashCallSchema = z.strictObject({ name: z.literal('bash'), command: z.string().max(16384),
-  timeout: bashTimeout.optional(), callId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/) });
+const callId = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
+export const bashCallSchema = z.union([
+  z.strictObject({ name: z.literal('bash'), command: z.string().max(16384), timeout: bashTimeout.optional(), callId }),
+  z.strictObject({ name: z.literal('bash'), operation: z.literal('copy-output'), reference: referenceSchema, callId }),
+]);
 export type BashCall = z.infer<typeof bashCallSchema>;
 const safeCount = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 export const bashProgressSchema = z.strictObject({ context: z.record(z.string(), z.string()),
@@ -17,10 +21,27 @@ export type BashProgress = z.infer<typeof bashProgressSchema>;
  */
 export function boundBashTools(options: ReadBinding & { vm: GuestOwner }, valid: () => boolean, revoke: () => void) {
   const bound = Object.freeze({ ...options.context });
+  // Trusted host snapshot precedes any await. JSON cannot qualify a VM or
+  // select policy. Host must select native-truncated output; no second truncator.
+  const copyAllowed = options.copyOutput === true && options.profileOrigin === 'factory-development-gondolin-0.14.0-stdin-capacity-v1';
+  const copy = boundStreamCopyTools(options, valid, revoke);
+  let latest: { reference: { workId: string; id: string }; bytes: number; callId: string } | undefined;
+  let running = false;
   return async (context: ToolContext, call: BashCall, progress: (frame: BashProgress) => Promise<void>): Promise<ReadResult> => {
     const failure = (code: string): ReadResult => ({ status: 'failure', code });
     if (!valid() || Object.keys(bound).some(key => bound[key as keyof ToolContext] !== context[key as keyof ToolContext])) return failure('STALE_TOOL_CONTEXT');
     if (bound.role !== 'builder') return failure('BASH_ROLE_DENIED');
+    if ('operation' in call) {
+      if (!copyAllowed || running || !latest || latest.callId === call.callId ||
+          latest.reference.id !== call.reference.id || latest.reference.workId !== call.reference.workId) return failure('BASH_COPY_DENIED');
+      const capture = latest;
+      latest = undefined; // Spend synchronously before the FIRST await; no retry.
+      running = true;
+      try { return await copy(call.callId, capture); } finally { running = false; }
+    }
+    if (running) return failure('BASH_IN_PROGRESS');
+    running = true;
+    latest = undefined; // Every new command invalidates its predecessor before effects.
     const lifetime = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     let timedOut = false;
@@ -68,6 +89,7 @@ export function boundBashTools(options: ReadBinding & { vm: GuestOwner }, valid:
       await emit(capture.tail);
       if (!valid()) throw new Error('STALE_TOOL_CONTEXT');
       completed = true;
+      latest = { reference: capture.reference, bytes: capture.bytes, callId: call.callId };
       return { status: 'success', format: 'text', reference: capture.reference, bytes: capture.bytes, encoding: 'base64',
         data: '', nextOffset: 0, exitCode: result.exitCode, progressFrames: sequence };
     } catch {
@@ -77,6 +99,7 @@ export function boundBashTools(options: ReadBinding & { vm: GuestOwner }, valid:
       if (timedOut) return failure('BASH_TIMEOUT_EFFECTS_UNKNOWN');
       return failure(attempted ? 'BASH_EFFECTS_OR_CAPTURE_UNKNOWN' : 'PROTECTED_BASH_UNAVAILABLE');
     } finally {
+      running = false;
       if (timer !== undefined) clearTimeout(timer);
       lifetime.abort();
       if (output && !completed) { try { await output.abort(); } catch { revoke(); } }

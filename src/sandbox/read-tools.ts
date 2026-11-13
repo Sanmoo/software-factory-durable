@@ -379,7 +379,7 @@ export async function connectReadTools(endpoint: string, context: ToolContext) {
           }
           if (response.value.kind !== 'tool-result') throw new Error('TOOL_CHANNEL_CLOSED');
           const result = readResultSchema.parse(response.value.payload);
-          if (call.data.name === 'bash' && result.status === 'success' && (result.format !== 'text' ||
+          if (call.data.name === 'bash' && !('operation' in call.data) && result.status === 'success' && (result.format !== 'text' ||
               result.exitCode === undefined || result.progressFrames !== sequence || result.bytes !== bytes ||
               result.reference.workId !== bound.workId || result.data !== '' || result.nextOffset !== 0)) throw new Error('INVALID_TOOL_RESULT');
           return result;

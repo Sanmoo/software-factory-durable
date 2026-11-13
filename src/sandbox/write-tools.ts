@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { createHash, randomUUID } from 'node:crypto';
 import type { createRecords } from '../records/index.js';
 import type { GuestOwner } from './tool-binding.js';
 
@@ -86,6 +87,114 @@ finally:
     for fd in reversed(fds):
         os.close(fd)
 `;
+
+// Stream branch is derived from the SAME authorized-FD engine. Public Write
+// and Edit bytes remain unchanged. Exclusive flat artifact only; no repair,
+// overwrite, retry, directory creation or rollback. Program remains DATA on host.
+const guestStreamProgram = guestWriteProgram.replace('import os, stat, sys', 'import os, stat, sys, hashlib, json')
+  .replace('("mkdir", "create")', '("stream",)')
+  .replace('("workspace", "artifacts")', '("artifacts",)')
+  .replace('("/workspace", "/artifacts")', '("/artifacts",)')
+  .replace('target.startswith(("/workspace/", "/artifacts/"))', 'target.startswith("/artifacts/")')
+  .replace('(operation == "create" and len(parts) < 3)', '(operation == "stream" and (len(parts) != 3 or parts[1] != "artifacts"))')
+  .replace('            authorize(parent)\n            os.mkdir(leaf, mode=0o700, dir_fd=parent)\n            child = os.open(leaf, flags, dir_fd=parent)', '            raise')
+  .replace('if operation == "create":', 'if operation == "stream":')
+  .replace(`        try:
+            fd = os.open(leaf, os.O_WRONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+        except FileNotFoundError:
+            authorize(parent)
+            fd = os.open(leaf, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=parent)`,
+    '        fd = os.open(leaf, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=parent)')
+  .replace('        os.ftruncate(fd, 0)', '        count = 0\n        digest = hashlib.sha256()')
+  .replace('                data = data[written:]', `                count += written
+                if count > 9007199254740991:
+                    raise OverflowError()
+                digest.update(data[:written])
+                data = data[written:]
+        print(json.dumps({"bytes": count, "sha256": digest.hexdigest()}, separators=(",", ":")), end="", flush=True)`);
+
+/** Private closed stream-copy variant of the owner mutation engine. No caller
+ * source/destination/count/hash grants: all inputs come from the spent Bash slot.
+ * Receipt proves an observation, NOT physical FD cessation or durable storage. */
+export function boundStreamCopyTools(options: Options, valid: () => boolean, revoke: () => void) {
+  const bound = Object.freeze({ ...options.context });
+  return async (callId: string, capture: { reference: { workId: string; id: string }; bytes: number; callId: string }): Promise<Result> => {
+    const failure = (): Result => ({ status: 'failure', code: 'BASH_COPY_EFFECTS_OR_CAPTURE_UNKNOWN' });
+    const { phaseId, ...captureContext } = bound;
+    const evidence = { ...captureContext, callId };
+    const path = `/artifacts/factory-output-${randomUUID()}.txt`;
+    const lifetime = new AbortController();
+    const signal = AbortSignal.any([options.signal, lifetime.signal]);
+    const projection = options.records.projectText({ context: { ...captureContext, callId: capture.callId },
+      reference: capture.reference, expectedBytes: capture.bytes, signal });
+    let attempted = false;
+    let count = 0;
+    const hash = createHash('sha256');
+    let output: Awaited<ReturnType<typeof options.records.openOutput>> | undefined;
+    let completed = false;
+    let published = false;
+    async function* stdin() {
+      for await (const chunk of projection.chunks) {
+        if (!valid() || signal.aborted || !Buffer.isBuffer(chunk) || chunk.length === 0 || chunk.length > 65536 ||
+            !Number.isSafeInteger(count + chunk.length)) throw new Error('copy source unavailable');
+        count += chunk.length;
+        hash.update(chunk);
+        yield chunk;
+      }
+    }
+    try {
+      await options.records.record(evidence, { kind: 'mutation-intent', phaseId, operation: 'copy-output', path,
+        source: capture.reference, semantics: 'exclusive-stream-create-non-atomic' });
+      if (!valid() || signal.aborted) throw new Error('stale');
+      attempted = true;
+      const process = options.vm.exec(['/usr/bin/env', '-i', '/usr/bin/python3', '-I', '-S', '-c', guestStreamProgram, 'stream', path], {
+        stdout: 'pipe', stderr: 'pipe', signal, windowBytes: 65536, env: {}, cwd: '/', stdin: stdin(), stdinCapacity: { maxChunkBytes: 65536 },
+      });
+      void process.result.catch(() => {});
+      // Bounded validation buffer ONLY, never an output/source accumulator.
+      let receiptBytes = Buffer.alloc(0);
+      for await (const chunk of process.output()) {
+        if (!valid() || signal.aborted || chunk.stream !== 'stdout' || receiptBytes.length + chunk.data.length > 8192) throw new Error('receipt unavailable');
+        receiptBytes = Buffer.concat([receiptBytes, chunk.data]);
+      }
+      const result = await process.result;
+      const receipt = z.strictObject({ bytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+        sha256: z.string().regex(/^[a-f0-9]{64}$/) }).parse(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(receiptBytes)));
+      const digest = hash.digest('hex');
+      if (result.exitCode !== 0 || result.signal !== undefined || receipt.bytes !== count || receipt.sha256 !== digest ||
+          !receiptBytes.equals(Buffer.from(JSON.stringify(receipt)))) throw new Error('receipt mismatch');
+      projection.assertCompleteAndCurrent();
+      const metadata = JSON.stringify({ path, bytes: count, sha256: digest });
+      output = await options.records.openOutput(evidence);
+      const released = await output.write(Buffer.from(metadata));
+      const protectedReceipt = await output.finish();
+      completed = true;
+      if (released + protectedReceipt.tail !== metadata || protectedReceipt.bytes !== Buffer.byteLength(metadata)) throw new Error('filtered metadata');
+      await options.records.record(evidence, { kind: 'mutation-result', phaseId, operation: 'copy-output', path,
+        status: 'guest-receipt-observed', bytes: count, sha256: digest, output: protectedReceipt.reference });
+      // The final publication fence follows EVERY awaited evidence write. No
+      // await below it. Historical EOF alone is insufficient after a late secret.
+      if (!valid() || signal.aborted) throw new Error('stale');
+      projection.assertCompleteAndCurrent();
+      published = true;
+      return { status: 'success', format: 'text', reference: protectedReceipt.reference, bytes: protectedReceipt.bytes,
+        encoding: 'base64', data: Buffer.from(metadata).toString('base64'), nextOffset: protectedReceipt.bytes };
+    } catch {
+      // Synchronous before uncertain evidence persistence: peers cannot enter
+      // Write/Edit/Bash while that await is held. Abort is NOT a physical stop.
+      revoke(); lifetime.abort();
+      if (attempted) {
+        try { await options.records.record(evidence, { kind: 'mutation-result', phaseId, operation: 'copy-output',
+          status: 'effects-unknown-no-retry' }); } catch { /* Still unknown. */ }
+      }
+      return failure();
+    } finally {
+      lifetime.abort();
+      if (!published) { try { await projection.chunks.return(); } catch { revoke(); } }
+      if (output && !completed) { try { await output.abort(); } catch { revoke(); } }
+    }
+  };
+}
 
 // Private owner-to-helper input. NEVER part of writeCallSchema or any wire schema.
 type ConditionalCommit = { name: 'edit-source'; operation: 'commit'; path: string; callId: string;

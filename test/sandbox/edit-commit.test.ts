@@ -26,6 +26,7 @@ async function fixture(t: { after(fn: () => Promise<void>): void }, original = '
   let virtual = original;
   let behavior: 'normal' | 'exec-error' | 'stream-error' | 'result-error' | 'abort' | 'partial' = 'normal';
   const vm: GuestOwner = { exec(argv, options) {
+    assert.ok(options.stdin === undefined || typeof options.stdin === 'string');
     calls.push({ argv, stdin: options.stdin });
     const commit = argv[5] === 'commit';
     const captured = Buffer.from(virtual);

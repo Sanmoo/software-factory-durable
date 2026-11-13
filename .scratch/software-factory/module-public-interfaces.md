@@ -161,6 +161,36 @@ O papel é vinculado pelo host, não pelo modelo. Builder recebe o conjunto apro
 Conexão perdida, cancelamento e geração/fase inválida impedem novas chamadas conforme o protocolo.
 Uma chamada já enviada pode ter produzido efeito; timeout não a transforma em não executada.
 
+**Componente fechado de cópia Bash (§12.2), não trigger automático:** `ToolProjection.executeTool`
+aceita `{name:'bash', operation:'copy-output', reference, callId}` sem mudar o schema MODEL nativo.
+O host confiável deve selecionar saída nativa truncada; `copyOutput: true` privado é explícito/default-deny,
+fotografado antes do primeiro await e não concede WorkAdmission. Exige também `profileOrigin` exato
+`factory-development-gondolin-0.14.0-stdin-capacity-v1`: o adapter o grava somente após a seleção SDK
+verificada e o encaminha ao owner da MESMA VM pelo quinto argumento privado de `serveOwnerRegistration`.
+O adapter não habilita a política por padrão; JSON, WorkerBootHost e Records não qualificam a VM.
+
+Somente o último Bash concluído deste binding/contexto completo/fase/role/lifetime é elegível, em um slot.
+Novo comando limpa o slot antes de efeitos; cópia exige callId diferente do original e gasta o slot
+sincronamente antes do primeiro await. Spec/standards, refs read/raw/alheias/antigas e reabertura sem slot
+não copiam. Chamador não fornece path/count/hash. Contexto/callId/bytes originais alimentam
+`Records.projectText`; TODOS os bytes refiltrados atuais, inclusive tail, passam incrementalmente a stdin
+AsyncIterableBuffer da VM qualificada com `stdinCapacity.maxChunkBytes:65536`; count/SHA256 são incrementais.
+Não há segundo filtro/truncador, payload integral em memória ou montagem host de Records.
+
+O helper SOURCE deriva do engine FD privado de Write; cria exclusivamente `/artifacts/factory-output-UUID.txt`
+com parent/FD autorizados, NOFOLLOW/O_EXCL/NONBLOCK/CLOEXEC, sem truncate/mkdir/overwrite/repair/delete.
+Exec guest usa `/usr/bin/env -i /usr/bin/python3`; stdin raw, writes parciais completos e receipt JSON pequeno
+bytes/SHA256 após EOF. Buffer host de validação de receipt tem teto8192. Exit0 isolado não basta: exige
+receipt estrito/count/hash e projeção completa. Intent e observação guest/metadata protegida são persistidos;
+contexto/sinal e `assertCompleteAndCurrent()` são revalidados depois de TODOS os awaits imediatamente
+antes do retorno local ReadResult text com pequeno JSON path/bytes/sha256 (nunca spill path host).
+Incerteza revoga mutações sincronamente antes de aguardar evidência; sem sucesso/path grant/blind retry.
+É ponto de publicação local, não transação sobre awaits futuros, snapshot/CAS, exclusão de writers,
+membership contínua, hostile-root, physical FD cessation ou durabilidade. Bytes aceitos podem ser irreversíveis.
+Testes usam Records FS real+VM receipt DOUBLE explicitamente qualificado e AST de SOURCE, nunca executado
+no host; não provam kernel/native VM/backpressure. Trigger SDKWorker autoTruncation, Read Builder normal,
+seleção reviewer/UI e reabertura modelSession ficam explicitamente para integração posterior.
+
 **Aprovado:** usar esta interface sem redesenho, com projeções de ciclo de vida/ferramentas e implementação Gondolin privada.
 
 ## Q6 — Workers/agentes

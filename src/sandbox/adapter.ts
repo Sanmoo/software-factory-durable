@@ -72,6 +72,9 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
     phase = 'sdk-import';
     // Runtime SDK import stays after all ownership/supervision/runtime/asset gates.
     const { VM, RealFSProvider } = await loadDevelopmentGondolinSdk();
+    // Private provenance stamp ONLY after closed full-tree SDK selection. Tied
+    // to this SAME VM below, never a worker/model claim or global registry.
+    const profileOrigin = 'factory-development-gondolin-0.14.0-stdin-capacity-v1' as const;
     phase = 'vm-create';
     // SDK 0.14 also consults autoStart inside explicit start(); false rejects a
     // stopped VM before sending boot. Ownership is established above, not by this flag.
@@ -106,7 +109,7 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
         processStartTicks(await readFile(`/proc/${pid}/stat`, 'utf8')) !== ticks) throw new Error('VMM_SUPERVISION_MISMATCH');
     readTools = await serveOwnerRegistration(await realpath(root), { workId: owner.workId, environmentRef: environment, bootRef: boot }, vm,
       { workId: owner.workId, environmentRef: environment, bootRef: boot, unit, invocation: state.InvocationID!, cgroup,
-        ...namespaces, runtimeDirectory: runtime.directory });
+        ...namespaces, runtimeDirectory: runtime.directory }, { profileOrigin });
     await durableJson(join(path, 'operational.json'), { version: 1, boot, session: vm.id, vmmPid: pid, vmmStartTicks: ticks });
     operational = true;
   })().catch(async error => {

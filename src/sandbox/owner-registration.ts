@@ -7,7 +7,7 @@ import { createRecords } from '../records/index.js';
 import { bootRuntimePaths } from './start.js';
 import { currentSchema, metadata, ownedEnvironment, type BootRef } from './lifecycle.js';
 import type { EnvironmentRef } from './prepare.js';
-import { connectReadTools, contextSchema, serveReadToolBindings, type GuestOwner, type ToolContext } from './read-tools.js';
+import { connectReadTools, contextSchema, serveReadToolBindings, type GuestOwner, type ToolContext, type ReadBinding } from './read-tools.js';
 
 function frame(id: string, kind: string, payload: Envelope['payload'], replyTo: string | null = null): Envelope {
   return { protocol_version: protocolVersion, controller_run_id: null, message_id: id, reply_to: replyTo, kind, payload };
@@ -16,7 +16,9 @@ function frame(id: string, kind: string, payload: Envelope['payload'], replyTo: 
 /** Private same-account host endpoint. Only this endpoint accepts registration;
  * worker projections get only a separately bound tool endpoint. Not admission. */
 export async function serveOwnerRegistration(root: string, identity: { workId: string; environmentRef: string; bootRef: BootRef },
-  vm: GuestOwner, host: WorkerBootHost) {
+  vm: GuestOwner, host: WorkerBootHost, capabilities?: Pick<ReadBinding, 'profileOrigin' | 'copyOutput'>) {
+  const privateCapabilities = Object.freeze({ ...(capabilities?.profileOrigin === undefined ? {} : { profileOrigin: capabilities.profileOrigin }),
+    copyOutput: capabilities?.copyOutput === true });
   const directory = bootRuntimePaths(root, identity.bootRef).directory;
   const bindings = await serveReadToolBindings([], vm);
   const records = await createRecords({ root });
@@ -45,7 +47,7 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
         for (const secret of [...parsed.data.knownSecrets, parsed.data.profile.apiKey]) records.registerSecret(secret);
         const endpoint = join(directory, `b${++sequence}`);
         try {
-          await bindings.add({ endpoint, context, signal: lifetime.signal, records,
+          await bindings.add({ ...privateCapabilities, endpoint, context, signal: lifetime.signal, records,
             ...(parsed.data.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: parsed.data.editSourceMaxBytes }),
             ...(parsed.data.imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes: parsed.data.imageSourceMaxBytes }) });
           const worker = await launchWorker(host, { ...parsed.data, context }, endpoint, root, lifetime.signal);
@@ -81,7 +83,7 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
       const lifetime = new AbortController();
       lifetimes.set(channel, lifetime);
       const endpoint = join(directory, `b${++sequence}`);
-      await bindings.add({ endpoint, context, signal: lifetime.signal, records });
+      await bindings.add({ ...privateCapabilities, endpoint, context, signal: lifetime.signal, records });
       await channel.send(frame(request.message_id, 'binding-result', { status: 'success', endpoint }, request.message_id));
     },
     closed(_error, _peer, channel) { lifetimes.get(channel)?.abort(); },
