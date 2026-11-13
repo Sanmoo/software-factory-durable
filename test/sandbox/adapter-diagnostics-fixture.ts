@@ -76,6 +76,8 @@ let editCommits = 0;
 let editChild: cp.ChildProcess | undefined;
 const nativeBuilder = process.env.TASK83_NATIVE_BUILDER === '1';
 const nativeBash = process.env.TASK85_NATIVE_BASH === '1';
+const nativeCopy = process.env.TASK145_COPY;
+let bashFinished = false;
 // VM double only; these virtual files/sentinel do not establish kernel FD safety.
 const virtualBuilderFiles = new Map<string, string>([
   ['/workspace/nested/new.txt', 'previous longer regular-file content'], ['/outside/sentinel', 'untouched'],
@@ -98,6 +100,7 @@ cp.spawn = ((command: string, args: string[], options: cp.SpawnOptions) => {
   if (nativeBuilder) preload = new URL('./fixtures/adapter-write-provider-preload.js', import.meta.url);
   if (nativeBash) preload = new URL('./fixtures/adapter-bash-provider-preload.js', import.meta.url);
   if (nativeEdit) preload = new URL('./fixtures/adapter-edit-provider-preload.js', import.meta.url);
+  if (nativeCopy) preload = new URL('./fixtures/adapter-bash-copy-provider-preload.js', import.meta.url);
   const child = actualSpawn(command, ['--import', preload.pathname, ...args], options);
   if (nativeEdit) editChild = child;
   child.on('message', message => {
@@ -187,8 +190,27 @@ const sdkDouble = {
     async close() { audit('close'); },
     id: '77777777-2222-4333-8444-555555555555',
     getHostPid() { return process.pid; }, // External VM double, never a real VMM.
-    exec(argv: string[], options: { signal: AbortSignal; stdout?: string; stderr?: string; env?: Record<string, string>; cwd?: string; stdin?: string }) {
+    exec(argv: string[], options: { signal: AbortSignal; stdout?: string; stderr?: string; env?: Record<string, string>; cwd?: string; stdin?: string | AsyncIterable<Buffer>; stdinCapacity?: { maxChunkBytes: number } }) {
+      if (nativeCopy && argv[2] === '/usr/bin/python3') {
+        // Receipt DOUBLE consumes the whole iterable, never runs helper SOURCE.
+        // No kernel FD/backpressure/physical-durability proof is claimed.
+        assert.ok(bashFinished); audit('copy-output');
+        assert.deepEqual(argv.slice(0, 6), ['/usr/bin/env', '-i', '/usr/bin/python3', '-I', '-S', '-c']);
+        assert.equal(argv[7], 'stream'); assert.match(argv[8]!, /^\/artifacts\/factory-output-[0-9a-f-]{36}\.txt$/);
+        assert.deepEqual(options.stdinCapacity, { maxChunkBytes: 65536 });
+        assert.deepEqual(options.env, {}); assert.equal(options.cwd, '/');
+        return { async *output() {
+          assert.ok(options.stdin && typeof options.stdin !== 'string');
+          const chunks: Buffer[] = [];
+          for await (const chunk of options.stdin) { assert.ok(chunk.length <= 65536); chunks.push(Buffer.from(chunk)); }
+          const bytes = Buffer.concat(chunks);
+          fs.writeFileSync(join(root!, 'copy-double-bytes'), bytes, { mode: 0o600 });
+          yield { stream: 'stdout', data: Buffer.from(JSON.stringify({ bytes: bytes.length,
+            sha256: nativeCopy === 'fail' ? '0'.repeat(64) : createHash('sha256').update(bytes).digest('hex') })) };
+        }, result: Promise.resolve({ exitCode: 0 }) };
+      }
       if (nativeEdit && argv[0] === '/usr/bin/python3') {
+        assert.ok(typeof options.stdin === 'string');
         assert.deepEqual(argv.slice(0, 4), ['/usr/bin/python3', '-I', '-S', '-c']);
         const operation = argv.length === 6 ? 'capture' : argv[5]!;
         audit('edit-' + operation);
@@ -241,9 +263,11 @@ const sdkDouble = {
           for (let offset = 0; offset < source.length; offset += 8191) yield {
             stream: offset % 2 ? 'stderr' : 'stdout', data: source.subarray(offset, offset + 8191),
           };
+          if (nativeCopy) { bashFinished = true; audit('bash-complete'); }
         }, result: Promise.resolve({ exitCode: 0 }) };
       }
       if (nativeBuilder && argv[0] === '/usr/bin/python3') {
+        assert.ok(typeof options.stdin === 'string');
         assert.deepEqual(argv.slice(0, 4), ['/usr/bin/python3', '-I', '-S', '-c']);
         assert.equal(argv.length, 7); assert.deepEqual(options.env, {}); assert.equal(options.cwd, '/');
         assert.doesNotMatch(JSON.stringify(argv), /synthetic-secret|synthetic-key/);
@@ -399,6 +423,13 @@ mock.method(prototype, 'sync', async function(this: FileHandle) {
         void import('../entrypoints/normal-edit.fixture.js').then(async ({ normalEdit }) => {
           await json(join(root!, 'normal-worker-result.json'), await normalEdit(root!, { workId, environmentRef: environment!, bootRef: boot! }));
           audit('normal-edit-passed');
+        }).catch(error => { console.error(error); process.exitCode = 1; }).finally(() => listeners[0]!('SIGTERM'));
+        return;
+      }
+      if (mode === 'normal-worker' && nativeCopy) {
+        void import('../entrypoints/normal-bash-copy.fixture.js').then(async ({ normalBashCopy }) => {
+          await json(join(root!, 'normal-worker-result.json'), await normalBashCopy(root!, { workId, environmentRef: environment!, bootRef: boot! }));
+          audit('normal-bash-copy-passed');
         }).catch(error => { console.error(error); process.exitCode = 1; }).finally(() => listeners[0]!('SIGTERM'));
         return;
       }

@@ -276,6 +276,8 @@ test('actual adapter SOURCE stamps verified private SDK origin into same VM owne
   const created = source.indexOf('vm = await VM.create(');
   const registered = source.indexOf('readTools = await serveOwnerRegistration(');
   assert.ok(selected > 0 && selected < stamped && stamped < created && created < registered);
-  assert.match(source.slice(registered), /bootRef: boot }, vm,\s*\{[^;]+runtimeDirectory: runtime.directory }, \{ profileOrigin }\)/);
-  assert.equal(source.includes('copyOutput: true'), false, 'adapter does not auto-enable host selection policy');
+  assert.match(source.slice(registered), /bootRef: boot }, vm,\s*\{[^;]+runtimeDirectory: runtime.directory }, \{ profileOrigin, copyOutput: true }\)/);
+  // Boot availability alone is not per-invocation selection. Executable launch
+  // policy tests separately prove absent/false and context-only default deny.
+  assert.equal(source.match(/copyOutput: true/g)?.length, 1);
 });

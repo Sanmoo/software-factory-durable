@@ -169,7 +169,7 @@ test('Builder composition has host-fixed lexical Write and host-gated Edit', asy
   // model args nor context fields can opt in, and reviewers remain read-only.
   assert.ok(worker.includes(`  const editEnabled = invocation.context.role === 'builder' && invocation.editSourceMaxBytes !== undefined;
   const customTools: ToolDefinition[] = invocation.context.role === 'builder'
-    ? [builderWrite(invocation.context, options.sandbox, critical), builderBash(invocation.context, options.sandbox, critical)]
+    ? [builderWrite(invocation.context, options.sandbox, critical), builderBash(invocation.context, options.sandbox, critical, copyOutput)]
     : [reviewerRead(invocation.context, options.sandbox, critical)];
   const tools = invocation.context.role === 'builder' ? ['write', 'bash'] : ['read'];
   if (editEnabled) {

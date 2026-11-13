@@ -14,13 +14,15 @@ type Options = { profile: ReviewerProfile; sandbox: ToolProjection; records: Awa
 /** Private SDK component seam; not host activation or process proof. */
 export function createWorkerSession(options: Options) {
   return { async activate(invocation: Invocation) {
-    const receipt = await startWorker(options.profile, options.records, invocation);
-    return executeSession(options, invocation, receipt);
+    const snapshot = { ...invocation, copyOutput: invocation.copyOutput === true };
+    const receipt = await startWorker(options.profile, options.records, snapshot);
+    return executeSession(options, snapshot, receipt);
   } };
 }
 
 /** Called only after the worker composition has synced its start evidence. */
 export async function executeSession(options: Options, invocation: Invocation, receipt: OutputReference) {
+  const copyOutput = invocation.copyOutput === true;
   const { profile } = options;
   if (invocation.signal.aborted) throw new Error('STALE_TOOL_CONTEXT');
   const runtime = await ModelRuntime.create({ authPath: join(profile.directory, 'auth.json'), modelsPath: null,
@@ -42,7 +44,7 @@ export async function executeSession(options: Options, invocation: Invocation, r
   const critical = () => { interrupted = true; abortSession(); };
   const editEnabled = invocation.context.role === 'builder' && invocation.editSourceMaxBytes !== undefined;
   const customTools: ToolDefinition[] = invocation.context.role === 'builder'
-    ? [builderWrite(invocation.context, options.sandbox, critical), builderBash(invocation.context, options.sandbox, critical)]
+    ? [builderWrite(invocation.context, options.sandbox, critical), builderBash(invocation.context, options.sandbox, critical, copyOutput)]
     : [reviewerRead(invocation.context, options.sandbox, critical)];
   const tools = invocation.context.role === 'builder' ? ['write', 'bash'] : ['read'];
   if (editEnabled) {

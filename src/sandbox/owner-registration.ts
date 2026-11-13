@@ -29,7 +29,9 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
     async message(request, channel, peer) {
       if (request.kind === 'launch-worker') {
         const parsed = workerLaunchSchema.safeParse(request.payload);
-        if (!parsed.success || lifetimes.has(channel)) {
+        if (!parsed.success || lifetimes.has(channel) || (parsed.data.copyOutput === true &&
+            (parsed.data.context.role !== 'builder' || !privateCapabilities.copyOutput ||
+             privateCapabilities.profileOrigin !== 'factory-development-gondolin-0.14.0-stdin-capacity-v1'))) {
           await channel.send(frame(request.message_id, 'worker-launch-result', { status: 'failure', code: 'WORKER_LAUNCH_INVALID' }, request.message_id));
           return;
         }
@@ -47,7 +49,7 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
         for (const secret of [...parsed.data.knownSecrets, parsed.data.profile.apiKey]) records.registerSecret(secret);
         const endpoint = join(directory, `b${++sequence}`);
         try {
-          await bindings.add({ ...privateCapabilities, endpoint, context, signal: lifetime.signal, records,
+          await bindings.add({ ...privateCapabilities, copyOutput: parsed.data.copyOutput === true, endpoint, context, signal: lifetime.signal, records,
             ...(parsed.data.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: parsed.data.editSourceMaxBytes }),
             ...(parsed.data.imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes: parsed.data.imageSourceMaxBytes }) });
           const worker = await launchWorker(host, { ...parsed.data, context }, endpoint, root, lifetime.signal);
@@ -83,7 +85,8 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
       const lifetime = new AbortController();
       lifetimes.set(channel, lifetime);
       const endpoint = join(directory, `b${++sequence}`);
-      await bindings.add({ ...privateCapabilities, endpoint, context, signal: lifetime.signal, records });
+      // Context-only registration carries no trusted per-invocation opt-in.
+      await bindings.add({ ...privateCapabilities, copyOutput: false, endpoint, context, signal: lifetime.signal, records });
       await channel.send(frame(request.message_id, 'binding-result', { status: 'success', endpoint }, request.message_id));
     },
     closed(_error, _peer, channel) { lifetimes.get(channel)?.abort(); },

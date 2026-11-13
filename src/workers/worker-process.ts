@@ -71,7 +71,7 @@ async function toolProjection(endpoint: string, context: ToolContext, signal: Ab
         }
         if (response.value.kind !== 'tool-result') throw new Error('TOOL_CHANNEL_CLOSED');
         const result = readResultSchema.parse(response.value.payload);
-        if (call.name === 'bash' && result.status === 'success' && (result.format !== 'text' ||
+        if (call.name === 'bash' && !('operation' in call) && result.status === 'success' && (result.format !== 'text' ||
             result.exitCode === undefined || result.progressFrames !== sequence || result.bytes !== bytes ||
             result.reference.workId !== context.workId || result.data !== '' || result.nextOffset !== 0)) throw new Error('INVALID_TOOL_RESULT');
         return result;
@@ -115,6 +115,7 @@ export async function run(input: unknown, signal: AbortSignal) {
     throw new Error('WORKER_BOOTSTRAP_INVALID');
   }
   const invocation = { context: bootstrap.context, prompt: bootstrap.prompt, signal,
+    ...(bootstrap.copyOutput === undefined ? {} : { copyOutput: bootstrap.copyOutput }),
     ...(bootstrap.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: bootstrap.editSourceMaxBytes }) };
   // Sync protected receipt before even importing/creating the native SDK runtime.
   const receipt = await startWorker(bootstrap.profile, records, invocation);

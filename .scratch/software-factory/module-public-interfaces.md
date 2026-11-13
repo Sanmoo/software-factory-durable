@@ -161,13 +161,19 @@ O papel é vinculado pelo host, não pelo modelo. Builder recebe o conjunto apro
 Conexão perdida, cancelamento e geração/fase inválida impedem novas chamadas conforme o protocolo.
 Uma chamada já enviada pode ter produzido efeito; timeout não a transforma em não executada.
 
-**Componente fechado de cópia Bash (§12.2), não trigger automático:** `ToolProjection.executeTool`
+**Cópia Bash (§12.2), seleção automática nativa sob política Host explícita:** `ToolProjection.executeTool`
 aceita `{name:'bash', operation:'copy-output', reference, callId}` sem mudar o schema MODEL nativo.
-O host confiável deve selecionar saída nativa truncada; `copyOutput: true` privado é explícito/default-deny,
-fotografado antes do primeiro await e não concede WorkAdmission. Exige também `profileOrigin` exato
+O SDKWorker aguarda `createBashTool.execute` nativo completar e seleciona exclusivamente
+`details.truncation.truncated === true`; progresso, tamanho bruto, spill path e `structuredContent.truncated`
+não selecionam cópia. `Invocation.copyOutput?: boolean` é política Host estrita, ausente/false preserva
+legado sem RPC de cópia. `Workers.activate` valida/snapshot antes do primeiro await e propaga por launch,
+bootstrap fechado, novo processo e sessão até Bash. Não concede WorkAdmission. Exige também `profileOrigin` exato
 `factory-development-gondolin-0.14.0-stdin-capacity-v1`: o adapter o grava somente após a seleção SDK
 verificada e o encaminha ao owner da MESMA VM pelo quinto argumento privado de `serveOwnerRegistration`.
-O adapter não habilita a política por padrão; JSON, WorkerBootHost e Records não qualificam a VM.
+O adapter oferece disponibilidade boot explícita na mesma VM qualificada, mas opt-in exige TAMBÉM
+`copyOutput === true` na invocação Builder. Boot legado/sem proveniência exata/sem disponibilidade rejeita
+pedido opt-in antes do worker/SDK/modelo/comando. Registro direto contendo somente contexto continua
+sem cópia mesmo com disponibilidade boot. JSON, WorkerBootHost e Records não qualificam a VM.
 
 Somente o último Bash concluído deste binding/contexto completo/fase/role/lifetime é elegível, em um slot.
 Novo comando limpa o slot antes de efeitos; cópia exige callId diferente do original e gasta o slot
@@ -187,9 +193,18 @@ antes do retorno local ReadResult text com pequeno JSON path/bytes/sha256 (nunca
 Incerteza revoga mutações sincronamente antes de aguardar evidência; sem sucesso/path grant/blind retry.
 É ponto de publicação local, não transação sobre awaits futuros, snapshot/CAS, exclusão de writers,
 membership contínua, hostile-root, physical FD cessation ou durabilidade. Bytes aceitos podem ser irreversíveis.
-Testes usam Records FS real+VM receipt DOUBLE explicitamente qualificado e AST de SOURCE, nunca executado
-no host; não provam kernel/native VM/backpressure. Trigger SDKWorker autoTruncation, Read Builder normal,
-seleção reviewer/UI e reabertura modelSession ficam explicitamente para integração posterior.
+Após conclusão nativa e cópia owner observada, Worker valida metadados textuais completos/canônicos
+<=8192 bytes, workId/UUID/base64/UTF-8/path/count/SHA. `reply.bytes` mede o pequeno JSON;
+`metadata.bytes` mede o arquivo completo refiltrado e pode diferir da captura original. Somente o path
+no footer final nativo verificado é trocado; prefixo stdout, status não-zero, contagens, structured output
+e walltime ficam nativos. `details.fullOutputPath` e `structuredContent.full_output_path`, quando existente,
+recebem o mesmo path guest. Falha/abort/metadata/footer incerto interrompe sessão sem fallback para spill
+host, próxima chamada provider ou mutação enfileirada. Spill permanece privado SDK, sem auto-delete.
+Testes usam SDK Pi nativo real, Protocol/Records reais, VM receipt DOUBLE explicitamente qualificado e
+AST de SOURCE nunca executado no host; não provam kernel/native VM/backpressure/cessação/durabilidade física.
+Task145 inclui fluxo público normal em novo Node24 com VM/manager/provider guardados e reabertura JSONL
+para conferir apresentação (não grant Read). VFS real permanece UNRUN. Read Builder normal, seleção
+reviewer/UI e leitor entre invocações ficam posteriores; não é aceitação do 05/MVP.
 
 **Aprovado:** usar esta interface sem redesenho, com projeções de ciclo de vida/ferramentas e implementação Gondolin privada.
 

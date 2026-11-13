@@ -109,7 +109,7 @@ export async function runSandboxAdapter(root: string, environment: EnvironmentRe
         processStartTicks(await readFile(`/proc/${pid}/stat`, 'utf8')) !== ticks) throw new Error('VMM_SUPERVISION_MISMATCH');
     readTools = await serveOwnerRegistration(await realpath(root), { workId: owner.workId, environmentRef: environment, bootRef: boot }, vm,
       { workId: owner.workId, environmentRef: environment, bootRef: boot, unit, invocation: state.InvocationID!, cgroup,
-        ...namespaces, runtimeDirectory: runtime.directory }, { profileOrigin });
+        ...namespaces, runtimeDirectory: runtime.directory }, { profileOrigin, copyOutput: true });
     await durableJson(join(path, 'operational.json'), { version: 1, boot, session: vm.id, vmmPid: pid, vmmStartTicks: ticks });
     operational = true;
   })().catch(async error => {
