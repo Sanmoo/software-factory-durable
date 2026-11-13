@@ -1,11 +1,15 @@
-// TEST ONLY loader-boundary double. No profile verification or native VM proof.
-// Actual VFS/RPC mode is unavailable pending a bounded complete leaf audit.
+// TEST ONLY loader-boundary double. VFS mode uses the audited actual Host JS
+// provider/RPC only; VM remains a double. No Guest/FUSE/kernel/durability proof.
 import cp from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { mkdir, open, readFile, readlink, writeFile, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
-import { syncBuiltinESMExports } from 'node:module';
+import Module, { syncBuiltinESMExports } from 'node:module';
+import { pathToFileURL } from 'node:url';
+import { auditedVfsManifest } from './fixtures/audited-vfs-manifest.js';
+import { observeSdkGlobals } from './audited-vfs-observer.js';
+import { verifyAuditedVfsSources } from './audited-vfs-guard.js';
 import { guardFixtureNetwork } from './adapter-fixture-network-guard.js';
 import { promisify } from 'node:util';
 import { mock } from 'node:test';
@@ -14,10 +18,54 @@ import type { RealFSProvider as RealProviderType } from '@earendil-works/gondoli
 
 const [root, environment, boot] = process.argv.slice(2);
 if (!root || !environment || !boot) throw new Error('FIXTURE_ARGUMENTS_REQUIRED');
-// Guard before any application import or mock.module resolution. No original or
-// staged SDK module may evaluate (including root, VM, SSH/crypto, assets, probes).
-guardFixtureNetwork(root);
-if (process.env.ADAPTER_DIAGNOSTIC_FIXTURE_MODE === 'vfs-confinement') throw new Error('ACTUAL_VFS_LEAF_AUDIT_REQUIRED_UNRUN');
+// Guard before application imports. Default remains SDK-deny-all. Only these
+// two exact entries and the pinned parent/specifier graph may evaluate in VFS mode.
+const actualVfs = process.env.ADAPTER_DIAGNOSTIC_FIXTURE_MODE === 'vfs-confinement';
+const networkGuard = guardFixtureNetwork(root, false, actualVfs ? 'audited-owned-vfs' : 'deny-all');
+const sdkObserver = actualVfs ? observeSdkGlobals() : undefined;
+let ActualProvider: (new (root: string) => RealProviderType) | undefined;
+type Rpc = {
+  handleRequest(message: { v: 1; t: 'fs_request'; id: number; p: { op: string; req: Record<string, unknown> } }):
+    Promise<{ p: { err: number; res?: Record<string, unknown> } }>;
+  close(): Promise<void>;
+  inoToPaths: Map<number, Set<string>>;
+};
+let ActualRpc: (new (provider: RealProviderType) => Rpc) | undefined;
+if (actualVfs) {
+  const stat = fs.lstatSync(root);
+  assert.ok(stat.isDirectory() && stat.uid === process.getuid?.() && (stat.mode & 0o7777) === 0o700);
+  assert.equal(fs.realpathSync(root), root);
+  assert.equal(typeof Module.registerHooks, 'function', 'PUBLIC_REGISTER_HOOKS_REQUIRED_BEFORE_SDK');
+  // Negative guard cases precede the positive graph, never evaluate root/VM/hooks.
+  for (const path of ['dist/src/index.js', 'dist/src/vm/core.js', 'dist/src/vfs/node/vendored-node-vfs/lib/internal/vfs/module_hooks.js', 'dist/src/vfs/unlisted.js']) {
+    // eslint-disable-next-line no-restricted-syntax -- Test-only pre-evaluation denial of exact forbidden SDK targets.
+    await assert.rejects(import(pathToFileURL(auditedVfsManifest.root + '/' + path).href), /SDK_EVALUATION_FORBIDDEN/);
+  }
+  assert.deepEqual(networkGuard.sdk!.loaded, []);
+  // eslint-disable-next-line no-restricted-syntax -- Test-only fixed audited canonical entry under closed hooks.
+  const providerModule = await import(pathToFileURL(auditedVfsManifest.root + '/dist/src/vfs/node/vendored-node-vfs/lib/internal/vfs/providers/real.js').href);
+  // eslint-disable-next-line no-restricted-syntax -- Test-only fixed audited canonical entry under closed hooks.
+  const rpcModule = await import(pathToFileURL(auditedVfsManifest.root + '/dist/src/vfs/rpc-service.js').href);
+  ActualProvider = providerModule.RealFSProvider;
+  ActualRpc = rpcModule.FsRpcService;
+  assert.equal(typeof ActualProvider, 'function'); assert.equal(typeof ActualRpc, 'function');
+  assert.equal(ActualProvider!.name, 'RealFSProvider'); assert.equal(ActualRpc!.name, 'FsRpcService');
+  // Cached CJS exports do not grant a new external-parent/absolute-path edge.
+  // eslint-disable-next-line no-restricted-syntax -- Public loader used only for pre-dispatch negative cached-CJS checks against already approved code.
+  const fromFixture = Module.createRequire(import.meta.url);
+  let cachedCjsDenied = 0;
+  for (const name of ['providers/real', 'provider', 'errors']) {
+    assert.throws(() => fromFixture(auditedVfsManifest.root + '/dist/src/vfs/node/vendored-node-vfs/lib/internal/vfs/' + name + '.js'), /SDK_EVALUATION_FORBIDDEN/);
+    cachedCjsDenied++;
+  }
+  sdkObserver!.assertUnchanged();
+  assert.deepEqual([...new Set(networkGuard.sdk!.loaded)].sort(), auditedVfsManifest.files.filter(f => f.kind === 'approved-eager-module').map(f => f.path).sort());
+  fs.writeFileSync(join(root, 'sdk-source-graph.json'), JSON.stringify({ aggregate: auditedVfsManifest.aggregate,
+    loaded: networkGuard.sdk!.loaded, sdkHookCalls: sdkObserver!.calls, ownGuardRegistrations: 1, cachedCjsDenied,
+    provider: ActualProvider!.name, rpc: ActualRpc!.name, vm: 'EXPLICIT_DOUBLE' }), { mode: 0o600 });
+  sdkObserver!.restore();
+}
+let operationsObserver: ReturnType<typeof observeSdkGlobals> | undefined;
 const hostBoot = '11111111-2222-4333-8444-555555555555';
 const namespaces = { cgroup: 'cgroup:[12345]', mnt: 'mnt:[12345]' };
 const path = join(root, 'environments', environment, boot);
@@ -38,6 +86,13 @@ const manifest = JSON.stringify({ version: 1, config: { arch: 'x86_64', distro: 
   checksums: { kernel: sha('kernel'), initramfs: sha('initramfs'), rootfs: sha('rootfs') } });
 await writeFile(join(assets, 'manifest.json'), manifest, { mode: 0o600 });
 await mkdir(path, { recursive: true, mode: 0o700 });
+if (actualVfs) {
+  for (const name of ['workspace', 'artifacts']) await mkdir(join(directory, name), { mode: 0o700 });
+  for (const zone of ['home', 'control', 'git-cache', 'other-work']) {
+    await mkdir(join(root, 'protected', zone), { recursive: true, mode: 0o700 });
+    await writeFile(join(root, 'protected', zone, 'secret'), 'PRIVATE_TOKEN_CANARY', { mode: 0o600 });
+  }
+}
 await json(join(directory, 'owner.json'), { version: 1, workId, environment, configuration,
   guestAssets: { directory: assets, manifestSha256: sha(manifest) } });
 await json(join(directory, 'ready.json'), { environment });
@@ -167,6 +222,7 @@ const sdkDouble = {
   VM: { async create(options: { debugLog: Logger; sandbox: { console: string; debug: readonly string[] | boolean };
     vfs: { mounts: Record<string, RealProviderType> } }) {
     if (mode === 'owner-registration' || nativeBash) audit('vm-create');
+    if (actualVfs) await actualOwnedVfsProbe(options.vfs.mounts);
     logger = options.debugLog;
     lateLogger = logger;
     if (options.sandbox.console !== 'none' || options.sandbox.debug !== false || options.debugLog !== null) {
@@ -187,7 +243,14 @@ const sdkDouble = {
         code: process.env.ADAPTER_DIAGNOSTIC_FIXTURE_MODE === 'unknown-error' ? 'PRIVATE_CODE_CANARY' : 'vm_start_timeout',
       });
     },
-    async close() { audit('close'); },
+    async close() {
+      if (actualVfs) {
+        operationsObserver!.assertUnchanged();
+        assert.equal(verifyAuditedVfsSources(), auditedVfsManifest.aggregate);
+        operationsObserver!.restore(); operationsObserver = undefined;
+      }
+      audit('close');
+    },
     id: '77777777-2222-4333-8444-555555555555',
     getHostPid() { return process.pid; }, // External VM double, never a real VMM.
     exec(argv: string[], options: { signal: AbortSignal; stdout?: string; stderr?: string; env?: Record<string, string>; cwd?: string; stdin?: string | AsyncIterable<Buffer>; stdinCapacity?: { maxChunkBytes: number } }) {
@@ -348,7 +411,7 @@ const sdkDouble = {
       })();
     },
   }; } },
-  RealFSProvider: class {
+  RealFSProvider: ActualProvider ?? class {
     async lstat() { throw new Error('UNEXPECTED_FILESYSTEM_ACCESS'); }
     lstatSync() { throw new Error('UNEXPECTED_FILESYSTEM_ACCESS'); }
     async readlink() { throw new Error('UNEXPECTED_FILESYSTEM_ACCESS'); }
@@ -471,6 +534,81 @@ mock.method(prototype, 'sync', async function(this: FileHandle) {
   if (publishing && target === path) audit('failure-durable');
 });
 
+async function actualOwnedVfsProbe(mounts: Record<string, RealProviderType>) {
+  audit('vfs-probe');
+  operationsObserver!.assertUnchanged();
+  const summaries: { mount: string; requests: number; denied: number }[] = [];
+  for (const mount of ['/workspace', '/artifacts']) {
+    const provider = mounts[mount]!;
+    assert.ok(provider instanceof ActualProvider!);
+    const canonical = fs.realpathSync(join(directory, mount.slice(1)));
+    assert.equal(provider.rootPath, canonical, 'actual constructor must not use realpath fallback');
+    assert.equal(Object.getPrototypeOf(provider).constructor, ActualProvider);
+    const bytes = Buffer.from('owned actual VFS π\n');
+    let handle = await provider.open('/owned.txt', 'wx+', 0o600);
+    try { assert.equal((await handle.write(bytes, 0, bytes.length, 0)).bytesWritten, bytes.length); }
+    finally { await handle.close(); }
+    handle = await provider.open('/owned.txt', 'r');
+    try {
+      const read = Buffer.alloc(bytes.length);
+      assert.equal((await handle.read(read, 0, read.length, 0)).bytesRead, bytes.length);
+      assert.deepEqual(read, bytes);
+    } finally { await handle.close(); }
+    fs.symlinkSync('owned.txt', join(canonical, 'inside-link'));
+    assert.ok((await provider.lstat('/inside-link')).isSymbolicLink());
+    assert.equal(await provider.readlink('/inside-link'), 'owned.txt');
+    handle = await provider.open('/inside-link', 'r');
+    try { assert.deepEqual(await handle.readFile(), bytes); } finally { await handle.close(); }
+    // Every symlink target is within THIS new private fixture. These canaries
+    // are outside the provider mount, not outside our host authority.
+    fs.symlinkSync(join(root!, 'protected', 'home'), join(canonical, 'ancestor'));
+    let denied = 0;
+    for (const operation of [
+      () => provider.lstat('/ancestor/secret'), () => provider.readlink('/ancestor/secret'),
+      () => provider.open('/ancestor/secret', 'r'), () => provider.open('../escape', 'w'),
+      () => provider.rename('/owned.txt', '/ancestor/renamed'), () => provider.unlink('/ancestor/secret'),
+    ]) { await assert.rejects(operation(), { code: 'ENOENT' }); denied++; }
+    assert.throws(() => provider.lstatSync('/ancestor/secret'), { code: 'ENOENT' }); denied++;
+    assert.throws(() => provider.readlinkSync('/ancestor/secret'), { code: 'ENOENT' }); denied++;
+    const rpc = new ActualRpc!(provider);
+    assert.equal(Object.getPrototypeOf(rpc).constructor, ActualRpc);
+    let requests = 0;
+    const request = async (op: string, req: Record<string, unknown>, error = 0) => {
+      const response = await rpc.handleRequest({ v: 1, t: 'fs_request', id: ++requests, p: { op, req } });
+      assert.equal(response.p.err, error, `${mount} actual RPC ${op}`);
+      if (error) denied++;
+      return response.p.res!;
+    };
+    try {
+      const lookup = await request('lookup', { parent_ino: 1, name: 'owned.txt' });
+      const ino = (lookup.entry as { ino: number }).ino;
+      const opened = await request('open', { ino, flags: 2 });
+      const fh = opened.fh;
+      const data = await request('read', { fh, offset: 0, size: bytes.length });
+      assert.deepEqual(data.data, bytes);
+      assert.equal((await request('write', { fh, offset: 0, data: bytes })).size, bytes.length);
+      await request('release', { fh });
+      await request('lookup', { parent_ino: 1, name: '../secret' }, 22);
+      // Forge caller inode metadata: wrapper must reject ancestor traversal,
+      // including the lexical-only raw lstat/readlink weakness, without using it.
+      rpc.inoToPaths.set(900, new Set(['/ancestor']));
+      rpc.inoToPaths.set(901, new Set(['/ancestor/secret']));
+      await request('lookup', { parent_ino: 900, name: 'secret' }, 2);
+      await request('getattr', { ino: 901 }, 2);
+      await request('readlink', { ino: 901 }, 2);
+      await request('open', { ino: 901, flags: 0 }, 2);
+      await request('rename', { old_parent_ino: 1, old_name: 'owned.txt', new_parent_ino: 900, new_name: 'renamed' }, 2);
+      await request('unlink', { parent_ino: 900, name: 'secret' }, 2);
+    } finally { await rpc.close(); }
+    assert.deepEqual(fs.readFileSync(join(canonical, 'owned.txt')), bytes);
+    summaries.push({ mount, requests, denied });
+  }
+  operationsObserver!.assertUnchanged();
+  fs.writeFileSync(join(root!, 'vfs-observation.json'), JSON.stringify({ summaries, sdkHookCalls: operationsObserver!.calls,
+    sourceHashAfter: verifyAuditedVfsSources(), native: ['RealFSProvider', 'FsRpcService'], doubled: ['VM', 'manager', 'proc', 'cgroup', 'guest commands'] }), { mode: 0o600 });
+  audit('vfs-confined');
+}
+
 async function registrationProbe() {
   if (!root || !environment || !boot) throw new Error('FIXTURE_ARGUMENTS_REQUIRED');
   const { connect, protocolVersion } = await import('../../src/protocol/index.js');
@@ -543,6 +681,9 @@ const registrationSandbox = mode === 'owner-registration'
   ? (await import('../../src/sandbox/index.js')).createSandbox({ root }) : undefined;
 const registrationContext = { workId, executionId: 'execution', invocationId: 'standards', role: 'standards' as const,
   environmentRef: environment, bootRef: boot, phaseId: 'review' };
+// Baseline after the fixture's explicit mocks; SDK constructors/operations must
+// not change these references either. A standalone graph-only child needs none.
+if (actualVfs && process.argv[1]?.endsWith('/src/entrypoints/adapter.js')) operationsObserver = observeSdkGlobals();
 if (registrationSandbox) {
   assert.deepEqual(JSON.parse(await readFile(join(directory, 'current.json'), 'utf8')), { version: 1, environment, boot });
   assert.equal(fs.existsSync(join(runtime, 'owner')), false);

@@ -23,7 +23,7 @@ async function shortRoot() {
   throw new Error('NO_NEW_SHORT_TEST_DIRECTORY_AVAILABLE');
 }
 
-test('Sandbox adapter confines actual SDK filesystem RPC and ancestor symlinks (VM doubled, no VM/network/signal)', { skip: 'UNRUN: root SDK forbidden; actual leaf closure audit required (not replaced with toy VFS)' }, async () => {
+test('Sandbox adapter confines actual SDK filesystem RPC and ancestor symlinks (VM doubled, no VM/network/signal)', async () => {
   const root = await shortRoot();
   try {
     const child = spawnSync(process.execPath, ['--experimental-test-module-mocks', '--import',
@@ -36,6 +36,15 @@ test('Sandbox adapter confines actual SDK filesystem RPC and ancestor symlinks (
     const audit = (await readFile(join(root, 'audit'), 'utf8')).trim().split('\n');
     assert.equal(child.status, 0, `${child.stderr}\nBoundary audit: ${JSON.stringify(audit)}`);
     assert.deepEqual(audit, ['vfs-probe', 'vfs-confined', 'guest-exec', 'close']);
+    const graph = JSON.parse(await readFile(join(root, 'sdk-source-graph.json'), 'utf8'));
+    assert.equal(graph.loaded.length, 19); assert.equal(graph.sdkHookCalls, 0);
+    assert.equal(graph.ownGuardRegistrations, 1); assert.equal(graph.vm, 'EXPLICIT_DOUBLE');
+    assert.equal(graph.cachedCjsDenied, 3);
+    const observed = JSON.parse(await readFile(join(root, 'vfs-observation.json'), 'utf8'));
+    assert.deepEqual(observed.summaries, [{ mount: '/workspace', requests: 12, denied: 15 }, { mount: '/artifacts', requests: 12, denied: 15 }]);
+    assert.equal(observed.sdkHookCalls, 0); assert.equal(observed.sourceHashAfter, graph.aggregate);
+    assert.deepEqual(observed.native, ['RealFSProvider', 'FsRpcService']);
+    assert.deepEqual(observed.doubled, ['VM', 'manager', 'proc', 'cgroup', 'guest commands']);
     // Guest command bodies remain inert DATA; no host shell, even for syntax parsing.
     assert.equal(`${child.stdout}${child.stderr}`.includes('PRIVATE_TOKEN_CANARY'), false);
     for (const zone of ['home', 'control', 'git-cache', 'other-work']) {

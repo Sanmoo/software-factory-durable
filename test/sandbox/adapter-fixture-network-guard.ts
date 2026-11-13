@@ -1,4 +1,5 @@
-// TEST ONLY: no SDK evaluation, external sockets/DNS, or fallback worker commands.
+// TEST ONLY: SDK denied by default; the explicit owned-VFS mode is a fixed audited graph.
+// No external sockets/DNS or fallback worker commands.
 // The only sockets permitted are Unix sockets underneath this new fixture root.
 import assert from 'node:assert/strict';
 import net from 'node:net';
@@ -11,12 +12,15 @@ import cp from 'node:child_process';
 import { registerHooks, syncBuiltinESMExports } from 'node:module';
 import { mock } from 'node:test';
 import { isAbsolute, normalize } from 'node:path';
+import { createAuditedVfsGuard } from './audited-vfs-guard.js';
 
-export function guardFixtureNetwork(root: string, worker = false) {
+export function guardFixtureNetwork(root: string, worker = false, mode: 'deny-all' | 'audited-owned-vfs' = 'deny-all') {
   // Caller supplies a newly owned private root. This is lexical confinement, not
   // a claim against hostile same-UID filesystem mutation.
   assert.ok(isAbsolute(root) && normalize(root) === root && root !== '/' && !root.includes('\0'), 'private normalized fixture root required');
-  const hooks = registerHooks({
+  assert.ok(!worker || mode === 'deny-all', 'Workers never receive SDK graph authority');
+  const sdk = mode === 'audited-owned-vfs' ? createAuditedVfsGuard() : undefined;
+  const hooks = registerHooks(sdk?.hooks ?? {
     resolve(specifier, context, nextResolve) {
       if (specifier.includes('@earendil-works/gondolin') || specifier.includes('/gondolin/') || specifier.includes('/factory-development-gondolin-v1/')) throw new Error('SDK_EVALUATION_FORBIDDEN');
       return nextResolve(specifier, context);
@@ -112,5 +116,5 @@ export function guardFixtureNetwork(root: string, worker = false) {
     syncBuiltinESMExports();
   };
   process.once('exit', restore);
-  return restore;
+  return Object.assign(restore, { sdk });
 }

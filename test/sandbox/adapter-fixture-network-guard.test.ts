@@ -109,6 +109,7 @@ test('fixture guard rejects SDK roots/leaves before evaluation and denies TCP/DN
   const before = { spawn: cp.spawn, execFile: cp.execFile, kill: process.kill, lookup: dns.lookup, exits: process.listeners('exit') };
   const transport = inertTransport(root, true);
   try {
+    assert.throws(() => guardFixtureNetwork(root, true, 'audited-owned-vfs'), /Workers never receive SDK graph authority/);
     for (const specifier of [
       '@earendil-works/gondolin',
       new URL('../../../node_modules/@earendil-works/gondolin/dist/src/index.js', import.meta.url).href,
