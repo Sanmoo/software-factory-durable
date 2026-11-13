@@ -5,7 +5,7 @@ import { connect, protocolVersion } from '../protocol/index.js';
 import { createRecords } from '../records/index.js';
 import type { ReadResult, ToolContext, ToolProjection } from '../sandbox/index.js';
 import { startWorker } from './worker-start.js';
-import { workerBootstrapSchema } from '../platform/host/index.js';
+import { createSecretPublisher, workerBootstrapSchema } from '../platform/host/index.js';
 
 
 const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
@@ -84,7 +84,9 @@ async function toolProjection(endpoint: string, context: ToolContext, signal: Ab
 
 /** Private bounded bootstrap, received only over the fixed entrypoint's inherited
  * IPC. No callbacks, SDK objects, environment bag or arbitrary executable input. */
-export async function run(input: unknown, signal: AbortSignal) {
+export async function run(input: unknown, parentSignal: AbortSignal) {
+  const synchronizationLifetime = new AbortController();
+  const signal = AbortSignal.any([parentSignal, synchronizationLifetime.signal]);
   if (Buffer.byteLength(JSON.stringify(input) ?? '') > 65536) throw new Error('WORKER_BOOTSTRAP_INVALID');
   const parsed = workerBootstrapSchema.safeParse(input);
   if (!parsed.success) throw new Error('WORKER_BOOTSTRAP_INVALID');
@@ -118,15 +120,21 @@ export async function run(input: unknown, signal: AbortSignal) {
     ...(bootstrap.copyOutput === undefined ? {} : { copyOutput: bootstrap.copyOutput }),
     ...(bootstrap.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: bootstrap.editSourceMaxBytes }) };
   // Sync protected receipt before even importing/creating the native SDK runtime.
-  const receipt = await startWorker(bootstrap.profile, records, invocation);
-  const sender = process.send?.bind(process);
-  if (sender) await new Promise<void>((resolve, reject) => {
-    sender({ kind: 'worker-started', receipt }, error => error ? reject(new Error('WORKER_CHANNEL_CLOSED')) : resolve());
-  });
-  if (signal.aborted) throw new Error('STALE_TOOL_CONTEXT');
-  const tools = await toolProjection(bootstrap.endpoint, bootstrap.context, signal);
+  const secretPublisher = createSecretPublisher(process, bootstrap.context, signal, 5000, () => synchronizationLifetime.abort());
   try {
-    const { executeSession } = await import('./worker-session.js');
-    return await executeSession({ profile: bootstrap.profile, records, sandbox: tools.sandbox }, invocation, receipt);
-  } finally { tools.close(); }
+    const receipt = await startWorker(bootstrap.profile, records, invocation);
+    const sender = process.send?.bind(process);
+    if (sender) await new Promise<void>((resolve, reject) => {
+      sender({ kind: 'worker-started', receipt }, error => error ? reject(new Error('WORKER_CHANNEL_CLOSED')) : resolve());
+    });
+    if (signal.aborted) throw new Error('STALE_TOOL_CONTEXT');
+    secretPublisher.protectedStarted();
+    // Future private OAuth composition can consume secretPublisher.acknowledgeSecrets.
+    // No OAuth producer/profile or credential access is activated in this slice.
+    const tools = await toolProjection(bootstrap.endpoint, bootstrap.context, signal);
+    try {
+      const { executeSession } = await import('./worker-session.js');
+      return await executeSession({ profile: bootstrap.profile, records, sandbox: tools.sandbox }, invocation, receipt);
+    } finally { tools.close(); }
+  } finally { secretPublisher.close(); }
 }

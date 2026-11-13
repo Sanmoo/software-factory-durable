@@ -53,7 +53,11 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
             ...(parsed.data.selectedOutputCopies === undefined ? {} : { selectedOutputCopies: parsed.data.selectedOutputCopies }),
             ...(parsed.data.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: parsed.data.editSourceMaxBytes }),
             ...(parsed.data.imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes: parsed.data.imageSourceMaxBytes }) });
-          const worker = await launchWorker(host, { ...parsed.data, context }, endpoint, root, lifetime.signal);
+          const worker = await launchWorker(host, { ...parsed.data, context }, endpoint, root, lifetime.signal, {
+            // EXACT same Records instance already passed to bindings.add above.
+            registerSecret(value) { records.registerSecret(value); },
+            revoke() { lifetime.abort(); },
+          });
           await channel.send(frame(request.message_id, 'worker-launch-result', { status: 'requested', worker: context.invocationId }, request.message_id));
           // Request, durable start and completion are distinct observations.
           void (async () => {

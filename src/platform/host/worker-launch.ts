@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import { workerLaunchSchema, type WorkerLaunch } from './worker-bootstrap.js';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+import { createOwnerSecretReceiver } from './worker-secret-ipc.js';
 
 const run = promisify(execFile);
 
@@ -111,7 +112,8 @@ const completedSchema = z.discriminatedUnion('status', [
 ]);
 /** Spawn only inside the existing correlated boot owner. Failures after claiming
  * remain uncertain: caller retains its invocation tombstone and must not retry. */
-export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, endpoint: string, root: string, signal: AbortSignal) {
+export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, endpoint: string, root: string, signal: AbortSignal,
+  secrets: { registerSecret(value: string): void; revoke(): void }) {
   const request = workerLaunchSchema.parse(input);
   const plan = planWorkerLaunch(host, { workId: request.context.workId, environmentRef: request.context.environmentRef,
     bootRef: request.context.bootRef, invocationId: request.context.invocationId, role: request.context.role });
@@ -138,13 +140,19 @@ export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, en
   const abort = () => { if (child.connected) child.send({ kind: 'abort' }, () => {}); };
   signal.addEventListener('abort', abort, { once: true });
   let startReference: z.infer<typeof reference> | undefined;
+  const secretReceiver = createOwnerSecretReceiver(child, request.context, signal, () => startReference !== undefined,
+    value => secrets.registerSecret(value), () => {
+      startReject(new Error('WORKER_START_UNCERTAIN'));
+      completeResolve({ status: 'failure', code: 'WORKER_EXECUTION_UNCERTAIN' });
+      secrets.revoke();
+    });
   child.on('message', message => {
     if (!message || typeof message !== 'object') return;
     if ('kind' in message && message.kind === 'worker-started' && 'receipt' in message) {
-      const parsed = reference.safeParse(message.receipt);
-      if (parsed.success && parsed.data.workId === request.context.workId && !startReference) {
-        startReference = parsed.data;
-        startResolve({ receipt: parsed.data });
+      const parsed = z.strictObject({ kind: z.literal('worker-started'), receipt: reference }).safeParse(message);
+      if (parsed.success && parsed.data.receipt.workId === request.context.workId && !startReference && !signal.aborted) {
+        startReference = parsed.data.receipt;
+        startResolve({ receipt: parsed.data.receipt });
       }
     }
     if ('kind' in message && message.kind === 'worker-result') {
@@ -157,10 +165,11 @@ export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, en
         if (result.status === 'completed' && startReference && result.receipt.id === startReference.id &&
             result.receipt.workId === startReference.workId) completeResolve({ status: 'success', receipt: result.receipt });
         else completeResolve({ status: 'failure', code: result.status === 'interrupted' ? 'WORKER_INTERRUPTED' : 'WORKER_EXECUTION_UNCERTAIN' });
+        secretReceiver.close();
       }
     }
   });
-  const lost = () => { startReject(new Error('WORKER_START_UNCERTAIN')); completeResolve({ status: 'failure', code: 'WORKER_EXECUTION_UNCERTAIN' }); signal.removeEventListener('abort', abort); };
+  const lost = () => { secretReceiver.close(); startReject(new Error('WORKER_START_UNCERTAIN')); completeResolve({ status: 'failure', code: 'WORKER_EXECUTION_UNCERTAIN' }); signal.removeEventListener('abort', abort); };
   child.once('error', lost); child.once('exit', lost);
   child.send(bootstrap, error => { if (error) { lost(); abort(); } });
   if (signal.aborted) abort();
