@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { createConnection } from 'node:net';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { createRecords } from '../../src/records/index.js';
 import { createSandbox, type ToolContext } from '../../src/sandbox/index.js';
-import { connectReadTools, serveReadToolBindings, type GuestOwner } from '../../src/sandbox/read-tools.js';
+import { connectReadTools, serveReadTools, serveReadToolBindings, type GuestOwner } from '../../src/sandbox/read-tools.js';
 
 // Existing Q5 projection and external GuestOwner boundary; no VM/model execution.
 test('one boot owns independent reviewer bindings: abort/EOF isolate pending reads and deny forged contexts', { timeout: 5000 }, async t => {
@@ -70,4 +71,60 @@ test('one boot owns independent reviewer bindings: abort/EOF isolate pending rea
     assert.equal((await sandbox.executeTool(spec, read)).status, 'failure', 'all-close revokes the remaining reviewer');
     assert.equal(bootStops, 0, 'binding cleanup does not own VM shutdown');
   }
+});
+
+test('binding closes an already-aborted or setup-aborted listener', { timeout: 5000 }, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'binding-race-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const records = await createRecords({ root });
+  const context: ToolContext = { workId: 'work-05', executionId: 'execution-05', invocationId: 'race-05',
+    role: 'standards', environmentRef: 'environment-05', bootRef: 'boot-05', phaseId: 'review-1' };
+  const vm: GuestOwner = { exec() { assert.fail('revoked binding reached guest'); } };
+  for (const mode of ['already', 'listen', 'add'] as const) {
+    const authority = new AbortController();
+    const endpoint = join(root, mode + '.sock');
+    if (mode === 'already') authority.abort();
+    const binding = { endpoint, context, signal: authority.signal, records };
+    const collection = await serveReadToolBindings([], vm);
+    t.after(() => collection.close());
+    const pending = mode === 'add' ? collection.add(binding) : serveReadTools({ ...binding, vm });
+    authority.abort(); // while listen's private-directory/listen/chmod awaits are outstanding
+    if (mode === 'add') await assert.rejects(pending, /STALE_TOOL_CONTEXT/);
+    const owner = mode === 'add' ? undefined : await pending;
+    if (owner) t.after(() => owner.close());
+    // Test the actual Unix listener, not a tool-level authorization error.
+    await assert.rejects(new Promise<void>((resolve, reject) => {
+      const socket = createConnection(endpoint);
+      socket.once('error', reject);
+      socket.once('connect', () => { socket.destroy(); resolve(); });
+    }), { code: 'ENOENT' });
+    if (owner) { await owner.close(); await owner.close(); }
+  }
+});
+
+test('binding close drains its actual pending callback after abort without closing a guest', { timeout: 5000 }, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'binding-drain-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const records = await createRecords({ root });
+  const context: ToolContext = { workId: 'work-05', executionId: 'execution-05', invocationId: 'drain-05',
+    role: 'standards', environmentRef: 'environment-05', bootRef: 'boot-05', phaseId: 'review-1' };
+  const authority = new AbortController();
+  let entered!: () => void; const started = new Promise<void>(resolve => { entered = resolve; });
+  let release!: () => void; const released = new Promise<void>(resolve => { release = resolve; });
+  let revoked!: () => void; const aborted = new Promise<void>(resolve => { revoked = resolve; });
+  const owner = await serveReadTools({ endpoint: join(root, 'read.sock'), context, signal: authority.signal, records,
+    vm: { exec(_argv, options) { return { async *output() {
+      options.signal.addEventListener('abort', revoked, { once: true });
+      entered(); await released; yield { stream: 'stdout', data: Buffer.from('late') };
+    }, result: Promise.resolve({ exitCode: 0 }) }; } } });
+  t.after(async () => { release(); await owner.close(); });
+  const tools = await connectReadTools(owner.endpoint, context);
+  const pending = tools.executeTool({ name: 'read', operation: 'capture', path: '/workspace/pending', callId: 'pending' });
+  await started; authority.abort(); await aborted;
+  const closing = owner.close(); assert.equal(owner.close(), closing);
+  let drained = false; void closing.then(() => { drained = true; });
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(drained, false, 'transport shutdown alone is not callback drain');
+  release(); await closing;
+  assert.equal((await pending).status, 'failure');
 });

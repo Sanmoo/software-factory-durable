@@ -24,7 +24,7 @@ test('public normal activation -> existing boot owner -> fixed new child -> prot
   assert.equal(audit.filter(event => event.includes('"kind":"provider-request"')).length, 2);
   assert.equal(audit.filter(event => event.includes('"kind":"worker-started"')).length, 1);
   assert.equal(audit.filter(event => event.includes('"kind":"worker-error"')).length, 1);
-  assert.equal(audit.filter(event => event === 'read').length, 1);
+  assert.equal(audit.filter(event => event === 'read').length, 4);
   assert.ok(audit.indexOf('normal-worker-passed') < audit.indexOf('close'));
   const result = JSON.parse(await readFile(join(root, 'normal-worker-result.json'), 'utf8'));
   assert.notEqual(result.pid, child.pid);

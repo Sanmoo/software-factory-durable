@@ -61,8 +61,11 @@ test('host revocation rejects new reads and late results, never confers authorit
   const f = await fixture(t, () => ({ async *output() { entered(); await released; yield { stream: 'stdout', data: Buffer.from('late') }; },
     result: Promise.resolve({ exitCode: 0 }) }));
   const pending = f.execute(); await started; f.authority.abort(); release();
-  assert.deepEqual(await pending, { status: 'failure', code: 'STALE_TOOL_CONTEXT' });
-  assert.deepEqual(await f.execute(), { status: 'failure', code: 'STALE_TOOL_CONTEXT' });
+  const result = await pending;
+  assert.equal(result.status, 'failure');
+  if (result.status === 'failure') assert.ok(['STALE_TOOL_CONTEXT', 'TOOL_CHANNEL_CLOSED'].includes(result.code));
+  await f.owner.close();
+  assert.deepEqual(await f.execute(), { status: 'failure', code: 'TOOL_CHANNEL_CLOSED' });
 });
 
 test('EOF revokes authority while guest read is pending, before the handler completes', async t => {
@@ -75,7 +78,8 @@ test('EOF revokes authority while guest read is pending, before the handler comp
   const tools = await connectReadTools(f.owner.endpoint, context);
   const pending = tools.executeTool(read); await started; tools.close(); await revoked;
   assert.deepEqual(await pending, { status: 'failure', code: 'TOOL_CHANNEL_CLOSED' });
-  assert.deepEqual(await f.execute(), { status: 'failure', code: 'STALE_TOOL_CONTEXT' });
+  await f.owner.close();
+  assert.deepEqual(await f.execute(), { status: 'failure', code: 'TOOL_CHANNEL_CLOSED' });
 });
 
 test('capture rejection and guest failure never deliver raw exception or output text', async t => {

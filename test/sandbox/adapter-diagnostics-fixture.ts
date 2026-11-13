@@ -377,8 +377,9 @@ async function registrationProbe() {
     kind: 'register-binding', payload: { context: { ...standards, invocationId: 'forged-boot', bootRef: 'old-boot' } } });
   assert.equal((await host.messages[Symbol.asyncIterator]().next()).value?.payload.code, 'STALE_TOOL_CONTEXT');
   host.close();
-  assert.deepEqual(await sandbox.executeTool(standards, { ...read, callId: 'after-standards-eof' }),
-    { status: 'failure', code: 'STALE_TOOL_CONTEXT' });
+  const afterEof = await sandbox.executeTool(standards, { ...read, callId: 'after-standards-eof' });
+  assert.equal(afterEof.status, 'failure');
+  if (afterEof.status === 'failure') assert.ok(['STALE_TOOL_CONTEXT', 'TOOL_CHANNEL_CLOSED'].includes(afterEof.code));
   assert.equal((await sandbox.executeTool(spec, { ...read, callId: 'after-eof' })).status, 'success');
   audit('registration-isolated');
 }

@@ -112,10 +112,18 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
     try { await task; } finally { active.delete(task); }
   }, closed() { lifetime.abort(); } }, { kind: 'worker-tool', binding: bound });
   let closing: Promise<void> | undefined;
-  return { endpoint: options.endpoint, close() {
+  function close() {
+    // Publish the single cleanup promise before abort dispatch can re-enter close.
+    closing ??= Promise.resolve().then(async () => {
+      try { await server.close(); } finally { await Promise.allSettled([...active]); }
+    });
     lifetime.abort();
-    return closing ??= (async () => { await server.close(); await Promise.allSettled([...active]); })();
-  } };
+    return closing;
+  }
+  signal.addEventListener('abort', () => { void close().catch(() => {}); }, { once: true });
+  // Covers an already-revoked binding and revocation during listen/chmod awaits.
+  if (signal.aborted) await close();
+  return { endpoint: options.endpoint, close };
 }
 
 /** Private boot-owner collection. Invocation revocation never owns VM shutdown;

@@ -109,7 +109,12 @@ test('fixed worker entrypoint runs native SDK in a new Node process; private rec
 
   // The fixed entrypoint accepts only invocation-local abort after bootstrap.
   // The independent existing owner and its other bindings remain intact.
-  const aborted = await child(bootstrap, true);
+  // The successful child's EOF now closes its listener. Use a distinct live
+  // binding so this still tests pending abort during SDK setup, not connect failure.
+  const abortContext = { ...context, invocationId: 'abort-05' };
+  const abortOwner = await nativeOwner(abortContext, { exec() { assert.fail('aborted setup reached guest'); } });
+  t.after(() => abortOwner.close());
+  const aborted = await child({ ...bootstrap, context: abortContext, endpoint: abortOwner.owner.endpoint }, true);
   assert.equal(aborted.code, 1);
   assert.equal(aborted.messages.filter(message => message.kind === 'provider-request').length, 0);
   assert.equal(guestCalls, 1);
