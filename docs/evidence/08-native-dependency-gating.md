@@ -6,7 +6,8 @@ Autoridade: [ticket 08](../../.scratch/software-factory-mvp/issues/08-native-dep
 [decisão de dependências](../../.scratch/software-factory/issues/09-dependency-compatibility.md#answer),
 [cenários V-05/V-06](../../.scratch/software-factory/acceptance-and-incremental-plan.md).
 
-**Estado: implementação e suíte local verdes; integração GitHub real ainda NÃO executada** (procedimento abaixo).
+**Estado: implementação e suíte local verdes; ensaio GitHub real autorizado executado em 2026-11-14 pelo supervisor**
+([seção](#ensaio-real-2026-11-14), [JSON](08-real-github-dependencies-2026-11-14.json)); correções da revisão independente aplicadas.
 Nenhum checkbox foi marcado e o ticket não foi resolvido. Dublê não comprova a fronteira gh/GitHub substituída.
 O despacho continua fechado (`EXECUTION_NOT_ENABLED`) até o ticket 09; este incremento torna real a decisão de
 gating e sua evidência.
@@ -25,15 +26,18 @@ gating e sua evidência.
   `DEPENDENCY_READ_UNAVAILABLE` (com `observedCode`, p.ex. falha após página emitida, JSON inválido, 404/oculto,
   rate limit com `waitSeconds`), `INVALID_DEPENDENCY_RELATION` (PR, auto-relação, URL de outro repo, payload inesperado,
   deriva de identidade do destino), `DEPENDENCY_LISTING_UNSTABLE` (mesmo bloqueador em páginas diferentes),
-  `DEPENDENCY_COUNT_MISMATCH` (listados ≠ `issue_dependencies_summary.total_blocked_by`/`blocked_by`),
+  `DEPENDENCY_COUNT_MISMATCH` (listados ≠ `issue_dependencies_summary.total_blocked_by`; abertos ≠ `blocked_by`),
+  `DEPENDENCY_SUMMARY_UNAVAILABLE` (resumo ausente ou ilegível: omissão indetectável → incompleto, volta ao operador),
   `DEPENDENCY_ROOT_MISMATCH`, `DEPENDENCY_GRAPH_TOO_LARGE` (> 100 nós). Qualquer problema → `incomplete`.
-  Ausência do resumo é limitação declarada ("omissão silenciosa não detectável"), nunca suporte.
+  Ausência do resumo torna a avaliação `inconclusive` (nunca libera). Forma real em `2026-03-10`:
+  `{"blocked_by": <abertos>, "blocking": …, "total_blocked_by": <todos>, "total_blocking": …}`.
 - **`platform/github`**: finalidade reduzida `dependency-read {metadata:read, issues:read}`, um token por repositório
   (executável ou só-dependência) com a instalação configurada daquele repositório; `dependency` para o pré-voo.
   `readPermissions` exporta só metadados das concessões (evidência de principal/escopo; nunca o token).
 - **`IssueTracker.checkAccess({…, role: 'dependency-only'})`**: pré-voo com finalidade `dependency`
-  (`metadata:read, issues:read`, nunca o teto `issues:write` do tracker), lê issues e o `blocked_by` de uma amostra;
-  não cria issue nem relação; limita-se a declarar que pares/relações ocultas não são certificados.
+  (`metadata:read, issues:read`, nunca o teto `issues:write` do tracker), lê **uma** página limitada
+  (`/issues?state=all&per_page=100`) e o `blocked_by` de uma issue da amostra; sem issue na amostra (vazio ou só PRs) →
+  `blocked/DEPENDENCY_ACCESS_UNVERIFIED/incomplete`, nunca `ok`. Não cria issue nem relação; pares/relações ocultas não são certificados.
 - **Configuração**: `dependencyRepositories: [{repository, installationId}]` (default `[]`), somente leitura de
   dependências, sem base/label/limites, disjunto de `repositories` (um repo é executável **ou** só-dependência).
   O proprietário compõe esses escopos no tracker; `inspect access`/`doctor --authenticated` reportam
@@ -51,7 +55,10 @@ gating e sua evidência.
     Rate limit/espera indicada interrompe a rodada e prevalece no próximo atraso; falhas transitórias alimentam o backoff.
   - `durable/admission.ts`: `recordDependencies` grava num único commit a última avaliação, a última completa, os
     impedimentos de dependência (os demais intocados; `since` preservado) e histórico **somente** quando a conclusão muda.
-    `ownCycles` classifica por `issueId` contra o índice durável (Ticket indexado sem registro → `missing`, nunca externo).
+    `ownCycles` reúne índice, **memória mínima explícita** (`ticket-index.memory`, gravada no commit de admissão com
+    ciclo/resultado/merge confirmado, preservada mesmo se a entrada do índice ou o registro sumirem) e registros, e delega à
+    regra pura `ownCycleFor`: indexado **ou** lembrado é próprio, nunca externo; sem registro nem memória do ciclo aplicável →
+    `missing` → `OWN_CYCLE_MEMORY_MISSING`.
     O placeholder de admissão `DEPENDENCIES_NOT_EVALUATED` só persiste até a avaliação da mesma rodada.
   - Registro `DependencyEvaluation`: `evaluationId`, `attemptId` (rodada), `source: github-rest`, `observedAt`,
     `evaluatedAt`, `principals` (instalação/repo/repoId/papel/finalidade/permissões, sem token), `completeness`,
@@ -67,10 +74,9 @@ gating e sua evidência.
 
 ### Decisões de interpretação (não alteram contratos aprovados; revisar)
 
-1. **Satisfação transitiva.** Satisfação é exigida dos bloqueadores **diretos**; o grafo alcançável inteiro precisa ser
-   completo/válido/acíclico. Um nó transitivo aberto atrás de um direto satisfeito é mostrado (`direct: false,
-   satisfied: false`) mas não retém. Leitura de "inacessibilidade transitiva … impedem liberação, mesmo com
-   intermediário encerrado" (§4.2/Answer 09). Se a intenção for exigir satisfação transitiva, é mudança de regra de uma linha.
+1. **Satisfação somente direta — decisão do operador (2026-11-14).** Satisfação é exigida dos bloqueadores **diretos**;
+   o grafo alcançável inteiro precisa ser completo/válido/acíclico. Um nó transitivo aberto atrás de um direto satisfeito
+   é mostrado (`direct: false, satisfied: false`) mas não retém. Confirmado pelo operador; o teste de regra correspondente é mantido.
 2. **Moeda por rodada.** A rodada é a "tentativa" de seleção deste incremento. O ticket 09 deve refazer a avaliação
    imediatamente antes de cada início/retomada/reparo e conferir, no commit "Admitir Execução", que o `attemptId`
    é da própria tentativa (`dispatchBlockers` já recusa qualquer outro). Durante uma rodada em curso, as vistas mostram
@@ -79,11 +85,10 @@ gating e sua evidência.
    `mergeConfirmed: false` e o fato de merge virá do registro durável de entrega confirmado via `CodeRepository`.
    Por isso entrega/cancelamento/novo ciclo/memória mínima são provados no nível de **regras**; no nível de **fluxo**
    prova-se o caso alcançável: bloqueador próprio fechado/completed com PR aberto não libera.
-4. **Memória mínima.** Exclusão (`forget`) ainda não existe; a regra aceita `source: 'minimal-memory'` com a mesma
-   semântica, e o Controle já devolve `missing` (nunca externo) para Ticket indexado sem registro.
-5. **Detecção de omissão.** Contagem de `issue_dependencies_summary` é usada quando presente; contagens iguais não
-   certificam ausência de relações invisíveis (limitação sempre declarada). A presença/forma real do campo na versão
-   `2026-03-10` precisa ser confirmada no ensaio real.
+4. **Memória mínima.** Exclusão (`forget`) ainda não existe; a memória mínima já é gravada na admissão e lida pela
+   classificação. Resultado/merge só mudarão com os tickets de entrega/cancelamento.
+5. **Detecção de omissão.** O resumo é obrigatório: listados × `total_blocked_by` e abertos × `blocked_by`; contagens iguais
+   não certificam ausência de relações invisíveis (limitação sempre declarada). Confirmado presente no ensaio real.
 6. **Custo.** Por rodada e Trabalho pendente: 2 GET por nó alcançável (+páginas). Sem cache temporal; tokens
    reutilizados em memória por finalidade/repo; limite de 100 nós por avaliação.
 
@@ -98,12 +103,12 @@ Nenhum deles prova a fronteira GitHub real.
 | AC | Testes | Nível | Lacuna |
 | --- | --- | --- | --- |
 | 1 Só `blocked_by` nativo via gh api/REST; páginas/destinos completos; identidades qualificadas; sem fallback | `github-dependency-reads` (páginas de 1 item, prosa/labels/duplicata ignorados, sem `blocking`/timeline, só GET, identidades e números iguais em repos distintos), `dependency-cli` (páginas `Link` seguidas na composição completa) | I-local | Paginação real (≤ 50 relações por issue cabem em uma página de 100) |
-| 2 Travessia inclui encerrados; compartilhado × ciclo; inválida/ciclo/inacessível/erro após página impedem | `dependency-rules` (diamante vs ciclo, ciclo pela raiz, alvo não lido, raiz não lida, transitivo inacessível atrás de encerrado), `github-dependency-reads` (502 na página 2 → sem lista parcial; JSON inválido; PR/auto/URL alheia/payload; contagem divergente; deriva de identidade; cada nó lido uma vez), `dependency-flow` (ciclo e rate limit → `inconclusive`) | R + I-local + S | Ciclo/relação inválida reais dependem do que o GitHub permite criar |
-| 3 Externo só closed/completed | `dependency-rules` (open, reopened, not_planned, duplicate, null, desconhecido), `dependency-flow` (sequência reopened → not_planned → duplicate → null → completed; só o último libera) | R + S | GitHub real |
-| 4 Próprio exige merge do ciclo vigente/último; fechamento/cancelamento/ciclo anterior não satisfazem, inclusive memória mínima | `dependency-rules` (delivered+merge, delivered sem confirmação, open, cancelled, closed-unmerged, novo ciclo após entrega, `minimal-memory`, `missing`), `dependency-flow` (bloqueador próprio closed/completed com PR aberto → `OWN_CYCLE_NOT_DELIVERED`; classificação própria sobrevive a reinício), `dependency-cli` | R + S + I-local | Entrega/cancelamento/`forget` não têm produtor ainda (decisões 3/4) |
-| 5 Registro com origem/principal/escopo sem token, instante, completude e motivos; refeito a cada rodada; observação antiga não concede | `dependency-flow` (campos do registro; novo `evaluationId`/`attemptId` por rodada; 1 leitura por Trabalho por rodada; `lastComplete` visível mas não libera; reinício → `DEPENDENCIES_NOT_CURRENT` até reavaliar; banco sem token), `dependency-rules` (`dispatchBlockers`), `dependency-cli` (principals reais por repo) | R + S + I-local | Despacho real (ticket 09) |
+| 2 Travessia inclui encerrados; compartilhado × ciclo; inválida/ciclo/inacessível/erro após página impedem | `dependency-rules` (diamante vs ciclo, ciclo pela raiz, alvo não lido, raiz não lida, transitivo inacessível atrás de encerrado), `github-dependency-reads` (502 na página 2 → sem lista parcial; JSON inválido; PR/auto/URL alheia/payload; contagem divergente; deriva de identidade; cada nó lido uma vez), `dependency-flow` (ciclo e rate limit → `inconclusive`) | R + I-local + S + **real** (E7) | Relação inválida real não criável |
+| 3 Externo só closed/completed | `dependency-rules` (open, reopened, not_planned, duplicate, null, desconhecido), `dependency-flow` (sequência reopened → not_planned → duplicate → null → completed; só o último libera) | R + S + **real** (E3–E6) | `duplicate`/motivo nulo só local |
+| 4 Próprio exige merge do ciclo vigente/último; fechamento/cancelamento/ciclo anterior não satisfazem, inclusive memória mínima | `dependency-rules` (delivered+merge, delivered sem confirmação, open, cancelled, closed-unmerged, novo ciclo após entrega, `minimal-memory`, `missing`), `dependency-flow` (bloqueador próprio closed/completed com PR aberto → `OWN_CYCLE_NOT_DELIVERED`; classificação própria sobrevive a reinício), `dependency-cli` | R + S + I-local + **real** (E1) | Entrega/cancelamento/`forget` não têm produtor ainda (decisões 3/4) |
+| 5 Registro com origem/principal/escopo sem token, instante, completude e motivos; refeito a cada rodada; observação antiga não concede | `dependency-flow` (campos do registro; novo `evaluationId`/`attemptId` por rodada; 1 leitura por Trabalho por rodada; `lastComplete` visível mas não libera; reinício → `DEPENDENCIES_NOT_CURRENT` até reavaliar; banco sem token), `dependency-rules` (`dispatchBlockers`, inclusive avaliação nula), `dependency-cli` (principals reais por repo) | R + S + I-local + **real** (E9) | Despacho real (ticket 09) |
 | 6 Executáveis × só-dependência; pré-voo sem criar issues/arestas nem certificar pares | `configuration.test` (lista explícita, disjunta, sem campos executáveis), `github-dependency-reads` (papéis, instalação própria por owner, um token por repo, repo não configurado nunca lido, pré-voo `dependency` só GET), `dependency-flow` (`inspect access` → `dependencyResults`), `dependency-cli` | I-local + S | Pré-voo real |
-| 7 Cenários reais locais/cross-repo/cross-owner/visibilidade sob autorização; omissão não detectável levada ao operador | Procedimento abaixo; `DEPENDENCY_COUNT_MISMATCH`/limitação de resumo ausente (I-local) | — | **Pendente: ensaio real autorizado** |
+| 7 Cenários reais locais/cross-repo/cross-owner/visibilidade sob autorização; omissão não detectável levada ao operador | [Ensaio real 2026-11-14](#ensaio-real-2026-11-14) (local: próprio/externo/ciclo/reinício); `DEPENDENCY_COUNT_MISMATCH`/`DEPENDENCY_SUMMARY_UNAVAILABLE` (I-local + mismatch real observado) | **real** (local) + I-local | Cross-repo/cross-owner/visibilidade não exercitáveis com um repo: não declarados suportados |
 | 8 Mesmos contratos com storage real; próprio fechado com PR aberto não libera; impedido não bloqueia independente | `dependency-flow` (todos com SQLite temporário real; `selection.next` pula o impedido; FIFO original volta quando libera), `dependency-cli` (`selection.next` = independente) | S + I-local | — |
 
 Mutações de controle (no JS compilado, depois restaurado): (M1) remover `DEPENDENCIES_NOT_CURRENT` → `dependency-flow`
@@ -130,6 +135,10 @@ Node 24.21.0 com `env -u NODE_OPTIONS -u NODE_COMPILE_CACHE NODE_DISABLE_COMPILE
 (os mesmos 10 skips de antes: sandbox/Gondolin dependentes de host). `test/sandbox/gondolin.test.ts` continua `skip:true`.
 Novos arquivos: `dependency-rules` (7), `github-dependency-reads` (7), `dependency-flow` (5), `dependency-cli` (1);
 `configuration.test` +1.
+
+Após as correções da revisão: eslint exit 0; dependency-cruiser sem violações (222 módulos, 1190 dependências); `tsc` exit 0
+(após `rm -rf dist`); **92 arquivos**, um por vez: **743 pass, 0 fail, 10 skipped, 0 cancelled** (`dependency-rules` 8,
+`github-dependency-reads` 8, novo `dependency-memory` 1).
 
 ## Procedimento para o ensaio real autorizado (supervisor)
 
@@ -201,3 +210,40 @@ ou `INVALID_DEPENDENCY_RELATION` — nunca liberação).
 - **Paginação real** de `blocked_by`: não alcançável com o limite de 50 relações por issue e `per_page=100`.
 
 Até o ensaio, AC 7 permanece sem evidência real; nenhuma combinação acima é declarada suportada.
+
+## Correções após revisão independente (2026-11-14)
+
+| Achado | Correção | Teste (RED → GREEN) |
+| --- | --- | --- |
+| 2 (Médio) resumo ausente/ilegível deixava o grafo `complete` | `DEPENDENCY_SUMMARY_UNAVAILABLE` → incompleto → `DEPENDENCY_EVALUATION_INCONCLUSIVE` com próximo passo ao operador | `github-dependency-reads` (ausente e ilegível; forma real; lag de contagem → mismatch), `dependency-rules` (impedimento/motivo). O teste que fixava a liberação foi substituído |
+| 3 (Baixo) pré-voo só-dependência `ok` sem verificar nada; listava todas as páginas | Uma página limitada `per_page=100`; sem issue → `blocked/DEPENDENCY_ACCESS_UNVERIFIED/incomplete` | `github-dependency-reads` (vazio, só PR; uma única requisição de amostra) |
+| 4 (Baixo) `dispatchBlockers` aceitava avaliação nula | Nula → `DEPENDENCIES_NOT_EVALUATED` (sem duplicar o placeholder) | `dependency-rules` |
+| 5 (Baixo) memória mínima implícita | `ticket-index.memory` gravada na admissão; regra pura `ownCycleFor` (índice/memória/registros) | `dependency-rules` (memória após perda do registro e da entrada do índice; `missing` → `OWN_CYCLE_MEMORY_MISSING`), `dependency-memory` (produtor real em SQLite, sobrevive à reabertura) |
+
+Verificado também: a contagem compara listados com `total_blocked_by` e abertos com `blocked_by` (forma real).
+
+## Ensaio real 2026-11-14
+
+Executado pelo supervisor sob autorização, raiz exclusiva `verify08-*`, repositório `Sanmoo/java-springboot-event-sourcing`,
+instalação `177599217`. Registro sanitizado: [08-real-github-dependencies-2026-11-14.json](08-real-github-dependencies-2026-11-14.json)
+(disposição `OBSERVED`, cópia da chave removida). Mutações remotas feitas pelo operador, não pela Factory.
+
+| Passo | Observado |
+| --- | --- |
+| E0 | #3 e #1 admitidos, ambos `satisfied`, sem bloqueadores |
+| E1 #3 *blocked by* #1 | #3 `pending/OWN_CYCLE_NOT_DELIVERED` (bloqueador próprio); seleção pulou #3 → `next` = Trabalho de #1 |
+| E3 issue #4 sem label; #1 *blocked by* #4 | `EXTERNAL_BLOCKER_OPEN` |
+| E4 #4 *not planned* | `EXTERNAL_BLOCKER_NOT_COMPLETED` |
+| E5 #4 reaberta | `EXTERNAL_BLOCKER_OPEN` com `stateReason: reopened` |
+| E6 #4 *completed* | bloqueador satisfeito |
+| Consistência eventual observada | Logo após criar uma aresta, `issue_dependencies_summary` ainda contava 0 → `DEPENDENCY_COUNT_MISMATCH` (`inconclusive`) por uma rodada; na rodada seguinte o resumo convergiu e a avaliação se recuperou. Falha fechada, conforme o desenho |
+| E7 tentar #1 *blocked by* #3 (com #3 *blocked by* #1) | **GitHub recusou: HTTP 422 "would create a cycle"** — ciclo não é criável pela API; a detecção de ciclo permanece como defesa (I-local/regras) |
+| E9 SIGTERM + reinício | antes da primeira rodada `DEPENDENCIES_NOT_CURRENT`; depois, avaliação nova e atual; sem Trabalho duplicado |
+| Requisições | só `GET` operacionais e tokens somente leitura (6 POST de `access_tokens` no total, todos somente leitura; contagens em `requestCounts`); nenhuma mutação pela Factory |
+| Banco | sem token, chave privada ou corpo de issue |
+| Forma real do resumo | `{"blocked_by":0,"blocking":1,"total_blocked_by":1,"total_blocking":1}` (`blocked_by` = abertos, `total_blocked_by` = todos) |
+| Limpeza | ambas as arestas removidas; #4 deixada fechada/completed |
+
+Não exercitado com um único repositório (não declarado suportado): cross-repo com leitura, cross-owner, visibilidade
+reduzida, paginação real de `blocked_by`, motivos `duplicate`/nulo reais e relação inválida real. Este ensaio é anterior às
+correções da revisão (o resumo estava presente nas leituras observadas; `DEPENDENCY_SUMMARY_UNAVAILABLE` não teria ocorrido).
