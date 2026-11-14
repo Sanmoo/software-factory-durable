@@ -369,3 +369,23 @@ test('AC3: cessation not confirmed keeps the Slot and the Work out of the queue;
   await h.cycle(); await h.cycle();
   assert.equal(h.activations().length, 1, 'no resume and no other Work while the uncertain Slot is held');
 });
+
+test('review 1: a completion reusing ANOTHER Work\'s question id never binds that Question: explicit conflict impediment, no foreign end.questionId, no resume by its answer', async t => {
+  const remote: Remote = { pulls: {}, issues: [remoteIssue(3), remoteIssue(4)] };
+  const h = await harness(t, remote, [
+    { kind: 'ask', questionId: qid(20), question: 'Question of Work #3' },
+    { kind: 'ask', questionId: qid(20), question: 'Same id reported by Work #4', notify: false }, { kind: 'complete' }, { kind: 'complete' }]);
+  await h.start();
+  await h.settle(async () => { const works = await h.byNumber(); return works[3]?.execution?.slot.held === false && works[4]?.execution?.slot.held === false; });
+  let works = await h.byNumber();
+  const foreign = await h.show(works[4]!.work_id);
+  assert.equal(foreign.work.execution!.end!.questionId ?? null, null, 'never points at a Question of another Work');
+  assert.ok(foreign.work.impediments.some(item => item.code === 'QUESTION_ID_CONFLICT'), JSON.stringify(foreign.work.impediments));
+  assert.deepEqual(foreign.questions, []);
+  await answer(h.control(), 'cli-own', qid(20), 'answer for #3 only');
+  await h.settle(async () => h.activations().length === 3 && (await h.byNumber())[3]!.execution!.state === 'ended', 'only #3 resumes');
+  await h.cycle(); await h.cycle();
+  works = await h.byNumber();
+  assert.equal(h.activations().length, 3);
+  assert.equal(works[4]!.previousExecutions.length, 0, 'Work #4 never resumed with Work #3\'s answer');
+});

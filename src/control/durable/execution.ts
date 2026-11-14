@@ -52,7 +52,8 @@ export async function admitExecution(session: Session, input: { work_id: string;
     if (previous?.end?.outcome === 'question') {
       const question = input.resume ? (await tx.doc(questions, input.resume.questionId, null)).question : null;
       if (!input.resume || input.resume.previousExecutionId !== previous.executionId || input.resume.questionId !== previous.end.questionId ||
-          question?.state !== 'answered' || question.answer?.sha256 !== input.resume.answerSha256) reasons.push('RESUME_BASIS_CHANGED');
+          question?.state !== 'answered' || question.answer?.sha256 !== input.resume.answerSha256 || question.workId !== input.work_id ||
+          question.executionId !== previous.executionId) reasons.push('RESUME_BASIS_CHANGED');
     } else if (input.resume) reasons.push('RESUME_BASIS_CHANGED');
     if (reasons.length) return { kind: 'refused' as const, reasons };
     const now = new Date().toISOString();

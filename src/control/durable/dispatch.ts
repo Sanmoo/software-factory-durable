@@ -256,7 +256,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       if (lifecycle.withdrawn) { await withdrawnBeforeActivation(); return; }
       const resume = execution.request.resume ?? null;
       const answered = resume ? await readQuestion(session, resume.questionId) : null;
-      if (resume && (!answered?.answer || answered.answer.sha256 !== resume.answerSha256)) { await revoke(); await refuse(['RESUME_BASIS_CHANGED']); return; }
+      if (resume && (!answered?.answer || answered.answer.sha256 !== resume.answerSha256 || answered.workId !== work.work_id ||
+          answered.executionId !== resume.previousExecutionId)) { await revoke(); await refuse(['RESUME_BASIS_CHANGED']); return; }
       // First activation: `/implement <ticket>`. After an answer: an explicit recovery instruction (new boot, new session), never a bare `continue`.
       const prompt = resume && answered?.answer ? recoveryPrompt({ ticketUrl: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
         baseCommit: prepared.checkout.baseCommit, branch: execution.request.branch, checkout: prepared.checkout.path, workId: work.work_id, executionId,
@@ -306,18 +307,22 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           const request = completed.question;
           let code: string | null = null;
           const known = await readQuestion(session, request.questionId);
+          // Only a record of THIS Work and THIS Execution may ever be bound to the end (and later to a recovery).
+          const own = (question: typeof known) => question !== null && question.workId === work.work_id && question.executionId === executionId;
           if (intactRequest(request, work.work_id)) {
             const outcome = await registerQuestion(session, { work_id: work.work_id, executionId, invocationId: execution.invocationId, request, from: 'worker-completion' });
             if (outcome.kind === 'refused') {
               code = outcome.code;
-              // A conflict keeps the ORIGINAL record (and its impediment); any other refusal leaves no record: block explicitly.
-              if (code !== 'QUESTION_ID_CONFLICT') await recordContentLost(session, work.work_id, executionId, request.questionId, 'QUESTION_NOT_RECORDED', `it could not be recorded (${code})`);
+              // Conflict: the existing record is kept untouched; this Work is blocked explicitly. Any other refusal leaves no record.
+              await recordContentLost(session, work.work_id, executionId, request.questionId, code === 'QUESTION_ID_CONFLICT' ? 'QUESTION_ID_CONFLICT' : 'QUESTION_NOT_RECORDED',
+                code === 'QUESTION_ID_CONFLICT' ? 'the identity is already recorded with other content or for another Work/Execution' : `it could not be recorded (${code})`);
             } else if (outcome.kind === 'recorded') deps.questionRecorded?.();
-          } else if (!known || known.executionId !== executionId) {
+          } else if (!own(known)) {
             code = 'QUESTION_CONTENT_LOST';
             await recordContentLost(session, work.work_id, executionId, request.questionId);
           }
-          await recordEnd(session, work.work_id, executionId, 'question', code, request.questionId);
+          const bound = own(await readQuestion(session, request.questionId));
+          await recordEnd(session, work.work_id, executionId, 'question', code, bound ? request.questionId : null);
         } else await recordEnd(session, work.work_id, executionId, completed.status === 'success' ? 'completed' : 'failure', completed.status === 'success' ? null : completed.code);
       } finally { startCommitted(false); handle.close(); }
       await lifecycle.withdraw('ended', { notifyWorker: false });
@@ -362,7 +367,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       let resume: NonNullable<ExecutionView['request']['resume']> | undefined;
       if (previous?.end?.outcome === 'question') {
         const answered = previous.end.questionId ? await readQuestion(session, previous.end.questionId) : null;
-        if (!answered?.answer) { observe(work.work_id, 'refused', ['QUESTION_NOT_ANSWERED']); return; }
+        if (!answered?.answer || answered.workId !== work.work_id || answered.executionId !== previous.executionId) { observe(work.work_id, 'refused', ['QUESTION_NOT_ANSWERED']); return; }
         resume = { previousExecutionId: previous.executionId, questionId: answered.questionId, answerSha256: answered.answer.sha256, reason: 'NEW_BOOT_REPLACEMENT_SESSION' };
       }
       const { attemptId } = await freshEvaluation(work);

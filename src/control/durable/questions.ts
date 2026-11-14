@@ -70,7 +70,7 @@ export async function registerQuestion(session: Session, input: { work_id: strin
  * (`QUESTION_NOT_RECORDED`, e.g. the Work stopped being current). Block explicitly; never invent or publish a question.
  */
 export async function recordContentLost(session: Session, work_id: string, executionId: string, questionId: string,
-  code: 'QUESTION_CONTENT_LOST' | 'QUESTION_NOT_RECORDED' = 'QUESTION_CONTENT_LOST', reason = 'its complete request was not received intact') {
+  code: 'QUESTION_CONTENT_LOST' | 'QUESTION_NOT_RECORDED' | 'QUESTION_ID_CONFLICT' | 'QUESTION_RECORDED_EXECUTION_UNCERTAIN' = 'QUESTION_CONTENT_LOST', reason = 'its complete request was not received intact') {
   return session.commit(async tx => {
     const document = await tx.doc(works, work_id, null);
     const work = document.work;

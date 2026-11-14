@@ -73,3 +73,36 @@ test('AC1: start receipt is consumed exactly once, only after the activation int
   assert.equal(work!.history.filter(item => item.event === 'execution-started').length, 1);
   assert.equal((await advance(session, a, id, { state: 'reserved', phases: ['activation-requested'] }, () => {})).kind, 'stale');
 });
+
+test('review 1: Admitir Execução refuses a recovery basis whose Question belongs to another Work/Execution, even if answered', async t => {
+  const { session, admit } = await store(t);
+  const { registerQuestion, acceptAnswer, questionSha256 } = await import('../../src/control/durable/questions.js');
+  const { recordEnd, releaseAfterCessation } = await import('../../src/control/durable/execution.js');
+  const started = async (work_id: string, n: string) => {
+    await recordDependencies(session, work_id, evaluation(`d${n}`));
+    const admitted = await admitExecution(session, { work_id, attemptId: `d${n}`, capacity: 2, authorizationObservedAt: 'now', request });
+    assert.equal(admitted.kind, 'reserved');
+    const execution = (admitted as { execution: { executionId: string; invocationId: string } }).execution;
+    await recordPhase(session, work_id, execution.executionId, 'reserved', 'prepared', 'execution-prepared', () => {});
+    await recordPhase(session, work_id, execution.executionId, 'prepared', 'booted', 'execution-booted', () => {});
+    await recordDependencies(session, work_id, evaluation(`a${n}`));
+    assert.equal((await confirmActivation(session, work_id, execution.executionId, `a${n}`, grant, 'sha')).kind, 'advanced');
+    assert.equal(await confirmStart(session, work_id, execution.executionId, { workId: work_id, id: '99999999-2222-4333-8444-55555555555' + n, ...execution }), 'confirmed');
+    return execution;
+  };
+  const a = await admit(1), b = await admit(2);
+  const ea = await started(a, '1'), eb = await started(b, '2');
+  const qid = '0b9c6a52-3d3e-4c8f-9a51-000000000077';
+  const question = { questionId: qid, question: 'B?', context: '', sha256: questionSha256('B?', ''), reference: { workId: b, id: '77777777-2222-4333-8444-555555555555' } };
+  assert.deepEqual(await registerQuestion(session, { work_id: b, executionId: eb.executionId, invocationId: eb.invocationId, request: question, from: 'worker-notification' }), { kind: 'recorded' });
+  // A buggy caller binds Work a's end to Work b's Question.
+  await recordEnd(session, a, ea.executionId, 'question', null, qid);
+  assert.equal(await releaseAfterCessation(session, a, ea.executionId, 'confirmed'), 'released');
+  const receipt = await acceptAnswer(session, { request_id: 'r1', question_id: qid, text: 'yes', origin: { kind: 'local-cli' } });
+  assert.equal('outcome' in receipt && receipt.outcome, 'accepted');
+  await recordDependencies(session, a, evaluation('d3'));
+  const { createHash } = await import('node:crypto');
+  assert.deepEqual(await admitExecution(session, { work_id: a, attemptId: 'd3', capacity: 2, authorizationObservedAt: 'now', request,
+    resume: { previousExecutionId: ea.executionId, questionId: qid, answerSha256: createHash('sha256').update('yes').digest('hex'), reason: 'NEW_BOOT_REPLACEMENT_SESSION' } }),
+  { kind: 'refused', reasons: ['RESUME_BASIS_CHANGED'] });
+});
