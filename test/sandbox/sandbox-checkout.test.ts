@@ -102,7 +102,8 @@ test('AC2/AC3: same repository is sequenced fetch -> completed clone; distinct r
   const envs = { a: await w.environment('env-a'), b: await w.environment('env-b'), c: await w.environment('env-c') };
   const checkouts = createCheckouts({ root: w.root, remoteUrl: scope => `file://${repos[scope.repository as keyof typeof repos].path}`,
     fetch: { async fetch(scope) {
-      events.push(`fetch:${scope.repository}:${await access(join(envs.a, 'checkout.json')).then(() => 'a-cloned', () => 'a-pending')}`);
+      const cloned = (await Promise.all([envs.a, envs.b].map(env => access(join(env, 'checkout.json')).then(() => 1, () => 0)))).reduce((x, y) => x + y, 0);
+      events.push(`fetch:${scope.repository}:${cloned ? 'project-cloned' : 'none-cloned'}`);
       if (scope.repository === 'acme/lib') await libGate;
       return { token: 't', expiresAt: new Date(Date.now() + 3600000).toISOString() };
     } } });
@@ -111,7 +112,7 @@ test('AC2/AC3: same repository is sequenced fetch -> completed clone; distinct r
   const [a, b] = await Promise.all([checkouts.prepare(envs.a, request('acme/project', 3, 'factory/work-a')),
     checkouts.prepare(envs.b, request('acme/project', 3, 'factory/work-b'))]);
   assert.equal(a.status, 'success'); assert.equal(b.status, 'success');
-  assert.deepEqual(events, ['fetch:acme/lib:a-pending', 'fetch:acme/project:a-pending', 'fetch:acme/project:a-cloned'],
+  assert.deepEqual(events, ['fetch:acme/lib:none-cloned', 'fetch:acme/project:none-cloned', 'fetch:acme/project:project-cloned'],
     'project proceeded while lib was still fetching (no global mutex); the second project fetch waited for the first clone');
   releaseLib();
   assert.equal((await lib).status, 'success');
@@ -210,4 +211,34 @@ test('review 1 audit: a first checkout is only made in a never-booted environmen
   const result = await checkouts.prepare(env, request('acme/project', 3, 'factory/p'));
   assert.equal(result.status, 'success', JSON.stringify(result));
   await assert.rejects(access(join(w.dir, 'PLANTED_FSMONITOR')));
+});
+
+test('review 9: cache mutation is serialised across processes by a per-repository flock; an interrupted mutation is refused, not repaired', async t => {
+  const { spawn } = await import('node:child_process');
+  const w = await world(t);
+  const project = await upstream(w.dir, 'project');
+  let fetches = 0;
+  const options = { root: w.root, lockWaitSeconds: 1, remoteUrl: () => `file://${project.path}`,
+    fetch: { async fetch() { fetches++; return { token: 't', expiresAt: new Date(Date.now() + 3600000).toISOString() }; } } };
+  // First preparation creates the cache and leaves an idle state.
+  assert.equal((await createCheckouts(options).prepare(await w.environment('env-1'), request('acme/project', 3, 'factory/1'))).status, 'success');
+  assert.deepEqual(JSON.parse(await readFile(join(w.root, 'cache', 'git', '3.state.json'), 'utf8')).state, 'idle');
+  // Another process (another owner) holds the repository lock: this one never mutates the cache.
+  const holder = spawn('/usr/bin/flock', ['--exclusive', join(w.root, 'cache', 'git', '3.lock'), '/bin/sh', '-c', 'echo held; exec cat'], { stdio: ['pipe', 'pipe', 'ignore'] });
+  await new Promise(resolve => holder.stdout!.once('data', resolve));
+  t.after(async () => { holder.stdin!.end(); });
+  const before = await readFile(join(w.root, 'cache', 'git', '3.state.json'), 'utf8');
+  const env2 = await w.environment('env-2');
+  assert.deepEqual(await createCheckouts(options).prepare(env2, request('acme/project', 3, 'factory/2')), { status: 'failure', code: 'CACHE_LOCK_UNAVAILABLE' });
+  assert.equal(await readFile(join(w.root, 'cache', 'git', '3.state.json'), 'utf8'), before, 'cache state untouched while another process holds the lock');
+  await assert.rejects(access(join(env2, 'workspace', 'checkout')));
+  holder.stdin!.end();
+  await new Promise(resolve => holder.once('exit', resolve));
+  // A crash mid-mutation leaves 'mutating': the next owner refuses to touch the cache until reconciled.
+  await writeFile(join(w.root, 'cache', 'git', '3.state.json'), JSON.stringify({ version: 1, state: 'mutating', pid: 1, at: new Date().toISOString() }));
+  const env3 = await w.environment('env-3');
+  assert.deepEqual(await createCheckouts(options).prepare(env3, request('acme/project', 3, 'factory/3')), { status: 'failure', code: 'CACHE_RECONCILIATION_REQUIRED' });
+  await assert.rejects(access(join(env3, 'workspace', 'checkout')));
+  assert.equal(JSON.parse(await readFile(join(w.root, 'cache', 'git', '3.state.json'), 'utf8')).state, 'mutating', 'never repaired automatically');
+  assert.ok(fetches >= 1);
 });

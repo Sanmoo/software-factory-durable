@@ -1,5 +1,5 @@
-import { execFile } from 'node:child_process';
-import { lstat, mkdir, mkdtemp, open, readdir, readFile, rm } from 'node:fs/promises';
+import { execFile, spawn } from 'node:child_process';
+import { lstat, mkdir, mkdtemp, open, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import type { RepositoryFetchCredentials } from '../contracts/index.js';
@@ -40,7 +40,30 @@ const exists = (path: string) => lstat(path).then(() => true, (error: NodeJS.Err
  * path, no system/global/personal config and filters/LFS disabled, so no repository or personal hook/script/plugin executes on the host.
  * A continuation reuses the recorded checkout WITHOUT running git in the guest-writable tree.
  */
-export function createCheckouts(options: { root: string; fetch: RepositoryFetchCredentials;
+/**
+ * Cross-process exclusive lock on <cache>/<id>.lock held by a `flock` child for the whole fetch -> clone sequence (released on exit or if
+ * this process dies: the child sees EOF). Bounded wait; never a takeover.
+ */
+async function acquireLock(path: string, waitSeconds: number): Promise<() => Promise<void>> {
+  const file = await open(path, 'a', 0o600);
+  try {
+    const info = await file.stat();
+    if (!info.isFile() || info.nlink !== 1 || info.uid !== process.getuid?.() || (info.mode & 0o077)) throw new CheckoutFailure('failure', 'CHECKOUT_PATH_UNSAFE');
+  } finally { await file.close(); }
+  if ((await lstat(path)).isSymbolicLink()) throw new CheckoutFailure('failure', 'CHECKOUT_PATH_UNSAFE');
+  const child = spawn('/usr/bin/flock', ['--exclusive', '--wait', String(waitSeconds), path, '/bin/sh', '-c', 'echo locked; exec /usr/bin/cat'],
+    { stdio: ['pipe', 'pipe', 'ignore'], env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' }, shell: false });
+  const exited = new Promise<void>(resolve => child.once('exit', () => resolve()));
+  const acquired = await new Promise<boolean>(resolve => {
+    child.stdout!.once('data', (data: Buffer) => resolve(data.toString().startsWith('locked')));
+    child.once('exit', () => resolve(false));
+    child.once('error', () => resolve(false));
+  });
+  if (!acquired) { child.kill(); throw new CheckoutFailure('failure', 'CACHE_LOCK_UNAVAILABLE'); }
+  return async () => { child.stdin!.end(); await exited; };
+}
+
+export function createCheckouts(options: { root: string; fetch: RepositoryFetchCredentials; lockWaitSeconds?: number;
   /** Upstream fetch URL; GitHub by default. Tests substitute a local file:// fixture. The checkout's origin is ALWAYS the GitHub URL. */
   remoteUrl?: (scope: { repository: string }) => string }) {
   const chains = new Map<number, Promise<unknown>>();
@@ -63,10 +86,30 @@ export function createCheckouts(options: { root: string; fetch: RepositoryFetchC
   async function first(environment: string, request: CheckoutRequest, home: string): Promise<CheckoutView> {
     const cacheRoot = join(options.root, 'cache', 'git');
     const cache = join(cacheRoot, `${request.repositoryId}.git`);
-    if (!await exists(cache)) await run(['init', '--quiet', '--bare', '--template=', cache], cacheRoot, home);
+    // Credential first: a known issuance failure leaves the cache untouched (no 'mutating' state).
     let token: string;
     try { token = (await options.fetch.fetch({ repository: request.repository, installationId: request.installationId, workflows: false })).token; }
     catch { throw new CheckoutFailure('failure', 'CHECKOUT_FETCH_CREDENTIAL_UNAVAILABLE'); }
+    const release = await acquireLock(join(cacheRoot, `${request.repositoryId}.lock`), options.lockWaitSeconds ?? 600);
+    try {
+      // An interrupted earlier mutation (crash between fetch and clone) is refused until the operator reconciles it (spec §7.3).
+      const statePath = join(cacheRoot, `${request.repositoryId}.state.json`);
+      const previous = await readFile(statePath, 'utf8').then(text => JSON.parse(text) as { state?: string }, () => undefined);
+      if (previous && previous.state !== 'idle') throw new CheckoutFailure('failure', 'CACHE_RECONCILIATION_REQUIRED');
+      const state = async (value: 'mutating' | 'idle') => {
+        const temporary = `${statePath}.${process.pid}.tmp`;
+        await writeFile(temporary, JSON.stringify({ version: 1, state: value, pid: process.pid, at: new Date().toISOString() }), { mode: 0o600 });
+        await rename(temporary, statePath);
+      };
+      await state('mutating');
+      const view = await mutate(environment, request, home, cache, cacheRoot, token);
+      await state('idle');
+      return view;
+    } finally { await release(); }
+  }
+
+  async function mutate(environment: string, request: CheckoutRequest, home: string, cache: string, cacheRoot: string, token: string): Promise<CheckoutView> {
+    if (!await exists(cache)) await run(['init', '--quiet', '--bare', '--template=', cache], cacheRoot, home);
     const upstream = options.remoteUrl?.({ repository: request.repository }) ?? github(request.repository);
     // A failed fetch never proves an updated base; nothing below runs without it.
     await run(['fetch', '--quiet', '--no-tags', '--no-recurse-submodules', upstream, `+refs/heads/${request.base}:refs/heads/${request.base}`], cache, home, token);
