@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { workerLaunchSchema, workerOwnerEndpoint, type WorkerLaunch } from '../platform/host/index.js';
+import { workerLaunchSchema, workerOwnerEndpoint, workerQuestionSchema, type WorkerLaunch } from '../platform/host/index.js';
 import { connect, protocolVersion, type Channel, type Envelope } from '../protocol/index.js';
 import type { Invocation } from './worker-start.js';
 export type { ReviewerProfile, Invocation } from './worker-start.js';
@@ -76,6 +76,7 @@ const startSchema = z.strictObject({ receipt: reference, invocation: z.strictObj
 const completionSchema = z.discriminatedUnion('status', [
   z.strictObject({ status: z.literal('success'), receipt: reference }),
   z.strictObject({ status: z.literal('failure'), code: z.string() }),
+  z.strictObject({ status: z.literal('question'), receipt: reference, question: workerQuestionSchema.extend({ acknowledged: z.boolean() }) }),
 ]);
 
 /** Trusted Control caller must have confirmed admission/reservation BEFORE this
@@ -101,7 +102,7 @@ export function createWorkers(configuration?: Configuration) {
     if (!reply) return { status: 'failure', code: 'CREDENTIAL_DELIVERY_UNCERTAIN' };
     if (reply.kind !== 'credential-result' || JSON.stringify(reply.payload) !== expected) return { status: 'failure', code: directive.kind === 'credential' ? 'CREDENTIAL_DELIVERY_DENIED' : 'CREDENTIAL_WITHDRAWAL_DENIED' };
     return { status: directive.kind === 'credential' ? 'delivered' : 'withdrawn' };
-  }, async activate(invocation: Invocation, delivery?: ActivationDelivery) {
+  }, async activate(invocation: Invocation, delivery?: ActivationDelivery, events?: ActivationEvents) {
     if (!configuration) throw new Error('WORKER_EXECUTION_NOT_ENABLED');
     const request = workerLaunchSchema.safeParse({ context: invocation.context, prompt: invocation.prompt,
       ...(invocation.copyOutput === undefined ? {} : { copyOutput: invocation.copyOutput }),
@@ -151,14 +152,51 @@ export function createWorkers(configuration?: Configuration) {
       if (acknowledgement.status === 'failure') throw new Error(acknowledgement.code);
       if (acknowledgement.worker !== context.invocationId) throw new Error('WORKER_EXECUTION_UNCERTAIN');
       live.set(acknowledgement.worker, { channel, inbox, context });
-      const started = receive('worker-started').then(value => {
-        const parsed = startSchema.parse(value);
-        if (parsed.receipt.workId !== context.workId || parsed.invocation.executionId !== context.executionId ||
-            parsed.invocation.invocationId !== context.invocationId) throw new Error('WORKER_EXECUTION_UNCERTAIN');
-        return parsed;
-      });
-      const completed = started.then(async () => completionSchema.parse(await receive('worker-completed')));
+      // One ordered pump: start receipt, then at most one ask_user notification (answered with the Control's ACK), then completion.
+      let startedResolve!: (value: z.infer<typeof startSchema>) => void, startedReject!: (error: unknown) => void;
+      let completedResolve!: (value: z.infer<typeof completionSchema>) => void, completedReject!: (error: unknown) => void;
+      const started = new Promise<z.infer<typeof startSchema>>((resolve, reject) => { startedResolve = resolve; startedReject = reject; });
+      const completed = new Promise<z.infer<typeof completionSchema>>((resolve, reject) => { completedResolve = resolve; completedReject = reject; });
       void started.catch(() => {}); void completed.catch(() => {});
+      const questionSchema = z.strictObject({ context: z.record(z.string(), z.string()), question: workerQuestionSchema });
+      void (async () => {
+        let start: z.infer<typeof startSchema> | undefined;
+        let asked = false;
+        try {
+          while (true) {
+            // Frames of this launch (start, ask_user notification, completion) share its reply_to; deliver replies have their own.
+            const message = await inbox.next(frame => frame.reply_to === id);
+            if (!message || message.controller_run_id !== null) throw new Error('WORKER_EXECUTION_UNCERTAIN');
+            if (message.kind === 'worker-question') {
+              const parsed = questionSchema.safeParse(message.payload);
+              if (!start || asked || !parsed.success || message.message_id !== parsed.data.question.questionId || context.role !== 'builder' ||
+                  Object.keys(parsed.data.context).length !== Object.keys(context).length || Object.entries(context).some(([key, value]) => parsed.data.context[key] !== value) || parsed.data.question.reference.workId !== context.workId) throw new Error('WORKER_EXECUTION_UNCERTAIN');
+              asked = true;
+              // No ACK unless the handler confirms: a failed commit leaves the worker unacknowledged (it ends; the completion repeats it).
+              const ack = events?.question ? await events.question(parsed.data.question).catch(() => undefined) : { status: 'refused' as const, code: 'QUESTIONS_NOT_ENABLED' };
+              if (ack) await channel.send({ protocol_version: protocolVersion, controller_run_id: null, message_id: randomUUID(), reply_to: message.message_id,
+                kind: 'question-ack', payload: ack.status === 'recorded' ? { status: 'recorded' } : { status: 'refused', code: ack.code } });
+              continue;
+            }
+            if (message.message_id !== id) throw new Error('WORKER_EXECUTION_UNCERTAIN');
+            if (message.kind === 'worker-started' && !start) {
+              const parsed = startSchema.parse(message.payload);
+              if (parsed.receipt.workId !== context.workId || parsed.invocation.executionId !== context.executionId ||
+                  parsed.invocation.invocationId !== context.invocationId) throw new Error('WORKER_EXECUTION_UNCERTAIN');
+              start = parsed;
+              startedResolve(parsed);
+              continue;
+            }
+            if (message.kind === 'worker-completed' && start) {
+              const parsed = completionSchema.parse(message.payload);
+              if (parsed.status === 'question' && (context.role !== 'builder' || parsed.question.reference.workId !== context.workId)) throw new Error('WORKER_EXECUTION_UNCERTAIN');
+              completedResolve(parsed);
+              return;
+            }
+            throw new Error('WORKER_EXECUTION_UNCERTAIN');
+          }
+        } catch (error) { startedReject(error); completedReject(error); }
+      })();
       return { worker: acknowledgement.worker, started, completed, close() {
         invocation.signal.removeEventListener('abort', close); close();
       } };

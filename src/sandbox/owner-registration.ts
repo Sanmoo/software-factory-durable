@@ -10,6 +10,8 @@ import type { EnvironmentRef } from './prepare.js';
 import { connectReadTools, contextSchema, serveReadToolBindings, type GuestOwner, type ToolContext, type ReadBinding } from './read-tools.js';
 
 const credentialSchema = z.strictObject({ context: contextSchema, token: z.string().min(1).max(1024).regex(/^[a-zA-Z0-9._~+/-]+=*$/) });
+const questionAckSchema = z.discriminatedUnion('status', [z.strictObject({ status: z.literal('recorded') }),
+  z.strictObject({ status: z.literal('refused'), code: z.string().regex(/^[A-Z_]{1,64}$/) })]);
 
 function frame(id: string, kind: string, payload: Envelope['payload'], replyTo: string | null = null): Envelope {
   return { protocol_version: protocolVersion, controller_run_id: null, message_id: id, reply_to: replyTo, kind, payload };
@@ -29,9 +31,19 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
   // Transient Builder credentials of a host-boot channel (spec §8.1): the first delivery precedes its launch; after the launch the SAME
   // invocation may receive renewals (new commands only) and a final withdrawal (ticket 20). Memory only; one mutable holder per channel.
   const credentials = new Map<Channel, { token: string | undefined; readonly invocationId: string; withdrawn: boolean }>();
+  // ask_user relays awaiting the Control's ACK on the SAME host-boot channel that launched the worker (bounded wait, no retry).
+  const questionAcks = new Map<string, { channel: Channel; resolve(ack: z.infer<typeof questionAckSchema>): void; reject(error: Error): void }>();
   let sequence = 0;
   const server = await listen(join(directory, 'owner'), {
     async message(request, channel, peer) {
+      if (request.kind === 'question-ack') {
+        const pending = request.reply_to ? questionAcks.get(request.reply_to) : undefined;
+        const parsed = questionAckSchema.safeParse(request.payload);
+        if (!pending || pending.channel !== channel || !lifetimes.has(channel)) return;
+        questionAcks.delete(request.reply_to!);
+        if (parsed.success) pending.resolve(parsed.data); else pending.reject(new Error('QUESTION_ACK_INVALID'));
+        return;
+      }
       if (request.kind === 'deliver-credential' || request.kind === 'withdraw-credential') {
         const withdrawal = request.kind === 'withdraw-credential';
         const parsed = (withdrawal ? z.strictObject({ context: contextSchema }) : credentialSchema).safeParse(request.payload);
@@ -98,7 +110,13 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
             // EXACT same Records instance already passed to bindings.add above.
             registerSecret(value) { records.registerSecret(value); },
             revoke() { lifetime.abort(); },
-          });
+          }, { question: question => new Promise((resolve, reject) => {
+            // Relay only: the Control commits Question + impediment + intent, then ACKs. Silence is never treated as recorded.
+            const timer = setTimeout(() => { questionAcks.delete(question.questionId); reject(new Error('QUESTION_ACK_TIMEOUT')); }, 30000);
+            questionAcks.set(question.questionId, { channel, resolve: ack => { clearTimeout(timer); resolve(ack); }, reject: error => { clearTimeout(timer); reject(error); } });
+            channel.send(frame(question.questionId, 'worker-question', { context, question }, request.message_id))
+              .catch(() => { questionAcks.get(question.questionId)?.reject(new Error('QUESTION_RELAY_FAILED')); questionAcks.delete(question.questionId); });
+          }) });
           await channel.send(frame(request.message_id, 'worker-launch-result', { status: 'requested', worker: context.invocationId }, request.message_id));
           // Request, durable start and completion are distinct observations.
           void (async () => {
@@ -135,7 +153,10 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
       await bindings.add({ ...privateCapabilities, copyOutput: false, endpoint, context, signal: lifetime.signal, records });
       await channel.send(frame(request.message_id, 'binding-result', { status: 'success', endpoint }, request.message_id));
     },
-    closed(_error, _peer, channel) { lifetimes.get(channel)?.abort(); credentials.delete(channel); },
+    closed(_error, _peer, channel) {
+      lifetimes.get(channel)?.abort(); credentials.delete(channel);
+      for (const [id, pending] of questionAcks) if (pending.channel === channel) { questionAcks.delete(id); pending.reject(new Error('QUESTION_RELAY_CLOSED')); }
+    },
   }, { kind: 'host-boot', binding: Object.freeze({ ...identity }) });
   let closing: Promise<void> | undefined;
   return { close() {

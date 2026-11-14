@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { EventEmitter } from 'node:events';
 import { z } from 'zod';
 import { workerBootstrapSchema } from './worker-bootstrap.js';
+import { isQuestionMessage, workerQuestionSchema } from './worker-question-ipc.js';
 
 // Private technical host/worker seam over the already inherited child channel.
 // Not a tool, reader, WorkAdmission grant, transaction or credential producer.
@@ -29,6 +30,8 @@ const ownerLifecycleSchema = z.union([
   z.strictObject({ kind: z.literal('worker-error'), code: z.string().regex(/^[A-Z_]{1,128}$/) }),
   z.strictObject({ kind: z.literal('worker-result'), status: z.enum(['completed', 'interrupted']), receipt, sessionFile: z.string().nullable().optional() }),
   z.strictObject({ kind: z.literal('worker-result'), status: z.literal('failure'), code: z.string().regex(/^[A-Z_]{1,128}$/) }),
+  z.strictObject({ kind: z.literal('worker-result'), status: z.literal('question'), receipt, sessionFile: z.string().nullable().optional(),
+    question: workerQuestionSchema.extend({ acknowledged: z.boolean() }) }),
 ]);
 const abortSchema = z.strictObject({ kind: z.literal('abort') });
 
@@ -61,8 +64,8 @@ export function createSecretPublisher(wire: Wire, input: Context, signal: AbortS
     current.resolve();
   }
   function message(value: unknown) {
-    // Keep the fixed entrypoint's abort/lifecycle demultiplexer independent.
-    if (abortSchema.safeParse(value).success) return;
+    // Keep the fixed entrypoint's abort/lifecycle and the question seam's demultiplexers independent.
+    if (abortSchema.safeParse(value).success || isQuestionMessage(value)) return;
     try {
       const parsed = responseSchema.safeParse(value);
       if (!withinBudget(value) || !parsed.success || !pending || pending.ack || !active() ||
@@ -128,7 +131,7 @@ export function createOwnerSecretReceiver(wire: Wire, input: Context, signal: Ab
     try { revoke(); } catch { /* Never propagate parent/private diagnostics. */ }
   }
   function message(value: unknown) {
-    if (ownerLifecycleSchema.safeParse(value).success) return;
+    if (ownerLifecycleSchema.safeParse(value).success || isQuestionMessage(value)) return;
     try {
       const parsed = requestSchema.safeParse(value);
       if (!withinBudget(value) || !parsed.success || !active() || pending || !wire.send ||

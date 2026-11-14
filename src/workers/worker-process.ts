@@ -6,7 +6,7 @@ import { createRecords } from '../records/index.js';
 import type { ReadResult, ToolContext, ToolProjection } from '../sandbox/index.js';
 import { startWorker } from './worker-start.js';
 import { builderBudget, oauthQualification } from './oauth-qualification.js';
-import { createSecretPublisher, workerBootstrapSchema } from '../platform/host/index.js';
+import { createQuestionSender, createSecretPublisher, workerBootstrapSchema } from '../platform/host/index.js';
 
 
 const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
@@ -137,7 +137,9 @@ export async function run(input: unknown, parentSignal: AbortSignal) {
     const tools = await toolProjection(bootstrap.endpoint, bootstrap.context, signal);
     try {
       const { executeSession } = await import('./worker-session.js');
+      const questions = bootstrap.context.role === 'builder' ? createQuestionSender(process, bootstrap.context, signal) : undefined;
       return await executeSession({ profile: bootstrap.profile, records, sandbox: tools.sandbox,
+        ...(questions ? { questions: { send: question => questions.ask(question), containsSecret: text => secrets.some(secret => text.includes(secret)) } } : {}),
         oauth: { factoryRoot: bootstrap.recordsRoot, acknowledgeSecrets: secretPublisher.acknowledgeSecrets,
           publicInputIsSafe: () => !containsSecret({ prompt: bootstrap.prompt, profile: publicProfile }),
           registerSecret(value) { records.registerSecret(value); if (!secrets.includes(value)) secrets.push(value); } } }, invocation, receipt);

@@ -1,6 +1,8 @@
 export { workerBootstrapSchema, workerLaunchSchema, type WorkerLaunch } from './worker-bootstrap.js';
 // Private composition on an existing fixed child channel; no public tool/reader.
 export { createSecretPublisher, createOwnerSecretReceiver } from './worker-secret-ipc.js';
+// Same fixed child channel: one ask_user notification per Builder activation and its Control ACK.
+export { createQuestionSender, serveQuestionRelay, workerQuestionSchema, type WorkerQuestionRequest, type QuestionRelayAck } from './worker-question-ipc.js';
 import { access, constants, statfs, stat, lstat, realpath, open, readdir, readFile } from 'node:fs/promises';
 import type { BigIntStats } from 'node:fs';
 import { join } from 'node:path';

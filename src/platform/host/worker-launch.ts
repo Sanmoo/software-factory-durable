@@ -6,6 +6,7 @@ import { workerLaunchSchema, type WorkerLaunch } from './worker-bootstrap.js';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { createOwnerSecretReceiver } from './worker-secret-ipc.js';
+import { serveQuestionRelay, workerQuestionSchema, type QuestionRelayAck, type WorkerQuestionRequest } from './worker-question-ipc.js';
 
 const run = promisify(execFile);
 
@@ -107,14 +108,18 @@ export async function workerOwnerEndpoint(root: string, context: WorkerLaunch['c
 
 const reference = z.strictObject({ workId: z.string(), id: z.uuid() });
 const startedInvocation = z.strictObject({ executionId: z.string(), invocationId: z.string() });
+const askedSchema = workerQuestionSchema.extend({ acknowledged: z.boolean() });
 const completedSchema = z.discriminatedUnion('status', [
   z.strictObject({ status: z.literal('success'), receipt: reference }),
   z.strictObject({ status: z.literal('failure'), code: z.string() }),
+  z.strictObject({ status: z.literal('question'), receipt: reference, question: askedSchema }),
 ]);
 /** Spawn only inside the existing correlated boot owner. Failures after claiming
  * remain uncertain: caller retains its invocation tombstone and must not retry. */
 export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, endpoint: string, root: string, signal: AbortSignal,
-  secrets: { registerSecret(value: string): void; revoke(): void }) {
+  secrets: { registerSecret(value: string): void; revoke(): void },
+  /** Builder ask_user relay: the owner forwards the preserved request to the Control and returns its ACK (spec §5.5). */
+  relay?: { question(question: WorkerQuestionRequest): Promise<QuestionRelayAck> }) {
   const request = workerLaunchSchema.parse(input);
   const plan = planWorkerLaunch(host, { workId: request.context.workId, environmentRef: request.context.environmentRef,
     bootRef: request.context.bootRef, invocationId: request.context.invocationId, role: request.context.role });
@@ -147,6 +152,8 @@ export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, en
       completeResolve({ status: 'failure', code: 'WORKER_EXECUTION_UNCERTAIN' });
       secrets.revoke();
     });
+  const questions = relay && request.context.role === 'builder'
+    ? serveQuestionRelay(child, request.context, signal, () => startReference !== undefined, question => relay.question(question)) : undefined;
   child.on('message', message => {
     if (!message || typeof message !== 'object') return;
     if ('kind' in message && message.kind === 'worker-started' && 'receipt' in message) {
@@ -162,17 +169,20 @@ export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, en
       const parsed = z.discriminatedUnion('status', [
         z.strictObject({ kind: z.literal('worker-result'), status: z.enum(['completed', 'interrupted']), receipt: reference, sessionFile: z.string().nullable().optional() }),
         z.strictObject({ kind: z.literal('worker-result'), status: z.literal('failure'), code: z.string() }),
+        z.strictObject({ kind: z.literal('worker-result'), status: z.literal('question'), receipt: reference, sessionFile: z.string().nullable().optional(), question: askedSchema }),
       ]).safeParse(message);
       if (parsed.success) {
         const result = parsed.data;
-        if (result.status === 'completed' && startReference && result.receipt.id === startReference.id &&
-            result.receipt.workId === startReference.workId) completeResolve({ status: 'success', receipt: result.receipt });
+        const own = result.status !== 'failure' && startReference !== undefined && result.receipt.id === startReference.id && result.receipt.workId === startReference.workId;
+        if (result.status === 'question' && own && request.context.role === 'builder' && result.question.reference.workId === request.context.workId) {
+          completeResolve({ status: 'question', receipt: result.receipt, question: result.question });
+        } else if (result.status === 'completed' && own) completeResolve({ status: 'success', receipt: result.receipt });
         else completeResolve({ status: 'failure', code: result.status === 'interrupted' ? 'WORKER_INTERRUPTED' : 'WORKER_EXECUTION_UNCERTAIN' });
         secretReceiver.close();
       }
     }
   });
-  const lost = () => { secretReceiver.close(); startReject(new Error('WORKER_START_UNCERTAIN')); completeResolve({ status: 'failure', code: 'WORKER_EXECUTION_UNCERTAIN' }); signal.removeEventListener('abort', abort); };
+  const lost = () => { questions?.close(); secretReceiver.close(); startReject(new Error('WORKER_START_UNCERTAIN')); completeResolve({ status: 'failure', code: 'WORKER_EXECUTION_UNCERTAIN' }); signal.removeEventListener('abort', abort); };
   child.once('error', lost); child.once('exit', lost);
   child.send(bootstrap, error => { if (error) { lost(); abort(); } });
   if (signal.aborted) abort();
