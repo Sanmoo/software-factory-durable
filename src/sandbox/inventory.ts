@@ -7,6 +7,8 @@ import { metadata, ownerSchema, privateDirectory } from './lifecycle.js';
 export type RuntimeListing = { environments: { environment: string; workId: string | null }[];
   cache: { repositoryId: number | null; state: 'idle' | 'preparing' | 'unknown' }[]; unknown: string[] };
 const environmentName = /^env-[a-f0-9]{64}$/;
+/** Sockets the controller (`control.sock`) and doctor (`factory.sock`) own in run/. */
+const ownSockets = ['control.sock', 'factory.sock'];
 const cacheState = z.object({ state: z.string() });
 const listing = async (path: string) => readdir(path).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return [] as string[]; throw error; });
 
@@ -47,6 +49,13 @@ export async function inventoryRuntime(root: string): Promise<RuntimeListing> {
     } catch { state = 'unknown'; }
     cache.push({ repositoryId: Number(match[1]), state });
   }
-  for (const name of (await listing(join(canonical, 'run'))).sort()) if (name !== 'control.sock') unknown.push(`run/${name}`);
+  // Own endpoints (an obsolete socket is inert: no process listens through a file) are known; anything else in run/ is unknown, never ignored.
+  for (const name of (await listing(join(canonical, 'run'))).sort()) {
+    if (ownSockets.includes(name)) {
+      const info = await lstat(join(canonical, 'run', name)).catch(() => null);
+      if (info?.isSocket() && info.uid === process.getuid?.()) continue;
+    }
+    unknown.push(`run/${name}`);
+  }
   return { environments, cache, unknown };
 }

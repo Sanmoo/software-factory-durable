@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import net from 'node:net';
 import { join } from 'node:path';
 import { createSandbox, inventoryRuntime, type EnvironmentRef } from '../../src/sandbox/index.js';
 
@@ -26,7 +27,8 @@ test('inventoryRuntime attributes own environments from their metadata, reports 
     const environment = await owned(root, 'work-a');
     await mkdir(join(root, 'environments', `env-${'0'.repeat(64)}`), { mode: 0o700 });
     await mkdir(join(root, 'environments', 'stray'), { mode: 0o700 });
-    await writeFile(join(root, 'run', 'control.sock'), '');
+    const own = net.createServer(); await new Promise<void>(resolve => own.listen(join(root, 'run', 'factory.sock'), resolve));
+    await writeFile(join(root, 'run', 'control.sock'), ''); // not a socket: unknown
     await writeFile(join(root, 'run', 'leftover'), '');
     await mkdir(join(root, 'cache', 'git'), { recursive: true, mode: 0o700 });
     await writeFile(join(root, 'cache', 'git', '3.state.json'), JSON.stringify({ version: 1, state: 'mutating' }), { mode: 0o600 });
@@ -36,7 +38,8 @@ test('inventoryRuntime attributes own environments from their metadata, reports 
     const listed = await inventoryRuntime(root);
     assert.deepEqual(listed.environments, [{ environment: `env-${'0'.repeat(64)}`, workId: null }, { environment, workId: 'work-a' }].sort((a, b) => a.environment.localeCompare(b.environment)));
     assert.deepEqual(listed.cache, [{ repositoryId: 3, state: 'preparing' }, { repositoryId: 4, state: 'idle' }, { repositoryId: 5, state: 'unknown' }]);
-    assert.deepEqual(listed.unknown, ['environments/stray', 'run/leftover']);
+    assert.deepEqual(listed.unknown, ['environments/stray', 'run/control.sock', 'run/leftover'], 'an own socket is known; a non-socket under its name is not');
+    await new Promise(resolve => own.close(resolve));
     assert.deepEqual(await readdir(join(root, 'environments')), before);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
