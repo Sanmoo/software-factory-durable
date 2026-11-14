@@ -20,6 +20,9 @@ const launchProfile = z.union([legacyProfile, oauthProfile]);
 const bootstrap = z.strictObject({
   version: z.literal(1),
   copyOutput: z.boolean().optional(),
+  // Host-selected Builder start policies (ticket 09): the Factory skill pack and the bounded Builder model budget.
+  skillPack: z.literal('factory-skills-v1').optional(),
+  modelBudget: z.literal('builder-v1').optional(),
   selectedOutputCopies: z.array(z.string().regex(/^\/artifacts\/factory-output-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.txt$/)).max(32).readonly().optional(),
   editSourceMaxBytes: z.number().int().nonnegative().max(8192).optional(),
   imageSourceMaxBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
@@ -29,10 +32,12 @@ const bootstrap = z.strictObject({
   profile: z.union([legacyProfile.extend({ directory: text }), oauthProfile.extend({ directory: text })]),
 });
 
-function rolePolicies(input: { context: { role: string }; copyOutput?: boolean | undefined; selectedOutputCopies?: readonly string[] | undefined }) {
+function rolePolicies(input: { context: { role: string }; copyOutput?: boolean | undefined; selectedOutputCopies?: readonly string[] | undefined;
+  skillPack?: string | undefined; modelBudget?: string | undefined }) {
   return !(input.context.role === 'builder' && input.selectedOutputCopies !== undefined) &&
+    !(input.context.role !== 'builder' && (input.skillPack !== undefined || input.modelBudget !== undefined)) &&
     !(input.context.role !== 'builder' && input.copyOutput === true);
 }
 export const workerBootstrapSchema = bootstrap.refine(rolePolicies, 'WORKER_POLICY_ROLE_DENIED');
-export const workerLaunchSchema = bootstrap.pick({ context: true, knownSecrets: true, prompt: true, imageSourceMaxBytes: true, editSourceMaxBytes: true, copyOutput: true, selectedOutputCopies: true }).extend({ profile: launchProfile }).strict().refine(rolePolicies, 'WORKER_POLICY_ROLE_DENIED');
+export const workerLaunchSchema = bootstrap.pick({ context: true, knownSecrets: true, prompt: true, imageSourceMaxBytes: true, editSourceMaxBytes: true, copyOutput: true, selectedOutputCopies: true, skillPack: true, modelBudget: true }).extend({ profile: launchProfile }).strict().refine(rolePolicies, 'WORKER_POLICY_ROLE_DENIED');
 export type WorkerLaunch = z.infer<typeof workerLaunchSchema>;

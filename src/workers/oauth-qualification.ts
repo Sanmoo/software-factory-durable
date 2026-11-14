@@ -5,6 +5,11 @@ import type { ModelRuntime, ToolDefinition } from '#factory-pi';
  * physical cessation. The built-in ChatGPT route omits max_output_tokens. */
 export const oauthQualification = Object.freeze({ requests: 2, tools: 1, promptBytes: 4096,
   contextBytes: 32768, toolBytes: 8192, providerBytes: 65536, deadlineMs: 30000 });
+/** Host-selected Builder start budget (ticket 09): a bounded, explicit envelope for one real Builder Execution with the skill pack.
+ * Same native SDK/no-retry path; these are observation limits, NOT a billing cap, RSS bound or physical cessation. */
+export const builderBudget = Object.freeze({ requests: 60, tools: 120, promptBytes: 16384, contextBytes: 2 * 1024 * 1024,
+  toolBytes: 262144, providerBytes: 16 * 1024 * 1024, deadlineMs: 30 * 60 * 1000 });
+export type QualificationLimits = typeof oauthQualification | typeof builderBudget;
 const size = (value: unknown) => Buffer.byteLength(JSON.stringify(value) ?? '');
 const unavailable = () => new Error('WORKER_QUALIFICATION_CLOSED');
 type Stream = ReturnType<ModelRuntime['streamSimple']>;
@@ -12,7 +17,8 @@ type Message = Awaited<ReturnType<Stream['result']>>;
 
 /** Native agent/accumulator/stream retained. Only this runtime instance's
  * public request/stream boundaries are narrowed before auth and persistence. */
-export function qualifyOAuth(runtime: ModelRuntime, signal: AbortSignal, publicInputIsSafe: () => boolean, abort: () => void) {
+export function qualifyOAuth(runtime: ModelRuntime, signal: AbortSignal, publicInputIsSafe: () => boolean, abort: () => void,
+  limits: QualificationLimits = oauthQualification) {
   let requests = 0, tools = 0, providerBytes = 0, failed = false;
   const close = () => { failed = true; abort(); return unavailable(); };
   const check = () => { if (failed || signal.aborted || !publicInputIsSafe()) throw close(); };
@@ -29,15 +35,15 @@ export function qualifyOAuth(runtime: ModelRuntime, signal: AbortSignal, publicI
     // Freeze/count BEFORE calling native (whose lazy setup begins auth immediately).
     const count = ++requests;
     check();
-    if (count > oauthQualification.requests || model.provider !== 'openai' || model.id !== 'gpt-6-luna' ||
-        model.api !== 'openai-responses' || size(context) > oauthQualification.contextBytes) throw close();
+    if (count > limits.requests || model.provider !== 'openai' || model.id !== 'gpt-6-luna' ||
+        model.api !== 'openai-responses' || size(context) > limits.contextBytes) throw close();
     const stream = native(model, context, { signal: options?.signal ? AbortSignal.any([signal, options.signal]) : signal,
       ...(options?.sessionId === undefined ? {} : { sessionId: options.sessionId }),
-      maxRetries: 0, timeoutMs: oauthQualification.deadlineMs, cacheRetention: 'none',
+      maxRetries: 0, timeoutMs: limits.deadlineMs, cacheRetention: 'none',
       async onProviderStreamEvent(data) {
         providerBytes += size(data); // awaited by native Responses BEFORE normalization
         check();
-        if (providerBytes > oauthQualification.providerBytes) throw close();
+        if (providerBytes > limits.providerBytes) throw close();
       } });
     const push = stream.push.bind(stream), end = stream.end.bind(stream);
     stream.push = event => {
@@ -59,19 +65,19 @@ export function qualifyOAuth(runtime: ModelRuntime, signal: AbortSignal, publicI
       return { ...tool, async execute(...args) {
         const count = ++tools; // before delegate/adapter, including concurrent calls
         check();
-        if (count > oauthQualification.tools || size(args[1]) > oauthQualification.toolBytes) throw close();
+        if (count > limits.tools || size(args[1]) > limits.toolBytes) throw close();
         const [callId, input, callerSignal, onUpdate, context] = args;
         const toolSignal = callerSignal ? AbortSignal.any([signal, callerSignal]) : signal;
         const checkTool = () => { check(); if (toolSignal.aborted) throw close(); };
         const update: typeof onUpdate = onUpdate ? result => {
           checkTool();
-          if (size(result) > oauthQualification.toolBytes) throw close();
+          if (size(result) > limits.toolBytes) throw close();
           onUpdate(result);
         } : undefined;
         checkTool();
         const result = await tool.execute(callId, input, toolSignal, update, context);
         checkTool();
-        if (size(result) > oauthQualification.toolBytes) throw close();
+        if (size(result) > limits.toolBytes) throw close();
         return result;
       } };
     } };

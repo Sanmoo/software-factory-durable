@@ -1,9 +1,10 @@
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openFactoryOAuth } from './factory-oauth.js';
-import { oauthQualification, qualifyOAuth } from './oauth-qualification.js';
-import { createAgentSession, createExtensionRuntime, ModelRuntime, SessionManager, SettingsManager,
-  type ResourceLoader, type ToolDefinition } from '#factory-pi';
+import { builderBudget, oauthQualification, qualifyOAuth } from './oauth-qualification.js';
+import { createAgentSession, createExtensionRuntime, createSyntheticSourceInfo, ModelRuntime, SessionManager, SettingsManager,
+  type PromptTemplate, type ResourceLoader, type Skill, type ToolDefinition } from '#factory-pi';
+import { builderSkillPack, loadSkillPack } from './skill-pack.js';
 import type { ToolProjection } from '../sandbox/index.js';
 import type { createRecords, OutputReference } from '../records/index.js';
 import { reviewerRead } from './read.js';
@@ -32,8 +33,17 @@ export async function executeSession(options: Options, invocation: Invocation, r
   if (invocation.signal.aborted) throw new Error('STALE_TOOL_CONTEXT');
   const qualificationAbort = new AbortController();
   const oauth = !('apiKey' in profile);
-  const signal = oauth ? AbortSignal.any([invocation.signal, qualificationAbort.signal, AbortSignal.timeout(oauthQualification.deadlineMs)]) : invocation.signal;
-  if (oauth && (!options.oauth || Buffer.byteLength(invocation.prompt) > oauthQualification.promptBytes)) throw new Error('WORKER_QUALIFICATION_CLOSED');
+  const limits = invocation.modelBudget === 'builder-v1' && invocation.context.role === 'builder' ? builderBudget : oauthQualification;
+  const signal = oauth ? AbortSignal.any([invocation.signal, qualificationAbort.signal, AbortSignal.timeout(limits.deadlineMs)]) : invocation.signal;
+  if (oauth && (!options.oauth || Buffer.byteLength(invocation.prompt) > limits.promptBytes)) throw new Error('WORKER_QUALIFICATION_CLOSED');
+  // Explicit Factory resources only: the verified pack (guest-readable copies under /artifacts) or nothing; never a personal profile.
+  const pack = invocation.skillPack === 'factory-skills-v1' && invocation.context.role === 'builder' ? await loadSkillPack() : undefined;
+  const source = (path: string) => createSyntheticSourceInfo(`${builderSkillPack.guestDirectory}/${path}`, { source: `factory:${builderSkillPack.id}`, scope: 'temporary', origin: 'package' });
+  const skills: Skill[] = pack ? pack.manifest.skills.map(skill => ({ name: skill.name, description: skill.description,
+    filePath: `${builderSkillPack.guestDirectory}/${skill.path}`, baseDir: `${builderSkillPack.guestDirectory}/${skill.path.replace(/\/SKILL\.md$/, '')}`,
+    sourceInfo: source(skill.path), disableModelInvocation: !skill.modelInvocation })) : [];
+  const prompts: PromptTemplate[] = pack ? pack.prompts.map(prompt => ({ name: prompt.name, description: prompt.description, content: prompt.content,
+    filePath: `${builderSkillPack.guestDirectory}/${prompt.path}`, sourceInfo: source(prompt.path) })) : [];
   const store = oauth ? await openFactoryOAuth({ factoryRoot: options.oauth!.factoryRoot,
     excludedRoots: { source: fileURLToPath(new URL('../../../', import.meta.url)).replace(/\/$/, ''),
       guest: join(options.oauth!.factoryRoot, 'environments'), profiles: [join(options.oauth!.factoryRoot, 'r')] },
@@ -50,13 +60,13 @@ export async function executeSession(options: Options, invocation: Invocation, r
         runtime.registerProvider(profile.providerId, profile.provider);
         await runtime.setRuntimeApiKey(profile.providerId, profile.apiKey, { signal });
       }
-      const qualification = oauth ? qualifyOAuth(runtime, signal, options.oauth!.publicInputIsSafe, () => qualificationAbort.abort()) : undefined;
+      const qualification = oauth ? qualifyOAuth(runtime, signal, options.oauth!.publicInputIsSafe, () => qualificationAbort.abort(), limits) : undefined;
       qualification?.check();
       const model = runtime.getModel(profile.providerId, profile.modelId);
       if (!model || (oauth && model.api !== 'openai-responses')) throw new Error('WORKER_MODEL_UNAVAILABLE');
       const resourceLoader: ResourceLoader = {
         getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
-        getSkills: () => ({ skills: [], diagnostics: [] }), getPrompts: () => ({ prompts: [], diagnostics: [] }),
+        getSkills: () => ({ skills, diagnostics: [] }), getPrompts: () => ({ prompts, diagnostics: [] }),
         getThemes: () => ({ themes: [], diagnostics: [] }), getAgentsFiles: () => ({ agentsFiles: [] }),
         getSystemPrompt: () => profile.systemPrompt, getSystemPromptSource: () => undefined,
         getAppendSystemPrompt: () => [], getAppendSystemPromptSources: () => [], extendResources() {}, async reload() {},

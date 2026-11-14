@@ -5,7 +5,7 @@ import { connect, protocolVersion } from '../protocol/index.js';
 import { createRecords } from '../records/index.js';
 import type { ReadResult, ToolContext, ToolProjection } from '../sandbox/index.js';
 import { startWorker } from './worker-start.js';
-import { oauthQualification } from './oauth-qualification.js';
+import { builderBudget, oauthQualification } from './oauth-qualification.js';
 import { createSecretPublisher, workerBootstrapSchema } from '../platform/host/index.js';
 
 
@@ -92,7 +92,7 @@ export async function run(input: unknown, parentSignal: AbortSignal) {
   const parsed = workerBootstrapSchema.safeParse(input);
   if (!parsed.success) throw new Error('WORKER_BOOTSTRAP_INVALID');
   const bootstrap = parsed.data;
-  if (!('apiKey' in bootstrap.profile)) signal = AbortSignal.any([signal, AbortSignal.timeout(oauthQualification.deadlineMs)]);
+  if (!('apiKey' in bootstrap.profile)) signal = AbortSignal.any([signal, AbortSignal.timeout(bootstrap.modelBudget === 'builder-v1' ? builderBudget.deadlineMs : oauthQualification.deadlineMs)]);
   // Same explicit minimal projection as the existing closed Host launch plan.
   const { TMPDIR: temporary, XDG_CACHE_HOME: cache } = process.env;
   if (process.versions.node.split('.')[0] !== '24' || process.env.NODE_DISABLE_COMPILE_CACHE !== '1' ||
@@ -120,6 +120,8 @@ export async function run(input: unknown, parentSignal: AbortSignal) {
   }
   const invocation = { context: bootstrap.context, prompt: bootstrap.prompt, signal,
     ...(bootstrap.copyOutput === undefined ? {} : { copyOutput: bootstrap.copyOutput }),
+    ...(bootstrap.skillPack === undefined ? {} : { skillPack: bootstrap.skillPack }),
+    ...(bootstrap.modelBudget === undefined ? {} : { modelBudget: bootstrap.modelBudget }),
     ...(bootstrap.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: bootstrap.editSourceMaxBytes }) };
   // Sync protected receipt before even importing/creating the native SDK runtime.
   const secretPublisher = createSecretPublisher(process, bootstrap.context, signal, 5000, () => synchronizationLifetime.abort());
