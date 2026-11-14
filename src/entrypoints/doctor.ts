@@ -48,8 +48,10 @@ export async function doctor(root: string) {
   checks.push({ id: 'socket-path', status: socketFits ? 'ok' : 'blocked',
     message: `${Buffer.byteLength(paths.socket)} bytes; Linux pathname limit is 107 bytes. No socket was created.`,
     nextStep: 'Choose a shorter canonical installation root if necessary; relocations require environment/reference validation.' });
-  const code = !configuration.valid ? 'INVALID_CONFIGURATION'
-    : checks.some(check => check.status === 'blocked') ? 'PREREQUISITES_MISSING' : 'RUNTIME_UNQUALIFIED';
+  // A blocked release is its own top-level result: configuration codes never mask an unverified distribution.
+  const code = release.checks.some(check => check.status === 'blocked') ? 'RELEASE_INVALID'
+    : !configuration.valid ? 'INVALID_CONFIGURATION'
+      : checks.some(check => check.status === 'blocked') ? 'PREREQUISITES_MISSING' : 'RUNTIME_UNQUALIFIED';
   return { code, scope: 'offline' as const, paths, versions: { node: process.versions.node, ...versions }, configuration,
     release: release.release ? { ...release.release, production: { id: productionProfile.id, sdkProfileId: productionProfile.sdkProfileId,
       model: { providerId: productionProfile.model.providerId, modelId: productionProfile.model.modelId, auth: productionProfile.model.auth } } } : null,

@@ -1,7 +1,7 @@
 import { createHash, webcrypto } from 'node:crypto';
-import { createReadStream, lstatSync } from 'node:fs';
+import { createReadStream } from 'node:fs';
 import { lstat, readdir, readFile, readlink, realpath } from 'node:fs/promises';
-import { dirname, join, resolve, sep } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import type { Diagnostic } from '../contracts/index.js';
@@ -20,6 +20,8 @@ const sha256 = z.string().regex(/^[0-9a-f]{64}$/);
 const relativePath = z.string().min(1).max(1024).refine(path => !path.startsWith('/') && !path.includes('\0') &&
   path.split('/').every(part => part !== '' && part !== '.' && part !== '..'));
 const mode = z.number().int().min(0).max(0o7777);
+const uniquePaths = (entries: readonly (readonly unknown[])[]) =>
+  new Set(entries.map(entry => String(entry[0]).toLowerCase())).size === entries.length;
 /** `d` directory, `f` regular file (mode, size, sha256), `l` relative symbolic link resolving inside the same tree. */
 export type TreeEntry = [string, 'd', number] | [string, 'f', number, number, string] | [string, 'l', string];
 const entrySchema = z.union([
@@ -68,15 +70,16 @@ const manifestSchema = z.strictObject({
   builtAt: z.iso.datetime(),
   node: z.strictObject({ version: z.string().regex(/^[0-9]+\.[0-9]+\.[0-9]+$/), path: z.literal('node/bin/node'), sha256, license: z.literal('node/LICENSE') }),
   launcher: z.strictObject({ path: z.literal('factory'), sha256 }),
-  /** `pinned`: manifest.json and the kernel/initramfs/rootfs it lists, whose content the Sandbox guest-asset verifier checks by the pin. */
-  guestAssets: z.strictObject({ path: z.string().regex(/^assets\/guest\/[0-9a-f]{64}$/), manifestSha256: sha256, files: z.array(entrySchema).min(1).max(64),
-    pinned: z.array(relativePath).min(1).max(8) }),
+  guestAssets: z.strictObject({ path: z.string().regex(/^assets\/guest\/[0-9a-f]{64}$/), manifestSha256: sha256,
+    files: z.array(entrySchema).min(1).max(64).refine(uniquePaths, 'Duplicate or case-colliding asset paths') }),
   production: z.strictObject({ id: z.literal(productionProfile.id) }).passthrough(),
   qualification: z.strictObject({ status: z.literal('unqualified'), statement: z.string().min(1).max(4096) }),
   /** Informational pins (source, build tooling, runtime packages/licenses, SDK profiles, assets provenance, build host). */
   metadata: z.record(z.string(), z.unknown()),
-  files: z.array(entrySchema).min(1).max(200000),
-}).refine(value => value.guestAssets.path === `assets/guest/${value.guestAssets.manifestSha256}`);
+  files: z.array(entrySchema).min(1).max(200000).refine(uniquePaths, 'Duplicate or case-colliding paths'),
+}).refine(value => value.guestAssets.path === `assets/guest/${value.guestAssets.manifestSha256}`)
+  // The pinned guest manifest is itself a distributed file whose recomputed hash must BE the pin (it anchors kernel/initramfs/rootfs).
+  .refine(value => value.guestAssets.files.some(entry => entry[0] === 'manifest.json' && entry[1] === 'f' && entry[4] === value.guestAssets.manifestSha256));
 export type ReleaseManifest = z.infer<typeof manifestSchema>;
 
 class ReleaseFailure extends Error {
@@ -88,11 +91,29 @@ export function applicationRoot(): string {
   return fileURLToPath(new URL('../../../', import.meta.url)).replace(/\/$/, '');
 }
 
-/** Installation root of a running release (`<root>/releases/<id>` → `<root>`), or undefined for a development checkout. */
+/**
+ * Installation root of a running release, by construction only (`<root>/releases/<id>` → `<root>`): never by manifest presence and never
+ * from the environment, so a truncated or tampered release still serves exactly its own root.
+ */
 export function releaseInstallationRoot(): string | undefined {
-  const application = applicationRoot();
-  try { lstatSync(join(application, releaseManifestName)); } catch { return undefined; }
-  return resolve(application, '..', '..');
+  return structuralInstallationRoot(applicationRoot());
+}
+
+export const developmentMarkerName = 'development-checkout.json';
+
+/** Only an EXPLICIT marker makes a tree a development checkout; anything else without a readable manifest is an invalid release. */
+async function explicitDevelopmentCheckout(directory: string): Promise<boolean> {
+  try {
+    const info = await lstat(join(directory, developmentMarkerName));
+    if (!info.isFile() || info.nlink !== 1 || info.size > 1024) return false;
+    return (JSON.parse(await readFile(join(directory, developmentMarkerName), 'utf8')) as { kind?: unknown }).kind === 'factory-development-checkout';
+  } catch { return false; }
+}
+
+/** Root implied by the running application's own location (`<root>/releases/<id>`), independent of any manifest. */
+export function structuralInstallationRoot(application: string): string | undefined {
+  const parent = dirname(application);
+  return basename(parent) === 'releases' && releaseIdSchema.safeParse(basename(application)).success ? dirname(parent) : undefined;
 }
 
 const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
@@ -106,11 +127,12 @@ async function hashFile(path: string): Promise<string> {
  * Exact inventory of a tree: directories, regular files (single link, no group/other write) and relative symbolic links that stay
  * inside the tree. Anything else (absolute or escaping links, devices, sockets, FIFOs, hard links, foreign owner) is refused.
  */
-/** `trusted`: files whose content another verifier already checks against a pin (guest assets): shape only, recorded hash kept. */
-export async function inventoryTree(directory: string, exclude: readonly string[] = [], expected?: readonly TreeEntry[], trusted: readonly string[] = []): Promise<TreeEntry[]> {
+export async function inventoryTree(directory: string, exclude: readonly string[] = [], expected?: readonly TreeEntry[]): Promise<TreeEntry[]> {
   const base = await realpath(directory);
   const uid = process.getuid?.();
   const files: [[string, 'f', number, number, string], string][] = [];
+  // Case-insensitive uniqueness: extraction on a case-insensitive filesystem must not merge two distributed entries.
+  const seenPaths = new Set<string>();
   // Subdirectories are walked concurrently; each directory returns its entries in sorted order, so the result stays deterministic.
   async function visit(relative: string): Promise<TreeEntry[]> {
     const names = (await readdir(relative ? join(base, relative) : base)).sort(compare)
@@ -118,6 +140,8 @@ export async function inventoryTree(directory: string, exclude: readonly string[
     const infos = await Promise.all(names.map(path => lstat(join(base, path))));
     const parts = await Promise.all(names.map(async (path, index): Promise<TreeEntry[]> => {
       const absolute = join(base, path), info = infos[index]!;
+      if (seenPaths.has(path.toLowerCase())) throw new ReleaseFailure('RELEASE_CASE_COLLISION', path);
+      seenPaths.add(path.toLowerCase());
       if (info.uid !== uid) throw new ReleaseFailure('RELEASE_ENTRY_NOT_OWNED', path);
       if ((info.mode & 0o7022) !== 0 && !info.isSymbolicLink()) throw new ReleaseFailure('RELEASE_ENTRY_WRITABLE', path);
       if (info.isDirectory()) return [[path, 'd', info.mode & 0o7777], ...await visit(path)];
@@ -130,7 +154,12 @@ export async function inventoryTree(directory: string, exclude: readonly string[
       if (info.isSymbolicLink()) {
         const target = await readlink(absolute);
         const resolved = resolve(dirname(absolute), target);
-        if (target.startsWith('/') || !(resolved === base || resolved.startsWith(base + sep))) throw new ReleaseFailure('RELEASE_LINK_ESCAPES', path);
+        const contained = (candidate: string) => candidate === base || candidate.startsWith(base + sep);
+        // Lexical containment AND the resolved target: a chain of in-tree links must not end outside (or dangle).
+        const real = contained(resolved) ? await realpath(absolute).catch(() => undefined) : undefined;
+        if (target.startsWith('/') || !contained(resolved) || real === undefined || !contained(real)) {
+          throw new ReleaseFailure('RELEASE_LINK_ESCAPES', path);
+        }
         return [[path, 'l', target]];
       }
       throw new ReleaseFailure('RELEASE_ENTRY_UNSUPPORTED', path);
@@ -145,13 +174,10 @@ export async function inventoryTree(directory: string, exclude: readonly string[
   }
   // Hash only after the complete shape is known; bounded parallel reads. Files up to 256 MiB (the private Node) are digested off the main thread (WebCrypto
   // thread pool); larger ones are streamed.
-  const recorded = new Map((expected ?? []).map(entry => [entry[0], entry]));
   let next = 0;
   await Promise.all(Array.from({ length: 32 }, async () => {
     while (next < files.length) {
       const [entry, absolute] = files[next++]!;
-      const known = recorded.get(entry[0]);
-      if (trusted.includes(entry[0]) && known?.[1] === 'f') { entry[4] = known[4]; continue; }
       entry[4] = entry[3] <= 256 * 1024 * 1024 ? Buffer.from(await webcrypto.subtle.digest('SHA-256', await readFile(absolute))).toString('hex') : await hashFile(absolute);
     }
   }));
@@ -188,7 +214,13 @@ export async function verifyReleaseTree(release: string): Promise<ReleaseVerific
     if (info.size > 64 * 1024 * 1024) return { kind: 'invalid', code: 'RELEASE_MANIFEST_TOO_LARGE' };
     bytes = await readFile(join(release, releaseManifestName));
   } catch (error) {
-    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return { kind: 'development' };
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+      // Fail closed (static review): a release launcher without its manifest must refuse; only an explicitly marked
+      // development checkout (tracked in the repository, never distributed) is development.
+      // A marker inside `<root>/releases/<id>` never turns a release into a development checkout: the location decides.
+      return structuralInstallationRoot(release) === undefined && await explicitDevelopmentCheckout(release) ? { kind: 'development' }
+        : { kind: 'invalid', code: 'RELEASE_MANIFEST_MISSING' };
+    }
     return { kind: 'invalid', code: 'RELEASE_MANIFEST_UNREADABLE' };
   }
   let manifest: ReleaseManifest;
@@ -218,11 +250,11 @@ async function privateDirectory(path: string) {
 }
 
 /**
- * Release facts of the running application for one installation root (doctor and controller bootstrap). Development checkouts carry no
- * release: no pinned assets, no execution composition. `assets: false` skips re-hashing the guest assets (the adapter verifies the pin
- * before every boot); doctor always hashes them.
+ * Release facts of the running application for one installation root (doctor and controller bootstrap). Every distributed byte is
+ * re-hashed here (the manifest is a claim to verify), including the guest assets, before storage is opened. Development checkouts carry
+ * no release: no pinned assets, no execution composition.
  */
-export async function inspectRelease(installationRoot: string, options: { assets?: boolean } = {}): Promise<{
+export async function inspectRelease(installationRoot: string): Promise<{
   release: ReleaseView | null; guestAssets?: { directory: string; manifestSha256: string }; checks: Diagnostic[] }> {
   const application = await realpath(applicationRoot());
   const verification = await verifyReleaseTree(application);
@@ -263,18 +295,21 @@ export async function inspectRelease(installationRoot: string, options: { assets
       nextStep: 'Administrator must inspect the named installation directory; no recursive chmod or automatic repair.' });
   }
   const directory = join(root, manifest.guestAssets.path);
-  if (options.assets !== false) {
-    let status: Diagnostic['status'] = 'blocked', message = 'Guest assets of this release are missing or differ from the release manifest.';
-    // Shape of every asset file; content of the remaining files here, of the pinned ones by the guest-assets checks below.
-    try {
-      const actual = await inventoryTree(directory, [], manifest.guestAssets.files, manifest.guestAssets.pinned);
-      if (JSON.stringify(actual) === JSON.stringify(manifest.guestAssets.files)) {
-        status = 'ok'; message = `Guest assets ${manifest.guestAssets.manifestSha256} preserved as distributed (pinned kernel/initramfs/rootfs content: guest-assets checks; no boot).`;
-      }
-    } catch { /* Reported as blocked below. */ }
-    checks.push({ id: 'release:assets', status, message,
-      nextStep: 'Assets are preserved while dependent disks exist; never rebuild, download or replace them in place.' });
+  let status: Diagnostic['status'] = 'blocked', message = 'Guest assets of this release are missing or differ from the release manifest.';
+  try {
+    // Every asset file is re-hashed from its bytes; the manifest hash is never copied as evidence.
+    const actual = await inventoryTree(directory, [], manifest.guestAssets.files);
+    message = JSON.stringify(actual) === JSON.stringify(manifest.guestAssets.files)
+      ? `Guest assets ${manifest.guestAssets.manifestSha256} preserved exactly as distributed (no boot performed).`
+      : `RELEASE_INTEGRITY_MISMATCH at ${manifest.guestAssets.path}/${firstDifference(actual, manifest.guestAssets.files)}`;
+    status = message.startsWith('Guest assets') ? 'ok' : 'blocked';
+  } catch (error) {
+    // Name the divergent path/code; the manifest hash is never used as evidence of content.
+    const failure = error as { code?: unknown; path?: unknown };
+    if (typeof failure.code === 'string') message = `${failure.code}${typeof failure.path === 'string' ? ` at ${failure.path}` : ''}`;
   }
+  checks.push({ id: 'release:assets', status, message,
+    nextStep: 'Assets are preserved while dependent disks exist; never rebuild, download or replace them in place.' });
   checks.push({ id: 'release:qualification', status: 'unverified', message: manifest.qualification.statement,
     nextStep: 'Qualify the final composition with the separately authorized real groups; checksums and build success are not qualification.' });
   return { release: { release: manifest.release, manifestSha256, node: manifest.node.version, production: manifest.production.id,

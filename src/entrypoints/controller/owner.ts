@@ -25,9 +25,9 @@ async function own(root: string): Promise<number> {
   process.umask(0o077);
   const paths = await controllerPaths(root);
   await verifyControllerLock(paths.lockPath);
-  // A distributed release must verify (integrity, location, explicit selection, private Node) BEFORE storage; a development checkout
-  // carries no release and composes no execution (EXECUTION_NOT_ENABLED). Guest assets are re-verified by the adapter at each boot.
-  const release = await inspectRelease(paths.root, { assets: false });
+  // A distributed release must verify (every distributed byte, guest assets included, location, explicit selection, private Node) BEFORE
+  // storage; a development checkout carries no release and composes no execution (EXECUTION_NOT_ENABLED).
+  const release = await inspectRelease(paths.root);
   const blocked = release.checks.filter(check => check.status === 'blocked');
   if (blocked.length > 0) {
     console.error(JSON.stringify({ code: 'RELEASE_INVALID', checks: blocked.map(check => ({ id: check.id, message: check.message })),
