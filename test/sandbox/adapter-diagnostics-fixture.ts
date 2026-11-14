@@ -201,11 +201,13 @@ cp.spawn = ((command: string, args: string[], options: cp.SpawnOptions) => {
   // exact shape before EventEmitter dispatch, retaining the attempt/start audit.
   // Every other message still reaches the unchanged strict production receiver.
   const emit = child.emit.bind(child);
+  // Fixture-only telemetry frames from every provider preload never reach the
+  // strict production worker IPC listeners (which still reject unknown kinds).
   child.emit = (event: string | symbol, ...values: unknown[]) => {
     const message = values[0];
     if (event === 'message' && message !== null && typeof message === 'object' &&
         Object.keys(message).length === 2 && 'kind' in message && (message.kind === 'provider-request' ||
-          (nativeCopyRead && (message.kind === 'provider-attempt' || message.kind === 'provider-validated'))) &&
+          message.kind === 'provider-attempt' || message.kind === 'provider-validated') &&
         'count' in message && typeof message.count === 'number' && Number.isSafeInteger(message.count) && message.count > 0) {
       observeMessage(message);
       return true;
@@ -326,7 +328,6 @@ const sdkDouble = {
         return { async *output() { const bytes = Buffer.from(text); for (let i = 0; i < bytes.length; i += 65536) yield { stream: 'stdout', data: bytes.subarray(i, i + 65536) }; }, result: Promise.resolve({ exitCode: 0 }) };
       }
       if (nativeEdit && argv[0] === '/usr/bin/python3') {
-        assert.ok(typeof options.stdin === 'string');
         assert.deepEqual(argv.slice(0, 4), ['/usr/bin/python3', '-I', '-S', '-c']);
         const operation = argv.length === 6 ? 'capture' : argv[5]!;
         audit('edit-' + operation);
@@ -344,6 +345,8 @@ const sdkDouble = {
           }
           return { async *output() { yield { stream: 'stdout', data: captured }; }, result: Promise.resolve({ exitCode: 0 }) };
         }
+        // Only mutations carry stdin content; the Read-owner source capture has none.
+        assert.ok(typeof options.stdin === 'string');
         assert.deepEqual(options.env, {}); assert.equal(options.cwd, '/');
         const evidence = join(root!, workId, 'evidence');
         const events = fs.readdirSync(evidence).flatMap(id => {
