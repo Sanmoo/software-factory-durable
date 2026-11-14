@@ -82,6 +82,8 @@ export function questionCommentBody(input: { questionId: string; workId: string;
 
 /** Explicit replacement instruction for the activation after an answer (new boot, new session): Work, artifacts, question and answer. */
 export function recoveryPrompt(input: { ticketUrl: string; repository: string; base: string; baseCommit: string; branch: string; checkout: string;
+  /** Guest directory of the Builder pack of this Execution (e.g. /artifacts/factory/skill-pack/factory-skills-v2). */
+  skillDirectory: string;
   workId: string; executionId: string; previousExecutionId: string; question: { questionId: string; question: string; context: string };
   answer: { text: string; author: string; origin: string } }): string {
   const build = (withContext: boolean) => [`Factory recovery instruction for Ticket ${input.ticketUrl}.`,
@@ -89,7 +91,7 @@ export function recoveryPrompt(input: { ticketUrl: string; repository: string; b
       `checkout=${input.checkout} artifacts=/artifacts work=${input.workId} execution=${input.executionId} previous-execution=${input.previousExecutionId}`,
     'This is a NEW session on the same Work: the previous Execution ended after asking the question below. Its workspace, branch, commits and ' +
       '/artifacts were preserved; its session is not continued.',
-    'Read /artifacts/factory/skill-pack/factory-skills-v1/skills/implement/SKILL.md with the read tool and follow section 4 (resume after an answer).',
+    `Read ${input.skillDirectory}/skills/implement/SKILL.md with the read tool and follow section 4 (resume after an answer).`,
     '', `Question ${input.question.questionId}:`, fenced(input.question.question),
     ...(input.question.context ? withContext ? ['Context you gave:', fenced(input.question.context)]
       : ['(The context you gave is omitted here for size; it is preserved with the question in the Factory.)'] : []),

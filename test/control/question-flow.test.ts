@@ -22,11 +22,11 @@ function executionDoubles(control: () => Control, scripts: Script[], options: { 
   const acks: { ack: QuestionAck; show: Extract<ShowView, { kind: 'work' }> }[] = [];
   const ports: ExecutionPorts = {
     configuration: { schemaVersion: 1 }, capacity: 1,
-    builder: { skillPack: 'factory-skills-v1', modelBudget: 'builder-v1', copyOutput: true, editSourceMaxBytes: 8192 },
+    builder: { skillPack: 'factory-skills-v2', modelBudget: 'builder-v1', copyOutput: true, editSourceMaxBytes: 8192 },
     sandbox: {
       async prepare(input) {
         calls.push({ kind: 'prepare', detail: input });
-        return { status: 'success', environment: `env-${'c'.repeat(64)}` as never, seeds: [{ name: 'factory/skill-pack/factory-skills-v1', manifestSha256: 'f'.repeat(64), reused: false }],
+        return { status: 'success', environment: `env-${'c'.repeat(64)}` as never, seeds: [{ name: 'factory/skill-pack/factory-skills-v2', manifestSha256: 'f'.repeat(64), reused: false }],
           checkout: { path: '/workspace/checkout', repository: input.checkout.repository, repositoryId: input.checkout.repositoryId, base: 'main', branch: input.checkout.branch,
             baseCommit: 'a'.repeat(40), origin: 'https://github.com/acme/project.git', reused: calls.filter(call => call.kind === 'prepare').length > 1, preparedAt: new Date().toISOString() } };
       },
@@ -149,6 +149,7 @@ test('AC1/AC2/AC3/AC6: ask -> Question+impediment+intent committed before the AC
   const recovery = h.activations()[2]!.detail as { prompt: string; context: { executionId: string } };
   assert.match(recovery.prompt, /^Factory recovery instruction for Ticket https:\/\/github\.com\/acme\/project\/issues\/3\./);
   assert.ok(recovery.prompt.includes('Use docs/factory-smoke.md') && recovery.prompt.includes('Which file name should the doc use?'));
+  assert.ok(recovery.prompt.includes('/artifacts/factory/skill-pack/factory-skills-v2/skills/implement/SKILL.md'), 'the pack of THIS Execution');
   await h.settle(async () => (await h.byNumber())[3]!.execution!.state === 'ended');
   const resumed = (await h.byNumber())[3]!;
   assert.equal(resumed.execution!.mode, 'recovery');

@@ -4,7 +4,7 @@ import { openFactoryOAuth } from './factory-oauth.js';
 import { builderBudget, oauthQualification, qualifyOAuth } from './oauth-qualification.js';
 import { createAgentSession, createExtensionRuntime, createSyntheticSourceInfo, ModelRuntime, SessionManager, SettingsManager,
   type PromptTemplate, type ResourceLoader, type Skill, type ToolDefinition } from '#factory-pi';
-import { builderSkillPack, loadSkillPack } from './skill-pack.js';
+import { loadSkillPack, skillPacks } from './skill-pack.js';
 import type { ToolProjection } from '../sandbox/index.js';
 import type { createRecords, OutputReference } from '../records/index.js';
 import { reviewerRead } from './read.js';
@@ -44,7 +44,10 @@ export async function executeSession(options: Options, invocation: Invocation, r
   const signal = oauth ? AbortSignal.any([invocation.signal, qualificationAbort.signal, AbortSignal.timeout(limits.deadlineMs)]) : invocation.signal;
   if (oauth && (!options.oauth || Buffer.byteLength(invocation.prompt) > limits.promptBytes)) throw new Error('WORKER_QUALIFICATION_CLOSED');
   // Explicit Factory resources only: the verified pack (guest-readable copies under /artifacts) or nothing; never a personal profile.
-  const pack = invocation.skillPack === 'factory-skills-v1' && invocation.context.role === 'builder' ? await loadSkillPack() : undefined;
+  const selected = invocation.skillPack !== undefined && invocation.context.role === 'builder' ? skillPacks[invocation.skillPack] : undefined;
+  const pack = selected ? await loadSkillPack(selected.directory) : undefined;
+  if (pack && pack.id !== selected!.id) throw new Error('WORKER_SKILL_PACK_DRIFT');
+  const builderSkillPack = selected ?? skillPacks['factory-skills-v2'];
   const source = (path: string) => createSyntheticSourceInfo(`${builderSkillPack.guestDirectory}/${path}`, { source: `factory:${builderSkillPack.id}`, scope: 'temporary', origin: 'package' });
   const skills: Skill[] = pack ? pack.manifest.skills.map(skill => ({ name: skill.name, description: skill.description,
     filePath: `${builderSkillPack.guestDirectory}/${skill.path}`, baseDir: `${builderSkillPack.guestDirectory}/${skill.path.replace(/\/SKILL\.md$/, '')}`,

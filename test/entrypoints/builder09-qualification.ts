@@ -113,7 +113,9 @@ export async function runPhase(phase: Phase) {
     if (phase === 'run') {
       const { github, tracker, codeRepository, createBuilderCredentials, createRepositoryFetchCredentials } = await compose();
       const { createSandbox } = await import('../../src/sandbox/index.js');
-      const { createWorkers, builderSkillPack } = await import('../../src/workers/index.js');
+      // Ticket 09 qualified v1; it stays pinned to v1 (the default Builder pack is now v2).
+      const { createWorkers, skillPacks } = await import('../../src/workers/index.js');
+      const builderSkillPack = skillPacks['factory-skills-v1'];
       const { openControl } = await import('../../src/control/index.js');
       const sandbox = createSandbox({ root, guestAssets, repositoryFetch: createRepositoryFetchCredentials({ github, repositories: [repository] }),
         artifactSeeds: [{ name: builderSkillPack.seedName, directory: builderSkillPack.directory }] });

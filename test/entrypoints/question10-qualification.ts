@@ -24,7 +24,7 @@ const systemPrompt = 'You are the Software Factory Builder. Follow the Factory s
   'approval you do not have, use the ask_user tool instead of working around it.';
 
 export function plan() {
-  return { revision, root, observations, phases, repository, expectedTicket, operators, configuration, guestAssets,
+  return { revision, root, observations, phases, repository, expectedTicket, operators, configuration, guestAssets, skillPack: 'factory-skills-v2',
     model: { provider: 'openai', model: 'gpt-6-luna', api: 'openai-responses', auth: 'factory-oauth (operator first-login store under root/credentials)',
       budget: 'builder-v1', maxActivations: 2, perActivation: { maxRequests: 60, maxToolCalls: 120, deadlineMinutes: 30 }, providerRetries: 0, sdkRetries: 0, providerBillingHardCap: false },
     github: { app: githubApp, controllerPurposes: ['tracker-read', 'association-read', 'dependency-read', 'repository-read', 'repository-fetch {metadata:read, contents:read}',
@@ -104,10 +104,11 @@ async function runControl(phase: 'ask' | 'resume', save: (name: string, data: un
   const events: unknown[] = [];
   const { github, tracker, codeRepository, createBuilderCredentials, createRepositoryFetchCredentials } = await compose(events);
   const { createSandbox } = await import('../../src/sandbox/index.js');
-  const { createWorkers, builderSkillPack } = await import('../../src/workers/index.js');
+  const { createWorkers, skillPacks } = await import('../../src/workers/index.js');
+  const pack = skillPacks['factory-skills-v2'];
   const { openControl } = await import('../../src/control/index.js');
   const sandbox = createSandbox({ root, guestAssets, repositoryFetch: createRepositoryFetchCredentials({ github, repositories: [repository] }),
-    artifactSeeds: [{ name: builderSkillPack.seedName, directory: builderSkillPack.directory }] });
+    artifactSeeds: [{ name: pack.seedName, directory: pack.directory }] });
   const workers = createWorkers({ root, knownSecrets: [], profile: { id: 'factory-development-pi-1.5.2-read-async-bash-lexical-v3', systemPrompt,
     auth: 'factory-oauth', providerId: 'openai', modelId: 'gpt-6-luna', api: 'openai-responses' } });
   const credentials = createBuilderCredentials({ github, repositories: [repository] });
@@ -117,7 +118,7 @@ async function runControl(phase: 'ask' | 'resume', save: (name: string, data: un
     const shown = await holder.control!.inspect({ kind: 'show', work_id: workId });
     return 'work' in shown && shown.work.ticket.number === expectedTicket.number && shown.work.ticket.repositoryId === expectedTicket.repositoryId;
   };
-  const execution: ExecutionPorts = { configuration, capacity: 1, credentials, builder: { skillPack: 'factory-skills-v1', modelBudget: 'builder-v1', copyOutput: true, editSourceMaxBytes: 8192 },
+  const execution: ExecutionPorts = { configuration, capacity: 1, credentials, builder: { skillPack: 'factory-skills-v2', modelBudget: 'builder-v1', copyOutput: true, editSourceMaxBytes: 8192 },
     sandbox: {
       async prepare(input) {
         events.push({ at: new Date().toISOString(), call: 'prepare', workId: input.workId, checkout: input.checkout });

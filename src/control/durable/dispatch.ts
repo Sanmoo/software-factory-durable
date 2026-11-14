@@ -260,6 +260,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       // First activation: `/implement <ticket>`. After an answer: an explicit recovery instruction (new boot, new session), never a bare `continue`.
       const prompt = resume && answered?.answer ? recoveryPrompt({ ticketUrl: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
         baseCommit: prepared.checkout.baseCommit, branch: execution.request.branch, checkout: prepared.checkout.path, workId: work.work_id, executionId,
+        skillDirectory: `/artifacts/factory/skill-pack/${execution.request.policies.skillPack ?? 'factory-skills-v2'}`,
         previousExecutionId: resume.previousExecutionId, question: { questionId: answered.questionId, question: answered.content.question, context: answered.content.context },
         answer: { text: answered.answer.text, author: answered.answer.author.kind === 'github' ? answered.answer.author.login : 'local administrator', origin: answered.answer.origin.kind } })
         : [`/implement ${work.ticket.url}`, `repository=${work.repository.repository}`, `base=${work.repository.base}`, `base-commit=${prepared.checkout.baseCommit}`,

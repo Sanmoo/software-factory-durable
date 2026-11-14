@@ -4,7 +4,7 @@ import { workerLaunchSchema, workerOwnerEndpoint, workerQuestionSchema, type Wor
 import { connect, protocolVersion, type Channel, type Envelope } from '../protocol/index.js';
 import type { Invocation } from './worker-start.js';
 export type { ReviewerProfile, Invocation } from './worker-start.js';
-export { builderSkillPack } from './skill-pack.js';
+export { builderSkillPack, skillPacks, type SkillPackId } from './skill-pack.js';
 /** Transient material handed to the host handshake, never part of the (serializable) invocation. */
 export type ActivationDelivery = { credential?: Readonly<{ token: string }> };
 /** `deliver` directives (Q6): a renewed transient Builder credential for NEW commands, or its final withdrawal. Never serialized/persisted. */

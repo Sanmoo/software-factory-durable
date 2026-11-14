@@ -71,14 +71,14 @@ test('AC2: the published comment carries the explicit reply instruction; model t
 
 test('AC6/spec 5.5: the recovery instruction is explicit (Work, artifacts, question and accepted answer), never a bare continue', () => {
   const prompt = recoveryPrompt({ ticketUrl: 'https://github.com/acme/project/issues/3', repository: 'acme/project', base: 'main', baseCommit: 'a'.repeat(40), branch: 'factory/3-abc',
-    checkout: '/workspace/checkout', workId: 'work-a', executionId: 'exec-2', previousExecutionId: 'exec-1',
+    checkout: '/workspace/checkout', workId: 'work-a', executionId: 'exec-2', previousExecutionId: 'exec-1', skillDirectory: '/artifacts/factory/skill-pack/factory-skills-v2',
     question: { questionId: qid, question: 'Which file?', context: 'none named' }, answer: { text: 'docs/a.md', author: 'sanmoo', origin: 'github-comment' } });
   assert.match(prompt, /^Factory recovery instruction/);
   for (const part of ['https://github.com/acme/project/issues/3', 'branch=factory/3-abc', 'previous-execution=exec-1', qid, 'Which file?', 'docs/a.md', 'sanmoo',
-    '/artifacts/factory/skill-pack/factory-skills-v1/skills/implement/SKILL.md', 'section 4']) assert.ok(prompt.includes(part), part);
+    '/artifacts/factory/skill-pack/factory-skills-v2/skills/implement/SKILL.md', 'section 4']) assert.ok(prompt.includes(part), part);
   assert.ok(Buffer.byteLength(prompt) < 16384);
   // Worst case (3-byte characters at every limit) still fits the Builder prompt budget: the context is then omitted, never the answer.
-  const big = recoveryPrompt({ ticketUrl: 'u', repository: 'r', base: 'b', baseCommit: 'c', branch: 'br', checkout: '/w', workId: 'w', executionId: 'e', previousExecutionId: 'p',
+  const big = recoveryPrompt({ ticketUrl: 'u', repository: 'r', base: 'b', baseCommit: 'c', branch: 'br', checkout: '/w', workId: 'w', executionId: 'e', previousExecutionId: 'p', skillDirectory: '/s',
     question: { questionId: qid, question: 'é'.repeat(2000), context: '€'.repeat(4000) }, answer: { text: '€'.repeat(2000), author: 'a', origin: 'local-cli' } });
   assert.ok(Buffer.byteLength(big) <= 16384);
   assert.ok(big.includes('€'.repeat(2000)) && big.includes('context you gave is omitted'));

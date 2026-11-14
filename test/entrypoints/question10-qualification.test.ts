@@ -21,6 +21,7 @@ test('recipe: import and --plan are inert and declare the fixed bounds (2 activa
   assert.deepEqual([plan.model.maxActivations, plan.model.perActivation.maxRequests, plan.model.providerRetries, plan.model.sdkRetries], [2, 60, 0, 0]);
   assert.match(plan.github.writes, /at most ONE POST \/repos\/Sanmoo\/java-springboot-event-sourcing\/issues\/3\/comments per phase/);
   assert.deepEqual(plan.operators, ['Sanmoo']);
+  assert.equal(plan.skillPack, 'factory-skills-v2');
   assert.match(plan.operatorStep, /controller STOPPED/);
   await assert.rejects(recipe.main(['retry']), /EXACT_PHASE_REQUIRED/);
   assert.equal(forbidden, 0);

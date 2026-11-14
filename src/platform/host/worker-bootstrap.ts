@@ -21,7 +21,7 @@ const bootstrap = z.strictObject({
   version: z.literal(1),
   copyOutput: z.boolean().optional(),
   // Host-selected Builder start policies (ticket 09): the Factory skill pack and the bounded Builder model budget.
-  skillPack: z.literal('factory-skills-v1').optional(),
+  skillPack: z.enum(['factory-skills-v1', 'factory-skills-v2']).optional(),
   modelBudget: z.literal('builder-v1').optional(),
   selectedOutputCopies: z.array(z.string().regex(/^\/artifacts\/factory-output-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.txt$/)).max(32).readonly().optional(),
   editSourceMaxBytes: z.number().int().nonnegative().max(8192).optional(),
