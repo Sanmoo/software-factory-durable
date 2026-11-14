@@ -113,4 +113,5 @@ o mapa está encerrado. Construção, provas, aceite do MVP e decomposição per
 Estas evoluções foram explicitamente solicitadas pelo operador; ficam registradas para esforços posteriores, sem ampliar o destino deste mapa nem virar fallback implícito do MVP.
 
 - Outras modalidades de sandbox, incluindo opção Docker para hosts que já são VMs, especialmente sem nested KVM; diretriz e limites registrados em [Escolher o isolamento e o ciclo de vida dos ambientes de trabalho](issues/07-isolation-choice.md).
+- [Software Factory v2 — sandbox AWS Lambda MicroVMs](../software-factory-v2/map.md): esforço pós-MVP separado para avaliar serviço gerenciado, preservação via Git e ambientes reconstruíveis com duração limitada; não altera o PRD/spec nem os gates de implementação do MVP.
 - Suporte da fábrica a macOS, aproveitando como ponto de partida o suporte documentado pelo Gondolin a QEMU/HVF; adaptações e validação próprias continuam necessárias, conforme [Escolher o isolamento e o ciclo de vida dos ambientes de trabalho](issues/07-isolation-choice.md).
