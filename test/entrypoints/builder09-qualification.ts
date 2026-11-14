@@ -1,4 +1,4 @@
-import type { ExecutionView } from '../../src/control/types.js';
+import type { ExecutionView } from '../../src/control/index.js';
 
 // TEST ONLY. Ticket 09 one-shot real Builder qualification recipe. Import and `--plan` are inert. Every other phase is a REAL effect and
 // requires an explicit operator grant: real GitHub (App), a real Gondolin/KVM VM and a real model. Phases are one-shot: an exclusive

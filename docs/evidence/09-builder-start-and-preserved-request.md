@@ -185,6 +185,6 @@ is closed"), caminho Write/owner não alterado aqui (`write-tools.ts`, `read-too
 `bash-credential` (2), `owner-credential` (2), `skill-pack` (3), `activate-credential` (2), `execution-flow` (7), `execution-commits` (2),
 `builder09-qualification` (1).
 
-Após as correções da revisão (gate completo, `rm -rf dist`): eslint exit 0; `tsc` exit 0; dependency-cruiser sem violações;
+Após as correções da revisão (gate completo, `rm -rf dist`): eslint exit 0; `tsc` exit 0; dependency-cruiser sem violações (241 módulos, após corrigir 2 imports de teste para a entrada pública de Control);
 **103 arquivos**, um por vez: **779 pass, 0 fail, 10 skipped, 0 cancelled**. Novos: `checkout-inspection` (3), `builder09-recipe-safety` (2);
 ampliados: `sandbox-checkout` (+2), `execution-flow` (+2), `execution-commits`, `activate-credential` (+1).

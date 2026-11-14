@@ -5,7 +5,7 @@ import { access, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { inspectEnvironment, needsStop } from './builder09-qualification.js';
-import type { ExecutionView } from '../../src/control/types.js';
+import type { ExecutionView } from '../../src/control/index.js';
 
 // Recipe safety on temporary fixtures only (never the real root): host inspection of a guest-written environment and the stop decision.
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8',
