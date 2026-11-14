@@ -54,9 +54,11 @@ Dublê não comprova fronteira substituída.
 - **CLI**: `factory answer <pergunta> <texto> [--request-id]` (identidade apresentada antes do envio; mesma identidade/conteúdo → mesmo recibo;
   conteúdo diferente → `REQUEST_ID_CONFLICT`; controlador indisponível → `REQUEST_INDETERMINATE`, código 4) e `factory question <id>`;
   `show` inclui as Perguntas; `status` conta abertas/respondidas/não publicadas. O proprietário passa `operators` da configuração.
-- **Pacote** `factory-skills-v1` 1.1.0: `implement` passo 1.6 usa `ask_user` (em vez de `BLOCKED:`) e a nova seção 4 orienta a sessão de
-  recuperação (inspecionar artefatos/commits antes, não repetir ferramenta às cegas, registrar a resposta como fonte de nova versão, perguntar
-  de novo se insuficiente).
+- **Pacote** `factory-skills-v2` 2.0.0 (novo; `factory-skills-v1` 1.0.0 restaurado e intacto, decisão do supervisor): `implement` passo 1.6
+  usa `ask_user` (em vez de `BLOCKED:`) e a nova seção 4 orienta a sessão de recuperação (inspecionar artefatos/commits antes, não repetir
+  ferramenta às cegas, registrar a resposta como fonte de nova versão, perguntar de novo se insuficiente); templates apontam para os caminhos
+  guest da v2; créditos/manifesto/hashes completos. O carregador conhece v1 e v2 por identidade e caminho guest; o padrão do Builder e a
+  receita do ticket 10 usam v2; a receita do ticket 09 continua fixada em v1; a instrução de recuperação cita o pacote da própria Execução.
 
 ## Mapa AC → evidência
 
@@ -80,6 +82,27 @@ resposta posterior substituindo (`question-flow` 3); sem descoberta antes de rep
 sem guarda de ferramenta, sem `terminate`/abort (`worker-question-process`); App não conferida em `findQuestion` e 5xx tratado como conhecido
 (`github-question-comments`).
 
+## Correções da revisão estática independente (supervisor, sobre eba9919)
+
+Todas com teste vermelho antes (ou mutação que comprova a detecção) e verde depois.
+
+| # | Achado | Correção | Teste |
+| --- | --- | --- | --- |
+| 1 (médio) | recuperação podia vincular Pergunta de outro Trabalho/Execução | conclusão em conflito → impedimento `QUESTION_ID_CONFLICT`, `end.questionId` só se a Pergunta é deste Trabalho E desta Execução; despacho, prompt e commit *Admitir Execução* exigem `question.workId`/`executionId` | `question-flow` review 1 (vermelho: `end.questionId` estrangeiro), `execution-commits` review 1 (mutação do commit derruba) |
+| 2 (médio) | comentários editados/antigos aceitos | `commentEligibility`: editado (`updatedAt ≠ createdAt`) → `COMMENT_EDITED`; anterior ao registro ou não posterior ao comentário publicado → `COMMENT_PREDATES_QUESTION`; cursor passa a começar após o comentário da própria Pergunta | `question-rules` review 2, `question-flow` review 2/3/4/6 (mutações derrubam) |
+| 3 (baixo-médio) | operador só por login; comentários via App | `operators` aceita `{login, id}` (configuração validada; ids/logins únicos); com id só o id casa; `performed_via_github_app ≠ null` → `AUTHOR_VIA_APP`; receita resolve o id na preflight (`GET /repos/<repo>` → owner `Sanmoo`, `type User`) e as fases autorizam só esse id | `question-rules`, `question-flow`, `configuration` review 3, `question10-recipe-safety` |
+| 4 (baixo) | documento durável por comentário não autorizado; listagem sem teto | não autorizados/inelegíveis só atualizam o resumo limitado e deduplicado `question.ignored` (sem documento de requisição); listagem de comentários ≤ 10 páginas, além disso indisponível (`INCOMPLETE_GITHUB_QUERY`), nunca truncada | `question-flow` (requisição `null`), `github-question-comments` review 4 |
+| 5 (baixo) | Pergunta registrada + conclusão falha = Trabalho parado em silêncio | impedimento `QUESTION_RECORDED_EXECUTION_UNCERTAIN` com `questionId` e próximo passo (falha da conclusão ou incerteza) | `question-flow` review 5 (mutação derruba) |
+| 6 (baixo) | caracteres de controle em respostas GitHub | mesma regra da CLI (`ANSWER_TEXT_INVALID`) | `question-rules` |
+| 7 (baixo) | `inspect` da receita abria o storage (commits de inicialização) | `ask/resume` seguram `flock` exclusivo em `control.lock`; `inspect/stop-environment` abrem uma CÓPIA nova tirada sob o lock; recibos por leitura confinada no-follow | `question10-recipe-safety` (bytes do original idênticos; 2º detentor recusado; cópia antiga nunca adotada) |
+| 8 (baixo) | token `question-publish` vivo após o POST | `DELETE /installation/token` logo após a tentativa (qualquer desfecho); `revocation: revoked/failed/unknown/not-issued` devolvido e registrado na tentativa de publicação | `github-question-comments` (DELETE após o POST; 500 → `failed`, nunca alegado) |
+
+Decisões do supervisor: publicação/leitura de respostas com pausa ou barreira fechada **aprovada** (questão 6); limites de texto **aprovados**
+(questão 7); pacote: v1 restaurado, mudanças em `factory-skills-v2` (questão 9). Interpretação (2): "inicializar o cursor no registro" foi
+concretizado como cursor = id do comentário publicado da Pergunta (o id GitHub não existe no registro) mais a checagem `createdAt ≥ recordedAt`
+(relógios GitHub/host: desvio de segundos pode recusar uma resposta escrita no mesmo segundo do registro — a resposta só é possível após ler o
+comentário publicado).
+
 ## TDD observado (honesto)
 
 Vermelho primeiro: `question-rules` (módulo inexistente), `question-flow` (falhas reais: Pergunta antes do commit de início →
@@ -95,21 +118,19 @@ Vermelho primeiro: `question-rules` (módulo inexistente), `question-flow` (falh
    sessão de outro boot (decisão a confirmar).
 2. **PR como destino.** A regra de destino existe, mas antes do ticket 14 nenhum Trabalho tem PR próprio; `CodeRepository.findQuestion/postComment`
    não foram implementados e um destino PR é recusado (`QUESTION_DESTINATION_NOT_ENABLED`, inalcançável hoje).
-3. **Operador por login.** A configuração só tem logins (`operators`); autorização = login configurado (sem distinção de caixa) + `type: User`
-   e sem sufixo `[bot]`; o id do autor é registrado na resposta. Renomeação/reuso de login fica como risco; ids na configuração resolveriam.
+3. **Operador** (resolvido na revisão 3): `{login, id}` fixa o id; entradas só com login continuam casando por login (risco de reuso de login
+   documentado para quem não fixar o id).
 4. **Custo da ingestão.** Cada rodada lê a listagem completa da issue de cada Trabalho com Pergunta aberta; o cursor (maior id lido) só avança
    após listagem completa; edições posteriores de um comentário já lido não são vistas.
 5. **Crash do controlador entre commit e ACK.** A perda do canal host-boot revoga o worker (semântica existente): a Pergunta existe e é
    publicada, mas a Execução fica `held` com Slot até a reconciliação (ticket 26). Se notificação E conclusão se perdem, a solicitação fica só
    na evidência Records do worker; não há leitura automática dela (`Workers.observe` não implementado).
-6. **Publicação sob pausa/barreira.** Publicação e ingestão rodam mesmo com despacho fechado ou pausa global: não lançam nada (pausa = novos
-   disparos). Confirmar.
-7. **Limites de texto.** 2000/4000/2000 caracteres para caber no orçamento de prompt do Builder (16 KiB); o contexto é omitido da instrução
+6. **Publicação sob pausa/barreira** (aprovado): publicação e ingestão rodam mesmo com despacho fechado ou pausa global; não lançam nada.
+7. **Limites de texto** (aprovados). 2000/4000/2000 caracteres para caber no orçamento de prompt do Builder (16 KiB); o contexto é omitido da instrução
    de recuperação se não couber (a resposta nunca).
 8. **Suficiência.** O Controle não julga a resposta; o pacote instrui perguntar de novo. Retirada de autorização durante a espera é observada
    na revalidação em memória (suspensão durável é o ticket 25).
-9. **Pacote alterado dentro de `factory-skills-v1`** (1.0.0 → 1.1.0, só `implement`): um ambiente já semeado com 1.0.0 recusa reutilização
-   (nunca sobrescreve); o ensaio usa armazenamento/Trabalho/ambiente novos.
+9. **Pacote** (resolvido): v1 intacto; mudanças em `factory-skills-v2`. O ticket 12 também evolui a v2 (o supervisor integra).
 
 ## Ensaio real (receita one-shot)
 
@@ -139,9 +160,10 @@ $NODE dist/test/entrypoints/question10-qualification.js stop-environment
 
 Efeitos e limites:
 
-- **GitHub**: só a App da Factory. Leituras por finalidade como no 09 (`tracker-read` agora também lê comentários de #3); escrita: **no máximo
-  um** `POST /repos/Sanmoo/java-springboot-event-sourcing/issues/3/comments` por fase (`ask`, `resume`), sob `question-publish {metadata: read,
-  issues: write}`, guardado pela receita (outro Ticket ou segundo comentário → recusado). Builder: `builder-start` somente leitura (push/PR
+- **GitHub**: só a App da Factory. Leituras por finalidade como no 09 (`tracker-read` agora também lê comentários de #3 e, na preflight,
+  `GET /repos/<repo>` para fixar o id do operador); escrita: **no máximo um** `POST /repos/Sanmoo/java-springboot-event-sourcing/issues/3/comments`
+  por fase (`ask`, `resume`), sob `question-publish {metadata: read, issues: write}`, seguido de `DELETE /installation/token` desse mesmo token,
+  guardado pela receita (outro Ticket ou segundo comentário → recusado). A resposta deve vir da conta `Sanmoo` (id fixado), comentário NÃO editado. Builder: `builder-start` somente leitura (push/PR
   impossíveis). Nenhuma label/assignee/estado alterado. O comentário de resposta é do operador (efeito humano, fora da receita).
 - **VM**: 1 ambiente novo (40 GiB qcow2 de assets34, 4096 MiB, 2 vCPU); `ask` = 1 boot; `resume` reutiliza o mesmo ambiente/branch com 1 boot
   novo; parada pública ao fim de cada Execução; sem `remove`/cleanup.
@@ -177,3 +199,8 @@ Novos arquivos: `question-rules` (7), `question-flow` (11), `github-question-com
 `owner-question` (1), `activate-question` (2), `answer-cli` (1), `question10-qualification` (2). Ajustados: `skill-pack` (texto 1.1.0) e as
 fixtures de provider do Host público (`edit-provider-preload`, `adapter-copy-read-provider-preload`: o conjunto de ferramentas do Builder passa
 a incluir `ask_user`).
+
+Após as correções da revisão (gate completo, `rm -rf dist`, HEAD 9634539 + este documento): dependency-cruiser sem violações (258 módulos,
+1450 dependências); eslint exit 0; `tsc` exit 0; **113 arquivos**, um por vez: **824 pass, 0 fail, 10 skipped, 0 cancelled** (≈ 300 s).
+Novos/ampliados: `question10-recipe-safety` (2), `question-flow` (+3), `question-rules` (+1), `execution-commits` (+1), `configuration` (+1),
+`github-question-comments` (+1), `skill-pack` (+1: v1 intacto).
