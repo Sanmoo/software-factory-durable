@@ -1,0 +1,659 @@
+{
+ "execution": {
+  "executionId": "c7b4cddb-2dba-4a8c-a58e-a9d222b79b84",
+  "invocationId": "builder-c7b4cddb-2dba-4a8c-a58e-a9d222b79b84",
+  "mode": "initial",
+  "state": "ended",
+  "slot": {
+   "held": false,
+   "capacity": 1,
+   "reservedAt": "2026-11-14T19:01:58.089Z",
+   "releasedAt": "2026-11-14T19:04:10.876Z"
+  },
+  "admission": {
+   "attemptId": "9271c46a-7a69-42a8-9ffc-e88304b8ebfe",
+   "evaluationId": "890d148b-8973-4d6c-9e15-eab8144c879e",
+   "authorizationObservedAt": "2026-11-14T19:01:56.409Z",
+   "activationAttemptId": "aa142b80-410b-4080-9be3-e5dd52f759e8",
+   "activationEvaluationId": "5480ead7-13a0-4366-9f20-8f3940663a4d"
+  },
+  "dispatch": {
+   "intent": "prepare-start-activate",
+   "phase": "stopped",
+   "environment": "env-b88abcaa3725a04df5fe5bdbdc43b7b6a6aaa6dbcf4d77ef4fe9aef9f26904c5",
+   "boot": "boot-679682b1-3531-4504-8372-c28f98028d3e",
+   "updatedAt": "2026-11-14T19:04:08.987Z"
+  },
+  "request": {
+   "ticket": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3",
+   "repository": "Sanmoo/java-springboot-event-sourcing",
+   "base": "main",
+   "branch": "factory/3-860b3ca1",
+   "policies": {
+    "skillPack": "factory-skills-v3",
+    "modelBudget": "builder-v1",
+    "copyOutput": true,
+    "editSourceMaxBytes": 8192
+   },
+   "baseCommit": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+   "checkout": "/workspace/checkout",
+   "promptSha256": "0b38fafd257930a1a0c89ed3755f9ac63418c9950ff231cb9d575407e06c4e73",
+   "skillPack": {
+    "name": "factory/skill-pack/factory-skills-v3",
+    "manifestSha256": "e2840966abad1f8292fb0e7a8f60eb361f6c8b3386f5990da183164248b7bcee"
+   },
+   "resume": null
+  },
+  "credential": {
+   "role": "builder",
+   "purpose": "builder-start",
+   "repository": "Sanmoo/java-springboot-event-sourcing",
+   "repositoryId": 1256893534,
+   "installationId": 177599217,
+   "permissions": {
+    "metadata": "read",
+    "contents": "read",
+    "issues": "read"
+   },
+   "issuedAt": "2026-11-14T19:02:16.967Z",
+   "expiresAt": "2026-11-14T20:02:18Z"
+  },
+  "credentialIssuance": {
+   "requestedAt": "2026-11-14T19:02:16.964Z",
+   "outcome": "issued",
+   "code": null,
+   "metadata": {
+    "role": "builder",
+    "purpose": "builder-start",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "installationId": 177599217,
+    "permissions": {
+     "metadata": "read",
+     "contents": "read",
+     "issues": "read"
+    },
+    "issuedAt": "2026-11-14T19:02:16.967Z",
+    "expiresAt": "2026-11-14T20:02:18Z"
+   },
+   "revocation": "revoked",
+   "revocationCode": "GITHUB_TOKEN_REVOKED",
+   "risk": null,
+   "revocationAttemptedAt": "2026-11-14T19:04:08.995Z"
+  },
+  "credentialRenewals": [],
+  "credentialLifecycle": {
+   "state": "withdrawn",
+   "withdrawnAt": "2026-11-14T19:04:08.992Z",
+   "reason": "ended",
+   "renewal": "enabled",
+   "renewalStop": null,
+   "workerNotice": null
+  },
+  "start": {
+   "receiptId": "b06a422f-5005-40f3-b797-676756376d0f",
+   "confirmedAt": "2026-11-14T19:02:18.451Z"
+  },
+  "end": {
+   "at": "2026-11-14T19:04:08.987Z",
+   "outcome": "completed",
+   "code": null,
+   "cessation": "confirmed"
+  },
+  "held": null,
+  "completion": {
+   "automatic": false,
+   "reason": "Reviews, publication and readiness are not enabled in this Factory version; an ended Builder Execution never completes the Work automatically."
+  },
+  "review": {
+   "rounds": [
+    {
+     "round": 1,
+     "attempt": 1,
+     "state": "delivered",
+     "handoff": {
+      "at": "2026-11-14T19:03:23.814Z",
+      "invocationId": "builder-c7b4cddb-2dba-4a8c-a58e-a9d222b79b84",
+      "status": "captured",
+      "code": null,
+      "detail": null,
+      "summary": {
+       "version": 1,
+       "round": 1,
+       "index": "/artifacts/review/r1/index.json",
+       "indexSha256": "c88d41e863fdb2135777262e349b683a0c056b0f582d5030114e169874b200f4",
+       "head": "e22126d9e05e6ed3e64a99f5cbe918ca2a2b06f0",
+       "branch": "factory/3-860b3ca1",
+       "base": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+       "mergeBase": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+       "counts": {
+        "entries": 1,
+        "committed": 1,
+        "staged": 0,
+        "unstaged": 0,
+        "untracked": 0,
+        "removed": 0
+       },
+       "patches": {
+        "committed": {
+         "path": "/artifacts/review/r1/committed.patch",
+         "bytes": 247,
+         "sha256": "010c026ae7a43857fbf37741ad9b7adb31cae1126fc5a07c5f18b0f234146150"
+        },
+        "staged": {
+         "path": "/artifacts/review/r1/staged.patch",
+         "bytes": 0,
+         "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "unstaged": {
+         "path": "/artifacts/review/r1/unstaged.patch",
+         "bytes": 0,
+         "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+       },
+       "spec": {
+        "version": "v1",
+        "sources": "/artifacts/spec/v1/sources.json",
+        "sha256": "2f27233f6e93f8bac452c598bfb47561e7415c50ec5ae4355ccfc6220cae2594"
+       },
+       "instructions": {
+        "version": "v1",
+        "sources": "/artifacts/instructions/v1/sources.json",
+        "sha256": "b81815d661c057a653c97feee3d22a6a921925f73d8a3e3660fca6ed4730869d"
+       },
+       "changed": [
+        "/workspace/checkout/docs/factory-smoke.md"
+       ],
+       "changedTruncated": false
+      }
+     },
+     "versions": {
+      "spec": {
+       "version": "v1",
+       "sources": "/artifacts/spec/v1/sources.json",
+       "sha256": "2f27233f6e93f8bac452c598bfb47561e7415c50ec5ae4355ccfc6220cae2594"
+      },
+      "instructions": {
+       "version": "v1",
+       "sources": "/artifacts/instructions/v1/sources.json",
+       "sha256": "b81815d661c057a653c97feee3d22a6a921925f73d8a3e3660fca6ed4730869d"
+      },
+      "base": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+      "head": "e22126d9e05e6ed3e64a99f5cbe918ca2a2b06f0",
+      "profile": {
+       "skillPack": {
+        "name": "factory/skill-pack/factory-skills-v3",
+        "manifestSha256": "e2840966abad1f8292fb0e7a8f60eb361f6c8b3386f5990da183164248b7bcee"
+       },
+       "builder": {
+        "skillPack": "factory-skills-v3",
+        "modelBudget": "builder-v1",
+        "copyOutput": true,
+        "editSourceMaxBytes": 8192
+       },
+       "reviewer": {
+        "modelBudget": "reviewer-v1",
+        "imageSourceMaxBytes": 5242880
+       }
+      }
+     },
+     "identity": {
+      "before": {
+       "status": "observed",
+       "sha256": "6fa73068c794e7fce759efed6574e3e58cba7d842cd24c7890aef43604c13602",
+       "indexSha256": "c88d41e863fdb2135777262e349b683a0c056b0f582d5030114e169874b200f4",
+       "entries": 1,
+       "consistent": true,
+       "observedAt": "2026-11-14T19:03:23.813Z"
+      },
+      "after": {
+       "status": "observed",
+       "sha256": "6fa73068c794e7fce759efed6574e3e58cba7d842cd24c7890aef43604c13602",
+       "indexSha256": "c88d41e863fdb2135777262e349b683a0c056b0f582d5030114e169874b200f4",
+       "entries": 1,
+       "consistent": true,
+       "observedAt": "2026-11-14T19:04:04.363Z"
+      }
+     },
+     "reviewers": {
+      "standards": {
+       "invocationId": "standards-c7b4cddb-2dba-4a8c-a58e-a9d222b79b84-r1a1",
+       "phaseId": "review-r1",
+       "promptSha256": "0a16998fa98b0322c057f725ec93865bd0382f806dde961fe9ea4e125652dae6",
+       "state": "ended",
+       "requestedAt": "2026-11-14T19:03:23.814Z",
+       "receiptId": "aa86b495-1ca0-4425-9868-6b8cf5c8f761",
+       "endedAt": "2026-11-14T19:04:04.354Z",
+       "opinion": {
+        "version": 1,
+        "role": "standards",
+        "round": 1,
+        "attempt": 1,
+        "invocationId": "standards-c7b4cddb-2dba-4a8c-a58e-a9d222b79b84-r1a1",
+        "reference": {
+         "workId": "860b3ca1-6b76-4a58-8a53-8a15b97653e9",
+         "id": "bc1e5223-8d1d-4e59-89db-7057a51b0243"
+        },
+        "session": {
+         "file": "/home/sanmoo/software-factory-test/y5/r/Z5aCsTUxRQSDcsKPmAKNPg/w-VzK4iV/profile/sessions/2026-11-14T19-03-24-714Z_01a1db71-6729-73ee-96f3-418911e1c76e.jsonl"
+        },
+        "model": {
+         "providerId": "openai",
+         "modelId": "gpt-6-luna"
+        },
+        "profile": {
+         "id": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+         "modelBudget": "reviewer-v1"
+        },
+        "input": {
+         "handoffIndexSha256": "c88d41e863fdb2135777262e349b683a0c056b0f582d5030114e169874b200f4",
+         "required": [
+          "/artifacts/review/r1/index.json",
+          "/artifacts/instructions/v1/sources.json",
+          "/artifacts/review/r1/committed.patch",
+          "/workspace/checkout/docs/factory-smoke.md"
+         ],
+         "missing": []
+        },
+        "conclusion": "clean",
+        "code": null,
+        "coverage": {
+         "scope": "incremental",
+         "justification": "Read the index, all committed, staged, and unstaged patches, the changed file in full, and the preserved repository instructions. The one-line documentation addition does not implicate other repository areas.",
+         "examined": [
+          "/artifacts/review/r1/index.json",
+          "/artifacts/review/r1/committed.patch",
+          "/artifacts/review/r1/staged.patch",
+          "/artifacts/review/r1/unstaged.patch",
+          "/artifacts/instructions/v1/sources.json",
+          "/artifacts/instructions/v1/AGENTS.md",
+          "/workspace/checkout/AGENTS.md",
+          "/workspace/checkout/docs/agents/domain.md",
+          "/workspace/checkout/docs/agents/issue-tracker.md",
+          "/workspace/checkout/docs/agents/triage-labels.md",
+          "/workspace/checkout/docs/factory-smoke.md"
+         ]
+        },
+        "findings": [],
+        "limitations": [],
+        "hostChecks": {
+         "reads": 13,
+         "failedReads": [],
+         "requiredNotFullyRead": [],
+         "downgraded": []
+        },
+        "finalMessageSha256": "2d0b22cdfeb12313cb501c3a09c4ab66c795d208b7a4e11ad02e9c2e165768ab",
+        "recordedAt": "2026-11-14T19:04:04.305Z"
+       },
+       "failure": null,
+       "cessation": "completion-observed",
+       "input": {
+        "required": [
+         "/artifacts/review/r1/index.json",
+         "/artifacts/instructions/v1/sources.json",
+         "/artifacts/review/r1/committed.patch",
+         "/workspace/checkout/docs/factory-smoke.md"
+        ],
+        "missing": []
+       }
+      },
+      "spec": {
+       "invocationId": "spec-c7b4cddb-2dba-4a8c-a58e-a9d222b79b84-r1a1",
+       "phaseId": "review-r1",
+       "promptSha256": "08cee5b7b8f54445fd3a2bdaed098a6ea578cadfddc160be3cebf88c60d712b1",
+       "state": "ended",
+       "requestedAt": "2026-11-14T19:03:23.814Z",
+       "receiptId": "bd11c0c8-da3a-4a55-89ff-0675943493d2",
+       "endedAt": "2026-11-14T19:03:44.537Z",
+       "opinion": {
+        "version": 1,
+        "role": "spec",
+        "round": 1,
+        "attempt": 1,
+        "invocationId": "spec-c7b4cddb-2dba-4a8c-a58e-a9d222b79b84-r1a1",
+        "reference": {
+         "workId": "860b3ca1-6b76-4a58-8a53-8a15b97653e9",
+         "id": "4b7755e5-8f8c-4325-af3e-28ea772e2d68"
+        },
+        "session": {
+         "file": "/home/sanmoo/software-factory-test/y5/r/Z5aCsTUxRQSDcsKPmAKNPg/w-jN5tYN/profile/sessions/2026-11-14T19-03-24-726Z_01a1db71-6735-74f0-a9e7-40f7b91f5143.jsonl"
+        },
+        "model": {
+         "providerId": "openai",
+         "modelId": "gpt-6-luna"
+        },
+        "profile": {
+         "id": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+         "modelBudget": "reviewer-v1"
+        },
+        "input": {
+         "handoffIndexSha256": "c88d41e863fdb2135777262e349b683a0c056b0f582d5030114e169874b200f4",
+         "required": [
+          "/artifacts/review/r1/index.json",
+          "/artifacts/spec/v1/sources.json",
+          "/artifacts/review/r1/committed.patch",
+          "/workspace/checkout/docs/factory-smoke.md"
+         ],
+         "missing": []
+        },
+        "conclusion": "clean",
+        "code": null,
+        "coverage": {
+         "scope": "broad",
+         "justification": "Read the index, preserved request, committed patch, and changed file in full; the sole change matches the requested exact content and does not modify other files.",
+         "examined": [
+          "/artifacts/review/r1/index.json",
+          "/artifacts/spec/v1/sources.json",
+          "/artifacts/spec/v1/ticket.json",
+          "/artifacts/review/r1/committed.patch",
+          "/workspace/checkout/docs/factory-smoke.md"
+         ]
+        },
+        "findings": [],
+        "limitations": [],
+        "hostChecks": {
+         "reads": 5,
+         "failedReads": [],
+         "requiredNotFullyRead": [],
+         "downgraded": []
+        },
+        "finalMessageSha256": "2abf5ac9c405c7bec10adb708b71af87db9fd318dc0e8b99998e15a57a7108de",
+        "recordedAt": "2026-11-14T19:03:44.491Z"
+       },
+       "failure": null,
+       "cessation": "completion-observed",
+       "input": {
+        "required": [
+         "/artifacts/review/r1/index.json",
+         "/artifacts/spec/v1/sources.json",
+         "/artifacts/review/r1/committed.patch",
+         "/workspace/checkout/docs/factory-smoke.md"
+        ],
+        "missing": []
+       }
+      }
+     },
+     "applicability": "current",
+     "conclusion": "clean",
+     "reasons": [],
+     "concludedAt": "2026-11-14T19:04:04.364Z",
+     "delivery": {
+      "requestedAt": "2026-11-14T19:04:04.368Z",
+      "outcome": "delivered",
+      "code": null,
+      "promptSha256": "90ca54fbcbb40ac93ea2f460da844974e758cc2fed6d30fa76618fbc12352cee"
+     }
+    }
+   ]
+  }
+ },
+ "receipts": {
+  "builder": "{\"version\":1,\"context\":{\"workId\":\"860b3ca1-6b76-4a58-8a53-8a15b97653e9\",\"executionId\":\"c7b4cddb-2dba-4a8c-a58e-a9d222b79b84\",\"invocationId\":\"builder-c7b4cddb-2dba-4a8c-a58e-a9d222b79b84\",\"role\":\"builder\",\"environmentRef\":\"env-b88abcaa3725a04df5fe5bdbdc43b7b6a6aaa6dbcf4d77ef4fe9aef9f26904c5\",\"bootRef\":\"boot-679682b1-3531-4504-8372-c28f98028d3e\",\"callId\":\"worker-start\"},\"recordedAt\":\"2026-11-14T19:02:18.426Z\",\"event\":{\"version\":1,\"kind\":\"worker-start\",\"suppliedContext\":{\"workId\":\"860b3ca1-6b76-4a58-8a53-8a15b97653e9\",\"executionId\":\"c7b4cddb-2dba-4a8c-a58e-a9d222b79b84\",\"invocationId\":\"builder-c7b4cddb-2dba-4a8c-a58e-a9d222b79b84\",\"role\":\"builder\",\"environmentRef\":\"env-b88abcaa3725a04df5fe5bdbdc43b7b6a6aaa6dbcf4d77ef4fe9aef9f26904c5\",\"bootRef\":\"boot-679682b1-3531-4504-8372-c28f98028d3e\",\"phaseId\":\"builder-initial\"},\"phaseId\":\"builder-initial\",\"profile\":{\"id\":\"factory-development-pi-1.5.2-read-async-bash-lexical-v3\",\"version\":\"1.5.2\",\"integrity\":\"sha512-mUWI04rqF1Vd/m1q+Ps1XeWsTXEVvRUnsmRa83I3Dzua0Tx5bYS93imeqtIfrXf7PkkaR6ERz+AuQhIJlom5yA==\",\"upstreamSHA256\":\"e6159de5e4d94ae22968b6524237ef3d4f0374a107e2321ed5c29e93d66c8efc\",\"upstreamTreeSHA256\":\"7d0961cce25f6c802b22aaa028206cd610de386442d2e6b732d71367ef006391\",\"patchSHA256\":\"5e45a7c2953db293a14db0138bb31f8ac9e95eb13512afd42f1f49b77c98e066\",\"resultSHA256\":\"06867a067ebbadca2e06f75ccb4e682cd7e37b9683d41a71562f770b3105a209\",\"asyncPatchSHA256\":\"1ee38f2bdb71480b5b6206e72dbed32ac9214acbe0afe9b7e5137ea8f63cdc1e\",\"candidatePatchSHA256\":\"fd85bbd3c22fff3cb90dd990cb2608f18884d15dcd3820fb2f790b6e42a4dd01\",\"candidateManifestSHA256\":\"b6aaa5391d251867e41e8fc80973a1da79c7df3e38cdd18d11e705d939809b69\",\"lexicalPatchSHA256\":\"e3e88f8e6a53c9b58164c85c9866cfcf5a31b9fd415fdad7ce136976d8fd96d0\",\"lexicalCandidateManifestSHA256\":\"923d916bae558e6d21978593b2effb716dec80398bb5b0a66271fefcfc0f42a2\"},\"providerId\":\"openai\",\"modelId\":\"gpt-6-luna\",\"profileDirectory\":\"/home/sanmoo/software-factory-test/y5/r/Z5aCsTUxRQSDcsKPmAKNPg/w-k1j2Zy/profile\",\"promptSha256\":\"0b38fafd257930a1a0c89ed3755f9ac63418c9950ff231cb9d575407e06c4e73\",\"skillPack\":{\"id\":\"factory-skills-v3\",\"version\":\"3.0.0\",\"manifestSha256\":\"e2840966abad1f8292fb0e7a8f60eb361f6c8b3386f5990da183164248b7bcee\"},\"modelBudget\":\"builder-v1\",\"handoff\":{\"baseCommit\":\"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\"},\"review\":null,\"startedAt\":\"2026-11-14T19:02:18.423Z\",\"observedProcess\":{\"pid\":1161810,\"parentPid\":1161591,\"uid\":1000,\"executable\":\"/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node\",\"nodeVersion\":\"24.21.0\",\"timeOrigin\":1794682938262.418,\"observedAt\":\"2026-11-14T19:02:18.424Z\"}}}",
+  "standards": "{\"version\":1,\"context\":{\"workId\":\"860b3ca1-6b76-4a58-8a53-8a15b97653e9\",\"executionId\":\"c7b4cddb-2dba-4a8c-a58e-a9d222b79b84\",\"invocationId\":\"standards-c7b4cddb-2dba-4a8c-a58e-a9d222b79b84-r1a1\",\"role\":\"standards\",\"environmentRef\":\"env-b88abcaa3725a04df5fe5bdbdc43b7b6a6aaa6dbcf4d77ef4fe9aef9f26904c5\",\"bootRef\":\"boot-679682b1-3531-4504-8372-c28f98028d3e\",\"callId\":\"worker-start\"},\"recordedAt\":\"2026-11-14T19:03:23.993Z\",\"event\":{\"version\":1,\"kind\":\"worker-start\",\"suppliedContext\":{\"workId\":\"860b3ca1-6b76-4a58-8a53-8a15b97653e9\",\"executionId\":\"c7b4cddb-2dba-4a8c-a58e-a9d222b79b84\",\"invocationId\":\"standards-c7b4cddb-2dba-4a8c-a58e-a9d222b79b84-r1a1\",\"role\":\"standards\",\"environmentRef\":\"env-b88abcaa3725a04df5fe5bdbdc43b7b6a6aaa6dbcf4d77ef4fe9aef9f26904c5\",\"bootRef\":\"boot-679682b1-3531-4504-8372-c28f98028d3e\",\"phaseId\":\"review-r1\"},\"phaseId\":\"review-r1\",\"profile\":{\"id\":\"factory-development-pi-1.5.2-read-async-bash-lexical-v3\",\"version\":\"1.5.2\",\"integrity\":\"sha512-mUWI04rqF1Vd/m1q+Ps1XeWsTXEVvRUnsmRa83I3Dzua0Tx5bYS93imeqtIfrXf7PkkaR6ERz+AuQhIJlom5yA==\",\"upstreamSHA256\":\"e6159de5e4d94ae22968b6524237ef3d4f0374a107e2321ed5c29e93d66c8efc\",\"upstreamTreeSHA256\":\"7d0961cce25f6c802b22aaa028206cd610de386442d2e6b732d71367ef006391\",\"patchSHA256\":\"5e45a7c2953db293a14db0138bb31f8ac9e95eb13512afd42f1f49b77c98e066\",\"resultSHA256\":\"06867a067ebbadca2e06f75ccb4e682cd7e37b9683d41a71562f770b3105a209\",\"asyncPatchSHA256\":\"1ee38f2bdb71480b5b6206e72dbed32ac9214acbe0afe9b7e5137ea8f63cdc1e\",\"candidatePatchSHA256\":\"fd85bbd3c22fff3cb90dd990cb2608f18884d15dcd3820fb2f790b6e42a4dd01\",\"candidateManifestSHA256\":\"b6aaa5391d251867e41e8fc80973a1da79c7df3e38cdd18d11e705d939809b69\",\"lexicalPatchSHA256\":\"e3e88f8e6a53c9b58164c85c9866cfcf5a31b9fd415fdad7ce136976d8fd96d0\",\"lexicalCandidateManifestSHA256\":\"923d916bae558e6d21978593b2effb716dec80398bb5b0a66271fefcfc0f42a2\"},\"providerId\":\"openai\",\"modelId\":\"gpt-6-luna\",\"profileDirectory\":\"/home/sanmoo/software-factory-test/y5/r/Z5aCsTUxRQSDcsKPmAKNPg/w-VzK4iV/profile\",\"promptSha256\":\"0a16998fa98b0322c057f725ec93865bd0382f806dde961fe9ea4e125652dae6\",\"skillPack\":null,\"modelBudget\":\"reviewer-v1\",\"handoff\":null,\"review\":{\"round\":1,\"attempt\":1,\"handoffIndexSha256\":\"c88d41e863fdb2135777262e349b683a0c056b0f582d5030114e169874b200f4\",\"required\":[\"/artifacts/review/r1/index.json\",\"/artifacts/instructions/v1/sources.json\",\"/artifacts/review/r1/committed.patch\",\"/workspace/checkout/docs/factory-smoke.md\"],\"missing\":[]},\"startedAt\":\"2026-11-14T19:03:23.990Z\",\"observedProcess\":{\"pid\":1162459,\"parentPid\":1161591,\"uid\":1000,\"executable\":\"/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node\",\"nodeVersion\":\"24.21.0\",\"timeOrigin\":1794683003840.525,\"observedAt\":\"2026-11-14T19:03:23.991Z\"}}}",
+  "spec": "{\"version\":1,\"context\":{\"workId\":\"860b3ca1-6b76-4a58-8a53-8a15b97653e9\",\"executionId\":\"c7b4cddb-2dba-4a8c-a58e-a9d222b79b84\",\"invocationId\":\"spec-c7b4cddb-2dba-4a8c-a58e-a9d222b79b84-r1a1\",\"role\":\"spec\",\"environmentRef\":\"env-b88abcaa3725a04df5fe5bdbdc43b7b6a6aaa6dbcf4d77ef4fe9aef9f26904c5\",\"bootRef\":\"boot-679682b1-3531-4504-8372-c28f98028d3e\",\"callId\":\"worker-start\"},\"recordedAt\":\"2026-11-14T19:03:23.992Z\",\"event\":{\"version\":1,\"kind\":\"worker-start\",\"suppliedContext\":{\"workId\":\"860b3ca1-6b76-4a58-8a53-8a15b97653e9\",\"executionId\":\"c7b4cddb-2dba-4a8c-a58e-a9d222b79b84\",\"invocationId\":\"spec-c7b4cddb-2dba-4a8c-a58e-a9d222b79b84-r1a1\",\"role\":\"spec\",\"environmentRef\":\"env-b88abcaa3725a04df5fe5bdbdc43b7b6a6aaa6dbcf4d77ef4fe9aef9f26904c5\",\"bootRef\":\"boot-679682b1-3531-4504-8372-c28f98028d3e\",\"phaseId\":\"review-r1\"},\"phaseId\":\"review-r1\",\"profile\":{\"id\":\"factory-development-pi-1.5.2-read-async-bash-lexical-v3\",\"version\":\"1.5.2\",\"integrity\":\"sha512-mUWI04rqF1Vd/m1q+Ps1XeWsTXEVvRUnsmRa83I3Dzua0Tx5bYS93imeqtIfrXf7PkkaR6ERz+AuQhIJlom5yA==\",\"upstreamSHA256\":\"e6159de5e4d94ae22968b6524237ef3d4f0374a107e2321ed5c29e93d66c8efc\",\"upstreamTreeSHA256\":\"7d0961cce25f6c802b22aaa028206cd610de386442d2e6b732d71367ef006391\",\"patchSHA256\":\"5e45a7c2953db293a14db0138bb31f8ac9e95eb13512afd42f1f49b77c98e066\",\"resultSHA256\":\"06867a067ebbadca2e06f75ccb4e682cd7e37b9683d41a71562f770b3105a209\",\"asyncPatchSHA256\":\"1ee38f2bdb71480b5b6206e72dbed32ac9214acbe0afe9b7e5137ea8f63cdc1e\",\"candidatePatchSHA256\":\"fd85bbd3c22fff3cb90dd990cb2608f18884d15dcd3820fb2f790b6e42a4dd01\",\"candidateManifestSHA256\":\"b6aaa5391d251867e41e8fc80973a1da79c7df3e38cdd18d11e705d939809b69\",\"lexicalPatchSHA256\":\"e3e88f8e6a53c9b58164c85c9866cfcf5a31b9fd415fdad7ce136976d8fd96d0\",\"lexicalCandidateManifestSHA256\":\"923d916bae558e6d21978593b2effb716dec80398bb5b0a66271fefcfc0f42a2\"},\"providerId\":\"openai\",\"modelId\":\"gpt-6-luna\",\"profileDirectory\":\"/home/sanmoo/software-factory-test/y5/r/Z5aCsTUxRQSDcsKPmAKNPg/w-jN5tYN/profile\",\"promptSha256\":\"08cee5b7b8f54445fd3a2bdaed098a6ea578cadfddc160be3cebf88c60d712b1\",\"skillPack\":null,\"modelBudget\":\"reviewer-v1\",\"handoff\":null,\"review\":{\"round\":1,\"attempt\":1,\"handoffIndexSha256\":\"c88d41e863fdb2135777262e349b683a0c056b0f582d5030114e169874b200f4\",\"required\":[\"/artifacts/review/r1/index.json\",\"/artifacts/spec/v1/sources.json\",\"/artifacts/review/r1/committed.patch\",\"/workspace/checkout/docs/factory-smoke.md\"],\"missing\":[]},\"startedAt\":\"2026-11-14T19:03:23.989Z\",\"observedProcess\":{\"pid\":1162471,\"parentPid\":1161591,\"uid\":1000,\"executable\":\"/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node\",\"nodeVersion\":\"24.21.0\",\"timeOrigin\":1794683003849.24,\"observedAt\":\"2026-11-14T19:03:23.990Z\"}}}"
+ },
+ "opinions": {
+  "standards": "{\"version\":1,\"context\":{\"workId\":\"860b3ca1-6b76-4a58-8a53-8a15b97653e9\",\"executionId\":\"c7b4cddb-2dba-4a8c-a58e-a9d222b79b84\",\"invocationId\":\"standards-c7b4cddb-2dba-4a8c-a58e-a9d222b79b84-r1a1\",\"role\":\"standards\",\"environmentRef\":\"env-b88abcaa3725a04df5fe5bdbdc43b7b6a6aaa6dbcf4d77ef4fe9aef9f26904c5\",\"bootRef\":\"boot-679682b1-3531-4504-8372-c28f98028d3e\",\"callId\":\"review-opinion\"},\"recordedAt\":\"2026-11-14T19:04:04.305Z\",\"event\":{\"kind\":\"review-opinion\",\"version\":1,\"role\":\"standards\",\"round\":1,\"attempt\":1,\"invocationId\":\"standards-c7b4cddb-2dba-4a8c-a58e-a9d222b79b84-r1a1\",\"session\":{\"file\":\"/home/sanmoo/software-factory-test/y5/r/Z5aCsTUxRQSDcsKPmAKNPg/w-VzK4iV/profile/sessions/2026-11-14T19-03-24-714Z_01a1db71-6729-73ee-96f3-418911e1c76e.jsonl\"},\"model\":{\"providerId\":\"openai\",\"modelId\":\"gpt-6-luna\"},\"profile\":{\"id\":\"factory-development-pi-1.5.2-read-async-bash-lexical-v3\",\"modelBudget\":\"reviewer-v1\"},\"input\":{\"handoffIndexSha256\":\"c88d41e863fdb2135777262e349b683a0c056b0f582d5030114e169874b200f4\",\"required\":[\"/artifacts/review/r1/index.json\",\"/artifacts/instructions/v1/sources.json\",\"/artifacts/review/r1/committed.patch\",\"/workspace/checkout/docs/factory-smoke.md\"],\"missing\":[]},\"finalMessageSha256\":\"2d0b22cdfeb12313cb501c3a09c4ab66c795d208b7a4e11ad02e9c2e165768ab\",\"conclusion\":\"clean\",\"code\":null,\"coverage\":{\"scope\":\"incremental\",\"justification\":\"Read the index, all committed, staged, and unstaged patches, the changed file in full, and the preserved repository instructions. The one-line documentation addition does not implicate other repository areas.\",\"examined\":[\"/artifacts/review/r1/index.json\",\"/artifacts/review/r1/committed.patch\",\"/artifacts/review/r1/staged.patch\",\"/artifacts/review/r1/unstaged.patch\",\"/artifacts/instructions/v1/sources.json\",\"/artifacts/instructions/v1/AGENTS.md\",\"/workspace/checkout/AGENTS.md\",\"/workspace/checkout/docs/agents/domain.md\",\"/workspace/checkout/docs/agents/issue-tracker.md\",\"/workspace/checkout/docs/agents/triage-labels.md\",\"/workspace/checkout/docs/factory-smoke.md\"]},\"findings\":[],\"limitations\":[],\"hostChecks\":{\"reads\":13,\"failedReads\":[],\"requiredNotFullyRead\":[],\"downgraded\":[]},\"recordedAt\":\"2026-11-14T19:04:04.305Z\"}}",
+  "spec": "{\"version\":1,\"context\":{\"workId\":\"860b3ca1-6b76-4a58-8a53-8a15b97653e9\",\"executionId\":\"c7b4cddb-2dba-4a8c-a58e-a9d222b79b84\",\"invocationId\":\"spec-c7b4cddb-2dba-4a8c-a58e-a9d222b79b84-r1a1\",\"role\":\"spec\",\"environmentRef\":\"env-b88abcaa3725a04df5fe5bdbdc43b7b6a6aaa6dbcf4d77ef4fe9aef9f26904c5\",\"bootRef\":\"boot-679682b1-3531-4504-8372-c28f98028d3e\",\"callId\":\"review-opinion\"},\"recordedAt\":\"2026-11-14T19:03:44.492Z\",\"event\":{\"kind\":\"review-opinion\",\"version\":1,\"role\":\"spec\",\"round\":1,\"attempt\":1,\"invocationId\":\"spec-c7b4cddb-2dba-4a8c-a58e-a9d222b79b84-r1a1\",\"session\":{\"file\":\"/home/sanmoo/software-factory-test/y5/r/Z5aCsTUxRQSDcsKPmAKNPg/w-jN5tYN/profile/sessions/2026-11-14T19-03-24-726Z_01a1db71-6735-74f0-a9e7-40f7b91f5143.jsonl\"},\"model\":{\"providerId\":\"openai\",\"modelId\":\"gpt-6-luna\"},\"profile\":{\"id\":\"factory-development-pi-1.5.2-read-async-bash-lexical-v3\",\"modelBudget\":\"reviewer-v1\"},\"input\":{\"handoffIndexSha256\":\"c88d41e863fdb2135777262e349b683a0c056b0f582d5030114e169874b200f4\",\"required\":[\"/artifacts/review/r1/index.json\",\"/artifacts/spec/v1/sources.json\",\"/artifacts/review/r1/committed.patch\",\"/workspace/checkout/docs/factory-smoke.md\"],\"missing\":[]},\"finalMessageSha256\":\"2abf5ac9c405c7bec10adb708b71af87db9fd318dc0e8b99998e15a57a7108de\",\"conclusion\":\"clean\",\"code\":null,\"coverage\":{\"scope\":\"broad\",\"justification\":\"Read the index, preserved request, committed patch, and changed file in full; the sole change matches the requested exact content and does not modify other files.\",\"examined\":[\"/artifacts/review/r1/index.json\",\"/artifacts/spec/v1/sources.json\",\"/artifacts/spec/v1/ticket.json\",\"/artifacts/review/r1/committed.patch\",\"/workspace/checkout/docs/factory-smoke.md\"]},\"findings\":[],\"limitations\":[],\"hostChecks\":{\"reads\":5,\"failedReads\":[],\"requiredNotFullyRead\":[],\"downgraded\":[]},\"recordedAt\":\"2026-11-14T19:03:44.491Z\"}}"
+ },
+ "review": {
+  "index": {
+   "bytes": 1875,
+   "text": "{\n \"base\": \"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\",\n \"branch\": \"factory/3-860b3ca1\",\n \"changed\": [\n  \"/workspace/checkout/docs/factory-smoke.md\"\n ],\n \"changedTruncated\": false,\n \"checkout\": \"/workspace/checkout\",\n \"counts\": {\n  \"committed\": 1,\n  \"entries\": 1,\n  \"removed\": 0,\n  \"staged\": 0,\n  \"unstaged\": 0,\n  \"untracked\": 0\n },\n \"entries\": [\n  {\n   \"bytes\": 83,\n   \"committed\": \"A\",\n   \"guestPath\": \"/workspace/checkout/docs/factory-smoke.md\",\n   \"kind\": \"file\",\n   \"mode\": \"100600\",\n   \"path\": \"docs/factory-smoke.md\",\n   \"present\": true,\n   \"sha256\": \"e48a8d654668d4748060eeca1f1ccac2c2f2a0ca2a60b85f1e81529b1d0b2f7f\",\n   \"staged\": null,\n   \"unstaged\": null,\n   \"untracked\": false\n  }\n ],\n \"head\": \"e22126d9e05e6ed3e64a99f5cbe918ca2a2b06f0\",\n \"index\": \"/artifacts/review/r1/index.json\",\n \"instructions\": {\n  \"sha256\": \"b81815d661c057a653c97feee3d22a6a921925f73d8a3e3660fca6ed4730869d\",\n  \"sources\": \"/artifacts/instructions/v1/sources.json\",\n  \"version\": \"v1\"\n },\n \"mergeBase\": \"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\",\n \"patches\": {\n  \"committed\": {\n   \"bytes\": 247,\n   \"path\": \"/artifacts/review/r1/committed.patch\",\n   \"sha256\": \"010c026ae7a43857fbf37741ad9b7adb31cae1126fc5a07c5f18b0f234146150\"\n  },\n  \"staged\": {\n   \"bytes\": 0,\n   \"path\": \"/artifacts/review/r1/staged.patch\",\n   \"sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n  },\n  \"unstaged\": {\n   \"bytes\": 0,\n   \"path\": \"/artifacts/review/r1/unstaged.patch\",\n   \"sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n  }\n },\n \"reviewerNote\": \"Read each listed guestPath and patch with the read tool, with offset/limit to continue; read beyond the hunks for context.\",\n \"round\": 1,\n \"spec\": {\n  \"sha256\": \"2f27233f6e93f8bac452c598bfb47561e7415c50ec5ae4355ccfc6220cae2594\",\n  \"sources\": \"/artifacts/spec/v1/sources.json\",\n  \"version\": \"v1\"\n },\n \"version\": 1\n}"
+  },
+  "committed": {
+   "bytes": 247,
+   "text": "diff --git a/docs/factory-smoke.md b/docs/factory-smoke.md\nnew file mode 100644\nindex 0000000..fe78c86\n--- /dev/null\n+++ b/docs/factory-smoke.md\n@@ -0,0 +1,3 @@\n+# Factory smoke\n+\n+This file was created by the Software Factory Builder smoke test.\n"
+  },
+  "staged": {
+   "bytes": 0,
+   "text": ""
+  },
+  "unstaged": {
+   "bytes": 0,
+   "text": ""
+  }
+ },
+ "sessions": [
+  {
+   "launch": "w-VzK4iV",
+   "file": "2026-11-14T19-03-24-714Z_01a1db71-6729-73ee-96f3-418911e1c76e.jsonl",
+   "bytes": 30203,
+   "toolCalls": [
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/factory-smoke.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/factory-smoke.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/domain.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/issue-tracker.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/triage-labels.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/factory-smoke.md"
+    }
+   ],
+   "tokenPattern": false
+  },
+  {
+   "launch": "w-jN5tYN",
+   "file": "2026-11-14T19-03-24-726Z_01a1db71-6735-74f0-a9e7-40f7b91f5143.jsonl",
+   "bytes": 16696,
+   "toolCalls": [
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/ticket.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/factory-smoke.md"
+    }
+   ],
+   "tokenPattern": false
+  },
+  {
+   "launch": "w-k1j2Zy",
+   "file": "2026-11-14T19-02-19-335Z_01a1db70-67c6-7556-94bf-4fafa1114530.jsonl",
+   "bytes": 49878,
+   "toolCalls": [
+    {
+     "name": "read",
+     "path": "/artifacts/factory/skill-pack/factory-skills-v3/skills/implement/SKILL.md"
+    },
+    {
+     "name": "bash"
+    },
+    {
+     "name": "bash"
+    },
+    {
+     "name": "bash"
+    },
+    {
+     "name": "write",
+     "path": "/artifacts/spec/v1/ticket.json"
+    },
+    {
+     "name": "bash"
+    },
+    {
+     "name": "write",
+     "path": "/artifacts/spec/v1/sources.json.tmp"
+    },
+    {
+     "name": "write",
+     "path": "/artifacts/instructions/v1/sources.json.tmp"
+    },
+    {
+     "name": "bash"
+    },
+    {
+     "name": "bash"
+    },
+    {
+     "name": "bash"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/factory/skill-pack/factory-skills-v3/skills/code-review/SKILL.md"
+    },
+    {
+     "name": "bash"
+    },
+    {
+     "name": "handoff"
+    }
+   ],
+   "tokenPattern": false
+  }
+ ],
+ "checkout": {
+  "version": 1,
+  "path": "/workspace/checkout",
+  "repository": "Sanmoo/java-springboot-event-sourcing",
+  "repositoryId": 1256893534,
+  "base": "main",
+  "branch": "factory/3-860b3ca1",
+  "baseCommit": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+  "origin": "https://github.com/Sanmoo/java-springboot-event-sourcing.git",
+  "preparedAt": "2026-11-14T19:02:03.609Z",
+  "cache": "factory-exclusive-bare",
+  "clone": "no-hardlinks",
+  "fetchCredentialRevocation": "revoked"
+ },
+ "artifacts": [
+  ".factory-profile/storage-v1",
+  "instructions/v1/AGENTS.md",
+  "instructions/v1/sources.json",
+  "review/r1/committed.patch",
+  "review/r1/index.json",
+  "review/r1/staged.patch",
+  "review/r1/unstaged.patch",
+  "spec/v1/sources.json",
+  "spec/v1/ticket.json"
+ ],
+ "specSources": {
+  "text": "{\"version\":\"v1\",\"complete\":true,\"capturedAt\":\"2026-11-14T19:02:48Z\",\"sources\":[{\"origin\":\"https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3\",\"copy\":\"ticket.json\",\"retrievedAt\":\"2026-11-14T19:02:48Z\",\"sha256\":\"e2bf154cbac1af65eec3a084845f92d5c2daf20d992b93b9ecde5ea282bb58fe\",\"revision\":\"2026-11-14T19:01:30Z\"}]}"
+ },
+ "instructionSources": {
+  "text": "{\"version\":\"v1\",\"complete\":true,\"capturedAt\":\"2026-11-14T19:02:48Z\",\"sources\":[{\"origin\":\"/workspace/checkout/AGENTS.md\",\"copy\":\"AGENTS.md\",\"retrievedAt\":\"2026-11-14T19:02:48Z\",\"sha256\":\"d623b8027afdb31af954ad21ba00e29a76a05942f0898209ab0e724761ecf58e\",\"revision\":\"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\"}]}"
+ },
+ "git": {
+  "status": "observed",
+  "head": "e22126d9e05e6ed3e64a99f5cbe918ca2a2b06f0",
+  "branch": "factory/3-860b3ca1",
+  "commits": [
+   "e22126d Add Factory smoke documentation",
+   "8c058c9 Configure engineering agent skills",
+   "3ed6575 wippy",
+   "90f6ad5 docs: global event position implementation plan",
+   "dafc2a2 docs: global event position design spec",
+   "20fa3b0 fix: restore null return in harness retry to not break non-concurrency failure scenarios",
+   "7f15aea Merge branch 'concurrency-tests'",
+   "0ce69c5 fix: rethrow unexpected exceptions in harness retry instead of swallowing them",
+   "3d6d076 chore(quality): fix SpotBugs and PMD violations in concurrency tests",
+   "a2248bc test(concurrency): add mixed commands scenario",
+   "9ba1af6 test(concurrency): add write and read with minVersion scenario",
+   "55d57fe test(concurrency): add idempotent duplicate requests scenario",
+   "c55e9ac test(concurrency): add authorization and capture scenario",
+   "545ce5f add graphify graph",
+   "3e755bf test(concurrency): add concurrent authorizations scenario",
+   "92877be test(concurrency): add base concurrency integration test class",
+   "3ab8ade test(concurrency): add ConcurrentCommandHarness",
+   "4a9a2c1 test(concurrency): add ConcurrentCommandResult record",
+   "3b0e6c4 polish: clear all deprecation notices, warnings, and PMD violations from check build",
+   "96ae37b style: remove redundant imports in CreditAccountController",
+   "aa55976 fix: flatten AuthorizePurchaseResponse JSON with @JsonUnwrapped to preserve API contract",
+   "12295ab fix: exclude CreditAccountResponse from SpotBugs EI_EXPOSE_REP and add defensive list copy",
+   "d8783df fix: remove unused List import in CreditAccountDtoMapper",
+   "2725901 test: use typed response DTOs in CreditAccountControllerListIT",
+   "8a89f1e test: use typed response DTOs in CreditAccountControllerIT",
+   "2c6c9da refactor: use ErrorResponse in RestExceptionHandler",
+   "1ebf772 refactor: use typed DTOs in PageResponse and CreditAccountController",
+   "0a3ce3e feat: add explicit REST response DTOs and mapper",
+   "4debd91 docs: add design spec for explicit REST response DTOs",
+   "e8fea05 simplify details manually",
+   "92354fa style: remove extra blank lines from CreditAccountUseCaseSupport",
+   "ee3d54a refactor(idempotency): remove duplicated aggregate version column",
+   "09f4955 docs: plan idempotency aggregate version simplification",
+   "c4b2150 chore(quality): allow snake_case tests, update spotbugs exclude, fix static field",
+   "1e47eee chore(quality): fix PMD acceptance test violations",
+   "c971b04 chore(quality): fix PMD violations across main source",
+   "69fbda2 chore(checkstyle): remove unused import and unused variable",
+   "399f9ca test(usecase): cover credit account listing mapping",
+   "d152884 test(projection): cover worker PIT survivor paths",
+   "e6d18fa test(projection): cover capture and release projector paths",
+   "3c05b52 docs: plan targeted PIT survivor coverage",
+   "55cf4d4 test(projection): cover projector limit change, payment and auth",
+   "55cd495 test(projection): cover worker gating, retry and unblock paths",
+   "70a07d3 test(projection): add StaleDeliveryRecovery coverage",
+   "40bcba8 test(projection): add ProjectionGatingResult coverage",
+   "1a67ed8 test(projection): add ProjectionWorkerResult coverage",
+   "ad14654 fix(architecture): resolve qualityTest violations via ProjectionConfig port",
+   "6d4e4a8 test(architecture): deny non-allow-listed Spring in core",
+   "d76b238 refactor(projection): use TransactionRunner port in stale recovery",
+   "af5260c refactor(projection): use TransactionRunner port in worker"
+  ],
+  "diffStat": "docs/factory-smoke.md | 3 +++\n 1 file changed, 3 insertions(+)",
+  "remotes": [
+   {
+    "name": "origin",
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing.git"
+   }
+  ],
+  "alternates": false,
+  "copiedBytes": 839319
+ }
+}

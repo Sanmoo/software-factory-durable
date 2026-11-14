@@ -226,3 +226,12 @@ regressão real: `native-builder-write` confere o texto exato do bloco de ferram
 e a observação das leituras do revisor passou a envolver a ferramenta depois dele.
 Novos arquivos: `handoff-capture` (2), `review-session` (4), `activate-review` (2), `worker-handoff-process` (1), `proposal-identity` (2),
 `owner-handoff` (1), `review-flow` (5), `review-rules` (3), `review12-qualification` (3).
+
+## Ensaio real v4 — 2026-11-14 (supervisor) — aceito
+
+HEAD `25d1d88` (rebaseado sobre 10+20), namespace `q12-review-v4`. Registros: [run](12-real-review-run-2026-11-14.json), [inspect](12-real-review-inspect-2026-11-14.json). Tentativas anteriores, todas preservadas: v1 falhou na captura (`safe.directory`); v2 teve vereditos rejeitados (caminho relativo); v3 teve o pack ilegível pela Read. Cada uma falhou fechada e foi corrigida com TDD.
+- Builder real (pack v3) implementou a #3 com commit da identidade **Software Factory Builder** (nenhuma identidade humana na evidência) e chamou `handoff` sozinho.
+- Captura ok, com identidade antes = depois (`current`).
+- **Standards e Spec reais** (`gpt-6-luna`) ativados em paralelo na mesma VM, Execution e Slot, só com `read` e sem credencial. Standards leu 13 entradas, Spec 5; nenhuma leitura falhou nem ficou truncada. Ambas as opiniões `clean`, duráveis antes da notificação.
+- Conclusão `clean` registrada, depois entrega ao mesmo Builder (`delivered`), que terminou. Cessação confirmada e Slot liberado.
+- Segredos: 0 em `control.sqlite*` e na evidência.
