@@ -11,8 +11,10 @@ import { evaluateEntry } from '../rules/admission.js';
 import { dispatchBlockers, selectNext, type OwnCycleFacts } from '../rules/dependencies.js';
 import { evaluateWorkDependencies } from './polling.js';
 import { readWork, type WorkRecord } from './admission.js';
-import { admitExecution, beginRenewal, confirmActivation, confirmStart, holdExecution, recordEnd, recordIssuance, recordPhase, recordRenewal, recordRevocation,
-  recordRevocationIntent, recordWorkerNotice, releaseAfterCessation, releaseBeforeStart, stopRenewal, withdrawCredentials } from './execution.js';
+import { admitExecution, beginRenewal, confirmActivation, confirmStart, holdExecution, recordActivity, recordEnd, recordIssuance, recordPhase, recordRenewal, recordRevocation,
+  recordRevocationIntent, recordTimeout, recordWorkerNotice, releaseAfterCessation, releaseBeforeStart, stopRenewal, withdrawCredentials } from './execution.js';
+import { systemClock } from './polling.js';
+import { timeoutReached } from '../rules/budget.js';
 import { intactRequest, readQuestion, recordContentLost, registerQuestion } from './questions.js';
 import { recoveryPrompt } from '../rules/questions.js';
 import type { WorkerQuestion } from '../../workers/index.js';
@@ -24,6 +26,8 @@ const codeOf = (error: unknown, fallback: string) => error instanceof Error && /
 // Executions whose grants are held in THIS process's memory: boot reconciliation of another run/Control in-process never relabels them.
 const liveExecutions = new Set<string>();
 export const isLiveCredentialExecution = (executionId: string) => liveExecutions.has(executionId);
+/** Executions measured by THIS process (credentials and duration evidence of another process are reconciled at boot, never these). */
+export const isLiveExecution = isLiveCredentialExecution;
 
 /**
  * Credential lifecycle of ONE active Execution (spec §8/§8.1, ticket 20), held in the memory of its execution task only. Renewal is a NEW
@@ -151,8 +155,14 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
   readWorks(): Promise<WorkRecord[]>; ownCycles(issueIds: number[]): Promise<Record<number, OwnCycleFacts>>;
   record(work_id: string, evaluation: DependencyEvaluation): Promise<unknown>; paused(): Promise<boolean>; heldSlots(): Promise<number>;
   /** A Question was durably recorded: publication proceeds independently of cessation (not awaited by the ACK). */
-  questionRecorded?(): void }) {
+  questionRecorded?(): void;
+  /** Identity of this controller process: origin of the monotonic elapsed values it records. */
+  controllerRunId?: string }) {
   const { session, ports } = deps;
+  // Live duration/timeout clock (spec §5.7): local monotonic, separate from the polling cadence and from Pi Durable's own timers.
+  const clock = ports.clock ?? systemClock;
+  // Monotonic start of each Execution running in THIS process (memory only): live duration for inspection.
+  const startedAt = new Map<string, number>();
   const running = new Map<string, Promise<void>>();
   const lifecycles = new Map<string, ReturnType<typeof credentialLifecycle>>();
   const stopping = new AbortController();
@@ -194,7 +204,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
    * round concluded durably and the effective results delivered to the preserved Builder session. No reviewer retry, no new Slot.
    */
   async function reviewRound(work: WorkRecord, execution: ExecutionView, environment: EnvironmentRef, boot: BootRef, handle: Handle, event: HandoffEvent,
-    holdExecutionAndWithdraw: (code: string, nextStep: string) => Promise<void>): Promise<boolean> {
+    holdExecutionAndWithdraw: (code: string, nextStep: string) => Promise<void>,
+    /** The Execution's activity scope: reviewers share its clock/timeout (spec §5.6/§5.7); an interruption ends the round at once. */
+    scope: { wait<T>(promise: Promise<T>): Promise<T>; signal: AbortSignal; interrupted(): boolean; activity(event: string): Promise<void> }): Promise<boolean> {
     const { executionId } = execution;
     const { round } = event;
     const reviews = ports.reviews!;
@@ -211,14 +223,15 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const recorded = await recordHandoff(session, work.work_id, executionId, { event, before, plans, reviewer: reviews.reviewer, failure });
     if (recorded !== 'recorded') return hold(`REVIEW_HANDOFF_${recorded.toUpperCase()}`, 'The handoff could not be recorded for this Execution; the Builder stays suspended. Operator recovery (ticket 26).');
     observe(work.work_id, failure ? 'review-handoff-failed' : 'reviewing', failure ? [failure] : []);
+    await scope.activity(`review-handoff-r${round}`);
     const runReviewer = async (plan: ReviewPlan) => {
       let reviewer: Handle;
       try {
         checkStop();
         reviewer = await ports.workers.activate({ context: { workId: work.work_id, executionId, invocationId: plan.invocationId, role: plan.role,
-          environmentRef: environment, bootRef: boot, phaseId: plan.phaseId }, prompt: plan.prompt, signal: stopping.signal, review: plan.review, ...reviews.reviewer });
+          environmentRef: environment, bootRef: boot, phaseId: plan.phaseId }, prompt: plan.prompt, signal: scope.signal, review: plan.review, ...reviews.reviewer });
       } catch (error) {
-        if (stopping.signal.aborted) throw error;
+        if (stopping.signal.aborted || scope.interrupted()) throw error;
         // Only a refusal known to precede any launch proves the reviewer never ran; anything else may have launched it.
         const known = error instanceof Error && ['WORKER_LAUNCH_INVALID', 'STALE_TOOL_CONTEXT', 'WORKER_EXECUTION_NOT_ENABLED', 'WORKER_PROFILE_NOT_CONFIGURED'].includes(error.message);
         await recordReviewerEnd(session, work.work_id, executionId, round, plan.role, { failure: known ? 'REVIEWER_UNAVAILABLE' : 'REVIEWER_LAUNCH_UNCERTAIN',
@@ -226,16 +239,17 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         return;
       }
       try {
-        const start = await untilStopped(reviewer.started);
+        const start = await scope.wait(reviewer.started);
         if (await recordReviewerStart(session, work.work_id, executionId, round, plan.role, { id: start.receipt.id, ...start.invocation }) !== 'recorded') {
           await recordReviewerEnd(session, work.work_id, executionId, round, plan.role, { failure: 'REVIEWER_START_RECEIPT_CONFLICT', cessation: 'unconfirmed' });
           return;
         }
-        const completed = await untilStopped(reviewer.completed);
+        await scope.activity(`reviewer-started-${plan.role}`);
+        const completed = await scope.wait(reviewer.completed);
         await recordReviewerEnd(session, work.work_id, executionId, round, plan.role, { cessation: 'completion-observed', ...(completed.status === 'success' && completed.opinion
           ? { opinion: completed.opinion } : { failure: completed.status === 'failure' && /^[A-Z_]{1,64}$/.test(completed.code) ? completed.code : 'OPINION_MISSING' }) });
       } catch (error) {
-        if (stopping.signal.aborted) throw error;
+        if (stopping.signal.aborted || scope.interrupted()) throw error;
         await recordReviewerEnd(session, work.work_id, executionId, round, plan.role, { failure: 'REVIEWER_OUTCOME_UNCERTAIN', cessation: 'unconfirmed' });
       } finally { reviewer.close(); }
     };
@@ -251,7 +265,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     if (await recordDelivery(session, work.work_id, executionId, round, { promptSha256: createHash('sha256').update(prompt).digest('hex') }) !== 'recorded') return hold('REVIEW_DELIVERY_STALE', 'Delivery intent not recordable.');
     checkStop();
     // Q6 deliver (same union as the credential directives of ticket 20): the results to the CURRENT Builder of this Execution.
-    const delivered = await untilStopped(ports.workers.deliver(handle.worker, { kind: 'review-results', round, prompt }));
+    const delivered = await scope.wait(ports.workers.deliver(handle.worker, { kind: 'review-results', round, prompt }));
     // A refusal is a known non-delivery; anything else may have reached the Builder (it might have resumed): uncertain, never "failed".
     const refused = delivered.status === 'failure' && ['DELIVERY_DENIED', 'DELIVERY_NOT_APPLICABLE', 'WORKER_NOT_CURRENT'].includes(delivered.code);
     await recordDelivery(session, work.work_id, executionId, round, delivered.status === 'delivered' ? { outcome: 'delivered', code: null }
@@ -260,6 +274,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       refused ? 'The review results were refused before reaching the suspended Builder; never retried automatically. Operator recovery (ticket 26).'
         : 'It is unknown whether the Builder received the results (it may have resumed); never redelivered automatically. Operator recovery (ticket 26).');
     observe(work.work_id, 'review-delivered', [concluded.conclusion!]);
+    await scope.activity(`review-delivered-r${round}`);
     return true;
   }
 
@@ -291,6 +306,38 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     try { await holdExecution(session, work.work_id, executionId, code, nextStep); observe(work.work_id, 'held', [code]); }
     finally { await lifecycle?.withdraw('held', { notifyWorker: true }); }
   };
+    // Activity scope of THIS Execution: the timeout interrupts it (Builder and reviewers) without stopping the owner.
+    const interrupt = new AbortController();
+    const activitySignal = AbortSignal.any([stopping.signal, interrupt.signal]);
+    const interrupted = () => interrupt.signal.aborted;
+    const wait = <T>(promise: Promise<T>): Promise<T> => untilStopped(new Promise<T>((resolve, reject) => {
+      const abort = () => reject(new Error('EXECUTION_TIMEOUT'));
+      if (interrupt.signal.aborted) { abort(); return; }
+      interrupt.signal.addEventListener('abort', abort, { once: true });
+      promise.then(value => { interrupt.signal.removeEventListener('abort', abort); resolve(value); },
+        error => { interrupt.signal.removeEventListener('abort', abort); reject(error); });
+    }));
+    let startMono: number | null = null;
+    const elapsed = () => startMono === null ? null : Math.max(0, clock.monotonic() - startMono);
+    const activity = async (event: string) => { const ms = elapsed(); if (ms !== null) await recordActivity(session, work.work_id, executionId, event, ms).catch(() => {}); };
+    const timerStop = new AbortController();
+    let timer: Promise<void> | undefined;
+    // Timer independent of logs/activity: on the configured limit it records the timeout durably, then interrupts the activity.
+    const armTimeout = (timeoutSeconds: number | null) => {
+      if (timeoutSeconds === null) return; // no timeout: no implicit cut of any length
+      timer = (async () => {
+        const signal = AbortSignal.any([timerStop.signal, stopping.signal]);
+        while (!signal.aborted) {
+          const ms = elapsed()!;
+          if (timeoutReached(timeoutSeconds, ms)) {
+            await recordTimeout(session, work.work_id, executionId, ms).catch(() => {});
+            interrupt.abort();
+            return;
+          }
+          await clock.sleep(timeoutSeconds * 1000 - ms, signal);
+        }
+      })();
+    };
     const stopOwnBoot = async (reason: string) => environment && boot ? ports.sandbox.stop({ environment, boot, reason }).catch(() => ({ status: 'indeterminate' as const, cessationConfirmed: false as const, code: 'STOP_UNAVAILABLE' })) : undefined;
     try {
       checkStop();
@@ -379,23 +426,29 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         if (!await untilStopped(startConfirmed)) return { status: 'refused' as const, code: 'START_NOT_CONFIRMED' };
         const outcome = await registerQuestion(session, { work_id: work.work_id, executionId, invocationId: execution.invocationId, request, from: 'worker-notification' });
         if (outcome.kind === 'refused') return { status: 'refused' as const, code: outcome.code };
+        await activity('question-recorded');
         deps.questionRecorded?.();
         // The activity now waits for an external answer: its credentials are withdrawn (no renewal) and revoked, independently of the ACK.
         void lifecycle!.withdraw('external-wait', { notifyWorker: true }).catch(() => {});
         return { status: 'recorded' as const };
       };
       const handle = await ports.workers.activate({ context: { workId: work.work_id, executionId, invocationId: execution.invocationId, role: 'builder',
-        environmentRef: environment, bootRef: boot, phaseId: resume ? 'builder-recovery' : 'builder-initial' }, prompt, signal: stopping.signal, ...ports.builder,
+        environmentRef: environment, bootRef: boot, phaseId: resume ? 'builder-recovery' : 'builder-initial' }, prompt, signal: activitySignal, ...ports.builder,
         ...(ports.reviews ? { handoff: { baseCommit: prepared.checkout.baseCommit } } : {}) },
       { credential: grant.delivery }, { question: onQuestion });
       await lifecycle.attach(handle.worker);
       try {
         phase = 'started';
         const start = await untilStopped(handle.started);
+        // The local monotonic clock of this Execution starts with the start receipt observation (never another process's origin).
+        const startMark = clock.monotonic();
         let consumed: Awaited<ReturnType<typeof confirmStart>> | undefined;
-        try { consumed = await confirmStart(session, work.work_id, executionId, { ...start.receipt, ...start.invocation }); }
+        try { consumed = await confirmStart(session, work.work_id, executionId, { ...start.receipt, ...start.invocation }, deps.controllerRunId ?? null); }
         finally { startCommitted(consumed === 'confirmed'); }
         if (consumed !== 'confirmed') { await hold(`START_RECEIPT_${consumed.toUpperCase().replaceAll('-', '_')}`, 'Start receipt was not consumable for this Execution.'); return; }
+        startMono = startMark;
+        startedAt.set(executionId, startMark);
+        armTimeout(execution.timing?.timeoutSeconds ?? null);
         observe(work.work_id, 'started');
         if (ports.reviews && handle.handoffs) {
           phase = 'review';
@@ -403,16 +456,17 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           // The grant keeps its time-based renewal while the Builder is suspended for review (tools stay refused by its Host);
           // reviewers never receive it.
           const reviewed = (async () => {
-            for (let event = await untilStopped(handoffs.next()); event; event = await untilStopped(handoffs.next())) {
-              if (!await reviewRound(work, execution, environment, boot, handle, event, hold)) return false;
+            for (let event = await wait(handoffs.next()); event; event = await wait(handoffs.next())) {
+              if (!await reviewRound(work, execution, environment, boot, handle, event, hold, { wait, signal: activitySignal, interrupted, activity })) return false;
             }
             return true;
           })();
-          if (!await untilStopped(lifecycle.renewWhile(reviewed))) return;
+          if (!await wait(lifecycle.renewWhile(reviewed))) return;
         }
         phase = 'completed';
         // Renewal happens only while waiting for THIS activity; it never restarts, replays or recovers the Builder.
-        const completed = await untilStopped(lifecycle.renewWhile(handle.completed));
+        const completed = await wait(lifecycle.renewWhile(handle.completed));
+        timerStop.abort(); // the activity ended: its clock stops (also before an external wait)
         if (completed.status === 'question') {
           // Lost ACK/notification: the completion repeats the SAME identity and content; a missing record is registered once from it.
           // Content not intact and no record: explicit impediment, nothing invented or published.
@@ -434,18 +488,29 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
             await recordContentLost(session, work.work_id, executionId, request.questionId);
           }
           const bound = own(await readQuestion(session, request.questionId));
-          await recordEnd(session, work.work_id, executionId, 'question', code, bound ? request.questionId : null);
+          await recordEnd(session, work.work_id, executionId, 'question', code, bound ? request.questionId : null, elapsed());
         } else {
-          await recordEnd(session, work.work_id, executionId, completed.status === 'success' ? 'completed' : 'failure', completed.status === 'success' ? null : completed.code);
+          await recordEnd(session, work.work_id, executionId, completed.status === 'success' ? 'completed' : 'failure', completed.status === 'success' ? null : completed.code, null, elapsed());
           if (completed.status === 'failure') await questionUncertain();
         }
-      } finally { startCommitted(false); handle.close(); }
+      } finally { timerStop.abort(); startCommitted(false); handle.close(); }
       await lifecycle.withdraw('ended', { notifyWorker: false });
       phase = 'stop';
       const stop = await stopOwnBoot('builder execution ended');
       await releaseAfterCessation(session, work.work_id, executionId, stop?.cessationConfirmed ? 'confirmed' : 'unconfirmed');
       observe(work.work_id, stop?.cessationConfirmed ? 'ended-slot-released' : 'ended-cessation-unconfirmed');
     } catch (error) {
+      if (interrupted() && !stopping.signal.aborted) {
+        // Timeout (spec §4.4/§5.7): recorded before the interruption; credentials withdrawn, own boot stopped, Slot only after cessation.
+        // Blocked by EXECUTION_TIMEOUT for intervention: no retry, no new clock for it.
+        await timer?.catch(() => {});
+        await lifecycle?.withdraw('timeout', { notifyWorker: false }).catch(() => {});
+        await recordEnd(session, work.work_id, executionId, 'timeout', 'EXECUTION_TIMEOUT', null, elapsed()).catch(() => {});
+        const stop = await stopOwnBoot('execution timeout');
+        await releaseAfterCessation(session, work.work_id, executionId, stop?.cessationConfirmed ? 'confirmed' : 'unconfirmed').catch(() => {});
+        observe(work.work_id, stop?.cessationConfirmed ? 'timeout-slot-released' : 'timeout-cessation-unconfirmed', ['EXECUTION_TIMEOUT']);
+        return;
+      }
       await questionUncertain().catch(() => {});
       if (stopping.signal.aborted) {
         // Owner stop: the host channel closes (worker revoked); the grants are still in memory, so their revocation is attempted.
@@ -454,11 +519,16 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       }
       const code = codeOf(error, 'UNEXPECTED_FAILURE');
       await hold(`${phase.toUpperCase()}_${code}`, 'Execution outcome is uncertain at this phase; never retried automatically. Operator recovery (ticket 26).').catch(() => {});
-    } finally { lifecycles.delete(work.work_id); liveExecutions.delete(executionId); }
+    } finally { timerStop.abort(); lifecycles.delete(work.work_id); liveExecutions.delete(executionId); startedAt.delete(executionId); }
   }
 
   return {
     view: () => ({ running: running.size, last }),
+    /** Live monotonic duration of an Execution running in THIS process, or null (then the durable evidence is presented). */
+    liveElapsed(executionId: string): number | null {
+      const start = startedAt.get(executionId);
+      return start === undefined ? null : Math.max(0, clock.monotonic() - start);
+    },
     /** External wait / cancellation entry (tickets 10/25): withdraws the active Execution's credentials and attempts their revocation. */
     async withdraw(work_id: string, reason: Extract<CredentialWithdrawal, 'external-wait' | 'cancelled'>): Promise<'withdrawn' | 'not-active'> {
       const lifecycle = lifecycles.get(work_id);
@@ -489,7 +559,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       const { attemptId } = await freshEvaluation(work);
       const admission = await admitExecution(session, { work_id: work.work_id, attemptId, capacity: ports.capacity, authorizationObservedAt: authorization.observedAt,
         request: { ticket: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
-          branch: `factory/${work.ticket.number}-${work.work_id.slice(0, 8)}`, policies: { ...ports.builder } }, ...(resume ? { resume } : {}) });
+          branch: `factory/${work.ticket.number}-${work.work_id.slice(0, 8)}`, policies: { ...ports.builder } }, ...(resume ? { resume } : {}),
+        limits: deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase()) ?? {} });
       if (admission.kind === 'refused') { observe(work.work_id, 'refused', admission.reasons); return; }
       observe(work.work_id, 'reserved');
       const task = execute(work, admission.execution).finally(() => running.delete(work.work_id));

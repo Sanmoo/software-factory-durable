@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { z } from 'zod';
-import type { AccessDependencies, Control, ControlStatus, DispatchReason, ExecutionPorts, Impediment, ListView, PollingOptions, PollingView, WorkView } from '../types.js';
-import { heldSlots, initializeSlots, reconcileLostCredentials } from './execution.js';
-import { createDispatcher, isLiveCredentialExecution } from './dispatch.js';
+import type { AccessDependencies, Control, ControlStatus, DispatchReason, ExecutionPorts, Impediment, LimitsView, ListView, PollingOptions, PollingView, WorkView } from '../types.js';
+import { heldSlots, initializeSlots, reconcileDurations, reconcileLostCredentials } from './execution.js';
+import { createDispatcher, isLiveCredentialExecution, isLiveExecution } from './dispatch.js';
 import { openStore } from './store.js';
 import { acceptPauseCommand, admitTicket, indexedWork, initialize, ownCycles, pendingWorks, readInstallation, readRequest, readWork, readWorks, recordDependencies,
   type WorkRecord } from './admission.js';
@@ -11,9 +11,13 @@ import { createPoller, systemClock } from './polling.js';
 import { createQuestionDesk } from './question-desk.js';
 import { acceptAnswer, readQuestion, readQuestions } from './questions.js';
 import { dispatchBlockers, selectNext } from '../rules/dependencies.js';
+import { counterView, durationView, maxGrantAmount } from '../rules/budget.js';
+import { grantBudget, openCorrection, requestOperationalRecovery } from './budget.js';
 
 const requestId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
 const inputSchema = z.union([z.strictObject({ request_id: requestId, operation: z.enum(['pause', 'unpause']), origin: z.literal('local-cli') }),
+  z.strictObject({ request_id: requestId, operation: z.literal('grant'), work_id: z.uuid(), counter: z.enum(['corrections', 'recoveries']),
+    amount: z.number().int().min(1).max(maxGrantAmount), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('answer'), question_id: z.uuid(), origin: z.literal('local-cli'),
     text: z.string().max(2000).refine(text => text.trim().length > 0 && text === text.trim() && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) })]);
 const workIdSchema = z.uuid();
@@ -28,6 +32,16 @@ const limitations = [
 
 // Module-internal seam for the external-wait/cancellation flows of this module (not part of the public Control contract).
 const dispatchers = new WeakMap<Control, ReturnType<typeof createDispatcher>>();
+// Module-internal seam for the correction (tickets 22/23) and recovery (ticket 26) triggers; not part of the public Control contract.
+const triggers = new WeakMap<Control, { correction(work_id: string, reason: string): Promise<string>; recovery(work_id: string, reason: string): Promise<string> }>();
+/** Opens a correction of a Work (charged once at its confirmed start); `refused` while an Execution is active or the Work is not current. */
+export async function requestCorrection(control: Control, work_id: string, reason: string): Promise<string> {
+  return triggers.get(control)?.correction(work_id, reason) ?? 'refused';
+}
+/** Requests an operational recovery of a Work (one recovery unit at its confirmed start). */
+export async function requestRecovery(control: Control, work_id: string, reason: string): Promise<string> {
+  return triggers.get(control)?.recovery(work_id, reason) ?? 'refused';
+}
 /** Withdraws the active Execution's credentials of a Work (external wait or cancellation) and attempts revocation of its known grants. */
 export async function withdrawActivityCredentials(control: Control, work_id: string, reason: 'external-wait' | 'cancelled'): Promise<'withdrawn' | 'not-active'> {
   return dispatchers.get(control)?.withdraw(work_id, reason) ?? 'not-active';
@@ -45,6 +59,7 @@ export async function openControl(options: { storagePath: string; runtimeInvento
   try { await initialize(state); await initializeSlots(state); } catch (error) { await store.close().catch(() => {}); throw error; }
   let dispatcher: ReturnType<typeof createDispatcher> | undefined;
   let stopped = false;
+  const configuredRepository = (repository: string) => options.access?.repositories.find(scope => scope.repository.toLowerCase() === repository.toLowerCase());
   // Question publication and answer ingestion need the tracker; they run whatever the dispatch barrier (no spawn involved).
   const desk = options.access && options.polling ? createQuestionDesk({ session: state, tracker: options.access.tracker, operators: options.access.operators ?? [],
     readWorks: () => readWorks(state), stopped: () => stopped }) : undefined;
@@ -52,7 +67,7 @@ export async function openControl(options: { storagePath: string; runtimeInvento
     access: options.access, intervalSeconds: options.polling.intervalSeconds, clock: options.polling.clock ?? systemClock,
     paused: async () => (await readInstallation(state)).paused,
     indexed: ticket => indexedWork(state, ticket),
-    admit: evidence => admitTicket(state, evidence),
+    admit: evidence => admitTicket(state, evidence, configuredRepository(evidence.repository.repository) ?? {}),
     pending: repositoryId => pendingWorks(state, repositoryId),
     ownCycles: issueIds => ownCycles(state, issueIds),
     record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation),
@@ -61,7 +76,7 @@ export async function openControl(options: { storagePath: string; runtimeInvento
   if (options.execution && options.access && poller) dispatcher = createDispatcher({ session: state, access: options.access, ports: options.execution,
     currentAttempt: repository => poller.currentAttempt(repository), readWorks: () => readWorks(state), ownCycles: issueIds => ownCycles(state, issueIds),
     record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation), paused: async () => (await readInstallation(state)).paused,
-    heldSlots: () => heldSlots(state), questionRecorded: () => desk?.kick() });
+    heldSlots: () => heldSlots(state), questionRecorded: () => desk?.kick(), controllerRunId: controller_run_id });
   const pollingView = (): PollingView => poller?.view() ?? { state: 'disabled', intervalSeconds: null, cycles: 0, lastCycleAt: null, source: 'in-memory-observation', repositories: [] };
   // Work-level reasons preventing a start now; the dependency evaluation must belong to the repository's current polling round.
   const blockers = (work: WorkRecord) => dispatchBlockers({ impediments: work.impediments, evaluation: work.dependencies.latest,
@@ -70,10 +85,23 @@ export async function openControl(options: { storagePath: string; runtimeInvento
     const impediments: Impediment[] = [...work.impediments,
       ...(paused ? [{ code: 'GLOBAL_PAUSE', scope: 'installation' as const, nextStep: 'Unpause to allow new triggers; unpausing removes no individual impediment.' }] : [])];
     // A Question wait whose boot ceased occupies nothing: the Work shows its queue blockers (QUESTION_PENDING...), not "executing".
-    const waiting = work.execution?.state === 'ended' && work.execution.end?.outcome === 'question' && !work.execution.slot.held;
+    // Likewise an ended, ceased Execution whose Work is pending again (correction/recovery/timeout): its queue blockers are shown.
+    const waiting = work.execution?.state === 'ended' && !work.execution.slot.held && (work.execution.end?.outcome === 'question' || work.queue.pending);
     const execution = work.execution && work.execution.state !== 'released' && !waiting ? work.execution : null;
     const reasons = [...(execution ? [] : blockers(work)), ...(dispatchReason ? [dispatchReason] : []), ...(paused ? ['GLOBAL_PAUSE'] : [])];
-    return { ...work, impediments, dispatch: { state: execution ? 'executing' : reasons.length ? 'held' : 'eligible', reasons } };
+    return { ...work, impediments, dispatch: { state: execution ? 'executing' : reasons.length ? 'held' : 'eligible', reasons }, limits: limitsOf(work, impediments) };
+  };
+  // Presentation of limits/reservations/consumption, timeout, duration (live monotonic when THIS process runs it) and the action required.
+  const limitsOf = (work: WorkRecord, impediments: Impediment[]): LimitsView => {
+    const execution = work.execution;
+    const live = execution ? dispatcher?.liveElapsed(execution.executionId) ?? null : null;
+    const timing = execution?.timing ?? null;
+    return { corrections: work.budget ? counterView(work.budget.corrections) : null, recoveries: work.budget ? counterView(work.budget.recoveries) : null,
+      grants: work.budget?.grants.length ?? 0,
+      timeout: { seconds: timing ? timing.timeoutSeconds : configuredRepository(work.repository.repository)?.timeoutSeconds ?? null, scope: 'per-execution',
+        reached: timing?.timeout ?? null, overrun: timing?.overrun ?? null },
+      duration: durationView(timing, live === null ? null : { elapsedMs: live }),
+      actions: impediments.map(item => ({ code: item.code, nextStep: item.nextStep })) };
   };
   const selection = (works: WorkRecord[]) => selectNext(works.filter(work => work.result === 'open' && work.queue.pending && work.queue.category === 'normal')
     .map(work => ({ work_id: work.work_id, blockers: blockers(work) })));
@@ -84,6 +112,7 @@ export async function openControl(options: { storagePath: string; runtimeInvento
       if (!parsed.success) return { kind: 'refused', code: 'INVALID_COMMAND' };
       // Local CLI under the administrator account's trust; correlation/single answer are checked in the commit.
       if (parsed.data.operation === 'answer') return acceptAnswer(state, { request_id: parsed.data.request_id, question_id: parsed.data.question_id, text: parsed.data.text, origin: { kind: 'local-cli' } });
+      if (parsed.data.operation === 'grant') return grantBudget(state, parsed.data, configuredRepository);
       return acceptPauseCommand(state, parsed.data);
     },
     async inspect(query) {
@@ -153,6 +182,8 @@ export async function openControl(options: { storagePath: string; runtimeInvento
         // Grants of a previous process were memory-only: record them as impossible to revoke, with their risk (never blocks by itself).
         // Before polling starts, so no dispatch of this run precedes it. A run stopped before it starts (read-only inspection) writes nothing.
         if (!signal.aborted) await reconcileLostCredentials(state, isLiveCredentialExecution);
+        // Durations measured by a previous process: proven lower bound + calendar estimate; overrun blocks when it cannot be excluded.
+        if (!signal.aborted) await reconcileDurations(state, isLiveExecution);
         const aborted = new Promise<'stop'>(resolve => {
           if (signal.aborted) resolve('stop');
           else signal.addEventListener('abort', () => resolve('stop'), { once: true });
@@ -181,5 +212,7 @@ export async function openControl(options: { storagePath: string; runtimeInvento
     },
   };
   if (dispatcher) dispatchers.set(control, dispatcher);
+  triggers.set(control, { correction: (work_id, reason) => openCorrection(state, work_id, reason, configuredRepository),
+    recovery: (work_id, reason) => requestOperationalRecovery(state, work_id, reason, configuredRepository) });
   return control;
 }

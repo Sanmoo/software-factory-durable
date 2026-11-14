@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { defineDoc } from '@earendil-works/pi-durable';
 import type { BuilderGrantMetadata, RevocationResult } from '../../contracts/index.js';
-import type { CredentialGrantRecord, CredentialWithdrawal, ExecutionView } from '../types.js';
+import type { CredentialGrantRecord, CredentialWithdrawal, ExecutionCharge, ExecutionView } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
+import { chargeDecision, classifyOverrun, exhaustionImpediment, initialBudget, overrunNotExcludedImpediment, timeoutImpediment, timeoutReached, type Motive } from '../rules/budget.js';
 import { dispatchBlockers } from '../rules/dependencies.js';
 import { installation, legacyCredentialLifecycle, ticketIndex, works, type WorkRecord } from './admission.js';
 import { questions } from './questions.js';
@@ -24,7 +25,7 @@ export type Admission = { kind: 'reserved'; execution: ExecutionView } | { kind:
 const history = (work: WorkRecord, event: Extract<WorkRecord['history'][number], { origin: 'controller-dispatch' }>['event'], executionId: string, detail?: string) =>
   work.history.push({ at: new Date().toISOString(), event, origin: 'controller-dispatch', executionId, ...(detail ? { detail } : {}) });
 /** An ended Execution whose own boot ceased and whose Slot was released no longer blocks a NEW Execution (e.g. after an answer). */
-const active = (execution: ExecutionView | null) => execution !== null && execution.state !== 'released' && !(execution.state === 'ended' && !execution.slot.held);
+export const activeExecution = (execution: ExecutionView | null) => execution !== null && execution.state !== 'released' && !(execution.state === 'ended' && !execution.slot.held);
 
 /**
  * "Admitir Execução" (spec §3.4): in ONE commit, the Work is still open, pending and the Ticket's current cycle; the global pause is off;
@@ -33,6 +34,8 @@ const active = (execution: ExecutionView | null) => execution !== null && execut
  */
 export async function admitExecution(session: Session, input: { work_id: string; attemptId: string; capacity: number; authorizationObservedAt: string;
   request: Omit<ExecutionView['request'], 'baseCommit' | 'checkout' | 'promptSha256' | 'skillPack' | 'resume'>;
+  /** Configured limits of the repository: initialize a budget absent on a pre-19 Work, and the per-Execution timeout (absent = none). */
+  limits?: { correctionLimit?: number | undefined; recoveryLimit?: number | undefined; timeoutSeconds?: number | undefined };
   /** Recovery basis after an answered Question; re-checked in this commit (the answer and the previous Execution must still match). */
   resume?: NonNullable<ExecutionView['request']['resume']> }): Promise<Admission> {
   return session.commit(async tx => {
@@ -42,7 +45,7 @@ export async function admitExecution(session: Session, input: { work_id: string;
     const document = await tx.doc(works, input.work_id, null);
     const work = document.work;
     if (!work || work.result !== 'open' || index.tickets[ticketKey(work.ticket)]?.current !== input.work_id) return { kind: 'refused' as const, reasons: ['WORK_NOT_CURRENT'] };
-    if (!work.queue.pending || active(work.execution ?? null)) reasons.push('EXECUTION_ALREADY_ACTIVE');
+    if (!work.queue.pending || activeExecution(work.execution ?? null)) reasons.push('EXECUTION_ALREADY_ACTIVE');
     const latest = work.dependencies?.latest ?? null;
     reasons.push(...dispatchBlockers({ impediments: work.impediments, evaluation: latest, currentAttempt: input.attemptId }));
     if (latest && latest.conclusion !== 'satisfied' && !reasons.length) reasons.push('DEPENDENCIES_NOT_SATISFIED');
@@ -57,7 +60,26 @@ export async function admitExecution(session: Session, input: { work_id: string;
     } else if (input.resume) reasons.push('RESUME_BASIS_CHANGED');
     if (reasons.length) return { kind: 'refused' as const, reasons };
     const now = new Date().toISOString();
+    // Budget reservation in THIS commit (spec §3.4): the correction once, each operational recovery once, the initial implementation never.
+    work.budget ??= initialBudget(input.limits ?? {}, work.repository.repository, now);
+    const decision = chargeDecision(work.budget, motiveOf(work));
+    if (decision.kind === 'exhausted') {
+      // Durable, visible exhaustion: the impediment keeps the Work out of selection (no automatic loop) until an explicit grant.
+      if (!work.impediments.some(item => item.code === decision.code)) {
+        work.impediments.push(exhaustionImpediment(decision.counter, work.work_id, now));
+        budgetHistory(work, 'budget-exhausted', null, `${decision.counter}:${work.budget[decision.counter].consumed}/${work.budget[decision.counter].limit + work.budget[decision.counter].granted}`);
+      }
+      return { kind: 'refused' as const, reasons: [decision.code] };
+    }
     const executionId = randomUUID();
+    const charge: ExecutionCharge = decision.kind === 'reserve' ? { kind: decision.counter === 'corrections' ? 'correction' : 'recovery', correctionId: decision.correctionId,
+      counter: decision.counter, state: 'reserved', settledAt: null }
+      : decision.kind === 'preserve' ? { kind: 'correction', correctionId: decision.correctionId, counter: 'corrections', state: 'preserved', settledAt: now }
+        : { kind: 'none', correctionId: null, counter: null, state: 'none', settledAt: null };
+    if (decision.kind === 'reserve') {
+      work.budget[decision.counter].reserved = executionId;
+      budgetHistory(work, 'budget-reserved', executionId, decision.counter);
+    }
     const execution: ExecutionView = {
       executionId, invocationId: `builder-${executionId}`, mode: input.resume ? 'recovery' : 'initial', state: 'reserved',
       slot: { held: true, capacity: input.capacity, reservedAt: now, releasedAt: null },
@@ -68,6 +90,8 @@ export async function admitExecution(session: Session, input: { work_id: string;
       credentialLifecycle: { state: 'none', withdrawnAt: null, reason: null, renewal: 'enabled', renewalStop: null, workerNotice: null },
       start: null, end: null, held: null,
       completion: { automatic: false, reason: 'Reviews, publication and readiness are not enabled in this Factory version; an ended Builder Execution never completes the Work automatically.' },
+      charge, timing: { timeoutSeconds: input.limits?.timeoutSeconds ?? null, clock: 'controller-monotonic', origin: null, startedAt: null, lastActivity: null,
+        duration: null, timeout: null, overrun: null },
     };
     occupancy.held[executionId] = input.work_id;
     if (previous) work.previousExecutions = [...(work.previousExecutions ?? []), previous];
@@ -77,6 +101,36 @@ export async function admitExecution(session: Session, input: { work_id: string;
     history(work, 'execution-reserved', executionId);
     return { kind: 'reserved' as const, execution: structuredClone(execution) };
   }, BACKGROUND_CONTEXT);
+}
+
+/** Motive of the next activation: a pending operational recovery, else the open correction (charged once), else nothing to charge. */
+function motiveOf(work: WorkRecord): Motive {
+  if (work.pendingRecovery) return { kind: 'recovery', correctionId: work.correction?.correctionId ?? null };
+  if (work.correction) return { kind: 'correction', correctionId: work.correction.correctionId, consumed: work.correction.consumed };
+  return { kind: 'none' };
+}
+export const budgetHistory = (work: WorkRecord, event: 'budget-reserved' | 'budget-consumed' | 'budget-released' | 'budget-exhausted', executionId: string | null, detail: string) =>
+  work.history.push({ at: new Date().toISOString(), event, origin: 'controller-budget', executionId, detail });
+
+/** Consumption exactly once with the confirmed start (spec §3.4 "Confirmar início"); events, tests, pushes and renewals never charge. */
+function consumeReservation(work: WorkRecord, execution: ExecutionView, at: string) {
+  const charge = execution.charge;
+  if (!charge || charge.state !== 'reserved' || !charge.counter || !work.budget) return;
+  const counter = work.budget[charge.counter];
+  if (counter.reserved === execution.executionId) counter.reserved = null;
+  counter.consumed += 1;
+  Object.assign(charge, { state: 'consumed', settledAt: at });
+  if (charge.kind === 'correction' && work.correction?.correctionId === charge.correctionId) work.correction.consumed = true;
+  if (charge.kind === 'recovery') work.pendingRecovery = null;
+  budgetHistory(work, 'budget-consumed', execution.executionId, charge.counter);
+}
+/** Proven non-start (spec §4.4): the reservation is released without consumption; the correction/recovery stays pending. */
+function releaseReservation(work: WorkRecord, execution: ExecutionView, at: string) {
+  const charge = execution.charge;
+  if (!charge || charge.state !== 'reserved' || !charge.counter || !work.budget) return;
+  if (work.budget[charge.counter].reserved === execution.executionId) work.budget[charge.counter].reserved = null;
+  Object.assign(charge, { state: 'released', settledAt: at });
+  budgetHistory(work, 'budget-released', execution.executionId, charge.counter);
 }
 
 type Expect = { state: ExecutionView['state']; phases: ExecutionView['dispatch']['phase'][] };
@@ -268,7 +322,9 @@ export async function reconcileLostCredentials(session: Session, live: (executio
 }
 
 /** "Confirmar início" (spec §3.4/5.3): the receipt of THIS Execution is consumed exactly once; a different receipt is a conflict. */
-export async function confirmStart(session: Session, work_id: string, executionId: string, receipt: { workId: string; id: string; executionId: string; invocationId: string }):
+export async function confirmStart(session: Session, work_id: string, executionId: string, receipt: { workId: string; id: string; executionId: string; invocationId: string },
+  /** Identity of THIS controller process: the origin of the monotonic elapsed values of this Execution. */
+  origin: string | null = null):
   Promise<'confirmed' | 'already-confirmed' | 'conflict' | 'stale'> {
   return session.commit(async tx => {
     const document = await tx.doc(works, work_id, null);
@@ -282,17 +338,96 @@ export async function confirmStart(session: Session, work_id: string, executionI
     execution.dispatch.phase = 'started';
     execution.dispatch.updatedAt = execution.start.confirmedAt;
     history(document.work, 'execution-started', executionId, receipt.id);
+    // The single consumption of the reservation, in the same commit as the confirmed start.
+    consumeReservation(document.work, execution, execution.start.confirmedAt);
+    if (execution.timing) Object.assign(execution.timing, { origin, startedAt: execution.start.confirmedAt,
+      lastActivity: { at: execution.start.confirmedAt, elapsedMs: 0, event: 'started' } });
     return 'confirmed' as const;
   }, BACKGROUND_CONTEXT);
 }
 
-export const recordEnd = (session: Session, work_id: string, executionId: string, outcome: 'completed' | 'failure' | 'question', code: string | null, questionId: string | null = null) =>
+export const recordEnd = (session: Session, work_id: string, executionId: string, outcome: 'completed' | 'failure' | 'question' | 'timeout', code: string | null,
+  questionId: string | null = null, elapsedMs: number | null = null) =>
   advance(session, work_id, executionId, { state: 'started', phases: ['started'] }, (execution, work) => {
     execution.state = 'ended';
     execution.dispatch.phase = 'completed';
     execution.end = { at: new Date().toISOString(), outcome, code, cessation: 'not-attempted', ...(outcome === 'question' ? { questionId } : {}) };
     history(work, 'execution-ended', executionId, code ?? outcome);
+    // The activity (and its clock) ends here, also for an external wait; a reached timeout is never bypassed by ending.
+    if (execution.timing && elapsedMs !== null) {
+      execution.timing.duration = { kind: 'measured', elapsedMs, endedAt: execution.end.at };
+      execution.timing.lastActivity = { at: execution.end.at, elapsedMs, event: `ended-${outcome}` };
+      const overrun = classifyOverrun({ timeoutSeconds: execution.timing.timeoutSeconds, measuredMs: elapsedMs, lowerBoundMs: null });
+      execution.timing.overrun = execution.timing.overrun === 'proven' ? 'proven' : overrun;
+      if (overrun === 'proven') markTimeout(work, execution, elapsedMs, 'measured', execution.end.at);
+    }
   });
+
+/** Durable timeout record + Work impediment (once): interrupted/blocked for intervention; nothing restarts its clock. */
+function markTimeout(work: WorkRecord, execution: ExecutionView, elapsedMs: number, evidence: 'measured' | 'lower-bound', at: string) {
+  const timing = execution.timing!;
+  timing.overrun = 'proven';
+  if (timing.timeout) return;
+  timing.timeout = { reachedAt: at, elapsedMs, evidence };
+  if (!work.impediments.some(item => item.code === 'EXECUTION_TIMEOUT')) work.impediments.push(timeoutImpediment(timing.timeoutSeconds!, at, evidence));
+  work.history.push({ at, event: 'timeout-reached', origin: 'controller-clock', executionId: execution.executionId, detail: `${evidence}:${elapsedMs}ms>=${timing.timeoutSeconds}s` });
+}
+
+/** The live timer of THIS process reached the configured timeout of the CURRENT Execution (measured monotonic elapsed value). */
+export async function recordTimeout(session: Session, work_id: string, executionId: string, elapsedMs: number) {
+  return session.commit(async tx => {
+    const document = await tx.doc(works, work_id, null);
+    const execution = document.work?.execution ?? null;
+    if (!document.work || !execution || execution.executionId !== executionId || !execution.timing || !timeoutReached(execution.timing.timeoutSeconds, elapsedMs)) return 'stale' as const;
+    markTimeout(document.work, execution, elapsedMs, 'measured', new Date().toISOString());
+    return 'recorded' as const;
+  }, BACKGROUND_CONTEXT);
+}
+
+/** Last activity observed by the controller (start, handoff, reviewers, question...): presentation and the proven lower bound after a crash. */
+export async function recordActivity(session: Session, work_id: string, executionId: string, event: string, elapsedMs: number) {
+  return session.commit(async tx => {
+    const document = await tx.doc(works, work_id, null);
+    const execution = document.work?.execution ?? null;
+    if (!execution || execution.executionId !== executionId || !execution.timing?.startedAt || execution.timing.duration) return 'stale' as const;
+    if ((execution.timing.lastActivity?.elapsedMs ?? 0) > elapsedMs) return 'stale' as const;
+    execution.timing.lastActivity = { at: new Date().toISOString(), elapsedMs, event };
+    return 'recorded' as const;
+  }, BACKGROUND_CONTEXT);
+}
+
+/**
+ * Boot reconciliation of durations measured by a previous controller process (spec §5.7): a started Execution without a measured end gets
+ * its proven lower bound (last durable observation of ITS origin) and a calendar estimate that is not proof. With a configured timeout, a
+ * proven overrun blocks (EXECUTION_TIMEOUT) and an overrun that cannot be excluded blocks automatic resumption (TIMEOUT_OVERRUN_NOT_EXCLUDED).
+ * Without timeout the gap is only observability. Never zero; never compared with this process's monotonic origin.
+ */
+export async function reconcileDurations(session: Session, live: (executionId: string) => boolean): Promise<number> {
+  const index = await session.snapshot(ticketIndex, BACKGROUND_CONTEXT);
+  let reconciled = 0;
+  for (const id of index?.order ?? []) {
+    reconciled += await session.commit(async tx => {
+      const document = await tx.doc(works, id, null);
+      const work = document.work;
+      const execution = work?.execution ?? null;
+      const timing = execution?.timing;
+      if (!work || !execution || !timing?.startedAt || timing.duration || live(execution.executionId)) return 0;
+      const now = new Date().toISOString();
+      const provenMs = timing.lastActivity?.elapsedMs ?? 0;
+      const estimate = Date.parse(now) - Date.parse(timing.startedAt);
+      timing.duration = { kind: 'lower-bound', provenMs, calendarEstimateMs: Number.isFinite(estimate) && estimate >= 0 ? estimate : null, reconciledAt: now };
+      const overrun = classifyOverrun({ timeoutSeconds: timing.timeoutSeconds, measuredMs: null, lowerBoundMs: provenMs });
+      if (overrun === 'proven') markTimeout(work, execution, provenMs, 'lower-bound', now);
+      else {
+        timing.overrun = overrun;
+        if (overrun === 'not-excludable' && !work.impediments.some(item => item.code === 'TIMEOUT_OVERRUN_NOT_EXCLUDED')) work.impediments.push(overrunNotExcludedImpediment(timing.timeoutSeconds!, now));
+      }
+      work.history.push({ at: now, event: 'duration-reconciled', origin: 'controller-clock', executionId: execution.executionId, detail: `lower-bound:${provenMs}ms:${overrun}` });
+      return 1;
+    }, BACKGROUND_CONTEXT);
+  }
+  return reconciled;
+}
 
 /** Slot is released only after confirmed cessation of the Execution's own boot (spec §5.3: "Slot só após cessação"). */
 export async function releaseAfterCessation(session: Session, work_id: string, executionId: string, cessation: 'confirmed' | 'unconfirmed') {
@@ -307,7 +442,8 @@ export async function releaseAfterCessation(session: Session, work_id: string, e
     delete occupancy.held[executionId];
     execution.slot = { ...execution.slot, held: false, releasedAt: new Date().toISOString() };
     // A Question wait occupies no Slot: the Work returns to its SAME category/position; its impediment (until answered) still blocks.
-    if (execution.end.outcome === 'question') document.work.queue = { ...document.work.queue, pending: true };
+    // A timeout keeps the same position too, blocked by its EXECUTION_TIMEOUT impediment until an explicit decision.
+    if (execution.end.outcome === 'question' || execution.end.outcome === 'timeout') document.work.queue = { ...document.work.queue, pending: true };
     history(document.work, 'slot-released', executionId);
     return 'released' as const;
   }, BACKGROUND_CONTEXT);
@@ -341,6 +477,8 @@ export async function releaseBeforeStart(session: Session, work_id: string, exec
     execution.state = 'released';
     execution.slot = { ...execution.slot, held: false, releasedAt: new Date().toISOString() };
     execution.held = { code: 'ACTIVATION_REVALIDATION_REFUSED', phase: execution.dispatch.phase, at: new Date().toISOString(), nextStep: reasons.join(', ') };
+    // Non-start proven (refused before any worker request, own boot ceased): no consumption.
+    releaseReservation(work, execution, execution.held.at);
     work.queue = { ...work.queue, pending: true };
     history(work, 'execution-released', executionId, reasons.join(','));
     return 'released' as const;

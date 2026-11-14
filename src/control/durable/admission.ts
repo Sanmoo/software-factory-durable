@@ -4,6 +4,7 @@ import { defineDoc, defineDocFamily } from '@earendil-works/pi-durable';
 import type { TicketRef } from '../../issue-tracker/index.js';
 import type { ControlInput, ControlReceipt, DependencyEvaluation, Impediment, WorkView } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
+import { initialBudget } from '../rules/budget.js';
 import { dependencyImpedimentCodes, dependencyImpediments, ownCycleFor, type OwnCycle, type OwnCycleFacts } from '../rules/dependencies.js';
 import type { Session } from './store.js';
 
@@ -21,7 +22,7 @@ type TicketIndex = { admissionSequence: number; tickets: Record<string, { curren
   memory?: Record<string, { cycles: OwnCycle[] }> };
 export const ticketIndex = defineDoc<TicketIndex>({ kind: 'factory.ticket-index', version: 1, scope: 'session',
   initial: () => ({ admissionSequence: 0, tickets: {}, order: [] }), checkpointWhen: () => true });
-export type WorkRecord = Omit<WorkView, 'dispatch'>;
+export type WorkRecord = Omit<WorkView, 'dispatch' | 'limits'>;
 export const works = defineDocFamily<{ work: WorkRecord | null }, null>({ kind: 'factory.work', version: 1, scope: 'session', family: true,
   initial: () => ({ work: null }), checkpointWhen: () => true });
 
@@ -39,7 +40,9 @@ export async function initialize(session: Session) {
  * Admit-Work transaction (spec §3.4): absence of a current cycle in the index, the global pause, the Work record, the index entry and the
  * admission sequence are read and written in ONE real Session commit. Concurrent or repeated callers serialise on Pi Durable's commit line.
  */
-export async function admitTicket(session: Session, evidence: AdmissionEvidence): Promise<AdmissionResult> {
+export async function admitTicket(session: Session, evidence: AdmissionEvidence,
+  /** Configured limits of the repository, captured with the Work (spec §4.4); later configuration changes never alter them. */
+  limits: { correctionLimit?: number | undefined; recoveryLimit?: number | undefined } = {}): Promise<AdmissionResult> {
   const key = ticketKey(evidence.ticket);
   return session.commit(async tx => {
     const index = await tx.doc(ticketIndex);
@@ -62,6 +65,8 @@ export async function admitTicket(session: Session, evidence: AdmissionEvidence)
         tracking: 'Authorization recorded at admission. Later label removal/closure tracking is not part of this increment; absence from a listing is never treated as withdrawal.' },
       queue: { category: 'normal', sequence, pending: true }, impediments, dependencies: { latest: null, lastComplete: null }, execution: null, branch: null, pullRequest: null,
       previousExecutions: [], questions: [], inputs: { cursor: null }, admittedAt,
+      budget: initialBudget(limits, evidence.repository.repository, admittedAt),
+      correction: null, pendingRecovery: null,
       history: [{ at: admittedAt, event: 'admitted', origin: 'github-polling', sequence }],
     };
     index.admissionSequence = sequence;
@@ -86,7 +91,8 @@ const normalize = (work: WorkRecord): WorkRecord => ({ ...work, dependencies: wo
     credentialLifecycle: work.execution.credentialLifecycle ? { ...work.execution.credentialLifecycle, workerNotice: work.execution.credentialLifecycle.workerNotice ?? null }
       : legacyCredentialLifecycle(work.execution) } : null,
   branch: work.branch ?? null,
-  previousExecutions: work.previousExecutions ?? [], questions: work.questions ?? [], inputs: work.inputs ?? { cursor: null } });
+  previousExecutions: work.previousExecutions ?? [], questions: work.questions ?? [], inputs: work.inputs ?? { cursor: null },
+  budget: work.budget ?? null, correction: work.correction ?? null, pendingRecovery: work.pendingRecovery ?? null });
 
 /** Open Works with pending queue work of one repository (by immutable id), FIFO by admission sequence. */
 export async function pendingWorks(session: Session, repositoryId: number): Promise<WorkRecord[]> {

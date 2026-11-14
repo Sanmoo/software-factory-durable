@@ -8,7 +8,8 @@ import type { BlockerView, DependencyReason } from './rules/dependencies.js';
 
 /** `dependencyResults`: preflight of repositories accessible only for dependency reads (no issue/relation is created). */
 export type AccessView = { kind: 'access'; scope: 'authenticated'; results: { tracker: AccessDiagnostic; repository: AccessDiagnostic }[]; dependencyResults: AccessDiagnostic[] };
-export type ConfiguredRepository = GitHubScope & { base: string; label: string };
+/** Per-repository limits of the validated configuration (spec §11.2): defaults 3/3, timeout absent (no implicit cut). */
+export type ConfiguredRepository = GitHubScope & { base: string; label: string; correctionLimit?: number | undefined; recoveryLimit?: number | undefined; timeoutSeconds?: number | undefined };
 /** `repositories` are executable Ticket origins; `dependencyRepositories` are readable only for native blocked_by and never executable. */
 /** `operators`: configured GitHub operator logins whose strict `/factory` comments on a Work's own Ticket may answer its Questions. */
 export type AccessDependencies = { tracker: IssueTracker; repository: CodeRepository; repositories: ConfiguredRepository[]; dependencyRepositories?: GitHubScope[];
@@ -19,10 +20,15 @@ export type PollingClock = { monotonic(): number; sleep(ms: number, signal: Abor
 export type PollingOptions = { intervalSeconds: number; clock?: PollingClock };
 export type ExecutionOptions = ExecutionPorts;
 export type ControlInput = { request_id: string; operation: 'pause' | 'unpause'; origin: 'local-cli' } |
-  { request_id: string; operation: 'answer'; question_id: string; text: string; origin: 'local-cli' };
+  { request_id: string; operation: 'answer'; question_id: string; text: string; origin: 'local-cli' } |
+  /** Explicit additional budget for ONE counter of a Work (spec §11.3 `grant`), from the authorized local ingress. */
+  { request_id: string; operation: 'grant'; work_id: string; counter: 'corrections' | 'recoveries'; amount: number; origin: 'local-cli' };
 /** `answer`: `accepted` removed only that Question's impediment; `not-applied` (already answered, unknown, closed Work...) changed nothing. */
 export type ControlReceipt = { kind: 'durable'; request_id: string; operation: 'pause' | 'unpause'; paused: boolean; historySequence: number } |
-  { kind: 'durable'; request_id: string; operation: 'answer'; question_id: string; outcome: 'accepted' | 'not-applied'; reason: string | null; work_id: string | null };
+  { kind: 'durable'; request_id: string; operation: 'answer'; question_id: string; outcome: 'accepted' | 'not-applied'; reason: string | null; work_id: string | null } |
+  /** `grant`: `accepted` added capacity (history kept, counters untouched); `not-applied` changed nothing (unknown/closed/old Work). */
+  { kind: 'durable'; request_id: string; operation: 'grant'; work_id: string; counter: 'corrections' | 'recoveries'; amount: number;
+    outcome: 'accepted' | 'not-applied'; reason: string | null; budget: CounterView | null };
 export type ControlQuery = { kind: 'status' } | { kind: 'request'; request_id: string } | { kind: 'access' } | { kind: 'list' } | { kind: 'show'; work_id: string } |
   { kind: 'question'; question_id: string };
 export type DispatchReason = 'RECONCILIATION_REQUIRED' | 'EXECUTION_NOT_ENABLED';
@@ -47,6 +53,8 @@ export type ExecutionPorts = {
   /** Ticket 12: when composed, the Builder hands off for parallel Standards/Spec reviews inside the SAME Execution/Slot/boot. */
   reviews?: { reviewer: Pick<Invocation, 'modelBudget' | 'imageSourceMaxBytes'> };
   credentials: BuilderCredentials;
+  /** Local monotonic clock of live Execution duration/timeout (default `performance.now()`); separate from the polling clock. Tests substitute it. */
+  clock?: PollingClock;
   /** Renew a Builder grant this many seconds before its expiresAt while the activity stays authorized (default 600). */
   credentialRenewal?: { beforeExpirySeconds: number };
   /** Sandbox configuration as configured (interpreted by Sandbox only). */
@@ -56,7 +64,37 @@ export type ExecutionPorts = {
   /** Host Builder policies applied to every initial Builder invocation. */
   builder: Pick<Invocation, 'skillPack' | 'modelBudget' | 'copyOutput' | 'editSourceMaxBytes'>;
 };
-export type CredentialWithdrawal = 'ended' | 'external-wait' | 'cancelled' | 'held' | 'refused' | 'owner-stopped' | 'controller-restart';
+export type CredentialWithdrawal = 'ended' | 'external-wait' | 'cancelled' | 'held' | 'refused' | 'owner-stopped' | 'controller-restart' | 'timeout';
+/**
+ * One budget counter of a Work (spec §4.4): the limit captured from the repository configuration at admission, explicit grants, the
+ * consumptions (each one confirmed start) and the single Execution holding an atomic reservation (null when none).
+ */
+export type BudgetCounter = { limit: number; granted: number; consumed: number; reserved: string | null };
+/** Explicit, auditable grant (spec §4.4/§11.3): never a counter reset; before/after keep the history. */
+export type BudgetGrant = { at: string; request_id: string; origin: 'local-cli'; counter: 'corrections' | 'recoveries'; amount: number;
+  before: BudgetCounter; after: BudgetCounter };
+/** Corrections and operational recoveries, separate (spec §4.4). Changing the YAML later neither erases exhaustion nor replaces a grant. */
+export type WorkBudget = { corrections: BudgetCounter; recoveries: BudgetCounter;
+  source: { kind: 'repository-configuration'; repository: string; recordedAt: string }; grants: BudgetGrant[] };
+/**
+ * Budget charge of one Execution: `reserved` in the "Admitir Execução" commit, `consumed` once in "Confirmar início", `released` when non-start
+ * is proven; an uncertain start keeps `reserved`. `preserved`: a continuation of a correction already charged (question/answer).
+ */
+export type ExecutionCharge = { kind: 'none' | 'correction' | 'recovery'; correctionId: string | null; counter: 'corrections' | 'recoveries' | null;
+  state: 'none' | 'reserved' | 'consumed' | 'released' | 'preserved'; settledAt: string | null };
+/**
+ * Duration/timeout evidence of one Execution (spec §5.7). Elapsed values are measured on the monotonic clock of ONE controller process
+ * (`origin`) from the confirmed start; they are never compared with another process's origin. Calendar instants are presentation/audit only.
+ */
+export type ExecutionTiming = {
+  timeoutSeconds: number | null; clock: 'controller-monotonic'; origin: string | null; startedAt: string | null;
+  lastActivity: { at: string; elapsedMs: number; event: string } | null;
+  duration: { kind: 'measured'; elapsedMs: number; endedAt: string } |
+    /** After a restart: proven at least `provenMs` (last durable observation); the calendar difference is an estimate, not proof. */
+    { kind: 'lower-bound'; provenMs: number; calendarEstimateMs: number | null; reconciledAt: string } | null;
+  timeout: { reachedAt: string; elapsedMs: number; evidence: 'measured' | 'lower-bound' } | null;
+  overrun: 'not-applicable' | 'within' | 'proven' | 'not-excludable' | null;
+};
 /** Token-free durable record of one known grant. `risk` explains what a revocation could not settle (e.g. value lost after a crash). */
 export type CredentialGrantRecord = { requestedAt: string; outcome: 'requested' | 'issued' | 'failed' | 'unknown' | 'not-attempted'; code: string | null;
   metadata: BuilderGrantMetadata | null; revocation: RevocationResult['kind'] | null; revocationCode: string | null; risk: string | null;
@@ -87,11 +125,14 @@ export type ExecutionView = {
     workerNotice: string | null };
   start: { receiptId: string; confirmedAt: string } | null;
   /** `question`: the activation ended after a durable Question (its id; `code` when the request content was lost and no Question exists). */
-  end: { at: string; outcome: 'completed' | 'failure' | 'question'; code: string | null; cessation: 'confirmed' | 'unconfirmed' | 'not-attempted'; questionId?: string | null } | null;
+  end: { at: string; outcome: 'completed' | 'failure' | 'question' | 'timeout'; code: string | null; cessation: 'confirmed' | 'unconfirmed' | 'not-attempted'; questionId?: string | null } | null;
   held: { code: string; phase: string; at: string; nextStep: string } | null;
   completion: { automatic: false; reason: string };
   /** Review rounds of this Execution (ticket 12); absent when reviews are not composed. Reviewers never hold a Slot of their own. */
   review?: { rounds: ReviewRoundView[] };
+  /** Ticket 19 (absent on earlier records): budget charge and duration/timeout evidence of this Execution. */
+  charge?: ExecutionCharge;
+  timing?: ExecutionTiming;
 };
 export type ReviewerView = { invocationId: string; phaseId: string; promptSha256: string; state: 'requested' | 'started' | 'ended' | 'failed';
   requestedAt: string; receiptId: string | null; endedAt: string | null; opinion: ReviewOpinion | null; failure: { code: string } | null;
@@ -177,6 +218,14 @@ export type WorkView = {
   questions: string[];
   /** Last processed comment of the Ticket issue (complete listings only). */
   inputs: { cursor: number | null };
+  /** Ticket 19: budget snapshot (null on Works admitted before it, until their next budget commit). */
+  budget: WorkBudget | null;
+  /** The correction under way (identity kept across its activations); opened by the repair flows (tickets 22/23). */
+  correction: { correctionId: string; reason: string; openedAt: string; consumed: boolean } | null;
+  /** A pending operational recovery (ticket 26 decides it); consumed by the start of the recovery Execution. */
+  pendingRecovery: { reason: string; requestedAt: string } | null;
+  /** Presentation only (never persisted): limits/reservations/consumption, timeout, duration/last activity and the action required. */
+  limits: LimitsView;
   admittedAt: string;
   history: ({ at: string; event: 'admitted'; origin: 'github-polling'; sequence: number } |
     { at: string; event: 'dependencies-changed'; origin: 'github-polling'; before: DependencyEvaluation['conclusion'] | null; after: DependencyEvaluation['conclusion']; evaluationId: string } |
@@ -184,8 +233,19 @@ export type WorkView = {
       'review-handoff' | 'reviewer-started' | 'reviewer-ended' | 'review-concluded' | 'review-delivered';
       origin: 'controller-dispatch'; executionId: string; detail?: string } |
     { at: string; event: 'question-recorded' | 'question-published' | 'question-answered'; origin: 'controller-dispatch' | 'controller-publication' | 'github-comment' | 'local-cli';
-      questionId: string; detail?: string })[];
+      questionId: string; detail?: string } |
+    { at: string; event: 'budget-reserved' | 'budget-consumed' | 'budget-released' | 'budget-exhausted' | 'budget-granted' | 'correction-opened' | 'recovery-requested';
+      origin: 'controller-budget' | 'local-cli'; executionId: string | null; detail: string } |
+    { at: string; event: 'timeout-reached' | 'duration-reconciled'; origin: 'controller-clock'; executionId: string; detail: string })[];
 };
+export type CounterView = { limit: number; granted: number; effectiveLimit: number; consumed: number; reserved: 0 | 1; reservedBy: string | null; available: number; exhausted: boolean };
+/** `elapsedMs` is a monotonic measurement (live or measured) or null; `unknown` is never shown as zero. */
+export type DurationView = { state: 'not-recorded' | 'not-started' | 'running' | 'measured' | 'lower-bound' | 'unknown'; elapsedMs: number | null;
+  lowerBoundMs: number | null; calendarEstimateMs: number | null; clock: 'controller-monotonic' | null; startedAt: string | null;
+  lastActivity: ExecutionTiming['lastActivity']; note: string };
+export type LimitsView = { corrections: CounterView | null; recoveries: CounterView | null; grants: number;
+  timeout: { seconds: number | null; scope: 'per-execution'; reached: ExecutionTiming['timeout']; overrun: ExecutionTiming['overrun'] };
+  duration: DurationView; actions: { code: string; nextStep: string }[] };
 export type ListView = { kind: 'list'; paused: boolean; dispatch: 'closed' | 'open'; dispatchReason: DispatchReason | null; slots: { capacity: number; held: number };
   queues: { normal: string[]; repair: string[] }; works: WorkView[]; selection: Selection; polling: PollingView; limitations: string[] };
 export type ShowView = { kind: 'work'; work: WorkView; lastPolled: CandidateView | null; questions: QuestionView[] } | { kind: 'work-not-found'; work_id: string; nextStep: string };
