@@ -1,8 +1,10 @@
-# Desenvolvimento local — tickets 01–02
+# Desenvolvimento local — tickets 01–02 (e admissão do 07)
 
 Os incrementos implementam preparação/diagnóstico offline, o gate da própria
 Factory e controlador exclusivo com pausa/pedidos duráveis por socket privado.
-Não admitem Tickets, iniciam workers/VMs, registram serviços nem usam GitHub/modelos.
+O ticket 07 acrescenta polling somente leitura e admissão durável de um Trabalho por
+Ticket elegível (`factory list`, `factory show <work>`); ver
+[evidência 07](evidence/07-unique-ticket-admission.md). Não iniciam workers/VMs nem registram serviços.
 Despacho permanece fechado, inclusive após `unpause`; não existe scheduler paralelo.
 Não é uma release autocontida homologada. Evidências e limites do controlador:
 [controller-evidence.md](controller-evidence.md). Autoridade: [spec](../.scratch/software-factory/spec.md),
