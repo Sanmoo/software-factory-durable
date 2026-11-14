@@ -197,6 +197,20 @@ export async function openControl(options: { storagePath: string;
       try {
         // Authoritative persisted task inventory, not an empty fake scheduler. Unknown runtime resources stay closed.
         const tasks = await state.commit(tx => tx.scanTasks({}, 1), BACKGROUND_CONTEXT);
+        const inventory = options.runtimeInventory;
+        const decide = async () => {
+          // Without a reconciliation (no execution boundaries to observe/stop with), every listed resource stays unreconciled: never free capacity.
+          const unreconciled = typeof inventory === 'object' && !recovery ? [...inventory.unknown.map(item => `UNKNOWN_RESOURCE:${item}`),
+            ...inventory.environments.map(item => `ENVIRONMENT_NOT_RECONCILED:${item.environment}`),
+            ...inventory.cache.filter(item => item.state !== 'idle').map(item => `CACHE_NOT_RECONCILED:${item.repositoryId ?? 'unknown'}`)] : [];
+          const gate = dispatchGate({ executionComposed: dispatcher !== undefined, inventory: typeof inventory === 'object' ? 'listed' : inventory, tasks: tasks.items.length,
+            unknownResources: recovery?.global ?? unreconciled, orphanSlots: [] });
+          // Without a reconciliation (inventory unknown, read-only inspection) a Slot still held from an earlier owner keeps dispatch closed.
+          dispatchReason = gate.reason ?? (recovery === null && await heldSlots(state) > 0 ? 'RECONCILIATION_REQUIRED' : null);
+          if (recovery && gate.closing.length) recovery = { ...recovery, global: gate.closing };
+        };
+        // Nothing to reconcile without execution boundaries: the gate is known at once (closed either way).
+        if (!dispatcher) await decide();
         // Grants of a previous process were memory-only: record them as impossible to revoke, with their risk (never blocks by itself).
         // Before polling starts, so no dispatch of this run precedes it. A run stopped before it starts (read-only inspection) writes nothing.
         if (!signal.aborted) await reconcileLostCredentials(state, isLiveCredentialExecution);
@@ -204,19 +218,10 @@ export async function openControl(options: { storagePath: string;
         if (!signal.aborted) await reconcileDurations(state, isLiveExecution);
         // Ticket 26 (spec §5.2 steps 3-5), barrier still closed: own survivors are stopped (not adopted), interrupted Executions settled from
         // durable evidence; only then the gate opens, unless unknown resources, tasks or orphan Slots keep the installation closed.
-        const inventory = options.runtimeInventory;
         if (!signal.aborted && dispatcher && options.execution && inventory !== 'unknown') {
           recovery = await reconcileBoot({ session: state, ports: options.execution, controllerRunId: controller_run_id, inventory, live: isLiveExecution });
         }
-        // Without a reconciliation (no execution boundaries to observe/stop with), every listed resource stays unreconciled: never free capacity.
-        const unreconciled = typeof inventory === 'object' && !recovery ? [...inventory.unknown.map(item => `UNKNOWN_RESOURCE:${item}`),
-          ...inventory.environments.map(item => `ENVIRONMENT_NOT_RECONCILED:${item.environment}`),
-          ...inventory.cache.filter(item => item.state !== 'idle').map(item => `CACHE_NOT_RECONCILED:${item.repositoryId ?? 'unknown'}`)] : [];
-        const gate = dispatchGate({ executionComposed: dispatcher !== undefined, inventory: typeof inventory === 'object' ? 'listed' : inventory, tasks: tasks.items.length,
-          unknownResources: recovery?.global ?? unreconciled, orphanSlots: [] });
-        // Without a reconciliation (inventory unknown, read-only inspection) a Slot still held from an earlier owner keeps dispatch closed.
-        dispatchReason = gate.reason ?? (recovery === null && await heldSlots(state) > 0 ? 'RECONCILIATION_REQUIRED' : null);
-        if (recovery && gate.closing.length) recovery = { ...recovery, global: gate.closing };
+        await decide();
         const aborted = new Promise<'stop'>(resolve => {
           if (signal.aborted) resolve('stop');
           else signal.addEventListener('abort', () => resolve('stop'), { once: true });

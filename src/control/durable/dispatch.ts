@@ -423,6 +423,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     // Set only once the Host actually activated the Builder: before that no worker request exists, so a failure or an owner stop
     // is a PROVEN non-start (AC2: no consumption) and never an uncertain outcome.
     let activated = false;
+    // Ticket 26: whether Sandbox.start was ever requested by this Execution (before it, no boot of it can exist).
+    let startRequested = false;
     /** Refusals the Host raises BEFORE any launch request: they prove no worker ran. Anything else at the activation phase may have. */
     const provenNonStartOf = (error: unknown) => !activated && (phase !== 'activate' ||
       (error instanceof Error && ['WORKER_LAUNCH_INVALID', 'STALE_TOOL_CONTEXT', 'WORKER_EXECUTION_NOT_ENABLED', 'WORKER_PROFILE_NOT_CONFIGURED', 'WORKER_POLICY_ROLE_DENIED'].includes(error.message)));
@@ -493,6 +495,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       })).kind !== 'advanced') { observe(work.work_id, 'stale'); return; }
       phase = 'start';
       checkStop();
+      startRequested = true;
       const started = await ports.sandbox.start({ environment, configuration: ports.configuration });
       if (started.status !== 'success') { await hold(`START_${started.code}`, 'The boot did not become operational; no automatic retry. Observe/stop the environment explicitly.', true); return; }
       boot = started.boot;
@@ -695,7 +698,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           const stop = await stopOwnBoot('owner stopped before activation');
           // Nothing was booted, or the own boot cessation is confirmed: the Slot can be released. Otherwise no worker was launched
           // (the reservation is released without consumption) but the Slot is kept, exactly like a refused revalidation.
-          if (environment === undefined || stop?.cessationConfirmed) {
+          if (environment === undefined || !startRequested || stop?.cessationConfirmed) {
             await releaseBeforeStart(session, work.work_id, executionId, ['OWNER_STOPPED_BEFORE_ACTIVATION'], 'OWNER_STOPPED_BEFORE_ACTIVATION').catch(() => {});
           } else {
             uncertainStops++;

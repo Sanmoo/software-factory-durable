@@ -198,24 +198,18 @@ test('ticket 20 AC6: after a controller crash the lost grant is recorded as an i
   assert.deepEqual([reopened.credentialLifecycle.state, reopened.credentialLifecycle.reason], ['withdrawn', 'controller-restart']);
   assert.equal(first.doubles.calls.filter(call => call.kind === 'revoke').length, 0, 'no secret is recovered from logs/sessions to attempt a revocation');
   assert.deepEqual((await first.work())!.impediments, [], 'no impediment from the lost grant');
-  // The held Slot (unknown runtime, ticket 26) keeps dispatch closed; this is the Slot reason, not the credential.
-  assert.equal((await first.control.inspect({ kind: 'status' }) as ControlStatus).dispatchReason, 'RECONCILIATION_REQUIRED');
-  await first.halt();
-
-  // After the Slot is recovered (operator path of ticket 26, emulated through the durable seam), the same risk alone blocks nothing.
-  const store = await openStore(storagePath);
-  try {
-    const work = (await readWorks(store.session))[0]!;
-    await recordEnd(store.session, work.work_id, work.execution!.executionId, 'failure', 'CONTROLLER_CRASH');
-    assert.equal(await releaseAfterCessation(store.session, work.work_id, work.execution!.executionId, 'confirmed'), 'released');
-  } finally { await store.close(); }
-  const second = await harness(t, remote, {}, storagePath);
-  await second.time.sleeping();
-  const status = await second.control.inspect({ kind: 'status' }) as ControlStatus;
+  // Ticket 26: the boot reconciliation stopped the own boot (host-confirmed cessation), settled the crashed Execution as an interruption
+  // (CONTROLLER_CRASH, recovery pending behind its persisted wait) and released its Slot: the lost-grant risk alone blocks nothing.
+  const status = await first.control.inspect({ kind: 'status' }) as ControlStatus;
   assert.deepEqual([status.dispatch, status.dispatchReason], ['open', null], 'the installation is not suspended because a lost grant may remain valid');
-  await second.until(async () => (await second.work(4))?.execution?.state === 'started');
-  assert.equal((await second.work(3))!.execution!.credentialIssuance!.revocationCode, 'VALUE_LOST_AFTER_RESTART', 'the risk record is kept');
-  second.doubles.complete();
+  const settled = (await first.work())!;
+  assert.deepEqual([settled.execution!.end!.outcome, settled.execution!.end!.code, settled.execution!.slot.held, settled.pendingRecovery!.waitSeconds],
+    ['failure', 'CONTROLLER_CRASH', false, 5]);
+  await first.until(async () => (await first.work(4))?.execution?.state === 'started');
+  assert.equal((await first.work(3))!.execution!.credentialIssuance!.revocationCode, 'VALUE_LOST_AFTER_RESTART', 'the risk record is kept');
+  first.doubles.complete();
+  await first.until(async () => (await first.work(4))?.execution?.slot.held === false);
+  await first.halt();
 });
 
 test('review 1: a withdrawal while the initial grant is being issued is seen (not not-active); the Builder is never activated with it', async t => {

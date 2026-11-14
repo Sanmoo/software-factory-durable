@@ -192,6 +192,8 @@ test('AC3: an explicit grant through the authorized ingress adds capacity with h
   assert.ok(work.impediments.some(item => item.code === 'RECOVERY_LIMIT_REACHED' && /--recoveries <n>/.test(item.nextStep)));
   assert.equal(h.execution.activations().length, before + 1);
   await grant(h.control(), 'grant-r1', work_id, 'recoveries', 1);
+  // Ticket 26: the recovery starts only after its persisted wait (5 s, calendar); the test calendar is moved past it.
+  h.execution.jumpCalendar(60000);
   await h.settle(async () => h.execution.activations().length === before + 2, 'recovery activation');
   await h.idle();
   work = await h.work();
@@ -252,7 +254,7 @@ test('AC3: touching an already-open correction records the added reason, never a
     'one identity, one charge');
 });
 
-test('AC2: an owner stop before activation with an unconfirmed boot cessation releases the reservation but keeps the Slot', async t => {
+test('AC2 (ticket 26): an owner stop after preparation but before any start request is a proven non-start: reservation and Slot released, nothing retried', async t => {
   let abortOnPrepare = false, aborted = false;
   let h!: Awaited<ReturnType<typeof harness>>;
   h = await harness(t, [{ kind: 'complete' }, { kind: 'complete' }], { onPrepare: async () => {
@@ -266,6 +268,7 @@ test('AC2: an owner stop before activation with an unconfirmed boot cessation re
   // Wake the poller; the correction is dispatched and the owner stop lands during its preparation.
   await h.settle(async () => aborted, 'owner stop during preparation');
   // The owner stop reaches the dispatcher after preparation but before any activation request (durable phase "prepared", no boot ref).
+  // Ticket 26: no Sandbox.start was ever requested by this Execution, so no boot of it can exist: the stop is clean.
   assert.deepEqual(await h.finished(), { kind: 'clean' });
   // Reopen the same storage: the durable state is what a restart sees.
   const time = manualClock();
@@ -276,11 +279,12 @@ test('AC2: an owner stop before activation with an unconfirmed boot cessation re
   const running = reopened.run(stop.signal);
   await time.sleeping();
   const work = ((await reopened.inspect({ kind: 'list' })) as ListView).works[0]!;
-  // No worker was launched (proven non-start): reservation released. The own boot cessation is NOT confirmed: the Slot is kept.
-  assert.deepEqual([work.execution!.state, work.execution!.held!.code], ['held', 'OWNER_STOPPED_BEFORE_ACTIVATION_CESSATION_UNCONFIRMED']);
-  assert.deepEqual([work.execution!.charge!.state, work.budget!.corrections.reserved, work.budget!.corrections.consumed], ['released', null, 0]);
-  assert.deepEqual([work.execution!.slot.held, work.queue.pending], [true, false], 'a Slot is never released without proven cessation');
-  assert.equal(work.execution!.held!.phase, 'prepared', 'the owner stop arrived after preparation, before the start result');
+  // No worker was launched and no boot was requested (proven non-start): reservation and Slot released, the Work kept its queue position
+  // (the reopened owner may already have admitted the next attempt of the same correction through the queue).
+  const stopped = [work.execution!, ...work.previousExecutions].find(item => item.held?.code === 'OWNER_STOPPED_BEFORE_ACTIVATION')!;
+  assert.deepEqual([stopped.state, stopped.charge!.state, stopped.slot.held], ['released', 'released', false]);
+  assert.equal(work.budget!.corrections.consumed, 0, 'nothing was consumed by the stopped attempt');
+  assert.equal(stopped.held!.phase, 'prepared', 'the owner stop arrived after preparation, before any start request');
   stop.abort();
   assert.deepEqual(await running, { kind: 'clean' });
 });

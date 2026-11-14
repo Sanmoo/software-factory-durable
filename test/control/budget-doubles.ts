@@ -54,8 +54,9 @@ export function budgetDoubles(scripts: Script[], options: { cessation?: boolean;
     void result.catch(() => {}); // like the real facade: an unobserved outcome is not an unhandled rejection
     return result;
   };
+  let calendarOffset = 0;
   const ports: ExecutionPorts = {
-    configuration: { schemaVersion: 1 }, capacity: 1,
+    configuration: { schemaVersion: 1 }, capacity: 1, calendar: { now: () => Date.now() + calendarOffset },
     builder: { skillPack: 'factory-skills-v2', modelBudget: 'builder-v1', copyOutput: true, editSourceMaxBytes: 8192 },
     ...(options.clock ? { clock: options.clock } : {}),
     ...(options.reviews ? { reviews: { reviewer: { modelBudget: 'reviewer-v1' as const, imageSourceMaxBytes: 5242880 } } } : {}),
@@ -122,6 +123,6 @@ export function budgetDoubles(scripts: Script[], options: { cessation?: boolean;
       async deliver(_worker, directive) { calls.push({ kind: `deliver-${directive.kind}` }); return { status: directive.kind === 'credential' ? 'delivered' as const : directive.kind === 'withdraw-credential' ? 'withdrawn' as const : 'delivered' as const }; },
     },
   };
-  return { ports, calls, signals, finish: (index = finishers.length - 1) => finishers[index]?.(),
+  return { ports, calls, signals, jumpCalendar: (ms: number) => { calendarOffset += ms; }, finish: (index = finishers.length - 1) => finishers[index]?.(),
     activations: () => calls.filter(call => call.kind === 'activate') };
 }

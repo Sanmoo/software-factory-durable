@@ -79,7 +79,7 @@ async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remo
     current = { control, stop, running: control.run(stop.signal), time };
     return current;
   }
-  async function stop() { current!.stop.abort(); assert.deepEqual(await current!.running, { kind: 'clean' }); }
+  async function stop(expected: 'clean' | 'uncertain' = 'clean') { current!.stop.abort(); assert.deepEqual(await current!.running, { kind: expected }); }
   t.after(async () => { if (current && !current.stop.signal.aborted) await stop(); });
   const list = async () => await current!.control.inspect({ kind: 'list' }) as ListView;
   const byNumber = async () => Object.fromEntries((await list()).works.map(work => [work.ticket.number, work])) as Record<number, WorkView>;
@@ -261,6 +261,8 @@ test('review 3: owner stop during preparation performs no further effect; during
   await run.time.sleeping();
   await second.until(async () => second.execution.calls.some(call => call.kind === 'activate'));
   assert.equal(second.execution.activationSignals[0]!.aborted, false);
-  await second.stop();
+  // Ticket 26: stopped while the start receipt was awaited and without the receipt facet of Workers.observe composed, the start cannot be
+  // established: the stop is `uncertain` (never clean) and the reservation is kept.
+  assert.deepEqual(await second.stop('uncertain'), undefined);
   assert.equal(second.execution.activationSignals[0]!.aborted, true, 'the stopping signal reaches Workers.activate (owner channel closed)');
 });
