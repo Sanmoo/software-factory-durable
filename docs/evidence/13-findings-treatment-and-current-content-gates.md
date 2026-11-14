@@ -100,14 +100,21 @@ pelas mutações M1–M8.
 4. **Autorização concreta.** Só Pergunta Factory respondida do mesmo Trabalho ou fonte preservada sob a versão revisada; o Control verifica
    presença/correlação, nunca o conteúdo. Discordância interna com justificativa não exige pergunta; o Control não distingue semanticamente "dúvida
    de requisito" de "discordância" — isso é da skill (`ask_user`).
-5. **Escopo da verificação.** Por Execução: tratamentos de achados de uma Execução anterior (antes de uma Pergunta) não são exigidos na seguinte;
+5. **Gate não executado ≠ dispensa ≠ sucesso.** `not-run` (sem autorização) mantém a Execução `not-verified` com `GATE_NOT_RUN:<id>`; a orientação
+   concreta do operador a uma pergunta entra como **dispensa** (`waived` + autorização), que é outro estado e não vira `passed`; para um check GitHub
+   obrigatório a dispensa continua insuficiente. Assim "falha não resolvida/instrução faltante/impossibilidade" fica explícito e nunca vira verde.
+6. **Escopo da verificação.** Por Execução: tratamentos de achados de uma Execução anterior (antes de uma Pergunta) não são exigidos na seguinte;
    a recuperação faz sua própria rodada (a numeração continua). Execução encerrada por Pergunta não é verificada. A verificação ainda não bloqueia
    nada: publicação/prontidão (tickets 14/15) devem consumi-la; o `requiredChecks` fica para a avaliação GitHub (§9.2).
-6. **Limites.** `rounds.max` conta capturas (handoffs + fechamento) por ativação; não há orçamento paralelo: os revisores usam `reviewer-v1` por ativação
-   e o Builder o mesmo `builder-v1` (30 min inclui as rodadas). Limites configuráveis de correções/recoveries são do ticket 19.
-7. **Pacote `factory-skills-v4`.** Ticket 11 (paralelo) pode também precisar de nova versão do pacote; se ambos criarem `factory-skills-v4`, a
+7. **Limites.** `rounds.max` conta capturas (handoffs + fechamento) por ativação; não há orçamento paralelo: os revisores usam `reviewer-v1` por ativação
+   e o Builder o mesmo `builder-v1`. Nesta base o `modelBudget` de worker ainda carrega um prazo de relógio (30 min do Builder inclui as rodadas);
+   a integração do ticket 19 passa a usar somente um prazo explícito do Host (não configurado em produção), e a receita mantém seus próprios limites
+   (60 min, 4 capturas, ≤ 8 ativações de revisor). Na ÚLTIMA captura da política os resultados são registrados e a ativação termina (`end`): se ela
+   for uma rodada com achados, o Builder não os trata nesta ativação e a verificação os reporta como não tratados (nunca sucesso), com o operador
+   decidindo a continuação. Limites configuráveis de correções/recoveries são do ticket 19.
+8. **Pacote `factory-skills-v4`.** Ticket 11 (paralelo) pode também precisar de nova versão do pacote; se ambos criarem `factory-skills-v4`, a
    integração precisa renumerar um deles (decisão de integração, não deste ticket).
-8. **Recuperação parcial** (parecer válido + retry só do falho) continua no ticket 28: aqui um revisor falho torna a rodada `incomplete` e a próxima
+9. **Recuperação parcial** (parecer válido + retry só do falho) continua no ticket 28: aqui um revisor falho torna a rodada `incomplete` e a próxima
    captura roda os dois de novo.
 
 ## Ensaio real (receita one-shot)
@@ -138,6 +145,12 @@ Documentation only: the operator explicitly approves that no tests, seams or cod
 Validation (documented gate, run from the repository root `/workspace/checkout`; it must exit 0):
 `test -f docs/FACTORY_SMOKE.md && grep -q '^## Steps' docs/FACTORY_SMOKE.md && grep -q '^## Rollback' docs/FACTORY_SMOKE.md`
 ```
+
+**Prova opcional de "resultado perdido" com agentes reais** (mesma receita, outra storage/namespace — exige nova issue #3 com o texto acima mais
+uma linha `4. A second documented gate: run `sleep 30` from `/workspace/checkout` with the bash tool timeout set to 2 seconds.` e a instrução no prompt
+do Builder para declará-la `run`): o host registra `exitCode: null`/`BASH_EFFECTS_OR_CAPTURE_UNKNOWN`, a declaração resolve `unknown` e a verificação
+termina `not-verified` com `GATE_RESULT_UNKNOWN:<id>` — ausência/resultado perdido nunca é sucesso. O caminho principal abaixo não provoca perda de
+resultado (coberta em I-local/S).
 
 **Provocação declarada** (prompt de sistema do Builder da receita, autorizada pelo operador ao executar): a primeira proposta omite `## Rollback`
 (achado de requisito do Spec plausível e o gate documentado **falha de verdade** na r1), a proposta fica sem commit até uma rodada sem achado a corrigir,

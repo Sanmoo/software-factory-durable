@@ -29,6 +29,8 @@ const suspendedResult = (text: string) => ({ content: [{ type: 'text' as const, 
  * request is refused with an explicit result, never silently accepted.
  */
 export function builderHandoff(policy?: HandoffRounds, ledger?: ReturnType<typeof createToolLedger>) {
+  // Gate evidence can only come from the Host ledger; a multi-round policy without it is a composition error, never a silent gap.
+  if (policy && !ledger) throw new Error('HANDOFF_LEDGER_REQUIRED');
   let suspended = false, pending = false, rounds = 0, batch = 0;
   let declarations: HandoffDeclarations | undefined;
   const legacy: ToolDefinition = {
