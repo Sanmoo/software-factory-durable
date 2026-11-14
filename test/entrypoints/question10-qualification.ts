@@ -38,6 +38,7 @@ export function plan() {
     effects: [
       'preflight: read-only GitHub: the configured label lists exactly Ticket #3; Ticket, native blocked_by and its comment listing are read',
       'ask: Control (new storage under observations) polls every 30 s; reserves ONE Execution; fetch+clone, skill pack seed, Sandbox.prepare/start (1 new VM), revalidation, Builder grant, Workers.activate (1 Builder, /implement); the Builder is expected to call ask_user; Control commits Question+impediment+intent, ACKs, waits for the end, Sandbox.stop, releases the Slot only after cessation, publishes ONE comment on #3; Control stops when the Execution is stopped and the publication settled, or at 45 min',
+      'ask: once the Question is recorded the activity enters an external wait: its Builder credentials are withdrawn (withdraw-credential to the live worker, no renewal) and each known grant gets ONE self-revocation (ticket 20)',
       'resume: same storage; refused unless the ask Execution ended with confirmed cessation; polling reads the comments of #3 (the answer posted while the controller was down), accepts it once, removes only its impediment; dispatch revalidates and starts ONE recovery Execution (prepare reuses the same environment/branch, NEW boot, explicit recovery instruction); waits for its end/stop or 45 min. A second question (insufficient answer) is published (1 comment) and ends the phase',
       'inspect: read-only: storage view (Works, Executions, Questions), comment listing of #3, confined no-follow reads of /artifacts, checkout via a Factory-owned bare copy, start receipts, secret scan of the own storage',
       'stop-environment: own boot of the current Execution when it may still run and is observed active: public Sandbox.stop of that exact boot',
@@ -182,6 +183,13 @@ async function runControl(phase: 'ask' | 'resume', save: (name: string, data: un
         events.push({ at: new Date().toISOString(), call: 'question-ack', ack });
         return ack;
       } });
+    },
+    // Ticket 20 lifecycle: renewal deliveries and the withdrawal (e.g. external-wait after the Question) reach the live Builder.
+    async deliver(worker, directive) {
+      events.push({ at: new Date().toISOString(), call: 'deliver', kind: directive.kind });
+      const result = await workers.deliver(worker, directive);
+      events.push({ at: new Date().toISOString(), call: 'deliver-result', result });
+      return result;
     } } };
   const control = holder.control = await openControl({ storagePath: `${observations}/control.sqlite`,
     // Recipe decision: root/environments holds only earlier qualification resources (q05/q06/q09) and, for `resume`, this storage's own

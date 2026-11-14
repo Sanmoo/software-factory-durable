@@ -133,6 +133,10 @@ test('AC1/AC2/AC3/AC6: ask -> Question+impediment+intent committed before the AC
   assert.deepEqual(waiting.dispatch, { state: 'held', reasons: ['QUESTION_PENDING'] });
   const kinds = h.execution.calls.map(call => call.kind);
   assert.ok(kinds.indexOf('stop') < kinds.lastIndexOf('activate'), 'the first boot ceased before the second activation');
+  // Ticket 20 composition: the recorded Question puts the activity in an external wait, which withdraws and revokes its credentials.
+  assert.deepEqual([waiting.execution!.credentialLifecycle.state, waiting.execution!.credentialLifecycle.reason], ['withdrawn', 'external-wait']);
+  assert.ok(kinds.indexOf('deliver-withdraw-credential') >= 0 && kinds.indexOf('deliver-withdraw-credential') < kinds.indexOf('stop'), 'the live Builder lost the credential before its boot stopped');
+  assert.ok(kinds.indexOf('revoke') >= 0 && kinds.indexOf('revoke') < kinds.indexOf('stop'), 'known grant revocation attempted at the external wait');
   // Published on the Ticket issue with the stable marker and the explicit reply instruction.
   await h.until(async () => (await h.show(waiting.work_id)).questions[0]!.publication.state === 'published', 'published');
   const posted = (remote.comments![3] ?? []).filter(item => item.viaApp === 1);
