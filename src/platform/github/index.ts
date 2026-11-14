@@ -32,14 +32,17 @@ const permissions = {
   'repository-fetch': { metadata: 'read', contents: 'read' },
   // Controller publication of a durable Question on its Ticket issue (spec §5.5): one POST of an issue comment, nothing else.
   'question-publish': { metadata: 'read', issues: 'write' },
+  // Ticket 15 required-checks explanation (spec §9.2), GET only: the own PR (Pull requests R), base branch tip/protection summary and
+  // comparison (Contents R), classic required status checks (Administration R), check-runs (Checks R), commit statuses (Statuses R).
+  'checks-read': { metadata: 'read', contents: 'read', pull_requests: 'read', checks: 'read', statuses: 'read', administration: 'read' },
 } as const;
 type Purpose = keyof typeof permissions;
 type DiagnosticPurpose = 'tracker' | 'repository' | 'dependency';
-export type ReadPurpose = 'tracker-read' | 'repository-read' | 'association-read' | 'dependency-read' | 'publication-read';
+export type ReadPurpose = 'tracker-read' | 'repository-read' | 'association-read' | 'dependency-read' | 'publication-read' | 'checks-read';
 /** Token-free metadata of each reduced read grant (principal/scope evidence; never the token). */
 export const readPermissions: Readonly<Record<ReadPurpose, Readonly<Record<string, 'read'>>>> = {
   'tracker-read': permissions['tracker-read'], 'repository-read': permissions['repository-read'],
-  'association-read': permissions['association-read'], 'dependency-read': permissions['dependency-read'], 'publication-read': permissions['publication-read'] };
+  'association-read': permissions['association-read'], 'dependency-read': permissions['dependency-read'], 'publication-read': permissions['publication-read'], 'checks-read': permissions['checks-read'] };
 const repositorySchema = z.object({ id: z.number().int().positive().safe(), full_name: z.string(), owner: z.object({ login: z.string() }) });
 const permissionSchema = z.record(z.string(), z.enum(['read', 'write']));
 class AccessFailure extends Error {
@@ -61,8 +64,10 @@ export interface GitHubSession {
   repositoryId: number;
   get(endpoint: string): Promise<unknown>;
   /** Complete listing of every Link page, or a failure; never a partial array. Query parameters other than paging are preserved.
-   * `maxPages` (default 100): more pages than that is INCOMPLETE_GITHUB_QUERY, never a truncated result. */
-  list(endpoint: string, options?: { maxPages?: number }): Promise<unknown[]>;
+   * `maxPages` (default 100): more pages than that is INCOMPLETE_GITHUB_QUERY, never a truncated result.
+   * `items` (ticket 15): pages are objects `{ total_count, <items>: [...] }` (e.g. check-runs); a total_count that changes between pages or
+   * differs from the collected count is INCOMPLETE_GITHUB_QUERY. */
+  list(endpoint: string, options?: { maxPages?: number; items?: string }): Promise<unknown[]>;
 }
 /** Read outcome for controller polling: an observation or a typed failure, never a fabricated empty result. */
 export type GitHubRead<T> = { ok: true; observedAt: string; repositoryId: number; value: T } |
@@ -331,14 +336,27 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
       first.searchParams.set('per_page', '100');
       first.searchParams.set('page', '1');
       let page: string | undefined = first.pathname + first.search;
+      const key = listOptions?.items;
+      if (key !== undefined && !/^[a-z_]{1,64}$/.test(key)) throw new AccessFailure('INVALID_ENDPOINT');
+      let total: number | undefined;
       while (page) {
         if (!allowed(page) || seen.has(page) || seen.size >= Math.min(100, listOptions?.maxPages ?? 100)) throw new AccessFailure('INCOMPLETE_GITHUB_QUERY');
         seen.add(page);
         const response = await gh(scope, directory, grant.token, page, grant.repositoryId);
-        if (!Array.isArray(response.body)) throw new AccessFailure('INVALID_GITHUB_PAYLOAD');
-        values.push(...response.body);
+        let items: unknown = response.body;
+        if (key !== undefined) {
+          const wrapped = response.body !== null && typeof response.body === 'object' && !Array.isArray(response.body) ? response.body as Record<string, unknown> : undefined;
+          const count = wrapped?.total_count;
+          if (!wrapped || typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0) throw new AccessFailure('INVALID_GITHUB_PAYLOAD');
+          if (total !== undefined && total !== count) throw new AccessFailure('INCOMPLETE_GITHUB_QUERY');
+          total = count;
+          items = wrapped[key];
+        }
+        if (!Array.isArray(items)) throw new AccessFailure('INVALID_GITHUB_PAYLOAD');
+        values.push(...items);
         page = response.next;
       }
+      if (total !== undefined && values.length !== total) throw new AccessFailure('INCOMPLETE_GITHUB_QUERY');
       return values;
     } };
   }

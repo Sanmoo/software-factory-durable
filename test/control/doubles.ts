@@ -1,7 +1,7 @@
 // Test doubles for the IssueTracker/CodeRepository contracts and the polling clock.
 // They replace GitHub only; Control, Pi Durable and SQLite stay real in every flow test.
 import type { IssueTracker, TicketRef, CandidateObservation, TicketObservation, TrackerScope, DependencyNode, DependencyProblem, TrackerComment } from '../../src/issue-tracker/index.js';
-import type { CodeRepository, PublicationObservation, PullRequestCandidate } from '../../src/code-repository/index.js';
+import type { CodeRepository, PublicationObservation, PullRequestCandidate, PullRequestObservation } from '../../src/code-repository/index.js';
 import type { PollingClock } from '../../src/control/types.js';
 
 export type RemoteIssue = { ref: TicketRef; state: 'open' | 'closed'; labels: { id: number; name: string }[]; pullRequest?: boolean; reread?: Partial<TicketRef>;
@@ -36,6 +36,8 @@ export type Remote = {
   incompleteSearches?: number;
   /** Number of next readInputs calls that are incomplete (unavailable). */
   incompleteInputs?: number;
+  /** Ticket 15: readPullRequest observations by PR number (absent = unavailable GITHUB_NOT_FOUND_OR_HIDDEN). */
+  pullRequests?: Record<number, PullRequestObservation>;
 };
 let commentSequence = 80000;
 /** A comment as the tracker adapter reports it. */
@@ -143,6 +145,8 @@ export function githubDoubles(remote: Remote) {
         'refs/heads/main': 'b'.repeat(40), ...Object.fromEntries(Object.entries(remote.refs ?? {}).filter(([, sha]) => sha !== 'unknown').map(([name, sha]) => [`refs/heads/${name}`, sha])),
         ...Object.fromEntries(Object.entries(remote.tags ?? {}).map(([name, sha]) => [`refs/tags/${name}`, sha])) } } } : {}),
       ...(correlation.base !== undefined ? { baseProtection: structuredClone(remote.baseProtection ?? { state: 'pull-request-required' as const, sources: ['ruleset:1'] }) } : {}) }), correlation),
+    readPullRequest: query => track('readPullRequest', (): PullRequestObservation => remote.pullRequests?.[query.number] ??
+      { kind: 'unavailable', source: 'github-rest', observedAt: observedAt(), repository: query.repo.repository, code: 'GITHUB_NOT_FOUND_OR_HIDDEN', nextStep: 'synthetic' }, query),
   };
   return { tracker, repository, calls, concurrency: () => maxActive };
 }

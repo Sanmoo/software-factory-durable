@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import type { AccessDiagnostic, GitHubScope } from '../contracts/index.js';
 import { InvalidGitHubObservation, type GitHubAccess } from '../platform/github/index.js';
+import { createPullRequestReader, type PullRequestObservation, type PullRequestQuery } from './pull-request.js';
+
+export type { BranchRule, CheckRunFact, ClassicChecks, Known, PullRequestFacts, PullRequestObservation, PullRequestQuery, RequiredCheck, StatusFact } from './pull-request.js';
 
 /** Known repository/branch identities and the Ticket numbers they serve; the caller decides ownership, never this adapter.
  * Several Tickets of one repository share ONE pull request listing per call (bounded polling cost). */
@@ -35,6 +38,8 @@ export type PublicationObservation = { kind: 'observed'; source: 'github-rest'; 
 export interface CodeRepository {
   checkAccess(repo: GitHubScope, base: string): Promise<AccessDiagnostic>;
   findPublication(correlation: PublicationCorrelation): Promise<PublicationObservation>;
+  /** Q4B `readPullRequest` (ticket 15): current facts of a known own PR and the data its applicable checks need; never decides readiness. */
+  readPullRequest(query: PullRequestQuery): Promise<PullRequestObservation>;
 }
 
 const pullSchema = z.object({
@@ -149,6 +154,7 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
     return read.value === null ? { state: 'absent' } : { state: 'present', sha: read.value };
   }
   return {
+    readPullRequest: createPullRequestReader(options),
     checkAccess(repo, base) {
       return options.github.diagnose(repo, 'repository', async session => {
         if (!base || /[\x00-\x20\x7f]/.test(base)) throw new InvalidGitHubObservation();

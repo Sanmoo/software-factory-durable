@@ -69,7 +69,40 @@ export type World = {
   tokenLifetimeSeconds?: number;
   /** Endpoint substrings whose request fails at the transport (no response at all: outcome unknown to the caller). */
   transportFailures?: string[];
+  /** Ticket 15: required-checks world of acme/project (read-only GET endpoints). */
+  checks?: ChecksWorld;
 };
+/**
+ * Ticket 15 (read-only): `GET /pulls/{n}` (the `pulls` entry + `details`), `GET /branches/{b}` (`branches`), `GET /branches/{b}/protection/
+ * required_status_checks` (`requiredStatusChecks`, absent = 404), `GET /rules/branches/{b}` (`rules`, paginated), `GET /commits/{sha}/check-runs`
+ * (`checkRuns`, paginated object pages with `total_count`), `GET /commits/{sha}/statuses` (`statuses`, paginated) and `GET /compare/{a}...{b}`.
+ */
+export type ChecksWorld = {
+  details?: Record<number, { head_sha: string; base_ref?: string; base_sha?: string; draft?: boolean; merged?: boolean; mergeable?: boolean | null;
+    mergeable_state?: string; merge_commit_sha?: string | null;
+    /** From the `afterReads`-th read of this pull request on, it reports this head (a push during the collection). */
+    change?: { afterReads: number; head_sha: string } }>;
+  branches?: Record<string, { sha: string; protected: boolean; protection?: object }>;
+  requiredStatusChecks?: Record<string, object>;
+  rules?: Record<string, object[]>;
+  checkRuns?: Record<string, object[]>;
+  /** Added to the reported total_count of check-run pages (a listing GitHub truncated or that changed between pages). */
+  checkRunsTotalOffset?: number;
+  statuses?: Record<string, object[]>;
+  compare?: Record<string, { status: string; ahead_by: number; behind_by: number }>;
+  /** Internal counter of pull request reads (written by the fixture). */
+  reads?: Record<string, number>;
+};
+/** A check run as GitHub REST returns it (ticket 15 fixtures). */
+export function checkRun(id: number, name: string, overrides: Record<string, unknown> = {}) {
+  return { id, name, head_sha: 'd'.repeat(40), status: 'completed', conclusion: 'success', started_at: `2026-11-14T10:${String(id % 60).padStart(2, '0')}:00Z`,
+    completed_at: '2026-11-14T11:00:00Z', app: { id: 15368, slug: 'github-actions' }, check_suite: { id: 500 }, html_url: `https://github.com/acme/project/runs/${id}`, ...overrides };
+}
+/** A commit status as GitHub REST returns it (ticket 15 fixtures). */
+export function commitStatus(id: number, context: string, state: string, overrides: Record<string, unknown> = {}) {
+  return { id, context, state, creator: { id: 77, login: 'ci-bot[bot]', type: 'Bot' }, created_at: `2026-11-14T10:${String(id % 60).padStart(2, '0')}:00Z`,
+    updated_at: '2026-11-14T10:59:00Z', target_url: `https://ci.example/${id}`, ...overrides };
+}
 export type TraceEntry = { method: string; endpoint: string; credential: 'app-jwt' | 'installation'; permissions?: Record<string, string>; body?: string };
 
 export function issue(number: number, overrides: Partial<WorldIssue> = {}): WorldIssue {
@@ -266,6 +299,42 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
   else body = page((world.comments ?? []).filter(c => c.issue === number && (c.repository ?? 'acme/project').toLowerCase() === repo.name.toLowerCase())
     .map(({ issue: _issue, repository: _repository, ...c }) => ({ node_id: 'IC_' + c.id, created_at: '2026-11-14T10:00:00Z', updated_at: '2026-11-14T10:00:00Z', performed_via_github_app: null,
       html_url: 'https://github.com/' + repo.name + '/issues/' + number + '#issuecomment-' + c.id, ...c })));
+  } else if (world.checks && /^\\/(pulls\\/\\d+|branches\\/.+|rules\\/branches\\/.+|commits\\/[0-9a-f]{40}\\/(check-runs|statuses)|compare\\/[0-9a-f]{40}\\.\\.\\.[0-9a-f]{40})$/.test(rest) && repo.id === 3) {
+  // Ticket 15 read-only required-checks world.
+  const checks = world.checks;
+  const notFound = () => { status = 404; body = { message: 'Not Found' }; };
+  if (/^\\/pulls\\/\\d+$/.test(rest)) {
+    const number = Number(rest.split('/')[2]);
+    const found = world.pulls.find(p => p.number === number);
+    const detail = checks.details?.[number];
+    if (!found || !detail) notFound();
+    else {
+      const reads = (checks.reads ??= {})[number] = (checks.reads[number] ?? 0) + 1;
+      writeFileSync(${JSON.stringify(worldFile)}, JSON.stringify(world));
+      const head = detail.change && reads >= detail.change.afterReads ? detail.change.head_sha : detail.head_sha;
+      body = { ...found, html_url: 'https://github.com/acme/project/pull/' + number, draft: detail.draft ?? true, merged: detail.merged ?? false,
+        mergeable: detail.mergeable === undefined ? true : detail.mergeable, mergeable_state: detail.mergeable_state ?? 'clean', merge_commit_sha: detail.merge_commit_sha ?? 'e'.repeat(40),
+        head: { ...found.head, sha: head }, base: { ref: detail.base_ref ?? 'main', sha: detail.base_sha ?? 'a'.repeat(40), repo: { id: 3 } } };
+    }
+  } else if (/^\\/rules\\/branches\\/.+$/.test(rest)) {
+    const name = decodeURIComponent(url.pathname.split('/rules/branches/')[1]);
+    body = page(checks.rules?.[name] ?? []);
+  } else if (/^\\/branches\\/.+\\/protection\\/required_status_checks$/.test(rest)) {
+    const name = decodeURIComponent(url.pathname.split('/branches/')[1].replace(/\\/protection\\/required_status_checks$/, ''));
+    if (checks.requiredStatusChecks?.[name]) body = checks.requiredStatusChecks[name]; else notFound();
+  } else if (/^\\/branches\\/.+$/.test(rest)) {
+    const name = decodeURIComponent(url.pathname.split('/branches/')[1]);
+    const branch = checks.branches?.[name];
+    if (branch) body = { name, commit: { sha: branch.sha }, protected: branch.protected, ...(branch.protection ? { protection: branch.protection } : {}) }; else notFound();
+  } else if (/\\/check-runs$/.test(rest)) {
+    if (url.searchParams.get('filter') !== 'all') process.exit(21);
+    const runs = checks.checkRuns?.[rest.split('/')[2]] ?? [];
+    body = { total_count: runs.length + (checks.checkRunsTotalOffset ?? 0), check_runs: page(runs) };
+  } else if (/\\/statuses$/.test(rest)) body = page(checks.statuses?.[rest.split('/')[2]] ?? []);
+  else {
+    const compared = checks.compare?.[rest.slice('/compare/'.length)];
+    if (compared) body = compared; else notFound();
+  }
   } else if (/^\\/issues\\/\\d+$/.test(rest)) {
   const found = issuesOf(repo).find(i => i.number === Number(rest.split('/')[2]));
   if (found) body = shape(found);
