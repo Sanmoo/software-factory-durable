@@ -5,7 +5,7 @@ import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs
 import { arch, platform, tmpdir, userInfo } from 'node:os';
 import { join, resolve } from 'node:path';
 import { buildRelease, copyTree, runtimeClosure, unaccountedShippedPaths, verifyShippedPackages } from '../../src/entrypoints/release-build.js';
-import { inventoryTree, markDevelopmentCheckout, parseReleaseManifest, releaseInstallationRoot, verifyReleaseTree, type TreeEntry } from '../../src/entrypoints/release.js';
+import { inventoryTree, parseReleaseManifest, releaseInstallationRoot, verifyReleaseTree, type TreeEntry } from '../../src/entrypoints/release.js';
 import { setupService, standardServiceDirectory } from '../../src/entrypoints/setup.js';
 
 // R-level regression tests of the release verifier/build (ticket 32 static review): the manifest is a claim to VERIFY, never a source of

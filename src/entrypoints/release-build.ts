@@ -106,6 +106,8 @@ export async function runtimeClosure(project: string) {
         }
         const target = packages[found]!;
         if (!await present(found)) {
+          // An optional peer is never required: shipped when installed, genuinely omitted when the lock names it but it is absent.
+          if (optionalPeer) { omitted.push({ from: key, dependency: name, reason: 'optional-peer' }); continue; }
           // Only an optional package whose os/cpu gate EXCLUDES this build platform is legitimately absent; every other missing edge
           // (including an optional package this platform could install) is an incomplete closure.
           const gated = (kind === 'optional' || target.optional === true) && (excludedBy(target.os, platform()) || excludedBy(target.cpu, arch()));
@@ -232,7 +234,11 @@ export async function buildRelease(input: BuildInput) {
   const closure = await runtimeClosure(project);
 
   // Exclusive output: created here, never adopted or overwritten.
-  await mkdir(output, { mode: 0o700 });
+  await mkdir(output, { mode: 0o700 }).catch((error: unknown) => {
+    // A path that appeared after the early check is still refused with the same explicit code, never adopted.
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST') fail('RELEASE_OUTPUT_EXISTS');
+    throw error;
+  });
   if (await realpath(output) !== output) fail('RELEASE_OUTPUT_NOT_CANONICAL');
   const payload = join(output, 'payload');
   const releaseDirectory = join(payload, 'releases', id);
