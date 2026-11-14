@@ -9,7 +9,9 @@ import { setup, setupService, firstHumanLogin } from './setup.js';
 import { doctor } from './doctor.js';
 import { releaseInstallationRoot } from './release.js';
 
-const usage = 'factory <setup|doctor|run|status|list|show <work>|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>)|update-scope <work> --reason <text>|request <id>> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service [--service-directory <absolute dir>]]; factory login --root <canonical-absolute-installation>';
+const usage = 'factory <setup|doctor|run|status|list|show <work>|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>)|update-scope <work> --reason <text>|request <id>|upgrade <check|apply|status|resume|rollback> [--migrate <id>]> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service [--service-directory <absolute dir>]]; factory login --root <canonical-absolute-installation>';
+const upgradeUsage = 'factory upgrade <check|apply|status|resume|rollback> [--root <installation>] [--migrate <migration id>] — run with the NEW release: ' +
+  '<root>/releases/<id>/node/bin/node <root>/releases/<id>/dist/src/entrypoints/cli.js upgrade ...';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 async function exchange(root: string, kind: 'inspect' | 'accept', payload: Envelope['payload'], id: string, runId: string | null) {
@@ -61,8 +63,8 @@ async function operational(root: string, command: string, requestId: string | un
   }
 }
 
-async function launch(root: string): Promise<number> {
-  const child = spawn(process.execPath, [fileURLToPath(new URL('./controller.js', import.meta.url)), root], { stdio: 'inherit' });
+async function launch(root: string, upgrade?: string[]): Promise<number> {
+  const child = spawn(process.execPath, [fileURLToPath(new URL('./controller.js', import.meta.url)), root, ...(upgrade ? ['upgrade', ...upgrade] : [])], { stdio: 'inherit' });
   const terminate = () => child.kill('SIGTERM');
   const interrupt = () => child.kill('SIGINT');
   process.on('SIGTERM', terminate); process.on('SIGINT', interrupt);
@@ -92,6 +94,30 @@ export async function main(args: string[]): Promise<number> {
   let json = false;
   let authenticated = false;
   let rootSeen = false;
+  // Ticket 33: `upgrade <check|apply|status|resume|rollback> [--migrate <id>]`, run by the NEW release under the canonical-storage lock.
+  if (command === 'upgrade') {
+    const sub = args[1];
+    const rest = args.slice(2);
+    let upgradeRoot = installation ?? resolve('.');
+    if (rest[0] === '--root' && rest[1]) { upgradeRoot = resolve(rest[1]); rest.splice(0, 2); }
+    const migrate = rest.length === 2 && rest[0] === '--migrate' && /^[a-z0-9-]{1,64}$/.test(rest[1]!) && (sub === 'apply' || sub === 'check');
+    if (!['check', 'apply', 'status', 'resume', 'rollback'].includes(sub ?? '') || (rest.length && !migrate)) {
+      console.error(JSON.stringify({ code: 'INVALID_ARGUMENTS', message: upgradeUsage }));
+      return 2;
+    }
+    if (installation !== undefined && await realpath(upgradeRoot).catch(() => upgradeRoot) !== installation) {
+      console.error(JSON.stringify({ code: 'RELEASE_ROOT_MISMATCH', message: 'This release serves only its own installation root.' }));
+      return 2;
+    }
+    try {
+      const code = await launch(upgradeRoot, [sub!, ...rest]);
+      if (code === 73) console.error(JSON.stringify({ code: 'CONTROLLER_RUNNING', message: 'Stop the controller (paused, clean exit) before upgrading; the lock is never taken over.' }));
+      return code;
+    } catch {
+      console.error(JSON.stringify({ code: 'LOCAL_IO_FAILED', message: 'Check installation paths, types and permissions; no automatic repair.' }));
+      return 2;
+    }
+  }
   let valid = ['setup', 'doctor', 'run', 'status', 'list', 'show', 'question', 'pause', 'unpause', 'answer', 'grant', 'update-scope', 'request'].includes(command ?? '');
   let requestId: string | undefined;
   const requested = command === 'request' || command === 'show' || command === 'question' || command === 'answer' || command === 'grant' || command === 'update-scope' ? args[1] : undefined;

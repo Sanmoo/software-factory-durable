@@ -1,7 +1,8 @@
 import { lstat, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { openControl, type ControlInput } from '../../control/index.js';
+import { inspectStorage, openControl, type ControlInput } from '../../control/index.js';
+import { upgradeBlocksStart } from './upgrade.js';
 import { listen, protocolVersion, type Envelope } from '../../protocol/index.js';
 import { controllerPaths, verifyControllerLock } from '../../platform/host/index.js';
 import { inventoryRuntime, reconcileInterruptedCaches } from '../../sandbox/index.js';
@@ -33,6 +34,20 @@ async function own(root: string): Promise<number> {
   if (blocked.length > 0) {
     console.error(JSON.stringify({ code: 'RELEASE_INVALID', checks: blocked.map(check => ({ id: check.id, message: check.message })),
       message: 'Run the verified release of this installation; storage was not opened and nothing is repaired.' }));
+    return 2;
+  }
+  // Ticket 33: an interrupted upgrade, or a storage not in this release's operational format, is refused before the storage is opened.
+  const pending = await upgradeBlocksStart(paths.root);
+  if (pending) {
+    console.error(JSON.stringify({ ...pending, message: 'The controller does not start during an incomplete upgrade; storage was not opened.' }));
+    return 2;
+  }
+  const storage = await inspectStorage(paths.storagePath);
+  if (storage.kind === 'storage' && storage.operational !== 'ready') {
+    console.error(JSON.stringify({ code: storage.operational === 'migration-required' ? 'STORAGE_MIGRATION_REQUIRED' : 'STORAGE_INCOMPATIBLE',
+      format: storage.format, supported: storage.current, problems: storage.problems.map(problem => problem.code),
+      message: storage.operational === 'migration-required' ? 'This release operates the storage only after the explicitly requested upgrade migration (`upgrade check`); nothing was written.'
+        : 'This release cannot operate this storage; nothing was written. Keep the release that operates it.' }));
     return 2;
   }
   const validated = await readConfiguration(paths.root, release.guestAssets);

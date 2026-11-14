@@ -2,12 +2,14 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { controllerPaths, prepareControllerLock } from '../platform/host/index.js';
 
-async function launch(root: string): Promise<number> {
+/** `upgrade <command> [...]` (ticket 33) runs the upgrade owner under the SAME canonical-storage lock instead of the controller owner. */
+async function launch(root: string, upgrade: string[] | undefined): Promise<number> {
   const paths = await controllerPaths(root);
   if (Buffer.byteLength(paths.endpoint) > 103) throw new Error('SOCKET_PATH_TOO_LONG');
   await prepareControllerLock(paths.lockPath);
+  const script = fileURLToPath(new URL(upgrade ? './controller/upgrade.js' : './controller/owner.js', import.meta.url));
   const owner = spawn('flock', ['--exclusive', '--nonblock', '--no-fork', '--conflict-exit-code', '73',
-    paths.lockPath, process.execPath, fileURLToPath(new URL('./controller/owner.js', import.meta.url)), paths.root],
+    paths.lockPath, process.execPath, script, paths.root, ...(upgrade ?? [])],
   { stdio: 'inherit', env: { PATH: process.env.PATH ?? '', LANG: 'C', LC_ALL: 'C' } });
   const interrupt = () => owner.kill('SIGINT');
   const terminate = () => owner.kill('SIGTERM');
@@ -22,7 +24,7 @@ async function launch(root: string): Promise<number> {
     return code;
   } finally { process.off('SIGINT', interrupt); process.off('SIGTERM', terminate); }
 }
-try { process.exitCode = await launch(process.argv[2] ?? '.'); }
+try { process.exitCode = await launch(process.argv[2] ?? '.', process.argv[3] === 'upgrade' ? process.argv.slice(4) : undefined); }
 catch {
   console.error(JSON.stringify({ code: 'CONTROLLER_START_FAILED', message: 'Check private installation paths and flock prerequisites; no takeover or repair.' }));
   process.exitCode = 3;
