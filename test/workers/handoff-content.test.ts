@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { handoffCaptureProgram, parseHandoffSummary } from '../../src/workers/handoff.js';
+import { contentProbeCommand, contentProbeSchema, handoffCaptureProgram, parseHandoffSummary } from '../../src/workers/handoff.js';
 
 // Level H: the constant GUEST capture program run against a TEST-OWNED local repository (never a guest tree). Ticket 13: the capture
 // carries a content identity independent of Git metadata (`content.sha256`), whether the tree is clean, and whether the HEAD commit
@@ -71,4 +71,18 @@ test('AC4/AC5: any content change after the reviewed capture changes the identit
   git(f.checkout, 'add', '-A'); git(f.checkout, 'commit', '-q', '--allow-empty', '-m', 'restore');
   await writeFile(join(f.checkout, 'docs', 'extra.md'), 'x\n');
   assert.notEqual(capture(f, 4).content!.sha256, reviewed.content!.sha256);
+});
+
+test('AC2/AC3 review fix 1: the SAME program in probe mode writes nothing and reports the capture content identity; an unknown mode is refused', async t => {
+  const f = await fixture(t);
+  const run = (mode?: string) => execFileSync('/usr/bin/python3', ['-I', '-S', '-c', handoffCaptureProgram, f.checkout, f.artifacts, '1', f.base, '/workspace/checkout', '/artifacts',
+    ...(mode === undefined ? [] : [mode])], { encoding: 'utf8', stdio: 'pipe' });
+  const probe = contentProbeSchema.parse(JSON.parse(run('probe')));
+  assert.deepEqual(await readdir(join(f.artifacts, 'review')).catch(() => []), [], 'the probe never creates a round directory');
+  // The probe and the capture compute the SAME content identity (the capture is the authority for a gate's currency).
+  const summary = JSON.parse(execFileSync('/usr/bin/python3', ['-I', '-S', '-c', handoffCaptureProgram, f.checkout, f.artifacts, '2', f.base, '/workspace/checkout', '/artifacts'],
+    { encoding: 'utf8', stdio: 'pipe' }));
+  assert.deepEqual(contentProbeSchema.parse(summary.content), probe);
+  assert.throws(() => run('other'), 'an unknown mode is invalid');
+  assert.match(contentProbeCommand(f.base), / \/workspace\/checkout \/artifacts probe <<'FACTORY_HANDOFF_EOF'\n$| \/workspace\/checkout \/artifacts probe <<'FACTORY_HANDOFF_EOF'\n/);
 });

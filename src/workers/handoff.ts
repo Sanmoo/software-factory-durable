@@ -21,10 +21,11 @@ def unexpected(kind, value, trace):
     sys.stderr.flush()
     os._exit(5)
 sys.excepthook = unexpected
-if len(sys.argv) != 7:
+if len(sys.argv) not in (7, 8):
     fail("INPUT_INVALID", 2)
-checkout, artifacts, rnd, base, checkout_view, artifacts_view = sys.argv[1:]
-if not re.fullmatch(r"[1-9][0-9]?", rnd) or not re.fullmatch(r"[0-9a-f]{40}", base):
+checkout, artifacts, rnd, base, checkout_view, artifacts_view = sys.argv[1:7]
+mode = sys.argv[7] if len(sys.argv) == 8 else "capture"
+if mode not in ("capture", "probe") or not re.fullmatch(r"[1-9][0-9]?", rnd) or not re.fullmatch(r"[0-9a-f]{40}", base):
     fail("INPUT_INVALID", 2)
 out = os.path.join(artifacts, "review", "r" + rnd)
 view = artifacts_view + "/review/r" + rnd
@@ -123,7 +124,21 @@ if wanted:
         at = end + 1 + size + 1
 for path, item in entries.items():
     item["headSha256"] = blobs.get(listing[path]) if path in listing else None
+ordered = [entries[key] for key in sorted(entries)]
+counts = {"entries": len(ordered), "committed": sum(1 for e in ordered if e["committed"]), "staged": sum(1 for e in ordered if e["staged"]),
+          "unstaged": sum(1 for e in ordered if e["unstaged"]), "untracked": sum(1 for e in ordered if e["untracked"]),
+          "removed": sum(1 for e in ordered if not e["present"])}
+changed = [e["guestPath"] for e in ordered if e["present"] and e.get("kind") == "file"]
+identity = [[e["path"], e["present"], e.get("kind"), e.get("mode"), e.get("sha256")] for e in ordered]
+clean = not any(e["staged"] or e["unstaged"] or e["untracked"] for e in ordered)
+head_matches = all((e["headSha256"] is not None and e.get("kind") in ("file", "symlink") and e["headSha256"] == e.get("sha256")) if e["present"]
+                   else e["headSha256"] is None for e in ordered)
+content = {"sha256": digest(json.dumps(identity, separators=(",", ":")).encode()), "clean": clean, "headMatches": head_matches}
 stage = "write"
+if mode == "probe":
+    # Ticket 13 (Host content snapshot): the SAME identity computation, writing nothing and opening no round directory.
+    sys.stdout.write(json.dumps(content, sort_keys=True))
+    raise SystemExit(0)
 os.makedirs(os.path.join(artifacts, "review"), exist_ok=True)
 try:
     os.mkdir(out, 0o755)
@@ -157,16 +172,6 @@ def latest(kind):
         if complete and (best is None or int(match.group(1)) > best[0]):
             best = (int(match.group(1)), {"version": name, "sources": artifacts_view + "/" + kind + "/" + name + "/sources.json", "sha256": digest(data)})
     return best and best[1]
-ordered = [entries[key] for key in sorted(entries)]
-counts = {"entries": len(ordered), "committed": sum(1 for e in ordered if e["committed"]), "staged": sum(1 for e in ordered if e["staged"]),
-          "unstaged": sum(1 for e in ordered if e["unstaged"]), "untracked": sum(1 for e in ordered if e["untracked"]),
-          "removed": sum(1 for e in ordered if not e["present"])}
-changed = [e["guestPath"] for e in ordered if e["present"] and e.get("kind") == "file"]
-identity = [[e["path"], e["present"], e.get("kind"), e.get("mode"), e.get("sha256")] for e in ordered]
-clean = not any(e["staged"] or e["unstaged"] or e["untracked"] for e in ordered)
-head_matches = all((e["headSha256"] is not None and e.get("kind") in ("file", "symlink") and e["headSha256"] == e.get("sha256")) if e["present"]
-                   else e["headSha256"] is None for e in ordered)
-content = {"sha256": digest(json.dumps(identity, separators=(",", ":")).encode()), "clean": clean, "headMatches": head_matches}
 summary = {"version": 1, "round": int(rnd), "index": view + "/index.json", "head": head, "branch": branch, "base": base, "mergeBase": merge_base,
            "counts": counts, "patches": patches, "spec": latest("spec"), "instructions": latest("instructions"),
            "changed": changed[:20], "changedTruncated": len(changed) > 20, "content": content}
