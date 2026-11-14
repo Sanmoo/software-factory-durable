@@ -4,8 +4,8 @@ import { bodyLimit, copyPattern, largeBytes, startProvider, type Case } from './
 import type { EnvironmentRef, BootRef } from '../../src/sandbox/index.js';
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const observations = `${root}/q05-qualification-v2`;
-const revision = 'task188-write-pipe-v2';
+const observations = `${root}/q05-qualification-v3`;
+const revision = 'task-native-write-oracle-v3';
 const phases = ['prepare', 'start', 'w1', 'w2', 'w3', 'w4', 'model', 'stop'] as const;
 type Phase = typeof phases[number];
 const configuration = { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1', memoryMiB: 2048, vcpus: 2, diskGiB: 40, shutdownGraceSeconds: 30, minFreeSpaceGiB: 4 };
@@ -222,7 +222,7 @@ export async function runPhase(phase: Phase) {
       if (event.suppliedContext?.invocationId !== `q05-${phase}` || event.suppliedContext?.bootRef !== boot || event.suppliedContext?.workId !== workId || !matchesSdkProfile(event.profile) || event.providerId !== (real ? 'openai' : 'q05-qualification-fixture') || event.modelId !== (real ? 'gpt-6-luna' : 'qual-model') || event.observedProcess?.pid === process.pid || !Number.isSafeInteger(event.observedProcess?.pid)) throw new Error('START_RECEIPT_HELD');
       let published = path;
       if (phase === 'w1') {
-        if (!JSON.stringify(results[0]).includes('Successfully wrote 6 bytes') || !JSON.stringify(results[1]).includes('Successfully replaced') || !JSON.stringify(results[1]).includes('beta')) throw new Error('WRITE_EDIT_HELD');
+        if (!JSON.stringify(results[0]).includes('Successfully wrote to /workspace/q05-new.txt') || !JSON.stringify(results[1]).includes('Successfully replaced') || !JSON.stringify(results[1]).includes('beta')) throw new Error('WRITE_EDIT_HELD');
         const bash = results.filter(m => m.toolName === 'bash');
         published = (bash[1]?.details as { fullOutputPath?: string })?.fullOutputPath ?? '';
         if (!copyPattern.test(published) || published !== observation?.path || !(bash[1]?.details as { truncation?: { truncated?: boolean } })?.truncation?.truncated) throw new Error('NATIVE_COPY_HELD');

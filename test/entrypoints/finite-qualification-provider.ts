@@ -38,7 +38,7 @@ export function createFixture(which: Case, selectedPath = '') {
     if (which === 'w2' || which === 'w3' || (which === 'w1' && slot === 2)) {
       if (!content.includes('READ_PATH_DENIED')) throw new Error('DENIAL_EXPECTED');
     } else if (content.includes('READ_PATH_DENIED') || content.includes('q05-secret-v1') || content.includes('q05-dummy-key-v1')) throw new Error('UNPROTECTED_RESULT');
-    if (which === 'w1' && slot === 0 && !content.includes('Successfully wrote 6 bytes')) throw new Error('WRITE_EXPECTED');
+    if (which === 'w1' && slot === 0 && !content.includes('Successfully wrote to /workspace/q05-new.txt')) throw new Error('WRITE_EXPECTED');
     if (which === 'w1' && slot === 1 && !content.includes('Successfully replaced')) throw new Error('EDIT_EXPECTED');
     if (which === 'w1' && slot === 3 && !content.includes('█')) throw new Error('FILTER_EXPECTED');
     if (which === 'w1' && slot === 4) {
