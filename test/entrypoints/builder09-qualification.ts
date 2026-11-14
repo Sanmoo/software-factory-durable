@@ -1,3 +1,5 @@
+import type { ExecutionView } from '../../src/control/types.js';
+
 // TEST ONLY. Ticket 09 one-shot real Builder qualification recipe. Import and `--plan` are inert. Every other phase is a REAL effect and
 // requires an explicit operator grant: real GitHub (App), a real Gondolin/KVM VM and a real model. Phases are one-shot: an exclusive
 // intent tombstone precedes effects; a consumed phase never reruns; nothing is retried automatically. Push/PR are impossible: the
@@ -26,8 +28,8 @@ export function plan() {
     effects: [
       'preflight: read-only GitHub: listing of the configured label must contain exactly Ticket #3; ticket and native blocked_by read; no token leaves the controller',
       'run: Control (new storage under observations) polls once per 30 s; dispatch reserves ONE Execution (capacity 1), then: host fetch into root/cache/git, no-hardlinks clone into the Work checkout, skill pack seed, Sandbox.prepare/start (1 new VM), fresh revalidation, Builder grant, Workers.activate (1 Builder, /implement), receipt consumption, wait for end, Sandbox.stop, Slot release; Control stops after the Execution leaves reserved/started or at the 45 min deadline',
-      'inspect: read-only: Control storage view, preserved spec/instructions manifests, checkout git log/diff --stat (hooks/fsmonitor disabled), start receipt',
-      'stop-environment: only if run left the own boot active (held): public Sandbox.stop of that exact boot',
+      'inspect: read-only: Control storage view; confined no-follow reads of /artifacts manifests; checkout log/diff via a Factory-owned bare copy of its objects (never host git in the guest tree); start receipt',
+      'stop-environment: own boot of the recorded Execution when it may still run (reserved/started/held, or ended without confirmed cessation) and is observed active: public Sandbox.stop of that exact boot',
     ],
     guards: ['one-shot intent tombstones', 'prepare/activate allowed once and only for the Work of Ticket #3', 'no retry', 'no remove/cleanup', 'no push/PR (read-only grant)'],
     expected: ['execution.state ended, start.receiptId set, slot released after confirmed cessation', '/artifacts/spec/v1/{ticket.json,sources.json} and /artifacts/instructions/v1/sources.json complete, or a BLOCKED final message with complete:false',
@@ -55,6 +57,40 @@ async function compose() {
   const github = createGitHubAccess({ root, ...githubApp });
   const tracker = createIssueTracker({ github, scopes: [repository], dependencyScopes: [] });
   return { github, tracker, codeRepository: createCodeRepository({ github }), createBuilderCredentials, createRepositoryFetchCredentials };
+}
+
+/** The recipe's own boot may still run unless the Execution was released or ended with confirmed cessation. */
+export function needsStop(execution: ExecutionView): boolean {
+  if (!execution.dispatch.boot || execution.state === 'released') return false;
+  return !(execution.state === 'ended' && execution.end?.cessation === 'confirmed');
+}
+
+/**
+ * Read-only host inspection of a guest-written environment: NO host git in the checkout (Factory-owned bare copy via Sandbox
+ * inspectCheckout) and only confined, bounded, no-follow reads of /artifacts. Host-only checkout.json is outside the guest mounts.
+ */
+export async function inspectEnvironment(environmentDirectory: string, scratch: string, base?: string): Promise<Record<string, unknown>> {
+  const fs = await import('node:fs/promises');
+  const { inspectCheckout, readConfined } = await import('../../src/sandbox/index.js');
+  const artifacts = `${environmentDirectory}/artifacts`;
+  const confined = async (relative: string) => readConfined(artifacts, relative, 1024 * 1024)
+    .then(bytes => bytes === null ? { absent: true } : { text: bytes.toString('utf8') }, (error: Error) => ({ error: error.message }));
+  const names: string[] = [];
+  const walk = async (relative: string, depth: number): Promise<void> => {
+    if (depth > 8 || names.length > 2000) return;
+    for (const name of (await fs.readdir(relative ? `${artifacts}/${relative}` : artifacts).catch(() => [])).sort()) {
+      const path = relative ? `${relative}/${name}` : name;
+      if (path.startsWith('factory/skill-pack')) continue;
+      const info = await fs.lstat(`${artifacts}/${path}`);
+      if (info.isSymbolicLink()) names.push(`${path} (symlink, not followed)`);
+      else if (info.isDirectory()) await walk(path, depth + 1);
+      else names.push(info.isFile() ? path : `${path} (not a regular file)`);
+    }
+  };
+  await walk('', 0);
+  return { checkout: await fs.readFile(`${environmentDirectory}/checkout.json`, 'utf8').then(text => JSON.parse(text) as unknown, () => null), artifacts: names,
+    specSources: await confined('spec/v1/sources.json'), instructionSources: await confined('instructions/v1/sources.json'),
+    git: await inspectCheckout(environmentDirectory, { scratch, ...(base ? { base } : {}) }) };
 }
 
 export async function runPhase(phase: Phase) {
@@ -128,31 +164,28 @@ export async function runPhase(phase: Phase) {
       await save('run-result', { status: 'observed', outcome, final, controlStatus: status, events, deadlineReached: Date.now() >= deadline });
       return;
     }
-    const run = await load('run-result') as { final: { works: { work_id: string; execution: { dispatch: { environment: string | null; boot: string | null }; start: { receiptId: string } | null; state: string } | null }[] } };
-    const work = run.final.works.find(item => item.execution);
+    // Authority is the recipe's own storage (not run-result, which a crash could prevent): read-only inspect, then closed.
+    const { openControl } = await import('../../src/control/index.js');
+    const stored = await openControl({ storagePath: `${observations}/control.sqlite`, runtimeInventory: 'unknown' });
+    const list = await stored.inspect({ kind: 'list' });
+    const stop = new AbortController(); stop.abort();
+    await stored.run(stop.signal);
+    const work = 'kind' in list && list.kind === 'list' ? list.works.find(item => item.execution) : undefined;
     if (!work?.execution?.dispatch.environment) throw new Error('NO_EXECUTION_OBSERVED');
     const environmentDirectory = `${root}/environments/${work.execution.dispatch.environment}`;
     if (phase === 'inspect') {
-      const { execFileSync } = await import('node:child_process');
-      const read = async (path: string) => fs.readFile(path, 'utf8').then(text => text.slice(0, 65536), () => null);
-      const git = (...args: string[]) => { try { return execFileSync('/usr/bin/git', ['--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null', '-C', `${environmentDirectory}/workspace/checkout`, ...args],
-        { encoding: 'utf8', timeout: 30000, maxBuffer: 1024 * 1024, env: { PATH: '/usr/bin:/bin', HOME: observations, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_PAGER: 'cat', LANG: 'C' } }); } catch { return null; } };
-      const artifacts = `${environmentDirectory}/artifacts`;
-      const listing = await fs.readdir(artifacts, { recursive: true }).catch(() => []);
-      await save('inspect-result', { checkout: await read(`${environmentDirectory}/checkout.json`), artifacts: listing.filter(name => !name.startsWith('factory/skill-pack')),
-        specSources: await read(`${artifacts}/spec/v1/sources.json`), instructionSources: await read(`${artifacts}/instructions/v1/sources.json`),
-        log: git('log', '--oneline', '-20'), diffStat: git('diff', '--stat', 'HEAD~0'), branch: git('branch', '--show-current'), remote: git('remote', '-v'),
-        receipt: work.execution.start ? await read(`${root}/${work.work_id}/evidence/${work.execution.start.receiptId}/output`) : null });
+      const receipt = work.execution.start ? await fs.readFile(`${root}/${work.work_id}/evidence/${work.execution.start.receiptId}/output`, 'utf8').then(text => text.slice(0, 65536), () => null) : null;
+      await save('inspect-result', { execution: work.execution, receipt, ...await inspectEnvironment(environmentDirectory, observations, work.execution.request.baseCommit ?? undefined) });
       return;
     }
-    // stop-environment: only an own boot left active by a held run.
-    if (work.execution.state !== 'held' || !work.execution.dispatch.boot) throw new Error('NOTHING_TO_STOP');
+    // stop-environment: only the recipe's own boot, in any state where it may still run.
+    if (!needsStop(work.execution)) throw new Error('NOTHING_TO_STOP');
     const { createSandbox } = await import('../../src/sandbox/index.js');
     const sandbox = createSandbox({ root, guestAssets });
     const environment = work.execution.dispatch.environment as never, boot = work.execution.dispatch.boot as never;
     const before = await sandbox.observe({ environment, boot });
-    const result = before.condition === 'active' ? await sandbox.stop({ environment, boot, reason: 'q09 explicit stop of held execution' }) : null;
-    await save('stop-environment-result', { before, result });
+    const result = before.condition === 'active' ? await sandbox.stop({ environment, boot, reason: 'q09 explicit stop of own boot' }) : null;
+    await save('stop-environment-result', { state: work.execution.state, before, result });
   } catch (error) {
     await save(`${phase}-held`, { phase, status: 'held', code: error instanceof Error ? error.message.slice(0, 128) : 'UNKNOWN', note: 'Consumed; no retry.' }).catch(() => {});
     throw new Error('QUALIFICATION_HELD');
