@@ -1,6 +1,7 @@
-import { isAbsolute, join, resolve } from 'node:path';
+import { basename, isAbsolute, join, resolve } from 'node:path';
+import { constants } from 'node:fs';
 import { execFile, spawn } from 'node:child_process';
-import { lstat, mkdir, mkdtemp, readFile, readlink, realpath } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, open, readFile, readlink, realpath, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { workerLaunchSchema, type WorkerLaunch } from './worker-bootstrap.js';
 import { fileURLToPath } from 'node:url';
@@ -115,6 +116,34 @@ const completedSchema = z.discriminatedUnion('status', [
   z.strictObject({ status: z.literal('failure'), code: z.string() }),
   z.strictObject({ status: z.literal('question'), receipt: reference, question: askedSchema, session: z.record(z.string(), z.json()).optional() }),
 ]);
+/**
+ * Ticket 13 (spec §6.4 "novas rodadas preferem sessões compatíveis"): a later round of the same reviewer role continues its previous
+ * session when that JSONL is a regular, non-linked file of an earlier worker profile of THIS boot owner's runtime directory. It is
+ * COPIED (exclusive, 0600) into the new profile, so the earlier file is never written by two processes. Anything else is a recorded
+ * replacement (new session), never a silent reuse.
+ */
+export async function prepareReviewerContinuation(runtimeDirectory: string, profileDirectory: string, from: string):
+  Promise<{ mode: 'continued'; from: string; file: string } | { mode: 'replaced'; from: string; code: string }> {
+  const replaced = (code: string) => ({ mode: 'replaced' as const, from, code });
+  const parts = isAbsolute(from) && resolve(from) === from ? from.slice(runtimeDirectory.length).split('/') : [];
+  if (!from.startsWith(`${runtimeDirectory}/`) || parts.length !== 5 || !/^w-[A-Za-z0-9]{6}$/.test(parts[1]!) || parts[2] !== 'profile' || parts[3] !== 'sessions' ||
+      !/^[A-Za-z0-9._-]{1,200}\.jsonl$/.test(parts[4]!)) return replaced('SESSION_NOT_IN_BOOT');
+  let handle;
+  try { handle = await open(from, constants.O_RDONLY | constants.O_NOFOLLOW); } catch { return replaced('SESSION_UNAVAILABLE'); }
+  try {
+    for (const directory of [join(runtimeDirectory, parts[1]!), join(runtimeDirectory, parts[1]!, 'profile'), join(runtimeDirectory, parts[1]!, 'profile', 'sessions')]) {
+      const info = await lstat(directory);
+      if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid?.() || (info.mode & 0o077)) return replaced('SESSION_UNSAFE');
+    }
+    const info = await handle.stat();
+    if (!info.isFile() || info.uid !== process.getuid?.() || info.size > 8 * 1024 * 1024) return replaced('SESSION_UNSAFE');
+    const data = await handle.readFile();
+    const file = join(profileDirectory, 'sessions', basename(from));
+    await writeFile(file, data, { flag: 'wx', mode: 0o600 });
+    return { mode: 'continued', from, file };
+  } catch { return replaced('SESSION_COPY_FAILED'); } finally { await handle.close(); }
+}
+
 /** Spawn only inside the existing correlated boot owner. Failures after claiming
  * remain uncertain: caller retains its invocation tombstone and must not retry. */
 export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, endpoint: string, root: string, signal: AbortSignal,
@@ -134,7 +163,9 @@ export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, en
   const { continueSession, ...launched } = request;
   // Ticket 11: the EXACT observed preserved session, copied into this worker's own private sessions directory before it exists.
   const continuedSession = continueSession ? await copyPreservedSession(root, sessionsDirectory, continueSession) : undefined;
-  const bootstrap = { ...launched, ...(continuedSession ? { continuedSession } : {}), version: 1, profile: { ...request.profile, directory: profileDirectory }, endpoint, recordsRoot: root };
+  const session = request.review?.continueFrom === undefined ? undefined : await prepareReviewerContinuation(host.runtimeDirectory, profileDirectory, request.review.continueFrom);
+  const bootstrap = { ...launched, ...(continuedSession ? { continuedSession } : {}), ...(request.review ? { review: { ...request.review, ...(session ? { session } : {}) } } : {}), version: 1,
+    profile: { ...request.profile, directory: profileDirectory }, endpoint, recordsRoot: root };
   if (Buffer.byteLength(JSON.stringify(bootstrap)) > 65536 || signal.aborted) throw new Error('WORKER_BOOTSTRAP_INVALID');
   const state = await unitState(host.unit);
   if (state.ActiveState !== 'active' || state.MainPID !== String(process.pid) || state.InvocationID !== host.invocation ||

@@ -4,7 +4,13 @@ import { z } from 'zod';
 import type { ReviewerRole, ReviewOpinion } from '../contracts/index.js';
 
 /** Host-trusted reviewer input (spec §6.4), from Control through the Host launch; never from the model. */
-export type ReviewInput = { round: number; attempt: number; handoffIndexSha256: string; required: readonly string[]; missing: readonly string[] };
+/** Ticket 13: how the reviewer's session of a later round was obtained by the owner launcher (never chosen by the model). */
+export type ReviewerSession = { mode: 'continued'; from: string; file: string } | { mode: 'replaced'; from: string; code: string };
+export type ReviewInput = { round: number; attempt: number; handoffIndexSha256: string; required: readonly string[]; missing: readonly string[];
+  /** Ticket 13 (launch input from Control): the same role's session file of the previous round, to continue when compatible. */
+  continueFrom?: string | undefined;
+  /** Ticket 13 (set by the owner launcher only): the continued copy or the replacement reason. */
+  session?: ReviewerSession | undefined };
 
 const text = (max: number) => z.string().min(1).max(max);
 // A checkout-relative path (as models write them) is read as /workspace/checkout/<path>; `..` is never accepted.
@@ -65,10 +71,10 @@ export function createReadObserver() {
  * missing/invalid verdict is a failure, never zero findings.
  */
 export function composeOpinion(input: { role: ReviewerRole; invocationId: string; review: ReviewInput; status: 'completed' | 'interrupted';
-  finalText: string | null; sessionFile: string | null; model: { providerId: string; modelId: string }; profile: { id: string; modelBudget: string | null };
+  finalText: string | null; sessionFile: string | null; sessionMode?: { mode: 'new' | 'continued' | 'replaced'; from: string | null; code: string | null }; model: { providerId: string; modelId: string }; profile: { id: string; modelBudget: string | null };
   host: ReturnType<ReturnType<typeof createReadObserver>['summary']> }): Omit<ReviewOpinion, 'reference' | 'recordedAt'> {
   const base = { version: 1 as const, role: input.role, round: input.review.round, attempt: input.review.attempt, invocationId: input.invocationId,
-    session: { file: input.sessionFile }, model: input.model, profile: input.profile,
+    session: { file: input.sessionFile, ...(input.sessionMode ?? {}) }, model: input.model, profile: input.profile,
     input: { handoffIndexSha256: input.review.handoffIndexSha256, required: [...input.review.required], missing: [...input.review.missing] },
     finalMessageSha256: input.finalText === null ? null : createHash('sha256').update(input.finalText).digest('hex') };
   const hostChecks = { ...input.host, downgraded: [] as string[] };
@@ -106,7 +112,8 @@ const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 export const opinionSchema = z.strictObject({
   version: z.literal(1), role: z.enum(['standards', 'spec']), round: z.number().int().min(1).max(99), attempt: z.number().int().min(1).max(9),
   invocationId: z.string().max(128), reference: z.strictObject({ workId: z.string().max(128), id: z.uuid() }),
-  session: z.strictObject({ file: z.string().max(4096).nullable() }), model: z.strictObject({ providerId: z.string().max(128), modelId: z.string().max(128) }),
+  session: z.strictObject({ file: z.string().max(4096).nullable(), mode: z.enum(['new', 'continued', 'replaced']).optional(),
+    from: z.string().max(4096).nullable().optional(), code: z.string().regex(/^[A-Z_]{1,64}$/).nullable().optional() }), model: z.strictObject({ providerId: z.string().max(128), modelId: z.string().max(128) }),
   profile: z.strictObject({ id: z.string().max(128), modelBudget: z.string().max(64).nullable() }),
   input: z.strictObject({ handoffIndexSha256: z.string().regex(/^[0-9a-f]{64}$/), required: z.array(z.string().max(1024)).max(32), missing: z.array(z.string().max(64)).max(3) }),
   conclusion: z.enum(['clean', 'findings', 'incomplete', 'failure', 'cancelled']), code: z.string().regex(/^[A-Z_]{1,64}$/).nullable(),

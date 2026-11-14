@@ -69,7 +69,8 @@ export type ReviewLimitation = { code: 'SOURCE_UNREADABLE' | 'TRUNCATION_NOT_OVE
 export type ReviewOpinion = {
   version: 1; role: ReviewerRole; round: number; attempt: number;
   invocationId: string; reference: { workId: string; id: string };
-  session: { file: string | null }; model: { providerId: string; modelId: string }; profile: { id: string; modelBudget: string | null };
+  /** Ticket 13: `continued` = a later round continued the reviewer's earlier session (copy, same boot); `replaced` = a new session, with why. */
+  session: { file: string | null; mode?: 'new' | 'continued' | 'replaced'; from?: string | null; code?: string | null }; model: { providerId: string; modelId: string }; profile: { id: string; modelBudget: string | null };
   input: { handoffIndexSha256: string; required: string[]; missing: string[] };
   conclusion: 'clean' | 'findings' | 'incomplete' | 'failure' | 'cancelled'; code: string | null;
   coverage: { scope: 'incremental' | 'broad'; justification: string; examined: string[] } | null;

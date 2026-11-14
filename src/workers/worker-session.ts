@@ -109,10 +109,23 @@ export async function executeSession(options: Options, invocation: Invocation, r
         getSystemPrompt: () => profile.systemPrompt, getSystemPromptSource: () => undefined,
         getAppendSystemPrompt: () => [], getAppendSystemPromptSources: () => [], extendResources() {}, async reload() {},
       };
-      // Ticket 11: a continuation reopens the owner's copy of the preserved session (same identity/hash, inside THIS profile only);
-      // otherwise a new session. Never a personal or another worker's session directory.
-      const manager = invocation.continuedSession ? await reopenSession(join(profile.directory, 'sessions'), invocation.continuedSession)
-        : SessionManager.create('/workspace', join(profile.directory, 'sessions'));
+      // Ticket 11: a Builder continuation reopens the owner's copy of the preserved session (same identity/hash, inside THIS profile only).
+      // Ticket 13: a later reviewer round continues its earlier session (owner-copied into this profile) when it opens as a /workspace session.
+      // Otherwise a new session. Never a personal or another worker's session directory.
+      const sessions = join(profile.directory, 'sessions');
+      const requested = role !== 'builder' ? invocation.review?.session : undefined;
+      let sessionMode: { mode: 'new' | 'continued' | 'replaced'; from: string | null; code: string | null } = requested
+        ? { mode: requested.mode, from: requested.from, code: requested.mode === 'replaced' ? requested.code : null } : { mode: 'new', from: null, code: null };
+      let manager: SessionManager;
+      if (invocation.continuedSession) manager = await reopenSession(sessions, invocation.continuedSession);
+      else try {
+        if (requested?.mode !== 'continued' || !requested.file.startsWith(`${sessions}/`)) throw new Error('new');
+        manager = SessionManager.open(requested.file, sessions);
+        if (manager.getCwd() !== '/workspace' || manager.getSessionFile() !== requested.file) throw new Error('SESSION_INCOMPATIBLE');
+      } catch (error) {
+        if (requested?.mode === 'continued') sessionMode = { mode: 'replaced', from: requested.from, code: error instanceof Error && error.message === 'SESSION_INCOMPATIBLE' ? 'SESSION_INCOMPATIBLE' : 'SESSION_OPEN_FAILED' };
+        manager = SessionManager.create('/workspace', sessions);
+      }
       let interrupted = false;
       let abortSession = () => {};
       const critical = () => { interrupted = true; abortSession(); };
@@ -215,7 +228,7 @@ export async function executeSession(options: Options, invocation: Invocation, r
         const last = [...session.messages].reverse().find(message => message.role === 'assistant');
         const finalText = last && 'content' in last && Array.isArray(last.content)
           ? last.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n') : null;
-        const composed = composeOpinion({ role, invocationId: invocation.context.invocationId, review: invocation.review, status, finalText, sessionFile,
+        const composed = composeOpinion({ role, invocationId: invocation.context.invocationId, review: invocation.review, status, finalText, sessionFile, sessionMode,
           model: { providerId: profile.providerId, modelId: profile.modelId }, profile: { id: profile.id, modelBudget: invocation.modelBudget ?? null },
           host: observer.summary(invocation.review.required) });
         const { phaseId: _phase, ...context } = invocation.context;

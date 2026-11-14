@@ -36,7 +36,12 @@ const bootstrap = z.strictObject({
       .refine(value => value.first + value.max - 1 <= 99).optional() }).optional(),
   review: z.strictObject({ round: z.number().int().min(1).max(99), attempt: z.number().int().min(1).max(9), handoffIndexSha256: z.string().regex(/^[0-9a-f]{64}$/),
     required: z.array(z.string().max(1024).regex(/^\/(workspace|artifacts)\//)).max(32).readonly(),
-    missing: z.array(z.enum(['handoff-index', 'spec-version', 'instructions-version'])).max(3).readonly() }).optional(),
+    missing: z.array(z.enum(['handoff-index', 'spec-version', 'instructions-version'])).max(3).readonly(),
+    // Ticket 13: Control names the previous round's session of the same role; only the owner launcher turns it into `session`.
+    continueFrom: z.string().max(4096).regex(/^\//).optional(),
+    session: z.discriminatedUnion('mode', [
+      z.strictObject({ mode: z.literal('continued'), from: z.string().max(4096), file: z.string().max(4096).regex(/^\//) }),
+      z.strictObject({ mode: z.literal('replaced'), from: z.string().max(4096), code: z.string().regex(/^[A-Z_]{1,64}$/) })]).optional() }).optional(),
   // Ticket 11, Builder only. Launch: the Host-observed preserved session to continue (copied by the owner before the worker exists).
   continueSession: sessionRefSchema.pick({ ref: true, sha256: true, sessionId: true, bytes: true }).strict().optional(),
   // Worker bootstrap: that owner copy inside this worker's own private sessions directory.
@@ -66,5 +71,7 @@ function rolePolicies(input: { context: { role: string }; copyOutput?: boolean |
     !(input.context.role !== 'builder' && input.copyOutput === true);
 }
 export const workerBootstrapSchema = bootstrap.refine(rolePolicies, 'WORKER_POLICY_ROLE_DENIED');
-export const workerLaunchSchema = bootstrap.pick({ context: true, knownSecrets: true, prompt: true, imageSourceMaxBytes: true, editSourceMaxBytes: true, copyOutput: true, selectedOutputCopies: true, skillPack: true, skillPackFiles: true, modelBudget: true, deadlineMs: true, handoff: true, review: true, continueSession: true }).extend({ profile: launchProfile }).strict().refine(rolePolicies, 'WORKER_POLICY_ROLE_DENIED');
+export const workerLaunchSchema =  bootstrap.pick({ context: true, knownSecrets: true, prompt: true, imageSourceMaxBytes: true, editSourceMaxBytes: true, copyOutput: true, selectedOutputCopies: true, skillPack: true, skillPackFiles: true, modelBudget: true, deadlineMs: true, handoff: true, review: true, continueSession: true }).extend({ profile: launchProfile }).strict().refine(rolePolicies, 'WORKER_POLICY_ROLE_DENIED')
+  // The continued session is resolved by the owner launcher from `continueFrom`, never supplied by the launch request.
+  .refine(input => input.review?.session === undefined, 'WORKER_POLICY_ROLE_DENIED');
 export type WorkerLaunch = z.infer<typeof workerLaunchSchema>;
