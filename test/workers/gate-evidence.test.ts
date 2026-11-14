@@ -93,6 +93,33 @@ test('AC2/AC3 LOW review fix 6: ledger exhaustion makes every declared run gate 
   assert.deepEqual([resolved.gates[0]!.outcome, resolved.gates[0]!.current, resolved.gates[0]!.code], ['unverified', false, 'GATE_LEDGER_EXHAUSTED']);
 });
 
+test('AC2/AC3 LOW review fix 6: interleaved tool batches keep each Bash result bound to its call id; start order never decides validity', () => {
+  const ledger = createToolLedger();
+  // write/edit may overlap a Bash (only Bash-to-Bash order is exact): begin order differs from completion order here.
+  ledger.begin('bash', 'first');
+  ledger.begin('write', 'w1');
+  ledger.begin('bash', 'second');
+  ledger.bash('second', { command: 'npm test', cwd: CWD, exitCode: 0, output, code: null, contentBeforeSha: capture, contentAfterSha: capture });
+  ledger.bash('first', { command: 'npm run lint', cwd: CWD, exitCode: 0, output, code: null, contentBeforeSha: capture, contentAfterSha: capture });
+  const resolved = ledger.resolve(declarationsSchema.parse({ gates: [gate('test', 'npm test'), gate('lint', 'npm run lint')] }), { captureContentSha: capture });
+  assert.deepEqual(resolved.gates.map(item => [item.id, item.outcome, item.sequence, item.current]),
+    [['test', 'passed', 3, true], ['lint', 'passed', 1, true]], 'each call id keeps its own result/sequence and both are current by content');
+});
+
+test('AC2/AC3 LOW review fix 6: the real 4096-call bound never keeps a gate silently current after exhaustion', () => {
+  const ledger = createToolLedger();
+  ran(ledger, 'gate', 'npm test'); // call 1: real evidence on the captured content
+  for (let index = 1; index < 4096; index++) ledger.begin('read', `r${index}`);
+  assert.equal(ledger.exhausted(), false, 'exactly at the bound is still complete');
+  let resolved = ledger.resolve(declarationsSchema.parse({ gates: [gate('test', 'npm test')] }), { captureContentSha: capture });
+  assert.deepEqual([resolved.gates[0]!.outcome, resolved.gates[0]!.current, resolved.gates[0]!.code], ['passed', true, null], 'the recorded gate is evidence while the ledger is complete');
+  ledger.begin('bash', 'overflow'); // call 4097: dropped, so the ledger is explicitly exhausted
+  assert.equal(ledger.exhausted(), true);
+  resolved = ledger.resolve(declarationsSchema.parse({ gates: [gate('test', 'npm test')] }), { captureContentSha: capture });
+  assert.deepEqual([resolved.gates[0]!.outcome, resolved.gates[0]!.current, resolved.gates[0]!.code], ['unverified', false, 'GATE_LEDGER_EXHAUSTED'],
+    'past the bound an old result is never silently presented as current evidence');
+});
+
 test('AC1: treatments record fixed or not adopted with justification, optional evidence and a concrete authorization reference', () => {
   const ledger = createToolLedger();
   const parsed = declarationsSchema.parse({ treatments: [

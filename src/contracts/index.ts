@@ -105,8 +105,9 @@ export type FindingTreatment = { round: number; role: ReviewerRole; findingId: s
  * One documented gate as evidenced by the Builder HOST from its own protected Bash result (exit code + protected output reference), never
  * from output or status declared by the model. `declared` is what the Builder said; `outcome` is what the Host could establish:
  * `passed`/`failed` from the real exit code, `unknown` when the result was lost (effects/capture unknown), `unverified` when no matching
- * protected result exists, `not-run`/`waived` as declared. `current`: no Builder write/edit/other Bash ran after it before the capture.
- * `requiredCheck` names a GitHub required check the gate corresponds to: a waiver never satisfies it.
+ * protected result exists, `not-run`/`waived` as declared. `current`: the declared cwd is the Host's real Bash cwd, both content snapshots
+ * exist, the command itself changed nothing (before === after) and the captured proposal still has exactly that content (after === capture);
+ * never decided by tool names/start order. `requiredCheck` names a GitHub required check the gate corresponds to: a waiver never satisfies it.
  */
 export type GateEvidence = { id: string; source: string; command: string; cwd: string; requiredCheck: string | null;
   declared: 'run' | 'not-run' | 'waived'; outcome: 'passed' | 'failed' | 'unknown' | 'unverified' | 'not-run' | 'waived'; code: string | null;

@@ -161,7 +161,12 @@ export type ExecutionView = {
   charge?: ExecutionCharge;
   timing?: ExecutionTiming;
 };
-/** Ticket 13: end-of-Execution verification (spec §6.4/§9.3). `verified` only with no reason; every reason is independent and explicit. */
+/**
+ * Ticket 13: end-of-Execution verification (spec §6.4/§9.3). `verified` only with no reason; every reason is independent and explicit.
+ * It is committed BEFORE the Execution end is recorded, but it does NOT gate completion: an Execution can end `completed` while its
+ * verification is `not-verified`. Publication/GitHub readiness (tickets 14/15) MUST consume this field and must never treat a
+ * `completed` Execution as success without it.
+ */
 export type VerificationView = { at: string; status: 'verified' | 'not-verified'; reasons: string[];
   /** The review round whose two opinions apply to the final content, and how that applicability is demonstrated. */
   reviewedRound: number | null; finalRound: number | null; contentSha256: string | null;
