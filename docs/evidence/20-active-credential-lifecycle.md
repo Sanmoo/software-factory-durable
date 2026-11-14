@@ -187,3 +187,13 @@ limite documentado de **90 s** (teste inalterado): `timeout 90` → **18/18 pass
 0 cancelled**. Novos nesta rodada: `control/credential-hold` (1), `credential-lifecycle` +7 (review 1, 1/6, 2 varredura, 2 determinístico,
 4, 5, 7), `activate-credential` +1, `owner-credential` +1, `sandbox-checkout` +1; ampliados `github-builder-credentials` e os testes AC4.
 
+
+## Ensaio real autorizado — 2026-11-14 (supervisor)
+
+HEAD `0a346aa`, namespace `y5/q20-credentials-v1`. Pré-condições como no 09: a #3 é a única com `ready-for-agent` (label da #1 removida temporariamente) e há cópia exclusiva da chave. Registros: [run](20-real-credential-run-2026-11-14.json), [inspect](20-real-credential-inspect-2026-11-14.json).
+
+- 1 VM (assets34), um Builder real conduzido pelo provedor local roteirizado (sem modelo), 18:04–18:08 UTC.
+- 3 emissões reais `builder-start` (só leitura) e **2 renovações entregues** durante a atividade. O comando em execução manteve o valor antigo e o seguinte recebeu o renovado; o último comando recebeu o último grant entregue; as 5 leituras reais (`gh api`, `git ls-remote`) funcionaram.
+- Fim: lifecycle `withdrawn / ended` e **3 auto-revogações** `DELETE /installation/token`. Na pós-checagem, o GitHub rejeita os 3 tokens (`already-invalid`). Execution `ended`, Slot liberado após cessação confirmada.
+- `verdict.passed: true` (9/9 checks).
+- Varredura de segredos: 0 em storage, observações e Records. As 6 ocorrências no runtime do boot (`r/<boot>/mitm-ca/*.key`) são as chaves privadas da CA de mediação TLS por boot, que o desenho do 06 mantém de propósito no diretório 0700 do boot. Não são tokens. Nenhum `ghs_` em parte alguma.
