@@ -4,7 +4,7 @@
 
 **Blocked by:** [02: Operar um controlador exclusivo com pausa durável](02-exclusive-controller-and-durable-pause.md); [03: Preparar, iniciar e parar um ambiente persistente por Trabalho](03-persistent-work-environment.md)
 
-**Status:** needs-info
+**Status:** resolved
 
 ## Acceptance criteria
 

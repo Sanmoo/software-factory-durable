@@ -4,7 +4,7 @@
 
 **Blocked by:** [03: Preparar, iniciar e parar um ambiente persistente por Trabalho](03-persistent-work-environment.md)
 
-**Status:** needs-info
+**Status:** resolved
 
 ## Acceptance criteria
 
