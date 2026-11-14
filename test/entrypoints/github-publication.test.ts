@@ -57,7 +57,8 @@ test('AC2/AC6: discovery reports the own branch tip and each correlated pull req
     [[4, head, 'main', true, ['closing-reference', 'known-branch'], 'Bot']]);
   assert.ok(issue3.candidates[0]!.body!.startsWith(marker));
   const reads = (await world.trace()).filter(entry => entry.method === 'POST' && entry.endpoint.includes('access_tokens')).map(entry => entry.permissions);
-  assert.ok(reads.some(item => JSON.stringify(item) === JSON.stringify({ metadata: 'read', contents: 'read', pull_requests: 'read' })), 'refs read with Contents R only');
+  assert.ok(reads.some(item => JSON.stringify(item) === JSON.stringify({ metadata: 'read', contents: 'read', pull_requests: 'read', administration: 'read' })),
+    'refs/rules read with Contents R and Administration R (rulesets), never a write');
   assert.ok(reads.every(item => !Object.values(item ?? {}).includes('write')), 'discovery never holds a write grant');
 });
 
@@ -75,4 +76,42 @@ test('AC6: an absent own branch is proven only by a complete read; a failed ref 
   assert.doesNotMatch(JSON.stringify(unknown), /synthetic-installation-secret/);
   const admission = await repository.findPublication({ repo: worldScope, issueNumbers: [3], knownBranches: [] });
   assert.ok(admission.kind === 'observed' && Object.keys(admission.branches).length === 0, 'admission reads no refs');
+});
+
+test('review MED 3: the Factory App bot identity is pinned from GET /app (slug) and the bot user read with an installation token', async t => {
+  const world = await githubWorld(t, { issues: [issue(3)], pulls: [] });
+  const github = createGitHubAccess({ root: world.root, executable: world.executable, appId: 1, privateKeyFile: 'credentials/app.pem' });
+  assert.deepEqual(await github.appIdentity(project), { login: 'factory-app[bot]', id: 41898282 });
+  const reads = (await world.trace()).filter(entry => entry.endpoint.startsWith('/users/'));
+  assert.deepEqual(reads.map(entry => [entry.endpoint, entry.credential]), [['/users/factory-app%5Bbot%5D', 'installation']]);
+  const missing = await githubWorld(t, { issues: [issue(3)], pulls: [], appSlug: 'renamed' });
+  const other = createGitHubAccess({ root: missing.root, executable: missing.executable, appId: 1, privateKeyFile: 'credentials/app.pem' });
+  await missing.update(value => { value.appSlug = 'renamed'; });
+  assert.ok((await other.appIdentity(project)) !== null, 'the slug of THIS App is used');
+});
+
+test('review MED 4: discovery lists every branch and tag tip and reports whether the base requires PRs without App bypass', async t => {
+  const world = await githubWorld(t, { issues: [issue(3)], pulls: [], refs: { [branch]: head }, tags: { v1: 'e'.repeat(40) },
+    branchRules: { main: [{ type: 'pull_request', ruleset_id: 7 }, { type: 'deletion', ruleset_id: 7 }] }, rulesets: { 7: { enforcement: 'active', current_user_can_bypass: 'never' } } });
+  const github = createGitHubAccess({ root: world.root, executable: world.executable, appId: 1, privateKeyFile: 'credentials/app.pem' });
+  const repository = createCodeRepository({ github });
+  const observed = await repository.findPublication({ repo: worldScope, issueNumbers: [3], knownBranches: [branch], refs: true, base: 'main' });
+  assert.ok(observed.kind === 'observed');
+  if (observed.kind !== 'observed') return;
+  assert.deepEqual(observed.refs, { state: 'complete', refs: { 'refs/heads/main': 'b'.repeat(40), [`refs/heads/${branch}`]: head, 'refs/tags/v1': 'e'.repeat(40) } });
+  assert.deepEqual(observed.baseProtection, { state: 'pull-request-required', sources: ['ruleset:7'] });
+  // A ruleset the App can bypass, or none at all: not required. Classic required reviews without App bypass count.
+  await world.update(value => { value.rulesets = { 7: { enforcement: 'active', current_user_can_bypass: 'always' } }; });
+  assert.deepEqual((await repository.findPublication({ repo: worldScope, issueNumbers: [3], knownBranches: [], base: 'main' }) as { baseProtection?: unknown }).baseProtection,
+    { state: 'not-required', reason: 'NO_PULL_REQUEST_RULE_WITHOUT_APP_BYPASS' });
+  await world.update(value => { value.branchRules = {}; value.classicProtection = { main: { required_pull_request_reviews: { required_approving_review_count: 1 } } }; });
+  assert.deepEqual((await repository.findPublication({ repo: worldScope, issueNumbers: [3], knownBranches: [], base: 'main' }) as { baseProtection?: unknown }).baseProtection,
+    { state: 'pull-request-required', sources: ['classic'] });
+  await world.update(value => { value.classicProtection = { main: { required_pull_request_reviews: { bypass_pull_request_allowances: { apps: [{ slug: 'factory-app' }] } } } }; });
+  assert.equal(((await repository.findPublication({ repo: worldScope, issueNumbers: [3], knownBranches: [], base: 'main' }) as { baseProtection?: { state: string } }).baseProtection)!.state, 'not-required');
+  await world.update(value => { value.faults = { '/rules/branches/': { status: 502 } }; });
+  assert.equal(((await repository.findPublication({ repo: worldScope, issueNumbers: [3], knownBranches: [], base: 'main' }) as { baseProtection?: { state: string } }).baseProtection)!.state, 'unknown');
+  await world.update(value => { value.faults = { 'matching-refs/tags': { status: 502 } }; });
+  assert.equal(((await repository.findPublication({ repo: worldScope, issueNumbers: [3], knownBranches: [], refs: true }) as { refs?: { state: string } }).refs)!.state, 'unknown',
+    'a failed listing is never a partial snapshot');
 });

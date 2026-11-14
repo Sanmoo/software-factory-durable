@@ -27,7 +27,7 @@ const permissions = {
   // draft PR directly with Git/gh in the guest. Issued only after Control's verification and discovery; never Workflows/other repository.
   'builder-publish': { metadata: 'read', contents: 'write', pull_requests: 'write', issues: 'read' },
   // Discovery of the own publication (ticket 14): remote refs of the own branch (Contents R) + pull requests (R).
-  'publication-read': { metadata: 'read', contents: 'read', pull_requests: 'read' },
+  'publication-read': { metadata: 'read', contents: 'read', pull_requests: 'read', administration: 'read' },
   // Host fetch into the Factory-exclusive bare cache (spec §8: clone/fetch uses Contents R).
   'repository-fetch': { metadata: 'read', contents: 'read' },
   // Controller publication of a durable Question on its Ticket issue (spec §5.5): one POST of an issue comment, nothing else.
@@ -79,6 +79,8 @@ export interface GitHubAccess {
   revoke(token: string): Promise<RevocationResult>;
   /** The configured App identity: comments it performed carry `performed_via_github_app.id === appId` (question discovery). */
   readonly appId: number;
+  /** Ticket 14: the App's bot user (`<slug>[bot]` from GET /app, its user id read with an installation token of `scope`); null when unknown. */
+  appIdentity(scope: GitHubScope): Promise<{ login: string; id: number } | null>;
   /**
    * The ONLY write: one POST of an issue comment under a fresh reduced `question-publish` grant (issues:write, this repository only).
    * Never retried. `unknown` (transport loss, 5xx, unexpected success payload) means the comment may exist: discover it before posting again.
@@ -108,6 +110,9 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
   };
   // In-memory only: reduced grants per repository/purpose, unknown-issuance latches, and rate-limit windows per installation.
   const grants = new Map<string, Grant>();
+  // The App slug observed by GET /app (identity check of every issuance): the only non-repository endpoint a session may read is its bot user.
+  let appSlug: string | undefined;
+  const botEndpoint = (slug: string) => `/users/${encodeURIComponent(`${slug}[bot]`)}`;
   const unknownIssuance = new Set<string>();
   const rateWindows = new Map<number, number>();
   const rateLimit = (scope: GitHubScope, waitSeconds: number) => {
@@ -283,8 +288,9 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
         throw error instanceof AccessFailure ? error : new AccessFailure('GITHUB_TRANSPORT_UNAVAILABLE');
       }
     }
-    const app = z.object({ id: z.literal(options.appId) }).safeParse((await appRequest('identity')).body);
+    const app = z.object({ id: z.literal(options.appId), slug: z.string().regex(/^[a-z0-9][a-z0-9-]{0,99}$/).optional() }).safeParse((await appRequest('identity')).body);
     if (!app.success) throw new AccessFailure('APP_IDENTITY_MISMATCH');
+    if (app.data.slug) appSlug = app.data.slug;
     const installation = z.object({ id: z.literal(scope.installationId), app_id: z.literal(options.appId), account: z.object({ login: z.string() }),
       suspended_at: z.null(), permissions: permissionSchema }).safeParse((await appRequest('installation')).body);
     const [owner, name] = scope.repository.split('/');
@@ -313,7 +319,7 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
 
   function session(scope: GitHubScope, directory: string, grant: Grant): GitHubSession {
     const allowed = (endpoint: string) => endpoint === `/repos/${scope.repository}` || endpoint.startsWith(`/repos/${scope.repository}/`) ||
-      endpoint.startsWith(`/repositories/${grant.repositoryId}/`);
+      endpoint.startsWith(`/repositories/${grant.repositoryId}/`) || (appSlug !== undefined && endpoint === botEndpoint(appSlug));
     return { repositoryId: grant.repositoryId, async get(endpoint) {
       if (!allowed(endpoint)) throw new AccessFailure('CREDENTIAL_SCOPE_MISMATCH');
       return (await gh(scope, directory, grant.token, endpoint, grant.repositoryId)).body;
@@ -367,7 +373,15 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
     } catch { return unknown; } finally { if (directory) await rm(directory, { recursive: true, force: true }); }
   }
 
-  return { revoke: revokeToken, appId: options.appId, async comment(scope, issueNumber, body) {
+  return { revoke: revokeToken, appId: options.appId, async appIdentity(scope) {
+    const read = await this.read(scope, 'publication-read', async session => {
+      if (!appSlug) throw new InvalidGitHubObservation();
+      const user = z.object({ login: z.literal(`${appSlug}[bot]`), id: z.number().int().positive().safe(), type: z.literal('Bot') }).safeParse(await session.get(botEndpoint(appSlug)));
+      if (!user.success) throw new InvalidGitHubObservation();
+      return { login: user.data.login, id: user.data.id };
+    });
+    return read.ok ? read.value : null;
+  }, async comment(scope, issueNumber, body) {
     let directory: string | undefined;
     const observedAt = new Date().toISOString();
     const sanitized = <R>(value: R): R => JSON.parse(filter(JSON.stringify(value))) as R;

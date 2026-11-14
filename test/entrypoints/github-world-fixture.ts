@@ -49,6 +49,13 @@ export type World = {
   refs?: Record<string, string>;
   /** POST /pulls: answer with this status; `created` decides whether the pull request was created anyway (ambiguous 5xx). */
   pullFault?: { status: number; created: boolean };
+  /** Ticket 14: tags of acme/project (name → sha) served at /git/matching-refs/tags. */
+  tags?: Record<string, string>;
+  /** Ticket 14: rules applying to a branch (/rules/branches/<b>), rulesets by id (/rulesets/<id>) and classic protection (/branches/<b>/protection; absent = 404). */
+  branchRules?: Record<string, { type: string; ruleset_id?: number }[]>; rulesets?: Record<string, { enforcement: string; current_user_can_bypass?: string }>;
+  classicProtection?: Record<string, object>;
+  /** Ticket 14: the App slug served by GET /app (default factory-app) and whether its bot user exists. */
+  appSlug?: string;
   pageSize?: number;
   /** endpoint substring → synthetic failure. */
   faults?: Record<string, { status: number; headers?: Record<string, string>; /** Raw (possibly non-JSON) body. */ body?: string }>;
@@ -155,7 +162,12 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
   }
   const installation = Number(/^\\/app\\/installations\\/(\\d+)/.exec(endpoint)?.[1] ?? NaN);
   const owned = repositories.filter(r => r.installation === installation);
-  if (endpoint === '/app' && method === 'GET') body = { id: 1 };
+  if (endpoint === '/app' && method === 'GET') body = { id: 1, slug: world.appSlug ?? 'factory-app' };
+  else if (!app && method === 'GET' && /^\\/users\\/[^/]+$/.test(url.pathname)) {
+    const login = decodeURIComponent(url.pathname.slice(7));
+    if (login === (world.appSlug ?? 'factory-app') + '[bot]') body = { login, id: 41898282, type: 'Bot' };
+    else { status = 404; body = { message: 'Not Found' }; }
+  }
   else if (/^\\/app\\/installations\\/\\d+$/.test(endpoint) && method === 'GET' && owned.length) body = { id: installation, app_id: 1, account: { login: owned[0].name.split('/')[0] }, suspended_at: null, permissions: ceiling };
   else if (/^\\/app\\/installations\\/\\d+\\/access_tokens$/.test(endpoint) && method === 'POST' && owned.length) {
   let input = ''; for await (const data of process.stdin) input += data;
@@ -233,10 +245,20 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
     else { status = 201; body = { ...created, html_url: 'https://github.com/' + repo.name + '/pull/' + number }; }
   }
   } else if (method !== 'GET') process.exit(16);
-  else if (/^\\/git\\/matching-refs\\/heads\\/.+$/.test(rest)) {
-  const prefix = decodeURIComponent(url.pathname.split('/git/matching-refs/heads/')[1]);
-  body = page(Object.entries(world.refs ?? {}).filter(([name]) => name.startsWith(prefix)).sort()
-    .map(([name, sha]) => ({ ref: 'refs/heads/' + name, node_id: 'REF_' + name, object: { sha, type: 'commit' } })));
+  else if (/^\\/git\\/matching-refs\\/(heads|tags)(\\/.*)?$/.test(rest)) {
+  const [kind, ...parts] = url.pathname.split('/git/matching-refs/')[1].split('/');
+  const prefix = decodeURIComponent(parts.join('/'));
+  const source = kind === 'heads' ? { main: 'b'.repeat(40), ...(world.refs ?? {}) } : (world.tags ?? {});
+  body = page(Object.entries(source).filter(([name]) => name.startsWith(prefix)).sort()
+    .map(([name, sha]) => ({ ref: 'refs/' + kind + '/' + name, node_id: 'REF_' + name, object: { sha, type: 'commit' } })));
+  } else if (/^\\/rules\\/branches\\/.+$/.test(rest)) {
+  body = page((world.branchRules ?? {})[decodeURIComponent(url.pathname.split('/rules/branches/')[1])] ?? []);
+  } else if (/^\\/rulesets\\/\\d+$/.test(rest)) {
+  const found = (world.rulesets ?? {})[rest.split('/')[2]];
+  if (found) body = { id: Number(rest.split('/')[2]), ...found }; else { status = 404; body = { message: 'Not Found' }; }
+  } else if (/^\\/branches\\/.+\\/protection$/.test(rest)) {
+  const found = (world.classicProtection ?? {})[decodeURIComponent(url.pathname.split('/branches/')[1].replace(/\\/protection$/, ''))];
+  if (found) body = found; else { status = 404; body = { message: 'Branch not protected' }; }
   }
   else if (/^\\/issues\\/\\d+\\/comments$/.test(rest)) {
   const number = Number(rest.split('/')[2]);

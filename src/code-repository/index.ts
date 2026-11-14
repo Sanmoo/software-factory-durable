@@ -4,7 +4,15 @@ import { InvalidGitHubObservation, type GitHubAccess } from '../platform/github/
 
 /** Known repository/branch identities and the Ticket numbers they serve; the caller decides ownership, never this adapter.
  * Several Tickets of one repository share ONE pull request listing per call (bounded polling cost). */
-export type PublicationCorrelation = { repo: GitHubScope; issueNumbers: number[]; knownBranches: string[] };
+export type PublicationCorrelation = { repo: GitHubScope; issueNumbers: number[]; knownBranches: string[];
+  /** Ticket 14: also report every branch/tag tip of the repository (complete listings) and whether `base` requires pull requests with no
+   * bypass for the reading App (rulesets / classic protection). Refs and rules are facts; Control decides. */
+  refs?: boolean; base?: string };
+/** Repository-wide branch/tag tips (`refs/heads/x`, `refs/tags/y`) from complete listings; a failed or capped read is unknown. */
+export type RefsListing = { state: 'complete'; refs: Record<string, string> } | { state: 'unknown'; code: string };
+/** `pull-request-required`: an active pull_request rule the App cannot bypass (ruleset `current_user_can_bypass: never`) or classic
+ * required reviews without App bypass allowances. Never a certification of the team's barriers (spec §2.1/§8). */
+export type BaseProtection = { state: 'pull-request-required'; sources: string[] } | { state: 'not-required'; reason: string } | { state: 'unknown'; code: string };
 export type PullRequestCandidate = {
   pullRequestId: number; nodeId: string; number: number; url: string; state: 'open' | 'closed'; merged: boolean;
   headRef: string; headRepositoryId: number | null; author: { id: number; login: string; type: string };
@@ -21,7 +29,7 @@ export type IssuePublication = { completeness: 'complete'; candidates: PullReque
 export type PublicationObservation = { kind: 'observed'; source: 'github-rest'; observedAt: string; repository: string; repositoryId: number;
   issues: Record<string, IssuePublication>; limitations: string[];
   /** One entry per known branch (empty when none was given, e.g. admission). */
-  branches: Record<string, BranchRef> } |
+  branches: Record<string, BranchRef>; refs?: RefsListing; baseProtection?: BaseProtection } |
   { kind: 'unavailable'; source: 'github-rest'; observedAt: string; repository: string; completeness: 'incomplete'; code: string; waitSeconds?: number; nextStep: string };
 
 export interface CodeRepository {
@@ -86,6 +94,45 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
     }
     return { completeness: 'complete', candidates };
   }
+  /** Every branch and tag tip (bounded: more than 10 pages per kind is unknown, never a truncated snapshot). */
+  async function refsListing(repo: GitHubScope): Promise<RefsListing> {
+    const item = z.object({ ref: z.string().regex(/^refs\/(heads|tags)\//), object: z.object({ sha: z.string().regex(/^[0-9a-f]{40}$/) }) });
+    const read = await options.github.read(repo, 'publication-read', async session => {
+      const refs: Record<string, string> = {};
+      for (const kind of ['heads', 'tags']) {
+        const parsed = z.array(item).safeParse(await session.list(`/repos/${repo.repository}/git/matching-refs/${kind}`, { maxPages: 10 }));
+        if (!parsed.success) throw new InvalidGitHubObservation();
+        for (const entry of parsed.data) refs[entry.ref] = entry.object.sha;
+      }
+      return refs;
+    });
+    return read.ok ? { state: 'complete', refs: read.value } : { state: 'unknown', code: read.code };
+  }
+  /** Whether `base` requires a pull request for every update with no bypass for THIS App (the reading installation token is the App). */
+  async function protection(repo: GitHubScope, base: string): Promise<BaseProtection> {
+    if (!/^(?!-)(?!.*\.\.)[A-Za-z0-9._/-]{1,200}$/.test(base)) return { state: 'unknown', code: 'INVALID_BRANCH' };
+    const read = await options.github.read(repo, 'publication-read', async session => {
+      const path = base.split('/').map(encodeURIComponent).join('/');
+      const rules = z.array(z.object({ type: z.string(), ruleset_id: z.number().int().positive().optional() })).safeParse(await session.list(`/repos/${repo.repository}/rules/branches/${path}`));
+      if (!rules.success) throw new InvalidGitHubObservation();
+      const sources: string[] = [];
+      for (const id of [...new Set(rules.data.filter(rule => rule.type === 'pull_request' && rule.ruleset_id).map(rule => rule.ruleset_id!))].slice(0, 10)) {
+        const ruleset = z.object({ id: z.literal(id), enforcement: z.string(), current_user_can_bypass: z.string().optional() }).safeParse(await session.get(`/repos/${repo.repository}/rulesets/${id}`));
+        if (!ruleset.success) throw new InvalidGitHubObservation();
+        if (ruleset.data.enforcement === 'active' && ruleset.data.current_user_can_bypass === 'never') sources.push(`ruleset:${id}`);
+      }
+      let classic: unknown = null;
+      try { classic = await session.get(`/repos/${repo.repository}/branches/${path}/protection`); }
+      catch (error) { if (!(error instanceof Error && error.message === 'GITHUB_NOT_FOUND_OR_HIDDEN')) throw error; }
+      const parsed = z.object({ required_pull_request_reviews: z.object({ bypass_pull_request_allowances: z.object({ apps: z.array(z.unknown()) }).optional() }).optional() }).safeParse(classic ?? {});
+      if (!parsed.success) throw new InvalidGitHubObservation();
+      const reviews = parsed.data.required_pull_request_reviews;
+      if (reviews && !(reviews.bypass_pull_request_allowances?.apps.length)) sources.push('classic');
+      return sources;
+    });
+    if (!read.ok) return { state: 'unknown', code: read.code };
+    return read.value.length ? { state: 'pull-request-required', sources: read.value } : { state: 'not-required', reason: 'NO_PULL_REQUEST_RULE_WITHOUT_APP_BYPASS' };
+  }
   /** Remote tip of one own branch: a complete matching-refs listing filtered to the exact ref (absence only from a complete listing). */
   async function branchRef(repo: GitHubScope, branch: string, repositoryId: number): Promise<BranchRef> {
     if (!/^(?!-)(?!.*\.\.)(?!.*\/\/)(?!.*@\{)[A-Za-z0-9._/-]{1,200}(?<![./])$/.test(branch)) return { state: 'unknown', code: 'INVALID_BRANCH', nextStep: 'Branch name rejected locally; nothing was read.' };
@@ -129,7 +176,10 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
       for (const issueNumber of numbers) issues[String(issueNumber)] = await associate(repo, issueNumber, pulls.value, pulls.repositoryId, correlation.knownBranches);
       const branches: Record<string, BranchRef> = {};
       for (const branch of [...new Set(correlation.knownBranches)]) branches[branch] = await branchRef(repo, branch, pulls.repositoryId);
-      return { kind: 'observed', source: 'github-rest', observedAt: pulls.observedAt, repository: repo.repository, repositoryId: pulls.repositoryId, issues, branches, limitations: [
+      const refs = correlation.refs ? await refsListing(repo) : undefined;
+      const baseProtection = correlation.base !== undefined ? await protection(repo, correlation.base) : undefined;
+      return { kind: 'observed', source: 'github-rest', observedAt: pulls.observedAt, repository: repo.repository, repositoryId: pulls.repositoryId, issues, branches,
+        ...(refs ? { refs } : {}), ...(baseProtection ? { baseProtection } : {}), limitations: [
         ...(correlation.knownBranches.length ? ['Own branch tips are read from the remote refs (Contents read) separately from the pull request listing.'] : []),
         'Association = GitHub closing keywords in pull request title/body, native issue-timeline cross-references and Development links (connected/disconnected) for pull requests of this repository, and known own branches.',
         'Pull requests in other repositories that reference the Ticket are not treated as associated (they cannot be own publications of this repository).',
