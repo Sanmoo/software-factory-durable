@@ -135,10 +135,17 @@ async function child(step: Step) {
     if (/gh[sopu]_[A-Za-z0-9]{20,}|PRIVATE KEY/.test(line)) throw new Error('OBSERVATION_SECRET_SHAPE');
     appendFileSync(events, `${line}\n`, { mode: 0o600 });
   };
+  // Only the orchestrator launches a step: its intent tombstone must exist, and a step runs once (exclusive start marker).
+  if (!(await fs.access(`${observations}/${step}-intent.json`).then(() => true, () => false))) throw new Error('STEP_INTENT_REQUIRED');
+  const marker = await fs.open(`${observations}/${step}-child-started.json`, 'wx', 0o600);
+  try { await marker.writeFile(JSON.stringify({ step, pid: process.pid, at: new Date().toISOString() })); await marker.sync(); } finally { await marker.close(); }
   const { verifyControllerLock } = await import('../../src/platform/host/index.js');
   await verifyControllerLock(`${observations}/control.lock`);
   const preexisting = (JSON.parse(await fs.readFile(`${observations}/preflight-result.json`, 'utf8')) as { preexisting: string[] }).preexisting;
-  const { createSandbox, inventoryRuntime } = await import('../../src/sandbox/index.js');
+  const { createSandbox, inventoryRuntime, reconcileInterruptedCaches } = await import('../../src/sandbox/index.js');
+  // Same boot path as the production owner: repair-free cache reconciliation, then the listed inventory.
+  const caches = await reconcileInterruptedCaches(root);
+  log({ call: 'cache-reconciliation', caches });
   const inventory = ownInventory(await inventoryRuntime(root), preexisting, new Date().toISOString());
   log({ call: 'inventory', inventory });
   const { github, tracker, codeRepository, createBuilderCredentials, createRepositoryFetchCredentials } = await compose();
@@ -177,7 +184,8 @@ async function child(step: Step) {
     workers: {
       async activate(invocation, delivery, handlers) {
         log({ call: 'activate', context: invocation.context, credentialDelivered: delivery?.credential !== undefined });
-        if (++activated !== 1) throw new Error('RECIPE_ONE_SHOT_GUARD');
+        // A refusal known to precede any launch (proven non-start for the Control), never an uncertain start.
+        if (++activated !== 1) throw new Error('WORKER_LAUNCH_INVALID');
         const handle = await workers.activate(invocation, delivery, handlers);
         log({ call: 'activation-requested', worker: handle.worker });
         if (step === 'c-spawn') kill('spawn');
@@ -219,7 +227,9 @@ async function runChild(step: Step, cut: (output: string, killChild: () => void)
   const { save } = await io();
   await save(`${step}-intent`, { revision, step, at: new Date().toISOString() });
   const owner = spawn('flock', ['--exclusive', '--nonblock', '--no-fork', '--conflict-exit-code', '73', `${observations}/control.lock`, node,
-    fileURLToPath(import.meta.url), 'child', step], { stdio: ['ignore', 'pipe', 'inherit'], env: { PATH: process.env.PATH ?? '', LANG: 'C', LC_ALL: 'C', NODE_DISABLE_COMPILE_CACHE: '1' } });
+    fileURLToPath(import.meta.url), 'child', step], { stdio: ['ignore', 'pipe', 'inherit'], env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C', NODE_DISABLE_COMPILE_CACHE: '1',
+      // systemd --user of THIS account (Sandbox start/stop/observe), derived from the uid like the other recipes; no other inherited variable.
+      HOME: process.env.HOME ?? '', XDG_RUNTIME_DIR: `/run/user/${process.getuid?.()}`, DBUS_SESSION_BUS_ADDRESS: `unix:path=/run/user/${process.getuid?.()}/bus` } });
   let output = '';
   const timer = setTimeout(() => owner.kill('SIGTERM'), stepDeadlineMs + 60000);
   const ended = new Promise<string>(resolve => owner.once('exit', (code, signal) => resolve(signal ? `signal:${signal}` : `exit:${code}`)));
