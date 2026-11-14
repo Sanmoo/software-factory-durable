@@ -61,7 +61,8 @@ test('CLI list/show expose one durable Work per eligible Ticket across repeated 
   assert.deepEqual(view.works.map((work: Json) => [work.ticket.number, work.ticket.issueId, work.ticket.nodeId, work.ticket.repositoryId, work.queue.sequence]),
     [[1, 7001, 'I_node1', 3, 1]]);
   const work = view.works[0];
-  assert.deepEqual(work.dispatch.reasons, ['DEPENDENCIES_NOT_EVALUATED', 'EXECUTION_NOT_ENABLED']);
+  assert.deepEqual(work.dispatch.reasons, ['EXECUTION_NOT_ENABLED'], 'no native blocker: only the execution barrier holds');
+  assert.equal(work.dependencies.latest.conclusion, 'satisfied');
   const candidates = view.polling.repositories[0].candidates as Json[];
   const foreign = candidates.find(candidate => candidate.ticket.number === 2)!;
   assert.equal(foreign.outcome, 'held');
@@ -92,7 +93,7 @@ test('CLI list/show expose one durable Work per eligible Ticket across repeated 
   assert.ok(trace.filter(entry => entry.method === 'POST').every(entry => entry.endpoint === '/app/installations/2/access_tokens'));
   assert.ok(trace.filter(entry => entry.method === 'POST').every(entry => !Object.values(entry.permissions ?? {}).includes('write')), 'polling grants are read-only');
   assert.ok(!trace.some(entry => /\/(labels|assignees|projects|comments)\b/.test(entry.endpoint.split('?')[0]!)));
-  assert.ok(trace.filter(entry => entry.method === 'POST').length <= 6, 'grants are reused across polls of one owner (tracker-read, repository-read, association-read per owner)');
+  assert.ok(trace.filter(entry => entry.method === 'POST').length <= 8, 'grants are reused across polls of one owner (tracker-read, repository-read, association-read, dependency-read per owner)');
   const database = Buffer.concat(await Promise.all(['control.sqlite', 'control.sqlite-wal'].map(name => readFile(join(root, 'data', name)).catch(() => Buffer.alloc(0)))));
   for (const forbidden of ['SPEC-BODY', 'synthetic-installation-secret', 'PRIVATE KEY']) assert.equal(database.includes(Buffer.from(forbidden)), false, forbidden);
 });

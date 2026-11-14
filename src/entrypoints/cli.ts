@@ -43,6 +43,8 @@ async function operational(root: string, command: string, requestId: string | un
       response.payload.results.some(result => !result || typeof result !== 'object' || Array.isArray(result) ||
         !result.tracker || typeof result.tracker !== 'object' || Array.isArray(result.tracker) || result.tracker.status !== 'ok' ||
         !result.repository || typeof result.repository !== 'object' || Array.isArray(result.repository) || result.repository.status !== 'ok')) return 3;
+    if (response.payload.kind === 'access' && (!Array.isArray(response.payload.dependencyResults) || response.payload.dependencyResults.some(result =>
+      !result || typeof result !== 'object' || Array.isArray(result) || result.status !== 'ok'))) return 3;
     return response.payload.kind === 'refused' || response.payload.kind === 'work-not-found' ? 2 : 0;
   } catch {
     console.error(JSON.stringify({ code: mutable ? 'REQUEST_INDETERMINATE' : 'CONTROLLER_UNAVAILABLE',

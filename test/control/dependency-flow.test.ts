@@ -4,7 +4,7 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openControl } from '../../src/control/index.js';
-import type { Control, ListView, ShowView, ControlStatus, WorkView } from '../../src/control/types.js';
+import type { AccessView, Control, ListView, ShowView, ControlStatus, WorkView } from '../../src/control/types.js';
 import { githubDoubles, manualClock, remoteIssue, foreignPull, scope, dependencyPrincipal, type Remote } from './doubles.js';
 
 // Flow level (Q11): real Control + Pi Durable + temporary SQLite; only GitHub (tracker/code repository) and the clock are doubled.
@@ -165,4 +165,23 @@ test('AC5: each round re-reads the graph; the record carries source/principal/sc
   const database = await readFile(h.storagePath);
   assert.equal(database.includes(Buffer.from('dependency-read')), true, 'principal metadata is durable');
   assert.equal(database.includes(Buffer.from('synthetic-installation-secret')), false);
+});
+
+test('AC6: access preflight covers dependency-only repositories separately from executable ones, without creating issues or relations', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'factory-dependencies-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const github = githubDoubles({ issues: [], pulls: {} });
+  const seen: object[] = [];
+  const diagnostic = (purpose: 'tracker' | 'repository' | 'dependency', repository: string) => ({ source: 'github-rest' as const, purpose, observedAt: 'now', repository,
+    status: 'ok' as const, code: 'OPERATIONAL_ACCESS_VERIFIED', completeness: 'complete' as const, certifiesMergeSafety: false as const, nextStep: 'x' });
+  const tracker = { ...github.tracker, checkAccess: async (scope: { repository: string }) => { seen.push(scope); return diagnostic('role' in scope ? 'dependency' : 'tracker', scope.repository); } };
+  const repository = { ...github.repository, checkAccess: async (scope: { repository: string }) => diagnostic('repository', scope.repository) };
+  const control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty',
+    access: { tracker, repository, repositories: [scope], dependencyRepositories: [{ repository: 'other/lib', installationId: 6, workflows: false }] } });
+  const view = await control.inspect({ kind: 'access' }) as AccessView;
+  assert.equal(view.kind, 'access');
+  assert.deepEqual([view.results.length, view.dependencyResults.map(result => [result.repository, result.purpose])], [1, [['other/lib', 'dependency']]]);
+  assert.deepEqual(seen[1], { repository: 'other/lib', installationId: 6, workflows: false, role: 'dependency-only' });
+  const stop = new AbortController(); stop.abort();
+  await control.run(stop.signal);
 });

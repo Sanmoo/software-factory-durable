@@ -38,9 +38,12 @@ async function own(root: string): Promise<number> {
   process.on('SIGTERM', terminate);
   const effective = validated.configuration.effective;
   const github = createGitHubAccess({ root: paths.root, ...effective.githubApp });
+  const dependencyScopes = effective.dependencyRepositories.map(entry => ({ repository: entry.repository, installationId: entry.installationId, workflows: false }));
   // Polling cadence comes only from the validated configuration (default 60 s); no reload or per-Work override.
   const control = await openControl({ storagePath: paths.storagePath, runtimeInventory: await controllerRuntimeInventory(paths.root),
-    access: { tracker: createIssueTracker({ github, scopes: effective.repositories }), repository: createCodeRepository({ github }), repositories: effective.repositories },
+    // Executable repositories are Ticket origins; dependency-only repositories are read solely for native blocked_by, with their own installation.
+    access: { tracker: createIssueTracker({ github, scopes: effective.repositories, dependencyScopes }), repository: createCodeRepository({ github }),
+      repositories: effective.repositories, dependencyRepositories: dependencyScopes },
     polling: { intervalSeconds: effective.pollingSeconds } });
   const status = await control.inspect({ kind: 'status' });
   if (!('controller_run_id' in status)) throw new Error('INVALID_CONTROL_STATUS');

@@ -23,6 +23,11 @@ const repository = z.strictObject({
   recoveryLimit: z.number().int().nonnegative().safe().default(3),
   timeoutSeconds: positive.optional(),
 });
+// Readable ONLY for native dependency reads (spec §4.2): never a Ticket origin, never executable, no base/label/limits.
+const dependencyRepository = z.strictObject({
+  repository: text.regex(/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/),
+  installationId: positive,
+});
 const schema = z.strictObject({
   schemaVersion: z.literal(1),
   operators: z.array(text.regex(/^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$/))
@@ -35,10 +40,14 @@ const schema = z.strictObject({
   sandbox: z.unknown(),
   repositories: z.array(repository).refine(values =>
     new Set(values.map(value => value.repository.toLowerCase())).size === values.length),
+  dependencyRepositories: z.array(dependencyRepository).default([]).refine(values =>
+    new Set(values.map(value => value.repository.toLowerCase())).size === values.length),
   concurrency: positive.default(1),
   pollingSeconds: positive.default(60),
   retentionDays: positive.default(30),
-});
+}).refine(value => !value.dependencyRepositories.some(dependency =>
+  value.repositories.some(executable => executable.repository.toLowerCase() === dependency.repository.toLowerCase())),
+{ path: ['dependencyRepositories'], message: 'A repository is either executable or dependency-only, never both' });
 
 export async function readConfiguration(root: string) {
   let input: unknown;

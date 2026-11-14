@@ -119,3 +119,19 @@ test('explicitly empty operators authorizes no remote operator rather than inher
   assert.equal(report.configuration.valid, true);
   assert.deepEqual(report.configuration.effective.operators, []);
 });
+
+test('dependency-only repositories are explicit, read-only and distinct from executable repositories', async () => {
+  const base = await diagnose(configuration);
+  assert.deepEqual(base.report.configuration.effective.dependencyRepositories, [], 'none by default: no repository is discovered or inherited');
+  const withDependencies = configuration + 'dependencyRepositories:\n  - {repository: owner/library, installationId: 456}\n  - {repository: other-owner/shared, installationId: 789}\n';
+  const { report } = await diagnose(withDependencies);
+  assert.equal(report.configuration.valid, true);
+  assert.deepEqual(report.configuration.effective.dependencyRepositories,
+    [{ repository: 'owner/library', installationId: 456 }, { repository: 'other-owner/shared', installationId: 789 }]);
+  for (const [name, yaml] of [
+    ['executable repository repeated as dependency-only', configuration + 'dependencyRepositories: [{repository: Owner/Project, installationId: 456}]\n'],
+    ['duplicate dependency-only repository', configuration + 'dependencyRepositories: [{repository: a/b, installationId: 1}, {repository: A/B, installationId: 1}]\n'],
+    ['executable fields on a dependency-only repository', configuration + 'dependencyRepositories: [{repository: a/b, installationId: 1, base: main}]\n'],
+    ['installation omitted', configuration + 'dependencyRepositories: [{repository: a/b}]\n'],
+  ]) assert.equal((await diagnose(yaml!)).report.configuration.valid, false, name);
+});
