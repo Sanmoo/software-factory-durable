@@ -30,8 +30,15 @@ export type WorldPull = {
   id: number; node_id: string; number: number; title: string; body: string | null; state: 'open' | 'closed'; merged_at: string | null;
   head: { ref: string; repo: { id: number } | null }; user: { id: number; login: string; type: string };
 };
+/** Issue comment as GitHub REST returns it (html_url/performed_via_github_app computed by the fixture when absent). */
+export type WorldComment = { id: number; issue: number; repository?: string; node_id?: string; body: string | null; user: { id: number; login: string; type: string };
+  created_at?: string; updated_at?: string; performed_via_github_app?: { id: number } | null; html_url?: string };
 export type World = {
   issues: WorldIssue[];
+  /** Issue comments served at /issues/{n}/comments (GET paginated, POST appends one created by the App bot). */
+  comments?: WorldComment[];
+  /** POST /issues/{n}/comments: answer with this status; `created` decides whether the comment was created anyway (ambiguous 5xx). */
+  postFault?: { status: number; created: boolean; headers?: Record<string, string> };
   pulls: WorldPull[];
   pageSize?: number;
   /** endpoint substring → synthetic failure. */
@@ -47,7 +54,7 @@ export type World = {
   /** Endpoint substrings whose request fails at the transport (no response at all: outcome unknown to the caller). */
   transportFailures?: string[];
 };
-export type TraceEntry = { method: string; endpoint: string; credential: 'app-jwt' | 'installation'; permissions?: Record<string, string> };
+export type TraceEntry = { method: string; endpoint: string; credential: 'app-jwt' | 'installation'; permissions?: Record<string, string>; body?: string };
 
 export function issue(number: number, overrides: Partial<WorldIssue> = {}): WorldIssue {
   return { id: 7000 + number, node_id: `I_node${number}`, number, title: `Ticket ${number}`, body: `SPEC-BODY-${number} must never be captured`,
@@ -73,7 +80,7 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
   const revokedFile = join(root, 'revoked.jsonl');
   const executable = join(root, 'gh');
   await writeFile(executable, `#!${process.execPath}
-import { readFileSync, appendFileSync } from 'node:fs';
+import { readFileSync, appendFileSync, writeFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 const endpoint = args.at(-1);
 const method = args[args.indexOf('--method') + 1];
@@ -158,7 +165,7 @@ else if (/^\\/app\\/installations\\/\\d+\\/access_tokens$/.test(endpoint) && met
   // Self-revocation of the installation token used for the request: 204, no body; the token is invalid afterwards (a fault prevents it).
   if (!Object.keys(world.faults ?? {}).some(fragment => endpoint.includes(fragment))) appendFileSync(revokedFile, JSON.stringify({ token }) + '\\n');
   status = 204; raw = '';
-} else if (method !== 'GET' || app) process.exit(16);
+} else if (app || (method !== 'GET' && !(method === 'POST' && /^\\/repos\\/[^/]+\\/[^/]+\\/issues\\/\\d+\\/comments$/.test(path)))) process.exit(16);
 else if (!repo) process.exit(11);
 else if (rest === '') body = { id: repo.id, full_name: repo.name, owner: { login: repo.name.split('/')[0] } };
 else if (rest === '/issues') {
@@ -176,6 +183,28 @@ else if (rest === '/issues') {
     if (targets.some(t => !t)) process.exit(18);
     body = page([...targets.map(shape), ...(found.raw_blocked_by ?? [])]);
   } else { status = 404; body = { message: 'Not Found' }; }
+} else if (/^\\/issues\\/\\d+\\/comments$/.test(rest) && method === 'POST') {
+  if (args[args.indexOf('--input') + 1] !== '-') process.exit(19);
+  let input = ''; for await (const data of process.stdin) input += data;
+  const request = JSON.parse(input);
+  const number = Number(rest.split('/')[2]);
+  if (Object.keys(request).join() !== 'body' || typeof request.body !== 'string' || !issuesOf(repo).some(i => i.number === number)) process.exit(20);
+  const fault = world.postFault;
+  const created = !fault || fault.created;
+  const comments = world.comments ?? [];
+  const comment = { id: 60000 + comments.length + 1, issue: number, repository: repo.name, node_id: 'IC_' + (comments.length + 1), body: request.body,
+    user: { id: 41898282, login: 'factory-app[bot]', type: 'Bot' }, performed_via_github_app: { id: 1 }, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+  if (created) { world.comments = [...comments, comment]; writeFileSync(${JSON.stringify(worldFile)}, JSON.stringify(world)); }
+  trace.body = request.body;
+  if (fault) { status = fault.status; body = { message: 'synthetic-installation-secret-leak' }; for (const [name, value] of Object.entries(fault.headers ?? {})) headers += name + ': ' + value + '\\r\\n'; }
+  else { status = 201; body = { ...comment, html_url: 'https://github.com/' + repo.name + '/issues/' + number + '#issuecomment-' + comment.id }; }
+} else if (method !== 'GET') process.exit(16);
+else if (/^\\/issues\\/\\d+\\/comments$/.test(rest)) {
+  const number = Number(rest.split('/')[2]);
+  if (!issuesOf(repo).some(i => i.number === number)) { status = 404; body = { message: 'Not Found' }; }
+  else body = page((world.comments ?? []).filter(c => c.issue === number && (c.repository ?? 'acme/project').toLowerCase() === repo.name.toLowerCase())
+    .map(({ issue: _issue, repository: _repository, ...c }) => ({ node_id: 'IC_' + c.id, created_at: '2026-11-14T10:00:00Z', updated_at: '2026-11-14T10:00:00Z', performed_via_github_app: null,
+      html_url: 'https://github.com/' + repo.name + '/issues/' + number + '#issuecomment-' + c.id, ...c })));
 } else if (/^\\/issues\\/\\d+$/.test(rest)) {
   const found = issuesOf(repo).find(i => i.number === Number(rest.split('/')[2]));
   if (found) body = shape(found);

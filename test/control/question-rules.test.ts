@@ -15,7 +15,7 @@ test('AC4: only a comment whose first characters are the strict /factory prefix 
   assert.deepEqual(parseFactoryCommand('/factory answer not-a-question yes'), { kind: 'invalid', code: 'QUESTION_ID_INVALID' });
   assert.deepEqual(parseFactoryCommand(`/factory answer ${qid.toUpperCase()} yes`), { kind: 'invalid', code: 'QUESTION_ID_INVALID' });
   assert.deepEqual(parseFactoryCommand('/factory resume'), { kind: 'invalid', code: 'COMMAND_NOT_SUPPORTED' });
-  assert.deepEqual(parseFactoryCommand(`/factory answer ${qid} ${'x'.repeat(4001)}`), { kind: 'invalid', code: 'ANSWER_TOO_LONG' });
+  assert.deepEqual(parseFactoryCommand(`/factory answer ${qid} ${'x'.repeat(2001)}`), { kind: 'invalid', code: 'ANSWER_TOO_LONG' });
 });
 
 test('AC4: only a configured human operator (case-insensitive login, type User) is authorized; bots and third parties never are', () => {
@@ -48,8 +48,8 @@ test('AC1: an ask_user request is bounded text with a stable UUID identity; anyt
   assert.deepEqual(validateQuestionRequest({ questionId: qid, question: 'Which file name?', context: 'Ticket #3 names none.' }), { valid: true });
   assert.deepEqual(validateQuestionRequest({ questionId: 'x', question: 'q', context: '' }), { valid: false, code: 'QUESTION_ID_INVALID' });
   assert.deepEqual(validateQuestionRequest({ questionId: qid, question: '   ', context: '' }), { valid: false, code: 'QUESTION_TEXT_INVALID' });
-  assert.deepEqual(validateQuestionRequest({ questionId: qid, question: 'q'.repeat(4001), context: '' }), { valid: false, code: 'QUESTION_TEXT_INVALID' });
-  assert.deepEqual(validateQuestionRequest({ questionId: qid, question: 'q', context: 'c'.repeat(8001) }), { valid: false, code: 'QUESTION_CONTEXT_INVALID' });
+  assert.deepEqual(validateQuestionRequest({ questionId: qid, question: 'q'.repeat(2001), context: '' }), { valid: false, code: 'QUESTION_TEXT_INVALID' });
+  assert.deepEqual(validateQuestionRequest({ questionId: qid, question: 'q', context: 'c'.repeat(4001) }), { valid: false, code: 'QUESTION_CONTEXT_INVALID' });
   assert.deepEqual(validateQuestionRequest({ questionId: qid, question: 'a\u0000b', context: '' }), { valid: false, code: 'QUESTION_TEXT_INVALID' });
   assert.deepEqual(validateQuestionRequest({ questionId: qid, question: 'see <!-- software-factory:question:x -->', context: '' }), { valid: false, code: 'QUESTION_MARKER_FORBIDDEN' });
 });
@@ -77,4 +77,9 @@ test('AC6/spec 5.5: the recovery instruction is explicit (Work, artifacts, quest
   for (const part of ['https://github.com/acme/project/issues/3', 'branch=factory/3-abc', 'previous-execution=exec-1', qid, 'Which file?', 'docs/a.md', 'sanmoo',
     '/artifacts/factory/skill-pack/factory-skills-v1/skills/implement/SKILL.md', 'section 4']) assert.ok(prompt.includes(part), part);
   assert.ok(Buffer.byteLength(prompt) < 16384);
+  // Worst case (3-byte characters at every limit) still fits the Builder prompt budget: the context is then omitted, never the answer.
+  const big = recoveryPrompt({ ticketUrl: 'u', repository: 'r', base: 'b', baseCommit: 'c', branch: 'br', checkout: '/w', workId: 'w', executionId: 'e', previousExecutionId: 'p',
+    question: { questionId: qid, question: 'é'.repeat(2000), context: '€'.repeat(4000) }, answer: { text: '€'.repeat(2000), author: 'a', origin: 'local-cli' } });
+  assert.ok(Buffer.byteLength(big) <= 16384);
+  assert.ok(big.includes('€'.repeat(2000)) && big.includes('context you gave is omitted'));
 });

@@ -25,6 +25,8 @@ const permissions = {
   'builder-start': { metadata: 'read', contents: 'read', issues: 'read' },
   // Host fetch into the Factory-exclusive bare cache (spec §8: clone/fetch uses Contents R).
   'repository-fetch': { metadata: 'read', contents: 'read' },
+  // Controller publication of a durable Question on its Ticket issue (spec §5.5): one POST of an issue comment, nothing else.
+  'question-publish': { metadata: 'read', issues: 'write' },
 } as const;
 type Purpose = keyof typeof permissions;
 type DiagnosticPurpose = 'tracker' | 'repository' | 'dependency';
@@ -36,7 +38,7 @@ export const readPermissions: Readonly<Record<ReadPurpose, Readonly<Record<strin
 const repositorySchema = z.object({ id: z.number().int().positive().safe(), full_name: z.string(), owner: z.object({ login: z.string() }) });
 const permissionSchema = z.record(z.string(), z.enum(['read', 'write']));
 class AccessFailure extends Error {
-  constructor(readonly code: string, readonly waitSeconds?: number, readonly nextStep?: string) { super(code); }
+  constructor(readonly code: string, readonly waitSeconds?: number, readonly nextStep?: string, readonly status?: number) { super(code); }
 }
 class TokenIssuanceFailure extends AccessFailure {
   constructor(readonly outcome: 'known-rejected' | 'unknown', code: string, waitSeconds?: number) {
@@ -69,7 +71,16 @@ export interface GitHubAccess {
   /** One self-revocation (`DELETE /installation/token` through gh, authenticated by the token itself) of a transient grant. Never retried;
    * distinguishes revoked / already-invalid / failed / unknown / impossible (no value). Never returns or logs the token. */
   revoke(token: string): Promise<RevocationResult>;
+  /** The configured App identity: comments it performed carry `performed_via_github_app.id === appId` (question discovery). */
+  readonly appId: number;
+  /**
+   * The ONLY write: one POST of an issue comment under a fresh reduced `question-publish` grant (issues:write, this repository only).
+   * Never retried. `unknown` (transport loss, 5xx, unexpected success payload) means the comment may exist: discover it before posting again.
+   */
+  comment(scope: GitHubScope, issueNumber: number, body: string): Promise<GitHubWrite>;
 }
+export type GitHubWrite = { ok: true; observedAt: string; repositoryId: number; value: unknown } |
+  { ok: false; outcome: 'known-failure' | 'unknown'; observedAt: string; code: string; waitSeconds?: number; nextStep: string };
 export type TransientPurpose = 'builder-start' | 'repository-fetch';
 export type TransientGrant = { token: string; expiresAt: string; repositoryId: number; permissions: Readonly<Record<string, 'read' | 'write'>> };
 /** Coded failure of a transient issuance; message is the code only (never a token or key). */
@@ -105,7 +116,7 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
       (options.executable !== undefined && !isAbsolute(options.executable))) throw new AccessFailure('INVALID_ACCESS_CONFIGURATION');
   }
 
-  function parseResponse(scope: GitHubScope, output: { stdout: string; failed: boolean }, endpoint: string, repositoryId?: number): { body: unknown; next?: string } {
+  function parseResponse(scope: GitHubScope, output: { stdout: string; failed: boolean }, endpoint: string, repositoryId?: number): { body: unknown; status: number; next?: string } {
     const match = /^HTTP\/[\d.]+ (\d{3})[^\r\n]*\r?\n([\s\S]*?)\r?\n\r?\n([\s\S]*)$/.exec(output.stdout);
     if (!match) throw new AccessFailure('INVALID_GITHUB_RESPONSE');
     const status = Number(match[1]);
@@ -127,8 +138,8 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
       const wait = retry && /^\d+$/.test(retry) ? Number(retry) : Number.isFinite(retryDate) ? Math.ceil((retryDate - Date.now()) / 1000) : resetWait ?? 60;
       throw new AccessFailure('GITHUB_RATE_LIMITED', Math.min(Math.max(wait, 1), 86400));
     }
-    if (status === 401 || status === 403 || status === 404) throw new AccessFailure(status === 404 ? 'GITHUB_NOT_FOUND_OR_HIDDEN' : 'GITHUB_ACCESS_DENIED');
-    if (output.failed || status < 200 || status >= 300) throw new AccessFailure('GITHUB_QUERY_FAILED');
+    if (status === 401 || status === 403 || status === 404) throw new AccessFailure(status === 404 ? 'GITHUB_NOT_FOUND_OR_HIDDEN' : 'GITHUB_ACCESS_DENIED', undefined, undefined, status);
+    if (output.failed || status < 200 || status >= 300) throw new AccessFailure('GITHUB_QUERY_FAILED', undefined, undefined, status);
     if (headers.get('x-github-api-version-selected') !== version) throw new AccessFailure('GITHUB_API_VERSION_MISMATCH');
     // A successful response that exhausts the quota defers the NEXT request; this one is still valid.
     if (exhausted && repositoryId !== undefined) rateLimit(scope, Math.min(resetWait ?? 60, 86400));
@@ -160,18 +171,20 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
         }
       }
     }
-    return { body, ...(next ? { next } : {}) };
+    return { body, status, ...(next ? { next } : {}) };
   }
 
-  async function gh(scope: GitHubScope, directory: string, token: string, endpoint: string, repositoryId?: number): Promise<{ body: unknown; next?: string }> {
+  /** `input`: JSON body of the single closed POST operation (question comment), sent on stdin; reads are GET without input. */
+  async function gh(scope: GitHubScope, directory: string, token: string, endpoint: string, repositoryId?: number, input?: string): Promise<{ body: unknown; status: number; next?: string }> {
     if (!endpoint.startsWith('/') || endpoint.startsWith('//') || /[\r\n#\\]/.test(endpoint)) throw new AccessFailure('INVALID_ENDPOINT');
-    return parseResponse(scope, await ghExec(directory, token, 'GET', endpoint), endpoint, repositoryId);
+    return parseResponse(scope, await ghExec(directory, token, input === undefined ? 'GET' : 'POST', endpoint, input), endpoint, repositoryId);
   }
 
-  /** gh api under one installation token in an isolated config directory; the token is in the explicit environment only, never argv. */
-  function ghExec(directory: string, token: string, method: 'GET' | 'DELETE', endpoint: string): Promise<{ stdout: string; failed: boolean }> {
+  /** gh api under one installation token in an isolated config directory; the token is in the explicit environment only, never argv.
+   * `input` (POST only): JSON body on stdin. */
+  function ghExec(directory: string, token: string, method: 'GET' | 'DELETE' | 'POST', endpoint: string, input?: string): Promise<{ stdout: string; failed: boolean }> {
     const argv = ['api', '--hostname', 'github.com', '--method', method, '--include', '-H', 'Accept: application/vnd.github+json', '-H', `X-GitHub-Api-Version: ${version}`,
-      '--', endpoint];
+      ...(input === undefined ? [] : ['--input', '-']), '--', endpoint];
     return new Promise<{ stdout: string; failed: boolean }>((resolve, reject) => {
       const child = execFile(options.executable ?? 'gh', argv, { cwd: directory, encoding: 'utf8', timeout: 15000, maxBuffer: 2 * 1024 * 1024, shell: false,
         env: { PATH: process.env.PATH ?? '', LANG: 'C', LC_ALL: 'C', GH_TOKEN: token, GH_HOST: 'github.com', GH_CONFIG_DIR: directory,
@@ -181,7 +194,7 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
         resolve({ stdout, failed: Boolean(error) });
       });
       child.stdin?.on('error', () => {});
-      child.stdin?.end();
+      child.stdin?.end(input);
     });
   }
 
@@ -343,6 +356,41 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
       if (status >= 400 && status < 500 && status !== 429) return { kind: 'failed', code: 'GITHUB_REVOCATION_REJECTED', nextStep: 'GitHub rejected the revocation; the token stays valid until its expiresAt. Not repeated automatically.' };
       return unknown;
     } catch { return unknown; } finally { if (directory) await rm(directory, { recursive: true, force: true }); }
+  }, appId: options.appId, async comment(scope, issueNumber, body) {
+    let directory: string | undefined;
+    const observedAt = new Date().toISOString();
+    const sanitized = <R>(value: R): R => JSON.parse(filter(JSON.stringify(value))) as R;
+    const window = rateWindows.get(scope.installationId) ?? 0;
+    if (window > Date.now()) return sanitized({ ok: false as const, outcome: 'known-failure' as const, observedAt, code: 'GITHUB_RATE_LIMITED',
+      waitSeconds: Math.max(1, Math.ceil((window - Date.now()) / 1000)), nextStep: 'Rate-limit window still open; nothing was sent.' });
+    if (!Number.isSafeInteger(issueNumber) || issueNumber <= 0 || typeof body !== 'string' || !body || body.length > 60000) {
+      return { ok: false, outcome: 'known-failure', observedAt, code: 'INVALID_COMMENT', nextStep: 'Comment rejected locally; nothing was sent.' };
+    }
+    let grant: Grant;
+    // Issuance failures happen BEFORE the POST: the comment certainly was not created.
+    try { grant = await issue(scope, 'question-publish'); } catch (error) {
+      const typed = failure(error);
+      return sanitized({ ok: false as const, outcome: 'known-failure' as const, observedAt, ...typed,
+        code: error instanceof TokenIssuanceFailure && error.outcome === 'unknown' ? 'GITHUB_TOKEN_ISSUANCE_UNKNOWN' : typed.code });
+    }
+    let sent = false;
+    try {
+      directory = await mkdtemp(join(options.root, 'run', 'github-'));
+      await verifyRepository(scope, session(scope, directory, grant));
+      sent = true;
+      const response = await gh(scope, directory, grant.token, `/repos/${scope.repository}/issues/${issueNumber}/comments`, grant.repositoryId, JSON.stringify({ body }));
+      if (response.status !== 201) return sanitized({ ok: false as const, outcome: 'unknown' as const, observedAt, code: 'GITHUB_WRITE_UNEXPECTED_STATUS',
+        nextStep: 'The comment may exist; discover it by its marker before any new publication.' });
+      return sanitized({ ok: true as const, observedAt, repositoryId: grant.repositoryId, value: response.body });
+    } catch (error) {
+      if (error instanceof AccessFailure && error.code === 'GITHUB_RATE_LIMITED' && error.waitSeconds !== undefined) rateLimit(scope, error.waitSeconds);
+      const typed = failure(error);
+      // Known: refused before sending, or GitHub answered 4xx (nothing created). Unknown: transport loss, 5xx, unparseable success.
+      const known = !sent || (error instanceof AccessFailure && (error.code === 'GITHUB_RATE_LIMITED' || (error.status !== undefined && error.status >= 400 && error.status < 500)));
+      return sanitized({ ok: false as const, outcome: known ? 'known-failure' as const : 'unknown' as const, observedAt, ...typed,
+        code: typed.code === 'GITHUB_DIAGNOSTIC_FAILED' ? 'GITHUB_WRITE_FAILED' : typed.code,
+        nextStep: known ? typed.nextStep : 'Publication outcome is unknown: the comment may exist. Discover it by its marker before any new publication; never repost blindly.' });
+    } finally { if (directory) await rm(directory, { recursive: true, force: true }); }
   }, async transient(scope, purpose) {
     try {
       const grant = await issue(scope, purpose);

@@ -52,3 +52,6 @@ export interface RepositoryFetchCredentials {
   /** One self-revocation attempt right after the fetch (ticket 20 review); never retried, never claims cessation. */
   revoke(grant: { readonly token: string }): Promise<RevocationResult>;
 }
+
+/** Stable correlation marker of a published Question (spec §5.5): first line `<!-- software-factory:question:<question-id> -->`. */
+export const questionMarkerPrefix = 'software-factory:question:';

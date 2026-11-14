@@ -1,10 +1,12 @@
+import { questionMarkerPrefix } from '../../contracts/index.js';
+
 // Pure rules for durable Questions (spec §5.5/§11.3): command parsing, authorization of the author, answer acceptance, destination,
 // published text and the explicit recovery instruction. No I/O, clock or randomness: callers supply every fact.
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-export const questionLimits = Object.freeze({ question: 4000, context: 8000, answer: 4000 });
-/** Stable marker prefix carried by every published Question (the tracker adapter prepends it); model text may never contain it. */
-export const questionMarkerPrefix = 'software-factory:question:';
+/** Characters. Bounded so the recovery instruction (question + answer, context when it fits) stays within the Builder prompt budget. */
+export const questionLimits = Object.freeze({ question: 2000, context: 4000, answer: 2000 });
+const promptBudgetBytes = 15000;
 
 export type FactoryCommand = { kind: 'answer'; questionId: string; text: string } | { kind: 'prose' } | { kind: 'invalid'; code: string };
 /**
@@ -82,13 +84,16 @@ export function questionCommentBody(input: { questionId: string; workId: string;
 export function recoveryPrompt(input: { ticketUrl: string; repository: string; base: string; baseCommit: string; branch: string; checkout: string;
   workId: string; executionId: string; previousExecutionId: string; question: { questionId: string; question: string; context: string };
   answer: { text: string; author: string; origin: string } }): string {
-  return [`Factory recovery instruction for Ticket ${input.ticketUrl}.`,
+  const build = (withContext: boolean) => [`Factory recovery instruction for Ticket ${input.ticketUrl}.`,
     `Execution context (from the Factory, authoritative): repository=${input.repository} base=${input.base} base-commit=${input.baseCommit} branch=${input.branch} ` +
       `checkout=${input.checkout} artifacts=/artifacts work=${input.workId} execution=${input.executionId} previous-execution=${input.previousExecutionId}`,
     'This is a NEW session on the same Work: the previous Execution ended after asking the question below. Its workspace, branch, commits and ' +
       '/artifacts were preserved; its session is not continued.',
     'Read /artifacts/factory/skill-pack/factory-skills-v1/skills/implement/SKILL.md with the read tool and follow section 4 (resume after an answer).',
     '', `Question ${input.question.questionId}:`, fenced(input.question.question),
-    ...(input.question.context ? ['Context you gave:', fenced(input.question.context)] : []),
+    ...(input.question.context ? withContext ? ['Context you gave:', fenced(input.question.context)]
+      : ['(The context you gave is omitted here for size; it is preserved with the question in the Factory.)'] : []),
     '', `Accepted answer (by ${input.answer.author}, via ${input.answer.origin}):`, fenced(input.answer.text)].join('\n');
+  const full = build(true);
+  return new TextEncoder().encode(full).length <= promptBudgetBytes ? full : build(false);
 }

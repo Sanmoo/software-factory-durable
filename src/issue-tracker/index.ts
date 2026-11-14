@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { AccessDiagnostic, GitHubScope } from '../contracts/index.js';
+import { questionMarkerPrefix, type AccessDiagnostic, type GitHubScope } from '../contracts/index.js';
 import { InvalidGitHubObservation, UnverifiedGitHubAccess, readPermissions, type GitHubAccess, type GitHubRead } from '../platform/github/index.js';
 
 /** Origin of Tickets: one configured repository plus its effective entry label. */
@@ -37,11 +37,33 @@ export type DependencyPrincipal = { installationId: number; repository: string; 
 export type DependencyGraphObservation = { kind: 'observed'; source: 'github-rest'; observedAt: string; root: TicketRef; completeness: 'complete' | 'incomplete';
   principals: DependencyPrincipal[]; nodes: DependencyNode[]; problems: DependencyProblem[]; limitations: string[] };
 
+/** Author of a comment as GitHub reports it (id is the identity; login/type are evidence for authorization by the Control). */
+export type CommentAuthorRef = { id: number; login: string; type: string };
+/** One issue comment. `viaApp`: id of the GitHub App that performed it (null for human/other comments). Never interpreted here. */
+export type TrackerComment = { commentId: number; nodeId: string; url: string; author: CommentAuthorRef; body: string; createdAt: string; updatedAt: string; viaApp: number | null };
+/** Comments after `cursor` (ascending id), from a COMPLETE listing only; an unavailable read never proves the absence of comments. */
+export type InputsObservation = { kind: 'observed'; source: 'github-rest'; observedAt: string; ticket: TicketRef; completeness: 'complete';
+  comments: TrackerComment[]; cursor: number | null; limitations: string[] } | TrackerUnavailable;
+/** Comments of THIS installation's App carrying the stable marker of the Question; several candidates are reported, never chosen. */
+export type QuestionSearch = { kind: 'observed'; source: 'github-rest'; observedAt: string; completeness: 'complete';
+  candidates: { commentId: number; url: string; createdAt: string }[]; limitations: string[] } | TrackerUnavailable;
+/** Concrete authorized Question text; the adapter prepends the stable marker for `questionId`. No arbitrary endpoint or label/state change. */
+export type QuestionComment = { kind: 'question'; questionId: string; body: string };
+/** Identity of the publication effect already persisted by the Control (correlation, not external idempotency). */
+export type CommentEffect = { effectId: string; questionId: string };
+/** Known success, known failure (nothing was created) or unknown outcome (the comment may exist: discover before republishing). */
+export type CommentResult = { kind: 'published'; observedAt: string; commentId: number; url: string; createdAt: string } |
+  { kind: 'failed'; observedAt: string; code: string; waitSeconds?: number; nextStep: string } |
+  { kind: 'unknown'; observedAt: string; code: string; nextStep: string };
+
 export interface IssueTracker {
   checkAccess(scope: TrackerScope | DependencyScope): Promise<AccessDiagnostic>;
   listCandidates(scope: TrackerScope): Promise<CandidateObservation>;
   readTicket(ticket: TicketRef): Promise<TicketObservation>;
   readDependencyGraph(ticket: TicketRef): Promise<DependencyGraphObservation>;
+  readInputs(ticket: TicketRef, cursor: number | null): Promise<InputsObservation>;
+  findQuestion(ticket: TicketRef, questionId: string): Promise<QuestionSearch>;
+  postComment(ticket: TicketRef, comment: QuestionComment, effect: CommentEffect): Promise<CommentResult>;
 }
 
 const issueSchema = z.object({
@@ -59,6 +81,14 @@ const edgeSchema = z.object({
 });
 type Edge = z.infer<typeof edgeSchema>;
 const maxGraphNodes = 100;
+const commentSchema = z.object({
+  id: z.number().int().positive().safe(), node_id: z.string().min(1).max(256), html_url: z.string().url(),
+  user: z.object({ id: z.number().int().positive().safe(), login: z.string().min(1).max(256), type: z.string().min(1).max(64) }),
+  body: z.string().max(262144).nullable(), created_at: z.iso.datetime(), updated_at: z.iso.datetime(),
+  performed_via_github_app: z.object({ id: z.number().int().positive().safe() }).passthrough().nullable().optional(),
+});
+const questionMarker = (questionId: string) => `<!-- ${questionMarkerPrefix}${questionId} -->`;
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const repositoryName = /^https:\/\/api\.github\.com\/repos\/([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)$/;
 /** Canonical repository of an issue payload; html_url must name the same repository and number (no pull request, no foreign URL). */
 function edgeRepository(edge: Edge): string | undefined {
@@ -194,7 +224,67 @@ export function createIssueTracker(options: { github: GitHubAccess; scopes?: Tra
       limitations: graphLimitations };
   }
 
+  const executableScope = (ticket: TicketRef) => options.scopes?.find(candidate => candidate.repository.toLowerCase() === ticket.repository.toLowerCase());
+  const notConfigured = (ticket: TicketRef): TrackerUnavailable => ({ kind: 'unavailable', source: 'github-rest', observedAt: new Date().toISOString(), repository: ticket.repository,
+    completeness: 'incomplete', code: 'REPOSITORY_NOT_CONFIGURED', nextStep: 'Only explicitly configured repositories are read or written.' });
+  /** Complete comment listing of the Ticket issue, every entry validated; a single invalid entry fails the whole read (no partial result). */
+  const comments = (scope: GitHubScope, ticket: TicketRef) => options.github.read(scope, 'tracker-read', async session => {
+    if (session.repositoryId !== ticket.repositoryId) throw new InvalidGitHubObservation();
+    const parsed = z.array(commentSchema).safeParse(await session.list(`/repos/${scope.repository}/issues/${ticket.number}/comments`));
+    if (!parsed.success) throw new InvalidGitHubObservation();
+    const seen = new Set<number>();
+    const result: TrackerComment[] = [];
+    for (const comment of parsed.data) {
+      if (comment.html_url.toLowerCase() !== `https://github.com/${scope.repository}/issues/${ticket.number}#issuecomment-${comment.id}`.toLowerCase()) throw new InvalidGitHubObservation();
+      if (seen.has(comment.id)) continue;
+      seen.add(comment.id);
+      result.push({ commentId: comment.id, nodeId: comment.node_id, url: comment.html_url, author: { id: comment.user.id, login: comment.user.login, type: comment.user.type },
+        body: comment.body ?? '', createdAt: comment.created_at, updatedAt: comment.updated_at, viaApp: comment.performed_via_github_app?.id ?? null });
+    }
+    return result.sort((a, b) => a.commentId - b.commentId);
+  });
+  const ownQuestions = (list: TrackerComment[], questionId: string) => list.filter(comment => comment.viaApp === options.github.appId && comment.author.type === 'Bot' &&
+    comment.body.startsWith(`${questionMarker(questionId)}\n`));
+
   return {
+    async readInputs(ticket, cursor) {
+      const scope = executableScope(ticket);
+      if (!scope) return notConfigured(ticket);
+      const read = await comments(scope, ticket);
+      if (!read.ok) return unavailable(scope.repository, read);
+      const after = read.value.filter(comment => cursor === null || comment.commentId > cursor);
+      return { kind: 'observed', source: 'github-rest', observedAt: read.observedAt, ticket, completeness: 'complete', comments: after,
+        cursor: read.value.length ? Math.max(cursor ?? 0, read.value.at(-1)!.commentId) : cursor,
+        limitations: ['Complete listing at one instant, not an atomic snapshot; edits after reading are not seen as new comments.', 'Comments are evidence; authorization and correlation are decided by the Control.'] };
+    },
+    async findQuestion(ticket, questionId) {
+      const scope = executableScope(ticket);
+      if (!scope) return notConfigured(ticket);
+      if (!uuid.test(questionId)) throw new Error('INVALID_QUESTION_ID');
+      const read = await comments(scope, ticket);
+      if (!read.ok) return unavailable(scope.repository, read);
+      return { kind: 'observed', source: 'github-rest', observedAt: read.observedAt, completeness: 'complete',
+        candidates: ownQuestions(read.value, questionId).map(comment => ({ commentId: comment.commentId, url: comment.url, createdAt: comment.createdAt })),
+        limitations: ['Only comments performed by this installation\'s App with the exact marker line count; a listing is not an atomic snapshot.'] };
+    },
+    async postComment(ticket, comment, effect) {
+      const scope = executableScope(ticket);
+      const observedAt = new Date().toISOString();
+      if (!scope) return { kind: 'failed', observedAt, code: 'REPOSITORY_NOT_CONFIGURED', nextStep: 'Only configured repositories receive Questions.' };
+      if (comment.kind !== 'question' || !uuid.test(comment.questionId) || effect.questionId !== comment.questionId || comment.body.includes(questionMarkerPrefix)) {
+        return { kind: 'failed', observedAt, code: 'INVALID_QUESTION_COMMENT', nextStep: 'Rejected locally; nothing was sent.' };
+      }
+      const marker = questionMarker(comment.questionId);
+      const written = await options.github.comment(scope, ticket.number, `${marker}\n${comment.body}`);
+      if (!written.ok) return written.outcome === 'unknown' ? { kind: 'unknown', observedAt: written.observedAt, code: written.code, nextStep: written.nextStep }
+        : { kind: 'failed', observedAt: written.observedAt, code: written.code, ...(written.waitSeconds !== undefined ? { waitSeconds: written.waitSeconds } : {}), nextStep: written.nextStep };
+      const parsed = commentSchema.safeParse(written.value);
+      if (!parsed.success || written.repositoryId !== ticket.repositoryId || !parsed.data.body?.startsWith(`${marker}\n`) ||
+          parsed.data.html_url.toLowerCase() !== `https://github.com/${scope.repository}/issues/${ticket.number}#issuecomment-${parsed.data.id}`.toLowerCase()) {
+        return { kind: 'unknown', observedAt: written.observedAt, code: 'GITHUB_WRITE_UNVERIFIED', nextStep: 'GitHub accepted a write whose result could not be verified; discover the marker before any new publication.' };
+      }
+      return { kind: 'published', observedAt: written.observedAt, commentId: parsed.data.id, url: parsed.data.html_url, createdAt: parsed.data.created_at };
+    },
     readDependencyGraph,
     checkAccess(scope) {
       if ('role' in scope) return options.github.diagnose(scope, 'dependency', async session => {
