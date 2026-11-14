@@ -155,8 +155,8 @@ resultado (coberta em I-local/S).
 **Provocação declarada** (prompt de sistema do Builder da receita, autorizada pelo operador ao executar): a primeira proposta omite `## Rollback`
 (achado de requisito do Spec plausível e o gate documentado **falha de verdade** na r1), a proposta fica sem commit até uma rodada sem achado a corrigir,
 e então o Builder commita exatamente o conteúdo revisado, roda o gate por último e faz handoff (isenção `identical-commit`). Um não acolhimento é
-plausível (ex.: Standards apontar o nome em maiúsculas como heurística/convenção; o Ticket fixa o nome), **não garantido**. Resultado perdido de gate
-não é provocado no real (coberto em I-local/S).
+plausível (ex.: Standards apontar o nome em maiúsculas como heurística/convenção; o Ticket fixa o nome), **não garantido**. O caminho principal não
+provoca perda de resultado de gate; a variante opcional acima provoca (e espera `not-verified`).
 
 ```sh
 NODE="env -u NODE_OPTIONS -u NODE_COMPILE_CACHE NODE_DISABLE_COMPILE_CACHE=1 /home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node"
