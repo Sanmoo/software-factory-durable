@@ -8,7 +8,7 @@ export { readBounded, snapshotStorage };
 // GitHub WRITES of this recipe (all by the Builder, directly, in its guest, with its own repo-restricted `builder-publish` grant): ONE push
 // creating the Work's own branch `factory/3-<work8>` and ONE draft pull request from it to `main` in Sanmoo/java-springboot-event-sourcing.
 // Never a merge, approval, ready conversion, label/assignee change, push to main or to another branch by design (skill + prompt), and the
-// controller itself never pushes or creates a pull request. REQUIRES ticket 13 (end-of-Execution verification) to be integrated.
+// controller itself never pushes or creates a pull request. Composes ticket 13's multi-round reviews and end-of-Execution verification.
 
 const root = '/home/sanmoo/software-factory-test/y5';
 const observations = `${root}/q14-publication-v6`;
@@ -39,7 +39,7 @@ const prompts = {
     'message is ONLY the JSON verdict object you are asked for, with no prose before or after.',
 };
 const reviewer = { modelBudget: 'reviewer-v1' as const, imageSourceMaxBytes: 5 * 1024 * 1024 };
-/** v6 = ticket 14 publication on top of the ticket 13 pack (re-derived from v5 at the rebase). */
+/** v6 = ticket 14 publication on top of the ticket 13 pack v5. */
 const skillPack = 'factory-skills-v6' as const;
 /** The Ticket text the operator puts on issue #3 for this run (documentation only; one documented gate). Same smoke as ticket 13. */
 export const ticketBody = [
@@ -53,7 +53,8 @@ export const ticketBody = [
   '`cd /workspace/checkout && test -f docs/FACTORY_SMOKE.md && grep -q \'^## Steps\' docs/FACTORY_SMOKE.md && grep -q \'^## Rollback\' docs/FACTORY_SMOKE.md`'].join('\n');
 
 export function plan() {
-  return { revision, root, observations, phases, repository, expectedTicket, configuration, guestAssets, requires: 'ticket 13 integrated (factory-skills-v5 present; reviews.rounds composed)',
+  return { revision, root, observations, phases, repository, expectedTicket, configuration, guestAssets,
+    requires: 'factory-skills-v5 and factory-skills-v6 registered and loadable (v6 continuation-capable); reviews.rounds composed',
     model: { provider: 'openai', model: 'gpt-6-luna', api: 'openai-responses', auth: 'factory-oauth (operator first-login store under root/credentials)', sameModelForAllRoles: true,
       builder: { skillPack, budget: 'builder-v1', maxRequests: 60, maxToolCalls: 120, deadlineMinutes: 30, activations: 2, captures: rounds.max },
       reviewers: { roles: ['standards', 'spec'], budget: 'reviewer-v1', maxRequestsEach: 24, maxToolCallsEach: 80, deadlineMinutesEach: 15, tools: ['read'], maxRounds: rounds.max,
@@ -64,7 +65,8 @@ export function plan() {
       operatorObligation: 'main of the test repository must be protected (no direct push, no merge without human review) with NO bypass for the App: Contents W does not separate push from merge',
       controllerPurposes: ['tracker-read', 'association-read', 'dependency-read', 'repository-read', 'publication-read {metadata:read, contents:read, pull_requests:read}', 'repository-fetch {metadata:read, contents:read}'],
       builderPurposes: ['builder-start {metadata:read, contents:read, issues:read} (implementation activation + renewals)',
-        'builder-publish {metadata:read, contents:write, pull_requests:write, issues:read} (ONLY the publication activation; at most 2 issuances: initial + one renewal)'],
+        'builder-publish {metadata:read, contents:write, pull_requests:write, issues:read} (ONLY the publish-only activation: no handoff, no edit tool; at most 2 issuances: initial + one renewal)'],
+      appIdentity: 'GET /app (slug) + GET /users/<slug>[bot] (installation token): pinned at preflight and required as the own PR author',
       reviewerCredentials: 'none',
       writes: ['Builder (guest, direct): 1 git push creating refs/heads/factory/3-<work8> at the verified commit with --force-with-lease=refs/heads/<branch>: (branch must not exist)',
         'Builder (guest, direct): 1 draft pull request factory/3-<work8> -> main whose body starts with <!-- software-factory:work:<work-id> --> and contains Closes #3',
@@ -72,9 +74,10 @@ export function plan() {
         'controller: at most one Question comment on issue #3 only if the Builder asks (ask_user); the recipe then stops (no answer)'],
       never: ['merge', 'approval', 'ready-for-review conversion', 'push to main or any other branch', 'labels/assignees/Projects', 'closing the issue or the PR', 'branch deletion/cleanup'] },
     effects: [
-      'preflight: read-only GitHub: the configured label lists exactly Ticket #3; ticket, native blocked_by and its associated pull requests (must be NONE); tips of main and of no factory branch',
-      'run: new Control storage; implementation Execution (ticket 13 rounds, verification); next tick: discovery (own branch tip + correlated PRs) -> absent -> publication requested; ' +
-        'next cycle: ONE publication activation (new boot, same Work checkout, builder-publish grant, `publish` to the same session or a replacement instruction) where the Builder pushes and ' +
+      'preflight: read-only GitHub: the configured label lists exactly Ticket #3; ticket, native blocked_by and its associated pull requests (must be NONE); every branch/tag tip ' +
+        '(no `factory/3-` branch may exist); main must require pull requests with NO bypass for the App (ruleset current_user_can_bypass never, or classic required reviews without App bypass); the App bot identity',
+      'run: new Control storage; implementation Execution (ticket 13 rounds, verification); next tick: discovery (own branch tip, all refs, base protection, correlated PRs) -> absent -> ' +
+        'publication requested; next cycle: ONE publish-only activation (new boot, same Work checkout, builder-publish grant, new session without handoff/edit) where the Builder pushes and ' +
         'creates the draft PR directly. From the moment the publication activation is observed, the recipe makes every discovery read of the own branch FAIL (lost result provoked): ' +
         'Control records nothing about the PR. The owner stops when the publication Execution ended and its boot was stopped (or any hold/block, or the 80 min deadline)',
       'discover: a NEW owner process on the SAME storage with the real adapter: it must discover and link the own draft PR before anything else (no prepare/activation/grant allowed)',
@@ -87,12 +90,12 @@ export function plan() {
       'discover phase: prepare/activate/issue refused'],
     expected: ['implementation Execution: ended completed, cessation confirmed, review.verification.status verified (otherwise publication.state not-publishable with reasons, and NO GitHub write)',
       'publication.state requested after the first discovery (trigger verified, outcome absent, branch absent), expectedRemote {state: absent}',
-      'publication Execution: request.publication {basisExecutionId, head = verified head, branch, base main, marker, expectedRemote absent}, credential.purpose builder-publish, phaseId builder-publication, ' +
-        'prompt starts with `publish` (continued session) or `Factory publication instruction` (replacement with its reason)',
+      'publication Execution: request.publication {basisExecutionId, head = verified head, branch, base main, marker, expectedRemote absent, pullRequest null}, credential.purpose builder-publish, ' +
+        'phaseId builder-publication, no handoff, policies without edit, prompt starts with `Factory publication instruction (publish-only session`; publication.attempts records it at the activation commit',
       'publication session: bash commands include the explicit --force-with-lease=refs/heads/<branch>: and gh pr create --draft (normal records); no merge/ready/approve command',
       'end of run: publication.state awaiting-discovery with incomplete discoveries (provoked), pullRequest null — the Factory did NOT learn the result from the Builder',
-      'discover: publication.state published, pullRequest {draft: true, headSha = verified head, headRef = own branch, base main}, Work.pullRequest set, description.conformant (or explicit reasons), ' +
-        'no new Execution; the issue stays open; main tip unchanged; PR open, draft, not merged',
+      'discover: publication.state published, pullRequest {draft: true, headSha = verified head, headRef = own branch, base main, author = pinned App bot}, Work.pullRequest set, ' +
+        'description conformant (otherwise blocked DESCRIPTION_NONCONFORMANT with its reasons), no unexpected ref change vs refsBefore, no new Execution; issue open; main tip unchanged; PR open, draft, not merged',
       'no token in storage/receipts/sessions/observations'],
   };
 }
@@ -119,12 +122,17 @@ export function activationGuard(maxRounds: number = rounds.max) {
   };
 }
 
-/** Grant guard: `builder-publish` only once Control requested the publication, at most `max` issuances; never another purpose. */
+/**
+ * Grant guard: `builder-publish` only for the publication activation's own lifecycle — its initial issuance while Control's publication
+ * is `requested`, and a renewal while that activation runs (the publication is then `awaiting-discovery` with its attempt recorded) —
+ * at most `max` issuances; never another purpose.
+ */
 export function grantGuard(max = 2) {
   let publish = 0;
-  return (purpose: string | undefined, publicationRequested: boolean) => {
+  return (purpose: string | undefined, lifecycle: { publicationState: string | null; publicationActivation: boolean }) => {
     if ((purpose ?? 'builder-start') === 'builder-start') return true;
-    if (purpose !== 'builder-publish' || !publicationRequested || publish >= max) return false;
+    const own = lifecycle.publicationState === 'requested' || (lifecycle.publicationState === 'awaiting-discovery' && lifecycle.publicationActivation);
+    if (purpose !== 'builder-publish' || !own || publish >= max) return false;
     publish++;
     return true;
   };
@@ -184,20 +192,29 @@ export async function runPhase(phase: Phase) {
   try {
     if (phase === 'preflight') {
       const { factorySkillPackIds } = await import('../../src/contracts/index.js');
-      if (!(factorySkillPackIds as readonly string[]).includes('factory-skills-v5')) throw new Error('TICKET13_NOT_INTEGRATED');
-      const { tracker, codeRepository } = await compose();
+      const { skillPackContinues } = await import('../../src/workers/index.js');
+      // Each pack is loaded with its manifest/hash verification by `skillPackContinues`; v6 must be the continuation-capable newest one.
+      for (const id of ['factory-skills-v5', 'factory-skills-v6'] as const) {
+        if (!(factorySkillPackIds as readonly string[]).includes(id) || !await skillPackContinues(id)) throw new Error('SKILL_PACK_NOT_READY');
+      }
+      if (factorySkillPackIds.at(-1) !== skillPack) throw new Error('SKILL_PACK_NOT_NEWEST');
+      const { github, tracker, codeRepository } = await compose();
       const listing = await tracker.listCandidates(repository);
       if (listing.kind !== 'observed' || listing.candidates.length !== 1 || listing.candidates[0]!.number !== expectedTicket.number ||
         listing.repositoryId !== expectedTicket.repositoryId) { await save('preflight-held', { listing }); throw new Error('PRECONDITION_HELD'); }
       const ticket = await tracker.readTicket(listing.candidates[0]!);
       const graph = await tracker.readDependencyGraph(listing.candidates[0]!);
-      const publication = await codeRepository.findPublication({ repo: repository, issueNumbers: [expectedTicket.number], knownBranches: [repository.base] });
+      const publication = await codeRepository.findPublication({ repo: repository, issueNumbers: [expectedTicket.number], knownBranches: [], refs: true, base: repository.base });
       const associated = publication.kind === 'observed' ? publication.issues[String(expectedTicket.number)] : undefined;
-      if (publication.kind !== 'observed' || associated?.completeness !== 'complete' || associated.candidates.length || publication.branches[repository.base]?.state !== 'present') {
-        await save('preflight-held', { publication }); throw new Error('ASSOCIATED_PULL_REQUEST_OR_UNKNOWN_BASE');
+      const refs = publication.kind === 'observed' && publication.refs?.state === 'complete' ? publication.refs.refs : null;
+      const factoryBranches = refs ? Object.keys(refs).filter(ref => ref.startsWith(`refs/heads/factory/${expectedTicket.number}-`)) : null;
+      const app = await github.appIdentity(repository);
+      if (publication.kind !== 'observed' || associated?.completeness !== 'complete' || associated.candidates.length || !refs || factoryBranches?.length ||
+        !refs[`refs/heads/${repository.base}`] || publication.baseProtection?.state !== 'pull-request-required' || !app) {
+        await save('preflight-held', { publication, factoryBranches, app }); throw new Error('PRECONDITION_HELD');
       }
       await save('preflight-result', { status: 'success', ticket, graph: { completeness: graph.completeness, nodes: graph.nodes.length, problems: graph.problems },
-        base: publication.branches[repository.base], associatedPullRequests: 0 });
+        base: { state: 'present', sha: refs[`refs/heads/${repository.base}`] }, refs, baseProtection: publication.baseProtection, app, associatedPullRequests: 0 });
       return;
     }
     if (!(await exists('preflight-result'))) throw new Error('PREFLIGHT_REQUIRED');
@@ -232,13 +249,14 @@ export async function runPhase(phase: Phase) {
             candidates: Object.values(result.issues).flatMap(item => item.completeness === 'complete' ? item.candidates.map(candidate => ({ number: candidate.number, headRef: candidate.headRef,
               headSha: candidate.headSha, draft: candidate.draft, author: candidate.author.login })) : []) } : { code: result.code }) });
           return result;
-        } }, repositories: [repository], dependencyRepositories: [] }, polling: { intervalSeconds: pollingSeconds },
+        } }, repositories: [repository], dependencyRepositories: [], factoryApp: () => github.appIdentity(repository) }, polling: { intervalSeconds: pollingSeconds },
         execution: { configuration, capacity: 1, builder: { skillPack, modelBudget: 'builder-v1', copyOutput: true, editSourceMaxBytes: 8192 },
           // Ticket 13 composition (multi-round reviews + end-of-Execution verification).
-          reviews: Object.assign({ reviewer }, { rounds }),
+          reviews: { reviewer, rounds },
           credentials: { async issue(context) {
             const work = await shown();
-            const allowed = !discovering && work?.ticket.number === expectedTicket.number && grants(context.purpose, work.publication?.state === 'requested');
+            const allowed = !discovering && work?.ticket.number === expectedTicket.number && grants(context.purpose, { publicationState: work.publication?.state ?? null,
+              publicationActivation: Boolean(work.execution?.request.publication) && work.execution?.executionId === context.executionId && work.execution.state !== 'ended' });
             log({ call: 'issue', purpose: context.purpose ?? 'builder-start', allowed });
             if (!allowed) throw Object.assign(new Error('RECIPE_GRANT_GUARD'), { outcome: 'known-rejected' });
             const grant = await builderCredentials.issue(context);
@@ -332,15 +350,15 @@ export async function runPhase(phase: Phase) {
       }
       // Read-only GitHub observation of the final remote state (own PR, own branch, main tip, issue still open).
       const { tracker, codeRepository } = await compose();
-      const remote = await codeRepository.findPublication({ repo: repository, issueNumbers: [expectedTicket.number], knownBranches: [work.branch ?? repository.base, repository.base] });
+      const remote = await codeRepository.findPublication({ repo: repository, issueNumbers: [expectedTicket.number], knownBranches: work.branch ? [work.branch] : [], refs: true, base: repository.base });
       const ticket = await tracker.readTicket(work.ticket);
-      const preflight = JSON.parse(await fs.readFile(`${observations}/preflight-result.json`, 'utf8')) as { base: unknown };
+      const preflight = JSON.parse(await fs.readFile(`${observations}/preflight-result.json`, 'utf8')) as { base: unknown; refs: unknown };
       await save('inspect-result', { work: { work_id: work.work_id, branch: work.branch, pullRequest: work.pullRequest, publication: work.publication, impediments: work.impediments,
         history: work.history.filter(item => item.event.startsWith('publication') || item.event.startsWith('execution')) },
       executions: [...work.previousExecutions, work.execution].map(item => ({ executionId: item.executionId, mode: item.mode, state: item.state, request: item.request, credential: item.credential,
         credentialRenewals: item.credentialRenewals.map(renewal => renewal.metadata?.purpose ?? null), end: item.end, held: item.held,
         verification: (item.review as { verification?: unknown } | undefined)?.verification ?? null })),
-      prBody: body, sessions, remote, ticket, baseBefore: preflight.base, ...await inspectEnvironment(environmentDirectory, observations, work.execution.request.baseCommit ?? undefined) });
+      prBody: body, sessions, remote, ticket, baseBefore: preflight.base, refsBefore: preflight.refs, ...await inspectEnvironment(environmentDirectory, observations, work.execution.request.baseCommit ?? undefined) });
       return;
     }
     if (!needsStop(work.execution as ExecutionView)) throw new Error('NOTHING_TO_STOP');

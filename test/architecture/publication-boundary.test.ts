@@ -17,10 +17,14 @@ async function sources(directory = 'src'): Promise<{ path: string; text: string 
 
 test('AC1/AC5: no controller push/PR-creation path, no Git/gh wrapper or shell parser for publication', async () => {
   const files = await sources();
-  // Host git runs only to prepare/inspect the checkout, never to push.
-  for (const file of files.filter(item => item.text.includes("'/usr/bin/git'"))) {
-    assert.ok(['src/sandbox/checkout.ts', 'src/sandbox/checkout-inspection.ts'].includes(file.path), file.path);
-    assert.doesNotMatch(file.text, /['"]push['"]|--force-with-lease/, `${file.path}: host git never pushes`);
+  // Host git runs only to prepare/inspect the checkout, never to push. Heuristic (review LOW): ANY file that spawns a process and names
+  // git (any path or a bare `git`) must not carry a push argument or a lease.
+  const spawns = files.filter(item => /\b(execFile|execFileSync|spawn|spawnSync|exec|execSync|fork)\s*\(/.test(item.text) && /['"`](?:[^'"`\s]*\/)?git['"`]/.test(item.text));
+  assert.ok(spawns.some(item => item.path === 'src/sandbox/checkout.ts'), 'the heuristic sees the known host git');
+  for (const file of spawns) assert.doesNotMatch(file.text, /['"`]push['"`]|--force-with-lease|\bgit push\b/, `${file.path}: host git never pushes`);
+  // The only Host git files: the Work checkout preparation/inspection, and the release build reading the Factory's OWN source metadata.
+  for (const file of spawns.filter(item => /['"`](?:\/usr\/bin\/)?git['"`]\s*,/.test(item.text))) {
+    assert.ok(['src/sandbox/checkout.ts', 'src/sandbox/checkout-inspection.ts', 'src/entrypoints/release-build.ts'].includes(file.path), file.path);
   }
   // The controller's GitHub client has exactly one write (the Question comment); no pulls/refs/contents writes.
   const github = files.find(item => item.path === 'src/platform/github/index.ts')!.text;

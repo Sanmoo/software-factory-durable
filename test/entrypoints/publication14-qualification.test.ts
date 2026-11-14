@@ -21,7 +21,9 @@ test('AC7 recipe: import and --plan are inert and declare the exact GitHub effec
   assert.deepEqual(plan.expectedTicket, { number: 3, repositoryId: 1256893534 });
   assert.equal(plan.github.writes.filter((item: string) => item.startsWith('Builder')).length, 2, 'one push and one draft PR');
   for (const never of ['merge', 'approval', 'ready-for-review conversion', 'push to main or any other branch']) assert.ok(plan.github.never.includes(never), never);
-  assert.match(plan.requires, /ticket 13/);
+  assert.match(plan.requires, /factory-skills-v5 and factory-skills-v6/);
+  assert.ok(plan.effects[0].includes('no `factory/3-` branch') && plan.effects[0].includes('NO bypass for the App'));
+  assert.match(plan.github.appIdentity, /GET \/app/);
   assert.deepEqual([plan.model.providerRetries, plan.model.sdkRetries], [0, 0]);
   await assert.rejects(recipe.main(['retry']), /EXACT_PHASE_REQUIRED/);
   assert.equal(forbidden, 0);
@@ -41,12 +43,15 @@ test('AC7 recipe guards: one implementation Builder, its reviewers, then ONE pub
   assert.equal(guard(c('builder', 'e3', 'builder-publication')), false, 'one publication only');
   assert.equal(guard(c('spec'), { round: 2 }), false, 'no reviewer after the publication started');
   const grants = recipe.grantGuard(2);
-  assert.equal(grants(undefined, false), true);
-  assert.equal(grants('builder-publish', false), false, 'never before Control requested it');
-  assert.equal(grants('builder-publish', true), true);
-  assert.equal(grants('builder-publish', true), true);
-  assert.equal(grants('builder-publish', true), false, 'bounded');
-  assert.equal(grants('admin', true), false);
+  const lifecycle = (publicationState: string | null, publicationActivation = false) => ({ publicationState, publicationActivation });
+  assert.equal(grants(undefined, lifecycle(null)), true);
+  assert.equal(grants('builder-publish', lifecycle(null)), false, 'never before Control requested it');
+  assert.equal(grants('builder-publish', lifecycle('awaiting-discovery')), false, 'not after the activation ended');
+  assert.equal(grants('builder-publish', lifecycle('requested')), true);
+  // Review MED 5: the renewal of the RUNNING publication activation (attempt already recorded, awaiting-discovery) is its own lifecycle.
+  assert.equal(grants('builder-publish', lifecycle('awaiting-discovery', true)), true);
+  assert.equal(grants('builder-publish', lifecycle('awaiting-discovery', true)), false, 'bounded');
+  assert.equal(grants('admin', lifecycle('requested')), false);
   const lost = recipe.lostResult();
   assert.equal(lost.refuses(['factory/3-x']), false);
   lost.provoke();
