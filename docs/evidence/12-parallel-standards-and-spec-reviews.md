@@ -157,6 +157,18 @@ registrada para o Builder com pacote mesmo sem cópia de saída. Nada mais fica 
 lê v3 → sucesso; v1 e workspace → `READ_PATH_DENIED` sem chegar ao guest; facade envia só a lista do pacote ativo). Receita em `q12-review-v4`.
 Gate (`rm -rf dist`): depcruise/eslint/tsc ok; **117 arquivos: 822 pass, 0 fail, 10 skipped, 0 cancelled**.
 
+## Rebase sobre a integração (tickets 10 e 20, `baa15a8`)
+
+Commits do ticket 12 reunidos em um (histórico original preservado em `backup/software-factory-mvp-12-pre-rebase`) e rebaseados.
+Unificações: pacotes `skillPacks` v1/v2 (ticket 10) + v3 (= v2 + §3 handoff + regra de identidade; v1/v2 intactos); regra de leitura dos
+arquivos do pacote: **uma** implementação (a do ticket 10, `skillPackGuestFiles` + `skillPackFiles`, leitura pelo programa guest em modo Builder
+com o próprio caminho, páginas só de capturas do pacote); testes `builder-pack-read` (v2, ticket 10) e `builder-pack-read-v3`. `Workers.deliver`
+é uma união: credencial/retirada (ticket 20) e `review-results` (ticket 12, só ao Builder com política de handoff); mensagens `worker-handoff`/
+`delivery-result` passam pela caixa estrita do facade como respostas esperadas da própria launch/entrega. Um prelúdio: `env -i` + identidade
+Factory + prelúdio de credencial do ticket 20. Revisores nunca recebem credencial; durante a suspensão para revisão a renovação por tempo do grant
+continua (`renewWhile` cobre a rodada) e todo `held` da rodada retira a credencial (`withdraw('held')`); as ferramentas continuam recusadas.
+Gate (`rm -rf dist`, normal-oauth com 90 s): depcruise/eslint/tsc ok; **132 arquivos: 902 pass, 0 fail, 10 skipped, 0 cancelled**.
+
 ## Ensaio real (receita one-shot)
 
 Receita: `dist/test/entrypoints/review12-qualification.js` (fonte `test/entrypoints/review12-qualification.ts`). `--plan` é inerte. Fases one-shot com
