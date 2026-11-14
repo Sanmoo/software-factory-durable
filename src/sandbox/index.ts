@@ -34,6 +34,8 @@ import { removeEnvironment } from './remove.js';
 export type { RemoveResult, ResourceRemoval } from './remove.js';
 // Trusted process composition only; never projected as a worker tool.
 export { runSandboxAdapter } from './adapter.js';
+// Release build (ticket 32) only: the pinned private Gondolin profile prepared/verified inside a release tree; never at runtime.
+export { prepareReleaseGondolinSdk, verifyDevelopmentGondolinSdk as verifyGondolinSdk, gondolinSdkProfile } from './gondolin-sdk-profile.js';
 import { connectReadTools, type ToolCall, type ReadResult, type ToolContext } from './read-tools.js';
 import { registerOwnerTools } from './owner-registration.js';
 export type { ToolContext, ToolCall, ReadCall, ReadResult, ToolProjection, ReadBinding } from './read-tools.js';

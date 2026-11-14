@@ -3,10 +3,11 @@ import { test, mock } from 'node:test';
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { createHash } from 'node:crypto';
-import { cp, mkdir, mkdtemp, readFile, rm, stat, readdir, symlink, writeFile, chmod } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readlink, rename, rm, stat, readdir, symlink, writeFile, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { gondolinSdkProfile, prepareDevelopmentGondolinSdk, verifyDevelopmentGondolinSdk } from '../../src/sandbox/gondolin-sdk-profile.js';
+import { prepareReleaseGondolinSdk } from '../../src/sandbox/index.js';
 
 // Distribution and corrected sources are filesystem DATA only. No SDK entry/module evaluation.
 async function fixture(run: (root: string, staging: string) => Promise<void>) {
@@ -191,3 +192,29 @@ for (const tree of ['source', 'copied'] as const) {
     });
   }
 }
+
+test('release form (ticket 32): relative link to the SAME canonical node_modules verifies path-independently; nothing else is accepted', async () => {
+  await fixture(async (root, staging) => {
+    const evidence = await prepareReleaseGondolinSdk(root);
+    assert.equal(await readlink(join(staging, 'node_modules')), '../../node_modules');
+    assert.equal(evidence.dependencyLink, '../../node_modules');
+    assert.doesNotMatch(await readFile(join(staging, 'profile.json'), 'utf8'), new RegExp(root));
+    assert.deepEqual(await verifyDevelopmentGondolinSdk(root), evidence);
+    assert.deepEqual(await prepareReleaseGondolinSdk(root), evidence); // Existing valid root: verified, never rewritten.
+    const moved = `${root}-moved`;
+    await rename(root, moved);
+    try {
+      assert.deepEqual(await verifyDevelopmentGondolinSdk(moved), evidence);
+      const link = join(moved, gondolinSdkProfile.directory, 'node_modules');
+      await rm(link);
+      await symlink('../../.scratch', link);
+      await assert.rejects(verifyDevelopmentGondolinSdk(moved), /GONDOLIN_DEPENDENCY_LINK/);
+      await rm(link);
+      await symlink('../../node_modules/', link); // Equivalent spelling is still not the exact pinned link.
+      await assert.rejects(verifyDevelopmentGondolinSdk(moved), /GONDOLIN_DEPENDENCY_LINK/);
+      await rm(link);
+      await symlink(join(moved, 'node_modules'), link); // Absolute form with a relative-form record: record mismatch.
+      await assert.rejects(verifyDevelopmentGondolinSdk(moved), /GONDOLIN_PROFILE_DRIFT/);
+    } finally { await rename(moved, root); }
+  });
+});

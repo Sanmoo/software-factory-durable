@@ -131,14 +131,21 @@ async function context(project: string) {
   return { source, staging, dependencies, provenance, corrected, evidence };
 }
 
+/** Release form (ticket 32): the same canonical dependency directory through this exact relative link, so an extracted release
+ * verifies at its own canonical path; the development form keeps the absolute link. No other spelling or target is accepted. */
+const releaseDependencyLink = '../../node_modules';
+type DependencyLink = 'absolute' | 'relative';
+
 async function verifyPrepared(ctx: Awaited<ReturnType<typeof context>>) {
-  const { staging, dependencies, provenance, evidence } = ctx;
+  const { staging, dependencies, provenance } = ctx;
   if (((await checked(staging, 'directory')).mode & 0o777) !== 0o700) deny('ROOT_MODE');
   if (json((await readdir(staging)).sort(comparePaths)) !== json(['node_modules', 'profile.json', 'sdk'])) deny('ROOT_DRIFT');
   const link = join(staging, 'node_modules'), info = await lstat(link);
   // Sole allowed escaping symlink: exact canonical installed dependency directory, never followed during SDK inventory.
-  if (!info.isSymbolicLink() || info.uid !== process.getuid?.() || await readlink(link) !== dependencies ||
+  const target = info.isSymbolicLink() ? await readlink(link) : undefined;
+  if (!info.isSymbolicLink() || info.uid !== process.getuid?.() || (target !== dependencies && target !== releaseDependencyLink) ||
       await realpath(link) !== dependencies) deny('DEPENDENCY_LINK');
+  const evidence = { ...ctx.evidence, dependencyLink: target };
   if (json(await inventory(join(staging, 'sdk'), provenance.copied)) !== json(provenance.copied)) deny('COPY_TREE');
   const record = join(staging, 'profile.json');
   if (((await checked(record, 'file')).mode & 0o777) !== 0o600 || (await bytes(record)).toString() !== json(evidence)) deny('PROFILE_DRIFT');
@@ -151,7 +158,7 @@ export async function verifyDevelopmentGondolinSdk(project = process.cwd()) {
 }
 
 /** Offline, explicit preparation. Existing/incomplete/drifted roots are never repaired or removed. */
-export async function prepareDevelopmentGondolinSdk(project = process.cwd()) {
+export async function prepareDevelopmentGondolinSdk(project = process.cwd(), { dependencyLink = 'absolute' }: { dependencyLink?: DependencyLink } = {}) {
   const ctx = await context(project);
   try { await mkdir(ctx.staging, { mode: 0o700 }); }
   catch (error) {
@@ -169,9 +176,14 @@ export async function prepareDevelopmentGondolinSdk(project = process.cwd()) {
     await writeFile(target, content, { flag: existed ? 'w' : 'wx', mode: 0o644 });
   }
   if (json(await inventory(ctx.source, ctx.provenance.original)) !== json(ctx.provenance.original)) deny('SOURCE_TREE');
-  await symlink(ctx.dependencies, join(ctx.staging, 'node_modules'));
-  await writeFile(join(ctx.staging, 'profile.json'), json(ctx.evidence), { mode: 0o600, flag: 'wx' });
+  const link = dependencyLink === 'relative' ? releaseDependencyLink : ctx.dependencies;
+  await symlink(link, join(ctx.staging, 'node_modules'));
+  await writeFile(join(ctx.staging, 'profile.json'), json({ ...ctx.evidence, dependencyLink: link }), { mode: 0o600, flag: 'wx' });
   return verifyPrepared(ctx);
+}
+/** Release preparation (ticket 32) of the SAME pinned profile inside a release tree being assembled: relative dependency link. */
+export async function prepareReleaseGondolinSdk(release: string) {
+  return prepareDevelopmentGondolinSdk(release, { dependencyLink: 'relative' });
 }
 if (process.argv[1] && resolve(process.argv[1]) === resolve('dist/src/sandbox/gondolin-sdk-profile.js')) {
   process.stdout.write(json(await prepareDevelopmentGondolinSdk()));
