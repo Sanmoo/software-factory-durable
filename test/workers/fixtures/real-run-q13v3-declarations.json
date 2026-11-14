@@ -1,0 +1,83 @@
+{
+  "_note": "Builder handoff declarations of the real ticket 13 run y5/q13-rounds-v3 (treatments and gates only, as declared by the model; Host-resolved fields removed). Rounds 2 and 3 declared placeholder treatments 'none' for reviewers without findings.",
+  "findings": {
+    "1": {
+      "standards": [],
+      "spec": [
+        "S1"
+      ]
+    },
+    "2": {
+      "standards": [],
+      "spec": []
+    },
+    "3": {
+      "standards": [],
+      "spec": []
+    },
+    "4": {
+      "standards": [],
+      "spec": []
+    }
+  },
+  "handoffs": {
+    "2": {
+      "treatments": [
+        {
+          "round": 1,
+          "role": "spec",
+          "findingId": "S1",
+          "outcome": "fixed",
+          "justification": "Added the required Rollback heading and the sentence that the file can be deleted at any time without other changes.",
+          "evidence": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+        },
+        {
+          "round": 1,
+          "role": "standards",
+          "findingId": "none",
+          "outcome": "not-adopted",
+          "justification": "Standards reported no findings; conclusion was incomplete due to SOURCE_UNREADABLE, so this is recorded as no actionable finding, not treated as approval.",
+          "evidence": "Round 1 standards result: STANDARDS_INCOMPLETE; findings list empty."
+        }
+      ],
+      "gates": [
+        {
+          "id": "ticket-validation",
+          "source": "/artifacts/spec/v1/ticket.json#Validation",
+          "command": "cd /workspace/checkout && test -f docs/FACTORY_SMOKE.md && grep -q '^## Steps' docs/FACTORY_SMOKE.md && grep -q '^## Rollback' docs/FACTORY_SMOKE.md",
+          "cwd": "/workspace",
+          "status": "run"
+        }
+      ]
+    },
+    "3": {
+      "treatments": [
+        {
+          "round": 2,
+          "role": "standards",
+          "findingId": "none",
+          "outcome": "not-adopted",
+          "justification": "No Standards findings were reported in this clean round.",
+          "evidence": "Round 2 Standards conclusion clean; findings list empty."
+        },
+        {
+          "round": 2,
+          "role": "spec",
+          "findingId": "none",
+          "outcome": "not-adopted",
+          "justification": "No Spec findings were reported in this clean round.",
+          "evidence": "Round 2 Spec conclusion clean; findings list empty."
+        }
+      ],
+      "gates": [
+        {
+          "id": "ticket-validation",
+          "source": "/artifacts/spec/v1/ticket.json#Validation",
+          "command": "cd /workspace/checkout && test -f docs/FACTORY_SMOKE.md && grep -q '^## Steps' docs/FACTORY_SMOKE.md && grep -q '^## Rollback' docs/FACTORY_SMOKE.md",
+          "cwd": "/workspace",
+          "status": "run"
+        }
+      ]
+    }
+  }
+}

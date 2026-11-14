@@ -38,9 +38,12 @@ const ownerLifecycleSchema = z.union([
   z.strictObject({ kind: z.literal('worker-handoff'), event: z.record(z.string(), z.json()) }),
 ]);
 const abortSchema = z.strictObject({ kind: z.literal('abort') });
+const findingId = z.string().regex(/^[A-Za-z0-9_.-]{1,32}$/);
 /** Host directive to a suspended Builder (ticket 12); demultiplexed by the fixed entrypoint like abort. */
 export const deliverSchema = z.strictObject({ kind: z.literal('deliver'), directive: z.strictObject({ kind: z.literal('review-results'),
-  round: z.number().int().min(1).max(99), prompt: z.string().min(1).max(40000), end: z.literal(true).optional() }) });
+  round: z.number().int().min(1).max(99), prompt: z.string().min(1).max(40000), end: z.literal(true).optional(),
+  // Ticket 13: the finding ids each reviewer listed for that round (the handoff refuses treatments of unlisted findings).
+  findings: z.strictObject({ standards: z.array(findingId).max(40), spec: z.array(findingId).max(40) }).optional() }) });
 
 /** Pure construction is allowed before durable start; publication is not. The
  * callback is usable by the future OAuth observer, but no producer is activated. */

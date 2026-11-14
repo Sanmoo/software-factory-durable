@@ -63,13 +63,14 @@ test('AC3: activate exposes the Builder handoff and delivers the review results 
   t.after(() => handle.close());
   await handle.started;
   assert.deepEqual(await handle.handoffs.next(), { round: 1, status: 'captured', summary });
-  assert.deepEqual(await facade.deliver(handle.worker, { kind: 'review-results', round: 1, prompt: 'results' }), { status: 'delivered' });
+  assert.deepEqual(await facade.deliver(handle.worker, { kind: 'review-results', round: 1, prompt: 'results', findings: { standards: [], spec: ['S1'] } }), { status: 'delivered' });
   assert.deepEqual(await handle.completed, { status: 'success', receipt });
   assert.equal(await handle.handoffs.next(), null, 'no handoff after completion');
   const launch = o.received.find(message => message.kind === 'launch-worker')!;
   assert.deepEqual(launch.payload.handoff, { baseCommit: 'a'.repeat(40) });
   const deliver = o.received.find(message => message.kind === 'deliver-directive')!;
-  assert.deepEqual([deliver.reply_to, deliver.payload], [launch.message_id, { directive: { kind: 'review-results', round: 1, prompt: 'results' } }]);
+  assert.deepEqual([deliver.reply_to, deliver.payload], [launch.message_id, { directive: { kind: 'review-results', round: 1, prompt: 'results', findings: { standards: [], spec: ['S1'] } } }],
+    'ticket 13: the listed finding ids travel with the results');
 });
 
 test('AC4/AC5: reviewers launch with their own configured profile, budget and review input; the opinion must be this invocation\'s', async t => {

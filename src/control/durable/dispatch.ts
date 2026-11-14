@@ -237,11 +237,13 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     if (recorded !== 'recorded') return hold(`REVIEW_HANDOFF_${recorded.toUpperCase()}`, 'The handoff could not be recorded for this Execution; the Builder stays suspended. Operator recovery (ticket 26).');
     observe(work.work_id, failure ? 'review-handoff-failed' : classification.kind === 'exemption' ? 'review-exempted' : 'reviewing', failure ? [failure] : []);
     await scope.activity(`review-handoff-r${round}`);
-    const deliver = async (prompt: string, end: boolean) => {
+    // Ticket 13: the finding ids of each role's effective opinion travel with the results, so the Builder's handoff refuses unknown treatments.
+    const deliver = async (prompt: string, end: boolean, findings?: { standards: string[]; spec: string[] }) => {
       if (await recordDelivery(session, work.work_id, executionId, round, { promptSha256: createHash('sha256').update(prompt).digest('hex') }) !== 'recorded') return hold('REVIEW_DELIVERY_STALE', 'Delivery intent not recordable.');
       checkStop();
       // Q6 deliver (same union as the credential directives of ticket 20): the results to the CURRENT Builder of this Execution.
-      const delivered = await scope.wait(ports.workers.deliver(handle.worker, { kind: 'review-results', round, prompt, ...(end ? { end: true as const } : {}) }));
+      const delivered = await scope.wait(ports.workers.deliver(handle.worker, { kind: 'review-results', round, prompt, ...(end ? { end: true as const } : {}),
+        ...(multi && findings ? { findings } : {}) }));
       // A refusal is a known non-delivery; anything else may have reached the Builder (it might have resumed): uncertain, never "failed".
       const refused = delivered.status === 'failure' && ['DELIVERY_DENIED', 'DELIVERY_NOT_APPLICABLE', 'WORKER_NOT_CURRENT'].includes(delivered.code);
       await recordDelivery(session, work.work_id, executionId, round, delivered.status === 'delivered' ? { outcome: 'delivered', code: null }
@@ -253,7 +255,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     };
     if (classification.kind === 'exemption') {
       const reviewed = lastReviewed(prior);
-      const ok = await deliver(exemptionPrompt({ round, exemption: classification.exemption, conclusion: reviewed?.conclusion ?? 'unknown' }), event.closing === true);
+      const ok = await deliver(exemptionPrompt({ round, exemption: classification.exemption, conclusion: reviewed?.conclusion ?? 'unknown' }), event.closing === true,
+        { standards: [], spec: [] });
       if (ok) { observe(work.work_id, 'review-delivered', [`exempt:${classification.exemption.kind}`]); await scope.activity(`review-delivered-r${round}`); }
       return ok;
     }
@@ -297,7 +300,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       reviewers: { standards: concluded.reviewers.standards, spec: concluded.reviewers.spec }, ...(multi ? { multi: !lastSlot } : {}) });
     // The closing capture in the last slot cannot be followed by another capture, and a failed closing capture has nothing to treat:
     // its results are recorded and the activation ends (the verification then reports it).
-    if (!await deliver(prompt, event.closing === true && (lastSlot || failure !== null))) return false;
+    const listed = (role: 'standards' | 'spec') => (concluded.reviewers[role].opinion?.findings ?? []).map(item => item.id).slice(0, 40);
+    if (!await deliver(prompt, event.closing === true && (lastSlot || failure !== null), { standards: listed('standards'), spec: listed('spec') })) return false;
     observe(work.work_id, 'review-delivered', [concluded.conclusion!]);
     await scope.activity(`review-delivered-r${round}`);
     return true;
@@ -595,7 +599,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           const bound = own(await readQuestion(session, request.questionId));
           await recordEnd(session, work.work_id, executionId, 'question', code, bound ? request.questionId : null, elapsed(), completed.session ?? null);
         } else {
-          // Ticket 13: Control's presence/correlation verification of opinions, treatments, gates and waivers, before the end is recorded.
+          // Ticket 13: Control's presence/correlation verification of opinions, treatments, gates and waivers, committed BEFORE the end.
+          // It does not gate completion (a `completed` Execution may be `not-verified`); GitHub readiness (tickets 14/15) must consume it.
           // Preserved-source authorizations are confirmed by the Host first (confined no-follow read); unverified ones never count.
           if (ports.reviews?.rounds && completed.status === 'success') {
             const shown = (await deps.readWorks()).find(item => item.work_id === work.work_id)?.execution;

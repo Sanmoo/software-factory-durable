@@ -50,10 +50,13 @@ test('AC3: the owner forwards the suspended Builder handoff to the host-boot cha
   assert.deepEqual((await messages.next()).value!.payload, { status: 'failure', code: 'DELIVERY_DENIED' }, 'not correlated to this launch');
   await send('d1', 'deliver-directive', { directive: { ...directive, kind: 'shell' } }, 'l1');
   assert.deepEqual((await messages.next()).value!.payload, { status: 'failure', code: 'DELIVERY_DENIED' }, 'only review results');
-  await send('d2', 'deliver-directive', { directive }, 'l1');
+  await send('d3', 'deliver-directive', { directive: { ...directive, findings: { standards: ['bad id!'], spec: [] } } }, 'l1');
+  assert.deepEqual((await messages.next()).value!.payload, { status: 'failure', code: 'DELIVERY_DENIED' }, 'listed finding ids are bounded and well formed');
+  const listed = { ...directive, findings: { standards: [], spec: ['S1'] } };
+  await send('d2', 'deliver-directive', { directive: listed }, 'l1');
   const result = (await messages.next()).value!;
   assert.deepEqual([result.kind, result.reply_to, result.payload], ['delivery-result', 'd2', { status: 'delivered' }]);
-  assert.deepEqual(delivered, [directive]);
+  assert.deepEqual(delivered, [listed], 'ticket 13: the listed finding ids reach the Builder process');
 });
 
 test('review fix 8: the owner forwards a reviewer opinion only after redaction with EVERY secret it holds, including the live Builder grant', async t => {

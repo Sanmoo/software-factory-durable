@@ -221,6 +221,7 @@ export async function executeSession(options: Options, invocation: Invocation, r
           const directive = await options.onHandoff!(event);
           if (signal.aborted || interrupted || directive.kind !== 'review-results' || directive.round !== round || (directive.end && closing === null)) { interrupted = true; break; }
           if (directive.end) break;
+          gate.listed(round, directive.findings);
           gate.resume();
           prompt = directive.prompt;
         }

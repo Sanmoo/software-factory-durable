@@ -13,6 +13,10 @@ import type { BuilderDirective, HandoffEvent } from './builder-handoff.js';
 export type { ReviewerProfile, Invocation } from './worker-start.js';
 export type { BuilderDirective, HandoffEvent } from './builder-handoff.js';
 export { builderSkillPack, builderSkillPacks, skillPackContinues, skillPacks, type SkillPackId } from './skill-pack.js';
+/** Ticket 13 gate evidence (Host ledger) as a public Worker surface, so Control-level tests can resolve real evidence instead of
+ * synthesizing it. Runtime use remains inside the Builder host (`worker-session`). */
+export { createToolLedger, declarationsSchema } from './gates.js';
+export type { BashObservation, Declarations } from './gates.js';
 import { skillPackContinues, skillPackGuestFiles } from './skill-pack.js';
 /** Transient material handed to the host handshake, never part of the (serializable) invocation. */
 export type ActivationDelivery = { credential?: Readonly<{ token: string }> };
@@ -145,7 +149,8 @@ export function createWorkers(configuration?: Configuration) {
       entry.inbox.expect(deliveryId);
       try {
         await entry.channel.send({ protocol_version: protocolVersion, controller_run_id: null, message_id: deliveryId, reply_to: entry.launchId,
-          kind: 'deliver-directive', payload: { directive: { kind: directive.kind, round: directive.round, prompt: directive.prompt, ...(directive.end ? { end: true } : {}) } } });
+          kind: 'deliver-directive', payload: { directive: { kind: directive.kind, round: directive.round, prompt: directive.prompt, ...(directive.end ? { end: true } : {}),
+            ...(directive.findings ? { findings: { standards: [...directive.findings.standards], spec: [...directive.findings.spec] } } : {}) } } });
       } catch { entry.inbox.release(deliveryId); return { status: 'failure', code: 'DELIVERY_UNCONFIRMED' }; }
       const reply = await entry.inbox.next(message => message.reply_to === deliveryId, 15000);
       entry.inbox.release(deliveryId);

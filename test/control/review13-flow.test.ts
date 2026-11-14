@@ -156,6 +156,9 @@ test('AC1/AC4/AC5/AC6: a fixed finding gets a new round of BOTH reviewers on the
   assert.equal(rounds[1]!.reviewers.spec.opinion!.round, 2, 'the round 1 approval/opinion is never reused for round 2');
   // Delivery: results for 1 and 2 (the Builder continues and hands off again), the closing exemption ends the activation.
   assert.deepEqual(h.execution.directives.map(item => [item.round, item.end ?? false]), [[1, false], [2, false], [3, true]]);
+  // Real-run regression (q13-rounds-v3): the delivered results list each role's finding ids, so the handoff can refuse placeholders.
+  assert.deepEqual(h.execution.directives.map(item => [item.round, item.findings]),
+    [[1, { standards: [], spec: ['S1'] }], [2, { standards: [], spec: [] }], [3, { standards: [], spec: [] }]]);
   assert.match(h.execution.directives[0]!.prompt, /call handoff again, alone, with `treatments`/);
   assert.match(h.execution.directives[2]!.prompt, /holds exactly the content reviewed in round 2/);
   assert.equal(execution.request.promptSha256 !== null, true);

@@ -17,7 +17,11 @@ export type HandoffEvent = { round: number; closing?: true; declarations?: Hando
  * Host directive to a suspended Builder: the effective review results of that round, as the continuation of the SAME session.
  * `end` (ticket 13, closing capture only): nothing more for the Builder; the activation completes without another model request.
  */
-export type BuilderDirective = { kind: 'review-results'; round: number; prompt: string; end?: true | undefined };
+export type BuilderDirective = { kind: 'review-results'; round: number; prompt: string; end?: true | undefined;
+  /** Ticket 13: the finding ids each reviewer's effective opinion of that round listed (empty for a role without findings or an exemption).
+   * The handoff refuses a treatment of a finding that is not listed, before any capture. */
+  findings?: ListedFindings | undefined };
+export type ListedFindings = { standards: string[]; spec: string[] };
 /** Ticket 13 multi-round policy: round numbers start at `first` (continuing earlier Executions of the Work) and at most `max` captures
  * (handoffs plus the closing capture) happen in this invocation; one capture is always kept for the closing. */
 export type HandoffRounds = { first: number; max: number };
@@ -34,6 +38,13 @@ export function builderHandoff(policy?: HandoffRounds, ledger?: ReturnType<typeo
   let suspended = false, pending = false, rounds = 0, batch = 0;
   // Ticket 13 review fix 1: the model's declarations are stored RAW; the Host resolves them against the capture's content snapshot.
   let declarations: Declarations | undefined;
+  // Ticket 13: findings delivered per round (null = a round delivered without a Host list: only the end-of-Execution check applies).
+  const listed = new Map<number, { standards: Set<string>; spec: Set<string> } | null>();
+  const unknownTreatments = (treatments: NonNullable<Declarations['treatments']>) => treatments.flatMap(item => {
+    if (!listed.has(item.round)) return [`${item.round}/${item.role}/${item.findingId}`];
+    const known = listed.get(item.round);
+    return known && !known[item.role].has(item.findingId) ? [`${item.round}/${item.role}/${item.findingId}`] : [];
+  });
   const legacy: ToolDefinition = {
     name: 'handoff', label: 'handoff', executionMode: 'sequential',
     description: 'Factory review handoff. Call it exactly once, alone, when your proposal is complete in /workspace/checkout (committed or not; a clean ' +
@@ -58,7 +69,7 @@ export function builderHandoff(policy?: HandoffRounds, ledger?: ReturnType<typeo
     description: 'Factory review handoff. Call it alone, when your proposal is complete in /workspace/checkout (committed or not) and after re-running the ' +
       'documented gates as your LAST commands. Arguments: `gates` (each documented gate: id, source document#section, the EXACT bash command you ran, ' +
       'its documented cwd, status run|not-run|waived, a reason when not run/waived, a waiver references its concrete prior authorization, requiredCheck when ' +
-      'it is a GitHub required check) and `treatments` (for every finding of earlier rounds: round, role, findingId, outcome fixed|not-adopted, justification, ' +
+      'it is a GitHub required check) and `treatments` (only for every finding the delivered results listed, never a placeholder for a reviewer without findings: round, role, findingId, outcome fixed|not-adopted, justification, ' +
       'optional evidence/authorization). The Factory takes gate results only from its own record of your Bash calls, suspends ALL your tools and turns, ' +
       'records the proposal and decides whether Standards and Spec review it again (any change of content or context) or whether no new round is needed ' +
       '(unchanged content, or a commit holding exactly the reviewed content). Its answer arrives as your next message.',
@@ -73,6 +84,9 @@ export function builderHandoff(policy?: HandoffRounds, ledger?: ReturnType<typeo
       if (!parsed.success) return refused(`HANDOFF_DECLARATIONS_INVALID: no handoff happened. Fix and call handoff again: ${parsed.error.issues.slice(0, 5)
         .map(issue => `${issue.path.join('.') || '(root)'}: ${issue.message}`).join('; ').slice(0, 1500)}`);
       if (Buffer.byteLength(JSON.stringify(parsed.data)) > declarationsMaxBytes) return refused('HANDOFF_DECLARATIONS_TOO_LARGE: no handoff happened. Shorten justifications, reasons and commands.');
+      const unknown = [...new Set(unknownTreatments(parsed.data.treatments ?? []))];
+      if (unknown.length) return refused(`HANDOFF_TREATMENT_UNKNOWN_FINDING: no handoff happened and no review round was used. Declare treatments ONLY for ` +
+        `findings the delivered review results listed (exact round, role and findingId); omit reviewers and rounds without findings. Unknown: ${unknown.slice(0, 16).join(', ')}`.slice(0, 1500));
       declarations = parsed.data;
       rounds++; suspended = true; pending = true;
       return { content: [{ type: 'text' as const, text: `Handoff accepted for capture round ${policy!.first + rounds - 1}. Your tools are suspended; stop now and wait.` }],
@@ -86,6 +100,10 @@ export function builderHandoff(policy?: HandoffRounds, ledger?: ReturnType<typeo
       if (!policy || pending || rounds >= policy.max) return null;
       rounds++; suspended = true;
       return policy.first + rounds - 1;
+    },
+    /** Ticket 13: the findings the Host delivered for a round (from its directive), before the Builder resumes. */
+    listed(round: number, findings: ListedFindings | undefined) {
+      listed.set(round, findings ? { standards: new Set(findings.standards), spec: new Set(findings.spec) } : null);
     },
     /** Tool calls of the assistant message being executed (from its message_end, before its tools run). */
     batch(count: number) { batch = count; },

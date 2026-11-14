@@ -88,8 +88,8 @@ export function deliveryPrompt(input: { round: number; conclusion: string; appli
     `${input.reasons.length ? ` (${input.reasons.join(', ')})` : ''}. Your tools are available again.\n` +
     'Treat every finding: fix it, or justify why you do not adopt it (with evidence). A failed, cancelled or incomplete review is NOT zero findings and ' +
     'NOT an approval: state it in your final message. A heuristic is a judgement call, not a mandatory violation. ' + (input.multi
-      ? `Then call handoff again, alone, with \`treatments\` for EVERY finding of round ${input.round} (round, role, findingId, outcome fixed|not-adopted, ` +
-        'justification, evidence) and your documented `gates` re-run as your LAST commands. The Factory decides whether Standards and Spec review again: any ' +
+      ? `Then call handoff again, alone, with \`treatments\` for EVERY finding listed above for round ${input.round} (round, role, findingId, outcome ` +
+        'fixed|not-adopted, justification, evidence) — a reviewer without findings gets NO treatment, never a placeholder — and your documented `gates` re-run as your LAST commands. The Factory decides whether Standards and Spec review again: any ' +
         'change of content or context gets a new round; unchanged content or a commit holding exactly the reviewed content does not. A requirement doubt, a ' +
         'waiver or an approval required by a skill without a concrete prior authorization is a question for the operator (ask_user), never a guess.\n'
       : 'Do not call handoff again in this Factory version; end with your final message listing each finding id with "fixed" or "not adopted: <justification>".\n');

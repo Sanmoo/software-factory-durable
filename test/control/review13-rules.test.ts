@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { classifyCapture, deliveryPrompt, exemptionPrompt, planReviews, verifyExecution } from '../../src/control/rules/review.js';
 import type { GateEvidence, HandoffDeclarations, ProposalHandoff, ProposalIdentity, ReviewOpinion } from '../../src/contracts/index.js';
 import type { ReviewRoundView } from '../../src/control/types.js';
+import { createToolLedger, declarationsSchema } from '../../src/workers/index.js';
 
 // Rules level (R): pure functions over canonical types. Ticket 13: when a new round is needed, and Control's end-of-Execution verification.
 const summary = (round: number, content: Partial<NonNullable<ProposalHandoff['content']>> = {}, extra: Partial<ProposalHandoff> = {}): ProposalHandoff => ({
@@ -81,7 +82,8 @@ test('AC4: a new round continues the same role\'s previous session when known; t
   assert.equal('continueFrom' in spec!.review, false);
   const prompt = deliveryPrompt({ round: 1, conclusion: 'findings', applicability: 'current', reasons: [], multi: true,
     reviewers: { standards: { opinion: opinion('standards', 1, ['H1']), failure: null }, spec: { opinion: null, failure: { code: 'REVIEWER_UNAVAILABLE' } } } });
-  assert.match(prompt, /call handoff again, alone, with `treatments` for EVERY finding of round 1/);
+  assert.match(prompt, /call handoff again, alone, with `treatments` for EVERY finding listed above for round 1/);
+  assert.match(prompt, /a reviewer without findings gets NO treatment, never a placeholder/, 'real-run regression q13-rounds-v3');
   assert.match(prompt, /ask_user/);
   assert.doesNotMatch(prompt, /Do not call handoff again/);
 });
@@ -147,6 +149,69 @@ test('AC1 review fix 5: a fix is only reviewed by a different-content round AFTE
   result = verify([round(1, { findings: { spec: ['S1'] } }), exempt(2, 'unchanged', 1, { declarations: { treatments: [fix], gates: [gate('docs', 'passed')] } }),
     round(3, { content: '8' }), exempt(4, 'unchanged', 2, { closing: true })]);
   assert.equal(result.reasons.includes('FIX_NOT_REVIEWED:1/spec/S1'), false, result.reasons.join(','));
+});
+
+test('AC2/AC3 review fix 1 (Host chain): a real gate on C0 followed by a declared mutating gate, or a background mutator started before the gate, never verifies', () => {
+  const c0 = '0'.repeat(64), c1 = '1'.repeat(64);
+  const output = { workId: 'w', id: '11111111-2222-4333-8444-555555555555' };
+  const declaration = (id: string, command: string, cwd = '/workspace') => ({ id, source: '/artifacts/spec/v1/ticket.json#validation', command, cwd, status: 'run' as const });
+  const ran = (ledger: ReturnType<typeof createToolLedger>, id: string, command: string, before: string, after: string, cwd = '/workspace') => {
+    ledger.begin('bash', id);
+    ledger.bash(id, { command, cwd, exitCode: 0, output, code: null, contentBeforeSha: before, contentAfterSha: after });
+  };
+  const roundWith = (content: string, gates: GateEvidence[]) => round(1, { content, declarations: { treatments: [], gates } });
+  // (i) The real gate ran on C0; the next DECLARED gate (a Bash command) mutated the content to C1 and the capture recorded C1.
+  const mutating = createToolLedger();
+  ran(mutating, 'gate', 'npm test', c0, c0);
+  ran(mutating, 'build', 'npm run build', c0, c1);
+  const first = mutating.resolve(declarationsSchema.parse({ gates: [declaration('test', 'npm test'), declaration('build', 'npm run build')] }), { captureContentSha: c1 });
+  assert.deepEqual(first.gates.map(item => [item.id, item.outcome, item.current, item.code]),
+    [['test', 'passed', false, 'GATE_NOT_CURRENT'], ['build', 'passed', false, 'GATE_MUTATED_CONTENT']], 'only the Host content snapshot decides currency');
+  const mutated = verify([roundWith('1', first.gates), exempt(2, 'unchanged', 1, { content: '1', closing: true })]);
+  assert.deepEqual([mutated.status, mutated.reasons], ['not-verified', ['GATE_NOT_CURRENT:test', 'GATE_NOT_CURRENT:build']],
+    'the verified content is not what the passing gate ran on: never verified');
+  // (ii) A background mutator is STARTED by an earlier Bash, before the gate; the gate itself still runs on C0, but the capture sees C1.
+  const background = createToolLedger();
+  ran(background, 'watch', 'npm run watch', c0, c0);
+  ran(background, 'gate', 'npm test', c0, c0);
+  const second = background.resolve(declarationsSchema.parse({ gates: [declaration('test', 'npm test')] }), { captureContentSha: c1 });
+  assert.deepEqual(second.gates.map(item => [item.id, item.outcome, item.current, item.code]), [['test', 'passed', false, 'GATE_NOT_CURRENT']]);
+  const slipped = verify([roundWith('1', second.gates), exempt(2, 'unchanged', 1, { content: '1', closing: true })]);
+  assert.deepEqual([slipped.status, slipped.reasons], ['not-verified', ['GATE_NOT_CURRENT:test']], 'a later background write invalidates the earlier gate');
+});
+
+test('AC2 review fix 2 (Host chain): the ledger records the ACTUAL Bash cwd; a matching declaration is current and verifies, a mismatch is GATE_CWD_MISMATCH and never verifies', () => {
+  const c0 = '0'.repeat(64);
+  const output = { workId: 'w', id: '11111111-2222-4333-8444-555555555555' };
+  const declaration = (id: string, command: string, cwd: string) => ({ id, source: '/artifacts/spec/v1/ticket.json#validation', command, cwd, status: 'run' as const });
+  const observe = (ledger: ReturnType<typeof createToolLedger>, id: string, command: string) => {
+    ledger.begin('bash', id);
+    // The Host records the owner's real cwd (/workspace), never the model's declaration.
+    ledger.bash(id, { command, cwd: '/workspace', exitCode: 0, output, code: null, contentBeforeSha: c0, contentAfterSha: c0 });
+  };
+  const matching = createToolLedger();
+  observe(matching, 'test', 'npm test');
+  const ok = matching.resolve(declarationsSchema.parse({ gates: [declaration('test', 'npm test', '/workspace')] }), { captureContentSha: c0 });
+  assert.deepEqual([ok.gates[0]!.current, ok.gates[0]!.code], [true, null]);
+  assert.deepEqual(verify([round(1, { content: '0', declarations: { treatments: [], gates: ok.gates } }), exempt(2, 'unchanged', 1, { content: '0', closing: true })]).reasons, []);
+  const mismatching = createToolLedger();
+  observe(mismatching, 'lint', 'npm run lint');
+  const wrong = mismatching.resolve(declarationsSchema.parse({ gates: [declaration('lint', 'npm run lint', '/workspace/checkout')] }), { captureContentSha: c0 });
+  assert.deepEqual([wrong.gates[0]!.outcome, wrong.gates[0]!.current, wrong.gates[0]!.code], ['passed', false, 'GATE_CWD_MISMATCH']);
+  const result = verify([round(1, { content: '0', declarations: { treatments: [], gates: wrong.gates } }), exempt(2, 'unchanged', 1, { content: '0', closing: true })]);
+  assert.deepEqual([result.status, result.reasons], ['not-verified', ['GATE_NOT_CURRENT:lint']], 'a command that never ran in the declared cwd is never evidence');
+});
+
+test('AC1 review fix 5: a fix declared and reviewed by the SAME capture is reviewed after the declaration; a later restatement does not move it', () => {
+  const fix = { round: 1, role: 'spec' as const, findingId: 'S1', outcome: 'fixed' as const, justification: 'Added it.', evidence: null, authorization: null };
+  // The declaring capture starts the round that reviews the changed content, so equality (>=) is still after the declaration.
+  let result = verify([round(1, { findings: { spec: ['S1'] } }), round(2, { content: '8', declarations: { treatments: [fix], gates: [gate('docs', 'passed')] } }),
+    exempt(3, 'unchanged', 2, { content: '8', closing: true })]);
+  assert.deepEqual([result.status, result.reasons], ['verified', []], 'the review of the declaring capture qualifies');
+  // Round 2 declares the fix; round 3 is a later different-content review. A restatement in round 4 must not delay the declaration.
+  result = verify([round(1, { findings: { spec: ['S1'] } }), round(2, { content: '8', declarations: { treatments: [fix], gates: [gate('docs', 'passed')] } }),
+    round(3, { content: '9' }), exempt(4, 'unchanged', 3, { content: '9', declarations: { treatments: [fix], gates: [gate('docs', 'passed')] }, closing: true })]);
+  assert.deepEqual([result.status, result.reasons], ['verified', []], 'the first declaration fixes when the treatment happened');
 });
 
 test('AC2/AC3/AC6: failed, lost, unverified, stale, not run and unauthorized gates are distinct and never success; a waiver never satisfies a required check', () => {
