@@ -5,7 +5,7 @@ import { createRecords } from '../../src/records/index.js';
 import { connectReadTools, serveReadTools, type GuestOwner, type ToolContext, type ReadBinding } from '../../src/sandbox/read-tools.js';
 
 /** Sandbox-owned fixture: real owner transport and Records, external VM only substituted. */
-export async function nativeOwner(context: ToolContext, vm: GuestOwner, options: Pick<ReadBinding, 'imageSourceMaxBytes' | 'editSourceMaxBytes' | 'copyOutput' | 'profileOrigin' | 'selectedOutputCopies'> = {}) {
+export async function nativeOwner(context: ToolContext, vm: GuestOwner, options: Pick<ReadBinding, 'imageSourceMaxBytes' | 'editSourceMaxBytes' | 'copyOutput' | 'profileOrigin' | 'selectedOutputCopies' | 'skillPackFiles'> = {}) {
   const root = await mkdtemp(join(tmpdir(), 'nr-'));
   const recordsRoot = join(root, 'records'); await mkdir(recordsRoot, { mode: 0o700 });
   const records = await createRecords({ root: recordsRoot }); records.registerSecret('synthetic-secret');

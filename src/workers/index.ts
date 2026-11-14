@@ -5,6 +5,7 @@ import { connect, protocolVersion, type Channel, type Envelope } from '../protoc
 import type { Invocation } from './worker-start.js';
 export type { ReviewerProfile, Invocation } from './worker-start.js';
 export { builderSkillPack, skillPacks, type SkillPackId } from './skill-pack.js';
+import { skillPackGuestFiles } from './skill-pack.js';
 /** Transient material handed to the host handshake, never part of the (serializable) invocation. */
 export type ActivationDelivery = { credential?: Readonly<{ token: string }> };
 /** `deliver` directives (Q6): a renewed transient Builder credential for NEW commands, or its final withdrawal. Never serialized/persisted. */
@@ -108,6 +109,8 @@ export function createWorkers(configuration?: Configuration) {
       ...(invocation.copyOutput === undefined ? {} : { copyOutput: invocation.copyOutput }),
       ...(invocation.selectedOutputCopies === undefined ? {} : { selectedOutputCopies: invocation.selectedOutputCopies }),
       ...(invocation.skillPack === undefined ? {} : { skillPack: invocation.skillPack }),
+      // The Host (not the worker or model) derives the exact readable pack paths from the verified manifest of THIS version.
+      ...(invocation.skillPack === undefined || invocation.context.role !== 'builder' ? {} : { skillPackFiles: await skillPackGuestFiles(invocation.skillPack) }),
       ...(invocation.modelBudget === undefined ? {} : { modelBudget: invocation.modelBudget }),
       ...(invocation.imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes: invocation.imageSourceMaxBytes }),
       ...(invocation.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: invocation.editSourceMaxBytes }),
@@ -115,8 +118,8 @@ export function createWorkers(configuration?: Configuration) {
     if (!request.success || invocation.signal.aborted) throw new Error('WORKER_LAUNCH_INVALID');
     if (delivery?.credential !== undefined && (request.data.context.role !== 'builder' || typeof delivery.credential.token !== 'string')) throw new Error('WORKER_LAUNCH_INVALID');
     const context = request.data.context;
-    const { imageSourceMaxBytes, editSourceMaxBytes, copyOutput, selectedOutputCopies, skillPack, modelBudget, ...baseRequest } = request.data;
-    const payload = { ...baseRequest, ...(skillPack === undefined ? {} : { skillPack }), ...(modelBudget === undefined ? {} : { modelBudget }), ...(selectedOutputCopies === undefined ? {} : { selectedOutputCopies: [...selectedOutputCopies] }), ...(copyOutput === undefined ? {} : { copyOutput }), ...(imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes }),
+    const { imageSourceMaxBytes, editSourceMaxBytes, copyOutput, selectedOutputCopies, skillPack, skillPackFiles, modelBudget, ...baseRequest } = request.data;
+    const payload = { ...baseRequest, ...(skillPack === undefined ? {} : { skillPack }), ...(skillPackFiles === undefined ? {} : { skillPackFiles: [...skillPackFiles] }), ...(modelBudget === undefined ? {} : { modelBudget }), ...(selectedOutputCopies === undefined ? {} : { selectedOutputCopies: [...selectedOutputCopies] }), ...(copyOutput === undefined ? {} : { copyOutput }), ...(imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes }),
       ...(editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes }) };
     const endpoint = await workerOwnerEndpoint(configuration.root, context);
     const channel = await connect(endpoint, { kind: 'host-boot', binding: { workId: context.workId,

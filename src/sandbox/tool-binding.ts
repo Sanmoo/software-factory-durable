@@ -43,6 +43,9 @@ export type ReadBinding = { endpoint: string; context: ToolContext; signal: Abor
   copyOutput?: boolean;
   /** Exact Host-selected reviewer copies; absent is empty, never Builder authority. */
   selectedOutputCopies?: readonly string[];
+  /** Builder only: the exact guest paths of the files of the Execution's skill pack version, as seeded (Host manifest). These
+   * paths, and nothing else new, become readable by the Builder Read; they are guest-writable copies (integrity not promised). */
+  skillPackFiles?: readonly string[];
   /** Transient Builder credential delivered in memory by the host handshake (spec §8.1), already registered in `records` for filtering.
    * Never accepted from tool JSON, never persisted. `current()` is read once at each NEW Builder Bash command, which receives it as explicit
    * environment via stdin; a renewal replaces it for later commands only and a withdrawal makes it undefined (ticket 20). */

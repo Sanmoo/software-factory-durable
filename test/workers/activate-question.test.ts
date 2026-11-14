@@ -71,3 +71,16 @@ test('AC5: without a confirmed commit there is NO recorded ACK (handler failure 
   assert.equal((await handle.completed).status, 'question');
   handle.close();
 });
+
+test('real-run fix: the launch payload carries the exact seeded file list of the Execution\'s pack version (Host-derived), v2 or v1', async t => {
+  const { skillPackGuestFiles } = await import('../../src/workers/skill-pack.js');
+  for (const pack of ['factory-skills-v2', 'factory-skills-v1'] as const) {
+    const o = await owner(t);
+    const handle = await createWorkers({ root: o.root, profile, knownSecrets: [] }).activate({ ...invocation(), skillPack: pack }, undefined, { async question() { return { status: 'recorded' }; } });
+    await handle.completed.catch(() => {});
+    handle.close();
+    const launch = o.received.find(message => message.kind === 'launch-worker')!;
+    assert.deepEqual(launch.payload.skillPackFiles, await skillPackGuestFiles(pack));
+    assert.ok((launch.payload.skillPackFiles as string[]).includes(`/artifacts/factory/skill-pack/${pack}/skills/implement/SKILL.md`));
+  }
+});

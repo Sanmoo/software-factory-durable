@@ -43,6 +43,13 @@ async function listFiles(directory: string, prefix = ''): Promise<string[]> {
   return result;
 }
 
+/** Exact guest paths of the files of a pack version as seeded (`<guestDirectory>/<manifest path>`, manifest included), from the verified Host copy. */
+export async function skillPackGuestFiles(id: SkillPackId): Promise<string[]> {
+  const pack = await loadSkillPack(skillPacks[id].directory);
+  if (pack.id !== id) throw new Error('WORKER_SKILL_PACK_DRIFT');
+  return ['manifest.json', ...pack.manifest.files.map(file => file.path)].map(path => `${skillPacks[id].guestDirectory}/${path}`);
+}
+
 /** Verifies the exact file set and every hash against the manifest before anything is offered to the SDK; drift refuses the start. */
 export async function loadSkillPack(directory = builderSkillPack.directory): Promise<LoadedSkillPack> {
   try {

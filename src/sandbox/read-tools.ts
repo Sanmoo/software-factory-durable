@@ -112,6 +112,9 @@ const guestCopyAwareReadProgram = guestReadProgram.replace('import os, stat, sys
     elif target.startswith("/artifacts/factory-output-") and target not in selected:
         raise ValueError()
     while True:`);
+/** Seeded pack file of exactly one known version; no `..`, no empty/dot segments. */
+export const skillPackFilePath = z.string().max(512).regex(/^\/artifacts\/factory\/skill-pack\/factory-skills-v[0-9]+\/[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/)
+  .refine(path => !path.split('/').some(part => part === '.' || part === '..'));
 const copyPath = z.string().regex(/^\/artifacts\/factory-output-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.txt$/);
 const failure = (code: string): ReadResult => ({ status: 'failure', code });
 function sameContext(left: ToolContext, right: ToolContext): boolean {
@@ -133,6 +136,9 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
     : z.number().int().nonnegative().max(8192).parse(options.editSourceMaxBytes);
   const selectedCopies = new Set(z.array(copyPath).max(32).parse(options.selectedOutputCopies ?? []));
   if (bound.role === 'builder' && options.selectedOutputCopies !== undefined) throw new Error('READ_SELECTION_ROLE_DENIED');
+  const packFiles = new Set(z.array(skillPackFilePath).max(64).parse(options.skillPackFiles ?? []));
+  const packCaptures = new Set<string>();
+  if (packFiles.size && (bound.role !== 'builder' || new Set([...packFiles].map(path => path.split('/')[4])).size !== 1)) throw new Error('READ_PACK_POLICY_INVALID');
   // Created ONLY here: no caller set/callback, Records receipt or persisted path
   // can grant Builder access in this or a subsequent invocation.
   const publishedCopies = new Set<string>();
@@ -158,7 +164,9 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
     if (call.name === 'bash') return bash(context, call, progress);
     if (call.name === 'write') return write(context, call);
     const editSource = call.name === 'edit-source';
-    if (!editSource && bound.role === 'builder' && !builderRead) return failure('READ_ROLE_DENIED');
+    // Builder Read without the copy qualification: only its pack files, and the pages of captures they produced.
+    if (!editSource && bound.role === 'builder' && !builderRead && !('path' in call ? packFiles.has(call.path)
+      : call.operation === 'page' && packCaptures.has(call.reference.id))) return failure(packFiles.size ? 'READ_PATH_DENIED' : 'READ_ROLE_DENIED');
     if (!sameContext(context, bound) || !valid()) return failure('STALE_TOOL_CONTEXT');
     if (editSource && (bound.role !== 'builder' || editSourceMaxBytes === undefined)) return failure('EDIT_SOURCE_DENIED');
     if (editSource && call.operation !== 'capture') {
@@ -219,7 +227,7 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
       if (!/^\/(workspace|artifacts)\/[^\0]*$/.test(call.path) || call.path.split('/').includes('..') ||
           (editSource && (call.path.split('/').slice(1).some(part => part === '' || part === '.') || /[\x00-\x1f\x7f]/.test(call.path)))) return failure('READ_PATH_DENIED');
       const copies = bound.role === 'builder' ? publishedCopies : selectedCopies;
-      if (!editSource && ((bound.role === 'builder' && !copies.has(call.path)) ||
+      if (!editSource && ((bound.role === 'builder' && !copies.has(call.path) && !packFiles.has(call.path)) ||
           (call.path.startsWith('/artifacts/factory-output-') && !copies.has(call.path)))) return failure('READ_PATH_DENIED');
       const copyText = !editSource && copies.has(call.path);
       const { phaseId: _phaseId, ...captureContext } = bound;
@@ -242,7 +250,7 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
           }
         };
         const argv = ['/usr/bin/python3', '-I', '-S', '-c', editSource ? guestEditSourceProgram : guestCopyAwareReadProgram, call.path];
-        if (!editSource) argv.push(bound.role === 'builder' ? 'builder' : 'reviewer', JSON.stringify([...copies]));
+        if (!editSource) argv.push(bound.role === 'builder' ? 'builder' : 'reviewer', JSON.stringify(bound.role === 'builder' && packFiles.has(call.path) ? [call.path] : [...copies]));
         // Native output() requires both pipes. stderr chunks are drained and
         // discarded below; diagnostics never reach captures, SDK or display.
         const process = options.vm.exec(argv, { stdout: 'pipe', stderr: 'pipe',
@@ -313,6 +321,7 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
             sourceVersion, data: '', nextOffset: 0 };
         }
         captures.set(capture.reference.id, format); completed = true;
+        if (bound.role === 'builder' && packFiles.has(call.path)) packCaptures.add(capture.reference.id);
         return { status: 'success', ...details(format), reference: capture.reference, bytes: capture.bytes, data: '', nextOffset: 0 };
       } finally {
         commandLifetime.abort();

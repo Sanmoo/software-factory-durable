@@ -22,6 +22,7 @@ test('recipe: import and --plan are inert and declare the fixed bounds (2 activa
   assert.match(plan.github.writes, /at most ONE POST \/repos\/Sanmoo\/java-springboot-event-sourcing\/issues\/3\/comments per phase/);
   assert.deepEqual(plan.operators, ['Sanmoo']);
   assert.equal(plan.skillPack, 'factory-skills-v2');
+  assert.equal(plan.revision, 'q10-question-v2', 'v1 namespace was consumed by the first real ask run');
   assert.match(plan.operatorStep, /controller STOPPED/);
   await assert.rejects(recipe.main(['retry']), /EXACT_PHASE_REQUIRED/);
   assert.equal(forbidden, 0);

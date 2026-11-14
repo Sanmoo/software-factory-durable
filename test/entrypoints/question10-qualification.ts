@@ -7,8 +7,8 @@ import type { IssueTracker } from '../../src/issue-tracker/index.js';
 // consumed phase never reruns); nothing is retried automatically. GitHub writes: at most ONE Question comment per phase, only on Ticket #3.
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const observations = `${root}/q10-question-v1`;
-const revision = 'q10-question-v1';
+const observations = `${root}/q10-question-v2`;
+const revision = 'q10-question-v2';
 const phases = ['preflight', 'ask', 'resume', 'inspect', 'stop-environment'] as const;
 type Phase = typeof phases[number];
 const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 'main', installationId: 177599217, workflows: false, label: 'ready-for-agent' };

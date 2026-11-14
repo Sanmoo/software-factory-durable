@@ -104,6 +104,7 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
           await bindings.add({ ...privateCapabilities, copyOutput: parsed.data.copyOutput === true, endpoint, context, signal: lifetime.signal, records,
             ...(credential === undefined ? {} : { credential: Object.freeze({ current: () => credential.token }) }),
             ...(parsed.data.selectedOutputCopies === undefined ? {} : { selectedOutputCopies: parsed.data.selectedOutputCopies }),
+            ...(parsed.data.skillPackFiles === undefined ? {} : { skillPackFiles: parsed.data.skillPackFiles }),
             ...(parsed.data.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: parsed.data.editSourceMaxBytes }),
             ...(parsed.data.imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes: parsed.data.imageSourceMaxBytes }) });
           const worker = await launchWorker(host, { ...parsed.data, context }, endpoint, root, lifetime.signal, {

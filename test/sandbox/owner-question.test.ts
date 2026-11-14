@@ -48,3 +48,28 @@ test('AC1: the owner relays the worker question on the SAME host-boot channel an
   channel.close();
   await assert.rejects(second, /QUESTION_RELAY_CLOSED/);
 });
+
+test('real-run fix: the owner refuses pack read paths outside the declared pack version, for reviewers, or without a pack', async t => {
+  relays.length = 0;
+  const root = await mkdtemp('/tmp/oqp-');
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(actual.workerRuntimeDirectory(root, boot), { recursive: true, mode: 0o700 });
+  const vm = { exec() { return { async *output() {}, result: Promise.resolve({ exitCode: 0 }) }; } };
+  const server = await serveOwnerRegistration(root, { workId, environmentRef, bootRef: boot as BootRef }, vm, { workId, environmentRef, bootRef: boot } as unknown as WorkerBootHost);
+  t.after(() => server.close());
+  const v1 = '/artifacts/factory/skill-pack/factory-skills-v1/skills/implement/SKILL.md';
+  let n = 0;
+  const launch = async (payload: Record<string, unknown>) => {
+    const channel = await connect(join(actual.workerRuntimeDirectory(root, boot), 'owner'), { kind: 'host-boot', binding: { workId, environmentRef, bootRef: boot } });
+    t.after(async () => channel.close());
+    const id = `l${++n}`;
+    await channel.send({ protocol_version: protocolVersion, controller_run_id: null, message_id: id, reply_to: null, kind: 'launch-worker',
+      payload: { context: { ...context, invocationId: `builder-${n}` }, prompt: 'x', profile, knownSecrets: [], ...payload } as never });
+    return (await channel.messages[Symbol.asyncIterator]().next()).value!.payload;
+  };
+  assert.deepEqual(await launch({ skillPack: 'factory-skills-v2', skillPackFiles: [v1] }), { status: 'failure', code: 'WORKER_LAUNCH_INVALID' }, 'another version');
+  assert.deepEqual(await launch({ skillPackFiles: [v1] }), { status: 'failure', code: 'WORKER_LAUNCH_INVALID' }, 'no pack');
+  assert.deepEqual(await launch({ skillPack: 'factory-skills-v1', skillPackFiles: ['/artifacts/factory/skill-pack/factory-skills-v1/../../spec/x'] }), { status: 'failure', code: 'WORKER_LAUNCH_INVALID' });
+  assert.deepEqual(await launch({ skillPack: 'factory-skills-v1', skillPackFiles: [v1] }), { status: 'requested', worker: `builder-${n}` });
+  assert.equal(relays.length, 1, 'only the consistent launch reached the worker spawn');
+});
