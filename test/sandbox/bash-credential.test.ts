@@ -84,3 +84,31 @@ test('ticket 20 AC2: a renewed credential reaches only NEW commands; a command a
   assert.equal((await h.run('echo "${GH_TOKEN-unset}"')).trim(), 'unset');
   assert.deepEqual([h.seen[2]!.argv.length, h.seen[2]!.stdin], [5, '']);
 });
+
+test('ticket 20 AC7: a renewed synthetic value split across output chunks and streams is filtered before capture and progress', async t => {
+  const root = await mkdtemp('/tmp/bcred-split-');
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const records = await createRecords({ root });
+  const renewed = 'ghs_syntheticSplitRenewal5556667778';
+  records.registerSecret(token);
+  const holder: { token: string | undefined } = { token };
+  const vm: GuestOwner = { exec() {
+    return { async *output() {
+      yield { stream: 'stdout' as const, data: Buffer.from(`before ${renewed.slice(0, 9)}`) };
+      yield { stream: 'stderr' as const, data: Buffer.from(`${renewed.slice(9, 20)}`) };
+      yield { stream: 'stdout' as const, data: Buffer.from(`${renewed.slice(20)} after\n`) };
+    }, result: Promise.resolve({ exitCode: 0 }) };
+  } };
+  const signal = new AbortController();
+  const bash = boundBashTools({ endpoint: '/unused', records, context, signal: signal.signal, vm, credential: { current: () => holder.token } }, () => true, () => signal.abort());
+  records.registerSecret(renewed); // the owner registers a renewal before it is used
+  holder.token = renewed;
+  const progress: string[] = [];
+  const result = await bash(context, { name: 'bash', command: 'gh auth status', callId: 'split' }, async frame => { progress.push(Buffer.from(frame.data, 'base64').toString()); });
+  assert.equal(result.status, 'success');
+  if (result.status !== 'success') return;
+  const output = await readFile(join(root, context.workId, 'evidence', result.reference.id, 'output'), 'utf8');
+  assert.doesNotMatch(output, /ghs_synthetic|SplitRenewal/);
+  assert.doesNotMatch(progress.join(''), /ghs_synthetic|SplitRenewal/, 'streamed progress is filtered too');
+  assert.match(output, /before .* after/);
+});
