@@ -40,6 +40,12 @@ export type World = {
   exhaustRateLimit?: boolean;
   /** Repositories and their App installations (default: acme/project id 3, installation 2). Owner = installation account. */
   repositories?: { name: string; id: number; installation: number }[];
+  /** Synthetic clock offset (seconds) of the fake GitHub, so tests that mock the controller Date see consistent token expiries. */
+  clockOffsetSeconds?: number;
+  /** Lifetime (seconds) of issued installation tokens (default 3600, like GitHub). */
+  tokenLifetimeSeconds?: number;
+  /** Endpoint substrings whose request fails at the transport (no response at all: outcome unknown to the caller). */
+  transportFailures?: string[];
 };
 export type TraceEntry = { method: string; endpoint: string; credential: 'app-jwt' | 'installation'; permissions?: Record<string, string> };
 
@@ -63,6 +69,8 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
   const traceFile = join(root, 'trace.jsonl');
   await writeFile(worldFile, JSON.stringify(initial));
   await writeFile(traceFile, '');
+  const issuedFile = join(root, 'issued.jsonl');
+  const revokedFile = join(root, 'revoked.jsonl');
   const executable = join(root, 'gh');
   await writeFile(executable, `#!${process.execPath}
 import { readFileSync, appendFileSync } from 'node:fs';
@@ -78,6 +86,18 @@ const allowedEnv = ['NATIVE_FIXTURE','PATH','LANG','LC_ALL','GH_TOKEN','GH_HOST'
 if (Object.keys(process.env).some(k => !allowedEnv.includes(k)) || args.some(a => token && a.includes(token))) process.exit(9);
 if (!app && !token.startsWith('synthetic-installation-secret-')) process.exit(13);
 const world = JSON.parse(readFileSync(${JSON.stringify(worldFile)}, 'utf8'));
+const now = Date.now() + (world.clockOffsetSeconds ?? 0) * 1000;
+if ((world.transportFailures ?? []).some(fragment => endpoint.includes(fragment))) process.exit(2);
+// Installation tokens stop working once revoked (DELETE /installation/token) or expired, as on GitHub.
+const lines = file => { try { return readFileSync(file, 'utf8').split('\\n').filter(Boolean).map(line => JSON.parse(line)); } catch { return []; } };
+const issuedFile = ${JSON.stringify(issuedFile)};
+const revokedFile = ${JSON.stringify(revokedFile)};
+const known = lines(issuedFile).find(entry => entry.token === token);
+if (!app && token && (lines(revokedFile).some(entry => entry.token === token) || (known && Date.parse(known.expiresAt) <= now))) {
+  process.stdout.write('HTTP/2.0 401 Test\\r\\nx-github-api-version-selected: 2026-03-10\\r\\n\\r\\n{"message":"Bad credentials"}');
+  appendFileSync(${JSON.stringify(traceFile)}, JSON.stringify({ method, endpoint, credential: 'installation', status: 401 }) + '\\n');
+  process.exit(1);
+}
 const ceiling = { metadata: 'read', issues: 'write', contents: 'write', pull_requests: 'write', checks: 'read', statuses: 'read', actions: 'read', administration: 'read' };
 const repositories = world.repositories ?? [{ name: 'acme/project', id: 3, installation: 2 }];
 const repoByName = name => repositories.find(r => r.name.toLowerCase() === String(name).toLowerCase());
@@ -130,9 +150,14 @@ else if (/^\\/app\\/installations\\/\\d+\\/access_tokens$/.test(endpoint) && met
   trace.permissions = request.permissions;
   trace.repository = target.name;
   const sequence = readFileSync(${JSON.stringify(traceFile)}, 'utf8').split('\\n').filter(line => line.includes('access_tokens')).length + 1;
-  body = { token: 'synthetic-installation-secret-' + sequence + '-r' + target.id, expires_at: new Date(Date.now() + 3600000).toISOString(), permissions: request.permissions,
+  body = { token: 'synthetic-installation-secret-' + sequence + '-r' + target.id, expires_at: new Date(now + (world.tokenLifetimeSeconds ?? 3600) * 1000).toISOString(), permissions: request.permissions,
     repositories: [{ id: target.id, full_name: target.name, owner: { login: target.name.split('/')[0] } }] };
+  appendFileSync(issuedFile, JSON.stringify({ token: body.token, expiresAt: body.expires_at }) + '\\n');
   status = 201;
+} else if (endpoint === '/installation/token' && method === 'DELETE' && !app) {
+  // Self-revocation of the installation token used for the request: 204, no body; the token is invalid afterwards (a fault prevents it).
+  if (!Object.keys(world.faults ?? {}).some(fragment => endpoint.includes(fragment))) appendFileSync(revokedFile, JSON.stringify({ token }) + '\\n');
+  status = 204; raw = '';
 } else if (method !== 'GET' || app) process.exit(16);
 else if (!repo) process.exit(11);
 else if (rest === '') body = { id: repo.id, full_name: repo.name, owner: { login: repo.name.split('/')[0] } };
@@ -185,6 +210,10 @@ child.on('exit',code=>{process.exitCode=code??1;});
       const world = JSON.parse(await readFile(worldFile, 'utf8')) as World;
       change(world);
       await writeFile(worldFile, JSON.stringify(world));
+    },
+    /** Tokens revoked through DELETE /installation/token (synthetic values only). */
+    async revoked(): Promise<string[]> {
+      try { return (await readFile(revokedFile, 'utf8')).split('\n').filter(Boolean).map(line => (JSON.parse(line) as { token: string }).token); } catch { return []; }
     },
     async trace(): Promise<TraceEntry[]> {
       return (await readFile(traceFile, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as TraceEntry);

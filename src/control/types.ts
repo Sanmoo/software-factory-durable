@@ -1,4 +1,4 @@
-import type { AccessDiagnostic, BuilderCredentials, BuilderGrantMetadata, GitHubScope } from '../contracts/index.js';
+import type { AccessDiagnostic, BuilderCredentials, BuilderGrantMetadata, GitHubScope, RevocationResult } from '../contracts/index.js';
 import type { CheckoutRequest, EnvironmentRef, PreparedWork, StartResult, StopResult, BootRef } from '../sandbox/index.js';
 import type { ActivationDelivery, Invocation } from '../workers/index.js';
 import type { IssueTracker, TicketRef } from '../issue-tracker/index.js';
@@ -51,7 +51,7 @@ export type ExecutionView = {
   credential: BuilderGrantMetadata | null;
   /** Durable issuance intent BEFORE the call, then its outcome, token-free metadata and revocation result: no live grant goes unrecorded. */
   credentialIssuance: { requestedAt: string; outcome: 'requested' | 'issued' | 'failed' | 'unknown'; code: string | null;
-    metadata: BuilderGrantMetadata | null; revocation: 'revoked' | 'not-attempted' | 'unknown' | null } | null;
+    metadata: BuilderGrantMetadata | null; revocation: RevocationResult['kind'] | null } | null;
   start: { receiptId: string; confirmedAt: string } | null;
   end: { at: string; outcome: 'completed' | 'failure'; code: string | null; cessation: 'confirmed' | 'unconfirmed' | 'not-attempted' } | null;
   held: { code: string; phase: string; at: string; nextStep: string } | null;

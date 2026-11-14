@@ -5,7 +5,7 @@ import { lstat, open, mkdtemp, rm } from 'node:fs/promises';
 import { join, isAbsolute } from 'node:path';
 import { sign } from 'node:crypto';
 import { z } from 'zod';
-import type { AccessDiagnostic, BuilderCredentials, GitHubScope, RepositoryFetchCredentials } from '../../contracts/index.js';
+import type { AccessDiagnostic, BuilderCredentials, GitHubScope, RepositoryFetchCredentials, RevocationResult } from '../../contracts/index.js';
 
 const version = '2026-03-10';
 const permissions = {
@@ -66,6 +66,9 @@ export interface GitHubAccess {
   /** One NEW reduced grant whose token leaves this module transiently (Builder delivery or host cache fetch). Never cached or retried;
    * an unknown issuance outcome throws GITHUB_TOKEN_ISSUANCE_UNKNOWN. The token is registered for filtering before it is returned. */
   transient(scope: GitHubScope, purpose: TransientPurpose): Promise<TransientGrant>;
+  /** One self-revocation (`DELETE /installation/token` through gh, authenticated by the token itself) of a transient grant. Never retried;
+   * distinguishes revoked / already-invalid / failed / unknown / impossible (no value). Never returns or logs the token. */
+  revoke(token: string): Promise<RevocationResult>;
 }
 export type TransientPurpose = 'builder-start' | 'repository-fetch';
 export type TransientGrant = { token: string; expiresAt: string; repositoryId: number; permissions: Readonly<Record<string, 'read' | 'write'>> };
@@ -162,9 +165,14 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
 
   async function gh(scope: GitHubScope, directory: string, token: string, endpoint: string, repositoryId?: number): Promise<{ body: unknown; next?: string }> {
     if (!endpoint.startsWith('/') || endpoint.startsWith('//') || /[\r\n#\\]/.test(endpoint)) throw new AccessFailure('INVALID_ENDPOINT');
-    const argv = ['api', '--hostname', 'github.com', '--method', 'GET', '--include', '-H', 'Accept: application/vnd.github+json', '-H', `X-GitHub-Api-Version: ${version}`,
+    return parseResponse(scope, await ghExec(directory, token, 'GET', endpoint), endpoint, repositoryId);
+  }
+
+  /** gh api under one installation token in an isolated config directory; the token is in the explicit environment only, never argv. */
+  function ghExec(directory: string, token: string, method: 'GET' | 'DELETE', endpoint: string): Promise<{ stdout: string; failed: boolean }> {
+    const argv = ['api', '--hostname', 'github.com', '--method', method, '--include', '-H', 'Accept: application/vnd.github+json', '-H', `X-GitHub-Api-Version: ${version}`,
       '--', endpoint];
-    const output = await new Promise<{ stdout: string; failed: boolean }>((resolve, reject) => {
+    return new Promise<{ stdout: string; failed: boolean }>((resolve, reject) => {
       const child = execFile(options.executable ?? 'gh', argv, { cwd: directory, encoding: 'utf8', timeout: 15000, maxBuffer: 2 * 1024 * 1024, shell: false,
         env: { PATH: process.env.PATH ?? '', LANG: 'C', LC_ALL: 'C', GH_TOKEN: token, GH_HOST: 'github.com', GH_CONFIG_DIR: directory,
           HOME: directory, XDG_CONFIG_HOME: directory, GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1', GH_NO_EXTENSION_UPDATE_NOTIFIER: '1', NO_COLOR: '1' } },
@@ -175,7 +183,6 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
       child.stdin?.on('error', () => {});
       child.stdin?.end();
     });
-    return parseResponse(scope, output, endpoint, repositoryId);
   }
 
   /** Reads the protected key, verifies App/installation/permissions and issues one reduced grant. Throws typed failures. */
@@ -320,7 +327,23 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
     nextStep: error instanceof AccessFailure && error.nextStep ? error.nextStep : error instanceof AccessFailure && error.code === 'GITHUB_RATE_LIMITED' ? 'Wait the reported seconds before retrying this repository/purpose; no automatic retry.' : 'Operator must verify the named repository, App/installation, private key, explicit Workflows setting, permissions and REST compatibility; no personal fallback or repair.',
   });
 
-  return { async transient(scope, purpose) {
+  return { async revoke(token) {
+    // No value, no request: a lost grant (e.g. after a crash) cannot be revoked and may stay valid externally until its expiry.
+    if (!token) return { kind: 'impossible', code: 'GRANT_VALUE_UNAVAILABLE', nextStep: 'The grant value is not available (never recovered from logs/sessions); it may remain valid externally until its expiresAt. Expiry is not proof of cessation.' };
+    secrets.add(token);
+    let directory: string | undefined;
+    const unknown = { kind: 'unknown' as const, code: 'GITHUB_REVOCATION_OUTCOME_UNKNOWN', nextStep: 'GitHub gave no conclusive answer; the token may still be valid until its expiresAt. Not repeated automatically; not proof of cessation.' };
+    try {
+      directory = await mkdtemp(join(options.root, 'run', 'github-'));
+      let output;
+      try { output = await ghExec(directory, token, 'DELETE', '/installation/token'); } catch { return unknown; }
+      const status = Number(/^HTTP\/[\d.]+ (\d{3})/.exec(output.stdout)?.[1]);
+      if (status === 204 && !output.failed) return { kind: 'revoked', code: 'GITHUB_TOKEN_REVOKED', nextStep: 'GitHub revoked this installation token. Copies already made by code that received it stop working, but this is not proof that the activity ceased.' };
+      if (status === 401) return { kind: 'already-invalid', code: 'GITHUB_TOKEN_NOT_ACCEPTED', nextStep: 'GitHub no longer accepts this token (expired or revoked earlier). This is not proof of cessation and not a revocation by this attempt.' };
+      if (status >= 400 && status < 500 && status !== 429) return { kind: 'failed', code: 'GITHUB_REVOCATION_REJECTED', nextStep: 'GitHub rejected the revocation; the token stays valid until its expiresAt. Not repeated automatically.' };
+      return unknown;
+    } catch { return unknown; } finally { if (directory) await rm(directory, { recursive: true, force: true }); }
+  }, async transient(scope, purpose) {
     try {
       const grant = await issue(scope, purpose);
       return { token: grant.token, expiresAt: grant.expiresAt, repositoryId: grant.repositoryId, permissions: permissions[purpose] };
@@ -382,9 +405,9 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
 }
 
 /**
- * Builder credential projection (spec §8.1): issues for the Work's OWN configured repository only, with the fixed initial purpose; the
- * caller cannot request permissions. Revocation is not implemented before the active credential lifecycle (ticket 20): it is reported as
- * not attempted, never as revoked; the grant expires at `expiresAt` (<= 1 h).
+ * Builder credential projection (spec §8.1): issues for the Work's OWN configured repository only, with the fixed purpose; the caller cannot
+ * request permissions. Renewal is simply a NEW `issue` after the caller revalidated the activity (no `renew` method, cache or vault).
+ * `revoke` makes one self-revocation attempt of that grant's value and reports its distinct outcome; it never claims cessation.
  */
 export function createBuilderCredentials(options: { github: GitHubAccess; repositories: readonly GitHubScope[] }): BuilderCredentials {
   return {
@@ -397,8 +420,8 @@ export function createBuilderCredentials(options: { github: GitHubAccess; reposi
       return { delivery: Object.freeze({ token: grant.token }), metadata: { role: 'builder', purpose: 'builder-start', repository: configured.repository,
         repositoryId: grant.repositoryId, installationId: configured.installationId, permissions: grant.permissions, issuedAt, expiresAt: grant.expiresAt } };
     },
-    async revoke() {
-      return { kind: 'not-attempted', nextStep: 'Revocation belongs to the active credential lifecycle (ticket 20); the grant expires at its expiresAt.' };
+    async revoke(grant) {
+      return options.github.revoke(typeof grant.delivery?.token === 'string' ? grant.delivery.token : '');
     },
   };
 }

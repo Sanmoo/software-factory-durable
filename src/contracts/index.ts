@@ -34,7 +34,13 @@ export type BuilderGrantMetadata = { role: 'builder'; purpose: 'builder-start'; 
 export type BuilderCredentialContext = { workId: string; executionId: string; repository: GitHubScope };
 /** Transient delivery + metadata. `delivery` is never serialized, persisted, prompted, logged or put in a Git remote. */
 export type BuilderGrant = { metadata: BuilderGrantMetadata; delivery: { readonly token: string } };
-export type RevocationResult = { kind: 'revoked' | 'not-attempted' | 'unknown'; nextStep: string };
+/**
+ * Outcome of ONE revocation attempt of a known grant (spec §8/§8.1, ticket 20). `revoked`: the provider confirmed it; `already-invalid`: the
+ * provider no longer accepts the value (expired or revoked earlier), which is NOT proof of cessation; `failed`: a complete known rejection;
+ * `unknown`: no conclusive response (never repeated automatically); `impossible`: the value is not available (e.g. lost after a crash), so
+ * no request can be made and the grant may stay valid externally until its expiry; `not-attempted`: deliberately not tried.
+ */
+export type RevocationResult = { kind: 'revoked' | 'already-invalid' | 'failed' | 'unknown' | 'impossible' | 'not-attempted'; code?: string; nextStep: string };
 /** Narrow composition dependency (spec §8.1/Q10), not a service, vault or universal authentication protocol. Failures throw coded errors. */
 export interface BuilderCredentials {
   issue(context: BuilderCredentialContext): Promise<BuilderGrant>;
