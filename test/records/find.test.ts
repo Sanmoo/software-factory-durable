@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rename, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRecords } from '../../src/records/index.js';
@@ -44,4 +44,17 @@ test('find never turns unreadable evidence into absence: corrupt metadata or a f
     } finally { await rm(other, { recursive: true, force: true }); }
     await assert.rejects(records.find({ workId: '../escape' }), /PROTECTED_CAPTURE_UNAVAILABLE/);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('review MED5: absence below a replaced/unsafe Records root is never complete (absence proves nothing there)', async () => {
+  const parent = await mkdtemp(join(tmpdir(), 'records-find-'));
+  const root = join(parent, 'root');
+  try {
+    await mkdir(root, { mode: 0o700 });
+    const records = await createRecords({ root });
+    assert.equal((await records.find({ workId: 'find-work' })).completeness, 'complete');
+    await rename(root, `${root}.replaced`); // kept, so the new directory cannot reuse its inode
+    await mkdir(root, { mode: 0o700 });
+    assert.deepEqual(await records.find({ workId: 'find-work' }), { completeness: 'incomplete', captures: [] }, 'not the root this instance opened');
+  } finally { await rm(parent, { recursive: true, force: true }); }
 });

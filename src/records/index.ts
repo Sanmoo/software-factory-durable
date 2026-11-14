@@ -153,8 +153,17 @@ function boundedEvent(event: unknown): JsonEvent {
 
 /** Host-only evidence storage. root must already be private and outside every guest mount. */
 export async function createRecords({ root }: { root: string }) {
-  try { await privateDirectory(root); root = await realpath(root); }
+  let rootIdentity: { dev: number; ino: number };
+  try { await privateDirectory(root); root = await realpath(root); const info = await lstat(root); rootIdentity = { dev: info.dev, ino: info.ino }; }
   catch { throw new RecordsError(); }
+  /** The Records root is still the private directory this instance opened (same identity, owner, mode): absence below it means something. */
+  async function rootIntact(): Promise<boolean> {
+    try {
+      await privateDirectory(root);
+      const info = await lstat(root);
+      return !info.isSymbolicLink() && info.dev === rootIdentity.dev && info.ino === rootIdentity.ino;
+    } catch { return false; }
+  }
   const secrets: string[] = [];
   const encodedSecrets: Buffer[] = [];
   let registryRevision = 0;
@@ -498,7 +507,8 @@ export async function createRecords({ root }: { root: string }) {
       for (const path of [join(root, filter.data.workId), evidence]) await privateDirectory(path);
       names = await readdir(evidence);
     } catch (error) {
-      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return { completeness: 'complete', captures: [] };
+      // No evidence of this Work proves absence ONLY under an intact Records root (ticket 26 review): otherwise nothing is proven.
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT' && await rootIntact()) return { completeness: 'complete', captures: [] };
       return { completeness: 'incomplete', captures: [] };
     }
     if (names.length > findLimit) return { completeness: 'incomplete', captures: [] };
@@ -519,7 +529,7 @@ export async function createRecords({ root }: { root: string }) {
         captures.push({ reference: capture.reference, context: capture.context, state });
       } catch { completeness = 'incomplete'; }
     }
-    return { completeness, captures };
+    return { completeness: completeness === 'complete' && await rootIntact() ? 'complete' : 'incomplete', captures };
   }
   const records = {
     openOutput, read, projectText, find,
