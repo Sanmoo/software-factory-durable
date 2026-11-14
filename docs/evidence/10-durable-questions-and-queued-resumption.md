@@ -204,3 +204,19 @@ Após as correções da revisão (gate completo, `rm -rf dist`, HEAD 9634539 + e
 1450 dependências); eslint exit 0; `tsc` exit 0; **113 arquivos**, um por vez: **824 pass, 0 fail, 10 skipped, 0 cancelled** (≈ 300 s).
 Novos/ampliados: `question10-recipe-safety` (2), `question-flow` (+3), `question-rules` (+1), `execution-commits` (+1), `configuration` (+1),
 `github-question-comments` (+1), `skill-pack` (+1: v1 intacto).
+
+## Integração com o ticket 20 (rebase sobre `integration/software-factory-mvp` @ d3295f9)
+
+- Pergunta registrada → a atividade entra em espera externa: `lifecycle.withdraw('external-wait', {notifyWorker: true})` do ticket 20 logo após
+  o commit (não atrasa o ACK): sem renovação, `withdraw-credential` ao Builder vivo e UMA autorrevogação por concessão conhecida; o `withdraw('ended')`
+  posterior é idempotente (primeiro motivo mantido). Prova: `question-flow` 1 (`credentialLifecycle {withdrawn, external-wait}`; diretiva e
+  revogação antes do `stop`; mutação que remove a ligação derruba o teste).
+- Caixa postal do facade (ticket 20): os quadros `worker-started`/`worker-question`/`worker-completed` usam o `reply_to` do lançamento (esperado);
+  as respostas de `deliver` têm seu próprio id; o `question-ack` é enviado sem resposta esperada.
+- Escrita de comentário: a autorrevogação do token `question-publish` passa a usar o mesmo `revoke` do ticket 20 (desfechos
+  `revoked/already-invalid/failed/unknown/impossible`, + `not-issued`); um 5xx na revogação é `unknown` (inconclusivo), um 4xx é `failed`.
+- Receita q10: `deliver` repassado ao Workers real (renovação/retirada alcançam o Builder vivo).
+- Pacote v1 idêntico ao da integração (diff vazio); v2 inalterado.
+
+Gate após o rebase (`rm -rf dist`): dependency-cruiser sem violações (266 módulos, 1512 dependências); eslint exit 0; `tsc` exit 0;
+**117 arquivos**, um por vez (timeout 60 s; `entrypoints/normal-oauth` com 90 s): **855 pass, 0 fail, 10 skipped, 0 cancelled** (≈ 349 s).
