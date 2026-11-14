@@ -535,8 +535,9 @@ export async function releaseBeforeStart(session: Session, work_id: string, exec
 }
 
 /**
- * Resumption refused BEFORE activation because its recovery context is insufficient (ticket 11, spec §5.5/§6.1): after the own boot ceased,
- * the Slot is released and the Work keeps its queue position but is blocked by an explicit impediment. Never an empty continue/recovery.
+ * Activation refused BEFORE any credential/worker request because its resumption context is insufficient or its prompt exceeds the budget
+ * (ticket 11, spec §5.5/§6.1): after the own boot ceased, the Slot and the budget reservation are released (proven non-start) and the Work
+ * keeps its queue position, blocked by an explicit impediment. Never an empty continue/recovery.
  */
 export async function blockBeforeStart(session: Session, work_id: string, executionId: string, code: string, nextStep: string) {
   return session.commit(async tx => {
@@ -550,6 +551,8 @@ export async function blockBeforeStart(session: Session, work_id: string, execut
     execution.state = 'released';
     execution.slot = { ...execution.slot, held: false, releasedAt: now };
     execution.held = { code, phase: execution.dispatch.phase, at: now, nextStep };
+    // Proven non-start (no worker request was ever made, own boot ceased): the budget reservation is released, never consumed (ticket 19).
+    releaseReservation(work, execution, now);
     if (!work.impediments.some(item => item.code === code)) work.impediments.push({ code, scope: 'work', since: now, nextStep });
     work.queue = { ...work.queue, pending: true };
     history(work, 'execution-released', executionId, code);

@@ -83,13 +83,73 @@ export function plan() {
   };
 }
 
-async function io() {
+/**
+ * Completion of the CURRENT phase in this process. A phase is complete once its `<phase>-result` observation was durably saved (exclusive
+ * create + fsync). After that, failures of the teardown (lock release, storage-copy close) or late asynchronous errors are recorded in
+ * `<phase>-teardown.json` and never turn the completed phase into a failure; before it, every error holds the phase (no retry).
+ */
+export type PhaseState = { phase: string; resultSaved: boolean; teardown: { stage: string; code: string; at: string }[] };
+export const newPhaseState = (phase: string): PhaseState => ({ phase, resultSaved: false, teardown: [] });
+/** Bounded code of an error, never its stack/cause (no diagnostics that might carry secrets). */
+const errorCode = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 128);
+const noteTeardown = (state: PhaseState, stage: string, error: unknown) => { state.teardown.push({ stage, code: errorCode(error), at: new Date().toISOString() }); };
+
+/** Runs the phase body, then its teardown. A teardown error is recorded; it fails the phase only when no result was saved yet. */
+export async function withTeardown(state: PhaseState, body: () => Promise<void>, teardown: () => Promise<void>): Promise<void> {
+  let failed = false;
+  let failure: unknown;
+  try { await body(); } catch (error) { failed = true; failure = error; }
+  try { await teardown(); } catch (error) {
+    noteTeardown(state, 'teardown', error);
+    if (!failed && !state.resultSaved) throw error;
+  }
+  if (failed) throw failure;
+}
+
+/** Exit code of a recipe process: 0 when it ended without error or after its result was durably saved; 1 otherwise (held, no retry). */
+export function phaseExitCode(state: PhaseState | null, error: unknown): 0 | 1 {
+  return error === undefined || state?.resultSaved === true ? 0 : 1;
+}
+
+/**
+ * Late asynchronous error (uncaught exception / unhandled rejection) of a recipe process. After a complete save it is recorded and the
+ * process still exits 0; before it the process fails closed with exit 1 at once.
+ */
+export function lateErrorDecision(state: PhaseState | null): 'record' | 'fail' {
+  return state?.resultSaved === true ? 'record' : 'fail';
+}
+
+/**
+ * CLI driver (the only place with process-level effects; never run on import). `deps` are the process hooks so the exit semantics are
+ * testable in a child process.
+ */
+export async function cli(args: string[], deps: { run(args: string[], state: PhaseState | null): Promise<void>; exit(code: 0 | 1): void;
+  on(event: 'uncaughtException' | 'unhandledRejection', listener: (error: unknown) => void): void; recordLate(state: PhaseState, code: string): void;
+  error(text: string): void }) {
+  const state = args.length === 1 && phases.includes(args[0] as Phase) ? newPhaseState(args[0]!) : null;
+  const late = (error: unknown) => {
+    if (lateErrorDecision(state) === 'fail') { deps.error('Qualification held; no retry.'); deps.exit(1); return; }
+    // The phase result is complete: record the late error next to it, never as a failure of the phase.
+    try { deps.recordLate(state!, errorCode(error)); } catch { /* recording is best effort; the saved result stands */ }
+  };
+  deps.on('uncaughtException', late);
+  deps.on('unhandledRejection', late);
+  let failure: unknown;
+  try { await deps.run(args, state); } catch (error) { failure = error; }
+  const code = phaseExitCode(state, failure);
+  if (code !== 0) deps.error('Qualification held; no retry.');
+  deps.exit(code);
+}
+
+async function io(state: PhaseState | null = null) {
   const fs = await import('node:fs/promises');
   const save = async (name: string, data: unknown) => {
     const text = JSON.stringify(data, null, 1);
     if (Buffer.byteLength(text) > 8 * 1024 * 1024) throw new Error('OBSERVATION_LIMIT');
     const file = await fs.open(`${observations}/${name}.json`, 'wx', 0o600);
     try { await file.writeFile(text); await file.sync(); } finally { await file.close(); }
+    // Durable (exclusive, fsync'ed and closed): from now on the phase is complete.
+    if (state && (name === `${state.phase}-result`)) state.resultSaved = true;
   };
   const load = async (name: string) => JSON.parse(await fs.readFile(`${observations}/${name}.json`, 'utf8')) as Record<string, unknown>;
   const exists = (name: string) => fs.access(`${observations}/${name}.json`).then(() => true, () => false);
@@ -233,9 +293,9 @@ async function runControl(phase: 'ask' | 'continue' | 'scope', save: (name: stri
     deadlineReached: Date.now() >= deadline });
 }
 
-export async function runPhase(phase: Phase) {
+export async function runPhase(phase: Phase, state: PhaseState = newPhaseState(phase)) {
   if (!phases.includes(phase)) throw new Error('UNKNOWN_PHASE');
-  const { fs, save, load, exists } = await io();
+  const { fs, save, load, exists } = await io(state);
   if (phase === 'preflight') await fs.mkdir(observations, { mode: 0o700 }); // EXCLUSIVE: never adopt an existing qualification
   await save(`${phase}-intent`, { revision, phase, at: new Date().toISOString() });
   try {
@@ -261,7 +321,7 @@ export async function runPhase(phase: Phase) {
     if (!Array.isArray(pinned) || pinned.length !== 1) throw new Error('OPERATOR_IDENTITY_UNRESOLVED');
     const { holdStorageLock } = await import('./question10-qualification.js');
     const lock = await holdStorageLock(`${observations}/control.lock`);
-    try {
+    await withTeardown(state, async () => {
       if (phase === 'ask') { await runControl('ask', save, pinned); return; }
       if (phase === 'continue' || phase === 'scope') {
         const previous = phase === 'continue' ? 'ask-result' : 'continue-result';
@@ -271,10 +331,17 @@ export async function runPhase(phase: Phase) {
         return;
       }
       await inspectOrStop(phase, save);
-    } finally { await lock.release(); }
+    }, () => lock.release());
   } catch (error) {
-    await save(`${phase}-held`, { phase, status: 'held', code: error instanceof Error ? error.message.slice(0, 128) : 'UNKNOWN', note: 'Consumed; no retry.' }).catch(() => {});
-    throw new Error('QUALIFICATION_HELD');
+    // An error AFTER the complete result (e.g. while closing) is recorded, not a held phase: the evidence is already durable.
+    if (state.resultSaved) noteTeardown(state, 'after-result', error);
+    else {
+      await save(`${phase}-held`, { phase, status: 'held', code: errorCode(error), note: 'Consumed; no retry.' }).catch(() => {});
+      throw new Error('QUALIFICATION_HELD');
+    }
+  } finally {
+    if (state.teardown.length) await save(`${phase}-teardown`, { phase, resultSaved: state.resultSaved, events: state.teardown,
+      note: 'Recorded after the phase; the saved result is complete and the phase is not retried.' }).catch(() => {});
   }
 }
 
@@ -372,11 +439,16 @@ async function inspectOrStop(phase: 'inspect' | 'stop-environment', save: (name:
   await save('stop-environment-result', { state: work.execution.state, before, result });
 }
 
-export async function main(args: string[]) {
+export async function main(args: string[], state: PhaseState | null = null) {
   if (args.length === 1 && args[0] === '--plan') { console.log(JSON.stringify(plan(), null, 2)); return; }
   if (args.length !== 1 || !phases.includes(args[0] as Phase)) throw new Error('EXACT_PHASE_REQUIRED');
-  await runPhase(args[0] as Phase);
+  await runPhase(args[0] as Phase, state ?? newPhaseState(args[0]!));
 }
 if (process.argv[1] === new URL(import.meta.url).pathname) {
-  main(process.argv.slice(2)).then(() => process.exit(0), () => { console.error('Qualification held; no retry.'); process.exit(1); });
+  const { writeFileSync } = await import('node:fs');
+  let late = 0;
+  await cli(process.argv.slice(2), { run: main, exit: code => process.exit(code), on: (event, listener) => { process.on(event, listener); },
+    error: text => console.error(text),
+    // Synchronous, exclusive, best effort: a late error after the complete result is evidence too, never a reason to fail.
+    recordLate: (state, code) => writeFileSync(`${observations}/${state.phase}-late-${++late}.json`, JSON.stringify({ phase: state.phase, code, at: new Date().toISOString() }), { flag: 'wx', mode: 0o600 }) });
 }

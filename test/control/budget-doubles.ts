@@ -64,9 +64,12 @@ export function budgetDoubles(scripts: Script[], options: { cessation?: boolean;
         calls.push({ kind: 'prepare', detail: input });
         await options.onPrepare?.();
         if (options.prepareFailure?.()) return { status: 'failure' as const, code: 'SYNTHETIC_PREPARE_FAILED' };
-        return { status: 'success', environment: `env-${'c'.repeat(64)}` as never, seeds: [{ name: 'factory/skill-pack/factory-skills-v2', manifestSha256: 'f'.repeat(64), reused: false }],
+        // Ticket 11: a resumed activation (after an accepted answer or an authorized scope change) must reuse the preserved
+        // environment/checkout; the double models that resumption by reusing the same checkout from the second prepare on.
+        const resumed = calls.filter(call => call.kind === 'prepare').length > 1;
+        return { status: 'success', environment: `env-${'c'.repeat(64)}` as never, seeds: [{ name: 'factory/skill-pack/factory-skills-v2', manifestSha256: 'f'.repeat(64), reused: resumed }],
           checkout: { path: '/workspace/checkout', repository: input.checkout.repository, repositoryId: input.checkout.repositoryId, base: 'main', branch: input.checkout.branch,
-            baseCommit: 'a'.repeat(40), origin: 'https://github.com/acme/project.git', reused: false, preparedAt: new Date().toISOString() } };
+            baseCommit: 'a'.repeat(40), origin: 'https://github.com/acme/project.git', reused: resumed, preparedAt: new Date().toISOString() } };
       },
       async start() { calls.push({ kind: 'start' }); return { status: 'success', boot: `boot-11111111-2222-4333-8444-${String(calls.length).padStart(12, '5')}` as never }; },
       async stop(input) { calls.push({ kind: 'stop', detail: input });

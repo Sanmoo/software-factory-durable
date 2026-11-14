@@ -459,7 +459,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         const nextStep = `The resumption context is insufficient (${plan.reasons.join(', ')}); no Builder was activated. Inspect the Work and its preserved artifacts and decide explicitly (ticket 26).`;
         const code = plan.reasons.some(reason => reason.includes('TOO_LARGE')) ? 'PROMPT_TOO_LARGE' : 'RECOVERY_CONTEXT_INSUFFICIENT';
         if (stop?.cessationConfirmed) await blockBeforeStart(session, work.work_id, executionId, code, nextStep);
-        else await hold(`${code}_CESSATION_UNCONFIRMED`, nextStep);
+        // Still a proven non-start (refused before any credential or worker request): the reservation is released; the Slot is kept.
+        else await hold(`${code}_CESSATION_UNCONFIRMED`, nextStep, true);
         observe(work.work_id, 'recovery-context-insufficient', plan.reasons);
         return;
       }

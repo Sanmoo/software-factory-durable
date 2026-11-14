@@ -5,6 +5,7 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openControl } from '../../src/control/index.js';
+import { requestCorrection } from '../../src/control/durable/control.js';
 import type { Control, ControlReceipt, ExecutionPorts, ListView, ShowView, WorkView } from '../../src/control/types.js';
 import type { SessionObservation, WorkerQuestion, WorkerSessionRef } from '../../src/workers/index.js';
 import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
@@ -21,7 +22,9 @@ const sessionRef = (n: number, profile: Partial<WorkerSessionRef['profile']> = {
 
 function executionDoubles(scripts: Script[], options: { observe?: (session: WorkerSessionRef) => SessionObservation; withObserve?: boolean; baseCommit?: () => string;
   /** `reusedOnResume: false` simulates a lost environment: the resumed prepare makes a FRESH clone at the same base/branch. */
-  reusedOnResume?: boolean; builder?: ExecutionPorts['builder'] } = {}) {
+  reusedOnResume?: boolean; builder?: ExecutionPorts['builder'];
+  /** Whether the next `stop` confirms the own boot's cessation (default always). */
+  cessation?: () => boolean } = {}) {
   const calls: { kind: string; detail?: unknown }[] = [];
   let sessions = 0;
   const ports: ExecutionPorts = {
@@ -36,7 +39,11 @@ function executionDoubles(scripts: Script[], options: { observe?: (session: Work
             reused: options.reusedOnResume === false ? false : calls.filter(call => call.kind === 'prepare').length > 1, preparedAt: new Date().toISOString() } };
       },
       async start() { calls.push({ kind: 'start' }); return { status: 'success', boot: `boot-11111111-2222-4333-8444-${String(calls.length).padStart(12, '5')}` as never }; },
-      async stop(input) { calls.push({ kind: 'stop', detail: input }); return { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'observed' }; },
+      async stop(input) {
+        calls.push({ kind: 'stop', detail: input });
+        return options.cessation && !options.cessation() ? { status: 'indeterminate', code: 'STOP_UNCONFIRMED', cessationConfirmed: false }
+          : { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'observed' };
+      },
     },
     credentials: {
       async issue(input) {
@@ -391,5 +398,73 @@ test('AC2/finding 2: a planned pack without the continue protocol replaces the s
   assert.ok(second.prompt.includes('reason: SESSION_CONTINUATION_UNSUPPORTED'));
   assert.deepEqual([(await h.byNumber())[3]!.execution!.request.session!.mode, (await h.byNumber())[3]!.execution!.request.session!.reason],
     ['replace', 'SESSION_CONTINUATION_UNSUPPORTED']);
+  await h.stop();
+});
+
+// Ticket 19 composition: the budget charge of the resumed Execution (spec §4.4) and its own duration clock (spec §5.7).
+test('ticket 19 x 11: a continuation of an already-consumed correction stays PRESERVED (not charged again) and has its own clock', async t => {
+  const h = await harness(t, { pulls: {}, issues: [remoteIssue(3)] }, [{ kind: 'complete' }, { kind: 'ask', questionId: qid(31), question: 'Which file name?' }, { kind: 'complete' }]);
+  await h.start();
+  await h.settle(async () => (await h.byNumber())[3]?.execution?.state === 'ended' && !(await h.byNumber())[3]!.execution!.slot.held, 'initial completed');
+  const work = (await h.byNumber())[3]!;
+  assert.equal(await requestCorrection(h.control(), work.work_id, 'Fix the failing check of the proposal.'), 'opened');
+  await h.settle(async () => (await h.byNumber())[3]!.execution?.end?.outcome === 'question' && !(await h.byNumber())[3]!.execution!.slot.held, 'correction asked');
+  const asked = (await h.show(work.work_id)).work;
+  assert.deepEqual([asked.execution!.charge!.kind, asked.execution!.charge!.state, asked.budget!.corrections.consumed], ['correction', 'consumed', 1]);
+  assert.equal((await answer(h.control(), 'a31', qid(31), 'docs/fix.md')).outcome, 'accepted');
+  await h.settle(async () => h.activations().length === 3 && (await h.byNumber())[3]!.execution!.state === 'ended', 'continuation ended');
+  assert.match(h.activations()[2]!.prompt, /^continue\n/);
+  const resumed = (await h.show(work.work_id)).work;
+  const continued = resumed.execution!;
+  assert.deepEqual([continued.request.session!.mode, continued.charge!.kind, continued.charge!.state, continued.charge!.correctionId],
+    ['continue', 'correction', 'preserved', asked.execution!.charge!.correctionId], 'the SAME correction continues');
+  assert.deepEqual([resumed.budget!.corrections.consumed, resumed.budget!.corrections.reserved], [1, null], 'consumed once, never again');
+  // Per-Execution clock: the continuation has its own confirmed start and measured duration, distinct from the asking Execution's.
+  assert.ok(continued.timing?.startedAt && asked.execution!.timing?.startedAt);
+  assert.notEqual(continued.timing!.startedAt, asked.execution!.timing!.startedAt);
+  assert.equal(continued.timing!.duration?.kind, 'measured');
+  assert.equal(continued.timing!.timeout, null);
+  await h.stop();
+});
+
+for (const [label, options, code] of [
+  ['RECOVERY_CONTEXT_INSUFFICIENT (cessation confirmed)', { reusedOnResume: false }, 'RECOVERY_CONTEXT_INSUFFICIENT'],
+  ['RECOVERY_CONTEXT_INSUFFICIENT (cessation NOT confirmed: held)', { reusedOnResume: false, unconfirmedSecondStop: true }, 'RECOVERY_CONTEXT_INSUFFICIENT_CESSATION_UNCONFIRMED'],
+] as const) test(`ticket 19 x 11: ${label} is a proven non-start: the reserved correction is RELEASED, never consumed`, async t => {
+  let stops = 0;
+  const h = await harness(t, { pulls: {}, issues: [remoteIssue(3)] }, [{ kind: 'ask', questionId: qid(32), question: 'Which file name?' }],
+    { reusedOnResume: options.reusedOnResume, cessation: () => !('unconfirmedSecondStop' in options) || ++stops < 2 });
+  await h.start();
+  await h.settle(async () => (await h.byNumber())[3]?.execution?.end?.outcome === 'question' && !(await h.byNumber())[3]!.execution!.slot.held, 'question wait');
+  const work = (await h.byNumber())[3]!;
+  // While it waits (no active Execution) a correction opens: the resumption that follows reserves it at admission.
+  assert.equal(await requestCorrection(h.control(), work.work_id, 'Also fix the reported lint failure.'), 'opened');
+  const issued = h.execution.calls.filter(call => call.kind === 'issue').length;
+  assert.equal((await answer(h.control(), 'a32', qid(32), 'docs/r.md')).outcome, 'accepted');
+  await h.settle(async () => { const shown = (await h.show(work.work_id)).work; return shown.execution?.held?.code === code || shown.execution?.state === 'held' && shown.execution.held?.code === code; }, code);
+  const blocked = (await h.show(work.work_id)).work;
+  assert.equal(h.activations().length, 1, 'no Builder activated');
+  assert.equal(h.execution.calls.filter(call => call.kind === 'issue').length, issued, 'no credential issued');
+  assert.deepEqual([blocked.execution!.charge!.kind, blocked.execution!.charge!.state], ['correction', 'released']);
+  assert.deepEqual([blocked.budget!.corrections.reserved, blocked.budget!.corrections.consumed], [null, 0]);
+  assert.equal(blocked.correction!.consumed, false, 'the correction stays pending for an explicit decision');
+  assert.ok(blocked.history.some(item => item.event === 'budget-released'));
+  await h.stop();
+});
+
+test('ticket 19 x 11: PROMPT_TOO_LARGE is a proven non-start: the reserved correction is RELEASED, never consumed', async t => {
+  let release!: () => void;
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  const h = await harness(t, { pulls: {}, issues: [remoteIssue(3), remoteIssue(4)] }, [{ kind: 'complete', hold }, { kind: 'complete' }]);
+  await h.start();
+  await h.settle(async () => (await h.byNumber())[3]?.execution?.state === 'started' && (await h.byNumber())[4] !== undefined, '#3 running, #4 queued');
+  const four = (await h.byNumber())[4]!;
+  assert.equal(await requestCorrection(h.control(), four.work_id, 'Fix the documented defect.'), 'opened');
+  for (let n = 0; n < 8; n++) assert.equal((await updateScope(h.control(), `big19-${n}`, four.work_id, `Concrete change number ${n}: ${'€'.repeat(1900)}`)).outcome, 'accepted');
+  release();
+  await h.settle(async () => (await h.byNumber())[4]!.impediments.some(item => item.code === 'PROMPT_TOO_LARGE'), 'blocked too large');
+  const blocked = (await h.show(four.work_id)).work;
+  assert.deepEqual([blocked.execution!.charge!.kind, blocked.execution!.charge!.state, blocked.budget!.corrections.reserved, blocked.budget!.corrections.consumed],
+    ['correction', 'released', null, 0]);
   await h.stop();
 });

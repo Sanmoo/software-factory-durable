@@ -292,3 +292,56 @@ Namespace `y5/q11-context-v1`, fases `preflight → ask → continue → scope �
 - **continue**: decisão `SESSION_COMPATIBLE`; o owner copiou a sessão preservada, o worker reabriu com `SessionManager` e recebeu `continue` com a resposta e o escopo; executou no mesmo ambiente/branch e terminou com cessação confirmada. Nenhum `/implement` reiniciado.
 - **scope**: `update-scope` com id fixo aceito durante a espera; a política sem `edit` tornou a sessão `SESSION_INCOMPATIBLE` → substituição explícita com razão e contexto recuperável; a atualização foi entregue e depois **consumida** só após fim completo com cessação confirmada (histórico `scope-update-delivered` → `execution-ended` → `scope-update-consumed`).
 - **inspect**: varredura de segredos em storage, 48 arquivos de Records e 9 observações: nenhum `ghs_` nem chave privada.
+
+## Rebase sobre a integração do ticket 19 (`integration/software-factory-mvp` @ f8104cc)
+
+Os 9 commits foram reaplicados sobre f8104cc (conflitos em `dispatch.ts`, `execution.ts`, `types.ts`, `cli.ts`, `controller/owner.ts`).
+A resolução foi revisada contra os dois desenhos e corrigida onde violava o ticket 19:
+
+- **Orçamento** (`admitExecution`): a base de retomada e o vínculo de escopo do ticket 11 convivem com a reserva do 19 no MESMO commit; o
+  motivo vem de `motiveOf` (correção/recuperação pendente). Retomada por resposta ou escopo não cobra nada; a continuação de uma correção já
+  consumida fica `preserved` e não consome de novo.
+- **Não-início provado** (corrigido nesta revisão — a resolução deixava a reserva presa): `blockBeforeStart` (`PROMPT_TOO_LARGE` /
+  `RECOVERY_CONTEXT_INSUFFICIENT`) passa a chamar `releaseReservation`, e o ramo com cessação não confirmada usa `hold(..., provenNonStart = true)`:
+  nenhum credencial ou pedido ao worker existiu, então a carga é `released`, nunca `consumed`; a correção continua pendente.
+- **Fim e espera**: `recordEnd(..., elapsedMs, session)` registra duração medida e sessão preservada; a re-oferta de escopo entregue cobre
+  também o novo desfecho `timeout`. `holdExecution` combina `provenNonStart` com a re-oferta; `releaseAfterCessation` mantém os dois re-enfileiramentos
+  (pergunta/timeout do 19; escopo pendente após `completed` do 11) e o consumo de escopo só em `completed`.
+- **Despacho**: `activationPlan` (antes de qualquer credencial) com `activitySignal`/`activated`/`wait`/`armTimeout` do 19; phaseId
+  `builder-continuation`. Cada Execução, inclusive a de `continue`, tem `timing` e relógio próprios (novo `startedAt` no seu início confirmado).
+- **Sem relógio implícito no worker**: `deadlineMs` segue só como política Host explícita; a continuação (`continuedSession`) não acrescenta prazo.
+- **Ingresso**: `ControlInput`/`ControlReceipt`/CLI/owner têm `grant` (19) e `update-scope` (11); os ids de pacote continuam na lista única `factorySkillPackIds`.
+
+Dublê ajustado: `test/control/budget-doubles.ts` (ticket 19) passa a reportar `checkout.reused` a partir do segundo `prepare`, como o
+ambiente preservado real; sem isso a nova exigência `PREVIOUS_ENVIRONMENT_NOT_REUSED` bloquearia as retomadas pós-pergunta dos fluxos de orçamento.
+
+Testes novos (`continuation-flow`, Control real + SQLite): continuação de correção consumida → `preserved`, `corrections.consumed` = 1 e relógio
+próprio da Execução continuada; `RECOVERY_CONTEXT_INSUFFICIENT` (cessação confirmada e não confirmada) e `PROMPT_TOO_LARGE` → carga `released`,
+`reserved` nulo, `consumed` 0, sem credencial nem ativação. Os três últimos ficaram vermelhos na resolução recebida e verdes após a correção.
+
+## Defeito do harness: `inspect` saía com 1 depois de um resultado completo
+
+No ensaio real, `inspect-result.json` foi gravado por completo e o processo terminou com código 1. A causa exata não é reproduzível sem efeitos
+reais (uma sonda local com storage temporário fechou cópia e lock sem erro). Em vez de adivinhar, a receita passou a tratar a conclusão
+explicitamente: a fase está **completa** quando `<fase>-result` foi gravado (exclusivo + `fsync`). Depois disso, falhas da desmontagem
+(liberação do lock, fechamento da cópia) e erros assíncronos tardios (`uncaughtException`/`unhandledRejection`) são registrados em
+`<fase>-teardown.json` / `<fase>-late-<n>.json` e o processo sai com **0**; antes disso, qualquer erro mantém a fase `held` (código 1, sem retry),
+e um erro tardio falha fechado imediatamente. O import e o `--plan` continuam inertes (os ganchos de processo só existem no bloco CLI).
+Testes: `context11-recipe-safety` (`withTeardown`, decisões de saída e de erro tardio) e um processo filho real (`context11-exit-fixture`) com
+`process.exit`/rejeição não tratada reais: desmontagem falha após salvar → 0; rejeição tardia após salvar → 0 e registrada; erro antes de salvar → 1;
+rejeição tardia antes de salvar → 1.
+
+Mutações (JS compilado, restauradas; cada uma derruba ao menos um teste): (M11) `blockBeforeStart` sem `releaseReservation` → 2 testes de
+não-início; (M12) bloqueio com cessação não confirmada sem `provenNonStart` → 1; (M13) correção consumida cobrada de novo (`preserve` desligado)
+→ teste de continuação preservada; (M14) código de saída ignorando o resultado salvo → processo filho; (M15) erro tardio após salvar tratado como
+falha → 2; (M16) erro de desmontagem após salvar relançado → 1.
+
+## Gate após o rebase sobre f8104cc
+
+`rm -rf dist`; Node 24.21.0 com `env -u NODE_OPTIONS -u NODE_COMPILE_CACHE NODE_DISABLE_COMPILE_CACHE=1`, sem npm/npx: dependency-cruiser sem
+violações (317 módulos, 1866 dependências); eslint `--max-warnings 0` exit 0; `tsc` exit 0; **146 arquivos** `dist/test/**/*.test.js`, um por vez
+(`timeout 60`, `entrypoints/normal-oauth` 90 s): **968 pass, 1 fail, 10 skipped, 0 cancelled** (479 s). A única falha já existia na própria
+integração f8104cc e não é do ticket 11: o teste de inércia de `limits19-qualification` ainda esperava o namespace `q19-limits-v1`, que a receita
+do ticket 19 trocou por `v2` depois que a v1 foi consumida por um preflight real (evidência 19, §ensaio). Sincronizado num commit separado
+(só a asserção); o arquivo reexecutado sozinho passa (4 pass). Total efetivo: **969 pass, 0 fail, 10 skipped, 0 cancelled**.
+`test/sandbox/gondolin.test.ts` continua `skip: true`.
