@@ -155,7 +155,10 @@ export type ExecutionView = {
     /** Resumption basis (re-checked in the admission commit): the previous Execution and what authorizes the new activation — its answered
      * Question and/or concrete scope updates. `NEW_BOOT_REPLACEMENT_SESSION` is the ticket-10 record of an answered Question. */
     resume?: { previousExecutionId: string; questionId: string | null; answerSha256: string | null; scopeUpdateIds?: string[];
-      reason: 'QUESTION_ANSWERED' | 'SCOPE_UPDATED' | 'NEW_BOOT_REPLACEMENT_SESSION' } | null;
+      reason: 'QUESTION_ANSWERED' | 'SCOPE_UPDATED' | 'NEW_BOOT_REPLACEMENT_SESSION' | 'PUBLICATION_REQUESTED' } | null;
+    /** Ticket 14: a publication activation requested by Control after discovery found no own pull request. It carries exactly the
+     * verified commit, the Work's branch/base, the correlation marker and the remote expectation (lease) observed BEFORE preparation. */
+    publication?: PublicationRequest | null;
     /** Scope updates bound to this Execution at admission (delivered in its first prompt; `delivered` once its start is confirmed). */
     scopeUpdateIds?: string[];
     /** Session decision of a resumed Builder (spec §5.5/§6.1): `continue` the previous compatible session, or `replace` it with the reason. */
@@ -188,6 +191,38 @@ export type ExecutionView = {
   recovery?: RecoveryRecord[];
   /** Ticket 26: basis of an Execution that follows an interrupted one (operational recovery or continuation after a clean stop). */
   interruption?: { previousExecutionId: string; reason: 'OPERATIONAL_RECOVERY' | 'ADMINISTRATIVE_STOP'; code: string } | null;
+};
+/** Remote tip of the Work's own branch as observed by a complete read (`absent` = no such ref). */
+export type BranchObservation = { state: 'absent' } | { state: 'present'; sha: string };
+/** What one publication activation may publish (spec §9.1): fixed by Control, never chosen by the model. */
+export type PublicationRequest = { basisExecutionId: string; head: string; branch: string; base: string; marker: string; expectedRemote: BranchObservation };
+/** The Work's own pull request, recognized by correlation (marker, App bot author, own branch/repository/base); never adopted otherwise. */
+export type OwnPullRequest = { pullRequestId: number; nodeId: string; number: number; url: string; state: 'open' | 'closed'; merged: boolean; draft: boolean;
+  headRef: string; headSha: string; base: string; author: { id: number; login: string; type: string }; linkedAt: string; bodySha256: string | null };
+/** One discovery (safe read) of the own publication: Git remote ref + pull requests of the repository correlated to the Work. */
+export type PublicationDiscovery = { at: string; observedAt: string | null; trigger: 'verified' | 'after-publication' | 'reconciliation';
+  outcome: 'linked' | 'absent' | 'incomplete' | 'blocked'; reasons: string[]; branch: BranchObservation | { state: 'unknown'; code: string };
+  candidates: { number: number; url: string; own: boolean; reasons: string[] }[] };
+/**
+ * Publication dimension of a Work (spec §3.3/§9.1, ticket 14). `not-publishable`: the basis Execution's content is not verified (its
+ * reasons; nothing is requested); `awaiting-discovery`: the next safe read decides; `requested`: discovery found nothing and a publication
+ * activation of the Builder is queued; `published`: the own draft PR is linked (opening never ends the Ticket/Work); `blocked`: repeating or
+ * linking would be unsafe (unknown PR/change, several candidates, outcome not confirmed after an attempt...), explicit operator decision.
+ */
+export type PublicationView = {
+  state: 'not-publishable' | 'awaiting-discovery' | 'requested' | 'published' | 'blocked';
+  basisExecutionId: string; marker: string; branch: string; base: string;
+  /** The content the end-of-Execution verification (ticket 13) established: the only commit a publication may carry. */
+  verified: { executionId: string; head: string; contentSha256: string; verifiedAt: string | null; reviewedRound: number | null;
+    gates: { id: string; outcome: string }[]; requiredChecks: string[] } | null;
+  /** Lease expectation observed BEFORE the publication activation and given to it (preserved, never recaptured as a new lease). */
+  expectedRemote: BranchObservation | null;
+  requestedAt: string | null;
+  pullRequest: OwnPullRequest | null;
+  /** Shape check of the linked PR description (short summary/validation/risk, marker, Ticket link, no transcript or local link). */
+  description: { conformant: boolean; reasons: string[] } | null;
+  discoveries: PublicationDiscovery[];
+  reasons: string[]; nextStep: string | null; updatedAt: string;
 };
 /**
  * Ticket 13: end-of-Execution verification (spec §6.4/§9.3). `verified` only with no reason; every reason is independent and explicit.
@@ -287,7 +322,11 @@ export type WorkView = {
   impediments: Impediment[];
   dependencies: DependencyState;
   dispatch: { state: 'held' | 'eligible' | 'executing'; reasons: string[] };
-  execution: ExecutionView | null; branch: string | null; pullRequest: null;
+  execution: ExecutionView | null; branch: string | null;
+  /** Ticket 14: the own pull request once discovery linked it (questions then belong to its surface). */
+  pullRequest: { number: number; url: string } | null;
+  /** Ticket 14 (absent on earlier records): publication of the verified content, its discoveries and the linked own PR. */
+  publication?: PublicationView | null;
   /** Earlier Executions of this Work, oldest first (a recovery Execution replaces `execution`, never erasing its predecessor). */
   previousExecutions: ExecutionView[];
   /** Question identities of this Work, in recording order. */
@@ -319,7 +358,9 @@ export type WorkView = {
     { at: string; event: 'timeout-reached' | 'duration-reconciled'; origin: 'controller-clock'; executionId: string; detail: string } |
     { at: string; event: 'scope-update-accepted' | 'scope-update-delivered' | 'scope-update-reoffered' | 'scope-update-consumed'; origin: 'local-cli' | 'controller-dispatch';
       scopeUpdateId: string; detail?: string } |
-    { at: string; event: 'execution-reconciled' | 'recovery-wait-kept'; origin: 'controller-recovery'; executionId: string | null; detail: string })[];
+    { at: string; event: 'execution-reconciled' | 'recovery-wait-kept'; origin: 'controller-recovery'; executionId: string | null; detail: string } |
+    { at: string; event: 'publication-evaluated' | 'publication-requested' | 'publication-started' | 'publication-linked' | 'publication-blocked' | 'publication-discovery-incomplete';
+      origin: 'controller-publication'; executionId: string | null; detail: string })[];
 };
 export type CounterView = { limit: number; granted: number; effectiveLimit: number; consumed: number; reserved: 0 | 1; reservedBy: string | null; available: number; exhausted: boolean };
 /** `elapsedMs` is a monotonic measurement (live or measured) or null; `unknown` is never shown as zero. */
