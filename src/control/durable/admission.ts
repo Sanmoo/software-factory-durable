@@ -4,7 +4,7 @@ import { defineDoc, defineDocFamily } from '@earendil-works/pi-durable';
 import type { TicketRef } from '../../issue-tracker/index.js';
 import type { ControlInput, ControlReceipt, DependencyEvaluation, Impediment, WorkView } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
-import { dependencyImpedimentCodes, dependencyImpediments, type OwnCycleFacts } from '../rules/dependencies.js';
+import { dependencyImpedimentCodes, dependencyImpediments, ownCycleFor, type OwnCycle, type OwnCycleFacts } from '../rules/dependencies.js';
 import type { Session } from './store.js';
 
 type History = { request_id: string; operation: 'pause' | 'unpause'; before: boolean; after: boolean; origin: 'local-cli' };
@@ -15,7 +15,9 @@ const requests = defineDocFamily<{ input: ControlInput | null; receipt: ControlR
   kind: 'factory.request', version: 1, scope: 'session', family: true, initial: () => ({ input: null, receipt: null }), checkpointWhen: () => true,
 });
 /** Installation-level Ticket → cycle index and FIFO admission sequence (spec §3.2), committed with each Work. */
-type TicketIndex = { admissionSequence: number; tickets: Record<string, { current: string; previous: string[] }>; order: string[] };
+/** `memory`: explicit minimal memory per Ticket key (spec §12.4) — cycle identity/order, result and confirmed merge; absent in pre-08 storage. */
+type TicketIndex = { admissionSequence: number; tickets: Record<string, { current: string; previous: string[] }>; order: string[];
+  memory?: Record<string, { cycles: OwnCycle[] }> };
 const ticketIndex = defineDoc<TicketIndex>({ kind: 'factory.ticket-index', version: 1, scope: 'session',
   initial: () => ({ admissionSequence: 0, tickets: {}, order: [] }), checkpointWhen: () => true });
 export type WorkRecord = Omit<WorkView, 'dispatch'>;
@@ -62,6 +64,7 @@ export async function admitTicket(session: Session, evidence: AdmissionEvidence)
     };
     index.admissionSequence = sequence;
     index.tickets[key] = { current: work_id, previous: [] };
+    index.memory = { ...(index.memory ?? {}), [key]: { cycles: [...(index.memory?.[key]?.cycles ?? []), { work_id, cycle: 1, result: 'open', mergeConfirmed: false }] } };
     index.order.push(work_id);
     return { kind: 'admitted' as const, work_id, sequence };
   }, BACKGROUND_CONTEXT);
@@ -75,30 +78,29 @@ export async function pendingWorks(session: Session, repositoryId: number): Prom
 }
 
 /**
- * Local facts of blockers that are Factory Tickets, by GitHub issue id (globally unique): the applicable cycle is the index's current
- * cycle, earlier cycles are reported but never satisfy it. An indexed Ticket whose record is missing stays own ('missing'), never external.
+ * Local facts of blockers that are Factory Tickets, by GitHub issue id (globally unique). Sources: the index (current/previous cycles), the
+ * explicit minimal memory written with each admission (kept even if an index entry or Work record disappears) and the Work records.
+ * Classification itself is the pure `ownCycleFor`: indexed or remembered is own, never external; no record and no memory is 'missing'.
  */
 export async function ownCycles(session: Session, issueIds: number[]): Promise<Record<number, OwnCycleFacts>> {
   const index = await session.snapshot(ticketIndex, BACKGROUND_CONTEXT);
-  const byIssue = new Map<number, { current: string; previous: string[] }>();
-  for (const [key, entry] of Object.entries(index?.tickets ?? {})) {
-    const issueId = Number(/^github:repository:\d+:issue:(\d+)$/.exec(key)?.[1]);
-    if (Number.isSafeInteger(issueId)) byIssue.set(issueId, entry);
-  }
+  const issueOf = (key: string) => Number(/^github:repository:\d+:issue:(\d+)$/.exec(key)?.[1]);
+  const indexed = new Map<number, { current: string; previous: string[] }>();
+  for (const [key, entry] of Object.entries(index?.tickets ?? {})) if (Number.isSafeInteger(issueOf(key))) indexed.set(issueOf(key), entry);
+  const memory = new Map<number, OwnCycle[]>();
+  for (const [key, entry] of Object.entries(index?.memory ?? {})) if (Number.isSafeInteger(issueOf(key))) memory.set(issueOf(key), entry.cycles);
   const result: Record<number, OwnCycleFacts> = {};
-  const cycleOf = async (work_id: string) => {
-    const work = (await session.snapshot(works, work_id, BACKGROUND_CONTEXT))?.work;
-    // Delivery/merge confirmation is not produced before publication tickets; a Work record is never delivered here.
-    return work ? { work_id, cycle: work.cycle, result: work.result, mergeConfirmed: false } : undefined;
-  };
   for (const issueId of new Set(issueIds)) {
-    const entry = byIssue.get(issueId);
-    if (!entry) continue;
-    const applicable = await cycleOf(entry.current);
-    if (!applicable) { result[issueId] = { source: 'missing', work_id: entry.current }; continue; }
-    const previousCycles = [];
-    for (const id of entry.previous) { const cycle = await cycleOf(id); if (cycle) previousCycles.push(cycle); }
-    result[issueId] = { source: 'work', applicable, previousCycles };
+    const entry = indexed.get(issueId), remembered = memory.get(issueId);
+    if (!entry && !remembered) continue;
+    const records: Record<string, OwnCycle | undefined> = {};
+    for (const id of new Set([...(entry ? [entry.current, ...entry.previous] : []), ...(remembered ?? []).map(item => item.work_id)])) {
+      const work = (await session.snapshot(works, id, BACKGROUND_CONTEXT))?.work;
+      // Delivery/merge confirmation is not produced before publication tickets; a Work record is never delivered here.
+      if (work) records[id] = { work_id: id, cycle: work.cycle, result: work.result, mergeConfirmed: false };
+    }
+    const facts = ownCycleFor({ ...(entry ? { indexed: entry } : {}), ...(remembered ? { memory: remembered } : {}), records });
+    if (facts) result[issueId] = facts;
   }
   return result;
 }

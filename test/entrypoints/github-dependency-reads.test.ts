@@ -98,11 +98,11 @@ test('a failure after an emitted page, invalid JSON and invalid relations never 
   ] })] });
   const relations = await invalid.tracker.readDependencyGraph(root);
   assert.equal(relations.completeness, 'incomplete');
-  assert.deepEqual(problems(relations), [['INVALID_DEPENDENCY_RELATION', null, 7001]]);
+  assert.deepEqual(problems(relations), [['INVALID_DEPENDENCY_RELATION', null, 7001], ['DEPENDENCY_SUMMARY_UNAVAILABLE', null, 7001]]);
   assert.match(relations.problems[0]!.nextStep, /4 invalid/);
 });
 
-test('rate limits and count mismatches are explicit; a missing summary is a declared limitation, not support', async t => {
+test('rate limits and count mismatches are explicit; a missing or unparseable summary makes omissions undetectable, so the graph is incomplete', async t => {
   const limited = await compose(t, { pulls: [], issues: [issue(1, { blocked_by: [{ number: 2 }] }), issue(2)],
     faults: { '/dependencies/blocked_by': { status: 403, headers: { 'retry-after': '90', 'x-ratelimit-remaining': '0' } } } });
   const graph = await limited.tracker.readDependencyGraph(root);
@@ -113,11 +113,22 @@ test('rate limits and count mismatches are explicit; a missing summary is a decl
   assert.deepEqual(problems(mismatch), [['DEPENDENCY_COUNT_MISMATCH', null, 7001]]);
   assert.match(mismatch.problems[0]!.nextStep, /listed 1 .*reports 2/);
 
-  const unsummarised = await compose(t, { pulls: [], issues: [issue(1, { blocked_by: [{ number: 2 }], no_summary: true }), issue(2)] });
-  const plain = await unsummarised.tracker.readDependencyGraph(root);
-  assert.equal(plain.completeness, 'complete');
-  assert.ok(plain.limitations.some(limitation => /summary.*absent.*cannot be detected/i.test(limitation)));
-  assert.ok(plain.limitations.some(limitation => /do not certify/i.test(limitation)));
+  // Real 2026-03-10 shape: blocked_by = open blockers, total_blocked_by = all blockers (closed included).
+  const real = await compose(t, { pulls: [], issues: [issue(1, { blocked_by: [{ number: 2 }], summary: { blocked_by: 0, blocking: 0, total_blocked_by: 1, total_blocking: 0 } }),
+    issue(2, { state: 'closed', state_reason: 'completed', summary: { blocked_by: 0, blocking: 1, total_blocked_by: 0, total_blocking: 1 } })] });
+  const matched = await real.tracker.readDependencyGraph(root);
+  assert.deepEqual([matched.completeness, matched.problems], ['complete', []]);
+  assert.ok(matched.limitations.some(limitation => /do not certify/i.test(limitation)));
+  // Observed eventual consistency: right after an edge is created the summary may still count 0 -> fail closed for that round.
+  const lagging = await compose(t, { pulls: [], issues: [issue(1, { blocked_by: [{ number: 2 }], summary: { blocked_by: 0, blocking: 0, total_blocked_by: 0, total_blocking: 0 } }), issue(2)] });
+  assert.deepEqual(problems(await lagging.tracker.readDependencyGraph(root)), [['DEPENDENCY_COUNT_MISMATCH', null, 7001]]);
+  for (const variant of [{ no_summary: true }, { summary: { blocked_by: 'one', total_blocked_by: 1 } }]) {
+    const unsummarised = await compose(t, { pulls: [], issues: [issue(1, { blocked_by: [{ number: 2 }], ...variant }), issue(2)] });
+    const plain = await unsummarised.tracker.readDependencyGraph(root);
+    assert.equal(plain.completeness, 'incomplete', JSON.stringify(variant));
+    assert.deepEqual(problems(plain), [['DEPENDENCY_SUMMARY_UNAVAILABLE', null, 7001]]);
+    assert.match(plain.problems[0]!.nextStep, /cannot be detected.*operator/i);
+  }
 });
 
 test('each node is read once per evaluation: a cycle terminates and a shared node is not re-read; root identity drift is reported', async t => {
@@ -142,6 +153,17 @@ test('dependency-only preflight verifies read access with its own least-privileg
   assert.deepEqual([diagnostic.status, diagnostic.purpose, diagnostic.grant?.permissions], ['ok', 'dependency', { metadata: 'read', issues: 'read' }]);
   assert.ok(diagnostic.limitations?.some(limitation => /not certified/.test(limitation)));
   const trace = await world.trace();
+  assert.deepEqual(trace.filter(entry => /\/issues\?/.test(entry.endpoint)).map(entry => entry.endpoint), ['/repos/acme/deps/issues?state=all&per_page=100'],
+    'one bounded sample page, not every page of the repository');
   assert.ok(trace.filter(entry => entry.credential === 'installation').every(entry => entry.method === 'GET'));
   assert.ok(!trace.some(entry => /comments/.test(entry.endpoint)), 'no question/milestone probe for a dependency-only repository');
+});
+
+test('dependency-only preflight that verified nothing (no issue, only pull requests) is not ok', async t => {
+  for (const issues of [[], [remote('acme/deps', 8003, 3, { pull_request: {} })]]) {
+    const world = await compose(t, { pulls: [], issues });
+    const diagnostic = await world.tracker.checkAccess({ ...depsScope, role: 'dependency-only' });
+    assert.deepEqual([diagnostic.status, diagnostic.code, diagnostic.completeness], ['blocked', 'DEPENDENCY_ACCESS_UNVERIFIED', 'incomplete']);
+    assert.match(diagnostic.nextStep, /no issue.*not verified; no issue or relation is created/i);
+  }
 });

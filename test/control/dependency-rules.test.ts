@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { analyseGraph, dependencyImpediments, dispatchBlockers, evaluateDependencies, selectNext, type GraphFacts, type GraphNodeFacts, type OwnCycleFacts }
+import { analyseGraph, dependencyImpediments, dispatchBlockers, evaluateDependencies, ownCycleFor, selectNext, type GraphFacts, type GraphNodeFacts, type OwnCycleFacts }
   from '../../src/control/rules/dependencies.js';
 
 // Rule level (Q11): deterministic functions over observed facts; proves no storage, process or GitHub boundary.
@@ -90,6 +90,11 @@ test('structural problems prevent release even when every direct blocker is sati
   const both = evaluate(graph([node(7001, { blockedBy: [7002] }), node(7002)], [{ code: 'DEPENDENCY_READ_UNAVAILABLE', observedCode: 'GITHUB_RATE_LIMITED', waitSeconds: 30, nextStep: 'wait' }]));
   assert.equal(both.conclusion, 'inconclusive');
   assert.deepEqual(dependencyImpediments(both, 'now').map(item => item.code), ['DEPENDENCY_PENDING', 'DEPENDENCY_EVALUATION_INCONCLUSIVE']);
+  // No GitHub count to cross-check: omissions are undetectable, so nothing is released and the operator gets the reason.
+  const unsummarised = evaluate(graph([node(7001, { blockedBy: [7002] }), closed(7002)], [{ code: 'DEPENDENCY_SUMMARY_UNAVAILABLE', issueId: 7001, nextStep: 'operator must verify' }]));
+  assert.deepEqual([unsummarised.conclusion, unsummarised.completeness], ['inconclusive', 'incomplete']);
+  assert.deepEqual(dependencyImpediments(unsummarised, 'now').map(item => item.code), ['DEPENDENCY_EVALUATION_INCONCLUSIVE']);
+  assert.match(dependencyImpediments(unsummarised, 'now')[0]!.nextStep, /DEPENDENCY_SUMMARY_UNAVAILABLE.*operator must verify/);
   // Root never read: nothing is known about its blockers.
   const unread = evaluate({ rootIssueId: 7001, nodes: [], problems: [{ code: 'DEPENDENCY_READ_UNAVAILABLE', nextStep: 'x' }] });
   assert.equal(unread.conclusion, 'inconclusive');
@@ -104,6 +109,8 @@ test('dispatch gate: only an evaluation from the current attempt can release; ol
   assert.deepEqual(dispatchBlockers({ impediments: [], evaluation: { ...satisfied, attemptId: 'a1' }, currentAttempt: 'a2' }), ['DEPENDENCIES_NOT_CURRENT']);
   assert.deepEqual(dispatchBlockers({ impediments: [], evaluation: satisfied, currentAttempt: null }), ['DEPENDENCIES_NOT_CURRENT'], 'after restart nothing is current');
   assert.deepEqual(dispatchBlockers({ impediments: [{ code: 'DEPENDENCIES_NOT_EVALUATED' }], evaluation: null, currentAttempt: 'a2' }), ['DEPENDENCIES_NOT_EVALUATED']);
+  assert.deepEqual(dispatchBlockers({ impediments: [], evaluation: null, currentAttempt: 'a2' }), ['DEPENDENCIES_NOT_EVALUATED'],
+    'no evaluation is never a release, even without the admission placeholder');
   assert.deepEqual(dispatchBlockers({ impediments: [{ code: 'DEPENDENCY_PENDING' }], evaluation: { attemptId: 'a2', conclusion: 'pending' }, currentAttempt: 'a2' }), ['DEPENDENCY_PENDING']);
 });
 
@@ -112,4 +119,24 @@ test('selection: FIFO skips impeded Works without losing their order; independen
     { next: 'b', skipped: [{ work_id: 'a', reasons: ['DEPENDENCY_PENDING'] }] });
   assert.deepEqual(selectNext([{ work_id: 'a', blockers: ['DEPENDENCIES_NOT_CURRENT'] }]), { next: null, skipped: [{ work_id: 'a', reasons: ['DEPENDENCIES_NOT_CURRENT'] }] });
   assert.deepEqual(selectNext([]), { next: null, skipped: [] });
+});
+
+test('own classification: index, preserved minimal memory and records; a remembered own Ticket never becomes external', () => {
+  const open1 = { work_id: 'w1', cycle: 1, result: 'open' as const, mergeConfirmed: false };
+  const delivered1 = { ...open1, result: 'delivered' as const, mergeConfirmed: true };
+  const open2 = { work_id: 'w2', cycle: 2, result: 'open' as const, mergeConfirmed: false };
+  assert.equal(ownCycleFor({ records: {} }), undefined, 'never indexed nor remembered: external');
+  assert.deepEqual(ownCycleFor({ indexed: { current: 'w1', previous: [] }, memory: [open1], records: { w1: open1 } }),
+    { source: 'work', applicable: open1, previousCycles: [] });
+  // Record gone (e.g. after history exclusion): the preserved minimal memory answers, with the same semantics.
+  assert.deepEqual(ownCycleFor({ indexed: { current: 'w1', previous: [] }, memory: [delivered1], records: {} }),
+    { source: 'minimal-memory', applicable: delivered1, previousCycles: [] });
+  // Index entry removed but memory kept: still own; the last remembered cycle is the applicable one.
+  assert.deepEqual(ownCycleFor({ memory: [delivered1, open2], records: {} }), { source: 'minimal-memory', applicable: open2, previousCycles: [delivered1] });
+  // Indexed (or remembered) but neither record nor memory of the applicable cycle: own and unsatisfied, never external.
+  const missing = ownCycleFor({ indexed: { current: 'w9', previous: [] }, records: {} });
+  assert.deepEqual(missing, { source: 'missing', work_id: 'w9' });
+  const result = evaluate(graph([node(7001, { blockedBy: [7002] }), closed(7002)]), { 7002: missing! });
+  assert.deepEqual([result.conclusion, codes(result), result.blockers[0]!.classification], ['pending', ['OWN_CYCLE_MEMORY_MISSING'], 'own']);
+  assert.deepEqual(ownCycleFor({ memory: [open1], records: {}, indexed: { current: 'w3', previous: ['w1'] } }), { source: 'missing', work_id: 'w3' });
 });

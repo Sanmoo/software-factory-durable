@@ -10,9 +10,28 @@ export type GraphNodeFacts = {
 };
 export type GraphProblem = { code: string; issueId?: number; repository?: string; observedCode?: string; waitSeconds?: number; nextStep: string };
 export type GraphFacts = { rootIssueId: number; nodes: GraphNodeFacts[]; problems: GraphProblem[] };
-type Cycle = { work_id: string; cycle: number; result: 'open' | 'cancelled' | 'closed-unmerged' | 'delivered'; mergeConfirmed: boolean };
+/** Minimal per-cycle memory (spec §12.4): identity/order, result and confirmed merge; no request content. */
+export type OwnCycle = { work_id: string; cycle: number; result: 'open' | 'cancelled' | 'closed-unmerged' | 'delivered'; mergeConfirmed: boolean };
+type Cycle = OwnCycle;
 /** Local facts of a blocker that is a Factory Ticket: its applicable (current, else last) cycle from the Work or the preserved minimal memory. */
 export type OwnCycleFacts = { source: 'work' | 'minimal-memory'; applicable: Cycle; previousCycles: Cycle[] } | { source: 'missing'; work_id: string };
+
+/**
+ * Own classification of one Ticket from the index entry (current/previous cycles), the preserved minimal memory and the Work records.
+ * Indexed OR remembered = own, never external; the applicable cycle is the indexed current one, else the last remembered one.
+ */
+export function ownCycleFor(input: { indexed?: { current: string; previous: string[] }; memory?: Cycle[]; records: Record<string, Cycle | undefined> }): OwnCycleFacts | undefined {
+  const memory = input.memory ?? [];
+  if (!input.indexed && !memory.length) return undefined;
+  const applicableId = input.indexed?.current ?? memory.at(-1)!.work_id;
+  const others = [...new Set([...(input.indexed?.previous ?? []), ...memory.map(item => item.work_id)])].filter(id => id !== applicableId);
+  const lookup = (id: string) => input.records[id] ?? memory.find(item => item.work_id === id);
+  const previousCycles = others.map(lookup).filter((item): item is Cycle => item !== undefined);
+  const record = input.records[applicableId];
+  if (record) return { source: 'work', applicable: record, previousCycles };
+  const remembered = memory.find(item => item.work_id === applicableId);
+  return remembered ? { source: 'minimal-memory', applicable: remembered, previousCycles } : { source: 'missing', work_id: applicableId };
+}
 
 export type DependencyReason = { code: string; issueId?: number; repository?: string; url?: string; observedCode?: string; waitSeconds?: number;
   stateReason?: string | null; path?: number[]; nextStep: string };
@@ -132,6 +151,7 @@ export function dependencyImpediments(result: DependencyConclusion, since: strin
  */
 export function dispatchBlockers(input: { impediments: { code: string }[]; evaluation: { attemptId: string; conclusion: string } | null; currentAttempt: string | null }): string[] {
   const reasons = input.impediments.map(item => item.code);
+  if (!input.evaluation && !reasons.includes('DEPENDENCIES_NOT_EVALUATED')) reasons.push('DEPENDENCIES_NOT_EVALUATED');
   if (input.evaluation && (input.currentAttempt === null || input.evaluation.attemptId !== input.currentAttempt)) reasons.push('DEPENDENCIES_NOT_CURRENT');
   return reasons;
 }

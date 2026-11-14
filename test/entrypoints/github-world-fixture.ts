@@ -21,6 +21,8 @@ export type WorldIssue = {
   hidden_blocked_by?: number;
   /** Omit issue_dependencies_summary from the issue object. */
   no_summary?: boolean;
+  /** Literal issue_dependencies_summary (overrides the computed one). */
+  summary?: object;
   /** Raw extra entries appended to the blocked_by listing (invalid relation payloads). */
   raw_blocked_by?: object[];
 };
@@ -95,12 +97,12 @@ if (!app && repo && token.split('-').at(-1) !== 'r' + repo.id) { // installation
 const issuesOf = r => world.issues.filter(i => (i.repository ?? 'acme/project').toLowerCase() === r.name.toLowerCase());
 const shape = i => {
   const r = repoByName(i.repository ?? 'acme/project');
-  const { repository, blocked_by, hidden_blocked_by, no_summary, raw_blocked_by, timeline, ...plain } = i;
+  const { repository, blocked_by, hidden_blocked_by, no_summary, raw_blocked_by, timeline, summary: literal, ...plain } = i;
   const targets = (blocked_by ?? []).map(edge => world.issues.find(t => t.number === edge.number && (t.repository ?? 'acme/project').toLowerCase() === (edge.repository ?? 'acme/project').toLowerCase())).filter(Boolean);
   const summary = { blocked_by: targets.filter(t => t.state === 'open').length + (hidden_blocked_by ?? 0), blocking: 0,
     total_blocked_by: targets.length + (hidden_blocked_by ?? 0), total_blocking: 0 };
   return { ...plain, repository_url: 'https://api.github.com/repos/' + r.name, html_url: 'https://github.com/' + r.name + '/issues/' + i.number,
-    ...(no_summary ? {} : { issue_dependencies_summary: summary }) };
+    ...(no_summary ? {} : { issue_dependencies_summary: literal ?? summary }) };
 };
 function page(items) {
   const size = world.pageSize ?? 100;

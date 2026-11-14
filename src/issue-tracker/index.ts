@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { AccessDiagnostic, GitHubScope } from '../contracts/index.js';
-import { InvalidGitHubObservation, readPermissions, type GitHubAccess, type GitHubRead } from '../platform/github/index.js';
+import { InvalidGitHubObservation, UnverifiedGitHubAccess, readPermissions, type GitHubAccess, type GitHubRead } from '../platform/github/index.js';
 
 /** Origin of Tickets: one configured repository plus its effective entry label. */
 export type TrackerScope = GitHubScope & { label: string };
@@ -97,7 +97,6 @@ export function createIssueTracker(options: { github: GitHubAccess; scopes?: Tra
     const nodes = new Map<number, DependencyNode>();
     const problems: DependencyProblem[] = [];
     const principals = new Map<string, DependencyPrincipal>();
-    let unsummarised = 0;
     type Item = { repository: string; number: number; issueId: number; nodeId: string; edge: Edge | null };
     const queue: Item[] = [{ repository: ticket.repository, number: ticket.number, issueId: ticket.issueId, nodeId: ticket.nodeId, edge: null }];
     const seen = new Set<number>([ticket.issueId]);
@@ -132,7 +131,7 @@ export function createIssueTracker(options: { github: GitHubAccess; scopes?: Tra
           repositoryId, role, purpose: 'dependency-read', permissions: readPermissions['dependency-read'] });
       };
       const issueRead = await options.github.read(scope, 'dependency-read', async session => {
-        const parsed = issueSchema.extend({ issue_dependencies_summary: summarySchema.optional() })
+        const parsed = issueSchema.extend({ issue_dependencies_summary: z.unknown().optional() })
           .safeParse(await session.get(`/repos/${scope.repository}/issues/${item.number}`));
         if (!parsed.success || edgeRepository(parsed.data)?.toLowerCase() !== scope.repository.toLowerCase()) throw new InvalidGitHubObservation();
         return parsed.data;
@@ -171,8 +170,12 @@ export function createIssueTracker(options: { github: GitHubAccess; scopes?: Tra
         nextStep: `${scope.repository}#${issue.number} lists ${invalid} invalid native blocked_by entr${invalid === 1 ? 'y' : 'ies'} (pull request, self, foreign URL or unexpected payload); operator must inspect the relations.` });
       if (repeated) problems.push({ code: 'DEPENDENCY_LISTING_UNSTABLE', issueId: issue.id, repository: scope.repository,
         nextStep: `${scope.repository}#${issue.number} returned the same blocker on several pages (concurrent change?); the listing may have skipped entries. Re-evaluated on the next poll.` });
-      const summary = issue.issue_dependencies_summary;
-      if (!summary) unsummarised++;
+      const parsedSummary = summarySchema.safeParse(issue.issue_dependencies_summary);
+      const summary = parsedSummary.success ? parsedSummary.data : undefined;
+      // Without GitHub's own count, an edge hidden from this installation is indistinguishable from no edge: never complete.
+      if (!summary) problems.push({ code: 'DEPENDENCY_SUMMARY_UNAVAILABLE', issueId: issue.id, repository: scope.repository,
+        nextStep: `${scope.repository}#${issue.number}: issue_dependencies_summary is absent or unparseable, so blockers GitHub omits for this installation ` +
+          'cannot be detected. Nothing is released; the operator must verify the relations on GitHub (or the REST version/compatibility).' });
       else if (summary.total_blocked_by !== listing.value.length || (!invalid && !repeated && summary.blocked_by !== edges.filter(edge => edge.state === 'open').length)) {
         problems.push({ code: 'DEPENDENCY_COUNT_MISMATCH', issueId: issue.id, repository: scope.repository,
           nextStep: `${scope.repository}#${issue.number}: listed ${listing.value.length} native blocker(s) but GitHub reports ${summary.total_blocked_by} (open ${summary.blocked_by}); ` +
@@ -188,22 +191,24 @@ export function createIssueTracker(options: { github: GitHubAccess; scopes?: Tra
     }
     return { kind: 'observed', source: 'github-rest', observedAt, root: ticket, completeness: problems.length ? 'incomplete' : 'complete',
       principals: [...principals.values()], nodes: [...nodes.values()], problems,
-      limitations: [...graphLimitations, ...(unsummarised ? [`issue_dependencies_summary was absent for ${unsummarised} issue(s): silent omission of blockers cannot be detected for them.`] : [])] };
+      limitations: graphLimitations };
   }
 
   return {
     readDependencyGraph,
     checkAccess(scope) {
       if ('role' in scope) return options.github.diagnose(scope, 'dependency', async session => {
+        // One bounded sample page (no full listing of the repository).
         const issues = z.array(z.object({ id: z.number().int().positive(), number: z.number().int().positive(), pull_request: z.unknown().optional() }).passthrough())
-          .safeParse(await session.list(`/repos/${scope.repository}/issues?state=all`));
+          .safeParse(await session.get(`/repos/${scope.repository}/issues?state=all&per_page=100`));
         if (!issues.success) throw new InvalidGitHubObservation();
         const sample = issues.data.find(item => item.pull_request === undefined);
-        if (sample && !z.array(edgeSchema.passthrough()).safeParse(await session.list(`/repos/${scope.repository}/issues/${sample.number}/dependencies/blocked_by`)).success) {
+        if (!sample) throw new UnverifiedGitHubAccess('DEPENDENCY_ACCESS_UNVERIFIED', `${scope.repository}: the sample page has no issue (only pull requests or none), ` +
+          'so native dependency reads were not verified; no issue or relation is created to test it. Blockers there are still read and checked in operation.');
+        if (!z.array(edgeSchema.passthrough()).safeParse(await session.list(`/repos/${scope.repository}/issues/${sample.number}/dependencies/blocked_by`)).success) {
           throw new InvalidGitHubObservation();
         }
-        return [sample ? 'Dependency-only repository: issues and native blocked_by readable on one sample; pairs, hidden relations and other repositories are not certified.' :
-          'Dependency-only repository has no issue to probe; native dependency access remains unverified (no issue or relation is created to test it).'];
+        return ['Dependency-only repository: issues and native blocked_by readable on one sample; pairs, hidden relations and other repositories are not certified.'];
       });
       return options.github.diagnose(scope, 'tracker', async session => {
         const issues = await session.list(`/repos/${scope.repository}/issues`);

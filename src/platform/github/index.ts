@@ -41,6 +41,10 @@ class TokenIssuanceFailure extends AccessFailure {
 export class InvalidGitHubObservation extends Error {
   constructor() { super('INVALID_GITHUB_PAYLOAD'); }
 }
+/** An access check that could not verify the capability it exists for: reported blocked/incomplete, never ok. */
+export class UnverifiedGitHubAccess extends AccessFailure {
+  constructor(code: string, nextStep: string) { super(code, undefined, nextStep); }
+}
 export interface GitHubSession {
   repositoryId: number;
   get(endpoint: string): Promise<unknown>;
