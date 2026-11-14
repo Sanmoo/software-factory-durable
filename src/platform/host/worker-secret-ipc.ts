@@ -28,11 +28,12 @@ const receipt = z.strictObject({ workId: identifier, id: z.uuid() });
 const ownerLifecycleSchema = z.union([
   z.strictObject({ kind: z.literal('worker-started'), receipt, invocation: z.strictObject({ executionId: identifier, invocationId: identifier }).optional() }),
   z.strictObject({ kind: z.literal('worker-error'), code: z.string().regex(/^[A-Z_]{1,128}$/) }),
+  // Ticket 11: a Builder result names its exact session tool set (the owner observes the preserved session itself).
   z.strictObject({ kind: z.literal('worker-result'), status: z.enum(['completed', 'interrupted']), receipt, sessionFile: z.string().nullable().optional(),
-    opinion: z.record(z.string(), z.json()).optional() }),
+    sessionTools: z.array(z.string().regex(/^[a-z_]{1,32}$/)).max(16).optional(), opinion: z.record(z.string(), z.json()).optional() }),
   z.strictObject({ kind: z.literal('worker-result'), status: z.literal('failure'), code: z.string().regex(/^[A-Z_]{1,128}$/) }),
   z.strictObject({ kind: z.literal('worker-result'), status: z.literal('question'), receipt, sessionFile: z.string().nullable().optional(),
-    question: workerQuestionSchema.extend({ acknowledged: z.boolean() }) }),
+    sessionTools: z.array(z.string().regex(/^[a-z_]{1,32}$/)).max(16).optional(), question: workerQuestionSchema.extend({ acknowledged: z.boolean() }) }),
   // Ticket 12 lifecycle: the suspended Builder's handoff notice (validated in full by the owner's launcher, not here).
   z.strictObject({ kind: z.literal('worker-handoff'), event: z.record(z.string(), z.json()) }),
 ]);

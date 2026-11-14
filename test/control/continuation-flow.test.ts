@@ -37,8 +37,8 @@ function executionDoubles(scripts: Script[], options: { observe?: (session: Work
       async stop(input) { calls.push({ kind: 'stop', detail: input }); return { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'observed' }; },
     },
     credentials: {
-      async issue() {
-        calls.push({ kind: 'issue' });
+      async issue(input) {
+        calls.push({ kind: 'issue', detail: input });
         return { delivery: { token: 'ghs_syntheticContinuation0123' }, metadata: { role: 'builder', purpose: 'builder-start', repository: 'acme/project', repositoryId: 3, installationId: 2,
           permissions: { metadata: 'read', contents: 'read', issues: 'read' }, issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 3600000).toISOString() } };
       },
@@ -47,7 +47,9 @@ function executionDoubles(scripts: Script[], options: { observe?: (session: Work
     workers: {
       async activate(invocation, _delivery, events) {
         const script = scripts.shift() ?? { kind: 'complete' };
-        calls.push({ kind: 'activate', detail: { prompt: invocation.prompt, context: invocation.context, continuation: invocation.continuation ?? null } });
+        calls.push({ kind: 'activate', detail: { prompt: invocation.prompt, context: invocation.context, continuation: invocation.continuation ?? null,
+          policies: { skillPack: invocation.skillPack, modelBudget: invocation.modelBudget, copyOutput: invocation.copyOutput, editSourceMaxBytes: invocation.editSourceMaxBytes,
+            handoff: invocation.handoff ?? null } } });
         const receipt = { workId: invocation.context.workId, id: '99999999-2222-4333-8444-555555555555' };
         const started = Promise.resolve({ receipt, invocation: { executionId: invocation.context.executionId, invocationId: invocation.context.invocationId } });
         // A continued activation keeps appending to (a Host copy of) the same session; a new one creates a new session.
@@ -102,7 +104,7 @@ async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remo
   const cycles = async (n: number) => { for (let i = 0; i < n; i++) { current!.time.advance(); await current!.time.sleeping(); await new Promise(resolve => setTimeout(resolve, 5)); } };
   const activations = () => execution.calls.filter(call => call.kind === 'activate').map(call => call.detail as { prompt: string; context: { phaseId: string; executionId: string };
     continuation: { session: WorkerSessionRef } | null });
-  return { execution, start, stop, byNumber, show, settle, cycles, activations, storagePath, control: () => current!.control };
+  return { github, execution, start, stop, byNumber, show, settle, cycles, activations, storagePath, control: () => current!.control };
 }
 type Outcome = Extract<ControlReceipt, { operation: 'answer' | 'update-scope' }> | { kind: 'refused'; code: string };
 const accept = (control: Control, input: Parameters<Control['accept']>[0]) => control.accept(input) as Promise<Outcome & { outcome?: string; reason?: string | null }>;
@@ -136,6 +138,15 @@ test('AC1: after an answer the compatible recorded session is CONTINUED with `co
   assert.deepEqual((observed[0]!.detail as { next: unknown }).next, { skillPack: 'factory-skills-v4', copyOutput: true, editSourceMaxBytes: 8192, handoff: false });
   const kinds = h.execution.calls.map(call => call.kind);
   assert.ok(kinds.indexOf('observe') < kinds.lastIndexOf('issue'), 'the session decision precedes the credential of the resumed activation');
+  // AC5/AC6: the resumed activation keeps exactly the Host policies and the same repository-scoped grant (no widening, nothing from the repo).
+  const policies = h.execution.calls.filter(call => call.kind === 'activate').map(call => (call.detail as { policies: unknown }).policies);
+  assert.deepEqual(policies[1], policies[0]);
+  assert.deepEqual(policies[1], { skillPack: 'factory-skills-v4', modelBudget: 'builder-v1', copyOutput: true, editSourceMaxBytes: 8192, handoff: null });
+  const grants = h.execution.calls.filter(call => call.kind === 'issue').map(call => call.detail as { repository: unknown; executionId: string });
+  assert.equal(grants.length, 2);
+  assert.deepEqual(grants.map(grant => grant.repository), [{ repository: 'acme/project', installationId: 2, workflows: false }, { repository: 'acme/project', installationId: 2, workflows: false }]);
+  // The Control never reads the Ticket's documents/links to resume (no collector): only tracking, authorization, dependencies and Questions.
+  assert.ok(h.github.calls.every(call => ['findQuestion', 'listCandidates', 'postComment', 'readDependencyGraph', 'readInputs', 'readTicket', 'findPublication'].includes(call.method)));
   // The continued session's new identity is what a further resumption would continue.
   assert.equal(resumed.execution!.end!.session!.ref, `${sessionRef(1).ref}.c`);
   await h.stop();

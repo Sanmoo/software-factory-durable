@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { workerLaunchSchema, workerOwnerEndpoint, workerQuestionSchema, type WorkerLaunch } from '../platform/host/index.js';
+import { readSessionFile, sessionRefSchema, workerLaunchSchema, workerOwnerEndpoint, workerQuestionSchema, type WorkerLaunch } from '../platform/host/index.js';
+import { builderToolNames, compareSessionProfile } from './session-ref.js';
 import { connect, protocolVersion, type Channel, type Envelope } from '../protocol/index.js';
 import type { Invocation } from './worker-start.js';
 import type { WorkerIpc } from './worker-process.js';
@@ -76,7 +77,7 @@ export type QuestionAck = { status: 'recorded' } | { status: 'refused'; code: st
 /** Host-side handlers of worker events during one activation (no Promise waits for a human: the handler only commits). */
 export type ActivationEvents = { question?(question: WorkerQuestion): Promise<QuestionAck> };
 export type { SessionProfile, WorkerSessionRef, SessionObservation } from './session-ref.js';
-import type { WorkerSessionRef } from './session-ref.js';
+import type { SessionObservation, WorkerSessionRef } from './session-ref.js';
 /** `question`: the activation ended after asking; `acknowledged` says whether the worker saw a `recorded` ACK (lost ACK => false).
  * `session`: the preserved session (Builder), when its owner could observe it; absent = not recorded (never invented). */
 export type WorkerCompletion = { status: 'success'; receipt: { workId: string; id: string }; opinion?: ReviewOpinion; session?: WorkerSessionRef } | { status: 'failure'; code: string } |
@@ -87,9 +88,9 @@ type Configuration = { root: string; profile: WorkerLaunch['profile']; knownSecr
 const reference = z.strictObject({ workId: z.string(), id: z.uuid() });
 const startSchema = z.strictObject({ receipt: reference, invocation: z.strictObject({ executionId: z.string(), invocationId: z.string() }) });
 const completionSchema = z.discriminatedUnion('status', [
-  z.strictObject({ status: z.literal('success'), receipt: reference, opinion: opinionSchema.optional() }),
+  z.strictObject({ status: z.literal('success'), receipt: reference, opinion: opinionSchema.optional(), session: sessionRefSchema.optional() }),
   z.strictObject({ status: z.literal('failure'), code: z.string() }),
-  z.strictObject({ status: z.literal('question'), receipt: reference, question: workerQuestionSchema.extend({ acknowledged: z.boolean() }) }),
+  z.strictObject({ status: z.literal('question'), receipt: reference, question: workerQuestionSchema.extend({ acknowledged: z.boolean() }), session: sessionRefSchema.optional() }),
 ]);
 
 const handoffEventSchema = z.union([
@@ -103,7 +104,31 @@ const handoffEventSchema = z.union([
 export function createWorkers(configuration?: Configuration) {
   // Live activations of THIS facade (memory only): the current recipient of `deliver`. Closed/ended channels are removed.
   const live = new Map<string, { channel: Channel; inbox: ReturnType<typeof mailbox>; context: Invocation['context']; launchId: string; handoff: boolean }>();
-  return { async deliver(worker: string, directive: WorkerDirective): Promise<DeliveryResult> {
+  return {
+    /**
+     * Q6 `observe` (ticket 11): whether the preserved session of an ended Builder invocation can be CONTINUED by the planned next Builder
+     * activation — present, intact (same hash/identity) and with the same SDK profile, provider/model, pack and tool set. Read-only and
+     * confined to the installation's private runtime tree; it never adopts a process or proves what the SDK consumed.
+     */
+    async observe(input: { workId: string; executionId: string; invocationId: string; session: WorkerSessionRef;
+      next: Pick<Invocation, 'skillPack' | 'copyOutput' | 'editSourceMaxBytes'> & { handoff: boolean } }): Promise<{ session: SessionObservation; limitations: string[] }> {
+      const limitations = ['Session availability and compatibility only; the SDK may still refuse it, and delivery of a continuation is not proof of consumption.'];
+      if (!configuration) return { session: { state: 'unavailable', code: 'WORKER_EXECUTION_NOT_ENABLED', differences: [] }, limitations };
+      const recorded = sessionRefSchema.safeParse(input.session);
+      if (!recorded.success) return { session: { state: 'unavailable', code: 'SESSION_REF_INVALID', differences: [] }, limitations };
+      const read = await readSessionFile(configuration.root, recorded.data.ref);
+      if (read.state === 'lost') return { session: { state: 'lost', code: read.code, differences: [] }, limitations };
+      if (read.state !== 'read') return { session: { state: read.state === 'unsafe' ? 'unavailable' : 'altered', code: read.code, differences: [] }, limitations };
+      if (read.sha256 !== recorded.data.sha256 || read.sessionId !== recorded.data.sessionId || read.data.length !== recorded.data.bytes) {
+        return { session: { state: 'altered', code: 'SESSION_HASH_MISMATCH', differences: [] }, limitations };
+      }
+      const profile = configuration.profiles?.builder ?? configuration.profile;
+      const differences = compareSessionProfile(recorded.data.profile, { sdkProfile: profile.id, providerId: profile.providerId, modelId: profile.modelId,
+        skillPack: input.next.skillPack ?? null, tools: builderToolNames(input.next) });
+      if (differences.length) return { session: { state: 'incompatible', code: 'SESSION_PROFILE_CHANGED', differences }, limitations };
+      return { session: { state: 'compatible', session: recorded.data }, limitations };
+    },
+    async deliver(worker: string, directive: WorkerDirective): Promise<DeliveryResult> {
     const entry = live.get(worker);
     if (!entry || entry.inbox.ended) return { status: 'failure', code: 'WORKER_NOT_CURRENT' };
     if (directive.kind === 'review-results') {
@@ -153,14 +178,17 @@ export function createWorkers(configuration?: Configuration) {
       ...(invocation.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: invocation.editSourceMaxBytes }),
       ...(invocation.handoff === undefined ? {} : { handoff: invocation.handoff }),
       ...(invocation.review === undefined ? {} : { review: invocation.review }),
+      // Ticket 11: continue the preserved session (Builder only; the owner re-checks identity/hash before copying it for the new worker).
+      ...(invocation.continuation === undefined ? {} : { continueSession: { ref: invocation.continuation.session.ref, sha256: invocation.continuation.session.sha256,
+        sessionId: invocation.continuation.session.sessionId, bytes: invocation.continuation.session.bytes } }),
       profile: roleProfile ?? configuration.profile, knownSecrets: configuration.knownSecrets });
     if (!request.success || invocation.signal.aborted) throw new Error('WORKER_LAUNCH_INVALID');
     if (delivery?.credential !== undefined && (request.data.context.role !== 'builder' || typeof delivery.credential.token !== 'string')) throw new Error('WORKER_LAUNCH_INVALID');
     const context = request.data.context;
-    const { imageSourceMaxBytes, editSourceMaxBytes, copyOutput, selectedOutputCopies, skillPack, skillPackFiles, modelBudget, deadlineMs, handoff, review, ...baseRequest } = request.data;
+    const { imageSourceMaxBytes, editSourceMaxBytes, copyOutput, selectedOutputCopies, skillPack, skillPackFiles, modelBudget, deadlineMs, handoff, review, continueSession, ...baseRequest } = request.data;
     const payload = { ...baseRequest, ...(handoff === undefined ? {} : { handoff: { ...handoff } }),
       ...(review === undefined ? {} : { review: { ...review, required: [...review.required], missing: [...review.missing] } }), ...(skillPack === undefined ? {} : { skillPack }), ...(skillPackFiles === undefined ? {} : { skillPackFiles: [...skillPackFiles] }), ...(modelBudget === undefined ? {} : { modelBudget }), ...(deadlineMs === undefined ? {} : { deadlineMs }), ...(selectedOutputCopies === undefined ? {} : { selectedOutputCopies: [...selectedOutputCopies] }), ...(copyOutput === undefined ? {} : { copyOutput }), ...(imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes }),
-      ...(editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes }) };
+      ...(editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes }), ...(continueSession === undefined ? {} : { continueSession: { ...continueSession } }) };
     const endpoint = await workerOwnerEndpoint(configuration.root, context);
     const channel = await connect(endpoint, { kind: 'host-boot', binding: { workId: context.workId,
       environmentRef: context.environmentRef, bootRef: context.bootRef } });
@@ -242,6 +270,8 @@ export function createWorkers(configuration?: Configuration) {
             }
             if (message.kind === 'worker-completed' && start) {
               const parsed = completionSchema.parse(message.payload);
+              // A preserved session is the Builder's only, under this installation's runtime tree (checked again by observe before any use).
+              if (parsed.status !== 'failure' && parsed.session && context.role !== 'builder') throw new Error('WORKER_EXECUTION_UNCERTAIN');
               if (parsed.status === 'question' && (context.role !== 'builder' || parsed.question.reference.workId !== context.workId)) throw new Error('WORKER_EXECUTION_UNCERTAIN');
               // A reviewer opinion must be THIS invocation's, of its role and round; a Builder never returns one.
               if (parsed.status === 'success' && parsed.opinion && (context.role === 'builder' || parsed.opinion.role !== context.role ||

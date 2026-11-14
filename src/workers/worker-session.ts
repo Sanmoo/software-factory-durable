@@ -1,4 +1,6 @@
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { lstat, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { openFactoryOAuth } from './factory-oauth.js';
 import { budgetFor, qualifyOAuth } from './oauth-qualification.js';
@@ -27,6 +29,17 @@ type Options = { profile: ReviewerProfile; sandbox: ToolProjection; records: Awa
     containsSecret(text: string): boolean };
   /** Builder with a `handoff` policy: notifies the suspended handoff and waits for the Host directive (review results). */
   onHandoff?: (event: HandoffEvent) => Promise<BuilderDirective> };
+
+/** Opens the owner's copy of a preserved Builder session only if it is the expected file (name, private regular file, hash and header id). */
+async function reopenSession(sessionsDirectory: string, expected: { file: string; sha256: string; sessionId: string }) {
+  if (dirname(expected.file) !== sessionsDirectory || !/^[A-Za-z0-9._-]{1,200}\.jsonl$/.test(basename(expected.file))) throw new Error('WORKER_SESSION_INVALID');
+  const info = await lstat(expected.file);
+  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || info.uid !== process.getuid?.() || (info.mode & 0o022)) throw new Error('WORKER_SESSION_INVALID');
+  if (createHash('sha256').update(await readFile(expected.file)).digest('hex') !== expected.sha256) throw new Error('WORKER_SESSION_INVALID');
+  const manager = SessionManager.open(expected.file, sessionsDirectory, '/workspace');
+  if (manager.getSessionId() !== expected.sessionId || manager.getSessionFile() !== expected.file || manager.getHeader()?.version !== 3) throw new Error('WORKER_SESSION_INVALID');
+  return manager;
+}
 
 /** Private SDK component seam; not host activation or process proof. */
 export function createWorkerSession(options: Options) {
@@ -95,7 +108,10 @@ export async function executeSession(options: Options, invocation: Invocation, r
         getSystemPrompt: () => profile.systemPrompt, getSystemPromptSource: () => undefined,
         getAppendSystemPrompt: () => [], getAppendSystemPromptSources: () => [], extendResources() {}, async reload() {},
       };
-      const manager = SessionManager.create('/workspace', join(profile.directory, 'sessions'));
+      // Ticket 11: a continuation reopens the owner's copy of the preserved session (same identity/hash, inside THIS profile only);
+      // otherwise a new session. Never a personal or another worker's session directory.
+      const manager = invocation.continuedSession ? await reopenSession(join(profile.directory, 'sessions'), invocation.continuedSession)
+        : SessionManager.create('/workspace', join(profile.directory, 'sessions'));
       let interrupted = false;
       let abortSession = () => {};
       const critical = () => { interrupted = true; abortSession(); };
@@ -171,7 +187,7 @@ export async function executeSession(options: Options, invocation: Invocation, r
         let prompt = invocation.prompt;
         while (true) {
           await session.prompt(prompt).catch(error => { if (!asked) throw error; });
-          if (asked) return { status: 'question' as const, receipt, sessionFile: manager.getSessionFile() ?? null, question: asked };
+          if (asked) return { status: 'question' as const, receipt, sessionFile: manager.getSessionFile() ?? null, sessionTools: [...tools].sort(), question: asked };
           if (!gate?.pending() || signal.aborted || interrupted || qualification?.failed()) break;
           // Suspended: the Host (not the model) captures the proposal through the Builder's own binding, then waits for the directive.
           const event = await captureHandoff(invocation.context, options.sandbox, gate.round(), invocation.handoff!.baseCommit, signal);
@@ -182,7 +198,7 @@ export async function executeSession(options: Options, invocation: Invocation, r
         }
         const status = signal.aborted || interrupted || qualification?.failed() ? 'interrupted' as const : 'completed' as const;
         const sessionFile = manager.getSessionFile() ?? null;
-        if (role === 'builder' || !invocation.review) return { status, receipt, sessionFile: manager.getSessionFile() };
+        if (role === 'builder' || !invocation.review) return { status, receipt, sessionFile: manager.getSessionFile(), ...(role === 'builder' ? { sessionTools: [...tools].sort() } : {}) };
         // Reviewer: the complete opinion from the FINAL assistant message is preserved durably BEFORE any notification.
         const last = [...session.messages].reverse().find(message => message.role === 'assistant');
         const finalText = last && 'content' in last && Array.isArray(last.content)

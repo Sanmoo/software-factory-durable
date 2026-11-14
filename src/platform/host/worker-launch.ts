@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { createOwnerSecretReceiver } from './worker-secret-ipc.js';
 import { serveQuestionRelay, workerQuestionSchema, type QuestionRelayAck, type WorkerQuestionRequest } from './worker-question-ipc.js';
+import { copyPreservedSession, observePreservedSession } from './worker-session-file.js';
 
 const run = promisify(execFile);
 
@@ -110,9 +111,9 @@ const reference = z.strictObject({ workId: z.string(), id: z.uuid() });
 const startedInvocation = z.strictObject({ executionId: z.string(), invocationId: z.string() });
 const askedSchema = workerQuestionSchema.extend({ acknowledged: z.boolean() });
 const completedSchema = z.discriminatedUnion('status', [
-  z.strictObject({ status: z.literal('success'), receipt: reference, opinion: z.record(z.string(), z.json()).optional() }),
+  z.strictObject({ status: z.literal('success'), receipt: reference, opinion: z.record(z.string(), z.json()).optional(), session: z.record(z.string(), z.json()).optional() }),
   z.strictObject({ status: z.literal('failure'), code: z.string() }),
-  z.strictObject({ status: z.literal('question'), receipt: reference, question: askedSchema }),
+  z.strictObject({ status: z.literal('question'), receipt: reference, question: askedSchema, session: z.record(z.string(), z.json()).optional() }),
 ]);
 /** Spawn only inside the existing correlated boot owner. Failures after claiming
  * remain uncertain: caller retains its invocation tombstone and must not retry. */
@@ -128,8 +129,12 @@ export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, en
   await privatePath(host.runtimeDirectory);
   const directory = await mkdtemp(join(host.runtimeDirectory, 'w-'));
   const profileDirectory = join(directory, 'profile');
-  for (const path of [profileDirectory, join(profileDirectory, 'sessions'), join(directory, 't'), join(directory, 'c')]) await mkdir(path, { mode: 0o700 });
-  const bootstrap = { ...request, version: 1, profile: { ...request.profile, directory: profileDirectory }, endpoint, recordsRoot: root };
+  const sessionsDirectory = join(profileDirectory, 'sessions');
+  for (const path of [profileDirectory, sessionsDirectory, join(directory, 't'), join(directory, 'c')]) await mkdir(path, { mode: 0o700 });
+  const { continueSession, ...launched } = request;
+  // Ticket 11: the EXACT observed preserved session, copied into this worker's own private sessions directory before it exists.
+  const continuedSession = continueSession ? await copyPreservedSession(root, sessionsDirectory, continueSession) : undefined;
+  const bootstrap = { ...launched, ...(continuedSession ? { continuedSession } : {}), version: 1, profile: { ...request.profile, directory: profileDirectory }, endpoint, recordsRoot: root };
   if (Buffer.byteLength(JSON.stringify(bootstrap)) > 65536 || signal.aborted) throw new Error('WORKER_BOOTSTRAP_INVALID');
   const state = await unitState(host.unit);
   if (state.ActiveState !== 'active' || state.MainPID !== String(process.pid) || state.InvocationID !== host.invocation ||
@@ -148,10 +153,11 @@ export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, en
   const abort = () => { if (child.connected) child.send({ kind: 'abort' }, () => {}); };
   signal.addEventListener('abort', abort, { once: true });
   let startReference: z.infer<typeof reference> | undefined;
+  let resulted = false;
   const secretReceiver = createOwnerSecretReceiver(child, request.context, signal, () => startReference !== undefined,
     value => secrets.registerSecret(value), () => {
       startReject(new Error('WORKER_START_UNCERTAIN'));
-      completeResolve({ status: 'failure', code: 'WORKER_EXECUTION_UNCERTAIN' });
+      if (!resulted) completeResolve({ status: 'failure', code: 'WORKER_EXECUTION_UNCERTAIN' });
       secrets.revoke();
     });
   const questions = relay && request.context.role === 'builder'
@@ -170,18 +176,25 @@ export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, en
     if ('kind' in message && message.kind === 'worker-result') {
       const parsed = z.discriminatedUnion('status', [
         z.strictObject({ kind: z.literal('worker-result'), status: z.enum(['completed', 'interrupted']), receipt: reference, sessionFile: z.string().nullable().optional(),
-          opinion: z.record(z.string(), z.json()).optional() }),
+          sessionTools: z.array(z.string()).max(16).optional(), opinion: z.record(z.string(), z.json()).optional() }),
         z.strictObject({ kind: z.literal('worker-result'), status: z.literal('failure'), code: z.string() }),
-        z.strictObject({ kind: z.literal('worker-result'), status: z.literal('question'), receipt: reference, sessionFile: z.string().nullable().optional(), question: askedSchema }),
+        z.strictObject({ kind: z.literal('worker-result'), status: z.literal('question'), receipt: reference, sessionFile: z.string().nullable().optional(),
+          sessionTools: z.array(z.string()).max(16).optional(), question: askedSchema }),
       ]).safeParse(message);
       if (parsed.success) {
         const result = parsed.data;
         const own = result.status !== 'failure' && startReference !== undefined && result.receipt.id === startReference.id && result.receipt.workId === startReference.workId;
-        if (result.status === 'question' && own && request.context.role === 'builder' && result.question.reference.workId === request.context.workId) {
-          completeResolve({ status: 'question', receipt: result.receipt, question: result.question });
-        } else if (result.status === 'completed' && own) completeResolve({ status: 'success', receipt: result.receipt, ...(result.opinion ? { opinion: result.opinion } : {}) });
-        else completeResolve({ status: 'failure', code: result.status === 'interrupted' ? 'WORKER_INTERRUPTED' : 'WORKER_EXECUTION_UNCERTAIN' });
-        secretReceiver.close();
+        resulted = true; // the exit/secret-channel end that follows must not pre-empt this result while its session is observed
+        // The preserved session is observed by this owner after the worker ended (no content leaves; absent if not observable).
+        void (async () => {
+          const session = result.status !== 'failure' && own ? await observePreservedSession(root, sessionsDirectory, result.sessionFile, result.sessionTools, request).catch(() => undefined) : undefined;
+          const preserved = session ? { session } : {};
+          if (result.status === 'question' && own && request.context.role === 'builder' && result.question.reference.workId === request.context.workId) {
+            completeResolve({ status: 'question', receipt: result.receipt, question: result.question, ...preserved });
+          } else if (result.status === 'completed' && own) completeResolve({ status: 'success', receipt: result.receipt, ...(result.opinion ? { opinion: result.opinion } : {}), ...preserved });
+          else completeResolve({ status: 'failure', code: result.status === 'interrupted' ? 'WORKER_INTERRUPTED' : 'WORKER_EXECUTION_UNCERTAIN' });
+          secretReceiver.close();
+        })();
       }
     }
   });
@@ -191,7 +204,8 @@ export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, en
     if (parsed.success && startReference && request.context.role === 'builder' && request.handoff && !signal.aborted &&
         Buffer.byteLength(JSON.stringify(parsed.data.event)) <= 32768) onHandoff(parsed.data.event);
   });
-  const lost = () => { questions?.close(); secretReceiver.close(); startReject(new Error('WORKER_START_UNCERTAIN')); completeResolve({ status: 'failure', code: 'WORKER_EXECUTION_UNCERTAIN' }); signal.removeEventListener('abort', abort); };
+  const lost = () => { questions?.close(); secretReceiver.close(); startReject(new Error('WORKER_START_UNCERTAIN'));
+    if (!resulted) completeResolve({ status: 'failure', code: 'WORKER_EXECUTION_UNCERTAIN' }); signal.removeEventListener('abort', abort); };
   child.once('error', lost); child.once('exit', lost);
   child.send(bootstrap, error => { if (error) { lost(); abort(); } });
   if (signal.aborted) abort();

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { sessionRefSchema } from './worker-session-file.js';
 
 const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
 const text = z.string().min(1).max(4096);
@@ -32,6 +33,10 @@ const bootstrap = z.strictObject({
   review: z.strictObject({ round: z.number().int().min(1).max(99), attempt: z.number().int().min(1).max(9), handoffIndexSha256: z.string().regex(/^[0-9a-f]{64}$/),
     required: z.array(z.string().max(1024).regex(/^\/(workspace|artifacts)\//)).max(32).readonly(),
     missing: z.array(z.enum(['handoff-index', 'spec-version', 'instructions-version'])).max(3).readonly() }).optional(),
+  // Ticket 11, Builder only. Launch: the Host-observed preserved session to continue (copied by the owner before the worker exists).
+  continueSession: sessionRefSchema.pick({ ref: true, sha256: true, sessionId: true, bytes: true }).strict().optional(),
+  // Worker bootstrap: that owner copy inside this worker's own private sessions directory.
+  continuedSession: z.strictObject({ file: text, sha256: z.string().regex(/^[0-9a-f]{64}$/), sessionId: z.string().regex(/^[A-Za-z0-9-]{1,128}$/) }).optional(),
   selectedOutputCopies: z.array(z.string().regex(/^\/artifacts\/factory-output-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.txt$/)).max(32).readonly().optional(),
   editSourceMaxBytes: z.number().int().nonnegative().max(8192).optional(),
   imageSourceMaxBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
@@ -43,7 +48,10 @@ const bootstrap = z.strictObject({
 
 function rolePolicies(input: { context: { role: string }; copyOutput?: boolean | undefined; selectedOutputCopies?: readonly string[] | undefined;
   skillPackFiles?: readonly string[] | undefined;
-  skillPack?: string | undefined; modelBudget?: string | undefined; handoff?: unknown; review?: unknown }) {
+  skillPack?: string | undefined; modelBudget?: string | undefined; handoff?: unknown; review?: unknown; continueSession?: unknown; continuedSession?: unknown }) {
+  // A session continuation is a Builder policy only, and never both the launch form and the bootstrap form.
+  if ((input.continueSession !== undefined || input.continuedSession !== undefined) && (input.context.role !== 'builder' ||
+      (input.continueSession !== undefined && input.continuedSession !== undefined))) return false;
   // Pack files: Builder only, with its pack, all under exactly that pack version's guest directory.
   if (input.skillPackFiles !== undefined && (input.context.role !== 'builder' || input.skillPack === undefined ||
       input.skillPackFiles.some(path => !path.startsWith(`/artifacts/factory/skill-pack/${input.skillPack}/`)))) return false;
@@ -54,5 +62,5 @@ function rolePolicies(input: { context: { role: string }; copyOutput?: boolean |
     !(input.context.role !== 'builder' && input.copyOutput === true);
 }
 export const workerBootstrapSchema = bootstrap.refine(rolePolicies, 'WORKER_POLICY_ROLE_DENIED');
-export const workerLaunchSchema = bootstrap.pick({ context: true, knownSecrets: true, prompt: true, imageSourceMaxBytes: true, editSourceMaxBytes: true, copyOutput: true, selectedOutputCopies: true, skillPack: true, skillPackFiles: true, modelBudget: true, deadlineMs: true, handoff: true, review: true }).extend({ profile: launchProfile }).strict().refine(rolePolicies, 'WORKER_POLICY_ROLE_DENIED');
+export const workerLaunchSchema = bootstrap.pick({ context: true, knownSecrets: true, prompt: true, imageSourceMaxBytes: true, editSourceMaxBytes: true, copyOutput: true, selectedOutputCopies: true, skillPack: true, skillPackFiles: true, modelBudget: true, deadlineMs: true, handoff: true, review: true, continueSession: true }).extend({ profile: launchProfile }).strict().refine(rolePolicies, 'WORKER_POLICY_ROLE_DENIED');
 export type WorkerLaunch = z.infer<typeof workerLaunchSchema>;

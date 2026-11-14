@@ -29,7 +29,9 @@ export type Invocation = { context: ToolContext; prompt: string; signal: AbortSi
   /** Standards/Spec only (ticket 12): the round/attempt, handoff identity and the inputs that must be read for a clean conclusion. */
   review?: ReviewInput;
   /** Builder only (ticket 11): continue THIS preserved compatible session (Host-copied before the worker exists); the prompt is `continue ...`. */
-  continuation?: { session: WorkerSessionRef } };
+  continuation?: { session: WorkerSessionRef };
+  /** Worker side of `continuation`: the owner's private copy of that session in THIS worker's profile (identity and hash re-checked). */
+  continuedSession?: { file: string; sha256: string; sessionId: string } };
 
 /** Critical protected evidence, never admission or proof of group/FD isolation. */
 export async function startWorker(profile: ReviewerProfile, records: Awaited<ReturnType<typeof createRecords>>, invocation: Invocation) {
@@ -45,7 +47,7 @@ export async function startWorker(profile: ReviewerProfile, records: Awaited<Ret
   if (!['standards', 'spec', 'builder'].includes(invocation.context.role)) throw new Error('WORKER_ROLE_UNSUPPORTED');
   if ('apiKey' in profile) records.registerSecret(profile.apiKey);
   const reviewer = invocation.context.role !== 'builder';
-  if (((invocation.skillPack !== undefined || invocation.handoff !== undefined || invocation.modelBudget === 'builder-v1') && reviewer) ||
+  if (((invocation.skillPack !== undefined || invocation.handoff !== undefined || invocation.modelBudget === 'builder-v1' || invocation.continuedSession !== undefined) && reviewer) ||
       ((invocation.review !== undefined || invocation.modelBudget === 'reviewer-v1') && !reviewer)) throw new Error('WORKER_POLICY_ROLE_DENIED');
   // The exact verified pack identity enters the start receipt; drift refuses the start before any model/tool.
   const pack = invocation.skillPack ? await loadSkillPack(skillPacks[invocation.skillPack].directory, invocation.skillPack) : undefined;
@@ -59,6 +61,9 @@ export async function startWorker(profile: ReviewerProfile, records: Awaited<Ret
     modelBudget: invocation.modelBudget ?? null,
     deadlineMs: invocation.deadlineMs ?? null,
     handoff: invocation.handoff ? { baseCommit: invocation.handoff.baseCommit } : null,
+    // Ticket 11 (spec §6.1): the session format and whether this activation continues a preserved session (identity/hash) or starts one.
+    session: { format: 'pi-session-jsonl-v3', mode: invocation.continuedSession ? 'continue' : 'new',
+      ...(invocation.continuedSession ? { sessionId: invocation.continuedSession.sessionId, sha256: invocation.continuedSession.sha256 } : {}) },
     review: invocation.review ? { round: invocation.review.round, attempt: invocation.review.attempt, handoffIndexSha256: invocation.review.handoffIndexSha256,
       required: [...invocation.review.required], missing: [...invocation.review.missing] } : null,
     startedAt: new Date().toISOString(),

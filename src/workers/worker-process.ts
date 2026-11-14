@@ -130,7 +130,8 @@ export async function run(input: unknown, parentSignal: AbortSignal, ipc?: Worke
     ...(bootstrap.deadlineMs === undefined ? {} : { deadlineMs: bootstrap.deadlineMs }),
     ...(bootstrap.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: bootstrap.editSourceMaxBytes }),
     ...(bootstrap.handoff === undefined ? {} : { handoff: bootstrap.handoff }),
-    ...(bootstrap.review === undefined ? {} : { review: bootstrap.review }) };
+    ...(bootstrap.review === undefined ? {} : { review: bootstrap.review }),
+    ...(bootstrap.continuedSession === undefined ? {} : { continuedSession: bootstrap.continuedSession }) };
   // One directive per handoff, awaited only while suspended; the abort lifetime ends the wait (no Promise waiting on a human here).
   const onHandoff = ipc && bootstrap.handoff ? (event: HandoffEvent) => new Promise<BuilderDirective>((resolve, reject) => {
     const done = () => { stop(); signal.removeEventListener('abort', aborted); };
