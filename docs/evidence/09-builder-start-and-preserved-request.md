@@ -98,12 +98,32 @@ teste, verificada por mutação: `github-builder-credentials`, `owner-credential
 6. **Composição de produção.** `entrypoints/controller/owner.ts` continua sem portas de execução (sem assets de release; ticket 32). Só a receita
    compõe execução com os assets de desenvolvimento fixados. Após uma Execução, `environments/` não fica vazio: um proprietário reiniciado
    ficaria fechado (inventário `unknown`) até a reconciliação.
-7. **Sequenciamento do cache em memória.** A cadeia por repo vale dentro do proprietário único; reconciliação de processos de preparo após crash
-   antes de mutar o cache (spec §7.3) **não** está implementada.
+7. **Sequenciamento do cache.** Em memória no proprietário e `flock` por repo entre processos; um estado `mutating` deixado por crash é
+   recusado (`CACHE_RECONCILIATION_REQUIRED`) — a reconciliação em si continua manual (ticket 26).
 8. **Limites de ferramentas.** Write ≤ 8192 bytes e Edit com fonte ≤ 8192 bytes (perfil 05): arquivos maiores exigem Bash. O orçamento
-   `builder-v1` (60/120/16 KiB/2 MiB/16 MiB/30 min) é escolha deste incremento — **requer aprovação do operador**.
+   `builder-v1` (60/120/16 KiB/2 MiB/16 MiB/30 min) foi aprovado pelo supervisor dentro da concessão do operador.
 9. **Pacote no `/artifacts` gravável.** O Builder pode alterar sua cópia; só o manifesto é conferido na reutilização. Imutabilidade contra código
    hostil não é prometida (spec §6.2). Revalidação de autorização antes do despacho é observação em memória; retirada durável é o ticket 25.
+
+## Correções da revisão estática independente (2026-11-14)
+
+Todas com teste vermelho antes (ou mutação que comprova a detecção) e verde depois.
+
+| # | Achado | Correção | Teste |
+| --- | --- | --- | --- |
+| 1 (alto) | `inspect` da receita rodava git do host no checkout gravável pelo guest (config/atributos locais → execução no host) | `Sandbox.inspectCheckout`: copia HEAD/refs/packed-refs/objects por leitura confinada para um bare **da Factory** com config própria; git só ali (sem system/global/local, hooks, atributos, pager, ext-diff, textconv, assinatura); remotos lidos como texto; alternates recusados. Auditoria de `src`: o primeiro checkout só ocorre em ambiente **nunca iniciado** (`CHECKOUT_REQUIRES_UNBOOTED_ENVIRONMENT`) e o git do host roda com cwd na home da Factory (sem descoberta acima do checkout); continuação nunca roda git | `checkout-inspection` (config hostil com fsmonitor/pager/textconv/ext-diff/clean/smudge/gpg: nenhum canário; mutação "git status no checkout" dispara canário), `sandbox-checkout` (auditoria), `builder09-recipe-safety` |
+| 2 (médio-alto) | leituras do host seguiam symlinks do guest | `readConfined`: lstat de cada componente (sem symlink), folha `O_NOFOLLOW`, regular com `nlink=1` e mesma identidade, limite de tamanho; ausência ≠ recusa. Usado na receita, na inspeção e nos seeds | `checkout-inspection` (symlink final/intermediário, hard link a arquivo do host, `..`, tamanho), `builder09-recipe-safety` |
+| 3 (médio) | parada do proprietário não interrompia despacho em voo | `checkStop` antes de cada efeito; `untilStopped` rejeita imediatamente se já abortado (corrige o listener após abort); `signal` de parada passado ao `Workers.activate` | `execution-flow` review 3 (parada durante prepare → nenhum efeito seguinte; durante ativação → sinal do worker abortado) |
+| 4 (médio) | pausa global não reconferida na ativação | `confirmActivation` lê a pausa no mesmo commit (`GLOBAL_PAUSE`) + pré-checagem antes da emissão | `execution-flow` review 4/5 (pausa durante a emissão → sem ativação) |
+| 5 (médio-baixo) | token emitido podia ficar sem registro | `credentialIssuance`: intenção durável antes do `issue`; desfecho `issued/failed/unknown` (+código), metadados sem token e resultado de `revoke` registrados em todos os caminhos (recusa, stale, fim) | `execution-flow` (intenção `requested` visível durante a emissão; `unknown` registrado; recusa após emissão → `issued` + `revocation: not-attempted`) |
+| 6 (médio-baixo) | `stop-environment` só cobria `held` | `needsStop`: `reserved/started/held` com boot próprio ou `ended` sem cessação confirmada; lê o storage da própria receita (não depende de `run-result`) | `builder09-recipe-safety` |
+| 7 (baixo) | seeds: componentes symlink e reutilização só pelo manifesto | componentes de `artifacts/factory/...` precisam ser diretórios reais; reutilização confere **todos** os hashes por leitura confinada; cópia nova grava exatamente os arquivos do manifesto (exclusivo) | `sandbox-checkout` (arquivo alterado pelo guest → conflito sem sobrescrever; `artifacts/factory` symlink → `ARTIFACT_SEED_PATH_UNSAFE`, nada escrito fora) |
+| 8 (baixo) | `confirmStart` não conferia Execução/invocação | `worker-started` leva `{executionId, invocationId}`; conferido em `launchWorker`, no `Workers.activate` e no commit (`conflict` se outro) | `execution-commits`, `activate-credential` review 8 |
+| 9 (baixo) | cache sem serialização entre processos | `flock` exclusivo por repo (`cache/git/<id>.lock`) segurado por processo filho durante fetch→clone (liberado na morte do dono); estado `mutating/idle`; `mutating` remanescente → `CACHE_RECONCILIATION_REQUIRED` (nunca reparado); espera limitada → `CACHE_LOCK_UNAVAILABLE` | `sandbox-checkout` review 9 (outro processo segura o lock; estado interrompido) |
+| flake | `native-owner-operation-ids` falhava ~1/4 também na base: o sinal do exec de um comando Write concluído ficava não abortado | causa no produto: propagação de `AbortSignal.any` perdia o abort; `commandLifetime` liga o comando ao binding por listener explícito | 25/25 execuções consecutivas verdes (antes 4 falhas em 15, sempre os dois primeiros sinais) |
+
+Orçamento `builder-v1` aprovado pelo supervisor dentro da concessão do operador. A issue #3 passou a ter pedido somente de documentação,
+com aprovação explícita de que seams/testes não são necessários (decisão 4 resolvida para o ensaio).
 
 ## Ensaio real (receita one-shot)
 
@@ -123,7 +143,7 @@ $NODE dist/test/entrypoints/builder09-qualification.js --plan
 $NODE dist/test/entrypoints/builder09-qualification.js preflight   # GitHub somente leitura
 $NODE dist/test/entrypoints/builder09-qualification.js run         # efeito real: 1 VM, 1 Builder, modelo real (até ~45 min)
 $NODE dist/test/entrypoints/builder09-qualification.js inspect     # somente leitura
-# somente se run terminar com execution.state = held e boot ativo:
+# se run terminar com o boot próprio possivelmente ativo (reserved/started/held, ou ended sem cessação confirmada):
 $NODE dist/test/entrypoints/builder09-qualification.js stop-environment
 ```
 
@@ -145,7 +165,7 @@ Observações esperadas (`run-result.json`, `inspect-result.json`):
    `execution-reserved → prepared → booted → activation-requested → started → ended → slot-released`.
 2. `events`: exatamente um `prepare` (checkout `factory/3-<work8>`, base `main`), um `start`, um `activate` com prompt `/implement
    https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3 …` e `credentialDelivered: true`, um `stop`.
-3. `inspect`: `checkout.json` (`origin` GitHub, `baseCommit`), `remote -v` só `https://github.com/…` (sem credencial),
+3. `inspect` (sem git do host no checkout; leituras confinadas): `checkout.json` (`origin` GitHub, `baseCommit`), `git.remotes` só `https://github.com/…` (sem credencial),
    `/artifacts/spec/v1/{ticket.json,sources.json}` e `/artifacts/instructions/v1/sources.json` com origem/data/sha256/revisão — ou
    `complete:false` + `missing` e sessão terminando em `BLOCKED:` (esperado se #3 não autoriza seams TDD, decisão 4); commits na branch
    própria (nunca publicados); recibo `worker-start` com `skillPack.manifestSha256`, `modelBudget: builder-v1`, `promptSha256`.
@@ -164,3 +184,7 @@ is closed"), caminho Write/owner não alterado aqui (`write-tools.ts`, `read-too
 `test/sandbox/gondolin.test.ts` continua `skip:true`. Novos arquivos: `github-builder-credentials` (3), `sandbox-checkout` (4),
 `bash-credential` (2), `owner-credential` (2), `skill-pack` (3), `activate-credential` (2), `execution-flow` (7), `execution-commits` (2),
 `builder09-qualification` (1).
+
+Após as correções da revisão (gate completo, `rm -rf dist`): eslint exit 0; `tsc` exit 0; dependency-cruiser sem violações;
+**103 arquivos**, um por vez: **779 pass, 0 fail, 10 skipped, 0 cancelled**. Novos: `checkout-inspection` (3), `builder09-recipe-safety` (2);
+ampliados: `sandbox-checkout` (+2), `execution-flow` (+2), `execution-commits`, `activate-credential` (+1).
