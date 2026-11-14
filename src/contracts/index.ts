@@ -137,3 +137,10 @@ export const reviewVerdictFormat = 'Your FINAL message must be ONLY the JSON ver
  */
 export const factorySkillPackIds = ['factory-skills-v1', 'factory-skills-v2', 'factory-skills-v3', 'factory-skills-v4', 'factory-skills-v5'] as const;
 export type FactorySkillPackId = typeof factorySkillPackIds[number];
+
+/**
+ * Ticket 33: the Control storage format this release operates and the formats its explicit upgrade migrates from. Owned by Control
+ * (which enforces it); declared in each release manifest so an upgrade or rollback can decide, BEFORE changing anything, whether a release
+ * may operate a given storage. A release manifest without this declaration predates ticket 33 and operates format 1 only.
+ */
+export const controlStorageCompatibility = Object.freeze({ format: 2, migratesFrom: Object.freeze([1]) });

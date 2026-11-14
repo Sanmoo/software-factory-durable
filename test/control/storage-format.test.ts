@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node';
 import { inspectStorage, migrateStorage, openControl, StorageFormatError, type StorageInspection } from '../../src/control/index.js';
 import type { ControlReceipt, ControlStatus, QuestionQueryView, ShowView } from '../../src/control/types.js';
 import { openStore } from '../../src/control/durable/store.js';
@@ -134,14 +134,14 @@ test('incompatible storages are refused before any change: unknown document kind
   // A Pi Durable schema this release does not support is never opened by SqliteStorage (that open would migrate it implicitly).
   const schema = join(dir, 'schema.sqlite');
   await writeFormatOne(source, schema);
-  const database = new DatabaseSync(schema);
-  database.exec('UPDATE durable_schema SET version = 1 WHERE singleton = 1');
-  database.close();
+  const database = await openNodeSqliteDatabase(schema); // Fixture edit of the backend version only (never a production path).
+  await database.run('UPDATE durable_schema SET version = 1 WHERE singleton = 1');
+  await database.close();
   const old = storage(await inspectStorage(schema));
   assert.deepEqual([old.operational, old.backend.durableSchema, old.problems[0]?.code], ['incompatible', 1, 'STORAGE_BACKEND_INCOMPATIBLE']);
   await assert.rejects(openControl({ storagePath: schema, runtimeInventory: 'unknown' }),
     (error: unknown) => error instanceof StorageFormatError && error.code === 'STORAGE_INCOMPATIBLE');
-  const check = new DatabaseSync(schema, { readOnly: true });
-  assert.equal((check.prepare('SELECT version FROM durable_schema').get() as { version: number }).version, 1, 'the backend schema was not migrated');
-  check.close();
+  const check = await openNodeSqliteDatabase(schema);
+  assert.equal((await check.get<{ version: number }>('SELECT version FROM durable_schema'))!.version, 1, 'the backend schema was not migrated');
+  await check.close();
 });

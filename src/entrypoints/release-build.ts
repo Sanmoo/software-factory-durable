@@ -7,9 +7,9 @@ import { basename, dirname, isAbsolute, join, posix, resolve } from 'node:path';
 import { arch, platform, release as kernelRelease } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { protocolVersion } from '../protocol/index.js';
-import { factorySkillPackIds } from '../contracts/index.js';
+import { controlStorageCompatibility, factorySkillPackIds } from '../contracts/index.js';
 import { createSandbox, prepareReleaseGondolinSdk, verifyGondolinSdk, gondolinSdkProfile } from '../sandbox/index.js';
-import { applicationRoot, inventoryTree, latestContinuationPack, parseReleaseManifest, productionProfile, releaseIdSchema, releaseManifestName, verifyReleaseTree, type TreeEntry } from './release.js';
+import { applicationRoot, inventoryTree, latestContinuationPack, parseReleaseManifest, productionProfile, releaseIdSchema, releaseLauncher, releaseManifestName, verifyReleaseTree, type TreeEntry } from './release.js';
 
 /**
  * DEVELOPMENT BUILD TOOL (ticket 32), never run on the operator host. Assembles a self-contained release from an already built and
@@ -201,14 +201,7 @@ async function osRelease() {
     .filter(match => match !== null).map(match => [match[1], match[3]]));
 }
 
-const launcher = (id: string) => `#!/bin/sh
-# Software Factory installation launcher. It explicitly selects release ${id} of this installation root;
-# it never discovers, downloads or switches releases and never uses the host Node or personal Node options.
-set -eu
-root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
-exec /usr/bin/env -u NODE_OPTIONS -u NODE_PATH -u NODE_COMPILE_CACHE NODE_DISABLE_COMPILE_CACHE=1 \\
-  "$root/releases/${id}/node/bin/node" "$root/releases/${id}/dist/src/entrypoints/cli.js" "$@"
-`;
+const launcher = releaseLauncher;
 
 const privateSdk = '.scratch/factory-development-sdk-v3', privateSdkSdk = `${privateSdk}/sdk`;
 export type BuildInput = { release: string; output: string; guestAssets: { directory: string; manifestSha256: string }; nodeHome?: string };
@@ -367,6 +360,8 @@ export async function buildRelease(input: BuildInput) {
         return { id: parsed.id, version: parsed.version, manifestSha256: sha(bytes), licenses: parsed.licenses, credits: parsed.credits };
       })),
       protocol: { version: protocolVersion },
+      // Ticket 33: the storage formats this release operates/migrates (upgrade and rollback decide on it before changing anything).
+      storage: { format: controlStorageCompatibility.format, migratesFrom: [...controlStorageCompatibility.migratesFrom] },
       formats: { releaseManifest: 1, configuration: 1, sandboxConfiguration: 1, sandboxProfile: productionProfile.sandboxProfile,
         controlStorage: 'Pi Durable SqliteStorage on node:sqlite (FULL synchronous)', workerSessions: 'Pi coding-agent SessionManager JSONL v3 (context only)' },
       build: { typescript: await developmentTool('typescript', 'tsconfig.json'), npm: { pinned: packageJson.packageManager, executed: false,

@@ -15,6 +15,7 @@ export type { CheckoutRequest, CheckoutView } from './checkout.js';
 export type { ArtifactSeed } from './artifact-seeds.js';
 // Host-side read-only observation of guest-writable trees (never host git/commands in them).
 export { readConfined } from './confined.js';
+export { environmentDependencies, type EnvironmentDependency } from './asset-dependencies.js';
 import { readConfined } from './confined.js';
 export { inspectCheckout, type CheckoutInspection } from './checkout-inspection.js';
 // Ticket 26: read-only host inventory of own runtime resources for the controller boot (composition only, never a worker tool).

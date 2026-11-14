@@ -6,6 +6,7 @@ import { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node';
 import type { JsonValue } from '@earendil-works/chord';
 import type { Cursor, DocumentRecord, JsonObject } from '@earendil-works/pi-durable';
 import { CURRENT_SQLITE_SCHEMA_VERSION, SqliteStorage } from '@earendil-works/pi-durable/storage/sqlite';
+import { controlStorageCompatibility } from '../../contracts/index.js';
 
 /**
  * Ticket 33 (spec §11.4): the Control storage FORMATS this release knows, read through the public Pi Durable Storage contract.
@@ -14,7 +15,7 @@ import { CURRENT_SQLITE_SCHEMA_VERSION, SqliteStorage } from '@earendil-works/pi
  * controller lifecycle to the installation document. Nothing here writes: an older Pi Durable schema is never opened (its open would
  * migrate it implicitly) and an older Factory document is never adopted lazily.
  */
-export const currentFormat = 2;
+export const currentFormat = controlStorageCompatibility.format;
 const formats: Record<number, Record<string, number>> = {
   1: { 'factory.installation': 1, 'factory.request': 1, 'factory.ticket-index': 1, 'factory.work': 1, 'factory.slots': 1, 'factory.question': 1 },
   2: { 'factory.installation': 2, 'factory.request': 1, 'factory.ticket-index': 1, 'factory.work': 1, 'factory.slots': 1, 'factory.question': 1 },
@@ -36,7 +37,7 @@ export type StorageInspection = { kind: 'absent' } | { kind: 'storage';
   /** Installation facts, when the installation document is readable at a known version. */
   installation: { paused: boolean; migrations: unknown[]; lifecycle: { current: unknown; last: unknown } | null } | null;
   /** Domain counts kept by any migration (ids, queues, Questions, reservations), and the digest of every preserved document. */
-  preserved: { works: number; questions: { open: number; answered: number }; heldSlots: number; requests: number; digest: string } | null;
+  preserved: { works: number; questions: { open: number; answered: number }; heldSlots: number; requests: number; sessions: number; digest: string } | null;
   /** What is needed before an operational open: nothing, an explicitly requested supported migration, or it is refused. */
   operational: 'ready' | 'migration-required' | 'incompatible' };
 
@@ -69,7 +70,7 @@ export async function examine(database: SqliteDatabase, options: { create: boole
   const problems: StorageProblem[] = [];
   const digest = createHash('sha256');
   let installation: Extract<StorageInspection, { kind: 'storage' }>['installation'] = null;
-  const counts = { works: 0, open: 0, answered: 0, heldSlots: 0, requests: 0 };
+  const counts = { works: 0, open: 0, answered: 0, heldSlots: 0, requests: 0, sessions: 0 };
   let installationVersion: number | null = null;
   const versionsSeen: number[] = [];
   let cursor: Cursor | undefined;
@@ -91,7 +92,11 @@ export async function examine(database: SqliteDatabase, options: { create: boole
         installation = { paused: value.paused === true, migrations: ((value.storage as JsonObject | undefined)?.migrations as unknown[] | undefined) ?? [], lifecycle: lifecycle ?? null };
         digest.update(`installation:${canonical(preservedInstallation(value))}\n`);
       } else digest.update(`${record.kind}:${record.key ?? ''}:${stored.version}:${canonical(value)}\n`);
-      if (record.kind === 'factory.work' && value.work) counts.works++;
+      if (record.kind === 'factory.work' && value.work) {
+        counts.works++;
+        // A preserved Builder session (ticket 11) that a later activation may continue when compatible, or replace with a recorded reason.
+        if ((((value.work as JsonObject).execution as JsonObject | null)?.end as JsonObject | null)?.session) counts.sessions++;
+      }
       if (record.kind === 'factory.request' && value.receipt) counts.requests++;
       if (record.kind === 'factory.slots') counts.heldSlots = Object.keys((value.held as JsonObject | undefined) ?? {}).length;
       if (record.kind === 'factory.question') {
@@ -117,7 +122,7 @@ export async function examine(database: SqliteDatabase, options: { create: boole
   const operational = problems.length > 0 ? 'incompatible' : detected === null || detected === currentFormat ? 'ready'
     : supportedMigrations.some(migration => migration.from === detected && migration.to === currentFormat) ? 'migration-required' : 'incompatible';
   return { storage, inspection: { kind: 'storage', ...base, format: detected, documents, tasks: { count: tasks.items.length, kinds: taskKinds }, problems, installation,
-    preserved: { works: counts.works, questions: { open: counts.open, answered: counts.answered }, heldSlots: counts.heldSlots, requests: counts.requests,
+    preserved: { works: counts.works, questions: { open: counts.open, answered: counts.answered }, heldSlots: counts.heldSlots, requests: counts.requests, sessions: counts.sessions,
       digest: digest.digest('hex') }, operational } };
 }
 

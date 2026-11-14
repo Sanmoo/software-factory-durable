@@ -92,6 +92,28 @@ const manifestSchema = z.strictObject({
   .refine(value => value.guestAssets.files.some(entry => entry[0] === 'manifest.json' && entry[1] === 'f' && entry[4] === value.guestAssets.manifestSha256));
 export type ReleaseManifest = z.infer<typeof manifestSchema>;
 
+/**
+ * The installation launcher shipped with release `id` (`<root>/factory`): it explicitly selects that release. Its SHA-256 is pinned by the
+ * release manifest, so the bytes an upgrade/rollback writes are checked against the manifest of the release they select (ticket 33).
+ */
+export const releaseLauncher = (id: string) => `#!/bin/sh
+# Software Factory installation launcher. It explicitly selects release ${id} of this installation root;
+# it never discovers, downloads or switches releases and never uses the host Node or personal Node options.
+set -eu
+root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+exec /usr/bin/env -u NODE_OPTIONS -u NODE_PATH -u NODE_COMPILE_CACHE NODE_DISABLE_COMPILE_CACHE=1 \\
+  "$root/releases/${id}/node/bin/node" "$root/releases/${id}/dist/src/entrypoints/cli.js" "$@"
+`;
+
+/** Ticket 33: storage formats a release operates/migrates, from its manifest; a manifest without the declaration predates ticket 33 (format 1 only). */
+export function releaseStorageSupport(manifest: ReleaseManifest): { format: number; migratesFrom: number[]; declared: boolean } {
+  const declared = manifest.metadata.storage as { format?: unknown; migratesFrom?: unknown } | undefined;
+  if (declared && Number.isSafeInteger(declared.format) && Array.isArray(declared.migratesFrom) && declared.migratesFrom.every(Number.isSafeInteger)) {
+    return { format: declared.format as number, migratesFrom: declared.migratesFrom as number[], declared: true };
+  }
+  return { format: 1, migratesFrom: [], declared: false };
+}
+
 class ReleaseFailure extends Error {
   constructor(readonly code: string, readonly path?: string) { super(code); }
 }
@@ -265,7 +287,9 @@ async function privateDirectory(path: string) {
  * no release: no pinned assets, no execution composition.
  */
 export async function inspectRelease(installationRoot: string): Promise<{
-  release: ReleaseView | null; guestAssets?: { directory: string; manifestSha256: string }; checks: Diagnostic[] }> {
+  release: ReleaseView | null; guestAssets?: { directory: string; manifestSha256: string }; checks: Diagnostic[];
+  /** The verified manifest (ticket 33: upgrade decisions use its launcher pin and storage declaration). */
+  manifest?: ReleaseManifest }> {
   const application = await realpath(applicationRoot());
   const verification = await verifyReleaseTree(application);
   if (verification.kind === 'development') {
@@ -325,7 +349,7 @@ export async function inspectRelease(installationRoot: string): Promise<{
   return { release: { release: manifest.release, manifestSha256, node: manifest.node.version, production: manifest.production.id,
     guestAssets: { path: manifest.guestAssets.path, manifestSha256: manifest.guestAssets.manifestSha256 }, qualification: manifest.qualification,
     metadata: manifest.metadata },
-  guestAssets: { directory, manifestSha256: manifest.guestAssets.manifestSha256 }, checks };
+  guestAssets: { directory, manifestSha256: manifest.guestAssets.manifestSha256 }, checks, manifest };
 }
 
 /** Exact configured provider/model of every role against the release's single production worker profile (no fallback). */
