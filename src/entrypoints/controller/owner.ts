@@ -9,11 +9,12 @@ import { createGitHubAccess } from '../../platform/github/index.js';
 import { createIssueTracker } from '../../issue-tracker/index.js';
 import { createCodeRepository } from '../../code-repository/index.js';
 
-const command = z.strictObject({ request_id: z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/),
-  operation: z.enum(['pause', 'unpause']), origin: z.literal('local-cli') });
+const requestId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
+const command = z.union([z.strictObject({ request_id: requestId, operation: z.enum(['pause', 'unpause']), origin: z.literal('local-cli') }),
+  z.strictObject({ request_id: requestId, operation: z.literal('answer'), question_id: z.uuid(), text: z.string().min(1).max(2000), origin: z.literal('local-cli') })]);
 const query = z.discriminatedUnion('kind', [z.strictObject({ kind: z.literal('status') }), z.strictObject({ kind: z.literal('access') }),
   z.strictObject({ kind: z.literal('list') }), z.strictObject({ kind: z.literal('show'), work_id: z.uuid() }),
-  z.strictObject({ kind: z.literal('request'), request_id: z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/) })]);
+  z.strictObject({ kind: z.literal('request'), request_id: requestId }), z.strictObject({ kind: z.literal('question'), question_id: z.uuid() })]);
 
 async function own(root: string): Promise<number> {
   process.umask(0o077);
@@ -43,7 +44,7 @@ async function own(root: string): Promise<number> {
   const control = await openControl({ storagePath: paths.storagePath, runtimeInventory: await controllerRuntimeInventory(paths.root),
     // Executable repositories are Ticket origins; dependency-only repositories are read solely for native blocked_by, with their own installation.
     access: { tracker: createIssueTracker({ github, scopes: effective.repositories, dependencyScopes }), repository: createCodeRepository({ github }),
-      repositories: effective.repositories, dependencyRepositories: dependencyScopes },
+      repositories: effective.repositories, dependencyRepositories: dependencyScopes, operators: effective.operators },
     polling: { intervalSeconds: effective.pollingSeconds } });
   const status = await control.inspect({ kind: 'status' });
   if (!('controller_run_id' in status)) throw new Error('INVALID_CONTROL_STATUS');

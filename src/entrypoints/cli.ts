@@ -8,7 +8,8 @@ import { pathToFileURL } from 'node:url';
 import { setup, firstHumanLogin } from './setup.js';
 import { doctor } from './doctor.js';
 
-const usage = 'factory <setup|doctor|run|status|list|show <work>|pause|unpause|request <id>> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated]; factory login --root <canonical-absolute-installation>';
+const usage = 'factory <setup|doctor|run|status|list|show <work>|question <id>|pause|unpause|answer <question> <text>|request <id>> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated]; factory login --root <canonical-absolute-installation>';
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 async function exchange(root: string, kind: 'inspect' | 'accept', payload: Envelope['payload'], id: string, runId: string | null) {
   const endpoint = resolve(await realpath(root), 'run', 'control.sock');
@@ -24,10 +25,10 @@ async function exchange(root: string, kind: 'inspect' | 'accept', payload: Envel
   } finally { clearTimeout(timeout); channel.close(); }
 }
 
-async function operational(root: string, command: string, requestId: string | undefined, requested: string | undefined, json: boolean) {
+async function operational(root: string, command: string, requestId: string | undefined, requested: string | undefined, json: boolean, text?: string) {
   const query = (): Envelope['payload'] => command === 'doctor' ? { kind: 'access' } : command === 'list' ? { kind: 'list' }
-    : command === 'show' ? { kind: 'show', work_id: requested! } : { kind: 'request', request_id: requested! };
-  const mutable = command === 'pause' || command === 'unpause';
+    : command === 'show' ? { kind: 'show', work_id: requested! } : command === 'question' ? { kind: 'question', question_id: requested! } : { kind: 'request', request_id: requested! };
+  const mutable = command === 'pause' || command === 'unpause' || command === 'answer';
   const id = requestId ?? randomUUID();
   // Present identity BEFORE sending; stdout remains a single machine-readable result.
   if (mutable) console.error(JSON.stringify({ code: 'REQUEST_IDENTIFIED', request_id: id }));
@@ -35,7 +36,8 @@ async function operational(root: string, command: string, requestId: string | un
     const status = await exchange(root, 'inspect', { kind: 'status' }, randomUUID(), null);
     if (status.kind !== 'view') throw new Error('INVALID_RESPONSE');
     const response = command === 'status' ? status : await exchange(root, mutable ? 'accept' : 'inspect',
-      mutable ? { request_id: id, operation: command, origin: 'local-cli' } : query(),
+      mutable ? (command === 'answer' ? { request_id: id, operation: 'answer', question_id: requested!, text: text!, origin: 'local-cli' }
+        : { request_id: id, operation: command, origin: 'local-cli' }) : query(),
       mutable ? id : randomUUID(), status.controller_run_id);
     console.log(json ? JSON.stringify(response.payload) : JSON.stringify(response.payload, null, 2));
     if (response.kind === 'error') return response.payload.outcome === 'indeterminate' ? 4 : 2;
@@ -45,7 +47,9 @@ async function operational(root: string, command: string, requestId: string | un
         !result.repository || typeof result.repository !== 'object' || Array.isArray(result.repository) || result.repository.status !== 'ok')) return 3;
     if (response.payload.kind === 'access' && (!Array.isArray(response.payload.dependencyResults) || response.payload.dependencyResults.some(result =>
       !result || typeof result !== 'object' || Array.isArray(result) || result.status !== 'ok'))) return 3;
-    return response.payload.kind === 'refused' || response.payload.kind === 'work-not-found' ? 2 : 0;
+    // `answer` not applied (already answered, unknown question, closed Work) is a durable refusal of the request: exit 2, nothing changed.
+    return response.payload.kind === 'refused' || response.payload.kind === 'work-not-found' || response.payload.kind === 'question-not-found' ||
+      response.payload.outcome === 'not-applied' ? 2 : 0;
   } catch {
     console.error(JSON.stringify({ code: mutable ? 'REQUEST_INDETERMINATE' : 'CONTROLLER_UNAVAILABLE',
       ...(mutable ? { request_id: id } : {}), message: mutable ? 'Query or repeat this same request identity and content; do not invent a replacement ID.' : 'Start the controller; operational inspection never opens SQLite offline.' }));
@@ -79,18 +83,21 @@ export async function main(args: string[]): Promise<number> {
   let json = false;
   let authenticated = false;
   let rootSeen = false;
-  let valid = ['setup', 'doctor', 'run', 'status', 'list', 'show', 'pause', 'unpause', 'request'].includes(command ?? '');
+  let valid = ['setup', 'doctor', 'run', 'status', 'list', 'show', 'question', 'pause', 'unpause', 'answer', 'request'].includes(command ?? '');
   let requestId: string | undefined;
-  const requested = command === 'request' || command === 'show' ? args[1] : undefined;
+  const requested = command === 'request' || command === 'show' || command === 'question' || command === 'answer' ? args[1] : undefined;
   if (command === 'request' && !requested?.match(/^[a-zA-Z0-9_-]{1,128}$/)) valid = false;
-  if (command === 'show' && !requested?.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)) valid = false;
-  for (let index = command === 'request' || command === 'show' ? 2 : 1; index < args.length; index++) {
+  if ((command === 'show' || command === 'question' || command === 'answer') && !requested?.match(uuid)) valid = false;
+  // `answer <question> <text>`: exactly one text argument (quote it), trimmed by the operator, at most 2000 characters.
+  const text = command === 'answer' ? args[2] : undefined;
+  if (command === 'answer' && (!text || text !== text.trim() || text.length > 2000 || text.startsWith('--'))) valid = false;
+  for (let index = command === 'answer' ? 3 : command === 'request' || command === 'show' || command === 'question' ? 2 : 1; index < args.length; index++) {
     if (args[index] === '--authenticated' && command === 'doctor' && !authenticated) authenticated = true;
     else if (args[index] === '--json' && !json) json = true;
     else if (args[index] === '--root' && !rootSeen && args[index + 1] && !args[index + 1]?.startsWith('-')) {
       root = resolve(args[++index]!);
       rootSeen = true;
-    } else if (args[index] === '--request-id' && !requestId && (command === 'pause' || command === 'unpause') &&
+    } else if (args[index] === '--request-id' && !requestId && (command === 'pause' || command === 'unpause' || command === 'answer') &&
       args[index + 1]?.match(/^[a-zA-Z0-9_-]{1,128}$/)) requestId = args[++index];
     else { valid = false; break; }
   }
@@ -100,8 +107,9 @@ export async function main(args: string[]): Promise<number> {
   }
   try {
     if (command === 'run') return await launch(root);
-    if (command === 'status' || command === 'list' || command === 'show' || command === 'pause' || command === 'unpause' || command === 'request') {
-      return await operational(root, command, requestId, requested, json);
+    if (command === 'status' || command === 'list' || command === 'show' || command === 'question' || command === 'pause' || command === 'unpause' ||
+        command === 'answer' || command === 'request') {
+      return await operational(root, command, requestId, requested, json, text);
     }
     if (command === 'doctor' && authenticated) return await operational(root, command, undefined, undefined, json);
     if (command === 'doctor') {
