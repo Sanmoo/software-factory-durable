@@ -50,6 +50,9 @@ test('build: one exclusive archive with checksum and manifest pinning Node/SDKs/
   assert.equal(metadata.build.npm.executed, false);
   assert.ok(metadata.build.architectureFixtures.some((item: { path: string }) => item.path === 'test/architecture/architecture-gate.test.ts'));
   assert.equal(manifest.production.builder.skillPack, 'factory-skills-v3');
+  assert.equal(manifest.production.limits.modelBudget.builderV1.requests, 60);
+  assert.match(manifest.production.limits.deadline, /only the optional configured per-repository timeoutSeconds applies/);
+  assert.doesNotMatch(JSON.stringify(manifest.production.limits), /deadlineMinutes|deadlineMs/);
   assert.deepEqual(manifest.production.tools.standards, ['read']);
   assert.equal(manifest.qualification.status, 'unqualified');
   assert.match(manifest.qualification.statement, /claims no functional coverage/);

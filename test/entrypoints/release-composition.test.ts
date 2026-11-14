@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { composeProductionExecution } from '../../src/entrypoints/controller/composition.js';
+import { productionProfile } from '../../src/entrypoints/release.js';
 import { createGitHubAccess } from '../../src/platform/github/index.js';
 
 // R/S boundary of the production composition (ticket 32): only object composition is exercised; nothing is prepared, booted, launched,
@@ -36,6 +37,12 @@ test('production composition: the release profile for all three roles, skill pac
     assert.match(summary.profiles[role].systemPromptSha256, /^[0-9a-f]{64}$/);
   }
   assert.notEqual(summary.profiles.builder.systemPromptSha256, summary.profiles.spec.systemPromptSha256);
+  // Spec §4.4: production composes NO worker clock deadline; only the optional configured per-repository timeout applies.
+  assert.equal('deadlineMs' in ports.builder, false);
+  assert.equal('deadlineSeconds' in ports.builder, false);
+  assert.equal('timeoutSeconds' in ports.builder, false);
+  assert.match(productionProfile.limits.deadline, /^not set by production composition; only the optional configured per-repository timeoutSeconds applies$/);
+  assert.doesNotMatch(JSON.stringify(productionProfile.limits), /deadlineMinutes|deadlineMs/);
 });
 
 test('production composition refuses any role whose configured provider/model is not the release profile; no fallback, no partial ports', () => {

@@ -9,7 +9,9 @@ Ticket elegível (`factory list`, `factory show <work>`); ver
 avaliação/seleção em `list`/`show`/`status`; ver [evidência 08](evidence/08-native-dependency-gating.md).
 Não iniciam workers/VMs nem registram serviços.
 Despacho permanece fechado, inclusive após `unpause`; não existe scheduler paralelo.
-Não é uma release autocontida homologada. Evidências e limites do controlador:
+Não é uma release autocontida homologada; a construção/instalação verificada da release e a composição
+de produção do ticket 32 estão em [evidência 32](evidence/32-self-contained-release.md). Evidências e
+limites do controlador:
 [controller-evidence.md](controller-evidence.md). Autoridade: [spec](../.scratch/software-factory/spec.md),
 [interfaces](../.scratch/software-factory/module-public-interfaces.md), decisões
 [operacionais](../.scratch/software-factory/issues/21-installation-operations-contract.md)
@@ -73,9 +75,13 @@ Não há engine próprio de impacto/cache.
 | Agentes reais | Grupo separado, **ainda sem comando executável**: skills, dois revisores, modelos e custos autorizados. Um dublê não prova essa fronteira. |
 | Pilotos | Grupo separado, **ainda sem comando executável**: Tickets reais, recursos/conta/GitHub/modelos autorizados e avaliação/merge humanos. Não é smoke test local. |
 
-Não criamos scripts vazios que retornem verde para grupos inexistentes. O restante
-de V-16 (release/manifesto/assets, run/serviço, migrações/upgrade) pertence aos
-incrementos correspondentes. Doctor não dispensa nenhuma prova real afetada.
+O ticket 32 acrescenta a ferramenta de construção da release
+(`dist/src/entrypoints/release-build.js`, só desenvolvimento; nunca no host operador) e a composição de
+produção do controlador; ambos estão cobertos pelo gate local com assets sintéticos e tar real. A
+construção/verificação com os assets reais e o boot continuam grupos autorizados separados
+([evidência 32](evidence/32-self-contained-release.md)). O restante de V-16 (release nova com perguntas
+pendentes, migração interrompida, upgrade) pertence aos incrementos seguintes. Doctor não dispensa
+nenhuma prova real afetada.
 
 ## Grafo executável
 

@@ -19,11 +19,14 @@ Os 26 tickets do mapa estão resolvidos; a migração preserva esse estado, não
 ## Estado do projeto
 
 O primeiro incremento implementa setup/doctor offline e o gate local de desenvolvimento.
-A Factory operacional e a release autocontida ainda não foram implementadas nem homologadas;
-a spec e o plano de aceite continuam descrevendo as demais provas futuras.
+O ticket 32 acrescenta a release autocontida (manifesto/integridades, Node privado, skill packs,
+assets fixados), a instalação repetida/verificada e a composição de produção de execução/reviews/
+credenciais. A release com os assets reais ainda não foi construída nem homologada: boot, Docker/TLS,
+GitHub/modelos reais, jornada e piloto continuam provas futuras da spec e do plano de aceite.
 
 - [Comandos de desenvolvimento e arquitetura executável](docs/development.md).
 - [Preparação/configuração e diagnóstico offline](docs/local-installation.md).
 - [Evidências do ticket 01 e limites de V-16](docs/evidence/01-local-setup-and-development-gate.md).
+- [Release autocontida e composição de produção (ticket 32)](docs/evidence/32-self-contained-release.md).
 
 [Proveniência, escopo e verificações da migração](docs/migrations/software-factory-from-pkm.md).

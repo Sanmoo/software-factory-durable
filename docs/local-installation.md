@@ -114,7 +114,49 @@ prova supervisão/permissões. Statfs/free-space não prova locks, fsync ou recu
 após perda de energia. Não se faz boot/TCG fallback, teste Docker/TLS, montagem FUSE,
 criação de units, alteração de permissões ou reparo. Esses checks permanecem
 explicitamente `unverified` e exigem integração real autorizada antes da operação.
-A prova de release autocontida/manifestos/assets e atualização não foi realizada.
+## Release autocontida (incremento 32)
+
+A release é construída **fora** do host operador por
+`dist/src/entrypoints/release-build.js` (ferramenta de desenvolvimento; nunca roda em produção):
+
+```sh
+node dist/src/entrypoints/release-build.js --release <id> --output <diretório-exclusivo-novo> \
+  --guest-assets <diretório-assets-fixado> --guest-manifest-sha256 <sha do manifesto>
+```
+
+Ela copia o JavaScript emitido (`dist/src`, sem testes/`.d.ts`/`.map`), a closure runtime do
+`package-lock.json`, o Node privado (`node/bin/node` + licença), os perfis privados de SDK
+(`.scratch/factory-development-sdk-v3` e a forma de release do Gondolin, com link relativo
+`../../node_modules`), os skill packs (`assets/skill-pack`) e os assets guest fixados, e grava
+`release-manifest.json` com o inventário exato (caminho/tipo/modo/tamanho/sha256), os pins de
+Node/SQLite/Pi/Durable/Gondolin/assets/perfil/limites e os créditos/licenças. O resultado é um
+`software-factory-<id>.tar` determinístico, seu `.sha256` e `build-report.json`. Não há bundler, `npm`
+nem download na construção.
+
+Instalação: extrair o archive em uma raiz canônica **nova** com `tar -xpkf <archive> -C <raiz>` (o `-p`
+preserva os modos; extração sem preservá-los é recusada) e executar:
+
+```sh
+<raiz>/factory setup --json            # repetível; cria só os paths próprios
+<raiz>/factory setup --service --json  # opcional e explícito: grava a unit de usuário, NÃO inicia/habilita
+<raiz>/factory doctor --json
+<raiz>/factory run                     # mesmo controlador/lock do serviço
+```
+
+`doctor` verifica a integridade da árvore contra o manifesto (`release:integrity`, falha nomeando o
+caminho divergente), a localização (`releases/<id>` desta raiz), a seleção explícita pelo `factory`
+desta raiz (sha do launcher), o Node privado efetivamente em execução, a preservação dos assets e os
+pins `guest-assets:*`; `release:qualification` permanece `unverified`. Uma release executa somente a
+própria raiz (`RELEASE_ROOT_MISMATCH`); não há descoberta, troca implícita de release nem relocação por
+cópia. Configuração com provider/modelo diferente do perfil único distribuído é recusada pelo controlador
+(`CONFIGURATION_UNSUPPORTED`, antes de abrir o storage), sem fallback.
+
+O manifesto prova integridade distribucional, **não autenticidade** (não há assinatura) e **não**
+qualificação funcional: boot de VM, Docker/TLS, GitHub/modelos reais, jornada e piloto continuam provas
+separadas. Host operador não precisa de TypeScript, ESLint, dependency-cruiser nem `npm`. A receita
+one-shot real e seus limites estão em
+[evidence/32-self-contained-release.md](evidence/32-self-contained-release.md). O restante da atualização
+(release nova com perguntas pendentes, migração interrompida) permanece nos tickets seguintes.
 
 `run`, status operacional e demais comandos da spec ainda não são implementados
 neste ticket: são recusados com `INVALID_ARGUMENTS`, não simulados com sucesso.

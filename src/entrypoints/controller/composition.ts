@@ -47,6 +47,7 @@ export function composeProductionExecution(input: ProductionInput):
     credentials: createBuilderCredentials({ github: input.github, repositories: input.effective.repositories }),
     configuration: input.effective.sandbox,
     capacity: input.effective.concurrency,
+    // No `deadlineMs` policy: the worker gets no clock from production (spec §4.4). `modelBudget` bounds requests/tools/bytes only.
     builder: { ...productionProfile.builder },
   };
   const sha = (text: string) => createHash('sha256').update(text).digest('hex');

@@ -44,8 +44,12 @@ export const productionProfile = Object.freeze({
   reviewer: Object.freeze({ modelBudget: 'reviewer-v1', imageSourceMaxBytes: 5 * 1024 * 1024 }),
   tools: Object.freeze({ builder: ['write', 'bash', 'read', 'edit', 'ask_user', 'handoff'], standards: ['read'], spec: ['read'] }),
   limits: Object.freeze({ socketPathBytes: 107, writeMaxBytes: 8192, editSourceMaxBytes: 8192,
-    builderV1: { requests: 60, toolCalls: 120, deadlineMinutes: 30 }, reviewerV1: { requests: 24, toolCalls: 80, deadlineMinutes: 15 },
-    providerRetries: 0, sdkRetries: 0 }),
+    // `modelBudget` governs request/tool/byte limits only.
+    modelBudget: Object.freeze({ builderV1: Object.freeze({ requests: 60, toolCalls: 120 }), reviewerV1: Object.freeze({ requests: 24, toolCalls: 80 }) }),
+    providerRetries: 0, sdkRetries: 0,
+    // Spec §4.4: the production composition sets NO worker clock deadline. Without a configured repository timeout there is no cut; the
+    // optional per-repository `timeoutSeconds` is the only deadline (tickets 19) and this release never invents another.
+    deadline: 'not set by production composition; only the optional configured per-repository timeoutSeconds applies' }),
   prompts: Object.freeze({
     builder: 'You are the Software Factory Builder. Follow the Factory skill pack exactly. Work only in /workspace/checkout and /artifacts. Never push, open pull ' +
       'requests, change GitHub state, request broader access or use another credential. Report blockers instead of working around them. When your proposal is ' +
