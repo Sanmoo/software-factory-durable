@@ -51,9 +51,13 @@ export async function composeProductionExecution(input: ProductionInput): Promis
     sandbox: { prepare: input => sandbox.prepare(input), start: input => sandbox.start(input), stop: input => sandbox.stop(input),
       observeProposal: input => sandbox.observeProposal(input),
       // Ticket 13: confined Host confirmation of preserved-source authorizations (absent = none would ever correlate).
-      verifyPreservedSource: input => sandbox.verifyPreservedSource(input) },
+      verifyPreservedSource: input => sandbox.verifyPreservedSource(input),
+      // Ticket 26: host observation (works without the old Gondolin owner) for boot reconciliation of survivors.
+      observe: input => sandbox.observe(input) },
     workers: { activate: (invocation, delivery, events) => workers.activate(invocation, delivery, events), deliver: (worker, directive) => workers.deliver(worker, directive),
-      observe: input => workers.observe(input) },
+      observe: input => workers.observe(input),
+      // Ticket 26: protected start receipt of an invocation, discovered without its notification.
+      observeStart: input => workers.observeStart(input) },
     // Ticket 13: multi-round reviews (treatments, Host-evidenced gates, end-of-Execution verification) with the release's bound.
     reviews: { reviewer: { ...productionProfile.reviewer }, rounds: { ...productionProfile.reviewRounds } },
     credentials: createBuilderCredentials({ github: input.github, repositories: input.effective.repositories }),

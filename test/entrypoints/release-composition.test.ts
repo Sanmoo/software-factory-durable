@@ -53,6 +53,9 @@ test('production composition: the release profile for all three roles, the deriv
   assert.equal(typeof ports.workers.deliver, 'function');
   // Ticket 11: the planned next Builder may continue a preserved session only through the Workers observation port.
   assert.equal(typeof ports.workers.observe, 'function');
+  // Ticket 26: boot reconciliation observes/stops own boots through the host path and discovers start receipts without notification.
+  assert.equal(typeof ports.sandbox.observe, 'function');
+  assert.equal(typeof ports.workers.observeStart, 'function');
   assert.equal(typeof ports.credentials.issue, 'function');
   assert.deepEqual(summary.guestAssets, guestAssets);
   assert.deepEqual(summary.artifactSeeds, [`factory/skill-pack/${pack}`]);
