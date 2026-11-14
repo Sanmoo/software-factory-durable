@@ -1,4 +1,6 @@
 import { constants } from 'node:fs';
+import { realpath } from 'node:fs/promises';
+import { join } from 'node:path';
 import { platform, arch } from 'node:os';
 import type { Diagnostic } from '../contracts/index.js';
 import { canAccess, inspectStorage, versionOf } from '../platform/host/index.js';
@@ -6,6 +8,12 @@ import { inspectGuestAssets, type GuestAssetPin } from './guest-assets.js';
 import { validateConfiguration } from './configuration.js';
 import { prepareEnvironment, type PrepareResult } from './prepare.js';
 export type { EnvironmentRef, PrepareResult } from './prepare.js';
+import type { RepositoryFetchCredentials } from '../contracts/index.js';
+import { createCheckouts, type CheckoutRequest, type CheckoutView } from './checkout.js';
+import { seedArtifacts, type ArtifactSeed } from './artifact-seeds.js';
+export type { CheckoutRequest, CheckoutView } from './checkout.js';
+export type { ArtifactSeed } from './artifact-seeds.js';
+export type PreparedWork = PrepareResult | { status: 'success'; environment: EnvironmentRef; checkout: CheckoutView; seeds: { name: string; manifestSha256: string; reused: boolean }[] };
 export type { GuestAssetPin } from './guest-assets.js';
 import { observeEnvironment, type BootRef } from './lifecycle.js';
 import type { EnvironmentRef } from './prepare.js';
@@ -27,7 +35,13 @@ import { registerOwnerTools } from './owner-registration.js';
 export type { ToolContext, ToolCall, ReadCall, ReadResult, ToolProjection, ReadBinding } from './read-tools.js';
 export type { WriteCall } from './write-tools.js';
 
-export function createSandbox({ root, guestAssets, toolEndpoint }: { root: string; guestAssets?: GuestAssetPin; toolEndpoint?: string }) {
+/**
+ * `repositoryFetch`/`remoteUrl`/`artifactSeeds` are trusted composition inputs (controller only): the host Contents:read fetch credential,
+ * the upstream fetch URL (GitHub by default) and read-only Factory material copied once per environment into /artifacts.
+ */
+export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch, remoteUrl, artifactSeeds = [] }: { root: string; guestAssets?: GuestAssetPin; toolEndpoint?: string;
+  repositoryFetch?: RepositoryFetchCredentials; remoteUrl?: (scope: { repository: string }) => string; artifactSeeds?: readonly ArtifactSeed[] }) {
+  const checkouts = repositoryFetch ? createCheckouts({ root, fetch: repositoryFetch, ...(remoteUrl ? { remoteUrl } : {}) }) : undefined;
   const projections = new Map<string, Promise<Awaited<ReturnType<typeof connectReadTools>>>>();
   const bindings = new Map<string, string>();
   return {
@@ -71,11 +85,21 @@ export function createSandbox({ root, guestAssets, toolEndpoint }: { root: strin
       const storage = await observeStorage(root, environment, observation.condition === 'removed');
       return { ...observation, ...(storage ? { storage } : {}) };
     },
-    async prepare({ workId, configuration }: { workId: string; configuration: unknown }): Promise<PrepareResult> {
+    /** With `checkout`, the environment also receives the Work's own checkout (spec §7.3) and the composed artifact seeds; never a boot or agent. */
+    async prepare({ workId, configuration, checkout }: { workId: string; configuration: unknown; checkout?: CheckoutRequest }): Promise<PreparedWork> {
       const parsed = validateConfiguration(configuration);
       if (!parsed.valid) return { status: 'failure', code: 'SANDBOX_CONFIGURATION_INVALID' };
-      try { return await prepareEnvironment(root, guestAssets, workId, parsed.effective); }
+      let prepared: PrepareResult;
+      try { prepared = await prepareEnvironment(root, guestAssets, workId, parsed.effective); }
       catch { return { status: 'indeterminate', code: 'ENVIRONMENT_PREPARATION_UNAVAILABLE' }; }
+      if (prepared.status !== 'success' || !checkout) return prepared;
+      if (!checkouts) return { status: 'failure', code: 'CHECKOUT_NOT_COMPOSED' };
+      const directory = join(await realpath(root), 'environments', prepared.environment);
+      const result = await checkouts.prepare(directory, checkout);
+      if (result.status !== 'success') return result;
+      const seeds = await seedArtifacts(join(directory, 'artifacts'), artifactSeeds);
+      if (seeds.status !== 'success') return seeds;
+      return { status: 'success', environment: prepared.environment, checkout: result.checkout, seeds: seeds.seeds };
     },
     async validate(configuration: unknown) {
       const validated = validateConfiguration(configuration);
