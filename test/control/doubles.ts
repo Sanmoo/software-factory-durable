@@ -59,6 +59,9 @@ export function githubDoubles(remote: Remote) {
       return { kind: 'observed', source: 'github-rest', observedAt: observedAt(), completeness: 'complete', ticket: { ...found.ref, ...found.reread },
         state: found.state, stateReason: null, labels: found.labels, pullRequest: found.pullRequest ?? false };
     }),
+    readDependencyGraph: ref => track('readDependencyGraph', () => ({ kind: 'observed' as const, source: 'github-rest' as const, observedAt: observedAt(), root: ref,
+      completeness: 'complete' as const, principals: [], problems: [], limitations: [], nodes: [{ issueId: ref.issueId, nodeId: ref.nodeId, repository: ref.repository,
+        repositoryId: ref.repositoryId, number: ref.number, url: ref.url, state: 'open' as const, stateReason: null, access: 'read' as const, repositoryRole: 'executable' as const, blockedBy: [] }] }), ref),
   };
   const repository: CodeRepository = {
     checkAccess() { throw new Error('not used by admission'); },

@@ -10,9 +10,10 @@ export function installNativeAppFixture(executable: string, scenario: string) {
   const substitute = (options: https.RequestOptions, callback: (response: IncomingMessage) => void) => {
     if (options.method === 'POST') observation.tokenPosts++;
     observation.trace.push(`${options.method} ${options.path}`);
-    const allowed: Record<string, string> = { '/app': 'GET', '/app/installations/2': 'GET', '/app/installations/2/access_tokens': 'POST' };
+    // Closed App operation set; the installation id is decided by the world executable (several installations per world).
+    const allowed = (path: string) => path === '/app' ? 'GET' : /^\/app\/installations\/\d+$/.test(path) ? 'GET' : /^\/app\/installations\/\d+\/access_tokens$/.test(path) ? 'POST' : undefined;
     const headers = options.headers as Record<string, string>;
-    if (options.hostname !== 'api.github.com' || options.port !== 443 || options.protocol !== 'https:' || options.rejectUnauthorized !== true || options.agent !== false || options.maxHeaderSize !== 16384 || allowed[options.path!] !== options.method || headers.Authorization?.split(' ')[0] !== 'Bearer' || headers['X-GitHub-Api-Version'] !== '2026-03-10' || headers.Accept !== 'application/vnd.github+json' || !headers['User-Agent']) throw Error('INVALID_NATIVE_CONTRACT');
+    if (options.hostname !== 'api.github.com' || options.port !== 443 || options.protocol !== 'https:' || options.rejectUnauthorized !== true || options.agent !== false || options.maxHeaderSize !== 16384 || allowed(options.path!) !== options.method || headers.Authorization?.split(' ')[0] !== 'Bearer' || headers['X-GitHub-Api-Version'] !== '2026-03-10' || headers.Accept !== 'application/vnd.github+json' || !headers['User-Agent']) throw Error('INVALID_NATIVE_CONTRACT');
     const request = new EventEmitter() as ClientRequest;
     request.destroy = () => request;
     request.end = ((input?: string) => {

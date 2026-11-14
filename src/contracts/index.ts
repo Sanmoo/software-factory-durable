@@ -12,7 +12,7 @@ export interface GitHubScope {
 }
 export type AccessDiagnostic = {
   source: 'github-rest';
-  purpose: 'tracker' | 'repository';
+  purpose: 'tracker' | 'repository' | 'dependency';
   observedAt: string;
   repository: string;
   status: 'ok' | 'blocked';
@@ -24,5 +24,5 @@ export type AccessDiagnostic = {
   workflows?: boolean;
   limitations?: string[];
   identity?: { appId: number; installationId: number; repositoryId: number };
-  grant?: { role: 'controller'; purpose: 'tracker' | 'repository'; permissions: Readonly<Record<string, 'read' | 'write'>>; expiresAt: string };
+  grant?: { role: 'controller'; purpose: 'tracker' | 'repository' | 'dependency'; permissions: Readonly<Record<string, 'read' | 'write'>>; expiresAt: string };
 }

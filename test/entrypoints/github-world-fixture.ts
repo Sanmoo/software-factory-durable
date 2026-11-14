@@ -13,6 +13,16 @@ export type WorldIssue = {
   labels: { id: number; name: string }[]; user: { id: number; login: string; type: string }; pull_request?: object;
   /** Issue timeline events served at /issues/{n}/timeline (paginated). */
   timeline?: object[];
+  /** Owning repository (default acme/project). Issue ids stay globally unique across repositories, like GitHub. */
+  repository?: string;
+  /** Native blocked_by edges served at /issues/{n}/dependencies/blocked_by (paginated) as full issue objects of the targets. */
+  blocked_by?: { repository?: string; number: number }[];
+  /** Edges GitHub counts in issue_dependencies_summary but does not list (simulated invisible blocker). */
+  hidden_blocked_by?: number;
+  /** Omit issue_dependencies_summary from the issue object. */
+  no_summary?: boolean;
+  /** Raw extra entries appended to the blocked_by listing (invalid relation payloads). */
+  raw_blocked_by?: object[];
 };
 export type WorldPull = {
   id: number; node_id: string; number: number; title: string; body: string | null; state: 'open' | 'closed'; merged_at: string | null;
@@ -23,9 +33,11 @@ export type World = {
   pulls: WorldPull[];
   pageSize?: number;
   /** endpoint substring → synthetic failure. */
-  faults?: Record<string, { status: number; headers?: Record<string, string> }>;
+  faults?: Record<string, { status: number; headers?: Record<string, string>; /** Raw (possibly non-JSON) body. */ body?: string }>;
   /** Make every successful operational response report an exhausted rate limit until reset. */
   exhaustRateLimit?: boolean;
+  /** Repositories and their App installations (default: acme/project id 3, installation 2). Owner = installation account. */
+  repositories?: { name: string; id: number; installation: number }[];
 };
 export type TraceEntry = { method: string; endpoint: string; credential: 'app-jwt' | 'installation'; permissions?: Record<string, string> };
 
@@ -65,60 +77,93 @@ if (Object.keys(process.env).some(k => !allowedEnv.includes(k)) || args.some(a =
 if (!app && !token.startsWith('synthetic-installation-secret-')) process.exit(13);
 const world = JSON.parse(readFileSync(${JSON.stringify(worldFile)}, 'utf8'));
 const ceiling = { metadata: 'read', issues: 'write', contents: 'write', pull_requests: 'write', checks: 'read', statuses: 'read', actions: 'read', administration: 'read' };
-let body, status = 200, headers = '';
+const repositories = world.repositories ?? [{ name: 'acme/project', id: 3, installation: 2 }];
+const repoByName = name => repositories.find(r => r.name.toLowerCase() === String(name).toLowerCase());
+let body, raw, status = 200, headers = '';
 const trace = { method, endpoint, credential: app ? 'app-jwt' : 'installation' };
 const url = new URL(endpoint, 'https://api.github.com');
-const path = url.pathname.replace(/^\\/repositories\\/3(?=\\/|$)/, '/repos/acme/project').toLowerCase(); // GitHub names are case-insensitive
+// GitHub names are case-insensitive and may be addressed by numeric id.
+let path = url.pathname.replace(/^\\/repositories\\/(\\d+)(?=\\/|$)/, (all, id) => { const r = repositories.find(r => r.id === Number(id)); return r ? '/repos/' + r.name : all; }).toLowerCase();
+const match = /^\\/repos\\/([^/]+\\/[^/]+)(\\/.*)?$/.exec(path);
+const repo = match ? repoByName(match[1]) : undefined;
+const rest = match ? match[2] ?? '' : '';
+if (!app && repo && token.split('-').at(-1) !== 'r' + repo.id) { // installation tokens are scoped to one repository
+  process.stdout.write('HTTP/2.0 404 Test\\r\\nx-github-api-version-selected: 2026-03-10\\r\\n\\r\\n{"message":"Not Found"}');
+  appendFileSync(${JSON.stringify(traceFile)}, JSON.stringify({ ...trace, status: 404 }) + '\\n');
+  process.exit(1);
+}
+const issuesOf = r => world.issues.filter(i => (i.repository ?? 'acme/project').toLowerCase() === r.name.toLowerCase());
+const shape = i => {
+  const r = repoByName(i.repository ?? 'acme/project');
+  const { repository, blocked_by, hidden_blocked_by, no_summary, raw_blocked_by, timeline, ...plain } = i;
+  const targets = (blocked_by ?? []).map(edge => world.issues.find(t => t.number === edge.number && (t.repository ?? 'acme/project').toLowerCase() === (edge.repository ?? 'acme/project').toLowerCase())).filter(Boolean);
+  const summary = { blocked_by: targets.filter(t => t.state === 'open').length + (hidden_blocked_by ?? 0), blocking: 0,
+    total_blocked_by: targets.length + (hidden_blocked_by ?? 0), total_blocking: 0 };
+  return { ...plain, repository_url: 'https://api.github.com/repos/' + r.name, html_url: 'https://github.com/' + r.name + '/issues/' + i.number,
+    ...(no_summary ? {} : { issue_dependencies_summary: summary }) };
+};
 function page(items) {
   const size = world.pageSize ?? 100;
   const number = Number(url.searchParams.get('page') ?? '1');
   if (url.searchParams.get('per_page') !== '100') process.exit(15);
   const slice = items.slice((number - 1) * size, number * size);
   if (number * size < items.length) {
-    const next = new URL('https://api.github.com/repositories/3' + path.slice('/repos/acme/project'.length));
+    const next = new URL('https://api.github.com/repositories/' + repo.id + rest);
     for (const [key, value] of url.searchParams) next.searchParams.set(key, value);
     next.searchParams.set('page', String(number + 1));
     headers += 'link: <' + next.href + '>; rel="next"\\r\\n';
   }
   return slice;
 }
+const installation = Number(/^\\/app\\/installations\\/(\\d+)/.exec(endpoint)?.[1] ?? NaN);
+const owned = repositories.filter(r => r.installation === installation);
 if (endpoint === '/app' && method === 'GET') body = { id: 1 };
-else if (endpoint === '/app/installations/2' && method === 'GET') body = { id: 2, app_id: 1, account: { login: 'acme' }, suspended_at: null, permissions: ceiling };
-else if (endpoint === '/app/installations/2/access_tokens' && method === 'POST') {
+else if (/^\\/app\\/installations\\/\\d+$/.test(endpoint) && method === 'GET' && owned.length) body = { id: installation, app_id: 1, account: { login: owned[0].name.split('/')[0] }, suspended_at: null, permissions: ceiling };
+else if (/^\\/app\\/installations\\/\\d+\\/access_tokens$/.test(endpoint) && method === 'POST' && owned.length) {
   let input = ''; for await (const data of process.stdin) input += data;
   const request = JSON.parse(input);
-  if (Object.keys(request).sort().join() !== 'permissions,repositories' || JSON.stringify(request.repositories.map(name => name.toLowerCase())) !== '["project"]') process.exit(10);
+  const target = owned.find(r => request.repositories?.length === 1 && r.name.split('/')[1].toLowerCase() === String(request.repositories[0]).toLowerCase());
+  if (Object.keys(request).sort().join() !== 'permissions,repositories' || !target) process.exit(10);
   for (const [name, level] of Object.entries(request.permissions)) if (!ceiling[name] || (level === 'write' && ceiling[name] !== 'write')) process.exit(10);
   trace.permissions = request.permissions;
+  trace.repository = target.name;
   const sequence = readFileSync(${JSON.stringify(traceFile)}, 'utf8').split('\\n').filter(line => line.includes('access_tokens')).length + 1;
-  body = { token: 'synthetic-installation-secret-' + sequence, expires_at: new Date(Date.now() + 3600000).toISOString(), permissions: request.permissions,
-    repositories: [{ id: 3, full_name: 'acme/project', owner: { login: 'acme' } }] };
+  body = { token: 'synthetic-installation-secret-' + sequence + '-r' + target.id, expires_at: new Date(Date.now() + 3600000).toISOString(), permissions: request.permissions,
+    repositories: [{ id: target.id, full_name: target.name, owner: { login: target.name.split('/')[0] } }] };
   status = 201;
-} else if (method !== 'GET') process.exit(16);
-else if (path === '/repos/acme/project') body = { id: 3, full_name: 'acme/project', owner: { login: 'acme' } };
-else if (path === '/repos/acme/project/issues') {
+} else if (method !== 'GET' || app) process.exit(16);
+else if (!repo) process.exit(11);
+else if (rest === '') body = { id: repo.id, full_name: repo.name, owner: { login: repo.name.split('/')[0] } };
+else if (rest === '/issues') {
   const state = url.searchParams.get('state'); const label = url.searchParams.get('labels');
-  body = page(world.issues.filter(i => (!state || state === 'all' || i.state === state) &&
-    (!label || i.labels.some(l => l.name.toLowerCase() === label.toLowerCase()))).map(i => ({ ...i, repository_url: 'https://api.github.com/repos/acme/project', html_url: 'https://github.com/acme/project/issues/' + i.number })));
-} else if (/^\\/repos\\/acme\\/project\\/issues\\/\\d+\\/timeline$/.test(path)) {
-  const found = world.issues.find(i => i.number === Number(path.split('/').at(-2)));
+  body = page(issuesOf(repo).filter(i => (!state || state === 'all' || i.state === state) &&
+    (!label || i.labels.some(l => l.name.toLowerCase() === label.toLowerCase()))).map(shape));
+} else if (/^\\/issues\\/\\d+\\/timeline$/.test(rest)) {
+  const found = issuesOf(repo).find(i => i.number === Number(rest.split('/')[2]));
   if (found) body = page(found.timeline ?? []);
   else { status = 404; body = { message: 'Not Found' }; }
-} else if (/^\\/repos\\/acme\\/project\\/issues\\/\\d+$/.test(path)) {
-  const found = world.issues.find(i => i.number === Number(path.split('/').at(-1)));
-  if (found) body = { ...found, repository_url: 'https://api.github.com/repos/acme/project', html_url: 'https://github.com/acme/project/issues/' + found.number };
+} else if (/^\\/issues\\/\\d+\\/dependencies\\/blocked_by$/.test(rest)) {
+  const found = issuesOf(repo).find(i => i.number === Number(rest.split('/')[2]));
+  if (found) {
+    const targets = (found.blocked_by ?? []).map(edge => world.issues.find(t => t.number === edge.number && (t.repository ?? 'acme/project').toLowerCase() === (edge.repository ?? 'acme/project').toLowerCase()));
+    if (targets.some(t => !t)) process.exit(18);
+    body = page([...targets.map(shape), ...(found.raw_blocked_by ?? [])]);
+  } else { status = 404; body = { message: 'Not Found' }; }
+} else if (/^\\/issues\\/\\d+$/.test(rest)) {
+  const found = issuesOf(repo).find(i => i.number === Number(rest.split('/')[2]));
+  if (found) body = shape(found);
   else { status = 404; body = { message: 'Not Found' }; }
-} else if (path === '/repos/acme/project/pulls') {
+} else if (rest === '/pulls' && repo.id === 3) {
   if (url.searchParams.get('state') !== 'all') process.exit(17);
   body = page(world.pulls.map(p => ({ ...p, html_url: 'https://github.com/acme/project/pull/' + p.number, base: { repo: { id: 3 } } })));
 } else process.exit(11);
 for (const [fragment, fault] of Object.entries(world.faults ?? {})) if (endpoint.includes(fragment) && !app) {
-  status = fault.status; body = { message: 'synthetic-installation-secret-leak' };
+  status = fault.status; body = { message: 'synthetic-installation-secret-leak' }; if (fault.body !== undefined) raw = fault.body;
   for (const [name, value] of Object.entries(fault.headers ?? {})) headers += name + ': ' + value + '\\r\\n';
 }
 if (world.exhaustRateLimit && !app && status === 200) headers += 'x-ratelimit-remaining: 0\\r\\nx-ratelimit-reset: ' + (Math.floor(Date.now() / 1000) + 600) + '\\r\\n';
 appendFileSync(${JSON.stringify(traceFile)}, JSON.stringify(trace) + '\\n');
-process.stdout.write('HTTP/2.0 ' + status + ' Test\\r\\nx-github-api-version-selected: 2026-03-10\\r\\n' + headers + '\\r\\n' + JSON.stringify(body));
+process.stdout.write('HTTP/2.0 ' + status + ' Test\\r\\nx-github-api-version-selected: 2026-03-10\\r\\n' + headers + '\\r\\n' + (raw ?? JSON.stringify(body)));
 process.exit(status >= 200 && status < 300 ? 0 : 1);
 `, { mode: 0o700 });
   const preload = join(root, 'native-fixture.mjs');

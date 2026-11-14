@@ -16,10 +16,18 @@ const permissions = {
   'repository-read': { metadata: 'read', pull_requests: 'read' },
   // Issue timeline (GitHub-native PR association) is an issues endpoint: issues:read, no pull request or write access.
   'association-read': { metadata: 'read', issues: 'read' },
+  // Native blocked_by traversal (spec §4.2): issue + dependency reads only, in executable AND dependency-only repositories.
+  'dependency-read': { metadata: 'read', issues: 'read' },
+  // Preflight of a repository accessible only for dependency reads: never the tracker ceiling (issues:write).
+  dependency: { metadata: 'read', issues: 'read' },
 } as const;
 type Purpose = keyof typeof permissions;
-type DiagnosticPurpose = 'tracker' | 'repository';
-export type ReadPurpose = 'tracker-read' | 'repository-read' | 'association-read';
+type DiagnosticPurpose = 'tracker' | 'repository' | 'dependency';
+export type ReadPurpose = 'tracker-read' | 'repository-read' | 'association-read' | 'dependency-read';
+/** Token-free metadata of each reduced read grant (principal/scope evidence; never the token). */
+export const readPermissions: Readonly<Record<ReadPurpose, Readonly<Record<string, 'read'>>>> = {
+  'tracker-read': permissions['tracker-read'], 'repository-read': permissions['repository-read'],
+  'association-read': permissions['association-read'], 'dependency-read': permissions['dependency-read'] };
 const repositorySchema = z.object({ id: z.number().int().positive().safe(), full_name: z.string(), owner: z.object({ login: z.string() }) });
 const permissionSchema = z.record(z.string(), z.enum(['read', 'write']));
 class AccessFailure extends Error {
