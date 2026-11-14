@@ -37,7 +37,9 @@ const summary = (): ProposalHandoff => ({ version: 1, round: 1, index: '/artifac
   spec: { version: 'v1', sources: '/artifacts/spec/v1/sources.json', sha256: '1'.repeat(64) }, instructions: { version: 'v1', sources: '/artifacts/instructions/v1/sources.json', sha256: '2'.repeat(64) },
   changed: ['/workspace/checkout/a.ts'], changedTruncated: false });
 
-export function budgetDoubles(scripts: Script[], options: { cessation?: boolean; reviews?: boolean; clock?: PollingClock; onPrepare?: () => Promise<void> } = {}) {
+export function budgetDoubles(scripts: Script[], options: { cessation?: boolean; reviews?: boolean; clock?: PollingClock; onPrepare?: () => Promise<void>;
+  /** A preparation that fails before any environment/boot exists: a PROVEN non-start, never an uncertain activation. */
+  prepareFailure?: () => boolean } = {}) {
   const calls: { kind: string; detail?: unknown }[] = [];
   const signals: { role: string; signal: AbortSignal }[] = [];
   const finishers: (() => void)[] = [];
@@ -61,6 +63,7 @@ export function budgetDoubles(scripts: Script[], options: { cessation?: boolean;
       async prepare(input) {
         calls.push({ kind: 'prepare', detail: input });
         await options.onPrepare?.();
+        if (options.prepareFailure?.()) return { status: 'failure' as const, code: 'SYNTHETIC_PREPARE_FAILED' };
         return { status: 'success', environment: `env-${'c'.repeat(64)}` as never, seeds: [{ name: 'factory/skill-pack/factory-skills-v2', manifestSha256: 'f'.repeat(64), reused: false }],
           checkout: { path: '/workspace/checkout', repository: input.checkout.repository, repositoryId: input.checkout.repositoryId, base: 'main', branch: input.checkout.branch,
             baseCommit: 'a'.repeat(40), origin: 'https://github.com/acme/project.git', reused: false, preparedAt: new Date().toISOString() } };

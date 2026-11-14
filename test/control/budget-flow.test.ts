@@ -15,7 +15,7 @@ import { budgetDoubles, type Script } from './budget-doubles.js';
 const qid = (n: number) => `0b9c6a52-3d3e-4c8f-9a51-${String(n).padStart(12, '0')}`;
 type Limits = { correctionLimit?: number; recoveryLimit?: number };
 
-async function harness(t: { after(fn: () => Promise<void>): void }, scripts: Script[], options: { cessation?: boolean; onPrepare?: () => Promise<void> } = {}) {
+async function harness(t: { after(fn: () => Promise<void>): void }, scripts: Script[], options: { cessation?: boolean; onPrepare?: () => Promise<void>; prepareFailure?: () => boolean } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'factory-budget-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
@@ -47,7 +47,8 @@ async function harness(t: { after(fn: () => Promise<void>): void }, scripts: Scr
   };
   const cycles = async (n: number) => { for (let i = 0; i < n; i++) { current!.time.advance(); await current!.time.sleeping(); } };
   const idle = async () => settle(async () => { const w = await work(); return w?.execution !== null && w.execution!.slot.held === false; }, 'execution ended and Slot released');
-  return { github, execution, start, stop, work, show, settle, cycles, idle, storagePath, control: () => current!.control };
+  return { github, execution, start, stop, work, show, settle, cycles, idle, storagePath, control: () => current!.control,
+    abort: () => current!.stop.abort(), finished: () => current!.running };
 }
 const grant = (control: Control, request_id: string, work_id: string, counter: 'corrections' | 'recoveries', amount: number) =>
   control.accept({ request_id, operation: 'grant', work_id, counter, amount, origin: 'local-cli' }) as Promise<ControlReceipt | { kind: 'refused'; code: string }>;
@@ -198,4 +199,88 @@ test('AC3: an explicit grant through the authorized ingress adds capacity with h
     [{ limit: 0, granted: 1, consumed: 1, reserved: null }, 2, 'recovery', null], 'a recovery consumes a recovery, never a correction');
   const shown = await h.show(work_id);
   assert.deepEqual([shown.work.limits.grants, shown.work.limits.recoveries!.exhausted], [2, true]);
+});
+
+test('AC2: a PREPARE failure is a proven non-start: the reservation is released without consumption and the Work stays held with its Slot', async t => {
+  let failPrepare = false;
+  const h = await harness(t, [{ kind: 'complete' }, { kind: 'complete' }], { prepareFailure: () => failPrepare });
+  await h.start({ correctionLimit: 1 });
+  await h.idle();
+  const work_id = (await h.work()).work_id;
+  failPrepare = true;
+  assert.equal(await requestCorrection(h.control(), work_id, 'preparation of the correction fails'), 'opened');
+  await h.settle(async () => (await h.work()).execution?.state === 'held', 'prepare failure held');
+  let work = await h.work();
+  assert.equal(h.execution.activations().length, 1, 'no worker request was ever issued');
+  assert.deepEqual([work.execution!.state, work.execution!.held!.code], ['held', 'PREPARE_SYNTHETIC_PREPARE_FAILED']);
+  // No worker was launched: the reservation is released (availability restored) but the correction is NOT consumed and stays pending.
+  assert.deepEqual([work.execution!.charge!.state, work.budget!.corrections.reserved, work.budget!.corrections.consumed], ['released', null, 0]);
+  assert.equal(work.correction!.consumed, false);
+  assert.equal(work.limits.corrections!.available, 1);
+  assert.deepEqual(budgetEvents(work), [['budget-reserved', 'corrections'], ['budget-released', 'corrections']]);
+  // The hold still owns the Work (no automatic retry) and keeps the Slot until operator recovery (ticket 26).
+  assert.deepEqual([work.execution!.slot.held, work.queue.pending], [true, false]);
+  await h.cycles(3);
+  work = await h.work();
+  assert.equal(h.execution.activations().length, 1, 'held without a loop');
+  assert.equal(work.execution!.state, 'held');
+  assert.deepEqual([work.budget!.corrections.reserved, work.budget!.corrections.consumed], [null, 0]);
+});
+
+test('AC3: touching an already-open correction records the added reason, never a second identity or charge', async t => {
+  const h = await harness(t, [{ kind: 'complete' }, { kind: 'complete' }]);
+  await h.start({ correctionLimit: 2 });
+  await h.idle();
+  const work_id = (await h.work()).work_id;
+  assert.equal(await requestCorrection(h.control(), work_id, 'first reason'), 'opened');
+  const firstId = (await h.work()).correction!.correctionId;
+  assert.equal(await requestCorrection(h.control(), work_id, 'second reason'), 'already-open');
+  let work = await h.work();
+  assert.equal(work.correction!.correctionId, firstId, 'the same correction identity absorbs the new reason');
+  assert.deepEqual(work.history.filter(item => item.event.startsWith('correction-')).map(item => [item.event, 'detail' in item ? item.detail : null]),
+    [['correction-opened', firstId], ['correction-reason-added', 'second reason']]);
+  // Each request carries its own reason into the audit history; it never opens a second identity or charge.
+  assert.equal(await requestCorrection(h.control(), work_id, 'third reason'), 'already-open');
+  work = await h.work();
+  assert.deepEqual(work.history.filter(item => item.event === 'correction-reason-added').map(item => 'detail' in item ? item.detail : null),
+    ['second reason', 'third reason']);
+  assert.equal(work.correction!.reason, 'first reason');
+  await h.settle(async () => h.execution.activations().length === 2, 'correction activation');
+  await h.idle();
+  work = await h.work();
+  assert.deepEqual([work.budget!.corrections.consumed, work.correction!.consumed, work.history.filter(item => item.event === 'correction-opened').length], [1, true, 1],
+    'one identity, one charge');
+});
+
+test('AC2: an owner stop before activation with an unconfirmed boot cessation releases the reservation but keeps the Slot', async t => {
+  let abortOnPrepare = false, aborted = false;
+  let h!: Awaited<ReturnType<typeof harness>>;
+  h = await harness(t, [{ kind: 'complete' }, { kind: 'complete' }], { onPrepare: async () => {
+    if (abortOnPrepare && !aborted) { aborted = true; h.abort(); }
+  } });
+  await h.start({ correctionLimit: 1 });
+  await h.idle();
+  const work_id = (await h.work()).work_id;
+  abortOnPrepare = true;
+  assert.equal(await requestCorrection(h.control(), work_id, 'owner stop before activation'), 'opened');
+  // Wake the poller; the correction is dispatched and the owner stop lands during its preparation.
+  await h.settle(async () => aborted, 'owner stop during preparation');
+  // The owner stop reaches the dispatcher after preparation but before any activation request (durable phase "prepared", no boot ref).
+  assert.deepEqual(await h.finished(), { kind: 'clean' });
+  // Reopen the same storage: the durable state is what a restart sees.
+  const time = manualClock();
+  const reopened = await openControl({ storagePath: h.storagePath, runtimeInventory: 'empty', execution: budgetDoubles([]).ports,
+    access: { tracker: h.github.tracker, repository: h.github.repository, repositories: [{ ...scope, correctionLimit: 1 }], operators: ['operator-one'] },
+    polling: { intervalSeconds: 60, clock: time.clock } });
+  const stop = new AbortController();
+  const running = reopened.run(stop.signal);
+  await time.sleeping();
+  const work = ((await reopened.inspect({ kind: 'list' })) as ListView).works[0]!;
+  // No worker was launched (proven non-start): reservation released. The own boot cessation is NOT confirmed: the Slot is kept.
+  assert.deepEqual([work.execution!.state, work.execution!.held!.code], ['held', 'OWNER_STOPPED_BEFORE_ACTIVATION_CESSATION_UNCONFIRMED']);
+  assert.deepEqual([work.execution!.charge!.state, work.budget!.corrections.reserved, work.budget!.corrections.consumed], ['released', null, 0]);
+  assert.deepEqual([work.execution!.slot.held, work.queue.pending], [true, false], 'a Slot is never released without proven cessation');
+  assert.equal(work.execution!.held!.phase, 'prepared', 'the owner stop arrived after preparation, before the start result');
+  stop.abort();
+  assert.deepEqual(await running, { kind: 'clean' });
 });

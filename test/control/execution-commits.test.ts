@@ -3,9 +3,10 @@ import { test } from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { openStore } from '../../src/control/durable/store.js';
-import { admitTicket, initialize, readWork, recordDependencies } from '../../src/control/durable/admission.js';
-import { admitExecution, advance, confirmActivation, confirmStart, heldSlots, initializeSlots, recordPhase } from '../../src/control/durable/execution.js';
+import { admitTicket, initialize, readWork, recordDependencies, works } from '../../src/control/durable/admission.js';
+import { admitExecution, advance, confirmActivation, confirmStart, heldSlots, initializeSlots, reconcileDurations, recordPhase, recordTimeout } from '../../src/control/durable/execution.js';
 import type { DependencyEvaluation } from '../../src/control/types.js';
 import { ticket } from './doubles.js';
 
@@ -105,4 +106,41 @@ test('review 1: Admitir Execução refuses a recovery basis whose Question belon
   assert.deepEqual(await admitExecution(session, { work_id: a, attemptId: 'd3', capacity: 2, authorizationObservedAt: 'now', request,
     resume: { previousExecutionId: ea.executionId, questionId: qid, answerSha256: createHash('sha256').update('yes').digest('hex'), reason: 'NEW_BOOT_REPLACEMENT_SESSION' } }),
   { kind: 'refused', reasons: ['RESUME_BASIS_CHANGED'] });
+});
+
+test('AC5/AC6: a durable timeout is the last activity of its origin, and crash reconciliation never lowers the proven bound', async t => {
+  const { session, admit } = await store(t);
+  const work_id = await admit(1);
+  await recordDependencies(session, work_id, evaluation('d1'));
+  const reserved = await admitExecution(session, { work_id, attemptId: 'd1', capacity: 1, authorizationObservedAt: 'now', request, limits: { timeoutSeconds: 120 } });
+  assert.ok(reserved.kind === 'reserved');
+  const execution = reserved.execution;
+  await recordPhase(session, work_id, execution.executionId, 'reserved', 'prepared', 'execution-prepared', () => {});
+  await recordPhase(session, work_id, execution.executionId, 'prepared', 'booted', 'execution-booted', () => {});
+  await recordDependencies(session, work_id, evaluation('a1'));
+  assert.equal((await confirmActivation(session, work_id, execution.executionId, 'a1', grant, 'sha')).kind, 'advanced');
+  assert.equal(await confirmStart(session, work_id, execution.executionId, { workId: work_id, id: '99999999-2222-4333-8444-555555555555',
+    executionId: execution.executionId, invocationId: execution.invocationId }, 'origin-1'), 'confirmed');
+  assert.equal(await recordTimeout(session, work_id, execution.executionId, 120000), 'recorded');
+  let work = await readWork(session, work_id);
+  // The measured timeout is durable evidence of THIS origin and is also its last activity (never a null/zero bound after a crash).
+  assert.deepEqual([work!.execution!.timing!.lastActivity!.event, work!.execution!.timing!.lastActivity!.elapsedMs], ['timeout-reached', 120000]);
+  assert.deepEqual([work!.execution!.timing!.timeout!.evidence, work!.execution!.timing!.timeout!.elapsedMs], ['measured', 120000]);
+  assert.equal(work!.history.filter(item => item.event === 'timeout-reached').length, 1);
+  // Simulate an older/lower durable last activity of the same origin: reconciliation takes the max, never the timeout as a ceiling.
+  await session.commit(async tx => {
+    const document = await tx.doc(works, work_id, null);
+    document.work!.execution!.timing!.lastActivity = { at: new Date().toISOString(), elapsedMs: 5000, event: 'started' };
+  }, BACKGROUND_CONTEXT);
+  // This process never observed the Execution (a real crash): its end is lost and only the durable evidence remains.
+  assert.equal(await reconcileDurations(session, () => false), 1);
+  work = await readWork(session, work_id);
+  const duration = work!.execution!.timing!.duration as { kind: 'lower-bound'; provenMs: number };
+  assert.equal(duration.kind, 'lower-bound');
+  assert.ok(duration.provenMs >= 120000, `the proven bound is never lowered (got ${String(duration.provenMs)})`);
+  assert.deepEqual([work!.execution!.timing!.timeout!.evidence, work!.execution!.timing!.overrun], ['measured', 'proven'], 'measured evidence is not rewritten');
+  assert.ok(work!.impediments.some(item => item.code === 'EXECUTION_TIMEOUT'));
+  assert.equal(work!.history.filter(item => item.event === 'duration-reconciled').length, 1);
+  // Reconciliation is single-shot: a second boot never rewrites the evidence of the lost origin.
+  assert.equal(await reconcileDurations(session, () => false), 0);
 });
