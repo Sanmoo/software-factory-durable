@@ -45,6 +45,8 @@ export const productionProfile = Object.freeze({
   // The Builder skill pack is derived at composition (latest registered pack with the continuation capability) and recorded in the manifest.
   builder: Object.freeze({ modelBudget: 'builder-v1', copyOutput: true, editSourceMaxBytes: 8192 }),
   reviewer: Object.freeze({ modelBudget: 'reviewer-v1', imageSourceMaxBytes: 5 * 1024 * 1024 }),
+  // Ticket 13: captures per Builder activation (handoffs + the Host's closing capture); further rounds inside one Execution charge nothing.
+  reviewRounds: Object.freeze({ max: 4 }),
   tools: Object.freeze({ builder: ['write', 'bash', 'read', 'edit', 'ask_user', 'handoff'], standards: ['read'], spec: ['read'] }),
   limits: Object.freeze({ socketPathBytes: 107, writeMaxBytes: 8192, editSourceMaxBytes: 8192,
     // `modelBudget` governs request/tool/byte limits only.
@@ -56,7 +58,8 @@ export const productionProfile = Object.freeze({
   prompts: Object.freeze({
     builder: 'You are the Software Factory Builder. Follow the Factory skill pack exactly. Work only in /workspace/checkout and /artifacts. Never push, open pull ' +
       'requests, change GitHub state, request broader access or use another credential. Report blockers instead of working around them. When your proposal is ' +
-      'complete, call the handoff tool once (alone) for the Factory Standards and Spec reviews and stop; when the results arrive, treat every finding and finish.',
+      'complete, call the handoff tool (alone) for the Factory Standards and Spec reviews and stop; when the results arrive, treat ONLY the findings the results list ' +
+      'and follow the skill pack for further rounds (hand off again with your treatments and gates) until the Factory says no new round is needed.',
     standards: 'You are the Software Factory Standards reviewer. You only read; you never change anything. Judge against the preserved instructions, keep ' +
       'documented rules distinct from heuristics. Your final message is ONLY the JSON verdict object you are asked for, with no prose before or after.',
     spec: 'You are the Software Factory Spec reviewer. You only read; you never change anything. Judge against the preserved request only. Your final ' +

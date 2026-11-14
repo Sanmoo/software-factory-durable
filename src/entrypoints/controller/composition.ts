@@ -26,7 +26,7 @@ export function productionSkillPack(): Promise<SkillPackId> {
 /**
  * Production composition of the execution ports (ticket 32; deferred to the release by tickets 09/10/12/20): the same public Sandbox,
  * Workers and Builder credential implementations the qualification recipes composed, with the release's single worker profile, the
- * latest registered skill pack with the continuation capability, session observation (ticket 11), parallel reviews, configured capacity/sandbox and the release's guest assets.
+ * latest registered skill pack with the continuation capability, session observation (ticket 11), parallel multi-round reviews (ticket 13), configured capacity/sandbox and the release's guest assets.
  * No broker, scheduler or registry: plain objects handed to `openControl`. A role whose configured provider/model is not exactly the
  * release profile refuses the whole composition (spec §6.1: explicit per role, no default or fallback, no partial application).
  */
@@ -49,10 +49,13 @@ export async function composeProductionExecution(input: ProductionInput): Promis
   const workers = createWorkers({ root: input.root, knownSecrets: [], profile: profiles.builder, profiles });
   const ports: ExecutionPorts = {
     sandbox: { prepare: input => sandbox.prepare(input), start: input => sandbox.start(input), stop: input => sandbox.stop(input),
-      observeProposal: input => sandbox.observeProposal(input) },
+      observeProposal: input => sandbox.observeProposal(input),
+      // Ticket 13: confined Host confirmation of preserved-source authorizations (absent = none would ever correlate).
+      verifyPreservedSource: input => sandbox.verifyPreservedSource(input) },
     workers: { activate: (invocation, delivery, events) => workers.activate(invocation, delivery, events), deliver: (worker, directive) => workers.deliver(worker, directive),
       observe: input => workers.observe(input) },
-    reviews: { reviewer: { ...productionProfile.reviewer } },
+    // Ticket 13: multi-round reviews (treatments, Host-evidenced gates, end-of-Execution verification) with the release's bound.
+    reviews: { reviewer: { ...productionProfile.reviewer }, rounds: { ...productionProfile.reviewRounds } },
     credentials: createBuilderCredentials({ github: input.github, repositories: input.effective.repositories }),
     configuration: input.effective.sandbox,
     capacity: input.effective.concurrency,

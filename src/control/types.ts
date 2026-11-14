@@ -66,8 +66,8 @@ export type ExecutionPorts = {
   /** Ticket 12: when composed, the Builder hands off for parallel Standards/Spec reviews inside the SAME Execution/Slot/boot.
    * Ticket 13 `rounds.max`: repeated captures per Builder activation (handoffs with treatments/gates plus the Host's closing capture),
    * exemptions (unchanged content, identical commit) and the end-of-Execution verification. Absent = the single ticket 12 round.
-   * PRODUCTION COMPOSITION: whenever the release profile enables reviews, it must also pass `rounds` (e.g. `{ max: 4 }`) so findings and
-   * gates can be treated without a new Execution; the release-profile composition is ticket 32's, not this module's. */
+   * PRODUCTION COMPOSITION (`composeProductionExecution`) passes `rounds: productionProfile.reviewRounds` (`{ max: 4 }`) so findings and
+   * gates are treated without a new Execution. */
   reviews?: { reviewer: Pick<Invocation, 'modelBudget' | 'imageSourceMaxBytes'>; rounds?: { max: number } };
   credentials: BuilderCredentials;
   /** Local monotonic clock of live Execution duration/timeout (default `performance.now()`); separate from the polling clock. Tests substitute it. */
