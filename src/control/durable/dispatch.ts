@@ -468,13 +468,18 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     };
     // Clean administrative stop after confirmed cessation (one end commit with the measured duration, then the Slot release commit). Before a
     // confirmed start, the receipt facet decides whether it started (consumed once) or not (reservation released): never by guess.
-    const administrativeStop = async (current: WorkRecord, id: string, env: EnvironmentRef, ownBoot: BootRef): Promise<boolean> => {
+    // A FORCED termination (grace period expired) is not a clean stop: it keeps the failure treatment (one operational recovery).
+    const administrativeStop = async (current: WorkRecord, id: string, env: EnvironmentRef, ownBoot: BootRef, forced: boolean): Promise<boolean> => {
       const shown = await readWork(session, current.work_id);
       if (shown?.execution?.executionId !== id) return false;
       if (shown.execution.state === 'started') {
-        if ((await recordEnd(session, current.work_id, id, 'stopped', 'ADMINISTRATIVE_STOP', null, elapsed())).kind !== 'advanced') return false;
+        const ended = forced ? await recordEnd(session, current.work_id, id, 'failure', 'ADMINISTRATIVE_STOP_FORCED', null, elapsed())
+          : await recordEnd(session, current.work_id, id, 'stopped', 'ADMINISTRATIVE_STOP', null, elapsed());
+        if (ended.kind !== 'advanced') return false;
+        if (forced) { await releaseAfterCessation(session, current.work_id, id, 'confirmed'); return false; }
         return await releaseAfterCessation(session, current.work_id, id, 'confirmed') === 'released';
       }
+      if (forced) return false; // held below; the next boot reconciles it with the failure treatment
       const { decision } = await reconcileExecution({ session, ports, controllerRunId: deps.controllerRunId ?? 'unknown', inventory: 'empty' }, shown, 'administrative-stop',
         { result: 'confirmed', basis: 'sandbox-stop', environment: env, boot: ownBoot });
       return decision !== 'stale' && decision !== 'kept' && decision !== 'blocked';
@@ -688,8 +693,13 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           // Ticket 26 (spec §11.4): administrative stop of a requested/started activity. Clean only after the host confirmed cessation and the
           // end was persisted; it then continues in a new Execution without a recovery charge. Otherwise it stays an interruption.
           const stop = await stopOwnBoot('administrative stop');
-          const settled = stop?.cessationConfirmed ? await administrativeStop(work, executionId, environment!, boot!).catch(() => false) : false;
-          if (!settled) {
+          const forced = stop?.status === 'success' && stop.termination === 'forced';
+          const settled = stop?.cessationConfirmed ? await administrativeStop(work, executionId, environment!, boot!, forced).catch(() => false) : false;
+          if (forced) {
+            uncertainStops++;
+            if ((await readWork(session, work.work_id))?.execution?.state !== 'ended') await hold('ADMINISTRATIVE_STOP_FORCED',
+              'The own boot had to be terminated forcibly (grace period expired): not a clean stop; the next controller boot reconciles it as an interruption.').catch(() => {});
+          } else if (!settled) {
             uncertainStops++;
             await hold('ADMINISTRATIVE_STOP_CESSATION_UNCONFIRMED', 'The owner stopped; the cessation of this activity (or its durable end) is not confirmed. ' +
               'The next controller boot reconciles it as an interruption (failure treatment, not a clean stop).').catch(() => {});

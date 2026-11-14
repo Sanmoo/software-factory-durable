@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { openControl } from '../../src/control/index.js';
-import type { Control, ControlStatus, ListView, WorkView } from '../../src/control/types.js';
+import type { Control, ControlStatus, ListView, RuntimeInventory, WorkView } from '../../src/control/types.js';
+import { createHash } from 'node:crypto';
 import { confirmStart } from '../../src/control/durable/execution.js';
 import { openStore } from '../../src/control/durable/store.js';
 import { githubDoubles, manualClock, remoteIssue, scope } from './doubles.js';
@@ -25,11 +26,11 @@ async function crash(dir: string, mode: string) {
   });
 }
 
-async function reopen(t: { after(fn: () => Promise<void>): void }, dir: string, scripts: RecoveryScript[], options: { capacity?: number; issues?: number[] } = {}) {
+async function reopen(t: { after(fn: () => Promise<void>): void }, dir: string, scripts: RecoveryScript[], options: { capacity?: number; issues?: number[]; inventory?: RuntimeInventory } = {}) {
   const doubles = recoveryDoubles(dir, scripts, { capacity: options.capacity ?? 1 });
   const github = githubDoubles({ pulls: {}, issues: (options.issues ?? [3]).map(number => remoteIssue(number)) });
   const time = manualClock();
-  const control: Control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty', execution: doubles.ports,
+  const control: Control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: options.inventory ?? 'empty', execution: doubles.ports,
     access: { tracker: github.tracker, repository: github.repository, repositories: [scope], operators: ['operator-one'] }, polling: { intervalSeconds: 60, clock: time.clock } });
   const before = await control.inspect({ kind: 'status' }) as ControlStatus;
   const stop = new AbortController();
@@ -155,7 +156,7 @@ test('AC3 reservation cut: interrupted before any start request — nothing to c
   const h = await reopen(t, dir, [{ kind: 'complete' }]);
   await h.until(async () => h.doubles.calls('activate').length === 1 && (await h.work()).execution?.slot.held === false, 'requeued attempt ended');
   const first = (await h.work()).previousExecutions[0]!;
-  assert.deepEqual([first.state, first.recovery![0]!.cessation.basis, first.recovery![0]!.start.detail], ['released', 'no-boot-before-preparation-recorded', 'no-activation-request']);
+  assert.deepEqual([first.state, first.recovery![0]!.cessation.basis, first.recovery![0]!.start.detail], ['released', 'preparation:no-environment', 'no-activation-request']);
   const log = readHost(dir).log;
   assert.equal(log.findIndex(item => item.kind === 'stop'), log.findLastIndex(item => item.kind === 'stop'), 'only the requeued attempt\'s own end stops a boot');
   assert.ok(log.findIndex(item => item.kind === 'stop') > log.findIndex(item => item.kind === 'activate'), 'no boot existed at reconciliation: nothing was stopped then');
@@ -193,4 +194,40 @@ test('AC4/AC3 question cut: a Question recorded before the crash binds the end (
   assert.deepEqual([work.execution!.end!.outcome, work.execution!.end!.questionId, work.pendingRecovery, work.execution!.recovery![0]!.decision],
     ['question', '0b9c6a52-3d3e-4c8f-9a51-000000000026', null, 'settled']);
   assert.ok(work.impediments.some(item => item.code === 'QUESTION_PENDING'));
+});
+
+const listed = (environments: { environment: string; workId: string }[], cache: RuntimeInventory['cache'] = []): RuntimeInventory =>
+  ({ kind: 'listed', observedAt: new Date().toISOString(), environments, cache, unknown: [] });
+async function crashedWorkId(dir: string) {
+  const { readWorks } = await import('../../src/control/durable/admission.js');
+  const store = await openStore(join(dir, 'control.sqlite'));
+  try { return (await readWorks(store.session))[0]!.work_id; } finally { await store.close(); }
+}
+
+test('review MED1/MED3: a preparation in flight is never ASSUMED ceased — an incomplete own environment or a cache left in preparation keeps the Work blocked; a later boot with host evidence lifts the block', async t => {
+  const dir = await scratch(t);
+  await crash(dir, 'reservation');
+  const workId = await crashedWorkId(dir);
+  const environment = `env-${createHash('sha256').update(workId).digest('hex')}`;
+  // The environment exists but its preparation never completed (the doubled host observes it as indeterminate).
+  let h = await reopen(t, dir, [], { inventory: listed([{ environment, workId }]) });
+  let work = await h.work();
+  assert.deepEqual([work.execution!.state, work.execution!.slot.held, work.execution!.recovery![0]!.cessation.basis, work.execution!.charge!.state],
+    ['held', true, 'preparation:observed-indeterminate', 'none']);
+  assert.ok(work.impediments.some(item => item.code === 'RECOVERY_CESSATION_UNCONFIRMED'));
+  assert.equal(h.doubles.calls('prepare').length, 1, 'nothing new is prepared for it');
+  await h.halt();
+  // A cache of its repository left in preparation (a git of the dead owner may still run) keeps it blocked too.
+  h = await reopen(t, dir, [], { inventory: listed([], [{ repositoryId: 3, state: 'preparing' }]) });
+  work = await h.work();
+  assert.equal(work.execution!.recovery!.at(-1)!.cessation.basis, 'preparation:git-cache-not-reconciled');
+  await h.halt();
+  // Host evidence now proves the environment finished preparing (never booted): cessation confirmed, the block is lifted, the Work requeued.
+  updateHost(dir, state => { if (!state.prepared.includes(environment)) state.prepared.push(environment); });
+  h = await reopen(t, dir, [{ kind: 'complete' }], { inventory: listed([{ environment, workId }]) });
+  await h.until(async () => h.doubles.calls('activate').length === 1 && (await h.work()).execution?.slot.held === false, 'requeued attempt ended');
+  work = await h.work();
+  const first = work.previousExecutions[0]!;
+  assert.deepEqual([first.state, first.recovery!.at(-1)!.cessation.basis, first.recovery!.at(-1)!.decision], ['released', 'preparation:never-booted', 'requeued']);
+  assert.equal(work.impediments.some(item => item.code === 'RECOVERY_CESSATION_UNCONFIRMED'), false, 'lifted by this boot\'s recorded evidence');
 });

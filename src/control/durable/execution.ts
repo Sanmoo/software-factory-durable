@@ -390,6 +390,13 @@ export async function confirmStart(session: Session, work_id: string, executionI
 }
 
 /** A scope update delivered by this Execution but not yet consumed (delivery alone never proves the Builder consumed it). */
+/** A delivery is not consumption: unless this Execution completed, its scope updates are offered again (same concrete text). */
+export function reofferUnlessCompleted(work: WorkRecord, executionId: string, outcome: string, at: string) {
+  if (outcome !== 'completed') for (const update of deliveredBy(work, executionId)) {
+    Object.assign(update, { state: 'pending', executionId: null, reoffers: (update.reoffers ?? 0) + 1 });
+    work.history.push({ at, event: 'scope-update-reoffered', origin: 'controller-dispatch', scopeUpdateId: update.scopeUpdateId, detail: outcome });
+  }
+}
 const deliveredBy = (work: WorkRecord, executionId: string) => (work.scopeUpdates ?? []).filter(update => update.state === 'delivered' && update.executionId === executionId);
 export const recordEnd = (session: Session, work_id: string, executionId: string, outcome: 'completed' | 'failure' | 'question' | 'timeout' | 'stopped', code: string | null,
   questionId: string | null = null, elapsedMs: number | null = null,
@@ -399,11 +406,7 @@ export const recordEnd = (session: Session, work_id: string, executionId: string
     execution.state = 'ended';
     execution.dispatch.phase = 'completed';
     execution.end = { at: new Date().toISOString(), outcome, code, cessation: 'not-attempted', ...(outcome === 'question' ? { questionId } : {}), session: preserved };
-    // A delivery is not consumption: unless this Execution completed, its scope updates are offered again (same concrete text).
-    if (outcome !== 'completed') for (const update of deliveredBy(work, executionId)) {
-      Object.assign(update, { state: 'pending', executionId: null, reoffers: (update.reoffers ?? 0) + 1 });
-      work.history.push({ at: execution.end.at, event: 'scope-update-reoffered', origin: 'controller-dispatch', scopeUpdateId: update.scopeUpdateId, detail: outcome });
-    }
+    reofferUnlessCompleted(work, executionId, outcome, execution.end.at);
     history(work, 'execution-ended', executionId, code ?? outcome);
     // The activity (and its clock) ends here, also for an external wait; a reached timeout is never bypassed by ending.
     if (execution.timing && elapsedMs !== null) {
@@ -494,28 +497,41 @@ export async function releaseAfterCessation(session: Session, work_id: string, e
     execution.end.cessation = cessation;
     execution.dispatch.phase = 'stopped';
     if (cessation !== 'confirmed') return 'kept' as const;
-    const occupancy = await tx.doc(slots);
-    delete occupancy.held[executionId];
-    execution.slot = { ...execution.slot, held: false, releasedAt: new Date().toISOString() };
-    // A Question wait occupies no Slot: the Work returns to its SAME category/position; its impediment (until answered) still blocks.
-    // A timeout keeps the same position too, blocked by its EXECUTION_TIMEOUT impediment until an explicit decision.
-    if (execution.end.outcome === 'question' || execution.end.outcome === 'timeout') document.work.queue = { ...document.work.queue, pending: true };
-    // A COMPLETED Execution with confirmed cessation consumed the scope updates it delivered; anything still pending (accepted during the
-    // activity) waited for it to cease and is the next safe activation's.
-    if (execution.end.outcome === 'completed') for (const update of deliveredBy(document.work, executionId)) {
-      Object.assign(update, { state: 'consumed', consumedAt: execution.slot.releasedAt, consumption: 'execution-completed' });
-      document.work.history.push({ at: execution.slot.releasedAt!, event: 'scope-update-consumed', origin: 'controller-dispatch', scopeUpdateId: update.scopeUpdateId, detail: executionId });
-    }
-    if (execution.end.outcome === 'completed' && pendingScope(document.work).length) document.work.queue = { ...document.work.queue, pending: true };
-    // Ticket 26: a clean administrative stop continues in a new Execution without a recovery charge; a transient operational failure comes
-    // back through the queue as ONE operational recovery after its persisted wait (same commit as the cessation, never lost by a crash).
-    if (execution.end.outcome === 'stopped') document.work.queue = { ...document.work.queue, pending: true };
-    if (execution.end.outcome === 'failure' && classifyInterruption(execution.end.code).kind === 'recoverable') {
-      applyRecoveryRequest(document.work, { executionId, code: execution.end.code ?? 'CONTROLLER_CRASH', at: execution.slot.releasedAt! });
-    }
-    history(document.work, 'slot-released', executionId);
+    applyConfirmedCessation(document.work, execution, await tx.doc(slots));
     return 'released' as const;
   }, BACKGROUND_CONTEXT);
+}
+
+
+/**
+ * Inside a commit, after CONFIRMED cessation of an ended Execution (shared by the live release and the boot reconciliation, ticket 26): the
+ * Slot is released and the outcome decides the queue — question/timeout/stopped keep the same position; completed consumes the scope updates
+ * it delivered and requeues for pending ones (ticket 11); a transient failure becomes ONE operational recovery.
+ */
+export function applyConfirmedCessation(work: WorkRecord, execution: ExecutionView, occupancy: { held: Record<string, string> }) {
+  const executionId = execution.executionId;
+  const end = execution.end!;
+  end.cessation = 'confirmed';
+  execution.dispatch.phase = 'stopped';
+  delete occupancy.held[executionId];
+  execution.slot = { ...execution.slot, held: false, releasedAt: new Date().toISOString() };
+  // A Question wait occupies no Slot: the Work returns to its SAME category/position; its impediment (until answered) still blocks.
+  // A timeout keeps the same position too, blocked by its EXECUTION_TIMEOUT impediment until an explicit decision.
+  if (end.outcome === 'question' || end.outcome === 'timeout') work.queue = { ...work.queue, pending: true };
+  // A COMPLETED Execution with confirmed cessation consumed the scope updates it delivered; anything still pending (accepted during the
+  // activity) waited for it to cease and is the next safe activation's.
+  if (end.outcome === 'completed') for (const update of deliveredBy(work, executionId)) {
+    Object.assign(update, { state: 'consumed', consumedAt: execution.slot.releasedAt, consumption: 'execution-completed' });
+    work.history.push({ at: execution.slot.releasedAt!, event: 'scope-update-consumed', origin: 'controller-dispatch', scopeUpdateId: update.scopeUpdateId, detail: executionId });
+  }
+  if (end.outcome === 'completed' && pendingScope(work).length) work.queue = { ...work.queue, pending: true };
+  // Ticket 26: a clean administrative stop continues in a new Execution without a recovery charge; a transient operational failure comes
+  // back through the queue as ONE operational recovery after its persisted wait (same commit as the cessation, never lost by a crash).
+  if (end.outcome === 'stopped') work.queue = { ...work.queue, pending: true };
+  if (end.outcome === 'failure' && classifyInterruption(end.code).kind === 'recoverable') {
+    applyRecoveryRequest(work, { executionId, code: end.code ?? 'CONTROLLER_CRASH', at: execution.slot.releasedAt! });
+  }
+  history(work, 'slot-released', executionId);
 }
 
 /**

@@ -4,9 +4,8 @@ import type { ExecutionPorts, ExecutionView, RecoveryRecord, RecoveryView, Runti
 import { classifyOverrun, overrunNotExcludedImpediment, timeoutImpediment } from '../rules/budget.js';
 import { classifyInterruption, recoveryImpediment, startDecision } from '../rules/recovery.js';
 import { readWork, ticketIndex, works, type WorkRecord } from './admission.js';
-import { consumeReservation, releaseReservation, slots } from './execution.js';
+import { applyConfirmedCessation, consumeReservation, reofferUnlessCompleted, releaseReservation, slots } from './execution.js';
 import { questions } from './questions.js';
-import { applyRecoveryRequest } from './recovery-request.js';
 import type { Session } from './store.js';
 
 // Ticket 26 (spec §5.2-5.4/§11.4): boot reconciliation of interrupted Executions — own survivors are stopped, never adopted; the start is
@@ -26,31 +25,45 @@ export function unsettled(execution: ExecutionView | null | undefined): executio
 const listedEnvironment = (inventory: Inventory, workId: string) =>
   typeof inventory === 'object' ? inventory.environments.find(item => item.workId === workId)?.environment ?? null : null;
 
-/**
- * Host cessation of the Execution's own activity (spec §5.4): boot/VMM/worker/subprocesses live in the boot's supervised group, so the
- * Sandbox host stop/observe path is the proof — never a PID, an abort, a closed channel or an expired token. Works without the old owner.
- */
-export async function ceaseOwn(ports: ExecutionPorts['sandbox'], execution: ExecutionView, inventory: Inventory, workId: string, reason: string): Promise<Cessation> {
-  const phase = execution.dispatch.phase;
-  // Preparation is recorded BEFORE any start: an Execution still at `reserved` never booted anything (host subprocesses of an interrupted
-  // preparation are covered by the Sandbox's own non-adoption and, for the Git cache, by the cache inventory).
-  if (phase === 'reserved') return { result: 'confirmed', basis: 'no-boot-before-preparation-recorded', environment: listedEnvironment(inventory, workId), boot: null };
-  const environment = execution.dispatch.environment as EnvironmentRef | null;
-  if (!environment) return { result: 'unconfirmed', basis: 'environment-not-recorded', environment: null, boot: null };
-  let boot = execution.dispatch.boot as BootRef | null;
-  if (!boot) {
-    // Start may have been in flight: the environment's current boot (published before any manager actuation) tells what could run.
-    if (!ports.observe) return { result: 'unconfirmed', basis: 'observe-not-composed', environment, boot: null };
-    const observed = await ports.observe({ environment }).catch(() => null);
-    if (!observed) return { result: 'unconfirmed', basis: 'observe-failed', environment, boot: null };
-    if (observed.condition === 'not-booted') return { result: 'confirmed', basis: 'never-booted', environment, boot: null };
-    if (observed.cessationConfirmed) return { result: 'confirmed', basis: `current-boot-${observed.condition}`, environment, boot: observed.boot ?? null };
-    if (!observed.boot) return { result: 'unconfirmed', basis: `observed-${observed.condition}`, environment, boot: null };
-    boot = observed.boot;
-  }
+/** The environment's current boot (published before any manager actuation) observed by the host; an active one is stopped, never adopted. */
+async function observeCurrent(ports: ExecutionPorts['sandbox'], environment: EnvironmentRef, reason: string, prefix: string): Promise<Cessation> {
+  if (!ports.observe) return { result: 'unconfirmed', basis: 'observe-not-composed', environment, boot: null };
+  const observed = await ports.observe({ environment }).catch(() => null);
+  if (!observed) return { result: 'unconfirmed', basis: 'observe-failed', environment, boot: null };
+  if (observed.condition === 'not-booted') return { result: 'confirmed', basis: `${prefix}never-booted`, environment, boot: null };
+  if (observed.cessationConfirmed) return { result: 'confirmed', basis: `${prefix}current-boot-${observed.condition}`, environment, boot: observed.boot ?? null };
+  // Indeterminate: e.g. a preparation that never completed (its host subprocesses may have outlived the controller).
+  if (!observed.boot) return { result: 'unconfirmed', basis: `${prefix}observed-${observed.condition}`, environment, boot: null };
+  return stopBoot(ports, environment, observed.boot, reason);
+}
+async function stopBoot(ports: ExecutionPorts['sandbox'], environment: EnvironmentRef, boot: BootRef, reason: string): Promise<Cessation> {
   const stopped = await ports.stop({ environment, boot, reason }).catch(() => ({ status: 'indeterminate' as const, cessationConfirmed: false as const, code: 'STOP_UNAVAILABLE' }));
   return stopped.cessationConfirmed ? { result: 'confirmed', basis: 'sandbox-stop', environment, boot }
     : { result: 'unconfirmed', basis: `sandbox-stop:${'code' in stopped ? stopped.code : 'UNCONFIRMED'}`, environment, boot };
+}
+
+/**
+ * Host cessation of the Execution's own activity (spec §5.4): boot/VMM/worker/subprocesses live in the boot's supervised group, so the
+ * Sandbox host stop/observe path is the proof — never a PID, an abort, a closed channel or an expired token. Works without the old owner.
+ * A preparation in flight (`reserved`) is never ASSUMED ceased: its host subprocesses run outside any supervised group, so cessation needs
+ * the host evidence that none can still run — no own environment yet, or an environment observed complete (its disk work finished before
+ * `ready`), and the repository's Git cache not left in preparation (its git commands run under the cache's own lock).
+ */
+export async function ceaseOwn(ports: ExecutionPorts['sandbox'], execution: ExecutionView, inventory: Inventory, work: Pick<WorkRecord, 'work_id' | 'repository'>, reason: string): Promise<Cessation> {
+  const phase = execution.dispatch.phase;
+  if (phase === 'reserved') {
+    if (inventory === 'unknown') return { result: 'unconfirmed', basis: 'preparation:runtime-inventory-unknown', environment: null, boot: null };
+    const cache = typeof inventory === 'object' ? inventory.cache.find(item => item.repositoryId === work.repository.repositoryId) : undefined;
+    if (cache && cache.state !== 'idle') return { result: 'unconfirmed', basis: 'preparation:git-cache-not-reconciled', environment: null, boot: null };
+    const listed = listedEnvironment(inventory, work.work_id) as EnvironmentRef | null;
+    if (!listed) return { result: 'confirmed', basis: 'preparation:no-environment', environment: null, boot: null };
+    return observeCurrent(ports, listed, reason, 'preparation:');
+  }
+  const environment = execution.dispatch.environment as EnvironmentRef | null;
+  if (!environment) return { result: 'unconfirmed', basis: 'environment-not-recorded', environment: null, boot: null };
+  const boot = execution.dispatch.boot as BootRef | null;
+  // Start may have been in flight without its boot recorded: observe the environment's current boot.
+  return boot ? stopBoot(ports, environment, boot, reason) : observeCurrent(ports, environment, reason, '');
 }
 
 /** Whether the start decision needs the receipt facet of Workers.observe (activation was requested, no start confirmed). */
@@ -105,15 +118,20 @@ export async function settleInterruption(session: Session, input: { work_id: str
         detail: `${decision}${code ? `:${code}` : ''}; cessation ${input.cessation.result} (${input.cessation.basis}); start ${start.kind}` });
       return decision;
     };
+    const preActivation = ['reserved', 'prepared', 'booted'].includes(execution.dispatch.phase) && !execution.start;
     if (input.cessation.result !== 'confirmed') {
-      // Local uncertainty: this Work keeps its Slot and reservation and is blocked; independents with proven capacity may proceed.
+      // Local uncertainty: this Work keeps its Slot and is blocked; independents with proven capacity may proceed. Before the activation
+      // request no worker can have started, so only that case releases the reservation (proven non-start); otherwise it is kept.
       addImpediment(work, recoveryImpediment('RECOVERY_CESSATION_UNCONFIRMED', input.cessation.basis, now));
+      if (preActivation) releaseReservation(work, execution, now);
       if (execution.state !== 'ended' && execution.state !== 'held') {
         execution.state = 'held';
-        execution.held = { code: 'RECOVERY_CESSATION_UNCONFIRMED', phase: execution.dispatch.phase, at: now, nextStep: 'Cessation of the own boot is not confirmed; no substitute starts.' };
+        execution.held = { code: 'RECOVERY_CESSATION_UNCONFIRMED', phase: execution.dispatch.phase, at: now, nextStep: 'Cessation of the own activity is not confirmed; no substitute starts.' };
       }
-      return record({ kind: 'uncertain', detail: 'cessation-unconfirmed' }, 'kept', 'RECOVERY_CESSATION_UNCONFIRMED');
+      return record({ kind: preActivation ? 'not-started' : 'uncertain', detail: 'cessation-unconfirmed' }, 'kept', 'RECOVERY_CESSATION_UNCONFIRMED');
     }
+    // This boot's host evidence confirms the cessation: an earlier unconfirmed-cessation block is lifted (the evidence is in `recovery[]`).
+    work.impediments = work.impediments.filter(item => item.code !== 'RECOVERY_CESSATION_UNCONFIRMED');
     const observed = input.observation;
     // A discovered receipt must be THIS Execution's (identity of the invocation the Control reserved), never another one's.
     const matching = observed?.kind === 'receipt' && observed.receipt.workId === input.work_id && observed.receipt.executionId === execution.executionId &&
@@ -121,11 +139,11 @@ export async function settleInterruption(session: Session, input: { work_id: str
     const start = startDecision({ confirmed: execution.start, phase: execution.dispatch.phase, cessation: 'confirmed',
       observation: observed === null ? null : observed.kind === 'receipt' ? (matching ? { kind: 'receipt', receiptId: observed.receipt.id } : { kind: 'uncertain', code: 'START_RECEIPT_MISMATCH' })
         : observed.kind === 'absent' ? { kind: 'absent' } : { kind: 'uncertain', code: observed.code } });
-    // Cessation confirmed: the capacity is free whatever the start decision.
     const occupancy = await tx.doc(slots);
-    delete occupancy.held[execution.executionId];
-    execution.slot = { ...execution.slot, held: false, releasedAt: now };
     if (start.kind === 'not-started') {
+      // Cessation confirmed and nothing started: Slot and reservation free, the Work keeps its queue position.
+      delete occupancy.held[execution.executionId];
+      execution.slot = { ...execution.slot, held: false, releasedAt: now };
       releaseReservation(work, execution, now);
       const code = execution.held?.code ?? null;
       execution.state = 'released';
@@ -139,13 +157,19 @@ export async function settleInterruption(session: Session, input: { work_id: str
       }
       return record({ kind: 'not-started', detail: start.basis }, 'requeued', code);
     }
-    execution.dispatch.phase = 'stopped';
     if (start.kind === 'uncertain') {
-      // The reservation stays (never consumed or released by guess); the Work is blocked for an explicit decision.
-      if (execution.state === 'ended' && execution.end) execution.end.cessation = 'confirmed';
-      else { execution.state = 'ended'; execution.end = { at: now, outcome: 'failure', code: start.code, cessation: 'confirmed' }; }
-      addImpediment(work, recoveryImpediment('RECOVERY_START_UNCERTAIN', start.code, now));
+      // The reservation stays (never consumed or released by guess); the capacity is free (cessation confirmed); blocked for a decision.
+      if (execution.state !== 'ended' || !execution.end) {
+        execution.state = 'ended';
+        execution.end = { at: now, outcome: 'failure', code: start.code, cessation: 'confirmed' };
+        reofferUnlessCompleted(work, execution.executionId, 'failure', now);
+      }
+      execution.end.cessation = 'confirmed';
+      execution.dispatch.phase = 'stopped';
+      delete occupancy.held[execution.executionId];
+      execution.slot = { ...execution.slot, held: false, releasedAt: now };
       work.history.push({ at: now, event: 'slot-released', origin: 'controller-dispatch', executionId: execution.executionId });
+      addImpediment(work, recoveryImpediment('RECOVERY_START_UNCERTAIN', start.code, now));
       return record({ kind: 'uncertain', detail: start.code }, 'blocked', start.code);
     }
     if (start.source === 'receipt-discovered') {
@@ -155,52 +179,44 @@ export async function settleInterruption(session: Session, input: { work_id: str
       consumeReservation(work, execution, now);
       boundDiscoveredDuration(work, execution, observed?.kind === 'receipt' ? observed.recordedAt : now, now);
     }
-    work.history.push({ at: now, event: 'slot-released', origin: 'controller-dispatch', executionId: execution.executionId });
     const startRecord: RecoveryRecord['start'] = { kind: 'confirmed', detail: `${start.source}:${start.receiptId}` };
+    let decision: RecoveryRecord['decision'];
+    let code: string | null;
     if (execution.state === 'ended' && execution.end) {
-      // The end was recorded earlier but the cessation was not confirmed then: only the cessation is settled now.
-      execution.end.cessation = 'confirmed';
-      const outcome = execution.end.outcome;
-      if (outcome === 'question' || outcome === 'timeout' || outcome === 'stopped') work.queue = { ...work.queue, pending: true };
-      if (outcome === 'failure') return settleFailure(work, execution, execution.end.code ?? 'CONTROLLER_CRASH', now, startRecord, record);
-      return record(startRecord, outcome === 'stopped' ? 'administrative-continuation' : 'settled', outcome);
-    }
-    // A Question recorded by this Execution (durable before its ACK) is the end: the Work waits for its answer, never a recovery.
-    for (const id of work.questions ?? []) {
-      const question = (await tx.doc(questions, id, null)).question;
-      if (question?.executionId !== execution.executionId || question.workId !== work.work_id) continue;
+      // The end was recorded earlier (with ticket 11's scope handling) but its cessation was not confirmed then.
+      code = execution.end.outcome === 'failure' ? execution.end.code ?? 'CONTROLLER_CRASH' : execution.end.outcome;
+      decision = execution.end.outcome === 'stopped' ? 'administrative-continuation' : execution.end.outcome === 'failure' ? 'operational-recovery' : 'settled';
+    } else {
+      // A Question recorded by this Execution (durable before its ACK) is the end: the Work waits for its answer, never a recovery.
+      let questionId: string | null = null;
+      for (const id of work.questions ?? []) {
+        const question = (await tx.doc(questions, id, null)).question;
+        if (question?.executionId === execution.executionId && question.workId === work.work_id) { questionId = id; break; }
+      }
+      const outcome = questionId ? 'question' as const : input.trigger === 'administrative-stop' ? 'stopped' as const : 'failure' as const;
+      code = outcome === 'question' ? 'question' : outcome === 'stopped' ? 'ADMINISTRATIVE_STOP' : execution.held?.code ?? 'CONTROLLER_CRASH';
       execution.state = 'ended';
-      execution.end = { at: now, outcome: 'question', code: null, cessation: 'confirmed', questionId: id };
-      work.queue = { ...work.queue, pending: true };
-      return record(startRecord, 'settled', 'question');
+      execution.end = { at: now, outcome, code: outcome === 'question' ? null : code, cessation: 'confirmed', ...(questionId ? { questionId } : {}) };
+      reofferUnlessCompleted(work, execution.executionId, outcome, now);
+      decision = outcome === 'stopped' ? 'administrative-continuation' : outcome === 'failure' ? 'operational-recovery' : 'settled';
     }
-    execution.state = 'ended';
-    if (input.trigger === 'administrative-stop') {
-      execution.end = { at: now, outcome: 'stopped', code: 'ADMINISTRATIVE_STOP', cessation: 'confirmed' };
-      work.queue = { ...work.queue, pending: true };
-      return record(startRecord, 'administrative-continuation', 'ADMINISTRATIVE_STOP');
+    // Shared with the live release (ticket 11 scope consumption/requeue, question/timeout/stop positions, ONE operational recovery).
+    applyConfirmedCessation(work, execution, occupancy);
+    if (execution.end.outcome === 'failure') {
+      const classified = classifyInterruption(execution.end.code);
+      if (classified.kind === 'blocking') {
+        addImpediment(work, recoveryImpediment('RECOVERY_BLOCKED', classified.code, now));
+        return record(startRecord, 'blocked', classified.code);
+      }
     }
-    const code = execution.held?.code ?? 'CONTROLLER_CRASH';
-    execution.end = { at: now, outcome: 'failure', code, cessation: 'confirmed' };
-    return settleFailure(work, execution, code, now, startRecord, record);
+    return record(startRecord, decision, code);
   }, BACKGROUND_CONTEXT);
-}
-
-function settleFailure(work: WorkRecord, execution: ExecutionView, code: string, now: string, start: RecoveryRecord['start'],
-  record: (start: RecoveryRecord['start'], decision: RecoveryRecord['decision'], code: string | null) => RecoveryRecord['decision']) {
-  const classified = classifyInterruption(code);
-  if (classified.kind === 'blocking') {
-    addImpediment(work, recoveryImpediment('RECOVERY_BLOCKED', classified.code, now));
-    return record(start, 'blocked', classified.code);
-  }
-  applyRecoveryRequest(work, { executionId: execution.executionId, code, at: now });
-  return record(start, 'operational-recovery', code);
 }
 
 /** Cessation + receipt observation + settlement of ONE interrupted Execution (boot reconciliation or an administrative stop before its start). */
 export async function reconcileExecution(deps: Omit<RecoveryDeps, 'live'>, work: WorkRecord, trigger: RecoveryRecord['trigger'], cessation?: Cessation) {
   const execution = work.execution!;
-  const ceased = cessation ?? await ceaseOwn(deps.ports.sandbox, execution, deps.inventory, work.work_id, 'controller recovery: own survivor stopped, not adopted');
+  const ceased = cessation ?? await ceaseOwn(deps.ports.sandbox, execution, deps.inventory, work, 'controller recovery: own survivor stopped, not adopted');
   const observation = ceased.result === 'confirmed' && needsReceipt(execution) ? await observeReceipt(deps.ports, work.work_id, execution) : null;
   return { cessation: ceased, decision: await settleInterruption(deps.session, { work_id: work.work_id, executionId: execution.executionId, cessation: ceased, observation,
     trigger, controllerRunId: deps.controllerRunId }) };
@@ -250,5 +266,6 @@ export async function reconcileBoot(deps: RecoveryDeps): Promise<RecoveryView> {
     if (execution?.executionId !== executionId || !execution.slot.held) global.push(`SLOT_WITHOUT_CURRENT_EXECUTION:${executionId}`);
   }
   return { at, inventory: typeof deps.inventory === 'object' ? 'listed' : deps.inventory, reconciled, ceased, unconfirmed, global,
-    cachePreparing: (listed?.cache ?? []).filter(item => item.state !== 'idle').map(item => item.repositoryId) };
+    cachePreparing: (listed?.cache ?? []).filter(item => item.state !== 'idle').map(item => item.repositoryId),
+    cache: (listed?.cache ?? []).filter(item => item.state !== 'idle').map(item => ({ repositoryId: item.repositoryId, state: item.state, nextStep: item.nextStep ?? null })) };
 }

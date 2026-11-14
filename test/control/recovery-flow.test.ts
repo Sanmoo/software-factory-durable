@@ -170,3 +170,39 @@ test('AC1/AC5: the listed host inventory gates dispatch — unknown resources ke
   assert.deepEqual([status.dispatch, readHost(h.dir).boots[survivor]], ['open', 'stopped']);
 });
 
+
+test('review MED2: settling an ended Execution reuses ticket 11 — a completed Execution whose stop was unconfirmed requeues for a scope update accepted meanwhile', async t => {
+  const h = await harness(t);
+  await h.start([{ kind: 'hang' }, { kind: 'complete' }]);
+  await h.until(async () => (await h.work()).execution?.state === 'started', 'started');
+  const work_id = (await h.work()).work_id;
+  const receipt = await h.current().control.accept({ request_id: 'scope-26', operation: 'update-scope', work_id, reason: 'Also expose the port in the README file', origin: 'local-cli' });
+  assert.equal((receipt as { outcome: string }).outcome, 'deferred');
+  const boot = (await h.work()).execution!.dispatch.boot!;
+  updateHost(h.dir, state => { state.stuck.push(boot); });
+  h.current().doubles.finish(0);
+  await h.until(async () => (await h.work()).execution?.state === 'ended', 'ended with unconfirmed cessation');
+  let work = await h.work();
+  assert.deepEqual([work.execution!.end!.outcome, work.execution!.end!.cessation, work.execution!.slot.held, work.queue.pending], ['completed', 'unconfirmed', true, false]);
+  await h.halt();
+  updateHost(h.dir, state => { state.stuck = []; });
+  await h.start([{ kind: 'complete' }]);
+  await idle(h, 2);
+  work = await h.work();
+  const settled = work.previousExecutions.at(-1)!;
+  assert.deepEqual([settled.end!.cessation, settled.recovery![0]!.decision], ['confirmed', 'settled']);
+  assert.equal(work.execution!.request.resume?.reason, 'SCOPE_UPDATED', 'the pending authorized scope change resumes the Work through its queue position');
+});
+
+test('review LOW: a FORCED termination at an administrative stop is not clean — failure treatment (one operational recovery)', async t => {
+  const h = await harness(t);
+  await h.start([{ kind: 'hang' }]);
+  await h.until(async () => (await h.work()).execution?.state === 'started', 'started');
+  updateHost(h.dir, state => { state.forced = true; });
+  assert.deepEqual(await h.halt(), { kind: 'uncertain' });
+  updateHost(h.dir, state => { state.forced = false; });
+  await h.start([]);
+  const work = await h.work();
+  assert.deepEqual([work.execution!.end!.outcome, work.execution!.end!.code, work.execution!.slot.held, work.pendingRecovery!.waitSeconds],
+    ['failure', 'ADMINISTRATIVE_STOP_FORCED', false, 5]);
+});

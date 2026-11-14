@@ -46,7 +46,7 @@ export type DispatchReason = 'RECONCILIATION_REQUIRED' | 'EXECUTION_NOT_ENABLED'
  * `unknown` every other entry the host cannot classify. Unknown resources are never ignored to declare free capacity.
  */
 export type RuntimeInventory = { kind: 'listed'; observedAt: string; environments: { environment: string; workId: string | null }[];
-  cache: { repositoryId: number | null; state: 'idle' | 'preparing' | 'unknown' }[]; unknown: string[] };
+  cache: { repositoryId: number | null; state: 'idle' | 'preparing' | 'unknown'; nextStep?: string | null }[]; unknown: string[] };
 /** Ticket 26 Q6 `observe` facet: the complete synchronized start receipt of one invocation in the protected Records, if any. */
 export type StartObservation = { kind: 'receipt'; receipt: { workId: string; id: string; executionId: string; invocationId: string }; recordedAt: string } |
   { kind: 'absent'; completeness: 'complete' } | { kind: 'uncertain'; code: string };
@@ -357,7 +357,9 @@ export type ControlStatus = {
   recovery: RecoveryView | null;
 };
 export type RecoveryView = { at: string; inventory: 'empty' | 'unknown' | 'listed'; reconciled: number; ceased: number; unconfirmed: number;
-  global: string[]; cachePreparing: (number | null)[] };
+  global: string[]; cachePreparing: (number | null)[];
+  /** Caches still left in preparation after the owner's repair-free reconciliation, with the explicit operator action. */
+  cache: { repositoryId: number | null; state: string; nextStep: string | null }[] };
 export interface Control {
   accept(input: ControlInput): Promise<ControlReceipt | { kind: 'refused'; code: 'REQUEST_ID_CONFLICT' | 'INVALID_COMMAND' }>;
   inspect(query: ControlQuery): Promise<ControlStatus | { kind: 'request'; receipt: ControlReceipt | null } | AccessView | ListView | ShowView | QuestionQueryView>;

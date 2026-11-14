@@ -10,7 +10,9 @@ import { createWorkers, type Invocation, type WorkerQuestion } from '../../src/w
 
 export type HostState = { prepared: string[]; current: Record<string, string | null>; boots: Record<string, 'active' | 'stopped'>;
   /** Boots whose host stop never confirms cessation (unit stuck, observation unavailable). */
-  stuck: string[]; log: { kind: string; detail?: unknown }[]; calendarOffsetMs: number };
+  stuck: string[];
+  /** When true, a confirmed stop reports a FORCED termination (grace period expired). */
+  forced?: boolean; log: { kind: string; detail?: unknown }[]; calendarOffsetMs: number };
 /** Builder behaviour per activation: the receipt is written to the protected Records BEFORE the start notification (like the worker host). */
 export type RecoveryScript = { kind: 'complete' } | { kind: 'hang' } | { kind: 'fail'; code: string } |
   /** Receipt written, notification lost: `started` never resolves (the worker keeps running until its boot stops). */
@@ -76,7 +78,8 @@ export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options:
       async stop(input) {
         const stuck = readHost(dir).stuck.includes(input.boot);
         updateHost(dir, state => { state.log.push({ kind: 'stop', detail: { boot: input.boot, reason: input.reason, stuck } }); if (!stuck) state.boots[input.boot] = 'stopped'; });
-        return stuck ? { status: 'indeterminate', code: 'ENVIRONMENT_STOP_UNCONFIRMED', cessationConfirmed: false } : { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'observed' };
+        return stuck ? { status: 'indeterminate', code: 'ENVIRONMENT_STOP_UNCONFIRMED', cessationConfirmed: false }
+          : { status: 'success', cessationConfirmed: true, termination: readHost(dir).forced ? 'forced' : 'unconfirmed', guestFinalization: 'observed' };
       },
       ...(options.observe === false ? {} : { async observe(input: { environment: string; boot?: string }) {
         const state = readHost(dir);
