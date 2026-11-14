@@ -39,7 +39,7 @@ test('AC1/AC2/AC4/AC5/AC6: factory-skills-v4 is a fully hashed new version whose
   // finding 2: the pack itself declares which session protocols it defines; no Control/Host list of versions decides it.
   assert.deepEqual(pack.manifest.capabilities, { continuation: true });
   assert.equal(await skillPackContinues('factory-skills-v4'), true);
-  for (const older of skillPackIds.filter(id => id !== 'factory-skills-v4')) {
+  for (const older of skillPackIds.slice(0, skillPackIds.indexOf('factory-skills-v4'))) {
     assert.equal((await loadSkillPack(builderSkillPacks[older].directory, older)).manifest.capabilities?.continuation, undefined, older);
     assert.equal(await skillPackContinues(older), false, older);
   }
