@@ -1,0 +1,11 @@
+{
+ "status": "observed",
+ "refused": {
+  "status": 2,
+  "signal": null,
+  "stdout": "",
+  "stderr": "{\"code\":\"CONFIGURATION_INVALID\",\"errors\":[{\"code\":\"CONFIGURATION_INVALID\",\"path\":\"models.builder.provider\"},{\"code\":\"CONFIGURATION_INVALID\",\"path\":\"models.builder.model\"},{\"code\":\"CONFIGURATION_INVALID\",\"path\":\"models.standards.provider\"},{\"code\":\"CONFIGURATION_INVALID\",\"path\":\"models.standards.model\"},{\"code\":\"CONFIGURATION_INVALID\",\"path\":\"models.spec.provider\"},{\"code\":\"CONFIGURATION_INVALID\",\"path\":\"models.spec.model\"},{\"code\":\"CONFIGURATION_INVALID\",\"path\":\"githubApp.appId\"}],\"message\":\"Complete the explicit configuration before starting the controller; storage was not opened.\"}\n"
+ },
+ "storageAbsent": true,
+ "socketAbsent": true
+}

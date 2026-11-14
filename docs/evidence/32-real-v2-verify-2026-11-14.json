@@ -1,0 +1,10 @@
+{
+ "status": "success",
+ "archiveSha256": "b4210a0ad7ebd677538e4563bdd4cdd1cae50ba7cbd41803743be17de389310d",
+ "sidecarMatches": true,
+ "reportMatches": true,
+ "manifestSha256": "48051fa85ccefd3e7f7ed64cb70c5a0e0e4f22e73c28071516ee6bda7716d7eb",
+ "manifestMatches": true,
+ "entries": 23573,
+ "violations": []
+}

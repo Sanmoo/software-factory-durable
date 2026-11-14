@@ -236,3 +236,18 @@ Raiz nova `$HOME/software-factory-test/r32-v1`, seis fases one-shot, sem rede, G
 | controller-refusal | exit 2 `CONFIGURATION_INVALID` **antes** de storage: sem `data/control.sqlite` e sem `run/factory.sock` |
 
 Nenhuma credencial foi lida (`credentials/` ficou vazio) e nada fora de `r32-v1` foi escrito.
+
+## Verificação real r32-v2 — 2026-11-14 (supervisor), após correções da revisão e rebase sobre 11/19
+
+HEAD `2d5600e`, raiz nova `$HOME/software-factory-test/r32-v2`, sem rede, GitHub, credenciais, modelo, VM, systemd ou sudo. Registros: `32-real-v2-*.json`. A r32-v1 é anterior às correções e fica como histórico.
+
+| Fase | Observado |
+|---|---|
+| build | `RELEASE_BUILT mvp-32.1`, arquivo sha256 `b4210a0a…`, manifest `48051fa8…`, 23 560 entradas; todos os bytes distribuídos reverificados, incluindo os assets do guest (pin `8efa506a…`); packs registrados conferidos contra `factorySkillPackIds` |
+| verify | sha do arquivo = sidecar = relatório; manifest confere; 23 573 entradas listadas, **0 violações** |
+| install | extração só em `assets`, `factory`, `releases` |
+| setup (2×) | 2ª execução criou `[]` |
+| doctor | `INVALID_CONFIGURATION` (configuração de exemplo incompleta, esperado), com a release íntegra |
+| controller-refusal | exit 2 `CONFIGURATION_INVALID`, `storageAbsent: true`, `socketAbsent: true` |
+
+Decisão do supervisor: aceito `skillPackContinues` como exportação mínima e só de leitura da superfície Workers, usada pela composição de produção para derivar o pack.
