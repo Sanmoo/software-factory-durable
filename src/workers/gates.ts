@@ -18,8 +18,8 @@ export const declarationsSchema = z.strictObject({ treatments: z.array(treatment
   .refine(value => new Set((value.gates ?? []).map(item => item.id)).size === (value.gates ?? []).length, 'gate ids are unique')
   .refine(value => new Set((value.treatments ?? []).map(item => `${item.round}/${item.role}/${item.findingId}`)).size === (value.treatments ?? []).length, 'one treatment per finding');
 export type Declarations = z.infer<typeof declarationsSchema>;
-/** Resolved declarations travel inside one handoff notice (owner relay bound 32 KiB, protocol frame 64 KiB). */
-export const declarationsMaxBytes = 24 * 1024;
+/** Resolved declarations travel inside one handoff notice with the capture summary (owner relay bound 32 KiB, protocol frame 64 KiB). */
+export const declarationsMaxBytes = 16 * 1024;
 
 const reference = z.strictObject({ workId: z.string().min(1).max(128), id: z.uuid() });
 /** The RESOLVED declarations as relayed by the owner to the Host facade (strict; produced by the Builder host, re-checked by Control). */

@@ -130,9 +130,9 @@ export async function executeSession(options: Options, invocation: Invocation, r
       let abortSession = () => {};
       const critical = () => { interrupted = true; abortSession(); };
       const observer = createReadObserver();
-      const editEnabled = invocation.context.role === 'builder' && invocation.editSourceMaxBytes !== undefined;
       // Ticket 13: the Host ledger of the Builder's own tool calls and real Bash results (the only source of gate evidence).
       const ledger = invocation.handoff?.rounds ? createToolLedger() : undefined;
+      const editEnabled = invocation.context.role === 'builder' && invocation.editSourceMaxBytes !== undefined;
       const customTools: ToolDefinition[] = invocation.context.role === 'builder'
         ? [builderWrite(invocation.context, options.sandbox, critical), builderBash(invocation.context, options.sandbox, critical, copyOutput,
           ledger ? (callId, observation) => ledger.bash(callId, observation) : undefined)]
