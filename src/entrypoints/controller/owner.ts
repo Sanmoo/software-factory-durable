@@ -5,6 +5,8 @@ import { openControl, type ControlInput } from '../../control/index.js';
 import { listen, protocolVersion, type Envelope } from '../../protocol/index.js';
 import { controllerPaths, verifyControllerLock, controllerRuntimeInventory } from '../../platform/host/index.js';
 import { readConfiguration } from '../configuration.js';
+import { inspectRelease } from '../release.js';
+import { composeProductionExecution } from './composition.js';
 import { createGitHubAccess } from '../../platform/github/index.js';
 import { createIssueTracker } from '../../issue-tracker/index.js';
 import { createCodeRepository } from '../../code-repository/index.js';
@@ -23,7 +25,16 @@ async function own(root: string): Promise<number> {
   process.umask(0o077);
   const paths = await controllerPaths(root);
   await verifyControllerLock(paths.lockPath);
-  const validated = await readConfiguration(paths.root);
+  // A distributed release must verify (integrity, location, explicit selection, private Node) BEFORE storage; a development checkout
+  // carries no release and composes no execution (EXECUTION_NOT_ENABLED). Guest assets are re-verified by the adapter at each boot.
+  const release = await inspectRelease(paths.root, { assets: false });
+  const blocked = release.checks.filter(check => check.status === 'blocked');
+  if (blocked.length > 0) {
+    console.error(JSON.stringify({ code: 'RELEASE_INVALID', checks: blocked.map(check => ({ id: check.id, message: check.message })),
+      message: 'Run the verified release of this installation; storage was not opened and nothing is repaired.' }));
+    return 2;
+  }
+  const validated = await readConfiguration(paths.root, release.guestAssets);
   if (!validated.configuration.valid) {
     console.error(JSON.stringify({ code: 'CONFIGURATION_INVALID', errors: validated.configuration.errors,
       message: 'Complete the explicit configuration before starting the controller; storage was not opened.' }));
@@ -36,19 +47,26 @@ async function own(root: string): Promise<number> {
   } catch (error) {
     if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
   }
+  const github = createGitHubAccess({ root: paths.root, ...validated.configuration.effective.githubApp });
+  const composed = release.release && release.guestAssets
+    ? composeProductionExecution({ root: paths.root, effective: validated.configuration.effective, guestAssets: release.guestAssets, github }) : undefined;
+  if (composed?.status === 'refused') {
+    console.error(JSON.stringify({ code: 'CONFIGURATION_UNSUPPORTED', reason: composed.code, roles: composed.roles,
+      message: 'Every role must name the release worker profile explicitly; storage was not opened.' }));
+    return 2;
+  }
   const stop = new AbortController();
   const terminate = () => stop.abort();
   process.on('SIGINT', terminate);
   process.on('SIGTERM', terminate);
   const effective = validated.configuration.effective;
-  const github = createGitHubAccess({ root: paths.root, ...effective.githubApp });
   const dependencyScopes = effective.dependencyRepositories.map(entry => ({ repository: entry.repository, installationId: entry.installationId, workflows: false }));
   // Polling cadence comes only from the validated configuration (default 60 s); no reload or per-Work override.
   const control = await openControl({ storagePath: paths.storagePath, runtimeInventory: await controllerRuntimeInventory(paths.root),
     // Executable repositories are Ticket origins; dependency-only repositories are read solely for native blocked_by, with their own installation.
     access: { tracker: createIssueTracker({ github, scopes: effective.repositories, dependencyScopes }), repository: createCodeRepository({ github }),
       repositories: effective.repositories, dependencyRepositories: dependencyScopes, operators: effective.operators },
-    polling: { intervalSeconds: effective.pollingSeconds } });
+    polling: { intervalSeconds: effective.pollingSeconds }, ...(composed?.status === 'composed' ? { execution: composed.ports } : {}) });
   const status = await control.inspect({ kind: 'status' });
   if (!('controller_run_id' in status)) throw new Error('INVALID_CONTROL_STATUS');
   const runId = status.controller_run_id;
