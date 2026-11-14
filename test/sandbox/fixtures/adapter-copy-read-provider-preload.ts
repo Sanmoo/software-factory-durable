@@ -17,7 +17,7 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => 
   const publish = body.includes('Task149 publish');
   const allowed = publish || body.includes('Task149 selected');
   const builder = publish || body.includes('Task149 builder');
-  assert.deepEqual(parsed.tools.map((t: { function: { name: string } }) => t.function.name).sort(), builder ? ['bash', 'read', 'write'] : ['read']);
+  assert.deepEqual(parsed.tools.map((t: { function: { name: string } }) => t.function.name).sort(), builder ? ['ask_user', 'bash', 'read', 'write'] : ['read']);
   const read = parsed.tools.find((t: { function: { name: string } }) => t.function.name === 'read').function.parameters;
   assert.deepEqual(Object.keys(read.properties).sort(), ['limit', 'offset', 'path']);
   assert.ok(attempts <= (publish ? 4 : 2));

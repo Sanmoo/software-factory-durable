@@ -15,7 +15,7 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => 
   const mode: string = typeof content === 'string' ? content : content.map((c: { text: string }) => c.text).join('');
   const disabled = ['absent', 'standards', 'spec'].includes(mode);
   const tools = JSON.parse(body).tools.map((t: { function: { name: string } }) => t.function.name).sort();
-  assert.deepEqual(tools, mode === 'standards' || mode === 'spec' ? ['read'] : disabled ? ['bash', 'write'] : ['bash', 'edit', 'write']);
+  assert.deepEqual(tools, mode === 'standards' || mode === 'spec' ? ['read'] : disabled ? ['ask_user', 'bash', 'write'] : ['ask_user', 'bash', 'edit', 'write']);
   const critical = ['uncertain', 'persist', 'cancel', 'eof', 'budget', 'secret'].includes(mode);
   assert.ok(requests <= (critical || disabled ? 1 : mode === 'mismatch' || mode === 'no-match' ? 3 : 2), 'no provider continuation after critical Edit');
   process.send?.({ kind: 'provider-validated', count: requests });
