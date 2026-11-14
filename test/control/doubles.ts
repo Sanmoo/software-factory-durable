@@ -1,10 +1,11 @@
 // Test doubles for the IssueTracker/CodeRepository contracts and the polling clock.
 // They replace GitHub only; Control, Pi Durable and SQLite stay real in every flow test.
-import type { IssueTracker, TicketRef, CandidateObservation, TicketObservation, TrackerScope } from '../../src/issue-tracker/index.js';
+import type { IssueTracker, TicketRef, CandidateObservation, TicketObservation, TrackerScope, DependencyNode, DependencyProblem } from '../../src/issue-tracker/index.js';
 import type { CodeRepository, PublicationObservation, PullRequestCandidate } from '../../src/code-repository/index.js';
 import type { PollingClock } from '../../src/control/types.js';
 
-export type RemoteIssue = { ref: TicketRef; state: 'open' | 'closed'; labels: { id: number; name: string }[]; pullRequest?: boolean; reread?: Partial<TicketRef> };
+export type RemoteIssue = { ref: TicketRef; state: 'open' | 'closed'; labels: { id: number; name: string }[]; pullRequest?: boolean; reread?: Partial<TicketRef>;
+  stateReason?: string | null; /** Native blocked_by edges, by issue number in remote.issues. */ blockedBy?: number[] };
 export type Unavailable = { code: string; waitSeconds?: number };
 export type Remote = {
   issues: RemoteIssue[];
@@ -17,7 +18,13 @@ export type Remote = {
   /** Extra refs returned by the listing, e.g. from another repository. */
   extraListed?: TicketRef[];
   hang?: Promise<void>;
+  /** Problems the dependency graph read reports for a root Ticket number (e.g. a rate-limited page). */
+  dependencyProblems?: Record<number, DependencyProblem[]>;
+  /** readDependencyGraph throws (unexpected adapter failure). */
+  graphThrows?: boolean;
 };
+export const dependencyPrincipal = { installationId: 2, repository: 'acme/project', repositoryId: 3, role: 'executable' as const, purpose: 'dependency-read' as const,
+  permissions: { metadata: 'read' as const, issues: 'read' as const } };
 export const scope: TrackerScope & { base: string } = { repository: 'acme/project', installationId: 2, workflows: false, label: 'ready-for-agent', base: 'main' };
 export function ticket(number: number, overrides: Partial<TicketRef> = {}): TicketRef {
   return { tracker: 'github', repository: 'acme/project', repositoryId: 3, issueId: 7000 + number, nodeId: `I_node${number}`, number,
@@ -57,11 +64,27 @@ export function githubDoubles(remote: Remote) {
       const found = remote.issues.find(i => i.ref.number === ref.number && i.ref.repository === ref.repository);
       if (!found) return failure(ref.repository, { code: 'GITHUB_NOT_FOUND_OR_HIDDEN' });
       return { kind: 'observed', source: 'github-rest', observedAt: observedAt(), completeness: 'complete', ticket: { ...found.ref, ...found.reread },
-        state: found.state, stateReason: null, labels: found.labels, pullRequest: found.pullRequest ?? false };
+        state: found.state, stateReason: found.stateReason ?? null, labels: found.labels, pullRequest: found.pullRequest ?? false };
     }),
-    readDependencyGraph: ref => track('readDependencyGraph', () => ({ kind: 'observed' as const, source: 'github-rest' as const, observedAt: observedAt(), root: ref,
-      completeness: 'complete' as const, principals: [], problems: [], limitations: [], nodes: [{ issueId: ref.issueId, nodeId: ref.nodeId, repository: ref.repository,
-        repositoryId: ref.repositoryId, number: ref.number, url: ref.url, state: 'open' as const, stateReason: null, access: 'read' as const, repositoryRole: 'executable' as const, blockedBy: [] }] }), ref),
+    // Reachable native graph over remote.issues (same repository), each node once; problems are injected per root Ticket.
+    readDependencyGraph: ref => track('readDependencyGraph', () => {
+      if (remote.graphThrows) throw new Error('synthetic unexpected adapter failure');
+      const nodes: DependencyNode[] = [];
+      const queue = [ref.number];
+      const seen = new Set(queue);
+      while (queue.length) {
+        const found = remote.issues.find(i => i.ref.number === queue[0]);
+        queue.shift();
+        if (!found) continue;
+        const blockers = (found.blockedBy ?? []).map(n => remote.issues.find(i => i.ref.number === n)!);
+        nodes.push({ issueId: found.ref.issueId, nodeId: found.ref.nodeId, repository: found.ref.repository, repositoryId: found.ref.repositoryId, number: found.ref.number,
+          url: found.ref.url, state: found.state, stateReason: found.stateReason ?? null, access: 'read', repositoryRole: 'executable', blockedBy: blockers.map(b => b.ref.issueId) });
+        for (const blocker of blockers) if (!seen.has(blocker.ref.number)) { seen.add(blocker.ref.number); queue.push(blocker.ref.number); }
+      }
+      const problems = remote.dependencyProblems?.[ref.number] ?? [];
+      return { kind: 'observed' as const, source: 'github-rest' as const, observedAt: observedAt(), root: ref, completeness: problems.length ? 'incomplete' as const : 'complete' as const,
+        principals: [dependencyPrincipal], problems, limitations: ['synthetic graph'], nodes };
+    }, ref),
   };
   const repository: CodeRepository = {
     checkAccess() { throw new Error('not used by admission'); },

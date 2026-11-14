@@ -140,7 +140,8 @@ test('AC4: list/show/status keep result, authorization, queue and impediments di
   if (shown.kind !== 'work') return;
   assert.deepEqual(Object.keys(shown.work).filter(k => ['result', 'authorization', 'queue', 'impediments', 'dispatch', 'execution', 'pullRequest'].includes(k)).sort(),
     ['authorization', 'dispatch', 'execution', 'impediments', 'pullRequest', 'queue', 'result']);
-  assert.deepEqual(shown.work.impediments.map(i => [i.code, i.scope]), [['DEPENDENCIES_NOT_EVALUATED', 'work']]);
+  assert.deepEqual(shown.work.impediments, [], 'the admission placeholder is replaced by the real evaluation of the same round');
+  assert.deepEqual([shown.work.dependencies.latest?.conclusion, shown.work.dependencies.latest?.completeness], ['satisfied', 'complete']);
   assert.equal(shown.work.execution, null);
   assert.equal(shown.lastPolled?.outcome, 'admitted');
   assert.deepEqual(await h.control().inspect({ kind: 'show', work_id: '00000000-0000-4000-8000-000000000000' }),
@@ -200,14 +201,14 @@ test('AC5: global pause stops new admissions but not tracking; unpause admits by
   assert.deepEqual((await h.list()).works.map(w => w.ticket.number).sort(), [1, 2]);
 });
 
-test('AC6/AC7: only read operations are used and dispatch stays held pending dependency evaluation', async t => {
+test('AC6/AC7: only read operations are used and dispatch stays held behind the execution barrier', async t => {
   const remote: Remote = { issues: [remoteIssue(1)], pulls: {} };
   const h = await harness(t, remote);
   const { time } = await h.start();
   await time.sleeping();
-  assert.deepEqual([...new Set(h.github.calls.map(c => c.method))].sort(), ['findPublication', 'listCandidates', 'readTicket']);
+  assert.deepEqual([...new Set(h.github.calls.map(c => c.method))].sort(), ['findPublication', 'listCandidates', 'readDependencyGraph', 'readTicket']);
   const [work] = (await h.list()).works;
-  assert.deepEqual(work!.dispatch, { state: 'held', reasons: ['DEPENDENCIES_NOT_EVALUATED', 'EXECUTION_NOT_ENABLED'] });
+  assert.deepEqual(work!.dispatch, { state: 'held', reasons: ['EXECUTION_NOT_ENABLED'] });
   assert.equal((await h.status()).dispatch, 'closed');
   await h.stop();
   const database = await readFile(h.storagePath);

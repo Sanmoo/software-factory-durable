@@ -1,6 +1,8 @@
-import type { TicketRef } from '../../issue-tracker/index.js';
-import type { AccessDependencies, CandidateView, ConfiguredRepository, PollingClock, PollingView, RepositoryPollView } from '../types.js';
+import { randomUUID } from 'node:crypto';
+import type { DependencyGraphObservation, TicketRef } from '../../issue-tracker/index.js';
+import type { AccessDependencies, CandidateView, ConfiguredRepository, DependencyEvaluation, PollingClock, PollingView, RepositoryPollView } from '../types.js';
 import { evaluateEntry, evaluatePublication, pollDelaySeconds, type Hold, type PublicationFacts } from '../rules/admission.js';
+import { evaluateDependencies, type OwnCycleFacts } from '../rules/dependencies.js';
 import type { AdmissionEvidence, AdmissionResult } from './admission.js';
 
 const maxTimer = 2 ** 31 - 1;
@@ -24,6 +26,9 @@ type RepositoryState = { scope: ConfiguredRepository; dueAt: number; failures: n
 export function createPoller(deps: {
   access: AccessDependencies; intervalSeconds: number; clock: PollingClock;
   paused(): Promise<boolean>; indexed(ticket: TicketRef): Promise<string | undefined>; admit(evidence: AdmissionEvidence): Promise<AdmissionResult>;
+  pending(repositoryId: number): Promise<{ work_id: string; ticket: TicketRef }[]>;
+  ownCycles(issueIds: number[]): Promise<Record<number, OwnCycleFacts>>;
+  record(work_id: string, evaluation: DependencyEvaluation): Promise<unknown>;
 }) {
   const { tracker, repository } = deps.access;
   const interval = deps.intervalSeconds;
@@ -33,6 +38,8 @@ export function createPoller(deps: {
   let state: PollingView['state'] = repositories.length ? 'starting' : 'disabled';
   let cycles = 0;
   let lastCycleAt: string | null = null;
+  // Polling round per repository; only evaluations of the current round may release a dispatch (in memory: a restart makes none current).
+  const attempts = new Map<string, string>();
   // Unexpected adapter exceptions are explicit failures of that observation, never empty/green results.
   const guarded = async <T>(repo: string, read: () => Promise<T>): Promise<T | Unavailable> => {
     try { return await read(); } catch {
@@ -96,7 +103,37 @@ export function createPoller(deps: {
     return outcomes;
   }
 
+  /**
+   * Phase 3: fresh native dependency evaluation of every open pending Work of the repository, in FIFO order, recorded durably with the
+   * round's attempt id. Tracking continues while paused. A wait window stops the round; the rest stay not current (held).
+   */
+  async function dependencies(repositoryId: number, attemptId: string): Promise<{ waitSeconds?: number; failed: boolean }> {
+    let waitSeconds: number | undefined;
+    let failed = false;
+    for (const work of await deps.pending(repositoryId)) {
+      if (waitSeconds !== undefined) break;
+      let graph: DependencyGraphObservation;
+      try { graph = await tracker.readDependencyGraph(work.ticket); } catch {
+        graph = { kind: 'observed', source: 'github-rest', observedAt: new Date().toISOString(), root: work.ticket, completeness: 'incomplete', principals: [], nodes: [],
+          limitations: [], problems: [{ code: 'DEPENDENCY_READ_UNAVAILABLE', issueId: work.ticket.issueId, repository: work.ticket.repository, observedCode: 'POLLING_QUERY_FAILED',
+            nextStep: 'Unexpected failure while reading native dependencies; nothing is concluded. Inspect controller logs; polling retries with backoff.' }] };
+      }
+      const own = await deps.ownCycles(graph.nodes.map(node => node.issueId).filter(id => id !== work.ticket.issueId));
+      const result = evaluateDependencies({ graph: { rootIssueId: work.ticket.issueId, nodes: graph.nodes, problems: graph.problems }, own });
+      await deps.record(work.work_id, { evaluationId: randomUUID(), attemptId, source: 'github-rest', observedAt: graph.observedAt, evaluatedAt: new Date().toISOString(),
+        principals: graph.principals, completeness: result.completeness, conclusion: result.conclusion, blockers: result.blockers, cycles: result.cycles,
+        shared: result.shared, reasons: result.reasons, limitations: graph.limitations });
+      for (const problem of graph.problems) {
+        if (problem.waitSeconds !== undefined) waitSeconds = Math.max(waitSeconds ?? 0, problem.waitSeconds);
+        if (problem.observedCode && transient.has(problem.observedCode)) failed = true;
+      }
+    }
+    return { ...(waitSeconds !== undefined ? { waitSeconds } : {}), failed };
+  }
+
   async function cycle(entry_: RepositoryState) {
+    const attemptId = randomUUID();
+    attempts.set(entry_.scope.repository.toLowerCase(), attemptId);
     const listing = await guarded(entry_.scope.repository, () => tracker.listCandidates(entry_.scope));
     let delay: number;
     if (listing.kind !== 'observed') {
@@ -123,7 +160,12 @@ export function createPoller(deps: {
         ? { view: { ticket: slot.notEvaluated, observedAt: new Date().toISOString(), outcome: 'not-evaluated', reason: 'GitHub wait window open; evaluated on a later poll.' } }
         : 'pending' in slot ? published.get(slot.pending) ?? { view: { ticket: slot.pending.ref, observedAt: new Date().toISOString(), outcome: 'not-evaluated', reason: 'GitHub wait window open; evaluated on a later poll.' } }
         : slot);
-      const failed = outcomes.some(outcome => outcome.failed);
+      let failed = outcomes.some(outcome => outcome.failed);
+      if (waitSeconds === undefined) {
+        const evaluated = await dependencies(listing.repositoryId, attemptId);
+        if (evaluated.waitSeconds !== undefined) waitSeconds = evaluated.waitSeconds;
+        failed ||= evaluated.failed;
+      }
       entry_.failures = failed ? entry_.failures + 1 : 0;
       delay = pollDelaySeconds({ intervalSeconds: interval, outcome: failed ? 'unavailable' : 'observed', consecutiveFailures: entry_.failures, ...(waitSeconds !== undefined ? { waitSeconds } : {}) });
       entry_.view = { repository: entry_.scope.repository, label: entry_.scope.label, state: 'observed', observedAt: listing.observedAt, completeness: 'complete',
@@ -134,6 +176,8 @@ export function createPoller(deps: {
   }
 
   return {
+    /** Current polling round of a configured repository; null before its first round in this owner run. */
+    currentAttempt(repository: string): string | null { return attempts.get(repository.toLowerCase()) ?? null; },
     view(): PollingView {
       const now = deps.clock.monotonic();
       return { state, intervalSeconds: interval, cycles, lastCycleAt, source: 'in-memory-observation',

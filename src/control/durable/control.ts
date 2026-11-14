@@ -3,8 +3,10 @@ import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { z } from 'zod';
 import type { AccessDependencies, Control, ControlStatus, DispatchReason, Impediment, ListView, PollingOptions, PollingView, WorkView } from '../types.js';
 import { openStore } from './store.js';
-import { acceptPauseCommand, admitTicket, indexedWork, initialize, readInstallation, readRequest, readWork, readWorks, type WorkRecord } from './admission.js';
+import { acceptPauseCommand, admitTicket, indexedWork, initialize, ownCycles, pendingWorks, readInstallation, readRequest, readWork, readWorks, recordDependencies,
+  type WorkRecord } from './admission.js';
 import { createPoller, systemClock } from './polling.js';
+import { dispatchBlockers, selectNext } from '../rules/dependencies.js';
 
 const inputSchema = z.strictObject({
   request_id: z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/),
@@ -14,7 +16,8 @@ const workIdSchema = z.uuid();
 const limitations = [
   'Candidate observations are in-memory results of the latest poll, not authority; they are rebuilt after restart.',
   'A failed or partial query, or absence from a listing, never proves absence of a Ticket, label or pull request, nor withdrawal of authorization.',
-  'Dispatch is held: native dependency evaluation and execution activation are not part of this increment.',
+  'Dispatch is held: execution activation is not part of this increment; selection shows what native dependency gating would allow.',
+  'Native dependency evaluations are re-done every polling round; only an evaluation of the current round can release, never an older or pre-restart one.',
 ];
 
 /** Bootstrap must already hold the stable canonical-storage flock for this owner's entire lifetime. */
@@ -30,13 +33,21 @@ export async function openControl(options: { storagePath: string; runtimeInvento
     paused: async () => (await readInstallation(state)).paused,
     indexed: ticket => indexedWork(state, ticket),
     admit: evidence => admitTicket(state, evidence),
+    pending: repositoryId => pendingWorks(state, repositoryId),
+    ownCycles: issueIds => ownCycles(state, issueIds),
+    record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation),
   }) : undefined;
   const pollingView = (): PollingView => poller?.view() ?? { state: 'disabled', intervalSeconds: null, cycles: 0, lastCycleAt: null, source: 'in-memory-observation', repositories: [] };
+  // Work-level reasons preventing a start now; the dependency evaluation must belong to the repository's current polling round.
+  const blockers = (work: WorkRecord) => dispatchBlockers({ impediments: work.impediments, evaluation: work.dependencies.latest,
+    currentAttempt: poller?.currentAttempt(work.repository.repository) ?? null });
   const present = (work: WorkRecord, paused: boolean): WorkView => {
     const impediments: Impediment[] = [...work.impediments,
       ...(paused ? [{ code: 'GLOBAL_PAUSE', scope: 'installation' as const, nextStep: 'Unpause to allow new triggers; unpausing removes no individual impediment.' }] : [])];
-    return { ...work, impediments, dispatch: { state: 'held', reasons: [...work.impediments.map(item => item.code), dispatchReason, ...(paused ? ['GLOBAL_PAUSE'] : [])] } };
+    return { ...work, impediments, dispatch: { state: 'held', reasons: [...blockers(work), dispatchReason, ...(paused ? ['GLOBAL_PAUSE'] : [])] } };
   };
+  const selection = (works: WorkRecord[]) => selectNext(works.filter(work => work.result === 'open' && work.queue.pending && work.queue.category === 'normal')
+    .map(work => ({ work_id: work.work_id, blockers: blockers(work) })));
   let running = false;
   return {
     async accept(input) {
@@ -53,7 +64,9 @@ export async function openControl(options: { storagePath: string; runtimeInvento
           tracker: await options.access.tracker.checkAccess(repo),
           repository: await options.access.repository.checkAccess(repo, repo.base),
         });
-        return { kind: 'access', scope: 'authenticated', results };
+        const dependencyResults = [];
+        for (const repo of options.access.dependencyRepositories ?? []) dependencyResults.push(await options.access.tracker.checkAccess({ ...repo, role: 'dependency-only' }));
+        return { kind: 'access', scope: 'authenticated', results, dependencyResults };
       }
       if (query.kind === 'request') {
         if (!inputSchema.shape.request_id.safeParse(query.request_id).success) throw new Error('INVALID_REQUEST_ID');
@@ -72,12 +85,17 @@ export async function openControl(options: { storagePath: string; runtimeInvento
       if (query.kind === 'list') {
         return { kind: 'list', paused: current.paused, dispatch: 'closed', dispatchReason, works: works.map(work => present(work, current.paused)),
           queues: { normal: works.filter(work => work.queue.pending && work.queue.category === 'normal').map(work => work.work_id), repair: [] },
-          polling: pollingView(), limitations } satisfies ListView;
+          selection: selection(works), polling: pollingView(), limitations } satisfies ListView;
       }
       const polling = pollingView();
       return { controller_run_id, paused: current.paused, dispatch: 'closed', dispatchReason, historyLength: current.history.length,
         works: { total: works.length, open: works.filter(work => work.result === 'open').length },
         queues: { normal: works.filter(work => work.queue.pending && work.queue.category === 'normal').length, repair: 0 },
+        dependencies: { satisfied: works.filter(work => work.dependencies.latest?.conclusion === 'satisfied').length,
+          pending: works.filter(work => work.dependencies.latest?.conclusion === 'pending').length,
+          inconclusive: works.filter(work => work.dependencies.latest?.conclusion === 'inconclusive').length,
+          notEvaluated: works.filter(work => !work.dependencies.latest).length },
+        selection: { next: selection(works).next },
         polling: { ...polling, repositories: polling.repositories.map(({ candidates: _candidates, ...repo }) => repo) },
         persistence: store.persistence } satisfies ControlStatus;
     },
