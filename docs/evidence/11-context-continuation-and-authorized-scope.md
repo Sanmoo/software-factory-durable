@@ -282,3 +282,13 @@ HEAD `7532220`, namespace `y5/q11-context-v1`, issue sintética #3 de `Sanmoo/ja
 - **Observação menor:** como o arquivo da mudança de escopo não existia, o Builder o criou e repetiu nele a frase de contexto antes da linha autorizada. É uma adição pequena além do pedido literal; fica registrada.
 - **Segredos:** `storage`, `records` (48 arquivos) e `observations` (9) sem `ghs_` nem chave privada.
 - **Defeito do harness:** a fase `inspect` gravou `inspect-result.json` completo e depois saiu com código 1 (falha após o `save`, provavelmente no fechamento da cópia do storage). A fase é one-shot e não foi repetida; a evidência está completa.
+
+## Ensaio real autorizado — 2026-11-14 (supervisor)
+
+Namespace `y5/q11-context-v1`, fases `preflight → ask → continue → scope → inspect`. Registros: `11-real-context-{ask,continue,scope,inspect}-2026-11-14.json`.
+
+- **ask**: issue #3 pedia uma redação que só existia na fonte privada `Sanmoo/factory-private-spec/SPEC.md`. O Builder real (pack v4, `gpt-6-luna`) tentou a fonte, recebeu 404 e **perguntou** o texto exato em vez de adivinhar; a Question foi gravada antes do ACK, credencial retirada, boot parado, Slot liberado após cessação, um único comentário do bot.
+- **Resposta do operador**: comentário `/factory answer …` de `Sanmoo` (id fixado) e edição do corpo da #3 com B1 (adotar) e B2 (não adotar).
+- **continue**: decisão `SESSION_COMPATIBLE`; o owner copiou a sessão preservada, o worker reabriu com `SessionManager` e recebeu `continue` com a resposta e o escopo; executou no mesmo ambiente/branch e terminou com cessação confirmada. Nenhum `/implement` reiniciado.
+- **scope**: `update-scope` com id fixo aceito durante a espera; a política sem `edit` tornou a sessão `SESSION_INCOMPATIBLE` → substituição explícita com razão e contexto recuperável; a atualização foi entregue e depois **consumida** só após fim completo com cessação confirmada (histórico `scope-update-delivered` → `execution-ended` → `scope-update-consumed`).
+- **inspect**: varredura de segredos em storage, 48 arquivos de Records e 9 observações: nenhum `ghs_` nem chave privada.
