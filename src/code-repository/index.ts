@@ -4,6 +4,7 @@ import { InvalidGitHubObservation, type GitHubAccess } from '../platform/github/
 import { createPullRequestReader, type PullRequestObservation, type PullRequestQuery } from './pull-request.js';
 
 export type { BranchRule, CheckRunFact, ClassicChecks, Known, PullRequestFacts, PullRequestObservation, PullRequestQuery, RequiredCheck, StatusFact } from './pull-request.js';
+import { deliveryOperations, type BranchCleanupResult, type BranchCleanupSelection, type CleanupEffect, type PullRequestObservation, type PullRequestRef } from './delivery.js';
 
 /** Known repository/branch identities and the Ticket numbers they serve; the caller decides ownership, never this adapter.
  * Several Tickets of one repository share ONE pull request listing per call (bounded polling cost). */
@@ -48,7 +49,12 @@ export interface CodeRepository {
   /** Q4B `setDraft(pr, draft, effect)` (ticket 16): one draft/ready conversion of a known own PR, correlated by the effect identity. The
    * decision and its evidence belong to Control; a remote flag never stands in for internal readiness. Never review, approval or merge. */
   setDraft(pr: { repo: GitHubScope; number: number; nodeId: string }, draft: boolean, effect: { effectId: string }): Promise<DraftConversion>;
+  /** Ticket 17 (Q4B): current facts of a KNOWN own pull request (merge/closure/head/base). Not a delivery decision. */
+  readPullRequest?(pr: PullRequestRef): Promise<PullRequestObservation>;
+  /** Ticket 17 (Q4B): delete ONE selected own branch under its own cleanup grant, revalidating ownership/concurrency first. */
+  cleanupBranch?(selection: BranchCleanupSelection, effect: CleanupEffect): Promise<BranchCleanupResult>;
 }
+export type { PullRequestRef, PullRequestFacts, PullRequestObservation, BranchCleanupSelection, CleanupEffect, BranchCleanupResult } from './delivery.js';
 
 const pullSchema = z.object({
   id: z.number().int().positive().safe(), node_id: z.string().min(1).max(256), number: z.number().int().positive().safe(), html_url: z.string().url(),
@@ -172,6 +178,7 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
       return { kind: written.outcome, observedAt: written.observedAt, code: written.code, ...(written.waitSeconds !== undefined ? { waitSeconds: written.waitSeconds } : {}),
         nextStep: written.nextStep, revocation: written.revocation };
     },
+    ...deliveryOperations(options),
     checkAccess(repo, base) {
       return options.github.diagnose(repo, 'repository', async session => {
         if (!base || /[\x00-\x20\x7f]/.test(base)) throw new InvalidGitHubObservation();

@@ -38,6 +38,11 @@ const permissions = {
   // Ticket 16 readiness conversion (spec §9.2 step 7/§9.3), a controller effect: ONE draft/ready GraphQL mutation of the own PR, fresh grant
   // per conversion, used for that mutation only and revoked right after. Pull requests W is the narrowest App permission carrying it.
   'readiness-write': { metadata: 'read', pull_requests: 'write' },
+  // Ticket 17: observation of the Work's own pull request (merge confirmation) and of its own branch tip. Read-only.
+  'delivery-read': { metadata: 'read', contents: 'read', pull_requests: 'read' },
+  // Ticket 17 (spec §8: "cleanup de branch remota própria recebe token próprio com Contents W"): ONE single-use grant per cleanup attempt,
+  // never reused for tracking; the session can send only the closed DELETE of the selected own branch ref.
+  'branch-cleanup': { metadata: 'read', contents: 'write', pull_requests: 'read' },
 } as const;
 /** The only two GraphQL documents the controller sends (ticket 16): the draft flag of one pull request, correlated by the effect identity.
  * Never review, approval, merge or any other mutation. */
@@ -47,11 +52,11 @@ export const draftMutations = {
 } as const;
 type Purpose = keyof typeof permissions;
 type DiagnosticPurpose = 'tracker' | 'repository' | 'dependency';
-export type ReadPurpose = 'tracker-read' | 'repository-read' | 'association-read' | 'dependency-read' | 'publication-read' | 'checks-read';
+export type ReadPurpose = 'tracker-read' | 'repository-read' | 'association-read' | 'dependency-read' | 'publication-read' | 'checks-read' | 'delivery-read';
 /** Token-free metadata of each reduced read grant (principal/scope evidence; never the token). */
 export const readPermissions: Readonly<Record<ReadPurpose, Readonly<Record<string, 'read'>>>> = {
   'tracker-read': permissions['tracker-read'], 'repository-read': permissions['repository-read'],
-  'association-read': permissions['association-read'], 'dependency-read': permissions['dependency-read'], 'publication-read': permissions['publication-read'], 'checks-read': permissions['checks-read'] };
+  'association-read': permissions['association-read'], 'dependency-read': permissions['dependency-read'], 'publication-read': permissions['publication-read'], 'checks-read': permissions['checks-read'], 'delivery-read': permissions['delivery-read'] };
 const repositorySchema = z.object({ id: z.number().int().positive().safe(), full_name: z.string(), owner: z.object({ login: z.string() }) });
 const permissionSchema = z.record(z.string(), z.enum(['read', 'write']));
 class AccessFailure extends Error {
@@ -106,7 +111,19 @@ export interface GitHubAccess {
    * 5xx, unexpected payload) means the flag may have changed: read the pull request before any repetition.
    */
   setDraft(scope: GitHubScope, pullRequest: { number: number; nodeId: string }, draft: boolean, clientMutationId: string): Promise<GitHubWrite>;
+  /**
+   * Ticket 17: one FRESH single-use `branch-cleanup` grant for THIS repository (never cached, never the tracking token). `operate` reads with
+   * GET and may send at most one closed DELETE of one branch ref (`deleteBranch`); the grant is revoked right after, whatever happened.
+   * `unknown` only when that DELETE left and its outcome is not conclusive.
+   */
+  cleanup<T>(scope: GitHubScope, operate: (session: GitHubCleanupSession) => Promise<T>): Promise<GitHubCleanup<T>>;
 }
+/** Read session plus the single closed ref deletion of a cleanup attempt. A second call is refused locally (nothing sent). */
+export interface GitHubCleanupSession extends GitHubSession {
+  deleteBranch(branch: string): Promise<{ status: number }>;
+}
+export type GitHubCleanup<T> = { ok: true; observedAt: string; repositoryId: number; value: T; sent: boolean; revocation: TokenRevocation } |
+  { ok: false; outcome: 'known-failure' | 'unknown'; observedAt: string; code: string; waitSeconds?: number; nextStep: string; sent: boolean; revocation: TokenRevocation };
 /** `revocation`: outcome of the self-revocation (DELETE /installation/token) of the single-use grant after the POST attempt. */
 export type TokenRevocation = RevocationResult['kind'] | 'not-issued';
 export type GitHubWrite = { ok: true; observedAt: string; repositoryId: number; value: unknown; revocation: TokenRevocation } |
@@ -212,9 +229,9 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
   }
 
   /** `input`: JSON body of the single closed POST operation (question comment), sent on stdin; reads are GET without input. */
-  async function gh(scope: GitHubScope, directory: string, token: string, endpoint: string, repositoryId?: number, input?: string): Promise<{ body: unknown; status: number; next?: string }> {
+  async function gh(scope: GitHubScope, directory: string, token: string, endpoint: string, repositoryId?: number, input?: string, method?: 'DELETE'): Promise<{ body: unknown; status: number; next?: string }> {
     if (!endpoint.startsWith('/') || endpoint.startsWith('//') || /[\r\n#\\]/.test(endpoint)) throw new AccessFailure('INVALID_ENDPOINT');
-    return parseResponse(scope, await ghExec(directory, token, input === undefined ? 'GET' : 'POST', endpoint, input), endpoint, repositoryId);
+    return parseResponse(scope, await ghExec(directory, token, method ?? (input === undefined ? 'GET' : 'POST'), endpoint, input), endpoint, repositoryId);
   }
 
   /** gh api under one installation token in an isolated config directory; the token is in the explicit environment only, never argv.
@@ -513,6 +530,55 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
     } catch (error) {
       await revoke();
       return sanitized({ ok: false as const, outcome: 'unknown' as const, observedAt, ...failure(error), nextStep: unknownStep, revocation });
+    } finally { if (directory) await rm(directory, { recursive: true, force: true }); }
+  }, async cleanup(scope, operate) {
+    let directory: string | undefined;
+    const observedAt = new Date().toISOString();
+    const sanitized = <R>(value: R): R => JSON.parse(filter(JSON.stringify(value))) as R;
+    const window = rateWindows.get(scope.installationId) ?? 0;
+    if (window > Date.now()) return sanitized({ ok: false as const, outcome: 'known-failure' as const, observedAt, code: 'GITHUB_RATE_LIMITED',
+      waitSeconds: Math.max(1, Math.ceil((window - Date.now()) / 1000)), nextStep: 'Rate-limit window still open; nothing was sent.', sent: false, revocation: 'not-issued' as const });
+    let grant: Grant;
+    // Issuance failures happen BEFORE any request: nothing was deleted.
+    try { grant = await issue(scope, 'branch-cleanup'); } catch (error) {
+      const typed = failure(error);
+      return sanitized({ ok: false as const, outcome: 'known-failure' as const, observedAt, ...typed,
+        code: error instanceof TokenIssuanceFailure && error.outcome === 'unknown' ? 'GITHUB_TOKEN_ISSUANCE_UNKNOWN' : typed.code, sent: false, revocation: 'not-issued' as const });
+    }
+    let sent = false;
+    let answered: number | undefined;
+    let revocation: TokenRevocation = 'unknown';
+    const revoke = async () => { revocation = (await revokeToken(grant.token)).kind; };
+    try {
+      directory = await mkdtemp(join(options.root, 'run', 'github-'));
+      const reads = session(scope, directory, grant);
+      await verifyRepository(scope, reads);
+      const own = directory;
+      const value = await operate({ ...reads, async deleteBranch(branch) {
+        // Closed operation: one ref of THIS repository, a branch name the Factory itself validates (no other path, method or body).
+        if (sent || !/^(?!-)(?!.*\.\.)(?!.*\/\/)(?!.*@\{)[A-Za-z0-9._/-]{1,200}(?<![./])$/.test(branch)) throw new AccessFailure('CLEANUP_OPERATION_REFUSED');
+        sent = true;
+        try {
+          const response = await gh(scope, own, grant.token, `/repos/${scope.repository}/git/refs/heads/${branch.split('/').map(encodeURIComponent).join('/')}`, grant.repositoryId, undefined, 'DELETE');
+          answered = response.status;
+        } catch (error) {
+          // An HTTP answer (e.g. 422 for a ref that no longer exists, 403 by a rule) is conclusive and returned to the caller to interpret.
+          if (!(error instanceof AccessFailure && error.status !== undefined)) throw error;
+          answered = error.status;
+        }
+        return { status: answered };
+      } });
+      await revoke();
+      return sanitized({ ok: true as const, observedAt, repositoryId: grant.repositoryId, value, sent, revocation });
+    } catch (error) {
+      if (error instanceof AccessFailure && error.code === 'GITHUB_RATE_LIMITED' && error.waitSeconds !== undefined) rateLimit(scope, error.waitSeconds);
+      await revoke();
+      const typed = failure(error);
+      // Known: nothing sent, the DELETE answered (any status), or GitHub answered 4xx to it. Unknown: the DELETE left and no conclusive answer.
+      const known = !sent || answered !== undefined || (error instanceof AccessFailure && (error.code === 'GITHUB_RATE_LIMITED' || (error.status !== undefined && error.status >= 400 && error.status < 500)));
+      return sanitized({ ok: false as const, outcome: known ? 'known-failure' as const : 'unknown' as const, observedAt, ...typed,
+        code: typed.code === 'GITHUB_DIAGNOSTIC_FAILED' ? 'GITHUB_CLEANUP_FAILED' : typed.code,
+        nextStep: known ? typed.nextStep : 'The branch deletion may have happened: re-read the ref before any new attempt; never repeated blindly.', sent, revocation });
     } finally { if (directory) await rm(directory, { recursive: true, force: true }); }
   }, async transient(scope, purpose) {
     try {
