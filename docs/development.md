@@ -4,7 +4,10 @@ Os incrementos implementam preparação/diagnóstico offline, o gate da própria
 Factory e controlador exclusivo com pausa/pedidos duráveis por socket privado.
 O ticket 07 acrescenta polling somente leitura e admissão durável de um Trabalho por
 Ticket elegível (`factory list`, `factory show <work>`); ver
-[evidência 07](evidence/07-unique-ticket-admission.md). Não iniciam workers/VMs nem registram serviços.
+[evidência 07](evidence/07-unique-ticket-admission.md). O ticket 08 reavalia a cada rodada o grafo nativo
+`blocked_by` de cada Trabalho pendente (repos executáveis e `dependencyRepositories` só de leitura) e mostra a
+avaliação/seleção em `list`/`show`/`status`; ver [evidência 08](evidence/08-native-dependency-gating.md).
+Não iniciam workers/VMs nem registram serviços.
 Despacho permanece fechado, inclusive após `unpause`; não existe scheduler paralelo.
 Não é uma release autocontida homologada. Evidências e limites do controlador:
 [controller-evidence.md](controller-evidence.md). Autoridade: [spec](../.scratch/software-factory/spec.md),
