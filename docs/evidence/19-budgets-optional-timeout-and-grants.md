@@ -145,7 +145,7 @@ O núcleo durável de orçamento passou na primeira execução após compilar: a
 
 Receita: `dist/test/entrypoints/limits19-qualification.js` (fonte `test/entrypoints/limits19-qualification.ts`, provedor roteirizado
 `limits19-provider.ts`). `--plan` é inerte (teste `limits19-qualification`). Fases one-shot com tombstone `*-intent.json` exclusivo em
-`$HOME/software-factory-test/y5/q19-limits-v1/` (criado na `preflight`; existir = consumido). Sem retry; falha grava `*-held.json`.
+`$HOME/software-factory-test/y5/q19-limits-v2/` (criado na `preflight`; existir = consumido). Sem retry; falha grava `*-held.json`.
 
 **O modelo é substituído** por um provedor local roteirizado (`127.0.0.1:18719`, SSE openai-completions, mesmo padrão do 20): o worker Builder real,
 a VM real e o Bash real do guest executam `c0` (listagem curta do checkout) e `c1` (`sleep 600`, timeout da ferramenta 900 s). O que o ensaio comprova
@@ -214,3 +214,12 @@ adicionado em correção aberta, stop do dono com cessação não confirmada), `
 filho `timing-crash-child` em 3 modos), `control/execution-commits` (4; +1 de regressão para o timeout durável como última atividade e a cota
 inferior nunca reduzida), `workers/worker-clock-bound` (3, guarda estática + esquema de `deadlineMs`), `entrypoints/grant-cli` (1, I-local),
 `entrypoints/limits19-qualification` (4, receita inerte/provedor/veredito).
+
+## Ensaio real autorizado — 2026-11-14 (supervisor)
+
+Namespace `y5/q19-limits-v2` (v1 consumiu só o preflight: a listagem do GitHub ainda mostrava a issue #1 recém-desmarcada, consistência eventual; recipiada em v2). Registros: [run](19-real-limits-run-2026-11-14.json), [inspect](19-real-limits-inspect-2026-11-14.json).
+
+- 1 VM (assets34), um Builder conduzido por provedor local roteirizado (sem modelo), timeout do repo em 90 s e `correctionLimit: 1`.
+- O comando longo foi interrompido exatamente no limiar: `timing.timeout.elapsedMs` 90 005 ms (medido, origem monotônica local), duração final 90 504 ms, `overrun: proven`.
+- Fim `timeout / EXECUTION_TIMEOUT` com cessação confirmada, credencial retirada e revogada, Slot liberado; histórico `timeout-reached` uma única vez; `grant --corrections 1` aceito sem burlar o bloqueio; nenhum relançamento nos ciclos seguintes.
+- `verdict.passed: true` (9/9). Segredos: 0 no storage/observações/Records; as 2 ocorrências no runtime do boot são as chaves da CA de mediação por boot (esperado).

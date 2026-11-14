@@ -1,0 +1,315 @@
+{
+ "work": {
+  "budget": {
+   "corrections": {
+    "limit": 1,
+    "granted": 1,
+    "consumed": 0,
+    "reserved": null
+   },
+   "recoveries": {
+    "limit": 0,
+    "granted": 0,
+    "consumed": 0,
+    "reserved": null
+   },
+   "source": {
+    "kind": "repository-configuration",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "recordedAt": "2026-11-14T20:59:16.006Z"
+   },
+   "grants": [
+    {
+     "at": "2026-11-14T21:03:03.335Z",
+     "request_id": "q19-grant-1",
+     "origin": "local-cli",
+     "counter": "corrections",
+     "amount": 1,
+     "before": {
+      "limit": 1,
+      "granted": 0,
+      "consumed": 0,
+      "reserved": null
+     },
+     "after": {
+      "limit": 1,
+      "granted": 1,
+      "consumed": 0,
+      "reserved": null
+     }
+    }
+   ]
+  },
+  "impediments": [
+   {
+    "code": "EXECUTION_TIMEOUT",
+    "scope": "work",
+    "since": "2026-11-14T21:01:16.142Z",
+    "nextStep": "The Execution reached its configured timeout (90 s per Execution, measured on the controller monotonic clock); it is interrupted/blocked for intervention. Nothing is retried automatically and no new clock is started for it; answers and grants do not remove this impediment. Inspect with `factory show`."
+   }
+  ],
+  "limits": {
+   "corrections": {
+    "limit": 1,
+    "granted": 1,
+    "effectiveLimit": 2,
+    "consumed": 0,
+    "reserved": 0,
+    "reservedBy": null,
+    "available": 2,
+    "exhausted": false
+   },
+   "recoveries": {
+    "limit": 0,
+    "granted": 0,
+    "effectiveLimit": 0,
+    "consumed": 0,
+    "reserved": 0,
+    "reservedBy": null,
+    "available": 0,
+    "exhausted": true
+   },
+   "grants": 1,
+   "timeout": {
+    "seconds": 90,
+    "scope": "per-execution",
+    "reached": {
+     "reachedAt": "2026-11-14T21:01:16.142Z",
+     "elapsedMs": 90005.730813,
+     "evidence": "measured"
+    },
+    "overrun": "proven"
+   },
+   "duration": {
+    "clock": "controller-monotonic",
+    "startedAt": "2026-11-14T20:59:46.136Z",
+    "lastActivity": {
+     "at": "2026-11-14T21:01:16.640Z",
+     "elapsedMs": 90503.95130300001,
+     "event": "ended-timeout"
+    },
+    "lowerBoundMs": null,
+    "calendarEstimateMs": null,
+    "state": "measured",
+    "elapsedMs": 90503.95130300001,
+    "note": "Measured by the controller monotonic clock from the confirmed start to the observed end."
+   },
+   "actions": [
+    {
+     "code": "EXECUTION_TIMEOUT",
+     "nextStep": "The Execution reached its configured timeout (90 s per Execution, measured on the controller monotonic clock); it is interrupted/blocked for intervention. Nothing is retried automatically and no new clock is started for it; answers and grants do not remove this impediment. Inspect with `factory show`."
+    }
+   ]
+  },
+  "history": [
+   {
+    "at": "2026-11-14T20:59:16.006Z",
+    "event": "admitted",
+    "origin": "github-polling",
+    "sequence": 1
+   },
+   {
+    "at": "2026-11-14T20:59:18.990Z",
+    "event": "dependencies-changed",
+    "origin": "github-polling",
+    "before": null,
+    "after": "satisfied",
+    "evaluationId": "ed5d8966-0db4-43cb-b952-cac307fdcc3e"
+   },
+   {
+    "at": "2026-11-14T20:59:20.693Z",
+    "event": "execution-reserved",
+    "origin": "controller-dispatch",
+    "executionId": "80291079-5d1c-46ef-91fe-f3d2ad92ccd7"
+   },
+   {
+    "at": "2026-11-14T20:59:28.640Z",
+    "event": "execution-prepared",
+    "origin": "controller-dispatch",
+    "executionId": "80291079-5d1c-46ef-91fe-f3d2ad92ccd7"
+   },
+   {
+    "at": "2026-11-14T20:59:42.771Z",
+    "event": "execution-booted",
+    "origin": "controller-dispatch",
+    "executionId": "80291079-5d1c-46ef-91fe-f3d2ad92ccd7"
+   },
+   {
+    "at": "2026-11-14T20:59:45.939Z",
+    "event": "activation-requested",
+    "origin": "controller-dispatch",
+    "executionId": "80291079-5d1c-46ef-91fe-f3d2ad92ccd7"
+   },
+   {
+    "at": "2026-11-14T20:59:46.136Z",
+    "event": "execution-started",
+    "origin": "controller-dispatch",
+    "executionId": "80291079-5d1c-46ef-91fe-f3d2ad92ccd7",
+    "detail": "7aee4326-532d-4f25-bf94-3347f0eb7107"
+   },
+   {
+    "at": "2026-11-14T21:01:16.142Z",
+    "event": "timeout-reached",
+    "origin": "controller-clock",
+    "executionId": "80291079-5d1c-46ef-91fe-f3d2ad92ccd7",
+    "detail": "measured:90005.730813ms>=90s"
+   },
+   {
+    "at": "2026-11-14T21:01:16.640Z",
+    "event": "execution-ended",
+    "origin": "controller-dispatch",
+    "executionId": "80291079-5d1c-46ef-91fe-f3d2ad92ccd7",
+    "detail": "EXECUTION_TIMEOUT"
+   },
+   {
+    "at": "2026-11-14T21:01:17.999Z",
+    "event": "slot-released",
+    "origin": "controller-dispatch",
+    "executionId": "80291079-5d1c-46ef-91fe-f3d2ad92ccd7"
+   },
+   {
+    "at": "2026-11-14T21:03:03.335Z",
+    "event": "budget-granted",
+    "origin": "local-cli",
+    "executionId": null,
+    "detail": "corrections:+1:q19-grant-1"
+   }
+  ]
+ },
+ "execution": {
+  "executionId": "80291079-5d1c-46ef-91fe-f3d2ad92ccd7",
+  "invocationId": "builder-80291079-5d1c-46ef-91fe-f3d2ad92ccd7",
+  "mode": "initial",
+  "state": "ended",
+  "slot": {
+   "held": false,
+   "capacity": 1,
+   "reservedAt": "2026-11-14T20:59:20.693Z",
+   "releasedAt": "2026-11-14T21:01:17.999Z"
+  },
+  "admission": {
+   "attemptId": "0801936e-354d-4a52-9161-6ddb9336f856",
+   "evaluationId": "f61340f3-44ef-469e-ad3d-b7f647a1ac24",
+   "authorizationObservedAt": "2026-11-14T20:59:18.994Z",
+   "activationAttemptId": "b1096a47-90c8-40e0-bf8f-608dcc4cd6a6",
+   "activationEvaluationId": "10076899-d9d2-447c-abac-f95d2f8e7f5c"
+  },
+  "dispatch": {
+   "intent": "prepare-start-activate",
+   "phase": "stopped",
+   "environment": "env-75b775f7973a6d1a614e4552d3135fd5663200acf886765f7470943831f0c7c2",
+   "boot": "boot-5e1f076c-2b20-45fd-b162-cd033d272231",
+   "updatedAt": "2026-11-14T21:01:16.640Z"
+  },
+  "request": {
+   "ticket": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3",
+   "repository": "Sanmoo/java-springboot-event-sourcing",
+   "base": "main",
+   "branch": "factory/3-c6a7a2e2",
+   "policies": {},
+   "baseCommit": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+   "checkout": "/workspace/checkout",
+   "promptSha256": "ea7af09d22d10005889d57ff90903021869edcdeec74e0fb45f04a9b16437aeb",
+   "skillPack": null,
+   "resume": null
+  },
+  "credential": {
+   "role": "builder",
+   "purpose": "builder-start",
+   "repository": "Sanmoo/java-springboot-event-sourcing",
+   "repositoryId": 1256893534,
+   "installationId": 177599217,
+   "permissions": {
+    "metadata": "read",
+    "contents": "read",
+    "issues": "read"
+   },
+   "issuedAt": "2026-11-14T20:59:44.669Z",
+   "expiresAt": "2026-11-14T21:59:45Z"
+  },
+  "credentialIssuance": {
+   "requestedAt": "2026-11-14T20:59:44.664Z",
+   "outcome": "issued",
+   "code": null,
+   "metadata": {
+    "role": "builder",
+    "purpose": "builder-start",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "installationId": 177599217,
+    "permissions": {
+     "metadata": "read",
+     "contents": "read",
+     "issues": "read"
+    },
+    "issuedAt": "2026-11-14T20:59:44.669Z",
+    "expiresAt": "2026-11-14T21:59:45Z"
+   },
+   "revocation": "revoked",
+   "revocationCode": "GITHUB_TOKEN_REVOKED",
+   "risk": null,
+   "revocationAttemptedAt": "2026-11-14T21:01:16.149Z"
+  },
+  "credentialRenewals": [],
+  "credentialLifecycle": {
+   "state": "withdrawn",
+   "withdrawnAt": "2026-11-14T21:01:16.146Z",
+   "reason": "timeout",
+   "renewal": "enabled",
+   "renewalStop": null,
+   "workerNotice": null
+  },
+  "start": {
+   "receiptId": "7aee4326-532d-4f25-bf94-3347f0eb7107",
+   "confirmedAt": "2026-11-14T20:59:46.136Z"
+  },
+  "end": {
+   "at": "2026-11-14T21:01:16.640Z",
+   "outcome": "timeout",
+   "code": "EXECUTION_TIMEOUT",
+   "cessation": "confirmed"
+  },
+  "held": null,
+  "completion": {
+   "automatic": false,
+   "reason": "Reviews, publication and readiness are not enabled in this Factory version; an ended Builder Execution never completes the Work automatically."
+  },
+  "charge": {
+   "kind": "none",
+   "correctionId": null,
+   "counter": null,
+   "state": "none",
+   "settledAt": null
+  },
+  "timing": {
+   "timeoutSeconds": 90,
+   "clock": "controller-monotonic",
+   "origin": "53f677d5-1fdc-4d95-a587-49a4c4e2cef0",
+   "startedAt": "2026-11-14T20:59:46.136Z",
+   "lastActivity": {
+    "at": "2026-11-14T21:01:16.640Z",
+    "elapsedMs": 90503.95130300001,
+    "event": "ended-timeout"
+   },
+   "duration": {
+    "kind": "measured",
+    "elapsedMs": 90503.95130300001,
+    "endedAt": "2026-11-14T21:01:16.640Z"
+   },
+   "timeout": {
+    "reachedAt": "2026-11-14T21:01:16.142Z",
+    "elapsedMs": 90005.730813,
+    "evidence": "measured"
+   },
+   "overrun": "proven"
+  }
+ },
+ "receipt": {
+  "text": "{\"version\":1,\"context\":{\"workId\":\"c6a7a2e2-5fb5-43ce-b46c-c1b636cc7651\",\"executionId\":\"80291079-5d1c-46ef-91fe-f3d2ad92ccd7\",\"invocationId\":\"builder-80291079-5d1c-46ef-91fe-f3d2ad92ccd7\",\"role\":\"builder\",\"environmentRef\":\"env-75b775f7973a6d1a614e4552d3135fd5663200acf886765f7470943831f0c7c2\",\"bootRef\":\"boot-5e1f076c-2b20-45fd-b162-cd033d272231\",\"callId\":\"worker-start\"},\"recordedAt\":\"2026-11-14T20:59:46.108Z\",\"event\":{\"version\":1,\"kind\":\"worker-start\",\"suppliedContext\":{\"workId\":\"c6a7a2e2-5fb5-43ce-b46c-c1b636cc7651\",\"executionId\":\"80291079-5d1c-46ef-91fe-f3d2ad92ccd7\",\"invocationId\":\"builder-80291079-5d1c-46ef-91fe-f3d2ad92ccd7\",\"role\":\"builder\",\"environmentRef\":\"env-75b775f7973a6d1a614e4552d3135fd5663200acf886765f7470943831f0c7c2\",\"bootRef\":\"boot-5e1f076c-2b20-45fd-b162-cd033d272231\",\"phaseId\":\"builder-initial\"},\"phaseId\":\"builder-initial\",\"profile\":{\"id\":\"factory-development-pi-1.5.2-read-async-bash-lexical-v3\",\"version\":\"1.5.2\",\"integrity\":\"sha512-mUWI04rqF1Vd/m1q+Ps1XeWsTXEVvRUnsmRa83I3Dzua0Tx5bYS93imeqtIfrXf7PkkaR6ERz+AuQhIJlom5yA==\",\"upstreamSHA256\":\"e6159de5e4d94ae22968b6524237ef3d4f0374a107e2321ed5c29e93d66c8efc\",\"upstreamTreeSHA256\":\"7d0961cce25f6c802b22aaa028206cd610de386442d2e6b732d71367ef006391\",\"patchSHA256\":\"5e45a7c2953db293a14db0138bb31f8ac9e95eb13512afd42f1f49b77c98e066\",\"resultSHA256\":\"06867a067ebbadca2e06f75ccb4e682cd7e37b9683d41a71562f770b3105a209\",\"asyncPatchSHA256\":\"1ee38f2bdb71480b5b6206e72dbed32ac9214acbe0afe9b7e5137ea8f63cdc1e\",\"candidatePatchSHA256\":\"fd85bbd3c22fff3cb90dd990cb2608f18884d15dcd3820fb2f790b6e42a4dd01\",\"candidateManifestSHA256\":\"b6aaa5391d251867e41e8fc80973a1da79c7df3e38cdd18d11e705d939809b69\",\"lexicalPatchSHA256\":\"e3e88f8e6a53c9b58164c85c9866cfcf5a31b9fd415fdad7ce136976d8fd96d0\",\"lexicalCandidateManifestSHA256\":\"923d916bae558e6d21978593b2effb716dec80398bb5b0a66271fefcfc0f42a2\"},\"providerId\":\"q19-qualification-fixture\",\"modelId\":\"q19-model\",\"profileDirectory\":\"/home/sanmoo/software-factory-test/y5/r/Xh8HbCsgRf2xYs0DPSciMQ/w-JXhY0l/profile\",\"promptSha256\":\"ea7af09d22d10005889d57ff90903021869edcdeec74e0fb45f04a9b16437aeb\",\"skillPack\":null,\"modelBudget\":null,\"deadlineMs\":null,\"handoff\":null,\"review\":null,\"startedAt\":\"2026-11-14T20:59:46.105Z\",\"observedProcess\":{\"pid\":1538871,\"parentPid\":1538631,\"uid\":1000,\"executable\":\"/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node\",\"nodeVersion\":\"24.21.0\",\"timeOrigin\":1794689985977.442,\"observedAt\":\"2026-11-14T20:59:46.106Z\"}}}"
+ },
+ "secretShapes": {
+  "/home/sanmoo/software-factory-test/y5/q19-limits-v2": 0,
+  "/home/sanmoo/software-factory-test/y5/c6a7a2e2-5fb5-43ce-b46c-c1b636cc7651": 0,
+  "/home/sanmoo/software-factory-test/y5/r/Xh8HbCsgRf2xYs0DPSciMQ": 2
+ }
+}

@@ -9,8 +9,8 @@ import type { ExecutionPorts, ExecutionView, ListView, ShowView, WorkView } from
 // blocked (EXECUTION_TIMEOUT) through polling rounds, an explicit grant and a controller restart — no automatic loop.
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const observations = `${root}/q19-limits-v1`;
-const revision = 'q19-limits-v1';
+const observations = `${root}/q19-limits-v2`;
+const revision = 'q19-limits-v2';
 const phases = ['preflight', 'run', 'inspect', 'stop-environment'] as const;
 type Phase = typeof phases[number];
 // Limits under test: per-Execution timeout 90 s; correction/recovery limits captured at admission (1/0) to observe the snapshot and a grant.
