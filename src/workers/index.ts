@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { createRecords } from '../records/index.js';
 import { z } from 'zod';
 import { readSessionFile, sessionRefSchema, workerLaunchSchema, workerOwnerEndpoint, workerQuestionSchema, type WorkerLaunch } from '../platform/host/index.js';
 import { builderToolNames, compareSessionProfile } from './session-ref.js';
@@ -100,6 +101,14 @@ const completionSchema = z.discriminatedUnion('status', [
 
 // Ticket 13: `closing` (the Host's capture after the session ended) and the Host-resolved `declarations` (treatments, gate evidence).
 const handoffExtras = { closing: z.literal(true).optional(), declarations: resolvedDeclarationsSchema.optional() };
+/** The protected `worker-start` record (worker-start.ts): its correlation and supplied context, never its process details. */
+const startRecordSchema = z.object({ version: z.literal(1), recordedAt: z.iso.datetime(),
+  context: z.object({ workId: z.string(), executionId: z.string(), invocationId: z.string(), callId: z.string() }),
+  event: z.object({ kind: z.literal('worker-start'), suppliedContext: z.object({ workId: z.string(), executionId: z.string(), invocationId: z.string() }) }) });
+/** Ticket 26: what the receipt facet of `observe` established (see `observeStart`). */
+export type StartObservation = { kind: 'receipt'; receipt: { workId: string; id: string; executionId: string; invocationId: string }; recordedAt: string } |
+  { kind: 'absent'; completeness: 'complete' } | { kind: 'uncertain'; code: string };
+
 const handoffEventSchema = z.union([
   z.strictObject({ round: z.number().int().min(1).max(99), status: z.literal('captured'), summary: handoffSummarySchema, ...handoffExtras }),
   z.strictObject({ round: z.number().int().min(1).max(99), status: z.literal('failure'), code: z.string().regex(/^[A-Z_]{1,64}$/),
@@ -112,6 +121,31 @@ export function createWorkers(configuration?: Configuration) {
   // Live activations of THIS facade (memory only): the current recipient of `deliver`. Closed/ended channels are removed.
   const live = new Map<string, { channel: Channel; inbox: ReturnType<typeof mailbox>; context: Invocation['context']; launchId: string; handoff: boolean }>();
   return {
+    /**
+   * Ticket 26 — Q6 `observe`, receipt facet: the complete synchronized start receipt the worker host wrote in the protected Records BEFORE any
+   * model/tool, discovered without its notification and without rerunning anything. Exactly one complete, intact, correlated receipt is a
+   * start; a complete listing with none is absence; partial/corrupt/multiple/unreadable evidence is uncertain (never absence). Not cessation.
+   */
+  async observeStart(input: { workId: string; executionId: string; invocationId: string }): Promise<StartObservation> {
+    if (!configuration) return { kind: 'uncertain', code: 'WORKER_EXECUTION_NOT_ENABLED' };
+    let records: Awaited<ReturnType<typeof createRecords>>;
+    try { records = await createRecords({ root: configuration.root }); } catch { return { kind: 'uncertain', code: 'RECORDS_UNAVAILABLE' }; }
+    const found = await records.find({ workId: input.workId, executionId: input.executionId, invocationId: input.invocationId, callId: 'worker-start' }).catch(() => null);
+    if (!found || found.completeness !== 'complete') return { kind: 'uncertain', code: 'START_RECEIPT_LISTING_INCOMPLETE' };
+    if (found.captures.length === 0) return { kind: 'absent', completeness: 'complete' };
+    if (found.captures.length > 1) return { kind: 'uncertain', code: 'START_RECEIPT_MULTIPLE' };
+    const capture = found.captures[0]!;
+    if (capture.state !== 'complete') return { kind: 'uncertain', code: 'START_RECEIPT_INCOMPLETE' };
+    try {
+      const page = await records.read({ reference: capture.reference, offset: 0, limit: 65536 });
+      if (page.state !== 'complete' || page.nextOffset !== page.bytes) return { kind: 'uncertain', code: 'START_RECEIPT_INCOMPLETE' };
+      const parsed = startRecordSchema.parse(JSON.parse(page.data.toString('utf8')));
+      const supplied = parsed.event.suppliedContext;
+      if (parsed.context.callId !== 'worker-start' || supplied.workId !== input.workId || supplied.executionId !== input.executionId ||
+          supplied.invocationId !== input.invocationId) return { kind: 'uncertain', code: 'START_RECEIPT_MISMATCH' };
+      return { kind: 'receipt', receipt: { workId: input.workId, id: capture.reference.id, executionId: input.executionId, invocationId: input.invocationId }, recordedAt: parsed.recordedAt };
+    } catch { return { kind: 'uncertain', code: 'START_RECEIPT_INVALID' }; }
+  },
     /**
      * Q6 `observe` (ticket 11): whether the preserved session of an ended Builder invocation can be CONTINUED by the planned next Builder
      * activation — present, intact (same hash/identity) and with the same SDK profile, provider/model, pack and tool set. Read-only and
@@ -138,41 +172,40 @@ export function createWorkers(configuration?: Configuration) {
         skillPack: input.next.skillPack ?? null, tools: builderToolNames(input.next) });
       if (differences.length) return { session: { state: 'incompatible', code: 'SESSION_PROFILE_CHANGED', differences }, limitations };
       return { session: { state: 'compatible', session: recorded.data }, limitations };
-    },
-    async deliver(worker: string, directive: WorkerDirective): Promise<DeliveryResult> {
-    const entry = live.get(worker);
-    if (!entry || entry.inbox.ended) return { status: 'failure', code: 'WORKER_NOT_CURRENT' };
-    if (directive.kind === 'review-results') {
-      // Only to a Builder launched with a handoff policy; delivery is not proof of consumption by the SDK.
-      if (entry.context.role !== 'builder' || !entry.handoff) return { status: 'failure', code: 'DELIVERY_NOT_APPLICABLE' };
-      const deliveryId = randomUUID();
-      entry.inbox.expect(deliveryId);
-      try {
-        await entry.channel.send({ protocol_version: protocolVersion, controller_run_id: null, message_id: deliveryId, reply_to: entry.launchId,
-          kind: 'deliver-directive', payload: { directive: { kind: directive.kind, round: directive.round, prompt: directive.prompt, ...(directive.end ? { end: true } : {}),
-            ...(directive.findings ? { findings: { standards: [...directive.findings.standards], spec: [...directive.findings.spec] } } : {}) } } });
-      } catch { entry.inbox.release(deliveryId); return { status: 'failure', code: 'DELIVERY_UNCONFIRMED' }; }
-      const reply = await entry.inbox.next(message => message.reply_to === deliveryId, 15000);
-      entry.inbox.release(deliveryId);
-      if (!reply) return { status: 'failure', code: 'DELIVERY_UNCONFIRMED' };
-      if (reply.kind !== 'delivery-result' || JSON.stringify(reply.payload) !== '{"status":"delivered"}') return { status: 'failure', code: 'DELIVERY_DENIED' };
-      return { status: 'delivered' };
-    }
-    // Reviewers never receive the Builder's secret environment (spec §8: handoff does not deliver it).
-    if (entry.context.role !== 'builder') return { status: 'failure', code: 'CREDENTIAL_ROLE_DENIED' };
-    if (directive.kind === 'credential' && (typeof directive.credential?.token !== 'string' || !directive.credential.token)) return { status: 'failure', code: 'WORKER_DIRECTIVE_INVALID' };
-    const id = randomUUID();
-    entry.inbox.expect(id);
+    }, async deliver(worker: string, directive: WorkerDirective): Promise<DeliveryResult> {
+  const entry = live.get(worker);
+  if (!entry || entry.inbox.ended) return { status: 'failure', code: 'WORKER_NOT_CURRENT' };
+  if (directive.kind === 'review-results') {
+    // Only to a Builder launched with a handoff policy; delivery is not proof of consumption by the SDK.
+    if (entry.context.role !== 'builder' || !entry.handoff) return { status: 'failure', code: 'DELIVERY_NOT_APPLICABLE' };
+    const deliveryId = randomUUID();
+    entry.inbox.expect(deliveryId);
     try {
-      await entry.channel.send({ protocol_version: protocolVersion, controller_run_id: null, message_id: id, reply_to: null, kind: directive.kind === 'credential' ? 'deliver-credential' : 'withdraw-credential',
-        payload: directive.kind === 'credential' ? { context: entry.context, token: directive.credential.token } : { context: entry.context } });
-    } catch { return { status: 'failure', code: 'CREDENTIAL_DELIVERY_UNCERTAIN' }; }
-    const reply = await entry.inbox.next(message => message.reply_to === id, 15000);
-    entry.inbox.release(id); // a late reply after a timeout is unexpected: the channel becomes uncertain
-    const expected = directive.kind === 'credential' ? '{"status":"delivered"}' : '{"status":"withdrawn"}';
-    if (!reply) return { status: 'failure', code: 'CREDENTIAL_DELIVERY_UNCERTAIN' };
-    if (reply.kind !== 'credential-result' || JSON.stringify(reply.payload) !== expected) return { status: 'failure', code: directive.kind === 'credential' ? 'CREDENTIAL_DELIVERY_DENIED' : 'CREDENTIAL_WITHDRAWAL_DENIED' };
-    return { status: directive.kind === 'credential' ? 'delivered' : 'withdrawn' };
+      await entry.channel.send({ protocol_version: protocolVersion, controller_run_id: null, message_id: deliveryId, reply_to: entry.launchId,
+        kind: 'deliver-directive', payload: { directive: { kind: directive.kind, round: directive.round, prompt: directive.prompt, ...(directive.end ? { end: true } : {}),
+          ...(directive.findings ? { findings: { standards: [...directive.findings.standards], spec: [...directive.findings.spec] } } : {}) } } });
+    } catch { entry.inbox.release(deliveryId); return { status: 'failure', code: 'DELIVERY_UNCONFIRMED' }; }
+    const reply = await entry.inbox.next(message => message.reply_to === deliveryId, 15000);
+    entry.inbox.release(deliveryId);
+    if (!reply) return { status: 'failure', code: 'DELIVERY_UNCONFIRMED' };
+    if (reply.kind !== 'delivery-result' || JSON.stringify(reply.payload) !== '{"status":"delivered"}') return { status: 'failure', code: 'DELIVERY_DENIED' };
+    return { status: 'delivered' };
+  }
+  // Reviewers never receive the Builder's secret environment (spec §8: handoff does not deliver it).
+  if (entry.context.role !== 'builder') return { status: 'failure', code: 'CREDENTIAL_ROLE_DENIED' };
+  if (directive.kind === 'credential' && (typeof directive.credential?.token !== 'string' || !directive.credential.token)) return { status: 'failure', code: 'WORKER_DIRECTIVE_INVALID' };
+  const id = randomUUID();
+  entry.inbox.expect(id);
+  try {
+    await entry.channel.send({ protocol_version: protocolVersion, controller_run_id: null, message_id: id, reply_to: null, kind: directive.kind === 'credential' ? 'deliver-credential' : 'withdraw-credential',
+      payload: directive.kind === 'credential' ? { context: entry.context, token: directive.credential.token } : { context: entry.context } });
+  } catch { return { status: 'failure', code: 'CREDENTIAL_DELIVERY_UNCERTAIN' }; }
+  const reply = await entry.inbox.next(message => message.reply_to === id, 15000);
+  entry.inbox.release(id); // a late reply after a timeout is unexpected: the channel becomes uncertain
+  const expected = directive.kind === 'credential' ? '{"status":"delivered"}' : '{"status":"withdrawn"}';
+  if (!reply) return { status: 'failure', code: 'CREDENTIAL_DELIVERY_UNCERTAIN' };
+  if (reply.kind !== 'credential-result' || JSON.stringify(reply.payload) !== expected) return { status: 'failure', code: directive.kind === 'credential' ? 'CREDENTIAL_DELIVERY_DENIED' : 'CREDENTIAL_WITHDRAWAL_DENIED' };
+  return { status: directive.kind === 'credential' ? 'delivered' : 'withdrawn' };
   }, async activate(invocation: Invocation, delivery?: ActivationDelivery, events?: ActivationEvents) {
     if (!configuration) throw new Error('WORKER_EXECUTION_NOT_ENABLED');
     // Spec §6.1: provider/model explicit PER ROLE, no silent fallback. With per-role profiles every role must be listed; a ticket-12

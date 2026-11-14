@@ -5,6 +5,7 @@ import { ticketKey } from '../rules/admission.js';
 import { availableOf, counterView, exhaustionCodes, exhaustionImpediment, grantDecision, initialBudget, type BudgetCounterName } from '../rules/budget.js';
 import { requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import { activeExecution } from './execution.js';
+import { applyRecoveryRequest } from './recovery-request.js';
 import type { Session } from './store.js';
 
 type Limits = Pick<ConfiguredRepository, 'correctionLimit' | 'recoveryLimit'>;
@@ -86,11 +87,9 @@ export const openCorrection = (session: Session, work_id: string, reason: string
     return 'opened';
   });
 
-/** Module-internal trigger of the recovery flow (ticket 26): the next Execution of the Work is an operational recovery (one unit). */
+/**
+ * Module-internal trigger of the recovery flow (ticket 26): the next Execution of the Work is an operational recovery (one unit), after the
+ * persisted wait (5/15/45 s by recoveries already consumed). A repeated request keeps the pending one: no earlier deadline, no second unit.
+ */
 export const requestOperationalRecovery = (session: Session, work_id: string, reason: string, limits: (repository: string) => Limits | undefined) =>
-  charge(session, work_id, limits, 'recoveries', (work, at) => {
-    if (work.pendingRecovery) return 'already-open';
-    work.pendingRecovery = { reason, requestedAt: at };
-    work.history.push({ at, event: 'recovery-requested', origin: 'controller-budget', executionId: null, detail: reason.slice(0, 200) });
-    return 'requested';
-  });
+  charge(session, work_id, limits, 'recoveries', (work, at) => applyRecoveryRequest(work, { executionId: null, code: 'REQUESTED', at, reason }));

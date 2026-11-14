@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { z } from 'zod';
-import type { AccessDependencies, Control, ControlStatus, DispatchReason, ExecutionPorts, Impediment, LimitsView, ListView, PollingOptions, PollingView, WorkView } from '../types.js';
+import type { AccessDependencies, Control, ControlStatus, DispatchReason, ExecutionPorts, Impediment, LimitsView, ListView, PollingOptions, PollingView, RecoveryView, RuntimeInventory,
+  WorkView } from '../types.js';
 import { heldSlots, initializeSlots, reconcileDurations, reconcileLostCredentials } from './execution.js';
 import { createDispatcher, isLiveCredentialExecution, isLiveExecution } from './dispatch.js';
 import { openStore } from './store.js';
@@ -14,6 +15,9 @@ import { acceptScopeUpdate } from './scope.js';
 import { dispatchBlockers, selectNext } from '../rules/dependencies.js';
 import { counterView, durationView, maxGrantAmount } from '../rules/budget.js';
 import { grantBudget, openCorrection, requestOperationalRecovery } from './budget.js';
+import { reconcileBoot } from './recovery.js';
+import { dispatchGate } from '../rules/recovery.js';
+import { backoffRunning } from './recovery-request.js';
 
 const requestId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
 const inputSchema = z.union([z.strictObject({ request_id: requestId, operation: z.enum(['pause', 'unpause']), origin: z.literal('local-cli') }),
@@ -27,7 +31,8 @@ const workIdSchema = z.uuid();
 const limitations = [
   'Candidate observations are in-memory results of the latest poll, not authority; they are rebuilt after restart.',
   'A failed or partial query, or absence from a listing, never proves absence of a Ticket, label or pull request, nor withdrawal of authorization.',
-  'Dispatch opens only when execution boundaries are composed, the runtime inventory is empty and no Slot is held from an earlier run; it then revalidates authorization and dependencies of its own attempt before reserving.',
+  'Dispatch opens only after the boot reconciliation: execution boundaries composed, no unknown runtime resource, task or orphan Slot; interrupted Executions are ceased (never adopted) and settled from durable evidence. A Work whose own cessation or start stays uncertain keeps its Slot/reservation and is blocked; independents proceed with the remaining capacity. Each dispatch then revalidates authorization and dependencies of its own attempt before reserving.',
+  'An operational recovery waits its persisted delay (5/15/45 s by recoveries already consumed, never anticipated by events or restarts) and is checked again at the next polling round after it.',
   'An ended Builder Execution never completes the Work automatically: reviews, publication (push/PR) and readiness are not enabled in this increment; nothing is retried automatically.',
   'Native dependency evaluations are re-done every polling round; only an evaluation of the current round can release, never an older or pre-restart one.',
   'A Question waiting for an answer occupies no Slot; an accepted answer removes only its own impediment and never starts an agent directly: the Work resumes through its queue position after revalidation.',
@@ -53,7 +58,9 @@ export async function withdrawActivityCredentials(control: Control, work_id: str
 }
 
 /** Bootstrap must already hold the stable canonical-storage flock for this owner's entire lifetime. */
-export async function openControl(options: { storagePath: string; runtimeInventory: 'empty' | 'unknown'; access?: AccessDependencies; polling?: PollingOptions;
+export async function openControl(options: { storagePath: string;
+  /** Host inventory of own runtime resources taken after the lock (ticket 26). `empty`/`unknown` are the coarse legacy forms. */
+  runtimeInventory: 'empty' | 'unknown' | RuntimeInventory; access?: AccessDependencies; polling?: PollingOptions;
   /** Execution boundaries (sandbox lifecycle, Workers activation, Builder credentials). Absent: dispatch stays closed (EXECUTION_NOT_ENABLED). */
   execution?: ExecutionPorts }): Promise<Control> {
   // Closed before any storage open; this increment exposes no dispatch, task, or external-effect entrypoint.
@@ -64,6 +71,12 @@ export async function openControl(options: { storagePath: string; runtimeInvento
   try { await initialize(state); await initializeSlots(state); } catch (error) { await store.close().catch(() => {}); throw error; }
   let dispatcher: ReturnType<typeof createDispatcher> | undefined;
   let stopped = false;
+  let recovery: RecoveryView | null = null;
+  const calendar = options.execution?.calendar ?? { now: () => Date.now() };
+  // Boot facts of THIS run (ticket 26): a repository whose host Git cache was being prepared stays blocked (a fetch/clone may still run).
+  const runBlockers = (work: WorkRecord): string[] => [
+    ...(recovery?.cachePreparing.includes(work.repository.repositoryId) ? ['CACHE_RECONCILIATION_REQUIRED'] : []),
+    ...(backoffRunning(work, calendar.now()) ? ['RECOVERY_BACKOFF'] : [])];
   const configuredRepository = (repository: string) => options.access?.repositories.find(scope => scope.repository.toLowerCase() === repository.toLowerCase());
   // Question publication and answer ingestion need the tracker; they run whatever the dispatch barrier (no spawn involved).
   const desk = options.access && options.polling ? createQuestionDesk({ session: state, tracker: options.access.tracker, operators: options.access.operators ?? [],
@@ -81,11 +94,11 @@ export async function openControl(options: { storagePath: string; runtimeInvento
   if (options.execution && options.access && poller) dispatcher = createDispatcher({ session: state, access: options.access, ports: options.execution,
     currentAttempt: repository => poller.currentAttempt(repository), readWorks: () => readWorks(state), ownCycles: issueIds => ownCycles(state, issueIds),
     record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation), paused: async () => (await readInstallation(state)).paused,
-    heldSlots: () => heldSlots(state), questionRecorded: () => desk?.kick(), controllerRunId: controller_run_id });
+    heldSlots: () => heldSlots(state), questionRecorded: () => desk?.kick(), controllerRunId: controller_run_id, runBlockers });
   const pollingView = (): PollingView => poller?.view() ?? { state: 'disabled', intervalSeconds: null, cycles: 0, lastCycleAt: null, source: 'in-memory-observation', repositories: [] };
   // Work-level reasons preventing a start now; the dependency evaluation must belong to the repository's current polling round.
-  const blockers = (work: WorkRecord) => dispatchBlockers({ impediments: work.impediments, evaluation: work.dependencies.latest,
-    currentAttempt: poller?.currentAttempt(work.repository.repository) ?? null });
+  const blockers = (work: WorkRecord) => [...dispatchBlockers({ impediments: work.impediments, evaluation: work.dependencies.latest,
+    currentAttempt: poller?.currentAttempt(work.repository.repository) ?? null }), ...runBlockers(work)];
   const present = (work: WorkRecord, paused: boolean): WorkView => {
     const impediments: Impediment[] = [...work.impediments,
       ...(paused ? [{ code: 'GLOBAL_PAUSE', scope: 'installation' as const, nextStep: 'Unpause to allow new triggers; unpausing removes no individual impediment.' }] : [])];
@@ -174,7 +187,7 @@ export async function openControl(options: { storagePath: string; runtimeInvento
           unpublished: allQuestions.filter(item => item.state === 'open' && item.publication.state !== 'published').length },
         selection: { next: selection(works).next },
         polling: { ...polling, repositories: polling.repositories.map(({ candidates: _candidates, ...repo }) => repo) },
-        persistence: store.persistence } satisfies ControlStatus;
+        persistence: store.persistence, recovery } satisfies ControlStatus;
     },
     async run(signal) {
       if (running) throw new Error('CONTROL_ALREADY_RUNNING');
@@ -184,13 +197,26 @@ export async function openControl(options: { storagePath: string; runtimeInvento
       try {
         // Authoritative persisted task inventory, not an empty fake scheduler. Unknown runtime resources stay closed.
         const tasks = await state.commit(tx => tx.scanTasks({}, 1), BACKGROUND_CONTEXT);
-        // A Slot still held from an earlier owner means unknown runtime state: stay closed until recovery (ticket 26).
-        if (tasks.items.length === 0 && options.runtimeInventory === 'empty') dispatchReason = dispatcher && await heldSlots(state) === 0 ? null : dispatcher ? 'RECONCILIATION_REQUIRED' : 'EXECUTION_NOT_ENABLED';
         // Grants of a previous process were memory-only: record them as impossible to revoke, with their risk (never blocks by itself).
         // Before polling starts, so no dispatch of this run precedes it. A run stopped before it starts (read-only inspection) writes nothing.
         if (!signal.aborted) await reconcileLostCredentials(state, isLiveCredentialExecution);
         // Durations measured by a previous process: proven lower bound + calendar estimate; overrun blocks when it cannot be excluded.
         if (!signal.aborted) await reconcileDurations(state, isLiveExecution);
+        // Ticket 26 (spec §5.2 steps 3-5), barrier still closed: own survivors are stopped (not adopted), interrupted Executions settled from
+        // durable evidence; only then the gate opens, unless unknown resources, tasks or orphan Slots keep the installation closed.
+        const inventory = options.runtimeInventory;
+        if (!signal.aborted && dispatcher && options.execution && inventory !== 'unknown') {
+          recovery = await reconcileBoot({ session: state, ports: options.execution, controllerRunId: controller_run_id, inventory, live: isLiveExecution });
+        }
+        // Without a reconciliation (no execution boundaries to observe/stop with), every listed resource stays unreconciled: never free capacity.
+        const unreconciled = typeof inventory === 'object' && !recovery ? [...inventory.unknown.map(item => `UNKNOWN_RESOURCE:${item}`),
+          ...inventory.environments.map(item => `ENVIRONMENT_NOT_RECONCILED:${item.environment}`),
+          ...inventory.cache.filter(item => item.state !== 'idle').map(item => `CACHE_NOT_RECONCILED:${item.repositoryId ?? 'unknown'}`)] : [];
+        const gate = dispatchGate({ executionComposed: dispatcher !== undefined, inventory: typeof inventory === 'object' ? 'listed' : inventory, tasks: tasks.items.length,
+          unknownResources: recovery?.global ?? unreconciled, orphanSlots: [] });
+        // Without a reconciliation (inventory unknown, read-only inspection) a Slot still held from an earlier owner keeps dispatch closed.
+        dispatchReason = gate.reason ?? (recovery === null && await heldSlots(state) > 0 ? 'RECONCILIATION_REQUIRED' : null);
+        if (recovery && gate.closing.length) recovery = { ...recovery, global: gate.closing };
         const aborted = new Promise<'stop'>(resolve => {
           if (signal.aborted) resolve('stop');
           else signal.addEventListener('abort', () => resolve('stop'), { once: true });
@@ -202,11 +228,12 @@ export async function openControl(options: { storagePath: string; runtimeInvento
         loop.abort();
         stopped = true;
         await polling.catch(() => {});
-        await dispatcher?.stop();
+        // An administrative stop is clean only after the confirmed cessation and persistence of every own activity (spec §11.4).
+        const uncertain = (await dispatcher?.stop())?.uncertain ?? 0;
         await desk?.idle();
         await state.close(BACKGROUND_CONTEXT);
         const end = await state.closed;
-        return { kind: outcome === 'stop' && end.kind === 'closed' ? 'clean' : 'failed' };
+        return { kind: outcome === 'stop' && end.kind === 'closed' ? uncertain ? 'uncertain' : 'clean' : 'failed' };
       } catch {
         loop.abort();
         stopped = true;

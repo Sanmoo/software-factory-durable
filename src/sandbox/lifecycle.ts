@@ -12,14 +12,17 @@ import type { EnvironmentRef } from './prepare.js';
 
 export type BootRef = string & { readonly bootRef: unique symbol };
 export type Observation = {
-  condition: 'active' | 'stopped' | 'removed' | 'indeterminate';
+  /** `not-booted` (ticket 26): an owned, prepared environment that never published a boot, so no manager unit was ever started for it. */
+  condition: 'active' | 'stopped' | 'removed' | 'not-booted' | 'indeterminate';
   cessationConfirmed: boolean;
   consumption: 'unavailable';
+  /** Ticket 26: the boot an observation WITHOUT an explicit boot correlated (the environment's published current boot); null when none. */
+  boot?: BootRef | null;
 };
 
 const environmentRef = z.string().regex(/^env-[a-f0-9]{64}$/);
 const bootRef = z.string().regex(/^boot-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/);
-const ownerSchema = z.strictObject({
+export const ownerSchema = z.strictObject({
   version: z.literal(1), workId: z.string().min(1).max(512), environment: environmentRef,
   configuration: configurationSchema,
   guestAssets: z.strictObject({ directory: z.string(), manifestSha256: z.string().regex(/^[a-f0-9]{64}$/) }),
@@ -188,6 +191,24 @@ export async function observeBootEnvironment(root: string, environment: Environm
     }
     return { condition: 'stopped', cessationConfirmed: true, consumption: 'unavailable' };
   } catch { return unknown; }
+}
+
+/**
+ * Ticket 26: the boot currently published for an owned, prepared environment. `current.json` is renamed into place (and the directory
+ * synced) BEFORE any manager actuation, so its absence proves that no unit was ever started for this environment. `undefined`: unknown.
+ */
+export async function currentBoot(root: string, environment: EnvironmentRef): Promise<BootRef | null | undefined> {
+  try {
+    const { directory } = await ownedEnvironment(root, environment);
+    try {
+      const current = await metadata(join(directory, 'current.json'), currentSchema);
+      return current.environment === environment ? current.boot as BootRef : undefined;
+    } catch (error) {
+      // A boot directory or an unrenamed `current-<boot>.json` without the published current boot never reached systemd-run.
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null;
+      return undefined;
+    }
+  } catch { return undefined; }
 }
 
 /** Removal evidence is not cessation by itself: verify every recorded boot and absence. */

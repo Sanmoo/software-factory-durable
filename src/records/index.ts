@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, mkdir, open, rename, realpath, unlink, type FileHandle } from 'node:fs/promises';
+import { lstat, mkdir, open, readdir, rename, realpath, unlink, type FileHandle } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { types } from 'node:util';
 import { z } from 'zod';
@@ -37,6 +37,8 @@ export type TextProjection = {
 type OutputPage = { state: 'complete' | 'partial'; data: Buffer<ArrayBuffer>; nextOffset: number; bytes: number }
   | { state: 'absent'; data: Buffer<ArrayBuffer>; nextOffset: number; bytes: number };
 type RawPage = OutputPage & { version: 2; format: 'raw' };
+/** Upper bound of the captures one `find` lists for a Work (bounded host read; beyond it the result is incomplete). */
+const findLimit = 20000;
 export const outputLimits = Object.freeze({ chunkBytes: 65536, pageBytes: 65536, excerptBytes: 4096,
   secretCharacters: 4096, secretCount: 128 });
 export class RecordsError extends Error {
@@ -482,8 +484,45 @@ export async function createRecords({ root }: { root: string }) {
       throw new RecordsError();
     }
   }
+  /**
+   * Ticket 26 (`read(selection)` with filters): the captures of ONE Work whose recorded correlation matches the selection, with their state.
+   * Unreadable/corrupt capture metadata or an over-limit listing makes the result `incomplete` — never proof of absence.
+   */
+  async function find(selection: { workId: string; executionId?: string; invocationId?: string; callId?: string }):
+    Promise<{ completeness: 'complete' | 'incomplete'; captures: { reference: OutputReference; context: OutputContext; state: 'complete' | 'partial' }[] }> {
+    const filter = z.strictObject({ workId: identifier, executionId: identifier.optional(), invocationId: identifier.optional(), callId: identifier.optional() }).safeParse(selection);
+    if (!filter.success) throw new RecordsError();
+    const evidence = join(root, filter.data.workId, 'evidence');
+    let names: string[];
+    try {
+      for (const path of [join(root, filter.data.workId), evidence]) await privateDirectory(path);
+      names = await readdir(evidence);
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return { completeness: 'complete', captures: [] };
+      return { completeness: 'incomplete', captures: [] };
+    }
+    if (names.length > findLimit) return { completeness: 'incomplete', captures: [] };
+    let completeness: 'complete' | 'incomplete' = 'complete';
+    const captures: { reference: OutputReference; context: OutputContext; state: 'complete' | 'partial' }[] = [];
+    for (const name of names.sort()) {
+      if (!z.uuid().safeParse(name).success) { completeness = 'incomplete'; continue; }
+      try {
+        const directory = join(evidence, name);
+        await privateDirectory(directory);
+        const capture = z.union([captureSchema, rawCaptureSchema]).parse(await privateJson(join(directory, 'capture.json')));
+        if (capture.reference.id !== name || capture.reference.workId !== filter.data.workId || capture.context.workId !== filter.data.workId) { completeness = 'incomplete'; continue; }
+        const { workId: _workId, ...wanted } = filter.data;
+        if (Object.entries(wanted).some(([key, value]) => value !== undefined && capture.context[key as keyof OutputContext] !== value)) continue;
+        let state: 'complete' | 'partial' = 'partial';
+        try { await privateJson(join(directory, 'complete.json')); state = 'complete'; }
+        catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) { completeness = 'incomplete'; continue; } }
+        captures.push({ reference: capture.reference, context: capture.context, state });
+      } catch { completeness = 'incomplete'; }
+    }
+    return { completeness, captures };
+  }
   const records = {
-    openOutput, read, projectText,
+    openOutput, read, projectText, find,
     async record(context: OutputContext, event: unknown): Promise<OutputReference> {
       try {
         const parsed = z.json().parse(boundedEvent(event));

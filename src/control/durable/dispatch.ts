@@ -11,15 +11,17 @@ import { evaluateEntry } from '../rules/admission.js';
 import { dispatchBlockers, selectNext, type OwnCycleFacts } from '../rules/dependencies.js';
 import { evaluateWorkDependencies } from './polling.js';
 import { readWork, type WorkRecord } from './admission.js';
-import { admitExecution, beginRenewal, blockBeforeStart, confirmActivation, confirmStart, holdExecution, recordActivity, recordEnd, recordIssuance, recordPhase, recordRenewal, recordRevocation,
+import { admitExecution, interruptionBasis, beginRenewal, blockBeforeStart, confirmActivation, confirmStart, holdExecution, recordActivity, recordEnd, recordIssuance, recordPhase, recordRenewal, recordRevocation,
   recordRevocationIntent, recordTimeout, recordWorkerNotice, releaseAfterCessation, releaseBeforeStart, resumeBasis, stopRenewal, withdrawCredentials } from './execution.js';
 import { systemClock } from './polling.js';
 import { timeoutReached } from '../rules/budget.js';
 import { intactRequest, readQuestion, readQuestions, recordContentLost, registerQuestion } from './questions.js';
 import { pendingScope } from './scope.js';
 import { recoveryPrompt, type KnownContext } from '../rules/questions.js';
-import { continuationPrompt, initialPrompt, recoveryContext, sessionDecision } from '../rules/continuation.js';
+import { continuationPrompt, initialPrompt, promptBudgetBytes, recoveryContext, scopeSection, sessionDecision } from '../rules/continuation.js';
 import type { SessionRef } from '../types.js';
+import { interruptionRecoveryPrompt } from '../rules/recovery.js';
+import { reconcileExecution } from './recovery.js';
 import type { WorkerQuestion } from '../../workers/index.js';
 import type { Session } from './store.js';
 
@@ -160,7 +162,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
   /** A Question was durably recorded: publication proceeds independently of cessation (not awaited by the ACK). */
   questionRecorded?(): void;
   /** Identity of this controller process: origin of the monotonic elapsed values it records. */
-  controllerRunId?: string }) {
+  controllerRunId?: string;
+  /** Ticket 26: boot facts of this run and the persisted recovery wait, blocking a Work's start beyond its durable impediments. */
+  runBlockers?(work: WorkRecord): string[] }) {
   const { session, ports } = deps;
   // Live duration/timeout clock (spec §5.7): local monotonic, separate from the polling cadence and from Pi Durable's own timers.
   const clock = ports.clock ?? systemClock;
@@ -170,6 +174,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
   const lifecycles = new Map<string, ReturnType<typeof credentialLifecycle>>();
   const stopping = new AbortController();
   let last: DispatchObservation | null = null;
+  // Ticket 26: activities whose cessation an administrative stop could not confirm (the stop is then uncertain, never clean).
+  let uncertainStops = 0;
   // Owner stop: no NEW effect starts after it (checked before every call), and pending waits end at once, even if already aborted.
   const checkStop = () => { if (stopping.signal.aborted) throw new Error('OWNER_STOPPING'); };
   const untilStopped = <T>(promise: Promise<T>): Promise<T> => {
@@ -328,6 +334,23 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       .map(update => ({ scopeUpdateId: update.scopeUpdateId, reason: update.reason }));
     if ((execution.request.scopeUpdateIds ?? []).length !== updates.length) return { kind: 'insufficient', reasons: ['SCOPE_UPDATE_CONTENT_MISSING'] };
     const skillDirectory = `/artifacts/factory/skill-pack/${execution.request.policies.skillPack ?? 'factory-skills-v2'}`;
+    const basis = execution.interruption ?? null;
+    if (!resume && basis) {
+      // Ticket 26: after an interrupted Execution, an explicit substitute instruction on the PRESERVED workspace (same base/branch/checkout,
+      // reused environment) — the interruption is its trigger; never `/implement` again, never a blind replay of the last tool.
+      const previous = current?.previousExecutions.find(item => item.executionId === basis.previousExecutionId) ?? null;
+      if (!previous) return { kind: 'insufficient', reasons: ['PREVIOUS_EXECUTION_MISSING'] };
+      const context = recoveryContext({ previous: { baseCommit: previous.request.baseCommit, branch: previous.request.branch, checkout: previous.request.checkout },
+        prepared: { baseCommit: prepared.checkout.baseCommit, branch: prepared.checkout.branch, checkout: prepared.checkout.path, reused: prepared.checkout.reused },
+        trigger: { answer: true, scopeUpdates: updates.length } });
+      if (!context.sufficient) return { kind: 'insufficient', reasons: context.reasons };
+      const prompt = [interruptionRecoveryPrompt({ ticketUrl: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
+        baseCommit: prepared.checkout.baseCommit, branch: execution.request.branch, checkout: prepared.checkout.path, workId: work.work_id,
+        executionId: execution.executionId, skillDirectory, previousExecutionId: basis.previousExecutionId, reason: basis.reason, code: basis.code,
+        reviews: Boolean(ports.reviews) }), ...(updates.length ? ['', ...scopeSection(updates)] : [])].join('\n');
+      if (new TextEncoder().encode(prompt).length > promptBudgetBytes) return { kind: 'insufficient', reasons: ['PROMPT_TOO_LARGE'] };
+      return { kind: 'ready', prompt, resume: null, decision: null, continuation: null };
+    }
     if (!resume) {
       // Bounded like every resumption prompt: an over-large initial prompt blocks explicitly instead of being truncated.
       const initial = initialPrompt({ ticketUrl: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
@@ -441,6 +464,19 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         }
       })();
     };
+    // Clean administrative stop after confirmed cessation (one end commit with the measured duration, then the Slot release commit). Before a
+    // confirmed start, the receipt facet decides whether it started (consumed once) or not (reservation released): never by guess.
+    const administrativeStop = async (current: WorkRecord, id: string, env: EnvironmentRef, ownBoot: BootRef): Promise<boolean> => {
+      const shown = await readWork(session, current.work_id);
+      if (shown?.execution?.executionId !== id) return false;
+      if (shown.execution.state === 'started') {
+        if ((await recordEnd(session, current.work_id, id, 'stopped', 'ADMINISTRATIVE_STOP', null, elapsed())).kind !== 'advanced') return false;
+        return await releaseAfterCessation(session, current.work_id, id, 'confirmed') === 'released';
+      }
+      const { decision } = await reconcileExecution({ session, ports, controllerRunId: deps.controllerRunId ?? 'unknown', inventory: 'empty' }, shown, 'administrative-stop',
+        { result: 'confirmed', basis: 'sandbox-stop', environment: env, boot: ownBoot });
+      return decision !== 'stale' && decision !== 'kept' && decision !== 'blocked';
+    };
     const stopOwnBoot = async (reason: string) => environment && boot ? ports.sandbox.stop({ environment, boot, reason }).catch(() => ({ status: 'indeterminate' as const, cessationConfirmed: false as const, code: 'STOP_UNAVAILABLE' })) : undefined;
     try {
       checkStop();
@@ -541,7 +577,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         return { status: 'recorded' as const };
       };
       const handle = await ports.workers.activate({ context: { workId: work.work_id, executionId, invocationId: execution.invocationId, role: 'builder',
-        environmentRef: environment, bootRef: boot, phaseId: plan.continuation ? 'builder-continuation' : resume ? 'builder-recovery' : 'builder-initial' }, prompt, signal: activitySignal, ...ports.builder,
+        environmentRef: environment, bootRef: boot, phaseId: plan.continuation ? 'builder-continuation' : resume || execution.interruption ? 'builder-recovery' : 'builder-initial' }, prompt, signal: activitySignal, ...ports.builder,
         ...(ports.reviews ? { handoff: { baseCommit: prepared.checkout.baseCommit, ...(ports.reviews.rounds ? { rounds: { first: firstRound, max: ports.reviews.rounds.max } } : {}) } } : {}), ...(plan.continuation ? { continuation: { session: plan.continuation } } : {}) },
       { credential: grant.delivery }, { question: onQuestion });
       activated = true;
@@ -645,13 +681,24 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         // booted or the own boot cessation is proven, the Slot is released and the Work returns to its queue position; otherwise
         // the reservation is still released without consumption but the Slot is kept under hold. At the activation phase itself the
         // outcome stays uncertain (a request may have reached the worker).
-        if (!activated && phase !== 'activate') {
+        if (activated || phase === 'activate') {
+          // Ticket 26 (spec §11.4): administrative stop of a requested/started activity. Clean only after the host confirmed cessation and the
+          // end was persisted; it then continues in a new Execution without a recovery charge. Otherwise it stays an interruption.
+          const stop = await stopOwnBoot('administrative stop');
+          const settled = stop?.cessationConfirmed ? await administrativeStop(work, executionId, environment!, boot!).catch(() => false) : false;
+          if (!settled) {
+            uncertainStops++;
+            await hold('ADMINISTRATIVE_STOP_CESSATION_UNCONFIRMED', 'The owner stopped; the cessation of this activity (or its durable end) is not confirmed. ' +
+              'The next controller boot reconciles it as an interruption (failure treatment, not a clean stop).').catch(() => {});
+          }
+        } else {
           const stop = await stopOwnBoot('owner stopped before activation');
           // Nothing was booted, or the own boot cessation is confirmed: the Slot can be released. Otherwise no worker was launched
           // (the reservation is released without consumption) but the Slot is kept, exactly like a refused revalidation.
           if (environment === undefined || stop?.cessationConfirmed) {
             await releaseBeforeStart(session, work.work_id, executionId, ['OWNER_STOPPED_BEFORE_ACTIVATION'], 'OWNER_STOPPED_BEFORE_ACTIVATION').catch(() => {});
           } else {
+            uncertainStops++;
             await hold('OWNER_STOPPED_BEFORE_ACTIVATION_CESSATION_UNCONFIRMED',
               'The owner stopped before activation; no worker was launched and the reservation was released without consumption. The own boot cessation is not confirmed, so the Slot is kept (ticket 26).', true).catch(() => {});
           }
@@ -686,7 +733,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       const works = await deps.readWorks();
       const candidates = works.filter(work => work.result === 'open' && work.queue.pending && work.queue.category === 'normal' && !running.has(work.work_id))
         .map(work => ({ work_id: work.work_id, blockers: dispatchBlockers({ impediments: work.impediments, evaluation: work.dependencies.latest,
-          currentAttempt: deps.currentAttempt(work.repository.repository) }) }));
+          currentAttempt: deps.currentAttempt(work.repository.repository) }).concat(deps.runBlockers?.(work) ?? []) }));
       const next = selectNext(candidates).next;
       if (!next) { observe(null, 'nothing-eligible'); return; }
       const work = works.find(item => item.work_id === next)!;
@@ -704,8 +751,10 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       } else if (previous?.end?.outcome === 'completed' && scopeUpdateIds.length) {
         resume = { previousExecutionId: previous.executionId, questionId: null, answerSha256: null, scopeUpdateIds, reason: 'SCOPE_UPDATED' };
       }
+      // Ticket 26: after an interrupted Execution, its basis (operational recovery or clean-stop continuation), re-checked in the commit.
+      const interruption = interruptionBasis(work);
       const { attemptId } = await freshEvaluation(work);
-      const admission = await admitExecution(session, { work_id: work.work_id, attemptId, capacity: ports.capacity, authorizationObservedAt: authorization.observedAt,
+      const admission = await admitExecution(session, { ...(interruption ? { interruption } : {}), now: (ports.calendar ?? Date).now(), work_id: work.work_id, attemptId, capacity: ports.capacity, authorizationObservedAt: authorization.observedAt,
         request: { ticket: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
           branch: `factory/${work.ticket.number}-${work.work_id.slice(0, 8)}`, policies: { ...ports.builder } }, ...(resume ? { resume } : {}),
         limits: deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase()) ?? {} });
@@ -714,6 +763,6 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       const task = execute(work, admission.execution).finally(() => running.delete(work.work_id));
       running.set(work.work_id, task);
     },
-    async stop() { stopping.abort(); await Promise.allSettled(running.values()); },
+    async stop() { stopping.abort(); await Promise.allSettled(running.values()); return { uncertain: uncertainStops }; },
   };
 }

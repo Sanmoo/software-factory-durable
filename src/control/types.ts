@@ -39,6 +39,24 @@ export type ControlReceipt = { kind: 'durable'; request_id: string; operation: '
 export type ControlQuery = { kind: 'status' } | { kind: 'request'; request_id: string } | { kind: 'access' } | { kind: 'list' } | { kind: 'show'; work_id: string } |
   { kind: 'question'; question_id: string };
 export type DispatchReason = 'RECONCILIATION_REQUIRED' | 'EXECUTION_NOT_ENABLED';
+/**
+ * Ticket 26: host listing of the installation's own runtime resources taken by the composition after the exclusive lock and BEFORE the
+ * storage opens (spec §5.2 boot step 3). `environments` carries the attribution the Sandbox host read from each environment's own metadata
+ * (null: unreadable/foreign); `cache` the per-repository host Git cache states (`preparing`: an interrupted fetch/clone may still run);
+ * `unknown` every other entry the host cannot classify. Unknown resources are never ignored to declare free capacity.
+ */
+export type RuntimeInventory = { kind: 'listed'; observedAt: string; environments: { environment: string; workId: string | null }[];
+  cache: { repositoryId: number | null; state: 'idle' | 'preparing' | 'unknown' }[]; unknown: string[] };
+/** Ticket 26 Q6 `observe` facet: the complete synchronized start receipt of one invocation in the protected Records, if any. */
+export type StartObservation = { kind: 'receipt'; receipt: { workId: string; id: string; executionId: string; invocationId: string }; recordedAt: string } |
+  { kind: 'absent'; completeness: 'complete' } | { kind: 'uncertain'; code: string };
+/** Durable boot/live reconciliation of one interrupted Execution (spec §5.2-5.4): what was observed and decided, by which controller run. */
+export type RecoveryRecord = { at: string; controllerRunId: string; trigger: 'boot' | 'administrative-stop';
+  /** Old evidence incorporated explicitly: the phase/hold/end found, and whose origin measured the Execution. */
+  found: { state: ExecutionView['state']; phase: ExecutionView['dispatch']['phase']; held: string | null; end: string | null; origin: string | null };
+  cessation: { result: 'confirmed' | 'unconfirmed'; basis: string; environment: string | null; boot: string | null };
+  start: { kind: 'confirmed' | 'not-started' | 'uncertain'; detail: string };
+  decision: 'operational-recovery' | 'requeued' | 'administrative-continuation' | 'blocked' | 'kept' | 'settled'; code: string | null };
 
 /** Injected execution boundaries (spec §2.4/Q11): public Sandbox lifecycle, Workers activation and the Builder credential projection. */
 export type ExecutionPorts = {
@@ -51,6 +69,8 @@ export type ExecutionPorts = {
     /** Ticket 13: Host confirmation of a preserved-source authorization (confined, no-follow read: the file exists and is listed in the
      * version's sources.json). Absent = no preserved-source authorization is ever correlated. */
     verifyPreservedSource?(input: { environment: EnvironmentRef; reference: string }): Promise<{ status: 'verified' | 'invalid'; code: string }>;
+    /** Ticket 26: Sandbox `observe` (host path, works without the old Gondolin owner); without `boot`, the environment's current boot. */
+    observe?(input: { environment: EnvironmentRef; boot?: BootRef }): Promise<{ condition: string; cessationConfirmed: boolean; boot?: BootRef | null }>;
   };
   workers: { activate(invocation: Invocation, delivery?: ActivationDelivery, events?: ActivationEvents): Promise<{ worker: string;
     started: Promise<{ receipt: { workId: string; id: string }; invocation: { executionId: string; invocationId: string } }>; completed: Promise<WorkerCompletion>;
@@ -62,7 +82,9 @@ export type ExecutionPorts = {
     deliver(worker: string, directive: WorkerDirective): Promise<DeliveryResult>;
     /** Q6 `observe` (ticket 11): whether a preserved Builder session can be continued by the planned next Builder activation. Absent: replaced. */
     observe?(input: { workId: string; executionId: string; invocationId: string; session: WorkerSessionRef;
-      next: Pick<Invocation, 'skillPack' | 'copyOutput' | 'editSourceMaxBytes'> & { handoff: boolean } }): Promise<{ session: SessionObservation; limitations: string[] }> };
+      next: Pick<Invocation, 'skillPack' | 'copyOutput' | 'editSourceMaxBytes'> & { handoff: boolean } }): Promise<{ session: SessionObservation; limitations: string[] }>;
+    /** Ticket 26 (Q6 `observe`, receipt facet): the protected start receipt of an invocation, without notification and without rerunning. */
+    observeStart?(input: { workId: string; executionId: string; invocationId: string }): Promise<StartObservation> };
   /** Ticket 12: when composed, the Builder hands off for parallel Standards/Spec reviews inside the SAME Execution/Slot/boot.
    * Ticket 13 `rounds.max`: repeated captures per Builder activation (handoffs with treatments/gates plus the Host's closing capture),
    * exemptions (unchanged content, identical commit) and the end-of-Execution verification. Absent = the single ticket 12 round.
@@ -72,6 +94,8 @@ export type ExecutionPorts = {
   credentials: BuilderCredentials;
   /** Local monotonic clock of live Execution duration/timeout (default `performance.now()`); separate from the polling clock. Tests substitute it. */
   clock?: PollingClock;
+  /** Calendar clock of the persisted recovery waits (default `Date.now()`); never the monotonic clock. Tests substitute it. */
+  calendar?: { now(): number };
   /** Renew a Builder grant this many seconds before its expiresAt while the activity stays authorized (default 600). */
   credentialRenewal?: { beforeExpirySeconds: number };
   /** Sandbox configuration as configured (interpreted by Sandbox only). */
@@ -148,7 +172,7 @@ export type ExecutionView = {
     workerNotice: string | null };
   start: { receiptId: string; confirmedAt: string } | null;
   /** `question`: the activation ended after a durable Question (its id; `code` when the request content was lost and no Question exists). */
-  end: { at: string; outcome: 'completed' | 'failure' | 'question' | 'timeout'; code: string | null; cessation: 'confirmed' | 'unconfirmed' | 'not-attempted'; questionId?: string | null;
+  end: { at: string; outcome: 'completed' | 'failure' | 'question' | 'timeout' | 'stopped'; code: string | null; cessation: 'confirmed' | 'unconfirmed' | 'not-attempted'; questionId?: string | null;
     /** Host-observed preserved Builder session (ticket 11); null/absent = not recorded. */
     session?: WorkerSessionRef | null } | null;
   held: { code: string; phase: string; at: string; nextStep: string } | null;
@@ -160,6 +184,10 @@ export type ExecutionView = {
   /** Ticket 19 (absent on earlier records): budget charge and duration/timeout evidence of this Execution. */
   charge?: ExecutionCharge;
   timing?: ExecutionTiming;
+  /** Ticket 26: reconciliations of this Execution after an interruption (boot or administrative stop), oldest first. */
+  recovery?: RecoveryRecord[];
+  /** Ticket 26: basis of an Execution that follows an interrupted one (operational recovery or continuation after a clean stop). */
+  interruption?: { previousExecutionId: string; reason: 'OPERATIONAL_RECOVERY' | 'ADMINISTRATIVE_STOP'; code: string } | null;
 };
 /**
  * Ticket 13: end-of-Execution verification (spec §6.4/§9.3). `verified` only with no reason; every reason is independent and explicit.
@@ -270,7 +298,9 @@ export type WorkView = {
   /** The correction under way (identity kept across its activations); opened by the repair flows (tickets 22/23). */
   correction: { correctionId: string; reason: string; openedAt: string; consumed: boolean } | null;
   /** A pending operational recovery (ticket 26 decides it); consumed by the start of the recovery Execution. */
-  pendingRecovery: { reason: string; requestedAt: string } | null;
+  pendingRecovery: { reason: string; requestedAt: string;
+    /** Ticket 26: persisted wait (calendar) before the recovery may start, its length and the attempt index it was derived from. */
+    notBefore?: string; waitSeconds?: number; attempt?: number; executionId?: string | null } | null;
   /** Presentation only (never persisted): limits/reservations/consumption, timeout, duration/last activity and the action required. */
   limits: LimitsView;
   /** Concrete scope updates authorized by the operator (ticket 11), in acceptance order. Later Ticket/link edits are never one. */
@@ -287,7 +317,8 @@ export type WorkView = {
       origin: 'controller-budget' | 'local-cli'; executionId: string | null; detail: string } |
     { at: string; event: 'timeout-reached' | 'duration-reconciled'; origin: 'controller-clock'; executionId: string; detail: string } |
     { at: string; event: 'scope-update-accepted' | 'scope-update-delivered' | 'scope-update-reoffered' | 'scope-update-consumed'; origin: 'local-cli' | 'controller-dispatch';
-      scopeUpdateId: string; detail?: string })[];
+      scopeUpdateId: string; detail?: string } |
+    { at: string; event: 'execution-reconciled' | 'recovery-wait-kept'; origin: 'controller-recovery'; executionId: string | null; detail: string })[];
 };
 export type CounterView = { limit: number; granted: number; effectiveLimit: number; consumed: number; reserved: 0 | 1; reservedBy: string | null; available: number; exhausted: boolean };
 /** `elapsedMs` is a monotonic measurement (live or measured) or null; `unknown` is never shown as zero. */
@@ -322,9 +353,14 @@ export type ControlStatus = {
   selection: { next: string | null };
   polling: Omit<PollingView, 'repositories'> & { repositories: Omit<RepositoryPollView, 'candidates'>[] };
   persistence: { sqliteVersion: string; sqliteSourceId: string; journalMode: 'wal'; synchronous: 'FULL' };
+  /** Ticket 26: boot reconciliation of THIS run (null before it ran or when nothing was composed to reconcile). */
+  recovery: RecoveryView | null;
 };
+export type RecoveryView = { at: string; inventory: 'empty' | 'unknown' | 'listed'; reconciled: number; ceased: number; unconfirmed: number;
+  global: string[]; cachePreparing: (number | null)[] };
 export interface Control {
   accept(input: ControlInput): Promise<ControlReceipt | { kind: 'refused'; code: 'REQUEST_ID_CONFLICT' | 'INVALID_COMMAND' }>;
   inspect(query: ControlQuery): Promise<ControlStatus | { kind: 'request'; receipt: ControlReceipt | null } | AccessView | ListView | ShowView | QuestionQueryView>;
-  run(signal: AbortSignal): Promise<{ kind: 'clean' | 'failed' }>;
+  /** `uncertain`: stopped, but the cessation of some activity could not be confirmed (the next boot reconciles it as an interruption). */
+  run(signal: AbortSignal): Promise<{ kind: 'clean' | 'failed' | 'uncertain' }>;
 }

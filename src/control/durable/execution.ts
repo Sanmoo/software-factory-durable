@@ -10,9 +10,24 @@ import { installation, legacyCredentialLifecycle, ticketIndex, works, type WorkR
 import { questions } from './questions.js';
 import { pendingScope } from './scope.js';
 import type { Session } from './store.js';
+import { classifyInterruption } from '../rules/recovery.js';
+import { applyRecoveryRequest, backoffRunning } from './recovery-request.js';
+
+/** The interruption basis still describes the Work: its current Execution ended stopped, or failed with a pending operational recovery. */
+export function interruptionBasis(work: Pick<WorkRecord, 'execution' | 'pendingRecovery'>): NonNullable<ExecutionView['interruption']> | null {
+  const execution = work.execution ?? null;
+  if (!execution) return null;
+  // Released before its start: it never ran, so the basis it was admitted with still holds.
+  if (execution.state === 'released' && !execution.start) return execution.interruption ?? null;
+  if (execution.state !== 'ended' || execution.slot.held || !execution.end) return null;
+  if (execution.end.outcome === 'stopped') return { previousExecutionId: execution.executionId, reason: 'ADMINISTRATIVE_STOP', code: execution.end.code ?? 'ADMINISTRATIVE_STOP' };
+  if (execution.end.outcome === 'failure' && work.pendingRecovery) return { previousExecutionId: execution.executionId, reason: 'OPERATIONAL_RECOVERY', code: execution.end.code ?? 'CONTROLLER_CRASH' };
+  return null;
+}
+const interruptionHolds = (work: WorkRecord, basis: NonNullable<ExecutionView['interruption']>) => JSON.stringify(interruptionBasis(work)) === JSON.stringify(basis);
 
 /** Installation-level Slot occupancy, committed with every reservation/release (spec §3.4 "Admitir Execução"). */
-const slots = defineDoc<{ held: Record<string, string> }>({ kind: 'factory.slots', version: 1, scope: 'session',
+export const slots = defineDoc<{ held: Record<string, string> }>({ kind: 'factory.slots', version: 1, scope: 'session',
   initial: () => ({ held: {} }), checkpointWhen: () => true });
 
 export async function initializeSlots(session: Session) {
@@ -42,7 +57,11 @@ export async function admitExecution(session: Session, input: { work_id: string;
   /** Configured limits of the repository: initialize a budget absent on a pre-19 Work, and the per-Execution timeout (absent = none). */
   limits?: { correctionLimit?: number | undefined; recoveryLimit?: number | undefined; timeoutSeconds?: number | undefined };
   /** Recovery basis after an answered Question; re-checked in this commit (the answer and the previous Execution must still match). */
-  resume?: NonNullable<ExecutionView['request']['resume']> }): Promise<Admission> {
+  resume?: NonNullable<ExecutionView['request']['resume']>;
+  /** Ticket 26: basis after an interrupted Execution (operational recovery or continuation after a clean stop); re-checked here. */
+  interruption?: NonNullable<ExecutionView['interruption']>;
+  /** Ticket 26: calendar instant of this attempt (ms), against the persisted recovery wait. */
+  now?: number }): Promise<Admission> {
   return session.commit(async tx => {
     const reasons: string[] = [];
     if ((await tx.doc(installation)).paused) reasons.push('GLOBAL_PAUSE');
@@ -56,6 +75,9 @@ export async function admitExecution(session: Session, input: { work_id: string;
     if (latest && latest.conclusion !== 'satisfied' && !reasons.length) reasons.push('DEPENDENCIES_NOT_SATISFIED');
     const occupancy = await tx.doc(slots);
     if (Object.keys(occupancy.held).length >= input.capacity) reasons.push('NO_SLOT_AVAILABLE');
+    // Ticket 26: the persisted recovery wait is never anticipated, and an interruption basis must still name the Work's current Execution.
+    if (backoffRunning(work, input.now ?? Date.now())) reasons.push('RECOVERY_BACKOFF');
+    if (input.interruption && !interruptionHolds(work, input.interruption)) reasons.push('INTERRUPTION_BASIS_CHANGED');
     const previous = resumeBasis(work);
     // Every pending authorized scope change is bound to THIS Execution (ticket 11), and the resumption basis must name exactly them.
     const scopeUpdateIds = pendingScope(work).map(update => update.scopeUpdateId);
@@ -103,6 +125,7 @@ export async function admitExecution(session: Session, input: { work_id: string;
       completion: { automatic: false, reason: 'Reviews, publication and readiness are not enabled in this Factory version; an ended Builder Execution never completes the Work automatically.' },
       charge, timing: { timeoutSeconds: input.limits?.timeoutSeconds ?? null, clock: 'controller-monotonic', origin: null, startedAt: null, lastActivity: null,
         duration: null, timeout: null, overrun: null },
+      interruption: input.interruption ?? null,
     };
     occupancy.held[executionId] = input.work_id;
     if (work.execution) work.previousExecutions = [...(work.previousExecutions ?? []), work.execution];
@@ -124,7 +147,7 @@ export const budgetHistory = (work: WorkRecord, event: 'budget-reserved' | 'budg
   work.history.push({ at: new Date().toISOString(), event, origin: 'controller-budget', executionId, detail });
 
 /** Consumption exactly once with the confirmed start (spec §3.4 "Confirmar início"); events, tests, pushes and renewals never charge. */
-function consumeReservation(work: WorkRecord, execution: ExecutionView, at: string) {
+export function consumeReservation(work: WorkRecord, execution: ExecutionView, at: string) {
   const charge = execution.charge;
   if (!charge || charge.state !== 'reserved' || !charge.counter || !work.budget) return;
   const counter = work.budget[charge.counter];
@@ -136,7 +159,7 @@ function consumeReservation(work: WorkRecord, execution: ExecutionView, at: stri
   budgetHistory(work, 'budget-consumed', execution.executionId, charge.counter);
 }
 /** Proven non-start (spec §4.4): the reservation is released without consumption; the correction/recovery stays pending. */
-function releaseReservation(work: WorkRecord, execution: ExecutionView, at: string) {
+export function releaseReservation(work: WorkRecord, execution: ExecutionView, at: string) {
   const charge = execution.charge;
   if (!charge || charge.state !== 'reserved' || !charge.counter || !work.budget) return;
   if (work.budget[charge.counter].reserved === execution.executionId) work.budget[charge.counter].reserved = null;
@@ -368,7 +391,7 @@ export async function confirmStart(session: Session, work_id: string, executionI
 
 /** A scope update delivered by this Execution but not yet consumed (delivery alone never proves the Builder consumed it). */
 const deliveredBy = (work: WorkRecord, executionId: string) => (work.scopeUpdates ?? []).filter(update => update.state === 'delivered' && update.executionId === executionId);
-export const recordEnd = (session: Session, work_id: string, executionId: string, outcome: 'completed' | 'failure' | 'question' | 'timeout', code: string | null,
+export const recordEnd = (session: Session, work_id: string, executionId: string, outcome: 'completed' | 'failure' | 'question' | 'timeout' | 'stopped', code: string | null,
   questionId: string | null = null, elapsedMs: number | null = null,
   /** Host-observed preserved session of the Builder (ticket 11); never invented when the completion did not carry it. */
   preserved: NonNullable<ExecutionView['end']>['session'] = null) =>
@@ -484,6 +507,12 @@ export async function releaseAfterCessation(session: Session, work_id: string, e
       document.work.history.push({ at: execution.slot.releasedAt!, event: 'scope-update-consumed', origin: 'controller-dispatch', scopeUpdateId: update.scopeUpdateId, detail: executionId });
     }
     if (execution.end.outcome === 'completed' && pendingScope(document.work).length) document.work.queue = { ...document.work.queue, pending: true };
+    // Ticket 26: a clean administrative stop continues in a new Execution without a recovery charge; a transient operational failure comes
+    // back through the queue as ONE operational recovery after its persisted wait (same commit as the cessation, never lost by a crash).
+    if (execution.end.outcome === 'stopped') document.work.queue = { ...document.work.queue, pending: true };
+    if (execution.end.outcome === 'failure' && classifyInterruption(execution.end.code).kind === 'recoverable') {
+      applyRecoveryRequest(document.work, { executionId, code: execution.end.code ?? 'CONTROLLER_CRASH', at: execution.slot.releasedAt! });
+    }
     history(document.work, 'slot-released', executionId);
     return 'released' as const;
   }, BACKGROUND_CONTEXT);

@@ -17,10 +17,12 @@ export type { ArtifactSeed } from './artifact-seeds.js';
 export { readConfined } from './confined.js';
 import { readConfined } from './confined.js';
 export { inspectCheckout, type CheckoutInspection } from './checkout-inspection.js';
+// Ticket 26: read-only host inventory of own runtime resources for the controller boot (composition only, never a worker tool).
+export { inventoryRuntime, type RuntimeListing } from './inventory.js';
 import { observeProposal } from './proposal-identity.js';
 export type PreparedWork = PrepareResult | { status: 'success'; environment: EnvironmentRef; checkout: CheckoutView; seeds: { name: string; manifestSha256: string; reused: boolean }[] };
 export type { GuestAssetPin } from './guest-assets.js';
-import { observeEnvironment, type BootRef } from './lifecycle.js';
+import { currentBoot, observeEnvironment, type BootRef } from './lifecycle.js';
 import type { EnvironmentRef } from './prepare.js';
 export type { BootRef, StartupFailure } from './lifecycle.js';
 import type { Observation as LifecycleObservation } from './lifecycle.js';
@@ -115,7 +117,12 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
       return startEnvironment(root, guestAssets, environment, parsed.effective);
     },
     async observe({ environment, boot }: { environment: EnvironmentRef; boot?: BootRef }): Promise<Observation> {
-      const observation = await observeEnvironment(root, environment, boot);
+      // Ticket 26: without an explicit boot, the environment's published current boot is the one observed (and returned for a stop); an
+      // owned, prepared environment that never published one is `not-booted` (no unit can exist for it).
+      const current = boot === undefined ? await currentBoot(root, environment) : undefined;
+      const lifecycle: LifecycleObservation = current === null ? { condition: 'not-booted', cessationConfirmed: true, consumption: 'unavailable', boot: null }
+        : await observeEnvironment(root, environment, boot);
+      const observation = current && (lifecycle.condition === 'active' || lifecycle.condition === 'stopped') ? { ...lifecycle, boot: current } : lifecycle;
       const storage = await observeStorage(root, environment, observation.condition === 'removed');
       return { ...observation, ...(storage ? { storage } : {}) };
     },
