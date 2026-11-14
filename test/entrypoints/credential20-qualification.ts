@@ -27,7 +27,7 @@ export function plan() {
     model: 'none: scripted local provider on 127.0.0.1:18720 (openai-completions SSE), fixed 5-command Bash schedule, then "Complete."; no OAuth/model request',
     github: { app: githubApp, controllerPurposes: ['tracker-read', 'association-read', 'dependency-read', 'repository-read', 'repository-fetch {metadata:read, contents:read}'],
       builderPurpose: 'builder-start {metadata:read, contents:read, issues:read} for Sanmoo/java-springboot-event-sourcing only (initial + each renewal)',
-      writes: 'POST /app/installations/{id}/access_tokens (issuance) and DELETE /installation/token (self-revocation of each Builder grant, then one post-check DELETE per grant expecting 401); nothing else' },
+      writes: 'POST /app/installations/{id}/access_tokens (issuance) and DELETE /installation/token (self-revocation of the host fetch token right after the fetch, of each Builder grant at the end, then one post-check DELETE per Builder grant expecting 401); nothing else' },
     effects: [
       'preflight: read-only GitHub: listing of the configured label must contain exactly Ticket #3; ticket and native blocked_by read',
       'run: new Control storage; ONE Execution: host fetch into root/cache/git, clone, Sandbox.prepare/start (1 new VM), Builder grant, Workers.activate (1 Builder, scripted provider), renewals every ~90 s delivered over the host channel, end, withdrawal + self-revocation of every known grant, Sandbox.stop, Slot release; post-check revocation of each grant (expects already-invalid); Control stops after the Execution leaves reserved/started or at the 15 min deadline',
