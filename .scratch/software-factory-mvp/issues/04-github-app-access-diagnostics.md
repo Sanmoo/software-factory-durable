@@ -4,17 +4,17 @@
 
 **Blocked by:** [02: Operar um controlador exclusivo com pausa durável](02-exclusive-controller-and-durable-pause.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
-- [ ] Doctor autenticado passa pelo controlador e verifica identidade da App/instalação, repo/base, permissões operacionais e escolha explícita de Workflows; leitura negada, incompatibilidade e consulta parcial têm causa/ação.
-- [ ] Emissor e chave protegida ficam somente no controlador; concessões reduzem explicitamente repo, papel e finalidade, conferindo escopo devolvido e persistindo apenas metadados.
-- [ ] gh api usa executável/argumentos estruturados, host e versão REST explícitos, ambiente privado e GH_TOKEN fora de argv; sem shell/pipeline, login pessoal, aliases ou fallback de identidade.
-- [ ] Payload, identidades, status/headers e completude são validados; página posterior falha não transforma saída parcial em sucesso, e rate limit informa espera/escopo afetado.
-- [ ] Segredos conhecidos são registrados em memória para filtragem antes do uso e não aparecem em logs, diagnóstico, sessão ou estado; testes de vazamento usam valores sintéticos.
-- [ ] Tracker e CodeRepository conservam contratos distintos com infraestrutura GitHub privada compartilhável; nenhum adapter importa/consulta o outro para decidir domínio.
-- [ ] Diagnóstico não altera GitHub, certifica/monitora bypass/base/CI ou exige provas negativas dessas barreiras; essas responsabilidades permanecem do time.
+- [x] Doctor autenticado passa pelo controlador e verifica identidade da App/instalação, repo/base, permissões operacionais e escolha explícita de Workflows; leitura negada, incompatibilidade e consulta parcial têm causa/ação.
+- [x] Emissor e chave protegida ficam somente no controlador; concessões reduzem explicitamente repo, papel e finalidade, conferindo escopo devolvido e persistindo apenas metadados.
+- [x] gh api usa executável/argumentos estruturados, host e versão REST explícitos, ambiente privado e GH_TOKEN fora de argv; sem shell/pipeline, login pessoal, aliases ou fallback de identidade.
+- [x] Payload, identidades, status/headers e completude são validados; página posterior falha não transforma saída parcial em sucesso, e rate limit informa espera/escopo afetado.
+- [x] Segredos conhecidos são registrados em memória para filtragem antes do uso e não aparecem em logs, diagnóstico, sessão ou estado; testes de vazamento usam valores sintéticos.
+- [x] Tracker e CodeRepository conservam contratos distintos com infraestrutura GitHub privada compartilhável; nenhum adapter importa/consulta o outro para decidir domínio.
+- [x] Diagnóstico não altera GitHub, certifica/monitora bypass/base/CI ou exige provas negativas dessas barreiras; essas responsabilidades permanecem do time.
 
 ## Referências e validação
 
@@ -113,3 +113,7 @@ Publicação é planejamento aprovado, não autorização de construção, uso d
   operador é salvar/aprovar somente administration R efetiva na App/instalação,
   sem recriar chave/reinstalar nem elevar direitos. Nenhum novo ensaio real até
   correção explícita; token tracker não declarado revogado, expiração registrada.
+
+## Answer
+
+Resolvido em 2026-11-14: revalidação real com `administration:read` concedido; doctor autenticado `ok/complete` para tracker e repository. Evidência: `docs/evidence/04-github-app-access-diagnostics.md` (seção 2026-11-14) e `docs/evidence/04-administration-read-real-github-access-2026-11-14.json`.

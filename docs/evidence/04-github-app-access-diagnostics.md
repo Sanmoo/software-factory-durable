@@ -591,3 +591,27 @@ da allowlist, e não se afirma revogação por apagar chave/encerrar processo. P
 continuar válido até **01:41:32Z**, dentro do risco residual já aprovado. Nenhum
 resultado incerto foi observado; não há justificativa para replay automático.
 Sem mudanças em main/integração, merge/push ou alterações de settings remotas.
+
+## Revalidação real após concessão de administration:read — 2026-11-14 UTC
+
+**COMPLETO (diagnóstico), aceite.** Mesmo driver e mesmos limites da revalidação de 2026-11-06, numa raiz exclusiva nova (`/home/sanmoo/software-factory-test/verify04-lzJ4ds4j`, 0700). Só mudou o nome do arquivo de saída. HEAD `3faefcc`, produto sem alterações. Registro sanitizado: [JSON](04-administration-read-real-github-access-2026-11-14.json).
+
+| Operação | Observado |
+| --- | --- |
+| GET `/app` ×2, GET instalação ×2 | 200. Teto agora inclui `administration:read` junto com `checks/statuses/actions:read`, `contents/issues/pull_requests:write`, `metadata:read`; sem workflows |
+| POST access_tokens ×2 | 201. Tracker: exatamente `metadata:read, issues:write`. Repository: exatamente `metadata/contents/checks/statuses/actions/administration:read, pull_requests:write`; um repo `1256893534` |
+| gh GET (repo, issues, dependencies, comments, repo, branches/main) | 200 em todas |
+| doctor `--authenticated` | exit **0**; tracker e repository `ok / OPERATIONAL_ACCESS_VERIFIED / complete`; `certifiesMergeSafety:false` |
+| Estado | `historyLength` 0, controlador encerrado com 0, cópia da chave removida |
+
+Antes do proprietário, o doctor recusou (exit 3, controlador ausente). Nenhuma mutação remota, retry, fallback ou login pessoal. Os tokens ficaram em memória e no ambiente privado do gh. O JSON não contém token nem chave (verificado por busca).
+
+### Mapa dos ACs
+
+1. Doctor via controlador verifica App, instalação, repo/base (`branches/main`), permissões e Workflows explícito (`false`); causas e ações de leitura negada e parcial: testes locais V-05 e os ensaios BLOCKED anteriores reais (permissão ausente com ação exata). ✔
+2. Emissor e chave só no controlador; concessões reduzidas por repo, papel e finalidade, com escopo devolvido conferido (real, acima); só metadados persistidos. ✔
+3. gh estruturado, host e versão explícitos, GH_TOKEN no ambiente privado, sem shell nem login pessoal (real + testes V-03). ✔
+4. Payload, identidade, status e completude validados; página parcial e rate limit (testes locais V-05, correção `90d6b93` revisada). ✔
+5. Segredos registrados e filtrados; testes com valores sintéticos (V-03); JSON real sem token. ✔
+6. Tracker e CodeRepository com contratos distintos (arquitetura estática). ✔
+7. Sem mutação GitHub; sem certificação de bypass, base ou CI (`certifiesMergeSafety:false`). ✔
