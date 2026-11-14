@@ -72,11 +72,13 @@ export function createCheckouts(options: { root: string; fetch: RepositoryFetchC
     await run(['fetch', '--quiet', '--no-tags', '--no-recurse-submodules', upstream, `+refs/heads/${request.base}:refs/heads/${request.base}`], cache, home, token);
     const baseCommit = await run(['rev-parse', '--verify', `refs/heads/${request.base}^{commit}`], cache, home);
     const checkout = join(environment, 'workspace', 'checkout');
-    await run(['clone', '--quiet', '--no-hardlinks', '--template=', '--no-checkout', '--single-branch', '--branch', request.base, '--', cache, checkout], join(environment, 'workspace'), home);
+    // cwd is the Factory-owned home, never the workspace: no repository discovery above the new checkout. Only this never-booted,
+    // Factory-created clone is touched by host git, and only now (never on continuation).
+    await run(['clone', '--quiet', '--no-hardlinks', '--template=', '--no-checkout', '--single-branch', '--branch', request.base, '--', cache, checkout], home, home);
     const origin = github(request.repository);
-    await run(['remote', 'set-url', 'origin', origin], checkout, home);
-    await run(['checkout', '--quiet', '--no-track', '-b', request.branch, baseCommit], checkout, home);
-    if (await exists(join(checkout, '.git', 'objects', 'info', 'alternates')) || await run(['config', '--get', 'remote.origin.url'], checkout, home) !== origin ||
+    await run(['-C', checkout, 'remote', 'set-url', 'origin', origin], home, home);
+    await run(['-C', checkout, 'checkout', '--quiet', '--no-track', '-b', request.branch, baseCommit], home, home);
+    if (await exists(join(checkout, '.git', 'objects', 'info', 'alternates')) || await run(['-C', checkout, 'config', '--get', 'remote.origin.url'], home, home) !== origin ||
       (await readdir(join(checkout, '.git', 'hooks')).catch(() => [])).length) throw new CheckoutFailure('indeterminate', 'CHECKOUT_VERIFICATION_FAILED');
     const preparedAt = new Date().toISOString();
     await durableJson(join(environment, 'checkout.json'), { version: 1, path: '/workspace/checkout', repository: request.repository, repositoryId: request.repositoryId,
@@ -109,6 +111,8 @@ export function createCheckouts(options: { root: string; fetch: RepositoryFetchC
         try { await durableJson(join(environment, 'checkout-intent.json'), { version: 1, ...request, at: new Date().toISOString() }); }
         catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') return { status: 'indeterminate', code: 'CHECKOUT_PREPARATION_INCOMPLETE' }; throw error; }
         if (await exists(join(environment, 'workspace', 'checkout'))) return { status: 'indeterminate', code: 'CHECKOUT_PREPARATION_INCOMPLETE' };
+        // Host git may only create the checkout before ANY guest could have written the workspace (spec §7.3).
+        if ((await readdir(environment)).some(name => name.startsWith('boot-'))) return { status: 'failure', code: 'CHECKOUT_REQUIRES_UNBOOTED_ENVIRONMENT' };
         const previous = chains.get(request.repositoryId) ?? Promise.resolve();
         const current = previous.catch(() => {}).then(async () => {
           await privateDirectory(join(options.root, 'cache'));

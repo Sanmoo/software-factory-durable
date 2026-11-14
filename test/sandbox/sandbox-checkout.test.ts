@@ -107,7 +107,7 @@ test('AC2/AC3: same repository is sequenced fetch -> completed clone; distinct r
       return { token: 't', expiresAt: new Date(Date.now() + 3600000).toISOString() };
     } } });
   const lib = checkouts.prepare(envs.c, request('acme/lib', 4, 'factory/work-c'));
-  await new Promise(resolve => setImmediate(resolve));
+  while (!events.length) await new Promise(resolve => setTimeout(resolve, 2)); // lib is now inside its fetch, holding its own repository
   const [a, b] = await Promise.all([checkouts.prepare(envs.a, request('acme/project', 3, 'factory/work-a')),
     checkouts.prepare(envs.b, request('acme/project', 3, 'factory/work-b'))]);
   assert.equal(a.status, 'success'); assert.equal(b.status, 'success');
@@ -161,7 +161,8 @@ test('AC3/AC4: Sandbox.prepare composes the own checkout and seeds versioned Fac
   const pack = join(w.dir, 'pack');
   await mkdir(join(pack, 'skills', 'implement'), { recursive: true });
   await writeFile(join(pack, 'skills', 'implement', 'SKILL.md'), 'implement v1');
-  await writeFile(join(pack, 'manifest.json'), '{"id":"pack-v1"}');
+  const packManifest = JSON.stringify({ id: 'pack-v1', files: [{ path: 'skills/implement/SKILL.md', sha256: sha('implement v1') }] });
+  await writeFile(join(pack, 'manifest.json'), packManifest);
   const sandbox = createSandbox({ root: w.root, guestAssets, remoteUrl: () => `file://${project.path}`, artifactSeeds: [{ name: 'factory/skill-pack/pack-v1', directory: pack }],
     repositoryFetch: { async fetch() { return { token: 't', expiresAt: new Date(Date.now() + 3600000).toISOString() }; } } });
   const checkout = request('acme/project', 3, 'factory/work-09');
@@ -169,11 +170,44 @@ test('AC3/AC4: Sandbox.prepare composes the own checkout and seeds versioned Fac
   assert.equal(first.status, 'success', JSON.stringify(first));
   if (first.status !== 'success' || !('checkout' in first)) return;
   assert.equal(first.checkout.baseCommit, project.head);
-  assert.deepEqual(first.seeds, [{ name: 'factory/skill-pack/pack-v1', manifestSha256: sha('{"id":"pack-v1"}'), reused: false }]);
+  assert.deepEqual(first.seeds, [{ name: 'factory/skill-pack/pack-v1', manifestSha256: sha(packManifest), reused: false }]);
   assert.equal(await readFile(join(directory, 'artifacts', 'factory', 'skill-pack', 'pack-v1', 'skills', 'implement', 'SKILL.md'), 'utf8'), 'implement v1');
   const again = await sandbox.prepare({ workId, configuration, checkout });
   assert.ok(again.status === 'success' && 'checkout' in again && again.checkout.reused && again.seeds[0]!.reused);
-  await writeFile(join(pack, 'manifest.json'), '{"id":"pack-v1","changed":true}');
+  // Review 7: on reuse EVERY listed file is verified, not just the manifest; a modified copy is a conflict, never overwritten.
+  const copied = join(directory, 'artifacts', 'factory', 'skill-pack', 'pack-v1', 'skills', 'implement', 'SKILL.md');
+  await writeFile(copied, 'guest-modified');
+  assert.deepEqual(await sandbox.prepare({ workId, configuration, checkout }), { status: 'failure', code: 'ARTIFACT_SEED_VERSION_CONFLICT' });
+  assert.equal(await readFile(copied, 'utf8'), 'guest-modified', 'not overwritten');
+  await writeFile(copied, 'implement v1');
+  await writeFile(join(pack, 'manifest.json'), JSON.stringify({ ...JSON.parse(packManifest), changed: true }));
   assert.deepEqual(await sandbox.prepare({ workId, configuration, checkout }), { status: 'failure', code: 'ARTIFACT_SEED_VERSION_CONFLICT' }, 'a version is never overwritten');
   assert.deepEqual(await createSandbox({ root: w.root, guestAssets }).prepare({ workId, configuration, checkout }), { status: 'failure', code: 'CHECKOUT_NOT_COMPOSED' });
+  // Review 7: a symlinked component of the target path is refused (never followed to write outside /artifacts).
+  const { seedArtifacts } = await import('../../src/sandbox/artifact-seeds.js');
+  const other = await w.environment('env-symlinked');
+  const outside = join(w.dir, 'outside');
+  await mkdir(outside);
+  const { symlink } = await import('node:fs/promises');
+  await symlink(outside, join(other, 'artifacts', 'factory'));
+  await writeFile(join(pack, 'manifest.json'), packManifest);
+  assert.deepEqual(await seedArtifacts(join(other, 'artifacts'), [{ name: 'factory/skill-pack/pack-v1', directory: pack }]), { status: 'failure', code: 'ARTIFACT_SEED_PATH_UNSAFE' });
+  assert.deepEqual(await readdir(outside), []);
+});
+
+test('review 1 audit: a first checkout is only made in a never-booted environment; guest-planted Git state above it is never discovered', async t => {
+  const w = await world(t);
+  const project = await upstream(w.dir, 'project');
+  const checkouts = createCheckouts({ root: w.root, remoteUrl: () => `file://${project.path}`,
+    fetch: { async fetch() { return { token: 't', expiresAt: new Date(Date.now() + 3600000).toISOString() }; } } });
+  const booted = await w.environment('env-booted');
+  await mkdir(join(booted, 'boot-11111111-2222-4333-8444-555555555555'));
+  assert.deepEqual(await checkouts.prepare(booted, request('acme/project', 3, 'factory/b')), { status: 'failure', code: 'CHECKOUT_REQUIRES_UNBOOTED_ENVIRONMENT' });
+  // Unbooted environment whose workspace nevertheless contains a hostile repository (e.g. restored files): never used as discovery root.
+  const env = await w.environment('env-planted');
+  git(join(env, 'workspace'), 'init', '-q');
+  await writeFile(join(env, 'workspace', '.git', 'config'), `[core]\n\trepositoryformatversion = 0\n\tfsmonitor = touch ${join(w.dir, 'PLANTED_FSMONITOR')}\n\thooksPath = ${join(w.dir, 'nohooks')}\n`);
+  const result = await checkouts.prepare(env, request('acme/project', 3, 'factory/p'));
+  assert.equal(result.status, 'success', JSON.stringify(result));
+  await assert.rejects(access(join(w.dir, 'PLANTED_FSMONITOR')));
 });

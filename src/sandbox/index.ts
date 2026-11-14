@@ -13,6 +13,9 @@ import { createCheckouts, type CheckoutRequest, type CheckoutView } from './chec
 import { seedArtifacts, type ArtifactSeed } from './artifact-seeds.js';
 export type { CheckoutRequest, CheckoutView } from './checkout.js';
 export type { ArtifactSeed } from './artifact-seeds.js';
+// Host-side read-only observation of guest-writable trees (never host git/commands in them).
+export { readConfined } from './confined.js';
+export { inspectCheckout, type CheckoutInspection } from './checkout-inspection.js';
 export type PreparedWork = PrepareResult | { status: 'success'; environment: EnvironmentRef; checkout: CheckoutView; seeds: { name: string; manifestSha256: string; reused: boolean }[] };
 export type { GuestAssetPin } from './guest-assets.js';
 import { observeEnvironment, type BootRef } from './lifecycle.js';
