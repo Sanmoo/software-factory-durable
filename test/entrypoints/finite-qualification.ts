@@ -4,8 +4,8 @@ import { bodyLimit, copyPattern, largeBytes, startProvider, type Case } from './
 import type { EnvironmentRef, BootRef } from '../../src/sandbox/index.js';
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const observations = `${root}/q05-qualification-v3`;
-const revision = 'task-native-write-oracle-v3';
+const observations = `${root}/q05-qualification-v4`;
+const revision = 'task-read-pipe-v4';
 const phases = ['prepare', 'start', 'w1', 'w2', 'w3', 'w4', 'model', 'stop'] as const;
 type Phase = typeof phases[number];
 const configuration = { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1', memoryMiB: 2048, vcpus: 2, diskGiB: 40, shutdownGraceSeconds: 30, minFreeSpaceGiB: 4 };

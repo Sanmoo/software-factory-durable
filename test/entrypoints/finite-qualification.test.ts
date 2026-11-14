@@ -39,8 +39,8 @@ const fs = {
   async mkdir(path: string) { fileAttempts++; if (dirs.has(path)) throw new Error('EXISTS'); dirs.add(path); },
   async open(path: string, flags: string) {
     fileAttempts++;
-    if (path === '/home/sanmoo/software-factory-test/y5/q05-qualification-v3' && flags === 'r') return { async writeFile() { deny(); }, async sync() {}, async close() {} };
-    assert.ok(path.startsWith('/home/sanmoo/software-factory-test/y5/q05-qualification-v3/') || path.endsWith('/workspace/source.txt'));
+    if (path === '/home/sanmoo/software-factory-test/y5/q05-qualification-v4' && flags === 'r') return { async writeFile() { deny(); }, async sync() {}, async close() {} };
+    assert.ok(path.startsWith('/home/sanmoo/software-factory-test/y5/q05-qualification-v4/') || path.endsWith('/workspace/source.txt'));
     assert.equal(flags, 'wx'); if (files.has(path)) throw new Error('EXISTS'); files.set(path, '');
     return { async writeFile(text: string) { files.set(path, text); }, async sync() {}, async close() {} };
   },
@@ -171,7 +171,7 @@ test('all runnable phases through preinstalled public/transport doubles; fixed r
   const before = workerCalls;
   for (const phase of ['w1', 'w2', 'w3', 'w4', 'model'] as const) await assert.rejects(recipe.runPhase(phase));
   assert.equal(workerCalls, before);
-  const result = JSON.parse(files.get('/home/sanmoo/software-factory-test/y5/q05-qualification-v3/w1-result.json')!);
+  const result = JSON.parse(files.get('/home/sanmoo/software-factory-test/y5/q05-qualification-v4/w1-result.json')!);
   assert.equal(result.observation.nativeResults, 8); assert.equal(result.observation.wholeCaptures, 4);
   assert.equal(result.observation.physicalCessation, 'unknown');
 });
@@ -182,7 +182,7 @@ test('late transport freeze during evidence checks cannot publish a successful p
   freezeDuringEvidence = true;
   await assert.rejects(recipe.runPhase('w1'), /QUALIFICATION_HELD/);
   assert.equal(freezeDuringEvidence, false);
-  assert.ok(!files.has('/home/sanmoo/software-factory-test/y5/q05-qualification-v3/w1-result.json'));
+  assert.ok(!files.has('/home/sanmoo/software-factory-test/y5/q05-qualification-v4/w1-result.json'));
   await assert.rejects(recipe.runPhase('w2'));
   assert.equal(forbidden, 0);
 });
@@ -195,14 +195,14 @@ test('failed worker intent is consumed and blocks dependent phases with no fallb
   await assert.rejects(recipe.runPhase('w1'));
   await assert.rejects(recipe.runPhase('w2'));
   assert.equal(workerCalls, before + 1);
-  assert.ok(files.has('/home/sanmoo/software-factory-test/y5/q05-qualification-v3/w1-held.json'));
+  assert.ok(files.has('/home/sanmoo/software-factory-test/y5/q05-qualification-v4/w1-held.json'));
   assert.equal(forbidden, 0);
 });
 
 test('mismatched boot/source identity fails before stop or worker action; consumed failures never retry', async () => {
   files.clear(); dirs.clear();
   await recipe.runPhase('prepare'); await recipe.runPhase('start');
-  const name = '/home/sanmoo/software-factory-test/y5/q05-qualification-v3/start-result.json';
+  const name = '/home/sanmoo/software-factory-test/y5/q05-qualification-v4/start-result.json';
   const result = JSON.parse(files.get(name)!); result.identity.source = 'wrong'; files.set(name, JSON.stringify(result));
   const before = sandboxCalls;
   await assert.rejects(recipe.runPhase('stop'), /QUALIFICATION_HELD/);
@@ -288,7 +288,7 @@ test('string or drifted profile receipts are rejected instead of accepting only 
     try {
       await recipe.runPhase('prepare'); await recipe.runPhase('start');
       await assert.rejects(recipe.runPhase('w1'), /QUALIFICATION_HELD/);
-      assert.ok(!files.has('/home/sanmoo/software-factory-test/y5/q05-qualification-v3/w1-result.json'));
+      assert.ok(!files.has('/home/sanmoo/software-factory-test/y5/q05-qualification-v4/w1-result.json'));
     } finally { receiptProfileOverride = undefined; }
   }
   assert.equal(forbidden, 0);
