@@ -25,7 +25,7 @@ async function owner(t: { after(fn: () => Promise<void>): void }, credentialRepl
   await mkdir(runtime, { recursive: true, mode: 0o700 });
   await writeFile(join(runtime, 'owner.json'), JSON.stringify({ environment: environmentRef, boot }), { mode: 0o600 });
   const received: Envelope[] = [];
-  const launched: { send?: (kind: string, payload: Record<string, unknown>) => Promise<void> } = {};
+  const launched: { send?: (kind: string, payload: Record<string, unknown>) => Promise<void>; sendRaw?: (frame: Envelope) => Promise<void> } = {};
   const server = await listen(join(runtime, 'owner'), { async message(request, channel) {
     received.push(request);
     const reply = (kind: string, payload: Record<string, string>) => channel.send({ protocol_version: protocolVersion, controller_run_id: null,
@@ -33,6 +33,7 @@ async function owner(t: { after(fn: () => Promise<void>): void }, credentialRepl
     if (request.kind === 'deliver-credential') await reply('credential-result', credentialReply);
     else if (request.kind === 'withdraw-credential') await reply('credential-result', { status: 'withdrawn' });
     else {
+      launched.sendRaw = frame => channel.send(frame);
       launched.send = (kind, payload) => channel.send({ protocol_version: protocolVersion, controller_run_id: null, message_id: request.message_id,
         reply_to: request.message_id, kind, payload: payload as never });
       await reply('worker-launch-result', { status: 'requested', worker: (request.payload.context as Record<string, string>).invocationId! });
@@ -111,4 +112,12 @@ test('ticket 20 AC3: Workers.deliver never sends a credential to a reviewer or a
   assert.deepEqual(await workers.deliver('builder-unknown', { kind: 'credential', credential: { token } }), { status: 'failure', code: 'WORKER_NOT_CURRENT' });
   assert.ok(o.received.every(message => message.kind !== 'deliver-credential'), 'nothing secret was sent');
   reviewer.close();
+});
+
+test('review 8: an unexpected or unmatched frame on the host channel makes the activation uncertain, never buffered silently', async t => {
+  const o = await owner(t, { status: 'delivered' });
+  const handle = await createWorkers({ root: o.root, profile, knownSecrets: [] }).activate(invocation(), { credential: { token } });
+  await o.launched.sendRaw!({ protocol_version: protocolVersion, controller_run_id: null, message_id: 'stray', reply_to: 'nobody-asked', kind: 'worker-started', payload: {} });
+  await assert.rejects(handle.started, /WORKER_EXECUTION_UNCERTAIN/);
+  handle.close();
 });

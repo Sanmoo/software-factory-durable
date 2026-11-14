@@ -12,10 +12,15 @@ export type WorkerDirective = { kind: 'credential'; credential: Readonly<{ token
 /** Delivery is not proof of consumption by the SDK/tools; failure codes never carry the secret. */
 export type DeliveryResult = { status: 'delivered' | 'withdrawn' } | { status: 'failure'; code: string };
 
-/** Demultiplexes one host channel: each waiter receives the next frame it matches, so a credential reply never consumes a start frame. */
+/**
+ * Demultiplexes one host channel: each waiter receives the next frame it matches, so a credential reply never consumes a start frame.
+ * Only replies to requests this facade sent (`expect`) are accepted; any other frame makes the whole channel uncertain (every waiter ends),
+ * exactly as an unexpected frame did before demultiplexing.
+ */
 function mailbox(channel: Channel) {
   const iterator = channel.messages[Symbol.asyncIterator]();
   const buffered: Envelope[] = [];
+  const expected = new Set<string>();
   const waiters: { match(message: Envelope): boolean; resolve(message: Envelope | undefined): void }[] = [];
   let ended = false;
   void (async () => {
@@ -23,15 +28,19 @@ function mailbox(channel: Channel) {
       for (;;) {
         const next = await iterator.next();
         if (next.done) break;
+        if (next.value.reply_to === null || !expected.has(next.value.reply_to)) break; // unexpected/unmatched: uncertain
         const index = waiters.findIndex(waiter => waiter.match(next.value));
         if (index >= 0) waiters.splice(index, 1)[0]!.resolve(next.value); else buffered.push(next.value);
       }
     } catch { /* channel failure ends every waiter below */ }
     ended = true;
+    buffered.length = 0;
     for (const waiter of waiters.splice(0)) waiter.resolve(undefined);
   })();
   return {
     get ended() { return ended; },
+    expect(id: string) { expected.add(id); },
+    release(id: string) { expected.delete(id); },
     next(match: (message: Envelope) => boolean, timeoutMs?: number): Promise<Envelope | undefined> {
       const index = buffered.findIndex(match);
       if (index >= 0) return Promise.resolve(buffered.splice(index, 1)[0]);
@@ -69,11 +78,13 @@ export function createWorkers(configuration?: Configuration) {
     if (entry.context.role !== 'builder') return { status: 'failure', code: 'CREDENTIAL_ROLE_DENIED' };
     if (directive.kind === 'credential' && (typeof directive.credential?.token !== 'string' || !directive.credential.token)) return { status: 'failure', code: 'WORKER_DIRECTIVE_INVALID' };
     const id = randomUUID();
+    entry.inbox.expect(id);
     try {
       await entry.channel.send({ protocol_version: protocolVersion, controller_run_id: null, message_id: id, reply_to: null, kind: directive.kind === 'credential' ? 'deliver-credential' : 'withdraw-credential',
         payload: directive.kind === 'credential' ? { context: entry.context, token: directive.credential.token } : { context: entry.context } });
     } catch { return { status: 'failure', code: 'CREDENTIAL_DELIVERY_UNCERTAIN' }; }
     const reply = await entry.inbox.next(message => message.reply_to === id, 15000);
+    entry.inbox.release(id); // a late reply after a timeout is unexpected: the channel becomes uncertain
     const expected = directive.kind === 'credential' ? '{"status":"delivered"}' : '{"status":"withdrawn"}';
     if (!reply) return { status: 'failure', code: 'CREDENTIAL_DELIVERY_UNCERTAIN' };
     if (reply.kind !== 'credential-result' || JSON.stringify(reply.payload) !== expected) return { status: 'failure', code: directive.kind === 'credential' ? 'CREDENTIAL_DELIVERY_DENIED' : 'CREDENTIAL_WITHDRAWAL_DENIED' };
@@ -105,12 +116,15 @@ export function createWorkers(configuration?: Configuration) {
       if (delivery?.credential !== undefined) {
         // Host handshake (spec §8.1): the credential reaches the owner's tool path BEFORE the worker exists; it is never in the launch payload.
         const credentialId = randomUUID();
+        inbox.expect(credentialId);
         await channel.send({ protocol_version: protocolVersion, controller_run_id: null, message_id: credentialId, reply_to: null,
           kind: 'deliver-credential', payload: { context, token: delivery.credential.token } });
         const reply = await inbox.next(message => message.reply_to === credentialId);
+        inbox.release(credentialId);
         if (!reply || reply.kind !== 'credential-result' || JSON.stringify(reply.payload) !== '{"status":"delivered"}') throw new Error('CREDENTIAL_DELIVERY_FAILED');
       }
       const id = randomUUID();
+      inbox.expect(id);
       await channel.send({ protocol_version: protocolVersion, controller_run_id: null, message_id: id, reply_to: null,
         kind: 'launch-worker', payload });
       const receive = async (kind: string) => {

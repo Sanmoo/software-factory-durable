@@ -54,7 +54,10 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
           return;
         }
         const value = 'token' in parsed.data && typeof parsed.data.token === 'string' ? parsed.data.token : '';
-        if (!value) return;
+        if (!value) {
+          await channel.send(frame(request.message_id, 'credential-result', { status: 'failure', code: 'CREDENTIAL_DELIVERY_DENIED' }, request.message_id));
+          return;
+        }
         // Registered in the SAME owner Records used by this invocation's tool captures before acknowledging/using; no await in between.
         records.registerSecret(value);
         if (holder) holder.token = value;

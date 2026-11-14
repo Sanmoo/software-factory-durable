@@ -117,3 +117,10 @@ test('ticket 20 AC3: a launched reviewer channel never accepts a credential, not
   assert.deepEqual((await o.request('r2', 'deliver-credential', { context: contextFor('spec-1'), token })).payload,
     { status: 'failure', code: 'CREDENTIAL_DELIVERY_DENIED' }, 'a builder claim on a reviewer channel is refused too');
 });
+
+test('review 8: a delivery without a usable value is answered with an explicit failure', async t => {
+  const o = await owner(t);
+  assert.deepEqual((await o.request('e1', 'deliver-credential', { context: contextFor('builder-1'), token: '' })).payload, { status: 'failure', code: 'CREDENTIAL_DELIVERY_DENIED' });
+  assert.deepEqual((await o.request('e2', 'withdraw-credential', { context: contextFor('builder-1') })).payload, { status: 'failure', code: 'CREDENTIAL_WITHDRAWAL_DENIED' },
+    'nothing to withdraw before any delivery');
+});
