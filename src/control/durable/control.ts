@@ -6,6 +6,8 @@ import type { AccessDependencies, Control, ControlStatus, DispatchReason, Execut
 import { heldSlots, initializeSlots, reconcileDurations, reconcileLostCredentials } from './execution.js';
 import { createDispatcher, isLiveCredentialExecution, isLiveExecution } from './dispatch.js';
 import { openStore } from './store.js';
+import { recordRunEnd, recordRunStart } from './migration.js';
+import { currentFormat } from './format.js';
 import { acceptPauseCommand, admitTicket, indexedWork, initialize, ownCycles, pendingWorks, readInstallation, readRequest, readWork, readWorks, recordDependencies,
   type WorkRecord } from './admission.js';
 import { createPoller, systemClock } from './polling.js';
@@ -124,6 +126,8 @@ export async function openControl(options: { storagePath: string;
   const selection = (works: WorkRecord[]) => selectNext(works.filter(work => work.result === 'open' && work.queue.pending && work.queue.category === 'normal')
     .map(work => ({ work_id: work.work_id, blockers: blockers(work) })));
   let running = false;
+  // Ticket 33: how the previous run of this storage ended, read when THIS run records its start (null before that or when never recorded).
+  let previousRun: ControlStatus['storage']['previousRun'] = null;
   const control: Control = {
     async accept(input) {
       const parsed = inputSchema.safeParse(input);
@@ -187,7 +191,7 @@ export async function openControl(options: { storagePath: string;
           unpublished: allQuestions.filter(item => item.state === 'open' && item.publication.state !== 'published').length },
         selection: { next: selection(works).next },
         polling: { ...polling, repositories: polling.repositories.map(({ candidates: _candidates, ...repo }) => repo) },
-        persistence: store.persistence, recovery } satisfies ControlStatus;
+        persistence: store.persistence, recovery, storage: { format: currentFormat, previousRun } } satisfies ControlStatus;
     },
     async run(signal) {
       if (running) throw new Error('CONTROL_ALREADY_RUNNING');
@@ -211,6 +215,9 @@ export async function openControl(options: { storagePath: string;
         };
         // Nothing to reconcile without execution boundaries: the gate is known at once (closed either way).
         if (!dispatcher) await decide();
+        // Ticket 33: this run's start is durable before anything else of the run; a later crash leaves it without an end (never a clean stop).
+        let started = false;
+        if (!signal.aborted) { previousRun = await recordRunStart(state, controller_run_id); started = true; }
         // Grants of a previous process were memory-only: record them as impossible to revoke, with their risk (never blocks by itself).
         // Before polling starts, so no dispatch of this run precedes it. A run stopped before it starts (read-only inspection) writes nothing.
         if (!signal.aborted) await reconcileLostCredentials(state, isLiveCredentialExecution);
@@ -236,6 +243,8 @@ export async function openControl(options: { storagePath: string;
         // An administrative stop is clean only after the confirmed cessation and persistence of every own activity (spec §11.4).
         const uncertain = (await dispatcher?.stop())?.uncertain ?? 0;
         await desk?.idle();
+        // Clean only for a requested stop after the confirmed cessation/persistence above; the intention to stop never makes a crash clean.
+        if (started) await recordRunEnd(state, controller_run_id, outcome !== 'stop' ? 'failed' : uncertain ? 'uncertain' : 'clean');
         await state.close(BACKGROUND_CONTEXT);
         const end = await state.closed;
         return { kind: outcome === 'stop' && end.kind === 'closed' ? uncertain ? 'uncertain' : 'clean' : 'failed' };

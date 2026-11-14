@@ -356,6 +356,8 @@ export type ControlStatus = {
   persistence: { sqliteVersion: string; sqliteSourceId: string; journalMode: 'wal'; synchronous: 'FULL' };
   /** Ticket 26: boot reconciliation of THIS run (null before it ran or when nothing was composed to reconcile). */
   recovery: RecoveryView | null;
+  /** Ticket 33: storage format and how the previous controller run of this storage ended (`crash`: it never recorded an end). */
+  storage: { format: number; previousRun: { runId: string; startedAt: string; endedAt?: string; end: 'clean' | 'uncertain' | 'failed' | 'crash' } | null };
 };
 export type RecoveryView = { at: string; inventory: 'empty' | 'unknown' | 'listed'; reconciled: number; ceased: number; unconfirmed: number;
   global: string[]; cachePreparing: (number | null)[];

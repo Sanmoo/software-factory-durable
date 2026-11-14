@@ -9,9 +9,27 @@ import { dependencyImpedimentCodes, dependencyImpediments, ownCycleFor, type Own
 import type { Session } from './store.js';
 
 type History = { request_id: string; operation: 'pause' | 'unpause'; before: boolean; after: boolean; origin: 'local-cli' };
-type Installation = { paused: boolean; history: History[] };
-export const installation = defineDoc<Installation>({ kind: 'factory.installation', version: 1, scope: 'session',
-  initial: () => ({ paused: false, history: [] }), checkpointWhen: () => true });
+/** Ticket 33: one controller run of this storage (spec §11.4: only a confirmed cessation/persistence is a clean stop; a crash leaves `current`). */
+export type ControllerRun = { runId: string; startedAt: string };
+export type ControllerRunEnd = ControllerRun & { endedAt: string; end: 'clean' | 'uncertain' | 'failed' };
+/** Ticket 33: explicitly requested, supported storage migrations applied to this storage, oldest first. */
+export type StorageMigration = { upgradeId: string; migration: string; from: number; to: number; at: string; release: string; previousRelease: string | null };
+type Installation = { paused: boolean; history: History[];
+  /** Storage format 2 (ticket 33): the format identity and the record of every migration applied. */
+  storage: { format: 2; migrations: StorageMigration[] };
+  /** Storage format 2 (ticket 33): `current` is the run that has not recorded its end (alive, or crashed); `last` the latest recorded end. */
+  lifecycle: { current: ControllerRun | null; last: ControllerRunEnd | null } };
+/**
+ * Version 2 = storage format 2 (ticket 33). Version 1 storages are NEVER migrated lazily: the operational open refuses them
+ * (STORAGE_MIGRATION_REQUIRED) and only the explicitly requested upgrade migration commits this conversion, all at once.
+ */
+export const installation = defineDoc<Installation>({ kind: 'factory.installation', version: 2, scope: 'session',
+  initial: () => ({ paused: false, history: [], storage: { format: 2, migrations: [] }, lifecycle: { current: null, last: null } }), checkpointWhen: () => true,
+  migrate: (value, fromVersion) => {
+    if (fromVersion !== 1) throw new Error('STORAGE_FORMAT_UNSUPPORTED');
+    // Format 1 recorded no controller lifecycle: nothing proves how its last run ended, so nothing is invented here.
+    return { ...value, storage: { format: 2, migrations: [] }, lifecycle: { current: null, last: null } } as unknown as Installation;
+  } });
 /** Identified ingresses (CLI request ids, `github-comment-<id>` for comments) with their single durable result. */
 export const requests = defineDocFamily<{ input: ControlInput | { request_id: string; operation: 'answer'; origin: 'github-comment' } | null; receipt: ControlReceipt | null }, null>({
   kind: 'factory.request', version: 1, scope: 'session', family: true, initial: () => ({ input: null, receipt: null }), checkpointWhen: () => true,
