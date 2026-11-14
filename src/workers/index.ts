@@ -9,6 +9,8 @@ import type { WorkerIpc } from './worker-process.js';
 import { handoffSummarySchema } from './handoff.js';
 import { resolvedDeclarationsSchema } from './gates.js';
 import { opinionSchema } from './review.js';
+import { observeOpinionRecord, type OpinionObservation } from './opinion-observation.js';
+export type { OpinionObservation } from './opinion-observation.js';
 import type { ReviewOpinion } from '../contracts/index.js';
 import type { BuilderDirective, HandoffEvent } from './builder-handoff.js';
 export type { ReviewerProfile, Invocation } from './worker-start.js';
@@ -146,6 +148,16 @@ export function createWorkers(configuration?: Configuration) {
       return { kind: 'receipt', receipt: { workId: input.workId, id: capture.reference.id, executionId: input.executionId, invocationId: input.invocationId }, recordedAt: parsed.recordedAt };
     } catch { return { kind: 'uncertain', code: 'START_RECEIPT_INVALID' }; }
   },
+    /**
+     * Ticket 28 — Q6 `observe`, opinion facet: the complete opinion a reviewer invocation preserved in the protected Records before its
+     * notification, located without that notification and without rerunning the reviewer. Read-only; never proof of cessation.
+     */
+    async observeOpinion(input: { workId: string; executionId: string; invocationId: string }): Promise<OpinionObservation> {
+      if (!configuration) return { kind: 'uncertain', code: 'WORKER_EXECUTION_NOT_ENABLED' };
+      let records: Awaited<ReturnType<typeof createRecords>>;
+      try { records = await createRecords({ root: configuration.root }); } catch { return { kind: 'uncertain', code: 'RECORDS_UNAVAILABLE' }; }
+      return observeOpinionRecord(records, input);
+    },
     /**
      * Q6 `observe` (ticket 11): whether the preserved session of an ended Builder invocation can be CONTINUED by the planned next Builder
      * activation — present, intact (same hash/identity) and with the same SDK profile, provider/model, pack and tool set. Read-only and
