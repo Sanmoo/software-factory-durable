@@ -11,6 +11,8 @@ import { installNativeAppFixture } from './native-app-fixture.js';
 export type WorldIssue = {
   id: number; node_id: string; number: number; title: string; body: string | null; state: 'open' | 'closed'; state_reason: string | null;
   labels: { id: number; name: string }[]; user: { id: number; login: string; type: string }; pull_request?: object;
+  /** Issue timeline events served at /issues/{n}/timeline (paginated). */
+  timeline?: object[];
 };
 export type WorldPull = {
   id: number; node_id: string; number: number; title: string; body: string | null; state: 'open' | 'closed'; merged_at: string | null;
@@ -98,6 +100,10 @@ else if (path === '/repos/acme/project/issues') {
   const state = url.searchParams.get('state'); const label = url.searchParams.get('labels');
   body = page(world.issues.filter(i => (!state || state === 'all' || i.state === state) &&
     (!label || i.labels.some(l => l.name.toLowerCase() === label.toLowerCase()))).map(i => ({ ...i, repository_url: 'https://api.github.com/repos/acme/project', html_url: 'https://github.com/acme/project/issues/' + i.number })));
+} else if (/^\\/repos\\/acme\\/project\\/issues\\/\\d+\\/timeline$/.test(path)) {
+  const found = world.issues.find(i => i.number === Number(path.split('/').at(-2)));
+  if (found) body = page(found.timeline ?? []);
+  else { status = 404; body = { message: 'Not Found' }; }
 } else if (/^\\/repos\\/acme\\/project\\/issues\\/\\d+$/.test(path)) {
   const found = world.issues.find(i => i.number === Number(path.split('/').at(-1)));
   if (found) body = { ...found, repository_url: 'https://api.github.com/repos/acme/project', html_url: 'https://github.com/acme/project/issues/' + found.number };
@@ -139,3 +145,12 @@ child.on('exit',code=>{process.exitCode=code??1;});
   };
 }
 export const worldScope = { repository: 'acme/project', installationId: 2, workflows: false, label: 'ready-for-agent', base: 'main' };
+
+/** GitHub timeline events as returned by REST for issue timelines. */
+export function crossReferenced(pullNumber: number, repository = 'acme/project') {
+  return { event: 'cross-referenced', source: { type: 'issue', issue: { id: 9000 + pullNumber, number: pullNumber,
+    html_url: `https://github.com/${repository}/pull/${pullNumber}`, pull_request: { url: `https://api.github.com/repos/${repository}/pulls/${pullNumber}` } } } };
+}
+export function connected(pullNumber?: number, event: 'connected' | 'disconnected' = 'connected') {
+  return pullNumber === undefined ? { event } : { ...crossReferenced(pullNumber), event };
+}

@@ -14,10 +14,12 @@ const permissions = {
   // Reduced polling/admission purposes: read-only, narrower than the diagnostic ceilings above.
   'tracker-read': { metadata: 'read', issues: 'read' },
   'repository-read': { metadata: 'read', pull_requests: 'read' },
+  // Issue timeline (GitHub-native PR association) is an issues endpoint: issues:read, no pull request or write access.
+  'association-read': { metadata: 'read', issues: 'read' },
 } as const;
 type Purpose = keyof typeof permissions;
 type DiagnosticPurpose = 'tracker' | 'repository';
-export type ReadPurpose = 'tracker-read' | 'repository-read';
+export type ReadPurpose = 'tracker-read' | 'repository-read' | 'association-read';
 const repositorySchema = z.object({ id: z.number().int().positive().safe(), full_name: z.string(), owner: z.object({ login: z.string() }) });
 const permissionSchema = z.record(z.string(), z.enum(['read', 'write']));
 class AccessFailure extends Error {
@@ -91,7 +93,9 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
     const reset = headers.get('x-ratelimit-reset');
     const resetWait = reset && /^\d+$/.test(reset) ? Math.max(1, Number(reset) - Math.floor(Date.now() / 1000)) : undefined;
     if (status === 429 || ((status === 403) && (retry !== undefined || exhausted))) {
-      const wait = retry && /^\d+$/.test(retry) ? Number(retry) : resetWait ?? 60;
+      // Retry-After is delta-seconds or an HTTP-date (RFC 9110 §10.2.3).
+      const retryDate = retry && !/^\d+$/.test(retry) ? Date.parse(retry) : NaN;
+      const wait = retry && /^\d+$/.test(retry) ? Number(retry) : Number.isFinite(retryDate) ? Math.ceil((retryDate - Date.now()) / 1000) : resetWait ?? 60;
       throw new AccessFailure('GITHUB_RATE_LIMITED', Math.min(Math.max(wait, 1), 86400));
     }
     if (status === 401 || status === 403 || status === 404) throw new AccessFailure(status === 404 ? 'GITHUB_NOT_FOUND_OR_HIDDEN' : 'GITHUB_ACCESS_DENIED');

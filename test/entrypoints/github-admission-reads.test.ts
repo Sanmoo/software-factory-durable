@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { createGitHubAccess } from '../../src/platform/github/index.js';
 import { createIssueTracker } from '../../src/issue-tracker/index.js';
 import { createCodeRepository } from '../../src/code-repository/index.js';
-import { githubWorld, issue, pull, worldScope, type World } from './github-world-fixture.js';
+import { githubWorld, issue, pull, worldScope, crossReferenced, connected, type World } from './github-world-fixture.js';
 
 const code = (observation: object) => 'code' in observation ? observation.code : undefined;
 // Real adapters/issuer/transport; only gh/GitHub (and App HTTPS) are substituted by the local world fixture.
@@ -82,6 +82,9 @@ test('readTicket returns state, reason, labels and identity only; unconfigured r
   assert.equal((await world.trace()).length, before);
 });
 
+const issueOf = (observed: Awaited<ReturnType<ReturnType<typeof createCodeRepository>['findPublication']>>, number: number) =>
+  observed.kind === 'observed' ? observed.issues[String(number)] : undefined;
+
 test('operational reads reuse one reduced in-memory grant per purpose and only ever issue GET requests', async t => {
   const world = await compose(t, { issues: [issue(1)], pulls: [pull(1)] });
   const listed = await world.tracker.listCandidates(worldScope);
@@ -89,11 +92,12 @@ test('operational reads reuse one reduced in-memory grant per purpose and only e
   if (listed.kind !== 'observed') return;
   await world.tracker.readTicket(listed.candidates[0]!);
   await world.tracker.listCandidates(worldScope);
-  await world.repository.findPublication({ repo: worldScope, issueNumber: 1, knownBranches: [] });
-  await world.repository.findPublication({ repo: worldScope, issueNumber: 1, knownBranches: [] });
+  await world.repository.findPublication({ repo: worldScope, issueNumbers: [1], knownBranches: [] });
+  await world.repository.findPublication({ repo: worldScope, issueNumbers: [1], knownBranches: [] });
   const trace = await world.trace();
   const posts = trace.filter(entry => entry.method === 'POST');
-  assert.deepEqual(posts.map(entry => entry.permissions), [{ metadata: 'read', issues: 'read' }, { metadata: 'read', pull_requests: 'read' }]);
+  // tracker-read, repository-read (pulls) and association-read (issue timeline): each least privilege, none with write.
+  assert.deepEqual(posts.map(entry => entry.permissions), [{ metadata: 'read', issues: 'read' }, { metadata: 'read', pull_requests: 'read' }, { metadata: 'read', issues: 'read' }]);
   assert.ok(trace.filter(entry => entry.credential === 'installation').every(entry => entry.method === 'GET'));
   assert.ok(!trace.some(entry => /labels\/|assignees|projects|\/comments/.test(entry.endpoint.split('?')[0]!)), 'no triage/project/status endpoints');
 });
@@ -108,38 +112,72 @@ test('an unknown token issuance is never repeated automatically by later polling
   assert.equal(world.native.tokenPosts, 1);
 });
 
-test('findPublication reports closing-reference and known-branch pull requests with GitHub identities, ignoring mere mentions', async t => {
-  const world = await compose(t, { issues: [issue(1)], pulls: [
-    pull(10, { body: 'Fixes #1' }), pull(11, { body: 'see #1 for context' }), pull(12, { title: 'resolves: acme/project#1', state: 'closed', merged_at: '2026-01-01T00:00:00Z' }),
-    pull(13, { body: 'Closes https://github.com/acme/project/issues/1' }), pull(14, { body: 'fixes acme/other#1' }), pull(15, { body: 'fixes #12' }),
-    pull(16, { head: { ref: 'factory/work-x', repo: { id: 3 } } }),
-  ] });
-  const observed = await world.repository.findPublication({ repo: worldScope, issueNumber: 1, knownBranches: ['factory/work-x'] });
-  assert.equal(observed.kind, 'observed');
-  if (observed.kind !== 'observed') return;
-  assert.equal(observed.completeness, 'complete');
-  assert.deepEqual(observed.candidates.map(candidate => [candidate.number, candidate.association]),
-    [[10, ['closing-reference']], [12, ['closing-reference']], [13, ['closing-reference']], [16, ['known-branch']]]);
-  assert.deepEqual(observed.candidates[1], { pullRequestId: 9012, nodeId: 'PR_node12', number: 12, url: 'https://github.com/acme/project/pull/12', state: 'closed', merged: true,
-    headRef: 'human/change-12', headRepositoryId: 3, author: { id: 10, login: 'someone', type: 'User' }, association: ['closing-reference'] });
-  assert.ok(observed.limitations.some(limitation => /manual/i.test(limitation)));
+test('a 429 on token issuance opens the rate window: no further issuance POST until it elapses', async t => {
+  const world = await compose(t, { issues: [issue(1)], pulls: [] }, 'post-rate-limit-429');
+  const first = await world.tracker.listCandidates(worldScope);
+  assert.deepEqual([code(first), first.kind === 'unavailable' && first.waitSeconds], ['GITHUB_RATE_LIMITED', 37]);
+  const second = await world.tracker.listCandidates(worldScope);
+  assert.equal(code(second), 'GITHUB_RATE_LIMITED');
+  assert.equal(world.native.tokenPosts, 1, 'known-rejected issuance is not repeated inside the window');
 });
 
-test('findPublication failure is unavailable, never an empty candidate list', async t => {
-  const world = await compose(t, { issues: [issue(1)], pulls: [pull(10)], faults: { '/pulls?': { status: 502 } } });
-  const observed = await world.repository.findPublication({ repo: worldScope, issueNumber: 1, knownBranches: [] });
-  assert.equal(observed.kind, 'unavailable');
-  assert.equal(observed.completeness, 'incomplete');
-  assert.equal('candidates' in observed, false);
+test('Retry-After given as an HTTP-date is honoured', async t => {
+  const date = new Date(Date.now() + 120000).toUTCString();
+  const world = await compose(t, { issues: [issue(1)], pulls: [], faults: { '/issues?': { status: 429, headers: { 'retry-after': date } } } });
+  const first = await world.tracker.listCandidates(worldScope);
+  assert.equal(code(first), 'GITHUB_RATE_LIMITED');
+  const wait = first.kind === 'unavailable' ? first.waitSeconds ?? 0 : 0;
+  assert.ok(wait >= 110 && wait <= 121, String(wait));
+});
+
+test('findPublication reports closing-reference, native timeline and known-branch pull requests with GitHub identities', async t => {
+  const world = await compose(t, { issues: [issue(1, { timeline: [crossReferenced(11), crossReferenced(10), crossReferenced(30, 'acme/other'), connected(17), { event: 'labeled' }] })], pulls: [
+    pull(10, { body: 'Fixes #1' }), pull(11, { body: 'see #1 for context' }), pull(12, { title: 'resolves: acme/project#1', state: 'closed', merged_at: '2026-01-01T00:00:00Z' }),
+    pull(13, { body: 'Closes https://github.com/acme/project/issues/1' }), pull(14, { body: 'fixes acme/other#1' }), pull(15, { body: 'fixes #12' }),
+    pull(16, { head: { ref: 'factory/work-x', repo: { id: 3 } } }), pull(17),
+  ] });
+  const observed = await world.repository.findPublication({ repo: worldScope, issueNumbers: [1], knownBranches: ['factory/work-x'] });
+  const result = issueOf(observed, 1);
+  assert.equal(result?.completeness, 'complete');
+  if (result?.completeness !== 'complete') return;
+  assert.deepEqual(result.candidates.map(candidate => [candidate.number, candidate.association]),
+    [[10, ['closing-reference', 'cross-reference']], [11, ['cross-reference']], [12, ['closing-reference']], [13, ['closing-reference']], [16, ['known-branch']], [17, ['development-link']]]);
+  assert.deepEqual(result.candidates[2], { pullRequestId: 9012, nodeId: 'PR_node12', number: 12, url: 'https://github.com/acme/project/pull/12', state: 'closed', merged: true,
+    headRef: 'human/change-12', headRepositoryId: 3, author: { id: 10, login: 'someone', type: 'User' }, association: ['closing-reference'] });
+  assert.ok(observed.kind === 'observed' && observed.limitations.some(limitation => /other repositories/i.test(limitation)));
+  assert.ok(observed.kind === 'observed' && !observed.limitations.some(limitation => /manual .*not observable/i.test(limitation)), 'limitation text stays accurate');
+});
+
+test('an association that cannot be identified, or a failed timeline, is incomplete — never an empty candidate list', async t => {
+  const world = await compose(t, { issues: [issue(1, { timeline: [connected()] }), issue(2, { timeline: [connected(), connected(undefined, 'disconnected')] }), issue(3)],
+    pulls: [], faults: { '/issues/3/timeline': { status: 502 } } });
+  const observed = await world.repository.findPublication({ repo: worldScope, issueNumbers: [1, 2, 3], knownBranches: [] });
+  assert.deepEqual([issueOf(observed, 1)?.completeness, (issueOf(observed, 1) as { code?: string }).code], ['incomplete', 'ASSOCIATION_UNIDENTIFIED']);
+  assert.equal(issueOf(observed, 2)?.completeness, 'complete', 'a disconnected link cancels the unidentified connection');
+  assert.deepEqual([issueOf(observed, 3)?.completeness, (issueOf(observed, 3) as { code?: string }).code], ['incomplete', 'GITHUB_QUERY_FAILED']);
+  assert.equal(issueOf(observed, 3) && 'candidates' in issueOf(observed, 3)!, false);
+});
+
+test('findPublication lists pull requests once per call for several Tickets, keeping page-cap/failure semantics', async t => {
+  const world = await compose(t, { pageSize: 1, issues: [issue(1), issue(2), issue(3)], pulls: [pull(10, { body: 'Fixes #2' }), pull(11)] });
+  const observed = await world.repository.findPublication({ repo: worldScope, issueNumbers: [1, 2, 3], knownBranches: [] });
+  assert.deepEqual([1, 2, 3].map(n => { const r = issueOf(observed, n); return r?.completeness === 'complete' ? r.candidates.map(c => c.number) : r; }), [[], [10], []]);
+  const trace = (await world.trace()).filter(entry => entry.credential === 'installation');
+  assert.equal(trace.filter(entry => /\/pulls\?/.test(entry.endpoint)).length, 2, 'two Link pages, listed once for all three Tickets');
+  assert.equal(trace.filter(entry => entry.endpoint.includes('/timeline')).length, 3, 'one timeline read per Ticket');
+  const failed = await compose(t, { issues: [issue(1)], pulls: [pull(10)], faults: { '/pulls?': { status: 502 } } });
+  const unavailable = await failed.repository.findPublication({ repo: worldScope, issueNumbers: [1], knownBranches: [] });
+  assert.equal(unavailable.kind, 'unavailable');
+  assert.equal('issues' in unavailable, false);
 });
 
 test('configured owner/repository casing differs from GitHub canonical URLs without breaking identity', async t => {
-  const world = await compose(t, { issues: [issue(1)], pulls: [pull(10, { body: 'Fixes #1' })] });
+  const world = await compose(t, { issues: [issue(1, { timeline: [crossReferenced(10)] })], pulls: [pull(10, { body: 'Fixes #1' })] });
   const mixed = { ...worldScope, repository: 'Acme/Project' };
   const github = createGitHubAccess({ root: world.root, executable: world.executable, appId: 1, privateKeyFile: 'credentials/app.pem' });
   const listed = await createIssueTracker({ github, scopes: [mixed] }).listCandidates(mixed);
   assert.equal(listed.kind, 'observed');
   assert.deepEqual(listed.kind === 'observed' && listed.candidates.map(ticket => ticket.issueId), [7001]);
-  const found = await createCodeRepository({ github }).findPublication({ repo: mixed, issueNumber: 1, knownBranches: [] });
-  assert.deepEqual(found.kind === 'observed' && found.candidates.map(candidate => candidate.number), [10]);
+  const found = issueOf(await createCodeRepository({ github }).findPublication({ repo: mixed, issueNumbers: [1], knownBranches: [] }), 1);
+  assert.deepEqual(found?.completeness === 'complete' && found.candidates.map(candidate => [candidate.number, candidate.association]), [[10, ['closing-reference', 'cross-reference']]]);
 });
