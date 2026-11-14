@@ -4,18 +4,18 @@
 
 **Blocked by:** [05: Executar um worker SDK com ferramentas confinadas e saída protegida](05-confined-sdk-worker-and-protected-output.md); [06: Executar testes Docker reais no perfil distribuível](06-real-docker-tests-on-supported-profile.md); [08: Liberar execução somente com dependências nativas satisfeitas](08-native-dependency-gating.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
-- [ ] Controle revalida elegibilidade/dependências/capacidade e confirma Execução vigente, Slot e intenção/tarefa de despacho antes de preparar/ativar; recibo de início incorpora consumo uma única vez.
-- [ ] Cache bare exclusivo da Factory sequencia fetch e clone local concluído por repo, sem mutex global de execução; cópia independente usa no-hardlinks, sem alternates/shared/reference e remoto GitHub.
-- [ ] Preparo host não executa hooks/scripts/plugins do repo nem monta cache no guest; branch/workspace/metadados próprios são reutilizados nas continuações, sem escrita comum entre Trabalhos.
-- [ ] Builder recebe Ticket/repo/base inequívocos, pacote próprio versionado de implement/code-review/pr/tdd/dependências e diagnóstico Alpine com origem/créditos/licenças, sem perfil pessoal.
-- [ ] Credencial inicial restrita ao repo é entregue transitoriamente pelo caminho host antes das ferramentas dependentes; chave/token não entram em estado serializável, prompt, sessão, recibo ou remoto Git.
-- [ ] Builder começa por implement e preserva fontes necessárias/instruções aplicáveis fora da proposta, com manifesto final completo, origem/data/hash/revisão e versões não sobrescritas; controlador não ingere documentos.
-- [ ] Fonte necessária inacessível ou aprovação não disponível impede conclusão automática e é explicitada, sem ampliar token nem adotar fonte auxiliar como requisito silencioso.
-- [ ] Prova com agente real relaciona autorização, reserva, recibo, perfil/spec, comandos e alteração observada; não habilita retry automático ou publicação antes dos contratos correspondentes.
+- [x] Controle revalida elegibilidade/dependências/capacidade e confirma Execução vigente, Slot e intenção/tarefa de despacho antes de preparar/ativar; recibo de início incorpora consumo uma única vez.
+- [x] Cache bare exclusivo da Factory sequencia fetch e clone local concluído por repo, sem mutex global de execução; cópia independente usa no-hardlinks, sem alternates/shared/reference e remoto GitHub.
+- [x] Preparo host não executa hooks/scripts/plugins do repo nem monta cache no guest; branch/workspace/metadados próprios são reutilizados nas continuações, sem escrita comum entre Trabalhos.
+- [x] Builder recebe Ticket/repo/base inequívocos, pacote próprio versionado de implement/code-review/pr/tdd/dependências e diagnóstico Alpine com origem/créditos/licenças, sem perfil pessoal.
+- [x] Credencial inicial restrita ao repo é entregue transitoriamente pelo caminho host antes das ferramentas dependentes; chave/token não entram em estado serializável, prompt, sessão, recibo ou remoto Git.
+- [x] Builder começa por implement e preserva fontes necessárias/instruções aplicáveis fora da proposta, com manifesto final completo, origem/data/hash/revisão e versões não sobrescritas; controlador não ingere documentos.
+- [x] Fonte necessária inacessível ou aprovação não disponível impede conclusão automática e é explicitada, sem ampliar token nem adotar fonte auxiliar como requisito silencioso.
+- [x] Prova com agente real relaciona autorização, reserva, recibo, perfil/spec, comandos e alteração observada; não habilita retry automático ou publicação antes dos contratos correspondentes.
 
 ## Referências e validação
 
@@ -26,3 +26,7 @@
 ## Autorização e limites
 
 Publicação é planejamento aprovado, não autorização de construção, uso de host/credenciais/GitHub/modelos reais, injeção de falhas ou piloto. Obter autorização pertinente antes da execução. Não alterar decisões aprovadas silenciosamente; lacuna de desenho volta ao operador. Merge e avaliação humana não são delegados aos agentes.
+
+## Answer
+
+Resolvido em 2026-11-14: despacho real de um Builder (VM própria, modelo real, checkout próprio de cache bare exclusivo, credencial só leitura transitória) que preservou pedido e instruções e commitou a mudança pedida na branch própria, sem push. Gate local 779/0. Evidência: `docs/evidence/09-builder-start-and-preserved-request.md`.

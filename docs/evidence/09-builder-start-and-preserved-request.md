@@ -188,3 +188,14 @@ is closed"), caminho Write/owner não alterado aqui (`write-tools.ts`, `read-too
 Após as correções da revisão (gate completo, `rm -rf dist`): eslint exit 0; `tsc` exit 0; dependency-cruiser sem violações (241 módulos, após corrigir 2 imports de teste para a entrada pública de Control);
 **103 arquivos**, um por vez: **779 pass, 0 fail, 10 skipped, 0 cancelled**. Novos: `checkout-inspection` (3), `builder09-recipe-safety` (2);
 ampliados: `sandbox-checkout` (+2), `execution-flow` (+2), `execution-commits`, `activate-credential` (+1).
+
+## Ensaio real autorizado — 2026-11-14 (supervisor)
+
+HEAD `3a390b4`. Namespace `q09-builder-v2`: a v1 consumiu só o preflight, que falhou localmente antes de qualquer chamada porque faltava `y5/run`. Pré-condições: issue #3 com pedido concreto só de documentação e aprovação explícita de que não precisa de testes ou seams; label `ready-for-agent` retirada temporariamente da #1 e restaurada depois; cópia exclusiva 0600 da chave do App removida ao final. Registros: [run](09-real-builder-run-2026-11-14.json), [inspect](09-real-builder-inspect-2026-11-14.json).
+
+- Preflight (só leitura): a #3 é a única elegível; grafo `complete` sem bloqueadores.
+- Run (16:33–16:35 UTC): reserva (Execution `6a0e4542…`, Slot 1/1) → fetch para o cache bare exclusivo → clone `--no-hardlinks` → branch `factory/3-5a018c66` sobre `8c058c9` → skill pack `factory-skills-v1` (manifest `d5756dbb…`) → prepare e start de 1 VM (assets34) → revalidação com novo `attemptId` (`9f45afe9…` ≠ `c4fe18b5…` da admissão) → grant `builder-start` (metadata, contents e issues **read**) entregue por via transitória → ativação de **um** Builder real (`openai/gpt-6-luna`, OAuth Factory, orçamento `builder-v1`) com `/implement …/issues/3` → recibo consumido uma vez → fim do Builder → stop (`cessationConfirmed:true`) → Slot liberado. Sem deadline atingido.
+- Inspect (só leitura, sem git do host na árvore do guest): `spec/v1/{ticket.json,sources.json}` e `instructions/v1/{AGENTS.md,sources.json}` `complete:true`, com origem, data, sha256 e revisão. Commit **`360e5f2 Add factory smoke documentation`**: `docs/factory-smoke.md`, +3 linhas, só esse arquivo. Remoto apenas `https://github.com/…`, sem alternates. **Sem push:** o GitHub tem só `main`.
+- Segredos: 0 ocorrências de `ghs_`/`PRIVATE KEY` em `control.sqlite*` e nas observações; o recibo registra skill pack, orçamento e hash do prompt.
+
+AC8 comprovado nesse nível: autorização, reserva, recibo, perfil e spec, comandos e alteração observada estão relacionados, sem retry nem publicação.

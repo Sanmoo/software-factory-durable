@@ -1,0 +1,189 @@
+{
+ "execution": {
+  "executionId": "6a0e4542-d3b6-43d4-8984-7263bca04c86",
+  "invocationId": "builder-6a0e4542-d3b6-43d4-8984-7263bca04c86",
+  "mode": "initial",
+  "state": "ended",
+  "slot": {
+   "held": false,
+   "capacity": 1,
+   "reservedAt": "2026-11-14T16:33:36.821Z",
+   "releasedAt": "2026-11-14T16:35:04.172Z"
+  },
+  "admission": {
+   "attemptId": "c4fe18b5-defb-474d-a55b-717372d4764a",
+   "evaluationId": "88e74e7f-98ca-46b6-af62-2b232308ca95",
+   "authorizationObservedAt": "2026-11-14T16:33:34.782Z",
+   "activationAttemptId": "9f45afe9-3b57-40d4-be75-cb00f959f5be",
+   "activationEvaluationId": "2501e396-b8fc-41a4-b0a2-1c9cbd8f4a5a"
+  },
+  "dispatch": {
+   "intent": "prepare-start-activate",
+   "phase": "stopped",
+   "environment": "env-ecabd427edc72fd22110f25e5b00a9fb28c065e231d04af5dd5852e2b88c09a7",
+   "boot": "boot-502a4304-25bc-413d-b4f3-9e0fb41eaf1f",
+   "updatedAt": "2026-11-14T16:35:02.806Z"
+  },
+  "request": {
+   "ticket": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3",
+   "repository": "Sanmoo/java-springboot-event-sourcing",
+   "base": "main",
+   "branch": "factory/3-5a018c66",
+   "policies": {
+    "skillPack": "factory-skills-v1",
+    "modelBudget": "builder-v1",
+    "copyOutput": true,
+    "editSourceMaxBytes": 8192
+   },
+   "baseCommit": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+   "checkout": "/workspace/checkout",
+   "promptSha256": "7bb2e0b86db97230659d5d9308c1b7d9a11f165a16095231bdd5f612a564edf7",
+   "skillPack": {
+    "name": "factory/skill-pack/factory-skills-v1",
+    "manifestSha256": "d5756dbb56a5eaf8f32a0e885d0cf48a667c62738cd16ab6630447e88d9e62ce"
+   }
+  },
+  "credential": {
+   "role": "builder",
+   "purpose": "builder-start",
+   "repository": "Sanmoo/java-springboot-event-sourcing",
+   "repositoryId": 1256893534,
+   "installationId": 177599217,
+   "permissions": {
+    "metadata": "read",
+    "contents": "read",
+    "issues": "read"
+   },
+   "issuedAt": "2026-11-14T16:33:55.922Z",
+   "expiresAt": "2026-11-14T17:33:57Z"
+  },
+  "credentialIssuance": {
+   "requestedAt": "2026-11-14T16:33:55.918Z",
+   "outcome": "issued",
+   "code": null,
+   "metadata": {
+    "role": "builder",
+    "purpose": "builder-start",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "installationId": 177599217,
+    "permissions": {
+     "metadata": "read",
+     "contents": "read",
+     "issues": "read"
+    },
+    "issuedAt": "2026-11-14T16:33:55.922Z",
+    "expiresAt": "2026-11-14T17:33:57Z"
+   },
+   "revocation": "not-attempted"
+  },
+  "start": {
+   "receiptId": "ccd503f8-ec05-4854-9069-bdcc02a85b55",
+   "confirmedAt": "2026-11-14T16:33:57.367Z"
+  },
+  "end": {
+   "at": "2026-11-14T16:35:02.806Z",
+   "outcome": "completed",
+   "code": null,
+   "cessation": "confirmed"
+  },
+  "held": null,
+  "completion": {
+   "automatic": false,
+   "reason": "Reviews, publication and readiness are not enabled in this Factory version; an ended Builder Execution never completes the Work automatically."
+  }
+ },
+ "receipt": "{\"version\":1,\"context\":{\"workId\":\"5a018c66-e690-4e8d-a6dc-075df00c98f9\",\"executionId\":\"6a0e4542-d3b6-43d4-8984-7263bca04c86\",\"invocationId\":\"builder-6a0e4542-d3b6-43d4-8984-7263bca04c86\",\"role\":\"builder\",\"environmentRef\":\"env-ecabd427edc72fd22110f25e5b00a9fb28c065e231d04af5dd5852e2b88c09a7\",\"bootRef\":\"boot-502a4304-25bc-413d-b4f3-9e0fb41eaf1f\",\"callId\":\"worker-start\"},\"recordedAt\":\"2026-11-14T16:33:57.345Z\",\"event\":{\"version\":1,\"kind\":\"worker-start\",\"suppliedContext\":{\"workId\":\"5a018c66-e690-4e8d-a6dc-075df00c98f9\",\"executionId\":\"6a0e4542-d3b6-43d4-8984-7263bca04c86\",\"invocationId\":\"builder-6a0e4542-d3b6-43d4-8984-7263bca04c86\",\"role\":\"builder\",\"environmentRef\":\"env-ecabd427edc72fd22110f25e5b00a9fb28c065e231d04af5dd5852e2b88c09a7\",\"bootRef\":\"boot-502a4304-25bc-413d-b4f3-9e0fb41eaf1f\",\"phaseId\":\"builder-initial\"},\"phaseId\":\"builder-initial\",\"profile\":{\"id\":\"factory-development-pi-1.5.2-read-async-bash-lexical-v3\",\"version\":\"1.5.2\",\"integrity\":\"sha512-mUWI04rqF1Vd/m1q+Ps1XeWsTXEVvRUnsmRa83I3Dzua0Tx5bYS93imeqtIfrXf7PkkaR6ERz+AuQhIJlom5yA==\",\"upstreamSHA256\":\"e6159de5e4d94ae22968b6524237ef3d4f0374a107e2321ed5c29e93d66c8efc\",\"upstreamTreeSHA256\":\"7d0961cce25f6c802b22aaa028206cd610de386442d2e6b732d71367ef006391\",\"patchSHA256\":\"5e45a7c2953db293a14db0138bb31f8ac9e95eb13512afd42f1f49b77c98e066\",\"resultSHA256\":\"06867a067ebbadca2e06f75ccb4e682cd7e37b9683d41a71562f770b3105a209\",\"asyncPatchSHA256\":\"1ee38f2bdb71480b5b6206e72dbed32ac9214acbe0afe9b7e5137ea8f63cdc1e\",\"candidatePatchSHA256\":\"fd85bbd3c22fff3cb90dd990cb2608f18884d15dcd3820fb2f790b6e42a4dd01\",\"candidateManifestSHA256\":\"b6aaa5391d251867e41e8fc80973a1da79c7df3e38cdd18d11e705d939809b69\",\"lexicalPatchSHA256\":\"e3e88f8e6a53c9b58164c85c9866cfcf5a31b9fd415fdad7ce136976d8fd96d0\",\"lexicalCandidateManifestSHA256\":\"923d916bae558e6d21978593b2effb716dec80398bb5b0a66271fefcfc0f42a2\"},\"providerId\":\"openai\",\"modelId\":\"gpt-6-luna\",\"profileDirectory\":\"/home/sanmoo/software-factory-test/y5/r/UCpDBCW8QT20854PtB6vHw/w-fOrSP8/profile\",\"promptSha256\":\"7bb2e0b86db97230659d5d9308c1b7d9a11f165a16095231bdd5f612a564edf7\",\"skillPack\":{\"id\":\"factory-skills-v1\",\"version\":\"1.0.0\",\"manifestSha256\":\"d5756dbb56a5eaf8f32a0e885d0cf48a667c62738cd16ab6630447e88d9e62ce\"},\"modelBudget\":\"builder-v1\",\"startedAt\":\"2026-11-14T16:33:57.342Z\",\"observedProcess\":{\"pid\":782813,\"parentPid\":782620,\"uid\":1000,\"executable\":\"/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node\",\"nodeVersion\":\"24.21.0\",\"timeOrigin\":1794674037217.754,\"observedAt\":\"2026-11-14T16:33:57.343Z\"}}}",
+ "checkout": {
+  "version": 1,
+  "path": "/workspace/checkout",
+  "repository": "Sanmoo/java-springboot-event-sourcing",
+  "repositoryId": 1256893534,
+  "base": "main",
+  "branch": "factory/3-5a018c66",
+  "baseCommit": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+  "origin": "https://github.com/Sanmoo/java-springboot-event-sourcing.git",
+  "preparedAt": "2026-11-14T16:33:42.752Z",
+  "cache": "factory-exclusive-bare",
+  "clone": "no-hardlinks"
+ },
+ "artifacts": [
+  ".factory-profile/storage-v1",
+  "instructions/v1/AGENTS.md",
+  "instructions/v1/sources.json",
+  "spec/v1/sources.json",
+  "spec/v1/ticket.json"
+ ],
+ "specSources": {
+  "text": "{\"version\":\"v1\",\"complete\":true,\"capturedAt\":\"2026-11-14T16:34:40Z\",\"sources\":[{\"origin\":\"https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3\",\"copy\":\"ticket.json\",\"retrievedAt\":\"2026-11-14T16:34:40Z\",\"sha256\":\"34514e15c80ab2470c0c39f0054bc8dcc34ea02714f9be7d66d4447e7ed84a17\",\"revision\":\"2026-11-14T16:04:09Z\"}]}"
+ },
+ "instructionSources": {
+  "text": "{\"version\":\"v1\",\"complete\":true,\"capturedAt\":\"2026-11-14T16:34:40Z\",\"sources\":[{\"origin\":\"AGENTS.md\",\"copy\":\"AGENTS.md\",\"retrievedAt\":\"2026-11-14T16:34:40Z\",\"sha256\":\"d623b8027afdb31af954ad21ba00e29a76a05942f0898209ab0e724761ecf58e\",\"revision\":\"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\"}]}"
+ },
+ "git": {
+  "status": "observed",
+  "head": "360e5f26e19cea66b028a94acbd6d3199e41711e",
+  "branch": "factory/3-5a018c66",
+  "commits": [
+   "360e5f2 Add factory smoke documentation",
+   "8c058c9 Configure engineering agent skills",
+   "3ed6575 wippy",
+   "90f6ad5 docs: global event position implementation plan",
+   "dafc2a2 docs: global event position design spec",
+   "20fa3b0 fix: restore null return in harness retry to not break non-concurrency failure scenarios",
+   "7f15aea Merge branch 'concurrency-tests'",
+   "0ce69c5 fix: rethrow unexpected exceptions in harness retry instead of swallowing them",
+   "3d6d076 chore(quality): fix SpotBugs and PMD violations in concurrency tests",
+   "a2248bc test(concurrency): add mixed commands scenario",
+   "9ba1af6 test(concurrency): add write and read with minVersion scenario",
+   "55d57fe test(concurrency): add idempotent duplicate requests scenario",
+   "c55e9ac test(concurrency): add authorization and capture scenario",
+   "545ce5f add graphify graph",
+   "3e755bf test(concurrency): add concurrent authorizations scenario",
+   "92877be test(concurrency): add base concurrency integration test class",
+   "3ab8ade test(concurrency): add ConcurrentCommandHarness",
+   "4a9a2c1 test(concurrency): add ConcurrentCommandResult record",
+   "3b0e6c4 polish: clear all deprecation notices, warnings, and PMD violations from check build",
+   "96ae37b style: remove redundant imports in CreditAccountController",
+   "aa55976 fix: flatten AuthorizePurchaseResponse JSON with @JsonUnwrapped to preserve API contract",
+   "12295ab fix: exclude CreditAccountResponse from SpotBugs EI_EXPOSE_REP and add defensive list copy",
+   "d8783df fix: remove unused List import in CreditAccountDtoMapper",
+   "2725901 test: use typed response DTOs in CreditAccountControllerListIT",
+   "8a89f1e test: use typed response DTOs in CreditAccountControllerIT",
+   "2c6c9da refactor: use ErrorResponse in RestExceptionHandler",
+   "1ebf772 refactor: use typed DTOs in PageResponse and CreditAccountController",
+   "0a3ce3e feat: add explicit REST response DTOs and mapper",
+   "4debd91 docs: add design spec for explicit REST response DTOs",
+   "e8fea05 simplify details manually",
+   "92354fa style: remove extra blank lines from CreditAccountUseCaseSupport",
+   "ee3d54a refactor(idempotency): remove duplicated aggregate version column",
+   "09f4955 docs: plan idempotency aggregate version simplification",
+   "c4b2150 chore(quality): allow snake_case tests, update spotbugs exclude, fix static field",
+   "1e47eee chore(quality): fix PMD acceptance test violations",
+   "c971b04 chore(quality): fix PMD violations across main source",
+   "69fbda2 chore(checkstyle): remove unused import and unused variable",
+   "399f9ca test(usecase): cover credit account listing mapping",
+   "d152884 test(projection): cover worker PIT survivor paths",
+   "e6d18fa test(projection): cover capture and release projector paths",
+   "3c05b52 docs: plan targeted PIT survivor coverage",
+   "55cf4d4 test(projection): cover projector limit change, payment and auth",
+   "55cd495 test(projection): cover worker gating, retry and unblock paths",
+   "70a07d3 test(projection): add StaleDeliveryRecovery coverage",
+   "40bcba8 test(projection): add ProjectionGatingResult coverage",
+   "1a67ed8 test(projection): add ProjectionWorkerResult coverage",
+   "ad14654 fix(architecture): resolve qualityTest violations via ProjectionConfig port",
+   "6d4e4a8 test(architecture): deny non-allow-listed Spring in core",
+   "d76b238 refactor(projection): use TransactionRunner port in stale recovery",
+   "af5260c refactor(projection): use TransactionRunner port in worker"
+  ],
+  "diffStat": "docs/factory-smoke.md | 3 +++\n 1 file changed, 3 insertions(+)",
+  "remotes": [
+   {
+    "name": "origin",
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing.git"
+   }
+  ],
+  "alternates": false,
+  "copiedBytes": 839297
+ }
+}

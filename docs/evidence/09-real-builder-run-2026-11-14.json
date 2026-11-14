@@ -1,0 +1,450 @@
+{
+ "status": "observed",
+ "outcome": {
+  "kind": "clean"
+ },
+ "final": {
+  "kind": "list",
+  "paused": false,
+  "dispatch": "open",
+  "dispatchReason": null,
+  "slots": {
+   "capacity": 1,
+   "held": 0
+  },
+  "works": [
+   {
+    "work_id": "5a018c66-e690-4e8d-a6dc-075df00c98f9",
+    "cycle": 1,
+    "predecessor": null,
+    "ticket": {
+     "tracker": "github",
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "repositoryId": 1256893534,
+     "issueId": 6391129588,
+     "nodeId": "I_kwDOSuqsXs8AAAABfPDl9A",
+     "number": 3,
+     "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3"
+    },
+    "repository": {
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "repositoryId": 1256893534,
+     "base": "main"
+    },
+    "result": "open",
+    "authorization": {
+     "state": "authorized",
+     "source": "github-rest",
+     "observedAt": "2026-11-14T16:33:24.662Z",
+     "basis": {
+      "repositoryConfigured": true,
+      "issueState": "open",
+      "label": {
+       "id": 12918930265,
+       "name": "ready-for-agent"
+      }
+     },
+     "publication": {
+      "observedAt": "2026-11-14T16:33:25.351Z",
+      "completeness": "complete",
+      "associatedPullRequests": 0,
+      "limitations": [
+       "Association = GitHub closing keywords in pull request title/body, native issue-timeline cross-references and Development links (connected/disconnected) for pull requests of this repository, and known own branches.",
+       "Pull requests in other repositories that reference the Ticket are not treated as associated (they cannot be own publications of this repository).",
+       "A Development link whose pull request is not identified in the timeline makes the Ticket incomplete, never clear.",
+       "Listing and timeline are separate reads, not an atomic remote snapshot."
+      ]
+     },
+     "tracking": "Authorization recorded at admission. Later label removal/closure tracking is not part of this increment; absence from a listing is never treated as withdrawal."
+    },
+    "queue": {
+     "category": "normal",
+     "sequence": 1,
+     "pending": false
+    },
+    "impediments": [],
+    "dependencies": {
+     "latest": {
+      "evaluationId": "2501e396-b8fc-41a4-b0a2-1c9cbd8f4a5a",
+      "attemptId": "9f45afe9-3b57-40d4-be75-cb00f959f5be",
+      "source": "github-rest",
+      "observedAt": "2026-11-14T16:33:54.698Z",
+      "evaluatedAt": "2026-11-14T16:33:55.914Z",
+      "principals": [
+       {
+        "installationId": 177599217,
+        "repository": "Sanmoo/java-springboot-event-sourcing",
+        "repositoryId": 1256893534,
+        "role": "executable",
+        "purpose": "dependency-read",
+        "permissions": {
+         "metadata": "read",
+         "issues": "read"
+        }
+       }
+      ],
+      "completeness": "complete",
+      "conclusion": "satisfied",
+      "blockers": [],
+      "cycles": [],
+      "shared": [],
+      "reasons": [],
+      "limitations": [
+       "Only native blocked_by relations are read; prose, \"Depends on\", labels, duplicates and the inverse blocking relation are never substitutes.",
+       "Reads of issues and pages are not an atomic remote snapshot; later changes are seen by the next evaluation.",
+       "Equal counts (issue_dependencies_summary) do not certify the absence of relations GitHub does not show to this installation."
+      ]
+     },
+     "lastComplete": {
+      "evaluationId": "2501e396-b8fc-41a4-b0a2-1c9cbd8f4a5a",
+      "observedAt": "2026-11-14T16:33:54.698Z",
+      "conclusion": "satisfied"
+     }
+    },
+    "execution": {
+     "executionId": "6a0e4542-d3b6-43d4-8984-7263bca04c86",
+     "invocationId": "builder-6a0e4542-d3b6-43d4-8984-7263bca04c86",
+     "mode": "initial",
+     "state": "ended",
+     "slot": {
+      "held": false,
+      "capacity": 1,
+      "reservedAt": "2026-11-14T16:33:36.821Z",
+      "releasedAt": "2026-11-14T16:35:04.172Z"
+     },
+     "admission": {
+      "attemptId": "c4fe18b5-defb-474d-a55b-717372d4764a",
+      "evaluationId": "88e74e7f-98ca-46b6-af62-2b232308ca95",
+      "authorizationObservedAt": "2026-11-14T16:33:34.782Z",
+      "activationAttemptId": "9f45afe9-3b57-40d4-be75-cb00f959f5be",
+      "activationEvaluationId": "2501e396-b8fc-41a4-b0a2-1c9cbd8f4a5a"
+     },
+     "dispatch": {
+      "intent": "prepare-start-activate",
+      "phase": "stopped",
+      "environment": "env-ecabd427edc72fd22110f25e5b00a9fb28c065e231d04af5dd5852e2b88c09a7",
+      "boot": "boot-502a4304-25bc-413d-b4f3-9e0fb41eaf1f",
+      "updatedAt": "2026-11-14T16:35:02.806Z"
+     },
+     "request": {
+      "ticket": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3",
+      "repository": "Sanmoo/java-springboot-event-sourcing",
+      "base": "main",
+      "branch": "factory/3-5a018c66",
+      "policies": {
+       "skillPack": "factory-skills-v1",
+       "modelBudget": "builder-v1",
+       "copyOutput": true,
+       "editSourceMaxBytes": 8192
+      },
+      "baseCommit": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+      "checkout": "/workspace/checkout",
+      "promptSha256": "7bb2e0b86db97230659d5d9308c1b7d9a11f165a16095231bdd5f612a564edf7",
+      "skillPack": {
+       "name": "factory/skill-pack/factory-skills-v1",
+       "manifestSha256": "d5756dbb56a5eaf8f32a0e885d0cf48a667c62738cd16ab6630447e88d9e62ce"
+      }
+     },
+     "credential": {
+      "role": "builder",
+      "purpose": "builder-start",
+      "repository": "Sanmoo/java-springboot-event-sourcing",
+      "repositoryId": 1256893534,
+      "installationId": 177599217,
+      "permissions": {
+       "metadata": "read",
+       "contents": "read",
+       "issues": "read"
+      },
+      "issuedAt": "2026-11-14T16:33:55.922Z",
+      "expiresAt": "2026-11-14T17:33:57Z"
+     },
+     "credentialIssuance": {
+      "requestedAt": "2026-11-14T16:33:55.918Z",
+      "outcome": "issued",
+      "code": null,
+      "metadata": {
+       "role": "builder",
+       "purpose": "builder-start",
+       "repository": "Sanmoo/java-springboot-event-sourcing",
+       "repositoryId": 1256893534,
+       "installationId": 177599217,
+       "permissions": {
+        "metadata": "read",
+        "contents": "read",
+        "issues": "read"
+       },
+       "issuedAt": "2026-11-14T16:33:55.922Z",
+       "expiresAt": "2026-11-14T17:33:57Z"
+      },
+      "revocation": "not-attempted"
+     },
+     "start": {
+      "receiptId": "ccd503f8-ec05-4854-9069-bdcc02a85b55",
+      "confirmedAt": "2026-11-14T16:33:57.367Z"
+     },
+     "end": {
+      "at": "2026-11-14T16:35:02.806Z",
+      "outcome": "completed",
+      "code": null,
+      "cessation": "confirmed"
+     },
+     "held": null,
+     "completion": {
+      "automatic": false,
+      "reason": "Reviews, publication and readiness are not enabled in this Factory version; an ended Builder Execution never completes the Work automatically."
+     }
+    },
+    "branch": "factory/3-5a018c66",
+    "pullRequest": null,
+    "admittedAt": "2026-11-14T16:33:31.491Z",
+    "history": [
+     {
+      "at": "2026-11-14T16:33:31.491Z",
+      "event": "admitted",
+      "origin": "github-polling",
+      "sequence": 1
+     },
+     {
+      "at": "2026-11-14T16:33:34.776Z",
+      "event": "dependencies-changed",
+      "origin": "github-polling",
+      "before": null,
+      "after": "satisfied",
+      "evaluationId": "5dc00f92-b32f-438f-b919-424e7847eae6"
+     },
+     {
+      "at": "2026-11-14T16:33:36.821Z",
+      "event": "execution-reserved",
+      "origin": "controller-dispatch",
+      "executionId": "6a0e4542-d3b6-43d4-8984-7263bca04c86"
+     },
+     {
+      "at": "2026-11-14T16:33:42.766Z",
+      "event": "execution-prepared",
+      "origin": "controller-dispatch",
+      "executionId": "6a0e4542-d3b6-43d4-8984-7263bca04c86"
+     },
+     {
+      "at": "2026-11-14T16:33:53.986Z",
+      "event": "execution-booted",
+      "origin": "controller-dispatch",
+      "executionId": "6a0e4542-d3b6-43d4-8984-7263bca04c86"
+     },
+     {
+      "at": "2026-11-14T16:33:57.182Z",
+      "event": "activation-requested",
+      "origin": "controller-dispatch",
+      "executionId": "6a0e4542-d3b6-43d4-8984-7263bca04c86"
+     },
+     {
+      "at": "2026-11-14T16:33:57.367Z",
+      "event": "execution-started",
+      "origin": "controller-dispatch",
+      "executionId": "6a0e4542-d3b6-43d4-8984-7263bca04c86",
+      "detail": "ccd503f8-ec05-4854-9069-bdcc02a85b55"
+     },
+     {
+      "at": "2026-11-14T16:35:02.806Z",
+      "event": "execution-ended",
+      "origin": "controller-dispatch",
+      "executionId": "6a0e4542-d3b6-43d4-8984-7263bca04c86",
+      "detail": "completed"
+     },
+     {
+      "at": "2026-11-14T16:35:04.172Z",
+      "event": "slot-released",
+      "origin": "controller-dispatch",
+      "executionId": "6a0e4542-d3b6-43d4-8984-7263bca04c86"
+     }
+    ],
+    "dispatch": {
+     "state": "executing",
+     "reasons": []
+    }
+   }
+  ],
+  "queues": {
+   "normal": [],
+   "repair": []
+  },
+  "selection": {
+   "next": null,
+   "skipped": []
+  },
+  "polling": {
+   "state": "sleeping",
+   "intervalSeconds": 30,
+   "cycles": 6,
+   "lastCycleAt": "2026-11-14T16:35:06.630Z",
+   "source": "in-memory-observation",
+   "repositories": [
+    {
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "label": "ready-for-agent",
+     "state": "observed",
+     "observedAt": "2026-11-14T16:35:06.012Z",
+     "completeness": "complete",
+     "absenceProven": false,
+     "consecutiveFailures": 0,
+     "nextPollInSeconds": 30,
+     "candidates": [
+      {
+       "ticket": {
+        "tracker": "github",
+        "repository": "Sanmoo/java-springboot-event-sourcing",
+        "repositoryId": 1256893534,
+        "issueId": 6391129588,
+        "nodeId": "I_kwDOSuqsXs8AAAABfPDl9A",
+        "number": 3,
+        "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3"
+       },
+       "observedAt": "2026-11-14T16:35:06.630Z",
+       "outcome": "existing",
+       "work_id": "5a018c66-e690-4e8d-a6dc-075df00c98f9"
+      }
+     ]
+    }
+   ]
+  },
+  "limitations": [
+   "Candidate observations are in-memory results of the latest poll, not authority; they are rebuilt after restart.",
+   "A failed or partial query, or absence from a listing, never proves absence of a Ticket, label or pull request, nor withdrawal of authorization.",
+   "Dispatch opens only when execution boundaries are composed, the runtime inventory is empty and no Slot is held from an earlier run; it then revalidates authorization and dependencies of its own attempt before reserving.",
+   "An ended Builder Execution never completes the Work automatically: reviews, publication (push/PR) and readiness are not enabled in this increment; nothing is retried automatically.",
+   "Native dependency evaluations are re-done every polling round; only an evaluation of the current round can release, never an older or pre-restart one."
+  ]
+ },
+ "controlStatus": {
+  "controller_run_id": "39cd3f05-0beb-41de-90f7-042458ae14db",
+  "paused": false,
+  "dispatch": "open",
+  "dispatchReason": null,
+  "slots": {
+   "capacity": 1,
+   "held": 0
+  },
+  "historyLength": 0,
+  "works": {
+   "total": 1,
+   "open": 1
+  },
+  "queues": {
+   "normal": 0,
+   "repair": 0
+  },
+  "dependencies": {
+   "satisfied": 1,
+   "pending": 0,
+   "inconclusive": 0,
+   "notEvaluated": 0
+  },
+  "selection": {
+   "next": null
+  },
+  "polling": {
+   "state": "sleeping",
+   "intervalSeconds": 30,
+   "cycles": 6,
+   "lastCycleAt": "2026-11-14T16:35:06.630Z",
+   "source": "in-memory-observation",
+   "repositories": [
+    {
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "label": "ready-for-agent",
+     "state": "observed",
+     "observedAt": "2026-11-14T16:35:06.012Z",
+     "completeness": "complete",
+     "absenceProven": false,
+     "consecutiveFailures": 0,
+     "nextPollInSeconds": 30
+    }
+   ]
+  },
+  "persistence": {
+   "sqliteVersion": "3.53.4",
+   "sqliteSourceId": "2026-07-24 19:02:57 bf7c7f30031888f4e796e429ab3978879485813aaca6f641c7b33e4e09459bcc",
+   "journalMode": "wal",
+   "synchronous": "FULL"
+  }
+ },
+ "events": [
+  {
+   "at": "2026-11-14T16:33:36.824Z",
+   "call": "prepare",
+   "workId": "5a018c66-e690-4e8d-a6dc-075df00c98f9",
+   "checkout": {
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "installationId": 177599217,
+    "base": "main",
+    "branch": "factory/3-5a018c66"
+   }
+  },
+  {
+   "at": "2026-11-14T16:33:42.765Z",
+   "call": "prepare-result",
+   "result": {
+    "status": "success",
+    "environment": "env-ecabd427edc72fd22110f25e5b00a9fb28c065e231d04af5dd5852e2b88c09a7",
+    "checkout": {
+     "path": "/workspace/checkout",
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "repositoryId": 1256893534,
+     "base": "main",
+     "branch": "factory/3-5a018c66",
+     "baseCommit": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+     "origin": "https://github.com/Sanmoo/java-springboot-event-sourcing.git",
+     "reused": false,
+     "preparedAt": "2026-11-14T16:33:42.752Z"
+    },
+    "seeds": [
+     {
+      "name": "factory/skill-pack/factory-skills-v1",
+      "manifestSha256": "d5756dbb56a5eaf8f32a0e885d0cf48a667c62738cd16ab6630447e88d9e62ce",
+      "reused": false
+     }
+    ]
+   }
+  },
+  {
+   "at": "2026-11-14T16:33:53.985Z",
+   "call": "start",
+   "result": {
+    "status": "success",
+    "boot": "boot-502a4304-25bc-413d-b4f3-9e0fb41eaf1f"
+   }
+  },
+  {
+   "at": "2026-11-14T16:33:57.185Z",
+   "call": "activate",
+   "context": {
+    "workId": "5a018c66-e690-4e8d-a6dc-075df00c98f9",
+    "executionId": "6a0e4542-d3b6-43d4-8984-7263bca04c86",
+    "invocationId": "builder-6a0e4542-d3b6-43d4-8984-7263bca04c86",
+    "role": "builder",
+    "environmentRef": "env-ecabd427edc72fd22110f25e5b00a9fb28c065e231d04af5dd5852e2b88c09a7",
+    "bootRef": "boot-502a4304-25bc-413d-b4f3-9e0fb41eaf1f",
+    "phaseId": "builder-initial"
+   },
+   "prompt": "/implement https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3 repository=Sanmoo/java-springboot-event-sourcing base=main base-commit=8c058c90b3a0371d5966892ef5f0fd4758cdf90c branch=factory/3-5a018c66 checkout=/workspace/checkout artifacts=/artifacts work=5a018c66-e690-4e8d-a6dc-075df00c98f9 execution=6a0e4542-d3b6-43d4-8984-7263bca04c86",
+   "credentialDelivered": true
+  },
+  {
+   "at": "2026-11-14T16:35:04.172Z",
+   "call": "stop",
+   "input": {
+    "environment": "env-ecabd427edc72fd22110f25e5b00a9fb28c065e231d04af5dd5852e2b88c09a7",
+    "boot": "boot-502a4304-25bc-413d-b4f3-9e0fb41eaf1f",
+    "reason": "builder execution ended"
+   },
+   "result": {
+    "status": "success",
+    "cessationConfirmed": true,
+    "termination": "unconfirmed",
+    "guestFinalization": "observed"
+   }
+  }
+ ],
+ "deadlineReached": false
+}
