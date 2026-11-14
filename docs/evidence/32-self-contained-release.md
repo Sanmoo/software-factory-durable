@@ -166,6 +166,24 @@ Observações esperadas:
 Não faz parte da receita: boot de VM, Docker/TLS, GitHub/modelo reais, registro do serviço, `factory login`
 ou qualquer escrita remota; essas provas continuam nos grupos autorizados correspondentes (tickets 19–35).
 
-## Gate local
+## Gate local (executado em 2026-11-14)
 
-Ver o total no fim deste documento após a execução completa (um arquivo de teste por vez).
+Comandos exatamente como no baseline (`env -u NODE_OPTIONS -u NODE_COMPILE_CACHE
+NODE_DISABLE_COMPILE_CACHE=1`, Node 24.21.0), na ordem:
+
+| Etapa | Comando | Resultado |
+| --- | --- | --- |
+| Arquitetura estática | `dependency-cruiser.mjs --config .dependency-cruiser.cjs --output-type err-long .` | rc=0, 297 módulos, 1747 dependências, nenhuma violação |
+| Lint | `eslint.js . --max-warnings 0` | rc=0 |
+| Compilação/typecheck | `tsc -p tsconfig.json` (uma vez, emite) | rc=0 |
+| Suíte completa | cada `dist/test/**/*.test.js` **um arquivo por vez** (`--experimental-test-module-mocks --test --test-concurrency=1`), timeout 60 s (90 s em `entrypoints/normal-oauth`) | **136 arquivos, 912 pass, 0 fail, 10 skip** |
+
+Skip esperados (inalterados por este ticket): `test/sandbox/gondolin.test.js` (skip:true, boot real) e os
+skips de ambiente já existentes em `sandbox-filesystem`/`sandbox-prepare`/`sandbox-storage`.
+
+Observação honesta: na primeira execução completa, `test/workers/sdk-profile.test.js` (ticket 05, não
+alterado aqui) estourou seu timeout interno de 15 s sob carga concorrente da máquina (~5 de load average
+com outros worktrees); o corpo leva ~6–7 s em repouso e o arquivo passou 3/3 isolado e na segunda execução
+completa (912 pass). Nenhuma mudança deste ticket toca esse teste ou `sdk-profile`. O total de parede da
+suíte é ~9–10 min neste host carregado; os testes de release representam ~50 s (duas construções reais +
+duas extrações + oito execuções do Node privado).
