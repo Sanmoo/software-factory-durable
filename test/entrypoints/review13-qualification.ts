@@ -9,8 +9,8 @@ export { readBounded, sessionToolCalls, snapshotStorage };
 // No GitHub write is possible: every grant is read-only and publication is not part of ticket 13.
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const observations = `${root}/q13-rounds-v1`;
-const revision = 'q13-rounds-v1';
+const observations = `${root}/q13-rounds-v4`;
+const revision = 'q13-rounds-v4';
 const phases = ['preflight', 'run', 'inspect', 'stop-environment'] as const;
 type Phase = typeof phases[number];
 const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 'main', installationId: 177599217, workflows: false, label: 'ready-for-agent' };

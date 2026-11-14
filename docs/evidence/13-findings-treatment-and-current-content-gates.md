@@ -72,6 +72,23 @@ Testes escritos/ajustados primeiro (vermelhos de compilação/asserção) e impl
 | 8 LOW | receita dizia "até TRÊS rodadas" com `max` 4; evidência de gate lida com `fs.readFile` não confinado | cabeçalho/limites dizem QUATRO; a evidência de gate é lida com `readConfined` (sem link, limitada) | `review13-qualification` (plano: 4 capturas, ≤8 ativações), revisão estática do arquivo |
 | 10 NOTE | verificação não bloqueia a conclusão | `ExecutionView.review.verification` exposto; a evidência e o comentário do tipo registram que prontidão (tickets 14/15) DEVE consumi-lo e nunca tratar `completed` como sucesso | `review13-flow`, `review13-question-flow` |
 
+## Correções do ensaio real `q13-rounds-v3`
+
+O ensaio real autorizado (`$HOME/software-factory-test/y5/q13-rounds-v3/run-result.json`) se comportou como desenhado: o gate r1 falhou de verdade
+(exit 1, saída protegida), o Spec achou S1 (`requirement`, `## Rollback` ausente), o Builder corrigiu, r2 teve os dois revisores com sessões
+continuadas → limpo, gate `passed` + atual + ligado ao conteúdo, r3/r4 isenções de commit idêntico, fechamento entregue com `end`. Mas a verificação
+final foi `not-verified` com `TREATMENT_UNKNOWN_FINDING:1/standards/none`, `2/standards/none` e `2/spec/none`: o Builder declarou tratamentos
+"placeholder" `findingId: "none"` para revisores SEM achados. E o Standards r1 chamou `read` num diretório (`/artifacts/spec/v1`), o que virou
+`GUEST_READ_FAILED` → `SOURCE_UNREADABLE` → `incomplete`.
+
+| Achado | Correção | Teste (vermelho antes, verde depois) |
+| --- | --- | --- |
+| tratamentos placeholder para revisores sem achados | a diretiva de resultados leva os ids listados por papel (`findings: { standards, spec }`, também `[]` em isenção), validados no IPC; o `handoff` multi-rodada recusa um tratamento de achado não listado (ou de rodada não entregue) com `HANDOFF_TREATMENT_UNKNOWN_FINDING` SEM consumir rodada; a verificação de fim de Execução continua como defesa em profundidade | `handoff-treatments` (declarações reais r2/r3 do ensaio como fixture `test/workers/fixtures/real-run-q13v3-declarations.json`, só tratamentos/gates), `review-rounds-session` (recusa no loop real do SDK, sem captura), `review13-flow` (ids na diretiva), `activate-review`/`owner-handoff` (ids atravessam facade/owner; ids inválidos recusados) |
+| texto que induzia o placeholder | `implement` v4 §3.4 e o prompt de entrega: tratar SOMENTE os achados listados, nunca inventar placeholder para revisor sem achados; descrição da ferramenta idem | `skill-pack-v4`, `review13-rules` |
+| leitura de diretório rebaixava a revisão | o programa confinado sai com status 3 para diretório (decidido antes de ler bytes); o owner devolve `READ_IS_DIRECTORY`; o modelo recebe mensagem clara; o observador NÃO conta como leitura falha nem como cobertura (outras falhas de leitura continuam rebaixando como no ticket 12) | `tool-transport` (status 3 → código distinto; checagem estática do programa), `review-session` (diretório + entradas obrigatórias lidas → `clean`, `failedReads: []`) |
+
+A receita passa ao namespace `q13-rounds-v4` (o v3 foi consumido).
+
 ## Mapa AC → evidência
 
 Níveis: **R** regras puras; **S** Control real + Pi Durable/SQLite temporário + dublês (GitHub, relógio, Sandbox/Workers); **I-local** SDK Pi real
@@ -142,7 +159,7 @@ pelas mutações M1–M8.
 ## Ensaio real (receita one-shot)
 
 Receita: `dist/test/entrypoints/review13-qualification.js` (fonte `test/entrypoints/review13-qualification.ts`). `--plan` é inerte. Fases one-shot com
-tombstone `*-intent.json` exclusivo em `$HOME/software-factory-test/y5/q13-rounds-v1/` (criado na `preflight`, `mkdir` exclusivo; existir = consumido).
+tombstone `*-intent.json` exclusivo em `$HOME/software-factory-test/y5/q13-rounds-v4/` (criado na `preflight`, `mkdir` exclusivo; existir = consumido).
 Sem retry; falha grava `*-held.json`. `inspect`/`stop-environment` abrem somente uma **cópia exclusiva** do SQLite; leituras de `/artifacts` são
 confinadas sem seguir links; o checkout é inspecionado por cópia bare da Factory (nunca git do host em árvore gravável pelo guest); sessões são lidas
 do runtime do host com limites (16 lançamentos × 4 arquivos, 8 MiB, sem symlink).
