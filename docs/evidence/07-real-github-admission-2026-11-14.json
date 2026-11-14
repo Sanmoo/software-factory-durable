@@ -1,0 +1,1212 @@
+{
+  "disposition": "OBSERVED",
+  "startedAt": "2026-11-14T14:18:46.216Z",
+  "node": "v24.21.0",
+  "restVersion": "2026-03-10",
+  "workflows": false,
+  "remoteMutations": 0,
+  "requests": [
+    {
+      "at": "2026-11-14T14:18:47.186Z",
+      "transport": "native-https-real",
+      "method": "GET",
+      "endpoint": "/app",
+      "status": 200,
+      "date": "Sat, 14 Nov 2026 14:18:47 GMT",
+      "version": "2026-03-10",
+      "complete": true,
+      "identity": {
+        "appId": 5569788
+      }
+    },
+    {
+      "at": "2026-11-14T14:18:47.609Z",
+      "transport": "native-https-real",
+      "method": "GET",
+      "endpoint": "/app/installations/177599217",
+      "status": 200,
+      "date": "Sat, 14 Nov 2026 14:18:47 GMT",
+      "version": "2026-03-10",
+      "complete": true,
+      "installation": {
+        "id": 177599217,
+        "appId": 5569788,
+        "account": "Sanmoo",
+        "permissions": {
+          "checks": "read",
+          "issues": "write",
+          "actions": "read",
+          "contents": "write",
+          "metadata": "read",
+          "statuses": "read",
+          "pull_requests": "write",
+          "administration": "read"
+        },
+        "suspended": false
+      }
+    },
+    {
+      "at": "2026-11-14T14:18:48.015Z",
+      "transport": "native-https-real",
+      "method": "POST",
+      "endpoint": "/app/installations/177599217/access_tokens",
+      "status": 201,
+      "date": "Sat, 14 Nov 2026 14:18:48 GMT",
+      "version": "2026-03-10",
+      "complete": true,
+      "grant": {
+        "permissions": {
+          "issues": "read",
+          "metadata": "read"
+        },
+        "repositories": [
+          {
+            "id": 1256893534,
+            "full_name": "Sanmoo/java-springboot-event-sourcing",
+            "owner": "Sanmoo"
+          }
+        ],
+        "expiresAt": "2026-11-14T15:18:48Z",
+        "tokenPresent": true,
+        "expirySecondsFromObservation": 3599
+      }
+    },
+    {
+      "at": "2026-11-14T14:18:48.505Z",
+      "transport": "gh-real",
+      "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing",
+      "method": "GET",
+      "status": 200,
+      "exit": 0,
+      "observation": {
+        "id": 1256893534,
+        "full_name": "Sanmoo/java-springboot-event-sourcing",
+        "default_branch": "main",
+        "owner": "Sanmoo",
+        "private": false
+      }
+    },
+    {
+      "at": "2026-11-14T14:18:49.288Z",
+      "transport": "gh-real",
+      "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/issues?state=open&labels=ready-for-agent&per_page=100&page=1",
+      "method": "GET",
+      "status": 200,
+      "exit": 0,
+      "observation": {
+        "count": 2
+      }
+    },
+    {
+      "at": "2026-11-14T14:18:50.314Z",
+      "transport": "gh-real",
+      "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/issues/3",
+      "method": "GET",
+      "status": 200,
+      "exit": 0
+    },
+    {
+      "at": "2026-11-14T14:18:51.071Z",
+      "transport": "native-https-real",
+      "method": "GET",
+      "endpoint": "/app",
+      "status": 200,
+      "date": "Sat, 14 Nov 2026 14:18:51 GMT",
+      "version": "2026-03-10",
+      "complete": true,
+      "identity": {
+        "appId": 5569788
+      }
+    },
+    {
+      "at": "2026-11-14T14:18:51.477Z",
+      "transport": "native-https-real",
+      "method": "GET",
+      "endpoint": "/app/installations/177599217",
+      "status": 200,
+      "date": "Sat, 14 Nov 2026 14:18:51 GMT",
+      "version": "2026-03-10",
+      "complete": true,
+      "installation": {
+        "id": 177599217,
+        "appId": 5569788,
+        "account": "Sanmoo",
+        "permissions": {
+          "checks": "read",
+          "issues": "write",
+          "actions": "read",
+          "contents": "write",
+          "metadata": "read",
+          "statuses": "read",
+          "pull_requests": "write",
+          "administration": "read"
+        },
+        "suspended": false
+      }
+    },
+    {
+      "at": "2026-11-14T14:18:51.870Z",
+      "transport": "native-https-real",
+      "method": "POST",
+      "endpoint": "/app/installations/177599217/access_tokens",
+      "status": 201,
+      "date": "Sat, 14 Nov 2026 14:18:52 GMT",
+      "version": "2026-03-10",
+      "complete": true,
+      "grant": {
+        "permissions": {
+          "metadata": "read",
+          "pull_requests": "read"
+        },
+        "repositories": [
+          {
+            "id": 1256893534,
+            "full_name": "Sanmoo/java-springboot-event-sourcing",
+            "owner": "Sanmoo"
+          }
+        ],
+        "expiresAt": "2026-11-14T15:18:52Z",
+        "tokenPresent": true,
+        "expirySecondsFromObservation": 3600
+      }
+    },
+    {
+      "at": "2026-11-14T14:18:52.436Z",
+      "transport": "gh-real",
+      "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing",
+      "method": "GET",
+      "status": 200,
+      "exit": 0,
+      "observation": {
+        "id": 1256893534,
+        "full_name": "Sanmoo/java-springboot-event-sourcing",
+        "default_branch": "main",
+        "owner": "Sanmoo",
+        "private": false
+      }
+    },
+    {
+      "at": "2026-11-14T14:18:53.283Z",
+      "transport": "gh-real",
+      "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/pulls?state=all&per_page=100&page=1",
+      "method": "GET",
+      "status": 200,
+      "exit": 0,
+      "observation": {
+        "count": 1
+      }
+    },
+    {
+      "at": "2026-11-14T14:18:54.082Z",
+      "transport": "gh-real",
+      "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/issues/1",
+      "method": "GET",
+      "status": 200,
+      "exit": 0
+    },
+    {
+      "at": "2026-11-14T14:18:54.780Z",
+      "transport": "gh-real",
+      "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/pulls?state=all&per_page=100&page=1",
+      "method": "GET",
+      "status": 200,
+      "exit": 0,
+      "observation": {
+        "count": 1
+      }
+    },
+    {
+      "at": "2026-11-14T14:19:10.576Z",
+      "transport": "gh-real",
+      "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/issues?state=open&labels=ready-for-agent&per_page=100&page=1",
+      "method": "GET",
+      "status": 200,
+      "exit": 0,
+      "observation": {
+        "count": 2
+      }
+    },
+    {
+      "at": "2026-11-14T14:19:12.853Z",
+      "transport": "native-https-real",
+      "method": "GET",
+      "endpoint": "/app",
+      "status": 200,
+      "date": "Sat, 14 Nov 2026 14:19:13 GMT",
+      "version": "2026-03-10",
+      "complete": true,
+      "identity": {
+        "appId": 5569788
+      }
+    },
+    {
+      "at": "2026-11-14T14:19:13.265Z",
+      "transport": "native-https-real",
+      "method": "GET",
+      "endpoint": "/app/installations/177599217",
+      "status": 200,
+      "date": "Sat, 14 Nov 2026 14:19:13 GMT",
+      "version": "2026-03-10",
+      "complete": true,
+      "installation": {
+        "id": 177599217,
+        "appId": 5569788,
+        "account": "Sanmoo",
+        "permissions": {
+          "checks": "read",
+          "issues": "write",
+          "actions": "read",
+          "contents": "write",
+          "metadata": "read",
+          "statuses": "read",
+          "pull_requests": "write",
+          "administration": "read"
+        },
+        "suspended": false
+      }
+    },
+    {
+      "at": "2026-11-14T14:19:13.666Z",
+      "transport": "native-https-real",
+      "method": "POST",
+      "endpoint": "/app/installations/177599217/access_tokens",
+      "status": 201,
+      "date": "Sat, 14 Nov 2026 14:19:13 GMT",
+      "version": "2026-03-10",
+      "complete": true,
+      "grant": {
+        "permissions": {
+          "issues": "read",
+          "metadata": "read"
+        },
+        "repositories": [
+          {
+            "id": 1256893534,
+            "full_name": "Sanmoo/java-springboot-event-sourcing",
+            "owner": "Sanmoo"
+          }
+        ],
+        "expiresAt": "2026-11-14T15:19:13Z",
+        "tokenPresent": true,
+        "expirySecondsFromObservation": 3599
+      }
+    },
+    {
+      "at": "2026-11-14T14:19:14.131Z",
+      "transport": "gh-real",
+      "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing",
+      "method": "GET",
+      "status": 200,
+      "exit": 0,
+      "observation": {
+        "id": 1256893534,
+        "full_name": "Sanmoo/java-springboot-event-sourcing",
+        "default_branch": "main",
+        "owner": "Sanmoo",
+        "private": false
+      }
+    },
+    {
+      "at": "2026-11-14T14:19:14.874Z",
+      "transport": "gh-real",
+      "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/issues?state=open&labels=ready-for-agent&per_page=100&page=1",
+      "method": "GET",
+      "status": 200,
+      "exit": 0,
+      "observation": {
+        "count": 2
+      }
+    }
+  ],
+  "sourceMetadata": {
+    "mode": "0600",
+    "uid": 1000,
+    "nlink": 1,
+    "ancestors": "validated root/current-user owned, no symlinks/group-other writes"
+  },
+  "unavailableList": 3,
+  "firstCycle": true,
+  "status1": {
+    "controller_run_id": "4db6e1e5-36bd-431d-b793-92453d46b6fc",
+    "paused": false,
+    "dispatch": "closed",
+    "dispatchReason": "EXECUTION_NOT_ENABLED",
+    "historyLength": 0,
+    "works": {
+      "total": 2,
+      "open": 2
+    },
+    "queues": {
+      "normal": 2,
+      "repair": 0
+    },
+    "polling": {
+      "state": "sleeping",
+      "intervalSeconds": 15,
+      "cycles": 1,
+      "lastCycleAt": "2026-11-14T14:18:55.540Z",
+      "source": "in-memory-observation",
+      "repositories": [
+        {
+          "repository": "Sanmoo/java-springboot-event-sourcing",
+          "label": "ready-for-agent",
+          "state": "observed",
+          "observedAt": "2026-11-14T14:18:47.180Z",
+          "completeness": "complete",
+          "absenceProven": false,
+          "consecutiveFailures": 0,
+          "nextPollInSeconds": 15
+        }
+      ]
+    },
+    "persistence": {
+      "sqliteVersion": "3.53.4",
+      "sqliteSourceId": "2026-07-24 19:02:57 bf7c7f30031888f4e796e429ab3978879485813aaca6f641c7b33e4e09459bcc",
+      "journalMode": "wal",
+      "synchronous": "FULL"
+    }
+  },
+  "list1": {
+    "kind": "list",
+    "paused": false,
+    "dispatch": "closed",
+    "dispatchReason": "EXECUTION_NOT_ENABLED",
+    "works": [
+      {
+        "work_id": "418b9d88-8d60-48dd-b29b-66ffc61149b9",
+        "cycle": 1,
+        "predecessor": null,
+        "ticket": {
+          "tracker": "github",
+          "repository": "Sanmoo/java-springboot-event-sourcing",
+          "repositoryId": 1256893534,
+          "issueId": 6391129588,
+          "nodeId": "I_kwDOSuqsXs8AAAABfPDl9A",
+          "number": 3,
+          "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3"
+        },
+        "repository": {
+          "repository": "Sanmoo/java-springboot-event-sourcing",
+          "repositoryId": 1256893534,
+          "base": "main"
+        },
+        "result": "open",
+        "authorization": {
+          "state": "authorized",
+          "source": "github-rest",
+          "observedAt": "2026-11-14T14:18:50.280Z",
+          "basis": {
+            "repositoryConfigured": true,
+            "issueState": "open",
+            "label": {
+              "id": 12918930265,
+              "name": "ready-for-agent"
+            }
+          },
+          "publication": {
+            "observedAt": "2026-11-14T14:18:51.066Z",
+            "completeness": "complete",
+            "associatedPullRequests": 0,
+            "limitations": [
+              "Association is detected from GitHub closing keywords in pull request title/body of this repository and from known own branches.",
+              "Manual \"Development\" links and pull requests in other repositories are not observable through this listing; they are not certified absent.",
+              "Listing is not an atomic remote snapshot."
+            ]
+          },
+          "tracking": "Authorization recorded at admission. Later label removal/closure tracking is not part of this increment; absence from a listing is never treated as withdrawal."
+        },
+        "queue": {
+          "category": "normal",
+          "sequence": 1,
+          "pending": true
+        },
+        "impediments": [
+          {
+            "code": "DEPENDENCIES_NOT_EVALUATED",
+            "scope": "work",
+            "since": "2026-11-14T14:18:54.030Z",
+            "nextStep": "Native blocked_by evaluation must complete before any dispatch; not implemented in this increment."
+          }
+        ],
+        "execution": null,
+        "branch": null,
+        "pullRequest": null,
+        "admittedAt": "2026-11-14T14:18:54.030Z",
+        "history": [
+          {
+            "at": "2026-11-14T14:18:54.030Z",
+            "event": "admitted",
+            "origin": "github-polling",
+            "sequence": 1
+          }
+        ],
+        "dispatch": {
+          "state": "held",
+          "reasons": [
+            "DEPENDENCIES_NOT_EVALUATED",
+            "EXECUTION_NOT_ENABLED"
+          ]
+        }
+      },
+      {
+        "work_id": "be7a4cdf-d06a-42e9-8d26-51daff96eade",
+        "cycle": 1,
+        "predecessor": null,
+        "ticket": {
+          "tracker": "github",
+          "repository": "Sanmoo/java-springboot-event-sourcing",
+          "repositoryId": 1256893534,
+          "issueId": 6149419836,
+          "nodeId": "I_kwDOSuqsXs8AAAABboizPA",
+          "number": 1,
+          "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/1"
+        },
+        "repository": {
+          "repository": "Sanmoo/java-springboot-event-sourcing",
+          "repositoryId": 1256893534,
+          "base": "main"
+        },
+        "result": "open",
+        "authorization": {
+          "state": "authorized",
+          "source": "github-rest",
+          "observedAt": "2026-11-14T14:18:54.037Z",
+          "basis": {
+            "repositoryConfigured": true,
+            "issueState": "open",
+            "label": {
+              "id": 12918930265,
+              "name": "ready-for-agent"
+            }
+          },
+          "publication": {
+            "observedAt": "2026-11-14T14:18:54.737Z",
+            "completeness": "complete",
+            "associatedPullRequests": 0,
+            "limitations": [
+              "Association is detected from GitHub closing keywords in pull request title/body of this repository and from known own branches.",
+              "Manual \"Development\" links and pull requests in other repositories are not observable through this listing; they are not certified absent.",
+              "Listing is not an atomic remote snapshot."
+            ]
+          },
+          "tracking": "Authorization recorded at admission. Later label removal/closure tracking is not part of this increment; absence from a listing is never treated as withdrawal."
+        },
+        "queue": {
+          "category": "normal",
+          "sequence": 2,
+          "pending": true
+        },
+        "impediments": [
+          {
+            "code": "DEPENDENCIES_NOT_EVALUATED",
+            "scope": "work",
+            "since": "2026-11-14T14:18:55.535Z",
+            "nextStep": "Native blocked_by evaluation must complete before any dispatch; not implemented in this increment."
+          }
+        ],
+        "execution": null,
+        "branch": null,
+        "pullRequest": null,
+        "admittedAt": "2026-11-14T14:18:55.535Z",
+        "history": [
+          {
+            "at": "2026-11-14T14:18:55.535Z",
+            "event": "admitted",
+            "origin": "github-polling",
+            "sequence": 2
+          }
+        ],
+        "dispatch": {
+          "state": "held",
+          "reasons": [
+            "DEPENDENCIES_NOT_EVALUATED",
+            "EXECUTION_NOT_ENABLED"
+          ]
+        }
+      }
+    ],
+    "queues": {
+      "normal": [
+        "418b9d88-8d60-48dd-b29b-66ffc61149b9",
+        "be7a4cdf-d06a-42e9-8d26-51daff96eade"
+      ],
+      "repair": []
+    },
+    "polling": {
+      "state": "sleeping",
+      "intervalSeconds": 15,
+      "cycles": 1,
+      "lastCycleAt": "2026-11-14T14:18:55.540Z",
+      "source": "in-memory-observation",
+      "repositories": [
+        {
+          "repository": "Sanmoo/java-springboot-event-sourcing",
+          "label": "ready-for-agent",
+          "state": "observed",
+          "observedAt": "2026-11-14T14:18:47.180Z",
+          "completeness": "complete",
+          "absenceProven": false,
+          "consecutiveFailures": 0,
+          "nextPollInSeconds": 15,
+          "candidates": [
+            {
+              "ticket": {
+                "tracker": "github",
+                "repository": "Sanmoo/java-springboot-event-sourcing",
+                "repositoryId": 1256893534,
+                "issueId": 6391129588,
+                "nodeId": "I_kwDOSuqsXs8AAAABfPDl9A",
+                "number": 3,
+                "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3"
+              },
+              "observedAt": "2026-11-14T14:18:54.037Z",
+              "outcome": "admitted",
+              "work_id": "418b9d88-8d60-48dd-b29b-66ffc61149b9"
+            },
+            {
+              "ticket": {
+                "tracker": "github",
+                "repository": "Sanmoo/java-springboot-event-sourcing",
+                "repositoryId": 1256893534,
+                "issueId": 6149419836,
+                "nodeId": "I_kwDOSuqsXs8AAAABboizPA",
+                "number": 1,
+                "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/1"
+              },
+              "observedAt": "2026-11-14T14:18:55.540Z",
+              "outcome": "admitted",
+              "work_id": "be7a4cdf-d06a-42e9-8d26-51daff96eade"
+            }
+          ]
+        }
+      ]
+    },
+    "limitations": [
+      "Candidate observations are in-memory results of the latest poll, not authority; they are rebuilt after restart.",
+      "A failed or partial query, or absence from a listing, never proves absence of a Ticket, label or pull request, nor withdrawal of authorization.",
+      "Dispatch is held: native dependency evaluation and execution activation are not part of this increment."
+    ]
+  },
+  "show1": {
+    "kind": "work",
+    "work": {
+      "work_id": "418b9d88-8d60-48dd-b29b-66ffc61149b9",
+      "cycle": 1,
+      "predecessor": null,
+      "ticket": {
+        "tracker": "github",
+        "repository": "Sanmoo/java-springboot-event-sourcing",
+        "repositoryId": 1256893534,
+        "issueId": 6391129588,
+        "nodeId": "I_kwDOSuqsXs8AAAABfPDl9A",
+        "number": 3,
+        "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3"
+      },
+      "repository": {
+        "repository": "Sanmoo/java-springboot-event-sourcing",
+        "repositoryId": 1256893534,
+        "base": "main"
+      },
+      "result": "open",
+      "authorization": {
+        "state": "authorized",
+        "source": "github-rest",
+        "observedAt": "2026-11-14T14:18:50.280Z",
+        "basis": {
+          "repositoryConfigured": true,
+          "issueState": "open",
+          "label": {
+            "id": 12918930265,
+            "name": "ready-for-agent"
+          }
+        },
+        "publication": {
+          "observedAt": "2026-11-14T14:18:51.066Z",
+          "completeness": "complete",
+          "associatedPullRequests": 0,
+          "limitations": [
+            "Association is detected from GitHub closing keywords in pull request title/body of this repository and from known own branches.",
+            "Manual \"Development\" links and pull requests in other repositories are not observable through this listing; they are not certified absent.",
+            "Listing is not an atomic remote snapshot."
+          ]
+        },
+        "tracking": "Authorization recorded at admission. Later label removal/closure tracking is not part of this increment; absence from a listing is never treated as withdrawal."
+      },
+      "queue": {
+        "category": "normal",
+        "sequence": 1,
+        "pending": true
+      },
+      "impediments": [
+        {
+          "code": "DEPENDENCIES_NOT_EVALUATED",
+          "scope": "work",
+          "since": "2026-11-14T14:18:54.030Z",
+          "nextStep": "Native blocked_by evaluation must complete before any dispatch; not implemented in this increment."
+        }
+      ],
+      "execution": null,
+      "branch": null,
+      "pullRequest": null,
+      "admittedAt": "2026-11-14T14:18:54.030Z",
+      "history": [
+        {
+          "at": "2026-11-14T14:18:54.030Z",
+          "event": "admitted",
+          "origin": "github-polling",
+          "sequence": 1
+        }
+      ],
+      "dispatch": {
+        "state": "held",
+        "reasons": [
+          "DEPENDENCIES_NOT_EVALUATED",
+          "EXECUTION_NOT_ENABLED"
+        ]
+      }
+    },
+    "lastPolled": {
+      "ticket": {
+        "tracker": "github",
+        "repository": "Sanmoo/java-springboot-event-sourcing",
+        "repositoryId": 1256893534,
+        "issueId": 6391129588,
+        "nodeId": "I_kwDOSuqsXs8AAAABfPDl9A",
+        "number": 3,
+        "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3"
+      },
+      "observedAt": "2026-11-14T14:18:54.037Z",
+      "outcome": "admitted",
+      "work_id": "418b9d88-8d60-48dd-b29b-66ffc61149b9"
+    }
+  },
+  "later": true,
+  "status2": {
+    "controller_run_id": "4db6e1e5-36bd-431d-b793-92453d46b6fc",
+    "paused": false,
+    "dispatch": "closed",
+    "dispatchReason": "EXECUTION_NOT_ENABLED",
+    "historyLength": 0,
+    "works": {
+      "total": 2,
+      "open": 2
+    },
+    "queues": {
+      "normal": 2,
+      "repair": 0
+    },
+    "polling": {
+      "state": "sleeping",
+      "intervalSeconds": 15,
+      "cycles": 3,
+      "lastCycleAt": "2026-11-14T14:19:11.284Z",
+      "source": "in-memory-observation",
+      "repositories": [
+        {
+          "repository": "Sanmoo/java-springboot-event-sourcing",
+          "label": "ready-for-agent",
+          "state": "observed",
+          "observedAt": "2026-11-14T14:19:10.541Z",
+          "completeness": "complete",
+          "absenceProven": false,
+          "consecutiveFailures": 0,
+          "nextPollInSeconds": 15
+        }
+      ]
+    },
+    "persistence": {
+      "sqliteVersion": "3.53.4",
+      "sqliteSourceId": "2026-07-24 19:02:57 bf7c7f30031888f4e796e429ab3978879485813aaca6f641c7b33e4e09459bcc",
+      "journalMode": "wal",
+      "synchronous": "FULL"
+    }
+  },
+  "list2": {
+    "kind": "list",
+    "paused": false,
+    "dispatch": "closed",
+    "dispatchReason": "EXECUTION_NOT_ENABLED",
+    "works": [
+      {
+        "work_id": "418b9d88-8d60-48dd-b29b-66ffc61149b9",
+        "cycle": 1,
+        "predecessor": null,
+        "ticket": {
+          "tracker": "github",
+          "repository": "Sanmoo/java-springboot-event-sourcing",
+          "repositoryId": 1256893534,
+          "issueId": 6391129588,
+          "nodeId": "I_kwDOSuqsXs8AAAABfPDl9A",
+          "number": 3,
+          "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3"
+        },
+        "repository": {
+          "repository": "Sanmoo/java-springboot-event-sourcing",
+          "repositoryId": 1256893534,
+          "base": "main"
+        },
+        "result": "open",
+        "authorization": {
+          "state": "authorized",
+          "source": "github-rest",
+          "observedAt": "2026-11-14T14:18:50.280Z",
+          "basis": {
+            "repositoryConfigured": true,
+            "issueState": "open",
+            "label": {
+              "id": 12918930265,
+              "name": "ready-for-agent"
+            }
+          },
+          "publication": {
+            "observedAt": "2026-11-14T14:18:51.066Z",
+            "completeness": "complete",
+            "associatedPullRequests": 0,
+            "limitations": [
+              "Association is detected from GitHub closing keywords in pull request title/body of this repository and from known own branches.",
+              "Manual \"Development\" links and pull requests in other repositories are not observable through this listing; they are not certified absent.",
+              "Listing is not an atomic remote snapshot."
+            ]
+          },
+          "tracking": "Authorization recorded at admission. Later label removal/closure tracking is not part of this increment; absence from a listing is never treated as withdrawal."
+        },
+        "queue": {
+          "category": "normal",
+          "sequence": 1,
+          "pending": true
+        },
+        "impediments": [
+          {
+            "code": "DEPENDENCIES_NOT_EVALUATED",
+            "scope": "work",
+            "since": "2026-11-14T14:18:54.030Z",
+            "nextStep": "Native blocked_by evaluation must complete before any dispatch; not implemented in this increment."
+          }
+        ],
+        "execution": null,
+        "branch": null,
+        "pullRequest": null,
+        "admittedAt": "2026-11-14T14:18:54.030Z",
+        "history": [
+          {
+            "at": "2026-11-14T14:18:54.030Z",
+            "event": "admitted",
+            "origin": "github-polling",
+            "sequence": 1
+          }
+        ],
+        "dispatch": {
+          "state": "held",
+          "reasons": [
+            "DEPENDENCIES_NOT_EVALUATED",
+            "EXECUTION_NOT_ENABLED"
+          ]
+        }
+      },
+      {
+        "work_id": "be7a4cdf-d06a-42e9-8d26-51daff96eade",
+        "cycle": 1,
+        "predecessor": null,
+        "ticket": {
+          "tracker": "github",
+          "repository": "Sanmoo/java-springboot-event-sourcing",
+          "repositoryId": 1256893534,
+          "issueId": 6149419836,
+          "nodeId": "I_kwDOSuqsXs8AAAABboizPA",
+          "number": 1,
+          "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/1"
+        },
+        "repository": {
+          "repository": "Sanmoo/java-springboot-event-sourcing",
+          "repositoryId": 1256893534,
+          "base": "main"
+        },
+        "result": "open",
+        "authorization": {
+          "state": "authorized",
+          "source": "github-rest",
+          "observedAt": "2026-11-14T14:18:54.037Z",
+          "basis": {
+            "repositoryConfigured": true,
+            "issueState": "open",
+            "label": {
+              "id": 12918930265,
+              "name": "ready-for-agent"
+            }
+          },
+          "publication": {
+            "observedAt": "2026-11-14T14:18:54.737Z",
+            "completeness": "complete",
+            "associatedPullRequests": 0,
+            "limitations": [
+              "Association is detected from GitHub closing keywords in pull request title/body of this repository and from known own branches.",
+              "Manual \"Development\" links and pull requests in other repositories are not observable through this listing; they are not certified absent.",
+              "Listing is not an atomic remote snapshot."
+            ]
+          },
+          "tracking": "Authorization recorded at admission. Later label removal/closure tracking is not part of this increment; absence from a listing is never treated as withdrawal."
+        },
+        "queue": {
+          "category": "normal",
+          "sequence": 2,
+          "pending": true
+        },
+        "impediments": [
+          {
+            "code": "DEPENDENCIES_NOT_EVALUATED",
+            "scope": "work",
+            "since": "2026-11-14T14:18:55.535Z",
+            "nextStep": "Native blocked_by evaluation must complete before any dispatch; not implemented in this increment."
+          }
+        ],
+        "execution": null,
+        "branch": null,
+        "pullRequest": null,
+        "admittedAt": "2026-11-14T14:18:55.535Z",
+        "history": [
+          {
+            "at": "2026-11-14T14:18:55.535Z",
+            "event": "admitted",
+            "origin": "github-polling",
+            "sequence": 2
+          }
+        ],
+        "dispatch": {
+          "state": "held",
+          "reasons": [
+            "DEPENDENCIES_NOT_EVALUATED",
+            "EXECUTION_NOT_ENABLED"
+          ]
+        }
+      }
+    ],
+    "queues": {
+      "normal": [
+        "418b9d88-8d60-48dd-b29b-66ffc61149b9",
+        "be7a4cdf-d06a-42e9-8d26-51daff96eade"
+      ],
+      "repair": []
+    },
+    "polling": {
+      "state": "sleeping",
+      "intervalSeconds": 15,
+      "cycles": 3,
+      "lastCycleAt": "2026-11-14T14:19:11.284Z",
+      "source": "in-memory-observation",
+      "repositories": [
+        {
+          "repository": "Sanmoo/java-springboot-event-sourcing",
+          "label": "ready-for-agent",
+          "state": "observed",
+          "observedAt": "2026-11-14T14:19:10.541Z",
+          "completeness": "complete",
+          "absenceProven": false,
+          "consecutiveFailures": 0,
+          "nextPollInSeconds": 14,
+          "candidates": [
+            {
+              "ticket": {
+                "tracker": "github",
+                "repository": "Sanmoo/java-springboot-event-sourcing",
+                "repositoryId": 1256893534,
+                "issueId": 6391129588,
+                "nodeId": "I_kwDOSuqsXs8AAAABfPDl9A",
+                "number": 3,
+                "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3"
+              },
+              "observedAt": "2026-11-14T14:19:11.283Z",
+              "outcome": "existing",
+              "work_id": "418b9d88-8d60-48dd-b29b-66ffc61149b9"
+            },
+            {
+              "ticket": {
+                "tracker": "github",
+                "repository": "Sanmoo/java-springboot-event-sourcing",
+                "repositoryId": 1256893534,
+                "issueId": 6149419836,
+                "nodeId": "I_kwDOSuqsXs8AAAABboizPA",
+                "number": 1,
+                "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/1"
+              },
+              "observedAt": "2026-11-14T14:19:11.284Z",
+              "outcome": "existing",
+              "work_id": "be7a4cdf-d06a-42e9-8d26-51daff96eade"
+            }
+          ]
+        }
+      ]
+    },
+    "limitations": [
+      "Candidate observations are in-memory results of the latest poll, not authority; they are rebuilt after restart.",
+      "A failed or partial query, or absence from a listing, never proves absence of a Ticket, label or pull request, nor withdrawal of authorization.",
+      "Dispatch is held: native dependency evaluation and execution activation are not part of this increment."
+    ]
+  },
+  "controllerExit1": 0,
+  "restartCycle": true,
+  "list3": {
+    "kind": "list",
+    "paused": false,
+    "dispatch": "closed",
+    "dispatchReason": "EXECUTION_NOT_ENABLED",
+    "works": [
+      {
+        "work_id": "418b9d88-8d60-48dd-b29b-66ffc61149b9",
+        "cycle": 1,
+        "predecessor": null,
+        "ticket": {
+          "tracker": "github",
+          "repository": "Sanmoo/java-springboot-event-sourcing",
+          "repositoryId": 1256893534,
+          "issueId": 6391129588,
+          "nodeId": "I_kwDOSuqsXs8AAAABfPDl9A",
+          "number": 3,
+          "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3"
+        },
+        "repository": {
+          "repository": "Sanmoo/java-springboot-event-sourcing",
+          "repositoryId": 1256893534,
+          "base": "main"
+        },
+        "result": "open",
+        "authorization": {
+          "state": "authorized",
+          "source": "github-rest",
+          "observedAt": "2026-11-14T14:18:50.280Z",
+          "basis": {
+            "repositoryConfigured": true,
+            "issueState": "open",
+            "label": {
+              "id": 12918930265,
+              "name": "ready-for-agent"
+            }
+          },
+          "publication": {
+            "observedAt": "2026-11-14T14:18:51.066Z",
+            "completeness": "complete",
+            "associatedPullRequests": 0,
+            "limitations": [
+              "Association is detected from GitHub closing keywords in pull request title/body of this repository and from known own branches.",
+              "Manual \"Development\" links and pull requests in other repositories are not observable through this listing; they are not certified absent.",
+              "Listing is not an atomic remote snapshot."
+            ]
+          },
+          "tracking": "Authorization recorded at admission. Later label removal/closure tracking is not part of this increment; absence from a listing is never treated as withdrawal."
+        },
+        "queue": {
+          "category": "normal",
+          "sequence": 1,
+          "pending": true
+        },
+        "impediments": [
+          {
+            "code": "DEPENDENCIES_NOT_EVALUATED",
+            "scope": "work",
+            "since": "2026-11-14T14:18:54.030Z",
+            "nextStep": "Native blocked_by evaluation must complete before any dispatch; not implemented in this increment."
+          }
+        ],
+        "execution": null,
+        "branch": null,
+        "pullRequest": null,
+        "admittedAt": "2026-11-14T14:18:54.030Z",
+        "history": [
+          {
+            "at": "2026-11-14T14:18:54.030Z",
+            "event": "admitted",
+            "origin": "github-polling",
+            "sequence": 1
+          }
+        ],
+        "dispatch": {
+          "state": "held",
+          "reasons": [
+            "DEPENDENCIES_NOT_EVALUATED",
+            "EXECUTION_NOT_ENABLED"
+          ]
+        }
+      },
+      {
+        "work_id": "be7a4cdf-d06a-42e9-8d26-51daff96eade",
+        "cycle": 1,
+        "predecessor": null,
+        "ticket": {
+          "tracker": "github",
+          "repository": "Sanmoo/java-springboot-event-sourcing",
+          "repositoryId": 1256893534,
+          "issueId": 6149419836,
+          "nodeId": "I_kwDOSuqsXs8AAAABboizPA",
+          "number": 1,
+          "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/1"
+        },
+        "repository": {
+          "repository": "Sanmoo/java-springboot-event-sourcing",
+          "repositoryId": 1256893534,
+          "base": "main"
+        },
+        "result": "open",
+        "authorization": {
+          "state": "authorized",
+          "source": "github-rest",
+          "observedAt": "2026-11-14T14:18:54.037Z",
+          "basis": {
+            "repositoryConfigured": true,
+            "issueState": "open",
+            "label": {
+              "id": 12918930265,
+              "name": "ready-for-agent"
+            }
+          },
+          "publication": {
+            "observedAt": "2026-11-14T14:18:54.737Z",
+            "completeness": "complete",
+            "associatedPullRequests": 0,
+            "limitations": [
+              "Association is detected from GitHub closing keywords in pull request title/body of this repository and from known own branches.",
+              "Manual \"Development\" links and pull requests in other repositories are not observable through this listing; they are not certified absent.",
+              "Listing is not an atomic remote snapshot."
+            ]
+          },
+          "tracking": "Authorization recorded at admission. Later label removal/closure tracking is not part of this increment; absence from a listing is never treated as withdrawal."
+        },
+        "queue": {
+          "category": "normal",
+          "sequence": 2,
+          "pending": true
+        },
+        "impediments": [
+          {
+            "code": "DEPENDENCIES_NOT_EVALUATED",
+            "scope": "work",
+            "since": "2026-11-14T14:18:55.535Z",
+            "nextStep": "Native blocked_by evaluation must complete before any dispatch; not implemented in this increment."
+          }
+        ],
+        "execution": null,
+        "branch": null,
+        "pullRequest": null,
+        "admittedAt": "2026-11-14T14:18:55.535Z",
+        "history": [
+          {
+            "at": "2026-11-14T14:18:55.535Z",
+            "event": "admitted",
+            "origin": "github-polling",
+            "sequence": 2
+          }
+        ],
+        "dispatch": {
+          "state": "held",
+          "reasons": [
+            "DEPENDENCIES_NOT_EVALUATED",
+            "EXECUTION_NOT_ENABLED"
+          ]
+        }
+      }
+    ],
+    "queues": {
+      "normal": [
+        "418b9d88-8d60-48dd-b29b-66ffc61149b9",
+        "be7a4cdf-d06a-42e9-8d26-51daff96eade"
+      ],
+      "repair": []
+    },
+    "polling": {
+      "state": "sleeping",
+      "intervalSeconds": 15,
+      "cycles": 1,
+      "lastCycleAt": "2026-11-14T14:19:15.720Z",
+      "source": "in-memory-observation",
+      "repositories": [
+        {
+          "repository": "Sanmoo/java-springboot-event-sourcing",
+          "label": "ready-for-agent",
+          "state": "observed",
+          "observedAt": "2026-11-14T14:19:12.847Z",
+          "completeness": "complete",
+          "absenceProven": false,
+          "consecutiveFailures": 0,
+          "nextPollInSeconds": 15,
+          "candidates": [
+            {
+              "ticket": {
+                "tracker": "github",
+                "repository": "Sanmoo/java-springboot-event-sourcing",
+                "repositoryId": 1256893534,
+                "issueId": 6391129588,
+                "nodeId": "I_kwDOSuqsXs8AAAABfPDl9A",
+                "number": 3,
+                "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3"
+              },
+              "observedAt": "2026-11-14T14:19:15.720Z",
+              "outcome": "existing",
+              "work_id": "418b9d88-8d60-48dd-b29b-66ffc61149b9"
+            },
+            {
+              "ticket": {
+                "tracker": "github",
+                "repository": "Sanmoo/java-springboot-event-sourcing",
+                "repositoryId": 1256893534,
+                "issueId": 6149419836,
+                "nodeId": "I_kwDOSuqsXs8AAAABboizPA",
+                "number": 1,
+                "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/1"
+              },
+              "observedAt": "2026-11-14T14:19:15.720Z",
+              "outcome": "existing",
+              "work_id": "be7a4cdf-d06a-42e9-8d26-51daff96eade"
+            }
+          ]
+        }
+      ]
+    },
+    "limitations": [
+      "Candidate observations are in-memory results of the latest poll, not authority; they are rebuilt after restart.",
+      "A failed or partial query, or absence from a listing, never proves absence of a Ticket, label or pull request, nor withdrawal of authorization.",
+      "Dispatch is held: native dependency evaluation and execution activation are not part of this increment."
+    ]
+  },
+  "status3": {
+    "controller_run_id": "29c9c623-f712-4635-ad87-ce150d3a35fb",
+    "paused": false,
+    "dispatch": "closed",
+    "dispatchReason": "EXECUTION_NOT_ENABLED",
+    "historyLength": 0,
+    "works": {
+      "total": 2,
+      "open": 2
+    },
+    "queues": {
+      "normal": 2,
+      "repair": 0
+    },
+    "polling": {
+      "state": "sleeping",
+      "intervalSeconds": 15,
+      "cycles": 1,
+      "lastCycleAt": "2026-11-14T14:19:15.720Z",
+      "source": "in-memory-observation",
+      "repositories": [
+        {
+          "repository": "Sanmoo/java-springboot-event-sourcing",
+          "label": "ready-for-agent",
+          "state": "observed",
+          "observedAt": "2026-11-14T14:19:12.847Z",
+          "completeness": "complete",
+          "absenceProven": false,
+          "consecutiveFailures": 0,
+          "nextPollInSeconds": 15
+        }
+      ]
+    },
+    "persistence": {
+      "sqliteVersion": "3.53.4",
+      "sqliteSourceId": "2026-07-24 19:02:57 bf7c7f30031888f4e796e429ab3978879485813aaca6f641c7b33e4e09459bcc",
+      "journalMode": "wal",
+      "synchronous": "FULL"
+    }
+  },
+  "controllerExit2": 0,
+  "dbSecretOrBodyMatches": 0,
+  "privateKeyCopyRemoved": true,
+  "finishedAt": "2026-11-14T14:19:16.634Z"
+}

@@ -169,3 +169,15 @@ Saída esperada:
 Registrar no relatório real: HEAD, versão do gh, requisições (método/endpoint/status/versão), IDs
 observados, saídas `list/show/status` sanitizadas, ausência de mutações e lacunas (rate limit não
 induzido, links manuais "Development" não observáveis).
+
+## Ensaio real autorizado — 2026-11-14 (supervisor)
+
+HEAD `738f5e9`; raiz exclusiva `/home/sanmoo/software-factory-test/verify07-gEoqJdLv`; driver derivado do driver do 04, com os mesmos guards (HTTPS só em `/app`, instalação e `access_tokens`; wrapper `gh` só GET no repo configurado). Registro sanitizado: [JSON](07-real-github-admission-2026-11-14.json). Pré-condição remota feita pelo operador por meio do agente, sob autorização explícita: issue de teste **#3** criada com `ready-for-agent`. A issue #1 já tinha a label.
+
+- `list` sem proprietário: exit 3. Com o proprietário real (flock): ciclo 1 admitiu **#3** (sequência 1, issueId `6391129588`, nodeId `I_kwDOSuqsXs8AAAABfPDl9A`, repositoryId `1256893534`) e **#1** (sequência 2). Autorização `authorized` pela label `ready-for-agent` (id 12918930265), publicação `complete` com 0 PRs associados, despacho `held` com `[DEPENDENCIES_NOT_EVALUATED, EXECUTION_NOT_ENABLED]`.
+- Mais 2 ciclos (15 s): mesmos `work_id`/`sequence`. SIGTERM → exit 0; restart → mesma lista, sem duplicata; SIGTERM → exit 0.
+- Status: `dispatch: closed / EXECUTION_NOT_ENABLED`, `historyLength: 0`, polling `observed / complete / absenceProven:false`, `consecutiveFailures: 0`.
+- Requisições: só GETs (`/app`, instalação, repo, issues filtradas por label, `issues/N`, `pulls?state=all`) e POSTs de token **somente leitura** (`metadata+issues:read`, `metadata+pull_requests:read`), um por finalidade a cada início do proprietário. Nenhuma mutação. Labels e assignees das issues inalterados.
+- Banco `control.sqlite*`: 0 ocorrências de `ghs_`, `PRIVATE KEY` ou texto do corpo da issue. Cópia da chave removida.
+
+**Observação AC3 / limitação:** a issue #1 tem o PR #2 *merged* na branch `factory/issue-1-a49bd5a1e147`, de outra factory. O GitHub não liga esse PR à issue: não há palavra-chave de fechamento, evento de referência cruzada nem `closedByPullRequestsReferences`. A Factory não usa convenções de branch alheias como prova, então a admissão segue o contrato observável. Não houve PR real com palavra-chave para exercitar o bloqueio AC3 (criar PR está fora da autorização); esse caso está coberto pelos testes de fluxo locais.
