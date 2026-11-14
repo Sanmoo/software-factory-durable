@@ -6,10 +6,12 @@ import { z } from 'zod';
 
 /** The Factory's own versioned Builder skill packs (spec §6.3): distributed with the Factory, never a personal profile or registry.
  * A published version is never edited in place; a change is a new version (v1 = ticket 09, v2 = ticket 10 ask_user/resume,
- * v3 = ticket 12: v2 plus the review handoff and the Factory commit identity rule). */
+ * v3 = ticket 12: v2 plus the review handoff and the Factory commit identity rule; v4 = ticket 11: v3 plus continue/recovery
+ * context, authorized scope changes and instruction precedence). */
 const pack = <T extends string>(id: T) => Object.freeze({ id, seedName: `factory/skill-pack/${id}`, guestDirectory: `/artifacts/factory/skill-pack/${id}`,
   directory: fileURLToPath(new URL(`../../../assets/skill-pack/${id}`, import.meta.url)) });
-export const skillPacks = Object.freeze({ 'factory-skills-v1': pack('factory-skills-v1'), 'factory-skills-v2': pack('factory-skills-v2'), 'factory-skills-v3': pack('factory-skills-v3') });
+export const skillPacks = Object.freeze({ 'factory-skills-v1': pack('factory-skills-v1'), 'factory-skills-v2': pack('factory-skills-v2'), 'factory-skills-v3': pack('factory-skills-v3'),
+  'factory-skills-v4': pack('factory-skills-v4') });
 export type SkillPackId = keyof typeof skillPacks;
 export const skillPackIds = Object.keys(skillPacks) as [SkillPackId, ...SkillPackId[]];
 /** Alias used by the ticket 12 compositions. */
