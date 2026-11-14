@@ -57,6 +57,18 @@ function mailbox(channel: Channel) {
     },
   };
 }
+/**
+ * `ask_user` request of a Builder (spec §5.5): identity assigned by the worker, complete text and its hash, and the reference of the
+ * protected Records evidence that preserved it BEFORE the notification. Not authorization; the Control validates and correlates it.
+ */
+export type WorkerQuestion = { questionId: string; question: string; context: string; sha256: string; reference: { workId: string; id: string } };
+/** Control's answer to a notification: `recorded` only after the durable commit of Question + impediment + publication intent. */
+export type QuestionAck = { status: 'recorded' } | { status: 'refused'; code: string };
+/** Host-side handlers of worker events during one activation (no Promise waits for a human: the handler only commits). */
+export type ActivationEvents = { question?(question: WorkerQuestion): Promise<QuestionAck> };
+/** `question`: the activation ended after asking; `acknowledged` says whether the worker saw a `recorded` ACK (lost ACK => false). */
+export type WorkerCompletion = { status: 'success'; receipt: { workId: string; id: string } } | { status: 'failure'; code: string } |
+  { status: 'question'; receipt: { workId: string; id: string }; question: WorkerQuestion & { acknowledged: boolean } };
 
 type Configuration = { root: string; profile: WorkerLaunch['profile']; knownSecrets: string[] };
 const reference = z.strictObject({ workId: z.string(), id: z.uuid() });

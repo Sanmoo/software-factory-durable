@@ -1,6 +1,6 @@
 // Test doubles for the IssueTracker/CodeRepository contracts and the polling clock.
 // They replace GitHub only; Control, Pi Durable and SQLite stay real in every flow test.
-import type { IssueTracker, TicketRef, CandidateObservation, TicketObservation, TrackerScope, DependencyNode, DependencyProblem } from '../../src/issue-tracker/index.js';
+import type { IssueTracker, TicketRef, CandidateObservation, TicketObservation, TrackerScope, DependencyNode, DependencyProblem, TrackerComment } from '../../src/issue-tracker/index.js';
 import type { CodeRepository, PublicationObservation, PullRequestCandidate } from '../../src/code-repository/index.js';
 import type { PollingClock } from '../../src/control/types.js';
 
@@ -22,7 +22,22 @@ export type Remote = {
   dependencyProblems?: Record<number, DependencyProblem[]>;
   /** readDependencyGraph throws (unexpected adapter failure). */
   graphThrows?: boolean;
+  /** Issue comments by issue number (ascending ids). postComment appends App-bot comments here. */
+  comments?: Record<number, TrackerComment[]>;
+  /** Consumed one per postComment: unknown outcome (created or not) or known failure; absent = published. */
+  postOutcomes?: ('unknown-created' | 'unknown-not-created' | 'failed')[];
+  /** Number of next findQuestion calls that are incomplete (unavailable). */
+  incompleteSearches?: number;
+  /** Number of next readInputs calls that are incomplete (unavailable). */
+  incompleteInputs?: number;
 };
+let commentSequence = 80000;
+/** A comment as the tracker adapter reports it. */
+export function comment(body: string, author: { id: number; login: string; type: string } = { id: 1, login: 'operator', type: 'User' }, issue = 3, viaApp: number | null = null): TrackerComment {
+  const id = ++commentSequence;
+  return { commentId: id, nodeId: `IC_${id}`, url: `https://github.com/acme/project/issues/${issue}#issuecomment-${id}`, author, body, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), viaApp };
+}
+export const factoryAppId = 1;
 export const dependencyPrincipal = { installationId: 2, repository: 'acme/project', repositoryId: 3, role: 'executable' as const, purpose: 'dependency-read' as const,
   permissions: { metadata: 'read' as const, issues: 'read' as const } };
 export const scope: TrackerScope & { base: string } = { repository: 'acme/project', installationId: 2, workflows: false, label: 'ready-for-agent', base: 'main' };
@@ -85,6 +100,27 @@ export function githubDoubles(remote: Remote) {
       return { kind: 'observed' as const, source: 'github-rest' as const, observedAt: observedAt(), root: ref, completeness: problems.length ? 'incomplete' as const : 'complete' as const,
         principals: [dependencyPrincipal], problems, limitations: ['synthetic graph'], nodes };
     }, ref),
+    readInputs: (ref, cursor) => track('readInputs', () => {
+      if (remote.incompleteInputs) { remote.incompleteInputs--; return failure(ref.repository, { code: 'GITHUB_QUERY_FAILED' }); }
+      const all = remote.comments?.[ref.number] ?? [];
+      const after = all.filter(item => cursor === null || item.commentId > cursor);
+      return { kind: 'observed' as const, source: 'github-rest' as const, observedAt: observedAt(), ticket: ref, completeness: 'complete' as const, comments: structuredClone(after),
+        cursor: all.length ? Math.max(cursor ?? 0, all.at(-1)!.commentId) : cursor, limitations: ['synthetic'] };
+    }, { number: ref.number, cursor }),
+    findQuestion: (ref, questionId) => track('findQuestion', () => {
+      if (remote.incompleteSearches) { remote.incompleteSearches--; return failure(ref.repository, { code: 'GITHUB_QUERY_FAILED' }); }
+      const candidates = (remote.comments?.[ref.number] ?? []).filter(item => item.viaApp === factoryAppId && item.body.startsWith(`<!-- software-factory:question:${questionId} -->\n`))
+        .map(item => ({ commentId: item.commentId, url: item.url, createdAt: item.createdAt }));
+      return { kind: 'observed' as const, source: 'github-rest' as const, observedAt: observedAt(), completeness: 'complete' as const, candidates, limitations: ['synthetic'] };
+    }, { number: ref.number, questionId }),
+    postComment: (ref, posted, effect) => track('postComment', () => {
+      const outcome = remote.postOutcomes?.shift();
+      const created = comment(`<!-- software-factory:question:${posted.questionId} -->\n${posted.body}`, { id: 41898282, login: 'factory-app[bot]', type: 'Bot' }, ref.number, factoryAppId);
+      if (outcome !== 'unknown-not-created' && outcome !== 'failed') (remote.comments ??= {})[ref.number] = [...(remote.comments?.[ref.number] ?? []), created];
+      if (outcome === 'failed') return { kind: 'failed' as const, observedAt: observedAt(), code: 'GITHUB_ACCESS_DENIED', nextStep: 'synthetic' };
+      if (outcome) return { kind: 'unknown' as const, observedAt: observedAt(), code: 'GITHUB_TRANSPORT_UNAVAILABLE', nextStep: 'synthetic' };
+      return { kind: 'published' as const, observedAt: observedAt(), commentId: created.commentId, url: created.url, createdAt: created.createdAt };
+    }, { number: ref.number, comment: posted, effect }),
   };
   const repository: CodeRepository = {
     checkAccess() { throw new Error('not used by admission'); },

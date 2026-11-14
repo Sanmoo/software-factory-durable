@@ -9,6 +9,9 @@ import { evaluateWorkDependencies } from './polling.js';
 import type { WorkRecord } from './admission.js';
 import { admitExecution, beginRenewal, confirmActivation, confirmStart, holdExecution, recordEnd, recordIssuance, recordPhase, recordRenewal, recordRevocation,
   recordRevocationIntent, recordWorkerNotice, releaseAfterCessation, releaseBeforeStart, stopRenewal, withdrawCredentials } from './execution.js';
+import { intactRequest, readQuestion, recordContentLost, registerQuestion } from './questions.js';
+import { recoveryPrompt } from '../rules/questions.js';
+import type { WorkerQuestion } from '../../workers/index.js';
 import type { Session } from './store.js';
 
 export type DispatchObservation = { at: string; work_id: string | null; outcome: string; reasons: string[] };
@@ -142,7 +145,9 @@ function credentialLifecycle(deps: { session: Session; ports: ExecutionPorts; wo
  */
 export function createDispatcher(deps: { session: Session; access: AccessDependencies; ports: ExecutionPorts; currentAttempt(repository: string): string | null;
   readWorks(): Promise<WorkRecord[]>; ownCycles(issueIds: number[]): Promise<Record<number, OwnCycleFacts>>;
-  record(work_id: string, evaluation: DependencyEvaluation): Promise<unknown>; paused(): Promise<boolean>; heldSlots(): Promise<number> }) {
+  record(work_id: string, evaluation: DependencyEvaluation): Promise<unknown>; paused(): Promise<boolean>; heldSlots(): Promise<number>;
+  /** A Question was durably recorded: publication proceeds independently of cessation (not awaited by the ACK). */
+  questionRecorded?(): void }) {
   const { session, ports } = deps;
   const running = new Map<string, Promise<void>>();
   const lifecycles = new Map<string, ReturnType<typeof credentialLifecycle>>();
@@ -249,8 +254,16 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         await hold('ACTIVATION_CREDENTIALS_WITHDRAWN', 'The activity credentials were withdrawn before activation; the Builder was not activated. Slot kept (ticket 26).');
       };
       if (lifecycle.withdrawn) { await withdrawnBeforeActivation(); return; }
-      const prompt = [`/implement ${work.ticket.url}`, `repository=${work.repository.repository}`, `base=${work.repository.base}`, `base-commit=${prepared.checkout.baseCommit}`,
-        `branch=${execution.request.branch}`, `checkout=${prepared.checkout.path}`, 'artifacts=/artifacts', `work=${work.work_id}`, `execution=${executionId}`].join(' ');
+      const resume = execution.request.resume ?? null;
+      const answered = resume ? await readQuestion(session, resume.questionId) : null;
+      if (resume && (!answered?.answer || answered.answer.sha256 !== resume.answerSha256)) { await revoke(); await refuse(['RESUME_BASIS_CHANGED']); return; }
+      // First activation: `/implement <ticket>`. After an answer: an explicit recovery instruction (new boot, new session), never a bare `continue`.
+      const prompt = resume && answered?.answer ? recoveryPrompt({ ticketUrl: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
+        baseCommit: prepared.checkout.baseCommit, branch: execution.request.branch, checkout: prepared.checkout.path, workId: work.work_id, executionId,
+        previousExecutionId: resume.previousExecutionId, question: { questionId: answered.questionId, question: answered.content.question, context: answered.content.context },
+        answer: { text: answered.answer.text, author: answered.answer.author.kind === 'github' ? answered.answer.author.login : 'local administrator', origin: answered.answer.origin.kind } })
+        : [`/implement ${work.ticket.url}`, `repository=${work.repository.repository}`, `base=${work.repository.base}`, `base-commit=${prepared.checkout.baseCommit}`,
+          `branch=${execution.request.branch}`, `checkout=${prepared.checkout.path}`, 'artifacts=/artifacts', `work=${work.work_id}`, `execution=${executionId}`].join(' ');
       const promptSha256 = createHash('sha256').update(prompt).digest('hex');
       const confirmed = await confirmActivation(session, work.work_id, executionId, attemptId, grant.metadata, promptSha256);
       if (confirmed.kind === 'refused') { await revoke(); await refuse(confirmed.reasons); return; }
@@ -258,21 +271,51 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       phase = 'activate';
       checkStop(); // owner stop: the catch below withdraws and attempts revocation
       if (lifecycle.withdrawn) { await withdrawnBeforeActivation(); return; }
+      // ask_user: the ACK is sent only after the durable commit of Question + impediment + publication intent (spec §5.5).
+      // A question can only follow the start: wait until THIS process committed "Confirmar início" (message order is not commit order).
+      let startCommitted!: (confirmed: boolean) => void;
+      const startConfirmed = new Promise<boolean>(resolve => { startCommitted = resolve; });
+      const onQuestion = async (request: WorkerQuestion) => {
+        if (!await untilStopped(startConfirmed)) return { status: 'refused' as const, code: 'START_NOT_CONFIRMED' };
+        const outcome = await registerQuestion(session, { work_id: work.work_id, executionId, invocationId: execution.invocationId, request, from: 'worker-notification' });
+        if (outcome.kind === 'refused') return { status: 'refused' as const, code: outcome.code };
+        deps.questionRecorded?.();
+        // The activity now waits for an external answer: its credentials are withdrawn (no renewal) and revoked, independently of the ACK.
+        void lifecycle!.withdraw('external-wait', { notifyWorker: true }).catch(() => {});
+        return { status: 'recorded' as const };
+      };
       const handle = await ports.workers.activate({ context: { workId: work.work_id, executionId, invocationId: execution.invocationId, role: 'builder',
-        environmentRef: environment, bootRef: boot, phaseId: 'builder-initial' }, prompt, signal: stopping.signal, ...ports.builder },
-      { credential: grant.delivery });
+        environmentRef: environment, bootRef: boot, phaseId: resume ? 'builder-recovery' : 'builder-initial' }, prompt, signal: stopping.signal, ...ports.builder },
+      { credential: grant.delivery }, { question: onQuestion });
       await lifecycle.attach(handle.worker);
       try {
         phase = 'started';
         const start = await untilStopped(handle.started);
-        const consumed = await confirmStart(session, work.work_id, executionId, { ...start.receipt, ...start.invocation });
+        let consumed: Awaited<ReturnType<typeof confirmStart>> | undefined;
+        try { consumed = await confirmStart(session, work.work_id, executionId, { ...start.receipt, ...start.invocation }); }
+        finally { startCommitted(consumed === 'confirmed'); }
         if (consumed !== 'confirmed') { await hold(`START_RECEIPT_${consumed.toUpperCase().replaceAll('-', '_')}`, 'Start receipt was not consumable for this Execution.'); return; }
         observe(work.work_id, 'started');
         phase = 'completed';
         // Renewal happens only while waiting for THIS activity; it never restarts, replays or recovers the Builder.
         const completed = await untilStopped(lifecycle.renewWhile(handle.completed));
-        await recordEnd(session, work.work_id, executionId, completed.status === 'success' ? 'completed' : 'failure', completed.status === 'success' ? null : completed.code);
-      } finally { handle.close(); }
+        if (completed.status === 'question') {
+          // Lost ACK/notification: the completion repeats the SAME identity and content; a missing record is registered once from it.
+          // Content not intact and no record: explicit impediment, nothing invented or published.
+          const request = completed.question;
+          let code: string | null = null;
+          const known = await readQuestion(session, request.questionId);
+          if (intactRequest(request, work.work_id)) {
+            const outcome = await registerQuestion(session, { work_id: work.work_id, executionId, invocationId: execution.invocationId, request, from: 'worker-completion' });
+            if (outcome.kind === 'refused') code = outcome.code;
+            else if (outcome.kind === 'recorded') deps.questionRecorded?.();
+          } else if (!known || known.executionId !== executionId) {
+            code = 'QUESTION_CONTENT_LOST';
+            await recordContentLost(session, work.work_id, executionId, request.questionId);
+          }
+          await recordEnd(session, work.work_id, executionId, 'question', code, request.questionId);
+        } else await recordEnd(session, work.work_id, executionId, completed.status === 'success' ? 'completed' : 'failure', completed.status === 'success' ? null : completed.code);
+      } finally { startCommitted(false); handle.close(); }
       await lifecycle.withdraw('ended', { notifyWorker: false });
       phase = 'stop';
       const stop = await stopOwnBoot('builder execution ended');
@@ -310,10 +353,18 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       const work = works.find(item => item.work_id === next)!;
       const authorization = await revalidateAuthorization(work);
       if (!authorization.ok) { observe(work.work_id, 'authorization-not-confirmed', authorization.reasons); return; }
+      // After a Question: only its accepted answer is a recovery basis (re-checked in the admission commit).
+      const previous = work.execution;
+      let resume: NonNullable<ExecutionView['request']['resume']> | undefined;
+      if (previous?.end?.outcome === 'question') {
+        const answered = previous.end.questionId ? await readQuestion(session, previous.end.questionId) : null;
+        if (!answered?.answer) { observe(work.work_id, 'refused', ['QUESTION_NOT_ANSWERED']); return; }
+        resume = { previousExecutionId: previous.executionId, questionId: answered.questionId, answerSha256: answered.answer.sha256, reason: 'NEW_BOOT_REPLACEMENT_SESSION' };
+      }
       const { attemptId } = await freshEvaluation(work);
       const admission = await admitExecution(session, { work_id: work.work_id, attemptId, capacity: ports.capacity, authorizationObservedAt: authorization.observedAt,
         request: { ticket: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
-          branch: `factory/${work.ticket.number}-${work.work_id.slice(0, 8)}`, policies: { ...ports.builder } } });
+          branch: `factory/${work.ticket.number}-${work.work_id.slice(0, 8)}`, policies: { ...ports.builder } }, ...(resume ? { resume } : {}) });
       if (admission.kind === 'refused') { observe(work.work_id, 'refused', admission.reasons); return; }
       observe(work.work_id, 'reserved');
       const task = execute(work, admission.execution).finally(() => running.delete(work.work_id));

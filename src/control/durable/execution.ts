@@ -6,6 +6,7 @@ import type { CredentialGrantRecord, CredentialWithdrawal, ExecutionView } from 
 import { ticketKey } from '../rules/admission.js';
 import { dispatchBlockers } from '../rules/dependencies.js';
 import { installation, legacyCredentialLifecycle, ticketIndex, works, type WorkRecord } from './admission.js';
+import { questions } from './questions.js';
 import type { Session } from './store.js';
 
 /** Installation-level Slot occupancy, committed with every reservation/release (spec §3.4 "Admitir Execução"). */
@@ -22,7 +23,8 @@ export async function heldSlots(session: Session): Promise<number> {
 export type Admission = { kind: 'reserved'; execution: ExecutionView } | { kind: 'refused'; reasons: string[] };
 const history = (work: WorkRecord, event: Extract<WorkRecord['history'][number], { origin: 'controller-dispatch' }>['event'], executionId: string, detail?: string) =>
   work.history.push({ at: new Date().toISOString(), event, origin: 'controller-dispatch', executionId, ...(detail ? { detail } : {}) });
-const active = (execution: ExecutionView | null) => execution !== null && execution.state !== 'released';
+/** An ended Execution whose own boot ceased and whose Slot was released no longer blocks a NEW Execution (e.g. after an answer). */
+const active = (execution: ExecutionView | null) => execution !== null && execution.state !== 'released' && !(execution.state === 'ended' && !execution.slot.held);
 
 /**
  * "Admitir Execução" (spec §3.4): in ONE commit, the Work is still open, pending and the Ticket's current cycle; the global pause is off;
@@ -30,7 +32,9 @@ const active = (execution: ExecutionView | null) => execution !== null && execut
  * Writes the Execution identity, its Slot, the dispatch intent and the Work's own branch. Nothing external happens before this commit.
  */
 export async function admitExecution(session: Session, input: { work_id: string; attemptId: string; capacity: number; authorizationObservedAt: string;
-  request: Omit<ExecutionView['request'], 'baseCommit' | 'checkout' | 'promptSha256' | 'skillPack'> }): Promise<Admission> {
+  request: Omit<ExecutionView['request'], 'baseCommit' | 'checkout' | 'promptSha256' | 'skillPack' | 'resume'>;
+  /** Recovery basis after an answered Question; re-checked in this commit (the answer and the previous Execution must still match). */
+  resume?: NonNullable<ExecutionView['request']['resume']> }): Promise<Admission> {
   return session.commit(async tx => {
     const reasons: string[] = [];
     if ((await tx.doc(installation)).paused) reasons.push('GLOBAL_PAUSE');
@@ -44,21 +48,28 @@ export async function admitExecution(session: Session, input: { work_id: string;
     if (latest && latest.conclusion !== 'satisfied' && !reasons.length) reasons.push('DEPENDENCIES_NOT_SATISFIED');
     const occupancy = await tx.doc(slots);
     if (Object.keys(occupancy.held).length >= input.capacity) reasons.push('NO_SLOT_AVAILABLE');
+    const previous = work.execution ?? null;
+    if (previous?.end?.outcome === 'question') {
+      const question = input.resume ? (await tx.doc(questions, input.resume.questionId, null)).question : null;
+      if (!input.resume || input.resume.previousExecutionId !== previous.executionId || input.resume.questionId !== previous.end.questionId ||
+          question?.state !== 'answered' || question.answer?.sha256 !== input.resume.answerSha256) reasons.push('RESUME_BASIS_CHANGED');
+    } else if (input.resume) reasons.push('RESUME_BASIS_CHANGED');
     if (reasons.length) return { kind: 'refused' as const, reasons };
     const now = new Date().toISOString();
     const executionId = randomUUID();
     const execution: ExecutionView = {
-      executionId, invocationId: `builder-${executionId}`, mode: 'initial', state: 'reserved',
+      executionId, invocationId: `builder-${executionId}`, mode: input.resume ? 'recovery' : 'initial', state: 'reserved',
       slot: { held: true, capacity: input.capacity, reservedAt: now, releasedAt: null },
       admission: { attemptId: input.attemptId, evaluationId: latest!.evaluationId, authorizationObservedAt: input.authorizationObservedAt, activationAttemptId: null, activationEvaluationId: null },
       dispatch: { intent: 'prepare-start-activate', phase: 'reserved', environment: null, boot: null, updatedAt: now },
-      request: { ...input.request, baseCommit: null, checkout: null, promptSha256: null, skillPack: null },
+      request: { ...input.request, baseCommit: null, checkout: null, promptSha256: null, skillPack: null, resume: input.resume ?? null },
       credential: null, credentialIssuance: null, credentialRenewals: [],
       credentialLifecycle: { state: 'none', withdrawnAt: null, reason: null, renewal: 'enabled', renewalStop: null, workerNotice: null },
       start: null, end: null, held: null,
       completion: { automatic: false, reason: 'Reviews, publication and readiness are not enabled in this Factory version; an ended Builder Execution never completes the Work automatically.' },
     };
     occupancy.held[executionId] = input.work_id;
+    if (previous) work.previousExecutions = [...(work.previousExecutions ?? []), previous];
     work.execution = execution;
     work.branch = input.request.branch;
     work.queue = { ...work.queue, pending: false };
@@ -274,11 +285,11 @@ export async function confirmStart(session: Session, work_id: string, executionI
   }, BACKGROUND_CONTEXT);
 }
 
-export const recordEnd = (session: Session, work_id: string, executionId: string, outcome: 'completed' | 'failure', code: string | null) =>
+export const recordEnd = (session: Session, work_id: string, executionId: string, outcome: 'completed' | 'failure' | 'question', code: string | null, questionId: string | null = null) =>
   advance(session, work_id, executionId, { state: 'started', phases: ['started'] }, (execution, work) => {
     execution.state = 'ended';
     execution.dispatch.phase = 'completed';
-    execution.end = { at: new Date().toISOString(), outcome, code, cessation: 'not-attempted' };
+    execution.end = { at: new Date().toISOString(), outcome, code, cessation: 'not-attempted', ...(outcome === 'question' ? { questionId } : {}) };
     history(work, 'execution-ended', executionId, code ?? outcome);
   });
 
@@ -294,6 +305,8 @@ export async function releaseAfterCessation(session: Session, work_id: string, e
     const occupancy = await tx.doc(slots);
     delete occupancy.held[executionId];
     execution.slot = { ...execution.slot, held: false, releasedAt: new Date().toISOString() };
+    // A Question wait occupies no Slot: the Work returns to its SAME category/position; its impediment (until answered) still blocks.
+    if (execution.end.outcome === 'question') document.work.queue = { ...document.work.queue, pending: true };
     history(document.work, 'slot-released', executionId);
     return 'released' as const;
   }, BACKGROUND_CONTEXT);

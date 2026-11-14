@@ -11,7 +11,8 @@ type History = { request_id: string; operation: 'pause' | 'unpause'; before: boo
 type Installation = { paused: boolean; history: History[] };
 export const installation = defineDoc<Installation>({ kind: 'factory.installation', version: 1, scope: 'session',
   initial: () => ({ paused: false, history: [] }), checkpointWhen: () => true });
-const requests = defineDocFamily<{ input: ControlInput | null; receipt: ControlReceipt | null }, null>({
+/** Identified ingresses (CLI request ids, `github-comment-<id>` for comments) with their single durable result. */
+export const requests = defineDocFamily<{ input: ControlInput | { request_id: string; operation: 'answer'; origin: 'github-comment' } | null; receipt: ControlReceipt | null }, null>({
   kind: 'factory.request', version: 1, scope: 'session', family: true, initial: () => ({ input: null, receipt: null }), checkpointWhen: () => true,
 });
 /** Installation-level Ticket → cycle index and FIFO admission sequence (spec §3.2), committed with each Work. */
@@ -59,7 +60,8 @@ export async function admitTicket(session: Session, evidence: AdmissionEvidence)
         basis: { repositoryConfigured: true, issueState: 'open', label: evidence.label },
         publication: { observedAt: evidence.publication.observedAt, completeness: 'complete', associatedPullRequests: 0, limitations: evidence.publication.limitations },
         tracking: 'Authorization recorded at admission. Later label removal/closure tracking is not part of this increment; absence from a listing is never treated as withdrawal.' },
-      queue: { category: 'normal', sequence, pending: true }, impediments, dependencies: { latest: null, lastComplete: null }, execution: null, branch: null, pullRequest: null, admittedAt,
+      queue: { category: 'normal', sequence, pending: true }, impediments, dependencies: { latest: null, lastComplete: null }, execution: null, branch: null, pullRequest: null,
+      previousExecutions: [], questions: [], inputs: { cursor: null }, admittedAt,
       history: [{ at: admittedAt, event: 'admitted', origin: 'github-polling', sequence }],
     };
     index.admissionSequence = sequence;
@@ -83,7 +85,8 @@ const normalize = (work: WorkRecord): WorkRecord => ({ ...work, dependencies: wo
   execution: work.execution ? { ...work.execution, credentialRenewals: work.execution.credentialRenewals ?? [],
     credentialLifecycle: work.execution.credentialLifecycle ? { ...work.execution.credentialLifecycle, workerNotice: work.execution.credentialLifecycle.workerNotice ?? null }
       : legacyCredentialLifecycle(work.execution) } : null,
-  branch: work.branch ?? null });
+  branch: work.branch ?? null,
+  previousExecutions: work.previousExecutions ?? [], questions: work.questions ?? [], inputs: work.inputs ?? { cursor: null } });
 
 /** Open Works with pending queue work of one repository (by immutable id), FIFO by admission sequence. */
 export async function pendingWorks(session: Session, repositoryId: number): Promise<WorkRecord[]> {
@@ -170,7 +173,7 @@ export async function readRequest(session: Session, request_id: string): Promise
 }
 
 /** Pause/unpause: receipt, history and pause change share one real Session commit (no deferred persistence). */
-export async function acceptPauseCommand(session: Session, command: ControlInput): Promise<ControlReceipt | { kind: 'refused'; code: 'REQUEST_ID_CONFLICT' }> {
+export async function acceptPauseCommand(session: Session, command: Extract<ControlInput, { operation: 'pause' | 'unpause' }>): Promise<ControlReceipt | { kind: 'refused'; code: 'REQUEST_ID_CONFLICT' }> {
   return session.commit(async tx => {
     const current = await tx.doc(installation);
     const request = await tx.doc(requests, command.request_id, null);
