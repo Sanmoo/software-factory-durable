@@ -6,8 +6,10 @@ import { githubDoubles, manualClock, remoteIssue, scope } from './doubles.js';
 import { lifecycleDoubles } from './credential-doubles.js';
 
 const storagePath = process.argv[2]!;
+// 'active': crash while the Builder runs. 'revoking': crash while the end-of-activity revocation request is in flight.
+const mode = process.argv[3] ?? 'active';
 const github = githubDoubles({ pulls: {}, issues: [remoteIssue(3)] });
-const doubles = lifecycleDoubles();
+const doubles = lifecycleDoubles(mode === 'revoking' ? { revokeHangs: true, onRevoke: () => process.stdout.write('REVOKING\n') } : {});
 const time = manualClock();
 const control = await openControl({ storagePath, runtimeInventory: 'empty', execution: doubles.ports,
   access: { tracker: github.tracker, repository: github.repository, repositories: [scope] }, polling: { intervalSeconds: 60, clock: time.clock } });
@@ -19,4 +21,5 @@ for (;;) {
   await new Promise(resolve => setTimeout(resolve, 5));
 }
 process.stdout.write('ACTIVE\n');
+if (mode === 'revoking') doubles.complete();
 await new Promise(() => {});

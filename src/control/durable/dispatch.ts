@@ -8,12 +8,15 @@ import { dispatchBlockers, selectNext, type OwnCycleFacts } from '../rules/depen
 import { evaluateWorkDependencies } from './polling.js';
 import type { WorkRecord } from './admission.js';
 import { admitExecution, beginRenewal, confirmActivation, confirmStart, holdExecution, recordEnd, recordIssuance, recordPhase, recordRenewal, recordRevocation,
-  releaseAfterCessation, releaseBeforeStart, stopRenewal, withdrawCredentials } from './execution.js';
+  recordRevocationIntent, recordWorkerNotice, releaseAfterCessation, releaseBeforeStart, stopRenewal, withdrawCredentials } from './execution.js';
 import type { Session } from './store.js';
 
 export type DispatchObservation = { at: string; work_id: string | null; outcome: string; reasons: string[] };
 const maxTimer = 2147483647;
 const codeOf = (error: unknown, fallback: string) => error instanceof Error && /^[A-Z_]{1,64}$/.test(error.message) ? error.message : fallback;
+// Executions whose grants are held in THIS process's memory: boot reconciliation of another run/Control in-process never relabels them.
+const liveExecutions = new Set<string>();
+export const isLiveCredentialExecution = (executionId: string) => liveExecutions.has(executionId);
 
 /**
  * Credential lifecycle of ONE active Execution (spec §8/§8.1, ticket 20), held in the memory of its execution task only. Renewal is a NEW
@@ -22,19 +25,27 @@ const codeOf = (error: unknown, fallback: string) => error instanceof Error && /
  * grant; outcomes are recorded distinctly and never claim cessation.
  */
 function credentialLifecycle(deps: { session: Session; ports: ExecutionPorts; work_id: string; executionId: string; repositoryConfigured(): boolean;
-  context: Parameters<ExecutionPorts['credentials']['issue']>[0]; stopping: AbortSignal }, initial: BuilderGrant) {
+  context: Parameters<ExecutionPorts['credentials']['issue']>[0]; stopping: AbortSignal }) {
   const { session, ports, work_id, executionId } = deps;
   const margin = Math.max(0, (ports.credentialRenewal?.beforeExpirySeconds ?? 600) * 1000);
-  const known: { ref: 'initial' | number; grant: BuilderGrant; revoked: boolean }[] = [{ ref: 'initial', grant: initial, revoked: false }];
+  const known: { ref: 'initial' | number; grant: BuilderGrant; revoked: boolean }[] = [];
   const withdrawn = new AbortController();
-  let current = initial;
+  let current: BuilderGrant | undefined;
   let worker: string | undefined;
+  let issuing: Promise<unknown> | undefined;
   let renewing: Promise<boolean> | undefined;
   let withdrawing: Promise<void> | undefined;
   let renewal = true;
+  const notify = async () => {
+    if (!worker) return;
+    const result = await ports.workers.deliver(worker, { kind: 'withdraw-credential' }).catch(() => ({ status: 'failure' as const, code: 'CREDENTIAL_WITHDRAWAL_UNCERTAIN' }));
+    await recordWorkerNotice(session, work_id, executionId, result.status === 'failure' ? result.code : result.status).catch(() => {});
+  };
   const revoke = async (entry: (typeof known)[number]) => {
     if (entry.revoked) return;
     entry.revoked = true; // one attempt per grant; never repeated automatically
+    // Durable intent BEFORE the request: a crash meanwhile is later reported as attempted with unknown outcome, not as a lost value.
+    await recordRevocationIntent(session, work_id, executionId, entry.ref).catch(() => {});
     const result = await ports.credentials.revoke(entry.grant).catch(() => ({ kind: 'unknown' as const, code: 'REVOCATION_CALL_FAILED', nextStep: 'Revocation call failed; outcome unknown.' }));
     await recordRevocation(session, work_id, executionId, entry.ref, result).catch(() => {});
   };
@@ -43,6 +54,11 @@ function credentialLifecycle(deps: { session: Session; ports: ExecutionPorts; wo
   async function renew(): Promise<boolean> {
     const begun = await beginRenewal(session, work_id, executionId, { repositoryConfigured: deps.repositoryConfigured() });
     if (begun.kind !== 'begun') { if (!withdrawn.signal.aborted) await stop(`RENEWAL_REFUSED_${begun.reasons[0]}`); return false; }
+    // A withdrawal or owner stop that began while the intent was committed: nothing is issued.
+    if (withdrawn.signal.aborted || deps.stopping.aborted) {
+      await recordRenewal(session, work_id, executionId, begun.sequence, { outcome: 'not-attempted', code: 'CREDENTIALS_WITHDRAWN' }).catch(() => {});
+      return false;
+    }
     let grant: BuilderGrant;
     try { grant = await ports.credentials.issue(deps.context); } catch (error) {
       const code = codeOf(error, 'CREDENTIAL_ISSUANCE_FAILED');
@@ -68,21 +84,32 @@ function credentialLifecycle(deps: { session: Session; ports: ExecutionPorts; wo
     }
     await recordRenewal(session, work_id, executionId, begun.sequence, { delivery: 'delivered' }).catch(() => {});
     current = grant;
+    const expiry = Date.parse(grant.metadata.expiresAt);
+    if (!Number.isFinite(expiry)) { await stop('GRANT_EXPIRY_INVALID'); return false; }
     // A renewal that is already due again would loop: renewal stops, visibly, instead of hammering the issuer.
-    if (Date.parse(grant.metadata.expiresAt) - margin <= Date.now()) { await stop('GRANT_LIFETIME_BELOW_RENEWAL_MARGIN'); return false; }
+    if (expiry - margin <= Date.now()) { await stop('GRANT_LIFETIME_BELOW_RENEWAL_MARGIN'); return false; }
     return true;
   }
 
   return {
-    /** The live recipient, set once the Builder was activated with the initial grant. */
-    attach(name: string) { worker = name; },
+    get withdrawn() { return withdrawn.signal.aborted; },
+    /** Initial issuance, visible to a concurrent withdrawal while in flight (its grant is then revoked, never delivered). */
+    async issueInitial(): Promise<BuilderGrant> {
+      const pending = ports.credentials.issue(deps.context).then(grant => { known.push({ ref: 'initial', grant, revoked: false }); current = grant; return grant; });
+      issuing = pending.catch(() => {});
+      return pending;
+    },
+    /** The live recipient, set once the Builder was activated. A withdrawal that already ran reaches it immediately. */
+    async attach(name: string) { worker = name; if (withdrawing) { await withdrawing; await notify(); } },
     /** Waits for `done` while renewing the current grant before its expiry, as long as the activity stays authorized. */
     async renewWhile<T>(done: Promise<T>): Promise<T> {
       const finished = new AbortController();
       void done.then(() => finished.abort(), () => finished.abort());
       const signal = AbortSignal.any([finished.signal, withdrawn.signal, deps.stopping]);
-      while (renewal && !signal.aborted) {
-        const wait = Math.min(maxTimer, Math.max(0, Date.parse(current.metadata.expiresAt) - margin - Date.now()));
+      while (renewal && !signal.aborted && current) {
+        const expiry = Date.parse(current.metadata.expiresAt);
+        if (!Number.isFinite(expiry)) { await stop('GRANT_EXPIRY_INVALID'); break; }
+        const wait = Math.min(maxTimer, Math.max(0, expiry - margin - Date.now()));
         try { await delay(wait, undefined, { signal }); } catch { break; }
         renewing = renew();
         const continued = await renewing.catch(() => false);
@@ -97,9 +124,10 @@ function credentialLifecycle(deps: { session: Session; ports: ExecutionPorts; wo
         withdrawn.abort();
         renewal = false;
         await withdrawCredentials(session, work_id, executionId, reason).catch(() => {});
+        await issuing;
         await renewing?.catch(() => {});
         // New commands of a still-running Builder lose the credential before the revocation attempts.
-        if (options.notifyWorker && worker) await ports.workers.deliver(worker, { kind: 'withdraw-credential' }).catch(() => {});
+        if (options.notifyWorker && worker) await notify();
         for (const entry of known) await revoke(entry);
       })();
     },
@@ -155,10 +183,11 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     let environment: EnvironmentRef | undefined;
     let boot: BootRef | undefined;
     let lifecycle: ReturnType<typeof credentialLifecycle> | undefined;
-    // A held Execution is not authorized to advance: its credentials are withdrawn and known grants revocation is attempted.
+    // A held Execution is not authorized to advance: its credentials are withdrawn and known grants revocation is attempted, even if the
+    // hold commit itself fails.
     const hold = async (code: string, nextStep: string) => {
-      await holdExecution(session, work.work_id, executionId, code, nextStep); observe(work.work_id, 'held', [code]);
-      await lifecycle?.withdraw('held', { notifyWorker: true });
+      try { await holdExecution(session, work.work_id, executionId, code, nextStep); observe(work.work_id, 'held', [code]); }
+      finally { await lifecycle?.withdraw('held', { notifyWorker: true }); }
     };
     const stopOwnBoot = async (reason: string) => environment && boot ? ports.sandbox.stop({ environment, boot, reason }).catch(() => ({ status: 'indeterminate' as const, cessationConfirmed: false as const, code: 'STOP_UNAVAILABLE' })) : undefined;
     try {
@@ -201,17 +230,25 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       if (await recordIssuance(session, work.work_id, executionId, { requestedAt: new Date().toISOString(), outcome: 'requested' }) !== 'recorded') { observe(work.work_id, 'stale'); return; }
       let grant;
       const context = { workId: work.work_id, executionId, repository: { repository: configured.repository, installationId: configured.installationId, workflows: false } };
-      try { grant = await ports.credentials.issue(context); }
+      // Registered BEFORE issuing: a concurrent withdrawal sees the issuance in flight and revokes its grant.
+      lifecycle = credentialLifecycle({ session, ports, work_id: work.work_id, executionId, stopping: stopping.signal, context,
+        repositoryConfigured: () => deps.access.repositories.some(scope => scope.repository.toLowerCase() === configured.repository.toLowerCase() && scope.installationId === configured.installationId) });
+      lifecycles.set(work.work_id, lifecycle);
+      liveExecutions.add(executionId);
+      try { grant = await lifecycle.issueInitial(); }
       catch (error) {
         const code = error instanceof Error && /^[A-Z_]{1,64}$/.test(error.message) ? error.message : 'CREDENTIAL_ISSUANCE_FAILED';
         await recordIssuance(session, work.work_id, executionId, { outcome: (error as { outcome?: string }).outcome === 'known-rejected' ? 'failed' : 'unknown', code });
         throw error;
       }
       await recordIssuance(session, work.work_id, executionId, { outcome: 'issued', metadata: grant.metadata });
-      lifecycle = credentialLifecycle({ session, ports, work_id: work.work_id, executionId, stopping: stopping.signal, context,
-        repositoryConfigured: () => deps.access.repositories.some(scope => scope.repository.toLowerCase() === configured.repository.toLowerCase() && scope.installationId === configured.installationId) }, grant);
-      lifecycles.set(work.work_id, lifecycle);
       const revoke = () => lifecycle!.withdraw('refused', { notifyWorker: false });
+      // Withdrawn while issuing or before activation: the Builder is never activated with that grant; the own boot is stopped and held.
+      const withdrawnBeforeActivation = async () => {
+        await stopOwnBoot('credentials withdrawn before activation');
+        await hold('ACTIVATION_CREDENTIALS_WITHDRAWN', 'The activity credentials were withdrawn before activation; the Builder was not activated. Slot kept (ticket 26).');
+      };
+      if (lifecycle.withdrawn) { await withdrawnBeforeActivation(); return; }
       const prompt = [`/implement ${work.ticket.url}`, `repository=${work.repository.repository}`, `base=${work.repository.base}`, `base-commit=${prepared.checkout.baseCommit}`,
         `branch=${execution.request.branch}`, `checkout=${prepared.checkout.path}`, 'artifacts=/artifacts', `work=${work.work_id}`, `execution=${executionId}`].join(' ');
       const promptSha256 = createHash('sha256').update(prompt).digest('hex');
@@ -220,10 +257,11 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       if (confirmed.kind === 'stale') { await revoke(); observe(work.work_id, 'stale'); return; }
       phase = 'activate';
       checkStop(); // owner stop: the catch below withdraws and attempts revocation
+      if (lifecycle.withdrawn) { await withdrawnBeforeActivation(); return; }
       const handle = await ports.workers.activate({ context: { workId: work.work_id, executionId, invocationId: execution.invocationId, role: 'builder',
         environmentRef: environment, bootRef: boot, phaseId: 'builder-initial' }, prompt, signal: stopping.signal, ...ports.builder },
       { credential: grant.delivery });
-      lifecycle.attach(handle.worker);
+      await lifecycle.attach(handle.worker);
       try {
         phase = 'started';
         const start = await untilStopped(handle.started);
@@ -248,7 +286,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       }
       const code = codeOf(error, 'UNEXPECTED_FAILURE');
       await hold(`${phase.toUpperCase()}_${code}`, 'Execution outcome is uncertain at this phase; never retried automatically. Operator recovery (ticket 26).').catch(() => {});
-    } finally { lifecycles.delete(work.work_id); }
+    } finally { lifecycles.delete(work.work_id); liveExecutions.delete(executionId); }
   }
 
   return {

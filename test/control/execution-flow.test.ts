@@ -206,7 +206,7 @@ test('AC5: a failed credential issuance holds before any activation (never widen
   assert.equal((await h.byNumber())[3]!.execution!.held!.code, 'CREDENTIAL_GITHUB_TOKEN_ISSUANCE_UNKNOWN');
   // Review 5: the issuance intent was durable BEFORE the call, and its unknown outcome is recorded.
   assert.deepEqual(h.execution.snapshots.issue!.execution!.credentialIssuance, { requestedAt: h.execution.snapshots.issue!.execution!.credentialIssuance!.requestedAt,
-    outcome: 'requested', code: null, metadata: null, revocation: null, revocationCode: null, risk: null });
+    outcome: 'requested', code: null, metadata: null, revocation: null, revocationCode: null, risk: null, revocationAttemptedAt: null });
   const issuance = (await h.byNumber())[3]!.execution!.credentialIssuance!;
   assert.deepEqual([issuance.outcome, issuance.code, issuance.metadata], ['unknown', 'GITHUB_TOKEN_ISSUANCE_UNKNOWN', null]);
 });

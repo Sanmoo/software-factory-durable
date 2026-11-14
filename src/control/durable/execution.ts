@@ -5,7 +5,7 @@ import type { BuilderGrantMetadata, RevocationResult } from '../../contracts/ind
 import type { CredentialGrantRecord, CredentialWithdrawal, ExecutionView } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
 import { dispatchBlockers } from '../rules/dependencies.js';
-import { installation, ticketIndex, works, type WorkRecord } from './admission.js';
+import { installation, legacyCredentialLifecycle, ticketIndex, works, type WorkRecord } from './admission.js';
 import type { Session } from './store.js';
 
 /** Installation-level Slot occupancy, committed with every reservation/release (spec §3.4 "Admitir Execução"). */
@@ -54,7 +54,7 @@ export async function admitExecution(session: Session, input: { work_id: string;
       dispatch: { intent: 'prepare-start-activate', phase: 'reserved', environment: null, boot: null, updatedAt: now },
       request: { ...input.request, baseCommit: null, checkout: null, promptSha256: null, skillPack: null },
       credential: null, credentialIssuance: null, credentialRenewals: [],
-      credentialLifecycle: { state: 'none', withdrawnAt: null, reason: null, renewal: 'enabled', renewalStop: null },
+      credentialLifecycle: { state: 'none', withdrawnAt: null, reason: null, renewal: 'enabled', renewalStop: null, workerNotice: null },
       start: null, end: null, held: null,
       completion: { automatic: false, reason: 'Reviews, publication and readiness are not enabled in this Factory version; an ended Builder Execution never completes the Work automatically.' },
     };
@@ -108,11 +108,12 @@ export const confirmActivation = (session: Session, work_id: string, executionId
   });
 
 const blankGrant = (): CredentialGrantRecord => ({ requestedAt: new Date().toISOString(), outcome: 'requested', code: null, metadata: null,
-  revocation: null, revocationCode: null, risk: null });
+  revocation: null, revocationCode: null, risk: null, revocationAttemptedAt: null });
 // Records written before ticket 20 lack these fields; every credential commit completes them in place.
 function lifecycleOf(execution: ExecutionView) {
   execution.credentialRenewals ??= [];
-  execution.credentialLifecycle ??= { state: execution.credentialIssuance ? 'active' : 'none', withdrawnAt: null, reason: null, renewal: 'enabled', renewalStop: null };
+  execution.credentialLifecycle ??= legacyCredentialLifecycle(execution);
+  execution.credentialLifecycle.workerNotice ??= null;
   return execution.credentialLifecycle;
 }
 async function onExecution<T>(session: Session, work_id: string, executionId: string, change: (execution: ExecutionView) => T): Promise<T | 'stale'> {
@@ -191,10 +192,26 @@ export const withdrawCredentials = (session: Session, work_id: string, execution
     return 'withdrawn' as const;
   });
 
+const grantRecord = (execution: ExecutionView, grant: 'initial' | number) =>
+  grant === 'initial' ? execution.credentialIssuance : execution.credentialRenewals.find(item => item.sequence === grant);
+
+/** Durable revocation intent, committed BEFORE the request is sent. */
+export const recordRevocationIntent = (session: Session, work_id: string, executionId: string, grant: 'initial' | number) =>
+  onExecution(session, work_id, executionId, execution => {
+    const record = grantRecord(execution, grant);
+    if (!record) return 'stale' as const;
+    record.revocationAttemptedAt = new Date().toISOString();
+    return 'recorded' as const;
+  });
+
+/** Durable result of the withdraw-credential directive to the live worker. */
+export const recordWorkerNotice = (session: Session, work_id: string, executionId: string, notice: string) =>
+  onExecution(session, work_id, executionId, execution => { execution.credentialLifecycle.workerNotice = notice; return 'recorded' as const; });
+
 /** Outcome of the single revocation attempt of one known grant. */
 export const recordRevocation = (session: Session, work_id: string, executionId: string, grant: 'initial' | number, result: RevocationResult) =>
   onExecution(session, work_id, executionId, execution => {
-    const record = grant === 'initial' ? execution.credentialIssuance : execution.credentialRenewals.find(item => item.sequence === grant);
+    const record = grantRecord(execution, grant);
     if (!record) return 'stale' as const;
     Object.assign(record, { revocation: result.kind, revocationCode: result.code ?? null });
     return 'recorded' as const;
@@ -205,20 +222,29 @@ export const recordRevocation = (session: Session, work_id: string, executionId:
  * known grant without a revocation outcome becomes `impossible` with its external-validity risk. Nothing is recovered from logs/sessions,
  * no revocation or cessation is claimed, and no impediment, pause or dispatch reason is added because of it.
  */
-export async function reconcileLostCredentials(session: Session): Promise<number> {
+export async function reconcileLostCredentials(session: Session, live: (executionId: string) => boolean): Promise<number> {
   const index = await session.snapshot(ticketIndex, BACKGROUND_CONTEXT);
   let reconciled = 0;
   for (const id of index?.order ?? []) {
     reconciled += await session.commit(async tx => {
       const document = await tx.doc(works, id, null);
       const execution = document.work?.execution ?? null;
-      if (!execution) return 0;
+      // Grants still held in THIS process's memory (another run/Control in-process) are live, never relabelled.
+      if (!execution || live(execution.executionId)) return 0;
       const lifecycle = lifecycleOf(execution);
       let count = 0;
       for (const grant of [execution.credentialIssuance, ...execution.credentialRenewals]) {
-        if (!grant || grant.revocation !== null || grant.outcome === 'failed') continue;
+        if (!grant || grant.outcome === 'failed' || grant.outcome === 'not-attempted') continue;
         const until = grant.metadata?.expiresAt ?? `at most one hour after ${grant.requestedAt} (issuance outcome ${grant.outcome})`;
-        Object.assign(grant, { revocation: 'impossible', revocationCode: 'VALUE_LOST_AFTER_RESTART',
+        if (grant.revocation === 'not-attempted' && !grant.risk) {
+          grant.risk = `Revocation was not attempted (record from before the active credential lifecycle); the grant may have remained valid externally until ${until}. Expiry is not proof of cessation.`;
+          count++;
+          continue;
+        }
+        if (grant.revocation !== null) continue;
+        if (grant.revocationAttemptedAt) Object.assign(grant, { revocation: 'unknown', revocationCode: 'REVOCATION_OUTCOME_LOST_AFTER_RESTART',
+          risk: `A revocation was attempted at ${grant.revocationAttemptedAt} by a previous controller process whose outcome is unknown; the grant may remain valid externally until ${until}. Not repeated (the value is lost); expiry is not proof of cessation; this alone does not suspend the installation.` });
+        else Object.assign(grant, { revocation: 'impossible', revocationCode: 'VALUE_LOST_AFTER_RESTART',
           risk: `The grant value was held only in the memory of a previous controller process and is lost; it cannot be revoked and may remain valid externally (including copies made by code that received it) until ${until}. Expiry is not proof of cessation; this alone does not suspend the installation.` });
         count++;
       }

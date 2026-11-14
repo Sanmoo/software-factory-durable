@@ -14,7 +14,18 @@ export type LifecycleOptions = {
   /** Revocation outcome per token. */
   revoke?: (token: string) => RevocationResult['kind'];
   deliver?: (sequence: number) => 'delivered' | 'failure';
+  /** Result of the withdraw-credential directive. */
+  withdrawDirective?: 'withdrawn' | 'failure';
   stopCessation?: boolean;
+  /** Literal expiresAt of the n-th grant (overrides lifetimeMs), e.g. an invalid value. */
+  expiresAt?: (sequence: number) => string | undefined;
+  /** Activation waits for this gate before returning its handle. */
+  activateGate?: Promise<void>;
+  /** The start observation names another Execution (receipt conflict). */
+  startConflict?: boolean;
+  /** Revocation never settles (a crash test kills the process meanwhile); `onRevoke` fires first. */
+  revokeHangs?: boolean;
+  onRevoke?: () => void;
 };
 
 export const tokenOf = (sequence: number) => `ghs_syntheticLifecycle${String(sequence).padStart(4, '0')}abcdefghij`;
@@ -53,10 +64,12 @@ export function lifecycleDoubles(options: LifecycleOptions = {}) {
         const now = Date.now();
         return { delivery: Object.freeze({ token: tokenOf(sequence) }), metadata: { role: 'builder', purpose: 'builder-start', repository: 'acme/project', repositoryId: 3, installationId: 2,
           permissions: { metadata: 'read', contents: 'read', issues: 'read' }, issuedAt: new Date(now).toISOString(),
-          expiresAt: new Date(now + (options.lifetimeMs?.(sequence) ?? 3600000)).toISOString() } };
+          expiresAt: options.expiresAt?.(sequence) ?? new Date(now + (options.lifetimeMs?.(sequence) ?? 3600000)).toISOString() } };
       },
       async revoke(grant) {
         record({ kind: 'revoke', token: grant.delivery.token });
+        options.onRevoke?.();
+        if (options.revokeHangs) await new Promise(() => {});
         const kind = options.revoke?.(grant.delivery.token) ?? 'revoked';
         return { kind, code: `SYNTHETIC_${kind.toUpperCase().replace('-', '_')}`, nextStep: 'synthetic' };
       },
@@ -64,14 +77,18 @@ export function lifecycleDoubles(options: LifecycleOptions = {}) {
     workers: {
       async activate(invocation, delivery) {
         record({ kind: 'activate', ...(delivery?.credential ? { token: delivery.credential.token } : {}), detail: { invocation: { ...invocation, signal: undefined } } });
+        if (options.activateGate) await options.activateGate;
         const started = Promise.resolve({ receipt: { workId: invocation.context.workId, id: '99999999-2222-4333-8444-555555555555' },
-          invocation: { executionId: invocation.context.executionId, invocationId: invocation.context.invocationId } });
+          invocation: { executionId: options.startConflict ? 'another-execution' : invocation.context.executionId, invocationId: invocation.context.invocationId } });
         return { worker: invocation.context.invocationId, started,
           completed: started.then(() => completion.then(() => ({ status: 'success' as const, receipt: { workId: invocation.context.workId, id: '99999999-2222-4333-8444-555555555555' } }))),
           close() { record({ kind: 'close' }); } };
       },
       async deliver(worker, directive) {
-        if (directive.kind === 'withdraw-credential') { record({ kind: 'deliver', directive: directive.kind, detail: worker }); return { status: 'withdrawn' }; }
+        if (directive.kind === 'withdraw-credential') {
+          record({ kind: 'deliver', directive: directive.kind, detail: worker });
+          return options.withdrawDirective === 'failure' ? { status: 'failure', code: 'CREDENTIAL_DELIVERY_UNCERTAIN' } : { status: 'withdrawn' };
+        }
         const sequence = ++delivered;
         record({ kind: 'deliver', directive: directive.kind, token: directive.credential.token, detail: worker });
         return (options.deliver?.(sequence) ?? 'delivered') === 'delivered' ? { status: 'delivered' } : { status: 'failure', code: 'CREDENTIAL_DELIVERY_UNCERTAIN' };

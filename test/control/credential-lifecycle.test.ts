@@ -10,7 +10,9 @@ import { openControl } from '../../src/control/index.js';
 import { withdrawActivityCredentials } from '../../src/control/durable/control.js';
 import { openStore } from '../../src/control/durable/store.js';
 import { readWorks } from '../../src/control/durable/admission.js';
-import { recordEnd, releaseAfterCessation } from '../../src/control/durable/execution.js';
+import { reconcileLostCredentials, recordEnd, releaseAfterCessation } from '../../src/control/durable/execution.js';
+import { works as workDocs } from '../../src/control/durable/admission.js';
+import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { Control, ControlStatus, ListView, WorkView } from '../../src/control/types.js';
 import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
 import { lifecycleDoubles, tokenOf, type LifecycleOptions } from './credential-doubles.js';
@@ -18,7 +20,8 @@ import { lifecycleDoubles, tokenOf, type LifecycleOptions } from './credential-d
 // Flow level (Q11): real Control + Pi Durable + temporary SQLite; GitHub tracker, clock and execution boundaries doubled (synthetic tokens).
 // Not evidence of real GitHub issuance/revocation, VM, worker or model.
 
-async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remote, options: LifecycleOptions = {}, storagePath?: string) {
+async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remote, options: LifecycleOptions = {}, storagePath?: string,
+  repositories: (typeof scope)[] = [scope]) {
   const dir = await mkdtemp(join(tmpdir(), 'factory-credential-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const github = githubDoubles(remote);
@@ -26,7 +29,7 @@ async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remo
   const time = manualClock();
   const path = storagePath ?? join(dir, 'control.sqlite');
   const control = await openControl({ storagePath: path, runtimeInventory: 'empty', execution: doubles.ports,
-    access: { tracker: github.tracker, repository: github.repository, repositories: [scope] }, polling: { intervalSeconds: 60, clock: time.clock } });
+    access: { tracker: github.tracker, repository: github.repository, repositories }, polling: { intervalSeconds: 60, clock: time.clock } });
   const stop = new AbortController();
   const running = control.run(stop.signal);
   let stopped = false;
@@ -40,6 +43,15 @@ async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remo
   return { control, github, doubles, time, work, until, halt, storagePath: path };
 }
 const secrets = /ghs_synthetic/;
+/** A real controller child process is SIGKILLed once it prints `marker` (see credential-crash-child). */
+async function crash(storagePath: string, mode: 'active' | 'revoking', marker: string) {
+  const child = spawn(process.execPath, [fileURLToPath(new URL('./credential-crash-child.js', import.meta.url)), storagePath, mode], { stdio: ['ignore', 'pipe', 'inherit'] });
+  let output = '';
+  await new Promise<void>((resolve, reject) => {
+    child.stdout!.on('data', (chunk: Buffer) => { output += chunk; if (output.includes(marker)) child.kill('SIGKILL'); });
+    child.on('exit', (_code, signal) => signal === 'SIGKILL' ? resolve() : reject(new Error(`child exited without crash: ${output}`)));
+  });
+}
 
 test('ticket 20 AC1/AC2/AC3: renewal is a new issue for the same activity, delivered before expiry, beyond the initial validity, without restart; label removal does not cut it', async t => {
   const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
@@ -99,6 +111,7 @@ for (const reason of ['external-wait', 'cancelled'] as const) {
     assert.deepEqual([execution.credentialRenewals[1]!.revocationCode], ['SYNTHETIC_UNKNOWN']);
     const withdrawal = h.doubles.calls.find(call => call.directive === 'withdraw-credential');
     assert.ok(withdrawal && withdrawal.at < h.doubles.calls.findIndex(call => call.kind === 'revoke'), 'new commands lose the credential before revocation');
+    assert.equal(execution.credentialLifecycle.workerNotice, 'withdrawn', 'the directive result is durable');
     // No renewal or delivery afterwards, even across the former renewal deadline; the activity itself is not restarted.
     await new Promise(resolve => setTimeout(resolve, 300));
     assert.equal(h.doubles.calls.slice(after).filter(call => ['issue', 'deliver'].includes(call.kind)).length, 0);
@@ -169,12 +182,7 @@ test('ticket 20 AC6: after a controller crash the lost grant is recorded as an i
   t.after(() => rm(dir, { recursive: true, force: true }));
   const storagePath = join(dir, 'control.sqlite');
   // A real controller process holds the grant in memory and is SIGKILLed while the Builder is active (no revocation can run).
-  const child = spawn(process.execPath, [fileURLToPath(new URL('./credential-crash-child.js', import.meta.url)), storagePath], { stdio: ['ignore', 'pipe', 'inherit'] });
-  let output = '';
-  await new Promise<void>((resolve, reject) => {
-    child.stdout!.on('data', (chunk: Buffer) => { output += chunk; if (output.includes('ACTIVE')) { child.kill('SIGKILL'); } });
-    child.on('exit', (_code, signal) => signal === 'SIGKILL' ? resolve() : reject(new Error(`child exited without crash: ${output}`)));
-  });
+  await crash(storagePath, 'active', 'ACTIVE');
   const before = await openStore(storagePath);
   let lost;
   try { lost = (await readWorks(before.session))[0]!.execution!; } finally { await before.close(); }
@@ -208,4 +216,152 @@ test('ticket 20 AC6: after a controller crash the lost grant is recorded as an i
   await second.until(async () => (await second.work(4))?.execution?.state === 'started');
   assert.equal((await second.work(3))!.execution!.credentialIssuance!.revocationCode, 'VALUE_LOST_AFTER_RESTART', 'the risk record is kept');
   second.doubles.complete();
+});
+
+test('review 1: a withdrawal while the initial grant is being issued is seen (not not-active); the Builder is never activated with it', async t => {
+  const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
+  let release!: () => void;
+  const gate = new Promise<'ok'>(resolve => { release = () => resolve('ok'); });
+  const h = await harness(t, remote, { issue: sequence => sequence === 1 ? gate : 'ok' });
+  await h.time.sleeping();
+  await h.until(() => h.doubles.calls.some(call => call.kind === 'issue'));
+  const work = (await h.work())!;
+  const withdrawing = withdrawActivityCredentials(h.control, work.work_id, 'cancelled');
+  await new Promise(resolve => setTimeout(resolve, 20));
+  release();
+  assert.equal(await withdrawing, 'withdrawn', 'an issuance in flight is a known activity');
+  await h.until(async () => (await h.work())?.execution?.state === 'held');
+  const execution = (await h.work())!.execution!;
+  assert.equal(h.doubles.calls.filter(call => call.kind === 'activate').length, 0, 'never activated with a withdrawn grant');
+  assert.deepEqual([execution.held!.code, execution.credentialIssuance!.revocation, execution.credentialLifecycle.reason], ['ACTIVATION_CREDENTIALS_WITHDRAWN', 'revoked', 'cancelled']);
+  assert.ok(h.doubles.calls.some(call => call.kind === 'stop'), 'the own boot is stopped');
+});
+
+test('review 1/6: a withdrawal while activation is in flight reaches the worker as soon as it is attached; the directive result is durable', async t => {
+  const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
+  let open!: () => void;
+  const activateGate = new Promise<void>(resolve => { open = resolve; });
+  const h = await harness(t, remote, { activateGate, withdrawDirective: 'failure' });
+  await h.time.sleeping();
+  await h.until(() => h.doubles.calls.some(call => call.kind === 'activate'));
+  const work = (await h.work())!;
+  assert.equal(await withdrawActivityCredentials(h.control, work.work_id, 'external-wait'), 'withdrawn');
+  assert.deepEqual(h.doubles.calls.filter(call => call.kind === 'revoke').map(call => call.token), [tokenOf(1)]);
+  open();
+  await h.until(() => h.doubles.calls.some(call => call.directive === 'withdraw-credential'));
+  await h.until(async () => (await h.work())?.execution?.credentialLifecycle.workerNotice === 'CREDENTIAL_DELIVERY_UNCERTAIN');
+  assert.equal(h.doubles.calls.filter(call => call.kind === 'deliver' && call.directive === 'credential').length, 0);
+  h.doubles.complete();
+});
+
+test('review 2: no renewal is issued once a withdrawal began (sweep around the renewal deadline)', async t => {
+  for (let offset = 0; offset < 12; offset++) {
+    const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
+    const h = await harness(t, remote, { lifetimeMs: () => 1040, beforeExpirySeconds: 1 });
+    await h.time.sleeping();
+    await h.until(async () => (await h.work())?.execution?.state === 'started');
+    const work = (await h.work())!;
+    await new Promise(resolve => setTimeout(resolve, offset * 5));
+    const marker = h.doubles.calls.length;
+    const withdrawing = withdrawActivityCredentials(h.control, work.work_id, 'cancelled');
+    await withdrawing;
+    // The withdrawal aborts synchronously when called: any issuance recorded after `marker` STARTED after it.
+    assert.equal(h.doubles.calls.slice(marker).filter(call => call.kind === 'issue').length, 0, `offset ${offset}: no issuance starts after the withdrawal`);
+    const renewals = (await h.work())!.execution!.credentialRenewals;
+    assert.ok(renewals.every(renewal => renewal.delivery !== 'delivered' || renewal.revocation !== null));
+    await new Promise(resolve => setTimeout(resolve, 80));
+    assert.equal(h.doubles.calls.slice(marker).filter(call => call.kind === 'issue').length, 0, 'nothing issued later');
+    h.doubles.complete();
+    await h.until(async () => (await h.work())?.execution?.slot.held === false);
+    await h.halt();
+  }
+});
+
+test('review 7: an invalid expiresAt stops renewal with a recorded reason instead of looping', async t => {
+  const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
+  const h = await harness(t, remote, { expiresAt: () => 'not-a-date' });
+  await h.time.sleeping();
+  await h.until(async () => (await h.work())?.execution?.credentialLifecycle.renewal === 'stopped');
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal((await h.work())!.execution!.credentialLifecycle.renewalStop, 'GRANT_EXPIRY_INVALID');
+  assert.equal(h.doubles.calls.filter(call => call.kind === 'issue').length, 1);
+  h.doubles.complete();
+});
+
+test('review 4: a crash during the revocation request is reported as an attempted revocation with unknown outcome; reconciliation is skipped for live grants and for a run that never starts', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'factory-credential-revoking-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const storagePath = join(dir, 'control.sqlite');
+  await crash(storagePath, 'revoking', 'REVOKING');
+  // Read-only inspection: a Control whose run is already stopped makes no reconciliation write.
+  const inspector = await openControl({ storagePath, runtimeInventory: 'unknown' });
+  const stopped = new AbortController(); stopped.abort();
+  await inspector.run(stopped.signal);
+  const store = await openStore(storagePath);
+  try {
+    const before = (await readWorks(store.session))[0]!.execution!;
+    assert.deepEqual([before.credentialIssuance!.revocation, typeof before.credentialIssuance!.revocationAttemptedAt], [null, 'string'], 'durable intent before the DELETE');
+    assert.equal(await reconcileLostCredentials(store.session, () => true), 0, 'grants still live in this process are never relabelled');
+    assert.equal((await readWorks(store.session))[0]!.execution!.credentialIssuance!.revocation, null);
+    assert.equal(await reconcileLostCredentials(store.session, () => false), 1);
+    const after = (await readWorks(store.session))[0]!.execution!.credentialIssuance!;
+    assert.deepEqual([after.revocation, after.revocationCode], ['unknown', 'REVOCATION_OUTCOME_LOST_AFTER_RESTART']);
+    assert.match(after.risk!, /revocation was attempted/i);
+    assert.equal(await reconcileLostCredentials(store.session, () => false), 0, 'idempotent');
+  } finally { await store.close(); }
+});
+
+test('review 5: pre-ticket-20 records are presented by their execution state and their not-attempted revocation carries its risk', async t => {
+  const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
+  const h = await harness(t, remote);
+  await h.time.sleeping();
+  await h.until(async () => (await h.work())?.execution?.state === 'started');
+  h.doubles.complete();
+  await h.until(async () => (await h.work())?.execution?.slot.held === false);
+  await h.halt();
+  // Rewrite the record into its ticket 09 shape (no lifecycle/renewal fields, revocation not-attempted).
+  const store = await openStore(h.storagePath);
+  try {
+    const id = (await readWorks(store.session))[0]!.work_id;
+    await store.session.commit(async tx => {
+      const document = await tx.doc(workDocs, id, null);
+      const execution = document.work!.execution! as unknown as Record<string, unknown>;
+      delete execution.credentialRenewals; delete execution.credentialLifecycle;
+      execution.credentialIssuance = { ...(execution.credentialIssuance as object), revocation: 'not-attempted' };
+      delete (execution.credentialIssuance as Record<string, unknown>).revocationCode; delete (execution.credentialIssuance as Record<string, unknown>).risk;
+      delete (execution.credentialIssuance as Record<string, unknown>).revocationAttemptedAt;
+    }, BACKGROUND_CONTEXT);
+    const legacy = (await readWorks(store.session))[0]!.execution!;
+    assert.deepEqual([legacy.credentialLifecycle.state, legacy.credentialLifecycle.reason, legacy.credentialRenewals], ['withdrawn', 'legacy-unknown', []]);
+  } finally { await store.close(); }
+  const reopened = await harness(t, remote, {}, h.storagePath);
+  await reopened.time.sleeping();
+  const grant = (await reopened.work())!.execution!.credentialIssuance!;
+  assert.equal(grant.revocation, 'not-attempted');
+  assert.match(grant.risk!, /not attempted.*may have remained valid/i);
+});
+
+test('review 2 (deterministic): a withdrawal that begins while the renewal intent is being committed issues nothing; the renewal is not-attempted', async t => {
+  const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
+  let armed: (() => void) | undefined;
+  // The renewal revalidation reads the configured repositories right before its intent commit: the withdrawal starts exactly there.
+  const repositories = new Proxy([scope], { get(target, key, receiver) {
+    if (key === 'some' && armed) { const fire = armed; armed = undefined; fire(); }
+    return Reflect.get(target, key, receiver);
+  } });
+  const h = await harness(t, remote, { lifetimeMs: () => 1100, beforeExpirySeconds: 1 }, undefined, repositories);
+  await h.time.sleeping();
+  await h.until(async () => (await h.work())?.execution?.state === 'started');
+  const work = (await h.work())!;
+  let withdrawing: Promise<unknown> | undefined;
+  let marker = 0;
+  // One microtask later: the intent commit is already queued (beginRenewal starts it synchronously), the withdrawal commit follows it.
+  armed = () => queueMicrotask(() => { marker = h.doubles.calls.length; withdrawing = withdrawActivityCredentials(h.control, work.work_id, 'cancelled'); });
+  await h.until(() => withdrawing !== undefined, 2000);
+  await withdrawing;
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(h.doubles.calls.slice(marker).filter(call => call.kind === 'issue').length, 0, 'no issuance after the withdrawal began');
+  const renewals = (await h.work())!.execution!.credentialRenewals;
+  assert.deepEqual(renewals.map(renewal => [renewal.outcome, renewal.code]), [['not-attempted', 'CREDENTIALS_WITHDRAWN']]);
+  h.doubles.complete();
 });

@@ -44,8 +44,10 @@ export type ExecutionPorts = {
 };
 export type CredentialWithdrawal = 'ended' | 'external-wait' | 'cancelled' | 'held' | 'refused' | 'owner-stopped' | 'controller-restart';
 /** Token-free durable record of one known grant. `risk` explains what a revocation could not settle (e.g. value lost after a crash). */
-export type CredentialGrantRecord = { requestedAt: string; outcome: 'requested' | 'issued' | 'failed' | 'unknown'; code: string | null;
-  metadata: BuilderGrantMetadata | null; revocation: RevocationResult['kind'] | null; revocationCode: string | null; risk: string | null };
+export type CredentialGrantRecord = { requestedAt: string; outcome: 'requested' | 'issued' | 'failed' | 'unknown' | 'not-attempted'; code: string | null;
+  metadata: BuilderGrantMetadata | null; revocation: RevocationResult['kind'] | null; revocationCode: string | null; risk: string | null;
+  /** Durable intent written BEFORE the revocation request: a crash afterwards is reported as an attempted revocation of unknown outcome. */
+  revocationAttemptedAt: string | null };
 /** Durable Execution record (spec §3.2-3.4/5.3): identity, Slot, dispatch intent/phase, start receipt consumption and end. No secret. */
 export type ExecutionView = {
   executionId: string; invocationId: string; mode: 'initial';
@@ -62,8 +64,10 @@ export type ExecutionView = {
   /** Renewals (ticket 20): each a NEW issuance for the same authorized activity, delivered to new commands only. */
   credentialRenewals: (CredentialGrantRecord & { sequence: number; delivery: 'delivered' | 'failed' | 'not-delivered' | null })[];
   /** Activity credential lifecycle: withdrawn on end/external wait/cancellation/hold/owner stop/restart; no delivery or renewal after it. */
-  credentialLifecycle: { state: 'none' | 'active' | 'withdrawn'; withdrawnAt: string | null; reason: CredentialWithdrawal | null;
-    renewal: 'enabled' | 'stopped'; renewalStop: string | null };
+  credentialLifecycle: { state: 'none' | 'active' | 'withdrawn'; withdrawnAt: string | null; reason: CredentialWithdrawal | 'legacy-unknown' | null;
+    renewal: 'enabled' | 'stopped'; renewalStop: string | null;
+    /** Result of the withdraw-credential directive to a live worker: 'withdrawn' or a failure code; null when not sent. */
+    workerNotice: string | null };
   start: { receiptId: string; confirmedAt: string } | null;
   end: { at: string; outcome: 'completed' | 'failure'; code: string | null; cessation: 'confirmed' | 'unconfirmed' | 'not-attempted' } | null;
   held: { code: string; phase: string; at: string; nextStep: string } | null;

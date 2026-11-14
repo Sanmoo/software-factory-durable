@@ -3,7 +3,7 @@ import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { z } from 'zod';
 import type { AccessDependencies, Control, ControlStatus, DispatchReason, ExecutionPorts, Impediment, ListView, PollingOptions, PollingView, WorkView } from '../types.js';
 import { heldSlots, initializeSlots, reconcileLostCredentials } from './execution.js';
-import { createDispatcher } from './dispatch.js';
+import { createDispatcher, isLiveCredentialExecution } from './dispatch.js';
 import { openStore } from './store.js';
 import { acceptPauseCommand, admitTicket, indexedWork, initialize, ownCycles, pendingWorks, readInstallation, readRequest, readWork, readWorks, recordDependencies,
   type WorkRecord } from './admission.js';
@@ -132,8 +132,8 @@ export async function openControl(options: { storagePath: string; runtimeInvento
         // A Slot still held from an earlier owner means unknown runtime state: stay closed until recovery (ticket 26).
         if (tasks.items.length === 0 && options.runtimeInventory === 'empty') dispatchReason = dispatcher && await heldSlots(state) === 0 ? null : dispatcher ? 'RECONCILIATION_REQUIRED' : 'EXECUTION_NOT_ENABLED';
         // Grants of a previous process were memory-only: record them as impossible to revoke, with their risk (never blocks by itself).
-        // Before polling starts, so no dispatch of this run precedes it.
-        await reconcileLostCredentials(state);
+        // Before polling starts, so no dispatch of this run precedes it. A run stopped before it starts (read-only inspection) writes nothing.
+        if (!signal.aborted) await reconcileLostCredentials(state, isLiveCredentialExecution);
         const aborted = new Promise<'stop'>(resolve => {
           if (signal.aborted) resolve('stop');
           else signal.addEventListener('abort', () => resolve('stop'), { once: true });

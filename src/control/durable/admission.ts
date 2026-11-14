@@ -70,10 +70,19 @@ export async function admitTicket(session: Session, evidence: AdmissionEvidence)
   }, BACKGROUND_CONTEXT);
 }
 
-// Executions recorded before the credential lifecycle (ticket 20) have no renewal/lifecycle fields: presented with neutral defaults.
+/**
+ * Lifecycle of an Execution recorded before the credential lifecycle (ticket 20), derived from its execution state: an Execution that is no
+ * longer reserved/started is `withdrawn` for an unknown legacy reason; otherwise `active` when it holds a grant.
+ */
+export function legacyCredentialLifecycle(execution: NonNullable<WorkRecord['execution']>): NonNullable<WorkRecord['execution']>['credentialLifecycle'] {
+  const over = execution.end !== null || ['ended', 'released', 'held'].includes(execution.state);
+  return { state: over ? 'withdrawn' : execution.credentialIssuance ? 'active' : 'none', withdrawnAt: null, reason: over ? 'legacy-unknown' : null,
+    renewal: 'enabled', renewalStop: null, workerNotice: null };
+}
 const normalize = (work: WorkRecord): WorkRecord => ({ ...work, dependencies: work.dependencies ?? { latest: null, lastComplete: null },
   execution: work.execution ? { ...work.execution, credentialRenewals: work.execution.credentialRenewals ?? [],
-    credentialLifecycle: work.execution.credentialLifecycle ?? { state: work.execution.credentialIssuance ? 'active' : 'none', withdrawnAt: null, reason: null, renewal: 'enabled', renewalStop: null } } : null,
+    credentialLifecycle: work.execution.credentialLifecycle ? { ...work.execution.credentialLifecycle, workerNotice: work.execution.credentialLifecycle.workerNotice ?? null }
+      : legacyCredentialLifecycle(work.execution) } : null,
   branch: work.branch ?? null });
 
 /** Open Works with pending queue work of one repository (by immutable id), FIFO by admission sequence. */
