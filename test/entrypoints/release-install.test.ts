@@ -17,7 +17,7 @@ test('extracted release: repeated setup and offline doctor verify integrity with
   const canaries = join(work, 'canaries');
   const PATH = await canaryPath(canaries);
   const before = JSON.stringify(await inventoryTree(join(root, 'releases'))) + JSON.stringify(await inventoryTree(join(root, 'assets')));
-  const config = join(work, 'xdg');
+  const config = join(work, 'xdg-plain');
   // XDG_CONFIG_HOME set: a plain setup writes no service definition (registration only on explicit request).
   const first = factory(root, ['setup', '--json'], { PATH, NODE_OPTIONS: '--require /nonexistent-personal-hook.cjs', XDG_CONFIG_HOME: config });
   assert.equal(first.status, 0, first.stderr);
@@ -39,18 +39,12 @@ test('extracted release: repeated setup and offline doctor verify integrity with
   await writeFile(join(root, 'config.yaml'), configuration);
   await writeFile(join(root, 'credentials', 'github-app.pem'), 'synthetic-never-read', { mode: 0o600 });
   await writeFile(join(root, 'data', 'unknown'), 'preserved');
-  // Repeated setup with the explicit service request: the definition is written, never started or enabled.
-  const second = factory(root, ['setup', '--service', '--json'], { PATH, XDG_CONFIG_HOME: config });
+  // Repeated setup: nothing created or overwritten, and no service definition without the explicit request.
+  const second = factory(root, ['setup', '--json'], { PATH, XDG_CONFIG_HOME: config });
   assert.equal(second.status, 0, second.stderr);
   const repeated = JSON.parse(second.stdout);
-  const unit = join(config, 'systemd/user', repeated.service.unit);
-  assert.deepEqual({ path: repeated.service.path, state: repeated.service.state, registered: repeated.service.registered }, { path: unit, state: 'created', registered: false });
-  const text = await readFile(unit, 'utf8');
-  assert.match(text, new RegExp(`^ExecStart=${root}/factory run$`, 'm'));
-  assert.match(text, /^Restart=no$/m);
-  assert.match(text, /^NoNewPrivileges=yes$/m);
-  assert.doesNotMatch(text, /^(User|Group|AmbientCapabilities|CapabilityBoundingSet|ExecStartPre)=/m);
-  assert.doesNotMatch(text, /sudo|--root/);
+  assert.equal(repeated.service, undefined);
+  await assert.rejects(stat(config), { code: 'ENOENT' });
   assert.deepEqual(repeated.created, []);
   assert.equal(repeated.diagnostics.configuration.valid, true, JSON.stringify(repeated.diagnostics.configuration));
   for (const role of ['builder', 'standards', 'spec']) assert.equal(check(repeated.diagnostics.checks, `worker-profile:${role}`)?.status, 'ok', role);
@@ -84,19 +78,37 @@ test('foreground run and the explicitly requested user service use the same stab
     assert.match(unsupported.stderr, /"code":"CONFIGURATION_UNSUPPORTED","reason":"WORKER_PROFILE_UNSUPPORTED","roles":\["spec"\]/);
     await assert.rejects(stat(join(root, 'data', 'control.sqlite')), { code: 'ENOENT' });
   } finally { await writeFile(join(root, 'config.yaml'), current); }
-  const config = join(work, 'xdg');
-  const unit = join(config, 'systemd/user', (await readdir(join(config, 'systemd/user')))[0]!);
+  // The unit goes to an explicit absolute directory (or, without it, the account's standard path, never an environment-selected one: see
+  // the setup unit test). Tests always pass the directory so the real account is never touched; HOME/XDG_CONFIG_HOME are decoys.
+  const decoys = { HOME: join(work, 'home-decoy'), XDG_CONFIG_HOME: join(work, 'xdg-decoy') };
+  const units = join(work, 'units');
+  const service = factory(root, ['setup', '--service', '--service-directory', units, '--json'], decoys);
+  assert.equal(service.status, 0, service.stderr);
+  const result = JSON.parse(service.stdout);
+  const unit = join(units, result.service.unit);
+  assert.deepEqual({ path: result.service.path, state: result.service.state, registered: result.service.registered }, { path: unit, state: 'created', registered: false });
+  for (const decoy of Object.values(decoys)) await assert.rejects(stat(decoy), { code: 'ENOENT' });
+  const text = await readFile(unit, 'utf8');
+  assert.match(text, new RegExp(`^ExecStart=${root}/factory run$`, 'm'));
+  assert.match(text, /^Restart=no$/m);
+  assert.match(text, /^NoNewPrivileges=yes$/m);
+  assert.doesNotMatch(text, /^(User|Group|AmbientCapabilities|CapabilityBoundingSet|ExecStartPre)=/m);
+  assert.doesNotMatch(text, /sudo|--root/);
+  // Only absolute canonical directories, and only together with --service.
+  assert.equal(factory(root, ['setup', '--service', '--service-directory', 'relative', '--json'], decoys).status, 2);
+  assert.equal(factory(root, ['setup', '--service', '--service-directory', `${units}/../units`, '--json'], decoys).status, 2);
+  assert.equal(factory(root, ['setup', '--service-directory', units, '--json'], decoys).status, 2);
   // Repeated request with an unsupported model: the definition is preserved and doctor diagnoses the role, never replaces the model.
   const configuration = await readFile(join(root, 'config.yaml'), 'utf8');
   await writeFile(join(root, 'config.yaml'), configuration.replace('builder: { provider: openai, model: gpt-6-luna }', 'builder: { provider: other, model: other-model }'));
-  const again = factory(root, ['setup', '--service', '--json'], { XDG_CONFIG_HOME: config });
+  const again = factory(root, ['setup', '--service', '--service-directory', units, '--json'], decoys);
   await writeFile(join(root, 'config.yaml'), configuration);
   const repeated = JSON.parse(again.stdout);
   assert.equal(repeated.service.state, 'preserved');
   assert.equal(check(repeated.diagnostics.checks, 'worker-profile:builder')?.status, 'blocked');
   assert.equal(check(repeated.diagnostics.checks, 'worker-profile:spec')?.status, 'ok');
   await writeFile(unit, '# operator edited\n');
-  const conflict = factory(root, ['setup', '--service', '--json'], { XDG_CONFIG_HOME: config });
+  const conflict = factory(root, ['setup', '--service', '--service-directory', units, '--json'], decoys);
   assert.equal(conflict.status, 2);
   assert.match(conflict.stderr, /SERVICE_UNIT_CONFLICT/);
   assert.equal(await readFile(unit, 'utf8'), '# operator edited\n');

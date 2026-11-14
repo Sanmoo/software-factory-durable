@@ -1,7 +1,7 @@
 import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { homedir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { userInfo } from 'node:os';
+import { isAbsolute, join, resolve } from 'node:path';
 import { openSync, closeSync, writeSync, constants } from 'node:fs';
 import { isatty } from 'node:tty';
 import { createRecords } from '../records/index.js';
@@ -89,12 +89,18 @@ WantedBy=default.target
   return { unit, text };
 }
 
-export async function setupService(root: string): Promise<{ unit: string; path: string; state: 'created' | 'preserved' }> {
+/** The account's standard systemd user unit directory, from the account database (passwd), never from HOME or XDG_CONFIG_HOME. */
+export function standardServiceDirectory(): string {
+  return join(userInfo().homedir, '.config', 'systemd', 'user');
+}
+
+export async function setupService(root: string, directory?: string): Promise<{ unit: string; path: string; state: 'created' | 'preserved' }> {
   const { unit, text } = serviceDefinition(root);
-  const configHome = process.env.XDG_CONFIG_HOME && isAbsolute(process.env.XDG_CONFIG_HOME) ? process.env.XDG_CONFIG_HOME : join(homedir(), '.config');
-  const directory = join(configHome, 'systemd', 'user');
-  await mkdir(directory, { recursive: true, mode: 0o700 });
-  const path = join(directory, unit);
+  // Explicit absolute directory (operator/tests) or the account's standard systemd user path; never an environment-selected one.
+  if (directory !== undefined && (!isAbsolute(directory) || resolve(directory) !== directory)) throw new Error('SERVICE_DIRECTORY_UNSUPPORTED');
+  const target = directory ?? standardServiceDirectory();
+  await mkdir(target, { recursive: true, mode: 0o700 });
+  const path = join(target, unit);
   try {
     await writeFile(path, text, { flag: 'wx', mode: 0o600 });
     return { unit, path, state: 'created' };

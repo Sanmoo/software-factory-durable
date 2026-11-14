@@ -1,4 +1,4 @@
-import { resolve } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
 import { realpath } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -9,7 +9,7 @@ import { setup, setupService, firstHumanLogin } from './setup.js';
 import { doctor } from './doctor.js';
 import { releaseInstallationRoot } from './release.js';
 
-const usage = 'factory <setup|doctor|run|status|list|show <work>|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>)|update-scope <work> --reason <text>|request <id>> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service]; factory login --root <canonical-absolute-installation>';
+const usage = 'factory <setup|doctor|run|status|list|show <work>|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>)|update-scope <work> --reason <text>|request <id>> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service [--service-directory <absolute dir>]]; factory login --root <canonical-absolute-installation>';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 async function exchange(root: string, kind: 'inspect' | 'accept', payload: Envelope['payload'], id: string, runId: string | null) {
@@ -88,6 +88,7 @@ export async function main(args: string[]): Promise<number> {
   // A release serves exactly its own installation root (releases/<id> of it); a development checkout uses --root or the cwd.
   let root = installation ?? resolve('.');
   let service = false;
+  let serviceDirectory: string | undefined;
   let json = false;
   let authenticated = false;
   let rootSeen = false;
@@ -111,6 +112,10 @@ export async function main(args: string[]): Promise<number> {
   for (let index = command === 'answer' ? 3 : command === 'grant' || command === 'update-scope' ? 4 : command === 'request' || command === 'show' || command === 'question' ? 2 : 1; index < args.length; index++) {
     if (args[index] === '--authenticated' && command === 'doctor' && !authenticated) authenticated = true;
     else if (args[index] === '--service' && command === 'setup' && !service && installation !== undefined) service = true;
+    else if (args[index] === '--service-directory' && command === 'setup' && serviceDirectory === undefined &&
+      args[index + 1] !== undefined && isAbsolute(args[index + 1]!) && resolve(args[index + 1]!) === args[index + 1]) {
+      serviceDirectory = args[++index]!;
+    }
     else if (args[index] === '--json' && !json) json = true;
     else if (args[index] === '--root' && !rootSeen && args[index + 1] && !args[index + 1]?.startsWith('-')) {
       root = resolve(args[++index]!);
@@ -119,6 +124,7 @@ export async function main(args: string[]): Promise<number> {
       args[index + 1]?.match(/^[a-zA-Z0-9_-]{1,128}$/)) requestId = args[++index];
     else { valid = false; break; }
   }
+  if (serviceDirectory !== undefined && !service) valid = false;
   if (!valid) {
     console.error(JSON.stringify({ code: 'INVALID_ARGUMENTS', message: usage }));
     return 2;
@@ -140,12 +146,13 @@ export async function main(args: string[]): Promise<number> {
       console.log(json ? JSON.stringify(report) :
         `${report.code} (${report.scope})\nRoot: ${report.paths.root}\nNode: ${report.versions.node}\n${errors}` +
         report.checks.map(check => `${check.id}: ${check.status} — ${check.message} Next: ${check.nextStep}`).join('\n'));
+      if (report.code === 'RELEASE_INVALID') return 3;
       return report.configuration.valid ? (report.code === 'PREREQUISITES_MISSING' ? 3 : 0) : 2;
     }
     const prepared = await setup(root);
     let unit: Awaited<ReturnType<typeof setupService>> | undefined;
     if (service) {
-      try { unit = await setupService(prepared.root); }
+      try { unit = await setupService(prepared.root, serviceDirectory); }
       catch (error) {
         const code = error instanceof Error && ['SERVICE_UNIT_CONFLICT', 'SERVICE_PATH_UNSUPPORTED'].includes(error.message) ? error.message : 'SERVICE_DEFINITION_FAILED';
         console.error(JSON.stringify({ code, message: 'Existing unit definitions are never overwritten; inspect it explicitly. Nothing was started or enabled.' }));
