@@ -71,7 +71,8 @@ export function createCheckouts(options: { root: string; fetch: RepositoryFetchC
   const chains = new Map<number, Promise<unknown>>();
   const github = (repository: string) => `https://github.com/${repository}.git`;
 
-  async function run(args: string[], cwd: string, home: string, token?: string, timeout = 600000) {
+  /** `lock`: the repository's git lock, held by `flock` for the lifetime of THIS git process (it survives a controller crash with it). */
+  async function run(args: string[], cwd: string, home: string, token?: string, timeout = 600000, lock?: string) {
     // Fixed argv/env; output never recorded (it could echo remote text). Exit code is the observation.
     const env: Record<string, string> = { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C', HOME: home, XDG_CONFIG_HOME: home, GIT_CONFIG_NOSYSTEM: '1',
       GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0', GIT_LFS_SKIP_SMUDGE: '1', GIT_ATTR_NOSYSTEM: '1',
@@ -80,7 +81,8 @@ export function createCheckouts(options: { root: string; fetch: RepositoryFetchC
       '-c', 'protocol.allow=never', '-c', 'protocol.https.allow=always', '-c', 'protocol.file.allow=always', '-c', 'submodule.recurse=false',
       '-c', 'core.attributesFile=/dev/null', '-c', 'init.templateDir='];
     return new Promise<string>((resolve, reject) => {
-      execFile('/usr/bin/git', [...fixed, ...args], { cwd, env, timeout, maxBuffer: 1024 * 1024, shell: false, encoding: 'utf8' },
+      execFile(lock ? '/usr/bin/flock' : '/usr/bin/git', [...(lock ? ['--exclusive', lock, '/usr/bin/git'] : []), ...fixed, ...args],
+        { cwd, env, timeout, maxBuffer: 1024 * 1024, shell: false, encoding: 'utf8' },
         (error, stdout) => error ? reject(new CheckoutFailure('indeterminate', 'CHECKOUT_GIT_FAILED')) : resolve(stdout.trim()));
     });
   }
@@ -105,7 +107,8 @@ export function createCheckouts(options: { root: string; fetch: RepositoryFetchC
       if (previous && previous.state !== 'idle') throw new CheckoutFailure('failure', 'CACHE_RECONCILIATION_REQUIRED');
       const state = async (value: 'mutating' | 'idle') => {
         const temporary = `${statePath}.${process.pid}.tmp`;
-        await writeFile(temporary, JSON.stringify({ version: 1, state: value, pid: process.pid, at: new Date().toISOString() }), { mode: 0o600 });
+        // `lock: git-flock-v1`: every git command of this mutation holds the repository git lock (ticket 26 reconciliation proof).
+        await writeFile(temporary, JSON.stringify({ version: 1, state: value, pid: process.pid, at: new Date().toISOString(), lock: 'git-flock-v1' }), { mode: 0o600 });
         await rename(temporary, statePath);
       };
       await state('mutating');
@@ -117,21 +120,22 @@ export function createCheckouts(options: { root: string; fetch: RepositoryFetchC
 
   async function mutate(environment: string, request: CheckoutRequest, home: string, cache: string, cacheRoot: string, token: string,
     revokeFetch: () => Promise<string>): Promise<CheckoutView> {
-    if (!await exists(cache)) await run(['init', '--quiet', '--bare', '--template=', cache], cacheRoot, home);
+    if (!await exists(cache)) await run(['init', '--quiet', '--bare', '--template=', cache], cacheRoot, home, undefined, 600000, join(cacheRoot, `${request.repositoryId}.git.lock`));
+    const gitLock = join(cacheRoot, `${request.repositoryId}.git.lock`);
     const upstream = options.remoteUrl?.({ repository: request.repository }) ?? github(request.repository);
     // A failed fetch never proves an updated base; nothing below runs without it.
-    try { await run(['fetch', '--quiet', '--no-tags', '--no-recurse-submodules', upstream, `+refs/heads/${request.base}:refs/heads/${request.base}`], cache, home, token); }
+    try { await run(['fetch', '--quiet', '--no-tags', '--no-recurse-submodules', upstream, `+refs/heads/${request.base}:refs/heads/${request.base}`], cache, home, token, 600000, gitLock); }
     finally { await revokeFetch(); }
     const fetchCredentialRevocation = await revokeFetch();
-    const baseCommit = await run(['rev-parse', '--verify', `refs/heads/${request.base}^{commit}`], cache, home);
+    const baseCommit = await run(['rev-parse', '--verify', `refs/heads/${request.base}^{commit}`], cache, home, undefined, 600000, gitLock);
     const checkout = join(environment, 'workspace', 'checkout');
     // cwd is the Factory-owned home, never the workspace: no repository discovery above the new checkout. Only this never-booted,
     // Factory-created clone is touched by host git, and only now (never on continuation).
-    await run(['clone', '--quiet', '--no-hardlinks', '--template=', '--no-checkout', '--single-branch', '--branch', request.base, '--', cache, checkout], home, home);
+    await run(['clone', '--quiet', '--no-hardlinks', '--template=', '--no-checkout', '--single-branch', '--branch', request.base, '--', cache, checkout], home, home, undefined, 600000, gitLock);
     const origin = github(request.repository);
-    await run(['-C', checkout, 'remote', 'set-url', 'origin', origin], home, home);
-    await run(['-C', checkout, 'checkout', '--quiet', '--no-track', '-b', request.branch, baseCommit], home, home);
-    if (await exists(join(checkout, '.git', 'objects', 'info', 'alternates')) || await run(['-C', checkout, 'config', '--get', 'remote.origin.url'], home, home) !== origin ||
+    await run(['-C', checkout, 'remote', 'set-url', 'origin', origin], home, home, undefined, 600000, gitLock);
+    await run(['-C', checkout, 'checkout', '--quiet', '--no-track', '-b', request.branch, baseCommit], home, home, undefined, 600000, gitLock);
+    if (await exists(join(checkout, '.git', 'objects', 'info', 'alternates')) || await run(['-C', checkout, 'config', '--get', 'remote.origin.url'], home, home, undefined, 600000, gitLock) !== origin ||
       (await readdir(join(checkout, '.git', 'hooks')).catch(() => [])).length) throw new CheckoutFailure('indeterminate', 'CHECKOUT_VERIFICATION_FAILED');
     const preparedAt = new Date().toISOString();
     await durableJson(join(environment, 'checkout.json'), { version: 1, path: '/workspace/checkout', repository: request.repository, repositoryId: request.repositoryId,
@@ -180,4 +184,52 @@ export function createCheckouts(options: { root: string; fetch: RepositoryFetchC
       }
     },
   };
+}
+
+export type CacheReconciliation = { repositoryId: number; outcome: 'reconciled' | 'kept'; code: string | null; nextStep: string | null };
+/**
+ * Ticket 26 (spec §5.2/§7.3): reconciliation of host Git caches left in preparation by a dead owner, run by the exclusive controller owner
+ * BEFORE its storage opens. Repair-free: nothing is fetched, rewritten or deleted. A cache is marked idle again only when (1) its mutation
+ * used the git-lock discipline, (2) the repository git lock can be taken at once — no git command of the interrupted mutation can still run —
+ * and (3) a read-only connectivity check of the bare cache (Factory-only, never guest-writable) succeeds. Otherwise it stays blocked with an
+ * explicit operator action.
+ */
+export async function reconcileInterruptedCaches(root: string): Promise<CacheReconciliation[]> {
+  const cacheRoot = join(root, 'cache', 'git');
+  const names = await readdir(cacheRoot).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return [] as string[]; throw error; });
+  const results: CacheReconciliation[] = [];
+  for (const name of names.sort()) {
+    const match = /^([0-9]{1,20})\.state\.json$/.exec(name);
+    if (!match) continue;
+    const repositoryId = Number(match[1]);
+    const statePath = join(cacheRoot, name);
+    const keep = (code: string): CacheReconciliation => ({ repositoryId, outcome: 'kept', code, nextStep: `Host Git cache of repository ${repositoryId} was left in ` +
+      `preparation (${code}). Verify that no git process uses ${join(cacheRoot, `${repositoryId}.git`)}, then remove that bare cache and ${statePath} (the next ` +
+      'preparation fetches again) and restart the controller. The Factory never repairs or deletes it by itself.' });
+    let state: { state?: unknown; lock?: unknown };
+    try {
+      const info = await lstat(statePath);
+      if (!info.isFile() || info.isSymbolicLink() || info.uid !== process.getuid?.() || info.size > 4096) { results.push(keep('CACHE_STATE_UNSAFE')); continue; }
+      state = JSON.parse(await readFile(statePath, 'utf8')) as typeof state;
+    } catch { results.push(keep('CACHE_STATE_UNREADABLE')); continue; }
+    if (state.state === 'idle') continue;
+    if (state.lock !== 'git-flock-v1') { results.push(keep('CACHE_PREPARATION_WITHOUT_GIT_LOCK')); continue; }
+    const gitLock = join(cacheRoot, `${repositoryId}.git.lock`);
+    const cache = join(cacheRoot, `${repositoryId}.git`);
+    const env = { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C', HOME: cacheRoot, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0' };
+    const exists = await lstat(cache).then(info => info.isDirectory() && !info.isSymbolicLink(), () => false);
+    // Under the git lock taken WITHOUT waiting: busy means a git command of the dead owner still runs.
+    const checked = await new Promise<number | null>(resolve => {
+      execFile('/usr/bin/flock', ['--exclusive', '--nonblock', '--conflict-exit-code', '75', gitLock,
+        ...(exists ? ['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '--git-dir', cache, 'fsck', '--connectivity-only', '--no-dangling', '--no-progress'] : ['/usr/bin/true'])],
+      { cwd: cacheRoot, env, timeout: 600000, maxBuffer: 1024 * 1024, shell: false }, error => resolve(error ? (typeof error.code === 'number' ? error.code : null) : 0));
+    });
+    if (checked === 75) { results.push(keep('CACHE_GIT_STILL_RUNNING')); continue; }
+    if (checked !== 0) { results.push(keep('CACHE_INTEGRITY_UNVERIFIED')); continue; }
+    const temporary = `${statePath}.${process.pid}.reconcile.tmp`;
+    await writeFile(temporary, JSON.stringify({ version: 1, state: 'idle', at: new Date().toISOString(), reconciled: { previous: state.state, cache: exists ? 'connectivity-verified' : 'absent' }, lock: 'git-flock-v1' }), { mode: 0o600 });
+    await rename(temporary, statePath);
+    results.push({ repositoryId, outcome: 'reconciled', code: null, nextStep: null });
+  }
+  return results;
 }

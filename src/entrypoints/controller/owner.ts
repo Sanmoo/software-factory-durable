@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { openControl, type ControlInput } from '../../control/index.js';
 import { listen, protocolVersion, type Envelope } from '../../protocol/index.js';
 import { controllerPaths, verifyControllerLock } from '../../platform/host/index.js';
-import { inventoryRuntime } from '../../sandbox/index.js';
+import { inventoryRuntime, reconcileInterruptedCaches } from '../../sandbox/index.js';
 import { readConfiguration } from '../configuration.js';
 import { inspectRelease } from '../release.js';
 import { composeProductionExecution } from './composition.js';
@@ -64,7 +64,11 @@ async function own(root: string): Promise<number> {
   const dependencyScopes = effective.dependencyRepositories.map(entry => ({ repository: entry.repository, installationId: entry.installationId, workflows: false }));
   // Polling cadence comes only from the validated configuration (default 60 s); no reload or per-Work override.
   // Ticket 26: host inventory of own runtime resources, after the lock and before the storage opens (attributed, never ignored).
-  const runtimeInventory = { kind: 'listed' as const, observedAt: new Date().toISOString(), ...await inventoryRuntime(paths.root) };
+  // Repair-free reconciliation of host Git caches a dead owner left in preparation (proved quiescent + read-only verified, else kept blocked).
+  const caches = await reconcileInterruptedCaches(paths.root);
+  const listed = await inventoryRuntime(paths.root);
+  const runtimeInventory = { kind: 'listed' as const, observedAt: new Date().toISOString(), ...listed,
+    cache: listed.cache.map(item => ({ ...item, nextStep: caches.find(entry => entry.repositoryId === item.repositoryId)?.nextStep ?? null })) };
   const control = await openControl({ storagePath: paths.storagePath, runtimeInventory,
     // Executable repositories are Ticket origins; dependency-only repositories are read solely for native blocked_by, with their own installation.
     access: { tracker: createIssueTracker({ github, scopes: effective.repositories, dependencyScopes }), repository: createCodeRepository({ github }),

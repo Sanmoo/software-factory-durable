@@ -223,6 +223,8 @@ test('review 9: cache mutation is serialised across processes by a per-repositor
   // First preparation creates the cache and leaves an idle state.
   assert.equal((await createCheckouts(options).prepare(await w.environment('env-1'), request('acme/project', 3, 'factory/1'))).status, 'success');
   assert.deepEqual(JSON.parse(await readFile(join(w.root, 'cache', 'git', '3.state.json'), 'utf8')).state, 'idle');
+  // Ticket 26: the mutation declares the git-lock discipline its reconciliation relies on (each git ran under `<id>.git.lock`).
+  assert.equal(JSON.parse(await readFile(join(w.root, 'cache', 'git', '3.state.json'), 'utf8')).lock, 'git-flock-v1');
   // Another process (another owner) holds the repository lock: this one never mutates the cache.
   const holder = spawn('/usr/bin/flock', ['--exclusive', join(w.root, 'cache', 'git', '3.lock'), '/bin/sh', '-c', 'echo held; exec cat'], { stdio: ['pipe', 'pipe', 'ignore'] });
   await new Promise(resolve => holder.stdout!.once('data', resolve));

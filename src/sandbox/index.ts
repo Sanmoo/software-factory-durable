@@ -19,6 +19,7 @@ import { readConfined } from './confined.js';
 export { inspectCheckout, type CheckoutInspection } from './checkout-inspection.js';
 // Ticket 26: read-only host inventory of own runtime resources for the controller boot (composition only, never a worker tool).
 export { inventoryRuntime, type RuntimeListing } from './inventory.js';
+export { reconcileInterruptedCaches, type CacheReconciliation } from './checkout.js';
 import { observeProposal } from './proposal-identity.js';
 export type PreparedWork = PrepareResult | { status: 'success'; environment: EnvironmentRef; checkout: CheckoutView; seeds: { name: string; manifestSha256: string; reused: boolean }[] };
 export type { GuestAssetPin } from './guest-assets.js';
