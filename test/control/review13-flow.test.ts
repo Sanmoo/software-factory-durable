@@ -210,3 +210,17 @@ test('AC6/AC7: a failed reviewer is never reused as approval; a lost gate result
   assert.deepEqual(verification.reasons, ['GATE_RESULT_UNKNOWN:e2e', 'WAIVER_NOT_AUTHORIZED:ci', 'WAIVER_CANNOT_BYPASS_REQUIRED_CHECK:ci']);
   assert.deepEqual(verification.requiredChecks, ['ci/build']);
 });
+
+test('AC6/AC7: a failed closing capture ends the activation and never verifies: no identity, no content, no success by absence', async t => {
+  const h = await harness(t, { captures: [
+    capture(1, '1', { declarations: { gates: [gate('docs', 'passed')] } }),
+    { round: 2, status: 'failure', code: 'HANDOFF_CAPTURE_FAILED', detail: 'GIT_FAILED:git-head', closing: true }],
+  verdicts: () => 'clean' });
+  const rounds = h.work.execution!.review!.rounds;
+  assert.deepEqual(rounds.map(item => [item.round, item.kind, item.closing, item.conclusion, item.handoff.status]), [[1, 'review', false, 'clean', 'captured'], [2, 'review', true, 'incomplete', 'failure']]);
+  assert.deepEqual(h.execution.kinds.filter(kind => kind.startsWith('activate-')), ['activate-builder', 'activate-standards-r1', 'activate-spec-r1'], 'no reviewer on a failed capture');
+  assert.deepEqual(h.execution.directives.map(item => [item.round, item.end ?? false]), [[1, false], [2, true]]);
+  const verification = h.work.execution!.review!.verification!;
+  assert.equal(verification.status, 'not-verified');
+  assert.deepEqual(verification.reasons, ['FINAL_CAPTURE_UNAVAILABLE', 'STANDARDS_OPINION_MISSING', 'SPEC_OPINION_MISSING', 'REVIEW_INCOMPLETE', 'REVIEW_NOT_APPLICABLE', 'GATES_NOT_BOUND_TO_FINAL_CONTENT']);
+});

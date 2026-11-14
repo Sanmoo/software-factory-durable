@@ -295,8 +295,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     if (typeof concluded === 'string') return hold(`REVIEW_CONCLUSION_${concluded.toUpperCase()}`, 'The review round could not be concluded; the Builder stays suspended. Operator recovery (ticket 26/28).');
     const prompt = deliveryPrompt({ round, conclusion: concluded.conclusion!, applicability: concluded.applicability ?? 'unknown', reasons: concluded.reasons,
       reviewers: { standards: concluded.reviewers.standards, spec: concluded.reviewers.spec }, ...(multi ? { multi: !lastSlot } : {}) });
-    // The closing capture in the last slot cannot be followed by another capture: its results are recorded and the activation ends.
-    if (!await deliver(prompt, event.closing === true && lastSlot)) return false;
+    // The closing capture in the last slot cannot be followed by another capture, and a failed closing capture has nothing to treat:
+    // its results are recorded and the activation ends (the verification then reports it).
+    if (!await deliver(prompt, event.closing === true && (lastSlot || failure !== null))) return false;
     observe(work.work_id, 'review-delivered', [concluded.conclusion!]);
     await scope.activity(`review-delivered-r${round}`);
     return true;
