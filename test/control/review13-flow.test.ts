@@ -173,6 +173,10 @@ test('AC1/AC4/AC5/AC6: a fixed finding gets a new round of BOTH reviewers on the
   assert.deepEqual(events.filter(event => ['review-handoff', 'review-concluded', 'review-exempted', 'review-delivered', 'review-verified', 'execution-ended'].includes(event)),
     ['review-handoff', 'review-concluded', 'review-delivered', 'review-handoff', 'review-concluded', 'review-delivered', 'review-handoff', 'review-exempted', 'review-delivered',
       'review-verified', 'execution-ended'], 'the verification is durable before the end of the Execution');
+  // Ticket 19 composition: further review rounds inside the SAME Execution charge nothing, and they run on the Execution's own clock.
+  assert.deepEqual(execution.charge, { kind: 'none', correctionId: null, counter: null, state: 'none', settledAt: null });
+  assert.deepEqual(events.filter(event => event.startsWith('budget-')), [], 'no correction/recovery charge for repeated rounds');
+  assert.ok(execution.timing?.startedAt, 'the reviewer rounds ran under the Execution timing');
 });
 
 test('AC1/AC5: a justified non-adoption without content change needs no new round; the treatment is recorded and verified', async t => {

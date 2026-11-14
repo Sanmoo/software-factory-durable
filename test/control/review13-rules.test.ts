@@ -242,3 +242,22 @@ test('AC4/AC6/AC7: content changed after the reviewed round, gates bound to othe
   foreign.reviewers.standards.opinion = { ...foreign.reviewers.standards.opinion!, input: { ...foreign.reviewers.standards.opinion!.input, handoffIndexSha256: 'f'.repeat(64) } };
   assert.deepEqual(verify([foreign]).reasons, ['STANDARDS_OPINION_NOT_CORRELATED']);
 });
+
+test('ticket 11 + 13 composition: initial, continuation and recovery prompts all keep `review-rounds=multi` only when rounds are composed', async () => {
+  const { continuationPrompt, initialPrompt } = await import('../../src/control/rules/continuation.js');
+  const { recoveryPrompt } = await import('../../src/control/rules/questions.js');
+  const base = { ticketUrl: 'https://github.com/acme/project/issues/3', repository: 'acme/project', base: 'main', baseCommit: 'a'.repeat(40), branch: 'factory/3-abc',
+    checkout: '/workspace/checkout', workId: 'w', executionId: 'e2' };
+  const initial = (reviewRounds: boolean) => { const value = initialPrompt({ ...base, reviews: true, scopeUpdates: [], reviewRounds }); return value.kind === 'prompt' ? value.prompt : ''; };
+  assert.match(initial(true), /^\/implement \S+ .* reviews=factory-handoff review-rounds=multi$/);
+  assert.doesNotMatch(initial(false), /review-rounds=multi/);
+  const continued = (reviewRounds: boolean) => { const value = continuationPrompt({ executionId: 'e2', previousExecutionId: 'e1', skillDirectory: '/artifacts/factory/skill-pack/p',
+    answer: { questionId: 'q1', text: 'Use docs/a.md', author: 'Sanmoo', origin: 'github-comment' }, scopeUpdates: [], reviewRounds }); return value.kind === 'prompt' ? value.prompt : ''; };
+  assert.match(continued(true), /^continue\n[\s\S]*\nExecution context: reviews=factory-handoff review-rounds=multi\n/);
+  assert.doesNotMatch(continued(false), /review-rounds=multi/);
+  const recovered = (reviewRounds: boolean) => { const value = recoveryPrompt({ ...base, skillDirectory: '/artifacts/factory/skill-pack/p', previousExecutionId: 'e1',
+    question: null, answer: { text: 'docs/a.md', author: 'Sanmoo', origin: 'github-comment' }, replacement: { reason: 'SESSION_LOST' }, reviewRounds });
+    return value.kind === 'prompt' ? value.prompt : ''; };
+  assert.match(recovered(true), /previous-execution=e1 reviews=factory-handoff review-rounds=multi\n/);
+  assert.doesNotMatch(recovered(false), /review-rounds=multi/);
+});
