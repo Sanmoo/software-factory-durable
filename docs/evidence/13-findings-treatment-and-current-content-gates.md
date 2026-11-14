@@ -263,12 +263,12 @@ com 90 s. Ver [§ Gate final](#gate-final).
 
 ## Gate final
 
-Código no HEAD `53ee41c` (correções da revisão independente e do ensaio real `q13-rounds-v3`), após `rm -rf dist`:
+Código no HEAD `16e8ba2` (rebase sobre `integration/software-factory-mvp` @ `9f75f22`: tickets 19, 11 e 32), após `rm -rf dist`:
 
-- `dependency-cruiser --config .dependency-cruiser.cjs --output-type err-long .`: sem violações (303 módulos, 1793 dependências).
+- `dependency-cruiser --config .dependency-cruiser.cjs --output-type err-long .`: sem violações (340 módulos, 2054 dependências).
 - `eslint . --max-warnings 0`: exit 0. `tsc -p tsconfig.json`: exit 0.
-- **143 arquivos** `dist/test/**/*.test.js`, um por vez (`--experimental-test-module-mocks --test --test-concurrency=1`, `normal-oauth` com 90 s):
-  **945 pass, 0 fail, 10 skipped, 0 cancelled** (955 testes).
+- **162 arquivos** `dist/test/**/*.test.js`, um por vez (`--experimental-test-module-mocks --test --test-concurrency=1`, `normal-oauth` com 90 s):
+  **1037 pass, 0 fail, 10 skipped, 0 cancelled** (1047 testes).
 
 Os 10 skips são os mesmos das integrações anteriores (host-dependentes); `test/sandbox/gondolin.test.ts` continua `skip:true`.
 Novos arquivos de teste (25 testes): `handoff-content` (2), `gate-evidence` (3), `review-rounds-session` (2), `review-continuation` (2),
