@@ -129,10 +129,11 @@ export async function openControl(options: { storagePath: string; runtimeInvento
       try {
         // Authoritative persisted task inventory, not an empty fake scheduler. Unknown runtime resources stay closed.
         const tasks = await state.commit(tx => tx.scanTasks({}, 1), BACKGROUND_CONTEXT);
-        // Grants of a previous process were memory-only: record them as impossible to revoke, with their risk (never blocks by itself).
-        await reconcileLostCredentials(state);
         // A Slot still held from an earlier owner means unknown runtime state: stay closed until recovery (ticket 26).
         if (tasks.items.length === 0 && options.runtimeInventory === 'empty') dispatchReason = dispatcher && await heldSlots(state) === 0 ? null : dispatcher ? 'RECONCILIATION_REQUIRED' : 'EXECUTION_NOT_ENABLED';
+        // Grants of a previous process were memory-only: record them as impossible to revoke, with their risk (never blocks by itself).
+        // Before polling starts, so no dispatch of this run precedes it.
+        await reconcileLostCredentials(state);
         const aborted = new Promise<'stop'>(resolve => {
           if (signal.aborted) resolve('stop');
           else signal.addEventListener('abort', () => resolve('stop'), { once: true });
