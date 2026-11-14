@@ -65,14 +65,18 @@ export async function registerQuestion(session: Session, input: { work_id: strin
   }, BACKGROUND_CONTEXT);
 }
 
-/** The worker reported a question whose preserved content is not intact and no record exists: block explicitly, never invent one. */
-export async function recordContentLost(session: Session, work_id: string, executionId: string, questionId: string) {
+/**
+ * The worker ended with a question that has no record: its content was not intact (`QUESTION_CONTENT_LOST`) or it could not be recorded
+ * (`QUESTION_NOT_RECORDED`, e.g. the Work stopped being current). Block explicitly; never invent or publish a question.
+ */
+export async function recordContentLost(session: Session, work_id: string, executionId: string, questionId: string,
+  code: 'QUESTION_CONTENT_LOST' | 'QUESTION_NOT_RECORDED' = 'QUESTION_CONTENT_LOST', reason = 'its complete request was not received intact') {
   return session.commit(async tx => {
     const document = await tx.doc(works, work_id, null);
     const work = document.work;
     if (!work || work.execution?.executionId !== executionId) return 'stale' as const;
-    if (!work.impediments.some(item => item.code === 'QUESTION_CONTENT_LOST')) work.impediments.push({ code: 'QUESTION_CONTENT_LOST', scope: 'work', since: new Date().toISOString(),
-      nextStep: `Execution ${executionId} reported question ${/^[0-9a-f-]{36}$/.test(questionId) ? questionId : '(invalid id)'} but its complete request was not received intact; ` +
+    if (!work.impediments.some(item => item.code === code)) work.impediments.push({ code, scope: 'work', since: new Date().toISOString(),
+      nextStep: `Execution ${executionId} reported question ${/^[0-9a-f-]{36}$/.test(questionId) ? questionId : '(invalid id)'} but ${reason}; ` +
         'nothing was published or invented. Inspect the worker\'s preserved Records evidence and decide explicitly (recovery, ticket 26).' });
     return 'recorded' as const;
   }, BACKGROUND_CONTEXT);

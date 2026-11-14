@@ -307,8 +307,11 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           const known = await readQuestion(session, request.questionId);
           if (intactRequest(request, work.work_id)) {
             const outcome = await registerQuestion(session, { work_id: work.work_id, executionId, invocationId: execution.invocationId, request, from: 'worker-completion' });
-            if (outcome.kind === 'refused') code = outcome.code;
-            else if (outcome.kind === 'recorded') deps.questionRecorded?.();
+            if (outcome.kind === 'refused') {
+              code = outcome.code;
+              // A conflict keeps the ORIGINAL record (and its impediment); any other refusal leaves no record: block explicitly.
+              if (code !== 'QUESTION_ID_CONFLICT') await recordContentLost(session, work.work_id, executionId, request.questionId, 'QUESTION_NOT_RECORDED', `it could not be recorded (${code})`);
+            } else if (outcome.kind === 'recorded') deps.questionRecorded?.();
           } else if (!known || known.executionId !== executionId) {
             code = 'QUESTION_CONTENT_LOST';
             await recordContentLost(session, work.work_id, executionId, request.questionId);
