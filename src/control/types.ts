@@ -28,7 +28,7 @@ export type ExecutionPorts = {
     stop(input: { environment: EnvironmentRef; boot: BootRef; reason: string }): Promise<StopResult>;
   };
   workers: { activate(invocation: Invocation, delivery?: ActivationDelivery): Promise<{ worker: string;
-    started: Promise<{ receipt: { workId: string; id: string } }>; completed: Promise<{ status: 'success'; receipt: { workId: string; id: string } } | { status: 'failure'; code: string }>;
+    started: Promise<{ receipt: { workId: string; id: string }; invocation: { executionId: string; invocationId: string } }>; completed: Promise<{ status: 'success'; receipt: { workId: string; id: string } } | { status: 'failure'; code: string }>;
     close(): void }> };
   credentials: BuilderCredentials;
   /** Sandbox configuration as configured (interpreted by Sandbox only). */

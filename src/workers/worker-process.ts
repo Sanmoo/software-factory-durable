@@ -129,7 +129,7 @@ export async function run(input: unknown, parentSignal: AbortSignal) {
     const receipt = await startWorker(bootstrap.profile, records, invocation);
     const sender = process.send?.bind(process);
     if (sender) await new Promise<void>((resolve, reject) => {
-      sender({ kind: 'worker-started', receipt }, error => error ? reject(new Error('WORKER_CHANNEL_CLOSED')) : resolve());
+      sender({ kind: 'worker-started', receipt, invocation: { executionId: bootstrap.context.executionId, invocationId: bootstrap.context.invocationId } }, error => error ? reject(new Error('WORKER_CHANNEL_CLOSED')) : resolve());
     });
     if (signal.aborted) throw new Error('STALE_TOOL_CONTEXT');
     secretPublisher.protectedStarted();

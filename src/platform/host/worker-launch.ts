@@ -106,6 +106,7 @@ export async function workerOwnerEndpoint(root: string, context: WorkerLaunch['c
 }
 
 const reference = z.strictObject({ workId: z.string(), id: z.uuid() });
+const startedInvocation = z.strictObject({ executionId: z.string(), invocationId: z.string() });
 const completedSchema = z.discriminatedUnion('status', [
   z.strictObject({ status: z.literal('success'), receipt: reference }),
   z.strictObject({ status: z.literal('failure'), code: z.string() }),
@@ -130,9 +131,9 @@ export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, en
       await workerOwnerEndpoint(root, request.context) !== join(host.runtimeDirectory, 'owner') || signal.aborted) throw new Error('WORKER_BOOT_MISMATCH');
   const child = spawn(plan.executable, plan.argv, { stdio: [...plan.stdio], detached: plan.detached,
     env: { ...plan.env, TMPDIR: join(directory, 't'), XDG_CACHE_HOME: join(directory, 'c') } });
-  let startResolve!: (value: { receipt: z.infer<typeof reference> }) => void;
+  let startResolve!: (value: { receipt: z.infer<typeof reference>; invocation: z.infer<typeof startedInvocation> }) => void;
   let startReject!: (error: Error) => void;
-  const started = new Promise<{ receipt: z.infer<typeof reference> }>((resolve, reject) => { startResolve = resolve; startReject = reject; });
+  const started = new Promise<{ receipt: z.infer<typeof reference>; invocation: z.infer<typeof startedInvocation> }>((resolve, reject) => { startResolve = resolve; startReject = reject; });
   // Attach immediately: owner may still be sending its request acknowledgement.
   void started.catch(() => {});
   let completeResolve!: (value: z.infer<typeof completedSchema>) => void;
@@ -149,10 +150,12 @@ export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, en
   child.on('message', message => {
     if (!message || typeof message !== 'object') return;
     if ('kind' in message && message.kind === 'worker-started' && 'receipt' in message) {
-      const parsed = z.strictObject({ kind: z.literal('worker-started'), receipt: reference }).safeParse(message);
-      if (parsed.success && parsed.data.receipt.workId === request.context.workId && !startReference && !signal.aborted) {
+      const parsed = z.strictObject({ kind: z.literal('worker-started'), receipt: reference, invocation: startedInvocation }).safeParse(message);
+      // The start observation must name THIS Execution/invocation, not only the Work.
+      if (parsed.success && parsed.data.receipt.workId === request.context.workId && parsed.data.invocation.executionId === request.context.executionId &&
+          parsed.data.invocation.invocationId === request.context.invocationId && !startReference && !signal.aborted) {
         startReference = parsed.data.receipt;
-        startResolve({ receipt: parsed.data.receipt });
+        startResolve({ receipt: parsed.data.receipt, invocation: parsed.data.invocation });
       }
     }
     if ('kind' in message && message.kind === 'worker-result') {

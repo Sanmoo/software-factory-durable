@@ -47,7 +47,8 @@ function executionDoubles(control: () => Control, options: { prepare?: 'fail'; h
       async activate(invocation, delivery) {
         calls.push({ kind: 'activate', at: calls.length, detail: { invocation: { ...invocation, signal: undefined }, delivery } });
         snapshots.activate = await firstWork();
-        const started = (options.hangStart ? startGate : Promise.resolve()).then(() => ({ receipt: { workId: invocation.context.workId, id: '99999999-2222-4333-8444-555555555555' } }));
+        const started = (options.hangStart ? startGate : Promise.resolve()).then(() => ({ receipt: { workId: invocation.context.workId, id: '99999999-2222-4333-8444-555555555555' },
+          invocation: { executionId: invocation.context.executionId, invocationId: invocation.context.invocationId } }));
         return { worker: invocation.context.invocationId, started, completed: started.then(() => ({ status: 'success' as const, receipt: { workId: invocation.context.workId, id: '99999999-2222-4333-8444-555555555555' } })),
           close() { calls.push({ kind: 'close', at: calls.length }); } };
       },

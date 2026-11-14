@@ -56,7 +56,7 @@ test('AC1: start receipt is consumed exactly once, only after the activation int
   const reserved = await admitExecution(session, { work_id: a, attemptId: 'd1', capacity: 1, authorizationObservedAt: 'now', request });
   assert.ok(reserved.kind === 'reserved');
   const id = reserved.execution.executionId;
-  const receipt = { workId: a, id: '99999999-2222-4333-8444-555555555555' };
+  const receipt = { workId: a, id: '99999999-2222-4333-8444-555555555555', executionId: reserved.execution.executionId, invocationId: reserved.execution.invocationId };
   assert.equal(await confirmStart(session, a, id, receipt), 'stale', 'no start before the activation intent');
   assert.equal((await recordPhase(session, a, id, 'reserved', 'prepared', 'execution-prepared', () => {})).kind, 'advanced');
   assert.equal((await recordPhase(session, a, id, 'prepared', 'booted', 'execution-booted', () => {})).kind, 'advanced');
@@ -64,6 +64,8 @@ test('AC1: start receipt is consumed exactly once, only after the activation int
   await recordDependencies(session, a, evaluation('activation-1'));
   assert.equal((await confirmActivation(session, a, id, 'activation-1', grant, 'sha')).kind, 'advanced');
   assert.equal(await confirmStart(session, a, 'another-execution', receipt), 'stale');
+  assert.equal(await confirmStart(session, a, id, { ...receipt, invocationId: 'builder-other' }), 'conflict', 'review 8: a receipt of another invocation is never consumed');
+  assert.equal(await confirmStart(session, a, id, { ...receipt, executionId: 'other-execution' }), 'conflict');
   assert.equal(await confirmStart(session, a, id, receipt), 'confirmed');
   assert.equal(await confirmStart(session, a, id, receipt), 'already-confirmed');
   assert.equal(await confirmStart(session, a, id, { ...receipt, id: '88888888-2222-4333-8444-555555555555' }), 'conflict');

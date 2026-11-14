@@ -105,12 +105,13 @@ export const confirmActivation = (session: Session, work_id: string, executionId
   });
 
 /** "Confirmar início" (spec §3.4/5.3): the receipt of THIS Execution is consumed exactly once; a different receipt is a conflict. */
-export async function confirmStart(session: Session, work_id: string, executionId: string, receipt: { workId: string; id: string }):
+export async function confirmStart(session: Session, work_id: string, executionId: string, receipt: { workId: string; id: string; executionId: string; invocationId: string }):
   Promise<'confirmed' | 'already-confirmed' | 'conflict' | 'stale'> {
   return session.commit(async tx => {
     const document = await tx.doc(works, work_id, null);
     const execution = document.work?.execution ?? null;
     if (!document.work || !execution || execution.executionId !== executionId || receipt.workId !== work_id) return 'stale' as const;
+    if (receipt.executionId !== execution.executionId || receipt.invocationId !== execution.invocationId) return 'conflict' as const;
     if (execution.start) return execution.start.receiptId === receipt.id ? 'already-confirmed' as const : 'conflict' as const;
     if (execution.state !== 'reserved' || execution.dispatch.phase !== 'activation-requested') return 'stale' as const;
     execution.start = { receiptId: receipt.id, confirmedAt: new Date().toISOString() };

@@ -25,7 +25,7 @@ const same = (left: Context, right: Context) => Object.keys(left).every(key => l
 const withinBudget = (value: unknown) => Buffer.byteLength(JSON.stringify(value) ?? '') <= 49152;
 const receipt = z.strictObject({ workId: identifier, id: z.uuid() });
 const ownerLifecycleSchema = z.union([
-  z.strictObject({ kind: z.literal('worker-started'), receipt }),
+  z.strictObject({ kind: z.literal('worker-started'), receipt, invocation: z.strictObject({ executionId: identifier, invocationId: identifier }).optional() }),
   z.strictObject({ kind: z.literal('worker-error'), code: z.string().regex(/^[A-Z_]{1,128}$/) }),
   z.strictObject({ kind: z.literal('worker-result'), status: z.enum(['completed', 'interrupted']), receipt, sessionFile: z.string().nullable().optional() }),
   z.strictObject({ kind: z.literal('worker-result'), status: z.literal('failure'), code: z.string().regex(/^[A-Z_]{1,128}$/) }),

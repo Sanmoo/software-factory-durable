@@ -14,7 +14,7 @@ const token = 'ghs_syntheticFacadeToken000111222';
 const profile = { id: 'factory-development-pi-1.5.2-read-async-bash-lexical-v3' as const, systemPrompt: 'p', auth: 'factory-oauth' as const, providerId: 'openai' as const,
   modelId: 'gpt-6-luna' as const, api: 'openai-responses' as const };
 
-async function owner(t: { after(fn: () => Promise<void>): void }, credentialReply: Record<string, string>) {
+async function owner(t: { after(fn: () => Promise<void>): void }, credentialReply: Record<string, string>, startedInvocation?: Record<string, string>) {
   const root = await mkdtemp('/tmp/acred-');
   t.after(() => rm(root, { recursive: true, force: true }));
   const environment = join(root, 'environments', environmentRef);
@@ -30,7 +30,11 @@ async function owner(t: { after(fn: () => Promise<void>): void }, credentialRepl
     const reply = (kind: string, payload: Record<string, string>) => channel.send({ protocol_version: protocolVersion, controller_run_id: null,
       message_id: request.message_id, reply_to: request.message_id, kind, payload });
     if (request.kind === 'deliver-credential') await reply('credential-result', credentialReply);
-    else await reply('worker-launch-result', { status: 'requested', worker: 'builder-1' });
+    else {
+      await reply('worker-launch-result', { status: 'requested', worker: 'builder-1' });
+      if (startedInvocation) await channel.send({ protocol_version: protocolVersion, controller_run_id: null, message_id: request.message_id, reply_to: request.message_id,
+        kind: 'worker-started', payload: { receipt: { workId, id: '99999999-2222-4333-8444-555555555555' }, invocation: startedInvocation } });
+    }
   } }, { kind: 'host-boot', binding: { workId, environmentRef, bootRef: boot } });
   t.after(() => server.close());
   return { root, received };
@@ -58,4 +62,15 @@ test('AC5: a refused delivery stops before any launch; a reviewer cannot be give
   assert.deepEqual(o.received.map(message => message.kind), ['deliver-credential']);
   await assert.rejects(workers.activate({ ...invocation('spec'), context: { ...invocation('spec').context, invocationId: 'spec-1' } }, { credential: { token } }), /WORKER_LAUNCH_INVALID/);
   assert.equal(o.received.length, 1);
+});
+
+test('review 8: the start observation must name THIS Execution/invocation; another one is uncertain, never a start', async t => {
+  const good = await owner(t, { status: 'delivered' }, { executionId: 'execution', invocationId: 'builder-1' });
+  const handle = await createWorkers({ root: good.root, profile, knownSecrets: [] }).activate(invocation(), { credential: { token } });
+  assert.deepEqual(await handle.started, { receipt: { workId, id: '99999999-2222-4333-8444-555555555555' }, invocation: { executionId: 'execution', invocationId: 'builder-1' } });
+  handle.close();
+  const bad = await owner(t, { status: 'delivered' }, { executionId: 'execution', invocationId: 'builder-2' });
+  const other = await createWorkers({ root: bad.root, profile, knownSecrets: [] }).activate(invocation(), { credential: { token } });
+  await assert.rejects(other.started, /WORKER_EXECUTION_UNCERTAIN/);
+  other.close();
 });

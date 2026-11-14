@@ -93,7 +93,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       try {
         phase = 'started';
         const start = await Promise.race([handle.started, new Promise<never>((_, reject) => stopping.signal.addEventListener('abort', () => reject(new Error('OWNER_STOPPING')), { once: true }))]);
-        const consumed = await confirmStart(session, work.work_id, executionId, start.receipt);
+        const consumed = await confirmStart(session, work.work_id, executionId, { ...start.receipt, ...start.invocation });
         if (consumed !== 'confirmed') { await hold(`START_RECEIPT_${consumed.toUpperCase().replaceAll('-', '_')}`, 'Start receipt was not consumable for this Execution.'); return; }
         observe(work.work_id, 'started');
         phase = 'completed';

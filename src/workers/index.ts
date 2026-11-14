@@ -10,7 +10,7 @@ export type ActivationDelivery = { credential?: Readonly<{ token: string }> };
 
 type Configuration = { root: string; profile: WorkerLaunch['profile']; knownSecrets: string[] };
 const reference = z.strictObject({ workId: z.string(), id: z.uuid() });
-const startSchema = z.strictObject({ receipt: reference });
+const startSchema = z.strictObject({ receipt: reference, invocation: z.strictObject({ executionId: z.string(), invocationId: z.string() }) });
 const completionSchema = z.discriminatedUnion('status', [
   z.strictObject({ status: z.literal('success'), receipt: reference }),
   z.strictObject({ status: z.literal('failure'), code: z.string() }),
@@ -67,7 +67,12 @@ export function createWorkers(configuration?: Configuration) {
       ]).parse(await receive('worker-launch-result'));
       if (acknowledgement.status === 'failure') throw new Error(acknowledgement.code);
       if (acknowledgement.worker !== context.invocationId) throw new Error('WORKER_EXECUTION_UNCERTAIN');
-      const started = receive('worker-started').then(value => startSchema.parse(value));
+      const started = receive('worker-started').then(value => {
+        const parsed = startSchema.parse(value);
+        if (parsed.receipt.workId !== context.workId || parsed.invocation.executionId !== context.executionId ||
+            parsed.invocation.invocationId !== context.invocationId) throw new Error('WORKER_EXECUTION_UNCERTAIN');
+        return parsed;
+      });
       const completed = started.then(async () => completionSchema.parse(await receive('worker-completed')));
       void started.catch(() => {}); void completed.catch(() => {});
       return { worker: acknowledgement.worker, started, completed, close() {
