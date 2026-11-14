@@ -100,6 +100,8 @@ A receita passou a `q13-rounds-v4` (nunca executado) e, após a integração (pa
 - **Ticket 19:** as rodadas de revisor, entregas e isenções usam o escopo da Execução (`scope.wait`/`scope.activity`, mesmo relógio/timeout);
   rodadas adicionais na mesma Execução não cobram nada (`charge.kind: none`, sem eventos `budget-*`, `review13-flow`); nenhum prazo implícito.
 - **ExecutionView:** campos do ticket 11/19 (`session`, `scopeUpdateIds`, `charge`, `timing`) e `review.verification` coexistem.
+- **Ticket 32 (rebase sobre `9f75f22`):** produção compõe multi-rodada (`rounds: { max: 4 }`) e `verifyPreservedSource`; o pacote de produção
+  derivado é o mais novo registrado (v5, com `continuation`); a release envia todos os pacotes registrados (inclusive v5).
 - **Sessões:** a continuação da sessão do Builder (ticket 11) e a do revisor por rodada (ticket 13) coexistem em `worker-launch`/`worker-session`.
 
 ## Mapa AC → evidência
@@ -164,8 +166,10 @@ pelas mutações M1–M8.
    decidindo a continuação. Limites configuráveis de correções/recoveries são do ticket 19.
 8. **Pacote e composição de produção.** O ticket 11 integrou o seu `factory-skills-v4` (capacidade `continuation`) e a lista única
    `factorySkillPackIds`; este ticket foi renumerado para `factory-skills-v5` (texto do v4 do ticket 11 + as seções multi-rodada, também com
-   `continuation`), registrado só nessa lista. O ticket 32 compõe os portos executáveis da release (arquivo ausente nesta base): quando
-   habilitar reviews, deve passar `reviews.rounds = { max: 4 }` para o fluxo multi-rodada; sem `rounds` o comportamento é o de uma rodada do ticket 12.
+   `continuation`), registrado só nessa lista. A composição de produção do ticket 32 (`composeProductionExecution`) passa
+   `reviews.rounds = productionProfile.reviewRounds` (`{ max: 4 }`, registrado no manifesto da release) e `verifyPreservedSource`, e deriva o pacote
+   v5 (último registrado com `continuation`); o prompt de sistema do Builder deixou de dizer "handoff once". Sem `rounds` o comportamento é o de
+   uma rodada do ticket 12 (`release-composition`, `release-artifact`).
 9. **Recuperação parcial** (parecer válido + retry só do falho) continua no ticket 28: aqui um revisor falho torna a rodada `incomplete` e a próxima
    captura roda os dois de novo.
 
