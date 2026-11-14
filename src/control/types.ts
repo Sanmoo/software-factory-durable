@@ -1,6 +1,6 @@
 import type { AccessDiagnostic, BuilderCredentials, BuilderGrantMetadata, GitHubScope, RevocationResult } from '../contracts/index.js';
 import type { CheckoutRequest, EnvironmentRef, PreparedWork, StartResult, StopResult, BootRef } from '../sandbox/index.js';
-import type { ActivationDelivery, Invocation } from '../workers/index.js';
+import type { ActivationDelivery, DeliveryResult, Invocation, WorkerDirective } from '../workers/index.js';
 import type { IssueTracker, TicketRef } from '../issue-tracker/index.js';
 import type { CodeRepository } from '../code-repository/index.js';
 import type { Hold } from './rules/admission.js';
@@ -29,8 +29,12 @@ export type ExecutionPorts = {
   };
   workers: { activate(invocation: Invocation, delivery?: ActivationDelivery): Promise<{ worker: string;
     started: Promise<{ receipt: { workId: string; id: string }; invocation: { executionId: string; invocationId: string } }>; completed: Promise<{ status: 'success'; receipt: { workId: string; id: string } } | { status: 'failure'; code: string }>;
-    close(): void }> };
+    close(): void }>;
+    /** Q6 `deliver`: renewed transient credential or its withdrawal to the CURRENT Builder; never persisted, not proof of consumption. */
+    deliver(worker: string, directive: WorkerDirective): Promise<DeliveryResult> };
   credentials: BuilderCredentials;
+  /** Renew a Builder grant this many seconds before its expiresAt while the activity stays authorized (default 600). */
+  credentialRenewal?: { beforeExpirySeconds: number };
   /** Sandbox configuration as configured (interpreted by Sandbox only). */
   configuration: unknown;
   /** Slot capacity (configuration `concurrency`). */
@@ -38,6 +42,10 @@ export type ExecutionPorts = {
   /** Host Builder policies applied to every initial Builder invocation. */
   builder: Pick<Invocation, 'skillPack' | 'modelBudget' | 'copyOutput' | 'editSourceMaxBytes'>;
 };
+export type CredentialWithdrawal = 'ended' | 'external-wait' | 'cancelled' | 'held' | 'refused' | 'owner-stopped' | 'controller-restart';
+/** Token-free durable record of one known grant. `risk` explains what a revocation could not settle (e.g. value lost after a crash). */
+export type CredentialGrantRecord = { requestedAt: string; outcome: 'requested' | 'issued' | 'failed' | 'unknown'; code: string | null;
+  metadata: BuilderGrantMetadata | null; revocation: RevocationResult['kind'] | null; revocationCode: string | null; risk: string | null };
 /** Durable Execution record (spec §3.2-3.4/5.3): identity, Slot, dispatch intent/phase, start receipt consumption and end. No secret. */
 export type ExecutionView = {
   executionId: string; invocationId: string; mode: 'initial';
@@ -49,9 +57,13 @@ export type ExecutionView = {
   request: { ticket: string; repository: string; base: string; branch: string; baseCommit: string | null; checkout: string | null; promptSha256: string | null;
     skillPack: { name: string; manifestSha256: string } | null; policies: Pick<Invocation, 'skillPack' | 'modelBudget' | 'copyOutput' | 'editSourceMaxBytes'> };
   credential: BuilderGrantMetadata | null;
-  /** Durable issuance intent BEFORE the call, then its outcome, token-free metadata and revocation result: no live grant goes unrecorded. */
-  credentialIssuance: { requestedAt: string; outcome: 'requested' | 'issued' | 'failed' | 'unknown'; code: string | null;
-    metadata: BuilderGrantMetadata | null; revocation: RevocationResult['kind'] | null } | null;
+  /** Initial grant: durable issuance intent BEFORE the call, then outcome, token-free metadata and revocation result. Never the token. */
+  credentialIssuance: CredentialGrantRecord | null;
+  /** Renewals (ticket 20): each a NEW issuance for the same authorized activity, delivered to new commands only. */
+  credentialRenewals: (CredentialGrantRecord & { sequence: number; delivery: 'delivered' | 'failed' | 'not-delivered' | null })[];
+  /** Activity credential lifecycle: withdrawn on end/external wait/cancellation/hold/owner stop/restart; no delivery or renewal after it. */
+  credentialLifecycle: { state: 'none' | 'active' | 'withdrawn'; withdrawnAt: string | null; reason: CredentialWithdrawal | null;
+    renewal: 'enabled' | 'stopped'; renewalStop: string | null };
   start: { receiptId: string; confirmedAt: string } | null;
   end: { at: string; outcome: 'completed' | 'failure'; code: string | null; cessation: 'confirmed' | 'unconfirmed' | 'not-attempted' } | null;
   held: { code: string; phase: string; at: string; nextStep: string } | null;

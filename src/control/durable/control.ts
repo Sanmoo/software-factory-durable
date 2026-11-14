@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { z } from 'zod';
 import type { AccessDependencies, Control, ControlStatus, DispatchReason, ExecutionPorts, Impediment, ListView, PollingOptions, PollingView, WorkView } from '../types.js';
-import { heldSlots, initializeSlots } from './execution.js';
+import { heldSlots, initializeSlots, reconcileLostCredentials } from './execution.js';
 import { createDispatcher } from './dispatch.js';
 import { openStore } from './store.js';
 import { acceptPauseCommand, admitTicket, indexedWork, initialize, ownCycles, pendingWorks, readInstallation, readRequest, readWork, readWorks, recordDependencies,
@@ -22,6 +22,13 @@ const limitations = [
   'An ended Builder Execution never completes the Work automatically: reviews, publication (push/PR) and readiness are not enabled in this increment; nothing is retried automatically.',
   'Native dependency evaluations are re-done every polling round; only an evaluation of the current round can release, never an older or pre-restart one.',
 ];
+
+// Module-internal seam for the external-wait/cancellation flows of this module (not part of the public Control contract).
+const dispatchers = new WeakMap<Control, ReturnType<typeof createDispatcher>>();
+/** Withdraws the active Execution's credentials of a Work (external wait or cancellation) and attempts revocation of its known grants. */
+export async function withdrawActivityCredentials(control: Control, work_id: string, reason: 'external-wait' | 'cancelled'): Promise<'withdrawn' | 'not-active'> {
+  return dispatchers.get(control)?.withdraw(work_id, reason) ?? 'not-active';
+}
 
 /** Bootstrap must already hold the stable canonical-storage flock for this owner's entire lifetime. */
 export async function openControl(options: { storagePath: string; runtimeInventory: 'empty' | 'unknown'; access?: AccessDependencies; polling?: PollingOptions;
@@ -62,7 +69,7 @@ export async function openControl(options: { storagePath: string; runtimeInvento
   const selection = (works: WorkRecord[]) => selectNext(works.filter(work => work.result === 'open' && work.queue.pending && work.queue.category === 'normal')
     .map(work => ({ work_id: work.work_id, blockers: blockers(work) })));
   let running = false;
-  return {
+  const control: Control = {
     async accept(input) {
       const parsed = inputSchema.safeParse(input);
       if (!parsed.success) return { kind: 'refused', code: 'INVALID_COMMAND' };
@@ -122,6 +129,8 @@ export async function openControl(options: { storagePath: string; runtimeInvento
       try {
         // Authoritative persisted task inventory, not an empty fake scheduler. Unknown runtime resources stay closed.
         const tasks = await state.commit(tx => tx.scanTasks({}, 1), BACKGROUND_CONTEXT);
+        // Grants of a previous process were memory-only: record them as impossible to revoke, with their risk (never blocks by itself).
+        await reconcileLostCredentials(state);
         // A Slot still held from an earlier owner means unknown runtime state: stay closed until recovery (ticket 26).
         if (tasks.items.length === 0 && options.runtimeInventory === 'empty') dispatchReason = dispatcher && await heldSlots(state) === 0 ? null : dispatcher ? 'RECONCILIATION_REQUIRED' : 'EXECUTION_NOT_ENABLED';
         const aborted = new Promise<'stop'>(resolve => {
@@ -147,4 +156,6 @@ export async function openControl(options: { storagePath: string; runtimeInvento
       }
     },
   };
+  if (dispatcher) dispatchers.set(control, dispatcher);
+  return control;
 }

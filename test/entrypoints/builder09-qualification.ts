@@ -146,6 +146,10 @@ export async function runPhase(phase: Phase) {
             events.push({ at: new Date().toISOString(), call: 'activate', context: invocation.context, prompt: invocation.prompt, credentialDelivered: delivery?.credential !== undefined });
             if (++activated !== 1) throw new Error('RECIPE_ONE_SHOT_GUARD');
             return workers.activate(invocation, delivery);
+          }, async deliver(worker, directive) {
+            const result = await workers.deliver(worker, directive);
+            events.push({ at: new Date().toISOString(), call: 'deliver', directive: directive.kind, result });
+            return result;
           } } } });
       const stop = new AbortController();
       const running = control.run(stop.signal);

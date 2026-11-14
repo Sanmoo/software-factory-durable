@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { defineDoc } from '@earendil-works/pi-durable';
-import type { BuilderGrantMetadata } from '../../contracts/index.js';
-import type { ExecutionView } from '../types.js';
+import type { BuilderGrantMetadata, RevocationResult } from '../../contracts/index.js';
+import type { CredentialGrantRecord, CredentialWithdrawal, ExecutionView } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
 import { dispatchBlockers } from '../rules/dependencies.js';
 import { installation, ticketIndex, works, type WorkRecord } from './admission.js';
@@ -53,7 +53,9 @@ export async function admitExecution(session: Session, input: { work_id: string;
       admission: { attemptId: input.attemptId, evaluationId: latest!.evaluationId, authorizationObservedAt: input.authorizationObservedAt, activationAttemptId: null, activationEvaluationId: null },
       dispatch: { intent: 'prepare-start-activate', phase: 'reserved', environment: null, boot: null, updatedAt: now },
       request: { ...input.request, baseCommit: null, checkout: null, promptSha256: null, skillPack: null },
-      credential: null, credentialIssuance: null, start: null, end: null, held: null,
+      credential: null, credentialIssuance: null, credentialRenewals: [],
+      credentialLifecycle: { state: 'none', withdrawnAt: null, reason: null, renewal: 'enabled', renewalStop: null },
+      start: null, end: null, held: null,
       completion: { automatic: false, reason: 'Reviews, publication and readiness are not enabled in this Factory version; an ended Builder Execution never completes the Work automatically.' },
     };
     occupancy.held[executionId] = input.work_id;
@@ -105,16 +107,126 @@ export const confirmActivation = (session: Session, work_id: string, executionId
     return [];
   });
 
-/** Issuance record of the current Execution (any state): intent before the call, then outcome/metadata/revocation. Never the token. */
-export async function recordIssuance(session: Session, work_id: string, executionId: string, update: Partial<NonNullable<ExecutionView['credentialIssuance']>>) {
+const blankGrant = (): CredentialGrantRecord => ({ requestedAt: new Date().toISOString(), outcome: 'requested', code: null, metadata: null,
+  revocation: null, revocationCode: null, risk: null });
+// Records written before ticket 20 lack these fields; every credential commit completes them in place.
+function lifecycleOf(execution: ExecutionView) {
+  execution.credentialRenewals ??= [];
+  execution.credentialLifecycle ??= { state: execution.credentialIssuance ? 'active' : 'none', withdrawnAt: null, reason: null, renewal: 'enabled', renewalStop: null };
+  return execution.credentialLifecycle;
+}
+async function onExecution<T>(session: Session, work_id: string, executionId: string, change: (execution: ExecutionView) => T): Promise<T | 'stale'> {
   return session.commit(async tx => {
     const document = await tx.doc(works, work_id, null);
     const execution = document.work?.execution ?? null;
     if (!execution || execution.executionId !== executionId) return 'stale' as const;
-    if (!execution.credentialIssuance && update.outcome !== 'requested') return 'stale' as const;
-    execution.credentialIssuance = { ...(execution.credentialIssuance ?? { requestedAt: new Date().toISOString(), outcome: 'requested', code: null, metadata: null, revocation: null }), ...update };
-    return 'recorded' as const;
+    lifecycleOf(execution);
+    return change(execution);
   }, BACKGROUND_CONTEXT);
+}
+
+/** Initial grant record of the current Execution (any state): intent before the call, then outcome/metadata. Never the token. */
+export async function recordIssuance(session: Session, work_id: string, executionId: string, update: Partial<CredentialGrantRecord>) {
+  return onExecution(session, work_id, executionId, execution => {
+    if (!execution.credentialIssuance && update.outcome !== 'requested') return 'stale' as const;
+    execution.credentialIssuance = { ...(execution.credentialIssuance ?? blankGrant()), ...update };
+    if (update.outcome === 'issued' && execution.credentialLifecycle.state === 'none') execution.credentialLifecycle.state = 'active';
+    return 'recorded' as const;
+  });
+}
+
+/**
+ * Renewal intent (spec §8.1: "nova issue após revalidar autorização da atividade"): in ONE commit, the Execution is the Work's current one,
+ * its activity is started and not ended/held, the Work is open, the credential lifecycle is active with renewal enabled, the repository is
+ * still configured for execution and the purpose is the activity's own. Eligibility for a NEXT activation (label, pause, dependencies) is
+ * deliberately NOT a condition: its withdrawal does not cut an activity that is still authorized.
+ */
+export async function beginRenewal(session: Session, work_id: string, executionId: string, facts: { repositoryConfigured: boolean }):
+  Promise<{ kind: 'begun'; sequence: number } | { kind: 'refused'; reasons: string[] }> {
+  const result = await session.commit(async tx => {
+    const document = await tx.doc(works, work_id, null);
+    const work = document.work;
+    const execution = work?.execution ?? null;
+    if (!work || !execution || execution.executionId !== executionId) return { kind: 'refused' as const, reasons: ['EXECUTION_NOT_CURRENT'] };
+    const lifecycle = lifecycleOf(execution);
+    const reasons: string[] = [];
+    if (work.result !== 'open') reasons.push('WORK_NOT_OPEN');
+    if (execution.state !== 'started' || execution.dispatch.phase !== 'started' || execution.held) reasons.push('ACTIVITY_NOT_AUTHORIZED');
+    if (lifecycle.state !== 'active') reasons.push('CREDENTIALS_WITHDRAWN');
+    if (lifecycle.renewal !== 'enabled') reasons.push('RENEWAL_STOPPED');
+    if (!facts.repositoryConfigured) reasons.push('REPOSITORY_NOT_CONFIGURED');
+    if (execution.credential?.purpose !== 'builder-start') reasons.push('PURPOSE_MISMATCH');
+    if (reasons.length) return { kind: 'refused' as const, reasons };
+    const sequence = execution.credentialRenewals.length + 1;
+    execution.credentialRenewals.push({ ...blankGrant(), sequence, delivery: null });
+    return { kind: 'begun' as const, sequence };
+  }, BACKGROUND_CONTEXT);
+  return result;
+}
+
+/** Outcome/metadata/delivery of one renewal. Returns whether the lifecycle is still active, so a grant issued after a withdrawal is never delivered. */
+export async function recordRenewal(session: Session, work_id: string, executionId: string, sequence: number,
+  update: Partial<CredentialGrantRecord & { delivery: 'delivered' | 'failed' | 'not-delivered' }>) {
+  return onExecution(session, work_id, executionId, execution => {
+    const renewal = execution.credentialRenewals.find(item => item.sequence === sequence);
+    if (!renewal) return 'stale' as const;
+    Object.assign(renewal, update);
+    return execution.credentialLifecycle.state === 'active' ? 'active' as const : 'withdrawn' as const;
+  });
+}
+
+/** No further renewal for this activity (failed/unknown issuance or delivery): recorded, never retried blindly, never a restart. */
+export const stopRenewal = (session: Session, work_id: string, executionId: string, code: string) =>
+  onExecution(session, work_id, executionId, execution => {
+    if (execution.credentialLifecycle.renewal === 'enabled') Object.assign(execution.credentialLifecycle, { renewal: 'stopped', renewalStop: code });
+    return 'recorded' as const;
+  });
+
+/** Withdrawal commit (end/external wait/cancellation/hold/owner stop): no new delivery or renewal afterwards. The first reason is kept. */
+export const withdrawCredentials = (session: Session, work_id: string, executionId: string, reason: CredentialWithdrawal) =>
+  onExecution(session, work_id, executionId, execution => {
+    const lifecycle = execution.credentialLifecycle;
+    if (lifecycle.state === 'withdrawn') return 'already-withdrawn' as const;
+    Object.assign(lifecycle, { state: 'withdrawn', withdrawnAt: new Date().toISOString(), reason });
+    return 'withdrawn' as const;
+  });
+
+/** Outcome of the single revocation attempt of one known grant. */
+export const recordRevocation = (session: Session, work_id: string, executionId: string, grant: 'initial' | number, result: RevocationResult) =>
+  onExecution(session, work_id, executionId, execution => {
+    const record = grant === 'initial' ? execution.credentialIssuance : execution.credentialRenewals.find(item => item.sequence === grant);
+    if (!record) return 'stale' as const;
+    Object.assign(record, { revocation: result.kind, revocationCode: result.code ?? null });
+    return 'recorded' as const;
+  });
+
+/**
+ * Boot reconciliation of grants a previous controller process held only in memory (spec §8: "valor perdido pode impedir revogação"): every
+ * known grant without a revocation outcome becomes `impossible` with its external-validity risk. Nothing is recovered from logs/sessions,
+ * no revocation or cessation is claimed, and no impediment, pause or dispatch reason is added because of it.
+ */
+export async function reconcileLostCredentials(session: Session): Promise<number> {
+  const index = await session.snapshot(ticketIndex, BACKGROUND_CONTEXT);
+  let reconciled = 0;
+  for (const id of index?.order ?? []) {
+    reconciled += await session.commit(async tx => {
+      const document = await tx.doc(works, id, null);
+      const execution = document.work?.execution ?? null;
+      if (!execution) return 0;
+      const lifecycle = lifecycleOf(execution);
+      let count = 0;
+      for (const grant of [execution.credentialIssuance, ...execution.credentialRenewals]) {
+        if (!grant || grant.revocation !== null || grant.outcome === 'failed') continue;
+        const until = grant.metadata?.expiresAt ?? `at most one hour after ${grant.requestedAt} (issuance outcome ${grant.outcome})`;
+        Object.assign(grant, { revocation: 'impossible', revocationCode: 'VALUE_LOST_AFTER_RESTART',
+          risk: `The grant value was held only in the memory of a previous controller process and is lost; it cannot be revoked and may remain valid externally (including copies made by code that received it) until ${until}. Expiry is not proof of cessation; this alone does not suspend the installation.` });
+        count++;
+      }
+      if (count && lifecycle.state !== 'withdrawn') Object.assign(lifecycle, { state: 'withdrawn', withdrawnAt: new Date().toISOString(), reason: 'controller-restart' });
+      return count;
+    }, BACKGROUND_CONTEXT);
+  }
+  return reconciled;
 }
 
 /** "Confirmar início" (spec §3.4/5.3): the receipt of THIS Execution is consumed exactly once; a different receipt is a conflict. */

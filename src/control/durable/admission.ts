@@ -70,7 +70,11 @@ export async function admitTicket(session: Session, evidence: AdmissionEvidence)
   }, BACKGROUND_CONTEXT);
 }
 
-const normalize = (work: WorkRecord): WorkRecord => ({ ...work, dependencies: work.dependencies ?? { latest: null, lastComplete: null }, execution: work.execution ?? null, branch: work.branch ?? null });
+// Executions recorded before the credential lifecycle (ticket 20) have no renewal/lifecycle fields: presented with neutral defaults.
+const normalize = (work: WorkRecord): WorkRecord => ({ ...work, dependencies: work.dependencies ?? { latest: null, lastComplete: null },
+  execution: work.execution ? { ...work.execution, credentialRenewals: work.execution.credentialRenewals ?? [],
+    credentialLifecycle: work.execution.credentialLifecycle ?? { state: work.execution.credentialIssuance ? 'active' : 'none', withdrawnAt: null, reason: null, renewal: 'enabled', renewalStop: null } } : null,
+  branch: work.branch ?? null });
 
 /** Open Works with pending queue work of one repository (by immutable id), FIFO by admission sequence. */
 export async function pendingWorks(session: Session, repositoryId: number): Promise<WorkRecord[]> {

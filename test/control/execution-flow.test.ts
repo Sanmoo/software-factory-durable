@@ -58,6 +58,7 @@ function executionDoubles(control: () => Control, options: { prepare?: 'fail'; h
         return { worker: invocation.context.invocationId, started, completed: started.then(() => ({ status: 'success' as const, receipt: { workId: invocation.context.workId, id: '99999999-2222-4333-8444-555555555555' } })),
           close() { calls.push({ kind: 'close', at: calls.length }); } };
       },
+      async deliver(_worker, directive) { calls.push({ kind: `deliver-${directive.kind}`, at: calls.length }); return { status: directive.kind === 'credential' ? 'delivered' : 'withdrawn' }; },
     },
   };
   return { ports, calls, snapshots, releaseStart, activationSignals };
@@ -205,7 +206,7 @@ test('AC5: a failed credential issuance holds before any activation (never widen
   assert.equal((await h.byNumber())[3]!.execution!.held!.code, 'CREDENTIAL_GITHUB_TOKEN_ISSUANCE_UNKNOWN');
   // Review 5: the issuance intent was durable BEFORE the call, and its unknown outcome is recorded.
   assert.deepEqual(h.execution.snapshots.issue!.execution!.credentialIssuance, { requestedAt: h.execution.snapshots.issue!.execution!.credentialIssuance!.requestedAt,
-    outcome: 'requested', code: null, metadata: null, revocation: null });
+    outcome: 'requested', code: null, metadata: null, revocation: null, revocationCode: null, risk: null });
   const issuance = (await h.byNumber())[3]!.execution!.credentialIssuance!;
   assert.deepEqual([issuance.outcome, issuance.code, issuance.metadata], ['unknown', 'GITHUB_TOKEN_ISSUANCE_UNKNOWN', null]);
 });
