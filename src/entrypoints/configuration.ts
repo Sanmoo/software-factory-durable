@@ -52,7 +52,8 @@ const schema = z.strictObject({
   value.repositories.some(executable => executable.repository.toLowerCase() === dependency.repository.toLowerCase())),
 { path: ['dependencyRepositories'], message: 'A repository is either executable or dependency-only, never both' });
 
-export async function readConfiguration(root: string) {
+/** `guestAssets`: the pin of a verified release (trusted composition data), never read from the YAML. */
+export async function readConfiguration(root: string, guestAssets?: { directory: string; manifestSha256: string }) {
   let input: unknown;
   try {
     const configPath = join(root, 'config.yaml');
@@ -63,12 +64,12 @@ export async function readConfiguration(root: string) {
     input = document.toJS({ maxAliasCount: 0 });
   } catch {
     // Parser diagnostics can contain the offending scalar (including a secret).
-    const sandbox = await createSandbox({ root }).validate(undefined);
+    const sandbox = await createSandbox({ root, ...(guestAssets ? { guestAssets } : {}) }).validate(undefined);
     return { configuration: { valid: false as const, errors: [{ code: 'CONFIGURATION_UNREADABLE', path: 'config.yaml' }] },
       checks: sandbox.checks, versions: sandbox.versions };
   }
   const parsed = schema.safeParse(input);
-  const sandbox = await createSandbox({ root }).validate(input && typeof input === 'object' && 'sandbox' in input ? input.sandbox : undefined);
+  const sandbox = await createSandbox({ root, ...(guestAssets ? { guestAssets } : {}) }).validate(input && typeof input === 'object' && 'sandbox' in input ? input.sandbox : undefined);
   const validatedSandbox = sandbox.configuration;
   if (!parsed.success || !validatedSandbox.valid) {
     return { checks: sandbox.checks, versions: sandbox.versions, configuration: { valid: false as const, errors: [

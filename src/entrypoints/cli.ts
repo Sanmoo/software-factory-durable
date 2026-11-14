@@ -5,10 +5,11 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { connect, protocolVersion, type Envelope } from '../protocol/index.js';
 import { pathToFileURL } from 'node:url';
-import { setup, firstHumanLogin } from './setup.js';
+import { setup, setupService, firstHumanLogin } from './setup.js';
 import { doctor } from './doctor.js';
+import { releaseInstallationRoot } from './release.js';
 
-const usage = 'factory <setup|doctor|run|status|list|show <work>|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>)|update-scope <work> --reason <text>|request <id>> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated]; factory login --root <canonical-absolute-installation>';
+const usage = 'factory <setup|doctor|run|status|list|show <work>|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>)|update-scope <work> --reason <text>|request <id>> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service]; factory login --root <canonical-absolute-installation>';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 async function exchange(root: string, kind: 'inspect' | 'accept', payload: Envelope['payload'], id: string, runId: string | null) {
@@ -73,16 +74,20 @@ async function launch(root: string): Promise<number> {
 export async function main(args: string[]): Promise<number> {
   if (args.length === 1 && args[0] === '--help') { console.log(usage); return 0; }
   const command = args[0];
+  const installation = releaseInstallationRoot();
   if (command === 'login') {
     // Strict explicit root only; never accept an auth file, provider, key, JSON
     // output, environment/profile default or silently canonicalize aliases.
-    if (args.length !== 3 || args[1] !== '--root' || !args[2]?.startsWith('/') || resolve(args[2]) !== args[2]) {
-      console.error(JSON.stringify({ code: 'INVALID_ARGUMENTS' }));
+    if (args.length !== 3 || args[1] !== '--root' || !args[2]?.startsWith('/') || resolve(args[2]) !== args[2] ||
+        (installation !== undefined && args[2] !== installation)) {
+      console.error(JSON.stringify({ code: installation !== undefined && args[2] !== installation ? 'RELEASE_ROOT_MISMATCH' : 'INVALID_ARGUMENTS' }));
       return 2;
     }
     return firstHumanLogin(args[2]);
   }
-  let root = resolve('.');
+  // A release serves exactly its own installation root (releases/<id> of it); a development checkout uses --root or the cwd.
+  let root = installation ?? resolve('.');
+  let service = false;
   let json = false;
   let authenticated = false;
   let rootSeen = false;
@@ -105,6 +110,7 @@ export async function main(args: string[]): Promise<number> {
   if ((command === 'answer' || command === 'update-scope') && (!text || text !== text.trim() || text.length > 2000 || text.startsWith('--'))) valid = false;
   for (let index = command === 'answer' ? 3 : command === 'grant' || command === 'update-scope' ? 4 : command === 'request' || command === 'show' || command === 'question' ? 2 : 1; index < args.length; index++) {
     if (args[index] === '--authenticated' && command === 'doctor' && !authenticated) authenticated = true;
+    else if (args[index] === '--service' && command === 'setup' && !service && installation !== undefined) service = true;
     else if (args[index] === '--json' && !json) json = true;
     else if (args[index] === '--root' && !rootSeen && args[index + 1] && !args[index + 1]?.startsWith('-')) {
       root = resolve(args[++index]!);
@@ -115,6 +121,10 @@ export async function main(args: string[]): Promise<number> {
   }
   if (!valid) {
     console.error(JSON.stringify({ code: 'INVALID_ARGUMENTS', message: usage }));
+    return 2;
+  }
+  if (installation !== undefined && await realpath(root).catch(() => root) !== installation) {
+    console.error(JSON.stringify({ code: 'RELEASE_ROOT_MISMATCH', message: 'This release serves only its own installation root; use that root\'s launcher. No relocation by copy.' }));
     return 2;
   }
   try {
@@ -133,9 +143,20 @@ export async function main(args: string[]): Promise<number> {
       return report.configuration.valid ? (report.code === 'PREREQUISITES_MISSING' ? 3 : 0) : 2;
     }
     const prepared = await setup(root);
-    const result = { code: 'SETUP_PREPARED', ...prepared, diagnostics: await doctor(prepared.root) };
+    let unit: Awaited<ReturnType<typeof setupService>> | undefined;
+    if (service) {
+      try { unit = await setupService(prepared.root); }
+      catch (error) {
+        const code = error instanceof Error && ['SERVICE_UNIT_CONFLICT', 'SERVICE_PATH_UNSUPPORTED'].includes(error.message) ? error.message : 'SERVICE_DEFINITION_FAILED';
+        console.error(JSON.stringify({ code, message: 'Existing unit definitions are never overwritten; inspect it explicitly. Nothing was started or enabled.' }));
+        return 2;
+      }
+    }
+    const result = { code: 'SETUP_PREPARED', ...prepared, ...(unit ? { service: { ...unit, registered: false,
+      nextStep: `Administrator: systemctl --user daemon-reload && systemctl --user start ${unit.unit} (same lock as the foreground run).` } } : {}),
+    diagnostics: await doctor(prepared.root) };
     console.log(json ? JSON.stringify(result) :
-      `Prepared ${result.root}; created: ${result.created.join(', ') || 'none'}.\n${result.diagnostics.code}: preparation is not runtime qualification. Run doctor --json for details.`);
+      `Prepared ${result.root}; created: ${result.created.join(', ') || 'none'}.${unit ? ` Service definition ${unit.state}: ${unit.path} (not started).` : ''}\n${result.diagnostics.code}: preparation is not runtime qualification. Run doctor --json for details.`);
     return 0;
   } catch {
     console.error(JSON.stringify({ code: 'LOCAL_IO_FAILED', message: 'Check installation paths, types and permissions; no automatic repair.' }));
