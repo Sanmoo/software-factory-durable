@@ -14,8 +14,9 @@ type Phase = typeof phases[number];
 const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 'main', installationId: 177599217, workflows: false, label: 'ready-for-agent' };
 const expectedTicket = { number: 3, repositoryId: 1256893534 };
 const githubApp = { appId: 5569788, privateKeyFile: 'credentials/app.pem' };
-/** Only these GitHub accounts' strict `/factory answer` comments on Ticket #3 can answer (case-insensitive login, human accounts). */
-const operators = ['Sanmoo'];
+/** The only operator: preflight resolves the immutable user id GitHub reports for this login (the repository owner) and pins it. */
+const operatorLogin = 'Sanmoo';
+const operators = [operatorLogin];
 const configuration = { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1', memoryMiB: 4096, vcpus: 2, diskGiB: 40, shutdownGraceSeconds: 30, minFreeSpaceGiB: 4 } as const;
 const guestAssets = { directory: '/home/sanmoo/software-factory-test/assets34/assets', manifestSha256: '8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807' } as const;
 const phaseDeadlineMs = 45 * 60 * 1000;
@@ -24,7 +25,9 @@ const systemPrompt = 'You are the Software Factory Builder. Follow the Factory s
   'approval you do not have, use the ask_user tool instead of working around it.';
 
 export function plan() {
-  return { revision, root, observations, phases, repository, expectedTicket, operators, configuration, guestAssets, skillPack: 'factory-skills-v2',
+  return { revision, root, observations, phases, repository, expectedTicket, operators, operatorIdentity: 'pinned at preflight to the user id GitHub reports for this login (repository owner, type User); comments then match by id only',
+    storage: 'ask/resume hold an exclusive flock on observations/control.lock; inspect/stop-environment read a fresh copy of the storage taken under that lock (never write it)',
+    configuration, guestAssets, skillPack: 'factory-skills-v2',
     model: { provider: 'openai', model: 'gpt-6-luna', api: 'openai-responses', auth: 'factory-oauth (operator first-login store under root/credentials)',
       budget: 'builder-v1', maxActivations: 2, perActivation: { maxRequests: 60, maxToolCalls: 120, deadlineMinutes: 30 }, providerRetries: 0, sdkRetries: 0, providerBillingHardCap: false },
     github: { app: githubApp, controllerPurposes: ['tracker-read', 'association-read', 'dependency-read', 'repository-read', 'repository-fetch {metadata:read, contents:read}',
@@ -76,6 +79,46 @@ export function guardTracker(tracker: IssueTracker, events: unknown[]): IssueTra
     } };
 }
 
+/** Exclusive, non-blocking flock on the recipe storage lock, held by a child until `release` (never removed or taken over). */
+export async function holdStorageLock(path: string) {
+  const { spawn } = await import('node:child_process');
+  const fs = await import('node:fs/promises');
+  const { constants } = await import('node:fs');
+  await (await fs.open(path, constants.O_CREAT | constants.O_RDWR | constants.O_NOFOLLOW, 0o600)).close();
+  const child = spawn('flock', ['--exclusive', '--nonblock', path, 'sh', '-c', 'echo locked; exec cat'], { stdio: ['pipe', 'pipe', 'ignore'] });
+  const exited = new Promise<void>(resolve => child.once('exit', () => resolve()));
+  await new Promise<void>((resolve, reject) => {
+    child.stdout!.once('data', () => resolve());
+    child.once('error', () => reject(new Error('STORAGE_LOCK_UNAVAILABLE')));
+    void exited.then(() => reject(new Error('STORAGE_LOCK_UNAVAILABLE')));
+  });
+  return { async release() { child.stdin!.end(); await exited; } };
+}
+
+/** Read-only inspection: a NEW exclusive copy of the storage files (taken under the lock) is opened; the qualification storage is never written. */
+export async function openStorageCopy(storage: string, directory: string) {
+  const fs = await import('node:fs/promises');
+  const { constants } = await import('node:fs');
+  const { basename, join } = await import('node:path');
+  await fs.mkdir(directory, { mode: 0o700 });
+  for (const suffix of ['', '-wal', '-shm']) {
+    await fs.copyFile(`${storage}${suffix}`, join(directory, `${basename(storage)}${suffix}`), constants.COPYFILE_EXCL).catch((error: NodeJS.ErrnoException) => {
+      if (suffix === '' || error.code !== 'ENOENT') throw error;
+    });
+  }
+  const { openControl } = await import('../../src/control/index.js');
+  const control = await openControl({ storagePath: join(directory, basename(storage)), runtimeInventory: 'unknown' });
+  return { control, async close() { const stop = new AbortController(); stop.abort(); await control.run(stop.signal); } };
+}
+
+/** Pins the operator to the immutable id of the expected login as GitHub reports it (repository owner, human account). */
+export function resolveOperator(body: unknown, login: string): { login: string; id: number } {
+  const owner = body && typeof body === 'object' && 'owner' in body ? (body as { owner: { login?: unknown; id?: unknown; type?: unknown } }).owner : undefined;
+  if (!owner || typeof owner.login !== 'string' || owner.login.toLowerCase() !== login.toLowerCase() || owner.type !== 'User' ||
+      typeof owner.id !== 'number' || !Number.isSafeInteger(owner.id) || owner.id <= 0) throw new Error('OPERATOR_IDENTITY_UNRESOLVED');
+  return { login: owner.login, id: owner.id };
+}
+
 async function compose(events: unknown[]) {
   const { createGitHubAccess, createBuilderCredentials, createRepositoryFetchCredentials } = await import('../../src/platform/github/index.js');
   const { createIssueTracker } = await import('../../src/issue-tracker/index.js');
@@ -100,7 +143,7 @@ export function settled(list: ListView, questions: QuestionView[], executionsBef
   return stopped && questions.every(question => question.state !== 'open' || !['intended', 'attempting'].includes(question.publication.state));
 }
 
-async function runControl(phase: 'ask' | 'resume', save: (name: string, data: unknown) => Promise<void>) {
+async function runControl(phase: 'ask' | 'resume', save: (name: string, data: unknown) => Promise<void>, pinned: { login: string; id: number }[]) {
   const events: unknown[] = [];
   const { github, tracker, codeRepository, createBuilderCredentials, createRepositoryFetchCredentials } = await compose(events);
   const { createSandbox } = await import('../../src/sandbox/index.js');
@@ -144,7 +187,7 @@ async function runControl(phase: 'ask' | 'resume', save: (name: string, data: un
     // Recipe decision: root/environments holds only earlier qualification resources (q05/q06/q09) and, for `resume`, this storage's own
     // environment whose boot ceased (checked before opening); none is running for this storage.
     runtimeInventory: 'empty',
-    access: { tracker, repository: codeRepository, repositories: [repository], dependencyRepositories: [], operators }, polling: { intervalSeconds: 30 }, execution });
+    access: { tracker, repository: codeRepository, repositories: [repository], dependencyRepositories: [], operators: pinned }, polling: { intervalSeconds: 30 }, execution });
   const stop = new AbortController();
   const running = control.run(stop.signal);
   const deadline = Date.now() + phaseDeadlineMs;
@@ -177,64 +220,83 @@ export async function runPhase(phase: Phase) {
   await save(`${phase}-intent`, { revision, phase, at: new Date().toISOString() });
   try {
     if (phase === 'preflight') {
-      const { tracker } = await compose([]);
+      const { tracker, github } = await compose([]);
+      const owner = await github.read(repository, 'tracker-read', session => session.get(`/repos/${repository.repository}`));
+      if (!owner.ok) { await save('preflight-held', { owner }); throw new Error('PRECONDITION_HELD'); }
+      const operator = resolveOperator(owner.value, operatorLogin);
       const listing = await tracker.listCandidates(repository);
       if (listing.kind !== 'observed' || listing.candidates.length !== 1 || listing.candidates[0]!.number !== expectedTicket.number ||
         listing.repositoryId !== expectedTicket.repositoryId) { await save('preflight-held', { listing }); throw new Error('PRECONDITION_HELD'); }
       const ticket = await tracker.readTicket(listing.candidates[0]!);
       const graph = await tracker.readDependencyGraph(listing.candidates[0]!);
       const inputs = await tracker.readInputs(listing.candidates[0]!, null);
-      await save('preflight-result', { status: 'success', ticket, graph: { completeness: graph.completeness, nodes: graph.nodes.length, problems: graph.problems },
+      await save('preflight-result', { status: 'success', operators: [operator], ticket, graph: { completeness: graph.completeness, nodes: graph.nodes.length, problems: graph.problems },
         comments: inputs.kind === 'observed' ? { completeness: inputs.completeness, count: inputs.comments.length, cursor: inputs.cursor } : inputs });
       return;
     }
     if (!(await exists('preflight-result'))) throw new Error('PREFLIGHT_REQUIRED');
-    if (phase === 'ask') { await runControl('ask', save); return; }
-    if (phase === 'resume') {
-      if (!(await exists('ask-result'))) throw new Error('ASK_REQUIRED');
-      const asked = await load('ask-result');
-      const work = (asked.final as ListView).works.find(item => item.ticket.number === expectedTicket.number);
-      if (!work?.execution || work.execution.end?.outcome !== 'question' || needsStop(work.execution)) throw new Error('ASK_EXECUTION_NOT_CEASED_WITH_QUESTION');
-      await runControl('resume', save);
-      return;
-    }
-    // Authority is the recipe's own storage (not the phase results, which a crash could prevent): read-only inspect, then closed.
-    const { openControl } = await import('../../src/control/index.js');
-    const stored = await openControl({ storagePath: `${observations}/control.sqlite`, runtimeInventory: 'unknown' });
-    const list = await stored.inspect({ kind: 'list' }) as ListView;
-    const work = list.works.find(item => item.execution);
-    const shown = work ? await stored.inspect({ kind: 'show', work_id: work.work_id }) as Extract<ShowView, { kind: 'work' }> : undefined;
-    const stop = new AbortController(); stop.abort();
-    await stored.run(stop.signal);
-    if (!work?.execution?.dispatch.environment) throw new Error('NO_EXECUTION_OBSERVED');
-    const environmentDirectory = `${root}/environments/${work.execution.dispatch.environment}`;
-    if (phase === 'inspect') {
-      const { inspectEnvironment } = await import('./builder09-qualification.js');
-      const { tracker } = await compose([]);
-      const comments = await tracker.readInputs(work.ticket, null);
-      const receipts: Record<string, string | null> = {};
-      for (const execution of [...work.previousExecutions, work.execution]) {
-        if (execution.start) receipts[execution.executionId] = await fs.readFile(`${root}/${work.work_id}/evidence/${execution.start.receiptId}/output`, 'utf8').then(text => text.slice(0, 65536), () => null);
+    const pinned = (await load('preflight-result')).operators as { login: string; id: number }[];
+    if (!Array.isArray(pinned) || pinned.length !== 1) throw new Error('OPERATOR_IDENTITY_UNRESOLVED');
+    const lock = await holdStorageLock(`${observations}/control.lock`);
+    try {
+      if (phase === 'ask') { await runControl('ask', save, pinned); return; }
+      if (phase === 'resume') {
+        if (!(await exists('ask-result'))) throw new Error('ASK_REQUIRED');
+        const asked = await load('ask-result');
+        const work = (asked.final as ListView).works.find(item => item.ticket.number === expectedTicket.number);
+        if (!work?.execution || work.execution.end?.outcome !== 'question' || needsStop(work.execution)) throw new Error('ASK_EXECUTION_NOT_CEASED_WITH_QUESTION');
+        await runControl('resume', save, pinned);
+        return;
       }
-      const storage = Buffer.concat(await Promise.all(['control.sqlite', 'control.sqlite-wal'].map(name => fs.readFile(`${observations}/${name}`).catch(() => Buffer.alloc(0)))));
-      await save('inspect-result', { work, questions: shown?.questions ?? [], receipts,
-        comments: comments.kind === 'observed' ? comments.comments.map(item => ({ id: item.commentId, author: item.author, viaApp: item.viaApp, url: item.url, firstLine: item.body.split('\n')[0]!.slice(0, 200) })) : comments,
-        secretScan: { ghs: storage.includes(Buffer.from('ghs_')), privateKey: storage.includes(Buffer.from('PRIVATE KEY')) },
-        ...await inspectEnvironment(environmentDirectory, observations, work.execution.request.baseCommit ?? undefined) });
-      return;
-    }
-    // stop-environment: only the recipe's own current boot, in any state where it may still run.
-    if (!needsStop(work.execution)) throw new Error('NOTHING_TO_STOP');
-    const { createSandbox } = await import('../../src/sandbox/index.js');
-    const sandbox = createSandbox({ root, guestAssets });
-    const environment = work.execution.dispatch.environment as never, boot = work.execution.dispatch.boot as never;
-    const before = await sandbox.observe({ environment, boot });
-    const result = before.condition === 'active' ? await sandbox.stop({ environment, boot, reason: 'q10 explicit stop of own boot' }) : null;
-    await save('stop-environment-result', { state: work.execution.state, before, result });
+      await inspectOrStop(phase, save);
+    } finally { await lock.release(); }
   } catch (error) {
     await save(`${phase}-held`, { phase, status: 'held', code: error instanceof Error ? error.message.slice(0, 128) : 'UNKNOWN', note: 'Consumed; no retry.' }).catch(() => {});
     throw new Error('QUALIFICATION_HELD');
   }
+}
+
+async function inspectOrStop(phase: 'inspect' | 'stop-environment', save: (name: string, data: unknown) => Promise<void>) {
+  const fs = await import('node:fs/promises');
+  const { readConfined } = await import('../../src/sandbox/index.js');
+  // Authority is the recipe's own storage (not the phase results, which a crash could prevent), read through a COPY taken under the lock:
+  // opening Control initializes documents, so the original is never opened here.
+  const stored = await openStorageCopy(`${observations}/control.sqlite`, `${observations}/${phase}-storage-copy`);
+  let list: ListView, shown: Extract<ShowView, { kind: 'work' }> | undefined;
+  try {
+    list = await stored.control.inspect({ kind: 'list' }) as ListView;
+    const found = list.works.find(item => item.execution);
+    shown = found ? await stored.control.inspect({ kind: 'show', work_id: found.work_id }) as Extract<ShowView, { kind: 'work' }> : undefined;
+  } finally { await stored.close(); }
+  const work = list.works.find(item => item.execution);
+  if (!work?.execution?.dispatch.environment) throw new Error('NO_EXECUTION_OBSERVED');
+  const environmentDirectory = `${root}/environments/${work.execution.dispatch.environment}`;
+  if (phase === 'inspect') {
+    const { inspectEnvironment } = await import('./builder09-qualification.js');
+    const { tracker } = await compose([]);
+    const comments = await tracker.readInputs(work.ticket, null);
+    const receipts: Record<string, string | null | { error: string }> = {};
+    for (const execution of [...work.previousExecutions, work.execution]) {
+      // Confined, bounded, no-follow reads of the protected start receipts.
+      if (execution.start) receipts[execution.executionId] = await readConfined(root, `${work.work_id}/evidence/${execution.start.receiptId}/output`, 65536)
+        .then(bytes => bytes === null ? null : bytes.toString('utf8'), (error: Error) => ({ error: error.message }));
+    }
+    const storage = Buffer.concat(await Promise.all(['control.sqlite', 'control.sqlite-wal'].map(name => fs.readFile(`${observations}/${name}`).catch(() => Buffer.alloc(0)))));
+    await save('inspect-result', { work, questions: shown?.questions ?? [], receipts,
+      comments: comments.kind === 'observed' ? comments.comments.map(item => ({ id: item.commentId, author: item.author, viaApp: item.viaApp, url: item.url,
+        createdAt: item.createdAt, updatedAt: item.updatedAt, firstLine: item.body.split('\n')[0]!.slice(0, 200) })) : comments,
+      secretScan: { ghs: storage.includes(Buffer.from('ghs_')), privateKey: storage.includes(Buffer.from('PRIVATE KEY')) },
+      ...await inspectEnvironment(environmentDirectory, observations, work.execution.request.baseCommit ?? undefined) });
+    return;
+  }
+  // stop-environment: only the recipe's own current boot, in any state where it may still run.
+  if (!needsStop(work.execution)) throw new Error('NOTHING_TO_STOP');
+  const { createSandbox } = await import('../../src/sandbox/index.js');
+  const sandbox = createSandbox({ root, guestAssets });
+  const environment = work.execution.dispatch.environment as never, boot = work.execution.dispatch.boot as never;
+  const before = await sandbox.observe({ environment, boot });
+  const result = before.condition === 'active' ? await sandbox.stop({ environment, boot, reason: 'q10 explicit stop of own boot' }) : null;
+  await save('stop-environment-result', { state: work.execution.state, before, result });
 }
 
 export async function main(args: string[]) {
