@@ -131,6 +131,10 @@ dependency-cruiser rc=0 (300 módulos, 1766 dependências, nenhuma violação); 
 arquivo por vez (`--experimental-test-module-mocks --test --test-concurrency=1`, timeout 90 s):
 **137 arquivos, 924 pass, 0 fail, 10 skip** (skips de ambiente inalterados), sem reexecuções.
 
+Após o rebase sobre `integration/software-factory-mvp` @ `314f241` (tickets 11 e 19) e o pack de produção derivado
+(HEAD `9ba8f8f`, `rm -rf dist` antes): `tsc`/`eslint`/dependency-cruiser rc=0 (327 módulos, 1949 dependências);
+**151 arquivos, 993 pass, 0 fail, 10 skip**, um arquivo por vez, sem reexecuções.
+
 ## Decisões de interpretação e questões abertas (operador)
 
 1. **Perfil de worker único na release.** A release compõe `openai`/`gpt-6-luna` via OAuth da Factory para os
