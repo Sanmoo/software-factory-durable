@@ -78,8 +78,8 @@ comprovada pelas mutações acima. `entrypoints/credential-lifecycle` falhou pri
 
 1. **Gatilhos de espera externa e cancelamento.** Não existem neste incremento (tickets 10/25). O mecanismo e o seam interno
    `withdrawActivityCredentials`/`dispatcher.withdraw` estão prontos e testados; nenhuma operação pública nova foi acrescentada ao `Control`.
-2. **Hold retira credenciais.** Uma Execução `held` não está autorizada a avançar: retirada `held` + revogação. A spec lista fim/espera/
-   cancelamento; confirmar que hold entra nessa regra.
+2. **Hold retira credenciais** — **aprovado pelo supervisor** (2026-11-14): uma Execução `held` não está autorizada a avançar; retirada
+   `held` + revogação, inclusive se o commit do hold falhar.
 3. **Política de falha de renovação.** Uma tentativa por prazo; qualquer falha (inclusive rejeição conhecida, p.ex. rate limit) para as
    renovações daquela atividade, que segue até a concessão vigente expirar (gh/git no guest passam a falhar), sem reinício. Retentativa
    limitada para rejeições conhecidas seria decisão nova.
@@ -87,13 +87,12 @@ comprovada pelas mutações acima. `entrypoints/credential-lifecycle` falhou pri
    anterior; todas as conhecidas são revogadas na retirada. Janela: até N tokens vivos por ≤ 1 h cada.
 5. **Margem e espera.** `credentialRenewal.beforeExpirySeconds` (padrão 600) é parâmetro de composição; a configuração declarativa ainda não o
    expõe (a composição de produção ainda não tem portas de execução — ticket 32). A espera é prazo dentro da tarefa da Execução, não do polling.
-6. **Credencial de fetch do cache** (`repository-fetch`, host) não é revogada (fora do escopo Builder; vive ≤ 1 h só em memória do controlador).
-   Sugestão: auto-revogar após o fetch.
+6. **Credencial de fetch do cache** (`repository-fetch`, host) — **decidido pelo supervisor**: auto-revogada logo após o fetch (também em
+   falha do fetch/lock), uma vez; `checkout.json` guarda só o tipo do resultado (`fetchCredentialRevocation`).
 7. **Integração I-local unida no frame do Protocol.** A regra `public-entry` impede `test/entrypoints` de importar o owner; o lado owner dos
    mesmos frames é coberto com código real em `test/sandbox/owner-credential`.
 8. **`Workers.deliver`** só conhece diretivas de credencial; a entrega de resultados de revisão (tickets 12/13) estenderá a união.
-9. **Impressão digital no ensaio.** A receita registra apenas `sha256(token)[0:12]` para mostrar qual concessão cada comando viu. Não é o
-   valor nem prefixo dele; vetar se não aceitável.
+9. **Impressão digital no ensaio** — **aprovada pelo supervisor**: a receita registra apenas `sha256(token)[0:12]`.
 
 ## Ensaio real (receita one-shot)
 
@@ -149,6 +148,22 @@ Observações esperadas:
 5. Desvios que exigem disposição do operador: `verdict.passed: false` (ver `checks`), `held`, prazo atingido, `provider.held: true`,
    pós-verificação diferente de `already-invalid` (a concessão pode seguir válida até `expiresAt`).
 
+## Correções da revisão estática independente (2026-11-14, sobre `54aac1e`)
+
+Todas com teste vermelho antes da correção ou mutação que comprova a detecção (JS compilado, restaurado).
+
+| # | Achado | Correção | Teste (vermelho / mutação) |
+| --- | --- | --- | --- |
+| 1 (médio) | Retirada entre registro do lifecycle e `attach`: Builder ativado com token retirado; `withdraw` respondia `not-active` durante a emissão inicial | Lifecycle registrado **antes** da emissão (emissão em voo visível); `withdrawn` conferido após a emissão e imediatamente antes do `activate` → para o boot próprio e `held` `ACTIVATION_CREDENTIALS_WITHDRAWN`, sem ativar; `attach` após retirada envia `withdraw-credential` na hora | `credential-lifecycle` review 1 e review 1/6 (vermelhos; mutações M1/M1b detectadas) |
+| 2 (médio) | Renovação podia emitir após início da retirada/parada | Reconferência de `withdrawn`/`stopping` entre `beginRenewal` e `issue`; renovação gravada `not-attempted` / `CREDENTIALS_WITHDRAWN` | `review 2 (deterministic)` (retirada disparada exatamente após o commit da intenção; mutação M2 detectada). A varredura temporal `review 2` não ficou vermelha antes da correção (janela estreita): mantida só como regressão |
+| 3 (médio) | `hold()` pulava a retirada se `holdExecution` lançasse | Retirada em `finally` | `credential-hold` (commit de hold forçado a falhar por `mock.module`; vermelho; mutação M3 detectada) |
+| 4 (baixo) | Reconciliação rotulava como valor perdido uma revogação tentada cujo registro falhou; reexecução in-process; `inspect` da receita escrevia | Intenção durável `revocationAttemptedAt` antes de cada DELETE → no boot `unknown` / `REVOCATION_OUTCOME_LOST_AFTER_RESTART` com risco; concessões vivas neste processo (`isLiveCredentialExecution`) nunca reetiquetadas; `run` com sinal já abortado não reconcilia (inspeção somente leitura) | review 4 (SIGKILL durante a revogação; vermelho; mutação M4 detectada) |
+| 5 (baixo) | Registros anteriores ao 20 apareciam com lifecycle `active` | Estado derivado da Execução (`ended/released/held` → `withdrawn` / `legacy-unknown`); `not-attempted` antigo recebe texto de risco na reconciliação | review 5 (vermelho) |
+| 6 (baixo) | Resultado do `withdraw-credential` não era durável | `credentialLifecycle.workerNotice` (`withdrawn` ou código) | AC4 external-wait/cancelled + review 1/6 (vermelhos; mutação M6 detectada) |
+| 7 (baixo) | `expiresAt` inválido podia gerar laço | Renovação parada com `GRANT_EXPIRY_INVALID` | review 7 (vermelho; mutação M7 detectada) |
+| 8 (baixo) | Caixa de correio bufferizava frames inesperados; owner sem resposta para valor vazio | Só respostas a pedidos enviados são aceitas; qualquer outro frame torna o canal incerto (`WORKER_EXECUTION_UNCERTAIN`); owner responde `CREDENTIAL_DELIVERY_DENIED` | `activate-credential` review 8 (vermelho: travava), `owner-credential` review 8 |
+| decisão | Credencial de fetch do host | Auto-revogação após o fetch | `sandbox-checkout` (vermelho), `github-builder-credentials` (DELETE real do mundo sintético) |
+
 ## Gate local
 
 Node 24.21.0 com `env -u NODE_OPTIONS -u NODE_COMPILE_CACHE NODE_DISABLE_COMPILE_CACHE=1 timeout 60`, sem npm/npx, após `rm -rf dist`
@@ -164,3 +179,11 @@ Novos/ampliados: `control/credential-lifecycle` (7, inclui crash por SIGKILL de 
 `entrypoints/credential-lifecycle` (1, I-local), `entrypoints/credential20-qualification` (5, receita inerte/agenda/provedor/veredito),
 `github-builder-credentials` (+1), `bash-credential` (+2), `owner-credential` (+2), `activate-credential` (+2); ajustados `execution-flow`
 (dublê com `deliver`, campos novos do registro) e `builder09-qualification` (composição com `deliver`).
+
+**Gate após as correções da revisão** (HEAD `9d7c270` + este documento, `rm -rf dist`): `dependency-cruiser` sem violações (249 módulos,
+1400 dependências); eslint exit 0; tsc exit 0; **107 arquivos**, um por vez com `timeout 60`: 809 pass, 0 fail, 10 skipped, 1 cancelled —
+o cancelado é de novo `entrypoints/normal-oauth` (16 passes contados antes do corte). Por decisão do supervisor, **somente esse arquivo** usa
+limite documentado de **90 s** (teste inalterado): `timeout 90` → **18/18 pass em 55 s**. Total efetivo: **811 pass, 0 fail, 10 skipped,
+0 cancelled**. Novos nesta rodada: `control/credential-hold` (1), `credential-lifecycle` +7 (review 1, 1/6, 2 varredura, 2 determinístico,
+4, 5, 7), `activate-credential` +1, `owner-credential` +1, `sandbox-checkout` +1; ampliados `github-builder-credentials` e os testes AC4.
+
