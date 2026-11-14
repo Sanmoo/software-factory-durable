@@ -4,8 +4,8 @@ import type { BuilderGrant } from '../../contracts/index.js';
 import type { BootRef, EnvironmentRef } from '../../sandbox/index.js';
 import type { ProposalIdentity } from '../../contracts/index.js';
 import type { HandoffEvent } from '../../workers/index.js';
-import { deliveryPrompt, planReviews, type ReviewPlan } from '../rules/review.js';
-import { recordConclusion, recordDelivery, recordHandoff, recordReviewerEnd, recordReviewerStart } from './review.js';
+import { classifyCapture, deliveryPrompt, exemptionPrompt, lastReviewed, planReviews, type CaptureClass, type ReviewPlan } from '../rules/review.js';
+import { recordConclusion, recordDelivery, recordHandoff, recordReviewerEnd, recordReviewerStart, recordVerification } from './review.js';
 import type { AccessDependencies, CredentialWithdrawal, DependencyEvaluation, ExecutionPorts, ExecutionView } from '../types.js';
 import { evaluateEntry } from '../rules/admission.js';
 import { dispatchBlockers, selectNext, type OwnCycleFacts } from '../rules/dependencies.js';
@@ -209,24 +209,54 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
   async function reviewRound(work: WorkRecord, execution: ExecutionView, environment: EnvironmentRef, boot: BootRef, handle: Handle, event: HandoffEvent,
     holdExecutionAndWithdraw: (code: string, nextStep: string) => Promise<void>,
     /** The Execution's activity scope: reviewers share its clock/timeout (spec §5.6/§5.7); an interruption ends the round at once. */
-    scope: { wait<T>(promise: Promise<T>): Promise<T>; signal: AbortSignal; interrupted(): boolean; activity(event: string): Promise<void> }): Promise<boolean> {
+    scope: { wait<T>(promise: Promise<T>): Promise<T>; signal: AbortSignal; interrupted(): boolean; activity(event: string): Promise<void> }, firstRound = 1): Promise<boolean> {
     const { executionId } = execution;
     const { round } = event;
     const reviews = ports.reviews!;
+    // Ticket 13: repeated captures (handoffs and the Host's closing capture) with exemptions; absent = the single ticket 12 round.
+    const multi = reviews.rounds !== undefined;
+    const lastSlot = multi && round >= firstRound + reviews.rounds!.max - 1;
+    const prior = multi ? ((await deps.readWorks()).find(item => item.work_id === work.work_id)?.execution?.review?.rounds ?? []) : [];
     // The Execution's own hold: also withdraws the Builder credentials (ticket 20), even while it is suspended for review.
     const hold = async (code: string, nextStep: string) => { await holdExecutionAndWithdraw(code, nextStep); return false; };
     const observeProposal = async () => ports.sandbox.observeProposal ? ports.sandbox.observeProposal({ environment, round }).catch(() => unavailable('PROPOSAL_IDENTITY_UNAVAILABLE')) : unavailable('PROPOSAL_IDENTITY_NOT_COMPOSED');
     let failure: string | null = event.status === 'failure' ? 'HANDOFF_UNAVAILABLE' : null;
     checkStop();
     const before = failure ? null : await observeProposal();
-    const plans: ReviewPlan[] = event.status === 'captured' ? planReviews({ executionId, round, attempt: 1, handoff: event.summary }) : [];
     if (!failure && before?.status !== 'observed') failure = 'PROPOSAL_IDENTITY_UNAVAILABLE';
     // The host-read index must be the very index the Builder host reported; otherwise no reviewer starts on it.
     if (!failure && event.status === 'captured' && before?.status === 'observed' && before.indexSha256 !== event.summary.indexSha256) failure = 'PROPOSAL_INDEX_MISMATCH';
-    const recorded = await recordHandoff(session, work.work_id, executionId, { event, before, plans, reviewer: reviews.reviewer, failure });
+    // No new round only when demonstrably unchanged or held exactly by a new commit (spec §6.4); an old approval is never reused otherwise.
+    const classification: CaptureClass = multi && !failure && event.status === 'captured' ? classifyCapture({ summary: event.summary, identity: before, rounds: prior }) : { kind: 'review' };
+    // A later round prefers each role's compatible session of the last reviewed round (the Workers decide and record continuation/replacement).
+    const previous = lastReviewed(prior);
+    const plans: ReviewPlan[] = event.status === 'captured' && classification.kind === 'review' ? planReviews({ executionId, round, attempt: 1, handoff: event.summary,
+      ...(multi ? { previousSessions: { standards: previous?.reviewers.standards.opinion?.session.file ?? null, spec: previous?.reviewers.spec.opinion?.session.file ?? null } } : {}) }) : [];
+    const recorded = await recordHandoff(session, work.work_id, executionId, { event, before, plans, reviewer: reviews.reviewer, failure,
+      ...(multi ? { firstRound, classification } : {}) });
     if (recorded !== 'recorded') return hold(`REVIEW_HANDOFF_${recorded.toUpperCase()}`, 'The handoff could not be recorded for this Execution; the Builder stays suspended. Operator recovery (ticket 26).');
-    observe(work.work_id, failure ? 'review-handoff-failed' : 'reviewing', failure ? [failure] : []);
+    observe(work.work_id, failure ? 'review-handoff-failed' : classification.kind === 'exemption' ? 'review-exempted' : 'reviewing', failure ? [failure] : []);
     await scope.activity(`review-handoff-r${round}`);
+    const deliver = async (prompt: string, end: boolean) => {
+      if (await recordDelivery(session, work.work_id, executionId, round, { promptSha256: createHash('sha256').update(prompt).digest('hex') }) !== 'recorded') return hold('REVIEW_DELIVERY_STALE', 'Delivery intent not recordable.');
+      checkStop();
+      // Q6 deliver (same union as the credential directives of ticket 20): the results to the CURRENT Builder of this Execution.
+      const delivered = await scope.wait(ports.workers.deliver(handle.worker, { kind: 'review-results', round, prompt, ...(end ? { end: true as const } : {}) }));
+      // A refusal is a known non-delivery; anything else may have reached the Builder (it might have resumed): uncertain, never "failed".
+      const refused = delivered.status === 'failure' && ['DELIVERY_DENIED', 'DELIVERY_NOT_APPLICABLE', 'WORKER_NOT_CURRENT'].includes(delivered.code);
+      await recordDelivery(session, work.work_id, executionId, round, delivered.status === 'delivered' ? { outcome: 'delivered', code: null }
+        : { outcome: refused ? 'failed' : 'uncertain', code: delivered.status === 'failure' ? delivered.code : 'DELIVERY_UNEXPECTED' });
+      if (delivered.status !== 'delivered') return hold(refused ? 'REVIEW_DELIVERY_FAILED' : 'REVIEW_DELIVERY_UNCERTAIN',
+        refused ? 'The review results were refused before reaching the suspended Builder; never retried automatically. Operator recovery (ticket 26).'
+          : 'It is unknown whether the Builder received the results (it may have resumed); never redelivered automatically. Operator recovery (ticket 26).');
+      return true;
+    };
+    if (classification.kind === 'exemption') {
+      const reviewed = lastReviewed(prior);
+      const ok = await deliver(exemptionPrompt({ round, exemption: classification.exemption, conclusion: reviewed?.conclusion ?? 'unknown' }), event.closing === true);
+      if (ok) { observe(work.work_id, 'review-delivered', [`exempt:${classification.exemption.kind}`]); await scope.activity(`review-delivered-r${round}`); }
+      return ok;
+    }
     const runReviewer = async (plan: ReviewPlan) => {
       let reviewer: Handle;
       try {
@@ -264,18 +294,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const concluded = await recordConclusion(session, work.work_id, executionId, round, after);
     if (typeof concluded === 'string') return hold(`REVIEW_CONCLUSION_${concluded.toUpperCase()}`, 'The review round could not be concluded; the Builder stays suspended. Operator recovery (ticket 26/28).');
     const prompt = deliveryPrompt({ round, conclusion: concluded.conclusion!, applicability: concluded.applicability ?? 'unknown', reasons: concluded.reasons,
-      reviewers: { standards: concluded.reviewers.standards, spec: concluded.reviewers.spec } });
-    if (await recordDelivery(session, work.work_id, executionId, round, { promptSha256: createHash('sha256').update(prompt).digest('hex') }) !== 'recorded') return hold('REVIEW_DELIVERY_STALE', 'Delivery intent not recordable.');
-    checkStop();
-    // Q6 deliver (same union as the credential directives of ticket 20): the results to the CURRENT Builder of this Execution.
-    const delivered = await scope.wait(ports.workers.deliver(handle.worker, { kind: 'review-results', round, prompt }));
-    // A refusal is a known non-delivery; anything else may have reached the Builder (it might have resumed): uncertain, never "failed".
-    const refused = delivered.status === 'failure' && ['DELIVERY_DENIED', 'DELIVERY_NOT_APPLICABLE', 'WORKER_NOT_CURRENT'].includes(delivered.code);
-    await recordDelivery(session, work.work_id, executionId, round, delivered.status === 'delivered' ? { outcome: 'delivered', code: null }
-      : { outcome: refused ? 'failed' : 'uncertain', code: delivered.status === 'failure' ? delivered.code : 'DELIVERY_UNEXPECTED' });
-    if (delivered.status !== 'delivered') return hold(refused ? 'REVIEW_DELIVERY_FAILED' : 'REVIEW_DELIVERY_UNCERTAIN',
-      refused ? 'The review results were refused before reaching the suspended Builder; never retried automatically. Operator recovery (ticket 26).'
-        : 'It is unknown whether the Builder received the results (it may have resumed); never redelivered automatically. Operator recovery (ticket 26).');
+      reviewers: { standards: concluded.reviewers.standards, spec: concluded.reviewers.spec }, ...(multi ? { multi: !lastSlot } : {}) });
+    // The closing capture in the last slot cannot be followed by another capture: its results are recorded and the activation ends.
+    if (!await deliver(prompt, event.closing === true && lastSlot)) return false;
     observe(work.work_id, 'review-delivered', [concluded.conclusion!]);
     await scope.activity(`review-delivered-r${round}`);
     return true;
@@ -306,7 +327,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       // Bounded like every resumption prompt: an over-large initial prompt blocks explicitly instead of being truncated.
       const initial = initialPrompt({ ticketUrl: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
         baseCommit: prepared.checkout.baseCommit, branch: execution.request.branch, checkout: prepared.checkout.path, workId: work.work_id,
-        executionId: execution.executionId, reviews: Boolean(ports.reviews), scopeUpdates: updates });
+        executionId: execution.executionId, reviews: Boolean(ports.reviews), scopeUpdates: updates, reviewRounds: Boolean(ports.reviews?.rounds) });
       if (initial.kind === 'too-large') return { kind: 'insufficient', reasons: ['PROMPT_TOO_LARGE'] };
       return { kind: 'ready', prompt: initial.prompt, resume: null, decision: null, continuation: null };
     }
@@ -335,7 +356,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       origin: answered.answer.origin.kind } : null;
     if (decided.mode === 'continue') {
       const continued = continuationPrompt({ executionId: execution.executionId, previousExecutionId: previous.executionId, skillDirectory,
-        answer: answered && answer ? { questionId: answered.questionId, ...answer } : null, scopeUpdates: updates });
+        answer: answered && answer ? { questionId: answered.questionId, ...answer } : null, scopeUpdates: updates, reviewRounds: Boolean(ports.reviews?.rounds) });
       if (continued.kind === 'insufficient') return { kind: 'insufficient', reasons: continued.reasons };
       return { kind: 'ready', prompt: continued.prompt, resume, decision, continuation: recorded };
     }
@@ -350,7 +371,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       baseCommit: prepared.checkout.baseCommit, branch: execution.request.branch, checkout: prepared.checkout.path, workId: work.work_id, executionId: execution.executionId,
       skillDirectory, previousExecutionId: previous.executionId,
       question: answered ? { questionId: answered.questionId, question: answered.content.question, context: answered.content.context } : null,
-      answer, replacement: { reason: decided.reason }, known });
+      answer, replacement: { reason: decided.reason }, known, reviewRounds: Boolean(ports.reviews?.rounds) });
     if (recovered.kind === 'too-large') return { kind: 'insufficient', reasons: ['PROMPT_TOO_LARGE'] };
     return { kind: 'ready', prompt: recovered.prompt, resume, decision, continuation: null };
   }
@@ -490,6 +511,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         await hold('ACTIVATION_CREDENTIALS_WITHDRAWN', 'The activity credentials were withdrawn before activation; the Builder was not activated. No charge was consumed; the Slot is kept (ticket 26).', true);
       };
       if (lifecycle.withdrawn) { await withdrawnBeforeActivation(); return; }
+      // Ticket 13: round numbers continue the earlier Executions of this Work (their /artifacts/review/r<N> directories are preserved).
+      const firstRound = 1 + Math.max(0, ...[...(work.previousExecutions ?? []), ...(work.execution && work.execution.executionId !== executionId ? [work.execution] : [])]
+        .flatMap(item => item.review?.rounds ?? []).map(item => item.round));
       const promptSha256 = createHash('sha256').update(prompt).digest('hex');
       const confirmed = await confirmActivation(session, work.work_id, executionId, attemptId, grant.metadata, promptSha256, plan.decision);
       if (confirmed.kind === 'refused') { await revoke(); await refuse(confirmed.reasons); return; }
@@ -513,7 +537,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       };
       const handle = await ports.workers.activate({ context: { workId: work.work_id, executionId, invocationId: execution.invocationId, role: 'builder',
         environmentRef: environment, bootRef: boot, phaseId: plan.continuation ? 'builder-continuation' : resume ? 'builder-recovery' : 'builder-initial' }, prompt, signal: activitySignal, ...ports.builder,
-        ...(ports.reviews ? { handoff: { baseCommit: prepared.checkout.baseCommit } } : {}), ...(plan.continuation ? { continuation: { session: plan.continuation } } : {}) },
+        ...(ports.reviews ? { handoff: { baseCommit: prepared.checkout.baseCommit, ...(ports.reviews.rounds ? { rounds: { first: firstRound, max: ports.reviews.rounds.max } } : {}) } } : {}), ...(plan.continuation ? { continuation: { session: plan.continuation } } : {}) },
       { credential: grant.delivery }, { question: onQuestion });
       activated = true;
       await lifecycle.attach(handle.worker);
@@ -537,7 +561,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           // reviewers never receive it.
           const reviewed = (async () => {
             for (let event = await wait(handoffs.next()); event; event = await wait(handoffs.next())) {
-              if (!await reviewRound(work, execution, environment, boot, handle, event, hold, { wait, signal: activitySignal, interrupted, activity })) return false;
+              if (!await reviewRound(work, execution, environment, boot, handle, event, hold, { wait, signal: activitySignal, interrupted, activity }, firstRound)) return false;
             }
             return true;
           })();
@@ -570,6 +594,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           const bound = own(await readQuestion(session, request.questionId));
           await recordEnd(session, work.work_id, executionId, 'question', code, bound ? request.questionId : null, elapsed(), completed.session ?? null);
         } else {
+          // Ticket 13: Control's presence/correlation verification of opinions, treatments, gates and waivers, before the end is recorded.
+          if (ports.reviews?.rounds && completed.status === 'success') await recordVerification(session, work.work_id, executionId);
           await recordEnd(session, work.work_id, executionId, completed.status === 'success' ? 'completed' : 'failure', completed.status === 'success' ? null : completed.code,
             null, elapsed(), completed.status === 'success' ? completed.session ?? null : null);
           if (completed.status === 'failure') await questionUncertain();

@@ -9,7 +9,7 @@ import { access, constants, statfs, stat, lstat, realpath, open, readdir, readFi
 import type { BigIntStats } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-export { planWorkerLaunch, launchWorker, workerOwnerEndpoint, workerRuntimeDirectory, unitState, type WorkerBootHost } from './worker-launch.js';
+export { planWorkerLaunch, launchWorker, prepareReviewerContinuation, workerOwnerEndpoint, workerRuntimeDirectory, unitState, type WorkerBootHost } from './worker-launch.js';
 
 export async function controllerPaths(root: string) {
   const canonicalRoot = await realpath(root);

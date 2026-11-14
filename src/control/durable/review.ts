@@ -3,12 +3,13 @@ import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { ProposalIdentity, ReviewerRole, ReviewOpinion } from '../../contracts/index.js';
 import type { HandoffEvent } from '../../workers/index.js';
 import type { ExecutionView, ReviewRoundView } from '../types.js';
-import { concludeRound, reviewerRoles, type ReviewPlan } from '../rules/review.js';
+import { concludeRound, lastReviewed, reviewerRoles, verifyExecution, type CaptureClass, type ReviewPlan } from '../rules/review.js';
 import { works, type WorkRecord } from './admission.js';
+import { questions } from './questions.js';
 import type { Session } from './store.js';
 
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
-const history = (work: WorkRecord, event: 'review-handoff' | 'reviewer-started' | 'reviewer-ended' | 'review-concluded' | 'review-delivered', executionId: string, detail: string) =>
+const history = (work: WorkRecord, event: 'review-handoff' | 'reviewer-started' | 'reviewer-ended' | 'review-concluded' | 'review-delivered' | 'review-exempted' | 'review-verified', executionId: string, detail: string) =>
   work.history.push({ at: new Date().toISOString(), event, origin: 'controller-dispatch', executionId, detail });
 
 /** Every review commit: the Execution is still the Work's current one and STARTED (the Builder is suspended, its Slot still held). */
@@ -30,27 +31,38 @@ async function withRound<T>(session: Session, work_id: string, executionId: stri
  * reviewers explicitly failed. Exactly the next round; a repeated or skipped round is refused.
  */
 export function recordHandoff(session: Session, work_id: string, executionId: string, input: { event: HandoffEvent; before: ProposalIdentity | null;
-  plans: ReviewPlan[]; reviewer: ReviewRoundView['versions']['profile']['reviewer']; failure: string | null }) {
+  plans: ReviewPlan[]; reviewer: ReviewRoundView['versions']['profile']['reviewer']; failure: string | null;
+  /** Ticket 13: the round numbers of this Execution continue those of earlier Executions; the capture's classification (exemption = no reviewer). */
+  firstRound?: number; classification?: CaptureClass }) {
   return withRound(session, work_id, executionId, input.event.round, ({ work, execution, current }) => {
     const rounds = execution.review?.rounds ?? [];
-    if (current || input.event.round !== rounds.length + 1) return 'refused' as const;
+    const firstRound = execution.review?.firstRound ?? input.firstRound ?? 1;
+    if (current || input.event.round !== (rounds.at(-1)?.round ?? firstRound - 1) + 1) return 'refused' as const;
+    const exemption = input.classification?.kind === 'exemption' && !input.failure ? input.classification.exemption : null;
+    const reviewed = exemption ? lastReviewed(rounds) : undefined;
+    if (exemption && reviewed?.round !== exemption.reviewedRound) return 'refused' as const;
     const at = new Date().toISOString();
     const summary = input.event.status === 'captured' ? input.event.summary : null;
     const reviewers = Object.fromEntries(reviewerRoles.map(role => {
       const plan = input.plans.find(item => item.role === role);
       const view = { invocationId: plan?.invocationId ?? `${role}-${executionId}-r${input.event.round}a1`, phaseId: plan?.phaseId ?? `review-r${input.event.round}`,
-        promptSha256: plan ? sha256(plan.prompt) : '', state: input.failure ? 'failed' as const : 'requested' as const, requestedAt: at, receiptId: null, endedAt: input.failure ? at : null,
-        opinion: null, failure: input.failure ? { code: input.failure } : null, cessation: input.failure ? 'never-started' as const : null, input: { required: plan ? [...plan.review.required] : [], missing: plan ? [...plan.review.missing] : [] } };
+        promptSha256: plan ? sha256(plan.prompt) : '', state: input.failure ? 'failed' as const : exemption ? 'not-required' as const : 'requested' as const, requestedAt: at, receiptId: null,
+        endedAt: input.failure || exemption ? at : null, opinion: null, failure: input.failure ? { code: input.failure } : null,
+        cessation: input.failure || exemption ? 'never-started' as const : null, input: { required: plan ? [...plan.review.required] : [], missing: plan ? [...plan.review.missing] : [] } };
       return [role, view];
     })) as ReviewRoundView['reviewers'];
-    const record: ReviewRoundView = { round: input.event.round, attempt: 1, state: 'reviewing',
+    const record: ReviewRoundView = { round: input.event.round, attempt: 1, state: exemption ? 'concluded' : 'reviewing',
+      ...(input.classification ? { kind: exemption ? 'exemption' as const : 'review' as const, closing: input.event.closing === true, exemption,
+        declarations: input.event.declarations ? JSON.parse(JSON.stringify(input.event.declarations)) as NonNullable<ReviewRoundView['declarations']> : null } : {}),
       handoff: { at, invocationId: execution.invocationId, status: input.event.status, code: input.event.status === 'failure' ? input.event.code : null,
         detail: input.event.status === 'failure' ? input.event.detail ?? null : null, summary },
       versions: { spec: summary?.spec ?? null, instructions: summary?.instructions ?? null, base: summary?.base ?? execution.request.baseCommit, head: summary?.head ?? null,
         profile: { skillPack: execution.request.skillPack, builder: execution.request.policies, reviewer: { ...input.reviewer } } },
-      identity: { before: input.before, after: null }, reviewers, applicability: null, conclusion: null, reasons: [], concludedAt: null, delivery: null };
-    execution.review = { rounds: [...rounds, record] };
-    history(work, 'review-handoff', executionId, `r${record.round}:${input.event.status}${input.failure ? `:${input.failure}` : ''}`);
+      identity: { before: input.before, after: exemption ? input.before : null }, reviewers, applicability: exemption ? 'current' : null,
+      conclusion: exemption ? reviewed!.conclusion : null, reasons: exemption ? [`EXEMPT_${exemption.kind.toUpperCase().replace('-', '_')}`] : [], concludedAt: exemption ? at : null, delivery: null };
+    execution.review = { ...execution.review, ...(input.firstRound !== undefined || execution.review?.firstRound !== undefined ? { firstRound } : {}), rounds: [...rounds, record] };
+    history(work, 'review-handoff', executionId, `r${record.round}:${input.event.status}${input.failure ? `:${input.failure}` : ''}${input.event.closing ? ':closing' : ''}`);
+    if (exemption) history(work, 'review-exempted', executionId, `r${record.round}:${exemption.kind}:r${exemption.reviewedRound}`);
     return 'recorded' as const;
   });
 }
@@ -118,4 +130,28 @@ export function recordDelivery(session: Session, work_id: string, executionId: s
     history(work, 'review-delivered', executionId, `r${round}:${update.outcome}`);
     return 'recorded' as const;
   });
+}
+
+/**
+ * Ticket 13 end-of-Execution verification commit, while the Execution is still STARTED (before its end is recorded): the pure rule over the
+ * durable rounds, with the Questions referenced by authorizations read in the SAME commit. Presence/correlation only, never semantics.
+ */
+export async function recordVerification(session: Session, work_id: string, executionId: string) {
+  return session.commit(async tx => {
+    const document = await tx.doc(works, work_id, null);
+    const work = document.work;
+    const execution = work?.execution ?? null;
+    if (!work || !execution || execution.executionId !== executionId || execution.state !== 'started' || !execution.review) return 'stale' as const;
+    const referenced = new Set(execution.review.rounds.flatMap(round => [...(round.declarations?.treatments ?? []), ...(round.declarations?.gates ?? [])])
+      .flatMap(item => item.authorization?.kind === 'question' ? [item.authorization.questionId] : []));
+    const known = new Map<string, { workId: string; state: 'open' | 'answered' }>();
+    for (const id of [...referenced].slice(0, 64)) {
+      const question = (await tx.doc(questions, id, null)).question;
+      if (question) known.set(id, { workId: question.workId, state: question.state });
+    }
+    const verification = verifyExecution({ at: new Date().toISOString(), workId: work_id, rounds: execution.review.rounds, question: id => known.get(id) ?? null });
+    execution.review.verification = verification;
+    history(work, 'review-verified', executionId, `${verification.status}${verification.reasons.length ? `:${verification.reasons.slice(0, 8).join(',')}` : ''}`.slice(0, 512));
+    return JSON.parse(JSON.stringify(verification)) as typeof verification;
+  }, BACKGROUND_CONTEXT);
 }

@@ -92,13 +92,16 @@ const bytes = (text: string) => new TextEncoder().encode(text).length;
  * Control change.
  */
 export function continuationPrompt(input: { executionId: string; previousExecutionId: string; skillDirectory: string;
-  answer: { questionId: string; text: string; author: string; origin: string } | null; scopeUpdates: readonly ScopeText[] }):
+  answer: { questionId: string; text: string; author: string; origin: string } | null; scopeUpdates: readonly ScopeText[];
+  /** Ticket 13: the continued Builder keeps the multi-round review handoff (its rounds continue the Work's numbering). */
+  reviewRounds?: boolean }):
   { kind: 'prompt'; prompt: string } | { kind: 'insufficient'; reasons: ['RESUME_TRIGGER_MISSING' | 'CONTINUATION_TOO_LARGE'] } {
   if (!input.answer && input.scopeUpdates.length === 0) return { kind: 'insufficient', reasons: ['RESUME_TRIGGER_MISSING'] };
   const prompt = ['continue',
     `Factory continuation of the SAME session: Execution ${input.executionId} continues after Execution ${input.previousExecutionId} ended. ` +
       'Your workspace, branch, commits and /artifacts were preserved; check the effect of your last tool call before repeating anything.',
     `Read ${input.skillDirectory}/skills/implement/SKILL.md with the read tool and follow its instructions for continuing this Work in the same session.`,
+    ...(input.reviewRounds ? ['Execution context: reviews=factory-handoff review-rounds=multi'] : []),
     ...(input.answer ? ['', `Accepted answer to your question ${input.answer.questionId} (by ${input.answer.author}, via ${input.answer.origin}):`, fenced(input.answer.text)] : []),
     ...(input.scopeUpdates.length ? ['', ...scopeSection(input.scopeUpdates),
       'Before implementing a scope change, preserve a NEW request version that records it (never edit an earlier version).'] : [])].join('\n');
@@ -108,10 +111,12 @@ export function continuationPrompt(input: { executionId: string; previousExecuti
 
 /** First prompt of an initial Builder activation: `/implement <ticket>` plus the authorized scope changes, bounded (never a silent truncation). */
 export function initialPrompt(input: { ticketUrl: string; repository: string; base: string; baseCommit: string; branch: string; checkout: string; workId: string;
-  executionId: string; reviews: boolean; scopeUpdates: readonly ScopeText[] }): { kind: 'prompt'; prompt: string } | { kind: 'too-large'; bytes: number } {
+  executionId: string; reviews: boolean; scopeUpdates: readonly ScopeText[];
+  /** Ticket 13: the composition repeats review rounds inside the Execution (`review-rounds=multi`). */
+  reviewRounds?: boolean }): { kind: 'prompt'; prompt: string } | { kind: 'too-large'; bytes: number } {
   const prompt = [[`/implement ${input.ticketUrl}`, `repository=${input.repository}`, `base=${input.base}`, `base-commit=${input.baseCommit}`,
     `branch=${input.branch}`, `checkout=${input.checkout}`, 'artifacts=/artifacts', `work=${input.workId}`, `execution=${input.executionId}`,
-    ...(input.reviews ? ['reviews=factory-handoff'] : [])].join(' '), ...(input.scopeUpdates.length ? ['', ...scopeSection(input.scopeUpdates),
+    ...(input.reviews ? ['reviews=factory-handoff'] : []), ...(input.reviews && input.reviewRounds ? ['review-rounds=multi'] : [])].join(' '), ...(input.scopeUpdates.length ? ['', ...scopeSection(input.scopeUpdates),
     'Before implementing a scope change, preserve a NEW request version that records it (never edit an earlier version).'] : [])].join('\n');
   const size = bytes(prompt);
   return size <= promptBudgetBytes ? { kind: 'prompt', prompt } : { kind: 'too-large', bytes: size };

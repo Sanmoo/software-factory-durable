@@ -7,8 +7,7 @@ import { createSandbox, type ToolContext } from '../../src/sandbox/index.js';
 import { nativeOwner } from '../sandbox/native-owner.fixture.js';
 import { createWorkerSession } from '../../src/workers/worker-session.js';
 import { sdkProfile } from '../../src/workers/sdk-profile.js';
-import { prepareReviewerContinuation } from '../../src/platform/host/worker-launch.js';
-import { workerLaunchSchema } from '../../src/platform/host/worker-bootstrap.js';
+import { prepareReviewerContinuation, workerLaunchSchema } from '../../src/platform/host/index.js';
 
 // I-local: native Pi SDK sessions (JSONL v3) and the owner launcher's continuation copy; doubled ONLY the provider HTTP boundary and the
 // VM exec. Ticket 13 AC4: a later round prefers the compatible session of the same reviewer role; otherwise a replacement is recorded.
