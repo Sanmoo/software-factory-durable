@@ -117,3 +117,10 @@ done
 3. **Release anterior ao ticket 33 não vê o journal** (ver acima); o formato 1 continua íntegro até o commit.
 4. Composição com o ticket 26: o fim `uncertain` do `run` do 26 deve ser registrado como fim não limpo
    (`recordRunEnd(..., 'uncertain')`) no rebase; o boot reconciliador do 26 continua sendo o caminho após crash.
+
+## Gate (local, 2026-11-14, Node 24.21.0 com o comando fixado)
+
+- `tsc -p tsconfig.json`: ok; `eslint . --max-warnings 0`: ok; dependency-cruiser: sem violações (354 módulos).
+- `dist/test/**/*.test.js` um arquivo por vez: 165 arquivos, 1045 pass, 0 fail, 10 skip (inclui
+  `test/sandbox/gondolin.test.ts` com `skip: true`); depois da receita: `release33-qualification` 1/1,
+  `upgrade` 4/4, `storage-format` 3/3, `architecture-gate` 20/20, `typecheck-gate` 1/1.
