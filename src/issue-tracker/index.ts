@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { questionMarkerPrefix, type AccessDiagnostic, type GitHubScope } from '../contracts/index.js';
-import { InvalidGitHubObservation, UnverifiedGitHubAccess, readPermissions, type GitHubAccess, type GitHubRead } from '../platform/github/index.js';
+import { InvalidGitHubObservation, UnverifiedGitHubAccess, readPermissions, type GitHubAccess, type GitHubRead, type TokenRevocation } from '../platform/github/index.js';
 
 /** Origin of Tickets: one configured repository plus its effective entry label. */
 export type TrackerScope = GitHubScope & { label: string };
@@ -52,9 +52,10 @@ export type QuestionComment = { kind: 'question'; questionId: string; body: stri
 /** Identity of the publication effect already persisted by the Control (correlation, not external idempotency). */
 export type CommentEffect = { effectId: string; questionId: string };
 /** Known success, known failure (nothing was created) or unknown outcome (the comment may exist: discover before republishing). */
-export type CommentResult = { kind: 'published'; observedAt: string; commentId: number; url: string; createdAt: string } |
+/** `revocation`: what happened to the single-use write credential after the attempt (never claimed when not observed). */
+export type CommentResult = ({ kind: 'published'; observedAt: string; commentId: number; url: string; createdAt: string } |
   { kind: 'failed'; observedAt: string; code: string; waitSeconds?: number; nextStep: string } |
-  { kind: 'unknown'; observedAt: string; code: string; nextStep: string };
+  { kind: 'unknown'; observedAt: string; code: string; nextStep: string }) & { revocation?: TokenRevocation };
 
 export interface IssueTracker {
   checkAccess(scope: TrackerScope | DependencyScope): Promise<AccessDiagnostic>;
@@ -87,6 +88,7 @@ const commentSchema = z.object({
   body: z.string().max(262144).nullable(), created_at: z.iso.datetime(), updated_at: z.iso.datetime(),
   performed_via_github_app: z.object({ id: z.number().int().positive().safe() }).passthrough().nullable().optional(),
 });
+const maxCommentPages = 10;
 const questionMarker = (questionId: string) => `<!-- ${questionMarkerPrefix}${questionId} -->`;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const repositoryName = /^https:\/\/api\.github\.com\/repos\/([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)$/;
@@ -230,7 +232,8 @@ export function createIssueTracker(options: { github: GitHubAccess; scopes?: Tra
   /** Complete comment listing of the Ticket issue, every entry validated; a single invalid entry fails the whole read (no partial result). */
   const comments = (scope: GitHubScope, ticket: TicketRef) => options.github.read(scope, 'tracker-read', async session => {
     if (session.repositoryId !== ticket.repositoryId) throw new InvalidGitHubObservation();
-    const parsed = z.array(commentSchema).safeParse(await session.list(`/repos/${scope.repository}/issues/${ticket.number}/comments`));
+    // Bounded per read: more than maxCommentPages pages is incomplete (unavailable), never a truncated listing.
+    const parsed = z.array(commentSchema).safeParse(await session.list(`/repos/${scope.repository}/issues/${ticket.number}/comments`, { maxPages: maxCommentPages }));
     if (!parsed.success) throw new InvalidGitHubObservation();
     const seen = new Set<number>();
     const result: TrackerComment[] = [];
@@ -276,14 +279,15 @@ export function createIssueTracker(options: { github: GitHubAccess; scopes?: Tra
       }
       const marker = questionMarker(comment.questionId);
       const written = await options.github.comment(scope, ticket.number, `${marker}\n${comment.body}`);
-      if (!written.ok) return written.outcome === 'unknown' ? { kind: 'unknown', observedAt: written.observedAt, code: written.code, nextStep: written.nextStep }
-        : { kind: 'failed', observedAt: written.observedAt, code: written.code, ...(written.waitSeconds !== undefined ? { waitSeconds: written.waitSeconds } : {}), nextStep: written.nextStep };
+      const revocation = written.revocation;
+      if (!written.ok) return written.outcome === 'unknown' ? { kind: 'unknown', observedAt: written.observedAt, code: written.code, nextStep: written.nextStep, revocation }
+        : { kind: 'failed', observedAt: written.observedAt, code: written.code, ...(written.waitSeconds !== undefined ? { waitSeconds: written.waitSeconds } : {}), nextStep: written.nextStep, revocation };
       const parsed = commentSchema.safeParse(written.value);
       if (!parsed.success || written.repositoryId !== ticket.repositoryId || !parsed.data.body?.startsWith(`${marker}\n`) ||
           parsed.data.html_url.toLowerCase() !== `https://github.com/${scope.repository}/issues/${ticket.number}#issuecomment-${parsed.data.id}`.toLowerCase()) {
-        return { kind: 'unknown', observedAt: written.observedAt, code: 'GITHUB_WRITE_UNVERIFIED', nextStep: 'GitHub accepted a write whose result could not be verified; discover the marker before any new publication.' };
+        return { kind: 'unknown', observedAt: written.observedAt, code: 'GITHUB_WRITE_UNVERIFIED', nextStep: 'GitHub accepted a write whose result could not be verified; discover the marker before any new publication.', revocation };
       }
-      return { kind: 'published', observedAt: written.observedAt, commentId: parsed.data.id, url: parsed.data.html_url, createdAt: parsed.data.created_at };
+      return { kind: 'published', observedAt: written.observedAt, commentId: parsed.data.id, url: parsed.data.html_url, createdAt: parsed.data.created_at, revocation };
     },
     readDependencyGraph,
     checkAccess(scope) {

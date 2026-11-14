@@ -55,8 +55,9 @@ export class UnverifiedGitHubAccess extends AccessFailure {
 export interface GitHubSession {
   repositoryId: number;
   get(endpoint: string): Promise<unknown>;
-  /** Complete listing of every Link page, or a failure; never a partial array. Query parameters other than paging are preserved. */
-  list(endpoint: string): Promise<unknown[]>;
+  /** Complete listing of every Link page, or a failure; never a partial array. Query parameters other than paging are preserved.
+   * `maxPages` (default 100): more pages than that is INCOMPLETE_GITHUB_QUERY, never a truncated result. */
+  list(endpoint: string, options?: { maxPages?: number }): Promise<unknown[]>;
 }
 /** Read outcome for controller polling: an observation or a typed failure, never a fabricated empty result. */
 export type GitHubRead<T> = { ok: true; observedAt: string; repositoryId: number; value: T } |
@@ -79,8 +80,10 @@ export interface GitHubAccess {
    */
   comment(scope: GitHubScope, issueNumber: number, body: string): Promise<GitHubWrite>;
 }
-export type GitHubWrite = { ok: true; observedAt: string; repositoryId: number; value: unknown } |
-  { ok: false; outcome: 'known-failure' | 'unknown'; observedAt: string; code: string; waitSeconds?: number; nextStep: string };
+/** `revocation`: outcome of the self-revocation (DELETE /installation/token) of the single-use grant after the POST attempt. */
+export type TokenRevocation = RevocationResult['kind'] | 'not-issued';
+export type GitHubWrite = { ok: true; observedAt: string; repositoryId: number; value: unknown; revocation: TokenRevocation } |
+  { ok: false; outcome: 'known-failure' | 'unknown'; observedAt: string; code: string; waitSeconds?: number; nextStep: string; revocation: TokenRevocation };
 export type TransientPurpose = 'builder-start' | 'repository-fetch';
 export type TransientGrant = { token: string; expiresAt: string; repositoryId: number; permissions: Readonly<Record<string, 'read' | 'write'>> };
 /** Coded failure of a transient issuance; message is the code only (never a token or key). */
@@ -144,7 +147,8 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
     // A successful response that exhausts the quota defers the NEXT request; this one is still valid.
     if (exhausted && repositoryId !== undefined) rateLimit(scope, Math.min(resetWait ?? 60, 86400));
     let body: unknown;
-    try { body = JSON.parse(match[3]!); } catch { throw new AccessFailure('INVALID_GITHUB_PAYLOAD'); }
+    if (status === 204 && match[3] === '') body = null;
+    else try { body = JSON.parse(match[3]!); } catch { throw new AccessFailure('INVALID_GITHUB_PAYLOAD'); }
     // Register a returned grant before validation or any subsequent use.
     if (body && typeof body === 'object' && 'token' in body && typeof body.token === 'string' && body.token) secrets.add(body.token);
     const link = headers.get('link');
@@ -308,7 +312,7 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
     return { repositoryId: grant.repositoryId, async get(endpoint) {
       if (!allowed(endpoint)) throw new AccessFailure('CREDENTIAL_SCOPE_MISMATCH');
       return (await gh(scope, directory, grant.token, endpoint, grant.repositoryId)).body;
-    }, async list(endpoint) {
+    }, async list(endpoint, listOptions) {
       const values: unknown[] = [];
       const seen = new Set<string>();
       const first = new URL(endpoint, 'https://api.github.com');
@@ -317,7 +321,7 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
       first.searchParams.set('page', '1');
       let page: string | undefined = first.pathname + first.search;
       while (page) {
-        if (!allowed(page) || seen.has(page) || seen.size >= 100) throw new AccessFailure('INCOMPLETE_GITHUB_QUERY');
+        if (!allowed(page) || seen.has(page) || seen.size >= Math.min(100, listOptions?.maxPages ?? 100)) throw new AccessFailure('INCOMPLETE_GITHUB_QUERY');
         seen.add(page);
         const response = await gh(scope, directory, grant.token, page, grant.repositoryId);
         if (!Array.isArray(response.body)) throw new AccessFailure('INVALID_GITHUB_PAYLOAD');
@@ -340,7 +344,7 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
     nextStep: error instanceof AccessFailure && error.nextStep ? error.nextStep : error instanceof AccessFailure && error.code === 'GITHUB_RATE_LIMITED' ? 'Wait the reported seconds before retrying this repository/purpose; no automatic retry.' : 'Operator must verify the named repository, App/installation, private key, explicit Workflows setting, permissions and REST compatibility; no personal fallback or repair.',
   });
 
-  return { async revoke(token) {
+  async function revokeToken(token: string): Promise<RevocationResult> {
     // No value, no request: a lost grant (e.g. after a crash) cannot be revoked and may stay valid externally until its expiry.
     if (!token) return { kind: 'impossible', code: 'GRANT_VALUE_UNAVAILABLE', nextStep: 'The grant value is not available (never recovered from logs/sessions); it may remain valid externally until its expiresAt. Expiry is not proof of cessation.' };
     secrets.add(token);
@@ -356,40 +360,48 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
       if (status >= 400 && status < 500 && status !== 429) return { kind: 'failed', code: 'GITHUB_REVOCATION_REJECTED', nextStep: 'GitHub rejected the revocation; the token stays valid until its expiresAt. Not repeated automatically.' };
       return unknown;
     } catch { return unknown; } finally { if (directory) await rm(directory, { recursive: true, force: true }); }
-  }, appId: options.appId, async comment(scope, issueNumber, body) {
+  }
+
+  return { revoke: revokeToken, appId: options.appId, async comment(scope, issueNumber, body) {
     let directory: string | undefined;
     const observedAt = new Date().toISOString();
     const sanitized = <R>(value: R): R => JSON.parse(filter(JSON.stringify(value))) as R;
     const window = rateWindows.get(scope.installationId) ?? 0;
     if (window > Date.now()) return sanitized({ ok: false as const, outcome: 'known-failure' as const, observedAt, code: 'GITHUB_RATE_LIMITED',
-      waitSeconds: Math.max(1, Math.ceil((window - Date.now()) / 1000)), nextStep: 'Rate-limit window still open; nothing was sent.' });
+      waitSeconds: Math.max(1, Math.ceil((window - Date.now()) / 1000)), nextStep: 'Rate-limit window still open; nothing was sent.', revocation: 'not-issued' as const });
     if (!Number.isSafeInteger(issueNumber) || issueNumber <= 0 || typeof body !== 'string' || !body || body.length > 60000) {
-      return { ok: false, outcome: 'known-failure', observedAt, code: 'INVALID_COMMENT', nextStep: 'Comment rejected locally; nothing was sent.' };
+      return { ok: false, outcome: 'known-failure', observedAt, code: 'INVALID_COMMENT', nextStep: 'Comment rejected locally; nothing was sent.', revocation: 'not-issued' };
     }
     let grant: Grant;
     // Issuance failures happen BEFORE the POST: the comment certainly was not created.
     try { grant = await issue(scope, 'question-publish'); } catch (error) {
       const typed = failure(error);
       return sanitized({ ok: false as const, outcome: 'known-failure' as const, observedAt, ...typed,
-        code: error instanceof TokenIssuanceFailure && error.outcome === 'unknown' ? 'GITHUB_TOKEN_ISSUANCE_UNKNOWN' : typed.code });
+        code: error instanceof TokenIssuanceFailure && error.outcome === 'unknown' ? 'GITHUB_TOKEN_ISSUANCE_UNKNOWN' : typed.code, revocation: 'not-issued' as const });
     }
     let sent = false;
+    let revocation: TokenRevocation = 'unknown';
+    // Single-use grant: revoke it right after the write attempt, whatever its outcome (204 = revoked; anything else is reported, never claimed).
+    // Same self-revocation path as the Builder grants (distinct revoked/already-invalid/failed/unknown outcomes).
+    const revoke = async () => { revocation = (await revokeToken(grant.token)).kind; };
     try {
       directory = await mkdtemp(join(options.root, 'run', 'github-'));
       await verifyRepository(scope, session(scope, directory, grant));
       sent = true;
       const response = await gh(scope, directory, grant.token, `/repos/${scope.repository}/issues/${issueNumber}/comments`, grant.repositoryId, JSON.stringify({ body }));
+      await revoke();
       if (response.status !== 201) return sanitized({ ok: false as const, outcome: 'unknown' as const, observedAt, code: 'GITHUB_WRITE_UNEXPECTED_STATUS',
-        nextStep: 'The comment may exist; discover it by its marker before any new publication.' });
-      return sanitized({ ok: true as const, observedAt, repositoryId: grant.repositoryId, value: response.body });
+        nextStep: 'The comment may exist; discover it by its marker before any new publication.', revocation });
+      return sanitized({ ok: true as const, observedAt, repositoryId: grant.repositoryId, value: response.body, revocation });
     } catch (error) {
       if (error instanceof AccessFailure && error.code === 'GITHUB_RATE_LIMITED' && error.waitSeconds !== undefined) rateLimit(scope, error.waitSeconds);
+      await revoke();
       const typed = failure(error);
       // Known: refused before sending, or GitHub answered 4xx (nothing created). Unknown: transport loss, 5xx, unparseable success.
       const known = !sent || (error instanceof AccessFailure && (error.code === 'GITHUB_RATE_LIMITED' || (error.status !== undefined && error.status >= 400 && error.status < 500)));
       return sanitized({ ok: false as const, outcome: known ? 'known-failure' as const : 'unknown' as const, observedAt, ...typed,
         code: typed.code === 'GITHUB_DIAGNOSTIC_FAILED' ? 'GITHUB_WRITE_FAILED' : typed.code,
-        nextStep: known ? typed.nextStep : 'Publication outcome is unknown: the comment may exist. Discover it by its marker before any new publication; never repost blindly.' });
+        nextStep: known ? typed.nextStep : 'Publication outcome is unknown: the comment may exist. Discover it by its marker before any new publication; never repost blindly.', revocation });
     } finally { if (directory) await rm(directory, { recursive: true, force: true }); }
   }, async transient(scope, purpose) {
     try {

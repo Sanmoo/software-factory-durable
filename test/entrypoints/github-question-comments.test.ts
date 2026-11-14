@@ -34,6 +34,11 @@ test('AC2: postComment publishes ONE issue comment with the stable marker under 
   assert.deepEqual(trace.find(entry => entry.endpoint.includes('access_tokens') && entry.permissions?.issues === 'write')?.permissions, { metadata: 'read', issues: 'write' });
   assert.ok(trace.every(entry => entry.method !== 'POST' || entry.endpoint.includes('access_tokens') || entry.endpoint === '/repos/acme/project/issues/3/comments'),
     'no other write: no label, assignee or state change');
+  // Review 8: the single-use question-publish token is revoked right after its POST, and the outcome is reported.
+  assert.equal(result.revocation, 'revoked');
+  const deletes = trace.filter(entry => entry.method === 'DELETE');
+  assert.deepEqual(deletes.map(entry => entry.endpoint), ['/installation/token']);
+  assert.ok(trace.indexOf(deletes[0]!) > trace.indexOf(posts[0]!), 'revoked after the POST');
   const after = await world.tracker.findQuestion(ticket, qid);
   assert.deepEqual(after.kind === 'observed' ? after.candidates.map(item => item.commentId) : after, [result.commentId]);
   assert.doesNotMatch(JSON.stringify(result), /synthetic-installation-secret/);
@@ -46,9 +51,14 @@ test('AC2: a 5xx after the write is UNKNOWN (the comment may exist), a 4xx is a 
   assert.equal((await ambiguous.trace()).filter(entry => entry.method === 'POST' && entry.endpoint.includes('/comments')).length, 1, 'no automatic retry');
   const found = await ambiguous.tracker.findQuestion(ticket, qid);
   assert.equal(found.kind === 'observed' ? found.candidates.length : -1, 1, 'discovery shows the comment did get created');
-  const rejected = await compose(t, { issues: [issue(3)], pulls: [], postFault: { status: 422, created: false } });
+  assert.equal(unknown.kind === 'unknown' ? unknown.revocation : undefined, 'revoked', 'revocation is attempted whatever the POST outcome');
+  const rejected = await compose(t, { issues: [issue(3)], pulls: [], postFault: { status: 422, created: false }, revokeFault: 403 });
   const failed = await rejected.tracker.postComment(ticket, { kind: 'question', questionId: qid, body: 'Q' }, effect);
   assert.equal(failed.kind, 'failed');
+  assert.equal(failed.kind === 'failed' ? failed.revocation : undefined, 'failed', 'a rejected revocation is reported, never claimed');
+  const inconclusive = await compose(t, { issues: [issue(3)], pulls: [], revokeFault: 502 });
+  const published = await inconclusive.tracker.postComment(ticket, { kind: 'question', questionId: qid, body: 'Q' }, effect);
+  assert.deepEqual([published.kind, published.revocation], ['published', 'unknown'], 'a 5xx revocation answer is inconclusive');
   assert.doesNotMatch(JSON.stringify(failed), /synthetic-installation-secret/);
 });
 
@@ -80,4 +90,13 @@ test('AC4: readInputs returns comments after the cursor with author identity/typ
   assert.deepEqual(later.kind === 'observed' ? [later.comments.map(comment => comment.commentId), later.cursor] : later, [[31], 31]);
   const foreign = await world.tracker.readInputs({ ...ticket, repository: 'other/repo' }, null);
   assert.equal(foreign.kind === 'unavailable' ? foreign.code : '', 'REPOSITORY_NOT_CONFIGURED');
+});
+
+test('review 4: a comment listing beyond the page cap is incomplete (unavailable), never a partial result or absence', async t => {
+  const comments = Array.from({ length: 12 }, (_, i) => ({ id: 100 + i, issue: 3, body: `c${i}`, user: { id: 9, login: 'human', type: 'User' } }));
+  const world = await compose(t, { pageSize: 1, issues: [issue(3)], pulls: [], comments });
+  const inputs = await world.tracker.readInputs(ticket, null);
+  assert.deepEqual([inputs.kind, inputs.completeness, 'code' in inputs && inputs.code], ['unavailable', 'incomplete', 'INCOMPLETE_GITHUB_QUERY']);
+  const pages = (await world.trace()).filter(entry => entry.endpoint.includes('/issues/3/comments')).length;
+  assert.ok(pages <= 10, `at most 10 pages per read (${pages})`);
 });

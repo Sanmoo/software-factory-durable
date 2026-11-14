@@ -39,6 +39,8 @@ export type World = {
   comments?: WorldComment[];
   /** POST /issues/{n}/comments: answer with this status; `created` decides whether the comment was created anyway (ambiguous 5xx). */
   postFault?: { status: number; created: boolean; headers?: Record<string, string> };
+  /** Status of DELETE /installation/token (default 204). */
+  revokeFault?: number;
   pulls: WorldPull[];
   pageSize?: number;
   /** endpoint substring → synthetic failure. */
@@ -80,49 +82,49 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
   const revokedFile = join(root, 'revoked.jsonl');
   const executable = join(root, 'gh');
   await writeFile(executable, `#!${process.execPath}
-import { readFileSync, appendFileSync, writeFileSync } from 'node:fs';
-const args = process.argv.slice(2);
-const endpoint = args.at(-1);
-const method = args[args.indexOf('--method') + 1];
-const token = process.env.GH_TOKEN ?? '';
-const app = token.split('.').length === 3;
-const native = process.env.NATIVE_FIXTURE === '1'; // App HTTPS stand-in only.
-if (args[0] !== 'api' || !args.includes('--include') || !args.includes('X-GitHub-Api-Version: 2026-03-10') || args[args.indexOf('--hostname') + 1] !== 'github.com') process.exit(9);
-if (app !== endpoint.startsWith('/app') || (app && !native)) process.exit(13);
-const allowedEnv = ['NATIVE_FIXTURE','PATH','LANG','LC_ALL','GH_TOKEN','GH_HOST','GH_CONFIG_DIR','HOME','XDG_CONFIG_HOME','GH_PROMPT_DISABLED','GH_NO_UPDATE_NOTIFIER','GH_NO_EXTENSION_UPDATE_NOTIFIER','NO_COLOR'];
-if (Object.keys(process.env).some(k => !allowedEnv.includes(k)) || args.some(a => token && a.includes(token))) process.exit(9);
-if (!app && !token.startsWith('synthetic-installation-secret-')) process.exit(13);
-const world = JSON.parse(readFileSync(${JSON.stringify(worldFile)}, 'utf8'));
-const now = Date.now() + (world.clockOffsetSeconds ?? 0) * 1000;
-if ((world.transportFailures ?? []).some(fragment => endpoint.includes(fragment))) process.exit(2);
-// Installation tokens stop working once revoked (DELETE /installation/token) or expired, as on GitHub.
-const lines = file => { try { return readFileSync(file, 'utf8').split('\\n').filter(Boolean).map(line => JSON.parse(line)); } catch { return []; } };
-const issuedFile = ${JSON.stringify(issuedFile)};
-const revokedFile = ${JSON.stringify(revokedFile)};
-const known = lines(issuedFile).find(entry => entry.token === token);
-if (!app && token && (lines(revokedFile).some(entry => entry.token === token) || (known && Date.parse(known.expiresAt) <= now))) {
+  import { readFileSync, appendFileSync, writeFileSync } from 'node:fs';
+  const args = process.argv.slice(2);
+  const endpoint = args.at(-1);
+  const method = args[args.indexOf('--method') + 1];
+  const token = process.env.GH_TOKEN ?? '';
+  const app = token.split('.').length === 3;
+  const native = process.env.NATIVE_FIXTURE === '1'; // App HTTPS stand-in only.
+  if (args[0] !== 'api' || !args.includes('--include') || !args.includes('X-GitHub-Api-Version: 2026-03-10') || args[args.indexOf('--hostname') + 1] !== 'github.com') process.exit(9);
+  if (app !== endpoint.startsWith('/app') || (app && !native)) process.exit(13);
+  const allowedEnv = ['NATIVE_FIXTURE','PATH','LANG','LC_ALL','GH_TOKEN','GH_HOST','GH_CONFIG_DIR','HOME','XDG_CONFIG_HOME','GH_PROMPT_DISABLED','GH_NO_UPDATE_NOTIFIER','GH_NO_EXTENSION_UPDATE_NOTIFIER','NO_COLOR'];
+  if (Object.keys(process.env).some(k => !allowedEnv.includes(k)) || args.some(a => token && a.includes(token))) process.exit(9);
+  if (!app && !token.startsWith('synthetic-installation-secret-')) process.exit(13);
+  const world = JSON.parse(readFileSync(${JSON.stringify(worldFile)}, 'utf8'));
+  const now = Date.now() + (world.clockOffsetSeconds ?? 0) * 1000;
+  if ((world.transportFailures ?? []).some(fragment => endpoint.includes(fragment))) process.exit(2);
+  // Installation tokens stop working once revoked (DELETE /installation/token) or expired, as on GitHub.
+  const lines = file => { try { return readFileSync(file, 'utf8').split('\\n').filter(Boolean).map(line => JSON.parse(line)); } catch { return []; } };
+  const issuedFile = ${JSON.stringify(issuedFile)};
+  const revokedFile = ${JSON.stringify(revokedFile)};
+  const known = lines(issuedFile).find(entry => entry.token === token);
+  if (!app && token && (lines(revokedFile).some(entry => entry.token === token) || (known && Date.parse(known.expiresAt) <= now))) {
   process.stdout.write('HTTP/2.0 401 Test\\r\\nx-github-api-version-selected: 2026-03-10\\r\\n\\r\\n{"message":"Bad credentials"}');
   appendFileSync(${JSON.stringify(traceFile)}, JSON.stringify({ method, endpoint, credential: 'installation', status: 401 }) + '\\n');
   process.exit(1);
-}
-const ceiling = { metadata: 'read', issues: 'write', contents: 'write', pull_requests: 'write', checks: 'read', statuses: 'read', actions: 'read', administration: 'read' };
-const repositories = world.repositories ?? [{ name: 'acme/project', id: 3, installation: 2 }];
-const repoByName = name => repositories.find(r => r.name.toLowerCase() === String(name).toLowerCase());
-let body, raw, status = 200, headers = '';
-const trace = { method, endpoint, credential: app ? 'app-jwt' : 'installation' };
-const url = new URL(endpoint, 'https://api.github.com');
-// GitHub names are case-insensitive and may be addressed by numeric id.
-let path = url.pathname.replace(/^\\/repositories\\/(\\d+)(?=\\/|$)/, (all, id) => { const r = repositories.find(r => r.id === Number(id)); return r ? '/repos/' + r.name : all; }).toLowerCase();
-const match = /^\\/repos\\/([^/]+\\/[^/]+)(\\/.*)?$/.exec(path);
-const repo = match ? repoByName(match[1]) : undefined;
-const rest = match ? match[2] ?? '' : '';
-if (!app && repo && token.split('-').at(-1) !== 'r' + repo.id) { // installation tokens are scoped to one repository
+  }
+  const ceiling = { metadata: 'read', issues: 'write', contents: 'write', pull_requests: 'write', checks: 'read', statuses: 'read', actions: 'read', administration: 'read' };
+  const repositories = world.repositories ?? [{ name: 'acme/project', id: 3, installation: 2 }];
+  const repoByName = name => repositories.find(r => r.name.toLowerCase() === String(name).toLowerCase());
+  let body, raw, status = 200, headers = '';
+  const trace = { method, endpoint, credential: app ? 'app-jwt' : 'installation' };
+  const url = new URL(endpoint, 'https://api.github.com');
+  // GitHub names are case-insensitive and may be addressed by numeric id.
+  let path = url.pathname.replace(/^\\/repositories\\/(\\d+)(?=\\/|$)/, (all, id) => { const r = repositories.find(r => r.id === Number(id)); return r ? '/repos/' + r.name : all; }).toLowerCase();
+  const match = /^\\/repos\\/([^/]+\\/[^/]+)(\\/.*)?$/.exec(path);
+  const repo = match ? repoByName(match[1]) : undefined;
+  const rest = match ? match[2] ?? '' : '';
+  if (!app && repo && token.split('-').at(-1) !== 'r' + repo.id) { // installation tokens are scoped to one repository
   process.stdout.write('HTTP/2.0 404 Test\\r\\nx-github-api-version-selected: 2026-03-10\\r\\n\\r\\n{"message":"Not Found"}');
   appendFileSync(${JSON.stringify(traceFile)}, JSON.stringify({ ...trace, status: 404 }) + '\\n');
   process.exit(1);
-}
-const issuesOf = r => world.issues.filter(i => (i.repository ?? 'acme/project').toLowerCase() === r.name.toLowerCase());
-const shape = i => {
+  }
+  const issuesOf = r => world.issues.filter(i => (i.repository ?? 'acme/project').toLowerCase() === r.name.toLowerCase());
+  const shape = i => {
   const r = repoByName(i.repository ?? 'acme/project');
   const { repository, blocked_by, hidden_blocked_by, no_summary, raw_blocked_by, timeline, summary: literal, ...plain } = i;
   const targets = (blocked_by ?? []).map(edge => world.issues.find(t => t.number === edge.number && (t.repository ?? 'acme/project').toLowerCase() === (edge.repository ?? 'acme/project').toLowerCase())).filter(Boolean);
@@ -130,8 +132,8 @@ const shape = i => {
     total_blocked_by: targets.length + (hidden_blocked_by ?? 0), total_blocking: 0 };
   return { ...plain, repository_url: 'https://api.github.com/repos/' + r.name, html_url: 'https://github.com/' + r.name + '/issues/' + i.number,
     ...(no_summary ? {} : { issue_dependencies_summary: literal ?? summary }) };
-};
-function page(items) {
+  };
+  function page(items) {
   const size = world.pageSize ?? 100;
   const number = Number(url.searchParams.get('page') ?? '1');
   if (url.searchParams.get('per_page') !== '100') process.exit(15);
@@ -143,12 +145,12 @@ function page(items) {
     headers += 'link: <' + next.href + '>; rel="next"\\r\\n';
   }
   return slice;
-}
-const installation = Number(/^\\/app\\/installations\\/(\\d+)/.exec(endpoint)?.[1] ?? NaN);
-const owned = repositories.filter(r => r.installation === installation);
-if (endpoint === '/app' && method === 'GET') body = { id: 1 };
-else if (/^\\/app\\/installations\\/\\d+$/.test(endpoint) && method === 'GET' && owned.length) body = { id: installation, app_id: 1, account: { login: owned[0].name.split('/')[0] }, suspended_at: null, permissions: ceiling };
-else if (/^\\/app\\/installations\\/\\d+\\/access_tokens$/.test(endpoint) && method === 'POST' && owned.length) {
+  }
+  const installation = Number(/^\\/app\\/installations\\/(\\d+)/.exec(endpoint)?.[1] ?? NaN);
+  const owned = repositories.filter(r => r.installation === installation);
+  if (endpoint === '/app' && method === 'GET') body = { id: 1 };
+  else if (/^\\/app\\/installations\\/\\d+$/.test(endpoint) && method === 'GET' && owned.length) body = { id: installation, app_id: 1, account: { login: owned[0].name.split('/')[0] }, suspended_at: null, permissions: ceiling };
+  else if (/^\\/app\\/installations\\/\\d+\\/access_tokens$/.test(endpoint) && method === 'POST' && owned.length) {
   let input = ''; for await (const data of process.stdin) input += data;
   const request = JSON.parse(input);
   const target = owned.find(r => request.repositories?.length === 1 && r.name.split('/')[1].toLowerCase() === String(request.repositories[0]).toLowerCase());
@@ -161,29 +163,29 @@ else if (/^\\/app\\/installations\\/\\d+\\/access_tokens$/.test(endpoint) && met
     repositories: [{ id: target.id, full_name: target.name, owner: { login: target.name.split('/')[0] } }] };
   appendFileSync(issuedFile, JSON.stringify({ token: body.token, expiresAt: body.expires_at }) + '\\n');
   status = 201;
-} else if (endpoint === '/installation/token' && method === 'DELETE' && !app) {
+  } else if (endpoint === '/installation/token' && method === 'DELETE' && !app) {
   // Self-revocation of the installation token used for the request: 204, no body; the token is invalid afterwards (a fault prevents it).
-  if (!Object.keys(world.faults ?? {}).some(fragment => endpoint.includes(fragment))) appendFileSync(revokedFile, JSON.stringify({ token }) + '\\n');
-  status = 204; raw = '';
-} else if (app || (method !== 'GET' && !(method === 'POST' && /^\\/repos\\/[^/]+\\/[^/]+\\/issues\\/\\d+\\/comments$/.test(path)))) process.exit(16);
-else if (!repo) process.exit(11);
-else if (rest === '') body = { id: repo.id, full_name: repo.name, owner: { login: repo.name.split('/')[0] } };
-else if (rest === '/issues') {
+  status = world.revokeFault ?? 204; raw = '';
+  if (status === 204 && !Object.keys(world.faults ?? {}).some(fragment => endpoint.includes(fragment))) appendFileSync(revokedFile, JSON.stringify({ token }) + '\\n');
+  } else if (app || (method !== 'GET' && !(method === 'POST' && /^\\/repos\\/[^/]+\\/[^/]+\\/issues\\/\\d+\\/comments$/.test(path)))) process.exit(16);
+  else if (!repo) process.exit(11);
+  else if (rest === '') body = { id: repo.id, full_name: repo.name, owner: { login: repo.name.split('/')[0] } };
+  else if (rest === '/issues') {
   const state = url.searchParams.get('state'); const label = url.searchParams.get('labels');
   body = page(issuesOf(repo).filter(i => (!state || state === 'all' || i.state === state) &&
     (!label || i.labels.some(l => l.name.toLowerCase() === label.toLowerCase()))).map(shape));
-} else if (/^\\/issues\\/\\d+\\/timeline$/.test(rest)) {
+  } else if (/^\\/issues\\/\\d+\\/timeline$/.test(rest)) {
   const found = issuesOf(repo).find(i => i.number === Number(rest.split('/')[2]));
   if (found) body = page(found.timeline ?? []);
   else { status = 404; body = { message: 'Not Found' }; }
-} else if (/^\\/issues\\/\\d+\\/dependencies\\/blocked_by$/.test(rest)) {
+  } else if (/^\\/issues\\/\\d+\\/dependencies\\/blocked_by$/.test(rest)) {
   const found = issuesOf(repo).find(i => i.number === Number(rest.split('/')[2]));
   if (found) {
     const targets = (found.blocked_by ?? []).map(edge => world.issues.find(t => t.number === edge.number && (t.repository ?? 'acme/project').toLowerCase() === (edge.repository ?? 'acme/project').toLowerCase()));
     if (targets.some(t => !t)) process.exit(18);
     body = page([...targets.map(shape), ...(found.raw_blocked_by ?? [])]);
   } else { status = 404; body = { message: 'Not Found' }; }
-} else if (/^\\/issues\\/\\d+\\/comments$/.test(rest) && method === 'POST') {
+  } else if (/^\\/issues\\/\\d+\\/comments$/.test(rest) && method === 'POST') {
   if (args[args.indexOf('--input') + 1] !== '-') process.exit(19);
   let input = ''; for await (const data of process.stdin) input += data;
   const request = JSON.parse(input);
@@ -198,30 +200,30 @@ else if (rest === '/issues') {
   trace.body = request.body;
   if (fault) { status = fault.status; body = { message: 'synthetic-installation-secret-leak' }; for (const [name, value] of Object.entries(fault.headers ?? {})) headers += name + ': ' + value + '\\r\\n'; }
   else { status = 201; body = { ...comment, html_url: 'https://github.com/' + repo.name + '/issues/' + number + '#issuecomment-' + comment.id }; }
-} else if (method !== 'GET') process.exit(16);
-else if (/^\\/issues\\/\\d+\\/comments$/.test(rest)) {
+  } else if (method !== 'GET') process.exit(16);
+  else if (/^\\/issues\\/\\d+\\/comments$/.test(rest)) {
   const number = Number(rest.split('/')[2]);
   if (!issuesOf(repo).some(i => i.number === number)) { status = 404; body = { message: 'Not Found' }; }
   else body = page((world.comments ?? []).filter(c => c.issue === number && (c.repository ?? 'acme/project').toLowerCase() === repo.name.toLowerCase())
     .map(({ issue: _issue, repository: _repository, ...c }) => ({ node_id: 'IC_' + c.id, created_at: '2026-11-14T10:00:00Z', updated_at: '2026-11-14T10:00:00Z', performed_via_github_app: null,
       html_url: 'https://github.com/' + repo.name + '/issues/' + number + '#issuecomment-' + c.id, ...c })));
-} else if (/^\\/issues\\/\\d+$/.test(rest)) {
+  } else if (/^\\/issues\\/\\d+$/.test(rest)) {
   const found = issuesOf(repo).find(i => i.number === Number(rest.split('/')[2]));
   if (found) body = shape(found);
   else { status = 404; body = { message: 'Not Found' }; }
-} else if (rest === '/pulls' && repo.id === 3) {
+  } else if (rest === '/pulls' && repo.id === 3) {
   if (url.searchParams.get('state') !== 'all') process.exit(17);
   body = page(world.pulls.map(p => ({ ...p, html_url: 'https://github.com/acme/project/pull/' + p.number, base: { repo: { id: 3 } } })));
-} else process.exit(11);
-for (const [fragment, fault] of Object.entries(world.faults ?? {})) if (endpoint.includes(fragment) && !app) {
+  } else process.exit(11);
+  for (const [fragment, fault] of Object.entries(world.faults ?? {})) if (endpoint.includes(fragment) && !app) {
   status = fault.status; body = { message: 'synthetic-installation-secret-leak' }; if (fault.body !== undefined) raw = fault.body;
   for (const [name, value] of Object.entries(fault.headers ?? {})) headers += name + ': ' + value + '\\r\\n';
-}
-if (world.exhaustRateLimit && !app && status === 200) headers += 'x-ratelimit-remaining: 0\\r\\nx-ratelimit-reset: ' + (Math.floor(Date.now() / 1000) + 600) + '\\r\\n';
-appendFileSync(${JSON.stringify(traceFile)}, JSON.stringify(trace) + '\\n');
-process.stdout.write('HTTP/2.0 ' + status + ' Test\\r\\nx-github-api-version-selected: 2026-03-10\\r\\n' + headers + '\\r\\n' + (raw ?? JSON.stringify(body)));
-process.exit(status >= 200 && status < 300 ? 0 : 1);
-`, { mode: 0o700 });
+  }
+  if (world.exhaustRateLimit && !app && status === 200) headers += 'x-ratelimit-remaining: 0\\r\\nx-ratelimit-reset: ' + (Math.floor(Date.now() / 1000) + 600) + '\\r\\n';
+  appendFileSync(${JSON.stringify(traceFile)}, JSON.stringify(trace) + '\\n');
+  process.stdout.write('HTTP/2.0 ' + status + ' Test\\r\\nx-github-api-version-selected: 2026-03-10\\r\\n' + headers + '\\r\\n' + (raw ?? JSON.stringify(body)));
+  process.exit(status >= 200 && status < 300 ? 0 : 1);
+  `, { mode: 0o700 });
   const preload = join(root, 'native-fixture.mjs');
   await writeFile(preload, `import { installNativeAppFixture } from ${JSON.stringify(pathToFileURL(resolve('dist/test/entrypoints/native-app-fixture.js')).href)}; installNativeAppFixture(${JSON.stringify(executable)}, ${JSON.stringify(scenario)});`);
   await writeFile(join(root, 'flock'), `#!${process.execPath}
