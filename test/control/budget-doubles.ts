@@ -26,8 +26,9 @@ export function executionClock() {
 }
 
 /** Builder behaviour per activation (in order). `hang` runs until finished or interrupted (signal abort -> channel loss). */
-export type Script = { kind: 'complete' } | { kind: 'hang' } | { kind: 'ask'; questionId: string; question: string; beforeAsk?: () => void | Promise<void> } |
-  { kind: 'launch-uncertain' } | { kind: 'handoff' };
+export type Script = { kind: 'complete' } | { kind: 'hang' } |
+  { kind: 'ask'; questionId: string; question: string; beforeAsk?: () => void | Promise<void>; /** keep running after the ACK (crash tests) */ hangAfterAck?: boolean } |
+  { kind: 'launch-uncertain' } | { kind: 'handoff'; beforeHandoff?: () => void };
 const sha = (question: string, context: string) => createHash('sha256').update(JSON.stringify({ question, context })).digest('hex');
 const summary = (): ProposalHandoff => ({ version: 1, round: 1, index: '/artifacts/review/r1/index.json', indexSha256: 'e'.repeat(64),
   head: 'b'.repeat(40), branch: 'factory/3-x', base: 'a'.repeat(40), mergeBase: 'a'.repeat(40), counts: { entries: 1, committed: 1, staged: 0, unstaged: 0, untracked: 0, removed: 0 },
@@ -43,10 +44,14 @@ export function budgetDoubles(scripts: Script[], options: { cessation?: boolean;
   const receipt = (invocation: Invocation) => ({ receipt: { workId: invocation.context.workId, id: '99999999-2222-4333-8444-555555555555' },
     invocation: { executionId: invocation.context.executionId, invocationId: invocation.context.invocationId } });
   // A closed host channel (aborted activation signal) makes the activity outcome uncertain, as the real Workers facade reports it.
-  const interruptible = <T>(signal: AbortSignal, value: Promise<T>) => new Promise<T>((resolve, reject) => {
-    signal.addEventListener('abort', () => reject(new Error('WORKER_EXECUTION_UNCERTAIN')), { once: true });
-    value.then(resolve, reject);
-  });
+  const interruptible = <T>(signal: AbortSignal, value: Promise<T>) => {
+    const result = new Promise<T>((resolve, reject) => {
+      signal.addEventListener('abort', () => reject(new Error('WORKER_EXECUTION_UNCERTAIN')), { once: true });
+      value.then(resolve, reject);
+    });
+    void result.catch(() => {}); // like the real facade: an unobserved outcome is not an unhandled rejection
+    return result;
+  };
   const ports: ExecutionPorts = {
     configuration: { schemaVersion: 1 }, capacity: 1,
     builder: { skillPack: 'factory-skills-v2', modelBudget: 'builder-v1', copyOutput: true, editSourceMaxBytes: 8192 },
@@ -98,13 +103,14 @@ export function budgetDoubles(scripts: Script[], options: { cessation?: boolean;
             const question: WorkerQuestion = { questionId: script.questionId, question: script.question, context: '', sha256: sha(script.question, ''),
               reference: { workId: invocation.context.workId, id: '77777777-2222-4333-8444-555555555555' } };
             const ack = await events!.question!(question);
+            if (script.hangAfterAck) await finished;
             return { status: 'question' as const, receipt: receipt(invocation).receipt, question: { ...question, acknowledged: ack.status === 'recorded' } };
           }
           await finished;
           return { status: 'success' as const, receipt: receipt(invocation).receipt };
         }));
         return { worker: invocation.context.invocationId, started, completed,
-          ...(script.kind === 'handoff' ? { handoffs: { async next() { const event = pending; pending = null; if (!event) await finished; return event; } } } : {}),
+          ...(script.kind === 'handoff' ? { handoffs: { async next() { const event = pending; pending = null; if (event && script.kind === 'handoff') script.beforeHandoff?.(); if (!event) await finished; return event; } } } : {}),
           close() { calls.push({ kind: 'close' }); } };
       },
       async deliver(_worker, directive) { calls.push({ kind: `deliver-${directive.kind}` }); return { status: directive.kind === 'credential' ? 'delivered' as const : directive.kind === 'withdraw-credential' ? 'withdrawn' as const : 'delivered' as const }; },
