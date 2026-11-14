@@ -21,6 +21,14 @@ export const credentialPrelude = 'IFS= read -r GH_TOKEN || exit 97; export GH_TO
   'GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=credential.https://github.com.helper "GIT_CONFIG_VALUE_0=!/usr/bin/gh auth git-credential" ' +
   'GH_CONFIG_DIR="${GH_CONFIG_DIR:-/tmp/factory-gh-config}"; exec /bin/bash -c "$1"';
 
+/** Fixed Factory commit identity of every Builder command (never a human's, never chosen by the model); only Host configuration may replace it. */
+export const factoryCommitIdentity = Object.freeze({ name: 'Software Factory Builder', email: 'software-factory-builder@users.noreply.invalid' });
+const identityPart = /^[A-Za-z0-9 ._@+-]{1,128}$/;
+export function commitIdentityEnv(identity: Readonly<{ name: string; email: string }> = factoryCommitIdentity): string[] {
+  if (!identityPart.test(identity.name) || !identityPart.test(identity.email) || !identity.email.includes('@')) throw new Error('COMMIT_IDENTITY_INVALID');
+  return [`GIT_AUTHOR_NAME=${identity.name}`, `GIT_AUTHOR_EMAIL=${identity.email}`, `GIT_COMMITTER_NAME=${identity.name}`, `GIT_COMMITTER_EMAIL=${identity.email}`];
+}
+
 /** Existing owner only. The callback's cwd/env never crosses this authority boundary.
  * UTF-8 is intentionally fatal (Records default): arbitrary binary Bash is OPEN.
  */
@@ -33,6 +41,8 @@ export function boundBashTools(options: ReadBinding & { vm: GuestOwner }, valid:
   const copy = boundStreamCopyTools(options, valid, revoke, publishedCopies);
   // Builder-only, host-delivered holder; its CURRENT value is snapshotted per command (renewal reaches new commands only).
   const holder = bound.role === 'builder' ? options.credential : undefined;
+  // Host snapshot before any await; tool JSON can never set it.
+  const identity = commitIdentityEnv(options.commitIdentity);
   let latest: { reference: { workId: string; id: string }; bytes: number; callId: string } | undefined;
   let running = false;
   return async (context: ToolContext, call: BashCall, progress: (frame: BashProgress) => Promise<void>): Promise<ReadResult> => {
@@ -79,8 +89,8 @@ export function boundBashTools(options: ReadBinding & { vm: GuestOwner }, valid:
       // Gondolin merges env:{} with its VM default and omits an empty wire env;
       // the guest daemon may retain gEnv. Clear it at the fixed guest exec boundary.
       // Both guest executables are profile prerequisites, never host fallbacks.
-      const argv = credential === undefined ? ['/usr/bin/env', '-i', '/bin/bash', '-c', call.command]
-        : ['/usr/bin/env', '-i', '/bin/bash', '-c', credentialPrelude, 'factory-builder-credential', call.command];
+      const argv = credential === undefined ? ['/usr/bin/env', '-i', ...identity, '/bin/bash', '-c', call.command]
+        : ['/usr/bin/env', '-i', ...identity, '/bin/bash', '-c', credentialPrelude, 'factory-builder-credential', call.command];
       const process = options.vm.exec(argv, { stdout: 'pipe', stderr: 'pipe',
         signal: AbortSignal.any([options.signal, lifetime.signal]), windowBytes: 65536, env: {}, cwd: '/workspace', stdin: credential === undefined ? '' : `${credential}\n` });
       void process.result.catch(() => {});

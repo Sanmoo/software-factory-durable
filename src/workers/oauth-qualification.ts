@@ -9,7 +9,17 @@ export const oauthQualification = Object.freeze({ requests: 2, tools: 1, promptB
  * Same native SDK/no-retry path; these are observation limits, NOT a billing cap, RSS bound or physical cessation. */
 export const builderBudget = Object.freeze({ requests: 60, tools: 120, promptBytes: 16384, contextBytes: 2 * 1024 * 1024,
   toolBytes: 262144, providerBytes: 16 * 1024 * 1024, deadlineMs: 30 * 60 * 1000 });
-export type QualificationLimits = typeof oauthQualification | typeof builderBudget;
+/** Host-selected reviewer budget (ticket 12): one bounded Standards or Spec opinion over a handed-off proposal, read-only tools. Same
+ * native SDK/no-retry path; observation limits, NOT a billing cap. The reviewers share the Execution and its Slot (no own budget/Slot). */
+export const reviewerBudget = Object.freeze({ requests: 24, tools: 80, promptBytes: 16384, contextBytes: 2 * 1024 * 1024,
+  toolBytes: 262144, providerBytes: 16 * 1024 * 1024, deadlineMs: 15 * 60 * 1000 });
+export type QualificationLimits = typeof oauthQualification | typeof builderBudget | typeof reviewerBudget;
+/** Host policy -> limits; a budget never applies to a role it was not made for. */
+export function budgetFor(role: string, modelBudget: string | undefined): QualificationLimits {
+  if (modelBudget === 'builder-v1' && role === 'builder') return builderBudget;
+  if (modelBudget === 'reviewer-v1' && (role === 'standards' || role === 'spec')) return reviewerBudget;
+  return oauthQualification;
+}
 const size = (value: unknown) => Buffer.byteLength(JSON.stringify(value) ?? '');
 const unavailable = () => new Error('WORKER_QUALIFICATION_CLOSED');
 type Stream = ReturnType<ModelRuntime['streamSimple']>;

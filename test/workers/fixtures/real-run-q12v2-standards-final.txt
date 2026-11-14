@@ -1,0 +1,24 @@
+The proposal adds only a short smoke-test document. I found no conflict with the preserved instructions or documented standards.
+
+Coverage is **incremental**: the only changed path is `docs/factory-smoke.md`, and the complete committed patch and file were read. I also read the preserved instruction sources listed in `sources.json`. The addition is self-contained, so broader repository context was not needed.
+
+```json
+{
+  "role": "standards",
+  "conclusion": "clean",
+  "coverage": {
+    "scope": "incremental",
+    "justification": "The proposal adds one short, self-contained documentation file; the complete patch and changed file were read, along with all preserved instruction sources listed in sources.json.",
+    "examined": [
+      "docs/factory-smoke.md",
+      "/artifacts/instructions/v1/AGENTS.md",
+      "/artifacts/instructions/v1/issue-tracker.md",
+      "/artifacts/instructions/v1/triage-labels.md",
+      "/artifacts/instructions/v1/domain.md",
+      "/artifacts/instructions/v1/README.md"
+    ]
+  },
+  "findings": [],
+  "limitations": []
+}
+```

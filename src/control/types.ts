@@ -1,6 +1,6 @@
-import type { AccessDiagnostic, BuilderCredentials, BuilderGrantMetadata, GitHubScope, RevocationResult } from '../contracts/index.js';
+import type { AccessDiagnostic, BuilderCredentials, BuilderGrantMetadata, GitHubScope, ProposalHandoff, ProposalIdentity, ReviewerRole, ReviewOpinion, RevocationResult } from '../contracts/index.js';
 import type { CheckoutRequest, EnvironmentRef, PreparedWork, StartResult, StopResult, BootRef } from '../sandbox/index.js';
-import type { ActivationDelivery, DeliveryResult, ActivationEvents, Invocation, WorkerDirective, WorkerCompletion } from '../workers/index.js';
+import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion } from '../workers/index.js';
 import type { IssueTracker, TicketRef } from '../issue-tracker/index.js';
 import type { CodeRepository } from '../code-repository/index.js';
 import type { Hold } from './rules/admission.js';
@@ -33,12 +33,19 @@ export type ExecutionPorts = {
     prepare(input: { workId: string; configuration: unknown; checkout: CheckoutRequest }): Promise<PreparedWork>;
     start(input: { environment: EnvironmentRef; configuration: unknown }): Promise<StartResult>;
     stop(input: { environment: EnvironmentRef; boot: BootRef; reason: string }): Promise<StopResult>;
+    /** Ticket 12: Host identity of a handed-off proposal (confined reads); required when `reviews` is composed. */
+    observeProposal?(input: { environment: EnvironmentRef; round: number }): Promise<ProposalIdentity>;
   };
   workers: { activate(invocation: Invocation, delivery?: ActivationDelivery, events?: ActivationEvents): Promise<{ worker: string;
     started: Promise<{ receipt: { workId: string; id: string }; invocation: { executionId: string; invocationId: string } }>; completed: Promise<WorkerCompletion>;
+    /** Builder with a handoff policy: next suspended handoff, or null once the worker completed. */
+    handoffs?: { next(): Promise<HandoffEvent | null> };
     close(): void }>;
-    /** Q6 `deliver`: renewed transient credential or its withdrawal to the CURRENT Builder; never persisted, not proof of consumption. */
+    /** Q6 `deliver`: renewed transient credential or its withdrawal, or (ticket 12) the review results, to the CURRENT Builder; never
+     * persisted, not proof of consumption. */
     deliver(worker: string, directive: WorkerDirective): Promise<DeliveryResult> };
+  /** Ticket 12: when composed, the Builder hands off for parallel Standards/Spec reviews inside the SAME Execution/Slot/boot. */
+  reviews?: { reviewer: Pick<Invocation, 'modelBudget' | 'imageSourceMaxBytes'> };
   credentials: BuilderCredentials;
   /** Renew a Builder grant this many seconds before its expiresAt while the activity stays authorized (default 600). */
   credentialRenewal?: { beforeExpirySeconds: number };
@@ -83,6 +90,24 @@ export type ExecutionView = {
   end: { at: string; outcome: 'completed' | 'failure' | 'question'; code: string | null; cessation: 'confirmed' | 'unconfirmed' | 'not-attempted'; questionId?: string | null } | null;
   held: { code: string; phase: string; at: string; nextStep: string } | null;
   completion: { automatic: false; reason: string };
+  /** Review rounds of this Execution (ticket 12); absent when reviews are not composed. Reviewers never hold a Slot of their own. */
+  review?: { rounds: ReviewRoundView[] };
+};
+export type ReviewerView = { invocationId: string; phaseId: string; promptSha256: string; state: 'requested' | 'started' | 'ended' | 'failed';
+  requestedAt: string; receiptId: string | null; endedAt: string | null; opinion: ReviewOpinion | null; failure: { code: string } | null;
+  /** How the end of this reviewer's activity is known: its completion was received, it never launched, or it is unconfirmed (round held). */
+  cessation: 'completion-observed' | 'never-started' | 'unconfirmed' | null;
+  input: { required: string[]; missing: string[] } };
+/** One durable review round (spec §5.6/§6.4): handoff, identity before/after, both reviewers, conclusion and the delivery to the Builder. */
+export type ReviewRoundView = {
+  round: number; attempt: number; state: 'reviewing' | 'concluded' | 'delivered';
+  handoff: { at: string; invocationId: string; status: 'captured' | 'failure'; code: string | null; detail: string | null; summary: ProposalHandoff | null };
+  versions: { spec: ProposalHandoff['spec']; instructions: ProposalHandoff['instructions']; base: string | null; head: string | null;
+    profile: { skillPack: { name: string; manifestSha256: string } | null; builder: ExecutionView['request']['policies']; reviewer: Pick<Invocation, 'modelBudget' | 'imageSourceMaxBytes'> } };
+  identity: { before: ProposalIdentity | null; after: ProposalIdentity | null };
+  reviewers: Record<ReviewerRole, ReviewerView>;
+  applicability: 'current' | 'invalidated' | 'unknown' | null; conclusion: 'clean' | 'findings' | 'incomplete' | null; reasons: string[]; concludedAt: string | null;
+  delivery: { requestedAt: string; outcome: 'requested' | 'delivered' | 'failed' | 'uncertain'; code: string | null; promptSha256: string } | null;
 };
 
 /**
@@ -155,7 +180,8 @@ export type WorkView = {
   admittedAt: string;
   history: ({ at: string; event: 'admitted'; origin: 'github-polling'; sequence: number } |
     { at: string; event: 'dependencies-changed'; origin: 'github-polling'; before: DependencyEvaluation['conclusion'] | null; after: DependencyEvaluation['conclusion']; evaluationId: string } |
-    { at: string; event: 'execution-reserved' | 'execution-prepared' | 'execution-booted' | 'activation-requested' | 'execution-started' | 'execution-ended' | 'execution-held' | 'execution-released' | 'slot-released';
+    { at: string; event: 'execution-reserved' | 'execution-prepared' | 'execution-booted' | 'activation-requested' | 'execution-started' | 'execution-ended' | 'execution-held' | 'execution-released' | 'slot-released' |
+      'review-handoff' | 'reviewer-started' | 'reviewer-ended' | 'review-concluded' | 'review-delivered';
       origin: 'controller-dispatch'; executionId: string; detail?: string } |
     { at: string; event: 'question-recorded' | 'question-published' | 'question-answered'; origin: 'controller-dispatch' | 'controller-publication' | 'github-comment' | 'local-cli';
       questionId: string; detail?: string })[];

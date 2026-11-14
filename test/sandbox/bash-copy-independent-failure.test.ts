@@ -48,7 +48,7 @@ for (const mode of ['projection', 'local-validation', 'result-rejection'] as con
       executions++;
       if (!options.stdin || typeof options.stdin === 'string') return {
         result: Promise.resolve({ exitCode: 0 }),
-        async *output() { yield { stream: 'stdout' as const, data: Buffer.from(argv[2] === '/bin/bash' ? 'owned-output-'.repeat(20000) : 'old') }; },
+        async *output() { yield { stream: 'stdout' as const, data: Buffer.from(argv.includes('/bin/bash') ? 'owned-output-'.repeat(20000) : 'old') }; },
       };
       const stdin = options.stdin;
       copySignal = options.signal;

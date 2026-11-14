@@ -1,0 +1,15 @@
+```json
+{
+  "role": "spec",
+  "conclusion": "clean",
+  "coverage": {
+    "scope": "incremental",
+    "justification": "The proposal adds one documentation file only. I examined the complete committed patch and the complete changed file, and compared its contents and scope with the preserved ticket.",
+    "examined": [
+      "docs/factory-smoke.md"
+    ]
+  },
+  "findings": [],
+  "limitations": []
+}
+```

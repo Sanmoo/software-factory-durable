@@ -28,12 +28,18 @@ const receipt = z.strictObject({ workId: identifier, id: z.uuid() });
 const ownerLifecycleSchema = z.union([
   z.strictObject({ kind: z.literal('worker-started'), receipt, invocation: z.strictObject({ executionId: identifier, invocationId: identifier }).optional() }),
   z.strictObject({ kind: z.literal('worker-error'), code: z.string().regex(/^[A-Z_]{1,128}$/) }),
-  z.strictObject({ kind: z.literal('worker-result'), status: z.enum(['completed', 'interrupted']), receipt, sessionFile: z.string().nullable().optional() }),
+  z.strictObject({ kind: z.literal('worker-result'), status: z.enum(['completed', 'interrupted']), receipt, sessionFile: z.string().nullable().optional(),
+    opinion: z.record(z.string(), z.json()).optional() }),
   z.strictObject({ kind: z.literal('worker-result'), status: z.literal('failure'), code: z.string().regex(/^[A-Z_]{1,128}$/) }),
   z.strictObject({ kind: z.literal('worker-result'), status: z.literal('question'), receipt, sessionFile: z.string().nullable().optional(),
     question: workerQuestionSchema.extend({ acknowledged: z.boolean() }) }),
+  // Ticket 12 lifecycle: the suspended Builder's handoff notice (validated in full by the owner's launcher, not here).
+  z.strictObject({ kind: z.literal('worker-handoff'), event: z.record(z.string(), z.json()) }),
 ]);
 const abortSchema = z.strictObject({ kind: z.literal('abort') });
+/** Host directive to a suspended Builder (ticket 12); demultiplexed by the fixed entrypoint like abort. */
+export const deliverSchema = z.strictObject({ kind: z.literal('deliver'), directive: z.strictObject({ kind: z.literal('review-results'),
+  round: z.number().int().min(1).max(99), prompt: z.string().min(1).max(40000) }) });
 
 /** Pure construction is allowed before durable start; publication is not. The
  * callback is usable by the future OAuth observer, but no producer is activated. */
@@ -65,7 +71,7 @@ export function createSecretPublisher(wire: Wire, input: Context, signal: AbortS
   }
   function message(value: unknown) {
     // Keep the fixed entrypoint's abort/lifecycle and the question seam's demultiplexers independent.
-    if (abortSchema.safeParse(value).success || isQuestionMessage(value)) return;
+    if (abortSchema.safeParse(value).success || isQuestionMessage(value) || deliverSchema.safeParse(value).success) return;
     try {
       const parsed = responseSchema.safeParse(value);
       if (!withinBudget(value) || !parsed.success || !pending || pending.ack || !active() ||

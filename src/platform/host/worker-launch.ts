@@ -110,7 +110,7 @@ const reference = z.strictObject({ workId: z.string(), id: z.uuid() });
 const startedInvocation = z.strictObject({ executionId: z.string(), invocationId: z.string() });
 const askedSchema = workerQuestionSchema.extend({ acknowledged: z.boolean() });
 const completedSchema = z.discriminatedUnion('status', [
-  z.strictObject({ status: z.literal('success'), receipt: reference }),
+  z.strictObject({ status: z.literal('success'), receipt: reference, opinion: z.record(z.string(), z.json()).optional() }),
   z.strictObject({ status: z.literal('failure'), code: z.string() }),
   z.strictObject({ status: z.literal('question'), receipt: reference, question: askedSchema }),
 ]);
@@ -119,7 +119,9 @@ const completedSchema = z.discriminatedUnion('status', [
 export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, endpoint: string, root: string, signal: AbortSignal,
   secrets: { registerSecret(value: string): void; revoke(): void },
   /** Builder ask_user relay: the owner forwards the preserved request to the Control and returns its ACK (spec §5.5). */
-  relay?: { question(question: WorkerQuestionRequest): Promise<QuestionRelayAck> }) {
+  relay?: { question(question: WorkerQuestionRequest): Promise<QuestionRelayAck> },
+  /** Ticket 12: the suspended Builder's handoff notice, forwarded by the owner on the host-boot channel. */
+  onHandoff: (event: Record<string, unknown>) => void = () => {}) {
   const request = workerLaunchSchema.parse(input);
   const plan = planWorkerLaunch(host, { workId: request.context.workId, environmentRef: request.context.environmentRef,
     bootRef: request.context.bootRef, invocationId: request.context.invocationId, role: request.context.role });
@@ -167,7 +169,8 @@ export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, en
     }
     if ('kind' in message && message.kind === 'worker-result') {
       const parsed = z.discriminatedUnion('status', [
-        z.strictObject({ kind: z.literal('worker-result'), status: z.enum(['completed', 'interrupted']), receipt: reference, sessionFile: z.string().nullable().optional() }),
+        z.strictObject({ kind: z.literal('worker-result'), status: z.enum(['completed', 'interrupted']), receipt: reference, sessionFile: z.string().nullable().optional(),
+          opinion: z.record(z.string(), z.json()).optional() }),
         z.strictObject({ kind: z.literal('worker-result'), status: z.literal('failure'), code: z.string() }),
         z.strictObject({ kind: z.literal('worker-result'), status: z.literal('question'), receipt: reference, sessionFile: z.string().nullable().optional(), question: askedSchema }),
       ]).safeParse(message);
@@ -176,15 +179,25 @@ export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, en
         const own = result.status !== 'failure' && startReference !== undefined && result.receipt.id === startReference.id && result.receipt.workId === startReference.workId;
         if (result.status === 'question' && own && request.context.role === 'builder' && result.question.reference.workId === request.context.workId) {
           completeResolve({ status: 'question', receipt: result.receipt, question: result.question });
-        } else if (result.status === 'completed' && own) completeResolve({ status: 'success', receipt: result.receipt });
+        } else if (result.status === 'completed' && own) completeResolve({ status: 'success', receipt: result.receipt, ...(result.opinion ? { opinion: result.opinion } : {}) });
         else completeResolve({ status: 'failure', code: result.status === 'interrupted' ? 'WORKER_INTERRUPTED' : 'WORKER_EXECUTION_UNCERTAIN' });
         secretReceiver.close();
       }
     }
   });
+  // Ticket 12: a started Builder with a handoff policy may notify its suspended handoff; the Host directive goes back on the same IPC.
+  child.on('message', message => {
+    const parsed = z.strictObject({ kind: z.literal('worker-handoff'), event: z.record(z.string(), z.json()) }).safeParse(message);
+    if (parsed.success && startReference && request.context.role === 'builder' && request.handoff && !signal.aborted &&
+        Buffer.byteLength(JSON.stringify(parsed.data.event)) <= 32768) onHandoff(parsed.data.event);
+  });
   const lost = () => { questions?.close(); secretReceiver.close(); startReject(new Error('WORKER_START_UNCERTAIN')); completeResolve({ status: 'failure', code: 'WORKER_EXECUTION_UNCERTAIN' }); signal.removeEventListener('abort', abort); };
   child.once('error', lost); child.once('exit', lost);
   child.send(bootstrap, error => { if (error) { lost(); abort(); } });
   if (signal.aborted) abort();
-  return { started, completed };
+  const deliver = (directive: Record<string, unknown>) => new Promise<boolean>(resolve => {
+    if (!child.connected || signal.aborted || !startReference || !request.handoff) { resolve(false); return; }
+    child.send({ kind: 'deliver', directive }, error => resolve(!error));
+  });
+  return { started, completed, deliver };
 }

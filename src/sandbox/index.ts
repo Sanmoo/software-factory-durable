@@ -16,6 +16,7 @@ export type { ArtifactSeed } from './artifact-seeds.js';
 // Host-side read-only observation of guest-writable trees (never host git/commands in them).
 export { readConfined } from './confined.js';
 export { inspectCheckout, type CheckoutInspection } from './checkout-inspection.js';
+import { observeProposal } from './proposal-identity.js';
 export type PreparedWork = PrepareResult | { status: 'success'; environment: EnvironmentRef; checkout: CheckoutView; seeds: { name: string; manifestSha256: string; reused: boolean }[] };
 export type { GuestAssetPin } from './guest-assets.js';
 import { observeEnvironment, type BootRef } from './lifecycle.js';
@@ -71,6 +72,11 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
         return { status: 'failure', code: error instanceof Error && error.message === 'STALE_TOOL_CONTEXT'
           ? 'STALE_TOOL_CONTEXT' : toolEndpoint ? 'TOOL_CHANNEL_CLOSED' : 'TOOL_CHANNEL_UNAVAILABLE' };
       }
+    },
+    /** Host-side identity of the handed-off proposal of `round` (confined reads; no host git, no guest command). */
+    async observeProposal({ environment, round }: { environment: EnvironmentRef; round: number }) {
+      if (!/^env-[a-f0-9]{64}$/.test(environment)) return { status: 'refused' as const, code: 'ENVIRONMENT_REF_INVALID' };
+      return observeProposal(join(await realpath(root), 'environments', environment), round);
     },
     async remove({ environment, cleanup }: { environment: EnvironmentRef; cleanup: unknown }) {
       return removeEnvironment(root, environment, cleanup);

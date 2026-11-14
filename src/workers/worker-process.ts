@@ -5,8 +5,12 @@ import { connect, protocolVersion } from '../protocol/index.js';
 import { createRecords } from '../records/index.js';
 import type { ReadResult, ToolContext, ToolProjection } from '../sandbox/index.js';
 import { startWorker } from './worker-start.js';
-import { builderBudget, oauthQualification } from './oauth-qualification.js';
-import { createQuestionSender, createSecretPublisher, workerBootstrapSchema } from '../platform/host/index.js';
+import { budgetFor } from './oauth-qualification.js';
+import { createQuestionSender, createSecretPublisher, deliverSchema, workerBootstrapSchema } from '../platform/host/index.js';
+import type { BuilderDirective, HandoffEvent } from './builder-handoff.js';
+
+/** The fixed entrypoint's own IPC (no new channel): the suspended Builder's handoff notice out, the Host directive in. */
+export type WorkerIpc = { send(message: Record<string, unknown>): Promise<void>; onMessage(listener: (value: unknown) => void): () => void };
 
 
 const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
@@ -85,14 +89,14 @@ async function toolProjection(endpoint: string, context: ToolContext, signal: Ab
 
 /** Private bounded bootstrap, received only over the fixed entrypoint's inherited
  * IPC. No callbacks, SDK objects, environment bag or arbitrary executable input. */
-export async function run(input: unknown, parentSignal: AbortSignal) {
+export async function run(input: unknown, parentSignal: AbortSignal, ipc?: WorkerIpc) {
   const synchronizationLifetime = new AbortController();
   let signal = AbortSignal.any([parentSignal, synchronizationLifetime.signal]);
   if (Buffer.byteLength(JSON.stringify(input) ?? '') > 65536) throw new Error('WORKER_BOOTSTRAP_INVALID');
   const parsed = workerBootstrapSchema.safeParse(input);
   if (!parsed.success) throw new Error('WORKER_BOOTSTRAP_INVALID');
   const bootstrap = parsed.data;
-  if (!('apiKey' in bootstrap.profile)) signal = AbortSignal.any([signal, AbortSignal.timeout(bootstrap.modelBudget === 'builder-v1' ? builderBudget.deadlineMs : oauthQualification.deadlineMs)]);
+  if (!('apiKey' in bootstrap.profile)) signal = AbortSignal.any([signal, AbortSignal.timeout(budgetFor(bootstrap.context.role, bootstrap.modelBudget).deadlineMs)]);
   // Same explicit minimal projection as the existing closed Host launch plan.
   const { TMPDIR: temporary, XDG_CACHE_HOME: cache } = process.env;
   if (process.versions.node.split('.')[0] !== '24' || process.env.NODE_DISABLE_COMPILE_CACHE !== '1' ||
@@ -122,7 +126,21 @@ export async function run(input: unknown, parentSignal: AbortSignal) {
     ...(bootstrap.copyOutput === undefined ? {} : { copyOutput: bootstrap.copyOutput }),
     ...(bootstrap.skillPack === undefined ? {} : { skillPack: bootstrap.skillPack }),
     ...(bootstrap.modelBudget === undefined ? {} : { modelBudget: bootstrap.modelBudget }),
-    ...(bootstrap.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: bootstrap.editSourceMaxBytes }) };
+    ...(bootstrap.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: bootstrap.editSourceMaxBytes }),
+    ...(bootstrap.handoff === undefined ? {} : { handoff: bootstrap.handoff }),
+    ...(bootstrap.review === undefined ? {} : { review: bootstrap.review }) };
+  // One directive per handoff, awaited only while suspended; the abort lifetime ends the wait (no Promise waiting on a human here).
+  const onHandoff = ipc && bootstrap.handoff ? (event: HandoffEvent) => new Promise<BuilderDirective>((resolve, reject) => {
+    const done = () => { stop(); signal.removeEventListener('abort', aborted); };
+    const aborted = () => { done(); reject(new Error('STALE_TOOL_CONTEXT')); };
+    const stop = ipc.onMessage(value => {
+      const parsed = deliverSchema.safeParse(value);
+      if (parsed.success && parsed.data.directive.round === event.round) { done(); resolve(parsed.data.directive); }
+    });
+    signal.addEventListener('abort', aborted, { once: true });
+    if (signal.aborted) { aborted(); return; }
+    ipc.send({ kind: 'worker-handoff', event }).catch(() => aborted());
+  }) : undefined;
   // Sync protected receipt before even importing/creating the native SDK runtime.
   const secretPublisher = createSecretPublisher(process, bootstrap.context, signal, 5000, () => synchronizationLifetime.abort());
   try {
@@ -142,7 +160,8 @@ export async function run(input: unknown, parentSignal: AbortSignal) {
         ...(questions ? { questions: { send: question => questions.ask(question), containsSecret: text => secrets.some(secret => text.includes(secret)) } } : {}),
         oauth: { factoryRoot: bootstrap.recordsRoot, acknowledgeSecrets: secretPublisher.acknowledgeSecrets,
           publicInputIsSafe: () => !containsSecret({ prompt: bootstrap.prompt, profile: publicProfile }),
-          registerSecret(value) { records.registerSecret(value); if (!secrets.includes(value)) secrets.push(value); } } }, invocation, receipt);
+          registerSecret(value) { records.registerSecret(value); if (!secrets.includes(value)) secrets.push(value); } },
+        ...(onHandoff ? { onHandoff } : {}) }, invocation, receipt);
     } finally { tools.close(); }
   } finally { secretPublisher.close(); }
 }

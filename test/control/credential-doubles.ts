@@ -89,6 +89,7 @@ export function lifecycleDoubles(options: LifecycleOptions = {}) {
           record({ kind: 'deliver', directive: directive.kind, detail: worker });
           return options.withdrawDirective === 'failure' ? { status: 'failure', code: 'CREDENTIAL_DELIVERY_UNCERTAIN' } : { status: 'withdrawn' };
         }
+        if (directive.kind !== 'credential') return { status: 'failure', code: 'DELIVERY_NOT_APPLICABLE' };
         const sequence = ++delivered;
         record({ kind: 'deliver', directive: directive.kind, token: directive.credential.token, detail: worker });
         return (options.deliver?.(sequence) ?? 'delivered') === 'delivered' ? { status: 'delivered' } : { status: 'failure', code: 'CREDENTIAL_DELIVERY_UNCERTAIN' };

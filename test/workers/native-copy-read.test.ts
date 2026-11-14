@@ -15,7 +15,7 @@ function guest(data = source) {
   const attempts = { bash: 0, copy: 0, read: 0, validatedRead: 0 };
   const programs: string[] = [];
   const vm: Parameters<typeof nativeOwner>[1] = { exec(argv, options) {
-    if (argv[0] === '/usr/bin/env' && argv[2] === '/bin/bash') {
+    if (argv[0] === '/usr/bin/env' && argv.includes('/bin/bash')) {
       attempts.bash++;
       return { async *output() { yield { stream: 'stdout', data }; }, result: Promise.resolve({ exitCode: 0 }) };
     }

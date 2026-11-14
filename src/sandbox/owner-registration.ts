@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { workerLaunchSchema, launchWorker, type WorkerBootHost } from '../platform/host/index.js';
+import { deliverSchema, workerLaunchSchema, launchWorker, type WorkerBootHost } from '../platform/host/index.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { connect, listen, protocolVersion, type Channel, type Envelope } from '../protocol/index.js';
@@ -33,9 +33,19 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
   const credentials = new Map<Channel, { token: string | undefined; readonly invocationId: string; withdrawn: boolean }>();
   // ask_user relays awaiting the Control's ACK on the SAME host-boot channel that launched the worker (bounded wait, no retry).
   const questionAcks = new Map<string, { channel: Channel; resolve(ack: z.infer<typeof questionAckSchema>): void; reject(error: Error): void }>();
+  // Ticket 12: the launched worker of each host-boot channel, for Host directives to a suspended Builder (Q6 deliver).
+  const launched = new Map<Channel, { launchId: string; deliver(directive: Record<string, unknown>): Promise<boolean> }>();
   let sequence = 0;
   const server = await listen(join(directory, 'owner'), {
     async message(request, channel, peer) {
+      if (request.kind === 'deliver-directive') {
+        const worker = launched.get(channel);
+        const parsed = deliverSchema.safeParse({ kind: 'deliver', directive: request.payload.directive });
+        const delivered = worker && parsed.success && request.reply_to === worker.launchId && Object.keys(request.payload).length === 1
+          ? await worker.deliver(parsed.data.directive) : false;
+        await channel.send(frame(request.message_id, 'delivery-result', delivered ? { status: 'delivered' } : { status: 'failure', code: 'DELIVERY_DENIED' }, request.message_id));
+        return;
+      }
       if (request.kind === 'question-ack') {
         const pending = request.reply_to ? questionAcks.get(request.reply_to) : undefined;
         const parsed = questionAckSchema.safeParse(request.payload);
@@ -117,14 +127,26 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
             questionAcks.set(question.questionId, { channel, resolve: ack => { clearTimeout(timer); resolve(ack); }, reject: error => { clearTimeout(timer); reject(error); } });
             channel.send(frame(question.questionId, 'worker-question', { context, question }, request.message_id))
               .catch(() => { questionAcks.get(question.questionId)?.reject(new Error('QUESTION_RELAY_FAILED')); questionAcks.delete(question.questionId); });
-          }) });
+          }) }, event => { void channel.send(frame(request.message_id, 'worker-handoff', event as Envelope['payload'], request.message_id)).catch(() => { lifetime.abort(); channel.close(); }); });
+          launched.set(channel, { launchId: request.message_id, deliver: typeof worker.deliver === 'function' ? worker.deliver : async () => false });
           await channel.send(frame(request.message_id, 'worker-launch-result', { status: 'requested', worker: context.invocationId }, request.message_id));
           // Request, durable start and completion are distinct observations.
           void (async () => {
             try {
               const started = await worker.started;
               await channel.send(frame(request.message_id, 'worker-started', started, request.message_id));
-              const completed = await worker.completed;
+              let completed = await worker.completed as Envelope['payload'];
+              // A reviewer opinion is forwarded only after redaction by THIS owner's Records, which holds every secret of the boot
+              // (including a live Builder grant the reviewer process never knew). Failure to redact is a failed completion, never raw text.
+              if (completed.status === 'success' && completed.opinion !== undefined) {
+                try {
+                  const { phaseId: _phase, ...captureContext } = context;
+                  const reference = await records.record({ ...captureContext, callId: 'review-opinion-forward' }, { opinion: completed.opinion });
+                  const page = await records.read({ reference, offset: 0, limit: 65536 });
+                  if (page.state !== 'complete' || page.nextOffset !== page.bytes) throw new Error('PROTECTED_CAPTURE_UNAVAILABLE');
+                  completed = { ...completed, opinion: (JSON.parse(page.data.toString('utf8')) as { event: { opinion: Envelope['payload'] } }).event.opinion };
+                } catch { completed = { status: 'failure', code: 'OPINION_REDACTION_UNAVAILABLE' }; }
+              }
               await channel.send(frame(request.message_id, 'worker-completed', completed, request.message_id));
             } catch { lifetime.abort(); channel.close(); }
           })();
@@ -155,7 +177,7 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
       await channel.send(frame(request.message_id, 'binding-result', { status: 'success', endpoint }, request.message_id));
     },
     closed(_error, _peer, channel) {
-      lifetimes.get(channel)?.abort(); credentials.delete(channel);
+      lifetimes.get(channel)?.abort(); credentials.delete(channel); launched.delete(channel);
       for (const [id, pending] of questionAcks) if (pending.channel === channel) { questionAcks.delete(id); pending.reject(new Error('QUESTION_RELAY_CLOSED')); }
     },
   }, { kind: 'host-boot', binding: Object.freeze({ ...identity }) });

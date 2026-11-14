@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openFactoryOAuth } from './factory-oauth.js';
-import { builderBudget, oauthQualification, qualifyOAuth } from './oauth-qualification.js';
+import { budgetFor, qualifyOAuth } from './oauth-qualification.js';
 import { createAgentSession, createExtensionRuntime, createSyntheticSourceInfo, ModelRuntime, SessionManager, SettingsManager,
   type PromptTemplate, type ResourceLoader, type Skill, type ToolDefinition } from '#factory-pi';
 import { loadSkillPack, skillPacks } from './skill-pack.js';
@@ -14,13 +14,19 @@ import { builderEdit } from './edit.js';
 import { startWorker, type ReviewerProfile, type Invocation } from './worker-start.js';
 import { builderAskUser, type AskedQuestion } from './ask-user.js';
 import type { WorkerQuestionRequest } from '../platform/host/index.js';
+import { builderHandoff, captureHandoff, suspendable, type BuilderDirective, type HandoffEvent } from './builder-handoff.js';
+import { composeOpinion, createReadObserver, opinionSchema } from './review.js';
+import type { ReviewOpinion } from '../contracts/index.js';
+export type { BuilderDirective, HandoffEvent } from './builder-handoff.js';
 
 type Options = { profile: ReviewerProfile; sandbox: ToolProjection; records: Awaited<ReturnType<typeof createRecords>>;
   oauth?: { factoryRoot: string; acknowledgeSecrets(values: readonly string[]): Promise<void>;
     registerSecret(value: string): void; publicInputIsSafe(): boolean };
   /** Builder ask_user: notification to the host (bounded wait for the Control ACK) and the known-secret check of the question text. */
   questions?: { send(question: WorkerQuestionRequest): Promise<{ status: 'recorded' } | { status: 'refused'; code: string } | { status: 'unacknowledged' }>;
-    containsSecret(text: string): boolean } };
+    containsSecret(text: string): boolean };
+  /** Builder with a `handoff` policy: notifies the suspended handoff and waits for the Host directive (review results). */
+  onHandoff?: (event: HandoffEvent) => Promise<BuilderDirective> };
 
 /** Private SDK component seam; not host activation or process proof. */
 export function createWorkerSession(options: Options) {
@@ -40,12 +46,14 @@ export async function executeSession(options: Options, invocation: Invocation, r
   const oauth = !('apiKey' in profile);
   // After a question no further model request or tool runs in this activation (spec §5.5: the activation ends, nothing waits).
   let asked: AskedQuestion | undefined;
-  const limits = invocation.modelBudget === 'builder-v1' && invocation.context.role === 'builder' ? builderBudget : oauthQualification;
+  const limits = budgetFor(invocation.context.role, invocation.modelBudget);
+  const role = invocation.context.role;
+  if (invocation.handoff !== undefined && (role !== 'builder' || !options.onHandoff)) throw new Error('WORKER_HANDOFF_UNAVAILABLE');
   const signal = oauth ? AbortSignal.any([invocation.signal, qualificationAbort.signal, AbortSignal.timeout(limits.deadlineMs)]) : invocation.signal;
   if (oauth && (!options.oauth || Buffer.byteLength(invocation.prompt) > limits.promptBytes)) throw new Error('WORKER_QUALIFICATION_CLOSED');
   // Explicit Factory resources only: the verified pack (guest-readable copies under /artifacts) or nothing; never a personal profile.
   const selected = invocation.skillPack !== undefined && invocation.context.role === 'builder' ? skillPacks[invocation.skillPack] : undefined;
-  const pack = selected ? await loadSkillPack(selected.directory) : undefined;
+  const pack = selected ? await loadSkillPack(selected.directory, selected.id) : undefined;
   if (pack && pack.id !== selected!.id) throw new Error('WORKER_SKILL_PACK_DRIFT');
   const builderSkillPack = selected ?? skillPacks['factory-skills-v2'];
   const source = (path: string) => createSyntheticSourceInfo(`${builderSkillPack.guestDirectory}/${path}`, { source: `factory:${builderSkillPack.id}`, scope: 'temporary', origin: 'package' });
@@ -88,6 +96,7 @@ export async function executeSession(options: Options, invocation: Invocation, r
       let interrupted = false;
       let abortSession = () => {};
       const critical = () => { interrupted = true; abortSession(); };
+      const observer = createReadObserver();
       const editEnabled = invocation.context.role === 'builder' && invocation.editSourceMaxBytes !== undefined;
       const customTools: ToolDefinition[] = invocation.context.role === 'builder'
         ? [builderWrite(invocation.context, options.sandbox, critical), builderBash(invocation.context, options.sandbox, critical, copyOutput)]
@@ -102,6 +111,15 @@ export async function executeSession(options: Options, invocation: Invocation, r
         customTools.push(builderEdit(invocation.context, options.sandbox, critical));
         tools.push('edit');
       }
+      // Reviewer with a review input: the SAME native read, observed by the Host (reads, failures, truncation) for the opinion checks.
+      if (invocation.context.role !== 'builder' && invocation.review) {
+        const reviewer = customTools[0]!;
+        customTools[0] = { ...reviewer, async execute(...args: Parameters<ToolDefinition['execute']>) {
+          try { const result = await reviewer.execute(...args); observer.observe(args[1], { details: result.details, ...(result.isError === undefined ? {} : { isError: result.isError }) }); return result; }
+          catch (error) { observer.observe(args[1], { error }); throw error; }
+        } };
+      }
+
       if (invocation.context.role === 'builder' && options.questions) {
         const { phaseId, ...recordContext } = invocation.context;
         customTools.push(builderAskUser(invocation.context, {
@@ -116,8 +134,21 @@ export async function executeSession(options: Options, invocation: Invocation, r
         if (asked) throw new Error('ACTIVATION_ENDED_AFTER_QUESTION');
         return tool.execute(...args);
       } } as ToolDefinition);
+      // Host suspension (spec §5.6): once the Builder hands off, EVERY Builder tool refuses and terminates the batch until the Host
+      // delivers the review results; a new model turn while suspended interrupts the session (it is not merely a model phrase/agent_end).
+      const gate = invocation.handoff ? builderHandoff() : undefined;
+      const sessionTools = gate ? [...gated.map(tool => suspendable(tool, gate)), gate.tool] : gated;
+      if (gate) {
+        // Synchronous backstop: no provider request can even start while suspended (the request itself is refused, not just aborted later).
+        const nativeStream = runtime.streamSimple.bind(runtime);
+        runtime.streamSimple = (...args: Parameters<typeof nativeStream>) => {
+          if (gate.suspended()) { critical(); throw new Error('BUILDER_SUSPENDED_FOR_REVIEW'); }
+          return nativeStream(...args);
+        };
+      }
+      if (gate) tools.push(gate.tool.name);
       const { session } = await createAgentSession({ cwd: '/workspace', agentDir: profile.directory, modelRuntime: runtime,
-        model, thinkingLevel: 'off', tools, customTools: qualification ? gated.map(tool => qualification.tool(tool)) : gated, resourceLoader, sessionManager: manager,
+        model, thinkingLevel: 'off', tools, customTools: qualification ? sessionTools.map(tool => qualification.tool(tool)) : sessionTools, resourceLoader, sessionManager: manager,
         settingsManager: SettingsManager.inMemory({ retry: { enabled: false, provider: { maxRetries: 0 } },
           compaction: { enabled: false }, cacheWarming: 'off' }) });
       if (session.model?.provider !== profile.providerId || session.model.id !== profile.modelId) {
@@ -126,14 +157,46 @@ export async function executeSession(options: Options, invocation: Invocation, r
       abortSession = () => { void session.abort().catch(() => {}); };
       const abort = () => { interrupted = true; abortSession(); };
       signal.addEventListener('abort', abort, { once: true });
+      const unsubscribe = session.subscribe(event => {
+        if (event.type === 'turn_start' && gate?.suspended()) abort();
+        if (event.type === 'message_end' && event.message.role === 'assistant' && 'content' in event.message && Array.isArray(event.message.content))
+          gate?.batch(event.message.content.filter(block => block.type === 'toolCall').length);
+      });
       try {
         if (signal.aborted) throw new Error('STALE_TOOL_CONTEXT');
         qualification?.check();
-        await session.prompt(invocation.prompt).catch(error => { if (!asked) throw error; });
-        if (asked) return { status: 'question' as const, receipt, sessionFile: manager.getSessionFile() ?? null, question: asked };
-        return { status: signal.aborted || interrupted || qualification?.failed() ? 'interrupted' as const : 'completed' as const,
-          receipt, sessionFile: manager.getSessionFile() };
-      } finally { signal.removeEventListener('abort', abort); session.dispose(); }
+        let prompt = invocation.prompt;
+        while (true) {
+          await session.prompt(prompt).catch(error => { if (!asked) throw error; });
+          if (asked) return { status: 'question' as const, receipt, sessionFile: manager.getSessionFile() ?? null, question: asked };
+          if (!gate?.pending() || signal.aborted || interrupted || qualification?.failed()) break;
+          // Suspended: the Host (not the model) captures the proposal through the Builder's own binding, then waits for the directive.
+          const event = await captureHandoff(invocation.context, options.sandbox, gate.round(), invocation.handoff!.baseCommit, signal);
+          const directive = await options.onHandoff!(event);
+          if (signal.aborted || interrupted || directive.kind !== 'review-results' || directive.round !== gate.round()) { interrupted = true; break; }
+          gate.resume();
+          prompt = directive.prompt;
+        }
+        const status = signal.aborted || interrupted || qualification?.failed() ? 'interrupted' as const : 'completed' as const;
+        const sessionFile = manager.getSessionFile() ?? null;
+        if (role === 'builder' || !invocation.review) return { status, receipt, sessionFile: manager.getSessionFile() };
+        // Reviewer: the complete opinion from the FINAL assistant message is preserved durably BEFORE any notification.
+        const last = [...session.messages].reverse().find(message => message.role === 'assistant');
+        const finalText = last && 'content' in last && Array.isArray(last.content)
+          ? last.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n') : null;
+        const composed = composeOpinion({ role, invocationId: invocation.context.invocationId, review: invocation.review, status, finalText, sessionFile,
+          model: { providerId: profile.providerId, modelId: profile.modelId }, profile: { id: profile.id, modelBudget: invocation.modelBudget ?? null },
+          host: observer.summary(invocation.review.required) });
+        const { phaseId: _phase, ...context } = invocation.context;
+        const recordedAt = new Date().toISOString();
+        const reference = await options.records.record({ ...context, callId: 'review-opinion' }, { kind: 'review-opinion', ...composed, recordedAt });
+        // Only the REDACTED protected record leaves this worker, never the raw composed text.
+        const page = await options.records.read({ reference, offset: 0, limit: 65536 });
+        if (page.state !== 'complete' || page.nextOffset !== page.bytes) throw new Error('PROTECTED_CAPTURE_UNAVAILABLE');
+        const { kind: _kind, ...stored } = (JSON.parse(page.data.toString('utf8')) as { event: Record<string, unknown> }).event;
+        const opinion: ReviewOpinion = opinionSchema.parse({ ...stored, reference }) as ReviewOpinion;
+        return { status, receipt, sessionFile: manager.getSessionFile(), opinion };
+      } finally { unsubscribe(); signal.removeEventListener('abort', abort); session.dispose(); }
     } finally { await runtime.settleCredentialWrites(); }
   } finally { await store?.settleCredentialWrites(); }
 }

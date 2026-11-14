@@ -2,6 +2,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { BuilderGrant } from '../../contracts/index.js';
 import type { BootRef, EnvironmentRef } from '../../sandbox/index.js';
+import type { ProposalIdentity } from '../../contracts/index.js';
+import type { HandoffEvent } from '../../workers/index.js';
+import { deliveryPrompt, planReviews, type ReviewPlan } from '../rules/review.js';
+import { recordConclusion, recordDelivery, recordHandoff, recordReviewerEnd, recordReviewerStart } from './review.js';
 import type { AccessDependencies, CredentialWithdrawal, DependencyEvaluation, ExecutionPorts, ExecutionView } from '../types.js';
 import { evaluateEntry } from '../rules/admission.js';
 import { dispatchBlockers, selectNext, type OwnCycleFacts } from '../rules/dependencies.js';
@@ -181,6 +185,90 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     return { attemptId, evaluation };
   }
 
+  type Handle = Awaited<ReturnType<ExecutionPorts['workers']['activate']>>;
+  const unavailable = (code: string): ProposalIdentity => ({ status: 'unavailable', code });
+  /**
+   * One review round inside the SAME Execution/Slot/boot (spec §5.6/§6.4): the Builder is already suspended by its Host; the handoff and
+   * both reviewer intents are durable before any reviewer starts; Standards and Spec run in parallel; each complete opinion (or failure)
+   * is committed; only after BOTH reviewers' activity ended (completion observed, tool binding closed) the identity is re-observed, the
+   * round concluded durably and the effective results delivered to the preserved Builder session. No reviewer retry, no new Slot.
+   */
+  async function reviewRound(work: WorkRecord, execution: ExecutionView, environment: EnvironmentRef, boot: BootRef, handle: Handle, event: HandoffEvent,
+    holdExecutionAndWithdraw: (code: string, nextStep: string) => Promise<void>): Promise<boolean> {
+    const { executionId } = execution;
+    const { round } = event;
+    const reviews = ports.reviews!;
+    // The Execution's own hold: also withdraws the Builder credentials (ticket 20), even while it is suspended for review.
+    const hold = async (code: string, nextStep: string) => { await holdExecutionAndWithdraw(code, nextStep); return false; };
+    const observeProposal = async () => ports.sandbox.observeProposal ? ports.sandbox.observeProposal({ environment, round }).catch(() => unavailable('PROPOSAL_IDENTITY_UNAVAILABLE')) : unavailable('PROPOSAL_IDENTITY_NOT_COMPOSED');
+    let failure: string | null = event.status === 'failure' ? 'HANDOFF_UNAVAILABLE' : null;
+    checkStop();
+    const before = failure ? null : await observeProposal();
+    const plans: ReviewPlan[] = event.status === 'captured' ? planReviews({ executionId, round, attempt: 1, handoff: event.summary }) : [];
+    if (!failure && before?.status !== 'observed') failure = 'PROPOSAL_IDENTITY_UNAVAILABLE';
+    // The host-read index must be the very index the Builder host reported; otherwise no reviewer starts on it.
+    if (!failure && event.status === 'captured' && before?.status === 'observed' && before.indexSha256 !== event.summary.indexSha256) failure = 'PROPOSAL_INDEX_MISMATCH';
+    const recorded = await recordHandoff(session, work.work_id, executionId, { event, before, plans, reviewer: reviews.reviewer, failure });
+    if (recorded !== 'recorded') return hold(`REVIEW_HANDOFF_${recorded.toUpperCase()}`, 'The handoff could not be recorded for this Execution; the Builder stays suspended. Operator recovery (ticket 26).');
+    observe(work.work_id, failure ? 'review-handoff-failed' : 'reviewing', failure ? [failure] : []);
+    const runReviewer = async (plan: ReviewPlan) => {
+      let reviewer: Handle;
+      try {
+        checkStop();
+        reviewer = await ports.workers.activate({ context: { workId: work.work_id, executionId, invocationId: plan.invocationId, role: plan.role,
+          environmentRef: environment, bootRef: boot, phaseId: plan.phaseId }, prompt: plan.prompt, signal: stopping.signal, review: plan.review, ...reviews.reviewer });
+      } catch (error) {
+        if (stopping.signal.aborted) throw error;
+        // Only a refusal known to precede any launch proves the reviewer never ran; anything else may have launched it.
+        const known = error instanceof Error && ['WORKER_LAUNCH_INVALID', 'STALE_TOOL_CONTEXT', 'WORKER_EXECUTION_NOT_ENABLED', 'WORKER_PROFILE_NOT_CONFIGURED'].includes(error.message);
+        await recordReviewerEnd(session, work.work_id, executionId, round, plan.role, { failure: known ? 'REVIEWER_UNAVAILABLE' : 'REVIEWER_LAUNCH_UNCERTAIN',
+          cessation: known ? 'never-started' : 'unconfirmed' });
+        return;
+      }
+      try {
+        const start = await untilStopped(reviewer.started);
+        if (await recordReviewerStart(session, work.work_id, executionId, round, plan.role, { id: start.receipt.id, ...start.invocation }) !== 'recorded') {
+          await recordReviewerEnd(session, work.work_id, executionId, round, plan.role, { failure: 'REVIEWER_START_RECEIPT_CONFLICT', cessation: 'unconfirmed' });
+          return;
+        }
+        const completed = await untilStopped(reviewer.completed);
+        await recordReviewerEnd(session, work.work_id, executionId, round, plan.role, { cessation: 'completion-observed', ...(completed.status === 'success' && completed.opinion
+          ? { opinion: completed.opinion } : { failure: completed.status === 'failure' && /^[A-Z_]{1,64}$/.test(completed.code) ? completed.code : 'OPINION_MISSING' }) });
+      } catch (error) {
+        if (stopping.signal.aborted) throw error;
+        await recordReviewerEnd(session, work.work_id, executionId, round, plan.role, { failure: 'REVIEWER_OUTCOME_UNCERTAIN', cessation: 'unconfirmed' });
+      } finally { reviewer.close(); }
+    };
+    if (!failure) await Promise.all(plans.map(runReviewer));
+    checkStop();
+    if (await stillRunning(work.work_id, executionId, round)) return hold('REVIEWER_CESSATION_UNCONFIRMED',
+      'A reviewer may still be active; the Builder stays suspended and no result is delivered until its cessation is confirmed (operator recovery, ticket 26/28).');
+    const after = failure ? null : await observeProposal();
+    const concluded = await recordConclusion(session, work.work_id, executionId, round, after);
+    if (typeof concluded === 'string') return hold(`REVIEW_CONCLUSION_${concluded.toUpperCase()}`, 'The review round could not be concluded; the Builder stays suspended. Operator recovery (ticket 26/28).');
+    const prompt = deliveryPrompt({ round, conclusion: concluded.conclusion!, applicability: concluded.applicability ?? 'unknown', reasons: concluded.reasons,
+      reviewers: { standards: concluded.reviewers.standards, spec: concluded.reviewers.spec } });
+    if (await recordDelivery(session, work.work_id, executionId, round, { promptSha256: createHash('sha256').update(prompt).digest('hex') }) !== 'recorded') return hold('REVIEW_DELIVERY_STALE', 'Delivery intent not recordable.');
+    checkStop();
+    // Q6 deliver (same union as the credential directives of ticket 20): the results to the CURRENT Builder of this Execution.
+    const delivered = await untilStopped(ports.workers.deliver(handle.worker, { kind: 'review-results', round, prompt }));
+    // A refusal is a known non-delivery; anything else may have reached the Builder (it might have resumed): uncertain, never "failed".
+    const refused = delivered.status === 'failure' && ['DELIVERY_DENIED', 'DELIVERY_NOT_APPLICABLE', 'WORKER_NOT_CURRENT'].includes(delivered.code);
+    await recordDelivery(session, work.work_id, executionId, round, delivered.status === 'delivered' ? { outcome: 'delivered', code: null }
+      : { outcome: refused ? 'failed' : 'uncertain', code: delivered.status === 'failure' ? delivered.code : 'DELIVERY_UNEXPECTED' });
+    if (delivered.status !== 'delivered') return hold(refused ? 'REVIEW_DELIVERY_FAILED' : 'REVIEW_DELIVERY_UNCERTAIN',
+      refused ? 'The review results were refused before reaching the suspended Builder; never retried automatically. Operator recovery (ticket 26).'
+        : 'It is unknown whether the Builder received the results (it may have resumed); never redelivered automatically. Operator recovery (ticket 26).');
+    observe(work.work_id, 'review-delivered', [concluded.conclusion!]);
+    return true;
+  }
+
+  async function stillRunning(work_id: string, executionId: string, round: number) {
+    const shown = (await deps.readWorks()).find(item => item.work_id === work_id)?.execution;
+    const current = shown?.executionId === executionId ? shown.review?.rounds.find(item => item.round === round) : undefined;
+    return !current || Object.values(current.reviewers).some(reviewer => reviewer.cessation === 'unconfirmed');
+  }
+
   async function execute(work: WorkRecord, execution: ExecutionView) {
     const { executionId } = execution;
     const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase())!;
@@ -274,7 +362,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         previousExecutionId: resume.previousExecutionId, question: { questionId: answered.questionId, question: answered.content.question, context: answered.content.context },
         answer: { text: answered.answer.text, author: answered.answer.author.kind === 'github' ? answered.answer.author.login : 'local administrator', origin: answered.answer.origin.kind } })
         : [`/implement ${work.ticket.url}`, `repository=${work.repository.repository}`, `base=${work.repository.base}`, `base-commit=${prepared.checkout.baseCommit}`,
-          `branch=${execution.request.branch}`, `checkout=${prepared.checkout.path}`, 'artifacts=/artifacts', `work=${work.work_id}`, `execution=${executionId}`].join(' ');
+          `branch=${execution.request.branch}`, `checkout=${prepared.checkout.path}`, 'artifacts=/artifacts', `work=${work.work_id}`, `execution=${executionId}`,
+        ...(ports.reviews ? ['reviews=factory-handoff'] : [])].join(' ');
       const promptSha256 = createHash('sha256').update(prompt).digest('hex');
       const confirmed = await confirmActivation(session, work.work_id, executionId, attemptId, grant.metadata, promptSha256);
       if (confirmed.kind === 'refused') { await revoke(); await refuse(confirmed.reasons); return; }
@@ -296,7 +385,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         return { status: 'recorded' as const };
       };
       const handle = await ports.workers.activate({ context: { workId: work.work_id, executionId, invocationId: execution.invocationId, role: 'builder',
-        environmentRef: environment, bootRef: boot, phaseId: resume ? 'builder-recovery' : 'builder-initial' }, prompt, signal: stopping.signal, ...ports.builder },
+        environmentRef: environment, bootRef: boot, phaseId: resume ? 'builder-recovery' : 'builder-initial' }, prompt, signal: stopping.signal, ...ports.builder,
+        ...(ports.reviews ? { handoff: { baseCommit: prepared.checkout.baseCommit } } : {}) },
       { credential: grant.delivery }, { question: onQuestion });
       await lifecycle.attach(handle.worker);
       try {
@@ -307,6 +397,19 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         finally { startCommitted(consumed === 'confirmed'); }
         if (consumed !== 'confirmed') { await hold(`START_RECEIPT_${consumed.toUpperCase().replaceAll('-', '_')}`, 'Start receipt was not consumable for this Execution.'); return; }
         observe(work.work_id, 'started');
+        if (ports.reviews && handle.handoffs) {
+          phase = 'review';
+          const handoffs = handle.handoffs;
+          // The grant keeps its time-based renewal while the Builder is suspended for review (tools stay refused by its Host);
+          // reviewers never receive it.
+          const reviewed = (async () => {
+            for (let event = await untilStopped(handoffs.next()); event; event = await untilStopped(handoffs.next())) {
+              if (!await reviewRound(work, execution, environment, boot, handle, event, hold)) return false;
+            }
+            return true;
+          })();
+          if (!await untilStopped(lifecycle.renewWhile(reviewed))) return;
+        }
         phase = 'completed';
         // Renewal happens only while waiting for THIS activity; it never restarts, replays or recovers the Builder.
         const completed = await untilStopped(lifecycle.renewWhile(handle.completed));

@@ -44,7 +44,10 @@ try {
   });
   // Bootstrap is consumed exactly once; only this invocation's abort remains.
   process.on('message', directive);
-  const result = await runWorkerProcess(input, lifetime.signal);
+  const result = await runWorkerProcess(input, lifetime.signal, { send, onMessage(listener) {
+    process.on('message', listener);
+    return () => { process.removeListener('message', listener); };
+  } });
   if (!fatal) await send({ kind: 'worker-result', ...result });
 } catch (error) {
   // Allowlist codes only: never serialize arbitrary exception messages/stacks,

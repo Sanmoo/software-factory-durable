@@ -20,7 +20,7 @@ for (const mode of ['complete', 'binary', 'capture-failure', 'transport-loss', '
     let guestCalls = 0;
     const f = await nativeOwner(context, { exec(argv, options) {
       guestCalls++;
-      assert.deepEqual(argv, ['/usr/bin/env', '-i', '/bin/bash', '-c', "printf 'syn''thetic-se''cret'; printf 'tail π' >&2"]);
+      assert.deepEqual(argv, ['/usr/bin/env', '-i', 'GIT_AUTHOR_NAME=Software Factory Builder', 'GIT_AUTHOR_EMAIL=software-factory-builder@users.noreply.invalid', 'GIT_COMMITTER_NAME=Software Factory Builder', 'GIT_COMMITTER_EMAIL=software-factory-builder@users.noreply.invalid', '/bin/bash', '-c', "printf 'syn''thetic-se''cret'; printf 'tail π' >&2"]);
       assert.deepEqual(options.env, {}); assert.equal(options.cwd, '/workspace');
       assert.equal(options.stdout, 'pipe'); assert.equal(options.stderr, 'pipe'); assert.equal(options.windowBytes, 65536);
       return { async *output() {
