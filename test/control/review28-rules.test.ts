@@ -1,0 +1,136 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { opinionCorrelated, verifyExecution } from '../../src/control/rules/review.js';
+import { carryPlan, carrySource, incorporable, notRetriedReasons, preservedReviewContext, retryDecision, reviewerFailure, reviewerRetryWait, undiscovered }
+  from '../../src/control/rules/review-recovery.js';
+import type { ProposalHandoff, ProposalIdentity, ReviewOpinion } from '../../src/contracts/index.js';
+import type { BudgetCounter, ExecutionView, ReviewerView, ReviewRoundView } from '../../src/control/types.js';
+
+// Rules level (R): pure ticket 28 partial review recovery rules over canonical types. Not evidence of any real reviewer, Records or crash.
+const summary = (round: number, content = '7', extra: Partial<ProposalHandoff> = {}): ProposalHandoff => ({
+  version: 1, round, index: `/artifacts/review/r${round}/index.json`, indexSha256: String(round).repeat(64), head: 'b'.repeat(40), branch: 'factory/3-x',
+  base: 'a'.repeat(40), mergeBase: 'a'.repeat(40), counts: { entries: 1, committed: 0, staged: 0, unstaged: 1, untracked: 0, removed: 0 },
+  patches: { committed: { path: 'c', bytes: 0, sha256: 'c'.repeat(64) }, staged: { path: 's', bytes: 0, sha256: 'c'.repeat(64) }, unstaged: { path: 'u', bytes: 3, sha256: 'c'.repeat(64) } },
+  spec: { version: 'v1', sources: '/artifacts/spec/v1/sources.json', sha256: '1'.repeat(64) }, instructions: { version: 'v1', sources: '/artifacts/instructions/v1/sources.json', sha256: '2'.repeat(64) },
+  changed: ['/workspace/checkout/docs/a.md'], changedTruncated: false, content: { sha256: content.repeat(64), clean: false, headMatches: false }, ...extra });
+const observed = (sha = 'i', index = 'x', consistent = true): ProposalIdentity => ({ status: 'observed', sha256: sha.repeat(64), indexSha256: index, entries: 1, consistent, observedAt: 'now' });
+const opinion = (role: 'standards' | 'spec', round: number, extra: Partial<ReviewOpinion> = {}): ReviewOpinion => ({ version: 1, role, round, attempt: 1, invocationId: `${role}-e1-r${round}a1`,
+  reference: { workId: 'w', id: '11111111-2222-4333-8444-555555555555' }, session: { file: null }, model: { providerId: 'openai', modelId: 'gpt-6-luna' },
+  profile: { id: 'p', modelBudget: 'reviewer-v1' }, input: { handoffIndexSha256: String(round).repeat(64), required: [], missing: [] },
+  conclusion: 'clean', code: null, coverage: { scope: 'broad', justification: 'j', examined: [] }, findings: [], limitations: [],
+  hostChecks: { reads: 1, failedReads: [], requiredNotFullyRead: [], downgraded: [] }, finalMessageSha256: null, recordedAt: 'now', ...extra });
+const view = (role: 'standards' | 'spec', round: number, extra: Partial<ReviewerView> = {}): ReviewerView => ({ invocationId: `${role}-e1-r${round}a1`, phaseId: `review-r${round}`,
+  promptSha256: 'p', state: 'ended', requestedAt: 'now', receiptId: 'r', endedAt: 'now', opinion: opinion(role, round), failure: null, cessation: 'completion-observed',
+  input: { required: [], missing: [] }, ...extra });
+const counter = (extra: Partial<BudgetCounter> = {}): BudgetCounter => ({ limit: 3, granted: 0, consumed: 0, reserved: null, ...extra });
+const profile: ReviewRoundView['versions']['profile'] = { skillPack: { name: 'factory/skill-pack/v5', manifestSha256: 'f'.repeat(64) }, builder: {}, reviewer: { modelBudget: 'reviewer-v1' } };
+function round(number: number, reviewers: Partial<Record<'standards' | 'spec', Partial<ReviewerView>>> = {}, content = '7'): ReviewRoundView {
+  const s = summary(number, content);
+  return { round: number, attempt: 1, state: 'reviewing', kind: 'review', closing: false, exemption: null, declarations: null,
+    handoff: { at: 'now', invocationId: 'b', status: 'captured', code: null, detail: null, summary: s },
+    versions: { spec: s.spec, instructions: s.instructions, base: s.base, head: s.head, profile },
+    identity: { before: observed(), after: null }, reviewers: { standards: view('standards', number, reviewers.standards), spec: view('spec', number, reviewers.spec) },
+    applicability: null, conclusion: null, reasons: [], concludedAt: null, delivery: null };
+}
+const failed = (code: string, cessation: ReviewerView['cessation'] = 'completion-observed'): Partial<ReviewerView> => ({ state: 'failed', opinion: null, failure: { code }, cessation });
+
+test('AC2/AC3: only a failure with known cessation, transient cause, unchanged proposal and existing budget is re-obtained', () => {
+  const failure = { ...view('spec', 1), ...failed('WORKER_INTERRUPTED') };
+  assert.deepEqual(retryDecision({ reviewer: failure, before: observed(), now: observed(), counter: counter() }), { kind: 'retry', attempt: 2, waitSeconds: 5 });
+  assert.deepEqual(retryDecision({ reviewer: view('spec', 1), before: observed(), now: observed(), counter: counter() }), { kind: 'none' }, 'a valid opinion is never re-obtained');
+  assert.deepEqual(retryDecision({ reviewer: view('spec', 1, { opinion: opinion('spec', 1, { conclusion: 'incomplete' }) }), before: observed(), now: observed(), counter: counter() }), { kind: 'none' },
+    'an incomplete opinion is a real reviewer result, not a failure');
+  const code = (reviewer: ReviewerView, extra: { before?: ProposalIdentity | null; now?: ProposalIdentity | null; counter?: BudgetCounter | null } = {}) =>
+    retryDecision({ reviewer, before: extra.before === undefined ? observed() : extra.before, now: extra.now === undefined ? observed() : extra.now,
+      counter: extra.counter === undefined ? counter() : extra.counter });
+  const notRetried = (decision: ReturnType<typeof code>) => decision.kind === 'not-retried' ? decision.code : decision.kind;
+  assert.equal(notRetried(code({ ...view('spec', 1), ...failed('REVIEWER_OUTCOME_UNCERTAIN', 'unconfirmed') })), 'REVIEWER_CESSATION_UNCONFIRMED');
+  assert.equal(notRetried(code({ ...view('spec', 1), ...failed('REVIEWER_UNAVAILABLE', 'never-started') })), 'REVIEWER_FAILURE_NOT_TRANSIENT');
+  assert.equal(notRetried(code({ ...view('spec', 1), ...failed('OPINION_NOT_CORRELATED') })), 'REVIEWER_FAILURE_NOT_TRANSIENT');
+  assert.equal(notRetried(code(failure, { now: observed('j') })), 'PROPOSAL_CHANGED', 'changed content: never on the old input');
+  assert.equal(notRetried(code(failure, { now: observed('i', 'y') })), 'PROPOSAL_CHANGED', 'changed index');
+  assert.equal(notRetried(code(failure, { now: { status: 'unavailable', code: 'X' } })), 'PROPOSAL_IDENTITY_UNKNOWN');
+  assert.equal(notRetried(code(failure, { now: observed('i', 'x', false) })), 'PROPOSAL_IDENTITY_UNKNOWN');
+  assert.equal(notRetried(code(failure, { counter: counter({ consumed: 3 }) })), 'RECOVERY_LIMIT_REACHED');
+  assert.equal(code(failure, { counter: counter({ consumed: 3, granted: 1 }) }).kind, 'retry', 'an explicit grant counts');
+  assert.equal(notRetried(code(failure, { counter: counter({ reserved: 'other' }) })), 'RECOVERY_RESERVATION_BUSY');
+  assert.equal(notRetried(code(failure, { counter: null })), 'RECOVERY_BUDGET_UNAVAILABLE');
+  assert.equal(notRetried(code({ ...failure, attempt: 9 })), 'REVIEWER_ATTEMPTS_EXHAUSTED');
+  // A recorded failure opinion (invalid verdict, cancellation) is a failure, never zero findings.
+  assert.deepEqual(reviewerFailure(view('spec', 1, { opinion: opinion('spec', 1, { conclusion: 'cancelled', code: 'REVIEWER_INTERRUPTED' }) })), { code: 'REVIEWER_INTERRUPTED' });
+  assert.equal(code(view('spec', 1, { opinion: opinion('spec', 1, { conclusion: 'failure', code: 'REVIEW_VERDICT_INVALID' }) })).kind, 'retry');
+  assert.deepEqual([0, 1, 2, 3, 7].map(reviewerRetryWait), [5, 15, 45, 45, 45], 'the persisted 5/15/45 s waits of spec §4.4, by consumed recoveries');
+});
+
+test('AC1/AC2: a discovered record is incorporated only as the complete opinion of exactly that request', () => {
+  const expected = { role: 'spec' as const, round: 1, attempt: 1, invocationId: 'spec-e1-r1a1', handoffIndexSha256: '1'.repeat(64) };
+  assert.equal(incorporable(opinion('spec', 1), expected), true);
+  assert.equal(incorporable(opinion('spec', 1, { attempt: 2 }), expected), false, 'another attempt');
+  assert.equal(incorporable(opinion('standards', 1), { ...expected, invocationId: 'standards-e1-r1a1' }), false, 'another role');
+  assert.equal(incorporable(opinion('spec', 1, { input: { handoffIndexSha256: '9'.repeat(64), required: [], missing: [] } }), expected), false, 'another input');
+  assert.equal(incorporable(opinion('spec', 1, { invocationId: 'spec-e2-r1a1' }), expected), false, 'another Execution');
+});
+
+test('AC3/AC4: a recovery Execution carries ONLY valid opinions of the interrupted round on the SAME proposal and context; discovered ones too', () => {
+  const previous = (rounds: ReviewRoundView[], cessation: 'confirmed' | 'unconfirmed' = 'confirmed') => ({ executionId: 'e1', review: { rounds },
+    end: { at: 'now', outcome: 'failure' as const, code: 'CONTROLLER_CRASH', cessation }, request: {} as ExecutionView['request'] });
+  // Interrupted: Standards ended with a valid opinion; Spec's outcome was never recorded (its notification was lost with the controller).
+  const interrupted = round(4, { spec: { state: 'started', opinion: null, cessation: null, endedAt: null } });
+  assert.equal(carrySource(previous([interrupted], 'unconfirmed')), null, 'never before the cessation of the interrupted Execution is confirmed');
+  const source = carrySource(previous([round(3), interrupted]))!;
+  assert.equal(source.round.round, 4, 'the last review round');
+  assert.deepEqual(undiscovered(source.round), ['spec']);
+  const same = { source, summary: summary(5), identity: observed(), profile };
+  const plan = carryPlan({ ...same, discovered: { spec: opinion('spec', 4) } });
+  assert.deepEqual(Object.keys(plan).sort(), ['spec', 'standards']);
+  assert.deepEqual(plan.standards!.from, { executionId: 'e1', round: 4, attempt: 1, invocationId: 'standards-e1-r4a1', indexSha256: '4'.repeat(64), contentSha256: '7'.repeat(64), discovered: false });
+  assert.equal(plan.spec!.from.discovered, true);
+  assert.deepEqual(Object.keys(carryPlan(same)), ['standards'], 'nothing discovered: Spec is reviewed again, Standards kept');
+  assert.deepEqual(Object.keys(carryPlan({ ...same, discovered: { spec: opinion('spec', 4, { conclusion: 'failure', code: 'REVIEW_VERDICT_INVALID' }) } })), ['standards'],
+    'a discovered failure is not carried as a result');
+  assert.deepEqual(Object.keys(carryPlan({ ...same, discovered: { spec: opinion('spec', 4, { attempt: 2 }) } })), ['standards'], 'never an uncorrelated record');
+  // Relevant change: no equivalence is computed, BOTH reviewers give new opinions.
+  assert.deepEqual(carryPlan({ ...same, summary: summary(5, '8') }), {}, 'content changed');
+  assert.deepEqual(carryPlan({ ...same, summary: summary(5, '7', { spec: { version: 'v2', sources: 's', sha256: '3'.repeat(64) } }) }), {}, 'request version changed');
+  assert.deepEqual(carryPlan({ ...same, summary: summary(5, '7', { base: 'e'.repeat(40) }) }), {}, 'context (base) changed');
+  assert.deepEqual(carryPlan({ ...same, identity: observed('i', 'x', false) }), {}, 'inconsistent host identity');
+  assert.deepEqual(carryPlan({ ...same, profile: { ...profile, reviewer: { modelBudget: 'reviewer-v1', imageSourceMaxBytes: 1024 } } }), {}, 'reviewer profile changed');
+  assert.deepEqual(carryPlan({ ...same, source: null }), {});
+  const failedSource = carrySource(previous([round(4, { spec: failed('WORKER_INTERRUPTED') })]))!;
+  assert.deepEqual(Object.keys(carryPlan({ ...same, source: failedSource })), ['standards'], 'only the failed one is re-obtained');
+});
+
+test('AC3/AC6: a carried opinion correlates through its provenance; verification accepts it only over the very content it reviewed', () => {
+  const carried = (content = '7') => {
+    const value = round(5, {}, content);
+    value.reviewers.spec = { ...view('spec', 4), invocationId: 'spec-e1-r4a1', source: 'carried', cessation: 'never-started',
+      carried: { executionId: 'e1', round: 4, attempt: 1, invocationId: 'spec-e1-r4a1', indexSha256: '4'.repeat(64), contentSha256: '7'.repeat(64), discovered: true } };
+    return { ...value, state: 'delivered' as const, closing: true, conclusion: 'clean' as const, applicability: 'current' as const,
+      declarations: { treatments: [], gates: [{ id: 'g', source: 's', command: 'c', cwd: '/w', requiredCheck: null, declared: 'run' as const, outcome: 'passed' as const, code: null, exitCode: 0,
+        output: null, sequence: 1, current: true, reason: null, authorization: null }] } };
+  };
+  assert.equal(opinionCorrelated(carried(), 'spec'), true);
+  assert.equal(opinionCorrelated(carried('8'), 'spec'), false, 'carried onto other content');
+  const forged = carried();
+  forged.reviewers.spec = { ...forged.reviewers.spec, source: 'notification' };
+  assert.equal(opinionCorrelated(forged, 'spec'), false, 'without provenance an old-round opinion never correlates');
+  const verify = (value: ReviewRoundView) => verifyExecution({ at: 'now', workId: 'w', rounds: [value], question: () => null, source: () => false });
+  assert.deepEqual(verify(carried()).reasons, []);
+  assert.ok(verify(carried('8')).reasons.includes('SPEC_OPINION_NOT_CORRELATED'));
+  assert.deepEqual(notRetriedReasons(round(1, { spec: { notRetried: { code: 'PROPOSAL_CHANGED', at: 'now' } } })), ['SPEC_NOT_RETRIED:PROPOSAL_CHANGED']);
+});
+
+test('AC6: the substitute session gets the preserved review state as context only (delivery is not consumption), bounded', () => {
+  const delivered = { ...round(4, { spec: failed('WORKER_INTERRUPTED'), standards: { opinion: opinion('standards', 4, { conclusion: 'findings',
+    findings: [{ id: 'H1', basis: 'heuristic', reference: 'r', location: { path: '/workspace/checkout/a.md' }, summary: 'x'.repeat(2000) }] }) } }),
+  state: 'delivered' as const, conclusion: 'incomplete' as const, delivery: { requestedAt: 'now', outcome: 'delivered' as const, code: null, promptSha256: 'p' } };
+  const text = preservedReviewContext([delivered])!;
+  assert.match(text, /round 4 \(delivered; conclusion incomplete; delivery to the previous Builder session: delivered, not proof that it was consumed\)/);
+  assert.match(text, /"role":"standards","conclusion":"findings"/);
+  assert.match(text, /"role":"spec","conclusion":"failure","code":"WORKER_INTERRUPTED"/);
+  assert.match(text, /treat the findings of the results it then delivers to you \(their round\), never these/);
+  const unknown = preservedReviewContext([round(4, { spec: { state: 'started', opinion: null, cessation: null } })])!;
+  assert.match(unknown, /"role":"spec","conclusion":"unknown","code":"OUTCOME_NOT_RECORDED"/, 'an unrecorded outcome is unknown, never clean');
+  assert.ok(Buffer.byteLength(preservedReviewContext([delivered], 900)!) <= 900 + 64);
+  assert.equal(preservedReviewContext([]), null);
+});

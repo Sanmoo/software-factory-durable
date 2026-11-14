@@ -106,6 +106,17 @@ export function deliveryPrompt(input: { round: number; conclusion: string; appli
   return head + body;
 }
 
+/**
+ * Pure (spec §6.4): this capture demonstrates the SAME proposal in the SAME context as an earlier capture — content identity, request and
+ * instructions versions, base, merge-base and branch — with a Host identity that is observed and consistent. Never semantic equivalence.
+ */
+export function sameProposal(input: { now: ProposalHandoff; identity: ProposalIdentity | null; before: ProposalHandoff }): boolean {
+  const { now, before } = input;
+  const same = (a: ProposalHandoff['spec'], b: ProposalHandoff['spec']) => (a?.version ?? null) === (b?.version ?? null) && (a?.sha256 ?? null) === (b?.sha256 ?? null);
+  return Boolean(before.content && now.content && input.identity?.status === 'observed' && input.identity.consistent && now.content.sha256 === before.content.sha256 &&
+    same(now.spec, before.spec) && same(now.instructions, before.instructions) && now.base === before.base && now.mergeBase === before.mergeBase && now.branch === before.branch);
+}
+
 type Reviewed = Pick<ReviewRoundView, 'round' | 'kind' | 'conclusion' | 'applicability'> & { handoff: Pick<ReviewRoundView['handoff'], 'summary'> };
 export type CaptureClass = { kind: 'review' } | { kind: 'exemption'; exemption: NonNullable<ReviewRoundView['exemption']> };
 /** The latest round whose two reviewers actually ran (legacy rounds without `kind` are reviews). */
@@ -122,10 +133,9 @@ export function classifyCapture(input: { summary: ProposalHandoff; identity: Pro
   const reviewed = lastReviewed(input.rounds);
   const before = reviewed?.handoff.summary;
   const now = input.summary;
-  const same = (a: ProposalHandoff['spec'], b: ProposalHandoff['spec']) => (a?.version ?? null) === (b?.version ?? null) && (a?.sha256 ?? null) === (b?.sha256 ?? null);
-  if (!reviewed || !before?.content || !now.content || !['clean', 'findings'].includes(reviewed.conclusion ?? '') || reviewed.applicability !== 'current' ||
-      input.identity?.status !== 'observed' || !input.identity.consistent || now.content.sha256 !== before.content.sha256 || !same(now.spec, before.spec) ||
-      !same(now.instructions, before.instructions) || now.base !== before.base || now.mergeBase !== before.mergeBase || now.branch !== before.branch) return { kind: 'review' };
+  if (!reviewed || !before || !['clean', 'findings'].includes(reviewed.conclusion ?? '') || reviewed.applicability !== 'current' ||
+      !sameProposal({ now, identity: input.identity, before })) return { kind: 'review' };
+  if (!now.content) return { kind: 'review' };
   const exemption = { reviewedRound: reviewed.round, head: now.head, reviewedHead: before.head, contentSha256: now.content.sha256 };
   if (now.head === before.head) return { kind: 'exemption', exemption: { kind: 'unchanged', ...exemption } };
   if (now.content.clean && now.content.headMatches) return { kind: 'exemption', exemption: { kind: 'identical-commit', ...exemption } };
@@ -140,6 +150,23 @@ export function exemptionPrompt(input: { round: number; exemption: NonNullable<R
   return `FACTORY REVIEW — capture ${input.round}: no new reviewer round is needed: ${why}. The round ${input.exemption.reviewedRound} opinions (conclusion ` +
     `${input.conclusion}) still apply, and your treatments and gates of this capture are recorded. Your tools are available again. If you change anything, ` +
     'call handoff again; otherwise finish with your final message (each finding id with fixed / not adopted: justification, the gates and their real results).';
+}
+
+/**
+ * Pure: the role's opinion of a round is the one Control requested for it — its round, attempt invocation and handoff index — or, for an
+ * opinion carried from an interrupted round (ticket 28), the one its provenance names, over the very content this round captured.
+ */
+export function opinionCorrelated(round: Pick<ReviewRoundView, 'round' | 'reviewers' | 'handoff'>, role: ReviewerRole): boolean {
+  const reviewer = round.reviewers[role];
+  const opinion = reviewer.opinion;
+  if (!opinion || opinion.role !== role) return false;
+  if (reviewer.source === 'carried') {
+    const from = reviewer.carried;
+    return Boolean(from && opinion.round === from.round && opinion.attempt === from.attempt && opinion.invocationId === from.invocationId &&
+      opinion.input.handoffIndexSha256 === from.indexSha256 && round.handoff.summary?.content?.sha256 === from.contentSha256);
+  }
+  return opinion.round === round.round && opinion.invocationId === reviewer.invocationId && opinion.attempt === (reviewer.attempt ?? opinion.attempt) &&
+    opinion.input.handoffIndexSha256 === round.handoff.summary?.indexSha256;
 }
 
 /** A concrete authorization is valid only when Control could CORRELATE it: an answered Question of this Work, or a preserved source that
@@ -174,8 +201,7 @@ export function verifyExecution(input: { at: string; workId: string; rounds: rea
   for (const role of reviewerRoles) {
     const opinion = reviewed.reviewers[role].opinion;
     if (!opinion) reasons.push(`${role.toUpperCase()}_OPINION_MISSING`);
-    else if (opinion.round !== reviewed.round || opinion.invocationId !== reviewed.reviewers[role].invocationId ||
-      opinion.input.handoffIndexSha256 !== reviewed.handoff.summary?.indexSha256) reasons.push(`${role.toUpperCase()}_OPINION_NOT_CORRELATED`);
+    else if (!opinionCorrelated(reviewed, role)) reasons.push(`${role.toUpperCase()}_OPINION_NOT_CORRELATED`);
   }
   if (!['clean', 'findings'].includes(reviewed.conclusion ?? '')) reasons.push('REVIEW_INCOMPLETE');
   if (reviewed.applicability !== 'current') reasons.push('REVIEW_NOT_APPLICABLE');
