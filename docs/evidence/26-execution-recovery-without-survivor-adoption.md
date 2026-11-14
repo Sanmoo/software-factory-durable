@@ -3,7 +3,7 @@
 Autoridade: [ticket 26](../../.scratch/software-factory-mvp/issues/26-execution-recovery-without-survivor-adoption.md),
 [spec §§3.4, 4.4, 5.2, 5.3, 5.4, 5.7, 11.4](../../.scratch/software-factory/spec.md), [interfaces Q3/Q5/Q6/Q8/Q11](../../.scratch/software-factory/module-public-interfaces.md),
 cenários V-01/V-07/V-12/V-13 da [matriz de aceite](../../.scratch/software-factory/acceptance-and-incremental-plan.md).
-Base: integração `9f75f22` (tickets 01–13, 19, 20, 32 + 11). Branch `implement/software-factory-mvp-26`.
+Base: integração `d4483d1` (tickets 01–13, 19, 20, 32). Branch `implement/software-factory-mvp-26`.
 
 **Estado: implementação e suíte local verdes (níveis R/S/I-local, com cortes SIGKILL reais de processo controlador); ensaio real NÃO executado
 por este agente** (sem GitHub/VM/systemd/credenciais/rede/modelo). A receita fixa está em [§ Ensaio real](#ensaio-real-receita-one-shot).
@@ -119,6 +119,7 @@ Todas com teste vermelho contra o código anterior (verificado compilando a árv
 | LOW guarda one-shot da receita | recusa `WORKER_LAUNCH_INVALID` (não início comprovado) | — |
 | LOW ambiente systemd --user dos filhos | `HOME`, `XDG_RUNTIME_DIR`, `DBUS_SESSION_BUS_ADDRESS` derivados do uid | — |
 | LOW `serviceSeconds` | lacuna documentada: nenhum adapter entrega `retry-after` ao Control hoje (regra pronta) | `recovery-rules` |
+| Composição com 13 (Execução interrompida no meio de uma rodada) | revisores compartilham o boot: a cessação confirmada do boot é a deles; os não concluídos ficam `failed`/`EXECUTION_INTERRUPTED`, cessação `boot-ceased`, motivo da rodada `EXECUTION_INTERRUPTED`; nada reativado, entregue ou concluído; o Trabalho recupera pela fila (recuperação parcial de rodada é o ticket 28) | `recovery-crash` "ticket 13 composition" |
 | LOW inspect na raiz viva | `inspect` só lê (`Records.find` não cria nada; a cópia do storage fica no namespace da qualificação, como nas receitas 19/20) | — |
 
 ## Ensaio real (receita one-shot)
@@ -161,9 +162,8 @@ $N dist/test/entrypoints/recovery26-qualification.js stop-environment   # só se
 
 Comandos Node exatamente `env -u NODE_OPTIONS -u NODE_COMPILE_CACHE NODE_DISABLE_COMPILE_CACHE=1 timeout 90 …/node/24.21.0/bin/node`, sem npm/npx.
 
-- `tsc -p tsconfig.json`: OK. `eslint . --max-warnings 0`: OK. `dependency-cruiser`: 0 violações (332 módulos, 1974 dependências).
-- Suíte compilada, **um arquivo por vez** (`--experimental-test-module-mocks --test --test-concurrency=1`): **153 arquivos, 996 pass, 0 fail,
-  10 skip** (skips preexistentes, incl. `test/sandbox/gondolin.test.ts` `skip:true` intocado).
-- TDD: os cortes SIGKILL (`recovery-crash`) rodaram vermelhos primeiro e revelaram que o registro `execution.recovery` não era persistido
-  (array atribuído e mutado no lugar dentro do commit); corrigido para atribuição nova. Os testes dos tickets anteriores listados acima ficaram
-  vermelhos com a nova semântica e foram ajustados explicitamente.
+- Após rebase em `d4483d1`: `tsc -p tsconfig.json` OK; `eslint . --max-warnings 0` OK; `dependency-cruiser` 0 violações (356 módulos, 2171 dependências).
+- Suíte compilada, **um arquivo por vez**: **170 arquivos, 1071 pass, 0 fail, 10 skip** (skips preexistentes, incl. `gondolin.test.ts` `skip:true`
+  intocado). `github-dependency-reads` falhou uma vez sob carga na passada completa e passou 3/3 sozinho (1070 + 1).
+- TDD: os testes da revisão foram executados contra a árvore anterior (compilada à parte com os testes novos) e falharam (MED1/MED3, MED2, MED4,
+  MED5, LOW forçada, inventário, checkout); verdes depois. Os cortes SIGKILL originais revelaram o registro `execution.recovery` não persistido.
