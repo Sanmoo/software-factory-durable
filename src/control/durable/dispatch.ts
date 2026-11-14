@@ -300,10 +300,16 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       }
     };
     let lifecycle: ReturnType<typeof credentialLifecycle> | undefined;
+    // Set only once the Host actually activated the Builder: before that no worker request exists, so a failure or an owner stop
+    // is a PROVEN non-start (AC2: no consumption) and never an uncertain outcome.
+    let activated = false;
+    /** Refusals the Host raises BEFORE any launch request: they prove no worker ran. Anything else at the activation phase may have. */
+    const provenNonStartOf = (error: unknown) => !activated && (phase !== 'activate' ||
+      (error instanceof Error && ['WORKER_LAUNCH_INVALID', 'STALE_TOOL_CONTEXT', 'WORKER_EXECUTION_NOT_ENABLED', 'WORKER_PROFILE_NOT_CONFIGURED', 'WORKER_POLICY_ROLE_DENIED'].includes(error.message)));
     // A held Execution is not authorized to advance: its credentials are withdrawn and known grants revocation is attempted, even if the
     // hold commit itself fails.
-    const hold = async (code: string, nextStep: string) => {
-    try { await holdExecution(session, work.work_id, executionId, code, nextStep); observe(work.work_id, 'held', [code]); }
+    const hold = async (code: string, nextStep: string, provenNonStart = false) => {
+    try { await holdExecution(session, work.work_id, executionId, code, nextStep, provenNonStart); observe(work.work_id, 'held', [code]); }
     finally { await lifecycle?.withdraw('held', { notifyWorker: true }); }
   };
     // Activity scope of THIS Execution: the timeout interrupts it (Builder and reviewers) without stopping the owner.
@@ -343,7 +349,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       checkStop();
       const prepared = await ports.sandbox.prepare({ workId: work.work_id, configuration: ports.configuration,
         checkout: { repository: work.repository.repository, repositoryId: work.repository.repositoryId, installationId: configured.installationId, base: work.repository.base, branch: execution.request.branch } });
-      if (prepared.status !== 'success' || !('checkout' in prepared)) { await hold(`PREPARE_${prepared.status === 'success' ? 'CHECKOUT_MISSING' : prepared.code}`, 'Preparation did not complete; it is never retried automatically. Inspect the environment (ticket 26 recovery).'); return; }
+      if (prepared.status !== 'success' || !('checkout' in prepared)) { await hold(`PREPARE_${prepared.status === 'success' ? 'CHECKOUT_MISSING' : prepared.code}`, 'Preparation did not complete; it is never retried automatically. Inspect the environment (ticket 26 recovery).', true); return; }
       environment = prepared.environment;
       const pack = prepared.seeds.find(seed => seed.name.startsWith('factory/skill-pack/'));
       if ((await recordPhase(session, work.work_id, executionId, 'reserved', 'prepared', 'execution-prepared', current => {
@@ -355,7 +361,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       phase = 'start';
       checkStop();
       const started = await ports.sandbox.start({ environment, configuration: ports.configuration });
-      if (started.status !== 'success') { await hold(`START_${started.code}`, 'The boot did not become operational; no automatic retry. Observe/stop the environment explicitly.'); return; }
+      if (started.status !== 'success') { await hold(`START_${started.code}`, 'The boot did not become operational; no automatic retry. Observe/stop the environment explicitly.', true); return; }
       boot = started.boot;
       if ((await recordPhase(session, work.work_id, executionId, 'prepared', 'booted', 'execution-booted', current => { current.dispatch.boot = started.boot; })).kind !== 'advanced') { observe(work.work_id, 'stale'); return; }
       // Revalidation immediately before activation: authorization and a FRESH dependency evaluation of THIS attempt.
@@ -395,7 +401,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       // Withdrawn while issuing or before activation: the Builder is never activated with that grant; the own boot is stopped and held.
       const withdrawnBeforeActivation = async () => {
         await stopOwnBoot('credentials withdrawn before activation');
-        await hold('ACTIVATION_CREDENTIALS_WITHDRAWN', 'The activity credentials were withdrawn before activation; the Builder was not activated. Slot kept (ticket 26).');
+        await hold('ACTIVATION_CREDENTIALS_WITHDRAWN', 'The activity credentials were withdrawn before activation; the Builder was not activated. No charge was consumed; the Slot is kept (ticket 26).', true);
       };
       if (lifecycle.withdrawn) { await withdrawnBeforeActivation(); return; }
       const resume = execution.request.resume ?? null;
@@ -436,6 +442,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         environmentRef: environment, bootRef: boot, phaseId: resume ? 'builder-recovery' : 'builder-initial' }, prompt, signal: activitySignal, ...ports.builder,
         ...(ports.reviews ? { handoff: { baseCommit: prepared.checkout.baseCommit } } : {}) },
       { credential: grant.delivery }, { question: onQuestion });
+      activated = true;
       await lifecycle.attach(handle.worker);
       try {
         phase = 'started';
@@ -515,10 +522,28 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       if (stopping.signal.aborted) {
         // Owner stop: the host channel closes (worker revoked); the grants are still in memory, so their revocation is attempted.
         await lifecycle?.withdraw('owner-stopped', { notifyWorker: false }).catch(() => {});
+        // Stopped before the activation phase: no worker request exists. Nothing is retried because nothing started. If nothing was
+        // booted or the own boot cessation is proven, the Slot is released and the Work returns to its queue position; otherwise
+        // the reservation is still released without consumption but the Slot is kept under hold. At the activation phase itself the
+        // outcome stays uncertain (a request may have reached the worker).
+        if (!activated && phase !== 'activate') {
+          const stop = await stopOwnBoot('owner stopped before activation');
+          // Nothing was booted, or the own boot cessation is confirmed: the Slot can be released. Otherwise no worker was launched
+          // (the reservation is released without consumption) but the Slot is kept, exactly like a refused revalidation.
+          if (environment === undefined || stop?.cessationConfirmed) {
+            await releaseBeforeStart(session, work.work_id, executionId, ['OWNER_STOPPED_BEFORE_ACTIVATION'], 'OWNER_STOPPED_BEFORE_ACTIVATION').catch(() => {});
+          } else {
+            await hold('OWNER_STOPPED_BEFORE_ACTIVATION_CESSATION_UNCONFIRMED',
+              'The owner stopped before activation; no worker was launched and the reservation was released without consumption. The own boot cessation is not confirmed, so the Slot is kept (ticket 26).', true).catch(() => {});
+          }
+        }
         observe(work.work_id, 'owner-stopped', [phase]); return;
       }
       const code = codeOf(error, 'UNEXPECTED_FAILURE');
-      await hold(`${phase.toUpperCase()}_${code}`, 'Execution outcome is uncertain at this phase; never retried automatically. Operator recovery (ticket 26).').catch(() => {});
+      const proven = provenNonStartOf(error);
+      await hold(`${phase.toUpperCase()}_${code}`, proven
+        ? 'No worker was launched; the reservation was released without consumption. Never retried automatically.'
+        : 'Execution outcome is uncertain at this phase; never retried automatically. Operator recovery (ticket 26).', proven).catch(() => {});
     } finally { timerStop.abort(); lifecycles.delete(work.work_id); liveExecutions.delete(executionId); startedAt.delete(executionId); }
   }
 

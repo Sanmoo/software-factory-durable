@@ -379,7 +379,10 @@ export async function recordTimeout(session: Session, work_id: string, execution
     const document = await tx.doc(works, work_id, null);
     const execution = document.work?.execution ?? null;
     if (!document.work || !execution || execution.executionId !== executionId || !execution.timing || !timeoutReached(execution.timing.timeoutSeconds, elapsedMs)) return 'stale' as const;
-    markTimeout(document.work, execution, elapsedMs, 'measured', new Date().toISOString());
+    const at = new Date().toISOString();
+    markTimeout(document.work, execution, elapsedMs, 'measured', at);
+    // The proven value is also the last durable activity of THIS origin: reconciliation after a crash must never lower it.
+    if ((execution.timing.lastActivity?.elapsedMs ?? -1) < elapsedMs) execution.timing.lastActivity = { at, elapsedMs, event: 'timeout-reached' };
     return 'recorded' as const;
   }, BACKGROUND_CONTEXT);
 }
@@ -413,12 +416,13 @@ export async function reconcileDurations(session: Session, live: (executionId: s
       const timing = execution?.timing;
       if (!work || !execution || !timing?.startedAt || timing.duration || live(execution.executionId)) return 0;
       const now = new Date().toISOString();
-      const provenMs = timing.lastActivity?.elapsedMs ?? 0;
+      // A durable timeout measurement is evidence of ITS origin; the lower bound never discards it.
+      const provenMs = Math.max(timing.lastActivity?.elapsedMs ?? 0, timing.timeout?.elapsedMs ?? 0);
       const estimate = Date.parse(now) - Date.parse(timing.startedAt);
       timing.duration = { kind: 'lower-bound', provenMs, calendarEstimateMs: Number.isFinite(estimate) && estimate >= 0 ? estimate : null, reconciledAt: now };
       const overrun = classifyOverrun({ timeoutSeconds: timing.timeoutSeconds, measuredMs: null, lowerBoundMs: provenMs });
       if (overrun === 'proven') markTimeout(work, execution, provenMs, 'lower-bound', now);
-      else {
+      else if (timing.overrun !== 'proven') {
         timing.overrun = overrun;
         if (overrun === 'not-excludable' && !work.impediments.some(item => item.code === 'TIMEOUT_OVERRUN_NOT_EXCLUDED')) work.impediments.push(overrunNotExcludedImpediment(timing.timeoutSeconds!, now));
       }
@@ -453,20 +457,24 @@ export async function releaseAfterCessation(session: Session, work_id: string, e
  * Explicit, durable hold: the Execution stops advancing, keeps its Slot (no proof of non-start/cessation) and is never retried
  * automatically. Operator recovery is ticket 26.
  */
-export async function holdExecution(session: Session, work_id: string, executionId: string, code: string, nextStep: string) {
+export async function holdExecution(session: Session, work_id: string, executionId: string, code: string, nextStep: string,
+  /** Proven non-start (no worker was ever activated): the reservation is released without consumption; the hold still blocks retry. */
+  provenNonStart = false) {
   return session.commit(async tx => {
     const document = await tx.doc(works, work_id, null);
     const execution = document.work?.execution ?? null;
     if (!document.work || !execution || execution.executionId !== executionId || execution.state === 'released') return 'stale' as const;
     execution.held = { code, phase: execution.dispatch.phase, at: new Date().toISOString(), nextStep };
     if (execution.state !== 'ended') execution.state = 'held';
+    if (provenNonStart) releaseReservation(document.work, execution, execution.held.at);
     history(document.work, 'execution-held', executionId, code);
     return 'held' as const;
   }, BACKGROUND_CONTEXT);
 }
 
 /** Activation refused by revalidation BEFORE any worker request, after the own boot ceased: release Slot, Work back to its FIFO turn. */
-export async function releaseBeforeStart(session: Session, work_id: string, executionId: string, reasons: string[]) {
+export async function releaseBeforeStart(session: Session, work_id: string, executionId: string, reasons: string[],
+  code = 'ACTIVATION_REVALIDATION_REFUSED') {
   return session.commit(async tx => {
     const document = await tx.doc(works, work_id, null);
     const work = document.work;
@@ -476,7 +484,7 @@ export async function releaseBeforeStart(session: Session, work_id: string, exec
     delete occupancy.held[executionId];
     execution.state = 'released';
     execution.slot = { ...execution.slot, held: false, releasedAt: new Date().toISOString() };
-    execution.held = { code: 'ACTIVATION_REVALIDATION_REFUSED', phase: execution.dispatch.phase, at: new Date().toISOString(), nextStep: reasons.join(', ') };
+    execution.held = { code, phase: execution.dispatch.phase, at: new Date().toISOString(), nextStep: reasons.join(', ') };
     // Non-start proven (refused before any worker request, own boot ceased): no consumption.
     releaseReservation(work, execution, execution.held.at);
     work.queue = { ...work.queue, pending: true };
