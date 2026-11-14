@@ -135,7 +135,7 @@ Vermelho primeiro: `question-rules` (módulo inexistente), `question-flow` (falh
 ## Ensaio real (receita one-shot)
 
 Receita: `dist/test/entrypoints/question10-qualification.js` (fonte `test/entrypoints/question10-qualification.ts`). `--plan` é inerte
-(teste `question10-qualification`). Fases one-shot com tombstone `*-intent.json` exclusivo em `$HOME/software-factory-test/y5/q10-question-v1/`
+(teste `question10-qualification`). Fases one-shot com tombstone `*-intent.json` exclusivo em `$HOME/software-factory-test/y5/q10-question-v2/` (v1 consumida pelo primeiro `ask` real)
 (criado na `preflight`; existir = consumido). Sem retry; falha grava `*-held.json`.
 
 Pré-requisitos (operador/supervisor): os mesmos do ticket 09 (raiz `y5` 0700 com store OAuth da Factory e `run/`; cópia exclusiva 0600 da
@@ -220,3 +220,17 @@ Novos/ampliados: `question10-recipe-safety` (2), `question-flow` (+3), `question
 
 Gate após o rebase (`rm -rf dist`): dependency-cruiser sem violações (266 módulos, 1512 dependências); eslint exit 0; `tsc` exit 0;
 **117 arquivos**, um por vez (timeout 60 s; `entrypoints/normal-oauth` com 90 s): **855 pass, 0 fail, 10 skipped, 0 cancelled** (≈ 349 s).
+
+## Ensaio real `ask` (q10-question-v1, supervisor) e correção da leitura do pacote
+
+O mecanismo funcionou de ponta a ponta (ask_user → Pergunta durável → comentário com marcador em #3 por `sanmoo-factory[bot]` → Slot liberado,
+VM parada), mas a pergunta do Builder foi que a ferramenta `read` negava `/artifacts/factory/skill-pack/factory-skills-v2/skills/implement/SKILL.md`.
+Causa: o Read do Builder no owner só aceitava cópias de saída publicadas pelo Host; nenhum caminho do pacote (nem v1) era legível por Read
+(no 09 o Builder lera pelo Bash). Correção: o Host (`Workers.activate`) deriva do manifesto verificado da versão da Execução a lista EXATA dos
+arquivos semeados (`skillPackFiles`, inclusive `manifest.json`) e a envia no lançamento; o owner valida (só Builder, só com `skillPack`, todos sob
+`/artifacts/factory/skill-pack/<a mesma versão>/`, sem `..`, ≤ 64) e o binding Read passa a aceitar esses caminhos — e suas páginas — e nada mais
+novo; outro caminho dá `READ_PATH_DENIED` (não crítico). O worker oferece `read` ao Builder com pacote mesmo sem `copyOutput`.
+Testes: `builder-pack-read` (I-local: SDK real + owner/Records reais; v2 lê seu SKILL.md com a seção 4, v1 e outro `/artifacts` negados e nunca
+chegam ao guest; todos os caminhos citados por templates/skill da v2 estão na lista; uma Execução v1 lê só a v1), `activate-question` (lista
+exata no payload, v1 e v2), `owner-question` (versão divergente, sem pacote ou `..` → `WORKER_LAUNCH_INVALID`). Mutação que retira a permissão
+do pacote derruba `builder-pack-read`. Receita: namespace **`q10-question-v2`**; a issue #3 agora pede ao Builder que pergunte o nome do arquivo.
