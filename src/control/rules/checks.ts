@@ -204,7 +204,8 @@ export function evaluateChecks(input: { at: string; expect: ChecksExpectation; o
       if (code) { own.push(code); reason(category, code, requirement.context); }
       else if (results.some(item => item.kind === 'check-run' && item.conclusion !== 'success')) notes.push(`SATISFIED_WITHOUT_RUN:${requirement.context}`);
     }
-    views.push({ ...requirement, sha: head, state, results, otherOrigin, reasons: own });
+    // Bounded view (the decision above used every result): at most 10 results and 10 other-origin results per requirement.
+    views.push({ ...requirement, sources: requirement.sources.slice(0, 10), sha: head, state, results: results.slice(0, 10), otherOrigin: otherOrigin.slice(0, 10), reasons: own });
   }
   // Optional results: visible, never a repair by themselves.
   const requiredNames = new Set([...requirements.values()].map(item => item.context));
@@ -232,6 +233,7 @@ export function evaluateChecks(input: { at: string; expect: ChecksExpectation; o
     if (recheck.value.state !== pull.state || recheck.value.merged !== pull.merged) reason('indeterminate', 'STATE_CHANGED_DURING_COLLECTION');
   }
   const requiredByGitHub = declared.filter(name => requiredNames.has(name));
-  return base({ ...frame, strict, requiredSet, requirements: views, optional, otherSha, modalities,
+  if (views.length > 100) notes.push(`REQUIREMENTS_VIEW_TRUNCATED:${views.length}`);
+  return base({ ...frame, strict, requiredSet, requirements: views.slice(0, 100), optional, otherSha, modalities: modalities.slice(0, 50),
     localGates: { declared, requiredByGitHub, notRequiredByGitHub: declared.filter(name => !requiredNames.has(name)) } });
 }
