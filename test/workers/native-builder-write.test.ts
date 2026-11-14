@@ -173,7 +173,8 @@ test('Builder composition has host-fixed lexical Write and independent host-gate
   assert.ok(withoutIndentation(worker).includes(withoutIndentation(`  const editEnabled = invocation.context.role === 'builder' && invocation.editSourceMaxBytes !== undefined;
   const customTools: ToolDefinition[] = invocation.context.role === 'builder'
     ? [builderWrite(invocation.context, options.sandbox, critical), builderBash(invocation.context, options.sandbox, critical, copyOutput,
-      ledger ? (callId, observation) => ledger.bash(callId, observation) : undefined)]
+      ledger ? (callId, observation) => ledger.bash(callId, observation) : undefined,
+      ledger ? () => probeContent(invocation.context, options.sandbox, invocation.handoff!.baseCommit, signal) : undefined)]
     : [reviewerRead(invocation.context, options.sandbox, critical)];
   const tools = invocation.context.role === 'builder' ? ['write', 'bash'] : ['read'];
   // Builder Read: selected output copies (copyOutput) and/or the files of its own pack version (owner-enforced exact paths).
