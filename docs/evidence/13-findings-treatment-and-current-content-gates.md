@@ -229,12 +229,15 @@ com 90 s. Ver [§ Gate final](#gate-final).
 
 ## Gate final
 
-Código no HEAD `f49a777` (os commits posteriores `6a8de7c`/`ea530f3` mudam somente este documento), após `rm -rf dist`:
+Código no HEAD `a1346bb` (correções da revisão independente `76c0f3a`/`fea3616` e o ajuste do pino de composição em
+`native-builder-write`), após `rm -rf dist`:
 
-- `dependency-cruiser --config .dependency-cruiser.cjs --output-type err-long .`: sem violações (301 módulos, 1777 dependências).
+- `dependency-cruiser --config .dependency-cruiser.cjs --output-type err-long .`: sem violações (302 módulos, 1784 dependências).
 - `eslint . --max-warnings 0`: exit 0. `tsc -p tsconfig.json`: exit 0.
-- **141 arquivos** `dist/test/**/*.test.js`, um por vez (`--experimental-test-module-mocks --test --test-concurrency=1`, `normal-oauth` com 90 s):
-  **927 pass, 0 fail, 10 skipped, 0 cancelled**.
+- **142 arquivos** `dist/test/**/*.test.js`, um por vez (`--experimental-test-module-mocks --test --test-concurrency=1`, `normal-oauth` com 90 s):
+  **936 pass, 0 fail, 10 skipped, 0 cancelled** (946 testes). Na primeira passada `workers/native-builder-write` falhou porque o pino
+  textual da composição do Builder ainda esperava a chamada de `builderBash` anterior à sonda de conteúdo; o pino foi atualizado
+  (`a1346bb`) e o arquivo passou 7/7.
 
 Os 10 skips são os mesmos das integrações anteriores (host-dependentes); `test/sandbox/gondolin.test.ts` continua `skip:true`.
 Novos arquivos de teste (25 testes): `handoff-content` (2), `gate-evidence` (3), `review-rounds-session` (2), `review-continuation` (2),
