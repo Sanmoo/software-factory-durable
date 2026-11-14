@@ -1,56 +1,70 @@
 # Ticket 14 — Direct draft publication and discovery of the own PR
 
-Branch `implement/software-factory-mvp-14`, rebased on integration `9f75f22` (tickets 01–12, 19, 20, 32). **Ticket 13 is not integrated
-yet**: this branch consumes its record `ExecutionView.review.verification` and the final capture `handoff.summary.content` structurally
-(`src/control/rules/publication.ts`), and the local flow tests SEED that record into the real SQLite storage between two owner runs. The
-real run requires 13 (the recipe refuses without `factory-skills-v5`).
+Branch `implement/software-factory-mvp-14`, rebased on integration `d4483d1` (tickets 01–13, 19, 20, 32). Ticket 13's
+`ExecutionView.review.verification` and the final capture's `summary.content` are consumed with their real types; the flow and composition
+tests produce them through ticket 13's REAL review rounds (scripted Builder captures + scripted reviewers), no storage seed.
 
 ## Composition
 
 - Contracts: `BuilderGrantPurpose = 'builder-start' | 'builder-publish'`; `BuilderCredentialContext.purpose` (Control's choice, default
   `builder-start`); `publicationMarkerPrefix` (`<!-- software-factory:work:<work-id> -->`, first body line).
 - GitHub (`src/platform/github`): `builder-publish` = Metadata R, Contents W, Pull requests W, Issues R for the Work's own repository only,
-  never Workflows; `publication-read` = Metadata/Contents/Pull requests R for discovery. The controller's only write stays the Question
+  never Workflows; `publication-read` = Metadata/Contents/Pull requests/Administration R for discovery. `appIdentity(scope)` pins the
+  Factory App bot (`GET /app` slug, then `GET /users/<slug>[bot]` with an installation token). The controller's only write stays the Question
   comment: **no push gateway, no PR creation by the controller** (static gate `test/architecture/publication-boundary.test.ts`).
-- CodeRepository `findPublication`: candidates now carry `headSha`, `baseRef`, `draft` and a bounded `body`; `branches` reports each known own
-  branch tip from a complete `git/matching-refs` listing (`absent` only from a complete read; failure = `unknown`).
-- Control (new modules `rules/publication.ts`, `durable/publication.ts`; hooks in `dispatch.ts`/`execution.ts`):
+- CodeRepository `findPublication` (contract: "refs e candidatos ao PR próprio"): candidates carry `headSha`, `baseRef`, `draft`, bounded
+  `body`; `branches` = known own branch tips (complete `matching-refs` listing; failure = `unknown`); with `refs: true` every branch/tag tip
+  (bounded, never partial); with `base` whether it requires pull requests with no App bypass (ruleset `current_user_can_bypass: never`, or
+  classic required reviews without App bypass allowances).
+- Control (`rules/publication.ts`, `durable/publication.ts`; hooks in `dispatch.ts`/`execution.ts`):
   1. After a completed implementation Execution ceased, the tick records the **publication basis**: `awaiting-discovery` only when ticket 13's
-     verification is `verified` and the final capture is committed (clean tree, HEAD holds it); otherwise `not-publishable` with reasons
-     (`REVIEW_VERIFICATION_ABSENT`, `REVIEW_NOT_VERIFIED`, `VERIFIED_CONTENT_NOT_COMMITTED`…). `completed` is never success by itself.
-  2. **Discovery** (safe read, also while paused, never during an activity): own = Work marker + App bot author + own branch/repository/base.
-     Exactly one own draft PR at the verified head → `published` (Work.pullRequest set; Ticket/Work stay open). Complete absence and **no
-     earlier publication attempt** → `requested` with the observed lease expectation (`absent`, or the verified commit already on the branch).
-     Several own candidates, an unknown associated PR, an unknown branch change, an own PR not acceptable (other head, not draft, closed/merged)
-     or absence after an attempt → `blocked` + `PUBLICATION_BLOCKED` impediment. Incomplete read → nothing decided (re-read next cycle).
-  3. **Publication activation** through the queue: `resume.reason = PUBLICATION_REQUESTED`, `request.publication` = {basis, verified head,
-     branch, base, marker, expectedRemote}, re-checked in the admission commit; grant purpose `builder-publish` (activation/renewal refuse any
-     other); phaseId `builder-publication`; `publish` message to the SAME compatible session, else a replacement "Factory publication
-     instruction" with its reason. The Builder pushes with `--force-with-lease=refs/heads/<branch>:<expected>` and runs `gh pr create --draft`
-     itself. Its start (`Confirmar início`) moves the publication to `awaiting-discovery`: it is never requested again, and nothing else is
-     admitted (`PUBLICATION_DISCOVERY_PENDING`) until a discovery decides.
-- Skill pack `factory-skills-v6` (v1–v4 untouched; `continuation: true`, so ticket 32's production composition derives it): `implement` §2/§8,
-  `pr` with the short Summary/Validation/Risk body, marker, Ticket link, no transcripts/local links, and the "Factory publication" procedure.
-  At the rebase on 13, v6 is re-derived from 13's v5 with the same textual changes.
+     verification is `verified` and the final capture is committed (clean tree, HEAD holds it); otherwise `not-publishable` with reasons.
+     `completed` is never success by itself. A later verified basis is evaluated again even after a publication (it may update the own PR).
+  2. **Discovery** (safe read, also while paused, never during an activity; at most 4 per tick; one Work's failure is recorded and does not
+     stop the others): own = Work marker + the PINNED App bot (login and id) + own branch/repository/base. Exactly one own draft PR at the
+     verified head with a conformant description → `published`. Complete absence, verified head never attempted, complete refs snapshot and a
+     base requiring PRs without App bypass → `requested` (lease expectation + refs snapshot recorded). A linked own PR at an earlier Factory
+     head → `requested` as an UPDATE of that PR (lease on its head). Before any attempt an unknown associated PR is `held` (re-read; ticket 07
+     operator path); after an attempt it blocks. Several own candidates, unknown own-branch change, any other branch/tag changed during the
+     window (`UNEXPECTED_REF_CHANGE`), an own PR not acceptable (other head, not draft, `DESCRIPTION_NONCONFORMANT`, closed/merged), an
+     unprotected base, or absence after an attempt → `blocked` + `PUBLICATION_BLOCKED`. Incomplete read or unknown App identity → nothing decided.
+  3. **Publish-only activation** through the queue: `resume.reason = PUBLICATION_REQUESTED`, `request.publication` = {basis, verified head,
+     branch, base, marker, expectedRemote, pullRequest (update target or null)}, re-checked in the admission commit (an attempted head is
+     refused); grant purpose `builder-publish` (activation/renewal refuse any other); phaseId `builder-publication`; ALWAYS a new session
+     (`Factory publication instruction (publish-only session …)`), no `handoff`, no `edit` tool (policies recorded without it). The attempt is
+     recorded at the ACTIVATION commit (before any launch or receipt): a lost receipt/crash never leads to a second activation; only a
+     discovery after cessation decides. Bash/write remain, but no other content is ever accepted (verified head + refs check).
+- Skill pack `factory-skills-v6` = v5 (ticket 13) + `implement` §2/§8 (publish-only activation), `pr` (short Summary/Validation/Risk body,
+  marker, Ticket link, no transcripts/local links, "Factory publication" procedure incl. update of the own PR) and `prompts/pr.md`;
+  `continuation: true`, newest registered entry, so ticket 32's production composition derives it. v1–v5 untouched. Production composes
+  `factoryApp: () => github.appIdentity(...)` and the real `createBuilderCredentials` (publish purpose honoured).
 
 ## AC → tests (evidence level)
 
-| AC | Tests | Level |
-| --- | --- | --- |
-| 1 direct publication, restricted App, no gateway, /pr ≠ publication | `github-publication` AC1 (start grant 403, publish grant creates ref/PR at the fixture), `publication-commits` AC1/AC5, `publication-flow` AC1…, `publication-boundary`, `publication-rules` AC1/AC5, `skill-pack-v6` | R + S + I-local (fixture); real: recipe |
-| 2 unambiguous association; draft after reviews; Ticket not closed | `publication-rules` AC2 (verified basis, ownership), `publication-flow` AC1… and AC2 (not verified → nothing, no write grant) | R + S |
-| 3 short description, details separate, no local links | `publication-rules` AC3 (`descriptionCheck`), `skill-pack-v6` | R (shape check only) ; real: recipe |
-| 4 absence → request; branch name ≠ authorship; unknown PR not adopted | `publication-rules` AC4/AC6, `publication-flow` AC1… and AC4 (unknown PR / unknown commit block, nothing requested) | R + S |
-| 5 normal records keep refs/evidence; no intent/ACK/wrapper/parser | `publication-commits` (request.publication with the lease), `publication-flow` AC1… (record), `publication-boundary`, recipe `sessionCommands` | R + S + static |
-| 6 lost result discovered before repeating; ambiguity blocks | `publication-flow` AC6 (worker failure + owner restart → linked, no repeat; nothing visible → `PUBLICATION_OUTCOME_UNCONFIRMED`; two own PRs; incomplete reads), `github-publication` AC6, `publication-rules` | R + S + I-local |
-| 7 real agent + real GitHub | `publication14-qualification.ts` (recipe), `publication14-qualification.test.ts` (inert/guards) | pending authorized real run |
+R = rules; S = real Control + SQLite with doubled boundaries; I-local = real adapters/issuer over the world fixture; static = source scan.
 
-Red→green: adapter test red against the previous adapter (3/3 fail) then green; flow tests red with `dispatch.ts`/`execution.ts` reverted
-(5/5 fail) then green; rules/commit tests written before their implementation slices were wired.
+| AC / review finding | Tests | Level |
+| --- | --- | --- |
+| 1 direct publication, restricted App, no gateway, /pr ≠ publication | `github-publication` AC1, `publication-composition` (Builder writes refs/PR with ITS grant; controller writes nothing), `publication-commits` AC1/AC5, `publication-boundary`, `skill-pack-v6` | R + S + I-local + static |
+| 2 unambiguous association; draft after reviews; Ticket open | `publication-rules` AC2, `publication-flow` (real 13 verification; failed gate / uncommitted / no reviews → nothing, no write grant) | R + S + I-local |
+| 3 description | `publication-rules` AC3 + `DESCRIPTION_NONCONFORMANT` blocks linking as published | R |
+| 4 absence → request; branch name ≠ authorship; unknown PR not adopted | `publication-rules`, `publication-flow` AC4 (held + operator path, unknown branch change) | R + S |
+| 5 normal records keep refs/evidence; no wrapper/parser | `publication-commits`, `publication-flow` (request.publication, refsBefore, attempts), `publication-boundary` (broadened heuristic), recipe `sessionCommands` | R + S + static |
+| 6 lost result discovered; ambiguity blocks | `publication-flow` AC6 (failure + restart; nothing visible; two own PRs; incomplete reads), `github-publication` AC6 | R + S + I-local |
+| HIGH 1 publish-only | `publication-flow` HIGH 1 (no handoff/edit/continuation, reviewers only for the implementation) | S |
+| HIGH 2 attempt before launch | `publication-commits` (attempt at activation commit; refused activation is not an attempt), `publication-flow` HIGH 2 (lost receipt → never a second activation) | S |
+| MED 3 pinned App identity | `publication-rules` (other bot, login/id, unknown identity), `github-publication` MED 3, composition | R + I-local |
+| MED 4 refs + base protection | `publication-rules` MED 4, `publication-flow` MED 4 (unprotected base, tag pushed), `github-publication` MED 4 | R + S + I-local |
+| MED 5 recipe grant guard | `publication14-qualification.test` | R |
+| MED 6 attempts bound to the head; update of the own PR | `publication-rules` MED 6, `publication-flow` MED 6 (scope update → second verified basis updates PR #4 once) | R + S |
+| 7 real run | recipe ready; not run | — |
+
+Red→green: the original slices (adapter 3/3, flow 5/5 red before wiring). Review fixes: with the review tests and the pre-review `src`,
+rules 7/9, commits 1/2 and flow 5/8 fail; all green after the fixes.
 
 ## One-shot real-run recipe (`test/entrypoints/publication14-qualification.ts`)
 
-Prerequisites (operator): ticket 13 integrated and this branch rebased on it; issue #3 of `Sanmoo/java-springboot-event-sourcing` carries
+Prerequisites (operator): issue #3 of `Sanmoo/java-springboot-event-sourcing` carries
 `ticketBody` of the recipe and the label `ready-for-agent`, with **no associated pull request**; the App installation grants Contents RW and
 Pull requests RW; `main` is protected with no bypass for the App (Contents W does not separate push from merge).
 
@@ -58,8 +72,9 @@ Run (compiled, from the repository root, Node command of the gate):
 `node dist/test/entrypoints/publication14-qualification.js --plan` (inert), then each phase exactly once, in order:
 `preflight`, `run`, `discover`, `inspect` (and `stop-environment` only if `inspect` shows a boot that may still run).
 
-- `preflight`: read-only; label lists exactly #3; no associated PR; records the tip of `main`.
-- `run`: new storage `…/y5/q14-publication-v6`; implementation Execution (13 rounds ≤ 4); discovery → `requested`; ONE publication activation.
+- `preflight`: read-only; v5/v6 registered and loadable, v6 newest and continuation-capable; label lists exactly #3; no associated PR; every
+  branch/tag tip recorded and no `factory/3-` branch; `main` requires PRs with no App bypass; the App bot identity pinned.
+- `run`: new storage `…/y5/q14-publication-v6`; implementation Execution (13 rounds ≤ 4); discovery → `requested`; ONE publish-only activation.
   From that activation on, the recipe makes own-branch discovery reads fail (**provoked lost result**). Stops when the publication Execution
   ended and its boot stopped (or hold/block/`not-publishable`, or 80 min).
 - `discover`: new owner on the SAME storage; no prepare/activation/grant allowed; must link the own PR. Stops at `published`/`blocked` or 10 min.
@@ -79,18 +94,18 @@ issue open, `main` unchanged).
 
 ## Open design questions
 
-1. Own-PR authorship is "Bot author + marker + own branch/repo/base"; the App's bot user id is not pinned (the pulls REST payload has no
-   `performed_via_github_app`). Pinning the login/id from configuration would tighten it.
-2. After a publication attempt, an empty discovery blocks (`PUBLICATION_OUTCOME_UNCONFIRMED`) instead of re-requesting; recovery is an
-   explicit operator decision (ticket 26).
-3. Once a PR is linked, `questionDestination` routes new Questions to the PR surface, which is still refused (`QUESTION_DESTINATION_NOT_ENABLED`)
-   until the PR comment surface exists.
-4. A publication activation keeps the handoff tool (session compatibility); if the Builder hands off anyway, 13's review machinery runs.
-5. An I-local composition test (real adapters over the world fixture + Control) needs ticket 13's verification produced by real rounds;
-   it is added after the rebase on 13, together with replacing the storage seed of the flow tests.
+1. Base protection is read and REQUIRED before any publication request (review MED 4). The spec says the Factory does not certify or
+   monitor the team's merge barriers; this check is a precondition of publication only, never a certification (decision for the operator).
+2. After a publication attempt, an empty discovery blocks (`PUBLICATION_OUTCOME_UNCONFIRMED`); recovery is an explicit operator decision
+   (ticket 26, which will also compose its receipt discovery with the activation-time attempt record).
+3. Once a PR is linked, new Questions route to the PR surface, which is still refused (`QUESTION_DESTINATION_NOT_ENABLED`).
+4. The publish-only session still has `write`/`bash` (always part of the Builder tool set); content changes are never accepted (verified
+   head + refs window), but the guest checkout may diverge from the verified commit after such an activation.
+5. Unexpected ref changes during the window cannot be attributed (a human push at the same time also blocks): explicit operator decision.
 
-## Gate totals (after the rebase on `9f75f22`)
+## Gate totals (review fixes, after the rebase on `d4483d1`)
 
-`tsc -p tsconfig.json` rc=0; `eslint . --max-warnings 0` rc=0; dependency-cruiser: no violations (337 modules, 2019 dependencies);
+`tsc -p tsconfig.json` rc=0; `eslint . --max-warnings 0` rc=0; dependency-cruiser: no violations (352 modules, 2139 dependencies);
 every compiled `dist/test/**/*.test.js` run one file at a time with `--experimental-test-module-mocks --test --test-concurrency=1`:
-158 files, 1015 pass, 0 fail, 10 skipped (`test/sandbox/gondolin.test.ts` stays `skip: true`).
+170 files, 1067 pass, 0 fail, 10 skipped. `workers/sdk-profile.test.js` hit its known inner 15 s timeout under load in the full run and
+passed alone (1/1). `test/sandbox/gondolin.test.ts` stays `skip: true`.
