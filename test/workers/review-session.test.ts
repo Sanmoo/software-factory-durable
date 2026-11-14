@@ -21,14 +21,16 @@ const files: Record<string, string> = {
   '/artifacts/spec/v1/sources.json': '{"complete":true}', '/artifacts/instructions/v1/sources.json': '{"complete":true}',
   '/workspace/checkout/src/a.ts': 'export const a = 1;\n',
 };
+const directories = new Set(['/artifacts/spec/v1']);
 type Step = { tools?: { name: string; arguments: object }[]; text?: string };
 const guestReads: string[] = [];
 const vm: GuestOwner = { exec(argv) {
   const path = argv[5]!;
   guestReads.push(path);
   const content = files[path];
+  // The confined guest program exits 3 for a directory (ticket 13 real run: Standards read `/artifacts/spec/v1`).
   return { async *output() { if (content !== undefined) yield { stream: 'stdout' as const, data: Buffer.from(content) }; },
-    result: Promise.resolve({ exitCode: content === undefined ? 1 : 0 }) };
+    result: Promise.resolve({ exitCode: directories.has(path) ? 3 : content === undefined ? 1 : 0 }) };
 } };
 const profile = (directory: string) => ({ id: sdkProfile.id, directory, systemPrompt: 'Factory reviewer fixture. No personal resources.',
   providerId: 'offline-fixture', modelId: 'reader', apiKey: 'synthetic-key', provider: { api: 'openai-completions' as const, baseUrl: 'https://offline.invalid',
@@ -156,6 +158,18 @@ test('AC3: the Builder handoff suspends every Builder tool and turn until the Ho
   assert.equal(commands.length, 2);
   const transcript = await readFile(result.sessionFile!, 'utf8');
   assert.match(transcript, /Handoff accepted for review round 1/);
+});
+
+test('ticket 13 real-run regression: reading a DIRECTORY is a distinct READ_IS_DIRECTORY result, not a failed source read; the opinion stays clean', { timeout: 15000 }, async t => {
+  const bodies = provider(t, [{ tools: [{ name: 'read', arguments: { path: '/artifacts/spec/v1' } }] },
+    { tools: [{ name: 'read', arguments: { path: index } }, { name: 'read', arguments: { path: '/artifacts/spec/v1/sources.json' } }] }, { text: verdict(clean('standards')) }]);
+  const { f, session } = await reviewerSession(t, 'standards');
+  const result = await session.activate({ context: reviewer('standards'), prompt: 'Review round 1.', signal: f.authority.signal,
+    review: review([index, '/artifacts/spec/v1/sources.json']) });
+  assert.match(bodies[1]!.text, /READ_IS_DIRECTORY: [^"]*is a directory/, 'the model is told it read a directory and what to do instead');
+  assert.ok('opinion' in result && result.opinion);
+  assert.equal(result.opinion.conclusion, 'clean');
+  assert.deepEqual(result.opinion.hostChecks, { reads: 3, failedReads: [], requiredNotFullyRead: [], downgraded: [] });
 });
 
 test('review fix 10: a read surfaced as an isError result is a failed read, never a full read', async () => {

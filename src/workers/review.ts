@@ -47,6 +47,8 @@ export function createReadObserver() {
       // An isError result is a failed read (never coverage), exactly like a thrown one.
       if ('error' in outcome || outcome.isError === true) {
         const error = 'error' in outcome ? outcome.error : undefined;
+        // Ticket 13: reading a directory is an answer (READ_IS_DIRECTORY), never a failed source read and never coverage.
+        if (error instanceof Error && error.message.startsWith('READ_IS_DIRECTORY')) return;
         if (failures.length < 50) failures.push({ path: path.slice(0, 1024), code: error instanceof Error && /^[A-Z_]{1,64}$/.test(error.message) ? error.message : 'READ_FAILED' });
         return;
       }

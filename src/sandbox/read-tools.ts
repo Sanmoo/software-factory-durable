@@ -35,6 +35,7 @@ export interface ToolProjection { executeTool(context: ToolContext, call: ToolCa
 // membership enforcement. Never execute this body on the host.
 const guestReadProgram = `import os, stat, sys
 fd = None
+directory = False
 try:
     path = sys.argv[1]
     if (len(sys.argv) != 2 or not 0 < len(path) <= 4096
@@ -46,6 +47,7 @@ try:
         raise ValueError()
     fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
     if not stat.S_ISREG(os.fstat(fd).st_mode):
+        directory = stat.S_ISDIR(os.fstat(fd).st_mode)
         raise ValueError()
     target = os.readlink("/proc/self/fd/" + str(fd))
     if (not target.startswith(("/workspace/", "/artifacts/"))
@@ -62,7 +64,7 @@ try:
                 raise OSError()
             data = data[written:]
 except BaseException:
-    sys.exit(1)
+    sys.exit(3 if directory else 1)
 finally:
     if fd is not None:
         os.close(fd)
@@ -304,6 +306,8 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
           await append(prefix);
         }
         const result = await process.result;
+        // Ticket 13: status 3 = the path is a directory (decided before any source byte); a distinct, non-failing kind of answer.
+        if (result.exitCode === 3 && !editSource && format === 'text' && prefix.length === 0) return failure('READ_IS_DIRECTORY');
         if (result.exitCode !== 0) return failure(format === 'raw' ? 'PROTECTED_READ_UNAVAILABLE' : 'GUEST_READ_FAILED');
         if (!valid()) return failure('STALE_TOOL_CONTEXT');
         const capture = await output.finish();

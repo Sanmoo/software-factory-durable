@@ -108,6 +108,15 @@ test('supported image magic is not misreported as a complete text read', async t
   assert.deepEqual(await f.execute(), { status: 'failure', code: 'READ_BINARY_UNSUPPORTED' });
 });
 
+test('ticket 13: the guest program reports a directory with its own status, surfaced as READ_IS_DIRECTORY (never a generic failure)', async t => {
+  let program = '';
+  const f = await fixture(t, argv => { program = argv[4]!; return guest(Buffer.alloc(0), 3); });
+  assert.deepEqual(await f.execute(), { status: 'failure', code: 'READ_IS_DIRECTORY' });
+  assert.match(program, /if not stat\.S_ISREG\(os\.fstat\(fd\)\.st_mode\):\n\s+directory = stat\.S_ISDIR\(os\.fstat\(fd\)\.st_mode\)\n\s+raise ValueError\(\)/);
+  assert.match(program, /sys\.exit\(3 if directory else 1\)/);
+  assert.ok(program.indexOf('stat.S_ISDIR(os.fstat(fd).st_mode)') < program.indexOf('os.read(fd,'), 'decided before any source read');
+});
+
 test('guest nonzero status and invalid UTF-8 are explicit errors, not successful or raw output', async t => {
   let count = 0;
   const f = await fixture(t, () => ++count === 1 ? guest(Buffer.from('untrusted error secret'), 1) : guest(Buffer.from([255])));
