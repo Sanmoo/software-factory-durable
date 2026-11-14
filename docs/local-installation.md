@@ -124,6 +124,11 @@ node dist/src/entrypoints/release-build.js --release <id> --output <diretório-e
   --guest-assets <diretório-assets-fixado> --guest-manifest-sha256 <sha do manifesto>
 ```
 
+O diretório de saída não pode existir (`RELEASE_OUTPUT_EXISTS`); a construção o cria exclusivamente. Toda
+entrada distribuída sob `node_modules` precisa pertencer à closure calculada do lockfile (inclusive as
+dependências aninhadas da cópia privada do SDK); dependências ausentes são recusadas, e só opcionais cujo
+`os`/`cpu` exclui a plataforma ficam de fora (registradas em `metadata.runtime.omittedEdges`).
+
 Ela copia o JavaScript emitido (`dist/src`, sem testes/`.d.ts`/`.map`), a closure runtime do
 `package-lock.json`, o Node privado (`node/bin/node` + licença), os perfis privados de SDK
 (`.scratch/factory-development-sdk-v3` e a forma de release do Gondolin, com link relativo
@@ -139,14 +144,20 @@ preserva os modos; extração sem preservá-los é recusada) e executar:
 ```sh
 <raiz>/factory setup --json            # repetível; cria só os paths próprios
 <raiz>/factory setup --service --json  # opcional e explícito: grava a unit de usuário, NÃO inicia/habilita
+# A unit vai para ~/.config/systemd/user da conta (home do passwd; HOME/XDG_CONFIG_HOME são ignorados),
+# ou para um diretório absoluto canônico explícito: setup --service --service-directory <dir>
 <raiz>/factory doctor --json
 <raiz>/factory run                     # mesmo controlador/lock do serviço
 ```
 
 `doctor` verifica a integridade da árvore contra o manifesto (`release:integrity`, falha nomeando o
 caminho divergente), a localização (`releases/<id>` desta raiz), a seleção explícita pelo `factory`
-desta raiz (sha do launcher), o Node privado efetivamente em execução, a preservação dos assets e os
-pins `guest-assets:*`; `release:qualification` permanece `unverified`. Uma release executa somente a
+desta raiz (sha do launcher), o Node privado efetivamente em execução, os bytes de todos os assets
+(re-hasheados, inclusive kernel/initramfs/rootfs) e os pins `guest-assets:*`; `release:qualification`
+permanece `unverified`. Release bloqueada é o código de topo `RELEASE_INVALID` (exit 3); uma release sem
+manifesto legível é `RELEASE_MANIFEST_MISSING` e nunca é tratada como checkout de desenvolvimento (só o
+marcador versionado `development-checkout.json`, fora de `releases/<id>`, identifica um checkout). O
+controlador faz as mesmas verificações, assets incluídos, antes de abrir o storage. Uma release executa somente a
 própria raiz (`RELEASE_ROOT_MISMATCH`); não há descoberta, troca implícita de release nem relocação por
 cópia. Configuração com provider/modelo diferente do perfil único distribuído é recusada pelo controlador
 (`CONFIGURATION_UNSUPPORTED`, antes de abrir o storage), sem fallback.

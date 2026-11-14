@@ -27,7 +27,11 @@ JavaScript já emitido por `tsc` e as dependências runtime do lockfile.
   internos), conferido byte a byte na instalação.
 - `node`: versão e sha256 do Node privado distribuído (`node/bin/node`) e licença (`node/LICENSE`).
 - `guestAssets`: caminho `assets/guest/<manifest-sha256>/`, o pin do manifesto e o inventário dos assets
-  preservados; `pinned` nomeia os arquivos cujo conteúdo o verificador de assets do Sandbox confere pelo pin.
+  preservados. Todo arquivo (inclusive `manifest.json`, kernel, initramfs e rootfs) é re-hasheado dos bytes
+  na verificação; a entrada `manifest.json` precisa ter exatamente o hash do pin (esquema).
+- `files`/`guestAssets.files` sem caminhos duplicados ou que colidem por caixa (esquema e inventário).
+- `metadata.runtime.omittedEdges`: arestas opcionais não distribuídas e o motivo (`platform-excluded`,
+  `optional-peer`).
 - `production`: perfil de worker de produção (`factory-production-v1`), papel/perfil de cada papel,
   skill pack, limites (`modelBudget` = requests/ferramentas; **nenhum deadline de relógio**), ferramentas
   por papel, prompts por hash e o pin do perfil privado do SDK/Gondolin.
@@ -76,12 +80,12 @@ Níveis: **R** regras/determinístico; **S** Control real + Pi Durable/SQLite te
 
 | AC | Testes | Nível | Lacuna |
 | --- | --- | --- | --- |
-| 1 Artefato com JS emitido, dependências runtime do lockfile, Node privado, skill packs e assets prontos; sem bundler/runner TS/framework novo | `release-artifact` (lista do tar: só `factory`, `releases/r32-test/`, `assets/guest/<sha>/`; sem `dist/test`, `.ts`, `src/`, TypeScript/ESLint/dependency-cruiser, SDK upstream; JS emitido + `node/bin/node` + skill packs presentes; archive+SHA-256 únicos; segunda construção no mesmo diretório falha `EEXIST`), `release-composition` (portas reais) | I-local (assets sintéticos, tar do host, Node privado real) | Release real com assets34 e boot real |
+| 1 Artefato com JS emitido, dependências runtime do lockfile, Node privado, skill packs e assets prontos; sem bundler/runner TS/framework novo | `release-artifact` (lista do tar: só `factory`, `releases/r32-test/`, `assets/guest/<sha>/`; sem `dist/test`, `.ts`, `src/`, TypeScript/ESLint/dependency-cruiser, SDK upstream; JS emitido + `node/bin/node` + skill packs presentes; archive+SHA-256 únicos; segunda construção no mesmo diretório falha `RELEASE_OUTPUT_EXISTS` antes de qualquer escrita), `release-composition` (portas reais) | I-local (assets sintéticos, tar do host, Node privado real) | Release real com assets34 e boot real |
 | 2 Manifesto fixa Node/Pi/Durable/SDK/SQLite/Gondolin/QEMU/helpers/kernel/initramfs/Alpine/pacotes, perfil/ferramentas/skills/protocolo/formatos/limites e host das provas | `release-artifact` (node 24.21.0 e sha = binário; `metadata.sqlite.version`; Pi Durable 1.5.0, coding-agent 1.5.2 + perfil; Gondolin 0.14.0 + forma de release `../../node_modules`; skill packs v1–v3 com licenças/créditos; protocolo 1; pacotes apk; lockfile sha; 3 instrumentos; fixtures de arquitetura; `buildHost`; `production.limits.modelBudget`; `limits.deadline` sem minutos) | I-local | Hashes/números reais do host de qualificação (QEMU/helpers/initramfs) pertencem à construção real |
 | 3 Build registra TypeScript/npm, lockfile e checker/configuração/fixtures, preservando créditos/licenças; instrumentos dev não exigidos no host | `release-artifact` (`build.typescript` 6.0.3, `build.dependencyCruiser.configSha256`, `build.eslint.configSha256`, `build.npm.executed=false`, lockfile sha, licenças por pacote, tokens inline legados `licenses[].type`), `release-install` (PATH só com canários: nenhum npm/npx/apk/sudo/node do host chamado; doctor não lê credenciais) | I-local | — |
 | 4 Raiz canônica, releases imutáveis selecionadas explicitamente, assets preservados, configuração sem segredos, áreas privadas | `release-install` (setup cria só `releases/ assets/ credentials/ data/ environments/ run/ config.yaml`; `release:location/selected/node` ok; `permissions:releases/assets`; repetição sem sobrescrever config/credenciais/dados), `release-artifact` (raiz estrangeira recusada `RELEASE_ROOT_MISMATCH`, nada criado; conteúdo alterado `RELEASE_INTEGRITY_MISMATCH` sem reparo) | I-local | — |
 | 5 Setup repetido não sobrescreve, não instala, não inicia Ticket, não usa sudo; dependências administrativas e KVM diagnosticadas sem fallback | `release-install` (segunda execução `created: []`; canários intactos; `kvm-access`/`kvm-functional`/qemu/systemd/storage no doctor; `environments`/`run` vazios), `local-setup`, `doctor` (existentes) | I-local + R | KVM funcional real (ticket 03/05) |
-| 6 Primeiro plano e serviço systemd opcional com o mesmo lock; systemd dos ambientes requisito; workers sem administração host | `release-install` (`factory run` com lock tomado por outro processo → 73 `CONTROLLER_ALREADY_RUNNING`; `setup --service` só sob pedido explícito grava a unit, `preserved` se idêntica, `SERVICE_UNIT_CONFLICT` sem sobrescrever; unit usa o mesmo `factory run`, `Restart=no`, `NoNewPrivileges=yes`, sem `User`/capabilities/`ExecStartPre`, sem sudo/--root), `controller-ownership` | I-local | Registro/execução real de unit e segundo início pelo serviço |
+| 6 Primeiro plano e serviço systemd opcional com o mesmo lock; systemd dos ambientes requisito; workers sem administração host | `release-install` (`factory run` com lock tomado por outro processo → 73 `CONTROLLER_ALREADY_RUNNING`; `setup --service` só sob pedido explícito grava a unit (diretório padrão da conta pelo passwd, nunca `HOME`/`XDG_CONFIG_HOME`, ou `--service-directory` absoluto canônico), `preserved` se idêntica, `SERVICE_UNIT_CONFLICT` sem sobrescrever; unit usa o mesmo `factory run`, `Restart=no`, `NoNewPrivileges=yes`, sem `User`/capabilities/`ExecStartPre`, sem sudo/--root), `controller-ownership` | I-local | Registro/execução real de unit e segundo início pelo serviço |
 | 7 Extração/setup/diagnóstico em instalação limpa e repetida comprovam artefato autocontido e integridades; paths/FS incompatíveis falham explicitamente, sem relocação livre | `release-artifact` (extração com `umask 077` sem `-p` → `RELEASE_INTEGRITY_MISMATCH` e controlador `RELEASE_INVALID` antes do storage; raiz estrangeira recusada), `release-install` (extração limpa, setup/doctor com o Node privado; `NODE_OPTIONS` pessoal ignorado; socket/FS/storage checks existentes), `doctor` (socket >107 bytes) | I-local | — |
 | 8 Empacotamento não afirma cobertura; qualificação posterior usa a composição final e não apenas checksums/build | `release-artifact` (`qualification.status: unqualified`, texto "claims no functional coverage"; doctor `release:qualification: unverified`), `release-composition` (portas de produção efetivamente compostas) | R + I-local | Qualificação real posterior (tickets 34/35) |
 
@@ -100,6 +104,24 @@ Níveis: **R** regras/determinístico; **S** Control real + Pi Durable/SQLite te
   no manifesto (corrigido); inventário/hash da árvore era o gargalo (paralelizado, WebCrypto até 256 MiB);
   `@types/node`/`@types/retry` entram legitimamente pela closure de pacotes upstream que os declaram como
   dependência de runtime (teste restrito a instrumentos de desenvolvimento).
+
+### Correções da revisão independente (2026-11-14)
+
+| Achado | Correção | Teste (falhou antes, passa depois) |
+| --- | --- | --- |
+| HIGH 1 assets fixados `trusted` (hash copiado do manifesto) | todo arquivo distribuído é re-hasheado; `pinned` removido; `manifest.json` dos assets = pin | `release-artifact` (rootfs alterado → `release:assets` blocked, doctor `RELEASE_INVALID`, controlador recusa sem storage); `release-inventory` (pin ≠ hash do `manifest.json` recusado) |
+| HIGH 2 manifesto ausente ⇒ `development` | `RELEASE_MANIFEST_MISSING`; só `development-checkout.json` explícito, fora de `<root>/releases/<id>`, é desenvolvimento | `release-inventory` (sem marcador, marcador inválido, marcador dentro de `releases/<id>`); `release-artifact` (release sem manifesto: doctor 3, controlador `RELEASE_INVALID` antes do storage) |
+| HIGH 3 closure incompleta/aninhada, SDK por caminho | toda entrada sob `node_modules` (topo e dependências aninhadas da cópia privada do SDK) pertence à closure; links `.bin` só para pacotes da closure; link Gondolin é a única exceção; nenhum `package.json` distribuído com o nome do SDK upstream; aresta obrigatória/peer ausente recusada; opcional omitido só se `os`/`cpu` exclui a plataforma | `release-inventory` (closure, `unaccountedShippedPaths`, `verifyShippedPackages`); `release-artifact` (build real passa) |
+| MED 4 duplicados/caixa/links encadeados | esquema e inventário recusam; links por `realpath` dentro da árvore | `release-inventory` (`sub/up -> ..` + `sub/esc -> up/../outside`) |
+| MED 5 owner com `{assets:false}` | `inspectRelease` sempre verifica os assets antes do storage | `release-artifact` |
+| MED 6 unit sob `XDG_CONFIG_HOME` | padrão do passwd ou `--service-directory` explícito | `release-inventory`, `release-install` (HOME/XDG chamarizes intocados) |
+| MED 7 raiz por presença do manifesto | raiz estrutural (`<root>/releases/<id>`), nunca do ambiente; lançador não exporta raiz | `release-inventory`; `release-artifact` (release sem manifesto com `--root` estrangeiro → `RELEASE_ROOT_MISMATCH`, nada criado) |
+| LOW 8 saída existente | `RELEASE_OUTPUT_EXISTS` antes de qualquer efeito; `mkdir` exclusivo | `release-inventory`, `release-artifact` |
+| LOW 9 links da fonte léxicos | `realpath` contido na fonte | `release-inventory` |
+| LOW 10 doctor mascarava release bloqueada | código de topo `RELEASE_INVALID` (exit 3) | `release-artifact` |
+| LOW 11 base parcial sem tombstone | tombstone `<base>.<fase>-intent.json` irmão da base, escrito antes dela; namespace `r32-v2` | `release32-qualification` |
+
+A verificação real registrada abaixo (`r32-v1`) é anterior a estas correções; a receita agora usa `r32-v2`.
 
 ## Decisões de interpretação e questões abertas (operador)
 
@@ -124,9 +146,9 @@ Níveis: **R** regras/determinístico; **S** Control real + Pi Durable/SQLite te
 ## Receita one-shot de verificação real (para o supervisor)
 
 Fonte: `test/entrypoints/release32-qualification.ts` → `dist/test/entrypoints/release32-qualification.js`
-(revisão `r32-v1`; raiz **nova** `/home/sanmoo/software-factory-test/r32-v1`, conferida inexistente em
-2026-11-14). Import e `--plan` são inertes (teste com módulos de efeito negados). Fases **one-shot** com
-tombstone exclusivo `<phase>-intent.json`; sem retry; uma fase consumida nunca reroda (construir uma
+(revisão `r32-v2`; raiz **nova** `/home/sanmoo/software-factory-test/r32-v2`; `r32-v1` foi consumida pela
+verificação real). Import e `--plan` são inertes (teste com módulos de efeito negados). Fases **one-shot** com
+tombstone exclusivo `r32-v2.<phase>-intent.json`, irmão da base e escrito antes dela (build); sem retry; uma fase consumida nunca reroda (construir uma
 revisão nova). Rodar em ordem:
 
 ```sh
@@ -144,9 +166,9 @@ done
 ```
 
 Limites: sem rede/GitHub/credenciais/modelo/VM/systemd/sudo/instalação de pacotes; nada fora de
-`/home/sanmoo/software-factory-test/r32-v1` é escrito (assets34 e o checkout só são lidos); pico de disco
+`/home/sanmoo/software-factory-test/r32-v2` e seus tombstones irmãos é escrito (assets34 e o checkout só são lidos); pico de disco
 ~3,5 GiB (cópia dos assets ~860 MB + release ~300 MB + archive ~340 MB); orçamento de 15 min para a build e
-120 s por comando. Observações gravadas em `r32-v1/observations/` (`*-intent`, `*-result`, `*-held`).
+120 s por comando. Observações gravadas em `r32-v2/observations/` (`*-result`, `*-held`).
 
 Observações esperadas:
 
