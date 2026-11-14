@@ -39,6 +39,7 @@ type OutputPage = { state: 'complete' | 'partial'; data: Buffer<ArrayBuffer>; ne
 type RawPage = OutputPage & { version: 2; format: 'raw' };
 /** Upper bound of the captures one `find` lists for a Work (bounded host read; beyond it the result is incomplete). */
 const findLimit = 20000;
+export { preserveEvidence, type PreservedEvidence, type Preservation } from './preserve.js';
 export const outputLimits = Object.freeze({ chunkBytes: 65536, pageBytes: 65536, excerptBytes: 4096,
   secretCharacters: 4096, secretCount: 128 });
 export class RecordsError extends Error {

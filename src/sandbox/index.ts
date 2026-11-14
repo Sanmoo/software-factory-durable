@@ -36,6 +36,8 @@ export type { StartResult } from './start.js';
 import { stopEnvironment } from './stop.js';
 export type { StopResult } from './stop.js';
 import { removeEnvironment } from './remove.js';
+import { exportEvidence } from './evidence-export.js';
+export type { EvidenceExport } from './evidence-export.js';
 export type { RemoveResult, ResourceRemoval } from './remove.js';
 // Trusted process composition only; never projected as a worker tool.
 export { runSandboxAdapter } from './adapter.js';
@@ -106,6 +108,10 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
         if (!content) return { status: 'invalid' as const, code: 'PRESERVED_SOURCE_MISSING' };
         return { status: 'verified' as const, code: 'PRESERVED_SOURCE_VERIFIED' };
       } catch { return { status: 'invalid' as const, code: 'PRESERVED_SOURCE_UNSAFE' }; }
+    },
+    /** Ticket 17: copy the own environment's review/spec/instructions evidence into a caller-owned private directory before removal. */
+    async exportEvidence({ environment, destination }: { environment: EnvironmentRef; destination: string }) {
+      return exportEvidence(root, environment, destination);
     },
     async remove({ environment, cleanup }: { environment: EnvironmentRef; cleanup: unknown }) {
       return removeEnvironment(root, environment, cleanup);
