@@ -256,6 +256,9 @@ export async function runPhase(phase: Phase) {
       await provider?.close();
       await save(`${phase}-close`, { identity, boot, ownedHostCloseRequested: closeRequested, activeGuestAtClose: 'unknown', physicalCessation: 'unknown' });
     }
+    // A transport violation during asynchronous evidence checks/close must not
+    // publish success from the earlier completion snapshot.
+    if (provider?.observation().held) throw new Error('LATE_TRANSPORT_HELD');
     await save(`${phase}-result`, successResult);
   } catch {
     await save(`${phase}-held`, { identity, phase, status: 'held', note: 'Consumed; no retry/fallback. Inspect protected product observations; physical cessation unknown.' });

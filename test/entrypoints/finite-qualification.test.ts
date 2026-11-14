@@ -17,6 +17,8 @@ let environment = '';
 let workerMode: 'reject' | 'success' = 'reject';
 let listenAttempts = 0;
 let closeRequests = 0;
+let freezeDuringEvidence = false;
+let transportServer: EventEmitter;
 let serverHandler: (req: unknown, res: unknown) => void;
 const activations: { context: { invocationId: string; role: string }; selectedOutputCopies?: string[]; profile: unknown }[] = [];
 const copyPath = '/artifacts/factory-output-00000000-0000-4000-8000-000000000001.txt';
@@ -26,6 +28,7 @@ mock.module('node:http', { namedExports: { createServer: (_options: unknown, han
     listen(port: number, host: string, done: () => void) { listenAttempts++; assert.equal(port, 18705); assert.equal(host, '127.0.0.1'); done(); },
     close(done: () => void) { done(); },
   });
+  transportServer = server;
   return server;
 } } });
 mock.module('#factory-pi', { namedExports: { SessionManager: { open(path: string) { return { buildSessionContext() { return JSON.parse(files.get(path)!); } }; } } } });
@@ -44,6 +47,10 @@ const fs = {
     fileAttempts++;
     if (path instanceof URL) { assert.match(path.pathname, /dist\/test\/entrypoints\/finite-qualification(-provider)?\.js$/); return 'closed-source-identity'; }
     assert.ok(!path.includes('credentials'));
+    if (freezeDuringEvidence && path.endsWith('/capture.json')) {
+      freezeDuringEvidence = false;
+      transportServer.emit('clientError', new Error('closed-double'), { destroy() {} });
+    }
     if (!files.has(path)) throw Object.assign(new Error('MISSING'), { code: 'ENOENT' }); return files.get(path)!;
   },
   async lstat(path: string) { fileAttempts++; if (!files.has(path)) throw Object.assign(new Error('MISSING'), { code: 'ENOENT' }); return { isFile: () => true, isSymbolicLink: () => false, size: Buffer.byteLength(files.get(path)!) }; },
@@ -166,6 +173,17 @@ test('all runnable phases through preinstalled public/transport doubles; fixed r
   const result = JSON.parse(files.get('/home/sanmoo/software-factory-test/y5/q05-qualification-v1/w1-result.json')!);
   assert.equal(result.observation.nativeResults, 8); assert.equal(result.observation.wholeCaptures, 4);
   assert.equal(result.observation.physicalCessation, 'unknown');
+});
+
+test('late transport freeze during evidence checks cannot publish a successful phase', async () => {
+  files.clear(); dirs.clear(); workerMode = 'success';
+  await recipe.runPhase('prepare'); await recipe.runPhase('start');
+  freezeDuringEvidence = true;
+  await assert.rejects(recipe.runPhase('w1'), /QUALIFICATION_HELD/);
+  assert.equal(freezeDuringEvidence, false);
+  assert.ok(!files.has('/home/sanmoo/software-factory-test/y5/q05-qualification-v1/w1-result.json'));
+  await assert.rejects(recipe.runPhase('w2'));
+  assert.equal(forbidden, 0);
 });
 
 test('failed worker intent is consumed and blocks dependent phases with no fallback', async () => {
