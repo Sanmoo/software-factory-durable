@@ -99,7 +99,8 @@ export async function settleInterruption(session: Session, input: { work_id: str
     const found: RecoveryRecord['found'] = { state: execution.state, phase: execution.dispatch.phase, held: execution.held?.code ?? null,
       end: execution.end ? `${execution.end.outcome}:${execution.end.code ?? ''}` : null, origin: execution.timing?.origin ?? null };
     const record = (start: RecoveryRecord['start'], decision: RecoveryRecord['decision'], code: string | null) => {
-      (execution.recovery ??= []).push({ at: now, controllerRunId: input.controllerRunId, trigger: input.trigger, found, cessation: input.cessation, start, decision, code });
+      // Assigned as a new array: a doc value assigned then mutated in place is not what the commit persists.
+      execution.recovery = [...(execution.recovery ?? []), { at: now, controllerRunId: input.controllerRunId, trigger: input.trigger, found, cessation: input.cessation, start, decision, code }];
       work.history.push({ at: now, event: 'execution-reconciled', origin: 'controller-recovery', executionId: execution.executionId,
         detail: `${decision}${code ? `:${code}` : ''}; cessation ${input.cessation.result} (${input.cessation.basis}); start ${start.kind}` });
       return decision;
