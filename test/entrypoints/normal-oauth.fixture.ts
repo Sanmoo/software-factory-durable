@@ -16,7 +16,9 @@ export async function normalOAuth(root: string, identity: { workId: string; envi
     await assert.rejects(createWorkers({ root, knownSecrets: [], profile: { ...profile, ...override } as typeof profile })
       .activate({ context, prompt: 'Read.', signal: new AbortController().signal }), /WORKER_LAUNCH_INVALID/);
   }
-  const handle = await workers.activate({ context, prompt: mode === 'prompt-bytes' ? 'π'.repeat(2100) : mode === 'prompt-secret' ? 'Read oauth-access-canary.' : 'Read source.txt then report.', signal: new AbortController().signal });
+  // Ticket 19: no implicit clock cut. The Host deadline is an explicit policy; only the `deadline` mode sets one.
+  const handle = await workers.activate({ context, prompt: mode === 'prompt-bytes' ? 'π'.repeat(2100) : mode === 'prompt-secret' ? 'Read oauth-access-canary.' : 'Read source.txt then report.',
+    signal: new AbortController().signal, ...(mode === 'deadline' ? { deadlineMs: 30_000 } : {}) });
   try {
     if (mode === 'start-failure') {
       await assert.rejects(handle.started);

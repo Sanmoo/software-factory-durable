@@ -100,9 +100,16 @@ export async function secretScan(directories: string[]) {
     let files = 0, hits = 0;
     const entries = await fs.readdir(directory, { recursive: true, withFileTypes: true }).catch(() => []);
     for (const entry of entries) {
-      if (!entry.isFile() || files >= 5000) continue;
+      // Regular host files only: a guest-planted symlink or device is never followed, and each file is bounded.
+      if (!entry.isFile() || entry.isSymbolicLink() || files >= 5000) continue;
       files++;
-      const bytes = await fs.readFile(`${entry.parentPath}/${entry.name}`).catch(() => Buffer.alloc(0));
+      // Bound the READ, not only the scan: never materialize a multi-GB guest-written file in this process.
+      const handle = await fs.open(`${entry.parentPath}/${entry.name}`, 'r').catch(() => undefined);
+      let bytes = Buffer.alloc(0);
+      if (handle) {
+        try { const buffer = Buffer.alloc(1024 * 1024); const read = await handle.read(buffer, 0, buffer.length, 0); bytes = buffer.subarray(0, read.bytesRead); }
+        catch { /* unreadable file counts as no hit */ } finally { await handle.close().catch(() => {}); }
+      }
       hits += (bytes.toString('latin1').match(/gh[sopu]_[A-Za-z0-9]{20,}|PRIVATE KEY/g) ?? []).length;
     }
     counts[directory] = hits;
