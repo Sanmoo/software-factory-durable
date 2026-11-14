@@ -12,9 +12,11 @@ import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './d
 const token = 'ghs_syntheticBuilderGrant0123456789';
 type Call = { kind: string; at: number; detail?: unknown };
 
-function executionDoubles(control: () => Control, options: { prepare?: 'fail'; hangStart?: boolean; issue?: 'throw'; onBoot?: () => void; stopCessation?: boolean } = {}) {
+function executionDoubles(control: () => Control, options: { prepare?: 'fail'; hangStart?: boolean; issue?: 'throw'; onBoot?: () => void; stopCessation?: boolean;
+  prepareGate?: Promise<void>; onIssue?: () => Promise<void> } = {}) {
   const calls: Call[] = [];
   const snapshots: Record<string, WorkView | undefined> = {};
+  const activationSignals: AbortSignal[] = [];
   let releaseStart!: () => void;
   const startGate = new Promise<void>(resolve => { releaseStart = resolve; });
   const firstWork = async () => ((await control().inspect({ kind: 'list' })) as ListView).works.find(work => work.execution && work.execution.state !== 'released');
@@ -25,6 +27,7 @@ function executionDoubles(control: () => Control, options: { prepare?: 'fail'; h
       async prepare(input) {
         calls.push({ kind: 'prepare', at: calls.length, detail: input });
         snapshots.prepare = await firstWork();
+        if (options.prepareGate) await options.prepareGate;
         if (options.prepare === 'fail') return { status: 'indeterminate', code: 'ENVIRONMENT_PREPARATION_INCOMPLETE' };
         return { status: 'success', environment: `env-${'c'.repeat(64)}` as never, seeds: [{ name: 'factory/skill-pack/factory-skills-v1', manifestSha256: 'f'.repeat(64), reused: false }],
           checkout: { path: '/workspace/checkout', repository: input.checkout.repository, repositoryId: input.checkout.repositoryId, base: 'main', branch: input.checkout.branch,
@@ -37,7 +40,9 @@ function executionDoubles(control: () => Control, options: { prepare?: 'fail'; h
     credentials: {
       async issue(context) {
         calls.push({ kind: 'issue', at: calls.length, detail: context });
-        if (options.issue === 'throw') throw new Error('GITHUB_TOKEN_ISSUANCE_UNKNOWN');
+        snapshots.issue = await firstWork();
+        await options.onIssue?.();
+        if (options.issue === 'throw') throw Object.assign(new Error('GITHUB_TOKEN_ISSUANCE_UNKNOWN'), { outcome: 'unknown' });
         return { delivery: { token }, metadata: { role: 'builder', purpose: 'builder-start', repository: 'acme/project', repositoryId: 3, installationId: 2,
           permissions: { metadata: 'read', contents: 'read', issues: 'read' }, issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 3600000).toISOString() } };
       },
@@ -46,6 +51,7 @@ function executionDoubles(control: () => Control, options: { prepare?: 'fail'; h
     workers: {
       async activate(invocation, delivery) {
         calls.push({ kind: 'activate', at: calls.length, detail: { invocation: { ...invocation, signal: undefined }, delivery } });
+        activationSignals.push(invocation.signal);
         snapshots.activate = await firstWork();
         const started = (options.hangStart ? startGate : Promise.resolve()).then(() => ({ receipt: { workId: invocation.context.workId, id: '99999999-2222-4333-8444-555555555555' },
           invocation: { executionId: invocation.context.executionId, invocationId: invocation.context.invocationId } }));
@@ -54,7 +60,7 @@ function executionDoubles(control: () => Control, options: { prepare?: 'fail'; h
       },
     },
   };
-  return { ports, calls, snapshots, releaseStart };
+  return { ports, calls, snapshots, releaseStart, activationSignals };
 }
 
 async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remote, ports: (control: () => Control) => ReturnType<typeof executionDoubles>, runtimeInventory: 'empty' | 'unknown' = 'empty') {
@@ -197,6 +203,11 @@ test('AC5: a failed credential issuance holds before any activation (never widen
   await h.until(async () => (await h.byNumber())[3]?.execution?.state === 'held');
   assert.deepEqual(h.execution.calls.map(call => call.kind), ['prepare', 'start', 'issue']);
   assert.equal((await h.byNumber())[3]!.execution!.held!.code, 'CREDENTIAL_GITHUB_TOKEN_ISSUANCE_UNKNOWN');
+  // Review 5: the issuance intent was durable BEFORE the call, and its unknown outcome is recorded.
+  assert.deepEqual(h.execution.snapshots.issue!.execution!.credentialIssuance, { requestedAt: h.execution.snapshots.issue!.execution!.credentialIssuance!.requestedAt,
+    outcome: 'requested', code: null, metadata: null, revocation: null });
+  const issuance = (await h.byNumber())[3]!.execution!.credentialIssuance!;
+  assert.deepEqual([issuance.outcome, issuance.code, issuance.metadata], ['unknown', 'GITHUB_TOKEN_ISSUANCE_UNKNOWN', null]);
 });
 
 test('without execution boundaries dispatch stays closed exactly as before (EXECUTION_NOT_ENABLED)', async t => {
@@ -212,4 +223,43 @@ test('without execution boundaries dispatch stays closed exactly as before (EXEC
   const list = await control.inspect({ kind: 'list' }) as ListView;
   assert.deepEqual([list.dispatch, list.dispatchReason, list.works[0]!.dispatch], ['closed', 'EXECUTION_NOT_ENABLED', { state: 'held', reasons: ['EXECUTION_NOT_ENABLED'] }]);
   stop.abort(); await running;
+});
+
+test('review 4/5: a pause committed after issuance refuses activation in the commit; the live grant is recorded with its revocation outcome', async t => {
+  const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
+  let control!: () => Control;
+  const h = await harness(t, remote, c => { control = c; return executionDoubles(c, { onIssue: async () => {
+    await control().accept({ request_id: 'pause-during-issue', operation: 'pause', origin: 'local-cli' }); } }); });
+  const { time } = await h.start();
+  await time.sleeping();
+  await h.until(async () => (await h.byNumber())[3]?.execution?.state === 'released');
+  const execution = (await h.byNumber())[3]!.execution!;
+  assert.deepEqual(h.execution.calls.map(call => call.kind), ['prepare', 'start', 'issue', 'revoke', 'stop'], 'never activated while paused');
+  assert.match(execution.held!.nextStep, /GLOBAL_PAUSE/);
+  assert.deepEqual([execution.credentialIssuance!.outcome, execution.credentialIssuance!.metadata!.purpose, execution.credentialIssuance!.revocation],
+    ['issued', 'builder-start', 'not-attempted'], 'no live token goes unrecorded');
+  await h.stop();
+  assert.doesNotMatch(await readFile(h.storagePath, 'latin1'), /ghs_synthetic/);
+});
+
+test('review 3: owner stop during preparation performs no further effect; during activation the worker signal is aborted', async t => {
+  const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
+  let open!: () => void;
+  const gate = new Promise<void>(resolve => { open = resolve; });
+  const h = await harness(t, remote, c => executionDoubles(c, { prepareGate: gate }));
+  const { time } = await h.start();
+  await time.sleeping();
+  await h.until(async () => h.execution.calls.some(call => call.kind === 'prepare'));
+  const stopping = h.stop();
+  open();
+  await stopping;
+  assert.deepEqual(h.execution.calls.map(call => call.kind), ['prepare'], 'no start/issue/activate after the owner stopped');
+
+  const second = await harness(t, { pulls: {}, issues: [remoteIssue(3)] }, c => executionDoubles(c, { hangStart: true }));
+  const run = await second.start();
+  await run.time.sleeping();
+  await second.until(async () => second.execution.calls.some(call => call.kind === 'activate'));
+  assert.equal(second.execution.activationSignals[0]!.aborted, false);
+  await second.stop();
+  assert.equal(second.execution.activationSignals[0]!.aborted, true, 'the stopping signal reaches Workers.activate (owner channel closed)');
 });

@@ -5,7 +5,7 @@ import { evaluateEntry } from '../rules/admission.js';
 import { dispatchBlockers, selectNext, type OwnCycleFacts } from '../rules/dependencies.js';
 import { evaluateWorkDependencies } from './polling.js';
 import type { WorkRecord } from './admission.js';
-import { admitExecution, confirmActivation, confirmStart, holdExecution, recordEnd, recordPhase, releaseAfterCessation, releaseBeforeStart } from './execution.js';
+import { admitExecution, confirmActivation, confirmStart, holdExecution, recordEnd, recordIssuance, recordPhase, releaseAfterCessation, releaseBeforeStart } from './execution.js';
 import type { Session } from './store.js';
 
 export type DispatchObservation = { at: string; work_id: string | null; outcome: string; reasons: string[] };
@@ -23,6 +23,17 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
   const running = new Map<string, Promise<void>>();
   const stopping = new AbortController();
   let last: DispatchObservation | null = null;
+  // Owner stop: no NEW effect starts after it (checked before every call), and pending waits end at once, even if already aborted.
+  const checkStop = () => { if (stopping.signal.aborted) throw new Error('OWNER_STOPPING'); };
+  const untilStopped = <T>(promise: Promise<T>): Promise<T> => {
+    if (stopping.signal.aborted) return Promise.reject(new Error('OWNER_STOPPING'));
+    return new Promise<T>((resolve, reject) => {
+      const abort = () => reject(new Error('OWNER_STOPPING'));
+      stopping.signal.addEventListener('abort', abort, { once: true });
+      promise.then(value => { stopping.signal.removeEventListener('abort', abort); resolve(value); },
+        error => { stopping.signal.removeEventListener('abort', abort); reject(error); });
+    });
+  };
   const observe = (work_id: string | null, outcome: string, reasons: string[] = []) => { last = { at: new Date().toISOString(), work_id, outcome, reasons }; };
 
   async function revalidateAuthorization(work: WorkRecord): Promise<{ ok: true; observedAt: string } | { ok: false; reasons: string[] }> {
@@ -49,6 +60,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const hold = async (code: string, nextStep: string) => { await holdExecution(session, work.work_id, executionId, code, nextStep); observe(work.work_id, 'held', [code]); };
     const stopOwnBoot = async (reason: string) => environment && boot ? ports.sandbox.stop({ environment, boot, reason }).catch(() => ({ status: 'indeterminate' as const, cessationConfirmed: false as const, code: 'STOP_UNAVAILABLE' })) : undefined;
     try {
+      checkStop();
       const prepared = await ports.sandbox.prepare({ workId: work.work_id, configuration: ports.configuration,
         checkout: { repository: work.repository.repository, repositoryId: work.repository.repositoryId, installationId: configured.installationId, base: work.repository.base, branch: execution.request.branch } });
       if (prepared.status !== 'success' || !('checkout' in prepared)) { await hold(`PREPARE_${prepared.status === 'success' ? 'CHECKOUT_MISSING' : prepared.code}`, 'Preparation did not complete; it is never retried automatically. Inspect the environment (ticket 26 recovery).'); return; }
@@ -61,12 +73,14 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         current.request.skillPack = pack ? { name: pack.name, manifestSha256: pack.manifestSha256 } : null;
       })).kind !== 'advanced') { observe(work.work_id, 'stale'); return; }
       phase = 'start';
+      checkStop();
       const started = await ports.sandbox.start({ environment, configuration: ports.configuration });
       if (started.status !== 'success') { await hold(`START_${started.code}`, 'The boot did not become operational; no automatic retry. Observe/stop the environment explicitly.'); return; }
       boot = started.boot;
       if ((await recordPhase(session, work.work_id, executionId, 'prepared', 'booted', 'execution-booted', current => { current.dispatch.boot = started.boot; })).kind !== 'advanced') { observe(work.work_id, 'stale'); return; }
       // Revalidation immediately before activation: authorization and a FRESH dependency evaluation of THIS attempt.
       phase = 'revalidate';
+      checkStop();
       const authorization = await revalidateAuthorization(work);
       const { attemptId, evaluation } = await freshEvaluation(work);
       const refuse = async (reasons: string[]) => {
@@ -78,29 +92,45 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       if (!authorization.ok) { await refuse(authorization.reasons); return; }
       // Cheap pre-check so no credential is issued for a refused activation; the commit below re-checks the same facts.
       if (evaluation.conclusion !== 'satisfied') { await refuse([`DEPENDENCIES_${evaluation.conclusion.toUpperCase()}`]); return; }
+      if (await deps.paused()) { await refuse(['GLOBAL_PAUSE']); return; }
       phase = 'credential';
-      const grant = await ports.credentials.issue({ workId: work.work_id, executionId, repository: { repository: configured.repository, installationId: configured.installationId, workflows: false } });
+      checkStop();
+      // Durable issuance intent BEFORE the call: an issued token is never unknown to the authority.
+      if (await recordIssuance(session, work.work_id, executionId, { requestedAt: new Date().toISOString(), outcome: 'requested' }) !== 'recorded') { observe(work.work_id, 'stale'); return; }
+      let grant;
+      try { grant = await ports.credentials.issue({ workId: work.work_id, executionId, repository: { repository: configured.repository, installationId: configured.installationId, workflows: false } }); }
+      catch (error) {
+        const code = error instanceof Error && /^[A-Z_]{1,64}$/.test(error.message) ? error.message : 'CREDENTIAL_ISSUANCE_FAILED';
+        await recordIssuance(session, work.work_id, executionId, { outcome: (error as { outcome?: string }).outcome === 'known-rejected' ? 'failed' : 'unknown', code });
+        throw error;
+      }
+      await recordIssuance(session, work.work_id, executionId, { outcome: 'issued', metadata: grant.metadata });
+      const revoke = async () => {
+        const result = await ports.credentials.revoke(grant).catch(() => ({ kind: 'unknown' as const }));
+        await recordIssuance(session, work.work_id, executionId, { revocation: result.kind }).catch(() => {});
+      };
       const prompt = [`/implement ${work.ticket.url}`, `repository=${work.repository.repository}`, `base=${work.repository.base}`, `base-commit=${prepared.checkout.baseCommit}`,
         `branch=${execution.request.branch}`, `checkout=${prepared.checkout.path}`, 'artifacts=/artifacts', `work=${work.work_id}`, `execution=${executionId}`].join(' ');
       const promptSha256 = createHash('sha256').update(prompt).digest('hex');
       const confirmed = await confirmActivation(session, work.work_id, executionId, attemptId, grant.metadata, promptSha256);
-      if (confirmed.kind === 'refused') { await ports.credentials.revoke(grant).catch(() => {}); await refuse(confirmed.reasons); return; }
-      if (confirmed.kind === 'stale') { observe(work.work_id, 'stale'); return; }
+      if (confirmed.kind === 'refused') { await revoke(); await refuse(confirmed.reasons); return; }
+      if (confirmed.kind === 'stale') { await revoke(); observe(work.work_id, 'stale'); return; }
       phase = 'activate';
+      if (stopping.signal.aborted) { await revoke(); checkStop(); }
       const handle = await ports.workers.activate({ context: { workId: work.work_id, executionId, invocationId: execution.invocationId, role: 'builder',
-        environmentRef: environment, bootRef: boot, phaseId: 'builder-initial' }, prompt, signal: new AbortController().signal, ...ports.builder },
+        environmentRef: environment, bootRef: boot, phaseId: 'builder-initial' }, prompt, signal: stopping.signal, ...ports.builder },
       { credential: grant.delivery });
       try {
         phase = 'started';
-        const start = await Promise.race([handle.started, new Promise<never>((_, reject) => stopping.signal.addEventListener('abort', () => reject(new Error('OWNER_STOPPING')), { once: true }))]);
+        const start = await untilStopped(handle.started);
         const consumed = await confirmStart(session, work.work_id, executionId, { ...start.receipt, ...start.invocation });
         if (consumed !== 'confirmed') { await hold(`START_RECEIPT_${consumed.toUpperCase().replaceAll('-', '_')}`, 'Start receipt was not consumable for this Execution.'); return; }
         observe(work.work_id, 'started');
         phase = 'completed';
-        const completed = await Promise.race([handle.completed, new Promise<never>((_, reject) => stopping.signal.addEventListener('abort', () => reject(new Error('OWNER_STOPPING')), { once: true }))]);
+        const completed = await untilStopped(handle.completed);
         await recordEnd(session, work.work_id, executionId, completed.status === 'success' ? 'completed' : 'failure', completed.status === 'success' ? null : completed.code);
       } finally { handle.close(); }
-      await ports.credentials.revoke(grant).catch(() => {});
+      await revoke();
       phase = 'stop';
       const stop = await stopOwnBoot('builder execution ended');
       await releaseAfterCessation(session, work.work_id, executionId, stop?.cessationConfirmed ? 'confirmed' : 'unconfirmed');

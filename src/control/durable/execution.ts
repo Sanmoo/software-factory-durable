@@ -53,7 +53,7 @@ export async function admitExecution(session: Session, input: { work_id: string;
       admission: { attemptId: input.attemptId, evaluationId: latest!.evaluationId, authorizationObservedAt: input.authorizationObservedAt, activationAttemptId: null, activationEvaluationId: null },
       dispatch: { intent: 'prepare-start-activate', phase: 'reserved', environment: null, boot: null, updatedAt: now },
       request: { ...input.request, baseCommit: null, checkout: null, promptSha256: null, skillPack: null },
-      credential: null, start: null, end: null, held: null,
+      credential: null, credentialIssuance: null, start: null, end: null, held: null,
       completion: { automatic: false, reason: 'Reviews, publication and readiness are not enabled in this Factory version; an ended Builder Execution never completes the Work automatically.' },
     };
     occupancy.held[executionId] = input.work_id;
@@ -68,13 +68,13 @@ export async function admitExecution(session: Session, input: { work_id: string;
 type Expect = { state: ExecutionView['state']; phases: ExecutionView['dispatch']['phase'][] };
 /** Phase transition only when the Execution is still the Work's current one in the expected state/phase (currency check in the commit). */
 export async function advance(session: Session, work_id: string, executionId: string, expect: Expect,
-  mutate: (execution: ExecutionView, work: WorkRecord) => void | string[]): Promise<{ kind: 'advanced'; execution: ExecutionView } | { kind: 'stale' } | { kind: 'refused'; reasons: string[] }> {
+  mutate: (execution: ExecutionView, work: WorkRecord, facts: { paused: boolean }) => void | string[]): Promise<{ kind: 'advanced'; execution: ExecutionView } | { kind: 'stale' } | { kind: 'refused'; reasons: string[] }> {
   return session.commit(async tx => {
     const document = await tx.doc(works, work_id, null);
     const work = document.work;
     const execution = work?.execution ?? null;
     if (!work || !execution || execution.executionId !== executionId || execution.state !== expect.state || !expect.phases.includes(execution.dispatch.phase)) return { kind: 'stale' as const };
-    const refused = mutate(execution, work);
+    const refused = mutate(execution, work, { paused: (await tx.doc(installation)).paused });
     if (refused?.length) return { kind: 'refused' as const, reasons: refused };
     execution.dispatch.updatedAt = new Date().toISOString();
     return { kind: 'advanced' as const, execution: JSON.parse(JSON.stringify(execution)) as ExecutionView };
@@ -90,8 +90,9 @@ export const recordPhase = (session: Session, work_id: string, executionId: stri
  * that is satisfied. Records the token-free grant metadata with the activation intent.
  */
 export const confirmActivation = (session: Session, work_id: string, executionId: string, attemptId: string, credential: BuilderGrantMetadata, promptSha256: string) =>
-  advance(session, work_id, executionId, { state: 'reserved', phases: ['booted'] }, (execution, work) => {
-    const reasons = dispatchBlockers({ impediments: work.impediments, evaluation: work.dependencies?.latest ?? null, currentAttempt: attemptId });
+  advance(session, work_id, executionId, { state: 'reserved', phases: ['booted'] }, (execution, work, facts) => {
+    const reasons = facts.paused ? ['GLOBAL_PAUSE'] : [];
+    reasons.push(...dispatchBlockers({ impediments: work.impediments, evaluation: work.dependencies?.latest ?? null, currentAttempt: attemptId }));
     if (work.dependencies?.latest?.conclusion !== 'satisfied' && !reasons.length) reasons.push('DEPENDENCIES_NOT_SATISFIED');
     if (!execution.slot.held) reasons.push('SLOT_NOT_HELD');
     if (reasons.length) return reasons;
@@ -103,6 +104,18 @@ export const confirmActivation = (session: Session, work_id: string, executionId
     history(work, 'activation-requested', executionId);
     return [];
   });
+
+/** Issuance record of the current Execution (any state): intent before the call, then outcome/metadata/revocation. Never the token. */
+export async function recordIssuance(session: Session, work_id: string, executionId: string, update: Partial<NonNullable<ExecutionView['credentialIssuance']>>) {
+  return session.commit(async tx => {
+    const document = await tx.doc(works, work_id, null);
+    const execution = document.work?.execution ?? null;
+    if (!execution || execution.executionId !== executionId) return 'stale' as const;
+    if (!execution.credentialIssuance && update.outcome !== 'requested') return 'stale' as const;
+    execution.credentialIssuance = { ...(execution.credentialIssuance ?? { requestedAt: new Date().toISOString(), outcome: 'requested', code: null, metadata: null, revocation: null }), ...update };
+    return 'recorded' as const;
+  }, BACKGROUND_CONTEXT);
+}
 
 /** "Confirmar início" (spec §3.4/5.3): the receipt of THIS Execution is consumed exactly once; a different receipt is a conflict. */
 export async function confirmStart(session: Session, work_id: string, executionId: string, receipt: { workId: string; id: string; executionId: string; invocationId: string }):

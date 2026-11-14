@@ -49,6 +49,9 @@ export type ExecutionView = {
   request: { ticket: string; repository: string; base: string; branch: string; baseCommit: string | null; checkout: string | null; promptSha256: string | null;
     skillPack: { name: string; manifestSha256: string } | null; policies: Pick<Invocation, 'skillPack' | 'modelBudget' | 'copyOutput' | 'editSourceMaxBytes'> };
   credential: BuilderGrantMetadata | null;
+  /** Durable issuance intent BEFORE the call, then its outcome, token-free metadata and revocation result: no live grant goes unrecorded. */
+  credentialIssuance: { requestedAt: string; outcome: 'requested' | 'issued' | 'failed' | 'unknown'; code: string | null;
+    metadata: BuilderGrantMetadata | null; revocation: 'revoked' | 'not-attempted' | 'unknown' | null } | null;
   start: { receiptId: string; confirmedAt: string } | null;
   end: { at: string; outcome: 'completed' | 'failure'; code: string | null; cessation: 'confirmed' | 'unconfirmed' | 'not-attempted' } | null;
   held: { code: string; phase: string; at: string; nextStep: string } | null;
