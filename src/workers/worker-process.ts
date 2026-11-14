@@ -5,7 +5,6 @@ import { connect, protocolVersion } from '../protocol/index.js';
 import { createRecords } from '../records/index.js';
 import type { ReadResult, ToolContext, ToolProjection } from '../sandbox/index.js';
 import { startWorker } from './worker-start.js';
-import { budgetFor } from './oauth-qualification.js';
 import { createQuestionSender, createSecretPublisher, deliverSchema, workerBootstrapSchema } from '../platform/host/index.js';
 import type { BuilderDirective, HandoffEvent } from './builder-handoff.js';
 
@@ -96,7 +95,9 @@ export async function run(input: unknown, parentSignal: AbortSignal, ipc?: Worke
   const parsed = workerBootstrapSchema.safeParse(input);
   if (!parsed.success) throw new Error('WORKER_BOOTSTRAP_INVALID');
   const bootstrap = parsed.data;
-  if (!('apiKey' in bootstrap.profile)) signal = AbortSignal.any([signal, AbortSignal.timeout(budgetFor(bootstrap.context.role, bootstrap.modelBudget).deadlineMs)]);
+  // No implicit clock cut (spec §4.4): an OAuth worker runs until it ends, its parent aborts it, or the Host policy gave an explicit
+  // deadline. The Execution-level clock is the repository's optional timeout, enforced by the controller.
+  if (!('apiKey' in bootstrap.profile) && bootstrap.deadlineMs !== undefined) signal = AbortSignal.any([signal, AbortSignal.timeout(bootstrap.deadlineMs)]);
   // Same explicit minimal projection as the existing closed Host launch plan.
   const { TMPDIR: temporary, XDG_CACHE_HOME: cache } = process.env;
   if (process.versions.node.split('.')[0] !== '24' || process.env.NODE_DISABLE_COMPILE_CACHE !== '1' ||
@@ -126,6 +127,7 @@ export async function run(input: unknown, parentSignal: AbortSignal, ipc?: Worke
     ...(bootstrap.copyOutput === undefined ? {} : { copyOutput: bootstrap.copyOutput }),
     ...(bootstrap.skillPack === undefined ? {} : { skillPack: bootstrap.skillPack }),
     ...(bootstrap.modelBudget === undefined ? {} : { modelBudget: bootstrap.modelBudget }),
+    ...(bootstrap.deadlineMs === undefined ? {} : { deadlineMs: bootstrap.deadlineMs }),
     ...(bootstrap.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: bootstrap.editSourceMaxBytes }),
     ...(bootstrap.handoff === undefined ? {} : { handoff: bootstrap.handoff }),
     ...(bootstrap.review === undefined ? {} : { review: bootstrap.review }) };

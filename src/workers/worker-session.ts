@@ -49,7 +49,10 @@ export async function executeSession(options: Options, invocation: Invocation, r
   const limits = budgetFor(invocation.context.role, invocation.modelBudget);
   const role = invocation.context.role;
   if (invocation.handoff !== undefined && (role !== 'builder' || !options.onHandoff)) throw new Error('WORKER_HANDOFF_UNAVAILABLE');
-  const signal = oauth ? AbortSignal.any([invocation.signal, qualificationAbort.signal, AbortSignal.timeout(limits.deadlineMs)]) : invocation.signal;
+  // No implicit clock cut (spec §4.4): only an explicit Host deadline bounds the activation, and the Execution-level clock is the
+  // repository's optional timeout enforced by the controller. `limits` still bounds requests/tools/bytes (request timeout included).
+  const deadline = invocation.deadlineMs === undefined ? [] : [AbortSignal.timeout(invocation.deadlineMs)];
+  const signal = oauth ? AbortSignal.any([invocation.signal, qualificationAbort.signal, ...deadline]) : invocation.signal;
   if (oauth && (!options.oauth || Buffer.byteLength(invocation.prompt) > limits.promptBytes)) throw new Error('WORKER_QUALIFICATION_CLOSED');
   // Explicit Factory resources only: the verified pack (guest-readable copies under /artifacts) or nothing; never a personal profile.
   const selected = invocation.skillPack !== undefined && invocation.context.role === 'builder' ? skillPacks[invocation.skillPack] : undefined;

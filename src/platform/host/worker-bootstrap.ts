@@ -23,6 +23,7 @@ const bootstrap = z.strictObject({
   // Host-selected Builder start policies (ticket 09): the Factory skill pack and the bounded Builder model budget.
   skillPack: z.enum(['factory-skills-v1', 'factory-skills-v2', 'factory-skills-v3']).optional(),
   modelBudget: z.enum(['builder-v1', 'reviewer-v1']).optional(),
+  deadlineMs: z.number().int().positive().max(86_400_000).optional(),
   // Host-derived exact guest paths of the seeded files of `skillPack` (Builder Read authority of the pack only).
   skillPackFiles: z.array(z.string().max(512).regex(/^\/artifacts\/factory\/skill-pack\/factory-skills-v[0-9]+\/[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/)
     .refine(path => !path.split('/').some(part => part === '.' || part === '..'))).min(1).max(64).readonly().optional(),
@@ -53,5 +54,5 @@ function rolePolicies(input: { context: { role: string }; copyOutput?: boolean |
     !(input.context.role !== 'builder' && input.copyOutput === true);
 }
 export const workerBootstrapSchema = bootstrap.refine(rolePolicies, 'WORKER_POLICY_ROLE_DENIED');
-export const workerLaunchSchema = bootstrap.pick({ context: true, knownSecrets: true, prompt: true, imageSourceMaxBytes: true, editSourceMaxBytes: true, copyOutput: true, selectedOutputCopies: true, skillPack: true, skillPackFiles: true, modelBudget: true, handoff: true, review: true }).extend({ profile: launchProfile }).strict().refine(rolePolicies, 'WORKER_POLICY_ROLE_DENIED');
+export const workerLaunchSchema = bootstrap.pick({ context: true, knownSecrets: true, prompt: true, imageSourceMaxBytes: true, editSourceMaxBytes: true, copyOutput: true, selectedOutputCopies: true, skillPack: true, skillPackFiles: true, modelBudget: true, deadlineMs: true, handoff: true, review: true }).extend({ profile: launchProfile }).strict().refine(rolePolicies, 'WORKER_POLICY_ROLE_DENIED');
 export type WorkerLaunch = z.infer<typeof workerLaunchSchema>;

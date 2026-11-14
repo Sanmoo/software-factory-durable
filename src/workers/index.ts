@@ -145,7 +145,7 @@ export function createWorkers(configuration?: Configuration) {
       ...(invocation.skillPack === undefined ? {} : { skillPack: invocation.skillPack }),
       // The Host (not the worker or model) derives the exact readable pack paths from the verified manifest of THIS version.
       ...(invocation.skillPack === undefined || invocation.context.role !== 'builder' ? {} : { skillPackFiles: await skillPackGuestFiles(invocation.skillPack) }),
-      ...(invocation.modelBudget === undefined ? {} : { modelBudget: invocation.modelBudget }),
+      ...(invocation.modelBudget === undefined ? {} : { modelBudget: invocation.modelBudget }), ...(invocation.deadlineMs === undefined ? {} : { deadlineMs: invocation.deadlineMs }),
       ...(invocation.imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes: invocation.imageSourceMaxBytes }),
       ...(invocation.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: invocation.editSourceMaxBytes }),
       ...(invocation.handoff === undefined ? {} : { handoff: invocation.handoff }),
@@ -154,9 +154,9 @@ export function createWorkers(configuration?: Configuration) {
     if (!request.success || invocation.signal.aborted) throw new Error('WORKER_LAUNCH_INVALID');
     if (delivery?.credential !== undefined && (request.data.context.role !== 'builder' || typeof delivery.credential.token !== 'string')) throw new Error('WORKER_LAUNCH_INVALID');
     const context = request.data.context;
-    const { imageSourceMaxBytes, editSourceMaxBytes, copyOutput, selectedOutputCopies, skillPack, skillPackFiles, modelBudget, handoff, review, ...baseRequest } = request.data;
+    const { imageSourceMaxBytes, editSourceMaxBytes, copyOutput, selectedOutputCopies, skillPack, skillPackFiles, modelBudget, deadlineMs, handoff, review, ...baseRequest } = request.data;
     const payload = { ...baseRequest, ...(handoff === undefined ? {} : { handoff: { ...handoff } }),
-      ...(review === undefined ? {} : { review: { ...review, required: [...review.required], missing: [...review.missing] } }), ...(skillPack === undefined ? {} : { skillPack }), ...(skillPackFiles === undefined ? {} : { skillPackFiles: [...skillPackFiles] }), ...(modelBudget === undefined ? {} : { modelBudget }), ...(selectedOutputCopies === undefined ? {} : { selectedOutputCopies: [...selectedOutputCopies] }), ...(copyOutput === undefined ? {} : { copyOutput }), ...(imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes }),
+      ...(review === undefined ? {} : { review: { ...review, required: [...review.required], missing: [...review.missing] } }), ...(skillPack === undefined ? {} : { skillPack }), ...(skillPackFiles === undefined ? {} : { skillPackFiles: [...skillPackFiles] }), ...(modelBudget === undefined ? {} : { modelBudget }), ...(deadlineMs === undefined ? {} : { deadlineMs }), ...(selectedOutputCopies === undefined ? {} : { selectedOutputCopies: [...selectedOutputCopies] }), ...(copyOutput === undefined ? {} : { copyOutput }), ...(imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes }),
       ...(editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes }) };
     const endpoint = await workerOwnerEndpoint(configuration.root, context);
     const channel = await connect(endpoint, { kind: 'host-boot', binding: { workId: context.workId,

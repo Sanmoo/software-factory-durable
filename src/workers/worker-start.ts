@@ -20,6 +20,9 @@ export type Invocation = { context: ToolContext; prompt: string; signal: AbortSi
   skillPack?: SkillPackId;
   /** Bounded OAuth budget instead of the 05 qualification envelope: `builder-v1` for the Builder, `reviewer-v1` for Standards/Spec. */
   modelBudget?: 'builder-v1' | 'reviewer-v1';
+  /** Explicit invocational clock bound (ticket 19): only a Host policy may set it. Absent means NO implicit cut (spec §4.4);
+   * the Execution-level clock is the repository's optional timeout, enforced by the controller. */
+  deadlineMs?: number;
   /** Builder only (ticket 12): the Host handoff tool and suspension for the Factory reviews, with the Execution's base commit. */
   handoff?: { baseCommit: string };
   /** Standards/Spec only (ticket 12): the round/attempt, handoff identity and the inputs that must be read for a clean conclusion. */
@@ -51,6 +54,7 @@ export async function startWorker(profile: ReviewerProfile, records: Awaited<Ret
     promptSha256: createHash('sha256').update(invocation.prompt).digest('hex'),
     skillPack: pack ? { id: pack.id, version: pack.version, manifestSha256: pack.manifestSha256 } : null,
     modelBudget: invocation.modelBudget ?? null,
+    deadlineMs: invocation.deadlineMs ?? null,
     handoff: invocation.handoff ? { baseCommit: invocation.handoff.baseCommit } : null,
     review: invocation.review ? { round: invocation.review.round, attempt: invocation.review.attempt, handoffIndexSha256: invocation.review.handoffIndexSha256,
       required: [...invocation.review.required], missing: [...invocation.review.missing] } : null,
