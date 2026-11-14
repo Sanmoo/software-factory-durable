@@ -76,7 +76,11 @@ async function charge(session: Session, work_id: string, limits: (repository: st
  */
 export const openCorrection = (session: Session, work_id: string, reason: string, limits: (repository: string) => Limits | undefined) =>
   charge(session, work_id, limits, 'corrections', (work, at) => {
-    if (work.correction && !work.correction.consumed) return 'already-open';
+    if (work.correction && !work.correction.consumed) {
+      // Same identity and charge, but the reason that motivated it is never silently lost.
+      if (work.correction.reason !== reason) work.history.push({ at, event: 'correction-reason-added', origin: 'controller-budget', executionId: null, detail: reason.slice(0, 200) });
+      return 'already-open';
+    }
     work.correction = { correctionId: randomUUID(), reason, openedAt: at, consumed: false };
     work.history.push({ at, event: 'correction-opened', origin: 'controller-budget', executionId: null, detail: work.correction.correctionId });
     return 'opened';

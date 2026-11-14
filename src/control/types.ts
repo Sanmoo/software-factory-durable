@@ -234,7 +234,7 @@ export type WorkView = {
       origin: 'controller-dispatch'; executionId: string; detail?: string } |
     { at: string; event: 'question-recorded' | 'question-published' | 'question-answered'; origin: 'controller-dispatch' | 'controller-publication' | 'github-comment' | 'local-cli';
       questionId: string; detail?: string } |
-    { at: string; event: 'budget-reserved' | 'budget-consumed' | 'budget-released' | 'budget-exhausted' | 'budget-granted' | 'correction-opened' | 'recovery-requested';
+    { at: string; event: 'budget-reserved' | 'budget-consumed' | 'budget-released' | 'budget-exhausted' | 'budget-granted' | 'correction-opened' | 'correction-reason-added' | 'recovery-requested';
       origin: 'controller-budget' | 'local-cli'; executionId: string | null; detail: string } |
     { at: string; event: 'timeout-reached' | 'duration-reconciled'; origin: 'controller-clock'; executionId: string; detail: string })[];
 };
