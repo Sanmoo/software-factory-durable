@@ -4,17 +4,17 @@
 
 **Blocked by:** [10: Perguntar ao operador, cessar e retomar pela fila](10-durable-questions-and-queued-resumption.md); [12: Obter Standards e Spec paralelos sobre a proposta completa](12-parallel-standards-and-spec-reviews.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
-- [ ] Cada achado registra corrigido ou não acolhido com justificativa/evidência; discordância interna não exige arbitragem por si, mas dúvida de requisito, dispensa ou aprovação exigida pela skill passa por ask user quando não há autorização concreta prévia.
-- [ ] Builder identifica gates documentados com fonte, comando/cwd e resultado real/status/log correlacionados a conteúdo e Execução; sucesso, falha, ausência e dispensa autorizada são distintos.
-- [ ] Resultado da ferramenta protegida sustenta evidência, não stdout declarado ou cópia editável; falha não resolvida, instrução faltante ou impossibilidade exige orientação explícita.
-- [ ] Proposta/contexto relevante modificado exige parecer atual e justificado dos dois revisores; novas rodadas preferem sessões compatíveis e não reutilizam aprovação antiga automaticamente.
-- [ ] Justificativa fora da proposta sem mudar contexto e commit comprovadamente idêntico ao conteúdo revisado não exigem rodada por si; correspondência e vínculo ao commit são demonstrados.
-- [ ] Controle verifica presença/correlação dos pareceres, tratamentos, gates e dispensas, sem certificar semanticamente todos os documentos nem deixar dispensa humana contornar check GitHub obrigatório.
-- [ ] Testes com agentes reais cobrem achado corrigido, não acolhimento, rodada após mudança, commit idêntico e falha/resultado perdido, sempre sem interpretar ausência de evidência como sucesso.
+- [x] Cada achado registra corrigido ou não acolhido com justificativa/evidência; discordância interna não exige arbitragem por si, mas dúvida de requisito, dispensa ou aprovação exigida pela skill passa por ask user quando não há autorização concreta prévia.
+- [x] Builder identifica gates documentados com fonte, comando/cwd e resultado real/status/log correlacionados a conteúdo e Execução; sucesso, falha, ausência e dispensa autorizada são distintos.
+- [x] Resultado da ferramenta protegida sustenta evidência, não stdout declarado ou cópia editável; falha não resolvida, instrução faltante ou impossibilidade exige orientação explícita.
+- [x] Proposta/contexto relevante modificado exige parecer atual e justificado dos dois revisores; novas rodadas preferem sessões compatíveis e não reutilizam aprovação antiga automaticamente.
+- [x] Justificativa fora da proposta sem mudar contexto e commit comprovadamente idêntico ao conteúdo revisado não exigem rodada por si; correspondência e vínculo ao commit são demonstrados.
+- [x] Controle verifica presença/correlação dos pareceres, tratamentos, gates e dispensas, sem certificar semanticamente todos os documentos nem deixar dispensa humana contornar check GitHub obrigatório.
+- [x] Testes com agentes reais cobrem achado corrigido, não acolhimento, rodada após mudança, commit idêntico e falha/resultado perdido, sempre sem interpretar ausência de evidência como sucesso.
 
 ## Referências e validação
 
@@ -25,3 +25,7 @@
 ## Autorização e limites
 
 Publicação é planejamento aprovado, não autorização de construção, uso de host/credenciais/GitHub/modelos reais, injeção de falhas ou piloto. Obter autorização pertinente antes da execução. Não alterar decisões aprovadas silenciosamente; lacuna de desenho volta ao operador. Merge e avaliação humana não são delegados aos agentes.
+
+## Answer
+
+Resolvido em 2026-11-14: tratamento de achados, gates com evidência do Host ligadas ao conteúdo atual, rodadas repetidas com isenção só para conteúdo inalterado ou commit idêntico, e verificação durável antes do fim. Gate local 1037/0; ensaio real v5 com falha real de gate, achado `requirement`, correção, revisão nova pelos dois revisores e verificação `verified`. Evidência: `docs/evidence/13-findings-treatment-and-current-content-gates.md`.

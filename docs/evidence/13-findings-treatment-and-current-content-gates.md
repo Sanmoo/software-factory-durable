@@ -280,3 +280,18 @@ falhou numa execução e passou 14/14 isolado (e nas duas execuções completas 
 
 Nota de integração: o ticket 19 removeu o prazo de relógio implícito do worker (só `deadlineMs` explícito do Host, ausente em produção); este
 ticket não adiciona prazo algum, e a receita impõe os seus próprios (60 min, 4 capturas, ≤ 8 ativações de revisor).
+
+## Ensaios reais autorizados — 2026-11-14 (supervisor)
+
+**v3** (`q13-rounds-v3`, consumida; [registro](13-real-rounds-v3-not-verified-2026-11-14.json)): o ciclo inteiro funcionou, mas a verificação final deu `not-verified`. O Builder declarou tratamentos fictícios (`findingId:"none"`) para revisores sem achados, e o Standards da r1 foi rebaixado por ler um diretório. Os dois defeitos foram corrigidos com TDD (recusa no handoff, `READ_IS_DIRECTORY`, texto do pack).
+
+**v5** (`q13-rounds-v5`, HEAD `8dd090d`, rebaseado sobre 11+19+32, pack `factory-skills-v5`; [run](13-real-rounds-run-2026-11-14.json), [inspect](13-real-rounds-inspect-2026-11-14.json)):
+
+| Rodada | Observado |
+|---|---|
+| r1 review | gate `ticket-validation` **falhou de verdade** (exit 1, saída protegida); Spec `S1` basis `requirement` (falta `## Rollback`); Standards `clean`; 0 leituras falhas |
+| r2 review | tratamento `S1 fixed` (só o achado listado, sem placeholders); **os dois revisores reavaliaram o conteúdo novo com sessões continuadas**, ambos `clean`; gate `passed`, atual |
+| r3 | isenção `identical-commit`, sem revisores (commit do conteúdo revisado) |
+| r4 | isenção de fechamento, `end` entregue |
+
+Verificação final **`verified`**, `reasons: []`: gate atual e ligada ao conteúdo final, tratamento `fixed` revisto depois da declaração, `requiredChecks: []`. Execution `ended/completed`, cessação confirmada. Diff final: `docs/FACTORY_SMOKE.md` (+13), sem push. Segredos: 0 no storage, nos Records e nas observações.

@@ -1,0 +1,1862 @@
+{
+ "execution": {
+  "executionId": "347a22c4-e4e3-4014-b63e-6fdc2bff6df0",
+  "invocationId": "builder-347a22c4-e4e3-4014-b63e-6fdc2bff6df0",
+  "mode": "initial",
+  "state": "ended",
+  "slot": {
+   "held": false,
+   "capacity": 1,
+   "reservedAt": "2026-11-14T22:59:48.819Z",
+   "releasedAt": "2026-11-14T23:03:33.039Z"
+  },
+  "admission": {
+   "attemptId": "83a19e99-453d-4732-b57b-b664132b14c5",
+   "evaluationId": "5ca524d7-cd08-4195-b8b6-1b355a447e42",
+   "authorizationObservedAt": "2026-11-14T22:59:46.792Z",
+   "activationAttemptId": "61e424ab-e895-4522-a551-d4d055aefade",
+   "activationEvaluationId": "b44afa4e-526b-46b7-aa11-969b428e2320"
+  },
+  "dispatch": {
+   "intent": "prepare-start-activate",
+   "phase": "stopped",
+   "environment": "env-9ad204ad81ee93ce8ffe6245445586b8678f126c79d2fd888b4a31621b33afeb",
+   "boot": "boot-05a8cd80-751a-4678-9c04-11d834a8058c",
+   "updatedAt": "2026-11-14T23:03:30.925Z"
+  },
+  "request": {
+   "ticket": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3",
+   "repository": "Sanmoo/java-springboot-event-sourcing",
+   "base": "main",
+   "branch": "factory/3-97e80b59",
+   "policies": {
+    "skillPack": "factory-skills-v5",
+    "modelBudget": "builder-v1",
+    "copyOutput": true,
+    "editSourceMaxBytes": 8192
+   },
+   "baseCommit": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+   "checkout": "/workspace/checkout",
+   "promptSha256": "e1c507bfb3b5c5f169d36a7b34d926459c084f5f43b1c963d3f385f5a03def7f",
+   "skillPack": {
+    "name": "factory/skill-pack/factory-skills-v5",
+    "manifestSha256": "44b7a65e7b1c7c9d2c3ded942a946dcc3efee00497a7cfb502c6fb7776645040"
+   },
+   "resume": null,
+   "scopeUpdateIds": [],
+   "session": null
+  },
+  "credential": {
+   "role": "builder",
+   "purpose": "builder-start",
+   "repository": "Sanmoo/java-springboot-event-sourcing",
+   "repositoryId": 1256893534,
+   "installationId": 177599217,
+   "permissions": {
+    "metadata": "read",
+    "contents": "read",
+    "issues": "read"
+   },
+   "issuedAt": "2026-11-14T23:00:08.709Z",
+   "expiresAt": "2026-11-15T00:00:09Z"
+  },
+  "credentialIssuance": {
+   "requestedAt": "2026-11-14T23:00:08.705Z",
+   "outcome": "issued",
+   "code": null,
+   "metadata": {
+    "role": "builder",
+    "purpose": "builder-start",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "installationId": 177599217,
+    "permissions": {
+     "metadata": "read",
+     "contents": "read",
+     "issues": "read"
+    },
+    "issuedAt": "2026-11-14T23:00:08.709Z",
+    "expiresAt": "2026-11-15T00:00:09Z"
+   },
+   "revocation": "revoked",
+   "revocationCode": "GITHUB_TOKEN_REVOKED",
+   "risk": null,
+   "revocationAttemptedAt": "2026-11-14T23:03:30.939Z"
+  },
+  "credentialRenewals": [],
+  "credentialLifecycle": {
+   "state": "withdrawn",
+   "withdrawnAt": "2026-11-14T23:03:30.935Z",
+   "reason": "ended",
+   "renewal": "enabled",
+   "renewalStop": null,
+   "workerNotice": null
+  },
+  "start": {
+   "receiptId": "24d32454-4c52-4889-875a-335121bdb1e5",
+   "confirmedAt": "2026-11-14T23:00:10.273Z"
+  },
+  "end": {
+   "at": "2026-11-14T23:03:30.925Z",
+   "outcome": "completed",
+   "code": null,
+   "cessation": "confirmed",
+   "session": {
+    "ref": "r/BajNgHUaRnicBBHYNKgFjA/w-FNyk5E/profile/sessions/2026-11-14T23-00-11-099Z_01a1dc4a-2cdb-77c3-821f-cff8acb5dfbf.jsonl",
+    "sessionId": "01a1dc4a-2cdb-77c3-821f-cff8acb5dfbf",
+    "sha256": "b722ec38d12eb089a4afdd7fb5a4d3b6fdc695dca54c7bb0b4ba8faf0cdcc7a7",
+    "bytes": 77649,
+    "format": "pi-session-jsonl-v3",
+    "profile": {
+     "sdkProfile": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+     "providerId": "openai",
+     "modelId": "gpt-6-luna",
+     "skillPack": "factory-skills-v5",
+     "tools": [
+      "ask_user",
+      "bash",
+      "edit",
+      "handoff",
+      "read",
+      "write"
+     ]
+    }
+   }
+  },
+  "held": null,
+  "completion": {
+   "automatic": false,
+   "reason": "Reviews, publication and readiness are not enabled in this Factory version; an ended Builder Execution never completes the Work automatically."
+  },
+  "charge": {
+   "kind": "none",
+   "correctionId": null,
+   "counter": null,
+   "state": "none",
+   "settledAt": null
+  },
+  "timing": {
+   "timeoutSeconds": null,
+   "clock": "controller-monotonic",
+   "origin": "dd0f3875-e63e-4302-915b-fb67e3471631",
+   "startedAt": "2026-11-14T23:00:10.273Z",
+   "lastActivity": {
+    "at": "2026-11-14T23:03:30.925Z",
+    "elapsedMs": 200651.675116,
+    "event": "ended-completed"
+   },
+   "duration": {
+    "kind": "measured",
+    "elapsedMs": 200651.675116,
+    "endedAt": "2026-11-14T23:03:30.925Z"
+   },
+   "timeout": null,
+   "overrun": "not-applicable"
+  },
+  "review": {
+   "firstRound": 1,
+   "rounds": [
+    {
+     "round": 1,
+     "attempt": 1,
+     "state": "delivered",
+     "kind": "review",
+     "closing": false,
+     "exemption": null,
+     "declarations": {
+      "treatments": [],
+      "gates": [
+       {
+        "id": "ticket-validation",
+        "source": "/artifacts/spec/v1/ticket.json#Validation",
+        "command": "cd /workspace/checkout && test -f docs/FACTORY_SMOKE.md && grep -q '^## Steps' docs/FACTORY_SMOKE.md && grep -q '^## Rollback' docs/FACTORY_SMOKE.md",
+        "cwd": "/workspace",
+        "requiredCheck": null,
+        "declared": "run",
+        "outcome": "failed",
+        "code": null,
+        "exitCode": 1,
+        "output": {
+         "workId": "97e80b59-52bc-4952-bc5f-0a7d4dbe3048",
+         "id": "63f2d30a-247a-4849-ad64-ababaffe2ba5"
+        },
+        "sequence": 12,
+        "current": true,
+        "reason": "Validation command was run and failed because the required Rollback section is deliberately absent in this first proposal, as authorized for this review-loop exercise.",
+        "authorization": null
+       }
+      ]
+     },
+     "handoff": {
+      "at": "2026-11-14T23:01:40.840Z",
+      "invocationId": "builder-347a22c4-e4e3-4014-b63e-6fdc2bff6df0",
+      "status": "captured",
+      "code": null,
+      "detail": null,
+      "summary": {
+       "version": 1,
+       "round": 1,
+       "index": "/artifacts/review/r1/index.json",
+       "indexSha256": "f2af5a00e9bd11bd63177e7cbf37e8bbdd0f4c62dc746ef0ec1a03592b9e7e1c",
+       "head": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+       "branch": "factory/3-97e80b59",
+       "base": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+       "mergeBase": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+       "counts": {
+        "entries": 1,
+        "committed": 0,
+        "staged": 0,
+        "unstaged": 0,
+        "untracked": 1,
+        "removed": 0
+       },
+       "patches": {
+        "committed": {
+         "path": "/artifacts/review/r1/committed.patch",
+         "bytes": 0,
+         "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "staged": {
+         "path": "/artifacts/review/r1/staged.patch",
+         "bytes": 0,
+         "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "unstaged": {
+         "path": "/artifacts/review/r1/unstaged.patch",
+         "bytes": 0,
+         "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+       },
+       "spec": {
+        "version": "v1",
+        "sources": "/artifacts/spec/v1/sources.json",
+        "sha256": "cc239aaef84537bb084b06f2e527883a7ed3efd1d0485be9bffc426254bc7e04"
+       },
+       "instructions": {
+        "version": "v1",
+        "sources": "/artifacts/instructions/v1/sources.json",
+        "sha256": "37807ec01b54012dbccc10797b96fa56593a8ce1731521d3071faedf7351ca26"
+       },
+       "changed": [
+        "/workspace/checkout/docs/FACTORY_SMOKE.md"
+       ],
+       "changedTruncated": false,
+       "content": {
+        "sha256": "605160601c451410eb713bc91275ee98a16323108d5c9fd04e5928d432f4db55",
+        "clean": false,
+        "headMatches": false
+       }
+      }
+     },
+     "versions": {
+      "spec": {
+       "version": "v1",
+       "sources": "/artifacts/spec/v1/sources.json",
+       "sha256": "cc239aaef84537bb084b06f2e527883a7ed3efd1d0485be9bffc426254bc7e04"
+      },
+      "instructions": {
+       "version": "v1",
+       "sources": "/artifacts/instructions/v1/sources.json",
+       "sha256": "37807ec01b54012dbccc10797b96fa56593a8ce1731521d3071faedf7351ca26"
+      },
+      "base": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+      "head": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+      "profile": {
+       "skillPack": {
+        "name": "factory/skill-pack/factory-skills-v5",
+        "manifestSha256": "44b7a65e7b1c7c9d2c3ded942a946dcc3efee00497a7cfb502c6fb7776645040"
+       },
+       "builder": {
+        "skillPack": "factory-skills-v5",
+        "modelBudget": "builder-v1",
+        "copyOutput": true,
+        "editSourceMaxBytes": 8192
+       },
+       "reviewer": {
+        "modelBudget": "reviewer-v1",
+        "imageSourceMaxBytes": 5242880
+       }
+      }
+     },
+     "identity": {
+      "before": {
+       "status": "observed",
+       "sha256": "bdefd8e1ad5bbe427cdd9464f26f2df327d68e2c0133068cc1c7c9ac260ba65a",
+       "indexSha256": "f2af5a00e9bd11bd63177e7cbf37e8bbdd0f4c62dc746ef0ec1a03592b9e7e1c",
+       "entries": 1,
+       "consistent": true,
+       "observedAt": "2026-11-14T23:01:40.839Z"
+      },
+      "after": {
+       "status": "observed",
+       "sha256": "bdefd8e1ad5bbe427cdd9464f26f2df327d68e2c0133068cc1c7c9ac260ba65a",
+       "indexSha256": "f2af5a00e9bd11bd63177e7cbf37e8bbdd0f4c62dc746ef0ec1a03592b9e7e1c",
+       "entries": 1,
+       "consistent": true,
+       "observedAt": "2026-11-14T23:02:28.829Z"
+      }
+     },
+     "reviewers": {
+      "standards": {
+       "invocationId": "standards-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r1a1",
+       "phaseId": "review-r1",
+       "promptSha256": "e1dbda4b8369a821da7a651a82ba4aece01415b6186e041d2db25cbe78061a2a",
+       "state": "ended",
+       "requestedAt": "2026-11-14T23:01:40.840Z",
+       "receiptId": "70fbdfda-5e6d-4261-94b6-51e77ad5d741",
+       "endedAt": "2026-11-14T23:02:10.047Z",
+       "opinion": {
+        "version": 1,
+        "role": "standards",
+        "round": 1,
+        "attempt": 1,
+        "invocationId": "standards-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r1a1",
+        "reference": {
+         "workId": "97e80b59-52bc-4952-bc5f-0a7d4dbe3048",
+         "id": "634f63e2-bf35-4386-972b-8ea29a5f8d1d"
+        },
+        "session": {
+         "file": "/home/sanmoo/software-factory-test/y5/r/BajNgHUaRnicBBHYNKgFjA/w-67PLIA/profile/sessions/2026-11-14T23-01-42-436Z_01a1dc4b-91a3-70a7-b1ee-f8805020f26c.jsonl",
+         "mode": "new",
+         "from": null,
+         "code": null
+        },
+        "model": {
+         "providerId": "openai",
+         "modelId": "gpt-6-luna"
+        },
+        "profile": {
+         "id": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+         "modelBudget": "reviewer-v1"
+        },
+        "input": {
+         "handoffIndexSha256": "f2af5a00e9bd11bd63177e7cbf37e8bbdd0f4c62dc746ef0ec1a03592b9e7e1c",
+         "required": [
+          "/artifacts/review/r1/index.json",
+          "/artifacts/instructions/v1/sources.json",
+          "/workspace/checkout/docs/FACTORY_SMOKE.md"
+         ],
+         "missing": []
+        },
+        "conclusion": "clean",
+        "code": null,
+        "coverage": {
+         "scope": "incremental",
+         "justification": "Read the index, all three empty patches, the complete changed file, and all preserved instruction sources; review was limited to the sole untracked documentation file.",
+         "examined": [
+          "/workspace/checkout/docs/FACTORY_SMOKE.md",
+          "/artifacts/instructions/v1/sources.json",
+          "/artifacts/instructions/v1/AGENTS.md",
+          "/artifacts/spec/v1/repo/docs/agents/issue-tracker.md",
+          "/artifacts/spec/v1/repo/docs/agents/triage-labels.md",
+          "/artifacts/spec/v1/repo/docs/agents/domain.md"
+         ]
+        },
+        "findings": [],
+        "limitations": [],
+        "hostChecks": {
+         "reads": 14,
+         "failedReads": [],
+         "requiredNotFullyRead": [],
+         "downgraded": []
+        },
+        "finalMessageSha256": "f9872d89b1fa8690e85b1db89a654b4e8e1c896ddeacd7b30699e618f9f506a4",
+        "recordedAt": "2026-11-14T23:02:09.986Z"
+       },
+       "failure": null,
+       "cessation": "completion-observed",
+       "input": {
+        "required": [
+         "/artifacts/review/r1/index.json",
+         "/artifacts/instructions/v1/sources.json",
+         "/workspace/checkout/docs/FACTORY_SMOKE.md"
+        ],
+        "missing": []
+       }
+      },
+      "spec": {
+       "invocationId": "spec-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r1a1",
+       "phaseId": "review-r1",
+       "promptSha256": "3d46535259bd3cea2405ce74369b321985f518f508f3d830ca80081344d0aae1",
+       "state": "ended",
+       "requestedAt": "2026-11-14T23:01:40.840Z",
+       "receiptId": "de13ed30-656c-40f3-bb33-4f1246b78e45",
+       "endedAt": "2026-11-14T23:02:28.820Z",
+       "opinion": {
+        "version": 1,
+        "role": "spec",
+        "round": 1,
+        "attempt": 1,
+        "invocationId": "spec-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r1a1",
+        "reference": {
+         "workId": "97e80b59-52bc-4952-bc5f-0a7d4dbe3048",
+         "id": "e2750507-5c07-4e62-a5cc-00c3ee6fb2a9"
+        },
+        "session": {
+         "file": "/home/sanmoo/software-factory-test/y5/r/BajNgHUaRnicBBHYNKgFjA/w-Q7x415/profile/sessions/2026-11-14T23-01-42-586Z_01a1dc4b-9239-761d-b5c5-925584408df0.jsonl",
+         "mode": "new",
+         "from": null,
+         "code": null
+        },
+        "model": {
+         "providerId": "openai",
+         "modelId": "gpt-6-luna"
+        },
+        "profile": {
+         "id": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+         "modelBudget": "reviewer-v1"
+        },
+        "input": {
+         "handoffIndexSha256": "f2af5a00e9bd11bd63177e7cbf37e8bbdd0f4c62dc746ef0ec1a03592b9e7e1c",
+         "required": [
+          "/artifacts/review/r1/index.json",
+          "/artifacts/spec/v1/sources.json",
+          "/workspace/checkout/docs/FACTORY_SMOKE.md"
+         ],
+         "missing": []
+        },
+        "conclusion": "findings",
+        "code": null,
+        "coverage": {
+         "scope": "broad",
+         "justification": "Read the index, all three empty patches, the complete changed file, the preserved ticket and all documents it explicitly references. The requested Rollback section is missing.",
+         "examined": [
+          "/artifacts/review/r1/index.json",
+          "/artifacts/review/r1/committed.patch",
+          "/artifacts/review/r1/staged.patch",
+          "/artifacts/review/r1/unstaged.patch",
+          "/workspace/checkout/docs/FACTORY_SMOKE.md",
+          "/artifacts/spec/v1/ticket.json",
+          "/artifacts/spec/v1/repo/docs/agents/issue-tracker.md",
+          "/artifacts/spec/v1/repo/docs/agents/triage-labels.md",
+          "/artifacts/spec/v1/repo/docs/agents/domain.md"
+         ]
+        },
+        "findings": [
+         {
+          "id": "S1",
+          "basis": "requirement",
+          "reference": "/artifacts/spec/v1/ticket.json#body",
+          "location": {
+           "path": "/workspace/checkout/docs/FACTORY_SMOKE.md",
+           "line": 10
+          },
+          "summary": "The required `## Rollback` section stating that the file can be deleted at any time without other changes is missing."
+         }
+        ],
+        "limitations": [],
+        "hostChecks": {
+         "reads": 15,
+         "failedReads": [],
+         "requiredNotFullyRead": [],
+         "downgraded": []
+        },
+        "finalMessageSha256": "8399df2d702fe54b9c577cf9d8bf610a0b2845a27db8fcc5eec9185bbf421f57",
+        "recordedAt": "2026-11-14T23:02:28.778Z"
+       },
+       "failure": null,
+       "cessation": "completion-observed",
+       "input": {
+        "required": [
+         "/artifacts/review/r1/index.json",
+         "/artifacts/spec/v1/sources.json",
+         "/workspace/checkout/docs/FACTORY_SMOKE.md"
+        ],
+        "missing": []
+       }
+      }
+     },
+     "applicability": "current",
+     "conclusion": "findings",
+     "reasons": [],
+     "concludedAt": "2026-11-14T23:02:28.830Z",
+     "delivery": {
+      "requestedAt": "2026-11-14T23:02:28.834Z",
+      "outcome": "delivered",
+      "code": null,
+      "promptSha256": "f0f7d7cad41f37c40c9a3d5d17b18261f89d27c7ed44ba9861b34692d6f79512"
+     }
+    },
+    {
+     "round": 2,
+     "attempt": 1,
+     "state": "delivered",
+     "kind": "review",
+     "closing": false,
+     "exemption": null,
+     "declarations": {
+      "treatments": [
+       {
+        "round": 1,
+        "role": "spec",
+        "findingId": "S1",
+        "outcome": "fixed",
+        "justification": "Added the required Rollback heading and stated the file can be deleted at any time without other changes, then passed the documented validation command.",
+        "evidence": "docs/FACTORY_SMOKE.md",
+        "authorization": null
+       }
+      ],
+      "gates": [
+       {
+        "id": "ticket-validation",
+        "source": "/artifacts/spec/v1/ticket.json#Validation",
+        "command": "cd /workspace/checkout && test -f docs/FACTORY_SMOKE.md && grep -q '^## Steps' docs/FACTORY_SMOKE.md && grep -q '^## Rollback' docs/FACTORY_SMOKE.md",
+        "cwd": "/workspace",
+        "requiredCheck": null,
+        "declared": "run",
+        "outcome": "passed",
+        "code": null,
+        "exitCode": 0,
+        "output": {
+         "workId": "97e80b59-52bc-4952-bc5f-0a7d4dbe3048",
+         "id": "a7ff6724-15d8-42ee-995d-d8387363e5cf"
+        },
+        "sequence": 14,
+        "current": true,
+        "reason": null,
+        "authorization": null
+       }
+      ]
+     },
+     "handoff": {
+      "at": "2026-11-14T23:02:42.321Z",
+      "invocationId": "builder-347a22c4-e4e3-4014-b63e-6fdc2bff6df0",
+      "status": "captured",
+      "code": null,
+      "detail": null,
+      "summary": {
+       "version": 1,
+       "round": 2,
+       "index": "/artifacts/review/r2/index.json",
+       "indexSha256": "e034ab07aa515ba9d1d3cd104de401e570e66eab15679ca6b4aff212e52715fb",
+       "head": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+       "branch": "factory/3-97e80b59",
+       "base": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+       "mergeBase": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+       "counts": {
+        "entries": 1,
+        "committed": 0,
+        "staged": 0,
+        "unstaged": 0,
+        "untracked": 1,
+        "removed": 0
+       },
+       "patches": {
+        "committed": {
+         "path": "/artifacts/review/r2/committed.patch",
+         "bytes": 0,
+         "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "staged": {
+         "path": "/artifacts/review/r2/staged.patch",
+         "bytes": 0,
+         "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "unstaged": {
+         "path": "/artifacts/review/r2/unstaged.patch",
+         "bytes": 0,
+         "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+       },
+       "spec": {
+        "version": "v1",
+        "sources": "/artifacts/spec/v1/sources.json",
+        "sha256": "cc239aaef84537bb084b06f2e527883a7ed3efd1d0485be9bffc426254bc7e04"
+       },
+       "instructions": {
+        "version": "v1",
+        "sources": "/artifacts/instructions/v1/sources.json",
+        "sha256": "37807ec01b54012dbccc10797b96fa56593a8ce1731521d3071faedf7351ca26"
+       },
+       "changed": [
+        "/workspace/checkout/docs/FACTORY_SMOKE.md"
+       ],
+       "changedTruncated": false,
+       "content": {
+        "sha256": "ad853efa30910bd1dadb512c9243af927207768d336d5d0ca86356973021f92a",
+        "clean": false,
+        "headMatches": false
+       }
+      }
+     },
+     "versions": {
+      "spec": {
+       "version": "v1",
+       "sources": "/artifacts/spec/v1/sources.json",
+       "sha256": "cc239aaef84537bb084b06f2e527883a7ed3efd1d0485be9bffc426254bc7e04"
+      },
+      "instructions": {
+       "version": "v1",
+       "sources": "/artifacts/instructions/v1/sources.json",
+       "sha256": "37807ec01b54012dbccc10797b96fa56593a8ce1731521d3071faedf7351ca26"
+      },
+      "base": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+      "head": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+      "profile": {
+       "skillPack": {
+        "name": "factory/skill-pack/factory-skills-v5",
+        "manifestSha256": "44b7a65e7b1c7c9d2c3ded942a946dcc3efee00497a7cfb502c6fb7776645040"
+       },
+       "builder": {
+        "skillPack": "factory-skills-v5",
+        "modelBudget": "builder-v1",
+        "copyOutput": true,
+        "editSourceMaxBytes": 8192
+       },
+       "reviewer": {
+        "modelBudget": "reviewer-v1",
+        "imageSourceMaxBytes": 5242880
+       }
+      }
+     },
+     "identity": {
+      "before": {
+       "status": "observed",
+       "sha256": "fff6b46e254d0661339800b0c648aa47f5810d1e10b2e8c0192ab6c6414246b4",
+       "indexSha256": "e034ab07aa515ba9d1d3cd104de401e570e66eab15679ca6b4aff212e52715fb",
+       "entries": 1,
+       "consistent": true,
+       "observedAt": "2026-11-14T23:02:42.320Z"
+      },
+      "after": {
+       "status": "observed",
+       "sha256": "fff6b46e254d0661339800b0c648aa47f5810d1e10b2e8c0192ab6c6414246b4",
+       "indexSha256": "e034ab07aa515ba9d1d3cd104de401e570e66eab15679ca6b4aff212e52715fb",
+       "entries": 1,
+       "consistent": true,
+       "observedAt": "2026-11-14T23:03:13.907Z"
+      }
+     },
+     "reviewers": {
+      "standards": {
+       "invocationId": "standards-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r2a1",
+       "phaseId": "review-r2",
+       "promptSha256": "d8f5239ef20fc697e8710ceaf0d6955fbfb49afdc507246ac16df82486bd6945",
+       "state": "ended",
+       "requestedAt": "2026-11-14T23:02:42.321Z",
+       "receiptId": "6abc8892-cb3b-4235-857c-92682dbc39d8",
+       "endedAt": "2026-11-14T23:03:02.145Z",
+       "opinion": {
+        "version": 1,
+        "role": "standards",
+        "round": 2,
+        "attempt": 1,
+        "invocationId": "standards-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r2a1",
+        "reference": {
+         "workId": "97e80b59-52bc-4952-bc5f-0a7d4dbe3048",
+         "id": "739d52bf-06f6-4270-b64d-428721fd2789"
+        },
+        "session": {
+         "file": "/home/sanmoo/software-factory-test/y5/r/BajNgHUaRnicBBHYNKgFjA/w-Qx74el/profile/sessions/2026-11-14T23-01-42-436Z_01a1dc4b-91a3-70a7-b1ee-f8805020f26c.jsonl",
+         "mode": "continued",
+         "from": "/home/sanmoo/software-factory-test/y5/r/BajNgHUaRnicBBHYNKgFjA/w-67PLIA/profile/sessions/2026-11-14T23-01-42-436Z_01a1dc4b-91a3-70a7-b1ee-f8805020f26c.jsonl",
+         "code": null
+        },
+        "model": {
+         "providerId": "openai",
+         "modelId": "gpt-6-luna"
+        },
+        "profile": {
+         "id": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+         "modelBudget": "reviewer-v1"
+        },
+        "input": {
+         "handoffIndexSha256": "e034ab07aa515ba9d1d3cd104de401e570e66eab15679ca6b4aff212e52715fb",
+         "required": [
+          "/artifacts/review/r2/index.json",
+          "/artifacts/instructions/v1/sources.json",
+          "/workspace/checkout/docs/FACTORY_SMOKE.md"
+         ],
+         "missing": []
+        },
+        "conclusion": "clean",
+        "code": null,
+        "coverage": {
+         "scope": "incremental",
+         "justification": "Read the index, all three empty patches, the complete changed file, and every preserved instruction source; the proposal contains only the listed untracked documentation file.",
+         "examined": [
+          "/workspace/checkout/docs/FACTORY_SMOKE.md",
+          "/artifacts/instructions/v1/sources.json",
+          "/artifacts/instructions/v1/AGENTS.md",
+          "/artifacts/spec/v1/repo/docs/agents/issue-tracker.md",
+          "/artifacts/spec/v1/repo/docs/agents/triage-labels.md",
+          "/artifacts/spec/v1/repo/docs/agents/domain.md"
+         ]
+        },
+        "findings": [],
+        "limitations": [],
+        "hostChecks": {
+         "reads": 10,
+         "failedReads": [],
+         "requiredNotFullyRead": [],
+         "downgraded": []
+        },
+        "finalMessageSha256": "7444c08101bc3e1642b2c1d4494d92c405829a20c3df09ac8bfc55fed374d6f0",
+        "recordedAt": "2026-11-14T23:03:02.099Z"
+       },
+       "failure": null,
+       "cessation": "completion-observed",
+       "input": {
+        "required": [
+         "/artifacts/review/r2/index.json",
+         "/artifacts/instructions/v1/sources.json",
+         "/workspace/checkout/docs/FACTORY_SMOKE.md"
+        ],
+        "missing": []
+       }
+      },
+      "spec": {
+       "invocationId": "spec-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r2a1",
+       "phaseId": "review-r2",
+       "promptSha256": "f453400d2c600c718081c71bd64036b7b3461480a5c9f5eb39e67f3f6850f68c",
+       "state": "ended",
+       "requestedAt": "2026-11-14T23:02:42.321Z",
+       "receiptId": "0c23af99-98e8-43e2-8817-1150ea52aed1",
+       "endedAt": "2026-11-14T23:03:13.895Z",
+       "opinion": {
+        "version": 1,
+        "role": "spec",
+        "round": 2,
+        "attempt": 1,
+        "invocationId": "spec-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r2a1",
+        "reference": {
+         "workId": "97e80b59-52bc-4952-bc5f-0a7d4dbe3048",
+         "id": "25baceca-8b9d-461f-8df1-68e0777897a2"
+        },
+        "session": {
+         "file": "/home/sanmoo/software-factory-test/y5/r/BajNgHUaRnicBBHYNKgFjA/w-WgJjox/profile/sessions/2026-11-14T23-01-42-586Z_01a1dc4b-9239-761d-b5c5-925584408df0.jsonl",
+         "mode": "continued",
+         "from": "/home/sanmoo/software-factory-test/y5/r/BajNgHUaRnicBBHYNKgFjA/w-Q7x415/profile/sessions/2026-11-14T23-01-42-586Z_01a1dc4b-9239-761d-b5c5-925584408df0.jsonl",
+         "code": null
+        },
+        "model": {
+         "providerId": "openai",
+         "modelId": "gpt-6-luna"
+        },
+        "profile": {
+         "id": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+         "modelBudget": "reviewer-v1"
+        },
+        "input": {
+         "handoffIndexSha256": "e034ab07aa515ba9d1d3cd104de401e570e66eab15679ca6b4aff212e52715fb",
+         "required": [
+          "/artifacts/review/r2/index.json",
+          "/artifacts/spec/v1/sources.json",
+          "/workspace/checkout/docs/FACTORY_SMOKE.md"
+         ],
+         "missing": []
+        },
+        "conclusion": "clean",
+        "code": null,
+        "coverage": {
+         "scope": "broad",
+         "justification": "Read the index, all three empty patches, the complete changed file, the preserved ticket, and all documents it explicitly references. The file has the requested title and paragraph, exactly three numbered steps, and the rollback statement.",
+         "examined": [
+          "/artifacts/review/r2/index.json",
+          "/artifacts/review/r2/committed.patch",
+          "/artifacts/review/r2/staged.patch",
+          "/artifacts/review/r2/unstaged.patch",
+          "/workspace/checkout/docs/FACTORY_SMOKE.md",
+          "/artifacts/spec/v1/sources.json",
+          "/artifacts/spec/v1/ticket.json",
+          "/artifacts/spec/v1/repo/docs/agents/issue-tracker.md",
+          "/artifacts/spec/v1/repo/docs/agents/triage-labels.md",
+          "/artifacts/spec/v1/repo/docs/agents/domain.md"
+         ]
+        },
+        "findings": [],
+        "limitations": [],
+        "hostChecks": {
+         "reads": 10,
+         "failedReads": [],
+         "requiredNotFullyRead": [],
+         "downgraded": []
+        },
+        "finalMessageSha256": "ec8da893031cf9161f7d207ff6e494f6ca95a4e23901e15601124dc8952bdc2a",
+        "recordedAt": "2026-11-14T23:03:13.847Z"
+       },
+       "failure": null,
+       "cessation": "completion-observed",
+       "input": {
+        "required": [
+         "/artifacts/review/r2/index.json",
+         "/artifacts/spec/v1/sources.json",
+         "/workspace/checkout/docs/FACTORY_SMOKE.md"
+        ],
+        "missing": []
+       }
+      }
+     },
+     "applicability": "current",
+     "conclusion": "clean",
+     "reasons": [],
+     "concludedAt": "2026-11-14T23:03:13.907Z",
+     "delivery": {
+      "requestedAt": "2026-11-14T23:03:13.911Z",
+      "outcome": "delivered",
+      "code": null,
+      "promptSha256": "c955583daebf06f085462a9daf72295c14ccb73ea832b55b7daf8a789e2150e2"
+     }
+    },
+    {
+     "round": 3,
+     "attempt": 1,
+     "state": "delivered",
+     "kind": "exemption",
+     "closing": false,
+     "exemption": {
+      "kind": "identical-commit",
+      "reviewedRound": 2,
+      "head": "71621d0ecb48366a80bebb7badf4b0fe0803a925",
+      "reviewedHead": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+      "contentSha256": "ad853efa30910bd1dadb512c9243af927207768d336d5d0ca86356973021f92a"
+     },
+     "declarations": {
+      "treatments": [],
+      "gates": [
+       {
+        "id": "ticket-validation",
+        "source": "/artifacts/spec/v1/ticket.json#Validation",
+        "command": "cd /workspace/checkout && test -f docs/FACTORY_SMOKE.md && grep -q '^## Steps' docs/FACTORY_SMOKE.md && grep -q '^## Rollback' docs/FACTORY_SMOKE.md",
+        "cwd": "/workspace",
+        "requiredCheck": null,
+        "declared": "run",
+        "outcome": "passed",
+        "code": null,
+        "exitCode": 0,
+        "output": {
+         "workId": "97e80b59-52bc-4952-bc5f-0a7d4dbe3048",
+         "id": "a7ff6724-15d8-42ee-995d-d8387363e5cf"
+        },
+        "sequence": 14,
+        "current": true,
+        "reason": null,
+        "authorization": null
+       }
+      ]
+     },
+     "handoff": {
+      "at": "2026-11-14T23:03:25.142Z",
+      "invocationId": "builder-347a22c4-e4e3-4014-b63e-6fdc2bff6df0",
+      "status": "captured",
+      "code": null,
+      "detail": null,
+      "summary": {
+       "version": 1,
+       "round": 3,
+       "index": "/artifacts/review/r3/index.json",
+       "indexSha256": "919c430ef504b594bdf56bafb83aa31e17e1ecdd3bf4a2d6c485dc7382a51da0",
+       "head": "71621d0ecb48366a80bebb7badf4b0fe0803a925",
+       "branch": "factory/3-97e80b59",
+       "base": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+       "mergeBase": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+       "counts": {
+        "entries": 1,
+        "committed": 1,
+        "staged": 0,
+        "unstaged": 0,
+        "untracked": 0,
+        "removed": 0
+       },
+       "patches": {
+        "committed": {
+         "path": "/artifacts/review/r3/committed.patch",
+         "bytes": 372,
+         "sha256": "3b0232c97f8341a30781a27d31db7a3a0324c3a0066b7d3642be83b2c979e692"
+        },
+        "staged": {
+         "path": "/artifacts/review/r3/staged.patch",
+         "bytes": 0,
+         "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "unstaged": {
+         "path": "/artifacts/review/r3/unstaged.patch",
+         "bytes": 0,
+         "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+       },
+       "spec": {
+        "version": "v1",
+        "sources": "/artifacts/spec/v1/sources.json",
+        "sha256": "cc239aaef84537bb084b06f2e527883a7ed3efd1d0485be9bffc426254bc7e04"
+       },
+       "instructions": {
+        "version": "v1",
+        "sources": "/artifacts/instructions/v1/sources.json",
+        "sha256": "37807ec01b54012dbccc10797b96fa56593a8ce1731521d3071faedf7351ca26"
+       },
+       "changed": [
+        "/workspace/checkout/docs/FACTORY_SMOKE.md"
+       ],
+       "changedTruncated": false,
+       "content": {
+        "sha256": "ad853efa30910bd1dadb512c9243af927207768d336d5d0ca86356973021f92a",
+        "clean": true,
+        "headMatches": true
+       }
+      }
+     },
+     "versions": {
+      "spec": {
+       "version": "v1",
+       "sources": "/artifacts/spec/v1/sources.json",
+       "sha256": "cc239aaef84537bb084b06f2e527883a7ed3efd1d0485be9bffc426254bc7e04"
+      },
+      "instructions": {
+       "version": "v1",
+       "sources": "/artifacts/instructions/v1/sources.json",
+       "sha256": "37807ec01b54012dbccc10797b96fa56593a8ce1731521d3071faedf7351ca26"
+      },
+      "base": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+      "head": "71621d0ecb48366a80bebb7badf4b0fe0803a925",
+      "profile": {
+       "skillPack": {
+        "name": "factory/skill-pack/factory-skills-v5",
+        "manifestSha256": "44b7a65e7b1c7c9d2c3ded942a946dcc3efee00497a7cfb502c6fb7776645040"
+       },
+       "builder": {
+        "skillPack": "factory-skills-v5",
+        "modelBudget": "builder-v1",
+        "copyOutput": true,
+        "editSourceMaxBytes": 8192
+       },
+       "reviewer": {
+        "modelBudget": "reviewer-v1",
+        "imageSourceMaxBytes": 5242880
+       }
+      }
+     },
+     "identity": {
+      "before": {
+       "status": "observed",
+       "sha256": "18b3c21156fc453bac43dfa462667040665446ee0544f14bfce568cc6df674ec",
+       "indexSha256": "919c430ef504b594bdf56bafb83aa31e17e1ecdd3bf4a2d6c485dc7382a51da0",
+       "entries": 1,
+       "consistent": true,
+       "observedAt": "2026-11-14T23:03:25.142Z"
+      },
+      "after": {
+       "status": "observed",
+       "sha256": "18b3c21156fc453bac43dfa462667040665446ee0544f14bfce568cc6df674ec",
+       "indexSha256": "919c430ef504b594bdf56bafb83aa31e17e1ecdd3bf4a2d6c485dc7382a51da0",
+       "entries": 1,
+       "consistent": true,
+       "observedAt": "2026-11-14T23:03:25.142Z"
+      }
+     },
+     "reviewers": {
+      "standards": {
+       "invocationId": "standards-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r3a1",
+       "phaseId": "review-r3",
+       "promptSha256": "",
+       "state": "not-required",
+       "requestedAt": "2026-11-14T23:03:25.142Z",
+       "receiptId": null,
+       "endedAt": "2026-11-14T23:03:25.142Z",
+       "opinion": null,
+       "failure": null,
+       "cessation": "never-started",
+       "input": {
+        "required": [],
+        "missing": []
+       }
+      },
+      "spec": {
+       "invocationId": "spec-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r3a1",
+       "phaseId": "review-r3",
+       "promptSha256": "",
+       "state": "not-required",
+       "requestedAt": "2026-11-14T23:03:25.142Z",
+       "receiptId": null,
+       "endedAt": "2026-11-14T23:03:25.142Z",
+       "opinion": null,
+       "failure": null,
+       "cessation": "never-started",
+       "input": {
+        "required": [],
+        "missing": []
+       }
+      }
+     },
+     "applicability": "current",
+     "conclusion": "clean",
+     "reasons": [
+      "EXEMPT_IDENTICAL_COMMIT"
+     ],
+     "concludedAt": "2026-11-14T23:03:25.142Z",
+     "delivery": {
+      "requestedAt": "2026-11-14T23:03:25.152Z",
+      "outcome": "delivered",
+      "code": null,
+      "promptSha256": "a593d98cadc8e791a3e8094e9b20977cbe8d6fa7be4597294b5a2377cae2986d"
+     }
+    },
+    {
+     "round": 4,
+     "attempt": 1,
+     "state": "delivered",
+     "kind": "exemption",
+     "closing": true,
+     "exemption": {
+      "kind": "identical-commit",
+      "reviewedRound": 2,
+      "head": "71621d0ecb48366a80bebb7badf4b0fe0803a925",
+      "reviewedHead": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+      "contentSha256": "ad853efa30910bd1dadb512c9243af927207768d336d5d0ca86356973021f92a"
+     },
+     "declarations": null,
+     "handoff": {
+      "at": "2026-11-14T23:03:30.893Z",
+      "invocationId": "builder-347a22c4-e4e3-4014-b63e-6fdc2bff6df0",
+      "status": "captured",
+      "code": null,
+      "detail": null,
+      "summary": {
+       "version": 1,
+       "round": 4,
+       "index": "/artifacts/review/r4/index.json",
+       "indexSha256": "57e1c41acfdccaafeb404ed3b3ed4ece4262d03b03ae36d163fd3fb97f3a7654",
+       "head": "71621d0ecb48366a80bebb7badf4b0fe0803a925",
+       "branch": "factory/3-97e80b59",
+       "base": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+       "mergeBase": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+       "counts": {
+        "entries": 1,
+        "committed": 1,
+        "staged": 0,
+        "unstaged": 0,
+        "untracked": 0,
+        "removed": 0
+       },
+       "patches": {
+        "committed": {
+         "path": "/artifacts/review/r4/committed.patch",
+         "bytes": 372,
+         "sha256": "3b0232c97f8341a30781a27d31db7a3a0324c3a0066b7d3642be83b2c979e692"
+        },
+        "staged": {
+         "path": "/artifacts/review/r4/staged.patch",
+         "bytes": 0,
+         "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "unstaged": {
+         "path": "/artifacts/review/r4/unstaged.patch",
+         "bytes": 0,
+         "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+       },
+       "spec": {
+        "version": "v1",
+        "sources": "/artifacts/spec/v1/sources.json",
+        "sha256": "cc239aaef84537bb084b06f2e527883a7ed3efd1d0485be9bffc426254bc7e04"
+       },
+       "instructions": {
+        "version": "v1",
+        "sources": "/artifacts/instructions/v1/sources.json",
+        "sha256": "37807ec01b54012dbccc10797b96fa56593a8ce1731521d3071faedf7351ca26"
+       },
+       "changed": [
+        "/workspace/checkout/docs/FACTORY_SMOKE.md"
+       ],
+       "changedTruncated": false,
+       "content": {
+        "sha256": "ad853efa30910bd1dadb512c9243af927207768d336d5d0ca86356973021f92a",
+        "clean": true,
+        "headMatches": true
+       }
+      }
+     },
+     "versions": {
+      "spec": {
+       "version": "v1",
+       "sources": "/artifacts/spec/v1/sources.json",
+       "sha256": "cc239aaef84537bb084b06f2e527883a7ed3efd1d0485be9bffc426254bc7e04"
+      },
+      "instructions": {
+       "version": "v1",
+       "sources": "/artifacts/instructions/v1/sources.json",
+       "sha256": "37807ec01b54012dbccc10797b96fa56593a8ce1731521d3071faedf7351ca26"
+      },
+      "base": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+      "head": "71621d0ecb48366a80bebb7badf4b0fe0803a925",
+      "profile": {
+       "skillPack": {
+        "name": "factory/skill-pack/factory-skills-v5",
+        "manifestSha256": "44b7a65e7b1c7c9d2c3ded942a946dcc3efee00497a7cfb502c6fb7776645040"
+       },
+       "builder": {
+        "skillPack": "factory-skills-v5",
+        "modelBudget": "builder-v1",
+        "copyOutput": true,
+        "editSourceMaxBytes": 8192
+       },
+       "reviewer": {
+        "modelBudget": "reviewer-v1",
+        "imageSourceMaxBytes": 5242880
+       }
+      }
+     },
+     "identity": {
+      "before": {
+       "status": "observed",
+       "sha256": "78f2428ceb578c4bdb3aaa5223ff8f5eee62ca318e208f53379111bd9f016396",
+       "indexSha256": "57e1c41acfdccaafeb404ed3b3ed4ece4262d03b03ae36d163fd3fb97f3a7654",
+       "entries": 1,
+       "consistent": true,
+       "observedAt": "2026-11-14T23:03:30.893Z"
+      },
+      "after": {
+       "status": "observed",
+       "sha256": "78f2428ceb578c4bdb3aaa5223ff8f5eee62ca318e208f53379111bd9f016396",
+       "indexSha256": "57e1c41acfdccaafeb404ed3b3ed4ece4262d03b03ae36d163fd3fb97f3a7654",
+       "entries": 1,
+       "consistent": true,
+       "observedAt": "2026-11-14T23:03:30.893Z"
+      }
+     },
+     "reviewers": {
+      "standards": {
+       "invocationId": "standards-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r4a1",
+       "phaseId": "review-r4",
+       "promptSha256": "",
+       "state": "not-required",
+       "requestedAt": "2026-11-14T23:03:30.893Z",
+       "receiptId": null,
+       "endedAt": "2026-11-14T23:03:30.893Z",
+       "opinion": null,
+       "failure": null,
+       "cessation": "never-started",
+       "input": {
+        "required": [],
+        "missing": []
+       }
+      },
+      "spec": {
+       "invocationId": "spec-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r4a1",
+       "phaseId": "review-r4",
+       "promptSha256": "",
+       "state": "not-required",
+       "requestedAt": "2026-11-14T23:03:30.893Z",
+       "receiptId": null,
+       "endedAt": "2026-11-14T23:03:30.893Z",
+       "opinion": null,
+       "failure": null,
+       "cessation": "never-started",
+       "input": {
+        "required": [],
+        "missing": []
+       }
+      }
+     },
+     "applicability": "current",
+     "conclusion": "clean",
+     "reasons": [
+      "EXEMPT_IDENTICAL_COMMIT"
+     ],
+     "concludedAt": "2026-11-14T23:03:30.893Z",
+     "delivery": {
+      "requestedAt": "2026-11-14T23:03:30.902Z",
+      "outcome": "delivered",
+      "code": null,
+      "promptSha256": "08747934971cb52e5b207bb771f20e77d4efcb5452945ad90f938053035ac91e"
+     }
+    }
+   ],
+   "verification": {
+    "at": "2026-11-14T23:03:30.921Z",
+    "status": "verified",
+    "reasons": [],
+    "reviewedRound": 2,
+    "finalRound": 4,
+    "contentSha256": "ad853efa30910bd1dadb512c9243af927207768d336d5d0ca86356973021f92a",
+    "applicability": {
+     "kind": "identical-commit",
+     "head": "71621d0ecb48366a80bebb7badf4b0fe0803a925",
+     "reviewedHead": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c"
+    },
+    "gates": [
+     {
+      "id": "ticket-validation",
+      "outcome": "passed",
+      "current": true,
+      "boundToFinalContent": true,
+      "requiredCheck": null
+     }
+    ],
+    "treatments": [
+     {
+      "round": 1,
+      "role": "spec",
+      "findingId": "S1",
+      "outcome": "fixed"
+     }
+    ],
+    "requiredChecks": []
+   }
+  }
+ },
+ "receipts": {
+  "builder": "{\"version\":1,\"context\":{\"workId\":\"97e80b59-52bc-4952-bc5f-0a7d4dbe3048\",\"executionId\":\"347a22c4-e4e3-4014-b63e-6fdc2bff6df0\",\"invocationId\":\"builder-347a22c4-e4e3-4014-b63e-6fdc2bff6df0\",\"role\":\"builder\",\"environmentRef\":\"env-9ad204ad81ee93ce8ffe6245445586b8678f126c79d2fd888b4a31621b33afeb\",\"bootRef\":\"boot-05a8cd80-751a-4678-9c04-11d834a8058c\",\"callId\":\"worker-start\"},\"recordedAt\":\"2026-11-14T23:00:10.252Z\",\"event\":{\"version\":1,\"kind\":\"worker-start\",\"suppliedContext\":{\"workId\":\"97e80b59-52bc-4952-bc5f-0a7d4dbe3048\",\"executionId\":\"347a22c4-e4e3-4014-b63e-6fdc2bff6df0\",\"invocationId\":\"builder-347a22c4-e4e3-4014-b63e-6fdc2bff6df0\",\"role\":\"builder\",\"environmentRef\":\"env-9ad204ad81ee93ce8ffe6245445586b8678f126c79d2fd888b4a31621b33afeb\",\"bootRef\":\"boot-05a8cd80-751a-4678-9c04-11d834a8058c\",\"phaseId\":\"builder-initial\"},\"phaseId\":\"builder-initial\",\"profile\":{\"id\":\"factory-development-pi-1.5.2-read-async-bash-lexical-v3\",\"version\":\"1.5.2\",\"integrity\":\"sha512-mUWI04rqF1Vd/m1q+Ps1XeWsTXEVvRUnsmRa83I3Dzua0Tx5bYS93imeqtIfrXf7PkkaR6ERz+AuQhIJlom5yA==\",\"upstreamSHA256\":\"e6159de5e4d94ae22968b6524237ef3d4f0374a107e2321ed5c29e93d66c8efc\",\"upstreamTreeSHA256\":\"7d0961cce25f6c802b22aaa028206cd610de386442d2e6b732d71367ef006391\",\"patchSHA256\":\"5e45a7c2953db293a14db0138bb31f8ac9e95eb13512afd42f1f49b77c98e066\",\"resultSHA256\":\"06867a067ebbadca2e06f75ccb4e682cd7e37b9683d41a71562f770b3105a209\",\"asyncPatchSHA256\":\"1ee38f2bdb71480b5b6206e72dbed32ac9214acbe0afe9b7e5137ea8f63cdc1e\",\"candidatePatchSHA256\":\"fd85bbd3c22fff3cb90dd990cb2608f18884d15dcd3820fb2f790b6e42a4dd01\",\"candidateManifestSHA256\":\"b6aaa5391d251867e41e8fc80973a1da79c7df3e38cdd18d11e705d939809b69\",\"lexicalPatchSHA256\":\"e3e88f8e6a53c9b58164c85c9866cfcf5a31b9fd415fdad7ce136976d8fd96d0\",\"lexicalCandidateManifestSHA256\":\"923d916bae558e6d21978593b2effb716dec80398bb5b0a66271fefcfc0f42a2\"},\"providerId\":\"openai\",\"modelId\":\"gpt-6-luna\",\"profileDirectory\":\"/home/sanmoo/software-factory-test/y5/r/BajNgHUaRnicBBHYNKgFjA/w-FNyk5E/profile\",\"promptSha256\":\"e1c507bfb3b5c5f169d36a7b34d926459c084f5f43b1c963d3f385f5a03def7f\",\"skillPack\":{\"id\":\"factory-skills-v5\",\"version\":\"5.0.0\",\"manifestSha256\":\"44b7a65e7b1c7c9d2c3ded942a946dcc3efee00497a7cfb502c6fb7776645040\"},\"modelBudget\":\"builder-v1\",\"deadlineMs\":null,\"handoff\":{\"baseCommit\":\"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\"},\"session\":{\"format\":\"pi-session-jsonl-v3\",\"mode\":\"new\"},\"review\":null,\"startedAt\":\"2026-11-14T23:00:10.249Z\",\"observedProcess\":{\"pid\":2030038,\"parentPid\":2029805,\"uid\":1000,\"executable\":\"/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node\",\"nodeVersion\":\"24.21.0\",\"timeOrigin\":1794697210110.404,\"observedAt\":\"2026-11-14T23:00:10.250Z\"}}}"
+ },
+ "rounds": [
+  {
+   "round": 1,
+   "kind": "review",
+   "closing": false,
+   "receipts": {
+    "standards": "{\"version\":1,\"context\":{\"workId\":\"97e80b59-52bc-4952-bc5f-0a7d4dbe3048\",\"executionId\":\"347a22c4-e4e3-4014-b63e-6fdc2bff6df0\",\"invocationId\":\"standards-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r1a1\",\"role\":\"standards\",\"environmentRef\":\"env-9ad204ad81ee93ce8ffe6245445586b8678f126c79d2fd888b4a31621b33afeb\",\"bootRef\":\"boot-05a8cd80-751a-4678-9c04-11d834a8058c\",\"callId\":\"worker-start\"},\"recordedAt\":\"2026-11-14T23:01:41.160Z\",\"event\":{\"version\":1,\"kind\":\"worker-start\",\"suppliedContext\":{\"workId\":\"97e80b59-52bc-4952-bc5f-0a7d4dbe3048\",\"executionId\":\"347a22c4-e4e3-4014-b63e-6fdc2bff6df0\",\"invocationId\":\"standards-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r1a1\",\"role\":\"standards\",\"environmentRef\":\"env-9ad204ad81ee93ce8ffe6245445586b8678f126c79d2fd888b4a31621b33afeb\",\"bootRef\":\"boot-05a8cd80-751a-4678-9c04-11d834a8058c\",\"phaseId\":\"review-r1\"},\"phaseId\":\"review-r1\",\"profile\":{\"id\":\"factory-development-pi-1.5.2-read-async-bash-lexical-v3\",\"version\":\"1.5.2\",\"integrity\":\"sha512-mUWI04rqF1Vd/m1q+Ps1XeWsTXEVvRUnsmRa83I3Dzua0Tx5bYS93imeqtIfrXf7PkkaR6ERz+AuQhIJlom5yA==\",\"upstreamSHA256\":\"e6159de5e4d94ae22968b6524237ef3d4f0374a107e2321ed5c29e93d66c8efc\",\"upstreamTreeSHA256\":\"7d0961cce25f6c802b22aaa028206cd610de386442d2e6b732d71367ef006391\",\"patchSHA256\":\"5e45a7c2953db293a14db0138bb31f8ac9e95eb13512afd42f1f49b77c98e066\",\"resultSHA256\":\"06867a067ebbadca2e06f75ccb4e682cd7e37b9683d41a71562f770b3105a209\",\"asyncPatchSHA256\":\"1ee38f2bdb71480b5b6206e72dbed32ac9214acbe0afe9b7e5137ea8f63cdc1e\",\"candidatePatchSHA256\":\"fd85bbd3c22fff3cb90dd990cb2608f18884d15dcd3820fb2f790b6e42a4dd01\",\"candidateManifestSHA256\":\"b6aaa5391d251867e41e8fc80973a1da79c7df3e38cdd18d11e705d939809b69\",\"lexicalPatchSHA256\":\"e3e88f8e6a53c9b58164c85c9866cfcf5a31b9fd415fdad7ce136976d8fd96d0\",\"lexicalCandidateManifestSHA256\":\"923d916bae558e6d21978593b2effb716dec80398bb5b0a66271fefcfc0f42a2\"},\"providerId\":\"openai\",\"modelId\":\"gpt-6-luna\",\"profileDirectory\":\"/home/sanmoo/software-factory-test/y5/r/BajNgHUaRnicBBHYNKgFjA/w-67PLIA/profile\",\"promptSha256\":\"e1dbda4b8369a821da7a651a82ba4aece01415b6186e041d2db25cbe78061a2a\",\"skillPack\":null,\"modelBudget\":\"reviewer-v1\",\"deadlineMs\":null,\"handoff\":null,\"session\":{\"format\":\"pi-session-jsonl-v3\",\"mode\":\"new\"},\"review\":{\"round\":1,\"attempt\":1,\"handoffIndexSha256\":\"f2af5a00e9bd11bd63177e7cbf37e8bbdd0f4c62dc746ef0ec1a03592b9e7e1c\",\"required\":[\"/artifacts/review/r1/index.json\",\"/artifacts/instructions/v1/sources.json\",\"/workspace/checkout/docs/FACTORY_SMOKE.md\"],\"missing\":[]},\"startedAt\":\"2026-11-14T23:01:41.153Z\",\"observedProcess\":{\"pid\":2032390,\"parentPid\":2029805,\"uid\":1000,\"executable\":\"/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node\",\"nodeVersion\":\"24.21.0\",\"timeOrigin\":1794697300891.735,\"observedAt\":\"2026-11-14T23:01:41.155Z\"}}}",
+    "spec": "{\"version\":1,\"context\":{\"workId\":\"97e80b59-52bc-4952-bc5f-0a7d4dbe3048\",\"executionId\":\"347a22c4-e4e3-4014-b63e-6fdc2bff6df0\",\"invocationId\":\"spec-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r1a1\",\"role\":\"spec\",\"environmentRef\":\"env-9ad204ad81ee93ce8ffe6245445586b8678f126c79d2fd888b4a31621b33afeb\",\"bootRef\":\"boot-05a8cd80-751a-4678-9c04-11d834a8058c\",\"callId\":\"worker-start\"},\"recordedAt\":\"2026-11-14T23:01:41.146Z\",\"event\":{\"version\":1,\"kind\":\"worker-start\",\"suppliedContext\":{\"workId\":\"97e80b59-52bc-4952-bc5f-0a7d4dbe3048\",\"executionId\":\"347a22c4-e4e3-4014-b63e-6fdc2bff6df0\",\"invocationId\":\"spec-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r1a1\",\"role\":\"spec\",\"environmentRef\":\"env-9ad204ad81ee93ce8ffe6245445586b8678f126c79d2fd888b4a31621b33afeb\",\"bootRef\":\"boot-05a8cd80-751a-4678-9c04-11d834a8058c\",\"phaseId\":\"review-r1\"},\"phaseId\":\"review-r1\",\"profile\":{\"id\":\"factory-development-pi-1.5.2-read-async-bash-lexical-v3\",\"version\":\"1.5.2\",\"integrity\":\"sha512-mUWI04rqF1Vd/m1q+Ps1XeWsTXEVvRUnsmRa83I3Dzua0Tx5bYS93imeqtIfrXf7PkkaR6ERz+AuQhIJlom5yA==\",\"upstreamSHA256\":\"e6159de5e4d94ae22968b6524237ef3d4f0374a107e2321ed5c29e93d66c8efc\",\"upstreamTreeSHA256\":\"7d0961cce25f6c802b22aaa028206cd610de386442d2e6b732d71367ef006391\",\"patchSHA256\":\"5e45a7c2953db293a14db0138bb31f8ac9e95eb13512afd42f1f49b77c98e066\",\"resultSHA256\":\"06867a067ebbadca2e06f75ccb4e682cd7e37b9683d41a71562f770b3105a209\",\"asyncPatchSHA256\":\"1ee38f2bdb71480b5b6206e72dbed32ac9214acbe0afe9b7e5137ea8f63cdc1e\",\"candidatePatchSHA256\":\"fd85bbd3c22fff3cb90dd990cb2608f18884d15dcd3820fb2f790b6e42a4dd01\",\"candidateManifestSHA256\":\"b6aaa5391d251867e41e8fc80973a1da79c7df3e38cdd18d11e705d939809b69\",\"lexicalPatchSHA256\":\"e3e88f8e6a53c9b58164c85c9866cfcf5a31b9fd415fdad7ce136976d8fd96d0\",\"lexicalCandidateManifestSHA256\":\"923d916bae558e6d21978593b2effb716dec80398bb5b0a66271fefcfc0f42a2\"},\"providerId\":\"openai\",\"modelId\":\"gpt-6-luna\",\"profileDirectory\":\"/home/sanmoo/software-factory-test/y5/r/BajNgHUaRnicBBHYNKgFjA/w-Q7x415/profile\",\"promptSha256\":\"3d46535259bd3cea2405ce74369b321985f518f508f3d830ca80081344d0aae1\",\"skillPack\":null,\"modelBudget\":\"reviewer-v1\",\"deadlineMs\":null,\"handoff\":null,\"session\":{\"format\":\"pi-session-jsonl-v3\",\"mode\":\"new\"},\"review\":{\"round\":1,\"attempt\":1,\"handoffIndexSha256\":\"f2af5a00e9bd11bd63177e7cbf37e8bbdd0f4c62dc746ef0ec1a03592b9e7e1c\",\"required\":[\"/artifacts/review/r1/index.json\",\"/artifacts/spec/v1/sources.json\",\"/workspace/checkout/docs/FACTORY_SMOKE.md\"],\"missing\":[]},\"startedAt\":\"2026-11-14T23:01:41.140Z\",\"observedProcess\":{\"pid\":2032396,\"parentPid\":2029805,\"uid\":1000,\"executable\":\"/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node\",\"nodeVersion\":\"24.21.0\",\"timeOrigin\":1794697300902.175,\"observedAt\":\"2026-11-14T23:01:41.141Z\"}}}"
+   },
+   "opinions": {
+    "standards": "{\"version\":1,\"context\":{\"workId\":\"97e80b59-52bc-4952-bc5f-0a7d4dbe3048\",\"executionId\":\"347a22c4-e4e3-4014-b63e-6fdc2bff6df0\",\"invocationId\":\"standards-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r1a1\",\"role\":\"standards\",\"environmentRef\":\"env-9ad204ad81ee93ce8ffe6245445586b8678f126c79d2fd888b4a31621b33afeb\",\"bootRef\":\"boot-05a8cd80-751a-4678-9c04-11d834a8058c\",\"callId\":\"review-opinion\"},\"recordedAt\":\"2026-11-14T23:02:09.987Z\",\"event\":{\"kind\":\"review-opinion\",\"version\":1,\"role\":\"standards\",\"round\":1,\"attempt\":1,\"invocationId\":\"standards-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r1a1\",\"session\":{\"file\":\"/home/sanmoo/software-factory-test/y5/r/BajNgHUaRnicBBHYNKgFjA/w-67PLIA/profile/sessions/2026-11-14T23-01-42-436Z_01a1dc4b-91a3-70a7-b1ee-f8805020f26c.jsonl\",\"mode\":\"new\",\"from\":null,\"code\":null},\"model\":{\"providerId\":\"openai\",\"modelId\":\"gpt-6-luna\"},\"profile\":{\"id\":\"factory-development-pi-1.5.2-read-async-bash-lexical-v3\",\"modelBudget\":\"reviewer-v1\"},\"input\":{\"handoffIndexSha256\":\"f2af5a00e9bd11bd63177e7cbf37e8bbdd0f4c62dc746ef0ec1a03592b9e7e1c\",\"required\":[\"/artifacts/review/r1/index.json\",\"/artifacts/instructions/v1/sources.json\",\"/workspace/checkout/docs/FACTORY_SMOKE.md\"],\"missing\":[]},\"finalMessageSha256\":\"f9872d89b1fa8690e85b1db89a654b4e8e1c896ddeacd7b30699e618f9f506a4\",\"conclusion\":\"clean\",\"code\":null,\"coverage\":{\"scope\":\"incremental\",\"justification\":\"Read the index, all three empty patches, the complete changed file, and all preserved instruction sources; review was limited to the sole untracked documentation file.\",\"examined\":[\"/workspace/checkout/docs/FACTORY_SMOKE.md\",\"/artifacts/instructions/v1/sources.json\",\"/artifacts/instructions/v1/AGENTS.md\",\"/artifacts/spec/v1/repo/docs/agents/issue-tracker.md\",\"/artifacts/spec/v1/repo/docs/agents/triage-labels.md\",\"/artifacts/spec/v1/repo/docs/agents/domain.md\"]},\"findings\":[],\"limitations\":[],\"hostChecks\":{\"reads\":14,\"failedReads\":[],\"requiredNotFullyRead\":[],\"downgraded\":[]},\"recordedAt\":\"2026-11-14T23:02:09.986Z\"}}",
+    "spec": "{\"version\":1,\"context\":{\"workId\":\"97e80b59-52bc-4952-bc5f-0a7d4dbe3048\",\"executionId\":\"347a22c4-e4e3-4014-b63e-6fdc2bff6df0\",\"invocationId\":\"spec-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r1a1\",\"role\":\"spec\",\"environmentRef\":\"env-9ad204ad81ee93ce8ffe6245445586b8678f126c79d2fd888b4a31621b33afeb\",\"bootRef\":\"boot-05a8cd80-751a-4678-9c04-11d834a8058c\",\"callId\":\"review-opinion\"},\"recordedAt\":\"2026-11-14T23:02:28.778Z\",\"event\":{\"kind\":\"review-opinion\",\"version\":1,\"role\":\"spec\",\"round\":1,\"attempt\":1,\"invocationId\":\"spec-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r1a1\",\"session\":{\"file\":\"/home/sanmoo/software-factory-test/y5/r/BajNgHUaRnicBBHYNKgFjA/w-Q7x415/profile/sessions/2026-11-14T23-01-42-586Z_01a1dc4b-9239-761d-b5c5-925584408df0.jsonl\",\"mode\":\"new\",\"from\":null,\"code\":null},\"model\":{\"providerId\":\"openai\",\"modelId\":\"gpt-6-luna\"},\"profile\":{\"id\":\"factory-development-pi-1.5.2-read-async-bash-lexical-v3\",\"modelBudget\":\"reviewer-v1\"},\"input\":{\"handoffIndexSha256\":\"f2af5a00e9bd11bd63177e7cbf37e8bbdd0f4c62dc746ef0ec1a03592b9e7e1c\",\"required\":[\"/artifacts/review/r1/index.json\",\"/artifacts/spec/v1/sources.json\",\"/workspace/checkout/docs/FACTORY_SMOKE.md\"],\"missing\":[]},\"finalMessageSha256\":\"8399df2d702fe54b9c577cf9d8bf610a0b2845a27db8fcc5eec9185bbf421f57\",\"conclusion\":\"findings\",\"code\":null,\"coverage\":{\"scope\":\"broad\",\"justification\":\"Read the index, all three empty patches, the complete changed file, the preserved ticket and all documents it explicitly references. The requested Rollback section is missing.\",\"examined\":[\"/artifacts/review/r1/index.json\",\"/artifacts/review/r1/committed.patch\",\"/artifacts/review/r1/staged.patch\",\"/artifacts/review/r1/unstaged.patch\",\"/workspace/checkout/docs/FACTORY_SMOKE.md\",\"/artifacts/spec/v1/ticket.json\",\"/artifacts/spec/v1/repo/docs/agents/issue-tracker.md\",\"/artifacts/spec/v1/repo/docs/agents/triage-labels.md\",\"/artifacts/spec/v1/repo/docs/agents/domain.md\"]},\"findings\":[{\"id\":\"S1\",\"basis\":\"requirement\",\"reference\":\"/artifacts/spec/v1/ticket.json#body\",\"location\":{\"path\":\"/workspace/checkout/docs/FACTORY_SMOKE.md\",\"line\":10},\"summary\":\"The required `## Rollback` section stating that the file can be deleted at any time without other changes is missing.\"}],\"limitations\":[],\"hostChecks\":{\"reads\":15,\"failedReads\":[],\"requiredNotFullyRead\":[],\"downgraded\":[]},\"recordedAt\":\"2026-11-14T23:02:28.778Z\"}}"
+   },
+   "gateOutputs": {
+    "ticket-validation": ""
+   },
+   "files": {
+    "index": {
+     "bytes": 2036,
+     "text": "{\n \"base\": \"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\",\n \"branch\": \"factory/3-97e80b59\",\n \"changed\": [\n  \"/workspace/checkout/docs/FACTORY_SMOKE.md\"\n ],\n \"changedTruncated\": false,\n \"checkout\": \"/workspace/checkout\",\n \"content\": {\n  \"clean\": false,\n  \"headMatches\": false,\n  \"sha256\": \"605160601c451410eb713bc91275ee98a16323108d5c9fd04e5928d432f4db55\"\n },\n \"counts\": {\n  \"committed\": 0,\n  \"entries\": 1,\n  \"removed\": 0,\n  \"staged\": 0,\n  \"unstaged\": 0,\n  \"untracked\": 1\n },\n \"entries\": [\n  {\n   \"bytes\": 124,\n   \"committed\": null,\n   \"guestPath\": \"/workspace/checkout/docs/FACTORY_SMOKE.md\",\n   \"headSha256\": null,\n   \"kind\": \"file\",\n   \"mode\": \"100600\",\n   \"path\": \"docs/FACTORY_SMOKE.md\",\n   \"present\": true,\n   \"sha256\": \"b051fc26c4af45f42b0fe88e1912b0b978c59c5e1051c7c24a7c4149335371e2\",\n   \"staged\": null,\n   \"unstaged\": null,\n   \"untracked\": true\n  }\n ],\n \"head\": \"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\",\n \"index\": \"/artifacts/review/r1/index.json\",\n \"instructions\": {\n  \"sha256\": \"37807ec01b54012dbccc10797b96fa56593a8ce1731521d3071faedf7351ca26\",\n  \"sources\": \"/artifacts/instructions/v1/sources.json\",\n  \"version\": \"v1\"\n },\n \"mergeBase\": \"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\",\n \"patches\": {\n  \"committed\": {\n   \"bytes\": 0,\n   \"path\": \"/artifacts/review/r1/committed.patch\",\n   \"sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n  },\n  \"staged\": {\n   \"bytes\": 0,\n   \"path\": \"/artifacts/review/r1/staged.patch\",\n   \"sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n  },\n  \"unstaged\": {\n   \"bytes\": 0,\n   \"path\": \"/artifacts/review/r1/unstaged.patch\",\n   \"sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n  }\n },\n \"reviewerNote\": \"Read each listed guestPath and patch with the read tool, with offset/limit to continue; read beyond the hunks for context.\",\n \"round\": 1,\n \"spec\": {\n  \"sha256\": \"cc239aaef84537bb084b06f2e527883a7ed3efd1d0485be9bffc426254bc7e04\",\n  \"sources\": \"/artifacts/spec/v1/sources.json\",\n  \"version\": \"v1\"\n },\n \"version\": 1\n}"
+    },
+    "committed": {
+     "bytes": 0,
+     "text": ""
+    },
+    "staged": {
+     "bytes": 0,
+     "text": ""
+    },
+    "unstaged": {
+     "bytes": 0,
+     "text": ""
+    }
+   }
+  },
+  {
+   "round": 2,
+   "kind": "review",
+   "closing": false,
+   "receipts": {
+    "standards": "{\"version\":1,\"context\":{\"workId\":\"97e80b59-52bc-4952-bc5f-0a7d4dbe3048\",\"executionId\":\"347a22c4-e4e3-4014-b63e-6fdc2bff6df0\",\"invocationId\":\"standards-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r2a1\",\"role\":\"standards\",\"environmentRef\":\"env-9ad204ad81ee93ce8ffe6245445586b8678f126c79d2fd888b4a31621b33afeb\",\"bootRef\":\"boot-05a8cd80-751a-4678-9c04-11d834a8058c\",\"callId\":\"worker-start\"},\"recordedAt\":\"2026-11-14T23:02:42.575Z\",\"event\":{\"version\":1,\"kind\":\"worker-start\",\"suppliedContext\":{\"workId\":\"97e80b59-52bc-4952-bc5f-0a7d4dbe3048\",\"executionId\":\"347a22c4-e4e3-4014-b63e-6fdc2bff6df0\",\"invocationId\":\"standards-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r2a1\",\"role\":\"standards\",\"environmentRef\":\"env-9ad204ad81ee93ce8ffe6245445586b8678f126c79d2fd888b4a31621b33afeb\",\"bootRef\":\"boot-05a8cd80-751a-4678-9c04-11d834a8058c\",\"phaseId\":\"review-r2\"},\"phaseId\":\"review-r2\",\"profile\":{\"id\":\"factory-development-pi-1.5.2-read-async-bash-lexical-v3\",\"version\":\"1.5.2\",\"integrity\":\"sha512-mUWI04rqF1Vd/m1q+Ps1XeWsTXEVvRUnsmRa83I3Dzua0Tx5bYS93imeqtIfrXf7PkkaR6ERz+AuQhIJlom5yA==\",\"upstreamSHA256\":\"e6159de5e4d94ae22968b6524237ef3d4f0374a107e2321ed5c29e93d66c8efc\",\"upstreamTreeSHA256\":\"7d0961cce25f6c802b22aaa028206cd610de386442d2e6b732d71367ef006391\",\"patchSHA256\":\"5e45a7c2953db293a14db0138bb31f8ac9e95eb13512afd42f1f49b77c98e066\",\"resultSHA256\":\"06867a067ebbadca2e06f75ccb4e682cd7e37b9683d41a71562f770b3105a209\",\"asyncPatchSHA256\":\"1ee38f2bdb71480b5b6206e72dbed32ac9214acbe0afe9b7e5137ea8f63cdc1e\",\"candidatePatchSHA256\":\"fd85bbd3c22fff3cb90dd990cb2608f18884d15dcd3820fb2f790b6e42a4dd01\",\"candidateManifestSHA256\":\"b6aaa5391d251867e41e8fc80973a1da79c7df3e38cdd18d11e705d939809b69\",\"lexicalPatchSHA256\":\"e3e88f8e6a53c9b58164c85c9866cfcf5a31b9fd415fdad7ce136976d8fd96d0\",\"lexicalCandidateManifestSHA256\":\"923d916bae558e6d21978593b2effb716dec80398bb5b0a66271fefcfc0f42a2\"},\"providerId\":\"openai\",\"modelId\":\"gpt-6-luna\",\"profileDirectory\":\"/home/sanmoo/software-factory-test/y5/r/BajNgHUaRnicBBHYNKgFjA/w-Qx74el/profile\",\"promptSha256\":\"d8f5239ef20fc697e8710ceaf0d6955fbfb49afdc507246ac16df82486bd6945\",\"skillPack\":null,\"modelBudget\":\"reviewer-v1\",\"deadlineMs\":null,\"handoff\":null,\"session\":{\"format\":\"pi-session-jsonl-v3\",\"mode\":\"new\"},\"review\":{\"round\":2,\"attempt\":1,\"handoffIndexSha256\":\"e034ab07aa515ba9d1d3cd104de401e570e66eab15679ca6b4aff212e52715fb\",\"required\":[\"/artifacts/review/r2/index.json\",\"/artifacts/instructions/v1/sources.json\",\"/workspace/checkout/docs/FACTORY_SMOKE.md\"],\"missing\":[]},\"startedAt\":\"2026-11-14T23:02:42.569Z\",\"observedProcess\":{\"pid\":2037782,\"parentPid\":2029805,\"uid\":1000,\"executable\":\"/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node\",\"nodeVersion\":\"24.21.0\",\"timeOrigin\":1794697362362.544,\"observedAt\":\"2026-11-14T23:02:42.571Z\"}}}",
+    "spec": "{\"version\":1,\"context\":{\"workId\":\"97e80b59-52bc-4952-bc5f-0a7d4dbe3048\",\"executionId\":\"347a22c4-e4e3-4014-b63e-6fdc2bff6df0\",\"invocationId\":\"spec-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r2a1\",\"role\":\"spec\",\"environmentRef\":\"env-9ad204ad81ee93ce8ffe6245445586b8678f126c79d2fd888b4a31621b33afeb\",\"bootRef\":\"boot-05a8cd80-751a-4678-9c04-11d834a8058c\",\"callId\":\"worker-start\"},\"recordedAt\":\"2026-11-14T23:02:42.575Z\",\"event\":{\"version\":1,\"kind\":\"worker-start\",\"suppliedContext\":{\"workId\":\"97e80b59-52bc-4952-bc5f-0a7d4dbe3048\",\"executionId\":\"347a22c4-e4e3-4014-b63e-6fdc2bff6df0\",\"invocationId\":\"spec-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r2a1\",\"role\":\"spec\",\"environmentRef\":\"env-9ad204ad81ee93ce8ffe6245445586b8678f126c79d2fd888b4a31621b33afeb\",\"bootRef\":\"boot-05a8cd80-751a-4678-9c04-11d834a8058c\",\"phaseId\":\"review-r2\"},\"phaseId\":\"review-r2\",\"profile\":{\"id\":\"factory-development-pi-1.5.2-read-async-bash-lexical-v3\",\"version\":\"1.5.2\",\"integrity\":\"sha512-mUWI04rqF1Vd/m1q+Ps1XeWsTXEVvRUnsmRa83I3Dzua0Tx5bYS93imeqtIfrXf7PkkaR6ERz+AuQhIJlom5yA==\",\"upstreamSHA256\":\"e6159de5e4d94ae22968b6524237ef3d4f0374a107e2321ed5c29e93d66c8efc\",\"upstreamTreeSHA256\":\"7d0961cce25f6c802b22aaa028206cd610de386442d2e6b732d71367ef006391\",\"patchSHA256\":\"5e45a7c2953db293a14db0138bb31f8ac9e95eb13512afd42f1f49b77c98e066\",\"resultSHA256\":\"06867a067ebbadca2e06f75ccb4e682cd7e37b9683d41a71562f770b3105a209\",\"asyncPatchSHA256\":\"1ee38f2bdb71480b5b6206e72dbed32ac9214acbe0afe9b7e5137ea8f63cdc1e\",\"candidatePatchSHA256\":\"fd85bbd3c22fff3cb90dd990cb2608f18884d15dcd3820fb2f790b6e42a4dd01\",\"candidateManifestSHA256\":\"b6aaa5391d251867e41e8fc80973a1da79c7df3e38cdd18d11e705d939809b69\",\"lexicalPatchSHA256\":\"e3e88f8e6a53c9b58164c85c9866cfcf5a31b9fd415fdad7ce136976d8fd96d0\",\"lexicalCandidateManifestSHA256\":\"923d916bae558e6d21978593b2effb716dec80398bb5b0a66271fefcfc0f42a2\"},\"providerId\":\"openai\",\"modelId\":\"gpt-6-luna\",\"profileDirectory\":\"/home/sanmoo/software-factory-test/y5/r/BajNgHUaRnicBBHYNKgFjA/w-WgJjox/profile\",\"promptSha256\":\"f453400d2c600c718081c71bd64036b7b3461480a5c9f5eb39e67f3f6850f68c\",\"skillPack\":null,\"modelBudget\":\"reviewer-v1\",\"deadlineMs\":null,\"handoff\":null,\"session\":{\"format\":\"pi-session-jsonl-v3\",\"mode\":\"new\"},\"review\":{\"round\":2,\"attempt\":1,\"handoffIndexSha256\":\"e034ab07aa515ba9d1d3cd104de401e570e66eab15679ca6b4aff212e52715fb\",\"required\":[\"/artifacts/review/r2/index.json\",\"/artifacts/spec/v1/sources.json\",\"/workspace/checkout/docs/FACTORY_SMOKE.md\"],\"missing\":[]},\"startedAt\":\"2026-11-14T23:02:42.570Z\",\"observedProcess\":{\"pid\":2037783,\"parentPid\":2029805,\"uid\":1000,\"executable\":\"/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node\",\"nodeVersion\":\"24.21.0\",\"timeOrigin\":1794697362368.959,\"observedAt\":\"2026-11-14T23:02:42.571Z\"}}}"
+   },
+   "opinions": {
+    "standards": "{\"version\":1,\"context\":{\"workId\":\"97e80b59-52bc-4952-bc5f-0a7d4dbe3048\",\"executionId\":\"347a22c4-e4e3-4014-b63e-6fdc2bff6df0\",\"invocationId\":\"standards-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r2a1\",\"role\":\"standards\",\"environmentRef\":\"env-9ad204ad81ee93ce8ffe6245445586b8678f126c79d2fd888b4a31621b33afeb\",\"bootRef\":\"boot-05a8cd80-751a-4678-9c04-11d834a8058c\",\"callId\":\"review-opinion\"},\"recordedAt\":\"2026-11-14T23:03:02.099Z\",\"event\":{\"kind\":\"review-opinion\",\"version\":1,\"role\":\"standards\",\"round\":2,\"attempt\":1,\"invocationId\":\"standards-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r2a1\",\"session\":{\"file\":\"/home/sanmoo/software-factory-test/y5/r/BajNgHUaRnicBBHYNKgFjA/w-Qx74el/profile/sessions/2026-11-14T23-01-42-436Z_01a1dc4b-91a3-70a7-b1ee-f8805020f26c.jsonl\",\"mode\":\"continued\",\"from\":\"/home/sanmoo/software-factory-test/y5/r/BajNgHUaRnicBBHYNKgFjA/w-67PLIA/profile/sessions/2026-11-14T23-01-42-436Z_01a1dc4b-91a3-70a7-b1ee-f8805020f26c.jsonl\",\"code\":null},\"model\":{\"providerId\":\"openai\",\"modelId\":\"gpt-6-luna\"},\"profile\":{\"id\":\"factory-development-pi-1.5.2-read-async-bash-lexical-v3\",\"modelBudget\":\"reviewer-v1\"},\"input\":{\"handoffIndexSha256\":\"e034ab07aa515ba9d1d3cd104de401e570e66eab15679ca6b4aff212e52715fb\",\"required\":[\"/artifacts/review/r2/index.json\",\"/artifacts/instructions/v1/sources.json\",\"/workspace/checkout/docs/FACTORY_SMOKE.md\"],\"missing\":[]},\"finalMessageSha256\":\"7444c08101bc3e1642b2c1d4494d92c405829a20c3df09ac8bfc55fed374d6f0\",\"conclusion\":\"clean\",\"code\":null,\"coverage\":{\"scope\":\"incremental\",\"justification\":\"Read the index, all three empty patches, the complete changed file, and every preserved instruction source; the proposal contains only the listed untracked documentation file.\",\"examined\":[\"/workspace/checkout/docs/FACTORY_SMOKE.md\",\"/artifacts/instructions/v1/sources.json\",\"/artifacts/instructions/v1/AGENTS.md\",\"/artifacts/spec/v1/repo/docs/agents/issue-tracker.md\",\"/artifacts/spec/v1/repo/docs/agents/triage-labels.md\",\"/artifacts/spec/v1/repo/docs/agents/domain.md\"]},\"findings\":[],\"limitations\":[],\"hostChecks\":{\"reads\":10,\"failedReads\":[],\"requiredNotFullyRead\":[],\"downgraded\":[]},\"recordedAt\":\"2026-11-14T23:03:02.099Z\"}}",
+    "spec": "{\"version\":1,\"context\":{\"workId\":\"97e80b59-52bc-4952-bc5f-0a7d4dbe3048\",\"executionId\":\"347a22c4-e4e3-4014-b63e-6fdc2bff6df0\",\"invocationId\":\"spec-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r2a1\",\"role\":\"spec\",\"environmentRef\":\"env-9ad204ad81ee93ce8ffe6245445586b8678f126c79d2fd888b4a31621b33afeb\",\"bootRef\":\"boot-05a8cd80-751a-4678-9c04-11d834a8058c\",\"callId\":\"review-opinion\"},\"recordedAt\":\"2026-11-14T23:03:13.847Z\",\"event\":{\"kind\":\"review-opinion\",\"version\":1,\"role\":\"spec\",\"round\":2,\"attempt\":1,\"invocationId\":\"spec-347a22c4-e4e3-4014-b63e-6fdc2bff6df0-r2a1\",\"session\":{\"file\":\"/home/sanmoo/software-factory-test/y5/r/BajNgHUaRnicBBHYNKgFjA/w-WgJjox/profile/sessions/2026-11-14T23-01-42-586Z_01a1dc4b-9239-761d-b5c5-925584408df0.jsonl\",\"mode\":\"continued\",\"from\":\"/home/sanmoo/software-factory-test/y5/r/BajNgHUaRnicBBHYNKgFjA/w-Q7x415/profile/sessions/2026-11-14T23-01-42-586Z_01a1dc4b-9239-761d-b5c5-925584408df0.jsonl\",\"code\":null},\"model\":{\"providerId\":\"openai\",\"modelId\":\"gpt-6-luna\"},\"profile\":{\"id\":\"factory-development-pi-1.5.2-read-async-bash-lexical-v3\",\"modelBudget\":\"reviewer-v1\"},\"input\":{\"handoffIndexSha256\":\"e034ab07aa515ba9d1d3cd104de401e570e66eab15679ca6b4aff212e52715fb\",\"required\":[\"/artifacts/review/r2/index.json\",\"/artifacts/spec/v1/sources.json\",\"/workspace/checkout/docs/FACTORY_SMOKE.md\"],\"missing\":[]},\"finalMessageSha256\":\"ec8da893031cf9161f7d207ff6e494f6ca95a4e23901e15601124dc8952bdc2a\",\"conclusion\":\"clean\",\"code\":null,\"coverage\":{\"scope\":\"broad\",\"justification\":\"Read the index, all three empty patches, the complete changed file, the preserved ticket, and all documents it explicitly references. The file has the requested title and paragraph, exactly three numbered steps, and the rollback statement.\",\"examined\":[\"/artifacts/review/r2/index.json\",\"/artifacts/review/r2/committed.patch\",\"/artifacts/review/r2/staged.patch\",\"/artifacts/review/r2/unstaged.patch\",\"/workspace/checkout/docs/FACTORY_SMOKE.md\",\"/artifacts/spec/v1/sources.json\",\"/artifacts/spec/v1/ticket.json\",\"/artifacts/spec/v1/repo/docs/agents/issue-tracker.md\",\"/artifacts/spec/v1/repo/docs/agents/triage-labels.md\",\"/artifacts/spec/v1/repo/docs/agents/domain.md\"]},\"findings\":[],\"limitations\":[],\"hostChecks\":{\"reads\":10,\"failedReads\":[],\"requiredNotFullyRead\":[],\"downgraded\":[]},\"recordedAt\":\"2026-11-14T23:03:13.847Z\"}}"
+   },
+   "gateOutputs": {
+    "ticket-validation": ""
+   },
+   "files": {
+    "index": {
+     "bytes": 2036,
+     "text": "{\n \"base\": \"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\",\n \"branch\": \"factory/3-97e80b59\",\n \"changed\": [\n  \"/workspace/checkout/docs/FACTORY_SMOKE.md\"\n ],\n \"changedTruncated\": false,\n \"checkout\": \"/workspace/checkout\",\n \"content\": {\n  \"clean\": false,\n  \"headMatches\": false,\n  \"sha256\": \"ad853efa30910bd1dadb512c9243af927207768d336d5d0ca86356973021f92a\"\n },\n \"counts\": {\n  \"committed\": 0,\n  \"entries\": 1,\n  \"removed\": 0,\n  \"staged\": 0,\n  \"unstaged\": 0,\n  \"untracked\": 1\n },\n \"entries\": [\n  {\n   \"bytes\": 197,\n   \"committed\": null,\n   \"guestPath\": \"/workspace/checkout/docs/FACTORY_SMOKE.md\",\n   \"headSha256\": null,\n   \"kind\": \"file\",\n   \"mode\": \"100600\",\n   \"path\": \"docs/FACTORY_SMOKE.md\",\n   \"present\": true,\n   \"sha256\": \"40f6d76998d4550b96bedb9bc34fd4c1e63d0a8e18c12fa7073686f85b63845b\",\n   \"staged\": null,\n   \"unstaged\": null,\n   \"untracked\": true\n  }\n ],\n \"head\": \"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\",\n \"index\": \"/artifacts/review/r2/index.json\",\n \"instructions\": {\n  \"sha256\": \"37807ec01b54012dbccc10797b96fa56593a8ce1731521d3071faedf7351ca26\",\n  \"sources\": \"/artifacts/instructions/v1/sources.json\",\n  \"version\": \"v1\"\n },\n \"mergeBase\": \"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\",\n \"patches\": {\n  \"committed\": {\n   \"bytes\": 0,\n   \"path\": \"/artifacts/review/r2/committed.patch\",\n   \"sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n  },\n  \"staged\": {\n   \"bytes\": 0,\n   \"path\": \"/artifacts/review/r2/staged.patch\",\n   \"sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n  },\n  \"unstaged\": {\n   \"bytes\": 0,\n   \"path\": \"/artifacts/review/r2/unstaged.patch\",\n   \"sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n  }\n },\n \"reviewerNote\": \"Read each listed guestPath and patch with the read tool, with offset/limit to continue; read beyond the hunks for context.\",\n \"round\": 2,\n \"spec\": {\n  \"sha256\": \"cc239aaef84537bb084b06f2e527883a7ed3efd1d0485be9bffc426254bc7e04\",\n  \"sources\": \"/artifacts/spec/v1/sources.json\",\n  \"version\": \"v1\"\n },\n \"version\": 1\n}"
+    },
+    "committed": {
+     "bytes": 0,
+     "text": ""
+    },
+    "staged": {
+     "bytes": 0,
+     "text": ""
+    },
+    "unstaged": {
+     "bytes": 0,
+     "text": ""
+    }
+   }
+  },
+  {
+   "round": 3,
+   "kind": "exemption",
+   "closing": false,
+   "receipts": {
+    "standards": null,
+    "spec": null
+   },
+   "opinions": {
+    "standards": null,
+    "spec": null
+   },
+   "gateOutputs": {
+    "ticket-validation": ""
+   },
+   "files": {
+    "index": {
+     "bytes": 2098,
+     "text": "{\n \"base\": \"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\",\n \"branch\": \"factory/3-97e80b59\",\n \"changed\": [\n  \"/workspace/checkout/docs/FACTORY_SMOKE.md\"\n ],\n \"changedTruncated\": false,\n \"checkout\": \"/workspace/checkout\",\n \"content\": {\n  \"clean\": true,\n  \"headMatches\": true,\n  \"sha256\": \"ad853efa30910bd1dadb512c9243af927207768d336d5d0ca86356973021f92a\"\n },\n \"counts\": {\n  \"committed\": 1,\n  \"entries\": 1,\n  \"removed\": 0,\n  \"staged\": 0,\n  \"unstaged\": 0,\n  \"untracked\": 0\n },\n \"entries\": [\n  {\n   \"bytes\": 197,\n   \"committed\": \"A\",\n   \"guestPath\": \"/workspace/checkout/docs/FACTORY_SMOKE.md\",\n   \"headSha256\": \"40f6d76998d4550b96bedb9bc34fd4c1e63d0a8e18c12fa7073686f85b63845b\",\n   \"kind\": \"file\",\n   \"mode\": \"100600\",\n   \"path\": \"docs/FACTORY_SMOKE.md\",\n   \"present\": true,\n   \"sha256\": \"40f6d76998d4550b96bedb9bc34fd4c1e63d0a8e18c12fa7073686f85b63845b\",\n   \"staged\": null,\n   \"unstaged\": null,\n   \"untracked\": false\n  }\n ],\n \"head\": \"71621d0ecb48366a80bebb7badf4b0fe0803a925\",\n \"index\": \"/artifacts/review/r3/index.json\",\n \"instructions\": {\n  \"sha256\": \"37807ec01b54012dbccc10797b96fa56593a8ce1731521d3071faedf7351ca26\",\n  \"sources\": \"/artifacts/instructions/v1/sources.json\",\n  \"version\": \"v1\"\n },\n \"mergeBase\": \"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\",\n \"patches\": {\n  \"committed\": {\n   \"bytes\": 372,\n   \"path\": \"/artifacts/review/r3/committed.patch\",\n   \"sha256\": \"3b0232c97f8341a30781a27d31db7a3a0324c3a0066b7d3642be83b2c979e692\"\n  },\n  \"staged\": {\n   \"bytes\": 0,\n   \"path\": \"/artifacts/review/r3/staged.patch\",\n   \"sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n  },\n  \"unstaged\": {\n   \"bytes\": 0,\n   \"path\": \"/artifacts/review/r3/unstaged.patch\",\n   \"sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n  }\n },\n \"reviewerNote\": \"Read each listed guestPath and patch with the read tool, with offset/limit to continue; read beyond the hunks for context.\",\n \"round\": 3,\n \"spec\": {\n  \"sha256\": \"cc239aaef84537bb084b06f2e527883a7ed3efd1d0485be9bffc426254bc7e04\",\n  \"sources\": \"/artifacts/spec/v1/sources.json\",\n  \"version\": \"v1\"\n },\n \"version\": 1\n}"
+    },
+    "committed": {
+     "bytes": 372,
+     "text": "diff --git a/docs/FACTORY_SMOKE.md b/docs/FACTORY_SMOKE.md\nnew file mode 100644\nindex 0000000..72d0cb9\n--- /dev/null\n+++ b/docs/FACTORY_SMOKE.md\n@@ -0,0 +1,13 @@\n+# Factory smoke\n+\n+This file exists only to exercise the Software Factory review loop.\n+\n+## Steps\n+\n+1. Build\n+2. Review\n+3. Merge\n+\n+## Rollback\n+\n+The file can be deleted at any time without other changes.\n"
+    },
+    "staged": {
+     "bytes": 0,
+     "text": ""
+    },
+    "unstaged": {
+     "bytes": 0,
+     "text": ""
+    }
+   }
+  },
+  {
+   "round": 4,
+   "kind": "exemption",
+   "closing": true,
+   "receipts": {
+    "standards": null,
+    "spec": null
+   },
+   "opinions": {
+    "standards": null,
+    "spec": null
+   },
+   "gateOutputs": {},
+   "files": {
+    "index": {
+     "bytes": 2098,
+     "text": "{\n \"base\": \"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\",\n \"branch\": \"factory/3-97e80b59\",\n \"changed\": [\n  \"/workspace/checkout/docs/FACTORY_SMOKE.md\"\n ],\n \"changedTruncated\": false,\n \"checkout\": \"/workspace/checkout\",\n \"content\": {\n  \"clean\": true,\n  \"headMatches\": true,\n  \"sha256\": \"ad853efa30910bd1dadb512c9243af927207768d336d5d0ca86356973021f92a\"\n },\n \"counts\": {\n  \"committed\": 1,\n  \"entries\": 1,\n  \"removed\": 0,\n  \"staged\": 0,\n  \"unstaged\": 0,\n  \"untracked\": 0\n },\n \"entries\": [\n  {\n   \"bytes\": 197,\n   \"committed\": \"A\",\n   \"guestPath\": \"/workspace/checkout/docs/FACTORY_SMOKE.md\",\n   \"headSha256\": \"40f6d76998d4550b96bedb9bc34fd4c1e63d0a8e18c12fa7073686f85b63845b\",\n   \"kind\": \"file\",\n   \"mode\": \"100600\",\n   \"path\": \"docs/FACTORY_SMOKE.md\",\n   \"present\": true,\n   \"sha256\": \"40f6d76998d4550b96bedb9bc34fd4c1e63d0a8e18c12fa7073686f85b63845b\",\n   \"staged\": null,\n   \"unstaged\": null,\n   \"untracked\": false\n  }\n ],\n \"head\": \"71621d0ecb48366a80bebb7badf4b0fe0803a925\",\n \"index\": \"/artifacts/review/r4/index.json\",\n \"instructions\": {\n  \"sha256\": \"37807ec01b54012dbccc10797b96fa56593a8ce1731521d3071faedf7351ca26\",\n  \"sources\": \"/artifacts/instructions/v1/sources.json\",\n  \"version\": \"v1\"\n },\n \"mergeBase\": \"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\",\n \"patches\": {\n  \"committed\": {\n   \"bytes\": 372,\n   \"path\": \"/artifacts/review/r4/committed.patch\",\n   \"sha256\": \"3b0232c97f8341a30781a27d31db7a3a0324c3a0066b7d3642be83b2c979e692\"\n  },\n  \"staged\": {\n   \"bytes\": 0,\n   \"path\": \"/artifacts/review/r4/staged.patch\",\n   \"sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n  },\n  \"unstaged\": {\n   \"bytes\": 0,\n   \"path\": \"/artifacts/review/r4/unstaged.patch\",\n   \"sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n  }\n },\n \"reviewerNote\": \"Read each listed guestPath and patch with the read tool, with offset/limit to continue; read beyond the hunks for context.\",\n \"round\": 4,\n \"spec\": {\n  \"sha256\": \"cc239aaef84537bb084b06f2e527883a7ed3efd1d0485be9bffc426254bc7e04\",\n  \"sources\": \"/artifacts/spec/v1/sources.json\",\n  \"version\": \"v1\"\n },\n \"version\": 1\n}"
+    },
+    "committed": {
+     "bytes": 372,
+     "text": "diff --git a/docs/FACTORY_SMOKE.md b/docs/FACTORY_SMOKE.md\nnew file mode 100644\nindex 0000000..72d0cb9\n--- /dev/null\n+++ b/docs/FACTORY_SMOKE.md\n@@ -0,0 +1,13 @@\n+# Factory smoke\n+\n+This file exists only to exercise the Software Factory review loop.\n+\n+## Steps\n+\n+1. Build\n+2. Review\n+3. Merge\n+\n+## Rollback\n+\n+The file can be deleted at any time without other changes.\n"
+    },
+    "staged": {
+     "bytes": 0,
+     "text": ""
+    },
+    "unstaged": {
+     "bytes": 0,
+     "text": ""
+    }
+   }
+  }
+ ],
+ "sessions": [
+  {
+   "launch": "w-67PLIA",
+   "file": "2026-11-14T23-01-42-436Z_01a1dc4b-91a3-70a7-b1ee-f8805020f26c.jsonl",
+   "bytes": 27464,
+   "toolCalls": [
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/repo/docs/agents/issue-tracker.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/repo/docs/agents/triage-labels.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/repo/docs/agents/domain.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/AGENTS.md"
+    }
+   ],
+   "tokenPattern": false
+  },
+  {
+   "launch": "w-FNyk5E",
+   "file": "2026-11-14T23-00-11-099Z_01a1dc4a-2cdb-77c3-821f-cff8acb5dfbf.jsonl",
+   "bytes": 77649,
+   "toolCalls": [
+    {
+     "name": "read",
+     "path": "/artifacts/factory/skill-pack/factory-skills-v5/skills/implement/SKILL.md"
+    },
+    {
+     "name": "bash"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/AGENTS.md"
+    },
+    {
+     "name": "bash"
+    },
+    {
+     "name": "bash"
+    },
+    {
+     "name": "bash"
+    },
+    {
+     "name": "bash"
+    },
+    {
+     "name": "write",
+     "path": "/artifacts/spec/v1/sources.tmp"
+    },
+    {
+     "name": "bash"
+    },
+    {
+     "name": "write",
+     "path": "/artifacts/instructions/v1/sources.tmp"
+    },
+    {
+     "name": "bash"
+    },
+    {
+     "name": "bash"
+    },
+    {
+     "name": "handoff"
+    },
+    {
+     "name": "edit",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "bash"
+    },
+    {
+     "name": "handoff"
+    },
+    {
+     "name": "bash"
+    },
+    {
+     "name": "handoff"
+    }
+   ],
+   "tokenPattern": false
+  },
+  {
+   "launch": "w-Q7x415",
+   "file": "2026-11-14T23-01-42-586Z_01a1dc4b-9239-761d-b5c5-925584408df0.jsonl",
+   "bytes": 34560,
+   "toolCalls": [
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/ticket.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/repo/docs/agents/issue-tracker.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/repo/docs/agents/triage-labels.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/repo/docs/agents/domain.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    }
+   ],
+   "tokenPattern": false
+  },
+  {
+   "launch": "w-Qx74el",
+   "file": "2026-11-14T23-01-42-436Z_01a1dc4b-91a3-70a7-b1ee-f8805020f26c.jsonl",
+   "bytes": 48231,
+   "toolCalls": [
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/repo/docs/agents/issue-tracker.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/repo/docs/agents/triage-labels.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/repo/docs/agents/domain.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/repo/docs/agents/issue-tracker.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/repo/docs/agents/triage-labels.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/repo/docs/agents/domain.md"
+    }
+   ],
+   "tokenPattern": false
+  },
+  {
+   "launch": "w-WgJjox",
+   "file": "2026-11-14T23-01-42-586Z_01a1dc4b-9239-761d-b5c5-925584408df0.jsonl",
+   "bytes": 60610,
+   "toolCalls": [
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/ticket.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/repo/docs/agents/issue-tracker.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/repo/docs/agents/triage-labels.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/repo/docs/agents/domain.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/ticket.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/repo/docs/agents/issue-tracker.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/repo/docs/agents/triage-labels.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/repo/docs/agents/domain.md"
+    }
+   ],
+   "tokenPattern": false
+  }
+ ],
+ "checkout": {
+  "version": 1,
+  "path": "/workspace/checkout",
+  "repository": "Sanmoo/java-springboot-event-sourcing",
+  "repositoryId": 1256893534,
+  "base": "main",
+  "branch": "factory/3-97e80b59",
+  "baseCommit": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+  "origin": "https://github.com/Sanmoo/java-springboot-event-sourcing.git",
+  "preparedAt": "2026-11-14T22:59:54.620Z",
+  "cache": "factory-exclusive-bare",
+  "clone": "no-hardlinks",
+  "fetchCredentialRevocation": "revoked"
+ },
+ "artifacts": [
+  ".factory-profile/storage-v1",
+  "instructions/v1/AGENTS.md",
+  "instructions/v1/sources.json",
+  "review/r1/committed.patch",
+  "review/r1/index.json",
+  "review/r1/staged.patch",
+  "review/r1/unstaged.patch",
+  "review/r2/committed.patch",
+  "review/r2/index.json",
+  "review/r2/staged.patch",
+  "review/r2/unstaged.patch",
+  "review/r3/committed.patch",
+  "review/r3/index.json",
+  "review/r3/staged.patch",
+  "review/r3/unstaged.patch",
+  "review/r4/committed.patch",
+  "review/r4/index.json",
+  "review/r4/staged.patch",
+  "review/r4/unstaged.patch",
+  "spec/v1/repo/docs/agents/domain.md",
+  "spec/v1/repo/docs/agents/issue-tracker.md",
+  "spec/v1/repo/docs/agents/triage-labels.md",
+  "spec/v1/sources.json",
+  "spec/v1/ticket.json"
+ ],
+ "specSources": {
+  "text": "{\"version\":\"v1\",\"complete\":true,\"capturedAt\":\"2026-11-14T23:00:54Z\",\"sources\":[{\"origin\":\"https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3\",\"copy\":\"ticket.json\",\"retrievedAt\":\"2026-11-14T23:00:54Z\",\"sha256\":\"1286de935c2e2d646887bd0433053395726ed0439218150145bbbb6cf6adb09e\",\"revision\":\"2026-11-14T21:56:38Z\"},{\"origin\":\"docs/agents/issue-tracker.md\",\"copy\":\"repo/docs/agents/issue-tracker.md\",\"retrievedAt\":\"2026-11-14T23:00:54Z\",\"sha256\":\"418382ab0909b5bd01979828be5ba58806b6518d7b051b327d1c3b7be5e18ea2\",\"revision\":\"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\"},{\"origin\":\"docs/agents/triage-labels.md\",\"copy\":\"repo/docs/agents/triage-labels.md\",\"retrievedAt\":\"2026-11-14T23:00:54Z\",\"sha256\":\"aab16579b0800e034baa2509ae16c65de8a8be92908833a29a7ac9292406a1d9\",\"revision\":\"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\"},{\"origin\":\"docs/agents/domain.md\",\"copy\":\"repo/docs/agents/domain.md\",\"retrievedAt\":\"2026-11-14T23:00:54Z\",\"sha256\":\"e43b491dfa9935bd169c2e17b00349715fc56eed268b924280938bd02e5e137c\",\"revision\":\"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\"}]}"
+ },
+ "instructionSources": {
+  "text": "{\"version\":\"v1\",\"complete\":true,\"capturedAt\":\"2026-11-14T23:00:54Z\",\"sources\":[{\"origin\":\"AGENTS.md\",\"copy\":\"AGENTS.md\",\"retrievedAt\":\"2026-11-14T23:00:54Z\",\"sha256\":\"d623b8027afdb31af954ad21ba00e29a76a05942f0898209ab0e724761ecf58e\",\"revision\":\"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\",\"scope\":\"/\",\"precedence\":1},{\"origin\":\"docs/agents/issue-tracker.md\",\"copy\":\"../spec/v1/repo/docs/agents/issue-tracker.md\",\"retrievedAt\":\"2026-11-14T23:00:54Z\",\"sha256\":\"418382ab0909b5bd01979828be5ba58806b6518d7b051b327d1c3b7be5e18ea2\",\"revision\":\"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\",\"scope\":\"/\",\"precedence\":1},{\"origin\":\"docs/agents/triage-labels.md\",\"copy\":\"../spec/v1/repo/docs/agents/triage-labels.md\",\"retrievedAt\":\"2026-11-14T23:00:54Z\",\"sha256\":\"aab16579b0800e034baa2509ae16c65de8a8be92908833a29a7ac9292406a1d9\",\"revision\":\"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\",\"scope\":\"/\",\"precedence\":1},{\"origin\":\"docs/agents/domain.md\",\"copy\":\"../spec/v1/repo/docs/agents/domain.md\",\"retrievedAt\":\"2026-11-14T23:00:54Z\",\"sha256\":\"e43b491dfa9935bd169c2e17b00349715fc56eed268b924280938bd02e5e137c\",\"revision\":\"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\",\"scope\":\"/\",\"precedence\":1}]}"
+ },
+ "git": {
+  "status": "observed",
+  "head": "71621d0ecb48366a80bebb7badf4b0fe0803a925",
+  "branch": "factory/3-97e80b59",
+  "commits": [
+   "71621d0 docs: add Factory smoke review-loop guide",
+   "8c058c9 Configure engineering agent skills",
+   "3ed6575 wippy",
+   "90f6ad5 docs: global event position implementation plan",
+   "dafc2a2 docs: global event position design spec",
+   "20fa3b0 fix: restore null return in harness retry to not break non-concurrency failure scenarios",
+   "7f15aea Merge branch 'concurrency-tests'",
+   "0ce69c5 fix: rethrow unexpected exceptions in harness retry instead of swallowing them",
+   "3d6d076 chore(quality): fix SpotBugs and PMD violations in concurrency tests",
+   "a2248bc test(concurrency): add mixed commands scenario",
+   "9ba1af6 test(concurrency): add write and read with minVersion scenario",
+   "55d57fe test(concurrency): add idempotent duplicate requests scenario",
+   "c55e9ac test(concurrency): add authorization and capture scenario",
+   "545ce5f add graphify graph",
+   "3e755bf test(concurrency): add concurrent authorizations scenario",
+   "92877be test(concurrency): add base concurrency integration test class",
+   "3ab8ade test(concurrency): add ConcurrentCommandHarness",
+   "4a9a2c1 test(concurrency): add ConcurrentCommandResult record",
+   "3b0e6c4 polish: clear all deprecation notices, warnings, and PMD violations from check build",
+   "96ae37b style: remove redundant imports in CreditAccountController",
+   "aa55976 fix: flatten AuthorizePurchaseResponse JSON with @JsonUnwrapped to preserve API contract",
+   "12295ab fix: exclude CreditAccountResponse from SpotBugs EI_EXPOSE_REP and add defensive list copy",
+   "d8783df fix: remove unused List import in CreditAccountDtoMapper",
+   "2725901 test: use typed response DTOs in CreditAccountControllerListIT",
+   "8a89f1e test: use typed response DTOs in CreditAccountControllerIT",
+   "2c6c9da refactor: use ErrorResponse in RestExceptionHandler",
+   "1ebf772 refactor: use typed DTOs in PageResponse and CreditAccountController",
+   "0a3ce3e feat: add explicit REST response DTOs and mapper",
+   "4debd91 docs: add design spec for explicit REST response DTOs",
+   "e8fea05 simplify details manually",
+   "92354fa style: remove extra blank lines from CreditAccountUseCaseSupport",
+   "ee3d54a refactor(idempotency): remove duplicated aggregate version column",
+   "09f4955 docs: plan idempotency aggregate version simplification",
+   "c4b2150 chore(quality): allow snake_case tests, update spotbugs exclude, fix static field",
+   "1e47eee chore(quality): fix PMD acceptance test violations",
+   "c971b04 chore(quality): fix PMD violations across main source",
+   "69fbda2 chore(checkstyle): remove unused import and unused variable",
+   "399f9ca test(usecase): cover credit account listing mapping",
+   "d152884 test(projection): cover worker PIT survivor paths",
+   "e6d18fa test(projection): cover capture and release projector paths",
+   "3c05b52 docs: plan targeted PIT survivor coverage",
+   "55cf4d4 test(projection): cover projector limit change, payment and auth",
+   "55cd495 test(projection): cover worker gating, retry and unblock paths",
+   "70a07d3 test(projection): add StaleDeliveryRecovery coverage",
+   "40bcba8 test(projection): add ProjectionGatingResult coverage",
+   "1a67ed8 test(projection): add ProjectionWorkerResult coverage",
+   "ad14654 fix(architecture): resolve qualityTest violations via ProjectionConfig port",
+   "6d4e4a8 test(architecture): deny non-allow-listed Spring in core",
+   "d76b238 refactor(projection): use TransactionRunner port in stale recovery",
+   "af5260c refactor(projection): use TransactionRunner port in worker"
+  ],
+  "diffStat": "docs/FACTORY_SMOKE.md | 13 +++++++++++++\n 1 file changed, 13 insertions(+)",
+  "remotes": [
+   {
+    "name": "origin",
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing.git"
+   }
+  ],
+  "alternates": false,
+  "copiedBytes": 839400
+ }
+}
