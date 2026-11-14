@@ -210,3 +210,28 @@ test('fixed human login permits Workers public setup operation only through setu
     'src/entrypoints/cli.ts': "export { firstFactoryOAuthLogin } from '../workers/index.js';",
   }, 'cli-workers-setup-only', 'src/entrypoints/cli.ts', 'src/workers/index.ts');
 });
+
+test('release bootstrap (ticket 32) is CLI-classified, shared with the controller like configuration, never with workers', async () => {
+  const result = await analyze({
+    'src/sandbox/index.ts': 'export const prepareReleaseGondolinSdk = () => undefined;',
+    'src/entrypoints/release.ts': 'export const readRelease = () => ({});',
+    'src/entrypoints/release-build.ts': "export { readRelease } from './release.js'; export { prepareReleaseGondolinSdk } from '../sandbox/index.js';",
+    'src/entrypoints/doctor.ts': "export { readRelease } from './release.js';",
+    'src/entrypoints/controller/owner.ts': "export { readRelease } from '../release.js';",
+  });
+  assert.equal(result.status, 0, JSON.stringify(result.violations));
+  await rejects({
+    'src/entrypoints/release.ts': 'export const readRelease = () => ({});',
+    'src/entrypoints/worker.ts': "export { readRelease } from './release.js';",
+  }, 'composition:worker', 'src/entrypoints/worker.ts', 'src/entrypoints/release.ts');
+  for (const from of ['src/entrypoints/release.ts', 'src/entrypoints/release-build.ts']) {
+    await rejects({
+      'src/workers/index.ts': 'export const skillPacks = {};',
+      [from]: "export { skillPacks } from '../workers/index.js';",
+    }, 'cli-workers-setup-only', from, 'src/workers/index.ts');
+  }
+  await rejects({
+    'src/entrypoints/setup.ts': 'export const setup = () => undefined;',
+    'src/entrypoints/controller/owner.ts': "export { setup } from '../setup.js';",
+  }, 'composition:controller', 'src/entrypoints/controller/owner.ts', 'src/entrypoints/setup.ts');
+});

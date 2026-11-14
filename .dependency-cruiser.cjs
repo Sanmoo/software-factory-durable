@@ -12,7 +12,7 @@ const allowed = {
   control: ['contracts', 'issue-tracker', 'code-repository', 'sandbox', 'workers', 'records'],
 };
 
-const classified = `^(src|test)/(${zones.join('|')})/|^src/entrypoints/(cli|setup|doctor|configuration)\\.ts$|^src/entrypoints/(controller|worker|adapter)(\\.ts$|/)|^test/(entrypoints|architecture)/|^(\\.dependency-cruiser\\.cjs|eslint\\.config\\.mjs)$`;
+const classified = `^(src|test)/(${zones.join('|')})/|^src/entrypoints/(cli|setup|doctor|configuration|release|release-build)\\.ts$|^src/entrypoints/(controller|worker|adapter)(\\.ts$|/)|^test/(entrypoints|architecture)/|^(\\.dependency-cruiser\\.cjs|eslint\\.config\\.mjs)$`;
 
 const compositions = {
   cli: ['contracts', 'protocol', 'records', 'sandbox', 'control', 'workers'],
@@ -20,7 +20,7 @@ const compositions = {
   worker: ['contracts', 'workers', 'protocol', 'records'],
   adapter: ['contracts', 'sandbox', 'protocol', 'records'],
 };
-const entrypoint = role => role === 'cli' ? '^src/entrypoints/(cli|setup|doctor|configuration)\\.ts$'
+const entrypoint = role => role === 'cli' ? '^src/entrypoints/(cli|setup|doctor|configuration|release|release-build)\\.ts$'
   : `^src/entrypoints/${role}(\\.ts$|/)`;
 
 module.exports = {
@@ -30,8 +30,8 @@ module.exports = {
       to: { pathNot: '^src/(contracts/|control/(rules/|types\\.ts$))' } },
     ...Object.entries(compositions).map(([role, destinations]) => ({ name: `composition:${role}`, severity: 'error',
       from: { path: entrypoint(role) },
-      to: { path: '^src/', pathNot: `^src/(${destinations.join('|')})/|${entrypoint(role)}${role === 'controller' ? '|^src/entrypoints/configuration\\.ts$' : ''}` } })),
-    { name: 'cli-workers-setup-only', severity: 'error', from: { path: '^src/entrypoints/(cli|doctor|configuration)\\.ts$' },
+      to: { path: '^src/', pathNot: `^src/(${destinations.join('|')})/|${entrypoint(role)}${role === 'controller' ? '|^src/entrypoints/(configuration|release)\\.ts$' : ''}` } })),
+    { name: 'cli-workers-setup-only', severity: 'error', from: { path: '^src/entrypoints/(cli|doctor|configuration|release|release-build)\\.ts$' },
       to: { path: '^src/workers/' } },
     { name: 'cli-control-types-only', severity: 'error', from: { path: entrypoint('cli') },
       to: { path: '^src/control/', dependencyTypesNot: ['type-only'] } },
