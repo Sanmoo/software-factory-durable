@@ -30,6 +30,10 @@
       {
         "src": "docker-daemon.json",
         "dest": "/etc/docker/daemon.json"
+      },
+      {
+        "src": "gitconfig",
+        "dest": "/etc/gitconfig"
       }
     ]
   },

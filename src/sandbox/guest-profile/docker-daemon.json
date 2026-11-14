@@ -10,10 +10,9 @@
     "unix:///run/docker.sock"
   ],
   "group": "root",
-  "bridge": "none",
   "iptables": false,
   "ip6tables": false,
   "ip-forward": false,
   "ip-masq": false,
-  "userland-proxy": false
+  "userland-proxy": true
 }

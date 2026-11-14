@@ -31,10 +31,16 @@ test('guest recipe uses one explicit ISO kernel/module cohort without a second k
     { src: '/home/sanmoo/software-factory-test/assets29/iso-boot/vmlinuz-virt', dest: '/boot/vmlinuz-virt' },
     { src: '/home/sanmoo/software-factory-test/assets29/cohort/6.18.58-0-virt', dest: '/lib/modules/6.18.58-0-virt' },
     { src: 'docker-daemon.json', dest: '/etc/docker/daemon.json' },
+    { src: 'gitconfig', dest: '/etc/gitconfig' },
   ]);
   for (const name of ['sandboxd', 'sandboxfs', 'sandboxssh', 'sandboxingress']) {
     assert.equal(recipe[name + 'Path'], '/home/sanmoo/software-factory-test/assets29/helpers/' + name);
   }
+});
+
+test('guest Git trusts only the Work workspace despite FUSE host uid mapping', () => {
+  // Operator decision 2026-11-14 (ticket 06): FUSE shows host uid to guest root.
+  assert.equal(readFileSync(join(directory, 'gitconfig'), 'utf8'), '[safe]\n\tdirectory = /workspace/*\n');
 });
 
 test('offline filesystem finalization is limited to the two sticky temporary directories', () => {
@@ -49,10 +55,15 @@ test('Docker-vfs profile uses guest cgroupfs and a guest-local Unix socket only'
   assert.deepEqual(daemon['exec-opts'], ['native.cgroupdriver=cgroupfs']);
   assert.deepEqual(daemon.hosts, ['unix:///run/docker.sock']);
   assert.equal(daemon.group, 'root');
-  assert.equal(daemon.bridge, 'none');
-  for (const name of ['iptables', 'ip6tables', 'ip-forward', 'ip-masq', 'userland-proxy']) {
+  // Operator decision 2026-11-14 (ticket 06): default bridge exists for Ryuk;
+  // no NAT/forwarding, so containers still have no outbound path.
+  assert.equal('bridge' in daemon, false);
+  for (const name of ['iptables', 'ip6tables', 'ip-forward', 'ip-masq']) {
     assert.equal(daemon[name], false);
   }
+  // Operator decision 2026-11-14 (ticket 06): published ports bind inside the
+  // guest via the userland proxy only; no NAT/forwarding/masquerade.
+  assert.equal(daemon['userland-proxy'], true);
 });
 
 test('guest-only hook has bounded readiness and is syntax-checked, never executed on host', () => {
