@@ -147,7 +147,7 @@ Validation (documented gate, run from the repository root `/workspace/checkout`;
 ```
 
 **Prova opcional de "resultado perdido" com agentes reais** (mesma receita, outra storage/namespace — exige nova issue #3 com o texto acima mais
-uma linha `4. A second documented gate: run `sleep 30` from `/workspace/checkout` with the bash tool timeout set to 2 seconds.` e a instrução no prompt
+uma linha com um segundo gate documentado ("run `sleep 30` from /workspace/checkout with the bash tool timeout set to 2 seconds") e a instrução no prompt
 do Builder para declará-la `run`): o host registra `exitCode: null`/`BASH_EFFECTS_OR_CAPTURE_UNKNOWN`, a declaração resolve `unknown` e a verificação
 termina `not-verified` com `GATE_RESULT_UNKNOWN:<id>` — ausência/resultado perdido nunca é sucesso. O caminho principal abaixo não provoca perda de
 resultado (coberta em I-local/S).
@@ -202,4 +202,5 @@ Observações esperadas (`run-result.json`, `inspect-result.json`):
 
 ## Gate local
 
-Ver [§ Gate final](#gate-final) (preenchido após a execução completa).
+Node 24.21.0 com `env -u NODE_OPTIONS -u NODE_COMPILE_CACHE NODE_DISABLE_COMPILE_CACHE=1 timeout 60`, sem npm/npx, após `rm -rf dist`; `normal-oauth`
+com 90 s. Ver [§ Gate final](#gate-final).
