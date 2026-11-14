@@ -3,7 +3,7 @@
 Autoridade: [ticket 26](../../.scratch/software-factory-mvp/issues/26-execution-recovery-without-survivor-adoption.md),
 [spec §§3.4, 4.4, 5.2, 5.3, 5.4, 5.7, 11.4](../../.scratch/software-factory/spec.md), [interfaces Q3/Q5/Q6/Q8/Q11](../../.scratch/software-factory/module-public-interfaces.md),
 cenários V-01/V-07/V-12/V-13 da [matriz de aceite](../../.scratch/software-factory/acceptance-and-incremental-plan.md).
-Base: integração `314f241` (tickets 01–13, 19, 20, 32 + 11). Branch `implement/software-factory-mvp-26`.
+Base: integração `9f75f22` (tickets 01–13, 19, 20, 32 + 11). Branch `implement/software-factory-mvp-26`.
 
 **Estado: implementação e suíte local verdes (níveis R/S/I-local, com cortes SIGKILL reais de processo controlador); ensaio real NÃO executado
 por este agente** (sem GitHub/VM/systemd/credenciais/rede/modelo). A receita fixa está em [§ Ensaio real](#ensaio-real-receita-one-shot).
@@ -93,11 +93,33 @@ mesmo storage; **I-local** componentes reais com fronteira externa substituída.
    função de composição do Sandbox (leitura do próprio layout), não operação nova do Control.
 3. **Hold bloqueante ⇒ `RECOVERY_BLOCKED` sem comando de saída**: `resume <trabalho>` (spec §11.3) não existe ainda; até lá a decisão explícita
    do operador não tem ingresso. Recomendado atribuir ao ticket que implementar `resume`.
-4. **Preparação interrompida** (fase `reserved`): considerada sem boot (correto) e o Slot é liberado; um `qemu-img`/`git` órfão do controlador
-   morto não é processo do grupo supervisionado — o ambiente incompleto nunca é adotado (`ENVIRONMENT_PREPARATION_INCOMPLETE`) e o cache em
-   preparo bloqueia o repositório. Supervisionar o preparo num grupo próprio seria mudança de desenho.
+4. **Preparação interrompida** (fase `reserved`, revisão MED1): nunca presumida cessada. Cessação só com evidência do host: nenhum ambiente
+   próprio listado, ou ambiente observado completo (`not-booted`/parado — o trabalho de disco termina antes de `ready`), e o cache do repo não
+   deixado em preparo. Ambiente incompleto (um `qemu-img` órfão pode seguir) ⇒ bloqueio local `RECOVERY_CESSATION_UNCONFIRMED` (reserva liberada,
+   não início comprovado; Slot retido). A saída é limpeza explícita do ambiente incompleto (ticket 30); supervisionar o preparo num grupo próprio
+   seria mudança de desenho.
 5. **Ambiente de Trabalho assentado com observação indeterminada** fecha o despacho globalmente (conservador).
 6. **Espera de 5 s com polling de 60 s**: a espera é um piso persistido; o início ocorre no primeiro ciclo após o prazo.
+
+## Correções da revisão estática (2026-11-14)
+
+Todas com teste vermelho contra o código anterior (verificado compilando a árvore anterior com os testes novos) e verde depois.
+
+| Achado | Correção | Teste |
+| --- | --- | --- |
+| HIGH composição de produção sem `sandbox.observe`/`workers.observeStart` | `entrypoints/controller/composition.ts` compõe ambos | `release-composition` (portas de recuperação) |
+| MED1 fase `reserved` presumida cessada | `ceaseOwn` exige evidência do host (ambiente ausente/observado completo, cache não em preparo) | `recovery-crash` "review MED1/MED3" |
+| MED2 assentamento sem a lógica do 11 | `applyConfirmedCessation`/`reofferUnlessCompleted` compartilhados com `releaseAfterCessation`/`recordEnd` | `recovery-flow` "review MED2" (escopo pendente ⇒ retomada `SCOPE_UPDATED`) |
+| MED3 `RECOVERY_CESSATION_UNCONFIRMED` nunca removido | removido no commit em que este boot confirma a cessação (evidência em `recovery[]`) | `recovery-crash` "review MED1/MED3" |
+| MED4 cache em preparo bloqueava para sempre | cada git da mutação roda sob `flock <id>.git.lock` (estado `lock: git-flock-v1`); o proprietário, antes do storage, reconcilia sem reparo: lock livre (nenhum git sobrevivente) + `git fsck --connectivity-only` só leitura do cache bare (nunca gravável pelo guest) ⇒ `idle`; senão mantido com próximo passo explícito ao operador (visível em `status.recovery.cache`) | `cache-reconciliation`, `sandbox-checkout` |
+| MED5 ausência sem raiz íntegra | `Records.find` só devolve `complete` sob a mesma raiz privada aberta (identidade dev/ino) | `find` "review MED5" |
+| MED6 passo filho executável sem orquestrador | filho exige o tombstone `<passo>-intent` e cria `<passo>-child-started` exclusivo | (receita; caminho com efeito, não exercitado localmente) |
+| LOW parada forçada | `termination: forced` ⇒ fim `failure` `ADMINISTRATIVE_STOP_FORCED` (recovery), `run` `uncertain` | `recovery-flow` "review LOW" |
+| LOW sockets próprios em `run/` | `control.sock`/`factory.sock` que são sockets do usuário são conhecidos | `sandbox-inventory` |
+| LOW guarda one-shot da receita | recusa `WORKER_LAUNCH_INVALID` (não início comprovado) | — |
+| LOW ambiente systemd --user dos filhos | `HOME`, `XDG_RUNTIME_DIR`, `DBUS_SESSION_BUS_ADDRESS` derivados do uid | — |
+| LOW `serviceSeconds` | lacuna documentada: nenhum adapter entrega `retry-after` ao Control hoje (regra pronta) | `recovery-rules` |
+| LOW inspect na raiz viva | `inspect` só lê (`Records.find` não cria nada; a cópia do storage fica no namespace da qualificação, como nas receitas 19/20) | — |
 
 ## Ensaio real (receita one-shot)
 
@@ -131,9 +153,9 @@ $N dist/test/entrypoints/recovery26-qualification.js stop-environment   # só se
   `providerSchedule` (marcador `a1-c1-start` sem `a1-c1-end`; ativações ≥ 2 só com a instrução de recuperação); `secretShapes` zerados.
   Resultado inconclusivo (p. ex. o worker do corte c ainda não escreveu recibo) continua válido se `spawnCutSettled` for satisfeito pelo ramo de
   não início; qualquer `false` reprova.
-- **Fora da receita**: corte real durante `git fetch` do cache (deixaria `cache/git/<id>.state.json` em `mutating`, exigindo reconciliação manual
-  do operador para qualquer preparo futuro desse repo no root). Coberto localmente pelo inventário/portão; proposto como ensaio separado em root
-  descartável.
+- **Fora da receita**: corte real durante `git fetch` do cache. Com a reconciliação sem reparo (MED4) o próximo proprietário marca o cache `idle`
+  se nenhum git sobreviveu e o cache bare passa a verificação só leitura; caso contrário fica bloqueado com ação explícita. Proposto como ensaio
+  separado em root descartável.
 
 ## Gate local
 
