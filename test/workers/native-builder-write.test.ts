@@ -175,7 +175,8 @@ test('Builder composition has host-fixed lexical Write and independent host-gate
     ? [builderWrite(invocation.context, options.sandbox, critical), builderBash(invocation.context, options.sandbox, critical, copyOutput)]
     : [reviewerRead(invocation.context, options.sandbox, critical)];
   const tools = invocation.context.role === 'builder' ? ['write', 'bash'] : ['read'];
-  if (invocation.context.role === 'builder' && copyOutput) {
+  // Builder Read: selected output copies (copyOutput) and/or the files of its own pack version (owner-enforced exact paths).
+  if (invocation.context.role === 'builder' && (copyOutput || invocation.skillPack !== undefined)) {
     customTools.push(reviewerRead(invocation.context, options.sandbox, critical));
     tools.push('read');
   }

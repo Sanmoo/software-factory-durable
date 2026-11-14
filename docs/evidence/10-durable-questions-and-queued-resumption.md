@@ -234,3 +234,6 @@ Testes: `builder-pack-read` (I-local: SDK real + owner/Records reais; v2 lê seu
 chegam ao guest; todos os caminhos citados por templates/skill da v2 estão na lista; uma Execução v1 lê só a v1), `activate-question` (lista
 exata no payload, v1 e v2), `owner-question` (versão divergente, sem pacote ou `..` → `WORKER_LAUNCH_INVALID`). Mutação que retira a permissão
 do pacote derruba `builder-pack-read`. Receita: namespace **`q10-question-v2`**; a issue #3 agora pede ao Builder que pergunte o nome do arquivo.
+Gate após a correção (`rm -rf dist`): dependency-cruiser sem violações (267 módulos, 1522 dependências); eslint exit 0; `tsc` exit 0;
+**118 arquivos**, um por vez (60 s; `normal-oauth` 90 s): 858 pass, 1 fail, 10 skipped — a falha era o teste estrutural `native-builder-write`
+que fixa o texto do portão de Read do Builder; atualizado para o novo portão exato e reexecutado: 7/7 verdes. Total: **859 pass, 0 fail, 10 skipped, 0 cancelled**.
