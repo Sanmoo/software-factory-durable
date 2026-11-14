@@ -122,7 +122,7 @@ test('guest helper is constant argv data and parses with same-FD authorization b
   const f = await fixture(t, (argv, options) => {
     invocations.push(argv);
     assert.equal(options.windowBytes, 65536);
-    assert.equal(options.stdout, 'pipe'); assert.equal(options.stderr, 'ignore');
+    assert.equal(options.stdout, 'pipe'); assert.equal(options.stderr, 'pipe'); // native ExecProcess.output() requires both pipes
     return guest(Buffer.from('source'));
   });
   const path = '/artifacts/name\'";$(not-a-command).txt';

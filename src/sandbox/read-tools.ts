@@ -243,7 +243,9 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
         };
         const argv = ['/usr/bin/python3', '-I', '-S', '-c', editSource ? guestEditSourceProgram : guestCopyAwareReadProgram, call.path];
         if (!editSource) argv.push(bound.role === 'builder' ? 'builder' : 'reviewer', JSON.stringify([...copies]));
-        const process = options.vm.exec(argv, { stdout: 'pipe', stderr: 'ignore',
+        // Native output() requires both pipes. stderr chunks are drained and
+        // discarded below; diagnostics never reach captures, SDK or display.
+        const process = options.vm.exec(argv, { stdout: 'pipe', stderr: 'pipe',
           signal: AbortSignal.any([signal, commandLifetime.signal]), windowBytes: 65536 });
         // Observe rejection immediately, even when the stream itself fails first.
         void process.result.catch(() => {});

@@ -280,3 +280,33 @@ test('simultaneous captures for two paths retain independent owner versions', as
     if (page.status === 'success') assert.equal(Buffer.from(page.data, 'base64').toString(), path);
   }
 });
+
+test('read and edit-source capture drain both pipes required by native ExecProcess.output without publishing stderr', async t => {
+  const calls = [capture, { name: 'read', operation: 'capture', path: '/workspace/source', callId: 'read' }];
+  for (const call of calls) await t.test(call.name, async t => {
+    let outputAttempts = 0, stderrDrained = 0;
+    const f = await fixture(t, [], { ...(call.name === 'read' ? { context: { ...context, role: 'standards' as const } } : {}), exec(_argv, options) {
+      return { async *output() {
+        outputAttempts++;
+        // Actual pinned ExecProcess.output contract (gondolin dist/src/exec.js:298–303), not VM execution.
+        if (options?.stdout !== 'pipe' || options.stderr !== 'pipe') throw new Error('stdout/stderr are not piped');
+        yield { stream: 'stdout', data: Buffer.from('alpha\n') };
+        stderrDrained++;
+        yield { stream: 'stderr', data: Buffer.from('private-guest-diagnostic') };
+      }, result: Promise.resolve({ exitCode: 0 }) };
+    } });
+    const result = await f.run(call);
+    assert.equal(outputAttempts, 1, JSON.stringify(result));
+    assert.equal(stderrDrained, 1);
+    assert.equal(result.status, 'success');
+    if (result.status !== 'success') return;
+    const page = await f.run(call.name === 'read' ? { name: 'read', operation: 'page', reference: result.reference, offset: 0, callId: 'p' }
+      : { name: 'edit-source', path: call.path, reference: result.reference, sourceVersion: (result as { sourceVersion?: string }).sourceVersion, operation: 'page', offset: 0, callId: 'p' });
+    assert.equal(page.status, 'success');
+    if (page.status === 'success') {
+      const text = Buffer.from(page.data, 'base64').toString();
+      assert.match(text, /alpha/);
+      assert.doesNotMatch(text, /private-guest-diagnostic/);
+    }
+  });
+});
