@@ -85,6 +85,12 @@ export type ProposalHandoff = {
   spec: { version: string; sources: string; sha256: string } | null; instructions: { version: string; sources: string; sha256: string } | null;
   /** Guest paths of the present changed files (sorted, at most 20) the reviewers must read in full; the index lists all of them. */
   changed: string[]; changedTruncated: boolean;
+  /**
+   * Ticket 13: content identity of the proposal independent of Git metadata (sha256 over path/presence/kind/mode/content of every indexed
+   * path), whether the tree is clean (nothing staged/unstaged/untracked) and whether the HEAD commit holds exactly that content (blobs of
+   * HEAD hashed by content). Absent in captures of earlier Factory versions: then no exemption can be demonstrated.
+   */
+  content?: { sha256: string; clean: boolean; headMatches: boolean };
 };
 /** Host-side identity of a handed-off proposal (hashes of every indexed path plus Git metadata), computed with confined reads. */
 export type ProposalIdentity = { status: 'observed'; sha256: string; indexSha256: string; entries: number; consistent: boolean; observedAt: string } | { status: 'unavailable' | 'refused'; code: string };

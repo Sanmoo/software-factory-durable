@@ -96,6 +96,33 @@ for path, item in entries.items():
         item["sha256"] = h.hexdigest()
     else:
         item["kind"] = "other"
+stage = "git-head-blobs"
+# Ticket 13: the HEAD blob of every indexed path, hashed by content (oids carry no newline, unlike paths), to prove a commit holds the tree.
+listing = {}
+for record in git("ls-tree", "-r", "-z", "--full-tree", "HEAD").split(b"\0"):
+    if not record:
+        continue
+    meta, _, name = record.partition(b"\t")
+    fields = meta.split(b" ")
+    if len(fields) == 3 and fields[1] == b"blob":
+        listing[text(name)] = text(fields[2])
+wanted = sorted(set(listing[path] for path in entries if path in listing))
+blobs = {}
+if wanted:
+    p = subprocess.run(G + ["cat-file", "--batch"], input=("\n".join(wanted) + "\n").encode(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env)
+    if p.returncode != 0:
+        fail("GIT_FAILED")
+    data, at = p.stdout, 0
+    for oid in wanted:
+        end = data.index(b"\n", at)
+        header = data[at:end].split(b" ")
+        if len(header) != 3 or text(header[0]) != oid or header[1] != b"blob":
+            fail("GIT_FAILED")
+        size = int(header[2])
+        blobs[oid] = digest(data[end + 1:end + 1 + size])
+        at = end + 1 + size + 1
+for path, item in entries.items():
+    item["headSha256"] = blobs.get(listing[path]) if path in listing else None
 stage = "write"
 os.makedirs(os.path.join(artifacts, "review"), exist_ok=True)
 try:
@@ -135,9 +162,14 @@ counts = {"entries": len(ordered), "committed": sum(1 for e in ordered if e["com
           "unstaged": sum(1 for e in ordered if e["unstaged"]), "untracked": sum(1 for e in ordered if e["untracked"]),
           "removed": sum(1 for e in ordered if not e["present"])}
 changed = [e["guestPath"] for e in ordered if e["present"] and e.get("kind") == "file"]
+identity = [[e["path"], e["present"], e.get("kind"), e.get("mode"), e.get("sha256")] for e in ordered]
+clean = not any(e["staged"] or e["unstaged"] or e["untracked"] for e in ordered)
+head_matches = all((e["headSha256"] is not None and e.get("kind") in ("file", "symlink") and e["headSha256"] == e.get("sha256")) if e["present"]
+                   else e["headSha256"] is None for e in ordered)
+content = {"sha256": digest(json.dumps(identity, separators=(",", ":")).encode()), "clean": clean, "headMatches": head_matches}
 summary = {"version": 1, "round": int(rnd), "index": view + "/index.json", "head": head, "branch": branch, "base": base, "mergeBase": merge_base,
            "counts": counts, "patches": patches, "spec": latest("spec"), "instructions": latest("instructions"),
-           "changed": changed[:20], "changedTruncated": len(changed) > 20}
+           "changed": changed[:20], "changedTruncated": len(changed) > 20, "content": content}
 index = dict(summary, checkout=checkout_view, entries=ordered,
              reviewerNote="Read each listed guestPath and patch with the read tool, with offset/limit to continue; read beyond the hunks for context.")
 index_bytes = json.dumps(index, indent=1, sort_keys=True).encode()
@@ -165,6 +197,7 @@ export const handoffSummarySchema = z.strictObject({
   counts: z.strictObject({ entries: count, committed: count, staged: count, unstaged: count, untracked: count, removed: count }),
   patches: z.strictObject({ committed: patch, staged: patch, unstaged: patch }), spec: version, instructions: version,
   changed: z.array(guestPath('/workspace/checkout/')).max(20), changedTruncated: z.boolean(),
+  content: z.strictObject({ sha256, clean: z.boolean(), headMatches: z.boolean() }).optional(),
 });
 /** Strict parse of the program's stdout (already filtered by Records); anything else is a failed capture, never a guessed handoff. */
 export function parseHandoffSummary(stdout: string, round: number, baseCommit: string): ProposalHandoff {
