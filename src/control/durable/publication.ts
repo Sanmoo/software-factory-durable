@@ -36,9 +36,13 @@ export async function evaluatePublication(session: Session, work_id: string, bas
     if (step.kind !== 'evaluate' || step.basisExecutionId !== basisExecutionId || !basis) return 'stale' as const;
     const decision = publishableContent(basis);
     const now = new Date().toISOString();
+    const earlier = work.publication ?? null;
+    // Attempts, linked heads and the linked own PR survive a new basis: an attempted head is never requested again, and a later verified
+    // head updates the same own PR instead of creating another.
     work.publication = { state: decision.ok ? 'awaiting-discovery' : 'not-publishable', basisExecutionId, marker: publicationMarker(work.work_id),
       branch: basis.request.branch, base: basis.request.base, verified: decision.ok ? decision.verified : null, expectedRemote: null, requestedAt: null,
-      pullRequest: null, description: null, discoveries: work.publication?.discoveries ?? [], reasons: decision.ok ? [] : decision.reasons,
+      pullRequest: earlier?.pullRequest ?? null, description: earlier?.description ?? null, discoveries: earlier?.discoveries ?? [],
+      attempts: earlier?.attempts ?? [], linkedHeads: earlier?.linkedHeads ?? [], refsBefore: null, update: null, reasons: decision.ok ? [] : decision.reasons,
       nextStep: decision.ok ? 'The own publication is discovered (Git remote + pull requests) before anything is requested.'
         : 'Nothing is published: the Execution content is not verified (reasons). A new verified Execution (correction/scope update) is needed.', updatedAt: now };
     history(work, 'publication-evaluated', basisExecutionId, `${work.publication.state}${decision.ok ? `:${decision.verified.head}` : `:${decision.reasons.join(',')}`}`);
@@ -46,12 +50,17 @@ export async function evaluatePublication(session: Session, work_id: string, bas
   });
 }
 
-/** The publication activation STARTED ("Confirmar início", same commit): from now on only a discovery decides; never requested again. */
-export function markPublicationStarted(work: WorkRecord, execution: ExecutionView, at: string) {
+/**
+ * The publication activation is ATTEMPTED from its activation commit ("activation-requested", before any launch or receipt): from now on
+ * only a discovery after cessation decides, and this verified head is never requested again, whatever happens to the receipt.
+ */
+export function markPublicationAttempt(work: WorkRecord, execution: ExecutionView, at: string) {
   const publication = work.publication;
-  if (!execution.request.publication || !publication || publication.state !== 'requested' || publication.basisExecutionId !== execution.request.publication.basisExecutionId) return;
-  Object.assign(publication, { state: 'awaiting-discovery', updatedAt: at, nextStep: 'A publication activation started: its effects are discovered after its cessation, never assumed.' });
-  work.history.push({ at, event: 'publication-started', origin: 'controller-publication', executionId: execution.executionId, detail: execution.request.publication.head });
+  const request = execution.request.publication;
+  if (!request || !publication || publication.state !== 'requested' || publication.basisExecutionId !== request.basisExecutionId) return;
+  publication.attempts = [...(publication.attempts ?? []), { executionId: execution.executionId, head: request.head, at }].slice(-20);
+  Object.assign(publication, { state: 'awaiting-discovery', updatedAt: at, nextStep: 'A publication activation was requested: its effects are discovered after its cessation, never assumed.' });
+  work.history.push({ at, event: 'publication-started', origin: 'controller-publication', executionId: execution.executionId, detail: request.head });
 }
 
 const own = (pull: NonNullable<Extract<DiscoveryDecision, { outcome: 'linked' }>['pullRequest']>, at: string): NonNullable<PublicationView['pullRequest']> => ({
@@ -88,11 +97,13 @@ export async function recordDiscovery(session: Session, work_id: string, input: 
     if (decision.outcome === 'linked') {
       link(decision.pullRequest);
       publication.state = 'published';
+      publication.linkedHeads = [...new Set([...(publication.linkedHeads ?? []), decision.pullRequest.headSha])].slice(-20);
       publication.nextStep = 'Own draft pull request linked. Opening it does not end the Ticket or the Work; readiness and human merge are separate.';
       history(work, 'publication-linked', input.executionId, `#${decision.pullRequest.number}:${decision.pullRequest.headSha}`);
     } else if (decision.outcome === 'absent') {
-      Object.assign(publication, { state: 'requested', expectedRemote: decision.expectedRemote, requestedAt: at,
-        nextStep: 'No own publication exists (complete read): a publication activation of the Builder is queued with the observed lease expectation.' });
+      Object.assign(publication, { state: 'requested', expectedRemote: decision.expectedRemote, requestedAt: at, refsBefore: decision.refs, update: decision.update?.number ?? null,
+        nextStep: decision.update ? `A later verified basis: a publication activation is queued to update the own pull request #${decision.update.number} (lease on its current head).`
+          : 'No own publication exists (complete read): a publication activation of the Builder is queued with the observed lease expectation.' });
       work.queue = { ...work.queue, pending: true };
       history(work, 'publication-requested', input.executionId, decision.expectedRemote.state === 'absent' ? 'remote:absent' : `remote:${decision.expectedRemote.sha}`);
     } else if (decision.outcome === 'blocked') {
@@ -101,6 +112,11 @@ export async function recordDiscovery(session: Session, work_id: string, input: 
       publication.nextStep = `Publication is not repeated or adopted automatically (${decision.reasons.join(', ')}). Operator must inspect the branch and pull requests on GitHub and decide explicitly (ticket 26).`;
       if (!work.impediments.some(item => item.code === publicationImpediment)) work.impediments.push({ code: publicationImpediment, scope: 'work', since: at, nextStep: publication.nextStep });
       history(work, 'publication-blocked', input.executionId, decision.reasons.join(','));
+    } else if (decision.outcome === 'held') {
+      publication.nextStep = 'A pull request associated with this Ticket is not recognised as the Factory\'s own: it is neither adopted nor ignored, and nothing is ' +
+        'requested. Operator must decide on GitHub (handle the Ticket manually, or remove the association: edit the closing keyword/reference out of that pull request, ' +
+        'or unlink it from Development); the discovery re-reads it on later cycles.';
+      if (!repeated) history(work, 'publication-discovery-incomplete', input.executionId, decision.reasons.join(','));
     } else {
       publication.nextStep = 'The discovery read was incomplete: nothing is concluded or repeated; the safe read is retried on a later cycle.';
       if (!repeated) history(work, 'publication-discovery-incomplete', input.executionId, decision.reasons.join(','));

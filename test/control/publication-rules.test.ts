@@ -9,13 +9,19 @@ const workId = '0b9c6a52-3d3e-4c8f-9a51-000000000001';
 const branch = 'factory/3-0b9c6a52';
 const head = 'd'.repeat(40);
 const marker = publicationMarker(workId);
-const expect = { workId, branch, base: 'main', repositoryId: 3, head };
+const app = { login: 'factory-app[bot]', id: 41898282 };
+const expect = { workId, ticketNumber: 3, branch, base: 'main', repositoryId: 3, head, app };
+const refs = { 'refs/heads/main': 'b'.repeat(40) };
+const protectedBase = { state: 'pull-request-required' as const, sources: ['ruleset:1'] };
 const body = [marker, '## Summary', 'Adds the factory note. Closes #3', '## Validation', 'npm test: passed (Factory gate t1).', '## Risk', 'Low: docs only.'].join('\n');
 const own = (overrides: Partial<CandidateFacts> = {}): CandidateFacts => ({ pullRequestId: 9004, nodeId: 'PR_node4', number: 4, url: 'https://github.com/acme/project/pull/4',
   state: 'open', merged: false, draft: true, headRef: branch, headSha: head, baseRef: 'main', headRepositoryId: 3, author: { id: 41898282, login: 'factory-app[bot]', type: 'Bot' },
   body, ...overrides });
-const observed = (candidates: CandidateFacts[], tip: { state: 'absent' } | { state: 'present'; sha: string } | { state: 'unknown'; code: string } = { state: 'present', sha: head }) =>
-  ({ kind: 'observed' as const, repositoryId: 3, candidates, branch: tip });
+const observed = (candidates: CandidateFacts[], tip: { state: 'absent' } | { state: 'present'; sha: string } | { state: 'unknown'; code: string } = { state: 'present', sha: head },
+  extra: { refs?: Record<string, string> | 'unknown'; baseProtection?: Parameters<typeof decideDiscovery>[0]['observation'] extends infer O ? O extends { baseProtection: infer P } ? P : never : never } = {}) =>
+  ({ kind: 'observed' as const, repositoryId: 3, candidates, branch: tip,
+    refs: extra.refs === 'unknown' ? { state: 'unknown' as const, code: 'GITHUB_QUERY_FAILED' } : { state: 'complete' as const, refs: extra.refs ?? refs },
+    baseProtection: extra.baseProtection ?? protectedBase });
 
 /** A completed, ceased Execution whose ticket 13 verification and final capture are given. */
 function execution(overrides: { verification?: object | null; content?: object | null; outcome?: 'completed' | 'failure'; cessation?: 'confirmed' | 'unconfirmed';
@@ -57,7 +63,13 @@ test('AC2/AC4: ownership needs the marker, the App bot author, the own branch, r
   assert.deepEqual(classifyCandidate(own(), expect), { own: true, reasons: [] });
   assert.deepEqual(classifyCandidate(own({ body: 'no marker' }), expect).reasons, ['MARKER_ABSENT']);
   assert.deepEqual(classifyCandidate(own({ body: publicationMarker('0b9c6a52-3d3e-4c8f-9a51-000000000002') }), expect).reasons, ['MARKER_ABSENT'], 'another Work\'s marker');
-  assert.deepEqual(classifyCandidate(own({ author: { id: 10, login: 'human', type: 'User' } }), expect).reasons, ['AUTHOR_NOT_APP'], 'a human copying the marker is not the Factory');
+  assert.deepEqual(classifyCandidate(own({ author: { id: 10, login: 'human', type: 'User' } }), expect).reasons, ['AUTHOR_NOT_FACTORY_APP'], 'a human copying the marker is not the Factory');
+  // Review MED 3: the App identity is pinned; another bot carrying the marker is not the Factory, and an unknown identity owns nothing.
+  assert.deepEqual(classifyCandidate(own({ author: { id: 777, login: 'other-app[bot]', type: 'Bot' } }), expect).reasons, ['AUTHOR_NOT_FACTORY_APP']);
+  assert.deepEqual(classifyCandidate(own({ author: { id: 41898282, login: 'other-app[bot]', type: 'Bot' } }), expect).reasons, ['AUTHOR_NOT_FACTORY_APP'], 'login and id both');
+  assert.deepEqual(classifyCandidate(own(), { ...expect, app: null }).reasons, ['FACTORY_APP_IDENTITY_UNKNOWN']);
+  assert.deepEqual(decideDiscovery({ expect: { ...expect, app: null }, attempted: false, observation: observed([], { state: 'absent' }) }).reasons, ['FACTORY_APP_IDENTITY_UNKNOWN'],
+    'nothing is requested without the pinned identity');
   assert.deepEqual(classifyCandidate(own({ headRef: 'factory/3-other' }), expect).reasons, ['OTHER_BRANCH']);
   assert.deepEqual(classifyCandidate(own({ headRepositoryId: 99 }), expect).reasons, ['OTHER_REPOSITORY']);
   assert.deepEqual(classifyCandidate(own({ baseRef: 'release' }), expect).reasons, ['OTHER_BASE']);
@@ -67,16 +79,20 @@ test('AC4/AC6: discovery links exactly one own draft PR at the verified head; ab
   const linked = decideDiscovery({ expect, attempted: true, observation: observed([own()]) });
   assert.equal(linked.outcome, 'linked');
   assert.equal(decideDiscovery({ expect, attempted: false, observation: observed([], { state: 'absent' }) }).outcome, 'absent');
-  assert.deepEqual(decideDiscovery({ expect, attempted: false, observation: observed([], { state: 'absent' }) }), { outcome: 'absent', expectedRemote: { state: 'absent' }, reasons: [], candidates: [] });
+  assert.deepEqual(decideDiscovery({ expect, attempted: false, observation: observed([], { state: 'absent' }) }),
+    { outcome: 'absent', expectedRemote: { state: 'absent' }, update: null, refs, reasons: [], candidates: [] }, 'the request keeps the refs snapshot');
   // The verified commit already on the remote branch is a compatible own push (only the PR is missing): the lease expects it.
-  assert.deepEqual(decideDiscovery({ expect, attempted: false, observation: observed([]) }), { outcome: 'absent', expectedRemote: { state: 'present', sha: head }, reasons: [], candidates: [] });
+  assert.deepEqual(decideDiscovery({ expect, attempted: false, observation: observed([]) }),
+    { outcome: 'absent', expectedRemote: { state: 'present', sha: head }, update: null, refs, reasons: [], candidates: [] });
 });
 
 test('AC4/AC6: the expected branch name is not authorship; unknown PRs, several candidates, unknown changes and incomplete reads block repetition', () => {
   const blocked = (input: Parameters<typeof decideDiscovery>[0]) => { const value = decideDiscovery(input); return [value.outcome, value.reasons]; };
   assert.deepEqual(blocked({ expect, attempted: false, observation: observed([], { state: 'present', sha: 'e'.repeat(40) }) }), ['blocked', ['REMOTE_BRANCH_UNKNOWN_CHANGE']]);
   assert.deepEqual(blocked({ expect, attempted: false, observation: observed([own({ body: null, author: { id: 10, login: 'human', type: 'User' } })]) }),
-    ['blocked', ['UNKNOWN_PULL_REQUEST:4']], 'a PR on the expected branch without correlation is not adopted');
+    ['held', ['UNKNOWN_PULL_REQUEST:4']], 'a PR on the expected branch without correlation is not adopted; before any attempt it is held (07 operator path)');
+  assert.deepEqual(blocked({ expect, attempted: true, observation: observed([own({ body: null, author: { id: 10, login: 'human', type: 'User' } })]) }),
+    ['blocked', ['UNKNOWN_PULL_REQUEST:4']], 'after an attempt it blocks');
   assert.deepEqual(blocked({ expect, attempted: true, observation: observed([own(), own({ number: 5, pullRequestId: 9005, url: 'https://github.com/acme/project/pull/5' })]) }),
     ['blocked', ['MULTIPLE_OWN_PULL_REQUESTS:4,5']]);
   assert.deepEqual(blocked({ expect, attempted: true, observation: { kind: 'incomplete', code: 'GITHUB_QUERY_FAILED' } }), ['incomplete', ['GITHUB_QUERY_FAILED']]);
@@ -92,6 +108,36 @@ test('AC4/AC6: the expected branch name is not authorship; unknown PRs, several 
   assert.deepEqual(blocked({ expect, attempted: true, observation: observed([own()], { state: 'present', sha: 'e'.repeat(40) }) }), ['blocked', ['REMOTE_BRANCH_CHANGED']]);
   assert.deepEqual(blocked({ expect, attempted: true, observation: observed([own(), own({ number: 9, pullRequestId: 9009, headRef: 'human/x', body: 'Closes #3', author: { id: 10, login: 'h', type: 'User' } })]) }),
     ['blocked', ['UNKNOWN_PULL_REQUEST:9']], 'an unknown associated PR is never adopted nor ignored');
+  // Review LOW: a non-conformant description is never linked as published.
+  assert.deepEqual(blocked({ expect, attempted: true, observation: observed([own({ body: `${marker}\nno sections` })]) }),
+    ['blocked', ['DESCRIPTION_NONCONFORMANT:SUMMARY_SECTION_MISSING+VALIDATION_SECTION_MISSING+RISK_SECTION_MISSING+TICKET_LINK_MISSING']]);
+});
+
+test('review MED 4: a request needs a complete refs snapshot and a base requiring PRs without App bypass; other refs changed during the window block', () => {
+  const blocked = (input: Parameters<typeof decideDiscovery>[0]) => { const value = decideDiscovery(input); return [value.outcome, value.reasons]; };
+  assert.deepEqual(blocked({ expect, attempted: false, observation: observed([], { state: 'absent' }, { refs: 'unknown' }) }), ['incomplete', ['REFS_UNKNOWN:GITHUB_QUERY_FAILED']]);
+  assert.deepEqual(blocked({ expect, attempted: false, observation: observed([], { state: 'absent' }, { baseProtection: { state: 'not-required', reason: 'NO_PULL_REQUEST_RULE_WITHOUT_APP_BYPASS' } }) }),
+    ['blocked', ['BASE_PROTECTION_NOT_VERIFIED:NO_PULL_REQUEST_RULE_WITHOUT_APP_BYPASS']], 'no publication without a base the App cannot update directly');
+  assert.deepEqual(blocked({ expect, attempted: false, observation: observed([], { state: 'absent' }, { baseProtection: { state: 'unknown', code: 'GITHUB_ACCESS_DENIED' } }) }),
+    ['incomplete', ['BASE_PROTECTION_UNKNOWN:GITHUB_ACCESS_DENIED']]);
+  const after = { ...refs, [`refs/heads/${branch}`]: head };
+  assert.deepEqual(blocked({ expect, attempted: true, refsBefore: refs, observation: observed([own()], { state: 'present', sha: head }, { refs: after }) }), ['linked', []], 'the own branch may change');
+  assert.deepEqual(blocked({ expect, attempted: true, refsBefore: refs, observation: observed([own()], { state: 'present', sha: head }, { refs: { ...after, 'refs/heads/main': 'e'.repeat(40) } }) }),
+    ['blocked', ['UNEXPECTED_REF_CHANGE:refs/heads/main']]);
+  assert.deepEqual(blocked({ expect, attempted: true, refsBefore: refs, observation: observed([own()], { state: 'present', sha: head }, { refs: { ...after, 'refs/tags/v9': head } }) }),
+    ['blocked', ['UNEXPECTED_REF_CHANGE:refs/tags/v9']]);
+  assert.deepEqual(blocked({ expect, attempted: true, refsBefore: refs, observation: observed([own()], { state: 'present', sha: head }, { refs: 'unknown' }) }), ['incomplete', ['REFS_UNKNOWN:GITHUB_QUERY_FAILED']]);
+});
+
+test('review MED 6: a later verified head updates the linked own PR once; the same head is never requested twice', () => {
+  const old = 'a'.repeat(40);
+  const update = decideDiscovery({ expect, attempted: false, previousHeads: [old], observation: observed([own({ headSha: old })], { state: 'present', sha: old }) });
+  assert.equal(update.outcome, 'absent');
+  assert.ok(update.outcome === 'absent' && update.update?.number === 4 && JSON.stringify(update.expectedRemote) === JSON.stringify({ state: 'present', sha: old }));
+  assert.deepEqual(decideDiscovery({ expect, attempted: true, previousHeads: [old], observation: observed([own({ headSha: old })], { state: 'present', sha: old }) }).reasons,
+    ['PUBLISHED_HEAD_NOT_VERIFIED'], 'an attempted head is never re-requested');
+  assert.deepEqual(decideDiscovery({ expect, attempted: false, previousHeads: [], observation: observed([own({ headSha: old })], { state: 'present', sha: old }) }).reasons,
+    ['PUBLISHED_HEAD_NOT_VERIFIED'], 'only a head the Factory itself linked may be updated');
 });
 
 test('AC3: the description is short summary/validation/risk with the marker and the Ticket link; no transcript or local path presented as a link', () => {
@@ -109,20 +155,22 @@ test('AC3: the description is short summary/validation/risk with the marker and 
 });
 
 test('AC1/AC5: the publication request names the exact commit, branch, base, lease expectation and marker; it never asks to merge or approve', () => {
-  const input = { mode: 'continue' as const, reason: 'SESSION_COMPATIBLE', executionId: 'e2', previousExecutionId: 'e1', skillDirectory: '/artifacts/factory/skill-pack/factory-skills-v6',
+  const input = { reason: 'PUBLISH_ONLY_SESSION', pullRequest: null, executionId: 'e2', previousExecutionId: 'e1', skillDirectory: '/artifacts/factory/skill-pack/factory-skills-v6',
     repository: 'acme/project', base: 'main', branch, head, marker, ticket: { number: 3, url: 'https://github.com/acme/project/issues/3' }, workId, checkout: '/workspace/checkout',
     expectedRemote: { state: 'absent' as const }, verified: { reviewedRound: 1, gates: [{ id: 't1', outcome: 'passed' }], requiredChecks: [] } };
   const continued = publicationPrompt(input);
   assert.equal(continued.kind, 'prompt');
   if (continued.kind !== 'prompt') return;
-  assert.match(continued.prompt, /^publish\n/);
+  assert.match(continued.prompt, /^Factory publication instruction \(publish-only session/);
+  assert.match(continued.prompt, /PUBLISH-ONLY/);
   assert.ok(continued.prompt.includes(`--force-with-lease=refs/heads/${branch}: origin ${head}:refs/heads/${branch}`), 'empty expectation: the branch must not exist yet');
   assert.ok(continued.prompt.includes(marker) && continued.prompt.includes('--draft') && continued.prompt.includes('/skills/pr/SKILL.md'));
   assert.doesNotMatch(continued.prompt, /gh pr merge|--admin|gh pr ready|--force(?!-with-lease)/);
   const pushed = publicationPrompt({ ...input, expectedRemote: { state: 'present', sha: head } });
   assert.ok(pushed.kind === 'prompt' && pushed.prompt.includes(`already holds the verified commit ${head}`) && !pushed.prompt.includes('git -C /workspace/checkout push'));
-  const replaced = publicationPrompt({ ...input, mode: 'replace', reason: 'SESSION_LOST' });
-  assert.ok(replaced.kind === 'prompt' && replaced.prompt.startsWith('Factory publication instruction') && replaced.prompt.includes('SESSION_LOST'));
+  const updated = publicationPrompt({ ...input, expectedRemote: { state: 'present', sha: 'a'.repeat(40) }, pullRequest: 4 });
+  assert.ok(updated.kind === 'prompt' && updated.prompt.includes(`--force-with-lease=refs/heads/${branch}:${'a'.repeat(40)}`) && updated.prompt.includes('Do NOT create a pull request: #4')
+    && !updated.prompt.includes('gh pr create'));
 });
 
 test('AC4/AC6: the next publication step follows the Work: evaluate a new verified basis, discover after cessation, nothing while active or settled', () => {
@@ -135,9 +183,12 @@ test('AC4/AC6: the next publication step follows the Work: evaluate a new verifi
   const active = { ...execution(), state: 'started' } as ExecutionView;
   assert.deepEqual(publicationStep(work(active)), { kind: 'none' });
   const publication = execution({ executionId: 'e2', outcome: 'failure', publication: { basisExecutionId: 'e1', head, branch, base: 'main', marker, expectedRemote: { state: 'absent' } } });
-  assert.deepEqual(publicationStep(work(publication, { state: 'awaiting-discovery', basisExecutionId: 'e1' }, [execution()])),
+  assert.deepEqual(publicationStep(work(publication, { state: 'awaiting-discovery', basisExecutionId: 'e1', verified: { head } as PublicationView['verified'],
+    attempts: [{ executionId: 'e2', head, at: 'x' }] }, [execution()])),
     { kind: 'discover', trigger: 'after-publication', attempted: true }, 'a lost result is discovered before anything is repeated');
   assert.deepEqual(publicationStep(work(execution(), { state: 'published', basisExecutionId: 'e1' })), { kind: 'none' });
+  assert.deepEqual(publicationStep(work(execution({ executionId: 'e4' }), { state: 'published', basisExecutionId: 'e1' })), { kind: 'evaluate', basisExecutionId: 'e4' },
+    'review MED 6: a later verified basis after publication may update the own PR');
   assert.deepEqual(publicationStep(work(execution(), { state: 'blocked', basisExecutionId: 'e1' })), { kind: 'none' });
   assert.deepEqual(publicationStep(work(execution({ executionId: 'e3' }), { state: 'requested', basisExecutionId: 'e1' })), { kind: 'evaluate', basisExecutionId: 'e3' },
     'a newer verified basis (e.g. after a scope update) is evaluated again');

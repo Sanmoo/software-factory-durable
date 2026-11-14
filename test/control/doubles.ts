@@ -12,6 +12,10 @@ export type Remote = {
   pulls: Record<number, PullRequestCandidate[]>;
   /** Ticket 14: remote tips of known branches (absent key = absent ref); `unknown` = the ref read failed. */
   refs?: Record<string, string | 'unknown'>;
+  /** Ticket 14: tags (`refs/tags/<name>` → sha); main is always at 'b'*40. `refsUnknown`: the repository-wide listing fails. */
+  tags?: Record<string, string>; refsUnknown?: boolean;
+  /** Ticket 14: base protection as the adapter reports it (default: pull requests required by a ruleset the App cannot bypass). */
+  baseProtection?: { state: 'pull-request-required'; sources: string[] } | { state: 'not-required'; reason: string } | { state: 'unknown'; code: string };
   listFailure?: Unavailable; readFailure?: Unavailable; publicationFailure?: Unavailable;
   /** Per-Ticket incomplete association (e.g. timeline unavailable). */
   incompleteAssociation?: Record<number, Unavailable>;
@@ -134,7 +138,11 @@ export function githubDoubles(remote: Remote) {
         : { completeness: 'complete' as const, candidates: [...(remote.pulls[n] ?? [])] }])),
       branches: Object.fromEntries(correlation.knownBranches.map(branch => [branch, remote.refs?.[branch] === 'unknown'
         ? { state: 'unknown' as const, code: 'GITHUB_QUERY_FAILED', nextStep: 'synthetic' }
-        : remote.refs?.[branch] ? { state: 'present' as const, sha: remote.refs[branch]! } : { state: 'absent' as const }])) }), correlation),
+        : remote.refs?.[branch] ? { state: 'present' as const, sha: remote.refs[branch]! } : { state: 'absent' as const }])),
+      ...(correlation.refs ? { refs: remote.refsUnknown ? { state: 'unknown' as const, code: 'GITHUB_QUERY_FAILED' } : { state: 'complete' as const, refs: {
+        'refs/heads/main': 'b'.repeat(40), ...Object.fromEntries(Object.entries(remote.refs ?? {}).filter(([, sha]) => sha !== 'unknown').map(([name, sha]) => [`refs/heads/${name}`, sha])),
+        ...Object.fromEntries(Object.entries(remote.tags ?? {}).map(([name, sha]) => [`refs/tags/${name}`, sha])) } } } : {}),
+      ...(correlation.base !== undefined ? { baseProtection: structuredClone(remote.baseProtection ?? { state: 'pull-request-required' as const, sources: ['ruleset:1'] }) } : {}) }), correlation),
   };
   return { tracker, repository, calls, concurrency: () => maxActive };
 }

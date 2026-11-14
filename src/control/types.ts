@@ -15,7 +15,9 @@ export type ConfiguredRepository = GitHubScope & { base: string; label: string; 
 /** `operators`: configured GitHub operator logins whose strict `/factory` comments on a Work's own Ticket may answer its Questions. */
 export type AccessDependencies = { tracker: IssueTracker; repository: CodeRepository; repositories: ConfiguredRepository[]; dependencyRepositories?: GitHubScope[];
   /** Login, or `{login, id}` with the pinned GitHub user id (then matched by id only). */
-  operators?: (string | { login: string; id?: number })[] };
+  operators?: (string | { login: string; id?: number })[];
+  /** Ticket 14: resolves the Factory App's bot identity (lazy, safe read); null/absent = unknown, and then nothing is publishable. */
+  factoryApp?: () => Promise<FactoryAppIdentity | null> };
 /** Monotonic local clock for live polling cadence; calendar time is only used for observation instants. Tests substitute it. */
 export type PollingClock = { monotonic(): number; sleep(ms: number, signal: AbortSignal): Promise<void> };
 export type PollingOptions = { intervalSeconds: number; clock?: PollingClock };
@@ -195,13 +197,17 @@ export type ExecutionView = {
 /** Remote tip of the Work's own branch as observed by a complete read (`absent` = no such ref). */
 export type BranchObservation = { state: 'absent' } | { state: 'present'; sha: string };
 /** What one publication activation may publish (spec §9.1): fixed by Control, never chosen by the model. */
-export type PublicationRequest = { basisExecutionId: string; head: string; branch: string; base: string; marker: string; expectedRemote: BranchObservation };
+export type PublicationRequest = { basisExecutionId: string; head: string; branch: string; base: string; marker: string; expectedRemote: BranchObservation;
+  /** An update of the Work's own pull request (a later verified basis): its number; null = create ONE draft pull request. */
+  pullRequest?: number | null };
+/** Pinned GitHub identity of the Factory App's bot user (from GET /app and the bot user), the only author an own PR may have. */
+export type FactoryAppIdentity = { login: string; id: number };
 /** The Work's own pull request, recognized by correlation (marker, App bot author, own branch/repository/base); never adopted otherwise. */
 export type OwnPullRequest = { pullRequestId: number; nodeId: string; number: number; url: string; state: 'open' | 'closed'; merged: boolean; draft: boolean;
   headRef: string; headSha: string; base: string; author: { id: number; login: string; type: string }; linkedAt: string; bodySha256: string | null };
 /** One discovery (safe read) of the own publication: Git remote ref + pull requests of the repository correlated to the Work. */
 export type PublicationDiscovery = { at: string; observedAt: string | null; trigger: 'verified' | 'after-publication' | 'reconciliation';
-  outcome: 'linked' | 'absent' | 'incomplete' | 'blocked'; reasons: string[]; branch: BranchObservation | { state: 'unknown'; code: string };
+  outcome: 'linked' | 'absent' | 'held' | 'incomplete' | 'blocked'; reasons: string[]; branch: BranchObservation | { state: 'unknown'; code: string };
   candidates: { number: number; url: string; own: boolean; reasons: string[] }[] };
 /**
  * Publication dimension of a Work (spec §3.3/§9.1, ticket 14). `not-publishable`: the basis Execution's content is not verified (its
@@ -223,6 +229,16 @@ export type PublicationView = {
   description: { conformant: boolean; reasons: string[] } | null;
   discoveries: PublicationDiscovery[];
   reasons: string[]; nextStep: string | null; updatedAt: string;
+  /** Publication activations recorded at their ACTIVATION commit (before any launch), bound to the verified head they carried. An attempted
+   * head is never requested again; a later verified basis (another head) may update the same own PR. */
+  attempts?: { executionId: string; head: string; at: string }[];
+  /** Heads the Factory linked as its own PR head (the remote tip an update may lease against). */
+  linkedHeads?: string[];
+  /** Branch/tag tips of the repository observed by the complete read that requested the publication: any other ref that changes during
+   * the publication window blocks (Contents W is repository-wide; the own-branch rule is enforced by observation, not by the token). */
+  refsBefore?: Record<string, string> | null;
+  /** The own PR a requested publication updates (a later verified basis); null = create. */
+  update?: number | null;
 };
 /**
  * Ticket 13: end-of-Execution verification (spec §6.4/§9.3). `verified` only with no reason; every reason is independent and explicit.

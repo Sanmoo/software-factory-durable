@@ -9,7 +9,7 @@ import { dispatchBlockers } from '../rules/dependencies.js';
 import { installation, legacyCredentialLifecycle, ticketIndex, works, type WorkRecord } from './admission.js';
 import { questions } from './questions.js';
 import { pendingScope } from './scope.js';
-import { markPublicationStarted } from './publication.js';
+import { markPublicationAttempt } from './publication.js';
 import type { Session } from './store.js';
 import { classifyInterruption } from '../rules/recovery.js';
 import { applyRecoveryRequest, backoffRunning } from './recovery-request.js';
@@ -100,6 +100,7 @@ export async function admitExecution(session: Session, input: { work_id: string;
       if (!input.resume || input.resume.reason !== 'PUBLICATION_REQUESTED' || input.resume.previousExecutionId !== previous.executionId || input.resume.questionId !== null ||
           !asked || !requested.verified || asked.basisExecutionId !== requested.basisExecutionId || asked.head !== requested.verified.head || asked.branch !== requested.branch ||
           asked.base !== requested.base || asked.marker !== requested.marker || JSON.stringify(asked.expectedRemote) !== JSON.stringify(requested.expectedRemote) ||
+          (asked.pullRequest ?? null) !== (requested.update ?? null) || publicationAttemptedHead(requested, asked.head) ||
           input.request.branch !== requested.branch) reasons.push('RESUME_BASIS_CHANGED');
     } else if (input.resume) reasons.push('RESUME_BASIS_CHANGED');
     // A publication activation started earlier and its effects are not discovered yet: nothing else runs before the discovery (spec §9.1).
@@ -154,6 +155,8 @@ export async function admitExecution(session: Session, input: { work_id: string;
   }, BACKGROUND_CONTEXT);
 }
 
+/** The head was already attempted (recorded at an activation commit): never admitted again. */
+const publicationAttemptedHead = (publication: NonNullable<WorkRecord['publication']>, head: string) => (publication.attempts ?? []).some(item => item.head === head);
 const requestOf = <T extends { publication?: unknown }>(request: T): Omit<T, 'publication'> => { const { publication: _publication, ...rest } = request; return rest; };
 /** Motive of the next activation: a pending operational recovery, else the open correction (charged once), else nothing to charge. */
 function motiveOf(work: WorkRecord): Motive {
@@ -227,6 +230,8 @@ export const confirmActivation = (session: Session, work_id: string, executionId
     execution.request.session = sessionDecision;
     execution.dispatch.phase = 'activation-requested';
     history(work, 'activation-requested', executionId);
+    // Ticket 14: the attempt is durable BEFORE any launch: a lost receipt or crash can never lead to a blind second publication.
+    markPublicationAttempt(work, execution, new Date().toISOString());
     return [];
   });
 
@@ -399,8 +404,6 @@ export async function confirmStart(session: Session, work_id: string, executionI
     history(document.work, 'execution-started', executionId, receipt.id);
     // The single consumption of the reservation, in the same commit as the confirmed start.
     consumeReservation(document.work, execution, execution.start.confirmedAt);
-    // Ticket 14: a started publication activation is an attempt; only a discovery after its cessation decides what happened.
-    markPublicationStarted(document.work, execution, execution.start.confirmedAt);
     if (execution.timing) Object.assign(execution.timing, { origin, startedAt: execution.start.confirmedAt,
       lastActivity: { at: execution.start.confirmedAt, elapsedMs: 0, event: 'started' } });
     // The scope changes bound at admission were sent in THIS activation's first prompt: delivered (context), not proof of consumption.

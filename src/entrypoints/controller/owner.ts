@@ -87,7 +87,9 @@ async function own(root: string): Promise<number> {
   const control = await openControl({ storagePath: paths.storagePath, runtimeInventory,
     // Executable repositories are Ticket origins; dependency-only repositories are read solely for native blocked_by, with their own installation.
     access: { tracker: createIssueTracker({ github, scopes: effective.repositories, dependencyScopes }), repository: createCodeRepository({ github }),
-      repositories: effective.repositories, dependencyRepositories: dependencyScopes, operators: effective.operators },
+      repositories: effective.repositories, dependencyRepositories: dependencyScopes, operators: effective.operators,
+      // Ticket 14: the Factory App bot identity (GET /app slug + bot user), resolved lazily by Control's first discovery; never a configured guess.
+      factoryApp: async () => effective.repositories[0] ? github.appIdentity(effective.repositories[0]) : null },
     polling: { intervalSeconds: effective.pollingSeconds }, ...(composed?.status === 'composed' ? { execution: composed.ports } : {}) });
   const status = await control.inspect({ kind: 'status' });
   if (!('controller_run_id' in status)) throw new Error('INVALID_CONTROL_STATUS');

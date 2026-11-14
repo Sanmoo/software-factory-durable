@@ -81,6 +81,8 @@ test('AC1/AC5: only the requested publication is admitted, with exactly its comm
   const wrong = await run('d4', { resume, request: { ticket: '', repository: 'acme/project', base: 'main', branch, policies: {}, publication } }, 'builder-start');
   assert.ok('activation' in wrong);
   assert.deepEqual((wrong as { activation: unknown }).activation, { kind: 'refused', reasons: ['CREDENTIAL_PURPOSE_MISMATCH'] });
+  assert.equal((await readWork(session, work_id))!.publication!.state, 'requested', 'a refused activation is not an attempt');
+  assert.equal((await readWork(session, work_id))!.publication!.attempts ?? undefined, undefined);
 });
 
 test('AC6: a started publication activation is an attempt: never requested again, discovery pending, and it renews only its publish grant', async t => {
@@ -95,6 +97,10 @@ test('AC6: a started publication activation is an attempt: never requested again
   const second = await run('d2', { resume, request: { ticket: '', repository: 'acme/project', base: 'main', branch, policies: {}, publication } }, 'builder-publish') as
     { id: string; activation: { kind: string } };
   assert.equal(second.activation.kind, 'advanced');
+  // Review HIGH 2: the attempt is durable at the ACTIVATION commit, before any launch or receipt: a lost receipt never re-requests.
+  const activated = await readWork(session, work_id);
+  assert.equal(activated!.publication!.state, 'awaiting-discovery');
+  assert.deepEqual(activated!.publication!.attempts!.map(item => [item.executionId, item.head]), [[second.id, head]]);
   assert.equal(await confirmStart(session, work_id, second.id, { workId: work_id, id: 'r2', executionId: second.id, invocationId: `builder-${second.id}` }), 'confirmed');
   const started = await readWork(session, work_id);
   assert.equal(started!.publication!.state, 'awaiting-discovery');
