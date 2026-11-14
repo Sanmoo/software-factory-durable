@@ -1,4 +1,5 @@
 import { questionMarkerPrefix } from '../../contracts/index.js';
+import { fenced, scopeSection, type ScopeText } from './continuation.js';
 
 // Pure rules for durable Questions (spec §5.5/§11.3): command parsing, authorization of the author, answer acceptance, destination,
 // published text and the explicit recovery instruction. No I/O, clock or randomness: callers supply every fact.
@@ -89,11 +90,6 @@ export function questionDestination<T>(work: { ticket: T; pullRequest: { number:
   return work.pullRequest ? { kind: 'pull-request', pullRequest: work.pullRequest } : { kind: 'issue', ticket: work.ticket };
 }
 
-const fenced = (text: string) => {
-  const longest = Math.max(0, ...[...text.matchAll(/`+/g)].map(run => run[0].length));
-  const fence = '`'.repeat(Math.max(3, longest + 1));
-  return `${fence}\n${text}\n${fence}`;
-};
 /** Visible body of a published Question. Model text is fenced (no mentions, markup or line that could look like a command). */
 export function questionCommentBody(input: { questionId: string; workId: string; executionId: string; question: string; context: string }): string {
   return [`**Software Factory question** \`${input.questionId}\``, '',
@@ -105,22 +101,50 @@ export function questionCommentBody(input: { questionId: string; workId: string;
       'a correction needs a new question. Answering does not start an agent directly: the Work returns to its queue position.'].join('\n');
 }
 
-/** Explicit replacement instruction for the activation after an answer (new boot, new session): Work, artifacts, question and answer. */
+/** Recoverable context known by the Factory (spec §6.1): earlier Executions, Questions, Host-observed versions/head and scope updates. */
+export type KnownContext = { previousExecutions: { executionId: string; outcome: string; at: string | null }[];
+  questions: { questionId: string; state: string; comment: string | null }[];
+  /** Latest Host-captured handoff of an earlier Execution (ticket 12), when one exists: preserved versions and proposal head. */
+  versions: { spec: string | null; instructions: string | null; head: string | null } | null;
+  scopeUpdates: readonly ScopeText[] };
+/**
+ * Explicit replacement instruction for a resumed activation whose session is NOT continued (new boot, new session; spec §5.5/§6.1): the
+ * reason of the replacement and the recoverable context — Work, preserved request/instructions, Git, artifacts, known effects — plus what
+ * authorizes the resumption (the accepted answer and/or concrete scope changes). Never a bare `continue`.
+ */
 export function recoveryPrompt(input: { ticketUrl: string; repository: string; base: string; baseCommit: string; branch: string; checkout: string;
   /** Guest directory of the Builder pack of this Execution (e.g. /artifacts/factory/skill-pack/factory-skills-v2). */
   skillDirectory: string;
-  workId: string; executionId: string; previousExecutionId: string; question: { questionId: string; question: string; context: string };
-  answer: { text: string; author: string; origin: string } }): string {
-  const build = (withContext: boolean) => [`Factory recovery instruction for Ticket ${input.ticketUrl}.`,
+  workId: string; executionId: string; previousExecutionId: string; question: { questionId: string; question: string; context: string } | null;
+  answer: { text: string; author: string; origin: string } | null;
+  /** Why the previous session is replaced (ticket 11); absent = the ticket-10 default (new boot, new session). */
+  replacement?: { reason: string }; known?: KnownContext }): string {
+  const known = input.known;
+  const build = (withContext: boolean, effects: number) => [`Factory recovery instruction for Ticket ${input.ticketUrl}.`,
     `Execution context (from the Factory, authoritative): repository=${input.repository} base=${input.base} base-commit=${input.baseCommit} branch=${input.branch} ` +
       `checkout=${input.checkout} artifacts=/artifacts work=${input.workId} execution=${input.executionId} previous-execution=${input.previousExecutionId}`,
-    'This is a NEW session on the same Work: the previous Execution ended after asking the question below. Its workspace, branch, commits and ' +
-      '/artifacts were preserved; its session is not continued.',
-    `Read ${input.skillDirectory}/skills/implement/SKILL.md with the read tool and follow section 4 (resume after an answer).`,
-    '', `Question ${input.question.questionId}:`, fenced(input.question.question),
-    ...(input.question.context ? withContext ? ['Context you gave:', fenced(input.question.context)]
-      : ['(The context you gave is omitted here for size; it is preserved with the question in the Factory.)'] : []),
-    '', `Accepted answer (by ${input.answer.author}, via ${input.answer.origin}):`, fenced(input.answer.text)].join('\n');
-  const full = build(true);
-  return new TextEncoder().encode(full).length <= promptBudgetBytes ? full : build(false);
+    'This is a NEW session on the same Work: the previous Execution ended' + (input.question ? ' after asking the question below' : '') + '. Its workspace, branch, commits and ' +
+      '/artifacts were preserved; its session is not continued' + (input.replacement ? ` (reason: ${input.replacement.reason})` : '') + '.',
+    `Read ${input.skillDirectory}/skills/implement/SKILL.md with the read tool and follow section 4 (resume in a new session).`,
+    ...(known ? ['', 'Recoverable context (Factory records; verify in the workspace before acting):',
+      '- Request: the Ticket above; its preserved versions are under /artifacts/spec/ (latest complete version wins; incomplete ones are not ready).',
+      '- Instructions: preserved under /artifacts/instructions/ (more specific instructions prevail in their scope, under the Factory policy).',
+      `- Git: base-commit ${input.baseCommit} on ${input.base}; own branch ${input.branch} in ${input.checkout}` +
+        (known.versions?.head ? `; last Host-observed proposal head ${known.versions.head}` : '') + '.',
+      ...(known.versions ? [`- Last Host-observed preserved versions: spec ${known.versions.spec ?? 'none complete'}, instructions ${known.versions.instructions ?? 'none complete'}.`] : []),
+      '- Artifacts: /artifacts (spec/, instructions/, review/r<N>/ of earlier rounds); never overwrite an existing version or round.',
+      '- Known effects: no push or pull request was made by the Factory in this version; credentials of earlier Executions were withdrawn.',
+      ...known.previousExecutions.slice(-effects).map(item => `- Earlier Execution ${item.executionId}: ${item.outcome}${item.at ? ` at ${item.at}` : ''}.`),
+      ...known.questions.slice(-effects).map(item => `- Question ${item.questionId}: ${item.state}${item.comment ? ` (published ${item.comment})` : ''}.`)] : []),
+    ...(input.question ? ['', `Question ${input.question.questionId}:`, fenced(input.question.question),
+      ...(input.question.context ? withContext ? ['Context you gave:', fenced(input.question.context)]
+        : ['(The context you gave is omitted here for size; it is preserved with the question in the Factory.)'] : [])] : []),
+    ...(input.answer ? ['', `Accepted answer (by ${input.answer.author}, via ${input.answer.origin}):`, fenced(input.answer.text)] : []),
+    ...(known?.scopeUpdates.length ? ['', ...scopeSection(known.scopeUpdates),
+      'Before implementing a scope change, preserve a NEW request version that records it (never edit an earlier version).'] : [])].join('\n');
+  for (const effects of [20, 5, 1]) {
+    const full = build(true, effects);
+    if (new TextEncoder().encode(full).length <= promptBudgetBytes) return full;
+  }
+  return build(false, 1);
 }

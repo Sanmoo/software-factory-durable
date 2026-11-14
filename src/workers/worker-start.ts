@@ -6,6 +6,7 @@ import { sdkProfile } from './sdk-profile.js';
 import { createHash } from 'node:crypto';
 import { loadSkillPack, skillPacks, type SkillPackId } from './skill-pack.js';
 import type { ReviewInput } from './review.js';
+import type { WorkerSessionRef } from './session-ref.js';
 
 type ReviewerModel = { id: string; name: string; reasoning: boolean; input: ('text' | 'image')[];
   cost: { input: number; output: number; cacheRead: number; cacheWrite: number }; contextWindow: number; maxTokens: number };
@@ -26,7 +27,9 @@ export type Invocation = { context: ToolContext; prompt: string; signal: AbortSi
   /** Builder only (ticket 12): the Host handoff tool and suspension for the Factory reviews, with the Execution's base commit. */
   handoff?: { baseCommit: string };
   /** Standards/Spec only (ticket 12): the round/attempt, handoff identity and the inputs that must be read for a clean conclusion. */
-  review?: ReviewInput };
+  review?: ReviewInput;
+  /** Builder only (ticket 11): continue THIS preserved compatible session (Host-copied before the worker exists); the prompt is `continue ...`. */
+  continuation?: { session: WorkerSessionRef } };
 
 /** Critical protected evidence, never admission or proof of group/FD isolation. */
 export async function startWorker(profile: ReviewerProfile, records: Awaited<ReturnType<typeof createRecords>>, invocation: Invocation) {

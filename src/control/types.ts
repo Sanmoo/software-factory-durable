@@ -1,6 +1,7 @@
 import type { AccessDiagnostic, BuilderCredentials, BuilderGrantMetadata, GitHubScope, ProposalHandoff, ProposalIdentity, ReviewerRole, ReviewOpinion, RevocationResult } from '../contracts/index.js';
 import type { CheckoutRequest, EnvironmentRef, PreparedWork, StartResult, StopResult, BootRef } from '../sandbox/index.js';
-import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion } from '../workers/index.js';
+import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion, SessionObservation, WorkerSessionRef } from '../workers/index.js';
+export type { SessionObservation, WorkerSessionRef as SessionRef } from '../workers/index.js';
 import type { IssueTracker, TicketRef } from '../issue-tracker/index.js';
 import type { CodeRepository } from '../code-repository/index.js';
 import type { Hold } from './rules/admission.js';
@@ -22,13 +23,19 @@ export type ExecutionOptions = ExecutionPorts;
 export type ControlInput = { request_id: string; operation: 'pause' | 'unpause'; origin: 'local-cli' } |
   { request_id: string; operation: 'answer'; question_id: string; text: string; origin: 'local-cli' } |
   /** Explicit additional budget for ONE counter of a Work (spec §11.3 `grant`), from the authorized local ingress. */
-  { request_id: string; operation: 'grant'; work_id: string; counter: 'corrections' | 'recoveries'; amount: number; origin: 'local-cli' };
+  { request_id: string; operation: 'grant'; work_id: string; counter: 'corrections' | 'recoveries'; amount: number; origin: 'local-cli' } |
+  /** Ticket 11 (spec §11.3): authorize ONE concrete new version of the Work's request; never applied to a running activity. */
+  { request_id: string; operation: 'update-scope'; work_id: string; reason: string; origin: 'local-cli' };
 /** `answer`: `accepted` removed only that Question's impediment; `not-applied` (already answered, unknown, closed Work...) changed nothing. */
 export type ControlReceipt = { kind: 'durable'; request_id: string; operation: 'pause' | 'unpause'; paused: boolean; historySequence: number } |
   { kind: 'durable'; request_id: string; operation: 'answer'; question_id: string; outcome: 'accepted' | 'not-applied'; reason: string | null; work_id: string | null } |
   /** `grant`: `accepted` added capacity (history kept, counters untouched); `not-applied` changed nothing (unknown/closed/old Work). */
   { kind: 'durable'; request_id: string; operation: 'grant'; work_id: string; counter: 'corrections' | 'recoveries'; amount: number;
-    outcome: 'accepted' | 'not-applied'; reason: string | null; budget: CounterView | null };
+    outcome: 'accepted' | 'not-applied'; reason: string | null; budget: CounterView | null } |
+  /** `accepted`: recorded for the next activation (the Work re-enters its queue position if it was idle after a completed Execution);
+   * `deferred`: an activity is running or held, nothing reaches it, the change waits for the next safe activation; `not-applied`: nothing changed. */
+  { kind: 'durable'; request_id: string; operation: 'update-scope'; work_id: string; outcome: 'accepted' | 'deferred' | 'not-applied'; reason: string | null;
+    scopeUpdateId: string | null; appliesAt: 'next-activation' | null };
 export type ControlQuery = { kind: 'status' } | { kind: 'request'; request_id: string } | { kind: 'access' } | { kind: 'list' } | { kind: 'show'; work_id: string } |
   { kind: 'question'; question_id: string };
 export type DispatchReason = 'RECONCILIATION_REQUIRED' | 'EXECUTION_NOT_ENABLED';
@@ -49,7 +56,10 @@ export type ExecutionPorts = {
     close(): void }>;
     /** Q6 `deliver`: renewed transient credential or its withdrawal, or (ticket 12) the review results, to the CURRENT Builder; never
      * persisted, not proof of consumption. */
-    deliver(worker: string, directive: WorkerDirective): Promise<DeliveryResult> };
+    deliver(worker: string, directive: WorkerDirective): Promise<DeliveryResult>;
+    /** Q6 `observe` (ticket 11): whether a preserved Builder session can be continued by the planned next Builder activation. Absent: replaced. */
+    observe?(input: { workId: string; executionId: string; invocationId: string; session: WorkerSessionRef;
+      next: Pick<Invocation, 'skillPack' | 'copyOutput' | 'editSourceMaxBytes'> & { handoff: boolean } }): Promise<{ session: SessionObservation; limitations: string[] }> };
   /** Ticket 12: when composed, the Builder hands off for parallel Standards/Spec reviews inside the SAME Execution/Slot/boot. */
   reviews?: { reviewer: Pick<Invocation, 'modelBudget' | 'imageSourceMaxBytes'> };
   credentials: BuilderCredentials;
@@ -111,8 +121,14 @@ export type ExecutionView = {
     environment: string | null; boot: string | null; updatedAt: string };
   request: { ticket: string; repository: string; base: string; branch: string; baseCommit: string | null; checkout: string | null; promptSha256: string | null;
     skillPack: { name: string; manifestSha256: string } | null; policies: Pick<Invocation, 'skillPack' | 'modelBudget' | 'copyOutput' | 'editSourceMaxBytes'>;
-    /** Recovery basis: the previous Execution, its answered Question and why the session is replaced (not continued). */
-    resume?: { previousExecutionId: string; questionId: string; answerSha256: string; reason: 'NEW_BOOT_REPLACEMENT_SESSION' } | null };
+    /** Resumption basis (re-checked in the admission commit): the previous Execution and what authorizes the new activation — its answered
+     * Question and/or concrete scope updates. `NEW_BOOT_REPLACEMENT_SESSION` is the ticket-10 record of an answered Question. */
+    resume?: { previousExecutionId: string; questionId: string | null; answerSha256: string | null; scopeUpdateIds?: string[];
+      reason: 'QUESTION_ANSWERED' | 'SCOPE_UPDATED' | 'NEW_BOOT_REPLACEMENT_SESSION' } | null;
+    /** Scope updates bound to this Execution at admission (delivered in its first prompt; `delivered` once its start is confirmed). */
+    scopeUpdateIds?: string[];
+    /** Session decision of a resumed Builder (spec §5.5/§6.1): `continue` the previous compatible session, or `replace` it with the reason. */
+    session?: { mode: 'continue' | 'replace'; reason: string; previousExecutionId: string; previous: WorkerSessionRef | null; decidedAt: string } | null };
   credential: BuilderGrantMetadata | null;
   /** Initial grant: durable issuance intent BEFORE the call, then outcome, token-free metadata and revocation result. Never the token. */
   credentialIssuance: CredentialGrantRecord | null;
@@ -125,7 +141,9 @@ export type ExecutionView = {
     workerNotice: string | null };
   start: { receiptId: string; confirmedAt: string } | null;
   /** `question`: the activation ended after a durable Question (its id; `code` when the request content was lost and no Question exists). */
-  end: { at: string; outcome: 'completed' | 'failure' | 'question' | 'timeout'; code: string | null; cessation: 'confirmed' | 'unconfirmed' | 'not-attempted'; questionId?: string | null } | null;
+  end: { at: string; outcome: 'completed' | 'failure' | 'question' | 'timeout'; code: string | null; cessation: 'confirmed' | 'unconfirmed' | 'not-attempted'; questionId?: string | null;
+    /** Host-observed preserved Builder session (ticket 11); null/absent = not recorded. */
+    session?: WorkerSessionRef | null } | null;
   held: { code: string; phase: string; at: string; nextStep: string } | null;
   completion: { automatic: false; reason: string };
   /** Review rounds of this Execution (ticket 12); absent when reviews are not composed. Reviewers never hold a Slot of their own. */
@@ -226,6 +244,8 @@ export type WorkView = {
   pendingRecovery: { reason: string; requestedAt: string } | null;
   /** Presentation only (never persisted): limits/reservations/consumption, timeout, duration/last activity and the action required. */
   limits: LimitsView;
+  /** Concrete scope updates authorized by the operator (ticket 11), in acceptance order. Later Ticket/link edits are never one. */
+  scopeUpdates?: ScopeUpdateView[];
   admittedAt: string;
   history: ({ at: string; event: 'admitted'; origin: 'github-polling'; sequence: number } |
     { at: string; event: 'dependencies-changed'; origin: 'github-polling'; before: DependencyEvaluation['conclusion'] | null; after: DependencyEvaluation['conclusion']; evaluationId: string } |
@@ -236,7 +256,8 @@ export type WorkView = {
       questionId: string; detail?: string } |
     { at: string; event: 'budget-reserved' | 'budget-consumed' | 'budget-released' | 'budget-exhausted' | 'budget-granted' | 'correction-opened' | 'correction-reason-added' | 'recovery-requested';
       origin: 'controller-budget' | 'local-cli'; executionId: string | null; detail: string } |
-    { at: string; event: 'timeout-reached' | 'duration-reconciled'; origin: 'controller-clock'; executionId: string; detail: string })[];
+    { at: string; event: 'timeout-reached' | 'duration-reconciled'; origin: 'controller-clock'; executionId: string; detail: string } |
+    { at: string; event: 'scope-update-accepted' | 'scope-update-delivered'; origin: 'local-cli' | 'controller-dispatch'; scopeUpdateId: string; detail?: string })[];
 };
 export type CounterView = { limit: number; granted: number; effectiveLimit: number; consumed: number; reserved: 0 | 1; reservedBy: string | null; available: number; exhausted: boolean };
 /** `elapsedMs` is a monotonic measurement (live or measured) or null; `unknown` is never shown as zero. */
@@ -246,6 +267,10 @@ export type DurationView = { state: 'not-recorded' | 'not-started' | 'running' |
 export type LimitsView = { corrections: CounterView | null; recoveries: CounterView | null; grants: number;
   timeout: { seconds: number | null; scope: 'per-execution'; reached: ExecutionTiming['timeout']; overrun: ExecutionTiming['overrun'] };
   duration: DurationView; actions: { code: string; nextStep: string }[] };
+/** One authorized scope change (spec §6.2/§11.3): the operator's concrete reason, never applied to a running activity. `delivered` = sent in
+ * the first prompt of a started Execution, which is context delivery, not proof that the Builder consumed it. */
+export type ScopeUpdateView = { scopeUpdateId: string; reason: string; sha256: string; acceptedAt: string; origin: { kind: 'local-cli'; request_id: string };
+  acceptedDuring: 'idle' | 'question-wait' | 'activity'; state: 'pending' | 'delivered'; executionId: string | null; deliveredAt: string | null };
 export type ListView = { kind: 'list'; paused: boolean; dispatch: 'closed' | 'open'; dispatchReason: DispatchReason | null; slots: { capacity: number; held: number };
   queues: { normal: string[]; repair: string[] }; works: WorkView[]; selection: Selection; polling: PollingView; limitations: string[] };
 export type ShowView = { kind: 'work'; work: WorkView; lastPolled: CandidateView | null; questions: QuestionView[] } | { kind: 'work-not-found'; work_id: string; nextStep: string };

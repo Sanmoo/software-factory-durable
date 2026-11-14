@@ -159,7 +159,9 @@ test('AC1/AC2/AC3/AC6: ask -> Question+impediment+intent committed before the AC
   const resumed = (await h.byNumber())[3]!;
   assert.equal(resumed.execution!.mode, 'recovery');
   assert.deepEqual(resumed.execution!.request.resume, { previousExecutionId: waiting.execution!.executionId, questionId: qid(1),
-    answerSha256: createHash('sha256').update('Use docs/factory-smoke.md').digest('hex'), reason: 'NEW_BOOT_REPLACEMENT_SESSION' });
+    answerSha256: createHash('sha256').update('Use docs/factory-smoke.md').digest('hex'), scopeUpdateIds: [], reason: 'QUESTION_ANSWERED' });
+  // Ticket 11: no preserved session was reported by these doubles, so it is replaced with that recorded reason (never continued blindly).
+  assert.deepEqual([resumed.execution!.request.session!.mode, resumed.execution!.request.session!.reason], ['replace', 'SESSION_NOT_RECORDED']);
   assert.equal(resumed.execution!.request.branch, waiting.execution!.request.branch, 'same Work branch/workspace');
   assert.deepEqual(resumed.previousExecutions.map(item => item.executionId), [waiting.execution!.executionId]);
   assert.deepEqual(resumed.history.filter(item => item.event.startsWith('question-')).map(item => item.event), ['question-recorded', 'question-published', 'question-answered']);

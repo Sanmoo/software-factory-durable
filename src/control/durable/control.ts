@@ -10,6 +10,7 @@ import { acceptPauseCommand, admitTicket, indexedWork, initialize, ownCycles, pe
 import { createPoller, systemClock } from './polling.js';
 import { createQuestionDesk } from './question-desk.js';
 import { acceptAnswer, readQuestion, readQuestions } from './questions.js';
+import { acceptScopeUpdate } from './scope.js';
 import { dispatchBlockers, selectNext } from '../rules/dependencies.js';
 import { counterView, durationView, maxGrantAmount } from '../rules/budget.js';
 import { grantBudget, openCorrection, requestOperationalRecovery } from './budget.js';
@@ -19,7 +20,9 @@ const inputSchema = z.union([z.strictObject({ request_id: requestId, operation: 
   z.strictObject({ request_id: requestId, operation: z.literal('grant'), work_id: z.uuid(), counter: z.enum(['corrections', 'recoveries']),
     amount: z.number().int().min(1).max(maxGrantAmount), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('answer'), question_id: z.uuid(), origin: z.literal('local-cli'),
-    text: z.string().max(2000).refine(text => text.trim().length > 0 && text === text.trim() && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) })]);
+    text: z.string().max(2000).refine(text => text.trim().length > 0 && text === text.trim() && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) }),
+  // Ticket 11: concreteness is a durable decision of the commit (queryable `not-applied`), only the shape is checked here.
+  z.strictObject({ request_id: requestId, operation: z.literal('update-scope'), work_id: z.uuid(), reason: z.string().min(1).max(2000), origin: z.literal('local-cli') })]);
 const workIdSchema = z.uuid();
 const limitations = [
   'Candidate observations are in-memory results of the latest poll, not authority; they are rebuilt after restart.',
@@ -28,6 +31,8 @@ const limitations = [
   'An ended Builder Execution never completes the Work automatically: reviews, publication (push/PR) and readiness are not enabled in this increment; nothing is retried automatically.',
   'Native dependency evaluations are re-done every polling round; only an evaluation of the current round can release, never an older or pre-restart one.',
   'A Question waiting for an answer occupies no Slot; an accepted answer removes only its own impediment and never starts an agent directly: the Work resumes through its queue position after revalidation.',
+  'A resumed Builder continues its previous session only when that session was recorded, is intact and compatible; otherwise it is replaced with a recorded reason and an explicit recovery instruction. Delivering context is not proof that the Builder consumed it.',
+  'Only `update-scope` (or an accepted answer) authorizes a concrete change of the request, for the next safe activation; a later Ticket or link edit is never a trigger or an authorization.',
 ];
 
 // Module-internal seam for the external-wait/cancellation flows of this module (not part of the public Control contract).
@@ -111,6 +116,8 @@ export async function openControl(options: { storagePath: string; runtimeInvento
       const parsed = inputSchema.safeParse(input);
       if (!parsed.success) return { kind: 'refused', code: 'INVALID_COMMAND' };
       // Local CLI under the administrator account's trust; correlation/single answer are checked in the commit.
+      // Ticket 11: recorded for the next safe activation; never delivered to a running Builder, never a launch.
+      if (parsed.data.operation === 'update-scope') return acceptScopeUpdate(state, parsed.data);
       if (parsed.data.operation === 'answer') return acceptAnswer(state, { request_id: parsed.data.request_id, question_id: parsed.data.question_id, text: parsed.data.text, origin: { kind: 'local-cli' } });
       if (parsed.data.operation === 'grant') return grantBudget(state, parsed.data, configuredRepository);
       return acceptPauseCommand(state, parsed.data);

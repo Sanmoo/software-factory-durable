@@ -75,9 +75,12 @@ export type WorkerQuestion = { questionId: string; question: string; context: st
 export type QuestionAck = { status: 'recorded' } | { status: 'refused'; code: string };
 /** Host-side handlers of worker events during one activation (no Promise waits for a human: the handler only commits). */
 export type ActivationEvents = { question?(question: WorkerQuestion): Promise<QuestionAck> };
-/** `question`: the activation ended after asking; `acknowledged` says whether the worker saw a `recorded` ACK (lost ACK => false). */
-export type WorkerCompletion = { status: 'success'; receipt: { workId: string; id: string }; opinion?: ReviewOpinion } | { status: 'failure'; code: string } |
-  { status: 'question'; receipt: { workId: string; id: string }; question: WorkerQuestion & { acknowledged: boolean } };
+export type { SessionProfile, WorkerSessionRef, SessionObservation } from './session-ref.js';
+import type { WorkerSessionRef } from './session-ref.js';
+/** `question`: the activation ended after asking; `acknowledged` says whether the worker saw a `recorded` ACK (lost ACK => false).
+ * `session`: the preserved session (Builder), when its owner could observe it; absent = not recorded (never invented). */
+export type WorkerCompletion = { status: 'success'; receipt: { workId: string; id: string }; opinion?: ReviewOpinion; session?: WorkerSessionRef } | { status: 'failure'; code: string } |
+  { status: 'question'; receipt: { workId: string; id: string }; question: WorkerQuestion & { acknowledged: boolean }; session?: WorkerSessionRef };
 
 /** `profiles` configures a model/profile per role (spec §6.1: explicit per role, may coincide; no silent fallback between roles). */
 type Configuration = { root: string; profile: WorkerLaunch['profile']; knownSecrets: string[]; profiles?: Partial<Record<'builder' | 'standards' | 'spec', WorkerLaunch['profile']>> };

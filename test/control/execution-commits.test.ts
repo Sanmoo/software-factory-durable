@@ -104,7 +104,7 @@ test('review 1: Admitir Execução refuses a recovery basis whose Question belon
   await recordDependencies(session, a, evaluation('d3'));
   const { createHash } = await import('node:crypto');
   assert.deepEqual(await admitExecution(session, { work_id: a, attemptId: 'd3', capacity: 2, authorizationObservedAt: 'now', request,
-    resume: { previousExecutionId: ea.executionId, questionId: qid, answerSha256: createHash('sha256').update('yes').digest('hex'), reason: 'NEW_BOOT_REPLACEMENT_SESSION' } }),
+    resume: { previousExecutionId: ea.executionId, questionId: qid, answerSha256: createHash('sha256').update('yes').digest('hex'), scopeUpdateIds: [], reason: 'QUESTION_ANSWERED' } }),
   { kind: 'refused', reasons: ['RESUME_BASIS_CHANGED'] });
 });
 

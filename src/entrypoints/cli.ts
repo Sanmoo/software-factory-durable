@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { setup, firstHumanLogin } from './setup.js';
 import { doctor } from './doctor.js';
 
-const usage = 'factory <setup|doctor|run|status|list|show <work>|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>)|request <id>> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated]; factory login --root <canonical-absolute-installation>';
+const usage = 'factory <setup|doctor|run|status|list|show <work>|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>)|update-scope <work> --reason <text>|request <id>> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated]; factory login --root <canonical-absolute-installation>';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 async function exchange(root: string, kind: 'inspect' | 'accept', payload: Envelope['payload'], id: string, runId: string | null) {
@@ -29,7 +29,7 @@ async function operational(root: string, command: string, requestId: string | un
   grant?: { counter: 'corrections' | 'recoveries'; amount: number }) {
   const query = (): Envelope['payload'] => command === 'doctor' ? { kind: 'access' } : command === 'list' ? { kind: 'list' }
     : command === 'show' ? { kind: 'show', work_id: requested! } : command === 'question' ? { kind: 'question', question_id: requested! } : { kind: 'request', request_id: requested! };
-  const mutable = command === 'pause' || command === 'unpause' || command === 'answer' || command === 'grant';
+  const mutable = command === 'pause' || command === 'unpause' || command === 'answer' || command === 'grant' || command === 'update-scope';
   const id = requestId ?? randomUUID();
   // Present identity BEFORE sending; stdout remains a single machine-readable result.
   if (mutable) console.error(JSON.stringify({ code: 'REQUEST_IDENTIFIED', request_id: id }));
@@ -39,7 +39,8 @@ async function operational(root: string, command: string, requestId: string | un
     const response = command === 'status' ? status : await exchange(root, mutable ? 'accept' : 'inspect',
       mutable ? (command === 'answer' ? { request_id: id, operation: 'answer', question_id: requested!, text: text!, origin: 'local-cli' }
         : command === 'grant' ? { request_id: id, operation: 'grant', work_id: requested!, counter: grant!.counter, amount: grant!.amount, origin: 'local-cli' }
-          : { request_id: id, operation: command, origin: 'local-cli' }) : query(),
+          : command === 'update-scope' ? { request_id: id, operation: 'update-scope', work_id: requested!, reason: text!, origin: 'local-cli' }
+            : { request_id: id, operation: command, origin: 'local-cli' }) : query(),
       mutable ? id : randomUUID(), status.controller_run_id);
     console.log(json ? JSON.stringify(response.payload) : JSON.stringify(response.payload, null, 2));
     if (response.kind === 'error') return response.payload.outcome === 'indeterminate' ? 4 : 2;
@@ -85,11 +86,11 @@ export async function main(args: string[]): Promise<number> {
   let json = false;
   let authenticated = false;
   let rootSeen = false;
-  let valid = ['setup', 'doctor', 'run', 'status', 'list', 'show', 'question', 'pause', 'unpause', 'answer', 'grant', 'request'].includes(command ?? '');
+  let valid = ['setup', 'doctor', 'run', 'status', 'list', 'show', 'question', 'pause', 'unpause', 'answer', 'grant', 'update-scope', 'request'].includes(command ?? '');
   let requestId: string | undefined;
-  const requested = command === 'request' || command === 'show' || command === 'question' || command === 'answer' || command === 'grant' ? args[1] : undefined;
+  const requested = command === 'request' || command === 'show' || command === 'question' || command === 'answer' || command === 'grant' || command === 'update-scope' ? args[1] : undefined;
   if (command === 'request' && !requested?.match(/^[a-zA-Z0-9_-]{1,128}$/)) valid = false;
-  if ((command === 'show' || command === 'question' || command === 'answer' || command === 'grant') && !requested?.match(uuid)) valid = false;
+  if ((command === 'show' || command === 'question' || command === 'answer' || command === 'grant' || command === 'update-scope') && !requested?.match(uuid)) valid = false;
   // `grant <work> --corrections <n>` or `--recoveries <n>`: exactly one counter, a plain positive integer up to 100 (spec §11.3).
   let grant: { counter: 'corrections' | 'recoveries'; amount: number } | undefined;
   if (command === 'grant') {
@@ -99,15 +100,16 @@ export async function main(args: string[]): Promise<number> {
     } else valid = false;
   }
   // `answer <question> <text>`: exactly one text argument (quote it), trimmed by the operator, at most 2000 characters.
-  const text = command === 'answer' ? args[2] : undefined;
-  if (command === 'answer' && (!text || text !== text.trim() || text.length > 2000 || text.startsWith('--'))) valid = false;
-  for (let index = command === 'answer' ? 3 : command === 'grant' ? 4 : command === 'request' || command === 'show' || command === 'question' ? 2 : 1; index < args.length; index++) {
+  // `update-scope <work> --reason <text>`: the concrete change, one quoted argument (the controller decides whether it is concrete).
+  const text = command === 'answer' ? args[2] : command === 'update-scope' && args[2] === '--reason' ? args[3] : undefined;
+  if ((command === 'answer' || command === 'update-scope') && (!text || text !== text.trim() || text.length > 2000 || text.startsWith('--'))) valid = false;
+  for (let index = command === 'answer' ? 3 : command === 'grant' || command === 'update-scope' ? 4 : command === 'request' || command === 'show' || command === 'question' ? 2 : 1; index < args.length; index++) {
     if (args[index] === '--authenticated' && command === 'doctor' && !authenticated) authenticated = true;
     else if (args[index] === '--json' && !json) json = true;
     else if (args[index] === '--root' && !rootSeen && args[index + 1] && !args[index + 1]?.startsWith('-')) {
       root = resolve(args[++index]!);
       rootSeen = true;
-    } else if (args[index] === '--request-id' && !requestId && (command === 'pause' || command === 'unpause' || command === 'answer' || command === 'grant') &&
+    } else if (args[index] === '--request-id' && !requestId && (command === 'pause' || command === 'unpause' || command === 'answer' || command === 'grant' || command === 'update-scope') &&
       args[index + 1]?.match(/^[a-zA-Z0-9_-]{1,128}$/)) requestId = args[++index];
     else { valid = false; break; }
   }
@@ -118,7 +120,7 @@ export async function main(args: string[]): Promise<number> {
   try {
     if (command === 'run') return await launch(root);
     if (command === 'status' || command === 'list' || command === 'show' || command === 'question' || command === 'pause' || command === 'unpause' ||
-        command === 'answer' || command === 'grant' || command === 'request') {
+        command === 'answer' || command === 'grant' || command === 'update-scope' || command === 'request') {
       return await operational(root, command, requestId, requested, json, text, grant);
     }
     if (command === 'doctor' && authenticated) return await operational(root, command, undefined, undefined, json);

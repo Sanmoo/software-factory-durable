@@ -8,6 +8,7 @@ import { chargeDecision, classifyOverrun, exhaustionImpediment, initialBudget, o
 import { dispatchBlockers } from '../rules/dependencies.js';
 import { installation, legacyCredentialLifecycle, ticketIndex, works, type WorkRecord } from './admission.js';
 import { questions } from './questions.js';
+import { pendingScope } from './scope.js';
 import type { Session } from './store.js';
 
 /** Installation-level Slot occupancy, committed with every reservation/release (spec §3.4 "Admitir Execução"). */
@@ -21,6 +22,10 @@ export async function heldSlots(session: Session): Promise<number> {
   return Object.keys((await session.snapshot(slots, BACKGROUND_CONTEXT))?.held ?? {}).length;
 }
 
+/** The Execution a resumption continues from: the latest one that actually ENDED (one released before its start never ran). */
+export function resumeBasis(work: Pick<WorkRecord, 'execution' | 'previousExecutions'>): ExecutionView | null {
+  return [work.execution ?? null, ...[...(work.previousExecutions ?? [])].reverse()].find(item => item?.end) ?? null;
+}
 export type Admission = { kind: 'reserved'; execution: ExecutionView } | { kind: 'refused'; reasons: string[] };
 const history = (work: WorkRecord, event: Extract<WorkRecord['history'][number], { origin: 'controller-dispatch' }>['event'], executionId: string, detail?: string) =>
   work.history.push({ at: new Date().toISOString(), event, origin: 'controller-dispatch', executionId, ...(detail ? { detail } : {}) });
@@ -33,7 +38,7 @@ export const activeExecution = (execution: ExecutionView | null) => execution !=
  * Writes the Execution identity, its Slot, the dispatch intent and the Work's own branch. Nothing external happens before this commit.
  */
 export async function admitExecution(session: Session, input: { work_id: string; attemptId: string; capacity: number; authorizationObservedAt: string;
-  request: Omit<ExecutionView['request'], 'baseCommit' | 'checkout' | 'promptSha256' | 'skillPack' | 'resume'>;
+  request: Omit<ExecutionView['request'], 'baseCommit' | 'checkout' | 'promptSha256' | 'skillPack' | 'resume' | 'scopeUpdateIds' | 'session'>;
   /** Configured limits of the repository: initialize a budget absent on a pre-19 Work, and the per-Execution timeout (absent = none). */
   limits?: { correctionLimit?: number | undefined; recoveryLimit?: number | undefined; timeoutSeconds?: number | undefined };
   /** Recovery basis after an answered Question; re-checked in this commit (the answer and the previous Execution must still match). */
@@ -51,12 +56,18 @@ export async function admitExecution(session: Session, input: { work_id: string;
     if (latest && latest.conclusion !== 'satisfied' && !reasons.length) reasons.push('DEPENDENCIES_NOT_SATISFIED');
     const occupancy = await tx.doc(slots);
     if (Object.keys(occupancy.held).length >= input.capacity) reasons.push('NO_SLOT_AVAILABLE');
-    const previous = work.execution ?? null;
+    const previous = resumeBasis(work);
+    // Every pending authorized scope change is bound to THIS Execution (ticket 11), and the resumption basis must name exactly them.
+    const scopeUpdateIds = pendingScope(work).map(update => update.scopeUpdateId);
+    const sameScope = JSON.stringify(input.resume?.scopeUpdateIds ?? []) === JSON.stringify(scopeUpdateIds);
     if (previous?.end?.outcome === 'question') {
-      const question = input.resume ? (await tx.doc(questions, input.resume.questionId, null)).question : null;
-      if (!input.resume || input.resume.previousExecutionId !== previous.executionId || input.resume.questionId !== previous.end.questionId ||
+      const question = input.resume?.questionId ? (await tx.doc(questions, input.resume.questionId, null)).question : null;
+      if (!input.resume || input.resume.reason !== 'QUESTION_ANSWERED' || input.resume.previousExecutionId !== previous.executionId || input.resume.questionId !== previous.end.questionId ||
           question?.state !== 'answered' || question.answer?.sha256 !== input.resume.answerSha256 || question.workId !== input.work_id ||
-          question.executionId !== previous.executionId) reasons.push('RESUME_BASIS_CHANGED');
+          question.executionId !== previous.executionId || !sameScope) reasons.push('RESUME_BASIS_CHANGED');
+    } else if (previous?.end?.outcome === 'completed' && scopeUpdateIds.length) {
+      // After a COMPLETED Execution only an authorized concrete scope change resumes the Work (never a later Ticket/link edit).
+      if (!input.resume || input.resume.reason !== 'SCOPE_UPDATED' || input.resume.previousExecutionId !== previous.executionId || input.resume.questionId !== null || !sameScope) reasons.push('RESUME_BASIS_CHANGED');
     } else if (input.resume) reasons.push('RESUME_BASIS_CHANGED');
     if (reasons.length) return { kind: 'refused' as const, reasons };
     const now = new Date().toISOString();
@@ -85,7 +96,7 @@ export async function admitExecution(session: Session, input: { work_id: string;
       slot: { held: true, capacity: input.capacity, reservedAt: now, releasedAt: null },
       admission: { attemptId: input.attemptId, evaluationId: latest!.evaluationId, authorizationObservedAt: input.authorizationObservedAt, activationAttemptId: null, activationEvaluationId: null },
       dispatch: { intent: 'prepare-start-activate', phase: 'reserved', environment: null, boot: null, updatedAt: now },
-      request: { ...input.request, baseCommit: null, checkout: null, promptSha256: null, skillPack: null, resume: input.resume ?? null },
+      request: { ...input.request, baseCommit: null, checkout: null, promptSha256: null, skillPack: null, resume: input.resume ?? null, scopeUpdateIds, session: null },
       credential: null, credentialIssuance: null, credentialRenewals: [],
       credentialLifecycle: { state: 'none', withdrawnAt: null, reason: null, renewal: 'enabled', renewalStop: null, workerNotice: null },
       start: null, end: null, held: null,
@@ -94,7 +105,7 @@ export async function admitExecution(session: Session, input: { work_id: string;
         duration: null, timeout: null, overrun: null },
     };
     occupancy.held[executionId] = input.work_id;
-    if (previous) work.previousExecutions = [...(work.previousExecutions ?? []), previous];
+    if (work.execution) work.previousExecutions = [...(work.previousExecutions ?? []), work.execution];
     work.execution = execution;
     work.branch = input.request.branch;
     work.queue = { ...work.queue, pending: false };
@@ -157,7 +168,9 @@ export const recordPhase = (session: Session, work_id: string, executionId: stri
  * Revalidation commit immediately before activation: still current, Slot held, no impediment and an evaluation of THIS activation attempt
  * that is satisfied. Records the token-free grant metadata with the activation intent.
  */
-export const confirmActivation = (session: Session, work_id: string, executionId: string, attemptId: string, credential: BuilderGrantMetadata, promptSha256: string) =>
+export const confirmActivation = (session: Session, work_id: string, executionId: string, attemptId: string, credential: BuilderGrantMetadata, promptSha256: string,
+  /** Resumed Builder: the continue/replace decision and its reason, recorded with the activation intent (ticket 11). */
+  sessionDecision: ExecutionView['request']['session'] = null) =>
   advance(session, work_id, executionId, { state: 'reserved', phases: ['booted'] }, (execution, work, facts) => {
     const reasons = facts.paused ? ['GLOBAL_PAUSE'] : [];
     reasons.push(...dispatchBlockers({ impediments: work.impediments, evaluation: work.dependencies?.latest ?? null, currentAttempt: attemptId }));
@@ -168,6 +181,7 @@ export const confirmActivation = (session: Session, work_id: string, executionId
     execution.admission.activationEvaluationId = work.dependencies!.latest!.evaluationId;
     execution.credential = credential;
     execution.request.promptSha256 = promptSha256;
+    execution.request.session = sessionDecision;
     execution.dispatch.phase = 'activation-requested';
     history(work, 'activation-requested', executionId);
     return [];
@@ -342,16 +356,24 @@ export async function confirmStart(session: Session, work_id: string, executionI
     consumeReservation(document.work, execution, execution.start.confirmedAt);
     if (execution.timing) Object.assign(execution.timing, { origin, startedAt: execution.start.confirmedAt,
       lastActivity: { at: execution.start.confirmedAt, elapsedMs: 0, event: 'started' } });
+    // The scope changes bound at admission were sent in THIS activation's first prompt: delivered (context), not proof of consumption.
+    for (const update of document.work.scopeUpdates ?? []) {
+      if (update.state !== 'pending' || !(execution.request.scopeUpdateIds ?? []).includes(update.scopeUpdateId)) continue;
+      Object.assign(update, { state: 'delivered', executionId, deliveredAt: execution.start.confirmedAt });
+      document.work.history.push({ at: execution.start.confirmedAt, event: 'scope-update-delivered', origin: 'controller-dispatch', scopeUpdateId: update.scopeUpdateId, detail: executionId });
+    }
     return 'confirmed' as const;
   }, BACKGROUND_CONTEXT);
 }
 
 export const recordEnd = (session: Session, work_id: string, executionId: string, outcome: 'completed' | 'failure' | 'question' | 'timeout', code: string | null,
-  questionId: string | null = null, elapsedMs: number | null = null) =>
+  questionId: string | null = null, elapsedMs: number | null = null,
+  /** Host-observed preserved session of the Builder (ticket 11); never invented when the completion did not carry it. */
+  preserved: NonNullable<ExecutionView['end']>['session'] = null) =>
   advance(session, work_id, executionId, { state: 'started', phases: ['started'] }, (execution, work) => {
     execution.state = 'ended';
     execution.dispatch.phase = 'completed';
-    execution.end = { at: new Date().toISOString(), outcome, code, cessation: 'not-attempted', ...(outcome === 'question' ? { questionId } : {}) };
+    execution.end = { at: new Date().toISOString(), outcome, code, cessation: 'not-attempted', ...(outcome === 'question' ? { questionId } : {}), session: preserved };
     history(work, 'execution-ended', executionId, code ?? outcome);
     // The activity (and its clock) ends here, also for an external wait; a reached timeout is never bypassed by ending.
     if (execution.timing && elapsedMs !== null) {
@@ -448,6 +470,8 @@ export async function releaseAfterCessation(session: Session, work_id: string, e
     // A Question wait occupies no Slot: the Work returns to its SAME category/position; its impediment (until answered) still blocks.
     // A timeout keeps the same position too, blocked by its EXECUTION_TIMEOUT impediment until an explicit decision.
     if (execution.end.outcome === 'question' || execution.end.outcome === 'timeout') document.work.queue = { ...document.work.queue, pending: true };
+    // A scope change accepted DURING this (completed) activity waited for it to cease; it is the next safe activation's (ticket 11).
+    if (execution.end.outcome === 'completed' && pendingScope(document.work).length) document.work.queue = { ...document.work.queue, pending: true };
     history(document.work, 'slot-released', executionId);
     return 'released' as const;
   }, BACKGROUND_CONTEXT);
@@ -490,5 +514,28 @@ export async function releaseBeforeStart(session: Session, work_id: string, exec
     work.queue = { ...work.queue, pending: true };
     history(work, 'execution-released', executionId, reasons.join(','));
     return 'released' as const;
+  }, BACKGROUND_CONTEXT);
+}
+
+/**
+ * Resumption refused BEFORE activation because its recovery context is insufficient (ticket 11, spec §5.5/§6.1): after the own boot ceased,
+ * the Slot is released and the Work keeps its queue position but is blocked by an explicit impediment. Never an empty continue/recovery.
+ */
+export async function blockBeforeStart(session: Session, work_id: string, executionId: string, code: string, nextStep: string) {
+  return session.commit(async tx => {
+    const document = await tx.doc(works, work_id, null);
+    const work = document.work;
+    const execution = work?.execution ?? null;
+    if (!work || !execution || execution.executionId !== executionId || execution.state !== 'reserved' || execution.start) return 'stale' as const;
+    const occupancy = await tx.doc(slots);
+    delete occupancy.held[executionId];
+    const now = new Date().toISOString();
+    execution.state = 'released';
+    execution.slot = { ...execution.slot, held: false, releasedAt: now };
+    execution.held = { code, phase: execution.dispatch.phase, at: now, nextStep };
+    if (!work.impediments.some(item => item.code === code)) work.impediments.push({ code, scope: 'work', since: now, nextStep });
+    work.queue = { ...work.queue, pending: true };
+    history(work, 'execution-released', executionId, code);
+    return 'blocked' as const;
   }, BACKGROUND_CONTEXT);
 }

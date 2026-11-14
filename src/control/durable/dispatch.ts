@@ -11,12 +11,15 @@ import { evaluateEntry } from '../rules/admission.js';
 import { dispatchBlockers, selectNext, type OwnCycleFacts } from '../rules/dependencies.js';
 import { evaluateWorkDependencies } from './polling.js';
 import { readWork, type WorkRecord } from './admission.js';
-import { admitExecution, beginRenewal, confirmActivation, confirmStart, holdExecution, recordActivity, recordEnd, recordIssuance, recordPhase, recordRenewal, recordRevocation,
-  recordRevocationIntent, recordTimeout, recordWorkerNotice, releaseAfterCessation, releaseBeforeStart, stopRenewal, withdrawCredentials } from './execution.js';
+import { admitExecution, beginRenewal, blockBeforeStart, confirmActivation, confirmStart, holdExecution, recordActivity, recordEnd, recordIssuance, recordPhase, recordRenewal, recordRevocation,
+  recordRevocationIntent, recordTimeout, recordWorkerNotice, releaseAfterCessation, releaseBeforeStart, resumeBasis, stopRenewal, withdrawCredentials } from './execution.js';
 import { systemClock } from './polling.js';
 import { timeoutReached } from '../rules/budget.js';
-import { intactRequest, readQuestion, recordContentLost, registerQuestion } from './questions.js';
-import { recoveryPrompt } from '../rules/questions.js';
+import { intactRequest, readQuestion, readQuestions, recordContentLost, registerQuestion } from './questions.js';
+import { pendingScope } from './scope.js';
+import { recoveryPrompt, type KnownContext } from '../rules/questions.js';
+import { continuationPrompt, recoveryContext, scopeSection, sessionDecision } from '../rules/continuation.js';
+import type { SessionRef } from '../types.js';
 import type { WorkerQuestion } from '../../workers/index.js';
 import type { Session } from './store.js';
 
@@ -284,6 +287,71 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     return !current || Object.values(current.reviewers).some(reviewer => reviewer.cessation === 'unconfirmed');
   }
 
+  type Plan = { kind: 'ready'; prompt: string; resume: ExecutionView['request']['resume']; decision: ExecutionView['request']['session']; continuation: SessionRef | null } |
+    { kind: 'refused'; reasons: string[] } | { kind: 'insufficient'; reasons: string[] };
+  /**
+   * First prompt of a Builder activation (spec §5.5/§6.1/§6.2): `/implement <ticket>` at the start (with any authorized scope change);
+   * after an answer or an authorized scope change, `continue` in the previous session when it is recorded, intact and compatible, or an
+   * explicit recovery instruction with the replacement reason and the recoverable context. Insufficient context blocks.
+   */
+  async function activationPlan(work: WorkRecord, execution: ExecutionView, prepared: { checkout: { baseCommit: string; branch: string; path: string } },
+    pack: ExecutionView['request']['skillPack']): Promise<Plan> {
+    const current = await readWork(session, work.work_id);
+    const resume = execution.request.resume ?? null;
+    const updates = (current?.scopeUpdates ?? []).filter(update => (execution.request.scopeUpdateIds ?? []).includes(update.scopeUpdateId))
+      .map(update => ({ scopeUpdateId: update.scopeUpdateId, reason: update.reason }));
+    if ((execution.request.scopeUpdateIds ?? []).length !== updates.length) return { kind: 'insufficient', reasons: ['SCOPE_UPDATE_CONTENT_MISSING'] };
+    const skillDirectory = `/artifacts/factory/skill-pack/${execution.request.policies.skillPack ?? 'factory-skills-v2'}`;
+    if (!resume) {
+      const prompt = [[`/implement ${work.ticket.url}`, `repository=${work.repository.repository}`, `base=${work.repository.base}`, `base-commit=${prepared.checkout.baseCommit}`,
+        `branch=${execution.request.branch}`, `checkout=${prepared.checkout.path}`, 'artifacts=/artifacts', `work=${work.work_id}`, `execution=${execution.executionId}`,
+        ...(ports.reviews ? ['reviews=factory-handoff'] : [])].join(' '), ...(updates.length ? ['', ...scopeSection(updates)] : [])].join('\n');
+      return { kind: 'ready', prompt, resume: null, decision: null, continuation: null };
+    }
+    const answered = resume.questionId ? await readQuestion(session, resume.questionId) : null;
+    if (resume.questionId && (!answered?.answer || answered.answer.sha256 !== resume.answerSha256 || answered.workId !== work.work_id ||
+        answered.executionId !== resume.previousExecutionId)) return { kind: 'refused', reasons: ['RESUME_BASIS_CHANGED'] };
+    const previous = current?.previousExecutions.find(item => item.executionId === resume.previousExecutionId) ?? null;
+    if (!previous) return { kind: 'insufficient', reasons: ['PREVIOUS_EXECUTION_MISSING'] };
+    const context = recoveryContext({ previous: { baseCommit: previous.request.baseCommit, branch: previous.request.branch, checkout: previous.request.checkout },
+      prepared: { baseCommit: prepared.checkout.baseCommit, branch: prepared.checkout.branch, checkout: prepared.checkout.path },
+      trigger: { answer: Boolean(answered?.answer), scopeUpdates: updates.length } });
+    if (!context.sufficient) return { kind: 'insufficient', reasons: context.reasons };
+    const recorded = previous.end?.session ?? null;
+    let observation = null;
+    if (recorded && ports.workers.observe) {
+      observation = (await ports.workers.observe({ workId: work.work_id, executionId: previous.executionId, invocationId: previous.invocationId, session: recorded,
+        next: { ...(execution.request.policies.skillPack ? { skillPack: execution.request.policies.skillPack } : {}),
+          ...(execution.request.policies.copyOutput === undefined ? {} : { copyOutput: execution.request.policies.copyOutput }),
+          ...(execution.request.policies.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: execution.request.policies.editSourceMaxBytes }), handoff: Boolean(ports.reviews) } })
+        .catch(() => ({ session: { state: 'unavailable' as const, code: 'SESSION_OBSERVATION_FAILED', differences: [] }, limitations: [] }))).session;
+    }
+    const decided = sessionDecision({ previous: { session: recorded, skillPack: previous.request.skillPack, policies: previous.request.policies },
+      next: { skillPack: pack, policies: execution.request.policies }, observation });
+    const decision = { mode: decided.mode, reason: decided.reason, previousExecutionId: previous.executionId, previous: recorded, decidedAt: new Date().toISOString() };
+    const answer = answered?.answer ? { text: answered.answer.text, author: answered.answer.author.kind === 'github' ? answered.answer.author.login : 'local administrator',
+      origin: answered.answer.origin.kind } : null;
+    if (decided.mode === 'continue') {
+      const continued = continuationPrompt({ executionId: execution.executionId, previousExecutionId: previous.executionId, skillDirectory,
+        answer: answered && answer ? { questionId: answered.questionId, ...answer } : null, scopeUpdates: updates });
+      if (continued.kind === 'insufficient') return { kind: 'insufficient', reasons: continued.reasons };
+      return { kind: 'ready', prompt: continued.prompt, resume, decision, continuation: recorded };
+    }
+    const lastRound = [...(current?.previousExecutions ?? [])].reverse().flatMap(item => [...(item.review?.rounds ?? [])].reverse()).find(round => round.handoff.summary) ?? null;
+    const known: KnownContext = {
+      previousExecutions: (current?.previousExecutions ?? []).map(item => ({ executionId: item.executionId,
+        outcome: item.end ? `${item.end.outcome}${item.end.code ? ` (${item.end.code})` : ''}` : item.held ? `released/held (${item.held.code})` : item.state, at: item.end?.at ?? item.held?.at ?? null })),
+      questions: (current ? await readQuestions(session, current) : []).map(item => ({ questionId: item.questionId, state: item.state, comment: item.publication.comment?.url ?? null })),
+      versions: lastRound ? { spec: lastRound.versions.spec?.version ?? null, instructions: lastRound.versions.instructions?.version ?? null, head: lastRound.handoff.summary?.head ?? null } : null,
+      scopeUpdates: updates };
+    const prompt = recoveryPrompt({ ticketUrl: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
+      baseCommit: prepared.checkout.baseCommit, branch: execution.request.branch, checkout: prepared.checkout.path, workId: work.work_id, executionId: execution.executionId,
+      skillDirectory, previousExecutionId: previous.executionId,
+      question: answered ? { questionId: answered.questionId, question: answered.content.question, context: answered.content.context } : null,
+      answer, replacement: { reason: decided.reason }, known });
+    return { kind: 'ready', prompt, resume, decision, continuation: null };
+  }
+
   async function execute(work: WorkRecord, execution: ExecutionView) {
     const { executionId } = execution;
     const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase())!;
@@ -379,6 +447,19 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       // Cheap pre-check so no credential is issued for a refused activation; the commit below re-checks the same facts.
       if (evaluation.conclusion !== 'satisfied') { await refuse([`DEPENDENCIES_${evaluation.conclusion.toUpperCase()}`]); return; }
       if (await deps.paused()) { await refuse(['GLOBAL_PAUSE']); return; }
+      // The first prompt and, for a resumption, the continue/replace decision are planned BEFORE any credential is issued.
+      const plan = await activationPlan(work, execution, prepared, pack ? { name: pack.name, manifestSha256: pack.manifestSha256 } : null);
+      if (plan.kind === 'refused') { await refuse(plan.reasons); return; }
+      if (plan.kind === 'insufficient') {
+        // Spec §5.5/§6.1: insufficient recovery context blocks explicitly (before any credential), never a `continue`/recovery without context.
+        const stop = await stopOwnBoot('recovery context insufficient');
+        const nextStep = `The resumption context is insufficient (${plan.reasons.join(', ')}); no Builder was activated. Inspect the Work and its preserved artifacts and decide explicitly (ticket 26).`;
+        if (stop?.cessationConfirmed) await blockBeforeStart(session, work.work_id, executionId, 'RECOVERY_CONTEXT_INSUFFICIENT', nextStep);
+        else await hold('RECOVERY_CONTEXT_INSUFFICIENT_CESSATION_UNCONFIRMED', nextStep);
+        observe(work.work_id, 'recovery-context-insufficient', plan.reasons);
+        return;
+      }
+      const { prompt, resume } = plan;
       phase = 'credential';
       checkStop();
       // Durable issuance intent BEFORE the call: an issued token is never unknown to the authority.
@@ -404,21 +485,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         await hold('ACTIVATION_CREDENTIALS_WITHDRAWN', 'The activity credentials were withdrawn before activation; the Builder was not activated. No charge was consumed; the Slot is kept (ticket 26).', true);
       };
       if (lifecycle.withdrawn) { await withdrawnBeforeActivation(); return; }
-      const resume = execution.request.resume ?? null;
-      const answered = resume ? await readQuestion(session, resume.questionId) : null;
-      if (resume && (!answered?.answer || answered.answer.sha256 !== resume.answerSha256 || answered.workId !== work.work_id ||
-          answered.executionId !== resume.previousExecutionId)) { await revoke(); await refuse(['RESUME_BASIS_CHANGED']); return; }
-      // First activation: `/implement <ticket>`. After an answer: an explicit recovery instruction (new boot, new session), never a bare `continue`.
-      const prompt = resume && answered?.answer ? recoveryPrompt({ ticketUrl: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
-        baseCommit: prepared.checkout.baseCommit, branch: execution.request.branch, checkout: prepared.checkout.path, workId: work.work_id, executionId,
-        skillDirectory: `/artifacts/factory/skill-pack/${execution.request.policies.skillPack ?? 'factory-skills-v2'}`,
-        previousExecutionId: resume.previousExecutionId, question: { questionId: answered.questionId, question: answered.content.question, context: answered.content.context },
-        answer: { text: answered.answer.text, author: answered.answer.author.kind === 'github' ? answered.answer.author.login : 'local administrator', origin: answered.answer.origin.kind } })
-        : [`/implement ${work.ticket.url}`, `repository=${work.repository.repository}`, `base=${work.repository.base}`, `base-commit=${prepared.checkout.baseCommit}`,
-          `branch=${execution.request.branch}`, `checkout=${prepared.checkout.path}`, 'artifacts=/artifacts', `work=${work.work_id}`, `execution=${executionId}`,
-        ...(ports.reviews ? ['reviews=factory-handoff'] : [])].join(' ');
       const promptSha256 = createHash('sha256').update(prompt).digest('hex');
-      const confirmed = await confirmActivation(session, work.work_id, executionId, attemptId, grant.metadata, promptSha256);
+      const confirmed = await confirmActivation(session, work.work_id, executionId, attemptId, grant.metadata, promptSha256, plan.decision);
       if (confirmed.kind === 'refused') { await revoke(); await refuse(confirmed.reasons); return; }
       if (confirmed.kind === 'stale') { await revoke(); observe(work.work_id, 'stale'); return; }
       phase = 'activate';
@@ -439,8 +507,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         return { status: 'recorded' as const };
       };
       const handle = await ports.workers.activate({ context: { workId: work.work_id, executionId, invocationId: execution.invocationId, role: 'builder',
-        environmentRef: environment, bootRef: boot, phaseId: resume ? 'builder-recovery' : 'builder-initial' }, prompt, signal: activitySignal, ...ports.builder,
-        ...(ports.reviews ? { handoff: { baseCommit: prepared.checkout.baseCommit } } : {}) },
+        environmentRef: environment, bootRef: boot, phaseId: plan.continuation ? 'builder-continuation' : resume ? 'builder-recovery' : 'builder-initial' }, prompt, signal: activitySignal, ...ports.builder,
+        ...(ports.reviews ? { handoff: { baseCommit: prepared.checkout.baseCommit } } : {}), ...(plan.continuation ? { continuation: { session: plan.continuation } } : {}) },
       { credential: grant.delivery }, { question: onQuestion });
       activated = true;
       await lifecycle.attach(handle.worker);
@@ -495,9 +563,10 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
             await recordContentLost(session, work.work_id, executionId, request.questionId);
           }
           const bound = own(await readQuestion(session, request.questionId));
-          await recordEnd(session, work.work_id, executionId, 'question', code, bound ? request.questionId : null, elapsed());
+          await recordEnd(session, work.work_id, executionId, 'question', code, bound ? request.questionId : null, elapsed(), completed.session ?? null);
         } else {
-          await recordEnd(session, work.work_id, executionId, completed.status === 'success' ? 'completed' : 'failure', completed.status === 'success' ? null : completed.code, null, elapsed());
+          await recordEnd(session, work.work_id, executionId, completed.status === 'success' ? 'completed' : 'failure', completed.status === 'success' ? null : completed.code,
+            null, elapsed(), completed.status === 'success' ? completed.session ?? null : null);
           if (completed.status === 'failure') await questionUncertain();
         }
       } finally { timerStop.abort(); startCommitted(false); handle.close(); }
@@ -573,13 +642,17 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       const work = works.find(item => item.work_id === next)!;
       const authorization = await revalidateAuthorization(work);
       if (!authorization.ok) { observe(work.work_id, 'authorization-not-confirmed', authorization.reasons); return; }
-      // After a Question: only its accepted answer is a recovery basis (re-checked in the admission commit).
-      const previous = work.execution;
+      // After a Question: only its accepted answer is a recovery basis; after a COMPLETED Execution: only an authorized concrete scope
+      // change (ticket 11). Both are re-checked in the admission commit; a later Ticket/link edit is never one.
+      const previous = resumeBasis(work);
+      const scopeUpdateIds = pendingScope(work).map(update => update.scopeUpdateId);
       let resume: NonNullable<ExecutionView['request']['resume']> | undefined;
       if (previous?.end?.outcome === 'question') {
         const answered = previous.end.questionId ? await readQuestion(session, previous.end.questionId) : null;
         if (!answered?.answer || answered.workId !== work.work_id || answered.executionId !== previous.executionId) { observe(work.work_id, 'refused', ['QUESTION_NOT_ANSWERED']); return; }
-        resume = { previousExecutionId: previous.executionId, questionId: answered.questionId, answerSha256: answered.answer.sha256, reason: 'NEW_BOOT_REPLACEMENT_SESSION' };
+        resume = { previousExecutionId: previous.executionId, questionId: answered.questionId, answerSha256: answered.answer.sha256, scopeUpdateIds, reason: 'QUESTION_ANSWERED' };
+      } else if (previous?.end?.outcome === 'completed' && scopeUpdateIds.length) {
+        resume = { previousExecutionId: previous.executionId, questionId: null, answerSha256: null, scopeUpdateIds, reason: 'SCOPE_UPDATED' };
       }
       const { attemptId } = await freshEvaluation(work);
       const admission = await admitExecution(session, { work_id: work.work_id, attemptId, capacity: ports.capacity, authorizationObservedAt: authorization.observedAt,

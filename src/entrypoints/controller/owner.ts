@@ -13,7 +13,8 @@ const requestId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
 const command = z.union([z.strictObject({ request_id: requestId, operation: z.enum(['pause', 'unpause']), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('answer'), question_id: z.uuid(), text: z.string().min(1).max(2000), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('grant'), work_id: z.uuid(), counter: z.enum(['corrections', 'recoveries']),
-    amount: z.number().int().min(1).max(100), origin: z.literal('local-cli') })]);
+    amount: z.number().int().min(1).max(100), origin: z.literal('local-cli') }),
+  z.strictObject({ request_id: requestId, operation: z.literal('update-scope'), work_id: z.uuid(), reason: z.string().min(1).max(2000), origin: z.literal('local-cli') })]);
 const query = z.discriminatedUnion('kind', [z.strictObject({ kind: z.literal('status') }), z.strictObject({ kind: z.literal('access') }),
   z.strictObject({ kind: z.literal('list') }), z.strictObject({ kind: z.literal('show'), work_id: z.uuid() }),
   z.strictObject({ kind: z.literal('request'), request_id: requestId }), z.strictObject({ kind: z.literal('question'), question_id: z.uuid() })]);
