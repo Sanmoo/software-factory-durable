@@ -11,7 +11,7 @@ import type { ReviewOpinion } from '../contracts/index.js';
 import type { BuilderDirective, HandoffEvent } from './builder-handoff.js';
 export type { ReviewerProfile, Invocation } from './worker-start.js';
 export type { BuilderDirective, HandoffEvent } from './builder-handoff.js';
-export { builderSkillPack, builderSkillPacks, skillPacks, type SkillPackId } from './skill-pack.js';
+export { builderSkillPack, builderSkillPacks, skillPackContinues, skillPacks, type SkillPackId } from './skill-pack.js';
 import { skillPackContinues, skillPackGuestFiles } from './skill-pack.js';
 /** Transient material handed to the host handshake, never part of the (serializable) invocation. */
 export type ActivationDelivery = { credential?: Readonly<{ token: string }> };

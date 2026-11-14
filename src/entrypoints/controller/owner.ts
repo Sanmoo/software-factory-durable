@@ -49,7 +49,7 @@ async function own(root: string): Promise<number> {
   }
   const github = createGitHubAccess({ root: paths.root, ...validated.configuration.effective.githubApp });
   const composed = release.release && release.guestAssets
-    ? composeProductionExecution({ root: paths.root, effective: validated.configuration.effective, guestAssets: release.guestAssets, github }) : undefined;
+    ? await composeProductionExecution({ root: paths.root, effective: validated.configuration.effective, guestAssets: release.guestAssets, github }) : undefined;
   if (composed?.status === 'refused') {
     console.error(JSON.stringify({ code: 'CONFIGURATION_UNSUPPORTED', reason: composed.code, roles: composed.roles,
       message: 'Every role must name the release worker profile explicitly; storage was not opened.' }));

@@ -4,6 +4,8 @@ import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/pr
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { buildRelease } from '../../src/entrypoints/release-build.js';
+import { productionSkillPack } from '../../src/entrypoints/controller/composition.js';
+import { factorySkillPackIds } from '../../src/contracts/index.js';
 import { builtRelease, check, id, manifestSha256, sha, type Check } from './release-fixture.js';
 
 // I-local (ticket 32): artifact layout/manifest pins and explicit failures of a changed, mis-extracted or foreign-root release.
@@ -18,6 +20,7 @@ test('build: one exclusive archive with checksum and manifest pinning Node/SDKs/
   const listing = spawnSync('tar', ['-tf', join(output, report.archive)], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).stdout.trim().split('\n');
   assert.ok(listing.every(path => path === 'factory' || path.startsWith(`releases/`) || path.startsWith('assets/')), 'only launcher, release and assets');
   assert.ok(listing.includes(`releases/${id}/node/bin/node`) && listing.includes(`releases/${id}/dist/src/entrypoints/cli.js`));
+  for (const pack of factorySkillPackIds) assert.ok(listing.includes(`releases/${id}/assets/skill-pack/${pack}/manifest.json`), pack);
   assert.ok(listing.includes(`assets/guest/${manifestSha256}/rootfs.ext4`));
   const release = listing.filter(path => path.startsWith(`releases/${id}/`)).map(path => path.slice(`releases/${id}/`.length));
   // Development instruments are absent; type-only packages stay only where an upstream runtime package declares them (lockfile closure).
@@ -37,7 +40,7 @@ test('build: one exclusive archive with checksum and manifest pinning Node/SDKs/
   assert.equal(metadata.pi.codingAgent.profile.id, 'factory-development-pi-1.5.2-read-async-bash-lexical-v3');
   assert.equal(metadata.gondolin.version, '0.14.0');
   assert.equal(metadata.gondolin.profile.dependencyLink, '../../node_modules');
-  assert.deepEqual(metadata.skillPacks.map((pack: { id: string }) => pack.id), ['factory-skills-v1', 'factory-skills-v2', 'factory-skills-v3']);
+  assert.deepEqual(metadata.skillPacks.map((pack: { id: string }) => pack.id), [...factorySkillPackIds], 'every registered pack ships');
   assert.ok(metadata.skillPacks.every((pack: { licenses: unknown[]; credits: string }) => pack.licenses.length > 0 && pack.credits));
   assert.equal(metadata.protocol.version, 1);
   assert.ok(metadata.guestProfile.apkPackages.includes('docker'));
@@ -49,7 +52,7 @@ test('build: one exclusive archive with checksum and manifest pinning Node/SDKs/
   assert.equal(metadata.build.eslint.configSha256, sha(await readFile('eslint.config.mjs')));
   assert.equal(metadata.build.npm.executed, false);
   assert.ok(metadata.build.architectureFixtures.some((item: { path: string }) => item.path === 'test/architecture/architecture-gate.test.ts'));
-  assert.equal(manifest.production.builder.skillPack, 'factory-skills-v3');
+  assert.equal(manifest.production.builder.skillPack, await productionSkillPack());
   assert.equal(manifest.production.limits.modelBudget.builderV1.requests, 60);
   assert.match(manifest.production.limits.deadline, /only the optional configured per-repository timeoutSeconds applies/);
   assert.doesNotMatch(JSON.stringify(manifest.production.limits), /deadlineMinutes|deadlineMs/);

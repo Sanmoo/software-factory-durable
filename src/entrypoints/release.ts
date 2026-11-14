@@ -32,7 +32,7 @@ const entrySchema = z.union([
 
 /**
  * The production composition this release distributes (ticket 32, deferred by tickets 09/10/12/20 to the release): one fixed worker
- * profile for the three roles, the Factory skill pack v3 (ask_user + review handoff) and the qualified budgets. Configuration selects
+ * profile for the three roles, the latest registered Factory skill pack with the continuation capability (derived) and the qualified budgets. Configuration selects
  * nothing else: provider/model per role must name exactly this profile (spec §6.1: explicit, no fallback); anything else is refused.
  */
 export const productionProfile = Object.freeze({
@@ -42,7 +42,8 @@ export const productionProfile = Object.freeze({
   gondolinSdkProfileId: 'factory-development-gondolin-0.14.0-stdin-capacity-v1',
   model: Object.freeze({ auth: 'factory-oauth', providerId: 'openai', modelId: 'gpt-6-luna', api: 'openai-responses',
     credential: 'credentials/chatgpt.json (factory login; never copied, read only by the worker native store)' }),
-  builder: Object.freeze({ skillPack: 'factory-skills-v3', modelBudget: 'builder-v1', copyOutput: true, editSourceMaxBytes: 8192 }),
+  // The Builder skill pack is derived at composition (latest registered pack with the continuation capability) and recorded in the manifest.
+  builder: Object.freeze({ modelBudget: 'builder-v1', copyOutput: true, editSourceMaxBytes: 8192 }),
   reviewer: Object.freeze({ modelBudget: 'reviewer-v1', imageSourceMaxBytes: 5 * 1024 * 1024 }),
   tools: Object.freeze({ builder: ['write', 'bash', 'read', 'edit', 'ask_user', 'handoff'], standards: ['read'], spec: ['read'] }),
   limits: Object.freeze({ socketPathBytes: 107, writeMaxBytes: 8192, editSourceMaxBytes: 8192,
@@ -62,6 +63,12 @@ export const productionProfile = Object.freeze({
       'message is ONLY the JSON verdict object you are asked for, with no prose before or after.',
   }),
 });
+
+/** The latest id (registry order) whose pack declares the continuation capability; derived, so a newer registered pack supersedes it. */
+export async function latestContinuationPack<T extends string>(ids: readonly T[], continues: (id: T) => Promise<boolean>): Promise<T> {
+  for (const id of [...ids].reverse()) if (await continues(id)) return id;
+  throw new Error('PRODUCTION_SKILL_PACK_UNAVAILABLE');
+}
 
 const manifestSchema = z.strictObject({
   schemaVersion: z.literal(1),

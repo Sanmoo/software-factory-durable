@@ -7,8 +7,9 @@ import { basename, dirname, isAbsolute, join, posix, resolve } from 'node:path';
 import { arch, platform, release as kernelRelease } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { protocolVersion } from '../protocol/index.js';
+import { factorySkillPackIds } from '../contracts/index.js';
 import { createSandbox, prepareReleaseGondolinSdk, verifyGondolinSdk, gondolinSdkProfile } from '../sandbox/index.js';
-import { applicationRoot, inventoryTree, parseReleaseManifest, productionProfile, releaseIdSchema, releaseManifestName, verifyReleaseTree, type TreeEntry } from './release.js';
+import { applicationRoot, inventoryTree, latestContinuationPack, parseReleaseManifest, productionProfile, releaseIdSchema, releaseManifestName, verifyReleaseTree, type TreeEntry } from './release.js';
 
 /**
  * DEVELOPMENT BUILD TOOL (ticket 32), never run on the operator host. Assembles a self-contained release from an already built and
@@ -126,6 +127,13 @@ export async function runtimeClosure(project: string) {
   // The private SDK copy ships the upstream package's own nested dependencies; they are accounted relative to that copy.
   const sdkKeys = [...seen].filter(key => key.startsWith(`${sdkPackage}/`)).map(key => key.slice(sdkPackage.length + 1)).sort(compare);
   return { lockfileSha256: sha(await readFile(join(project, 'package-lock.json'))), keys, sdkKeys, packages, omitted: omitted.sort((a, b) => compare(`${a.from}/${a.dependency}`, `${b.from}/${b.dependency}`)), sdk: packages[sdkPackage]! };
+}
+
+/** The skill-pack directory holds exactly the registered ids (no extra, missing or unregistered pack), each passing `verify`. */
+export async function verifySkillPackRegistry<T extends string>(directory: string, ids: readonly T[], verify: (id: T) => Promise<void>) {
+  const present = (await readdir(directory)).sort(compare);
+  if (JSON.stringify(present) !== JSON.stringify([...ids].sort(compare))) fail('RELEASE_SKILL_PACKS_DRIFT');
+  for (const id of ids) await verify(id);
 }
 
 /** A shipped dependency tree: `root` (release-relative, '' for the top level) holds `node_modules`; `keys` are lock keys relative to it. */
@@ -249,7 +257,16 @@ export async function buildRelease(input: BuildInput) {
   // Emitted JavaScript only: no TypeScript sources, declarations, maps or compiled tests.
   await copyTree(join(project, 'dist/src'), join(releaseDirectory, 'dist/src'), (path, directory) => directory || path.endsWith('.js'));
   await mkdir(join(releaseDirectory, 'assets'), { mode: 0o755 });
+  // Exactly the registered Factory skill packs (factorySkillPackIds): no extra or missing pack, each manifest declaring its own id. Their bytes are
+  // inventoried by the release manifest and verified by the Workers pack loader before any use; the production pack is the same derivation.
+  const packManifest = async (id: string) => {
+    const parsed = JSON.parse(await readFile(join(project, 'assets/skill-pack', id, 'manifest.json'), 'utf8')) as { id?: unknown; capabilities?: { continuation?: unknown } };
+    if (parsed.id !== id) fail('RELEASE_SKILL_PACKS_DRIFT');
+    return parsed;
+  };
+  await verifySkillPackRegistry(join(project, 'assets/skill-pack'), factorySkillPackIds, async id => { await packManifest(id); });
   await copyTree(join(project, 'assets/skill-pack'), join(releaseDirectory, 'assets/skill-pack'));
+  const builderSkillPack = await latestContinuationPack(factorySkillPackIds, async id => (await packManifest(id)).capabilities?.continuation === true);
   await mkdir(join(releaseDirectory, '.scratch'), { mode: 0o755 });
   await copyTree(join(project, privateSdk), join(releaseDirectory, privateSdk));
   for (const directory of ['docs', 'docs/evidence', 'provenance']) await mkdir(join(releaseDirectory, directory), { mode: 0o755 });
@@ -321,7 +338,7 @@ export async function buildRelease(input: BuildInput) {
     node: { version: process.versions.node, path: 'node/bin/node', sha256: await hashFile(join(releaseDirectory, 'node/bin/node')), license: 'node/LICENSE' },
     launcher: { path: 'factory', sha256: sha(launcherBytes) },
     guestAssets: { path: `assets/guest/${input.guestAssets.manifestSha256}`, manifestSha256: input.guestAssets.manifestSha256, files: await inventoryTree(assetsDirectory) },
-    production: { ...productionProfile, promptSha256: Object.fromEntries(Object.entries(productionProfile.prompts).map(([role, text]) => [role, sha(text)])) },
+    production: { ...productionProfile, builder: { ...productionProfile.builder, skillPack: builderSkillPack }, promptSha256: Object.fromEntries(Object.entries(productionProfile.prompts).map(([role, text]) => [role, sha(text)])) },
     qualification: { status: 'unqualified', statement: 'This release asserts the integrity and exact composition of the distributed set only. It claims no functional ' +
       'coverage: VM boot, Docker/TLS, real GitHub, model and pilot behaviour, and features not yet integrated (later MVP tickets) are qualified separately ' +
       'on the final composition, never by checksums or build success.' },
@@ -344,7 +361,7 @@ export async function buildRelease(input: BuildInput) {
           [key, (assetManifest.config as Record<string, unknown> | undefined)?.[key] === undefined ? null : basename(String((assetManifest.config as Record<string, unknown>)[key]))])),
         hostRequirements: 'QEMU/KVM, qemu-img, e2fsck/resize2fs and systemd user supervision are host prerequisites diagnosed by doctor; the release ships none of them.' },
       guestProfile: { files: guestProfile, apkPackages, location: 'provenance/guest-profile' },
-      skillPacks: await Promise.all((await readdir(join(project, 'assets/skill-pack'))).sort(compare).map(async name => {
+      skillPacks: await Promise.all(factorySkillPackIds.map(async name => {
         const bytes = await readFile(join(project, 'assets/skill-pack', name, 'manifest.json'));
         const parsed = JSON.parse(bytes.toString()) as { id: string; version: string; licenses: unknown; credits: string };
         return { id: parsed.id, version: parsed.version, manifestSha256: sha(bytes), licenses: parsed.licenses, credits: parsed.credits };

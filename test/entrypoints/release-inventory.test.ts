@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { arch, platform, tmpdir, userInfo } from 'node:os';
 import { join, resolve } from 'node:path';
-import { buildRelease, copyTree, runtimeClosure, unaccountedShippedPaths, verifyShippedPackages } from '../../src/entrypoints/release-build.js';
+import { buildRelease, copyTree, verifySkillPackRegistry, runtimeClosure, unaccountedShippedPaths, verifyShippedPackages } from '../../src/entrypoints/release-build.js';
 import { inventoryTree, parseReleaseManifest, releaseInstallationRoot, verifyReleaseTree, type TreeEntry } from '../../src/entrypoints/release.js';
 import { setupService, standardServiceDirectory } from '../../src/entrypoints/setup.js';
 
@@ -280,4 +280,18 @@ test('service unit: default directory comes from the account database, never HOM
   assert.notEqual(userInfo().homedir, '/nonexistent-home-decoy');
   await assert.rejects(setupService('/srv/factory', 'relative/units'), /SERVICE_DIRECTORY_UNSUPPORTED/);
   await assert.rejects(setupService('/srv/factory', '/tmp/a/../units'), /SERVICE_DIRECTORY_UNSUPPORTED/);
+});
+
+test('skill packs shipped are exactly the registered ones (factorySkillPackIds), each verified; unregistered or missing packs refuse', async () => {
+  await workspace(async root => {
+    await mkdir(join(root, 'packs', 'p1'), { recursive: true }); await mkdir(join(root, 'packs', 'p2'));
+    const verified: string[] = [];
+    const verify = async (id: string) => { verified.push(id); };
+    await verifySkillPackRegistry(join(root, 'packs'), ['p1', 'p2'], verify);
+    assert.deepEqual(verified, ['p1', 'p2']);
+    await assert.rejects(verifySkillPackRegistry(join(root, 'packs'), ['p1', 'p2', 'p3'], verify), /RELEASE_SKILL_PACKS_DRIFT/);
+    await assert.rejects(verifySkillPackRegistry(join(root, 'packs'), ['p1'], verify), /RELEASE_SKILL_PACKS_DRIFT/);
+    await assert.rejects(verifySkillPackRegistry(join(root, 'packs'), ['p1', 'p2'], async () => { throw new Error('WORKER_SKILL_PACK_DRIFT'); }),
+      /WORKER_SKILL_PACK_DRIFT/);
+  });
 });
