@@ -51,7 +51,7 @@ Ativada só quando a composição declara `ExecutionPorts.reviews.rounds = { max
    cada um `passed`+`current` ou motivo distinto (`GATE_FAILED`, `GATE_RESULT_UNKNOWN`, `GATE_RESULT_UNVERIFIED`, `GATE_NOT_CURRENT`, `GATE_NOT_RUN`,
    `WAIVER_NOT_AUTHORIZED`), e **dispensa nunca satisfaz check obrigatório** (`WAIVER_CANNOT_BYPASS_REQUIRED_CHECK`, `requiredChecks` listados para a
    prontidão GitHub). Sem gates declarados: `GATES_NOT_DECLARED`. `verified` só sem nenhum motivo. Execução encerrada por Pergunta não é verificada.
-8. **Pacote `factory-skills-v4` (novo; v1–v3 intactos).** `implement` §3: gates documentados com fonte/comando/cwd rodados como últimos comandos
+8. **Pacote `factory-skills-v5` (novo; v1–v4 intactos; era v4 antes da integração do ticket 11).** `implement` §3: gates documentados com fonte/comando/cwd rodados como últimos comandos
    (evidência só do registro do host), `not-run` + `ask_user`, dispensa só com autorização concreta e nunca para check obrigatório, tratamento de todo
    achado (heurística ≠ violação; discordância interna sem arbitragem; dúvida de requisito/dispensa/aprovação de skill → `ask_user`), novo `handoff`
    com `treatments`/`gates` até o Factory dizer que não há rodada nova. O prompt do Control acrescenta `review-rounds=multi` (também na recuperação).
@@ -87,7 +87,20 @@ final foi `not-verified` com `TREATMENT_UNKNOWN_FINDING:1/standards/none`, `2/st
 | texto que induzia o placeholder | `implement` v4 §3.4 e o prompt de entrega: tratar SOMENTE os achados listados, nunca inventar placeholder para revisor sem achados; descrição da ferramenta idem | `skill-pack-v4`, `review13-rules` |
 | leitura de diretório rebaixava a revisão | o programa confinado sai com status 3 para diretório (decidido antes de ler bytes); o owner devolve `READ_IS_DIRECTORY`; o modelo recebe mensagem clara; o observador NÃO conta como leitura falha nem como cobertura (outras falhas de leitura continuam rebaixando como no ticket 12) | `tool-transport` (status 3 → código distinto; checagem estática do programa), `review-session` (diretório + entradas obrigatórias lidas → `clean`, `failedReads: []`) |
 
-A receita passa ao namespace `q13-rounds-v4` (o v3 foi consumido).
+A receita passou a `q13-rounds-v4` (nunca executado) e, após a integração (pacote v5), a `q13-rounds-v5`.
+
+## Integração com os tickets 19 e 11 (rebase sobre `integration/software-factory-mvp` @ `314f241`)
+
+- **Pacote:** `factory-skills-v5` = texto do `factory-skills-v4` do ticket 11 (continuar/recuperar, escopo autorizado, precedência) + as seções
+  deste ticket (rodadas, tratamentos só de achados listados, gates com snapshot/cwd); manifesto com `capabilities.continuation`; registrado apenas
+  em `factorySkillPackIds` (a lista duplicada `builderSkillPackVersions` foi descartada); v1–v4 intactos (o teste do v4 passou a comparar só versões
+  ANTERIORES a ele). Receita do ticket 13 usa v5 (`q13-rounds-v5`); a do ticket 11 continua em v4.
+- **Prompts:** `initialPrompt`, `continuationPrompt` (`continue` + linha `Execution context: reviews=factory-handoff review-rounds=multi`) e
+  `recoveryPrompt` (contexto da Execução) carregam `review-rounds=multi` só quando `reviews.rounds` está composto (`review13-rules`).
+- **Ticket 19:** as rodadas de revisor, entregas e isenções usam o escopo da Execução (`scope.wait`/`scope.activity`, mesmo relógio/timeout);
+  rodadas adicionais na mesma Execução não cobram nada (`charge.kind: none`, sem eventos `budget-*`, `review13-flow`); nenhum prazo implícito.
+- **ExecutionView:** campos do ticket 11/19 (`session`, `scopeUpdateIds`, `charge`, `timing`) e `review.verification` coexistem.
+- **Sessões:** a continuação da sessão do Builder (ticket 11) e a do revisor por rodada (ticket 13) coexistem em `worker-launch`/`worker-session`.
 
 ## Mapa AC → evidência
 
@@ -149,9 +162,9 @@ pelas mutações M1–M8.
    (60 min, 4 capturas, ≤ 8 ativações de revisor). Na ÚLTIMA captura da política os resultados são registrados e a ativação termina (`end`): se ela
    for uma rodada com achados, o Builder não os trata nesta ativação e a verificação os reporta como não tratados (nunca sucesso), com o operador
    decidindo a continuação. Limites configuráveis de correções/recoveries são do ticket 19.
-8. **Pacote `factory-skills-v4` e composição de produção.** Ticket 11 (paralelo) pode também precisar de nova versão do pacote; se a integração já
-   trouxer outro `factory-skills-v4`, este é renumerado para v5 mecanicamente (`assets/skill-pack/factory-skills-v4` → v5, entrada em `skillPacks`,
-   enum do bootstrap, testes, receita e esta evidência). O ticket 32 compõe os portos executáveis da release (arquivo ausente nesta base): quando
+8. **Pacote e composição de produção.** O ticket 11 integrou o seu `factory-skills-v4` (capacidade `continuation`) e a lista única
+   `factorySkillPackIds`; este ticket foi renumerado para `factory-skills-v5` (texto do v4 do ticket 11 + as seções multi-rodada, também com
+   `continuation`), registrado só nessa lista. O ticket 32 compõe os portos executáveis da release (arquivo ausente nesta base): quando
    habilitar reviews, deve passar `reviews.rounds = { max: 4 }` para o fluxo multi-rodada; sem `rounds` o comportamento é o de uma rodada do ticket 12.
 9. **Recuperação parcial** (parecer válido + retry só do falho) continua no ticket 28: aqui um revisor falho torna a rodada `incomplete` e a próxima
    captura roda os dois de novo.
@@ -159,7 +172,7 @@ pelas mutações M1–M8.
 ## Ensaio real (receita one-shot)
 
 Receita: `dist/test/entrypoints/review13-qualification.js` (fonte `test/entrypoints/review13-qualification.ts`). `--plan` é inerte. Fases one-shot com
-tombstone `*-intent.json` exclusivo em `$HOME/software-factory-test/y5/q13-rounds-v4/` (criado na `preflight`, `mkdir` exclusivo; existir = consumido).
+tombstone `*-intent.json` exclusivo em `$HOME/software-factory-test/y5/q13-rounds-v5/` (criado na `preflight`, `mkdir` exclusivo; existir = consumido).
 Sem retry; falha grava `*-held.json`. `inspect`/`stop-environment` abrem somente uma **cópia exclusiva** do SQLite; leituras de `/artifacts` são
 confinadas sem seguir links; o checkout é inspecionado por cópia bare da Factory (nunca git do host em árvore gravável pelo guest); sessões são lidas
 do runtime do host com limites (16 lançamentos × 4 arquivos, 8 MiB, sem symlink).
@@ -261,6 +274,5 @@ Flake observado UMA vez, sob três gates de tickets paralelos na mesma máquina:
 falhou numa execução e passou 14/14 isolado (e nas duas execuções completas do gate); é um teste de processo do Controlador que lê
 `dispatch.reasons` enquanto um novo ciclo de polling reavalia dependências — não toca as superfícies deste ticket e não foi alterado.
 
-Nota de integração: o ticket 19 (paralelo) removeu o prazo de relógio implícito do worker (só `deadlineMs` explícito do Host, ausente em produção).
-Nesta base o `modelBudget` ainda define prazos (`builder-v1` 30 min, `reviewer-v1` 15 min por ativação); o código deste ticket não adiciona nem altera
-prazos, e a receita impõe os seus próprios (60 min, 4 capturas, ≤ 8 ativações de revisor).
+Nota de integração: o ticket 19 removeu o prazo de relógio implícito do worker (só `deadlineMs` explícito do Host, ausente em produção); este
+ticket não adiciona prazo algum, e a receita impõe os seus próprios (60 min, 4 capturas, ≤ 8 ativações de revisor).

@@ -9,8 +9,8 @@ export { readBounded, sessionToolCalls, snapshotStorage };
 // No GitHub write is possible: every grant is read-only and publication is not part of ticket 13.
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const observations = `${root}/q13-rounds-v4`;
-const revision = 'q13-rounds-v4';
+const observations = `${root}/q13-rounds-v5`;
+const revision = 'q13-rounds-v5';
 const phases = ['preflight', 'run', 'inspect', 'stop-environment'] as const;
 type Phase = typeof phases[number];
 const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 'main', installationId: 177599217, workflows: false, label: 'ready-for-agent' };
@@ -46,7 +46,7 @@ const prompts = {
 };
 const reviewer = { modelBudget: 'reviewer-v1' as const, imageSourceMaxBytes: 5 * 1024 * 1024 };
 /** v4: its `implement` hands off again with treatments and gates when `review-rounds=multi` is present (v1-v3 unchanged). */
-const skillPack = 'factory-skills-v4' as const;
+const skillPack = 'factory-skills-v5' as const;
 /** The Ticket text the operator puts on issue #3 for this run (documentation only; one documented gate). */
 export const ticketBody = [
   'Add a short documentation page `docs/FACTORY_SMOKE.md`. This exact upper-case file name was decided by the operator: keep it even if other docs use another naming style.',

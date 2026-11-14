@@ -16,9 +16,9 @@ test('AC7 recipe: import and --plan are inert and declare the fixed bounds of th
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q13-rounds-v4');
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q13-rounds-v5');
   assert.deepEqual(plan.phases, ['preflight', 'run', 'inspect', 'stop-environment']);
-  assert.equal(plan.model.builder.skillPack, 'factory-skills-v4');
+  assert.equal(plan.model.builder.skillPack, 'factory-skills-v5');
   assert.deepEqual([plan.model.builder.maxRequests, plan.model.builder.captures, plan.model.reviewers.maxRequestsEach, plan.model.reviewers.maxRounds,
     plan.model.reviewers.maxActivations, plan.model.maxRequestsTotal, plan.model.providerRetries, plan.model.sdkRetries], [60, 4, 24, 4, 8, 252, 0, 0]);
   assert.deepEqual(plan.model.reviewers.tools, ['read']);
