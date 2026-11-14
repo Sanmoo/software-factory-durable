@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { createHash, randomUUID } from 'node:crypto';
 import type { createRecords } from '../records/index.js';
-import type { GuestOwner } from './tool-binding.js';
+import { commandLifetime, type GuestOwner } from './tool-binding.js';
 
 type Context = { workId: string; executionId: string; invocationId: string; role: 'builder' | 'standards' | 'spec'; environmentRef: string; bootRef: string; phaseId: string };
 type Options = { context: Context; signal: AbortSignal; records: Awaited<ReturnType<typeof createRecords>>;
@@ -276,7 +276,7 @@ function boundMutation(options: Options, valid: () => boolean, revoke: () => voi
     const evidence = { ...captureContext, callId: call.callId };
     let attempted = false;
     let persistingResult = false;
-    const commandLifetime = new AbortController();
+    const command = commandLifetime(options.signal);
     try {
       await options.records.record(evidence, { kind: 'mutation-intent', phaseId, operation: call.operation, path: call.path,
         semantics: conditional ? 'same-fd-source-compare-direct-write-non-atomic' : 'regular-file-write-non-atomic', contentBytes: Buffer.byteLength(content) });
@@ -287,7 +287,7 @@ function boundMutation(options: Options, valid: () => boolean, revoke: () => voi
       const process = options.vm.exec(argv, {
         // Native output() merges two required pipes. Drain/discard both below;
         // diagnostics still never reach SDK, evidence or display.
-        stdout: 'pipe', stderr: 'pipe', signal: AbortSignal.any([options.signal, commandLifetime.signal]), windowBytes: 65536,
+        stdout: 'pipe', stderr: 'pipe', signal: command.signal, windowBytes: 65536,
         env: {}, cwd: '/', stdin: content,
       });
       void process.result.catch(() => {});
@@ -316,7 +316,7 @@ function boundMutation(options: Options, valid: () => boolean, revoke: () => voi
       // Same protected-reference result envelope as read, with no file-content bytes.
       return { status: 'success', format: 'text', reference, bytes: 0, encoding: 'base64', data: '', nextOffset: 0 };
     } catch {
-      revoke(); commandLifetime.abort();
+      revoke(); command.abort();
       if (attempted && !persistingResult) {
         try {
           await options.records.record(evidence, { kind: 'mutation-result', phaseId, operation: call.operation,
@@ -324,6 +324,6 @@ function boundMutation(options: Options, valid: () => boolean, revoke: () => voi
         } catch { /* Critical capture failure: no raw fallback, success or mutation retry. */ }
       }
       return failure(attempted ? `${prefix}_EVIDENCE_OR_EFFECTS_UNCERTAIN` : `PROTECTED_${prefix}_UNAVAILABLE`);
-    } finally { commandLifetime.abort(); }
+    } finally { command.abort(); }
   };
 }

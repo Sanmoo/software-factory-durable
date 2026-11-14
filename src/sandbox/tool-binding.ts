@@ -5,6 +5,16 @@ const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
 export const contextSchema = z.strictObject({ workId: identifier, executionId: identifier, invocationId: identifier,
   role: z.enum(['standards', 'spec', 'builder']), environmentRef: identifier, bootRef: identifier, phaseId: identifier });
 export type ToolContext = z.infer<typeof contextSchema>;
+/**
+ * One guest command's lifetime, linked to its binding by an explicit listener. Not `AbortSignal.any`: its dependent-signal propagation
+ * was observed to miss aborts intermittently (native-owner-operation-ids: a completed command's exec signal stayed un-aborted).
+ */
+export function commandLifetime(parent: AbortSignal) {
+  const controller = new AbortController();
+  const forward = () => controller.abort();
+  if (parent.aborted) controller.abort(); else parent.addEventListener('abort', forward, { once: true });
+  return { signal: controller.signal, abort() { controller.abort(); parent.removeEventListener('abort', forward); } };
+}
 export const referenceSchema = z.strictObject({ workId: identifier, id: z.uuid() });
 const successSchema = z.strictObject({ status: z.literal('success'), reference: referenceSchema,
   bytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), encoding: z.literal('base64'),
