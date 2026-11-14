@@ -205,8 +205,9 @@ export type VerificationView = { at: string; status: 'verified' | 'not-verified'
   requiredChecks: string[] };
 export type ReviewerView = { invocationId: string; phaseId: string; promptSha256: string; state: 'requested' | 'started' | 'ended' | 'failed' | 'not-required';
   requestedAt: string; receiptId: string | null; endedAt: string | null; opinion: ReviewOpinion | null; failure: { code: string } | null;
-  /** How the end of this reviewer's activity is known: its completion was received, it never launched, or it is unconfirmed (round held). */
-  cessation: 'completion-observed' | 'never-started' | 'unconfirmed' | null;
+  /** How the end of this reviewer's activity is known: its completion was received, it never launched, or it is unconfirmed (round held).
+   * `boot-ceased` (ticket 26): the Execution was interrupted mid round; the host confirmed the cessation of the shared boot (no survivor). */
+  cessation: 'completion-observed' | 'never-started' | 'unconfirmed' | 'boot-ceased' | null;
   input: { required: string[]; missing: string[] } };
 /** One durable review round (spec §5.6/§6.4): handoff, identity before/after, both reviewers, conclusion and the delivery to the Builder. */
 export type ReviewRoundView = {

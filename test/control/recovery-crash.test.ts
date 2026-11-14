@@ -26,8 +26,8 @@ async function crash(dir: string, mode: string) {
   });
 }
 
-async function reopen(t: { after(fn: () => Promise<void>): void }, dir: string, scripts: RecoveryScript[], options: { capacity?: number; issues?: number[]; inventory?: RuntimeInventory } = {}) {
-  const doubles = recoveryDoubles(dir, scripts, { capacity: options.capacity ?? 1 });
+async function reopen(t: { after(fn: () => Promise<void>): void }, dir: string, scripts: RecoveryScript[], options: { capacity?: number; issues?: number[]; inventory?: RuntimeInventory; reviews?: boolean } = {}) {
+  const doubles = recoveryDoubles(dir, scripts, { capacity: options.capacity ?? 1, ...(options.reviews ? { reviews: true } : {}) });
   const github = githubDoubles({ pulls: {}, issues: (options.issues ?? [3]).map(number => remoteIssue(number)) });
   const time = manualClock();
   const control: Control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: options.inventory ?? 'empty', execution: doubles.ports,
@@ -230,4 +230,22 @@ test('review MED1/MED3: a preparation in flight is never ASSUMED ceased — an i
   const first = work.previousExecutions[0]!;
   assert.deepEqual([first.state, first.recovery!.at(-1)!.cessation.basis, first.recovery!.at(-1)!.decision], ['released', 'preparation:never-booted', 'requeued']);
   assert.equal(work.impediments.some(item => item.code === 'RECOVERY_CESSATION_UNCONFIRMED'), false, 'lifted by this boot\'s recorded evidence');
+});
+
+test('ticket 13 composition: a crash mid review round — the shared boot (Builder suspended + both reviewers) is stopped once by the host, no reviewer is re-activated or adopted, unfinished reviewers are recorded failed/boot-ceased, and the Work recovers through the queue', async t => {
+  const dir = await scratch(t);
+  await crash(dir, 'review');
+  const boot = Object.entries(readHost(dir).boots).find(([, state]) => state === 'active')![0];
+  const before = readHost(dir).log.length;
+  const h = await reopen(t, dir, [], { reviews: true });
+  const after = readHost(dir).log.slice(before);
+  assert.deepEqual(after.filter(item => item.kind === 'stop').map(item => (item.detail as { boot: string }).boot), [boot], 'one host stop of the shared boot');
+  assert.equal(after.filter(item => item.kind === 'activate-reviewer').length, 0, 'no reviewer re-activated on the survivor');
+  const work = await h.work();
+  const execution = work.execution!;
+  const round = execution.review!.rounds[0]!;
+  assert.deepEqual([round.reviewers.standards.state, round.reviewers.standards.cessation, round.reviewers.spec.failure?.code, round.conclusion],
+    ['failed', 'boot-ceased', 'EXECUTION_INTERRUPTED', null], 'never concluded green; nothing delivered');
+  assert.ok(round.reasons.includes('EXECUTION_INTERRUPTED'));
+  assert.deepEqual([execution.end!.outcome, execution.end!.code, execution.slot.held, work.pendingRecovery!.waitSeconds], ['failure', 'CONTROLLER_CRASH', false, 5]);
 });

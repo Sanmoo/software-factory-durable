@@ -10,9 +10,9 @@ const [dir, mode] = [process.argv[2]!, process.argv[3]!];
 let cut = false;
 const scripts: Record<string, RecoveryScript[]> = {
   reservation: [], spawn: [{ kind: 'no-receipt' }], receipt: [{ kind: 'fail', code: 'WORKER_EXECUTION_UNCERTAIN' }, { kind: 'lose-notification' }],
-  tool: [{ kind: 'hang' }], two: [{ kind: 'hang' }, { kind: 'hang' }], question: [{ kind: 'ask', questionId: '0b9c6a52-3d3e-4c8f-9a51-000000000026', question: 'Which port?', hangAfterAck: true }],
+  tool: [{ kind: 'hang' }], review: [{ kind: 'handoff' }], two: [{ kind: 'hang' }, { kind: 'hang' }], question: [{ kind: 'ask', questionId: '0b9c6a52-3d3e-4c8f-9a51-000000000026', question: 'Which port?', hangAfterAck: true }],
 };
-const doubles = recoveryDoubles(dir, scripts[mode]!, { capacity: mode === 'two' ? 2 : 1,
+const doubles = recoveryDoubles(dir, scripts[mode]!, { capacity: mode === 'two' ? 2 : 1, reviews: mode === 'review',
   ...(mode === 'reservation' ? { onPrepare: async () => { cut = true; await new Promise<void>(() => {}); } } : {}) });
 const github = githubDoubles({ pulls: {}, issues: [remoteIssue(3), ...(mode === 'two' ? [remoteIssue(4)] : [])] });
 const time = manualClock();
@@ -30,6 +30,7 @@ const reached = async () => {
     return log.filter(item => item.kind === 'receipt').length === 2;
   }
   if (mode === 'question') return works[0]?.questions.length === 1;
+  if (mode === 'review') { const round = works[0]?.execution?.review?.rounds[0]; return round?.reviewers.spec.state === 'started' && round.reviewers.standards.state === 'started'; }
   return works.length > 0 && works.every(work => work.execution?.state === 'started');
 };
 for (;;) {

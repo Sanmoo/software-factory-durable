@@ -180,6 +180,7 @@ export async function settleInterruption(session: Session, input: { work_id: str
       boundDiscoveredDuration(work, execution, observed?.kind === 'receipt' ? observed.recordedAt : now, now);
     }
     const startRecord: RecoveryRecord['start'] = { kind: 'confirmed', detail: `${start.source}:${start.receiptId}` };
+    settleInterruptedReviews(execution, now);
     let decision: RecoveryRecord['decision'];
     let code: string | null;
     if (execution.state === 'ended' && execution.end) {
@@ -211,6 +212,24 @@ export async function settleInterruption(session: Session, input: { work_id: str
     }
     return record(startRecord, decision, code);
   }, BACKGROUND_CONTEXT);
+}
+
+/**
+ * Reviewers share the Execution's boot (spec §5.6): its confirmed cessation is theirs. A round interrupted before both opinions were incorporated
+ * keeps every complete opinion already recorded; a reviewer still requested/started is recorded failed (`EXECUTION_INTERRUPTED`, cessation
+ * `boot-ceased`) — never adopted, re-delivered or concluded green. Partial recovery of a round is ticket 28; the Work recovers through the queue.
+ */
+function settleInterruptedReviews(execution: ExecutionView, now: string) {
+  for (const round of execution.review?.rounds ?? []) {
+    if (round.state !== 'reviewing') continue;
+    for (const reviewer of Object.values(round.reviewers)) {
+      if (reviewer.state === 'requested' || reviewer.state === 'started' || reviewer.cessation === 'unconfirmed') {
+        Object.assign(reviewer, { state: reviewer.state === 'ended' ? reviewer.state : 'failed', endedAt: reviewer.endedAt ?? now,
+          failure: reviewer.failure ?? { code: 'EXECUTION_INTERRUPTED' }, cessation: 'boot-ceased' });
+      }
+    }
+    if (!round.reasons.includes('EXECUTION_INTERRUPTED')) round.reasons = [...round.reasons, 'EXECUTION_INTERRUPTED'];
+  }
 }
 
 /** Cessation + receipt observation + settlement of ONE interrupted Execution (boot reconciliation or an administrative stop before its start). */

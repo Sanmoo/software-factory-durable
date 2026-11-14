@@ -4,6 +4,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
+import type { ProposalHandoff } from '../../src/contracts/index.js';
 import type { ExecutionPorts } from '../../src/control/types.js';
 import { createRecords } from '../../src/records/index.js';
 import { createWorkers, type Invocation, type WorkerQuestion } from '../../src/workers/index.js';
@@ -19,8 +20,16 @@ export type RecoveryScript = { kind: 'complete' } | { kind: 'hang' } | { kind: '
   { kind: 'lose-notification' } |
   /** Activation requested, the worker never wrote its receipt (dies/hangs before it). */
   { kind: 'no-receipt' } |
-  { kind: 'ask'; questionId: string; question: string; hangAfterAck?: boolean };
+  { kind: 'ask'; questionId: string; question: string; hangAfterAck?: boolean } |
+  /** Hands off ONE captured round to the Factory reviewers (who then run until their boot stops), then waits. */
+  { kind: 'handoff' };
 
+const handoffSummary = (): ProposalHandoff => ({ version: 1, round: 1, index: '/artifacts/review/r1/index.json', indexSha256: 'e'.repeat(64),
+  head: 'b'.repeat(40), branch: 'factory/3-x', base: 'a'.repeat(40), mergeBase: 'a'.repeat(40), counts: { entries: 1, committed: 1, staged: 0, unstaged: 0, untracked: 0, removed: 0 },
+  patches: { committed: { path: '/artifacts/review/r1/committed.patch', bytes: 10, sha256: 'c'.repeat(64) }, staged: { path: '/artifacts/review/r1/staged.patch', bytes: 0, sha256: 'c'.repeat(64) },
+    unstaged: { path: '/artifacts/review/r1/unstaged.patch', bytes: 0, sha256: 'c'.repeat(64) } },
+  spec: { version: 'v1', sources: '/artifacts/spec/v1/sources.json', sha256: '1'.repeat(64) }, instructions: { version: 'v1', sources: '/artifacts/instructions/v1/sources.json', sha256: '2'.repeat(64) },
+  changed: ['/workspace/checkout/a.ts'], changedTruncated: false });
 const sha = (question: string, context: string) => createHash('sha256').update(JSON.stringify({ question, context })).digest('hex');
 
 export function hostFile(dir: string) { return join(dir, 'host.json'); }
@@ -35,7 +44,7 @@ function writeHost(dir: string, state: HostState) {
 }
 export function updateHost(dir: string, change: (state: HostState) => void) { const state = readHost(dir); change(state); writeHost(dir, state); }
 
-export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options: { capacity?: number; observe?: boolean; observeStart?: boolean;
+export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options: { capacity?: number; observe?: boolean; observeStart?: boolean; reviews?: boolean;
   onPrepare?: () => Promise<void>; onActivate?: (invocation: Invocation) => void | Promise<void> } = {}) {
   const prompts: { executionId: string; phaseId: string; prompt: string }[] = [];
   const log = (kind: string, detail?: unknown) => updateHost(dir, state => { state.log.push({ kind, ...(detail === undefined ? {} : { detail }) }); });
@@ -58,8 +67,10 @@ export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options:
   const ports: ExecutionPorts = {
     configuration: { schemaVersion: 1 }, capacity: options.capacity ?? 1,
     calendar: { now: () => Date.now() + readHost(dir).calendarOffsetMs },
+    ...(options.reviews ? { reviews: { reviewer: { modelBudget: 'reviewer-v1' as const, imageSourceMaxBytes: 5242880 } } } : {}),
     builder: { skillPack: 'factory-skills-v4', modelBudget: 'builder-v1', copyOutput: true, editSourceMaxBytes: 8192 },
     sandbox: {
+      async observeProposal() { return { status: 'observed', sha256: '1'.repeat(64), indexSha256: 'e'.repeat(64), entries: 1, consistent: true, observedAt: new Date().toISOString() }; },
       async prepare(input) {
         const environment = `env-${createHash('sha256').update(input.workId).digest('hex')}`;
         const reused = readHost(dir).prepared.includes(environment);
@@ -100,6 +111,13 @@ export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options:
     },
     workers: {
       async activate(invocation, _delivery, events) {
+        if (invocation.context.role !== 'builder') {
+          // A reviewer of the SAME boot: receipt first, then it runs until its activation (boot) is gone.
+          log('activate-reviewer', { role: invocation.context.role, boot: invocation.context.bootRef });
+          const started = writeReceipt(invocation).then(reference => ({ receipt: reference, invocation: { executionId: invocation.context.executionId, invocationId: invocation.context.invocationId } }));
+          return { worker: invocation.context.invocationId, started: interruptible(invocation.signal, started),
+            completed: interruptible(invocation.signal, new Promise<never>(() => {})), close() { log('close-reviewer'); } };
+        }
         const script = scripts.shift() ?? { kind: 'complete' };
         prompts.push({ executionId: invocation.context.executionId, phaseId: invocation.context.phaseId ?? '', prompt: invocation.prompt });
         log('activate', { executionId: invocation.context.executionId, boot: invocation.context.bootRef, phaseId: invocation.context.phaseId, script: script.kind,
@@ -127,7 +145,12 @@ export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options:
           await finished;
           return { status: 'success' as const, receipt: start.receipt };
         }));
-        return { worker: invocation.context.invocationId, started: interruptible(invocation.signal, started), completed, close() { log('close'); } };
+        let pending = script.kind === 'handoff';
+        return { worker: invocation.context.invocationId, started: interruptible(invocation.signal, started), completed, close() { log('close'); },
+          ...(script.kind === 'handoff' ? { handoffs: { async next() {
+            if (pending) { pending = false; return { round: 1, status: 'captured' as const, summary: handoffSummary() }; }
+            await finished; return null;
+          } } } : {}) };
       },
       async deliver(_worker, directive) { log(`deliver-${directive.kind}`); return { status: directive.kind === 'withdraw-credential' ? 'withdrawn' as const : 'delivered' as const }; },
       ...(options.observeStart === false ? {} : { observeStart: (input: { workId: string; executionId: string; invocationId: string }) => workers.observeStart(input) }),
