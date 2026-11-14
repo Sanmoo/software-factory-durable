@@ -4,16 +4,18 @@ import type { ProposalIdentity, ReviewerRole, ReviewOpinion } from '../../contra
 import type { HandoffEvent } from '../../workers/index.js';
 import type { ExecutionView, ReviewRoundView } from '../types.js';
 import { concludeRound, lastReviewed, reviewerRoles, verifyExecution, type CaptureClass, type ReviewPlan } from '../rules/review.js';
+import { notRetriedReasons, type CarryPlan } from '../rules/review-recovery.js';
 import { works, type WorkRecord } from './admission.js';
+import { budgetHistory } from './execution.js';
 import { questions } from './questions.js';
 import type { Session } from './store.js';
 
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
-const history = (work: WorkRecord, event: 'review-handoff' | 'reviewer-started' | 'reviewer-ended' | 'review-concluded' | 'review-delivered' | 'review-exempted' | 'review-verified', executionId: string, detail: string) =>
+export const history = (work: WorkRecord, event: Extract<WorkRecord['history'][number], { origin: 'controller-dispatch'; executionId: string }>['event'], executionId: string, detail: string) =>
   work.history.push({ at: new Date().toISOString(), event, origin: 'controller-dispatch', executionId, detail });
 
 /** Every review commit: the Execution is still the Work's current one and STARTED (the Builder is suspended, its Slot still held). */
-async function withRound<T>(session: Session, work_id: string, executionId: string, round: number,
+export async function withRound<T>(session: Session, work_id: string, executionId: string, round: number,
   mutate: (state: { work: WorkRecord; execution: ExecutionView; current: ReviewRoundView | undefined }) => T): Promise<T | 'stale'> {
   return session.commit(async tx => {
     const document = await tx.doc(works, work_id, null);
@@ -33,7 +35,9 @@ async function withRound<T>(session: Session, work_id: string, executionId: stri
 export function recordHandoff(session: Session, work_id: string, executionId: string, input: { event: HandoffEvent; before: ProposalIdentity | null;
   plans: ReviewPlan[]; reviewer: ReviewRoundView['versions']['profile']['reviewer']; failure: string | null;
   /** Ticket 13: the round numbers of this Execution continue those of earlier Executions; the capture's classification (exemption = no reviewer). */
-  firstRound?: number; classification?: CaptureClass }) {
+  firstRound?: number; classification?: CaptureClass;
+  /** Ticket 28: opinions of the interrupted round carried into this first round of a recovery Execution (same proposal and context). */
+  carried?: CarryPlan }) {
   return withRound(session, work_id, executionId, input.event.round, ({ work, execution, current }) => {
     const rounds = execution.review?.rounds ?? [];
     const firstRound = execution.review?.firstRound ?? input.firstRound ?? 1;
@@ -45,6 +49,14 @@ export function recordHandoff(session: Session, work_id: string, executionId: st
     const summary = input.event.status === 'captured' ? input.event.summary : null;
     const reviewers = Object.fromEntries(reviewerRoles.map(role => {
       const plan = input.plans.find(item => item.role === role);
+      const carried = !input.failure && !exemption ? input.carried?.[role] : undefined;
+      if (carried) {
+        // No reviewer activity in this round for the role: its current opinion is the carried one, with its provenance.
+        return [role, { invocationId: carried.from.invocationId, phaseId: plan?.phaseId ?? `review-r${input.event.round}`, promptSha256: '', state: 'ended' as const,
+          requestedAt: at, receiptId: null, endedAt: at, opinion: JSON.parse(JSON.stringify(carried.opinion)) as ReviewOpinion, failure: null, cessation: 'never-started' as const,
+          input: { required: [...carried.opinion.input.required], missing: [...carried.opinion.input.missing] }, attempt: carried.from.attempt, source: 'carried' as const,
+          carried: { ...carried.from } }];
+      }
       const view = { invocationId: plan?.invocationId ?? `${role}-${executionId}-r${input.event.round}a1`, phaseId: plan?.phaseId ?? `review-r${input.event.round}`,
         promptSha256: plan ? sha256(plan.prompt) : '', state: input.failure ? 'failed' as const : exemption ? 'not-required' as const : 'requested' as const, requestedAt: at, receiptId: null,
         endedAt: input.failure || exemption ? at : null, opinion: null, failure: input.failure ? { code: input.failure } : null,
@@ -62,9 +74,23 @@ export function recordHandoff(session: Session, work_id: string, executionId: st
       conclusion: exemption ? reviewed!.conclusion : null, reasons: exemption ? [`EXEMPT_${exemption.kind.toUpperCase().replace('-', '_')}`] : [], concludedAt: exemption ? at : null, delivery: null };
     execution.review = { ...execution.review, ...(input.firstRound !== undefined || execution.review?.firstRound !== undefined ? { firstRound } : {}), rounds: [...rounds, record] };
     history(work, 'review-handoff', executionId, `r${record.round}:${input.event.status}${input.failure ? `:${input.failure}` : ''}${input.event.closing ? ':closing' : ''}`);
+    for (const role of reviewerRoles) {
+      const from = record.reviewers[role].carried;
+      if (from) history(work, 'opinion-carried', executionId, `r${record.round}:${role}:from:${from.executionId}:r${from.round}a${from.attempt}${from.discovered ? ':records-discovery' : ''}`);
+    }
     if (exemption) history(work, 'review-exempted', executionId, `r${record.round}:${exemption.kind}:r${exemption.reviewedRound}`);
     return 'recorded' as const;
   });
+}
+
+/** Ticket 28: settle the `recoveries` unit a retry attempt reserved (counter of the Work, never a parallel review budget). */
+function settleReviewerCharge(work: WorkRecord, executionId: string, reviewer: ReviewRoundView['reviewers'][ReviewerRole], state: 'consumed' | 'released') {
+  if (reviewer.charge?.state !== 'reserved' || !work.budget) return;
+  const counter = work.budget.recoveries;
+  if (counter.reserved === reviewer.invocationId) counter.reserved = null;
+  if (state === 'consumed') counter.consumed += 1;
+  reviewer.charge = { ...reviewer.charge, state, settledAt: new Date().toISOString() };
+  budgetHistory(work, state === 'consumed' ? 'budget-consumed' : 'budget-released', executionId, `recoveries:${reviewer.invocationId}`);
 }
 
 /** A reviewer's start receipt (its own invocation of THIS Execution) is consumed once. */
@@ -74,24 +100,33 @@ export function recordReviewerStart(session: Session, work_id: string, execution
     if (!current || current.state !== 'reviewing' || !reviewer || reviewer.state !== 'requested' || receipt.invocationId !== reviewer.invocationId || receipt.executionId !== executionId) return 'conflict' as const;
     reviewer.state = 'started';
     reviewer.receiptId = receipt.id;
-    history(work, 'reviewer-started', executionId, `r${round}:${role}`);
+    // Ticket 28: a retry attempt consumes its reserved operational recovery unit exactly once, with its confirmed start.
+    settleReviewerCharge(work, executionId, reviewer, 'consumed');
+    history(work, 'reviewer-started', executionId, `r${round}:${role}${reviewer.attempt && reviewer.attempt > 1 ? `:a${reviewer.attempt}` : ''}`);
     return 'recorded' as const;
   });
 }
 
 /** The complete opinion (already durable in the reviewer's protected record) or an explicit failure; never both, never overwritten. */
 export function recordReviewerEnd(session: Session, work_id: string, executionId: string, round: number, role: ReviewerRole,
-  outcome: ({ opinion: ReviewOpinion } | { failure: string }) & { cessation: 'completion-observed' | 'never-started' | 'unconfirmed' }) {
+  outcome: ({ opinion: ReviewOpinion } | { failure: string }) & { cessation: 'completion-observed' | 'never-started' | 'unconfirmed';
+    /** Ticket 28: the opinion was located in the reviewer's complete protected record after its notification was lost. */
+    source?: 'notification' | 'records-discovery' }) {
   return withRound(session, work_id, executionId, round, ({ work, current }) => {
     const reviewer = current?.reviewers[role];
     if (!current || current.state !== 'reviewing' || !reviewer || reviewer.state === 'ended' || reviewer.state === 'failed') return 'conflict' as const;
     if ('opinion' in outcome && (outcome.opinion.role !== role || outcome.opinion.round !== round || outcome.opinion.invocationId !== reviewer.invocationId ||
-        outcome.opinion.input.handoffIndexSha256 !== current.handoff.summary?.indexSha256)) {
+        outcome.opinion.attempt !== (reviewer.attempt ?? outcome.opinion.attempt) || outcome.opinion.input.handoffIndexSha256 !== current.handoff.summary?.indexSha256)) {
       reviewer.state = 'failed'; reviewer.failure = { code: 'OPINION_NOT_CORRELATED' };
-    } else if ('opinion' in outcome) { reviewer.state = 'ended'; reviewer.opinion = JSON.parse(JSON.stringify(outcome.opinion)) as ReviewOpinion; }
+    } else if ('opinion' in outcome) {
+      reviewer.state = 'ended'; reviewer.opinion = JSON.parse(JSON.stringify(outcome.opinion)) as ReviewOpinion;
+      if (outcome.source) reviewer.source = outcome.source;
+    }
     else { reviewer.state = 'failed'; reviewer.failure = { code: outcome.failure }; }
     reviewer.endedAt = new Date().toISOString();
     reviewer.cessation = outcome.cessation;
+    // A retry attempt proven never launched releases its reservation without consumption; an uncertain launch keeps it.
+    if (outcome.cessation === 'never-started') settleReviewerCharge(work, executionId, reviewer, 'released');
     history(work, 'reviewer-ended', executionId, `r${round}:${role}:${reviewer.opinion?.conclusion ?? reviewer.failure?.code ?? 'unknown'}`);
     return 'recorded' as const;
   });
@@ -104,6 +139,7 @@ export function recordConclusion(session: Session, work_id: string, executionId:
         current.reviewers[role].cessation === 'unconfirmed')) return 'conflict' as const;
     const result = concludeRound({ opinions: { standards: current.reviewers.standards.opinion, spec: current.reviewers.spec.opinion }, before: current.identity.before, after });
     if (current.handoff.status === 'failure') result.reasons.unshift(`HANDOFF_${current.handoff.code ?? 'FAILED'}`);
+    result.reasons.push(...notRetriedReasons(current));
     current.identity.after = after;
     current.applicability = result.applicability;
     current.conclusion = current.handoff.status === 'failure' ? 'incomplete' : result.conclusion;

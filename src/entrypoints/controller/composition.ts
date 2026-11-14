@@ -57,9 +57,12 @@ export async function composeProductionExecution(input: ProductionInput): Promis
     workers: { activate: (invocation, delivery, events) => workers.activate(invocation, delivery, events), deliver: (worker, directive) => workers.deliver(worker, directive),
       observe: input => workers.observe(input),
       // Ticket 26: protected start receipt of an invocation, discovered without its notification.
-      observeStart: input => workers.observeStart(input) },
+      observeStart: input => workers.observeStart(input),
+      // Ticket 28: a reviewer's complete opinion record located without its notification (partial review recovery).
+      observeOpinion: input => workers.observeOpinion(input) },
     // Ticket 13: multi-round reviews (treatments, Host-evidenced gates, end-of-Execution verification) with the release's bound.
-    reviews: { reviewer: { ...productionProfile.reviewer }, rounds: { ...productionProfile.reviewRounds } },
+    // Ticket 28: partial review recovery (only the failed reviewer re-obtained on the unchanged proposal; lost notifications from Records).
+    reviews: { reviewer: { ...productionProfile.reviewer }, rounds: { ...productionProfile.reviewRounds }, partialRecovery: true },
     credentials: createBuilderCredentials({ github: input.github, repositories: input.effective.repositories }),
     configuration: input.effective.sandbox,
     capacity: input.effective.concurrency,

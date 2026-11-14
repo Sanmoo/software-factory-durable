@@ -44,7 +44,8 @@ test('production composition: the release profile for all three roles, the deriv
   assert.equal(ports.configuration, effective.sandbox);
   assert.deepEqual(ports.builder, { skillPack: pack, modelBudget: 'builder-v1', copyOutput: true, editSourceMaxBytes: 8192 });
   // Ticket 13: production repeats review rounds inside the Execution (treatments/gates/verification), bounded by the release profile.
-  assert.deepEqual(ports.reviews, { reviewer: { modelBudget: 'reviewer-v1', imageSourceMaxBytes: 5 * 1024 * 1024 }, rounds: { max: 4 } });
+  // Ticket 28: and recovers partial reviews (only the failed reviewer; lost notifications from Records; carried opinions after recovery).
+  assert.deepEqual(ports.reviews, { reviewer: { modelBudget: 'reviewer-v1', imageSourceMaxBytes: 5 * 1024 * 1024 }, rounds: { max: 4 }, partialRecovery: true });
   assert.deepEqual(productionProfile.reviewRounds, { max: 4 });
   assert.match(productionProfile.prompts.builder, /treat ONLY the findings the results list/);
   assert.doesNotMatch(productionProfile.prompts.builder, /call the handoff tool once/, 'the multi-round pack hands off again');
@@ -56,6 +57,8 @@ test('production composition: the release profile for all three roles, the deriv
   // Ticket 26: boot reconciliation observes/stops own boots through the host path and discovers start receipts without notification.
   assert.equal(typeof ports.sandbox.observe, 'function');
   assert.equal(typeof ports.workers.observeStart, 'function');
+  // Ticket 28: a reviewer's complete opinion record is located through the Workers opinion facet (never by rerunning it).
+  assert.equal(typeof ports.workers.observeOpinion, 'function');
   assert.equal(typeof ports.credentials.issue, 'function');
   assert.deepEqual(summary.guestAssets, guestAssets);
   assert.deepEqual(summary.artifactSeeds, [`factory/skill-pack/${pack}`]);

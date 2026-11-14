@@ -1,6 +1,6 @@
 import type { AccessDiagnostic, BuilderCredentials, BuilderGrantMetadata, GitHubScope, HandoffDeclarations, ProposalHandoff, ProposalIdentity, ReviewerRole, ReviewOpinion, RevocationResult } from '../contracts/index.js';
 import type { CheckoutRequest, EnvironmentRef, PreparedWork, StartResult, StopResult, BootRef } from '../sandbox/index.js';
-import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion, SessionObservation, WorkerSessionRef } from '../workers/index.js';
+import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion, SessionObservation, WorkerSessionRef, OpinionObservation } from '../workers/index.js';
 export type { SessionObservation, WorkerSessionRef as SessionRef } from '../workers/index.js';
 import type { IssueTracker, TicketRef } from '../issue-tracker/index.js';
 import type { CodeRepository } from '../code-repository/index.js';
@@ -86,13 +86,21 @@ export type ExecutionPorts = {
     observe?(input: { workId: string; executionId: string; invocationId: string; session: WorkerSessionRef;
       next: Pick<Invocation, 'skillPack' | 'copyOutput' | 'editSourceMaxBytes'> & { handoff: boolean } }): Promise<{ session: SessionObservation; limitations: string[] }>;
     /** Ticket 26 (Q6 `observe`, receipt facet): the protected start receipt of an invocation, without notification and without rerunning. */
-    observeStart?(input: { workId: string; executionId: string; invocationId: string }): Promise<StartObservation> };
+    observeStart?(input: { workId: string; executionId: string; invocationId: string }): Promise<StartObservation>;
+    /** Ticket 28 — Q6 `observe`, opinion facet: the complete opinion record a reviewer invocation preserved before its notification.
+     * Absent = a reviewer outcome without its opinion is never recovered from Records (it stays a failure). Not proof of cessation. */
+    observeOpinion?(input: { workId: string; executionId: string; invocationId: string }): Promise<OpinionObservation> };
   /** Ticket 12: when composed, the Builder hands off for parallel Standards/Spec reviews inside the SAME Execution/Slot/boot.
    * Ticket 13 `rounds.max`: repeated captures per Builder activation (handoffs with treatments/gates plus the Host's closing capture),
    * exemptions (unchanged content, identical commit) and the end-of-Execution verification. Absent = the single ticket 12 round.
    * PRODUCTION COMPOSITION (`composeProductionExecution`) passes `rounds: productionProfile.reviewRounds` (`{ max: 4 }`) so findings and
    * gates are treated without a new Execution. */
-  reviews?: { reviewer: Pick<Invocation, 'modelBudget' | 'imageSourceMaxBytes'>; rounds?: { max: number } };
+  reviews?: { reviewer: Pick<Invocation, 'modelBudget' | 'imageSourceMaxBytes'>; rounds?: { max: number };
+    /** Ticket 28: partial review recovery — a failed reviewer (known cessation, transient failure, unchanged proposal) is re-obtained alone
+     * under the same round, drawing on the Work's `recoveries` counter with the persisted 5/15/45 s waits; a lost notification is recovered
+     * from the reviewer's complete protected record; a recovery Execution carries the valid opinions of its interrupted round when the
+     * proposal identity and context are unchanged. Absent = tickets 12/13 behaviour (no reviewer retry). Production composes it. */
+    partialRecovery?: boolean };
   credentials: BuilderCredentials;
   /** Local monotonic clock of live Execution duration/timeout (default `performance.now()`); separate from the polling clock. Tests substitute it. */
   clock?: PollingClock;
@@ -259,7 +267,33 @@ export type ReviewerView = { invocationId: string; phaseId: string; promptSha256
   /** How the end of this reviewer's activity is known: its completion was received, it never launched, or it is unconfirmed (round held).
    * `boot-ceased` (ticket 26): the Execution was interrupted mid round; the host confirmed the cessation of the shared boot (no survivor). */
   cessation: 'completion-observed' | 'never-started' | 'unconfirmed' | 'boot-ceased' | null;
-  input: { required: string[]; missing: string[] } };
+  input: { required: string[]; missing: string[] } } & ReviewerRecoveryView;
+/**
+ * Ticket 28 partial review recovery (spec §5.6/§6.4; absent on earlier records = attempt 1, opinion by notification, no retry).
+ * `attempt`/`attempts`: the current attempt of this role in this round and the earlier ones that failed with KNOWN cessation (oldest first).
+ * `source`: how the effective opinion reached Control — its completion notification, discovery of its complete protected record (lost
+ * notification), or `carried` from the interrupted round of the previous Execution with the SAME proposal identity and context.
+ * `charge`: a retry draws ONE unit of the Work's existing `recoveries` counter (no parallel review budget): reserved at the retry intent,
+ * consumed with the reviewer's confirmed start, released on a proven non-start. `retry`: the persisted wait before that attempt.
+ * `notRetried`: why a failure stays a failure (explicit; never zero findings).
+ */
+export type ReviewerRecoveryView = {
+  attempt?: number;
+  attempts?: ReviewerAttemptView[];
+  source?: 'notification' | 'records-discovery' | 'carried';
+  carried?: CarriedOpinionView | null;
+  charge?: ReviewerCharge | null;
+  retry?: { requestedAt: string; waitSeconds: number; notBefore: string; after: string } | null;
+  notRetried?: { code: string; at: string } | null;
+};
+export type ReviewerAttemptView = { attempt: number; invocationId: string; promptSha256: string; state: ReviewerView['state']; receiptId: string | null;
+  requestedAt: string; endedAt: string | null; failure: { code: string } | null; cessation: ReviewerView['cessation'];
+  opinion: { reference: { workId: string; id: string }; conclusion: ReviewOpinion['conclusion']; code: string | null } | null;
+  charge: ReviewerCharge | null };
+export type ReviewerCharge = { counter: 'recoveries'; state: 'reserved' | 'consumed' | 'released'; settledAt: string | null };
+/** Provenance of an opinion carried into a recovery Execution's round: the source round's identity, and whether it was found in Records. */
+export type CarriedOpinionView = { executionId: string; round: number; attempt: number; invocationId: string; indexSha256: string; contentSha256: string;
+  discovered: boolean };
 /** One durable review round (spec §5.6/§6.4): handoff, identity before/after, both reviewers, conclusion and the delivery to the Builder. */
 export type ReviewRoundView = {
   round: number; attempt: number; state: 'reviewing' | 'concluded' | 'delivered';
@@ -407,7 +441,8 @@ export type WorkView = {
   history: ({ at: string; event: 'admitted'; origin: 'github-polling'; sequence: number } |
     { at: string; event: 'dependencies-changed'; origin: 'github-polling'; before: DependencyEvaluation['conclusion'] | null; after: DependencyEvaluation['conclusion']; evaluationId: string } |
     { at: string; event: 'execution-reserved' | 'execution-prepared' | 'execution-booted' | 'activation-requested' | 'execution-started' | 'execution-ended' | 'execution-held' | 'execution-released' | 'slot-released' |
-      'review-handoff' | 'reviewer-started' | 'reviewer-ended' | 'review-concluded' | 'review-delivered' | 'review-exempted' | 'review-verified';
+      'review-handoff' | 'reviewer-started' | 'reviewer-ended' | 'review-concluded' | 'review-delivered' | 'review-exempted' | 'review-verified' |
+      /* ticket 28 */ 'reviewer-retried' | 'reviewer-not-retried' | 'opinion-discovered' | 'opinion-carried';
       origin: 'controller-dispatch'; executionId: string; detail?: string } |
     { at: string; event: 'question-recorded' | 'question-published' | 'question-answered'; origin: 'controller-dispatch' | 'controller-publication' | 'github-comment' | 'local-cli';
       questionId: string; detail?: string } |

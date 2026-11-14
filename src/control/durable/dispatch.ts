@@ -2,10 +2,12 @@ import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { BuilderGrant } from '../../contracts/index.js';
 import type { BootRef, EnvironmentRef } from '../../sandbox/index.js';
-import type { ProposalIdentity } from '../../contracts/index.js';
+import type { ProposalIdentity, ReviewOpinion } from '../../contracts/index.js';
 import type { HandoffEvent } from '../../workers/index.js';
 import { classifyCapture, deliveryPrompt, exemptionPrompt, lastReviewed, planReviews, type CaptureClass, type ReviewPlan } from '../rules/review.js';
 import { recordConclusion, recordDelivery, recordHandoff, recordReviewerEnd, recordReviewerStart, recordVerification } from './review.js';
+import { carryPlan, carrySource, incorporable, retryDecision, undiscovered, type CarryPlan } from '../rules/review-recovery.js';
+import { recordNotRetried, recordReviewerRetry } from './review-recovery.js';
 import type { AccessDependencies, CredentialWithdrawal, DependencyEvaluation, ExecutionPorts, ExecutionView, FactoryAppIdentity } from '../types.js';
 import { evaluateEntry } from '../rules/admission.js';
 import { dispatchBlockers, selectNext, type OwnCycleFacts } from '../rules/dependencies.js';
@@ -246,8 +248,28 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const previous = lastReviewed(prior);
     const plans: ReviewPlan[] = event.status === 'captured' && classification.kind === 'review' ? planReviews({ executionId, round, attempt: 1, handoff: event.summary,
       ...(multi ? { previousSessions: { standards: previous?.reviewers.standards.opinion?.session.file ?? null, spec: previous?.reviewers.spec.opinion?.session.file ?? null } } : {}) }) : [];
+    // Ticket 28: partial review recovery (opt-in composition). The first review round of a recovery Execution carries the valid opinions of
+    // the interrupted round when the proposal and context are unchanged; only the missing/failed roles are reviewed again.
+    const recovery = reviews.partialRecovery === true;
+    const fresh = recovery ? (await deps.readWorks()).find(item => item.work_id === work.work_id) : undefined;
+    let carried: CarryPlan = {};
+    if (recovery && !failure && event.status === 'captured' && classification.kind === 'review' && !(fresh?.execution?.review?.rounds ?? []).some(item => (item.kind ?? 'review') === 'review')) {
+      const source = carrySource(interruptedPrevious(fresh, executionId));
+      if (source) {
+        // Lost notifications: the complete opinion record of a reviewer whose outcome was never recorded (the previous Execution ceased).
+        const discovered: Partial<Record<'standards' | 'spec', ReviewOpinion | null>> = {};
+        for (const role of undiscovered(source.round)) {
+          const found = ports.workers.observeOpinion ? await ports.workers.observeOpinion({ workId: work.work_id, executionId: source.executionId,
+            invocationId: source.round.reviewers[role].invocationId }).catch(() => null) : null;
+          discovered[role] = found?.kind === 'opinion' ? found.opinion : null;
+        }
+        const current = fresh?.execution;
+        carried = carryPlan({ source, summary: event.summary, identity: before, discovered,
+          profile: { skillPack: current?.request.skillPack ?? null, builder: current?.request.policies ?? execution.request.policies, reviewer: { ...reviews.reviewer } } });
+      }
+    }
     const recorded = await recordHandoff(session, work.work_id, executionId, { event, before, plans, reviewer: reviews.reviewer, failure,
-      ...(multi ? { firstRound, classification } : {}) });
+      ...(multi ? { firstRound, classification } : {}), ...(Object.keys(carried).length ? { carried } : {}) });
     if (recorded !== 'recorded') return hold(`REVIEW_HANDOFF_${recorded.toUpperCase()}`, 'The handoff could not be recorded for this Execution; the Builder stays suspended. Operator recovery (ticket 26).');
     observe(work.work_id, failure ? 'review-handoff-failed' : classification.kind === 'exemption' ? 'review-exempted' : 'reviewing', failure ? [failure] : []);
     await scope.activity(`review-handoff-r${round}`);
@@ -274,7 +296,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       if (ok) { observe(work.work_id, 'review-delivered', [`exempt:${classification.exemption.kind}`]); await scope.activity(`review-delivered-r${round}`); }
       return ok;
     }
-    const runReviewer = async (plan: ReviewPlan) => {
+    const attemptReviewer = async (plan: ReviewPlan) => {
       let reviewer: Handle;
       try {
         checkStop();
@@ -296,14 +318,55 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         }
         await scope.activity(`reviewer-started-${plan.role}`);
         const completed = await scope.wait(reviewer.completed);
-        await recordReviewerEnd(session, work.work_id, executionId, round, plan.role, { cessation: 'completion-observed', ...(completed.status === 'success' && completed.opinion
-          ? { opinion: completed.opinion } : { failure: completed.status === 'failure' && /^[A-Z_]{1,64}$/.test(completed.code) ? completed.code : 'OPINION_MISSING' }) });
+        // Ticket 28: a completion observed WITHOUT its opinion (lost/invalid notification): the reviewer preserved the complete opinion in
+        // its protected record before notifying, so it is located there and incorporated once; never rerun for it, never zero findings.
+        const notified = completed.status === 'success' && completed.opinion ? completed.opinion : null;
+        const found = !notified && recovery && ports.workers.observeOpinion ? await ports.workers.observeOpinion({ workId: work.work_id, executionId,
+          invocationId: plan.invocationId }).catch(() => null) : null;
+        const discovered = found?.kind === 'opinion' && event.status === 'captured' && incorporable(found.opinion, { role: plan.role, round, attempt: plan.review.attempt,
+          invocationId: plan.invocationId, handoffIndexSha256: event.summary.indexSha256 }) ? found.opinion : null;
+        await recordReviewerEnd(session, work.work_id, executionId, round, plan.role, { cessation: 'completion-observed', ...(notified
+          ? { opinion: notified, ...(recovery ? { source: 'notification' as const } : {}) } : discovered ? { opinion: discovered, source: 'records-discovery' as const }
+            : { failure: completed.status === 'failure' && /^[A-Z_]{1,64}$/.test(completed.code) ? completed.code : 'OPINION_MISSING' }) });
       } catch (error) {
         if (stopping.signal.aborted || scope.interrupted()) throw error;
         await recordReviewerEnd(session, work.work_id, executionId, round, plan.role, { failure: 'REVIEWER_OUTCOME_UNCERTAIN', cessation: 'unconfirmed' });
       } finally { reviewer.close(); }
     };
-    if (!failure) await Promise.all(plans.map(runReviewer));
+    /**
+     * Ticket 28: only the failed reviewer is re-obtained, alone, in the same round, while the Builder stays suspended and the other opinion
+     * stays as recorded — under a re-observed UNCHANGED proposal identity, with known cessation, a transient failure and the Work's existing
+     * recoveries counter (one unit per retry, persisted 5/15/45 s wait). Anything else stays an explicit failure in the round.
+     */
+    const runReviewer = async (first: ReviewPlan) => {
+      let plan = first;
+      for (;;) {
+        await attemptReviewer(plan);
+        if (!recovery || event.status !== 'captured') return;
+        const shown = (await deps.readWorks()).find(item => item.work_id === work.work_id);
+        const reviewer = shown?.execution?.executionId === executionId ? shown.execution.review?.rounds.find(item => item.round === round)?.reviewers[plan.role] : undefined;
+        if (!reviewer) return;
+        checkStop();
+        const decision = retryDecision({ reviewer, before, now: reviewer.cessation === 'unconfirmed' ? null : await observeProposal(), counter: shown?.budget?.recoveries });
+        if (decision.kind === 'none') return;
+        if (decision.kind === 'not-retried') {
+          // Unconfirmed cessation keeps the existing hold path (the round is never concluded on it); the rest is recorded explicitly.
+          if (decision.code !== 'REVIEWER_CESSATION_UNCONFIRMED') await recordNotRetried(session, work.work_id, executionId, round, plan.role, decision.code);
+          return;
+        }
+        const next = planReviews({ executionId, round, attempt: decision.attempt, handoff: event.summary,
+          ...(plan.review.continueFrom ? { previousSessions: { [plan.role]: plan.review.continueFrom } } : {}) }).find(item => item.role === plan.role)!;
+        const retried = await recordReviewerRetry(session, work.work_id, executionId, round, plan.role, { plan: next, attempt: decision.attempt, waitSeconds: decision.waitSeconds });
+        if (typeof retried === 'string' || retried.kind !== 'recorded') return;
+        observe(work.work_id, 'reviewer-retrying', [`${plan.role}:a${decision.attempt}`]);
+        await scope.activity(`reviewer-retry-${plan.role}-a${decision.attempt}`);
+        // The persisted wait runs on the Execution's clock (its timeout still applies); an interruption ends it at once.
+        await scope.wait(clock.sleep(decision.waitSeconds * 1000, scope.signal));
+        if (scope.interrupted()) throw new Error('EXECUTION_TIMEOUT');
+        plan = next;
+      }
+    };
+    if (!failure) await Promise.all(plans.filter(plan => !carried[plan.role]).map(runReviewer));
     checkStop();
     if (await stillRunning(work.work_id, executionId, round)) return hold('REVIEWER_CESSATION_UNCONFIRMED',
       'A reviewer may still be active; the Builder stays suspended and no result is delivered until its cessation is confirmed (operator recovery, ticket 26/28).');
@@ -319,6 +382,15 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     observe(work.work_id, 'review-delivered', [concluded.conclusion!]);
     await scope.activity(`review-delivered-r${round}`);
     return true;
+  }
+
+  /** The Execution interrupted before this one when ticket 26 readmitted it as an operational recovery (`interruption`), or null. */
+  function interruptedPrevious(work: WorkRecord | undefined, executionId: string): ExecutionView | null {
+    const execution = work?.execution;
+    if (!execution || execution.executionId !== executionId) return null;
+    const basis = (execution as ExecutionView & { interruption?: { previousExecutionId: string; reason: string } | null }).interruption;
+    if (!basis || basis.reason !== 'OPERATIONAL_RECOVERY') return null;
+    return work.previousExecutions.find(item => item.executionId === basis.previousExecutionId) ?? null;
   }
 
   async function stillRunning(work_id: string, executionId: string, round: number) {
