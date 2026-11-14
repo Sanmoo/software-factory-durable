@@ -6,6 +6,7 @@ import { connect, protocolVersion, type Channel, type Envelope } from '../protoc
 import type { Invocation } from './worker-start.js';
 import type { WorkerIpc } from './worker-process.js';
 import { handoffSummarySchema } from './handoff.js';
+import { resolvedDeclarationsSchema } from './gates.js';
 import { opinionSchema } from './review.js';
 import type { ReviewOpinion } from '../contracts/index.js';
 import type { BuilderDirective, HandoffEvent } from './builder-handoff.js';
@@ -93,10 +94,12 @@ const completionSchema = z.discriminatedUnion('status', [
   z.strictObject({ status: z.literal('question'), receipt: reference, question: workerQuestionSchema.extend({ acknowledged: z.boolean() }), session: sessionRefSchema.optional() }),
 ]);
 
+// Ticket 13: `closing` (the Host's capture after the session ended) and the Host-resolved `declarations` (treatments, gate evidence).
+const handoffExtras = { closing: z.literal(true).optional(), declarations: resolvedDeclarationsSchema.optional() };
 const handoffEventSchema = z.union([
-  z.strictObject({ round: z.number().int().min(1).max(99), status: z.literal('captured'), summary: handoffSummarySchema }),
+  z.strictObject({ round: z.number().int().min(1).max(99), status: z.literal('captured'), summary: handoffSummarySchema, ...handoffExtras }),
   z.strictObject({ round: z.number().int().min(1).max(99), status: z.literal('failure'), code: z.string().regex(/^[A-Z_]{1,64}$/),
-    detail: z.string().regex(/^[A-Z_]{1,32}:[a-z-]{1,32}$/).optional() }),
+    detail: z.string().regex(/^[A-Z_]{1,32}:[a-z-]{1,32}$/).optional(), ...handoffExtras }),
 ]);
 
 /** Trusted Control caller must have confirmed admission/reservation BEFORE this
@@ -142,7 +145,7 @@ export function createWorkers(configuration?: Configuration) {
       entry.inbox.expect(deliveryId);
       try {
         await entry.channel.send({ protocol_version: protocolVersion, controller_run_id: null, message_id: deliveryId, reply_to: entry.launchId,
-          kind: 'deliver-directive', payload: { directive: { kind: directive.kind, round: directive.round, prompt: directive.prompt } } });
+          kind: 'deliver-directive', payload: { directive: { kind: directive.kind, round: directive.round, prompt: directive.prompt, ...(directive.end ? { end: true } : {}) } } });
       } catch { entry.inbox.release(deliveryId); return { status: 'failure', code: 'DELIVERY_UNCONFIRMED' }; }
       const reply = await entry.inbox.next(message => message.reply_to === deliveryId, 15000);
       entry.inbox.release(deliveryId);
@@ -190,7 +193,7 @@ export function createWorkers(configuration?: Configuration) {
     if (delivery?.credential !== undefined && (request.data.context.role !== 'builder' || typeof delivery.credential.token !== 'string')) throw new Error('WORKER_LAUNCH_INVALID');
     const context = request.data.context;
     const { imageSourceMaxBytes, editSourceMaxBytes, copyOutput, selectedOutputCopies, skillPack, skillPackFiles, modelBudget, deadlineMs, handoff, review, continueSession, ...baseRequest } = request.data;
-    const payload = { ...baseRequest, ...(handoff === undefined ? {} : { handoff: { ...handoff } }),
+    const payload = { ...baseRequest, ...(handoff === undefined ? {} : { handoff: { baseCommit: handoff.baseCommit, ...(handoff.rounds ? { rounds: { ...handoff.rounds } } : {}) } }),
       ...(review === undefined ? {} : { review: { ...review, required: [...review.required], missing: [...review.missing] } }), ...(skillPack === undefined ? {} : { skillPack }), ...(skillPackFiles === undefined ? {} : { skillPackFiles: [...skillPackFiles] }), ...(modelBudget === undefined ? {} : { modelBudget }), ...(deadlineMs === undefined ? {} : { deadlineMs }), ...(selectedOutputCopies === undefined ? {} : { selectedOutputCopies: [...selectedOutputCopies] }), ...(copyOutput === undefined ? {} : { copyOutput }), ...(imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes }),
       ...(editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes }), ...(continueSession === undefined ? {} : { continueSession: { ...continueSession } }) };
     const endpoint = await workerOwnerEndpoint(configuration.root, context);

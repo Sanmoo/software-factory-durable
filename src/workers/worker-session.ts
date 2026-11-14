@@ -17,6 +17,7 @@ import { startWorker, type ReviewerProfile, type Invocation } from './worker-sta
 import { builderAskUser, type AskedQuestion } from './ask-user.js';
 import type { WorkerQuestionRequest } from '../platform/host/index.js';
 import { builderHandoff, captureHandoff, suspendable, type BuilderDirective, type HandoffEvent } from './builder-handoff.js';
+import { createToolLedger } from './gates.js';
 import { composeOpinion, createReadObserver, opinionSchema } from './review.js';
 import type { ReviewOpinion } from '../contracts/index.js';
 export type { BuilderDirective, HandoffEvent } from './builder-handoff.js';
@@ -117,8 +118,11 @@ export async function executeSession(options: Options, invocation: Invocation, r
       const critical = () => { interrupted = true; abortSession(); };
       const observer = createReadObserver();
       const editEnabled = invocation.context.role === 'builder' && invocation.editSourceMaxBytes !== undefined;
+      // Ticket 13: the Host ledger of the Builder's own tool calls and real Bash results (the only source of gate evidence).
+      const ledger = invocation.handoff?.rounds ? createToolLedger() : undefined;
       const customTools: ToolDefinition[] = invocation.context.role === 'builder'
-        ? [builderWrite(invocation.context, options.sandbox, critical), builderBash(invocation.context, options.sandbox, critical, copyOutput)]
+        ? [builderWrite(invocation.context, options.sandbox, critical), builderBash(invocation.context, options.sandbox, critical, copyOutput,
+          ledger ? (callId, observation) => ledger.bash(callId, observation) : undefined)]
         : [reviewerRead(invocation.context, options.sandbox, critical)];
       const tools = invocation.context.role === 'builder' ? ['write', 'bash'] : ['read'];
       // Builder Read: selected output copies (copyOutput) and/or the files of its own pack version (owner-enforced exact paths).
@@ -151,11 +155,12 @@ export async function executeSession(options: Options, invocation: Invocation, r
       // Gate: once a question is asked, every other tool call of this activation is refused before any effect.
       const gated = customTools.map(tool => tool.name === 'ask_user' ? tool : { ...tool, async execute(...args: Parameters<ToolDefinition['execute']>) {
         if (asked) throw new Error('ACTIVATION_ENDED_AFTER_QUESTION');
+        ledger?.begin(tool.name, args[0]);
         return tool.execute(...args);
       } } as ToolDefinition);
       // Host suspension (spec §5.6): once the Builder hands off, EVERY Builder tool refuses and terminates the batch until the Host
       // delivers the review results; a new model turn while suspended interrupts the session (it is not merely a model phrase/agent_end).
-      const gate = invocation.handoff ? builderHandoff() : undefined;
+      const gate = invocation.handoff ? builderHandoff(invocation.handoff.rounds, ledger) : undefined;
       const sessionTools = gate ? [...gated.map(tool => suspendable(tool, gate)), gate.tool] : gated;
       if (gate) {
         // Synchronous backstop: no provider request can even start while suspended (the request itself is refused, not just aborted later).
@@ -188,11 +193,18 @@ export async function executeSession(options: Options, invocation: Invocation, r
         while (true) {
           await session.prompt(prompt).catch(error => { if (!asked) throw error; });
           if (asked) return { status: 'question' as const, receipt, sessionFile: manager.getSessionFile() ?? null, sessionTools: [...tools].sort(), question: asked };
-          if (!gate?.pending() || signal.aborted || interrupted || qualification?.failed()) break;
+          if (!gate || signal.aborted || interrupted || qualification?.failed()) break;
+          // Ticket 13: after the session ended without a pending handoff, the Host captures once more (closing), with no model request.
+          const closing = gate.pending() ? null : gate.closing();
+          if (!gate.pending() && closing === null) break;
           // Suspended: the Host (not the model) captures the proposal through the Builder's own binding, then waits for the directive.
-          const event = await captureHandoff(invocation.context, options.sandbox, gate.round(), invocation.handoff!.baseCommit, signal);
+          const round = closing ?? gate.round();
+          const declarations = closing === null ? gate.declarations() : undefined;
+          const captured = await captureHandoff(invocation.context, options.sandbox, round, invocation.handoff!.baseCommit, signal);
+          const event: HandoffEvent = { ...captured, ...(closing === null ? {} : { closing: true as const }), ...(declarations ? { declarations } : {}) };
           const directive = await options.onHandoff!(event);
-          if (signal.aborted || interrupted || directive.kind !== 'review-results' || directive.round !== gate.round()) { interrupted = true; break; }
+          if (signal.aborted || interrupted || directive.kind !== 'review-results' || directive.round !== round || (directive.end && closing === null)) { interrupted = true; break; }
+          if (directive.end) break;
           gate.resume();
           prompt = directive.prompt;
         }

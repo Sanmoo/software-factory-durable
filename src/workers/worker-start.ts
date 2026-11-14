@@ -25,7 +25,9 @@ export type Invocation = { context: ToolContext; prompt: string; signal: AbortSi
    * the Execution-level clock is the repository's optional timeout, enforced by the controller. */
   deadlineMs?: number;
   /** Builder only (ticket 12): the Host handoff tool and suspension for the Factory reviews, with the Execution's base commit. */
-  handoff?: { baseCommit: string };
+  handoff?: { baseCommit: string;
+    /** Ticket 13: repeated rounds (treatments, gates, closing capture); absent = the single ticket 12 round. */
+    rounds?: { first: number; max: number } | undefined };
   /** Standards/Spec only (ticket 12): the round/attempt, handoff identity and the inputs that must be read for a clean conclusion. */
   review?: ReviewInput;
   /** Builder only (ticket 11): continue THIS preserved compatible session (Host-copied before the worker exists); the prompt is `continue ...`. */

@@ -92,6 +92,27 @@ export type ProposalHandoff = {
    */
   content?: { sha256: string; clean: boolean; headMatches: boolean };
 };
+/**
+ * Ticket 13 (spec §6.3/§6.4): a concrete PRIOR authorization referenced by a treatment or a gate waiver: an answered Factory Question
+ * (correlated by Control to this Work) or a preserved request source (`/artifacts/spec/vN/...`, presence checked, never interpreted).
+ */
+export type ConcreteAuthorization = { kind: 'question'; questionId: string } | { kind: 'preserved-source'; reference: string };
+/** The Builder's treatment of one finding of an earlier round: fixed, or not adopted with its justification/evidence. */
+export type FindingTreatment = { round: number; role: ReviewerRole; findingId: string; outcome: 'fixed' | 'not-adopted'; justification: string;
+  evidence: string | null; authorization: ConcreteAuthorization | null };
+/**
+ * One documented gate as evidenced by the Builder HOST from its own protected Bash result (exit code + protected output reference), never
+ * from output or status declared by the model. `declared` is what the Builder said; `outcome` is what the Host could establish:
+ * `passed`/`failed` from the real exit code, `unknown` when the result was lost (effects/capture unknown), `unverified` when no matching
+ * protected result exists, `not-run`/`waived` as declared. `current`: no Builder write/edit/other Bash ran after it before the capture.
+ * `requiredCheck` names a GitHub required check the gate corresponds to: a waiver never satisfies it.
+ */
+export type GateEvidence = { id: string; source: string; command: string; cwd: string; requiredCheck: string | null;
+  declared: 'run' | 'not-run' | 'waived'; outcome: 'passed' | 'failed' | 'unknown' | 'unverified' | 'not-run' | 'waived'; code: string | null;
+  exitCode: number | null; output: { workId: string; id: string } | null; sequence: number | null; current: boolean;
+  reason: string | null; authorization: ConcreteAuthorization | null };
+/** Treatments and gate evidence attached by the Builder host to one capture (handoff or closing). */
+export type HandoffDeclarations = { treatments: FindingTreatment[]; gates: GateEvidence[] };
 /** Host-side identity of a handed-off proposal (hashes of every indexed path plus Git metadata), computed with confined reads. */
 export type ProposalIdentity = { status: 'observed'; sha256: string; indexSha256: string; entries: number; consistent: boolean; observedAt: string } | { status: 'unavailable' | 'refused'; code: string };
 /** The exact reviewer output contract (the prompt is Control's; the parser is the reviewer worker's). */

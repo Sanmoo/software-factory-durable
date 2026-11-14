@@ -72,7 +72,10 @@ type DrainAwareOptions = Parameters<BashOperations['exec']>[2] & {
 
 /** Native Bash with COMPLETE remote operations. Only explicit trusted Host policy
  * copies completed native-truncated output. Host spill remains private SDK state. */
-export function builderBash(context: ToolContext, sandbox: ToolProjection, onCritical: () => void = () => {}, copyOutput = false): ToolDefinition {
+export type BashObservation = { command: string; exitCode: number | null; output: { workId: string; id: string } | null; code: string | null };
+export function builderBash(context: ToolContext, sandbox: ToolProjection, onCritical: () => void = () => {}, copyOutput = false,
+  /** Ticket 13: the Host's own record of each completed (or lost) Bash result, the only source of gate evidence. */
+  observe?: (callId: string, observation: BashObservation) => void): ToolDefinition {
   const copyEnabled = copyOutput === true;
   let failed = false;
   let timeoutFailure = false;
@@ -116,8 +119,14 @@ export function builderBash(context: ToolContext, sandbox: ToolProjection, onCri
       // Private per-execute completion slot; neither model callId/args/context nor
       // another concurrent callback can choose this source reference.
       let completed: Extract<ReadResult, { status: 'success' }> | undefined;
+      let observed = false;
+      const record = (code: string | null) => {
+        if (observed || !observe) return;
+        observed = true;
+        observe(callId, { command: input.command, exitCode: completed && 'exitCode' in completed ? completed.exitCode ?? null : null, output: completed ? { ...completed.reference } : null, code: completed ? null : code });
+      };
       try {
-        const result = await native(value => { completed = value; }).execute(callId, input, signal, onUpdate);
+        const result = await native(value => { completed = value; record(null); }).execute(callId, input, signal, onUpdate);
         if (!copyEnabled || result.details?.truncation?.truncated !== true) return result;
         if (!completed || signal?.aborted || failed) throw new Error('BASH_COPY_UNAVAILABLE');
         const reply = await sandbox.executeTool(context, { name: 'bash', operation: 'copy-output',
@@ -126,6 +135,7 @@ export function builderBash(context: ToolContext, sandbox: ToolProjection, onCri
         return guestPresentation(result, copiedPath(reply, context.workId));
       }
       catch {
+        record('BASH_EFFECTS_OR_CAPTURE_UNKNOWN');
         critical();
         if (signal?.aborted) throw new Error('Command aborted (effects unknown)');
         if (timeoutFailure) throw new Error(`Command timed out after ${input.timeout} seconds (effects unknown)`);

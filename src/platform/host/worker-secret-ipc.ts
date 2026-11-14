@@ -40,7 +40,7 @@ const ownerLifecycleSchema = z.union([
 const abortSchema = z.strictObject({ kind: z.literal('abort') });
 /** Host directive to a suspended Builder (ticket 12); demultiplexed by the fixed entrypoint like abort. */
 export const deliverSchema = z.strictObject({ kind: z.literal('deliver'), directive: z.strictObject({ kind: z.literal('review-results'),
-  round: z.number().int().min(1).max(99), prompt: z.string().min(1).max(40000) }) });
+  round: z.number().int().min(1).max(99), prompt: z.string().min(1).max(40000), end: z.literal(true).optional() }) });
 
 /** Pure construction is allowed before durable start; publication is not. The
  * callback is usable by the future OAuth observer, but no producer is activated. */

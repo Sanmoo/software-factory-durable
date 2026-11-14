@@ -30,7 +30,10 @@ const bootstrap = z.strictObject({
   skillPackFiles: z.array(z.string().max(512).regex(/^\/artifacts\/factory\/skill-pack\/factory-skills-v[0-9]+\/[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/)
     .refine(path => !path.split('/').some(part => part === '.' || part === '..'))).min(1).max(64).readonly().optional(),
   // Ticket 12 Host policies: the Builder handoff (base commit of the Execution) and the reviewer's round input; never model input.
-  handoff: z.strictObject({ baseCommit: z.string().regex(/^[0-9a-f]{40}$/) }).optional(),
+  handoff: z.strictObject({ baseCommit: z.string().regex(/^[0-9a-f]{40}$/),
+    // Ticket 13: repeated capture rounds of this invocation (first round number, at most `max` captures including the closing one).
+    rounds: z.strictObject({ first: z.number().int().min(1).max(98), max: z.number().int().min(2).max(8) })
+      .refine(value => value.first + value.max - 1 <= 99).optional() }).optional(),
   review: z.strictObject({ round: z.number().int().min(1).max(99), attempt: z.number().int().min(1).max(9), handoffIndexSha256: z.string().regex(/^[0-9a-f]{64}$/),
     required: z.array(z.string().max(1024).regex(/^\/(workspace|artifacts)\//)).max(32).readonly(),
     missing: z.array(z.enum(['handoff-index', 'spec-version', 'instructions-version'])).max(3).readonly() }).optional(),
