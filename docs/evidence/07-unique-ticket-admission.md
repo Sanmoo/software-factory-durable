@@ -15,14 +15,22 @@ Nenhum checkbox foi marcado. Dublê não comprova a fronteira gh/GitHub substitu
   `TicketRef` qualificado (`repositoryId`, `issueId`, `nodeId`, número/URL de apresentação), estado,
   motivo de fechamento e labels com ID. Corpo/título não são lidos para o resultado (spec não capturada).
   PRs devolvidos pelo endpoint de issues são excluídos. Repo não configurado é recusado sem requisição.
-- `CodeRepository.findPublication(correlation)` (Q4B): `GET /repos/{r}/pulls?state=all` paginado;
-  candidatos são PRs com palavra-chave de fechamento GitHub (`close[sd]/fix(e[sd])/resolve[sd]` +
-  `#N`, `owner/repo#N` ou URL da issue) no título/corpo, ou cuja head é branch própria conhecida do
-  mesmo repo. Menção simples não é associação. O adapter não decide propriedade.
+- `CodeRepository.findPublication({repo, issueNumbers, knownBranches})` (Q4B), após a revisão
+  independente: **uma** listagem `GET /repos/{r}/pulls?state=all` paginada por chamada, compartilhada
+  por todos os Tickets autorizados do repo no ciclo, mais `GET /repos/{r}/issues/{N}/timeline` paginado
+  por Ticket. Associação = palavra-chave de fechamento (`close[sd]/fix(e[sd])/resolve[sd]` + `#N`,
+  `owner/repo#N` ou URL) no título/corpo; eventos nativos `cross-referenced` e `connected`/`disconnected`
+  cuja fonte é PR **deste** repo; ou head em branch própria conhecida. Resultado por Ticket:
+  `complete` com candidatos deduplicados, ou `incomplete` (timeline falhou, link "Development" sem PR
+  identificável → `ASSOCIATION_UNIDENTIFIED`, PR associado ausente da listagem) → `PUBLICATION_UNKNOWN`,
+  nunca admissão. Falha da listagem de PRs → `unavailable` para todos. PRs de outros repos que
+  referenciam o Ticket não são tratados como associados (limitação declarada). O adapter não decide propriedade.
 - `platform/github`: além de `diagnose` (inalterado em comportamento), `read(scope, purpose, fn)` com
-  finalidades reduzidas somente leitura `tracker-read {metadata:read, issues:read}` e
-  `repository-read {metadata:read, pull_requests:read}`. O grant é reutilizado **em memória** até 5 min
-  antes do vencimento (sem POST por polling); janela de rate limit (`retry-after`, `x-ratelimit-*`,
+  finalidades reduzidas somente leitura `tracker-read {metadata:read, issues:read}`,
+  `repository-read {metadata:read, pull_requests:read}` e `association-read {metadata:read, issues:read}`
+  (timeline é endpoint de issues: menor privilégio, sem pull_requests nem escrita; grant próprio do
+  CodeRepository, não compartilhado com o tracker). O grant é reutilizado **em memória** até 5 min
+  antes do vencimento (sem POST por polling); janela de rate limit (`retry-after` em segundos **ou HTTP-date**, `x-ratelimit-*`, 429 na emissão do token,
   inclusive `remaining: 0` em resposta 200) impede novas requisições até expirar; emissão de resultado
   **desconhecido** fica travada (sem novo POST) até reinício deliberado do controlador. Paginação
   preserva os parâmetros da consulta e aceita o caminho `/repositories/{id}/…` do mesmo repo em `Link`.
@@ -31,7 +39,10 @@ Nenhum checkbox foi marcado. Dublê não comprova a fronteira gh/GitHub substitu
   chave do índice `github:repository:<id>:issue:<id>`); `durable/admission.ts` faz a transação
   **Admitir Trabalho** (§3.4) num único commit Session: índice Ticket→ciclo, pausa, documento do
   Trabalho e sequência de admissão. `durable/polling.ts`: um laço sequencial dentro de `Control.run`
-  (sem scheduler/broker), por repositório configurado, sem consultas sobrepostas.
+  (sem scheduler/broker), por repositório configurado, sem consultas sobrepostas. Ciclo em duas fases:
+  entrada por candidato, depois um `findPublication` por repositório configurado e admissões na ordem
+  da listagem. Falhas transitórias por candidato (`POLLING_QUERY_FAILED`, transporte/consulta) alimentam
+  o mesmo backoff do repositório.
 - `inspect` ganhou `list` e `show`; status ganhou `works`, `queues` e `polling`. CLI: `factory list`
   e `factory show <work_id>` (`--json`), sempre pelo controlador (sem leitor offline; exit 3).
 
@@ -40,11 +51,12 @@ Nenhum checkbox foi marcado. Dublê não comprova a fronteira gh/GitHub substitu
 1. **Pausa x admissão.** Pausado, o polling continua listando (acompanhamento), mas não relê nem admite
    candidatos novos: aparecem `held/GLOBAL_PAUSE`. A pausa é reconferida dentro do commit de admissão.
    Leitura de "respeitadas pausa" (§4.1) e "pausa impede novos disparos, não acompanhamento" (AC5).
-2. **"PR associado".** Não há definição operacional aprovada. Usou-se `findPublication` com palavras-chave
-   de fechamento no mesmo repo + branches próprias conhecidas. Links manuais "Development" e PRs de
-   outros repos **não são observáveis** por essa listagem e constam em `limitations` (não certificados
-   ausentes). PRs fechados/mergeados associados também bloqueiam (leitura conservadora). Se o operador
-   quiser outra semântica (p.ex. timeline da issue), é decisão de desenho a registrar.
+2. **"PR associado".** Sem definição operacional aprovada; após revisão: palavras-chave de fechamento +
+   timeline nativa (cross-reference/Development link) do mesmo repo + branches próprias. PRs fechados/
+   mergeados associados continuam bloqueando; o próximo passo não sugere fechá-los (fechar não remove
+   a associação). **Questão aberta:** uma cross-reference nativa (mera menção num PR) não pode ser
+   apagada no GitHub, então tal Ticket fica bloqueado até decisão do operador, e não existe comando
+   aprovado de "ignorar associação"; isso requer decisão de desenho se for indesejado.
 3. **Acompanhamento pós-admissão.** Retirada de label/fechamento depois da admissão não suspende nada
    neste incremento (ticket 25); a ausência numa listagem nunca é tratada como retirada.
 4. **Observações de candidatos** são somente em memória (último polling), com instante/completude, e
@@ -65,7 +77,7 @@ Nenhum dos dois é prova da fronteira GitHub real.
 | --- | --- | --- | --- |
 | 1 Repo/issue aberta/label efetiva; identidades qualificadas | `test/control/admission-rules.test.ts` (entrada, case-insensitive, deriva de identidade), `admission-flow` AC1 (PR, identidade divergente, repo não configurado, fechada, sem label), `github-admission-reads` (listagem/identidade/sem corpo), `admission-cli` | S + I-local | GitHub real |
 | 2 Atomicidade; polling repetido/concorrente/restart sem duplicatas | `admission-atomicity` (25 admissões concorrentes do mesmo Ticket → 1; sequência contígua; reabertura), `admission-flow` AC2 (restart), `admission-cli` (dois proprietários sucessivos) | S + I-local (SQLite real) | Crash físico/energia não exercitados |
-| 3 PR associado não próprio bloqueia e é reportado | `admission-rules`, `admission-flow` AC3 (`FOREIGN_PULL_REQUEST` com IDs, `PUBLICATION_UNKNOWN`), `github-admission-reads` (detecção), `admission-cli` | S + I-local | Links manuais/cross-repo não observáveis |
+| 3 PR associado não próprio bloqueia e é reportado | `admission-rules`, `admission-flow` AC3 (`FOREIGN_PULL_REQUEST` com IDs, texto do próximo passo, `PUBLICATION_UNKNOWN`) e AC5 (incompleto por Ticket), `github-admission-reads` (palavra-chave, cross-reference, Development link, link não identificado/timeline falha → incompleto), `admission-cli` | S + I-local | PRs de outros repos não tratados como associados; timeline real não exercitada |
 | 4 list/status/show sem colapsar; parcial/falha ≠ ausência | `admission-flow` AC4, `github-admission-reads` (página posterior falha → unavailable), `admission-cli` | S + I-local | — |
 | 5 60 s configurável; headers/rate limit/backoff; sem sobreposição; pausa | `admission-rules` (atraso), `admission-flow` AC5 (backoff 5/10/20/40, espera 300 s, consulta pendente sem novo disparo, pausa), `github-admission-reads` (janela de rate limit sem requisição, `remaining: 0`), `configuration.test` (default 60), `admission-cli` (`pollingSeconds: 1` efetivo) | S + I-local | Rate limit real não induzido |
 | 6 Sem labels/assignees/Projects/status; sem captura da spec | `github-admission-reads` (somente GET, grants só leitura), `admission-cli` (trace: só GET operacional, POST só access_tokens sem `write`; banco sem corpo/token/chave), `admission-flow` AC6 | I-local | GitHub real |
@@ -85,20 +97,29 @@ falhar (25 Trabalhos para o mesmo Ticket); restaurado, voltou a passar.
    proprietário saía com 1 (`controller.test` vermelho) → corrigido; testes 02 verdes.
 4. `admission-cli.test.ts` antes: vermelho (`list` recusado com exit 2) → verde após owner/CLI.
 
+## Correções após revisão independente (2026-11-14)
+
+| Achado | Correção | Teste (RED → GREEN) |
+| --- | --- | --- |
+| 1 `findPublication` declarava `complete` com pontos cegos | Timeline nativa + `association-read`; incompleto → `PUBLICATION_UNKNOWN` | `github-admission-reads`: timeline/Development/incompleto (RED: compilação + asserções), `admission-flow` AC5 incompleto por Ticket |
+| 2 Listagem de PRs por candidato por ciclo | Um `findPublication` por repo por ciclo; limite de páginas → incompleto mantido | `github-admission-reads` "lists pull requests once" (2 páginas para 3 Tickets, 3 timelines), `admission-flow` "one findPublication per repository cycle" |
+| 3 Próximo passo sugeria fechar PR | Texto: aberto/fechado/mergeado bloqueiam; remover referência/desvincular ou decisão do operador | `admission-flow` AC3 (`doesNotMatch /close it/`) |
+| Menor: falha por candidato sem backoff | Falhas transitórias por candidato → backoff 60/120/240 s | `admission-flow` "unexpected per-candidate evaluation failures" |
+| Menor: Retry-After HTTP-date | Data convertida em segundos | `github-admission-reads` HTTP-date (RED com o trecho revertido: 60 s; GREEN ~120 s) |
+| Menor: 429 na emissão abre janela | Já coberto por `TokenIssuanceFailure extends AccessFailure`; teste de regressão adicionado (passou de início) | `github-admission-reads` "a 429 on token issuance" (1 POST, sem nova emissão) |
+
+Mudança de contrato interno: `PublicationCorrelation.issueNumber` → `issueNumbers[]` e resultado por
+Ticket em `issues`. Uma finalidade a mais por proprietário (3 POST de token por início, reutilizados).
+
 ## Gate local
 
 Node 24.21.0 com `env -u NODE_OPTIONS -u NODE_COMPILE_CACHE NODE_DISABLE_COMPILE_CACHE=1 timeout 60`, sem npm/npx.
-Após `ab7011c`: `eslint . --max-warnings 0` exit 0; `dependency-cruiser` sem violações (214 módulos,
-1144 dependências); `tsc -p tsconfig.json` exit 0; **87 arquivos** `dist/test/**/*.test.js`, um por vez
-(`--experimental-test-module-mocks --test --test-concurrency=1`): **710 pass, 1 fail, 10 skipped,
-0 cancelled**. `test/sandbox/gondolin.test.ts` continua `skip:true`.
-
-A única falha é **preexistente e alheia a esta mudança**: `gondolin-sdk-runtime.test.js` →
-`GONDOLIN_PROFILE_DRIFT`. O artefato privado gitignorado
-`.scratch/factory-development-gondolin-v1/profile.json` (gerado 2026-11-14 10:26, antes do commit-base
-`f70ec2b`) tem `dependencyLink` com o prefixo do caminho duplicado. Esta branch não altera sandbox,
-package/lockfile nem evidência Gondolin. A preparação privada do SDK não foi reparada aqui (decisão do
-supervisor: reexecutar `prepare:gondolin-sdk` na worktree).
+Após `c641071` (rebase sobre a integração com ticket 06, `dfcfba7`): `eslint . --max-warnings 0` exit 0;
+`dependency-cruiser` sem violações (216 módulos, 1153 dependências); `tsc -p tsconfig.json` exit 0;
+**87 arquivos** `dist/test/**/*.test.js`, um por vez (`--experimental-test-module-mocks --test
+--test-concurrency=1`): **719 pass, 0 fail, 10 skipped, 0 cancelled**. `test/sandbox/gondolin.test.ts`
+continua `skip:true`. A falha anterior `GONDOLIN_PROFILE_DRIFT` (artefato gitignorado com
+`dependencyLink` duplicado) não se repetiu após a correção do ambiente pelo supervisor.
 
 ## Procedimento para o ensaio real autorizado (supervisor)
 
@@ -160,8 +181,10 @@ Saída esperada:
 - Sem issue rotulada: `works: []`, `candidates: []` — isso **não** é prova de ausência remota.
 - Requisições reais esperadas por proprietário: `GET /app`, `GET /app/installations/177599217` e um
   `POST …/access_tokens` por finalidade (`tracker-read`: `metadata:read, issues:read`;
-  `repository-read`: `metadata:read, pull_requests:read`), reutilizados entre ciclos; demais chamadas
-  `gh api GET` em `/repos/Sanmoo/java-springboot-event-sourcing{,/issues…,/issues/N,/pulls…}`.
+  `repository-read`: `metadata:read, pull_requests:read`; após a revisão também `association-read`:
+  `metadata:read, issues:read`), reutilizados entre ciclos; demais chamadas `gh api GET` em
+  `/repos/Sanmoo/java-springboot-event-sourcing{,/issues…,/issues/N,/issues/N/timeline…,/pulls…}`
+  (pulls no máximo uma vez por ciclo). O ensaio real registrado abaixo precede essa revisão.
   Nenhum POST/PATCH/PUT/DELETE operacional.
 - Após parar: `data/control.sqlite*` sem `ghs_`, sem `PRIVATE KEY` e sem texto do corpo da issue;
   labels/assignees/Projects inalterados.
