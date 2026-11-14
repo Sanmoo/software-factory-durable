@@ -1,0 +1,756 @@
+{
+ "work": {
+  "work_id": "f209e8a1-f7da-42e7-a173-69252ce5854d",
+  "cycle": 1,
+  "predecessor": null,
+  "ticket": {
+   "tracker": "github",
+   "repository": "Sanmoo/java-springboot-event-sourcing",
+   "repositoryId": 1256893534,
+   "issueId": 6391129588,
+   "nodeId": "I_kwDOSuqsXs8AAAABfPDl9A",
+   "number": 3,
+   "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3"
+  },
+  "repository": {
+   "repository": "Sanmoo/java-springboot-event-sourcing",
+   "repositoryId": 1256893534,
+   "base": "main"
+  },
+  "result": "open",
+  "authorization": {
+   "state": "authorized",
+   "source": "github-rest",
+   "observedAt": "2026-11-14T18:40:39.157Z",
+   "basis": {
+    "repositoryConfigured": true,
+    "issueState": "open",
+    "label": {
+     "id": 12918930265,
+     "name": "ready-for-agent"
+    }
+   },
+   "publication": {
+    "observedAt": "2026-11-14T18:40:39.803Z",
+    "completeness": "complete",
+    "associatedPullRequests": 0,
+    "limitations": [
+     "Association = GitHub closing keywords in pull request title/body, native issue-timeline cross-references and Development links (connected/disconnected) for pull requests of this repository, and known own branches.",
+     "Pull requests in other repositories that reference the Ticket are not treated as associated (they cannot be own publications of this repository).",
+     "A Development link whose pull request is not identified in the timeline makes the Ticket incomplete, never clear.",
+     "Listing and timeline are separate reads, not an atomic remote snapshot."
+    ]
+   },
+   "tracking": "Authorization recorded at admission. Later label removal/closure tracking is not part of this increment; absence from a listing is never treated as withdrawal."
+  },
+  "queue": {
+   "category": "normal",
+   "sequence": 1,
+   "pending": true
+  },
+  "impediments": [
+   {
+    "code": "QUESTION_PENDING",
+    "scope": "work",
+    "since": "2026-11-14T18:43:33.608Z",
+    "questionId": "4a6c7248-0b00-4a38-a7e7-74a2828dcd17",
+    "nextStep": "Answer with a comment `/factory answer 4a6c7248-0b00-4a38-a7e7-74a2828dcd17 <text>` by a configured operator on the Ticket, or locally with `factory answer 4a6c7248-0b00-4a38-a7e7-74a2828dcd17 <text>`. The Work then returns to its queue position; nothing starts directly."
+   }
+  ],
+  "dependencies": {
+   "latest": {
+    "evaluationId": "c2e9f11b-776f-4490-b75e-a19e55a333c9",
+    "attemptId": "811c294e-ec21-4441-ab5f-e1de97d704b5",
+    "source": "github-rest",
+    "observedAt": "2026-11-14T18:42:59.624Z",
+    "evaluatedAt": "2026-11-14T18:43:00.959Z",
+    "principals": [
+     {
+      "installationId": 177599217,
+      "repository": "Sanmoo/java-springboot-event-sourcing",
+      "repositoryId": 1256893534,
+      "role": "executable",
+      "purpose": "dependency-read",
+      "permissions": {
+       "metadata": "read",
+       "issues": "read"
+      }
+     }
+    ],
+    "completeness": "complete",
+    "conclusion": "satisfied",
+    "blockers": [],
+    "cycles": [],
+    "shared": [],
+    "reasons": [],
+    "limitations": [
+     "Only native blocked_by relations are read; prose, \"Depends on\", labels, duplicates and the inverse blocking relation are never substitutes.",
+     "Reads of issues and pages are not an atomic remote snapshot; later changes are seen by the next evaluation.",
+     "Equal counts (issue_dependencies_summary) do not certify the absence of relations GitHub does not show to this installation."
+    ]
+   },
+   "lastComplete": {
+    "evaluationId": "c2e9f11b-776f-4490-b75e-a19e55a333c9",
+    "observedAt": "2026-11-14T18:42:59.624Z",
+    "conclusion": "satisfied"
+   }
+  },
+  "execution": {
+   "executionId": "fc25ff8e-7fbf-4117-9d11-64578c444408",
+   "invocationId": "builder-fc25ff8e-7fbf-4117-9d11-64578c444408",
+   "mode": "recovery",
+   "state": "ended",
+   "slot": {
+    "held": false,
+    "capacity": 1,
+    "reservedAt": "2026-11-14T18:42:41.671Z",
+    "releasedAt": "2026-11-14T18:43:35.528Z"
+   },
+   "admission": {
+    "attemptId": "af763005-f993-4310-bf17-21b10a4faea6",
+    "evaluationId": "3c3295e3-8643-4233-8243-ee7a0e75ef3a",
+    "authorizationObservedAt": "2026-11-14T18:42:39.776Z",
+    "activationAttemptId": "811c294e-ec21-4441-ab5f-e1de97d704b5",
+    "activationEvaluationId": "c2e9f11b-776f-4490-b75e-a19e55a333c9"
+   },
+   "dispatch": {
+    "intent": "prepare-start-activate",
+    "phase": "stopped",
+    "environment": "env-75f39d6586f0c65cfcafccdc16ced5645e6db91f950362ae901cfefe41c5a7ca",
+    "boot": "boot-ca39324f-c613-4798-8a4c-0cdaca26f5ba",
+    "updatedAt": "2026-11-14T18:43:33.626Z"
+   },
+   "request": {
+    "ticket": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "base": "main",
+    "branch": "factory/3-f209e8a1",
+    "policies": {
+     "skillPack": "factory-skills-v2",
+     "modelBudget": "builder-v1",
+     "copyOutput": true,
+     "editSourceMaxBytes": 8192
+    },
+    "baseCommit": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+    "checkout": "/workspace/checkout",
+    "promptSha256": "10ec5ca4e8d044115c594df79e3e7a09e4112cb1441ed32d8d9b4d39d37e5483",
+    "skillPack": {
+     "name": "factory/skill-pack/factory-skills-v2",
+     "manifestSha256": "c3cade32dfeb7da475abac99cee1bc95ab526e4dc71ee83159d75993f9026afe"
+    },
+    "resume": {
+     "previousExecutionId": "a7f86b12-9d07-4715-ba2c-d7d153089c07",
+     "questionId": "abf8ee17-ce89-420e-b1d7-a1ecd2247aaf",
+     "answerSha256": "c9bbd52d7bd7d17714e5148561ff964b1fa766793ece0928531e3befc03414a3",
+     "reason": "NEW_BOOT_REPLACEMENT_SESSION"
+    }
+   },
+   "credential": {
+    "role": "builder",
+    "purpose": "builder-start",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "installationId": 177599217,
+    "permissions": {
+     "metadata": "read",
+     "contents": "read",
+     "issues": "read"
+    },
+    "issuedAt": "2026-11-14T18:43:00.971Z",
+    "expiresAt": "2026-11-14T19:43:02Z"
+   },
+   "credentialIssuance": {
+    "requestedAt": "2026-11-14T18:43:00.966Z",
+    "outcome": "issued",
+    "code": null,
+    "metadata": {
+     "role": "builder",
+     "purpose": "builder-start",
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "repositoryId": 1256893534,
+     "installationId": 177599217,
+     "permissions": {
+      "metadata": "read",
+      "contents": "read",
+      "issues": "read"
+     },
+     "issuedAt": "2026-11-14T18:43:00.971Z",
+     "expiresAt": "2026-11-14T19:43:02Z"
+    },
+    "revocation": "revoked",
+    "revocationCode": "GITHUB_TOKEN_REVOKED",
+    "risk": null,
+    "revocationAttemptedAt": "2026-11-14T18:43:33.622Z"
+   },
+   "credentialRenewals": [],
+   "credentialLifecycle": {
+    "state": "withdrawn",
+    "withdrawnAt": "2026-11-14T18:43:33.612Z",
+    "reason": "external-wait",
+    "renewal": "enabled",
+    "renewalStop": null,
+    "workerNotice": "withdrawn"
+   },
+   "start": {
+    "receiptId": "d46efa2f-b60a-46d7-9b47-ccd417b013a0",
+    "confirmedAt": "2026-11-14T18:43:02.488Z"
+   },
+   "end": {
+    "at": "2026-11-14T18:43:33.626Z",
+    "outcome": "question",
+    "code": null,
+    "cessation": "confirmed",
+    "questionId": "4a6c7248-0b00-4a38-a7e7-74a2828dcd17"
+   },
+   "held": null,
+   "completion": {
+    "automatic": false,
+    "reason": "Reviews, publication and readiness are not enabled in this Factory version; an ended Builder Execution never completes the Work automatically."
+   }
+  },
+  "branch": "factory/3-f209e8a1",
+  "pullRequest": null,
+  "previousExecutions": [
+   {
+    "executionId": "a7f86b12-9d07-4715-ba2c-d7d153089c07",
+    "invocationId": "builder-a7f86b12-9d07-4715-ba2c-d7d153089c07",
+    "mode": "initial",
+    "state": "ended",
+    "slot": {
+     "held": false,
+     "capacity": 1,
+     "reservedAt": "2026-11-14T18:40:50.200Z",
+     "releasedAt": "2026-11-14T18:41:54.095Z"
+    },
+    "admission": {
+     "attemptId": "e1491f01-a338-407b-9aa3-e2d8ad66bcd7",
+     "evaluationId": "4dfed2e9-4b71-4efa-89bc-1433ff5d69cb",
+     "authorizationObservedAt": "2026-11-14T18:40:48.347Z",
+     "activationAttemptId": "76aad04c-4211-4bac-8bf1-16a866a3423d",
+     "activationEvaluationId": "8ea0c78d-27a0-4ef6-9166-72c76c7773bb"
+    },
+    "dispatch": {
+     "intent": "prepare-start-activate",
+     "phase": "stopped",
+     "environment": "env-75f39d6586f0c65cfcafccdc16ced5645e6db91f950362ae901cfefe41c5a7ca",
+     "boot": "boot-1eee6366-72fb-4d8a-bc05-e4e0937ebcf9",
+     "updatedAt": "2026-11-14T18:41:52.104Z"
+    },
+    "request": {
+     "ticket": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3",
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "base": "main",
+     "branch": "factory/3-f209e8a1",
+     "policies": {
+      "skillPack": "factory-skills-v2",
+      "modelBudget": "builder-v1",
+      "copyOutput": true,
+      "editSourceMaxBytes": 8192
+     },
+     "baseCommit": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+     "checkout": "/workspace/checkout",
+     "promptSha256": "e87b3fe7ffe4ad9dbdbd78e7bea0a378bdf261439043e54ad317c304b36cd806",
+     "skillPack": {
+      "name": "factory/skill-pack/factory-skills-v2",
+      "manifestSha256": "c3cade32dfeb7da475abac99cee1bc95ab526e4dc71ee83159d75993f9026afe"
+     },
+     "resume": null
+    },
+    "credential": {
+     "role": "builder",
+     "purpose": "builder-start",
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "repositoryId": 1256893534,
+     "installationId": 177599217,
+     "permissions": {
+      "metadata": "read",
+      "contents": "read",
+      "issues": "read"
+     },
+     "issuedAt": "2026-11-14T18:41:12.899Z",
+     "expiresAt": "2026-11-14T19:41:14Z"
+    },
+    "credentialIssuance": {
+     "requestedAt": "2026-11-14T18:41:12.893Z",
+     "outcome": "issued",
+     "code": null,
+     "metadata": {
+      "role": "builder",
+      "purpose": "builder-start",
+      "repository": "Sanmoo/java-springboot-event-sourcing",
+      "repositoryId": 1256893534,
+      "installationId": 177599217,
+      "permissions": {
+       "metadata": "read",
+       "contents": "read",
+       "issues": "read"
+      },
+      "issuedAt": "2026-11-14T18:41:12.899Z",
+      "expiresAt": "2026-11-14T19:41:14Z"
+     },
+     "revocation": "revoked",
+     "revocationCode": "GITHUB_TOKEN_REVOKED",
+     "risk": null,
+     "revocationAttemptedAt": "2026-11-14T18:41:52.099Z"
+    },
+    "credentialRenewals": [],
+    "credentialLifecycle": {
+     "state": "withdrawn",
+     "withdrawnAt": "2026-11-14T18:41:52.087Z",
+     "reason": "external-wait",
+     "renewal": "enabled",
+     "renewalStop": null,
+     "workerNotice": "withdrawn"
+    },
+    "start": {
+     "receiptId": "caa47554-2351-4f7f-8f53-c5eb6487a7d9",
+     "confirmedAt": "2026-11-14T18:41:14.496Z"
+    },
+    "end": {
+     "at": "2026-11-14T18:41:52.104Z",
+     "outcome": "question",
+     "code": null,
+     "cessation": "confirmed",
+     "questionId": "abf8ee17-ce89-420e-b1d7-a1ecd2247aaf"
+    },
+    "held": null,
+    "completion": {
+     "automatic": false,
+     "reason": "Reviews, publication and readiness are not enabled in this Factory version; an ended Builder Execution never completes the Work automatically."
+    }
+   }
+  ],
+  "questions": [
+   "abf8ee17-ce89-420e-b1d7-a1ecd2247aaf",
+   "4a6c7248-0b00-4a38-a7e7-74a2828dcd17"
+  ],
+  "inputs": {
+   "cursor": 6882425021
+  },
+  "admittedAt": "2026-11-14T18:40:45.196Z",
+  "history": [
+   {
+    "at": "2026-11-14T18:40:45.196Z",
+    "event": "admitted",
+    "origin": "github-polling",
+    "sequence": 1
+   },
+   {
+    "at": "2026-11-14T18:40:48.341Z",
+    "event": "dependencies-changed",
+    "origin": "github-polling",
+    "before": null,
+    "after": "satisfied",
+    "evaluationId": "567c5db1-aee1-4d9a-aee3-86c99cfc3022"
+   },
+   {
+    "at": "2026-11-14T18:40:50.201Z",
+    "event": "execution-reserved",
+    "origin": "controller-dispatch",
+    "executionId": "a7f86b12-9d07-4715-ba2c-d7d153089c07"
+   },
+   {
+    "at": "2026-11-14T18:40:57.024Z",
+    "event": "execution-prepared",
+    "origin": "controller-dispatch",
+    "executionId": "a7f86b12-9d07-4715-ba2c-d7d153089c07"
+   },
+   {
+    "at": "2026-11-14T18:41:10.945Z",
+    "event": "execution-booted",
+    "origin": "controller-dispatch",
+    "executionId": "a7f86b12-9d07-4715-ba2c-d7d153089c07"
+   },
+   {
+    "at": "2026-11-14T18:41:14.178Z",
+    "event": "activation-requested",
+    "origin": "controller-dispatch",
+    "executionId": "a7f86b12-9d07-4715-ba2c-d7d153089c07"
+   },
+   {
+    "at": "2026-11-14T18:41:14.496Z",
+    "event": "execution-started",
+    "origin": "controller-dispatch",
+    "executionId": "a7f86b12-9d07-4715-ba2c-d7d153089c07",
+    "detail": "caa47554-2351-4f7f-8f53-c5eb6487a7d9"
+   },
+   {
+    "at": "2026-11-14T18:41:52.082Z",
+    "event": "question-recorded",
+    "origin": "controller-dispatch",
+    "questionId": "abf8ee17-ce89-420e-b1d7-a1ecd2247aaf",
+    "detail": "a7f86b12-9d07-4715-ba2c-d7d153089c07"
+   },
+   {
+    "at": "2026-11-14T18:41:52.104Z",
+    "event": "execution-ended",
+    "origin": "controller-dispatch",
+    "executionId": "a7f86b12-9d07-4715-ba2c-d7d153089c07",
+    "detail": "question"
+   },
+   {
+    "at": "2026-11-14T18:41:54.095Z",
+    "event": "slot-released",
+    "origin": "controller-dispatch",
+    "executionId": "a7f86b12-9d07-4715-ba2c-d7d153089c07"
+   },
+   {
+    "at": "2026-11-14T18:41:55.563Z",
+    "event": "question-published",
+    "origin": "controller-publication",
+    "questionId": "abf8ee17-ce89-420e-b1d7-a1ecd2247aaf",
+    "detail": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3#issuecomment-6882404049"
+   },
+   {
+    "at": "2026-11-14T18:42:39.765Z",
+    "event": "question-answered",
+    "origin": "github-comment",
+    "questionId": "abf8ee17-ce89-420e-b1d7-a1ecd2247aaf",
+    "detail": "github-comment:6882408052"
+   },
+   {
+    "at": "2026-11-14T18:42:41.672Z",
+    "event": "execution-reserved",
+    "origin": "controller-dispatch",
+    "executionId": "fc25ff8e-7fbf-4117-9d11-64578c444408"
+   },
+   {
+    "at": "2026-11-14T18:42:44.979Z",
+    "event": "execution-prepared",
+    "origin": "controller-dispatch",
+    "executionId": "fc25ff8e-7fbf-4117-9d11-64578c444408"
+   },
+   {
+    "at": "2026-11-14T18:42:58.912Z",
+    "event": "execution-booted",
+    "origin": "controller-dispatch",
+    "executionId": "fc25ff8e-7fbf-4117-9d11-64578c444408"
+   },
+   {
+    "at": "2026-11-14T18:43:02.223Z",
+    "event": "activation-requested",
+    "origin": "controller-dispatch",
+    "executionId": "fc25ff8e-7fbf-4117-9d11-64578c444408"
+   },
+   {
+    "at": "2026-11-14T18:43:02.488Z",
+    "event": "execution-started",
+    "origin": "controller-dispatch",
+    "executionId": "fc25ff8e-7fbf-4117-9d11-64578c444408",
+    "detail": "d46efa2f-b60a-46d7-9b47-ccd417b013a0"
+   },
+   {
+    "at": "2026-11-14T18:43:33.608Z",
+    "event": "question-recorded",
+    "origin": "controller-dispatch",
+    "questionId": "4a6c7248-0b00-4a38-a7e7-74a2828dcd17",
+    "detail": "fc25ff8e-7fbf-4117-9d11-64578c444408"
+   },
+   {
+    "at": "2026-11-14T18:43:33.626Z",
+    "event": "execution-ended",
+    "origin": "controller-dispatch",
+    "executionId": "fc25ff8e-7fbf-4117-9d11-64578c444408",
+    "detail": "question"
+   },
+   {
+    "at": "2026-11-14T18:43:35.528Z",
+    "event": "slot-released",
+    "origin": "controller-dispatch",
+    "executionId": "fc25ff8e-7fbf-4117-9d11-64578c444408"
+   },
+   {
+    "at": "2026-11-14T18:43:36.926Z",
+    "event": "question-published",
+    "origin": "controller-publication",
+    "questionId": "4a6c7248-0b00-4a38-a7e7-74a2828dcd17",
+    "detail": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3#issuecomment-6882425021"
+   }
+  ],
+  "dispatch": {
+   "state": "held",
+   "reasons": [
+    "QUESTION_PENDING",
+    "DEPENDENCIES_NOT_CURRENT",
+    "RECONCILIATION_REQUIRED"
+   ]
+  }
+ },
+ "questions": [
+  {
+   "questionId": "abf8ee17-ce89-420e-b1d7-a1ecd2247aaf",
+   "workId": "f209e8a1-f7da-42e7-a173-69252ce5854d",
+   "executionId": "a7f86b12-9d07-4715-ba2c-d7d153089c07",
+   "invocationId": "builder-a7f86b12-9d07-4715-ba2c-d7d153089c07",
+   "recordedAt": "2026-11-14T18:41:52.082Z",
+   "recordedFrom": "worker-notification",
+   "content": {
+    "question": "Which exact file name should I create under `docs/` for Ticket #3? Please provide the filename (including extension); I will create only `docs/<your exact filename>` with the requested contents.",
+    "context": "I fetched and preserved Ticket #3 in `/artifacts/spec/v1/ticket.json`. The request explicitly says the file name is intentionally unspecified and that I must ask the operator before writing anything. No checkout changes have been made.",
+    "sha256": "a58c9c56550f7924af886fbe8a39bb34ab9333f23ddfa7f3a50ae97d7b297d7c",
+    "reference": {
+     "workId": "f209e8a1-f7da-42e7-a173-69252ce5854d",
+     "id": "4782058f-bbf1-4843-99e4-00f3f6f94aeb"
+    }
+   },
+   "destination": {
+    "kind": "issue",
+    "ticket": {
+     "tracker": "github",
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "repositoryId": 1256893534,
+     "issueId": 6391129588,
+     "nodeId": "I_kwDOSuqsXs8AAAABfPDl9A",
+     "number": 3,
+     "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3"
+    }
+   },
+   "state": "answered",
+   "publication": {
+    "effectId": "4c1401e1-4114-4627-82bb-366ec597fc9b",
+    "state": "published",
+    "updatedAt": "2026-11-14T18:41:55.563Z",
+    "attempts": [
+     {
+      "at": "2026-11-14T18:41:52.088Z",
+      "outcome": "attempting"
+     },
+     {
+      "at": "2026-11-14T18:41:55.563Z",
+      "outcome": "published",
+      "revocation": "revoked"
+     }
+    ],
+    "comment": {
+     "commentId": 6882404049,
+     "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3#issuecomment-6882404049"
+    },
+    "nextStep": null
+   },
+   "answer": {
+    "text": "Use the file name factory-question.md (create docs/factory-question.md).",
+    "sha256": "c9bbd52d7bd7d17714e5148561ff964b1fa766793ece0928531e3befc03414a3",
+    "acceptedAt": "2026-11-14T18:42:39.765Z",
+    "author": {
+     "kind": "github",
+     "id": 1881597,
+     "login": "Sanmoo"
+    },
+    "origin": {
+     "kind": "github-comment",
+     "commentId": 6882408052,
+     "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3#issuecomment-6882408052"
+    }
+   },
+   "ignored": []
+  },
+  {
+   "questionId": "4a6c7248-0b00-4a38-a7e7-74a2828dcd17",
+   "workId": "f209e8a1-f7da-42e7-a173-69252ce5854d",
+   "executionId": "fc25ff8e-7fbf-4117-9d11-64578c444408",
+   "invocationId": "builder-fc25ff8e-7fbf-4117-9d11-64578c444408",
+   "recordedAt": "2026-11-14T18:43:33.608Z",
+   "recordedFrom": "worker-notification",
+   "content": {
+    "question": "May I create a repository-local Git author identity to commit this authorized documentation change? Please provide the exact author name and email to configure for this commit.",
+    "context": "The requested file is created and passes `git diff --check`, but commit failed because Git has no author identity configured. I will use the identity only for this repository and only to make the required commit.",
+    "sha256": "a918cdab59b4f4bf7e3ba021c166a399077c448820ce55d362a1d9879a1e1a48",
+    "reference": {
+     "workId": "f209e8a1-f7da-42e7-a173-69252ce5854d",
+     "id": "3a5a0bbd-6796-46bc-b778-815a0b951704"
+    }
+   },
+   "destination": {
+    "kind": "issue",
+    "ticket": {
+     "tracker": "github",
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "repositoryId": 1256893534,
+     "issueId": 6391129588,
+     "nodeId": "I_kwDOSuqsXs8AAAABfPDl9A",
+     "number": 3,
+     "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3"
+    }
+   },
+   "state": "open",
+   "publication": {
+    "effectId": "cafdf218-b2e7-402e-bc55-a9ef37baf343",
+    "state": "published",
+    "updatedAt": "2026-11-14T18:43:36.926Z",
+    "attempts": [
+     {
+      "at": "2026-11-14T18:43:33.612Z",
+      "outcome": "attempting"
+     },
+     {
+      "at": "2026-11-14T18:43:36.926Z",
+      "outcome": "published",
+      "revocation": "revoked"
+     }
+    ],
+    "comment": {
+     "commentId": 6882425021,
+     "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3#issuecomment-6882425021"
+    },
+    "nextStep": null
+   },
+   "answer": null,
+   "ignored": []
+  }
+ ],
+ "receipts": {
+  "a7f86b12-9d07-4715-ba2c-d7d153089c07": "{\"version\":1,\"context\":{\"workId\":\"f209e8a1-f7da-42e7-a173-69252ce5854d\",\"executionId\":\"a7f86b12-9d07-4715-ba2c-d7d153089c07\",\"invocationId\":\"builder-a7f86b12-9d07-4715-ba2c-d7d153089c07\",\"role\":\"builder\",\"environmentRef\":\"env-75f39d6586f0c65cfcafccdc16ced5645e6db91f950362ae901cfefe41c5a7ca\",\"bootRef\":\"boot-1eee6366-72fb-4d8a-bc05-e4e0937ebcf9\",\"callId\":\"worker-start\"},\"recordedAt\":\"2026-11-14T18:41:14.467Z\",\"event\":{\"version\":1,\"kind\":\"worker-start\",\"suppliedContext\":{\"workId\":\"f209e8a1-f7da-42e7-a173-69252ce5854d\",\"executionId\":\"a7f86b12-9d07-4715-ba2c-d7d153089c07\",\"invocationId\":\"builder-a7f86b12-9d07-4715-ba2c-d7d153089c07\",\"role\":\"builder\",\"environmentRef\":\"env-75f39d6586f0c65cfcafccdc16ced5645e6db91f950362ae901cfefe41c5a7ca\",\"bootRef\":\"boot-1eee6366-72fb-4d8a-bc05-e4e0937ebcf9\",\"phaseId\":\"builder-initial\"},\"phaseId\":\"builder-initial\",\"profile\":{\"id\":\"factory-development-pi-1.5.2-read-async-bash-lexical-v3\",\"version\":\"1.5.2\",\"integrity\":\"sha512-mUWI04rqF1Vd/m1q+Ps1XeWsTXEVvRUnsmRa83I3Dzua0Tx5bYS93imeqtIfrXf7PkkaR6ERz+AuQhIJlom5yA==\",\"upstreamSHA256\":\"e6159de5e4d94ae22968b6524237ef3d4f0374a107e2321ed5c29e93d66c8efc\",\"upstreamTreeSHA256\":\"7d0961cce25f6c802b22aaa028206cd610de386442d2e6b732d71367ef006391\",\"patchSHA256\":\"5e45a7c2953db293a14db0138bb31f8ac9e95eb13512afd42f1f49b77c98e066\",\"resultSHA256\":\"06867a067ebbadca2e06f75ccb4e682cd7e37b9683d41a71562f770b3105a209\",\"asyncPatchSHA256\":\"1ee38f2bdb71480b5b6206e72dbed32ac9214acbe0afe9b7e5137ea8f63cdc1e\",\"candidatePatchSHA256\":\"fd85bbd3c22fff3cb90dd990cb2608f18884d15dcd3820fb2f790b6e42a4dd01\",\"candidateManifestSHA256\":\"b6aaa5391d251867e41e8fc80973a1da79c7df3e38cdd18d11e705d939809b69\",\"lexicalPatchSHA256\":\"e3e88f8e6a53c9b58164c85c9866cfcf5a31b9fd415fdad7ce136976d8fd96d0\",\"lexicalCandidateManifestSHA256\":\"923d916bae558e6d21978593b2effb716dec80398bb5b0a66271fefcfc0f42a2\"},\"providerId\":\"openai\",\"modelId\":\"gpt-6-luna\",\"profileDirectory\":\"/home/sanmoo/software-factory-test/y5/r/Hu5jZnL7TYq8BeTgk368-Q/w-WKUjBu/profile\",\"promptSha256\":\"e87b3fe7ffe4ad9dbdbd78e7bea0a378bdf261439043e54ad317c304b36cd806\",\"skillPack\":{\"id\":\"factory-skills-v2\",\"version\":\"2.0.0\",\"manifestSha256\":\"c3cade32dfeb7da475abac99cee1bc95ab526e4dc71ee83159d75993f9026afe\"},\"modelBudget\":\"builder-v1\",\"startedAt\":\"2026-11-14T18:41:14.461Z\",\"observedProcess\":{\"pid\":1125030,\"parentPid\":1124729,\"uid\":1000,\"executable\":\"/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node\",\"nodeVersion\":\"24.21.0\",\"timeOrigin\":1794681674256.027,\"observedAt\":\"2026-11-14T18:41:14.463Z\"}}}",
+  "fc25ff8e-7fbf-4117-9d11-64578c444408": "{\"version\":1,\"context\":{\"workId\":\"f209e8a1-f7da-42e7-a173-69252ce5854d\",\"executionId\":\"fc25ff8e-7fbf-4117-9d11-64578c444408\",\"invocationId\":\"builder-fc25ff8e-7fbf-4117-9d11-64578c444408\",\"role\":\"builder\",\"environmentRef\":\"env-75f39d6586f0c65cfcafccdc16ced5645e6db91f950362ae901cfefe41c5a7ca\",\"bootRef\":\"boot-ca39324f-c613-4798-8a4c-0cdaca26f5ba\",\"callId\":\"worker-start\"},\"recordedAt\":\"2026-11-14T18:43:02.462Z\",\"event\":{\"version\":1,\"kind\":\"worker-start\",\"suppliedContext\":{\"workId\":\"f209e8a1-f7da-42e7-a173-69252ce5854d\",\"executionId\":\"fc25ff8e-7fbf-4117-9d11-64578c444408\",\"invocationId\":\"builder-fc25ff8e-7fbf-4117-9d11-64578c444408\",\"role\":\"builder\",\"environmentRef\":\"env-75f39d6586f0c65cfcafccdc16ced5645e6db91f950362ae901cfefe41c5a7ca\",\"bootRef\":\"boot-ca39324f-c613-4798-8a4c-0cdaca26f5ba\",\"phaseId\":\"builder-recovery\"},\"phaseId\":\"builder-recovery\",\"profile\":{\"id\":\"factory-development-pi-1.5.2-read-async-bash-lexical-v3\",\"version\":\"1.5.2\",\"integrity\":\"sha512-mUWI04rqF1Vd/m1q+Ps1XeWsTXEVvRUnsmRa83I3Dzua0Tx5bYS93imeqtIfrXf7PkkaR6ERz+AuQhIJlom5yA==\",\"upstreamSHA256\":\"e6159de5e4d94ae22968b6524237ef3d4f0374a107e2321ed5c29e93d66c8efc\",\"upstreamTreeSHA256\":\"7d0961cce25f6c802b22aaa028206cd610de386442d2e6b732d71367ef006391\",\"patchSHA256\":\"5e45a7c2953db293a14db0138bb31f8ac9e95eb13512afd42f1f49b77c98e066\",\"resultSHA256\":\"06867a067ebbadca2e06f75ccb4e682cd7e37b9683d41a71562f770b3105a209\",\"asyncPatchSHA256\":\"1ee38f2bdb71480b5b6206e72dbed32ac9214acbe0afe9b7e5137ea8f63cdc1e\",\"candidatePatchSHA256\":\"fd85bbd3c22fff3cb90dd990cb2608f18884d15dcd3820fb2f790b6e42a4dd01\",\"candidateManifestSHA256\":\"b6aaa5391d251867e41e8fc80973a1da79c7df3e38cdd18d11e705d939809b69\",\"lexicalPatchSHA256\":\"e3e88f8e6a53c9b58164c85c9866cfcf5a31b9fd415fdad7ce136976d8fd96d0\",\"lexicalCandidateManifestSHA256\":\"923d916bae558e6d21978593b2effb716dec80398bb5b0a66271fefcfc0f42a2\"},\"providerId\":\"openai\",\"modelId\":\"gpt-6-luna\",\"profileDirectory\":\"/home/sanmoo/software-factory-test/y5/r/yjkyT8YTR5iKTAzayib1ug/w-KIy8fL/profile\",\"promptSha256\":\"10ec5ca4e8d044115c594df79e3e7a09e4112cb1441ed32d8d9b4d39d37e5483\",\"skillPack\":{\"id\":\"factory-skills-v2\",\"version\":\"2.0.0\",\"manifestSha256\":\"c3cade32dfeb7da475abac99cee1bc95ab526e4dc71ee83159d75993f9026afe\"},\"modelBudget\":\"builder-v1\",\"startedAt\":\"2026-11-14T18:43:02.458Z\",\"observedProcess\":{\"pid\":1130822,\"parentPid\":1130490,\"uid\":1000,\"executable\":\"/home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node\",\"nodeVersion\":\"24.21.0\",\"timeOrigin\":1794681782282.791,\"observedAt\":\"2026-11-14T18:43:02.459Z\"}}}"
+ },
+ "comments": [
+  {
+   "id": 6882207730,
+   "author": {
+    "id": 351187749,
+    "login": "sanmoo-factory[bot]",
+    "type": "Bot"
+   },
+   "viaApp": 5569788,
+   "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3#issuecomment-6882207730",
+   "createdAt": "2026-11-14T18:26:33Z",
+   "updatedAt": "2026-11-14T18:26:33Z",
+   "firstLine": "<!-- software-factory:question:19c03a39-313c-46c3-8dd2-8d7610e4dab2 -->"
+  },
+  {
+   "id": 6882404049,
+   "author": {
+    "id": 351187749,
+    "login": "sanmoo-factory[bot]",
+    "type": "Bot"
+   },
+   "viaApp": 5569788,
+   "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3#issuecomment-6882404049",
+   "createdAt": "2026-11-14T18:41:54Z",
+   "updatedAt": "2026-11-14T18:41:54Z",
+   "firstLine": "<!-- software-factory:question:abf8ee17-ce89-420e-b1d7-a1ecd2247aaf -->"
+  },
+  {
+   "id": 6882408052,
+   "author": {
+    "id": 1881597,
+    "login": "Sanmoo",
+    "type": "User"
+   },
+   "viaApp": null,
+   "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3#issuecomment-6882408052",
+   "createdAt": "2026-11-14T18:42:14Z",
+   "updatedAt": "2026-11-14T18:42:14Z",
+   "firstLine": "/factory answer abf8ee17-ce89-420e-b1d7-a1ecd2247aaf Use the file name factory-question.md (create docs/factory-question.md)."
+  },
+  {
+   "id": 6882425021,
+   "author": {
+    "id": 351187749,
+    "login": "sanmoo-factory[bot]",
+    "type": "Bot"
+   },
+   "viaApp": 5569788,
+   "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3#issuecomment-6882425021",
+   "createdAt": "2026-11-14T18:43:36Z",
+   "updatedAt": "2026-11-14T18:43:36Z",
+   "firstLine": "<!-- software-factory:question:4a6c7248-0b00-4a38-a7e7-74a2828dcd17 -->"
+  }
+ ],
+ "secretScan": {
+  "ghs": false,
+  "privateKey": false
+ },
+ "checkout": {
+  "version": 1,
+  "path": "/workspace/checkout",
+  "repository": "Sanmoo/java-springboot-event-sourcing",
+  "repositoryId": 1256893534,
+  "base": "main",
+  "branch": "factory/3-f209e8a1",
+  "baseCommit": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+  "origin": "https://github.com/Sanmoo/java-springboot-event-sourcing.git",
+  "preparedAt": "2026-11-14T18:40:57.007Z",
+  "cache": "factory-exclusive-bare",
+  "clone": "no-hardlinks",
+  "fetchCredentialRevocation": "revoked"
+ },
+ "artifacts": [
+  ".factory-profile/storage-v1",
+  "instructions/v1/AGENTS.md",
+  "instructions/v1/sources.json",
+  "spec/v1/sources.json",
+  "spec/v1/ticket.json"
+ ],
+ "specSources": {
+  "text": "{\"version\":\"v1\",\"complete\":true,\"capturedAt\":\"2026-11-14T18:41:48Z\",\"sources\":[{\"origin\":\"https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3\",\"copy\":\"ticket.json\",\"retrievedAt\":\"2026-11-14T18:41:48Z\",\"sha256\":\"c50e7e9f0c31678cb4fe92d11efaa406625e6c8a5beeefbf977a624e21166fcf\",\"revision\":\"2026-11-14T18:40:20Z\"}]}"
+ },
+ "instructionSources": {
+  "text": "{\"version\":\"v1\",\"complete\":true,\"capturedAt\":\"2026-11-14T18:41:48Z\",\"sources\":[{\"origin\":\"AGENTS.md\",\"copy\":\"AGENTS.md\",\"retrievedAt\":\"2026-11-14T18:41:48Z\",\"sha256\":\"d623b8027afdb31af954ad21ba00e29a76a05942f0898209ab0e724761ecf58e\",\"revision\":\"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\"}]}"
+ },
+ "git": {
+  "status": "observed",
+  "head": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+  "branch": "factory/3-f209e8a1",
+  "commits": [
+   "8c058c9 Configure engineering agent skills",
+   "3ed6575 wippy",
+   "90f6ad5 docs: global event position implementation plan",
+   "dafc2a2 docs: global event position design spec",
+   "20fa3b0 fix: restore null return in harness retry to not break non-concurrency failure scenarios",
+   "7f15aea Merge branch 'concurrency-tests'",
+   "0ce69c5 fix: rethrow unexpected exceptions in harness retry instead of swallowing them",
+   "3d6d076 chore(quality): fix SpotBugs and PMD violations in concurrency tests",
+   "a2248bc test(concurrency): add mixed commands scenario",
+   "9ba1af6 test(concurrency): add write and read with minVersion scenario",
+   "55d57fe test(concurrency): add idempotent duplicate requests scenario",
+   "c55e9ac test(concurrency): add authorization and capture scenario",
+   "545ce5f add graphify graph",
+   "3e755bf test(concurrency): add concurrent authorizations scenario",
+   "92877be test(concurrency): add base concurrency integration test class",
+   "3ab8ade test(concurrency): add ConcurrentCommandHarness",
+   "4a9a2c1 test(concurrency): add ConcurrentCommandResult record",
+   "3b0e6c4 polish: clear all deprecation notices, warnings, and PMD violations from check build",
+   "96ae37b style: remove redundant imports in CreditAccountController",
+   "aa55976 fix: flatten AuthorizePurchaseResponse JSON with @JsonUnwrapped to preserve API contract",
+   "12295ab fix: exclude CreditAccountResponse from SpotBugs EI_EXPOSE_REP and add defensive list copy",
+   "d8783df fix: remove unused List import in CreditAccountDtoMapper",
+   "2725901 test: use typed response DTOs in CreditAccountControllerListIT",
+   "8a89f1e test: use typed response DTOs in CreditAccountControllerIT",
+   "2c6c9da refactor: use ErrorResponse in RestExceptionHandler",
+   "1ebf772 refactor: use typed DTOs in PageResponse and CreditAccountController",
+   "0a3ce3e feat: add explicit REST response DTOs and mapper",
+   "4debd91 docs: add design spec for explicit REST response DTOs",
+   "e8fea05 simplify details manually",
+   "92354fa style: remove extra blank lines from CreditAccountUseCaseSupport",
+   "ee3d54a refactor(idempotency): remove duplicated aggregate version column",
+   "09f4955 docs: plan idempotency aggregate version simplification",
+   "c4b2150 chore(quality): allow snake_case tests, update spotbugs exclude, fix static field",
+   "1e47eee chore(quality): fix PMD acceptance test violations",
+   "c971b04 chore(quality): fix PMD violations across main source",
+   "69fbda2 chore(checkstyle): remove unused import and unused variable",
+   "399f9ca test(usecase): cover credit account listing mapping",
+   "d152884 test(projection): cover worker PIT survivor paths",
+   "e6d18fa test(projection): cover capture and release projector paths",
+   "3c05b52 docs: plan targeted PIT survivor coverage",
+   "55cf4d4 test(projection): cover projector limit change, payment and auth",
+   "55cd495 test(projection): cover worker gating, retry and unblock paths",
+   "70a07d3 test(projection): add StaleDeliveryRecovery coverage",
+   "40bcba8 test(projection): add ProjectionGatingResult coverage",
+   "1a67ed8 test(projection): add ProjectionWorkerResult coverage",
+   "ad14654 fix(architecture): resolve qualityTest violations via ProjectionConfig port",
+   "6d4e4a8 test(architecture): deny non-allow-listed Spring in core",
+   "d76b238 refactor(projection): use TransactionRunner port in stale recovery",
+   "af5260c refactor(projection): use TransactionRunner port in worker",
+   "a26a7f7 chore(checkstyle): remove unused and redundant imports"
+  ],
+  "diffStat": "",
+  "remotes": [
+   {
+    "name": "origin",
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing.git"
+   }
+  ],
+  "alternates": false,
+  "copiedBytes": 839123
+ }
+}

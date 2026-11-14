@@ -237,3 +237,13 @@ do pacote derruba `builder-pack-read`. Receita: namespace **`q10-question-v2`**;
 Gate após a correção (`rm -rf dist`): dependency-cruiser sem violações (267 módulos, 1522 dependências); eslint exit 0; `tsc` exit 0;
 **118 arquivos**, um por vez (60 s; `normal-oauth` 90 s): 858 pass, 1 fail, 10 skipped — a falha era o teste estrutural `native-builder-write`
 que fixa o texto do portão de Read do Builder; atualizado para o novo portão exato e reexecutado: 7/7 verdes. Total: **859 pass, 0 fail, 10 skipped, 0 cancelled**.
+
+## Ensaios reais autorizados — 2026-11-14 (supervisor)
+
+**v1** (`q10-question-v1`, consumida): a fase `ask` funcionou (pergunta durável, comentário do bot com marcador, Slot liberado). O conteúdo da pergunta revelou um bug real: a Read do Builder negava o próprio skill pack. Corrigido em `f6afc8f`.
+
+**v2** (`q10-question-v2`, HEAD `2f65d12`). Issue #3 pedia de propósito que o nome do arquivo fosse perguntado. Registros: [ask](10-real-question-ask-2026-11-14.json), [resume](10-real-question-resume-2026-11-14.json), [inspect](10-real-question-inspect-2026-11-14.json).
+- **ask:** o Builder real (`gpt-6-luna`, pack v2) leu a #3, preservou o pedido e chamou `ask_user` com "Which exact file name should I create under `docs/`…". A Factory gravou a Question antes do ACK, retirou e revogou a credencial (external-wait), parou o boot próprio, liberou o Slot e publicou um único comentário `sanmoo-factory[bot]` com o marcador `software-factory:question:abf8ee17…` (comment 6882404049).
+- **Resposta do operador:** comentário de `Sanmoo` (id fixado 1881597), não editado, `/factory answer abf8ee17… Use the file name factory-question.md…`, postado pelo supervisor sob autorização do operador.
+- **resume:** a resposta foi aceita da fronteira GitHub e removeu só o seu impedimento. O Work voltou à fila e o despacho normal criou uma Execution `mode: recovery` (`fc25ff8e…`) no mesmo ambiente e branch, com boot novo, revalidação, grant novo e prompt de recuperação com a resposta. O Builder criou `docs/factory-question.md`. Ao commitar, o guest não tinha identidade Git, e o Builder fez uma **segunda pergunta legítima** (`4a6c7248…`) em vez de copiar a identidade de uma pessoa. Foi publicada (comment 6882425021), com credencial retirada, Slot liberado e cessação confirmada. Essa segunda pergunta ficou sem resposta de propósito: a identidade fixa da Factory chega com o ticket 12.
+- **inspect:** scan de segredos `ghs:false, privateKey:false`; 0 ocorrências no `control.sqlite*`.

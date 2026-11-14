@@ -4,17 +4,17 @@
 
 **Blocked by:** [09: Iniciar Builder com checkout próprio e pedido preservado](09-builder-start-and-preserved-request.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
-- [ ] Worker atribui identidade estável e preserva solicitação/contexto completos antes do envio; Controle confirma Pergunta, impedimento e intenção de publicação no mesmo commit antes do ACK.
-- [ ] Pergunta vai à issue ou ao PR próprio conforme contexto, com marcador estável e instrução de resposta explícita; após resultado ambíguo busca o comentário antes de republicar, sem usar consulta parcial como ausência.
-- [ ] Ativação termina sem Promise esperando humano; parada/cessação precedem liberação do Slot, preservando disco, workspace, sessão e pedido.
-- [ ] Comentário exige prefixo estrito, operador GitHub autorizado, contexto da issue/PR e correlação da Pergunta; CLI confia na conta administradora. Bot, terceiro, prosa e outro Trabalho não concedem poderes.
-- [ ] Somente primeira resposta válida confirmada duravelmente é aceita; duplicata não substitui, resposta insuficiente pode gerar outra Pergunta e ACK perdido recupera a mesma identidade/conteúdo.
-- [ ] Resposta remove somente seu impedimento e preserva fila/categoria/posição, limites e suspensão de autorização; não reativa entregue/cancelado nem faz spawn por ACK.
-- [ ] Testes de persistência e integrações com agente/GitHub/CLI demonstram pergunta, cessação e retorno seguro à fila, incluindo resposta durante indisponibilidade/reinício e conteúdo necessário perdido sem invenção.
+- [x] Worker atribui identidade estável e preserva solicitação/contexto completos antes do envio; Controle confirma Pergunta, impedimento e intenção de publicação no mesmo commit antes do ACK.
+- [x] Pergunta vai à issue ou ao PR próprio conforme contexto, com marcador estável e instrução de resposta explícita; após resultado ambíguo busca o comentário antes de republicar, sem usar consulta parcial como ausência.
+- [x] Ativação termina sem Promise esperando humano; parada/cessação precedem liberação do Slot, preservando disco, workspace, sessão e pedido.
+- [x] Comentário exige prefixo estrito, operador GitHub autorizado, contexto da issue/PR e correlação da Pergunta; CLI confia na conta administradora. Bot, terceiro, prosa e outro Trabalho não concedem poderes.
+- [x] Somente primeira resposta válida confirmada duravelmente é aceita; duplicata não substitui, resposta insuficiente pode gerar outra Pergunta e ACK perdido recupera a mesma identidade/conteúdo.
+- [x] Resposta remove somente seu impedimento e preserva fila/categoria/posição, limites e suspensão de autorização; não reativa entregue/cancelado nem faz spawn por ACK.
+- [x] Testes de persistência e integrações com agente/GitHub/CLI demonstram pergunta, cessação e retorno seguro à fila, incluindo resposta durante indisponibilidade/reinício e conteúdo necessário perdido sem invenção.
 
 ## Referências e validação
 
@@ -25,3 +25,7 @@
 ## Autorização e limites
 
 Publicação é planejamento aprovado, não autorização de construção, uso de host/credenciais/GitHub/modelos reais, injeção de falhas ou piloto. Obter autorização pertinente antes da execução. Não alterar decisões aprovadas silenciosamente; lacuna de desenho volta ao operador. Merge e avaliação humana não são delegados aos agentes.
+
+## Answer
+
+Resolvido em 2026-11-14: perguntas duráveis ao operador, publicação única por marcador, cessação com liberação do Slot e retirada de credencial, resposta autorizada do GitHub, retomada pela fila com Execution de recuperação. Gate local 859/0; ensaio real (issue #3) com pergunta → resposta → recuperação → nova pergunta. Evidência: `docs/evidence/10-durable-questions-and-queued-resumption.md`.
