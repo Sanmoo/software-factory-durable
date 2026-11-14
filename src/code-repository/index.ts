@@ -50,7 +50,7 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
         for (const pull of parsed.data) {
           if (seen.has(pull.id)) continue;
           seen.add(pull.id);
-          if (pull.html_url !== `https://github.com/${repo.repository}/pull/${pull.number}`) throw new InvalidGitHubObservation();
+          if (pull.html_url.toLowerCase() !== `https://github.com/${repo.repository}/pull/${pull.number}`.toLowerCase()) throw new InvalidGitHubObservation();
           const association: PullRequestCandidate['association'] = [];
           if (closing.test(pull.title ?? '') || closing.test(pull.body ?? '')) association.push('closing-reference');
           if (correlation.knownBranches.includes(pull.head.ref) && pull.head.repo?.id === session.repositoryId) association.push('known-branch');

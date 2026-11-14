@@ -34,8 +34,9 @@ export function createIssueTracker(options: { github: GitHubAccess; scopes?: Tra
     kind: 'unavailable', source: 'github-rest', observedAt: read.observedAt, repository, completeness: 'incomplete', code: read.code,
     ...(read.waitSeconds !== undefined ? { waitSeconds: read.waitSeconds } : {}), nextStep: read.nextStep });
   const reference = (scope: GitHubScope, repositoryId: number, issue: Issue): TicketRef => {
-    if (issue.repository_url !== `https://api.github.com/repos/${scope.repository}` ||
-      issue.html_url !== `https://github.com/${scope.repository}/issues/${issue.number}`) throw new InvalidGitHubObservation();
+    // GitHub owner/repository names are case-insensitive; the immutable ids carry identity.
+    if (issue.repository_url.toLowerCase() !== `https://api.github.com/repos/${scope.repository}`.toLowerCase() ||
+      issue.html_url.toLowerCase() !== `https://github.com/${scope.repository}/issues/${issue.number}`.toLowerCase()) throw new InvalidGitHubObservation();
     return { tracker: 'github', repository: scope.repository, repositoryId, issueId: issue.id, nodeId: issue.node_id, number: issue.number, url: issue.html_url };
   };
   return {

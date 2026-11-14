@@ -132,3 +132,14 @@ test('findPublication failure is unavailable, never an empty candidate list', as
   assert.equal(observed.completeness, 'incomplete');
   assert.equal('candidates' in observed, false);
 });
+
+test('configured owner/repository casing differs from GitHub canonical URLs without breaking identity', async t => {
+  const world = await compose(t, { issues: [issue(1)], pulls: [pull(10, { body: 'Fixes #1' })] });
+  const mixed = { ...worldScope, repository: 'Acme/Project' };
+  const github = createGitHubAccess({ root: world.root, executable: world.executable, appId: 1, privateKeyFile: 'credentials/app.pem' });
+  const listed = await createIssueTracker({ github, scopes: [mixed] }).listCandidates(mixed);
+  assert.equal(listed.kind, 'observed');
+  assert.deepEqual(listed.kind === 'observed' && listed.candidates.map(ticket => ticket.issueId), [7001]);
+  const found = await createCodeRepository({ github }).findPublication({ repo: mixed, issueNumber: 1, knownBranches: [] });
+  assert.deepEqual(found.kind === 'observed' && found.candidates.map(candidate => candidate.number), [10]);
+});

@@ -66,7 +66,7 @@ const ceiling = { metadata: 'read', issues: 'write', contents: 'write', pull_req
 let body, status = 200, headers = '';
 const trace = { method, endpoint, credential: app ? 'app-jwt' : 'installation' };
 const url = new URL(endpoint, 'https://api.github.com');
-const path = url.pathname.replace(/^\\/repositories\\/3(?=\\/|$)/, '/repos/acme/project');
+const path = url.pathname.replace(/^\\/repositories\\/3(?=\\/|$)/, '/repos/acme/project').toLowerCase(); // GitHub names are case-insensitive
 function page(items) {
   const size = world.pageSize ?? 100;
   const number = Number(url.searchParams.get('page') ?? '1');
@@ -85,7 +85,7 @@ else if (endpoint === '/app/installations/2' && method === 'GET') body = { id: 2
 else if (endpoint === '/app/installations/2/access_tokens' && method === 'POST') {
   let input = ''; for await (const data of process.stdin) input += data;
   const request = JSON.parse(input);
-  if (Object.keys(request).sort().join() !== 'permissions,repositories' || JSON.stringify(request.repositories) !== '["project"]') process.exit(10);
+  if (Object.keys(request).sort().join() !== 'permissions,repositories' || JSON.stringify(request.repositories.map(name => name.toLowerCase())) !== '["project"]') process.exit(10);
   for (const [name, level] of Object.entries(request.permissions)) if (!ceiling[name] || (level === 'write' && ceiling[name] !== 'write')) process.exit(10);
   trace.permissions = request.permissions;
   const sequence = readFileSync(${JSON.stringify(traceFile)}, 'utf8').split('\\n').filter(line => line.includes('access_tokens')).length + 1;
