@@ -29,7 +29,3 @@ Publicação é planejamento aprovado, não autorização de construção, uso d
 ## Answer
 
 Resolvido em 2026-11-14: continuação de sessão compatível com `continue`, substituição explícita quando incompatível ou perdida, mudança de escopo autorizada aplicada só na próxima ativação segura e edição posterior do Ticket sem efeito de autorização. Gate local 934/0; ensaio real com pergunta, resposta, continue e substituição. Evidência: `docs/evidence/11-context-continuation-and-authorized-scope.md`.
-
-## Answer
-
-Resolvido em 2026-11-14: continuação de contexto (continue/replace com razão e contexto recuperável), atualizações de escopo autorizadas sem injeção durante atividade, pack v4 com precedência de instruções e sem ampliar acesso, retomada exigindo o ambiente preservado. Gate local 934/0; ensaio real com pergunta → resposta/edição → continuação compatível → substituição incompatível → consumo confirmado. Evidência: `docs/evidence/11-context-continuation-and-authorized-scope.md`.
