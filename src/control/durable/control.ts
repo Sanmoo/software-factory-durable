@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { z } from 'zod';
-import type { AccessDependencies, Control, ControlStatus, DispatchReason, Impediment, ListView, PollingOptions, PollingView, WorkView } from '../types.js';
+import type { AccessDependencies, Control, ControlStatus, DispatchReason, ExecutionPorts, Impediment, ListView, PollingOptions, PollingView, WorkView } from '../types.js';
+import { heldSlots, initializeSlots } from './execution.js';
+import { createDispatcher } from './dispatch.js';
 import { openStore } from './store.js';
 import { acceptPauseCommand, admitTicket, indexedWork, initialize, ownCycles, pendingWorks, readInstallation, readRequest, readWork, readWorks, recordDependencies,
   type WorkRecord } from './admission.js';
@@ -16,18 +18,22 @@ const workIdSchema = z.uuid();
 const limitations = [
   'Candidate observations are in-memory results of the latest poll, not authority; they are rebuilt after restart.',
   'A failed or partial query, or absence from a listing, never proves absence of a Ticket, label or pull request, nor withdrawal of authorization.',
-  'Dispatch is held: execution activation is not part of this increment; selection shows what native dependency gating would allow.',
+  'Dispatch opens only when execution boundaries are composed, the runtime inventory is empty and no Slot is held from an earlier run; it then revalidates authorization and dependencies of its own attempt before reserving.',
+  'An ended Builder Execution never completes the Work automatically: reviews, publication (push/PR) and readiness are not enabled in this increment; nothing is retried automatically.',
   'Native dependency evaluations are re-done every polling round; only an evaluation of the current round can release, never an older or pre-restart one.',
 ];
 
 /** Bootstrap must already hold the stable canonical-storage flock for this owner's entire lifetime. */
-export async function openControl(options: { storagePath: string; runtimeInventory: 'empty' | 'unknown'; access?: AccessDependencies; polling?: PollingOptions }): Promise<Control> {
+export async function openControl(options: { storagePath: string; runtimeInventory: 'empty' | 'unknown'; access?: AccessDependencies; polling?: PollingOptions;
+  /** Execution boundaries (sandbox lifecycle, Workers activation, Builder credentials). Absent: dispatch stays closed (EXECUTION_NOT_ENABLED). */
+  execution?: ExecutionPorts }): Promise<Control> {
   // Closed before any storage open; this increment exposes no dispatch, task, or external-effect entrypoint.
-  let dispatchReason: DispatchReason = 'RECONCILIATION_REQUIRED';
+  let dispatchReason: DispatchReason | null = 'RECONCILIATION_REQUIRED';
   const controller_run_id = randomUUID();
   const store = await openStore(options.storagePath);
   const state = store.session;
-  try { await initialize(state); } catch (error) { await store.close().catch(() => {}); throw error; }
+  try { await initialize(state); await initializeSlots(state); } catch (error) { await store.close().catch(() => {}); throw error; }
+  let dispatcher: ReturnType<typeof createDispatcher> | undefined;
   const poller = options.access && options.polling ? createPoller({
     access: options.access, intervalSeconds: options.polling.intervalSeconds, clock: options.polling.clock ?? systemClock,
     paused: async () => (await readInstallation(state)).paused,
@@ -36,7 +42,12 @@ export async function openControl(options: { storagePath: string; runtimeInvento
     pending: repositoryId => pendingWorks(state, repositoryId),
     ownCycles: issueIds => ownCycles(state, issueIds),
     record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation),
+    afterCycle: async () => { if (dispatchReason === null) await dispatcher?.tick(); },
   }) : undefined;
+  if (options.execution && options.access && poller) dispatcher = createDispatcher({ session: state, access: options.access, ports: options.execution,
+    currentAttempt: repository => poller.currentAttempt(repository), readWorks: () => readWorks(state), ownCycles: issueIds => ownCycles(state, issueIds),
+    record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation), paused: async () => (await readInstallation(state)).paused,
+    heldSlots: () => heldSlots(state) });
   const pollingView = (): PollingView => poller?.view() ?? { state: 'disabled', intervalSeconds: null, cycles: 0, lastCycleAt: null, source: 'in-memory-observation', repositories: [] };
   // Work-level reasons preventing a start now; the dependency evaluation must belong to the repository's current polling round.
   const blockers = (work: WorkRecord) => dispatchBlockers({ impediments: work.impediments, evaluation: work.dependencies.latest,
@@ -44,7 +55,9 @@ export async function openControl(options: { storagePath: string; runtimeInvento
   const present = (work: WorkRecord, paused: boolean): WorkView => {
     const impediments: Impediment[] = [...work.impediments,
       ...(paused ? [{ code: 'GLOBAL_PAUSE', scope: 'installation' as const, nextStep: 'Unpause to allow new triggers; unpausing removes no individual impediment.' }] : [])];
-    return { ...work, impediments, dispatch: { state: 'held', reasons: [...blockers(work), dispatchReason, ...(paused ? ['GLOBAL_PAUSE'] : [])] } };
+    const execution = work.execution && work.execution.state !== 'released' ? work.execution : null;
+    const reasons = [...(execution ? [] : blockers(work)), ...(dispatchReason ? [dispatchReason] : []), ...(paused ? ['GLOBAL_PAUSE'] : [])];
+    return { ...work, impediments, dispatch: { state: execution ? 'executing' : reasons.length ? 'held' : 'eligible', reasons } };
   };
   const selection = (works: WorkRecord[]) => selectNext(works.filter(work => work.result === 'open' && work.queue.pending && work.queue.category === 'normal')
     .map(work => ({ work_id: work.work_id, blockers: blockers(work) })));
@@ -83,12 +96,14 @@ export async function openControl(options: { storagePath: string; runtimeInvento
       }
       const works = await readWorks(state);
       if (query.kind === 'list') {
-        return { kind: 'list', paused: current.paused, dispatch: 'closed', dispatchReason, works: works.map(work => present(work, current.paused)),
+        return { kind: 'list', paused: current.paused, dispatch: dispatchReason ? 'closed' : 'open', dispatchReason,
+          slots: { capacity: options.execution?.capacity ?? 0, held: await heldSlots(state) }, works: works.map(work => present(work, current.paused)),
           queues: { normal: works.filter(work => work.queue.pending && work.queue.category === 'normal').map(work => work.work_id), repair: [] },
           selection: selection(works), polling: pollingView(), limitations } satisfies ListView;
       }
       const polling = pollingView();
-      return { controller_run_id, paused: current.paused, dispatch: 'closed', dispatchReason, historyLength: current.history.length,
+      return { controller_run_id, paused: current.paused, dispatch: dispatchReason ? 'closed' : 'open', dispatchReason,
+        slots: { capacity: options.execution?.capacity ?? 0, held: await heldSlots(state) }, historyLength: current.history.length,
         works: { total: works.length, open: works.filter(work => work.result === 'open').length },
         queues: { normal: works.filter(work => work.queue.pending && work.queue.category === 'normal').length, repair: 0 },
         dependencies: { satisfied: works.filter(work => work.dependencies.latest?.conclusion === 'satisfied').length,
@@ -107,7 +122,8 @@ export async function openControl(options: { storagePath: string; runtimeInvento
       try {
         // Authoritative persisted task inventory, not an empty fake scheduler. Unknown runtime resources stay closed.
         const tasks = await state.commit(tx => tx.scanTasks({}, 1), BACKGROUND_CONTEXT);
-        if (tasks.items.length === 0 && options.runtimeInventory === 'empty') dispatchReason = 'EXECUTION_NOT_ENABLED';
+        // A Slot still held from an earlier owner means unknown runtime state: stay closed until recovery (ticket 26).
+        if (tasks.items.length === 0 && options.runtimeInventory === 'empty') dispatchReason = dispatcher && await heldSlots(state) === 0 ? null : dispatcher ? 'RECONCILIATION_REQUIRED' : 'EXECUTION_NOT_ENABLED';
         const aborted = new Promise<'stop'>(resolve => {
           if (signal.aborted) resolve('stop');
           else signal.addEventListener('abort', () => resolve('stop'), { once: true });
@@ -118,12 +134,14 @@ export async function openControl(options: { storagePath: string; runtimeInvento
           ...(poller ? [polling.then(() => 'polling-ended' as const, () => 'polling-failed' as const)] : [])]);
         loop.abort();
         await polling.catch(() => {});
+        await dispatcher?.stop();
         await state.close(BACKGROUND_CONTEXT);
         const end = await state.closed;
         return { kind: outcome === 'stop' && end.kind === 'closed' ? 'clean' : 'failed' };
       } catch {
         loop.abort();
         await polling.catch(() => {});
+        await dispatcher?.stop().catch(() => {});
         await state.close(BACKGROUND_CONTEXT).catch(() => {});
         return { kind: 'failed' };
       }

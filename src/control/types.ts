@@ -1,4 +1,6 @@
-import type { AccessDiagnostic, GitHubScope } from '../contracts/index.js';
+import type { AccessDiagnostic, BuilderCredentials, BuilderGrantMetadata, GitHubScope } from '../contracts/index.js';
+import type { CheckoutRequest, EnvironmentRef, PreparedWork, StartResult, StopResult, BootRef } from '../sandbox/index.js';
+import type { ActivationDelivery, Invocation } from '../workers/index.js';
 import type { IssueTracker, TicketRef } from '../issue-tracker/index.js';
 import type { CodeRepository } from '../code-repository/index.js';
 import type { Hold } from './rules/admission.js';
@@ -12,10 +14,46 @@ export type AccessDependencies = { tracker: IssueTracker; repository: CodeReposi
 /** Monotonic local clock for live polling cadence; calendar time is only used for observation instants. Tests substitute it. */
 export type PollingClock = { monotonic(): number; sleep(ms: number, signal: AbortSignal): Promise<void> };
 export type PollingOptions = { intervalSeconds: number; clock?: PollingClock };
+export type ExecutionOptions = ExecutionPorts;
 export type ControlInput = { request_id: string; operation: 'pause' | 'unpause'; origin: 'local-cli' };
 export type ControlReceipt = { kind: 'durable'; request_id: string; operation: 'pause' | 'unpause'; paused: boolean; historySequence: number };
 export type ControlQuery = { kind: 'status' } | { kind: 'request'; request_id: string } | { kind: 'access' } | { kind: 'list' } | { kind: 'show'; work_id: string };
 export type DispatchReason = 'RECONCILIATION_REQUIRED' | 'EXECUTION_NOT_ENABLED';
+
+/** Injected execution boundaries (spec §2.4/Q11): public Sandbox lifecycle, Workers activation and the Builder credential projection. */
+export type ExecutionPorts = {
+  sandbox: {
+    prepare(input: { workId: string; configuration: unknown; checkout: CheckoutRequest }): Promise<PreparedWork>;
+    start(input: { environment: EnvironmentRef; configuration: unknown }): Promise<StartResult>;
+    stop(input: { environment: EnvironmentRef; boot: BootRef; reason: string }): Promise<StopResult>;
+  };
+  workers: { activate(invocation: Invocation, delivery?: ActivationDelivery): Promise<{ worker: string;
+    started: Promise<{ receipt: { workId: string; id: string } }>; completed: Promise<{ status: 'success'; receipt: { workId: string; id: string } } | { status: 'failure'; code: string }>;
+    close(): void }> };
+  credentials: BuilderCredentials;
+  /** Sandbox configuration as configured (interpreted by Sandbox only). */
+  configuration: unknown;
+  /** Slot capacity (configuration `concurrency`). */
+  capacity: number;
+  /** Host Builder policies applied to every initial Builder invocation. */
+  builder: Pick<Invocation, 'skillPack' | 'modelBudget' | 'copyOutput' | 'editSourceMaxBytes'>;
+};
+/** Durable Execution record (spec §3.2-3.4/5.3): identity, Slot, dispatch intent/phase, start receipt consumption and end. No secret. */
+export type ExecutionView = {
+  executionId: string; invocationId: string; mode: 'initial';
+  state: 'reserved' | 'started' | 'ended' | 'held' | 'released';
+  slot: { held: boolean; capacity: number; reservedAt: string; releasedAt: string | null };
+  admission: { attemptId: string; evaluationId: string; authorizationObservedAt: string; activationAttemptId: string | null; activationEvaluationId: string | null };
+  dispatch: { intent: 'prepare-start-activate'; phase: 'reserved' | 'prepared' | 'booted' | 'activation-requested' | 'started' | 'completed' | 'stopped';
+    environment: string | null; boot: string | null; updatedAt: string };
+  request: { ticket: string; repository: string; base: string; branch: string; baseCommit: string | null; checkout: string | null; promptSha256: string | null;
+    skillPack: { name: string; manifestSha256: string } | null; policies: Pick<Invocation, 'skillPack' | 'modelBudget' | 'copyOutput' | 'editSourceMaxBytes'> };
+  credential: BuilderGrantMetadata | null;
+  start: { receiptId: string; confirmedAt: string } | null;
+  end: { at: string; outcome: 'completed' | 'failure'; code: string | null; cessation: 'confirmed' | 'unconfirmed' | 'not-attempted' } | null;
+  held: { code: string; phase: string; at: string; nextStep: string } | null;
+  completion: { automatic: false; reason: string };
+};
 
 /** In-memory observation of the latest polling of one repository. Not authority; lost on restart and rebuilt by the next poll. */
 export type CandidateView = { ticket: TicketRef; observedAt: string } & (
@@ -54,23 +92,26 @@ export type WorkView = {
     basis: { repositoryConfigured: true; issueState: 'open'; label: { id: number; name: string } };
     publication: { observedAt: string; completeness: 'complete'; associatedPullRequests: 0; limitations: string[] };
     tracking: string };
-  queue: { category: 'normal'; sequence: number; pending: true };
+  queue: { category: 'normal'; sequence: number; pending: boolean };
   impediments: Impediment[];
   dependencies: DependencyState;
-  dispatch: { state: 'held'; reasons: string[] };
-  execution: null; branch: null; pullRequest: null;
+  dispatch: { state: 'held' | 'eligible' | 'executing'; reasons: string[] };
+  execution: ExecutionView | null; branch: string | null; pullRequest: null;
   admittedAt: string;
   history: ({ at: string; event: 'admitted'; origin: 'github-polling'; sequence: number } |
-    { at: string; event: 'dependencies-changed'; origin: 'github-polling'; before: DependencyEvaluation['conclusion'] | null; after: DependencyEvaluation['conclusion']; evaluationId: string })[];
+    { at: string; event: 'dependencies-changed'; origin: 'github-polling'; before: DependencyEvaluation['conclusion'] | null; after: DependencyEvaluation['conclusion']; evaluationId: string } |
+    { at: string; event: 'execution-reserved' | 'execution-prepared' | 'execution-booted' | 'activation-requested' | 'execution-started' | 'execution-ended' | 'execution-held' | 'execution-released' | 'slot-released';
+      origin: 'controller-dispatch'; executionId: string; detail?: string })[];
 };
-export type ListView = { kind: 'list'; paused: boolean; dispatch: 'closed'; dispatchReason: DispatchReason;
+export type ListView = { kind: 'list'; paused: boolean; dispatch: 'closed' | 'open'; dispatchReason: DispatchReason | null; slots: { capacity: number; held: number };
   queues: { normal: string[]; repair: string[] }; works: WorkView[]; selection: Selection; polling: PollingView; limitations: string[] };
 export type ShowView = { kind: 'work'; work: WorkView; lastPolled: CandidateView | null } | { kind: 'work-not-found'; work_id: string; nextStep: string };
 export type ControlStatus = {
   controller_run_id: string;
   paused: boolean;
-  dispatch: 'closed';
-  dispatchReason: DispatchReason;
+  dispatch: 'closed' | 'open';
+  dispatchReason: DispatchReason | null;
+  slots: { capacity: number; held: number };
   historyLength: number;
   works: { total: number; open: number };
   queues: { normal: number; repair: number };

@@ -18,10 +18,10 @@ const requests = defineDocFamily<{ input: ControlInput | null; receipt: ControlR
 /** `memory`: explicit minimal memory per Ticket key (spec §12.4) — cycle identity/order, result and confirmed merge; absent in pre-08 storage. */
 type TicketIndex = { admissionSequence: number; tickets: Record<string, { current: string; previous: string[] }>; order: string[];
   memory?: Record<string, { cycles: OwnCycle[] }> };
-const ticketIndex = defineDoc<TicketIndex>({ kind: 'factory.ticket-index', version: 1, scope: 'session',
+export const ticketIndex = defineDoc<TicketIndex>({ kind: 'factory.ticket-index', version: 1, scope: 'session',
   initial: () => ({ admissionSequence: 0, tickets: {}, order: [] }), checkpointWhen: () => true });
 export type WorkRecord = Omit<WorkView, 'dispatch'>;
-const works = defineDocFamily<{ work: WorkRecord | null }, null>({ kind: 'factory.work', version: 1, scope: 'session', family: true,
+export const works = defineDocFamily<{ work: WorkRecord | null }, null>({ kind: 'factory.work', version: 1, scope: 'session', family: true,
   initial: () => ({ work: null }), checkpointWhen: () => true });
 
 export type AdmissionEvidence = {
@@ -70,7 +70,7 @@ export async function admitTicket(session: Session, evidence: AdmissionEvidence)
   }, BACKGROUND_CONTEXT);
 }
 
-const normalize = (work: WorkRecord): WorkRecord => ({ ...work, dependencies: work.dependencies ?? { latest: null, lastComplete: null } });
+const normalize = (work: WorkRecord): WorkRecord => ({ ...work, dependencies: work.dependencies ?? { latest: null, lastComplete: null }, execution: work.execution ?? null, branch: work.branch ?? null });
 
 /** Open Works with pending queue work of one repository (by immutable id), FIFO by admission sequence. */
 export async function pendingWorks(session: Session, repositoryId: number): Promise<WorkRecord[]> {
@@ -114,7 +114,9 @@ export async function recordDependencies(session: Session, work_id: string, eval
     const index = await tx.doc(ticketIndex);
     const document = await tx.doc(works, work_id, null);
     const work = document.work;
-    if (!work || work.result !== 'open' || !work.queue.pending || index.tickets[ticketKey(work.ticket)]?.current !== work_id) return 'skipped' as const;
+    // Pending queue work, or the Execution reserved for it (revalidation immediately before activation, spec §3.4).
+    if (!work || work.result !== 'open' || !(work.queue.pending || work.execution?.state === 'reserved') ||
+      index.tickets[ticketKey(work.ticket)]?.current !== work_id) return 'skipped' as const;
     const previous = work.dependencies ?? { latest: null, lastComplete: null };
     const before = previous.latest?.conclusion ?? null;
     const known = new Map(work.impediments.map(item => [item.code, item.since]));

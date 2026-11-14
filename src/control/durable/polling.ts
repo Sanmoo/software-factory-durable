@@ -6,6 +6,22 @@ import { evaluateDependencies, type OwnCycleFacts } from '../rules/dependencies.
 import type { AdmissionEvidence, AdmissionResult } from './admission.js';
 
 const maxTimer = 2 ** 31 - 1;
+
+/** One FRESH native dependency read + evaluation of a Ticket for the given attempt (polling round or dispatch attempt). */
+export async function evaluateWorkDependencies(tracker: AccessDependencies['tracker'], ownCycles: (issueIds: number[]) => Promise<Record<number, OwnCycleFacts>>,
+  ticket: TicketRef, attemptId: string): Promise<{ evaluation: DependencyEvaluation; graph: DependencyGraphObservation }> {
+  let graph: DependencyGraphObservation;
+  try { graph = await tracker.readDependencyGraph(ticket); } catch {
+    graph = { kind: 'observed', source: 'github-rest', observedAt: new Date().toISOString(), root: ticket, completeness: 'incomplete', principals: [], nodes: [],
+      limitations: [], problems: [{ code: 'DEPENDENCY_READ_UNAVAILABLE', issueId: ticket.issueId, repository: ticket.repository, observedCode: 'POLLING_QUERY_FAILED',
+        nextStep: 'Unexpected failure while reading native dependencies; nothing is concluded. Inspect controller logs; polling retries with backoff.' }] };
+  }
+  const own = await ownCycles(graph.nodes.map(node => node.issueId).filter(id => id !== ticket.issueId));
+  const result = evaluateDependencies({ graph: { rootIssueId: ticket.issueId, nodes: graph.nodes, problems: graph.problems }, own });
+  return { graph, evaluation: { evaluationId: randomUUID(), attemptId, source: 'github-rest', observedAt: graph.observedAt, evaluatedAt: new Date().toISOString(),
+    principals: graph.principals, completeness: result.completeness, conclusion: result.conclusion, blockers: result.blockers, cycles: result.cycles,
+    shared: result.shared, reasons: result.reasons, limitations: graph.limitations } };
+}
 export const systemClock: PollingClock = {
   monotonic: () => performance.now(),
   sleep: (ms, signal) => new Promise<void>(resolve => {
@@ -29,6 +45,8 @@ export function createPoller(deps: {
   pending(repositoryId: number): Promise<{ work_id: string; ticket: TicketRef }[]>;
   ownCycles(issueIds: number[]): Promise<Record<number, OwnCycleFacts>>;
   record(work_id: string, evaluation: DependencyEvaluation): Promise<unknown>;
+  /** Called after every completed polling iteration (same loop; no scheduler). */
+  afterCycle?(): Promise<void>;
 }) {
   const { tracker, repository } = deps.access;
   const interval = deps.intervalSeconds;
@@ -112,17 +130,8 @@ export function createPoller(deps: {
     let failed = false;
     for (const work of await deps.pending(repositoryId)) {
       if (waitSeconds !== undefined) break;
-      let graph: DependencyGraphObservation;
-      try { graph = await tracker.readDependencyGraph(work.ticket); } catch {
-        graph = { kind: 'observed', source: 'github-rest', observedAt: new Date().toISOString(), root: work.ticket, completeness: 'incomplete', principals: [], nodes: [],
-          limitations: [], problems: [{ code: 'DEPENDENCY_READ_UNAVAILABLE', issueId: work.ticket.issueId, repository: work.ticket.repository, observedCode: 'POLLING_QUERY_FAILED',
-            nextStep: 'Unexpected failure while reading native dependencies; nothing is concluded. Inspect controller logs; polling retries with backoff.' }] };
-      }
-      const own = await deps.ownCycles(graph.nodes.map(node => node.issueId).filter(id => id !== work.ticket.issueId));
-      const result = evaluateDependencies({ graph: { rootIssueId: work.ticket.issueId, nodes: graph.nodes, problems: graph.problems }, own });
-      await deps.record(work.work_id, { evaluationId: randomUUID(), attemptId, source: 'github-rest', observedAt: graph.observedAt, evaluatedAt: new Date().toISOString(),
-        principals: graph.principals, completeness: result.completeness, conclusion: result.conclusion, blockers: result.blockers, cycles: result.cycles,
-        shared: result.shared, reasons: result.reasons, limitations: graph.limitations });
+      const { evaluation, graph } = await evaluateWorkDependencies(tracker, deps.ownCycles, work.ticket, attemptId);
+      await deps.record(work.work_id, evaluation);
       for (const problem of graph.problems) {
         if (problem.waitSeconds !== undefined) waitSeconds = Math.max(waitSeconds ?? 0, problem.waitSeconds);
         if (problem.observedCode && transient.has(problem.observedCode)) failed = true;
@@ -198,6 +207,7 @@ export function createPoller(deps: {
           }
           cycles++;
           lastCycleAt = new Date().toISOString();
+          if (!signal.aborted && deps.afterCycle) await deps.afterCycle();
           if (signal.aborted) break;
           state = 'sleeping';
           await deps.clock.sleep(Math.max(0, Math.min(...repositories.map(entry => entry.dueAt)) - deps.clock.monotonic()), signal);
