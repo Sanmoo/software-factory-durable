@@ -72,6 +72,33 @@ Mutações (JS compilado, restaurado; todas detectadas): (M1) sem consumo no `co
 4/6 de `timeout-flow` falham; (M3) sem `reconcileDurations` no boot ⇒ crash falha; (M4) fim sem marcar timeout já atingido ⇒ “pergunta após o limite”
 falha; (M5) sem liberação em não início comprovado ⇒ AC2 falha.
 
+## Correções da revisão
+
+Revisão estática independente depois do gate inicial; cada achado com correção e teste de regressão. A revisão do supervisor não é revertida:
+os pontos abaixo refinam o incremento. Nenhum checkbox marcado; ticket não resolvido.
+
+| Achado | Correção | Teste |
+| --- | --- | --- |
+| FALHA de prepare/start, recusa pré-launch ou credencial retirada antes da ativação mantinha a reserva ocupando o orçamento, embora nenhum pedido ao worker existisse. | `holdExecution(..., provenNonStart)` libera a reserva sem consumo e mantém o Work sob hold/Slot; o `dispatch` distingue o que é não início comprovado (`activated` ainda falso) e, na fase de ativação, só a allowlist exata de recusas pré-launch (`WORKER_LAUNCH_INVALID`, `STALE_TOOL_CONTEXT`, `WORKER_EXECUTION_NOT_ENABLED`, `WORKER_PROFILE_NOT_CONFIGURED`, `WORKER_POLICY_ROLE_DENIED`). Qualquer outro erro na ativação mantém a reserva. | `budget-flow` “PREPARE failure …”; `budget-flow` AC2 (recusa de revalidação; `WORKER_LAUNCH_UNCERTAIN` mantém a reserva). |
+| Stop do processo dono antes da ativação liberava o Slot mesmo sem cessação comprovada do boot próprio (o código não era `OWNER_STOPPED_BEFORE_ACTIVATION`, era o de revalidação). | O stop antes da ativação libera via `releaseBeforeStart(..., 'OWNER_STOPPED_BEFORE_ACTIVATION')` somente quando nada foi bootado ou a cessação é confirmada; caso contrário libera a reserva sem consumo e **mantém** o Slot sob `OWNER_STOPPED_BEFORE_ACTIVATION_CESSATION_UNCONFIRMED` (ticket 26). | `budget-flow` “owner stop before activation … unconfirmed boot cessation …”. |
+| A cota inferior após crash usava só `lastActivity` e podia baixar um timeout durável já medido; o timeout medido não era uma atividade da origem. | `recordTimeout` grava `lastActivity {event: timeout-reached}`; `reconcileDurations` usa `max(lastActivity, timing.timeout.elapsedMs)` e não sobrescreve `overrun: proven` nem a evidência `measured` por `not-excludable`. | `execution-commits` “durable timeout is the last activity … never lowers the proven bound” (inclui atividade durável inferior simulada). |
+| Um novo motivo em correção já aberta era perdido (mesma identidade/cobrança, sem histórico). | `openCorrection` acrescenta `correction-reason-added` (detalhe ≤ 200) quando o motivo difere do original; identidade e cobrança não mudam; cada pedido distinto fica auditado. | `budget-flow` “touching an already-open correction records the added reason …”. |
+| Corte implícito do worker pelos orçamentos de modelo (`builder-v1` 30 min / `reviewer-v1` 15 min), em tensão com §4.4. A primeira correção só cobria `worker-process`; `worker-session` reintroduzia o corte e `deadlineMs` nem chegava à `Invocation`. | Nenhum worker deriva deadline de `budgetFor`/`modelBudget`: `worker-process` arma timeout somente de `bootstrap.deadlineMs` (política explícita do Host, ausente na composição de produção), encaminha o valor à `Invocation` e `worker-session` não converte mais `limits.deadlineMs` em corte de ativação. `modelBudget` segue governando requisições/ferramentas/bytes e o timeout por requisição do provedor. Import morto removido. | `workers/worker-clock-bound` (guarda estática de `worker-process` e `worker-session` + esquema: `deadlineMs` opcional, inteiro positivo ≤ 86 400 000, ausente = sem corte; `worker-start` grava o valor); `entrypoints/normal-oauth` modo `deadline` passa a fornecer a política explícita (`deadlineMs: 30000`), sem depender de corte implícito. |
+| `secretScan` seguia symlink e materializava o arquivo inteiro antes de cortar 1 MiB. | Somente arquivos regulares (não symlink), teto de 5000 arquivos e leitura limitada a 1 MiB desde o início (`open`+`read`). | Helper do ensaio (`limits19`/`credential20`), sem teste de unidade dedicado; comportamento inerte já coberto por `limits19-qualification`. |
+
+Decisões da revisão:
+
+- **Sem corte implícito em produção.** O timeout do repositório (relógio monotônico do controlador) é o único relógio da Execução. `deadlineMs` é
+  política explícita do Host e não é configurado pela composição de produção atual; `modelBudget` é envelope de requisições/ferramentas/bytes (e
+  timeout por requisição do provedor), não de duração da Execução.
+- **Snapshot de Trabalhos pré-19.** Um Trabalho criado antes do incremento recebe `budget` no primeiro commit de orçamento, com a configuração
+  então vigente (`budget: null` até lá). É limitação documentada: não há backfill retroativo nem histórico da configuração anterior.
+- **Bordas de motivo de cobrança** (múltiplas correções abertas, recovery e correção simultâneos, reabertura após consumo) pertencem aos tickets
+  22/23 (reparo) e 26 (recuperação). Este incremento testa reserva/consumo/liberação/preservação e delega a sequência de reparo.
+- **Não-issues confirmados:** os limites chegam ao Control por `entrypoints/configuration.ts` + `entrypoints/controller/owner.ts` (sem caminho
+  paralelo); `systemClock.sleep` resolve no abort (não prende o polling); `releaseAfterCessation` grava `dispatch.phase: 'stopped'` e só libera o
+  Slot com cessação confirmada.
+
 ## TDD observado (honesto)
 
 Vermelho primeiro: `budget-rules` (módulo/tipos inexistentes — falha de compilação), `budget-flow` (seams e operação `grant` inexistentes; depois
@@ -82,10 +109,11 @@ O núcleo durável de orçamento passou na primeira execução após compilar: a
 
 ## Decisões de interpretação e questões abertas (operador/supervisor)
 
-1. **Corte implícito dos orçamentos de modelo do worker.** `builder-v1` tem `deadlineMs` de 30 min e `reviewer-v1` de 15 min (`src/workers/
-   oauth-qualification.ts`, aprovados no 09/12 como envelope de observação). Isso é um corte por ativação **mesmo sem timeout configurado**, em tensão
-   com §4.4 (“sem teto de 60 minutos ou outro corte implícito”). Não alterado aqui: decidir se permanece como limite de modelo aceito (documentado
-   como tal) ou se passa a derivar do timeout configurado/ausente. Também não é teto de cobrança (custo continua estimado, sem cap no provedor).
+1. **Corte implícito dos orçamentos de modelo do worker — resolvido na revisão.** `builder-v1`/`reviewer-v1` têm `deadlineMs` de 30/15 min
+   (`src/workers/oauth-qualification.ts`) como envelope de observação. Esse valor deixou de ser um corte por ativação: nenhum worker deriva
+   deadline de `budgetFor`/`modelBudget`; só uma política explícita do Host (`deadlineMs`, ausente na composição de produção) limita a ativação.
+   O `modelBudget` permanece como envelope de requisições/ferramentas/bytes e timeout por requisição do provedor, não de duração da Execução e não
+   é teto de cobrança. Ver [Correções da revisão](#correções-da-revisão).
 2. **Local do timer.** §5.7 diz que o worker host mantém o relógio desde o recibo; aqui o relógio é o da tarefa de execução do controlador (host que
    possui a Execução), iniciado na observação do recibo — mesmo processo, origem única, inclusive com Builder ocioso no handoff e revisores ativos.
    Timer no processo worker exigiria nova mensagem worker→controlador (mudança de protocolo). A latência IPC do recibo subestima a duração em
@@ -96,8 +124,10 @@ O núcleo durável de orçamento passou na primeira execução após compilar: a
 4. **Snapshot dos limites na admissão.** “Mudar limite não apaga esgotamento nem substitui concessão” foi lido como: Trabalhos existentes mantêm os
    limites capturados; só `grant` amplia. Trabalhos anteriores a este incremento recebem o orçamento no primeiro commit de orçamento a partir da
    configuração então vigente (`budget: null` até lá).
-5. **Reserva em holds antes do início.** Só a recusa de revalidação com cessação confirmada do boot próprio prova não início e libera; falhas de
-   prepare/start/credencial/ativação mantêm a reserva (estado do ambiente incerto) até a recuperação do ticket 26.
+5. **Reserva em holds antes do início.** Não início comprovado libera a reserva sem consumo: falha de prepare, falha de start, credenciais
+   retiradas antes da ativação e stop do dono antes dela. Em todos esses casos o Slot só é liberado se a cessação do boot próprio for confirmada (ou
+   se nada foi bootado); caso contrário o hold mantém o Slot. Erros de ativação fora da allowlist pré-launch e cessação não confirmada mantêm a
+   reserva, que continua ocupando o orçamento até a recuperação do ticket 26. Ver [Correções da revisão](#correções-da-revisão).
 6. **Grant por comentário GitHub** (`/factory grant`) não implementado: a ingestão de comentários só lê Trabalhos com Pergunta aberta; ampliar o custo de
    leitura para todos os Trabalhos é decisão. O ingresso autorizado aqui é a CLI local (confiança da conta administradora).
 7. **Cancelamento.** O comando `cancel` é do ticket 25; nada neste incremento o bloqueia ou remove (o seam `withdrawActivityCredentials(…,'cancelled')`
@@ -172,16 +202,15 @@ Observações esperadas (`run-result.json`, `inspect-result.json`):
 
 ## Gate local
 
-Node 24.21.0 com `env -u NODE_OPTIONS -u NODE_COMPILE_CACHE NODE_DISABLE_COMPILE_CACHE=1 timeout 60`, sem npm/npx, após `rm -rf dist`
-(HEAD `1730ae3` + este documento): `dependency-cruiser` sem violações (301 módulos, 1759 dependências); `eslint . --max-warnings 0` exit 0;
-`tsc -p tsconfig.json` exit 0; **137 arquivos** `dist/test/**/*.test.js`, um por vez (`--experimental-test-module-mocks --test --test-concurrency=1`;
-só `entrypoints/normal-oauth` com `timeout 90`, conforme decisão do supervisor): **923 pass, 1 fail, 10 skipped, 0 cancelled**.
+Node 24.21.0 com `env -u NODE_OPTIONS -u NODE_COMPILE_CACHE NODE_DISABLE_COMPILE_CACHE=1 timeout 90`, sem npm/npx, após `rm -rf dist`
+(HEAD `21b552a` + as alterações da revisão, ainda não commitadas no momento do gate): `dependency-cruiser` sem violações (302 módulos, 1763
+dependências); `eslint . --max-warnings 0` exit 0; `tsc -p tsconfig.json` exit 0; **138 arquivos** `dist/test/**/*.test.js`, um por vez
+(`--experimental-test-module-mocks --test --test-concurrency=1`, `timeout 90` por arquivo): **931 pass, 0 fail, 10 skipped, 0 cancelled**.
 
-A falha foi `entrypoints/admission-cli` (arquivo não alterado aqui): uma leitura `list` viu `DEPENDENCIES_NOT_CURRENT` além de
-`EXECUTION_NOT_ENABLED` — a avaliação de dependências era da rodada anterior de polling no instante da leitura, sob carga do host (load ≈ 6, gates de
-outros tickets em paralelo). Reexecutado isolado **5/5 pass**. Registrado como intermitência temporal pré-existente a observar, sem regressão
-demonstrada (o caminho de bloqueios por dependência não foi alterado). Total efetivo: **924 pass, 0 fail, 10 skipped, 0 cancelled**. Os 10 skips são
-os mesmos de antes (host-dependentes); `test/sandbox/gondolin.test.ts` continua `skip:true`.
+Os 10 skips são os mesmos de antes (host-dependentes); `test/sandbox/gondolin.test.ts` continua `skip:true`.
 
-Novos: `control/budget-rules` (7), `control/budget-flow` (4), `control/timeout-flow` (6, inclui SIGKILL real de processo controlador filho
-`timing-crash-child` em 3 modos), `entrypoints/grant-cli` (1, I-local), `entrypoints/limits19-qualification` (4, receita inerte/provedor/veredito).
+Novos/estendidos: `control/budget-rules` (7), `control/budget-flow` (7; +3 de regressão nesta revisão: PREPARE provado não início, motivo
+adicionado em correção aberta, stop do dono com cessação não confirmada), `control/timeout-flow` (6, inclui SIGKILL real de processo controlador
+filho `timing-crash-child` em 3 modos), `control/execution-commits` (4; +1 de regressão para o timeout durável como última atividade e a cota
+inferior nunca reduzida), `workers/worker-clock-bound` (3, guarda estática + esquema de `deadlineMs`), `entrypoints/grant-cli` (1, I-local),
+`entrypoints/limits19-qualification` (4, receita inerte/provedor/veredito).
