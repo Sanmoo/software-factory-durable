@@ -7,6 +7,7 @@ import { createSandbox } from '../sandbox/index.js';
 const text = z.string().trim().min(1).max(256).refine(value =>
   !/(?:gh[pousr]_|github_pat_|sk-[a-zA-Z0-9]|-----BEGIN.*PRIVATE KEY)/.test(value), 'Secret values are forbidden');
 const positive = z.number().int().positive().safe();
+const login = text.regex(/^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$/);
 const credentialFile = text.regex(/^credentials\/[a-zA-Z0-9_-][a-zA-Z0-9_.-]*$/);
 const model = z.strictObject({ provider: text, model: text, credentialFile: credentialFile.optional() });
 const repository = z.strictObject({
@@ -30,8 +31,10 @@ const dependencyRepository = z.strictObject({
 });
 const schema = z.strictObject({
   schemaVersion: z.literal(1),
-  operators: z.array(text.regex(/^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$/))
-    .refine(values => new Set(values.map(value => value.toLowerCase())).size === values.length),
+  // Login, or {login, id}: the pinned immutable GitHub user id (comments then match by id only; spec §11.3 authorized operator).
+  operators: z.array(z.union([login, z.strictObject({ login, id: positive })]))
+    .refine(values => new Set(values.map(value => (typeof value === 'string' ? value : value.login).toLowerCase())).size === values.length)
+    .refine(values => { const ids = values.flatMap(value => typeof value === 'string' ? [] : [value.id]); return new Set(ids).size === ids.length; }),
   models: z.strictObject({ builder: model, standards: model, spec: model }),
   githubApp: z.strictObject({
     appId: positive,

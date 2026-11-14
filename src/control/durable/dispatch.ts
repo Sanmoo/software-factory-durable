@@ -6,7 +6,7 @@ import type { AccessDependencies, CredentialWithdrawal, DependencyEvaluation, Ex
 import { evaluateEntry } from '../rules/admission.js';
 import { dispatchBlockers, selectNext, type OwnCycleFacts } from '../rules/dependencies.js';
 import { evaluateWorkDependencies } from './polling.js';
-import type { WorkRecord } from './admission.js';
+import { readWork, type WorkRecord } from './admission.js';
 import { admitExecution, beginRenewal, confirmActivation, confirmStart, holdExecution, recordEnd, recordIssuance, recordPhase, recordRenewal, recordRevocation,
   recordRevocationIntent, recordWorkerNotice, releaseAfterCessation, releaseBeforeStart, stopRenewal, withdrawCredentials } from './execution.js';
 import { intactRequest, readQuestion, recordContentLost, registerQuestion } from './questions.js';
@@ -187,13 +187,22 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     let phase = 'prepare';
     let environment: EnvironmentRef | undefined;
     let boot: BootRef | undefined;
+    // A Question recorded by THIS Execution whose activation then failed or became uncertain: explicit impediment, never a silent wait.
+    const questionUncertain = async () => {
+      for (const id of (await readWork(session, work.work_id))?.questions ?? []) {
+        const question = await readQuestion(session, id);
+        if (question?.executionId !== executionId || question.workId !== work.work_id) continue;
+        await recordContentLost(session, work.work_id, executionId, id, 'QUESTION_RECORDED_EXECUTION_UNCERTAIN',
+          'the activation then ended with a failure or uncertain outcome (the Question stays recorded and publishable)', id);
+      }
+    };
     let lifecycle: ReturnType<typeof credentialLifecycle> | undefined;
     // A held Execution is not authorized to advance: its credentials are withdrawn and known grants revocation is attempted, even if the
     // hold commit itself fails.
     const hold = async (code: string, nextStep: string) => {
-      try { await holdExecution(session, work.work_id, executionId, code, nextStep); observe(work.work_id, 'held', [code]); }
-      finally { await lifecycle?.withdraw('held', { notifyWorker: true }); }
-    };
+    try { await holdExecution(session, work.work_id, executionId, code, nextStep); observe(work.work_id, 'held', [code]); }
+    finally { await lifecycle?.withdraw('held', { notifyWorker: true }); }
+  };
     const stopOwnBoot = async (reason: string) => environment && boot ? ports.sandbox.stop({ environment, boot, reason }).catch(() => ({ status: 'indeterminate' as const, cessationConfirmed: false as const, code: 'STOP_UNAVAILABLE' })) : undefined;
     try {
       checkStop();
@@ -323,7 +332,10 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           }
           const bound = own(await readQuestion(session, request.questionId));
           await recordEnd(session, work.work_id, executionId, 'question', code, bound ? request.questionId : null);
-        } else await recordEnd(session, work.work_id, executionId, completed.status === 'success' ? 'completed' : 'failure', completed.status === 'success' ? null : completed.code);
+        } else {
+          await recordEnd(session, work.work_id, executionId, completed.status === 'success' ? 'completed' : 'failure', completed.status === 'success' ? null : completed.code);
+          if (completed.status === 'failure') await questionUncertain();
+        }
       } finally { startCommitted(false); handle.close(); }
       await lifecycle.withdraw('ended', { notifyWorker: false });
       phase = 'stop';
@@ -331,6 +343,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       await releaseAfterCessation(session, work.work_id, executionId, stop?.cessationConfirmed ? 'confirmed' : 'unconfirmed');
       observe(work.work_id, stop?.cessationConfirmed ? 'ended-slot-released' : 'ended-cessation-unconfirmed');
     } catch (error) {
+      await questionUncertain().catch(() => {});
       if (stopping.signal.aborted) {
         // Owner stop: the host channel closes (worker revoked); the grants are still in memory, so their revocation is attempted.
         await lifecycle?.withdraw('owner-stopped', { notifyWorker: false }).catch(() => {});

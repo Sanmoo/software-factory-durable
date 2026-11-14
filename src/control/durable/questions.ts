@@ -70,12 +70,13 @@ export async function registerQuestion(session: Session, input: { work_id: strin
  * (`QUESTION_NOT_RECORDED`, e.g. the Work stopped being current). Block explicitly; never invent or publish a question.
  */
 export async function recordContentLost(session: Session, work_id: string, executionId: string, questionId: string,
-  code: 'QUESTION_CONTENT_LOST' | 'QUESTION_NOT_RECORDED' | 'QUESTION_ID_CONFLICT' | 'QUESTION_RECORDED_EXECUTION_UNCERTAIN' = 'QUESTION_CONTENT_LOST', reason = 'its complete request was not received intact') {
+  code: 'QUESTION_CONTENT_LOST' | 'QUESTION_NOT_RECORDED' | 'QUESTION_ID_CONFLICT' | 'QUESTION_RECORDED_EXECUTION_UNCERTAIN' = 'QUESTION_CONTENT_LOST', reason = 'its complete request was not received intact',
+  boundQuestionId?: string) {
   return session.commit(async tx => {
     const document = await tx.doc(works, work_id, null);
     const work = document.work;
     if (!work || work.execution?.executionId !== executionId) return 'stale' as const;
-    if (!work.impediments.some(item => item.code === code)) work.impediments.push({ code, scope: 'work', since: new Date().toISOString(),
+    if (!work.impediments.some(item => item.code === code)) work.impediments.push({ code, scope: 'work', since: new Date().toISOString(), ...(boundQuestionId ? { questionId: boundQuestionId } : {}),
       nextStep: `Execution ${executionId} reported question ${/^[0-9a-f-]{36}$/.test(questionId) ? questionId : '(invalid id)'} but ${reason}; ` +
         'nothing was published or invented. Inspect the worker\'s preserved Records evidence and decide explicitly (recovery, ticket 26).' });
     return 'recorded' as const;
@@ -131,8 +132,8 @@ export async function acceptAnswer(session: Session, input: { request_id: string
   }, BACKGROUND_CONTEXT);
 }
 
-type PublicationUpdate = { kind: 'begin' } | { kind: 'result'; outcome: 'published'; comment: { commentId: number; url: string } } |
-  { kind: 'result'; outcome: 'failed' | 'unknown'; code: string; nextStep: string } |
+type PublicationUpdate = { kind: 'begin' } | { kind: 'result'; outcome: 'published'; comment: { commentId: number; url: string }; revocation?: string } |
+  { kind: 'result'; outcome: 'failed' | 'unknown'; code: string; nextStep: string; revocation?: string } |
   { kind: 'discovery'; outcome: 'discovered'; comment: { commentId: number; url: string } } | { kind: 'discovery'; outcome: 'absent' | 'discovery-incomplete' | 'multiple'; code?: string };
 /** Publication effect transitions (intent -> attempt -> observation; discovery after uncertainty). Returns the new state or `stale`. */
 export async function recordPublication(session: Session, questionId: string, update: PublicationUpdate): Promise<QuestionView['publication']['state'] | 'stale'> {
@@ -143,13 +144,16 @@ export async function recordPublication(session: Session, questionId: string, up
     const publication = question.publication;
     const now = new Date().toISOString();
     const attempt = (outcome: QuestionView['publication']['attempts'][number]['outcome'], code?: string) => {
-      publication.attempts = keep([...publication.attempts, { at: now, outcome, ...(code ? { code } : {}) }]);
+      const revocation = update.kind === 'result' && update.revocation ? { revocation: update.revocation } : {};
+      publication.attempts = keep([...publication.attempts, { at: now, outcome, ...(code ? { code } : {}), ...revocation }]);
       publication.updatedAt = now;
     };
     const published = async (comment: { commentId: number; url: string }) => {
       publication.state = 'published'; publication.comment = comment; publication.nextStep = null;
       const work = (await tx.doc(works, question.workId, null)).work;
       work?.history.push({ at: now, event: 'question-published', origin: 'controller-publication', questionId, detail: comment.url });
+      // Comments up to the Question's own comment can never answer it: start reading after it.
+      if (work && (work.inputs?.cursor ?? 0) < comment.commentId) work.inputs = { cursor: comment.commentId };
     };
     if (update.kind === 'begin') {
       if (publication.state !== 'intended' && publication.state !== 'failed') return 'stale' as const;
@@ -170,6 +174,16 @@ export async function recordPublication(session: Session, questionId: string, up
       } else publication.state = publication.state === 'attempting' ? 'ambiguous' : publication.state;
     }
     return publication.state;
+  }, BACKGROUND_CONTEXT);
+}
+
+/** Bounded summary of a comment that did not apply (unauthorized author, edited/older comment); deduplicated by origin, no request document. */
+export async function recordIgnored(session: Session, questionId: string, origin: string, code: string) {
+  return session.commit(async tx => {
+    const document = await tx.doc(questions, questionId, null);
+    const question = document.question;
+    if (!question || question.ignored.some(item => item.origin === origin)) return;
+    question.ignored = keep([...question.ignored, { at: new Date().toISOString(), origin, code }]);
   }, BACKGROUND_CONTEXT);
 }
 

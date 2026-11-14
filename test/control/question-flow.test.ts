@@ -14,7 +14,7 @@ import { comment, githubDoubles, manualClock, remoteIssue, scope, type Remote } 
 const operator = { id: 501, login: 'Operator-One', type: 'User' };
 const sha = (question: string, context: string) => createHash('sha256').update(JSON.stringify({ question, context })).digest('hex');
 type Script = { kind: 'complete' } | { kind: 'ask'; questionId: string; question: string; context?: string; notify?: boolean;
-  completion?: 'same' | 'lost-content' | 'other-content'; afterAck?: () => Promise<void> };
+  completion?: 'same' | 'lost-content' | 'other-content' | 'failure'; afterAck?: () => Promise<void> };
 const qid = (n: number) => `0b9c6a52-3d3e-4c8f-9a51-${String(n).padStart(12, '0')}`;
 
 function executionDoubles(control: () => Control, scripts: Script[], options: { cessation?: boolean } = {}) {
@@ -59,6 +59,7 @@ function executionDoubles(control: () => Control, scripts: Script[], options: { 
             acknowledged = ack.status === 'recorded';
             await script.afterAck?.();
           }
+          if (script.completion === 'failure') return { status: 'failure' as const, code: 'WORKER_EXECUTION_UNCERTAIN' };
           const final = script.completion === 'lost-content' ? { ...question, question: '', context: '' }
             : script.completion === 'other-content' ? { ...question, question: 'A different question', sha256: sha('A different question', context) } : question;
           return { status: 'question' as const, receipt, question: { ...final, acknowledged } };
@@ -71,7 +72,7 @@ function executionDoubles(control: () => Control, scripts: Script[], options: { 
   return { ports, calls, acks };
 }
 
-async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remote, scripts: Script[], options: { cessation?: boolean } = {}) {
+async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remote, scripts: Script[], options: { cessation?: boolean; operators?: (string | { login: string; id: number })[] } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'factory-question-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const github = githubDoubles(remote);
@@ -81,7 +82,7 @@ async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remo
   async function start(inventory: 'empty' | 'unknown' = 'empty') {
     const time = manualClock();
     const control = await openControl({ storagePath, runtimeInventory: inventory, execution: execution.ports,
-      access: { tracker: github.tracker, repository: github.repository, repositories: [scope], operators: ['operator-one'] }, polling: { intervalSeconds: 60, clock: time.clock } });
+      access: { tracker: github.tracker, repository: github.repository, repositories: [scope], operators: options.operators ?? ['operator-one'] }, polling: { intervalSeconds: 60, clock: time.clock } });
     const stop = new AbortController();
     current = { control, stop, running: control.run(stop.signal), time };
     await time.sleeping();
@@ -388,4 +389,43 @@ test('review 1: a completion reusing ANOTHER Work\'s question id never binds tha
   works = await h.byNumber();
   assert.equal(h.activations().length, 3);
   assert.equal(works[4]!.previousExecutions.length, 0, 'Work #4 never resumed with Work #3\'s answer');
+});
+
+const at = (iso: string, body: string, author = operator, overrides: Partial<ReturnType<typeof comment>> = {}) => ({ ...comment(body, author), createdAt: iso, updatedAt: iso, ...overrides });
+test('review 2/3/4/6: edited, older, App-performed, id-mismatched and control-character answers never apply; unauthorized comments leave no request document', async t => {
+  const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
+  const h = await harness(t, remote, [{ kind: 'ask', questionId: qid(30), question: 'Pinned?' }], { operators: [{ login: 'operator-one', id: 501 }] });
+  await h.start();
+  await h.until(async () => (await h.byNumber())[3]?.execution?.slot.held === false);
+  await h.until(async () => (remote.comments?.[3] ?? []).length === 1);
+  const work = (await h.byNumber())[3]!;
+  const later = new Date(Date.now() + 1000).toISOString();
+  const edited = at(later, `/factory answer ${qid(30)} edited`, operator, { updatedAt: new Date(Date.now() + 5000).toISOString() });
+  const older = at('2020-01-01T00:00:00Z', `/factory answer ${qid(30)} older`);
+  const viaApp = { ...at(later, `/factory answer ${qid(30)} via app`), viaApp: 77 };
+  const impostor = at(later, `/factory answer ${qid(30)} same login, other id`, { id: 999, login: 'operator-one', type: 'User' });
+  const control = at(later, `/factory answer ${qid(30)} bell\u0007here`);
+  remote.comments![3]!.push(edited, older, viaApp, impostor, control);
+  await h.cycle();
+  const view = await h.show(work.work_id);
+  assert.equal(view.questions[0]!.state, 'open');
+  assert.deepEqual(view.questions[0]!.ignored.map(item => item.code).sort(), ['AUTHOR_NOT_OPERATOR', 'AUTHOR_VIA_APP', 'COMMENT_EDITED', 'COMMENT_PREDATES_QUESTION'].sort());
+  for (const item of [edited, older, viaApp, impostor]) {
+    assert.deepEqual(await h.control().inspect({ kind: 'request', request_id: `github-comment-${item.commentId}` }), { kind: 'request', receipt: null }, 'no durable request per refused comment');
+  }
+  // The pinned operator (id 501) answers: accepted even under another login spelling.
+  remote.comments![3]!.push(at(new Date(Date.now() + 2000).toISOString(), `/factory answer ${qid(30)} ok`, { id: 501, login: 'Operator-One', type: 'User' }));
+  await h.cycle();
+  assert.equal((await h.show(work.work_id)).questions[0]!.answer!.text, 'ok');
+});
+
+test('review 5: a recorded Question followed by a failed/uncertain completion leaves an explicit impediment, never a silently stuck Work', async t => {
+  const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
+  const h = await harness(t, remote, [{ kind: 'ask', questionId: qid(31), question: 'Then crash?', completion: 'failure' }]);
+  await h.start();
+  await h.until(async () => Boolean((await h.byNumber())[3]?.execution?.end));
+  const view = await h.show((await h.byNumber())[3]!.work_id);
+  assert.equal(view.questions[0]!.questionId, qid(31));
+  const impediment = view.work.impediments.find(item => item.code === 'QUESTION_RECORDED_EXECUTION_UNCERTAIN');
+  assert.ok(impediment && impediment.questionId === qid(31) && /recovery/.test(impediment.nextStep), JSON.stringify(view.work.impediments));
 });

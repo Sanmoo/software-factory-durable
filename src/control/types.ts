@@ -11,7 +11,9 @@ export type AccessView = { kind: 'access'; scope: 'authenticated'; results: { tr
 export type ConfiguredRepository = GitHubScope & { base: string; label: string };
 /** `repositories` are executable Ticket origins; `dependencyRepositories` are readable only for native blocked_by and never executable. */
 /** `operators`: configured GitHub operator logins whose strict `/factory` comments on a Work's own Ticket may answer its Questions. */
-export type AccessDependencies = { tracker: IssueTracker; repository: CodeRepository; repositories: ConfiguredRepository[]; dependencyRepositories?: GitHubScope[]; operators?: string[] };
+export type AccessDependencies = { tracker: IssueTracker; repository: CodeRepository; repositories: ConfiguredRepository[]; dependencyRepositories?: GitHubScope[];
+  /** Login, or `{login, id}` with the pinned GitHub user id (then matched by id only). */
+  operators?: (string | { login: string; id?: number })[] };
 /** Monotonic local clock for live polling cadence; calendar time is only used for observation instants. Tests substitute it. */
 export type PollingClock = { monotonic(): number; sleep(ms: number, signal: AbortSignal): Promise<void> };
 export type PollingOptions = { intervalSeconds: number; clock?: PollingClock };
@@ -93,7 +95,8 @@ export type QuestionView = {
   destination: { kind: 'issue'; ticket: TicketRef };
   state: 'open' | 'answered';
   publication: { effectId: string; state: 'intended' | 'attempting' | 'published' | 'ambiguous' | 'failed' | 'conflict'; updatedAt: string;
-    attempts: { at: string; outcome: 'attempting' | 'published' | 'failed' | 'unknown' | 'discovered' | 'absent' | 'discovery-incomplete' | 'multiple'; code?: string }[];
+    attempts: { at: string; outcome: 'attempting' | 'published' | 'failed' | 'unknown' | 'discovered' | 'absent' | 'discovery-incomplete' | 'multiple'; code?: string;
+      /** Self-revocation of the single-use publication credential after this attempt. */ revocation?: string }[];
     comment: { commentId: number; url: string } | null; nextStep: string | null };
   answer: { text: string; sha256: string; acceptedAt: string; author: { kind: 'github'; id: number; login: string } | { kind: 'local-administrator' };
     origin: { kind: 'github-comment'; commentId: number; url: string } | { kind: 'local-cli'; request_id: string } } | null;

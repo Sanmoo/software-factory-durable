@@ -5,6 +5,7 @@ import { questionMarkerPrefix } from '../../contracts/index.js';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** Characters. Bounded so the recovery instruction (question + answer, context when it fits) stays within the Builder prompt budget. */
+const control = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 export const questionLimits = Object.freeze({ question: 2000, context: 4000, answer: 2000 });
 const promptBudgetBytes = 15000;
 
@@ -22,15 +23,40 @@ export function parseFactoryCommand(body: string): FactoryCommand {
   const text = (match[2] ?? '').trim();
   if (!text) return { kind: 'invalid', code: 'ANSWER_TEXT_MISSING' };
   if (text.length > questionLimits.answer) return { kind: 'invalid', code: 'ANSWER_TOO_LONG' };
+  // Same rule as the local CLI: no control characters except tab/newline.
+  if (control.test(text)) return { kind: 'invalid', code: 'ANSWER_TEXT_INVALID' };
   return { kind: 'answer', questionId: match[1], text };
 }
 
 export type CommentAuthor = { id: number; login: string; type: string };
-/** Configured GitHub operators by login (case-insensitive), human accounts only. Bots, apps and third parties never authorize. */
-export function authorizeCommentAuthor(author: CommentAuthor, operators: readonly string[]): { authorized: true } | { authorized: false; code: 'AUTHOR_IS_BOT' | 'AUTHOR_NOT_OPERATOR' } {
+/** A configured operator: login, and optionally the pinned immutable GitHub user id (then ONLY the id matches). */
+export type OperatorRef = string | { login: string; id?: number };
+/**
+ * Configured GitHub operators, human accounts only. An operator with a pinned id matches by id alone (renames are fine, a reused login is
+ * not); a login-only operator matches by login (case-insensitive). Bots, App-performed comments and third parties never authorize.
+ */
+export function authorizeCommentAuthor(author: CommentAuthor, operators: readonly OperatorRef[], viaApp: number | null = null):
+  { authorized: true } | { authorized: false; code: 'AUTHOR_IS_BOT' | 'AUTHOR_NOT_OPERATOR' | 'AUTHOR_VIA_APP' } {
   if (author.type === 'Bot' || /\[bot\]$/i.test(author.login)) return { authorized: false, code: 'AUTHOR_IS_BOT' };
-  if (author.type !== 'User' || !operators.some(login => login.toLowerCase() === author.login.toLowerCase())) return { authorized: false, code: 'AUTHOR_NOT_OPERATOR' };
+  if (viaApp !== null) return { authorized: false, code: 'AUTHOR_VIA_APP' };
+  const matches = (operator: OperatorRef) => typeof operator === 'string' ? operator.toLowerCase() === author.login.toLowerCase()
+    : operator.id !== undefined ? operator.id === author.id : operator.login.toLowerCase() === author.login.toLowerCase();
+  if (author.type !== 'User' || !operators.some(matches)) return { authorized: false, code: 'AUTHOR_NOT_OPERATOR' };
   return { authorized: true };
+}
+
+/**
+ * An answer comment must be unedited (its text is what the operator wrote once) and written after the Question was recorded and after its
+ * published comment. Times are epoch milliseconds supplied by the caller (GitHub createdAt/updatedAt, local recordedAt).
+ */
+export function commentEligibility(comment: { commentId: number; createdAt: number; updatedAt: number }, question: { recordedAt: number; publishedCommentId: number | null }):
+  { eligible: true } | { eligible: false; code: 'COMMENT_EDITED' | 'COMMENT_PREDATES_QUESTION' | 'COMMENT_TIME_INVALID' } {
+  if (!Number.isFinite(comment.createdAt) || !Number.isFinite(comment.updatedAt) || !Number.isFinite(question.recordedAt)) return { eligible: false, code: 'COMMENT_TIME_INVALID' };
+  if (comment.updatedAt !== comment.createdAt) return { eligible: false, code: 'COMMENT_EDITED' };
+  if (comment.createdAt < question.recordedAt || (question.publishedCommentId !== null && comment.commentId <= question.publishedCommentId)) {
+    return { eligible: false, code: 'COMMENT_PREDATES_QUESTION' };
+  }
+  return { eligible: true };
 }
 
 export type AnswerContext = { kind: 'local-cli' } | { kind: 'github-comment'; workId: string };
@@ -48,7 +74,6 @@ export function answerDecision(input: { question: { questionId: string; workId: 
   return { kind: 'accept' };
 }
 
-const control = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 /** Shape of an ask_user request before any commit; the worker assigned the identity and preserved the request first. */
 export function validateQuestionRequest(input: { questionId: unknown; question: unknown; context: unknown }): { valid: true } | { valid: false; code: string } {
   if (typeof input.questionId !== 'string' || !uuid.test(input.questionId)) return { valid: false, code: 'QUESTION_ID_INVALID' };

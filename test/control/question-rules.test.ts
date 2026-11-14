@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { answerDecision, authorizeCommentAuthor, parseFactoryCommand, questionCommentBody, questionDestination, recoveryPrompt, validateQuestionRequest } from '../../src/control/rules/questions.js';
+import { answerDecision, authorizeCommentAuthor, commentEligibility, parseFactoryCommand, questionCommentBody, questionDestination, recoveryPrompt, validateQuestionRequest } from '../../src/control/rules/questions.js';
 
 // Rules level (Q11): deterministic functions over canonical inputs; no SQLite, GitHub or clock.
 const qid = '0b9c6a52-3d3e-4c8f-9a51-2f7d1e0c4a11';
@@ -15,6 +15,8 @@ test('AC4: only a comment whose first characters are the strict /factory prefix 
   assert.deepEqual(parseFactoryCommand('/factory answer not-a-question yes'), { kind: 'invalid', code: 'QUESTION_ID_INVALID' });
   assert.deepEqual(parseFactoryCommand(`/factory answer ${qid.toUpperCase()} yes`), { kind: 'invalid', code: 'QUESTION_ID_INVALID' });
   assert.deepEqual(parseFactoryCommand('/factory resume'), { kind: 'invalid', code: 'COMMAND_NOT_SUPPORTED' });
+  assert.deepEqual(parseFactoryCommand(`/factory answer ${qid} bell\u0007`), { kind: 'invalid', code: 'ANSWER_TEXT_INVALID' }, 'same control-character rule as the CLI');
+  assert.deepEqual(parseFactoryCommand(`/factory answer ${qid} tab\tok`), { kind: 'answer', questionId: qid, text: 'tab\tok' });
   assert.deepEqual(parseFactoryCommand(`/factory answer ${qid} ${'x'.repeat(2001)}`), { kind: 'invalid', code: 'ANSWER_TOO_LONG' });
 });
 
@@ -27,6 +29,11 @@ test('AC4: only a configured human operator (case-insensitive login, type User) 
   assert.deepEqual(authorizeCommentAuthor({ id: 5, login: 'stranger', type: 'User' }, operators), { authorized: false, code: 'AUTHOR_NOT_OPERATOR' });
   assert.deepEqual(authorizeCommentAuthor({ id: 6, login: 'sanmoo', type: 'Organization' }, operators), { authorized: false, code: 'AUTHOR_NOT_OPERATOR' });
   assert.deepEqual(authorizeCommentAuthor({ id: 7, login: 'sanmoo', type: 'User' }, []), { authorized: false, code: 'AUTHOR_NOT_OPERATOR' });
+  // Review 3: an operator pinned by id matches by id only; App-performed comments never authorize.
+  const pinned = [{ login: 'Sanmoo', id: 42 }];
+  assert.deepEqual(authorizeCommentAuthor({ id: 42, login: 'renamed', type: 'User' }, pinned), { authorized: true });
+  assert.deepEqual(authorizeCommentAuthor({ id: 43, login: 'Sanmoo', type: 'User' }, pinned), { authorized: false, code: 'AUTHOR_NOT_OPERATOR' });
+  assert.deepEqual(authorizeCommentAuthor({ id: 42, login: 'Sanmoo', type: 'User' }, pinned, 9), { authorized: false, code: 'AUTHOR_VIA_APP' });
 });
 
 const question = (overrides: Partial<Parameters<typeof answerDecision>[0]['question']> = {}) =>
@@ -82,4 +89,14 @@ test('AC6/spec 5.5: the recovery instruction is explicit (Work, artifacts, quest
     question: { questionId: qid, question: 'é'.repeat(2000), context: '€'.repeat(4000) }, answer: { text: '€'.repeat(2000), author: 'a', origin: 'local-cli' } });
   assert.ok(Buffer.byteLength(big) <= 16384);
   assert.ok(big.includes('€'.repeat(2000)) && big.includes('context you gave is omitted'));
+});
+
+test('review 2: only an unedited comment written after the Question was recorded (and after its published comment) is eligible', () => {
+  const question = { recordedAt: 1000, publishedCommentId: 50 };
+  assert.deepEqual(commentEligibility({ commentId: 60, createdAt: 2000, updatedAt: 2000 }, question), { eligible: true });
+  assert.deepEqual(commentEligibility({ commentId: 60, createdAt: 2000, updatedAt: 2500 }, question), { eligible: false, code: 'COMMENT_EDITED' });
+  assert.deepEqual(commentEligibility({ commentId: 60, createdAt: 999, updatedAt: 999 }, question), { eligible: false, code: 'COMMENT_PREDATES_QUESTION' });
+  assert.deepEqual(commentEligibility({ commentId: 40, createdAt: 2000, updatedAt: 2000 }, question), { eligible: false, code: 'COMMENT_PREDATES_QUESTION' });
+  assert.deepEqual(commentEligibility({ commentId: 40, createdAt: 2000, updatedAt: 2000 }, { recordedAt: 1000, publishedCommentId: null }), { eligible: true });
+  assert.deepEqual(commentEligibility({ commentId: 60, createdAt: Number.NaN, updatedAt: 2000 }, question), { eligible: false, code: 'COMMENT_TIME_INVALID' });
 });

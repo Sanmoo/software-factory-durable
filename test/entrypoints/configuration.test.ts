@@ -135,3 +135,13 @@ test('dependency-only repositories are explicit, read-only and distinct from exe
     ['installation omitted', configuration + 'dependencyRepositories: [{repository: a/b}]\n'],
   ]) assert.equal((await diagnose(yaml!)).report.configuration.valid, false, name);
 });
+
+test('review 3: an operator can be pinned by immutable GitHub user id next to the login; duplicate ids/logins and invalid ids are rejected', async () => {
+  const pinned = await diagnose(configuration.replace('operators: [operator-one]', 'operators: [operator-one, {login: Sanmoo, id: 4242}]'));
+  assert.equal(pinned.report.configuration.valid, true, pinned.stdout);
+  assert.deepEqual(pinned.report.configuration.effective.operators, ['operator-one', { login: 'Sanmoo', id: 4242 }]);
+  for (const bad of ['operators: [{login: Sanmoo, id: 0}]', 'operators: [{login: Sanmoo, id: 1}, {login: other, id: 1}]', 'operators: [sanmoo, {login: Sanmoo, id: 3}]',
+    'operators: [{login: Sanmoo, id: 3, extra: 1}]']) {
+    assert.equal((await diagnose(configuration.replace('operators: [operator-one]', bad))).report.configuration.valid, false, bad);
+  }
+});

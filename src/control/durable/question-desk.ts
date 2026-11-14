@@ -1,7 +1,7 @@
 import type { IssueTracker } from '../../issue-tracker/index.js';
-import { authorizeCommentAuthor, parseFactoryCommand, questionCommentBody } from '../rules/questions.js';
+import { authorizeCommentAuthor, commentEligibility, parseFactoryCommand, questionCommentBody, type OperatorRef } from '../rules/questions.js';
 import type { WorkRecord } from './admission.js';
-import { acceptAnswer, readQuestions, recordInputsCursor, recordPublication } from './questions.js';
+import { acceptAnswer, readQuestion, readQuestions, recordIgnored, recordInputsCursor, recordPublication } from './questions.js';
 import type { Session } from './store.js';
 
 const maxKnownFailures = 5;
@@ -13,7 +13,7 @@ const maxKnownFailures = 5;
  * several candidates are never chosen. Ingestion: complete comment listings of Works with open Questions; strict `/factory` prefix,
  * configured human operators and this Work's own Ticket only. Neither path launches anything.
  */
-export function createQuestionDesk(deps: { session: Session; tracker: IssueTracker; operators: readonly string[]; readWorks(): Promise<WorkRecord[]>; stopped(): boolean }) {
+export function createQuestionDesk(deps: { session: Session; tracker: IssueTracker; operators: readonly OperatorRef[]; readWorks(): Promise<WorkRecord[]>; stopped(): boolean }) {
   const { session, tracker } = deps;
   let chain: Promise<void> = Promise.resolve();
   const unexpected = () => undefined;
@@ -42,9 +42,10 @@ export function createQuestionDesk(deps: { session: Session; tracker: IssueTrack
           question: question.content.question, context: question.content.context });
         const result = await tracker.postComment(ticket, { kind: 'question', questionId: question.questionId, body },
           { effectId: question.publication.effectId, questionId: question.questionId }).catch(unexpected);
+        const revocation = result?.revocation ? { revocation: result.revocation } : {};
         await recordPublication(session, question.questionId, !result ? { kind: 'result', outcome: 'unknown', code: 'TRACKER_UNEXPECTED_FAILURE', nextStep: 'Unexpected adapter failure; discover before republishing.' }
-          : result.kind === 'published' ? { kind: 'result', outcome: 'published', comment: { commentId: result.commentId, url: result.url } }
-          : { kind: 'result', outcome: result.kind === 'failed' ? 'failed' : 'unknown', code: result.code, nextStep: result.nextStep });
+          : result.kind === 'published' ? { kind: 'result', outcome: 'published', comment: { commentId: result.commentId, url: result.url }, ...revocation }
+          : { kind: 'result', outcome: result.kind === 'failed' ? 'failed' : 'unknown', code: result.code, nextStep: result.nextStep, ...revocation });
       }
     }
   }
@@ -61,10 +62,16 @@ export function createQuestionDesk(deps: { session: Session; tracker: IssueTrack
       for (const comment of inputs.comments) {
         const command = parseFactoryCommand(comment.body);
         if (command.kind !== 'answer') continue;
-        const author = authorizeCommentAuthor(comment.author, deps.operators);
+        const origin = `github-comment:${comment.commentId}`;
+        const author = authorizeCommentAuthor(comment.author, deps.operators, comment.viaApp);
+        // Unauthorized: a bounded summary on the Question only, never a durable request document per comment.
+        if (!author.authorized) { await recordIgnored(session, command.questionId, origin, author.code); continue; }
+        const question = await readQuestion(session, command.questionId);
+        const eligibility = question ? commentEligibility({ commentId: comment.commentId, createdAt: Date.parse(comment.createdAt), updatedAt: Date.parse(comment.updatedAt) },
+          { recordedAt: Date.parse(question.recordedAt), publishedCommentId: question.publication.comment?.commentId ?? null }) : { eligible: true as const };
+        if (!eligibility.eligible) { await recordIgnored(session, command.questionId, origin, eligibility.code); continue; }
         await acceptAnswer(session, { request_id: `github-comment-${comment.commentId}`, question_id: command.questionId, text: command.text,
-          origin: { kind: 'github-comment', workId: work.work_id, comment: { commentId: comment.commentId, url: comment.url, author: comment.author } },
-          ...(author.authorized ? {} : { refusal: author.code }) });
+          origin: { kind: 'github-comment', workId: work.work_id, comment: { commentId: comment.commentId, url: comment.url, author: comment.author } } });
       }
       await recordInputsCursor(session, work.work_id, inputs.cursor);
     }
