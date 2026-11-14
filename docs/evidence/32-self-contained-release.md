@@ -123,6 +123,11 @@ Níveis: **R** regras/determinístico; **S** Control real + Pi Durable/SQLite te
 
 A verificação real registrada abaixo (`r32-v1`) é anterior a estas correções; a receita agora usa `r32-v2`.
 
+Gate após as correções (HEAD `f95ed8c`, `rm -rf dist` antes): `tsc` rc=0, `eslint --max-warnings 0` rc=0,
+dependency-cruiser rc=0 (300 módulos, 1766 dependências, nenhuma violação); cada `dist/test/**/*.test.js` um
+arquivo por vez (`--experimental-test-module-mocks --test --test-concurrency=1`, timeout 90 s):
+**137 arquivos, 924 pass, 0 fail, 10 skip** (skips de ambiente inalterados), sem reexecuções.
+
 ## Decisões de interpretação e questões abertas (operador)
 
 1. **Perfil de worker único na release.** A release compõe `openai`/`gpt-6-luna` via OAuth da Factory para os
