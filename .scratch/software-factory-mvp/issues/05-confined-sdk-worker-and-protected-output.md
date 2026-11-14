@@ -8,14 +8,14 @@
 
 ## Acceptance criteria
 
-- [ ] SDK embutido em worker Node recebe modelo/provider, loader, ferramentas, skills e sessões explícitos; não herda recursos pessoais nem executáveis do repo no host e desabilita retries SDK/provider conforme contrato.
-- [ ] Reserva/autorização antecedem ativação; recibo completo com identidades/perfil/tempo é sincronizado e publicado atomicamente antes de modelo/ferramenta, fora da área editável pelo guest.
-- [ ] Conexão é vinculada pelo host a invocação/papel/ambiente/boot esperados; mensagens antigas, identidade autoafirmada e operação administrativa de worker não autorizam efeitos.
-- [ ] Builder usa projeção de ferramentas do adapter da instância existente, sem shell host, SDK Gondolin irrestrito ou ambiente inteiro do host.
-- [ ] Saídas são filtradas antes de SDK/sessão nativa, arquivo, exibição e streaming, inclusive segredo sintético partido entre chunks; falha não libera bruto por caminho alternativo.
-- [ ] Saída volumosa é gravada incrementalmente com trecho marcado e referência paginável; cópia seletiva filtrada fica legível no guest sem montar registros host ou criar ferramenta de logs.
-- [ ] EOF/erro confirmado fecha novas chamadas e solicita abort/parada supervisionada; silêncio e comando longo não comprovam desconexão, e retorno SDK não comprova cessação.
-- [ ] Integração com SDK e modelo reais registra perfil, sessão, ferramenta/resultado e limites observados; falha crítica de captura impede passos dependentes em vez de inventar sucesso.
+- [x] SDK embutido em worker Node recebe modelo/provider, loader, ferramentas, skills e sessões explícitos; não herda recursos pessoais nem executáveis do repo no host e desabilita retries SDK/provider conforme contrato.
+- [x] Reserva/autorização antecedem ativação; recibo completo com identidades/perfil/tempo é sincronizado e publicado atomicamente antes de modelo/ferramenta, fora da área editável pelo guest.
+- [x] Conexão é vinculada pelo host a invocação/papel/ambiente/boot esperados; mensagens antigas, identidade autoafirmada e operação administrativa de worker não autorizam efeitos.
+- [x] Builder usa projeção de ferramentas do adapter da instância existente, sem shell host, SDK Gondolin irrestrito ou ambiente inteiro do host.
+- [x] Saídas são filtradas antes de SDK/sessão nativa, arquivo, exibição e streaming, inclusive segredo sintético partido entre chunks; falha não libera bruto por caminho alternativo.
+- [x] Saída volumosa é gravada incrementalmente com trecho marcado e referência paginável; cópia seletiva filtrada fica legível no guest sem montar registros host ou criar ferramenta de logs.
+- [x] EOF/erro confirmado fecha novas chamadas e solicita abort/parada supervisionada; silêncio e comando longo não comprovam desconexão, e retorno SDK não comprova cessação.
+- [x] Integração com SDK e modelo reais registra perfil, sessão, ferramenta/resultado e limites observados; falha crítica de captura impede passos dependentes em vez de inventar sucesso.
 
 ## Referências e validação
 
@@ -33,3 +33,7 @@ Publicação é planejamento aprovado, não autorização de construção, uso d
 - Gap reproduzido em Pi coding-agent 1.5.2: `createReadTool` consulta o filesystem host antes das `ReadOperations` substituídas. Candidato mínimo versionado, somente em cópia privada de fixture, preserva leitura/paginação/imagem nativas; **não adotado** como fork/dependência runtime. Requer avaliação/decisão do responsável antes de uso operacional.
 - Permanecem não implementados ativação supervisionada, recibo específico de início/reserva, `executeTool`/transporte do proprietário existente, projeção por papel, cópia seletiva ao guest e parada por EOF. São trabalho local restante, não redesenho obrigatório nem provas por dublê.
 - Chamadas reais continuam retidas: falta provider/modelo suportado e mecanismo verificável de credencial independente + contabilização agregada/cap autorizado. O aceite com modelo real e as provas físicas pertinentes não foram executados nem inferidos dos testes locais. Ticket não resolvido; integração de partial/stub não constitui aceite.
+
+## Answer
+
+Resolvido em 2026-11-14: qualificação física v4 completa (VM Gondolin real, worker Node novo, Write/Edit/Bash/Read/cópia/seleção, modelo real openai/gpt-6-luna via OAuth Factory) e gate local completo verde. Níveis e lacunas declarados em `docs/evidence/05-physical-qualification-and-acceptance.md`.
