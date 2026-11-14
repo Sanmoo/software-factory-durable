@@ -19,6 +19,9 @@ import { intactRequest, readQuestion, readQuestions, recordContentLost, register
 import { pendingScope } from './scope.js';
 import { recoveryPrompt, type KnownContext } from '../rules/questions.js';
 import { continuationPrompt, initialPrompt, promptBudgetBytes, recoveryContext, scopeSection, sessionDecision } from '../rules/continuation.js';
+import { decideDiscovery, publicationAttempted, publicationPrompt, publicationStep, type DiscoveryObservation } from '../rules/publication.js';
+import { evaluatePublication, recordDiscovery } from './publication.js';
+import { purposeOf } from './execution.js';
 import type { SessionRef } from '../types.js';
 import { interruptionRecoveryPrompt } from '../rules/recovery.js';
 import { reconcileExecution } from './recovery.js';
@@ -359,6 +362,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       if (initial.kind === 'too-large') return { kind: 'insufficient', reasons: ['PROMPT_TOO_LARGE'] };
       return { kind: 'ready', prompt: initial.prompt, resume: null, decision: null, continuation: null };
     }
+    if (resume.reason === 'PUBLICATION_REQUESTED') return publicationPlan(work, execution, prepared, pack, current ?? null, skillDirectory);
     const answered = resume.questionId ? await readQuestion(session, resume.questionId) : null;
     if (resume.questionId && (!answered?.answer || answered.answer.sha256 !== resume.answerSha256 || answered.workId !== work.work_id ||
         answered.executionId !== resume.previousExecutionId)) return { kind: 'refused', reasons: ['RESUME_BASIS_CHANGED'] };
@@ -402,6 +406,91 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       answer, replacement: { reason: decided.reason }, known, reviewRounds: Boolean(ports.reviews?.rounds) });
     if (recovered.kind === 'too-large') return { kind: 'insufficient', reasons: ['PROMPT_TOO_LARGE'] };
     return { kind: 'ready', prompt: recovered.prompt, resume, decision, continuation: null };
+  }
+
+  /**
+   * Ticket 14 (spec §9.1): the publication activation's first prompt. The SAME compatible session is continued with a `publish` message, or
+   * replaced by a self-contained publication instruction; the request (verified commit, branch/base, marker, lease expectation) is the one
+   * recorded at admission and must still be the Work's requested publication. Insufficient context blocks before any credential.
+   */
+  async function publicationPlan(work: WorkRecord, execution: ExecutionView, prepared: { checkout: { baseCommit: string; branch: string; path: string; reused: boolean } },
+    pack: ExecutionView['request']['skillPack'], current: WorkRecord | null, skillDirectory: string): Promise<Plan> {
+    const request = execution.request.publication;
+    const resume = execution.request.resume!;
+    const requested = current?.publication;
+    if (!request || !requested?.verified || requested.state !== 'requested' || requested.basisExecutionId !== request.basisExecutionId || requested.verified.head !== request.head) {
+      return { kind: 'refused', reasons: ['PUBLICATION_BASIS_CHANGED'] };
+    }
+    const previous = current?.previousExecutions.find(item => item.executionId === resume.previousExecutionId) ?? null;
+    if (!previous) return { kind: 'insufficient', reasons: ['PREVIOUS_EXECUTION_MISSING'] };
+    const context = recoveryContext({ previous: { baseCommit: previous.request.baseCommit, branch: previous.request.branch, checkout: previous.request.checkout },
+      prepared: { baseCommit: prepared.checkout.baseCommit, branch: prepared.checkout.branch, checkout: prepared.checkout.path, reused: prepared.checkout.reused },
+      trigger: { answer: false, scopeUpdates: 0, publication: true } });
+    if (!context.sufficient) return { kind: 'insufficient', reasons: context.reasons };
+    const recorded = previous.end?.session ?? null;
+    let observation = null;
+    if (recorded && ports.workers.observe) {
+      observation = (await ports.workers.observe({ workId: work.work_id, executionId: previous.executionId, invocationId: previous.invocationId, session: recorded,
+        next: { ...(execution.request.policies.skillPack ? { skillPack: execution.request.policies.skillPack } : {}),
+          ...(execution.request.policies.copyOutput === undefined ? {} : { copyOutput: execution.request.policies.copyOutput }),
+          ...(execution.request.policies.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: execution.request.policies.editSourceMaxBytes }), handoff: Boolean(ports.reviews) } })
+        .catch(() => ({ session: { state: 'unavailable' as const, code: 'SESSION_OBSERVATION_FAILED', differences: [] }, limitations: [] }))).session;
+    }
+    const decided = sessionDecision({ previous: { session: recorded, skillPack: previous.request.skillPack, policies: previous.request.policies },
+      next: { skillPack: pack, policies: execution.request.policies }, observation });
+    const decision = { mode: decided.mode, reason: decided.reason, previousExecutionId: previous.executionId, previous: recorded, decidedAt: new Date().toISOString() };
+    const prompt = publicationPrompt({ mode: decided.mode, reason: decided.reason, executionId: execution.executionId, previousExecutionId: previous.executionId, skillDirectory,
+      repository: work.repository.repository, base: request.base, branch: request.branch, head: request.head, marker: request.marker,
+      ticket: { number: work.ticket.number, url: work.ticket.url }, workId: work.work_id, checkout: prepared.checkout.path, expectedRemote: request.expectedRemote,
+      verified: { reviewedRound: requested.verified.reviewedRound, gates: requested.verified.gates, requiredChecks: requested.verified.requiredChecks } });
+    if (prompt.kind === 'too-large') return { kind: 'insufficient', reasons: ['PROMPT_TOO_LARGE'] };
+    return { kind: 'ready', prompt: prompt.prompt, resume, decision, continuation: decided.mode === 'continue' ? recorded : null };
+  }
+
+  /**
+   * Ticket 14 discovery pass (spec §9.1), in the same owner loop before selection: for each Work whose Execution ceased, record a NEW verified
+   * basis, then discover the own publication (Git remote ref + correlated pull requests) with a safe read and record the decision. Never
+   * while an activity of the Work is running; an incomplete read decides nothing and is simply read again on a later cycle.
+   */
+  async function reconcilePublications() {
+    for (const listed of await deps.readWorks()) {
+      if (stopping.signal.aborted) return;
+      if (running.has(listed.work_id)) continue;
+      let step = publicationStep(listed);
+      if (step.kind === 'evaluate') {
+        const evaluated = await evaluatePublication(session, listed.work_id, step.basisExecutionId);
+        if (evaluated === 'stale' || evaluated.state !== 'awaiting-discovery') { observe(listed.work_id, 'publication-evaluated', evaluated === 'stale' ? ['STALE'] : evaluated.reasons); continue; }
+        const attempted = publicationAttempted(listed);
+        step = { kind: 'discover', trigger: attempted ? 'after-publication' : 'verified', attempted };
+      }
+      if (step.kind !== 'discover') continue;
+      const work = await readWork(session, listed.work_id);
+      const publication = work?.publication;
+      if (!work || !publication?.verified || running.has(work.work_id)) continue;
+      const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase());
+      let observation: DiscoveryObservation;
+      let observedAt: string | null = null;
+      if (!configured) observation = { kind: 'incomplete', code: 'REPOSITORY_NOT_CONFIGURED' };
+      else {
+        try {
+          const read = await deps.access.repository.findPublication({ repo: configured, issueNumbers: [work.ticket.number], knownBranches: [publication.branch] });
+          observedAt = read.observedAt;
+          const issue = read.kind === 'observed' ? read.issues[String(work.ticket.number)] : undefined;
+          const tip = read.kind === 'observed' ? read.branches[publication.branch] : undefined;
+          observation = read.kind !== 'observed' ? { kind: 'incomplete', code: read.code }
+            : !issue ? { kind: 'incomplete', code: 'PUBLICATION_NOT_REPORTED' }
+            : issue.completeness === 'incomplete' ? { kind: 'incomplete', code: issue.code }
+            : { kind: 'observed', repositoryId: read.repositoryId, candidates: issue.candidates,
+              branch: !tip ? { state: 'unknown', code: 'BRANCH_NOT_REPORTED' } : tip.state === 'unknown' ? { state: 'unknown', code: tip.code } : tip };
+        } catch { observation = { kind: 'incomplete', code: 'PUBLICATION_QUERY_FAILED' }; }
+      }
+      const decision = decideDiscovery({ expect: { workId: work.work_id, branch: publication.branch, base: publication.base, repositoryId: work.repository.repositoryId,
+        head: publication.verified.head }, attempted: step.attempted, observation });
+      const recorded = await recordDiscovery(session, work.work_id, { basisExecutionId: publication.basisExecutionId, executionId: work.execution?.executionId ?? null,
+        trigger: step.trigger, observedAt, ticketNumber: work.ticket.number, decision,
+        branch: observation.kind === 'observed' ? observation.branch : { state: 'unknown', code: observation.code } });
+      observe(work.work_id, recorded === 'stale' ? 'publication-stale' : `publication-${decision.outcome}`, decision.reasons);
+    }
   }
 
   async function execute(work: WorkRecord, execution: ExecutionView) {
@@ -540,7 +629,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       // Durable issuance intent BEFORE the call: an issued token is never unknown to the authority.
       if (await recordIssuance(session, work.work_id, executionId, { requestedAt: new Date().toISOString(), outcome: 'requested' }) !== 'recorded') { observe(work.work_id, 'stale'); return; }
       let grant;
-      const context = { workId: work.work_id, executionId, repository: { repository: configured.repository, installationId: configured.installationId, workflows: false } };
+      // Ticket 14: the purpose is Control's, fixed by the activity (publication activations only); never chosen by the model.
+      const context = { workId: work.work_id, executionId, repository: { repository: configured.repository, installationId: configured.installationId, workflows: false },
+        purpose: purposeOf(execution) };
       // Registered BEFORE issuing: a concurrent withdrawal sees the issuance in flight and revokes its grant.
       lifecycle = credentialLifecycle({ session, ports, work_id: work.work_id, executionId, stopping: stopping.signal, context,
         repositoryConfigured: () => deps.access.repositories.some(scope => scope.repository.toLowerCase() === configured.repository.toLowerCase() && scope.installationId === configured.installationId) });
@@ -585,7 +676,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         return { status: 'recorded' as const };
       };
       const handle = await ports.workers.activate({ context: { workId: work.work_id, executionId, invocationId: execution.invocationId, role: 'builder',
-        environmentRef: environment, bootRef: boot, phaseId: plan.continuation ? 'builder-continuation' : resume || execution.interruption ? 'builder-recovery' : 'builder-initial' }, prompt, signal: activitySignal, ...ports.builder,
+        environmentRef: environment, bootRef: boot, phaseId: execution.request.publication ? 'builder-publication' : plan.continuation ? 'builder-continuation' : resume || execution.interruption ? 'builder-recovery' : 'builder-initial' },
+        prompt, signal: activitySignal, ...ports.builder,
         ...(ports.reviews ? { handoff: { baseCommit: prepared.checkout.baseCommit, ...(ports.reviews.rounds ? { rounds: { first: firstRound, max: ports.reviews.rounds.max } } : {}) } } : {}), ...(plan.continuation ? { continuation: { session: plan.continuation } } : {}) },
       { credential: grant.delivery }, { question: onQuestion });
       activated = true;
@@ -741,6 +833,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       return 'withdrawn';
     },
     async tick() {
+      if (stopping.signal.aborted) return;
+      // Discovery is tracking (safe reads), not a trigger: it runs while paused too, before any selection.
+      await reconcilePublications();
       if (stopping.signal.aborted || await deps.paused()) return;
       if (await deps.heldSlots() >= ports.capacity) { observe(null, 'no-slot-available'); return; }
       const works = await deps.readWorks();
@@ -757,19 +852,26 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       const previous = resumeBasis(work);
       const scopeUpdateIds = pendingScope(work).map(update => update.scopeUpdateId);
       let resume: NonNullable<ExecutionView['request']['resume']> | undefined;
+      let publication: NonNullable<ExecutionView['request']['publication']> | undefined;
       if (previous?.end?.outcome === 'question') {
         const answered = previous.end.questionId ? await readQuestion(session, previous.end.questionId) : null;
         if (!answered?.answer || answered.workId !== work.work_id || answered.executionId !== previous.executionId) { observe(work.work_id, 'refused', ['QUESTION_NOT_ANSWERED']); return; }
         resume = { previousExecutionId: previous.executionId, questionId: answered.questionId, answerSha256: answered.answer.sha256, scopeUpdateIds, reason: 'QUESTION_ANSWERED' };
       } else if (previous?.end?.outcome === 'completed' && scopeUpdateIds.length) {
         resume = { previousExecutionId: previous.executionId, questionId: null, answerSha256: null, scopeUpdateIds, reason: 'SCOPE_UPDATED' };
+      } else if (work.publication?.state === 'requested' && work.publication.verified && work.publication.expectedRemote && previous?.end?.outcome === 'completed' &&
+          previous.executionId === work.publication.basisExecutionId) {
+        // Ticket 14: the requested publication activation, with exactly the recorded verified commit and lease expectation (re-checked in the commit).
+        resume = { previousExecutionId: previous.executionId, questionId: null, answerSha256: null, scopeUpdateIds, reason: 'PUBLICATION_REQUESTED' };
+        publication = { basisExecutionId: work.publication.basisExecutionId, head: work.publication.verified.head, branch: work.publication.branch,
+          base: work.publication.base, marker: work.publication.marker, expectedRemote: work.publication.expectedRemote };
       }
       // Ticket 26: after an interrupted Execution, its basis (operational recovery or clean-stop continuation), re-checked in the commit.
       const interruption = interruptionBasis(work);
       const { attemptId } = await freshEvaluation(work);
       const admission = await admitExecution(session, { ...(interruption ? { interruption } : {}), now: (ports.calendar ?? Date).now(), work_id: work.work_id, attemptId, capacity: ports.capacity, authorizationObservedAt: authorization.observedAt,
         request: { ticket: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
-          branch: `factory/${work.ticket.number}-${work.work_id.slice(0, 8)}`, policies: { ...ports.builder } }, ...(resume ? { resume } : {}),
+          branch: `factory/${work.ticket.number}-${work.work_id.slice(0, 8)}`, policies: { ...ports.builder }, ...(publication ? { publication } : {}) }, ...(resume ? { resume } : {}),
         limits: deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase()) ?? {} });
       if (admission.kind === 'refused') { observe(work.work_id, 'refused', admission.reasons); return; }
       observe(work.work_id, 'reserved');

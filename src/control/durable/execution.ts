@@ -9,6 +9,7 @@ import { dispatchBlockers } from '../rules/dependencies.js';
 import { installation, legacyCredentialLifecycle, ticketIndex, works, type WorkRecord } from './admission.js';
 import { questions } from './questions.js';
 import { pendingScope } from './scope.js';
+import { markPublicationStarted } from './publication.js';
 import type { Session } from './store.js';
 import { classifyInterruption } from '../rules/recovery.js';
 import { applyRecoveryRequest, backoffRunning } from './recovery-request.js';
@@ -53,7 +54,9 @@ export const activeExecution = (execution: ExecutionView | null) => execution !=
  * Writes the Execution identity, its Slot, the dispatch intent and the Work's own branch. Nothing external happens before this commit.
  */
 export async function admitExecution(session: Session, input: { work_id: string; attemptId: string; capacity: number; authorizationObservedAt: string;
-  request: Omit<ExecutionView['request'], 'baseCommit' | 'checkout' | 'promptSha256' | 'skillPack' | 'resume' | 'scopeUpdateIds' | 'session'>;
+  request: Omit<ExecutionView['request'], 'baseCommit' | 'checkout' | 'promptSha256' | 'skillPack' | 'resume' | 'scopeUpdateIds' | 'session' | 'publication'> & {
+    /** Ticket 14: present only for a publication activation; re-checked against the Work's requested publication in this commit. */
+    publication?: ExecutionView['request']['publication'] };
   /** Configured limits of the repository: initialize a budget absent on a pre-19 Work, and the per-Execution timeout (absent = none). */
   limits?: { correctionLimit?: number | undefined; recoveryLimit?: number | undefined; timeoutSeconds?: number | undefined };
   /** Recovery basis after an answered Question; re-checked in this commit (the answer and the previous Execution must still match). */
@@ -90,8 +93,19 @@ export async function admitExecution(session: Session, input: { work_id: string;
     } else if (previous?.end?.outcome === 'completed' && scopeUpdateIds.length) {
       // After a COMPLETED Execution only an authorized concrete scope change resumes the Work (never a later Ticket/link edit).
       if (!input.resume || input.resume.reason !== 'SCOPE_UPDATED' || input.resume.previousExecutionId !== previous.executionId || input.resume.questionId !== null || !sameScope) reasons.push('RESUME_BASIS_CHANGED');
+    } else if (work.publication?.state === 'requested' && previous?.end?.outcome === 'completed' && previous.executionId === work.publication.basisExecutionId) {
+      // Ticket 14: the publication activation carries exactly the requested basis, verified commit, branch/base, marker and lease expectation.
+      const requested = work.publication;
+      const asked = input.request.publication;
+      if (!input.resume || input.resume.reason !== 'PUBLICATION_REQUESTED' || input.resume.previousExecutionId !== previous.executionId || input.resume.questionId !== null ||
+          !asked || !requested.verified || asked.basisExecutionId !== requested.basisExecutionId || asked.head !== requested.verified.head || asked.branch !== requested.branch ||
+          asked.base !== requested.base || asked.marker !== requested.marker || JSON.stringify(asked.expectedRemote) !== JSON.stringify(requested.expectedRemote) ||
+          input.request.branch !== requested.branch) reasons.push('RESUME_BASIS_CHANGED');
     } else if (input.resume) reasons.push('RESUME_BASIS_CHANGED');
-    if (reasons.length) return { kind: 'refused' as const, reasons };
+    // A publication activation started earlier and its effects are not discovered yet: nothing else runs before the discovery (spec §9.1).
+    if (work.publication?.state === 'awaiting-discovery') reasons.push('PUBLICATION_DISCOVERY_PENDING');
+    if (input.request.publication && input.resume?.reason !== 'PUBLICATION_REQUESTED') reasons.push('RESUME_BASIS_CHANGED');
+    if (reasons.length) return { kind: 'refused' as const, reasons: [...new Set(reasons)] };
     const now = new Date().toISOString();
     // Budget reservation in THIS commit (spec §3.4): the correction once, each operational recovery once, the initial implementation never.
     work.budget ??= initialBudget(input.limits ?? {}, work.repository.repository, now);
@@ -118,11 +132,14 @@ export async function admitExecution(session: Session, input: { work_id: string;
       slot: { held: true, capacity: input.capacity, reservedAt: now, releasedAt: null },
       admission: { attemptId: input.attemptId, evaluationId: latest!.evaluationId, authorizationObservedAt: input.authorizationObservedAt, activationAttemptId: null, activationEvaluationId: null },
       dispatch: { intent: 'prepare-start-activate', phase: 'reserved', environment: null, boot: null, updatedAt: now },
-      request: { ...input.request, baseCommit: null, checkout: null, promptSha256: null, skillPack: null, resume: input.resume ?? null, scopeUpdateIds, session: null },
+      request: { ...requestOf(input.request), baseCommit: null, checkout: null, promptSha256: null, skillPack: null, resume: input.resume ?? null, scopeUpdateIds, session: null,
+        ...(input.request.publication ? { publication: structuredClone(input.request.publication) } : {}) },
       credential: null, credentialIssuance: null, credentialRenewals: [],
       credentialLifecycle: { state: 'none', withdrawnAt: null, reason: null, renewal: 'enabled', renewalStop: null, workerNotice: null },
       start: null, end: null, held: null,
-      completion: { automatic: false, reason: 'Reviews, publication and readiness are not enabled in this Factory version; an ended Builder Execution never completes the Work automatically.' },
+      completion: { automatic: false, reason: input.request.publication
+        ? 'Publication activation: its effects are discovered by Control after cessation (own branch tip and own draft pull request); the Builder\'s message is not evidence.'
+        : 'An ended Builder Execution never completes the Work automatically: publication requires the end-of-Execution verification and a discovery; readiness is not enabled in this Factory version.' },
       charge, timing: { timeoutSeconds: input.limits?.timeoutSeconds ?? null, clock: 'controller-monotonic', origin: null, startedAt: null, lastActivity: null,
         duration: null, timeout: null, overrun: null },
       interruption: input.interruption ?? null,
@@ -137,6 +154,7 @@ export async function admitExecution(session: Session, input: { work_id: string;
   }, BACKGROUND_CONTEXT);
 }
 
+const requestOf = <T extends { publication?: unknown }>(request: T): Omit<T, 'publication'> => { const { publication: _publication, ...rest } = request; return rest; };
 /** Motive of the next activation: a pending operational recovery, else the open correction (charged once), else nothing to charge. */
 function motiveOf(work: WorkRecord): Motive {
   if (work.pendingRecovery) return { kind: 'recovery', correctionId: work.correction?.correctionId ?? null };
@@ -199,6 +217,8 @@ export const confirmActivation = (session: Session, work_id: string, executionId
     reasons.push(...dispatchBlockers({ impediments: work.impediments, evaluation: work.dependencies?.latest ?? null, currentAttempt: attemptId }));
     if (work.dependencies?.latest?.conclusion !== 'satisfied' && !reasons.length) reasons.push('DEPENDENCIES_NOT_SATISFIED');
     if (!execution.slot.held) reasons.push('SLOT_NOT_HELD');
+    // Ticket 14: only a publication activation holds a publication grant, and it always does.
+    if (credential.purpose !== purposeOf(execution)) reasons.push('CREDENTIAL_PURPOSE_MISMATCH');
     if (reasons.length) return reasons;
     execution.admission.activationAttemptId = attemptId;
     execution.admission.activationEvaluationId = work.dependencies!.latest!.evaluationId;
@@ -210,6 +230,8 @@ export const confirmActivation = (session: Session, work_id: string, executionId
     return [];
   });
 
+/** The fixed grant purpose of an activity (spec §8): publication activations publish; every other Builder activation only reads. */
+export const purposeOf = (execution: Pick<ExecutionView, 'request'>) => execution.request.publication ? 'builder-publish' as const : 'builder-start' as const;
 const blankGrant = (): CredentialGrantRecord => ({ requestedAt: new Date().toISOString(), outcome: 'requested', code: null, metadata: null,
   revocation: null, revocationCode: null, risk: null, revocationAttemptedAt: null });
 // Records written before ticket 20 lack these fields; every credential commit completes them in place.
@@ -259,7 +281,7 @@ export async function beginRenewal(session: Session, work_id: string, executionI
     if (lifecycle.state !== 'active') reasons.push('CREDENTIALS_WITHDRAWN');
     if (lifecycle.renewal !== 'enabled') reasons.push('RENEWAL_STOPPED');
     if (!facts.repositoryConfigured) reasons.push('REPOSITORY_NOT_CONFIGURED');
-    if (execution.credential?.purpose !== 'builder-start') reasons.push('PURPOSE_MISMATCH');
+    if (execution.credential?.purpose !== purposeOf(execution)) reasons.push('PURPOSE_MISMATCH');
     if (reasons.length) return { kind: 'refused' as const, reasons };
     const sequence = execution.credentialRenewals.length + 1;
     execution.credentialRenewals.push({ ...blankGrant(), sequence, delivery: null });
@@ -377,6 +399,8 @@ export async function confirmStart(session: Session, work_id: string, executionI
     history(document.work, 'execution-started', executionId, receipt.id);
     // The single consumption of the reservation, in the same commit as the confirmed start.
     consumeReservation(document.work, execution, execution.start.confirmedAt);
+    // Ticket 14: a started publication activation is an attempt; only a discovery after its cessation decides what happened.
+    markPublicationStarted(document.work, execution, execution.start.confirmedAt);
     if (execution.timing) Object.assign(execution.timing, { origin, startedAt: execution.start.confirmedAt,
       lastActivity: { at: execution.start.confirmedAt, elapsedMs: 0, event: 'started' } });
     // The scope changes bound at admission were sent in THIS activation's first prompt: delivered (context), not proof of consumption.

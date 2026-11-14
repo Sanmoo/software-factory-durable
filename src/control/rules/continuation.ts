@@ -63,13 +63,13 @@ type Git = { baseCommit: string | null; branch: string | null; checkout: string 
  * carry what authorizes it (an accepted answer or a concrete scope update). Otherwise the context is insufficient: block, never an empty
  * continue/recovery that claims preservation it cannot prove.
  */
-export function recoveryContext(input: { previous: Git; prepared: Git & { reused: boolean }; trigger: { answer: boolean; scopeUpdates: number } }):
+export function recoveryContext(input: { previous: Git; prepared: Git & { reused: boolean }; trigger: { answer: boolean; scopeUpdates: number; publication?: boolean } }):
   { sufficient: true } | { sufficient: false; reasons: string[] } {
   const reasons: string[] = [];
   if (!input.previous.baseCommit || !input.previous.branch || !input.previous.checkout) reasons.push('PREVIOUS_GIT_CONTEXT_MISSING');
   else if (input.previous.baseCommit !== input.prepared.baseCommit || input.previous.branch !== input.prepared.branch || input.previous.checkout !== input.prepared.checkout) reasons.push('GIT_CONTEXT_CHANGED');
   else if (!input.prepared.reused) reasons.push('PREVIOUS_ENVIRONMENT_NOT_REUSED');
-  if (!input.trigger.answer && input.trigger.scopeUpdates === 0) reasons.push('RESUME_TRIGGER_MISSING');
+  if (!input.trigger.answer && input.trigger.scopeUpdates === 0 && !input.trigger.publication) reasons.push('RESUME_TRIGGER_MISSING');
   return reasons.length ? { sufficient: false, reasons } : { sufficient: true };
 }
 
