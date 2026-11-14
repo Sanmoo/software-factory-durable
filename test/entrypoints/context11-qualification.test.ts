@@ -32,7 +32,10 @@ test('recipe: import and --plan are inert and declare the fixed bounds (3 activa
   assert.equal(plan.scopeUpdate.request_id, 'q11-scope-1');
   assert.match(plan.scopeUpdate.reason, /ONLY requirement B1[\s\S]*Do NOT adopt requirement B2/);
   assert.match(plan.ticketSetup.afterAsk, /controller STOPPED/);
-  for (const text of ['SESSION_COMPATIBLE', 'SESSION_INCOMPATIBLE', 'SCOPE_UPDATED', 'complete:false', 'delivery vs consumption']) assert.ok(JSON.stringify(plan.expected).includes(text), text);
+  for (const text of ['SESSION_COMPATIBLE', 'SESSION_INCOMPATIBLE', 'SESSION_CONTINUATION_UNSUPPORTED', 'SCOPE_UPDATED', 'complete:false', 'delivery vs consumption']) {
+    assert.ok(JSON.stringify(plan.expected).includes(text), text);
+  }
+  assert.match(plan.effects.find((item: string) => item.startsWith('inspect:')), /protected Records evidence output of the Work and of the recipe observation JSONs/);
   await assert.rejects(recipe.main(['retry']), /EXACT_PHASE_REQUIRED/);
   await assert.rejects(recipe.main(['ask', 'again']), /EXACT_PHASE_REQUIRED/);
   assert.equal(forbidden, 0);

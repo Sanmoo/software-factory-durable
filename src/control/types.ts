@@ -257,7 +257,8 @@ export type WorkView = {
     { at: string; event: 'budget-reserved' | 'budget-consumed' | 'budget-released' | 'budget-exhausted' | 'budget-granted' | 'correction-opened' | 'correction-reason-added' | 'recovery-requested';
       origin: 'controller-budget' | 'local-cli'; executionId: string | null; detail: string } |
     { at: string; event: 'timeout-reached' | 'duration-reconciled'; origin: 'controller-clock'; executionId: string; detail: string } |
-    { at: string; event: 'scope-update-accepted' | 'scope-update-delivered'; origin: 'local-cli' | 'controller-dispatch'; scopeUpdateId: string; detail?: string })[];
+    { at: string; event: 'scope-update-accepted' | 'scope-update-delivered' | 'scope-update-reoffered' | 'scope-update-consumed'; origin: 'local-cli' | 'controller-dispatch';
+      scopeUpdateId: string; detail?: string })[];
 };
 export type CounterView = { limit: number; granted: number; effectiveLimit: number; consumed: number; reserved: 0 | 1; reservedBy: string | null; available: number; exhausted: boolean };
 /** `elapsedMs` is a monotonic measurement (live or measured) or null; `unknown` is never shown as zero. */
@@ -267,10 +268,13 @@ export type DurationView = { state: 'not-recorded' | 'not-started' | 'running' |
 export type LimitsView = { corrections: CounterView | null; recoveries: CounterView | null; grants: number;
   timeout: { seconds: number | null; scope: 'per-execution'; reached: ExecutionTiming['timeout']; overrun: ExecutionTiming['overrun'] };
   duration: DurationView; actions: { code: string; nextStep: string }[] };
-/** One authorized scope change (spec §6.2/§11.3): the operator's concrete reason, never applied to a running activity. `delivered` = sent in
- * the first prompt of a started Execution, which is context delivery, not proof that the Builder consumed it. */
+/** One authorized scope change (spec §6.2/§11.3), never applied to a running activity. `pending` = will go with the next activation;
+ * `delivered` = sent in the first prompt of a started Execution but its consumption is not yet evidenced; `consumed` = that Execution
+ * ended COMPLETED with confirmed cessation. A delivery whose Execution ended otherwise returns to `pending` (re-offered, never lost) — and
+ * the concrete reason is re-offered as-is, never broadened. */
 export type ScopeUpdateView = { scopeUpdateId: string; reason: string; sha256: string; acceptedAt: string; origin: { kind: 'local-cli'; request_id: string };
-  acceptedDuring: 'idle' | 'question-wait' | 'activity'; state: 'pending' | 'delivered'; executionId: string | null; deliveredAt: string | null };
+  acceptedDuring: 'idle' | 'question-wait' | 'activity'; state: 'pending' | 'delivered' | 'consumed'; executionId: string | null; deliveredAt: string | null;
+  consumedAt: string | null; consumption: 'execution-completed' | null; reoffers: number };
 export type ListView = { kind: 'list'; paused: boolean; dispatch: 'closed' | 'open'; dispatchReason: DispatchReason | null; slots: { capacity: number; held: number };
   queues: { normal: string[]; repair: string[] }; works: WorkView[]; selection: Selection; polling: PollingView; limitations: string[] };
 export type ShowView = { kind: 'work'; work: WorkView; lastPolled: CandidateView | null; questions: QuestionView[] } | { kind: 'work-not-found'; work_id: string; nextStep: string };

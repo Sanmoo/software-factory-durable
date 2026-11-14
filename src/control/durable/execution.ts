@@ -366,6 +366,8 @@ export async function confirmStart(session: Session, work_id: string, executionI
   }, BACKGROUND_CONTEXT);
 }
 
+/** A scope update delivered by this Execution but not yet consumed (delivery alone never proves the Builder consumed it). */
+const deliveredBy = (work: WorkRecord, executionId: string) => (work.scopeUpdates ?? []).filter(update => update.state === 'delivered' && update.executionId === executionId);
 export const recordEnd = (session: Session, work_id: string, executionId: string, outcome: 'completed' | 'failure' | 'question' | 'timeout', code: string | null,
   questionId: string | null = null, elapsedMs: number | null = null,
   /** Host-observed preserved session of the Builder (ticket 11); never invented when the completion did not carry it. */
@@ -374,6 +376,11 @@ export const recordEnd = (session: Session, work_id: string, executionId: string
     execution.state = 'ended';
     execution.dispatch.phase = 'completed';
     execution.end = { at: new Date().toISOString(), outcome, code, cessation: 'not-attempted', ...(outcome === 'question' ? { questionId } : {}), session: preserved };
+    // A delivery is not consumption: unless this Execution completed, its scope updates are offered again (same concrete text).
+    if (outcome !== 'completed') for (const update of deliveredBy(work, executionId)) {
+      Object.assign(update, { state: 'pending', executionId: null, reoffers: (update.reoffers ?? 0) + 1 });
+      work.history.push({ at: execution.end.at, event: 'scope-update-reoffered', origin: 'controller-dispatch', scopeUpdateId: update.scopeUpdateId, detail: outcome });
+    }
     history(work, 'execution-ended', executionId, code ?? outcome);
     // The activity (and its clock) ends here, also for an external wait; a reached timeout is never bypassed by ending.
     if (execution.timing && elapsedMs !== null) {
@@ -470,7 +477,12 @@ export async function releaseAfterCessation(session: Session, work_id: string, e
     // A Question wait occupies no Slot: the Work returns to its SAME category/position; its impediment (until answered) still blocks.
     // A timeout keeps the same position too, blocked by its EXECUTION_TIMEOUT impediment until an explicit decision.
     if (execution.end.outcome === 'question' || execution.end.outcome === 'timeout') document.work.queue = { ...document.work.queue, pending: true };
-    // A scope change accepted DURING this (completed) activity waited for it to cease; it is the next safe activation's (ticket 11).
+    // A COMPLETED Execution with confirmed cessation consumed the scope updates it delivered; anything still pending (accepted during the
+    // activity) waited for it to cease and is the next safe activation's.
+    if (execution.end.outcome === 'completed') for (const update of deliveredBy(document.work, executionId)) {
+      Object.assign(update, { state: 'consumed', consumedAt: execution.slot.releasedAt, consumption: 'execution-completed' });
+      document.work.history.push({ at: execution.slot.releasedAt!, event: 'scope-update-consumed', origin: 'controller-dispatch', scopeUpdateId: update.scopeUpdateId, detail: executionId });
+    }
     if (execution.end.outcome === 'completed' && pendingScope(document.work).length) document.work.queue = { ...document.work.queue, pending: true };
     history(document.work, 'slot-released', executionId);
     return 'released' as const;
@@ -489,6 +501,11 @@ export async function holdExecution(session: Session, work_id: string, execution
     const execution = document.work?.execution ?? null;
     if (!document.work || !execution || execution.executionId !== executionId || execution.state === 'released') return 'stale' as const;
     execution.held = { code, phase: execution.dispatch.phase, at: new Date().toISOString(), nextStep };
+    // An explicit hold means the outcome is unknown: the scope changes it delivered are offered again, not lost.
+    for (const update of deliveredBy(document.work, executionId)) {
+      Object.assign(update, { state: 'pending', executionId: null, reoffers: (update.reoffers ?? 0) + 1 });
+      document.work.history.push({ at: execution.held.at, event: 'scope-update-reoffered', origin: 'controller-dispatch', scopeUpdateId: update.scopeUpdateId, detail: code });
+    }
     if (execution.state !== 'ended') execution.state = 'held';
     if (provenNonStart) releaseReservation(document.work, execution, execution.held.at);
     history(document.work, 'execution-held', executionId, code);

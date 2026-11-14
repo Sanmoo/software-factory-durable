@@ -9,6 +9,8 @@ import type { Session } from './store.js';
 type Receipt = Extract<ControlReceipt, { operation: 'update-scope' }>;
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 export const pendingScope = (work: Pick<WorkRecord, 'scopeUpdates'>) => (work.scopeUpdates ?? []).filter(update => update.state === 'pending');
+/** Updates the Builder will still be (or already is) told about: a duplicate authorization of one of them is refused. */
+export const unconsumedScope = (work: Pick<WorkRecord, 'scopeUpdates'>) => (work.scopeUpdates ?? []).filter(update => update.state !== 'consumed');
 
 /**
  * "Aceitar comando" for `update-scope` (spec §3.4/§11.3): deduplication by request identity, the concrete-reason rule, the Work's
@@ -35,13 +37,14 @@ export async function acceptScopeUpdate(session: Session, input: Extract<Control
     else {
       const execution = work.execution ?? null;
       const decision = scopeUpdateDecision({ result: work.result, current: index.tickets[ticketKey(work.ticket)]?.current === work.work_id,
-        pending: pendingScope(work).map(update => update.sha256), sha256: hash,
+        pending: unconsumedScope(work).map(update => update.sha256), sha256: hash,
         execution: execution ? { state: execution.state, slotHeld: execution.slot.held, outcome: execution.end?.outcome ?? null } : null });
       if (decision.outcome === 'not-applied') receipt = refuse(decision.code);
       else {
         const now = new Date().toISOString();
         const update: ScopeUpdateView = { scopeUpdateId: `scope-${input.request_id}`, reason: input.reason, sha256: hash, acceptedAt: now,
-          origin: { kind: 'local-cli', request_id: input.request_id }, acceptedDuring: decision.during, state: 'pending', executionId: null, deliveredAt: null };
+          origin: { kind: 'local-cli', request_id: input.request_id }, acceptedDuring: decision.during, state: 'pending', executionId: null, deliveredAt: null,
+          consumedAt: null, consumption: null, reoffers: 0 };
         work.scopeUpdates = [...(work.scopeUpdates ?? []), update];
         // Only an idle Work whose last Execution COMPLETED re-enters the queue, at its own category/sequence; impediments still apply.
         if (decision.requeue) work.queue = { ...work.queue, pending: true };

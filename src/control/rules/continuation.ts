@@ -41,13 +41,15 @@ const canonical = (policies: Facts['policies']) => Object.fromEntries(Object.ent
  * intact and compatible by the Host, with the same pack identity and Host policies; every other case replaces it with its reason.
  */
 export function sessionDecision(input: { previous: Facts & { session: SessionRef | null }; next: Facts; observation: SessionObservation | null }):
-  { mode: 'continue'; reason: 'SESSION_COMPATIBLE' } | { mode: 'replace'; reason: 'SESSION_NOT_RECORDED' | 'SESSION_OBSERVATION_NOT_COMPOSED' | 'SESSION_LOST' | 'SESSION_ALTERED' | 'SESSION_INCOMPATIBLE' | 'SESSION_UNAVAILABLE' } {
+  { mode: 'continue'; reason: 'SESSION_COMPATIBLE' } | { mode: 'replace'; reason: 'SESSION_NOT_RECORDED' | 'SESSION_OBSERVATION_NOT_COMPOSED' | 'SESSION_LOST' | 'SESSION_ALTERED' |
+    'SESSION_INCOMPATIBLE' | 'SESSION_UNAVAILABLE' | 'SESSION_CONTINUATION_UNSUPPORTED' } {
   if (!input.previous.session) return { mode: 'replace', reason: 'SESSION_NOT_RECORDED' };
   if (!input.observation) return { mode: 'replace', reason: 'SESSION_OBSERVATION_NOT_COMPOSED' };
   const observed = input.observation;
   if (observed.state === 'lost') return { mode: 'replace', reason: 'SESSION_LOST' };
   if (observed.state === 'altered') return { mode: 'replace', reason: 'SESSION_ALTERED' };
-  if (observed.state === 'incompatible') return { mode: 'replace', reason: 'SESSION_INCOMPATIBLE' };
+  // The Host names why it cannot continue; a pack without the continue protocol is not the same as a changed profile.
+  if (observed.state === 'incompatible') return { mode: 'replace', reason: observed.code === 'SESSION_CONTINUATION_UNSUPPORTED' ? 'SESSION_CONTINUATION_UNSUPPORTED' : 'SESSION_INCOMPATIBLE' };
   if (observed.state !== 'compatible') return { mode: 'replace', reason: 'SESSION_UNAVAILABLE' };
   if (!same(observed.session, input.previous.session)) return { mode: 'replace', reason: 'SESSION_ALTERED' };
   if (!same(input.previous.skillPack, input.next.skillPack) || !same(canonical(input.previous.policies), canonical(input.next.policies))) return { mode: 'replace', reason: 'SESSION_INCOMPATIBLE' };
@@ -56,13 +58,17 @@ export function sessionDecision(input: { previous: Facts & { session: SessionRef
 
 type Git = { baseCommit: string | null; branch: string | null; checkout: string | null };
 /**
- * Spec §5.5/§6.1: a resumption must reference the SAME Work context (base commit, own branch, checkout) and carry what authorizes it (an
- * accepted answer or a concrete scope update). Otherwise the context is insufficient: block, never send an empty continue/recovery.
+ * Spec §5.5/§6.1: a resumption must reference the SAME Work context (base commit, own branch, checkout) that was actually PRESERVED — the
+ * prepare must have reused the previous environment/checkout, not created a fresh clone that merely happens to sit at the same commit — and
+ * carry what authorizes it (an accepted answer or a concrete scope update). Otherwise the context is insufficient: block, never an empty
+ * continue/recovery that claims preservation it cannot prove.
  */
-export function recoveryContext(input: { previous: Git; prepared: Git; trigger: { answer: boolean; scopeUpdates: number } }): { sufficient: true } | { sufficient: false; reasons: string[] } {
+export function recoveryContext(input: { previous: Git; prepared: Git & { reused: boolean }; trigger: { answer: boolean; scopeUpdates: number } }):
+  { sufficient: true } | { sufficient: false; reasons: string[] } {
   const reasons: string[] = [];
   if (!input.previous.baseCommit || !input.previous.branch || !input.previous.checkout) reasons.push('PREVIOUS_GIT_CONTEXT_MISSING');
   else if (input.previous.baseCommit !== input.prepared.baseCommit || input.previous.branch !== input.prepared.branch || input.previous.checkout !== input.prepared.checkout) reasons.push('GIT_CONTEXT_CHANGED');
+  else if (!input.prepared.reused) reasons.push('PREVIOUS_ENVIRONMENT_NOT_REUSED');
   if (!input.trigger.answer && input.trigger.scopeUpdates === 0) reasons.push('RESUME_TRIGGER_MISSING');
   return reasons.length ? { sufficient: false, reasons } : { sufficient: true };
 }
@@ -77,11 +83,13 @@ export type ScopeText = { scopeUpdateId: string; reason: string };
 export function scopeSection(updates: readonly ScopeText[]): string[] {
   return updates.flatMap(update => [`Authorized scope change ${update.scopeUpdateId} (operator, concrete; only this change is authorized):`, fenced(update.reason)]);
 }
-const promptBudgetBytes = 15000;
+export const promptBudgetBytes = 15000;
 const bytes = (text: string) => new TextEncoder().encode(text).length;
 /**
  * The `continue` message to the SAME compatible session (spec §5.5: "Sessão compatível: `continue` com resposta/feedback/motivo"). It never
- * restarts `/implement`; it carries the accepted answer and/or the authorized scope changes, and refuses to be empty.
+ * restarts `/implement`; it carries the accepted answer and/or the authorized scope changes, and refuses to be empty. It cites only the
+ * pack's own `implement` file — which section defines the continuation protocol is the PACK's business, so a new pack version needs no
+ * Control change.
  */
 export function continuationPrompt(input: { executionId: string; previousExecutionId: string; skillDirectory: string;
   answer: { questionId: string; text: string; author: string; origin: string } | null; scopeUpdates: readonly ScopeText[] }):
@@ -90,10 +98,21 @@ export function continuationPrompt(input: { executionId: string; previousExecuti
   const prompt = ['continue',
     `Factory continuation of the SAME session: Execution ${input.executionId} continues after Execution ${input.previousExecutionId} ended. ` +
       'Your workspace, branch, commits and /artifacts were preserved; check the effect of your last tool call before repeating anything.',
-    `Follow section 5 of ${input.skillDirectory}/skills/implement/SKILL.md (continuation in the same session).`,
+    `Read ${input.skillDirectory}/skills/implement/SKILL.md with the read tool and follow its instructions for continuing this Work in the same session.`,
     ...(input.answer ? ['', `Accepted answer to your question ${input.answer.questionId} (by ${input.answer.author}, via ${input.answer.origin}):`, fenced(input.answer.text)] : []),
     ...(input.scopeUpdates.length ? ['', ...scopeSection(input.scopeUpdates),
       'Before implementing a scope change, preserve a NEW request version that records it (never edit an earlier version).'] : [])].join('\n');
   if (bytes(prompt) > promptBudgetBytes) return { kind: 'insufficient', reasons: ['CONTINUATION_TOO_LARGE'] };
   return { kind: 'prompt', prompt };
+}
+
+/** First prompt of an initial Builder activation: `/implement <ticket>` plus the authorized scope changes, bounded (never a silent truncation). */
+export function initialPrompt(input: { ticketUrl: string; repository: string; base: string; baseCommit: string; branch: string; checkout: string; workId: string;
+  executionId: string; reviews: boolean; scopeUpdates: readonly ScopeText[] }): { kind: 'prompt'; prompt: string } | { kind: 'too-large'; bytes: number } {
+  const prompt = [[`/implement ${input.ticketUrl}`, `repository=${input.repository}`, `base=${input.base}`, `base-commit=${input.baseCommit}`,
+    `branch=${input.branch}`, `checkout=${input.checkout}`, 'artifacts=/artifacts', `work=${input.workId}`, `execution=${input.executionId}`,
+    ...(input.reviews ? ['reviews=factory-handoff'] : [])].join(' '), ...(input.scopeUpdates.length ? ['', ...scopeSection(input.scopeUpdates),
+    'Before implementing a scope change, preserve a NEW request version that records it (never edit an earlier version).'] : [])].join('\n');
+  const size = bytes(prompt);
+  return size <= promptBudgetBytes ? { kind: 'prompt', prompt } : { kind: 'too-large', bytes: size };
 }

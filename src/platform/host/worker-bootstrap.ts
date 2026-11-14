@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { factorySkillPackIds } from '../../contracts/index.js';
 import { sessionRefSchema } from './worker-session-file.js';
 
 const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
@@ -22,7 +23,7 @@ const bootstrap = z.strictObject({
   version: z.literal(1),
   copyOutput: z.boolean().optional(),
   // Host-selected Builder start policies (ticket 09): the Factory skill pack and the bounded Builder model budget.
-  skillPack: z.enum(['factory-skills-v1', 'factory-skills-v2', 'factory-skills-v3', 'factory-skills-v4']).optional(),
+  skillPack: z.enum(factorySkillPackIds).optional(),
   modelBudget: z.enum(['builder-v1', 'reviewer-v1']).optional(),
   deadlineMs: z.number().int().positive().max(86_400_000).optional(),
   // Host-derived exact guest paths of the seeded files of `skillPack` (Builder Read authority of the pack only).

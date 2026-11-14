@@ -81,19 +81,34 @@ export function sessionRefOf(root: string, sessionsDirectory: string, file: stri
 }
 
 /**
- * Owner side, after a Builder worker ended: the identity of the session it preserved, observed by the owner from its own sessions directory
- * (never the worker's claim alone). The profile is the launch's (SDK profile, provider/model, pack) plus the worker's exact tool set.
+ * The Builder tool set a launch policy must produce (the same rule `worker-session` applies). The owner DERIVES it from the launch, so a
+ * session profile never depends on the worker's own claim.
  */
-export async function observePreservedSession(root: string, sessionsDirectory: string, file: unknown, tools: unknown,
-  launch: { context: { role: string }; profile: { id: string; providerId: string; modelId: string }; skillPack?: string | undefined }): Promise<HostSessionRef | undefined> {
-  if (launch.context.role !== 'builder' || typeof file !== 'string' || !Array.isArray(tools) || tools.length > 16 || tools.some(tool => typeof tool !== 'string' || !/^[a-z_]{1,32}$/.test(tool))) return undefined;
+export function launchToolNames(launch: { context: { role: string }; skillPack?: string | undefined; copyOutput?: boolean | undefined;
+  editSourceMaxBytes?: number | undefined; handoff: boolean }): string[] {
+  return ['write', 'bash', 'ask_user', ...(launch.copyOutput === true || launch.skillPack !== undefined ? ['read'] : []),
+    ...(launch.editSourceMaxBytes !== undefined ? ['edit'] : []), ...(launch.handoff ? ['handoff'] : [])].sort();
+}
+
+/**
+ * Owner side, after a Builder worker ended: the identity of the session it preserved, observed by the owner from its own sessions directory
+ * (never the worker's claim alone). The profile is entirely the launch's (SDK profile, provider/model, pack and the tool set DERIVED from the
+ * policy); the worker's reported set is only cross-checked, and a contradiction withholds the observation.
+ */
+export async function observePreservedSession(root: string, sessionsDirectory: string, file: unknown, toolsClaimed: unknown,
+  launch: { context: { role: string }; profile: { id: string; providerId: string; modelId: string }; skillPack?: string | undefined;
+    copyOutput?: boolean | undefined; editSourceMaxBytes?: number | undefined; handoff?: unknown }): Promise<HostSessionRef | undefined> {
+  if (launch.context.role !== 'builder' || typeof file !== 'string' || !Array.isArray(toolsClaimed) || toolsClaimed.length > 16 ||
+      toolsClaimed.some(tool => typeof tool !== 'string' || !/^[a-z_]{1,32}$/.test(tool))) return undefined;
   const ref = sessionRefOf(root, sessionsDirectory, file);
   if (!ref) return undefined;
   const read = await readSessionFile(root, ref);
   if (read.state !== 'read') return undefined;
+  // The tool set comes from the launch policy; a worker claim that contradicts it means the observation cannot be trusted.
+  const tools = launchToolNames({ ...launch, context: launch.context, handoff: launch.handoff !== undefined });
+  if (JSON.stringify([...new Set(toolsClaimed as string[])].sort()) !== JSON.stringify(tools)) return undefined;
   return sessionRefSchema.parse({ ref, sessionId: read.sessionId, sha256: read.sha256, bytes: read.data.length, format: 'pi-session-jsonl-v3',
-    profile: { sdkProfile: launch.profile.id, providerId: launch.profile.providerId, modelId: launch.profile.modelId, skillPack: launch.skillPack ?? null,
-      tools: [...new Set(tools as string[])].sort() } });
+    profile: { sdkProfile: launch.profile.id, providerId: launch.profile.providerId, modelId: launch.profile.modelId, skillPack: launch.skillPack ?? null, tools } });
 }
 
 /**

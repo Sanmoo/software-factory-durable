@@ -62,9 +62,10 @@ export function plan() {
       'scope: same storage; refused unless continue ended completed with confirmed cessation; update-scope (fixed request id/reason, partial authorization B1 only) is accepted ' +
         'and re-queues the idle Work; dispatch with the Builder policy WITHOUT edit: the session is REPLACED (SESSION_INCOMPATIBLE: tools differ) by an explicit recovery ' +
         'instruction with the reason, recoverable context (Work, request, instructions, Git, artifacts, known effects) and the scope change; ends',
-      'inspect: read-only: storage view (Works, Executions, Questions, scope updates), comments and body hash of #3, confined no-follow reads of /artifacts (spec/v1..v3 sources), ' +
+      'inspect: read-only: storage view (Works, Executions, Questions, scope updates), comments and body hash of #3, confined no-follow reads of /artifacts (spec/v1..v4 sources), ' +
         'checkout via a Factory-owned bare copy (never host git in the guest tree), start receipts, confined host reads of every Builder session JSONL (tool calls, whether the ' +
-        '`continue`/recovery message is in the session and what the model did after it), secret scan of the own storage',
+        '`continue`/recovery message is in the session and what the model did after it), and a secret scan (ghs_/PRIVATE KEY) of the own storage, of EVERY protected Records evidence ' +
+        'output of the Work and of the recipe observation JSONs',
       'stop-environment: own boot of the current Execution when it may still run and is observed active: public Sandbox.stop of that exact boot',
     ],
     guards: ['one-shot intent tombstones', 'per phase: prepare <= 1, activate <= 1 Builder, postComment <= 1 and only for Ticket #3', 'no retry', 'no remove/cleanup',
@@ -74,6 +75,7 @@ export function plan() {
       'continue: execution.request.session {mode: continue, reason: SESSION_COMPATIBLE}; activate phaseId builder-continuation with continuation.session = the ask session; prompt starts with `continue`; ' +
         'start receipt session.mode continue with that sessionId/sha256; spec/v2 records factory-question:<id>; docs/factory-question.md committed; B1/B2 NOT implemented',
       'scope: receipt outcome accepted (idle after completed); request.resume.reason SCOPE_UPDATED with scopeUpdateIds [scope-q11-scope-1]; request.session {mode: replace, reason: SESSION_INCOMPATIBLE}; ' +
+        'a plan whose pack does not define the continue protocol records SESSION_CONTINUATION_UNSUPPORTED instead (never a continue); ' +
         'prompt starts with `Factory recovery instruction` and names the reason, previous executions and the scope change; scope update delivered; spec/v3 records factory-scope:scope-q11-scope-1 ' +
         'with authorized B1 and notAdopted B2; the B1 line committed; the file NOT renamed',
       'delivery vs consumption: Control records only delivery (scope update `delivered`, continuation prompt hash); consumption is evidenced only by the session JSONL (the message present and later model turns) and the commits',
@@ -340,10 +342,24 @@ async function inspectOrStop(phase: 'inspect' | 'stop-environment', save: (name:
     const versions: Record<string, unknown> = {};
     for (const kind of ['spec', 'instructions']) for (const version of ['v1', 'v2', 'v3', 'v4']) versions[`${kind}/${version}`] = await confined(`${kind}/${version}/sources.json`);
     const storage = Buffer.concat(await Promise.all(['control.sqlite', 'control.sqlite-wal'].map(name => fs.readFile(`${observations}/${name}`).catch(() => Buffer.alloc(0)))));
+    // The evidence claims "no token in storage/receipts/sessions/observations": scan each of those scopes, not just the storage.
+    const scan = (bytes: Buffer) => ({ ghs: bytes.includes(Buffer.from('ghs_')), privateKey: bytes.includes(Buffer.from('PRIVATE KEY')) });
+    const recordsScan = { files: 0, unreadable: 0, ghs: false, privateKey: false };
+    for (const id of (await fs.readdir(`${root}/${work.work_id}/evidence`).catch(() => [])).filter(name => /^[0-9a-f-]{36}$/.test(name)).sort().slice(0, 200)) {
+      const bytes = await readConfined(root, `${work.work_id}/evidence/${id}/output`, 1024 * 1024).catch(() => null);
+      if (bytes === null) { recordsScan.unreadable++; continue; }
+      recordsScan.files++; const found = scan(bytes); recordsScan.ghs ||= found.ghs; recordsScan.privateKey ||= found.privateKey;
+    }
+    const observationsScan = { files: 0, unreadable: 0, ghs: false, privateKey: false };
+    for (const name of (await fs.readdir(observations)).filter(name => name.endsWith('.json')).sort().slice(0, 200)) {
+      const bytes = await fs.readFile(`${observations}/${name}`).catch(() => null);
+      if (bytes === null) { observationsScan.unreadable++; continue; }
+      observationsScan.files++; const found = scan(bytes); observationsScan.ghs ||= found.ghs; observationsScan.privateKey ||= found.privateKey;
+    }
     await save('inspect-result', { work, questions: shown?.questions ?? [], scopeUpdates: shown?.work.scopeUpdates ?? [], receipts, sessions, versions, ticketBody: await ticketBody(github),
       comments: comments.kind === 'observed' ? comments.comments.map(item => ({ id: item.commentId, author: item.author, viaApp: item.viaApp, url: item.url,
         createdAt: item.createdAt, updatedAt: item.updatedAt, firstLine: item.body.split('\n')[0]!.slice(0, 200) })) : comments,
-      secretScan: { ghs: storage.includes(Buffer.from('ghs_')), privateKey: storage.includes(Buffer.from('PRIVATE KEY')) },
+      secretScan: { storage: scan(storage), records: recordsScan, observations: observationsScan },
       ...await inspectEnvironment(environmentDirectory, observations, work.execution.request.baseCommit ?? undefined) });
     return;
   }

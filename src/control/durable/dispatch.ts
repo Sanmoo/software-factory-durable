@@ -18,7 +18,7 @@ import { timeoutReached } from '../rules/budget.js';
 import { intactRequest, readQuestion, readQuestions, recordContentLost, registerQuestion } from './questions.js';
 import { pendingScope } from './scope.js';
 import { recoveryPrompt, type KnownContext } from '../rules/questions.js';
-import { continuationPrompt, recoveryContext, scopeSection, sessionDecision } from '../rules/continuation.js';
+import { continuationPrompt, initialPrompt, recoveryContext, sessionDecision } from '../rules/continuation.js';
 import type { SessionRef } from '../types.js';
 import type { WorkerQuestion } from '../../workers/index.js';
 import type { Session } from './store.js';
@@ -294,8 +294,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
    * after an answer or an authorized scope change, `continue` in the previous session when it is recorded, intact and compatible, or an
    * explicit recovery instruction with the replacement reason and the recoverable context. Insufficient context blocks.
    */
-  async function activationPlan(work: WorkRecord, execution: ExecutionView, prepared: { checkout: { baseCommit: string; branch: string; path: string } },
-    pack: ExecutionView['request']['skillPack']): Promise<Plan> {
+  async function activationPlan(work: WorkRecord, execution: ExecutionView,
+    prepared: { checkout: { baseCommit: string; branch: string; path: string; reused: boolean } }, pack: ExecutionView['request']['skillPack']): Promise<Plan> {
     const current = await readWork(session, work.work_id);
     const resume = execution.request.resume ?? null;
     const updates = (current?.scopeUpdates ?? []).filter(update => (execution.request.scopeUpdateIds ?? []).includes(update.scopeUpdateId))
@@ -303,10 +303,12 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     if ((execution.request.scopeUpdateIds ?? []).length !== updates.length) return { kind: 'insufficient', reasons: ['SCOPE_UPDATE_CONTENT_MISSING'] };
     const skillDirectory = `/artifacts/factory/skill-pack/${execution.request.policies.skillPack ?? 'factory-skills-v2'}`;
     if (!resume) {
-      const prompt = [[`/implement ${work.ticket.url}`, `repository=${work.repository.repository}`, `base=${work.repository.base}`, `base-commit=${prepared.checkout.baseCommit}`,
-        `branch=${execution.request.branch}`, `checkout=${prepared.checkout.path}`, 'artifacts=/artifacts', `work=${work.work_id}`, `execution=${execution.executionId}`,
-        ...(ports.reviews ? ['reviews=factory-handoff'] : [])].join(' '), ...(updates.length ? ['', ...scopeSection(updates)] : [])].join('\n');
-      return { kind: 'ready', prompt, resume: null, decision: null, continuation: null };
+      // Bounded like every resumption prompt: an over-large initial prompt blocks explicitly instead of being truncated.
+      const initial = initialPrompt({ ticketUrl: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
+        baseCommit: prepared.checkout.baseCommit, branch: execution.request.branch, checkout: prepared.checkout.path, workId: work.work_id,
+        executionId: execution.executionId, reviews: Boolean(ports.reviews), scopeUpdates: updates });
+      if (initial.kind === 'too-large') return { kind: 'insufficient', reasons: ['PROMPT_TOO_LARGE'] };
+      return { kind: 'ready', prompt: initial.prompt, resume: null, decision: null, continuation: null };
     }
     const answered = resume.questionId ? await readQuestion(session, resume.questionId) : null;
     if (resume.questionId && (!answered?.answer || answered.answer.sha256 !== resume.answerSha256 || answered.workId !== work.work_id ||
@@ -314,7 +316,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const previous = current?.previousExecutions.find(item => item.executionId === resume.previousExecutionId) ?? null;
     if (!previous) return { kind: 'insufficient', reasons: ['PREVIOUS_EXECUTION_MISSING'] };
     const context = recoveryContext({ previous: { baseCommit: previous.request.baseCommit, branch: previous.request.branch, checkout: previous.request.checkout },
-      prepared: { baseCommit: prepared.checkout.baseCommit, branch: prepared.checkout.branch, checkout: prepared.checkout.path },
+      prepared: { baseCommit: prepared.checkout.baseCommit, branch: prepared.checkout.branch, checkout: prepared.checkout.path, reused: prepared.checkout.reused },
       trigger: { answer: Boolean(answered?.answer), scopeUpdates: updates.length } });
     if (!context.sufficient) return { kind: 'insufficient', reasons: context.reasons };
     const recorded = previous.end?.session ?? null;
@@ -344,12 +346,13 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       questions: (current ? await readQuestions(session, current) : []).map(item => ({ questionId: item.questionId, state: item.state, comment: item.publication.comment?.url ?? null })),
       versions: lastRound ? { spec: lastRound.versions.spec?.version ?? null, instructions: lastRound.versions.instructions?.version ?? null, head: lastRound.handoff.summary?.head ?? null } : null,
       scopeUpdates: updates };
-    const prompt = recoveryPrompt({ ticketUrl: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
+    const recovered = recoveryPrompt({ ticketUrl: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
       baseCommit: prepared.checkout.baseCommit, branch: execution.request.branch, checkout: prepared.checkout.path, workId: work.work_id, executionId: execution.executionId,
       skillDirectory, previousExecutionId: previous.executionId,
       question: answered ? { questionId: answered.questionId, question: answered.content.question, context: answered.content.context } : null,
       answer, replacement: { reason: decided.reason }, known });
-    return { kind: 'ready', prompt, resume, decision, continuation: null };
+    if (recovered.kind === 'too-large') return { kind: 'insufficient', reasons: ['PROMPT_TOO_LARGE'] };
+    return { kind: 'ready', prompt: recovered.prompt, resume, decision, continuation: null };
   }
 
   async function execute(work: WorkRecord, execution: ExecutionView) {
@@ -454,8 +457,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         // Spec §5.5/§6.1: insufficient recovery context blocks explicitly (before any credential), never a `continue`/recovery without context.
         const stop = await stopOwnBoot('recovery context insufficient');
         const nextStep = `The resumption context is insufficient (${plan.reasons.join(', ')}); no Builder was activated. Inspect the Work and its preserved artifacts and decide explicitly (ticket 26).`;
-        if (stop?.cessationConfirmed) await blockBeforeStart(session, work.work_id, executionId, 'RECOVERY_CONTEXT_INSUFFICIENT', nextStep);
-        else await hold('RECOVERY_CONTEXT_INSUFFICIENT_CESSATION_UNCONFIRMED', nextStep);
+        const code = plan.reasons.some(reason => reason.includes('TOO_LARGE')) ? 'PROMPT_TOO_LARGE' : 'RECOVERY_CONTEXT_INSUFFICIENT';
+        if (stop?.cessationConfirmed) await blockBeforeStart(session, work.work_id, executionId, code, nextStep);
+        else await hold(`${code}_CESSATION_UNCONFIRMED`, nextStep);
         observe(work.work_id, 'recovery-context-insufficient', plan.reasons);
         return;
       }

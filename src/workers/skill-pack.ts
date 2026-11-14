@@ -3,6 +3,7 @@ import { lstat, readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+import { factorySkillPackIds, type FactorySkillPackId } from '../contracts/index.js';
 
 /** The Factory's own versioned Builder skill packs (spec §6.3): distributed with the Factory, never a personal profile or registry.
  * A published version is never edited in place; a change is a new version (v1 = ticket 09, v2 = ticket 10 ask_user/resume,
@@ -10,10 +11,9 @@ import { z } from 'zod';
  * context, authorized scope changes and instruction precedence). */
 const pack = <T extends string>(id: T) => Object.freeze({ id, seedName: `factory/skill-pack/${id}`, guestDirectory: `/artifacts/factory/skill-pack/${id}`,
   directory: fileURLToPath(new URL(`../../../assets/skill-pack/${id}`, import.meta.url)) });
-export const skillPacks = Object.freeze({ 'factory-skills-v1': pack('factory-skills-v1'), 'factory-skills-v2': pack('factory-skills-v2'), 'factory-skills-v3': pack('factory-skills-v3'),
-  'factory-skills-v4': pack('factory-skills-v4') });
-export type SkillPackId = keyof typeof skillPacks;
-export const skillPackIds = Object.keys(skillPacks) as [SkillPackId, ...SkillPackId[]];
+export const skillPacks = Object.freeze(Object.fromEntries(factorySkillPackIds.map(id => [id, pack(id)]))) as { readonly [K in FactorySkillPackId]: ReturnType<typeof pack<K>> };
+export type SkillPackId = FactorySkillPackId;
+export const skillPackIds = factorySkillPackIds as unknown as [SkillPackId, ...SkillPackId[]];
 /** Alias used by the ticket 12 compositions. */
 export const builderSkillPacks = skillPacks;
 /** Default Builder pack. */
@@ -25,6 +25,8 @@ const manifestSchema = z.object({ id: z.enum(skillPackIds), version: z.string(),
   skills: z.array(z.strictObject({ name: z.string().regex(/^[a-z][a-z0-9-]*$/), path: relative, description: z.string().min(1).max(1024), modelInvocation: z.boolean() })).min(1),
   prompts: z.array(z.strictObject({ name: z.string().regex(/^[a-z][a-z0-9-]*$/), path: relative, description: z.string().min(1).max(1024) })).min(1),
   credits: relative, licenses: z.array(z.object({ license: z.string() })).min(1),
+  /** Session protocols the pack's texts define (a pack without `continuation` cannot continue a preserved session). */
+  capabilities: z.strictObject({ continuation: z.boolean().optional() }).optional(),
   files: z.array(z.object({ path: relative, sha256, change: z.enum(['verbatim', 'adapted', 'factory-own']),
     origin: z.object({ package: z.string(), license: z.string() }).passthrough() })).min(1) });
 export type SkillPackManifest = z.infer<typeof manifestSchema>;
@@ -68,4 +70,10 @@ export async function loadSkillPack(directory: string = builderSkillPack.directo
       content: strip(await readFile(join(directory, prompt.path), 'utf8')) })));
     return { id: manifest.id, version: manifest.version, manifestSha256: createHash('sha256').update(bytes).digest('hex'), manifest, prompts };
   } catch { throw new Error('WORKER_SKILL_PACK_DRIFT'); }
+}
+
+/** Whether this pack version's texts define the `continue` protocol (spec §5.5: continue a preserved compatible session). */
+export async function skillPackContinues(id: SkillPackId): Promise<boolean> {
+  const loaded = await loadSkillPack(skillPacks[id].directory, id);
+  return loaded.manifest.capabilities?.continuation === true;
 }

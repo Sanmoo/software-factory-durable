@@ -17,14 +17,19 @@ Dublê não comprova fronteira substituída.
   (regular, `nlink=1`, uid próprio, não gravável por grupo/outros, ≤ 64 MiB), primeira linha `{"type":"session","version":3,…,"cwd":"/workspace"}`,
   `sha256`/`bytes`/`sessionId`. O owner devolve `session {ref, sessionId, sha256, bytes, format, profile {sdkProfile, providerId, modelId,
   skillPack, tools}}` na conclusão — só para Builder (um revisor que reporte sessão torna o resultado incerto e é recusado). É leitura
-  confinada no host: a árvore de runtime nunca é montada no guest e nada é reparado.
+  confinada no host: a árvore de runtime nunca é montada no guest e nada é reparado. O conjunto de ferramentas do perfil vem da POLÍTICA do
+  lançamento (`launchToolNames`), não da declaração do worker: uma declaração que contradiz a política faz a sessão não ser observada
+  (revisão 5).
 - **Espelho de compatibilidade** (`src/workers/session-ref.ts`): `builderToolNames(policies)` deriva o conjunto de ferramentas que
   `worker-session` realmente oferece (write/bash/ask_user; read com `copyOutput` ou pacote; edit com limite; handoff com revisão) e
   `compareSessionProfile` lista os campos divergentes. `Workers.observe({session, next})` reabre o arquivo pelo caminho confinado,
   reconfere hash/identidade/tamanho e o perfil planejado, devolvendo `compatible` | `lost` (`SESSION_FILE_MISSING`) | `altered`
   (`SESSION_HASH_MISMATCH`) | `incompatible` (`SESSION_PROFILE_CHANGED`, `differences`) | `unavailable` (`SESSION_PATH_UNSAFE`,
   `SESSION_FILE_UNSAFE`, `SESSION_FILE_SIZE`, `SESSION_HEADER_INVALID`…). Limitação declarada: disponibilidade/compatibilidade, não consumo
-  nem adoção de processo.
+  nem adoção de processo. O protocolo `continue` é declarado pelo PACOTE (`capabilities.continuation` no manifesto, só a v4): um plano com
+  pacote que não o define (v1–v3, ou sem pacote) observa `incompatible/SESSION_CONTINUATION_UNSUPPORTED` e a Execução substitui a sessão com
+  esse motivo — nunca um `continue` para um texto que não o descreve (revisão 2). Os prompts citam apenas o arquivo `implement/SKILL.md` do
+  pacote, nunca um número de seção.
 - **Continuação da mesma sessão** (`worker-bootstrap.ts`, `worker-launch.ts`, `worker-session.ts`): `Invocation.continuation.session` chega
   ao owner como `continueSession` (só Builder; forma fechada `{ref, sha256, sessionId, bytes}`); o owner relê a original, reconfere
   identidade/hash/tamanho e copia **exclusivamente** (`O_CREAT|O_EXCL|O_WRONLY|O_NOFOLLOW`, `0600`, `fsync`) para o diretório de sessões
@@ -42,7 +47,11 @@ Dublê não comprova fronteira substituída.
     prompt `/implement`. Recibo: `{outcome: accepted|deferred|not-applied, reason, scopeUpdateId, appliesAt: 'next-activation'}`.
   - *Vínculo e entrega*: "Admitir Execução" grava `request.scopeUpdateIds` com exatamente as atualizações pendentes; "Confirmar início" marca
     cada uma `delivered` (contexto entregue no primeiro prompt) e o histórico registra `scope-update-accepted`/`scope-update-delivered`. A
-    entrega NÃO é checkpoint nem prova de consumo.
+    entrega NÃO é checkpoint nem prova de consumo: `delivered` significa entregue-e-não-consumido. Se a Execução termina sem `completed`
+    (`question`/`failure`), é explicitamente segurada (`held`) ou nunca confirma a cessação, as atualizações que ela entregou voltam a
+    `pending` (`scope-update-reoffered`, contador `reoffers`) e são re-oferecidas com o MESMO texto concreto na próxima ativação; somente uma
+    Execução `completed` com cessação confirmada as marca `consumed` (`consumption: 'execution-completed'`, `consumedAt`). Nada é
+    re-autorizado além da mudança concreta (revisão 1).
   - *Base de retomada*: `resumeBasis` = Execução mais recente que realmente TERMINOU (uma Execução liberada antes do start não conta).
     Após `question` a base é `{reason: 'QUESTION_ANSWERED', questionId, answerSha256, scopeUpdateIds}`; após `completed` só existe retomada
     com atualizações de escopo pendentes: `{reason: 'SCOPE_UPDATED', questionId: null, scopeUpdateIds}`. O commit revalida tudo
@@ -56,21 +65,31 @@ Dublê não comprova fronteira substituída.
     compatível é `continue\n…` (`continuationPrompt`) com a resposta aceita e/ou as mudanças de escopo e a referência à seção 5 do
     `implement` — nunca `/implement` de novo; sem sessão compatível é `recoveryPrompt` com o motivo da substituição e o contexto recuperável
     (Trabalho, pedido, instruções, Git, artefatos, efeitos conhecidos, Execuções/Perguntas anteriores, último `head` observado do handoff,
-    mudanças de escopo). Prompt vazio é impossível: sem resposta e sem escopo, `RESUME_TRIGGER_MISSING`.
+    mudanças de escopo). Identidades de versão/commit vindas do handoff só entram na forma canônica (`vN`, 40 hex) e cercadas como dados;
+    qualquer outro valor é omitido, nunca interpolado (revisão 6). Prompt vazio é impossível: sem resposta e sem escopo,
+    `RESUME_TRIGGER_MISSING`.
   - *Contexto insuficiente bloqueia* (`recoveryContext`): Git anterior ausente (`PREVIOUS_GIT_CONTEXT_MISSING`) ou diferente
-    (`GIT_CONTEXT_CHANGED`), sem gatilho (`RESUME_TRIGGER_MISSING`), ou Execução anterior ausente → o boot próprio é parado, NENHUMA
-    credencial é emitida, o Slot é liberado (`blockBeforeStart`) e o Trabalho mantém sua posição com o impedimento explícito
-    `RECOVERY_CONTEXT_INSUFFICIENT` e próximo passo. Sem retry automático.
+    (`GIT_CONTEXT_CHANGED`), ambiente NÃO preservado (`PREVIOUS_ENVIRONMENT_NOT_REUSED`: um clone novo no mesmo base/branch não é o workspace
+    preservado, e o prompt não pode alegar preservação — revisão 3), sem gatilho (`RESUME_TRIGGER_MISSING`), Execução anterior ausente, ou
+    prompt acima do orçamento (`PROMPT_TOO_LARGE`) → o boot próprio é parado, NENHUMA credencial é emitida, o Slot é liberado
+    (`blockBeforeStart`) e o Trabalho mantém sua posição com o impedimento explícito (`RECOVERY_CONTEXT_INSUFFICIENT` ou `PROMPT_TOO_LARGE`) e
+    próximo passo. Sem retry automático. Os três prompts (`/implement`, `continue`, recuperação) são limitados a 15 000 bytes: os de retomada
+    degradam o contexto conhecido e, se ainda não couberem, BLOQUEIAM; o `/implement` com escopo demais também bloqueia em vez de truncar
+    (revisão 4).
   - *Próxima ativação segura*: `releaseAfterCessation` devolve à fila um Trabalho cuja Execução terminou `completed` **e** que tem mudança de
     escopo pendente (aceita durante a atividade); fora isso, um `completed` continua não voltando à fila. Edição posterior de Ticket/link não
     é lida como autorização nem gatilho: o Controle não lê o corpo do Ticket para decidir escopo (só a revalidação de autorização já
     existente), e nada é enfileirado por mudança externa.
+- **Registro de pacotes** (`src/contracts/index.ts` `factorySkillPackIds`): a lista de versões é a ÚNICA origem — o registro do carregador,
+  o enum do schema de lançamento e o loader derivam dela, então renumerar/adicionar uma versão é mudança de dados (lista + diretório do
+  pacote), sem `v4` hardcoded em `src/` fora do registro.
 - **Pacote de skills** `factory-skills-v4` 4.0.0 (NOVO; v1/v2/v3 intactos, versões nunca sobrescritas): `implement` §4 (retomada em sessão
   nova com motivo + contexto recuperável), §5 (`continue` na mesma sessão, sem reiniciar `/implement`, checando o efeito da última
   ferramenta), §6 (só autorização concreta muda o pedido; preservar `vN+1` ANTES de implementar, com `authorized`/`notAdopted`; edição não
   autorizada do Ticket/documento não é gatilho; cópia preservada sobrevive à origem; captura incompleta se refaz como versão nova; fonte
   necessária inacessível é bloqueio, nunca ampliação de acesso), §7 (instruções por caminho/precedência, conflito → `ask_user`, instrução
-  alterada pelo próprio Builder nunca dispensa política/gates/limites). Manifesto e hashes completos; créditos atualizados. Carregador
+  alterada pelo próprio Builder nunca dispensa política/gates/limites). Manifesto e hashes completos; créditos atualizados; o manifesto
+  declara `capabilities: {continuation: true}` — o protocolo `continue` vive só no texto do pacote, e v1–v3 não o declaram. Carregador
   conhece v4 por identidade e caminho guest; o enum do bootstrap/launch inclui v4; a lista de arquivos legíveis do pacote (`skillPackFiles`)
   deriva do manifesto, então os novos caminhos são legíveis pelo Builder (coberto por teste).
 - **CLI**: `factory update-scope <trabalho> --reason <texto> [--request-id <id>]` — identidade apresentada antes do envio
@@ -86,18 +105,38 @@ Records reais; `Workers.observe` real lendo a árvore de runtime real de um work
 | AC | Testes | Nível | Lacuna |
 | --- | --- | --- | --- |
 | 1 Retomada revalida requisitos e usa fila/categoria/posição; sessão compatível recebe resposta/motivo via `continue`, sem reiniciar implement | `continuation-rules` (decisão continue/replace e prompt `continue` sem `/implement`, recusa vazia), `continuation-flow` AC1 (após a resposta: `request.session {mode: continue, reason: SESSION_COMPATIBLE}`, `phaseId builder-continuation`, `continuation.session` = sessão registrada, prompt `^continue`, mesma sequência/categoria 1, `observe` antes do `issue`), `session-continuation` (I-local: sessão JSONL REAL preservada por um worker Node24 real e reaberta por outro; a requisição ao provider contém a conversa anterior e a mensagem `continue`, `implementRestarted: false`; a original não é anexada; recibo `session.mode continue`), `activate-continuation` (payload exato ao owner) | S + I-local | Modelo real continuando (ensaio) |
-| 2 Sessão incompatível/perdida substituída com motivo e contexto recuperável; contexto insuficiente bloqueia em vez de continue vazio | `continuation-flow` AC2 para lost/altered/incompatible(Host)/não composto (prompt `^Factory recovery instruction`, `reason: <código>`, `previous-execution=`, `/artifacts/spec/`, `/artifacts/instructions/`, base-commit, Execuções/Perguntas conhecidas, resposta, seção 4 do pack) + política do Host alterada entre Execuções (arquivo íntegro, `SESSION_INCOMPATIBLE` por fatos do Controle) + Git alterado → bloqueio sem credencial (`RECOVERY_CONTEXT_INSUFFICIENT`, Slot liberado, fila 1, sem retry), `continuation-rules` (recoveryContext: Git ausente/alterado, gatilho ausente), `session-continuation` AC2 (lost/altered/`..`/perfil divergente/4 níveis de `unavailable` na observação real; cópia adulterada encerra o worker sem requisição ao modelo; diretório não privado → `unsafe`), `activate-continuation` (revisor não continua nem reporta sessão; forma inválida recusada antes do owner) | S + I-local | Sessão real perdida/adulterada por crash (ensaio de substituição usa incompatibilidade de política; ver decisão 3) |
-| 3 `update-scope` e resposta correlacionada autorizam só mudança concreta; durante atividade ficam para a próxima ativação segura, sem escritor paralelo/injeção | `continuation-rules` (motivo concreto; lugares: atividade → deferred, espera de Pergunta, ocioso após completed, released), `continuation-flow` AC3/AC4 (durante atividade: recibo `deferred`, mesma identidade → mesmo recibo, conteúdo diferente → conflito, repetição → `SCOPE_UPDATE_ALREADY_PENDING`, ZERO `deliver-*` ao Builder vivo, nenhum segundo `activate`; após a cessação a próxima Execução recebe `continue` com "Authorized scope change scope-s1" cercada; espera de Pergunta carrega a mudança junto da resposta; antes da 1ª Execução entra no `/implement`; Trabalho inexistente → `WORK_NOT_FOUND`), `update-scope-cli` (CLI real + owner + socket + SQLite: identidade antes do envio, idempotência, conflito, `not-applied` código 2, offline `REQUEST_INDETERMINATE` código 4) | R + S + I-local | Operador real digitando o comando (ensaio) |
-| 4 Próxima Execução preserva nova versão completa antes de implementar; versões anteriores não sobrescritas; edição posterior do link não é gatilho/autorização | `skill-pack-v4` (texto: "Before implementing it, preserve a NEW version `vN+1`", `"notAdopted"`, "Never edit an earlier version", "is **not** a request, a trigger or a reason to repair", captura incompleta refeita como versão nova), `continuation-flow` AC3/AC4 (edição posterior do Ticket observada pelo polling e ZERO ativação/autorização; só `update-scope` concreto retoma; escopo entregue nunca dispara de novo; mudanças de escopo cercadas para não virarem instrução), `continuation-flow` AC1 (a retomada não relê documentos: o conjunto de chamadas ao tracker/repositório é só tracking/autorização/dependências/Perguntas) | R + S + texto do pacote | Comportamento real de versionar `vN+1` (ensaio) |
+| 2 Sessão incompatível/perdida substituída com motivo e contexto recuperável; contexto insuficiente bloqueia em vez de continue vazio | `continuation-flow` AC2 para lost/altered/incompatible(Host)/não composto/`SESSION_CONTINUATION_UNSUPPORTED` (prompt `^Factory recovery instruction`, `reason: <código>`, `previous-execution=`, `/artifacts/spec/`, `/artifacts/instructions/`, base-commit, Execuções/Perguntas conhecidas, resposta, seção 4 do pack) + política do Host alterada entre Execuções (arquivo íntegro, `SESSION_INCOMPATIBLE` por fatos do Controle) + Git alterado e ambiente NÃO reutilizado → bloqueio sem credencial (`RECOVERY_CONTEXT_INSUFFICIENT`, Slot liberado, fila 1, sem retry), `continuation-rules` (recoveryContext: Git ausente/alterado, `PREVIOUS_ENVIRONMENT_NOT_REUSED`, gatilho ausente), `session-continuation` (pacote v3 ou sem pacote → `SESSION_CONTINUATION_UNSUPPORTED`; declaração do worker contradizendo a política → sessão não observada), `session-continuation` AC2 (lost/altered/`..`/perfil divergente/4 níveis de `unavailable` na observação real; cópia adulterada encerra o worker sem requisição ao modelo; diretório não privado → `unsafe`), `activate-continuation` (revisor não continua nem reporta sessão; forma inválida recusada antes do owner) | S + I-local | Sessão real perdida/adulterada por crash (ensaio de substituição usa incompatibilidade de política; ver decisão 3) |
+| 3 `update-scope` e resposta correlacionada autorizam só mudança concreta; durante atividade ficam para a próxima ativação segura, sem escritor paralelo/injeção | `continuation-rules` (motivo concreto; lugares: atividade → deferred, espera de Pergunta, ocioso após completed, released), `continuation-flow` AC3/AC4 (durante atividade: recibo `deferred`, mesma identidade → mesmo recibo, conteúdo diferente → conflito, repetição → `SCOPE_UPDATE_ALREADY_PENDING`, ZERO `deliver-*` ao Builder vivo, nenhum segundo `activate`; após a cessação a próxima Execução recebe `continue` com "Authorized scope change scope-s1" cercada; espera de Pergunta carrega a mudança junto da resposta; antes da 1ª Execução entra no `/implement`; Trabalho inexistente → `WORK_NOT_FOUND`), `continuation-flow` AC3/finding 1 (entregue por Execução que termina em `question` volta a `pending` com `reoffers: 1`, é re-oferecida na ativação seguinte e só uma Execução `completed` a marca `consumed`; nunca re-dispara), `update-scope-cli` (CLI real + owner + socket + SQLite: identidade antes do envio, idempotência, conflito, `not-applied` código 2, offline `REQUEST_INDETERMINATE` código 4) | R + S + I-local | Operador real digitando o comando (ensaio) |
+| 4 Próxima Execução preserva nova versão completa antes de implementar; versões anteriores não sobrescritas; edição posterior do link não é gatilho/autorização | `skill-pack-v4` (texto: "Before implementing it, preserve a NEW version `vN+1`", `"notAdopted"`, "Never edit an earlier version", "is **not** a request, a trigger or a reason to repair", captura incompleta refeita como versão nova), `continuation-flow` AC3/AC4 (edição posterior do Ticket observada pelo polling e ZERO ativação/autorização; só `update-scope` concreto retoma; escopo entregue nunca dispara de novo; mudanças de escopo cercadas para não virarem instrução), `continuation-flow` AC1 (a retomada não relê documentos: o conjunto de chamadas ao tracker/repositório é só tracking/autorização/dependências/Perguntas) e AC4/finding 4 (prompt `/implement` acima de 15 000 bytes bloqueia em `PROMPT_TOO_LARGE`, sem ativar e sem descartar escopo) | R + S + texto do pacote | Comportamento real de versionar `vN+1` (ensaio) |
 | 5 Fontes preservadas utilizáveis sem a origem; captura incompleta/fonte privada inacessível gera pergunta/recuperação, sem coletor nem ampliação de credenciais | `skill-pack-v4` (cópia preservada vale sem a origem; incompleta → versão nova; fonte necessária inacessível é bloqueio, nunca ampliar acesso), `continuation-flow` AC1 (o Controle não tem coletor: nenhuma leitura de documento; credencial da retomada é o mesmo grant escopado ao repositório, sem Workflows, e as políticas Host são idênticas às da Execução anterior), receita `context11` (fonte privada inacessível ANTES de preservar → `ask_user`; ver ensaio) | R + S + receita | Pergunta real por fonte privada e uso da cópia após a origem sumir (ensaio) |
-| 6 Instruções por caminho/precedência preservadas; conflito exige pergunta; instrução modificada pelo Builder não dispensa política/gates/limites | `skill-pack-v4` ("`\"precedence\"`", "A conflict without a clear resolution is a question (`ask_user`)", "never waive the Factory policy, the reviews/handoff, the tests/gates or your limits"), `continuation-flow` AC1 (políticas Host e grant inalterados na retomada) | R + texto do pacote | Modelo real alterando `AGENTS.md` sem efeito (ensaio; decisão 8) |
+| 6 Instruções por caminho/precedência preservadas; conflito exige pergunta; instrução modificada pelo Builder não dispensa política/gates/limites | `skill-pack-v4` ("`\"precedence\"`", "A conflict without a clear resolution is a question (`ask_user`)", "never waive the Factory policy, the reviews/handoff, the tests/gates or your limits"), `continuation-flow` AC1 (políticas Host e grant inalterados na retomada), `session-continuation` finding 5 (o conjunto de ferramentas vem da política do lançamento, não da declaração do worker; os dois lados coincidem em toda a matriz de políticas) | R + texto do pacote | Modelo real alterando `AGENTS.md` sem efeito (ensaio; decisão 8) |
 | 7 Provas com agentes e sessões reais cobrem continuação compatível, substituição, captura interrompida e autorização parcial, distinguindo entrega de contexto de checkpoint/consumo | Receita `context11-qualification` (+ testes de inércia `--plan` e de segurança de preconditions/evidência de sessão); `session-continuation` já usa worker Node24 + SDK reais com provider offline (I-local) | — (pendente) + I-local | **Ensaio real a executar pelo supervisor** |
 
 Mutações (JS compilado, restauradas; cada uma derruba ao menos um teste e a suíte volta verde depois):
 (M1) `sessionDecision` continua sempre que existe sessão registrada, ignorando observação e políticas → `continuation-flow` (5 testes AC2 + o de escopo);
 (M2) `scopeUpdateDecision` deixa de adiar durante atividade → `continuation-flow` AC3/AC4 (deferred/injeção);
 (M3) o worker abre uma sessão NOVA em vez da cópia continuada → `session-continuation` AC1 e AC2;
-(M4) o owner copia sem reconferir identidade/hash/tamanho → `session-continuation` AC2 (cópia adulterada).
+(M4) o owner copia sem reconferir identidade/hash/tamanho → `session-continuation` AC2 (cópia adulterada);
+(M5) a entrega não volta a `pending` quando a Execução termina em `question` → `continuation-flow` finding 1;
+(M6) `Workers.observe` deixa de exigir a capacidade `continuation` do pacote → `session-continuation` AC1/AC2;
+(M7) `recoveryContext` ignora `prepared.reused` → `continuation-flow` finding 3;
+(M8) o owner volta a confiar na declaração de ferramentas do worker → `session-continuation` AC1;
+(M9) `/implement` acima do orçamento é enviado truncado em vez de bloquear → `continuation-flow` finding 4;
+(M10) identidades do handoff entram sem forma canônica → `continuation-rules` review 6.
+
+## Correções da revisão estática independente (supervisor, sobre 024fb3d)
+
+Todas com teste vermelho antes (ou mutação que comprova a detecção) e verde depois.
+
+| # | Achado | Correção | Teste |
+| --- | --- | --- | --- |
+| 1 (médio) | `delivered` era consumido no "Confirmar início", antes de o modelo consumir o prompt: uma substituição/falha posterior descartava a mudança em silêncio | modelo entregue-não-consumido: `pending → delivered` no início; volta a `pending` (`reoffers`, `scope-update-reoffered`) quando a Execução termina em `question`/`failure` ou é segurada; só `completed` com cessação confirmada marca `consumed` (`consumption: 'execution-completed'`). Re-oferecida, a mudança é idêntica — nada além dela é re-autorizado; `unconsumedScope` impede duplicata da mesma autorização | `continuation-flow` finding 1 (delivered → question → re-offer → continue → consumed; nunca re-dispara), `continuation-flow` AC3/AC4 (consumo após completed) |
+| 2 (médio) | `continuationPrompt` citava "section 5", que só existe na v4; v1–v3 (e o padrão v2) permaneciam continuáveis | o PACOTE declara `capabilities.continuation` no manifesto (só a v4); `Workers.observe` recusa qualquer plano com pacote que não a declare (ou sem pacote) com `SESSION_CONTINUATION_UNSUPPORTED`, e o Controle registra esse motivo; os prompts citam só `implement/SKILL.md`, sem número de seção. Adicionado `factorySkillPackIds` em `contracts` como registro único (renumerar é mudança de dados) | `session-continuation` (v4 compatível; v3/sem pacote → `SESSION_CONTINUATION_UNSUPPORTED`), `skill-pack-v4` (capability só na v4; registro derivado), `continuation-rules` (sem `section N`; `SESSION_CONTINUATION_UNSUPPORTED`), `continuation-flow` finding 2, `session-continuation` finding 5 |
+| 3 (médio) | "mesmo contexto do Trabalho" ignorava `checkout.reused`: ambiente perdido + clone novo no mesmo base/branch passava e o prompt alegava preservação | `recoveryContext` exige `reused`; senão `PREVIOUS_ENVIRONMENT_NOT_REUSED` → bloqueio explícito (`RECOVERY_CONTEXT_INSUFFICIENT`), sem credencial | `continuation-rules` (reused falso), `continuation-flow` finding 3 |
+| 4 (baixo) | prompts de recuperação e `/implement` sem limite/teto de "grande demais" | `initialPrompt` e `recoveryPrompt` devolvem `{kind:'too-large'}` além do orçamento de 15 000 bytes; o despacho bloqueia com `PROMPT_TOO_LARGE` (Slot liberado, escopo intacto, nenhuma ativação) | `continuation-rules` (initial too-large, recovery too-large), `continuation-flow` finding 4 |
+| 5 (baixo) | o conjunto de ferramentas do perfil vinha da declaração do worker | o owner deriva o conjunto da POLÍTICA do lançamento (`launchToolNames`) e descarta a observação se a declaração do worker contradiz a política; os dois lados têm a mesma regra e um teste exige igualdade em toda a matriz | `session-continuation` finding 5, `session-continuation` AC1/AC2 (declaração contraditória → sem sessão) |
+| 6 (baixo) | a instrução de recuperação interpolava identidades de versão/commit do handoff sem cerca | só forma canônica (`^vN$`, 40 hex) entra, cercada como dado; qualquer outro valor é omitido | `continuation-rules` review 6 |
+| extra | o scan de segredos da receita cobria só o storage | o `inspect` passa a varrer TODO output de evidência Records do Trabalho e os JSONs de observação da própria receita (`secretScan.storage/records/observations`) | `context11-qualification` (plano declara o escopo do scan) |
 
 ## TDD observado (honesto)
 
@@ -130,7 +169,9 @@ Mutações (JS compilado, restauradas; cada uma derruba ao menos um teste e a su
    versionamento e a interpretação ficam com o Builder (pack v4 §6). Se o operador quiser aceitar critérios/arquivos por comando, é mudança
    de contrato.
 5. **Escopo pendente durante atividade que depois falha/segura.** A mudança continua `pending` (nunca se perde) e o Trabalho fica `held` com
-   o Slot pelo caminho já existente; a recuperação é do ticket 26. Não há retry nem liberação implícita.
+   o Slot pelo caminho já existente; a recuperação é do ticket 26. Não há retry nem liberação implícita. Se o controlador cair entre a
+   entrega e o fim, a atualização permanece `delivered` ligada àquela Execução (o texto está no registro, nunca se perde) e só a recuperação
+   do ticket 26 decide; um fim normal em `question`/`failure`/`held` a devolve a `pending` automaticamente.
 6. **Edição posterior do Ticket não é observada como evento.** O Controle não lê o corpo do Ticket para decidir escopo (para não criar
    coletor/ingestão): a edição simplesmente não autoriza nada. A receita registra o hash do corpo por fora, como evidência. Se o operador
    quiser que a Factory registre "houve edição" (sem autorizar), é um efeito novo e deve voltar ao operador.
@@ -200,11 +241,13 @@ Observações esperadas (`ask-result.json`, `continue-result.json`, `scope-resul
    `docs/factory-question.md`; B1/B2 NÃO implementados; `ticketBody.sha256` diferente do da `preflight` (edição observada, sem efeito).
 3. `scope`: `scopeReceipt {outcome: accepted, appliesAt: next-activation}`; `request.resume {reason: SCOPE_UPDATED, scopeUpdateIds:
    [scope-q11-scope-1]}`; `request.session {mode: replace, reason: SESSION_INCOMPATIBLE}`; prompt `Factory recovery instruction…` com o
-   motivo, as Execuções anteriores e a mudança de escopo; `scopeUpdates[0].state: delivered`; `spec/v3` com `factory-scope:` e
+   motivo, as Execuções anteriores e a mudança de escopo; `scopeUpdates[0].state: consumed` depois da cessação confirmada
+   (`delivered` se a Execução não concluir — a mudança é re-oferecida, nunca perdida); `spec/v3` com `factory-scope:` e
    `authorized`/`notAdopted`; a linha de B1 commitada e o arquivo NÃO renomeado.
 4. `inspect`: `sessions` com o JSONL de cada boot — para `continue`, a mensagem `continue` presente e turnos do modelo depois dela
-   (`resumeMessageIndex`, `assistantTurnsAfterResume`, `toolCallsAfterResume`); `secretScan` sem `ghs_`/chave; `versions` de cada
-   `spec|instructions/vN`; comentários de #3 (Pergunta da App com marcador e resposta do operador); `scopeUpdates`.
+   (`resumeMessageIndex`, `assistantTurnsAfterResume`, `toolCallsAfterResume`); `secretScan` com `storage`, `records` (todo output de
+   evidência Records do Trabalho) e `observations` (JSONs da própria receita), todos sem `ghs_`/`PRIVATE KEY`; `versions` de cada
+   `spec|instructions/vN`; comentários de #3 (Pergunta da App com marcador e resposta do operador); `scopeUpdates` com o estado final.
 5. Disposição do operador: `held` (código/fase), `resumption-not-observed`, Builder que concluiu sem perguntar na `ask`, prazo atingido.
    A distinção entrega/consumo é feita em `inspect`: recibo + mensagem no JSONL = entregue; turnos e commits posteriores = consumido.
 
@@ -217,12 +260,12 @@ Gate executado (`rm -rf dist` primeiro, Node 24.21.0, `env -u NODE_OPTIONS -u NO
 - `eslint . --max-warnings 0`: exit 0.
 - `tsc -p tsconfig.json`: exit 0.
 - **140 arquivos** `dist/test/**/*.test.js`, um por vez (`--experimental-test-module-mocks --test --test-concurrency=1`):
-  **926 pass, 0 fail, 10 skipped, 1 cancelled** (≈ 515 s), com três gates de outros tickets rodando em paralelo na mesma máquina. O único
-  arquivo com exit ≠ 0 foi `workers/sdk-profile` (timeout interno de 15 s estourando sob essa carga, 1 cancelado); reexecutado sozinho:
-  **1 pass** (≈ 13 s). Total efetivo: **927 pass, 0 fail, 10 skipped, 0 cancelled**.
+  **934 pass, 0 fail, 10 skipped, 0 cancelled** (≈ 369 s) na árvore final (com as correções da revisão). Um gate anterior, rodando com três
+  gates de outros tickets em paralelo na mesma máquina, teve `workers/sdk-profile` cancelado pelo seu timeout interno de 15 s (1 cancelled);
+  reexecutado sozinho passou (≈ 13 s).
 - Os 10 skips são os mesmos de antes (host-dependentes); `test/sandbox/gondolin.test.ts` continua `skip: true`.
 
-Novos arquivos de teste: `continuation-rules` (5), `continuation-flow` (11), `session-continuation` (2), `activate-continuation` (2),
+Novos arquivos de teste: `continuation-rules` (7), `continuation-flow` (15), `session-continuation` (3), `activate-continuation` (2),
 `skill-pack-v4` (1), `update-scope-cli` (1), `context11-qualification` (1), `context11-recipe-safety` (2), fixture
 `fixtures/continue-provider-preload`. Ajustados: `question-flow` (base de retomada + decisão de sessão com dublês), `execution-commits`
-(`scopeUpdateIds`/`QUESTION_ANSWERED`).
+(`scopeUpdateIds`/`QUESTION_ANSWERED`), `question-rules` (prompt de recuperação limitado/objeto).

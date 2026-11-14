@@ -12,7 +12,8 @@ import { nativeOwner } from '../sandbox/native-owner.fixture.js';
 import { sdkProfile } from '../../src/workers/sdk-profile.js';
 import { createWorkers } from '../../src/workers/index.js';
 import { builderToolNames } from '../../src/workers/session-ref.js';
-import { copyPreservedSession, observePreservedSession, readSessionFile } from '../../src/platform/host/index.js';
+import { copyPreservedSession, launchToolNames, observePreservedSession, readSessionFile } from '../../src/platform/host/index.js';
+import { skillPackContinues } from '../../src/workers/skill-pack.js';
 import type { ToolContext } from '../../src/sandbox/index.js';
 
 // I-local: new Node24 worker entrypoint + REAL Pi SDK SessionManager/AgentSession + real Records/Protocol owner transport + real Host
@@ -42,7 +43,7 @@ async function runWorker(t: { after(fn: () => Promise<void>): void }, paths: { d
   const f = await nativeOwner(context, { exec() { return { async *output() {}, result: Promise.resolve({ exitCode: 0 }) }; } });
   t.after(() => f.close());
   const recordsRoot = join(paths.directory, 'records');
-  const bootstrap = { version: 1, context, endpoint: f.owner.endpoint, recordsRoot, knownSecrets: ['synthetic-secret'], prompt,
+  const bootstrap = { version: 1, context, endpoint: f.owner.endpoint, recordsRoot, knownSecrets: ['synthetic-secret'], prompt, skillPack: 'factory-skills-v4' as const,
     profile: { id: sdkProfile.id, directory: paths.profile, systemPrompt: 'Builder continuation fixture.', ...provider }, ...extra };
   const child = fork(fileURLToPath(new URL('../../src/entrypoints/worker.js', import.meta.url)), [], {
     execPath: process.execPath, execArgv: ['--import', fileURLToPath(new URL(`./fixtures/${preload}`, import.meta.url))],
@@ -65,23 +66,40 @@ test('AC1: a preserved Builder session is observed by its owner, found compatibl
   const first = await worker('bootA', 'aaaa');
   const asked = await runWorker(t, first, context(1), 'ask-provider-preload.js', 'Implement the Ticket.');
   assert.equal(asked.result!.status, 'question');
-  assert.deepEqual(asked.result!.sessionTools, ['ask_user', 'bash', 'write'], 'the worker reports its exact tool set');
+  assert.deepEqual(asked.result!.sessionTools, ['ask_user', 'bash', 'read', 'write'], 'the worker reports its exact tool set');
   // Owner observation of the preserved session (Host path, not guest; identity/hash from the file itself).
-  const launch = { context: { role: 'builder' }, profile: { id: sdkProfile.id, providerId: 'offline-fixture', modelId: 'reader' } };
+  const launch = { context: { role: 'builder' }, profile: { id: sdkProfile.id, providerId: 'offline-fixture', modelId: 'reader' }, skillPack: 'factory-skills-v4' };
+  const planned = { skillPack: 'factory-skills-v4' as const, handoff: false };
   const ref = (await observePreservedSession(root, first.sessions, asked.result!.sessionFile, asked.result!.sessionTools, launch))!;
   assert.ok(ref, 'observed');
   assert.match(ref.ref, /^r\/bootA\/w-aaaa\/profile\/sessions\/[^/]+\.jsonl$/);
   const original = await readFile(join(root, ref.ref));
   assert.deepEqual([ref.sha256, ref.bytes, ref.format, ref.profile], [sha(original), original.length, 'pi-session-jsonl-v3',
-    { sdkProfile: sdkProfile.id, providerId: 'offline-fixture', modelId: 'reader', skillPack: null, tools: ['ask_user', 'bash', 'write'] }]);
-  assert.deepEqual(builderToolNames({ handoff: false }), ref.profile.tools, 'the facade predicts the very tool set the SDK session had');
+    { sdkProfile: sdkProfile.id, providerId: 'offline-fixture', modelId: 'reader', skillPack: 'factory-skills-v4', tools: ['ask_user', 'bash', 'read', 'write'] }]);
+  assert.deepEqual(builderToolNames(planned), ref.profile.tools, 'the facade predicts the very tool set the SDK session had');
   // Workers.observe (Q6): compatible for the same policies; incompatible when the planned tools differ; never a guest read.
   const workers = createWorkers({ root, knownSecrets: [], profile: { id: sdkProfile.id, systemPrompt: 's', ...provider } });
-  const observed = await workers.observe({ workId: 'continue-work', executionId: 'exec-1', invocationId: 'builder-1', session: ref, next: { handoff: false } });
+  const observed = await workers.observe({ workId: 'continue-work', executionId: 'exec-1', invocationId: 'builder-1', session: ref, next: planned });
   assert.deepEqual(observed.session, { state: 'compatible', session: ref });
   assert.ok(observed.limitations[0]!.includes('not proof of consumption'));
-  const other = await workers.observe({ workId: 'continue-work', executionId: 'exec-1', invocationId: 'builder-1', session: ref, next: { handoff: false, editSourceMaxBytes: 8192 } });
+  const other = await workers.observe({ workId: 'continue-work', executionId: 'exec-1', invocationId: 'builder-1', session: ref, next: { ...planned, editSourceMaxBytes: 8192 } });
   assert.deepEqual(other.session, { state: 'incompatible', code: 'SESSION_PROFILE_CHANGED', differences: ['tools'] });
+  // finding 2: the PACK decides whether it defines the continue protocol (v1-v3 do not); an explicit pack is required.
+  assert.equal(await skillPackContinues('factory-skills-v4'), true);
+  for (const older of ['factory-skills-v1', 'factory-skills-v2', 'factory-skills-v3'] as const) assert.equal(await skillPackContinues(older), false, older);
+  const v3Session = { ...ref, profile: { ...ref.profile, skillPack: 'factory-skills-v3', tools: ['ask_user', 'bash', 'read', 'write'] } };
+  const v3Observed = await workers.observe({ workId: 'continue-work', executionId: 'exec-1', invocationId: 'builder-1', session: v3Session, next: { skillPack: 'factory-skills-v3', handoff: false } });
+  assert.deepEqual(v3Observed.session, { state: 'incompatible', code: 'SESSION_CONTINUATION_UNSUPPORTED', differences: ['continuation'] });
+  assert.deepEqual((await workers.observe({ workId: 'continue-work', executionId: 'exec-1', invocationId: 'builder-1', session: ref, next: planned })).session.state,
+    'compatible');
+  assert.deepEqual((await workers.observe({ workId: 'continue-work', executionId: 'exec-1', invocationId: 'builder-1', session: ref, next: { handoff: false } })).session,
+    { state: 'incompatible', code: 'SESSION_CONTINUATION_UNSUPPORTED', differences: ['continuation'] }, 'a plan without a pack cannot continue');
+  // finding 5: the Host derives the tool set from the LAUNCH policy, not from the worker's claim; a contradicting claim withholds the session.
+  assert.deepEqual(ref.profile.tools, launchToolNames({ context: { role: 'builder' }, skillPack: 'factory-skills-v4', handoff: false }));
+  assert.equal(await observePreservedSession(root, first.sessions, asked.result!.sessionFile, ['bash', 'write'], launch), undefined,
+    'a claim contradicting the launch policy is not adopted');
+  assert.equal(await observePreservedSession(root, first.sessions, asked.result!.sessionFile, asked.result!.sessionTools,
+    { ...launch, editSourceMaxBytes: 8192 }), undefined, 'the policy, not the claim, decides the expected tool set');
   // Owner copy for the new worker, then the continuation in the SAME session.
   const second = await worker('bootB', 'bbbb');
   const copied = await copyPreservedSession(root, second.sessions, ref);
@@ -110,15 +128,19 @@ test('AC2: altered, lost, unsafe or foreign sessions are never continued; a tamp
   const { root, worker } = await installation(t);
   const first = await worker('bootA', 'aaaa');
   const asked = await runWorker(t, first, context(1), 'ask-provider-preload.js', 'Implement the Ticket.');
-  const launch = { context: { role: 'builder' }, profile: { id: sdkProfile.id, providerId: 'offline-fixture', modelId: 'reader' } };
+  const launch = { context: { role: 'builder' }, profile: { id: sdkProfile.id, providerId: 'offline-fixture', modelId: 'reader' }, skillPack: 'factory-skills-v4' };
   const ref = (await observePreservedSession(root, first.sessions, asked.result!.sessionFile, asked.result!.sessionTools, launch))!;
   const workers = createWorkers({ root, knownSecrets: [], profile: { id: sdkProfile.id, systemPrompt: 's', ...provider } });
-  const observe = (session: typeof ref) => workers.observe({ workId: 'w', executionId: 'e', invocationId: 'i', session, next: { handoff: false } }).then(result => result.session);
+  const observe = (session: typeof ref) => workers.observe({ workId: 'w', executionId: 'e', invocationId: 'i', session, next: { skillPack: 'factory-skills-v4', handoff: false } })
+    .then(result => result.session);
   // A reviewer never reports a session; a file outside the worker's own sessions directory is never one.
   assert.equal(await observePreservedSession(root, first.sessions, asked.result!.sessionFile, asked.result!.sessionTools, { ...launch, context: { role: 'spec' } }), undefined);
   assert.equal(await observePreservedSession(root, first.sessions, join(first.directory, 'records', 'x.jsonl'), asked.result!.sessionTools, launch), undefined);
   assert.deepEqual((await observe({ ...ref, ref: '../etc/passwd' })).state, 'unavailable');
   assert.deepEqual(await observe({ ...ref, profile: { ...ref.profile, modelId: 'other' } }), { state: 'incompatible', code: 'SESSION_PROFILE_CHANGED', differences: ['modelId'] });
+  assert.deepEqual(await workers.observe({ workId: 'w', executionId: 'e', invocationId: 'i', session: ref, next: { skillPack: 'factory-skills-v1', handoff: false } }).then(result => result.session),
+    { state: 'incompatible', code: 'SESSION_CONTINUATION_UNSUPPORTED', differences: ['continuation'] },
+    'an older planned pack cannot continue any session, whatever the recorded profile says');
   // Tampered copy: the worker refuses before creating any model request.
   const second = await worker('bootB', 'bbbb');
   const copied = await copyPreservedSession(root, second.sessions, ref);
@@ -138,4 +160,17 @@ test('AC2: altered, lost, unsafe or foreign sessions are never continued; a tamp
   // A group/world-readable runtime directory is not private: unavailable, never followed.
   await chmod(join(root, 'r', 'bootA'), 0o755);
   assert.equal((await readSessionFile(root, ref.ref)).state, 'unsafe');
+});
+
+test('finding 5: the Host tool set derived from the launch policy is exactly the set the SDK session is offered for every policy combination', async () => {
+  const { builderToolNames } = await import('../../src/workers/session-ref.js');
+  const policies = [
+    { handoff: false }, { handoff: false, copyOutput: true }, { handoff: false, skillPack: 'factory-skills-v4' as const },
+    { handoff: false, editSourceMaxBytes: 8192 }, { handoff: true, copyOutput: true, editSourceMaxBytes: 8192, skillPack: 'factory-skills-v4' as const },
+  ];
+  for (const policy of policies) {
+    assert.deepEqual(launchToolNames({ context: { role: 'builder' }, ...policy }), builderToolNames(policy), JSON.stringify(policy));
+  }
+  assert.deepEqual(launchToolNames({ context: { role: 'builder' }, handoff: false, copyOutput: true, editSourceMaxBytes: 0,
+    skillPack: 'factory-skills-v4' }), ['ask_user', 'bash', 'edit', 'read', 'write']);
 });

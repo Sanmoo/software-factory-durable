@@ -12,7 +12,7 @@ import type { BuilderDirective, HandoffEvent } from './builder-handoff.js';
 export type { ReviewerProfile, Invocation } from './worker-start.js';
 export type { BuilderDirective, HandoffEvent } from './builder-handoff.js';
 export { builderSkillPack, builderSkillPacks, skillPacks, type SkillPackId } from './skill-pack.js';
-import { skillPackGuestFiles } from './skill-pack.js';
+import { skillPackContinues, skillPackGuestFiles } from './skill-pack.js';
 /** Transient material handed to the host handshake, never part of the (serializable) invocation. */
 export type ActivationDelivery = { credential?: Readonly<{ token: string }> };
 /** `deliver` directives (Q6): a renewed transient Builder credential for NEW commands, or its final withdrawal. Never serialized/persisted. */
@@ -116,6 +116,10 @@ export function createWorkers(configuration?: Configuration) {
       if (!configuration) return { session: { state: 'unavailable', code: 'WORKER_EXECUTION_NOT_ENABLED', differences: [] }, limitations };
       const recorded = sessionRefSchema.safeParse(input.session);
       if (!recorded.success) return { session: { state: 'unavailable', code: 'SESSION_REF_INVALID', differences: [] }, limitations };
+      // The PACK defines the continue protocol (manifest capability); an older pack, or no pack, cannot continue a session.
+      if (!input.next.skillPack || !(await skillPackContinues(input.next.skillPack))) {
+        return { session: { state: 'incompatible', code: 'SESSION_CONTINUATION_UNSUPPORTED', differences: ['continuation'] }, limitations };
+      }
       const read = await readSessionFile(configuration.root, recorded.data.ref);
       if (read.state === 'lost') return { session: { state: 'lost', code: read.code, differences: [] }, limitations };
       if (read.state !== 'read') return { session: { state: read.state === 'unsafe' ? 'unavailable' : 'altered', code: read.code, differences: [] }, limitations };

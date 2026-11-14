@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { builderSkillPacks, loadSkillPack, skillPackGuestFiles } from '../../src/workers/skill-pack.js';
+import { builderSkillPacks, loadSkillPack, skillPackContinues, skillPackGuestFiles, skillPackIds } from '../../src/workers/skill-pack.js';
 
 // Ticket 11: a NEW pack version v4 = v3 plus continue/recovery context, authorized scope changes and instruction precedence.
 // Earlier versions are never edited in place (each keeps its own hashes).
@@ -36,6 +36,15 @@ test('AC1/AC2/AC4/AC5/AC6: factory-skills-v4 is a fully hashed new version whose
   // Every path the v4 texts cite is a seeded file the Builder may read (pack-read authority of ticket 10).
   const files = await skillPackGuestFiles('factory-skills-v4');
   for (const text of [implement, prompt]) for (const cited of text.match(/\/artifacts\/factory\/skill-pack\/[A-Za-z0-9._/-]+\.md/g) ?? []) assert.ok(files.includes(cited), cited);
+  // finding 2: the pack itself declares which session protocols it defines; no Control/Host list of versions decides it.
+  assert.deepEqual(pack.manifest.capabilities, { continuation: true });
+  assert.equal(await skillPackContinues('factory-skills-v4'), true);
+  for (const older of skillPackIds.filter(id => id !== 'factory-skills-v4')) {
+    assert.equal((await loadSkillPack(builderSkillPacks[older].directory, older)).manifest.capabilities?.continuation, undefined, older);
+    assert.equal(await skillPackContinues(older), false, older);
+  }
+  // Renumbering/adding a version is a data change: the registry, the Host schema enum and the loader all derive from the same list.
+  assert.deepEqual([...skillPackIds], [...(await import('../../src/contracts/index.js')).factorySkillPackIds]);
   // The earlier versions stay byte-identical to their own manifests.
   for (const id of ['factory-skills-v1', 'factory-skills-v2', 'factory-skills-v3'] as const) {
     const old = await loadSkillPack(builderSkillPacks[id].directory, id);

@@ -77,18 +77,28 @@ test('AC2: the published comment carries the explicit reply instruction; model t
 });
 
 test('AC6/spec 5.5: the recovery instruction is explicit (Work, artifacts, question and accepted answer), never a bare continue', () => {
-  const prompt = recoveryPrompt({ ticketUrl: 'https://github.com/acme/project/issues/3', repository: 'acme/project', base: 'main', baseCommit: 'a'.repeat(40), branch: 'factory/3-abc',
+  const recovered = recoveryPrompt({ ticketUrl: 'https://github.com/acme/project/issues/3', repository: 'acme/project', base: 'main', baseCommit: 'a'.repeat(40), branch: 'factory/3-abc',
     checkout: '/workspace/checkout', workId: 'work-a', executionId: 'exec-2', previousExecutionId: 'exec-1', skillDirectory: '/artifacts/factory/skill-pack/factory-skills-v2',
     question: { questionId: qid, question: 'Which file?', context: 'none named' }, answer: { text: 'docs/a.md', author: 'sanmoo', origin: 'github-comment' } });
+  assert.equal(recovered.kind, 'prompt');
+  const prompt = recovered.kind === 'prompt' ? recovered.prompt : '';
   assert.match(prompt, /^Factory recovery instruction/);
   for (const part of ['https://github.com/acme/project/issues/3', 'branch=factory/3-abc', 'previous-execution=exec-1', qid, 'Which file?', 'docs/a.md', 'sanmoo',
-    '/artifacts/factory/skill-pack/factory-skills-v2/skills/implement/SKILL.md', 'section 4']) assert.ok(prompt.includes(part), part);
+    '/artifacts/factory/skill-pack/factory-skills-v2/skills/implement/SKILL.md']) assert.ok(prompt.includes(part), part);
+  // The pack decides which section defines resumption: the Control never cites a section number (v1-v3 have no such section).
+  assert.doesNotMatch(prompt, /section \d/i);
   assert.ok(Buffer.byteLength(prompt) < 16384);
   // Worst case (3-byte characters at every limit) still fits the Builder prompt budget: the context is then omitted, never the answer.
   const big = recoveryPrompt({ ticketUrl: 'u', repository: 'r', base: 'b', baseCommit: 'c', branch: 'br', checkout: '/w', workId: 'w', executionId: 'e', previousExecutionId: 'p', skillDirectory: '/s',
     question: { questionId: qid, question: 'é'.repeat(2000), context: '€'.repeat(4000) }, answer: { text: '€'.repeat(2000), author: 'a', origin: 'local-cli' } });
-  assert.ok(Buffer.byteLength(big) <= 16384);
-  assert.ok(big.includes('€'.repeat(2000)) && big.includes('context you gave is omitted'));
+  assert.equal(big.kind, 'prompt');
+  assert.ok(big.kind === 'prompt' && Buffer.byteLength(big.prompt) <= 15000);
+  assert.ok(big.kind === 'prompt' && big.prompt.includes('€'.repeat(2000)) && big.prompt.includes('context you gave is omitted'));
+  // Beyond the budget even without the context: an explicit too-large outcome (the caller blocks), never a truncated requirement.
+  const huge = recoveryPrompt({ ticketUrl: 'u', repository: 'r', base: 'b', baseCommit: 'c', branch: 'br', checkout: '/w', workId: 'w', executionId: 'e', previousExecutionId: 'p', skillDirectory: '/s',
+    question: null, answer: { text: '€'.repeat(2000), author: 'a', origin: 'local-cli' },
+    known: { previousExecutions: [], questions: [], versions: null, scopeUpdates: [1, 2, 3].map(n => ({ scopeUpdateId: `s${n}`, reason: '€'.repeat(2000) })) } });
+  assert.equal(huge.kind, 'too-large');
 });
 
 test('review 2: only an unedited comment written after the Question was recorded (and after its published comment) is eligible', () => {

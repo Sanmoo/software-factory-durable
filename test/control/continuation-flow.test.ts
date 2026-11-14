@@ -20,7 +20,8 @@ const sessionRef = (n: number, profile: Partial<WorkerSessionRef['profile']> = {
     tools: ['ask_user', 'bash', 'edit', 'read', 'write'], ...profile } });
 
 function executionDoubles(scripts: Script[], options: { observe?: (session: WorkerSessionRef) => SessionObservation; withObserve?: boolean; baseCommit?: () => string;
-  builder?: ExecutionPorts['builder'] } = {}) {
+  /** `reusedOnResume: false` simulates a lost environment: the resumed prepare makes a FRESH clone at the same base/branch. */
+  reusedOnResume?: boolean; builder?: ExecutionPorts['builder'] } = {}) {
   const calls: { kind: string; detail?: unknown }[] = [];
   let sessions = 0;
   const ports: ExecutionPorts = {
@@ -31,7 +32,8 @@ function executionDoubles(scripts: Script[], options: { observe?: (session: Work
         calls.push({ kind: 'prepare', detail: input });
         return { status: 'success', environment: `env-${'c'.repeat(64)}` as never, seeds: [{ name: 'factory/skill-pack/factory-skills-v4', manifestSha256: 'f'.repeat(64), reused: false }],
           checkout: { path: '/workspace/checkout', repository: input.checkout.repository, repositoryId: input.checkout.repositoryId, base: 'main', branch: input.checkout.branch,
-            baseCommit: options.baseCommit?.() ?? 'a'.repeat(40), origin: 'https://github.com/acme/project.git', reused: calls.filter(call => call.kind === 'prepare').length > 1, preparedAt: new Date().toISOString() } };
+            baseCommit: options.baseCommit?.() ?? 'a'.repeat(40), origin: 'https://github.com/acme/project.git',
+            reused: options.reusedOnResume === false ? false : calls.filter(call => call.kind === 'prepare').length > 1, preparedAt: new Date().toISOString() } };
       },
       async start() { calls.push({ kind: 'start' }); return { status: 'success', boot: `boot-11111111-2222-4333-8444-${String(calls.length).padStart(12, '5')}` as never }; },
       async stop(input) { calls.push({ kind: 'stop', detail: input }); return { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'observed' }; },
@@ -234,9 +236,12 @@ test('AC3/AC4: update-scope during an activity is deferred (nothing reaches the 
   const resumed = await h.show(work.work_id);
   assert.deepEqual([resumed.work.execution!.request.resume!.reason, resumed.work.execution!.request.resume!.questionId, resumed.work.execution!.request.scopeUpdateIds],
     ['SCOPE_UPDATED', null, ['scope-s1']]);
-  assert.deepEqual(resumed.work.scopeUpdates!.map(item => [item.scopeUpdateId, item.state, item.executionId, item.acceptedDuring]),
-    [['scope-s1', 'delivered', resumed.work.execution!.executionId, 'activity']], 'delivered (context), not claimed consumed');
-  assert.deepEqual(resumed.work.history.filter(item => item.event.startsWith('scope-')).map(item => item.event), ['scope-update-accepted', 'scope-update-delivered']);
+  // Delivered in the prompt; with the Execution completed and its cessation confirmed it is consumed (Control-side evidence).
+  assert.deepEqual(resumed.work.scopeUpdates!.map(item => [item.scopeUpdateId, item.state, item.executionId, item.acceptedDuring, item.consumption]),
+    [['scope-s1', 'consumed', resumed.work.execution!.executionId, 'activity', 'execution-completed']]);
+  assert.ok(resumed.work.scopeUpdates![0]!.consumedAt);
+  assert.deepEqual(resumed.work.history.filter(item => item.event.startsWith('scope-')).map(item => item.event),
+    ['scope-update-accepted', 'scope-update-delivered', 'scope-update-consumed']);
   await h.cycles(3);
   assert.equal(h.activations().length, 2, 'a delivered scope change never triggers again');
   await h.stop();
@@ -305,5 +310,86 @@ test('AC3: update-scope before the first Execution is part of its /implement pro
   const prompt = h.activations()[1]!.prompt;
   assert.match(prompt, /^\/implement https:\/\/github\.com\/acme\/project\/issues\/4 /);
   assert.ok(prompt.includes('Authorized scope change scope-s5') && prompt.includes('```\nLimit the change to docs/; do not touch src/.\n```'));
+  await h.stop();
+});
+
+test('AC3/finding 1: a delivery is not consumption — an update delivered by an Execution that ended with a Question is re-offered and consumed only by a completed one', async t => {
+  let release!: () => void;
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  const h = await harness(t, { pulls: {}, issues: [remoteIssue(3)] }, [{ kind: 'complete', hold }, { kind: 'ask', questionId: qid(21), question: 'Which file name?' }, { kind: 'complete' }]);
+  await h.start();
+  await h.settle(async () => (await h.byNumber())[3]?.execution?.state === 'started', 'started');
+  const work = (await h.byNumber())[3]!;
+  assert.equal((await updateScope(h.control(), 's21', work.work_id, 'Also add a CHANGELOG line for the new flag only.')).outcome, 'deferred');
+  release();
+  // E2 delivers the update and then asks: its end is NOT completion, so the same concrete change becomes pending again.
+  await h.settle(async () => (await h.byNumber())[3]!.execution!.end?.outcome === 'question' && !(await h.byNumber())[3]!.execution!.slot.held, 'question ended');
+  assert.match(h.activations()[1]!.prompt, /Authorized scope change scope-s21/);
+  const asked = (await h.show(work.work_id)).work.scopeUpdates![0]!;
+  assert.deepEqual([asked.state, asked.executionId, asked.reoffers], ['pending', null, 1]);
+  assert.equal((await h.show(work.work_id)).work.history.filter(item => item.event === 'scope-update-reoffered').length, 1);
+  assert.equal((await answer(h.control(), 'a21', qid(21), 'docs/reoffer.md')).outcome, 'accepted');
+  await h.settle(async () => h.activations().length === 3 && (await h.byNumber())[3]!.execution!.state === 'ended', 'third activation');
+  const third = h.activations()[2]!;
+  assert.match(third.prompt, /^continue\n/);
+  assert.ok(third.prompt.includes('Authorized scope change scope-s21') && third.prompt.includes('Also add a CHANGELOG line for the new flag only.'));
+  const done = (await h.show(work.work_id)).work.scopeUpdates![0]!;
+  assert.deepEqual([done.state, done.consumption, done.reoffers], ['consumed', 'execution-completed', 1]);
+  await h.cycles(3);
+  assert.equal(h.activations().length, 3, 'a consumed update is never re-offered nor triggers again');
+  await h.stop();
+});
+
+test('AC2/finding 3: a resumed activation whose prepare made a FRESH clone (not the preserved environment) blocks instead of claiming preservation', async t => {
+  const h = await harness(t, { pulls: {}, issues: [remoteIssue(3)] }, [{ kind: 'ask', questionId: qid(22), question: 'Which file name?' }], { reusedOnResume: false });
+  await h.start();
+  await h.settle(async () => (await h.byNumber())[3]?.execution?.end?.outcome === 'question' && !(await h.byNumber())[3]!.execution!.slot.held, 'question wait');
+  const issued = h.execution.calls.filter(call => call.kind === 'issue').length;
+  assert.equal((await answer(h.control(), 'a22', qid(22), 'docs/z.md')).outcome, 'accepted');
+  await h.settle(async () => (await h.byNumber())[3]!.impediments.some(item => item.code === 'RECOVERY_CONTEXT_INSUFFICIENT'), 'blocked');
+  const blocked = (await h.byNumber())[3]!;
+  assert.equal(h.activations().length, 1, 'no Builder activated');
+  assert.equal(h.execution.calls.filter(call => call.kind === 'issue').length, issued, 'no credential issued');
+  const impediment = blocked.impediments.find(item => item.code === 'RECOVERY_CONTEXT_INSUFFICIENT')!;
+  assert.match(impediment.nextStep, /PREVIOUS_ENVIRONMENT_NOT_REUSED/);
+  assert.deepEqual([blocked.execution!.state, blocked.execution!.slot.held, blocked.queue.pending], ['released', false, true]);
+  await h.cycles(3);
+  assert.equal(h.activations().length, 1, 'never retried automatically');
+  await h.stop();
+});
+
+test('AC4/finding 4: an over-large initial prompt blocks explicitly (PROMPT_TOO_LARGE) instead of being truncated or sent', async t => {
+  let release!: () => void;
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  const h = await harness(t, { pulls: {}, issues: [remoteIssue(3), remoteIssue(4)] }, [{ kind: 'complete', hold }, { kind: 'complete' }]);
+  await h.start();
+  await h.settle(async () => (await h.byNumber())[3]?.execution?.state === 'started' && (await h.byNumber())[4] !== undefined, '#3 running, #4 queued');
+  const four = (await h.byNumber())[4]!;
+  for (let n = 0; n < 8; n++) {
+    assert.equal((await updateScope(h.control(), `big-${n}`, four.work_id, `Concrete change number ${n}: ${'€'.repeat(1900)}`)).outcome, 'accepted');
+  }
+  release();
+  await h.settle(async () => (await h.byNumber())[4]!.impediments.some(item => item.code === 'PROMPT_TOO_LARGE'), 'blocked too large');
+  const blocked = (await h.byNumber())[4]!;
+  assert.equal(h.activations().length, 1, 'the over-large initial prompt never reached a Builder');
+  assert.deepEqual([blocked.execution!.state, blocked.execution!.slot.held, blocked.queue.pending], ['released', false, true]);
+  assert.match(blocked.impediments.find(item => item.code === 'PROMPT_TOO_LARGE')!.nextStep, /PROMPT_TOO_LARGE/);
+  assert.deepEqual(blocked.scopeUpdates!.map(item => item.state), Array.from({ length: 8 }, () => 'pending'), 'nothing was silently dropped');
+  await h.stop();
+});
+
+test('AC2/finding 2: a planned pack without the continue protocol replaces the session with that explicit reason', async t => {
+  const h = await harness(t, { pulls: {}, issues: [remoteIssue(3)] }, [{ kind: 'ask', questionId: qid(23), question: 'Which file name?' }, { kind: 'complete' }],
+    { observe: () => ({ state: 'incompatible', code: 'SESSION_CONTINUATION_UNSUPPORTED', differences: ['continuation'] }) });
+  await h.start();
+  await h.settle(async () => (await h.byNumber())[3]?.execution?.end?.outcome === 'question' && !(await h.byNumber())[3]!.execution!.slot.held, 'question wait');
+  assert.equal((await answer(h.control(), 'a23', qid(23), 'docs/u.md')).outcome, 'accepted');
+  await h.settle(async () => h.activations().length === 2 && (await h.byNumber())[3]!.execution!.state === 'ended', 'replacement activation');
+  const second = h.activations()[1]!;
+  assert.equal(second.continuation, null);
+  assert.match(second.prompt, /^Factory recovery instruction/);
+  assert.ok(second.prompt.includes('reason: SESSION_CONTINUATION_UNSUPPORTED'));
+  assert.deepEqual([(await h.byNumber())[3]!.execution!.request.session!.mode, (await h.byNumber())[3]!.execution!.request.session!.reason],
+    ['replace', 'SESSION_CONTINUATION_UNSUPPORTED']);
   await h.stop();
 });

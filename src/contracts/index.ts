@@ -100,3 +100,11 @@ export const reviewVerdictFormat = 'Your FINAL message must be ONLY the JSON ver
   '"examined":["/workspace/checkout/src/a.ts"]},"findings":[{"id":"S1","basis":"rule","reference":"/artifacts/instructions/v1/AGENTS.md#naming",' +
   '"location":{"path":"/workspace/checkout/src/a.ts","line":3},"summary":"Name violates the documented convention."}],"limitations":[]} ' +
   'Paths are guest paths: /workspace/checkout/... or /artifacts/....';
+
+/**
+ * Versioned Factory Builder skill packs shipped with this release. A published pack is never edited: a change appends a new id (the pack
+ * decides its own guest paths and, in its manifest, which session protocols it supports). Consumers derive their enum/registry from this
+ * list, so renumbering or adding a version is a data change here plus the pack directory.
+ */
+export const factorySkillPackIds = ['factory-skills-v1', 'factory-skills-v2', 'factory-skills-v3', 'factory-skills-v4'] as const;
+export type FactorySkillPackId = typeof factorySkillPackIds[number];

@@ -2,6 +2,9 @@
   "id": "factory-skills-v4",
   "version": "4.0.0",
   "guestDirectory": "/artifacts/factory/skill-pack/factory-skills-v4",
+  "capabilities": {
+    "continuation": true
+  },
   "skills": [
     {
       "name": "implement",
