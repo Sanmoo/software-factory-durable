@@ -2,11 +2,12 @@
 // that the supervisor runs explicitly, in order, once: build the release from this CLEAN, freshly compiled checkout with the REAL pinned guest
 // assets (assets34, read-only), verify the archive, extract it into a NEW canonical installation root, run setup twice and doctor offline with
 // the release's private Node, and confirm the controller refuses the incomplete generated configuration before storage.
-// Bounds: no network, GitHub, credential, model, VM/QEMU boot, systemd unit, sudo or package installation; nothing outside `base` is written
-// (assets34 and the checkout are only read). Phases are one-shot: an exclusive intent tombstone precedes each effect; a consumed phase never
-// reruns; nothing is retried or repaired automatically. A held phase stops the recipe (build a NEW revision instead).
+// Bounds: no network, GitHub, credential, model, VM/QEMU boot, systemd unit, sudo or package installation; nothing outside `base` and its
+// sibling phase tombstones `<base>.<phase>-intent.json` is written (assets34 and the checkout are only read). Phases are one-shot: an exclusive
+// intent tombstone precedes each effect (for build, before the base itself exists); a consumed phase never reruns; nothing is retried or
+// repaired automatically. A held phase stops the recipe (build a NEW revision instead).
 
-const revision = 'r32-v1';
+const revision = 'r32-v2'; // v1 was consumed by the supervisor's real run (2026-11-14).
 const base = `/home/sanmoo/software-factory-test/${revision}`;
 const observations = `${base}/observations`;
 const output = `${base}/build`;
@@ -18,13 +19,16 @@ const guestProvenance = '/home/sanmoo/software-factory-test/assets34/provenance.
 const phases = ['build', 'verify', 'install', 'setup', 'doctor', 'controller-refusal'] as const;
 type Phase = typeof phases[number];
 const previous: Record<Phase, Phase | null> = { build: null, verify: 'build', install: 'verify', setup: 'install', doctor: 'setup', 'controller-refusal': 'doctor' };
+/** One-shot tombstone, a SIBLING of the base: consumed even when a failure happens before (or during) the base creation. */
+export function tombstonePath(phase: Phase) { return `${base}.${phase}-intent.json`; }
 
 export function plan() {
   return { revision, base, observations, output, root, release, guestAssets, guestProvenance, phases,
     prerequisites: ['the checkout is committed and clean (the build refuses a dirty tree in this recipe)', 'tsc emitted dist/ from HEAD immediately before',
-      'private SDK profiles .scratch/factory-development-sdk-v3 and -gondolin-v1 prepared and verified (the build re-verifies them)', 'base does not exist'],
+      'private SDK profiles .scratch/factory-development-sdk-v3 and -gondolin-v1 prepared and verified (the build re-verifies them)',
+      'neither base nor any <base>.<phase>-intent.json tombstone exists'],
     effects: [
-      'build: mkdir base/observations (exclusive); buildRelease into base/build: copies of dist/src JS, lockfile runtime closure, private Node 24.21.0, SDK profiles, skill packs; ' +
+      'build: exclusive tombstone <base>.build-intent.json, then mkdir base/observations (exclusive); buildRelease into base/build: copies of dist/src JS, lockfile runtime closure, private Node 24.21.0, SDK profiles, skill packs; ' +
         'assets34 copied (~860 MB) after pin verification; tar archive + .sha256 + manifest + build report; payload removed',
       'verify: archive SHA-256 against the sidecar and the build report; tar listing confined to factory, releases/<id>/, assets/guest/<sha>/ (no absolute or .. paths)',
       'install: mkdir root 0700 (exclusive); tar -xpkf into root (never overwrites)',
@@ -72,10 +76,15 @@ export function listingViolations(listing: string[], id: string, assets: string)
 export async function runPhase(phase: Phase) {
   if (!phases.includes(phase)) throw new Error('UNKNOWN_PHASE');
   const { fs, save, exists } = await io();
-  if (phase === 'build') { await fs.mkdir(base, { mode: 0o700 }); await fs.mkdir(observations, { mode: 0o700 }); } // EXCLUSIVE
-  const before = previous[phase];
-  if (before && !(await exists(`${before}-result`))) throw new Error('PREVIOUS_PHASE_REQUIRED');
-  await save(`${phase}-intent`, { revision, phase, at: new Date().toISOString() });
+  if (phase === 'build') {
+    // Tombstone first, outside the base: no partial failure leaves a resumable base without a consumed phase.
+    await fs.writeFile(tombstonePath(phase), JSON.stringify({ revision, phase, at: new Date().toISOString() }) + '\n', { flag: 'wx', mode: 0o600 });
+    await fs.mkdir(base, { mode: 0o700 }); await fs.mkdir(observations, { mode: 0o700 }); // EXCLUSIVE
+  } else {
+    const before = previous[phase];
+    if (before && !(await exists(`${before}-result`))) throw new Error('PREVIOUS_PHASE_REQUIRED');
+    await fs.writeFile(tombstonePath(phase), JSON.stringify({ revision, phase, at: new Date().toISOString() }) + '\n', { flag: 'wx', mode: 0o600 });
+  }
   try {
     const { createHash } = await import('node:crypto');
     const sha = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');

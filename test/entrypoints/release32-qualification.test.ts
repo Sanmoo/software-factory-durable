@@ -17,12 +17,18 @@ test('release recipe: import and --plan are inert and declare a fresh exclusive 
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
-  assert.equal(plan.base, '/home/sanmoo/software-factory-test/r32-v1');
+  assert.equal(plan.base, '/home/sanmoo/software-factory-test/r32-v2', 'v1 was consumed by the supervisor run');
   assert.ok(plan.root.startsWith(`${plan.base}/`) && plan.output.startsWith(`${plan.base}/`) && plan.observations.startsWith(`${plan.base}/`));
   assert.deepEqual(plan.phases, ['build', 'verify', 'install', 'setup', 'doctor', 'controller-refusal']);
   assert.deepEqual(plan.guestAssets, { directory: '/home/sanmoo/software-factory-test/assets34/assets',
     manifestSha256: '8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807' });
   assert.deepEqual([plan.bounds.network, plan.bounds.github, plan.bounds.model, plan.bounds.vm, plan.bounds.retries], ['none', 'none', 'none', 'none', 0]);
+  // A phase tombstone is written OUTSIDE the base, before the base is created, so a partial failure never leaves a resumable base.
+  for (const phase of plan.phases) {
+    const tombstone = recipe.tombstonePath(phase);
+    assert.equal(tombstone, `/home/sanmoo/software-factory-test/r32-v2.${phase}-intent.json`);
+    assert.equal(tombstone.startsWith(`${plan.base}/`), false);
+  }
   await assert.rejects(recipe.main(['retry']), /EXACT_PHASE_REQUIRED/);
   await assert.rejects(recipe.main(['build', 'verify']), /EXACT_PHASE_REQUIRED/);
   assert.equal(forbidden, 0);
