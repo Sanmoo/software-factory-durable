@@ -1,0 +1,14 @@
+{
+ "status": "success",
+ "extracted": {
+  "status": 0,
+  "signal": null,
+  "stdout": "",
+  "stderr": ""
+ },
+ "top": [
+  "assets",
+  "factory",
+  "releases"
+ ]
+}

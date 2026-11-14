@@ -187,3 +187,18 @@ com outros worktrees); o corpo leva ~6–7 s em repouso e o arquivo passou 3/3 i
 completa (912 pass). Nenhuma mudança deste ticket toca esse teste ou `sdk-profile`. O total de parede da
 suíte é ~9–10 min neste host carregado; os testes de release representam ~50 s (duas construções reais +
 duas extrações + oito execuções do Node privado).
+
+## Verificação real autorizada — 2026-11-14 (supervisor)
+
+Raiz nova `$HOME/software-factory-test/r32-v1`, seis fases one-shot, sem rede, GitHub, credenciais, modelo, VM, systemd, sudo ou instalação de pacotes. Registros: `32-real-{build,verify,install,setup,doctor,controller-refusal}-2026-11-14.json`.
+
+| Fase | Observado |
+|---|---|
+| build | `RELEASE_BUILT mvp-32.1`, arquivo `software-factory-mvp-32.1.tar` sha256 `c9f3f744…`, manifest `7ccfd824…`, 23 529 entradas, assets34 pin `8efa506a…` conforme |
+| verify | sha do arquivo = sidecar = relatório; manifest confere; 23 542 entradas listadas, **0 violações** (sem caminhos absolutos/`..`, tudo sob `factory/`, `releases/<id>/`, `assets/guest/<sha>/`) |
+| install | extração criou só `assets`, `factory`, `releases` |
+| setup (2×) | 1ª criou `config.yaml` e 4 diretórios; **2ª criou `[]`**; release/assets intactos |
+| doctor | `INVALID_CONFIGURATION` (configuração de exemplo incompleta, como esperado), com release e versões detectadas pelo Node privado |
+| controller-refusal | exit 2 `CONFIGURATION_INVALID` **antes** de storage: sem `data/control.sqlite` e sem `run/factory.sock` |
+
+Nenhuma credencial foi lida (`credentials/` ficou vazio) e nada fora de `r32-v1` foi escrito.

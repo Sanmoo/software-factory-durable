@@ -1,0 +1,26 @@
+{
+ "status": "success",
+ "report": {
+  "code": "RELEASE_BUILT",
+  "release": "mvp-32.1",
+  "archive": "software-factory-mvp-32.1.tar",
+  "archiveSha256": "c9f3f7447d180e1fa078ad702b40cd17bf18aee83ab13bd3315989e47ba68f3e",
+  "manifestSha256": "7ccfd824b7185adf02f805aaa2c94a5c3d9dc55405289ff56ee51939e9e74cc8",
+  "entries": 23529,
+  "guestAssets": "8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807",
+  "source": {
+   "commit": "05ffbc3fb9684c8c0fa920edd03863f8c13d2159",
+   "commitTime": "2026-11-14T17:49:12-03:00",
+   "dirty": false
+  },
+  "extract": "tar -xpkf software-factory-mvp-32.1.tar -C <new canonical installation root>"
+ },
+ "durationMs": 26497,
+ "guestProvenanceSha256": "f76e5d540fd508d10a80af6addeac1f756056899b28e282b98c68c0163eb8e21",
+ "outputs": [
+  "build-report.json",
+  "release-manifest.json",
+  "software-factory-mvp-32.1.tar",
+  "software-factory-mvp-32.1.tar.sha256"
+ ]
+}
