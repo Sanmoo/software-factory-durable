@@ -4,17 +4,17 @@
 
 **Blocked by:** [04: Diagnosticar o acesso GitHub pela identidade da Factory](04-github-app-access-diagnostics.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
-- [ ] Somente repo autorizado, issue aberta e label efetiva configurada autorizam entrada; identidades GitHub qualificadas e estáveis são preservadas além de nomes/números/URLs.
-- [ ] Ausência de ciclo vigente, Trabalho, índice Ticket/ciclo e sequência de admissão são confirmados atomicamente; polling concorrente/repetido e restart não criam duplicatas.
-- [ ] PR associado não reconhecido como próprio impede admissão/adoção automática e é reportado com motivo e próximo passo.
-- [ ] List/status/show apresentam resultado, autorização, fila e impedimentos sem colapsar dimensões; listagem parcial ou falha remota não comprova ausência de Ticket/label/PR.
-- [ ] Polling usa padrão de 60 segundos configurável, respeita headers/rate limit/backoff e não sobrepõe consultas descontroladamente; pausa impede novos disparos, não acompanhamento.
-- [ ] Fluxo padrão não altera labels, assignees, Projects ou status personalizados nem captura a especificação pelo controlador.
-- [ ] Testes de fluxo com persistência real e integração GitHub autorizada demonstram admissão única e diagnóstico; despacho aguarda a avaliação de dependências e a fatia de ativação.
+- [x] Somente repo autorizado, issue aberta e label efetiva configurada autorizam entrada; identidades GitHub qualificadas e estáveis são preservadas além de nomes/números/URLs.
+- [x] Ausência de ciclo vigente, Trabalho, índice Ticket/ciclo e sequência de admissão são confirmados atomicamente; polling concorrente/repetido e restart não criam duplicatas.
+- [x] PR associado não reconhecido como próprio impede admissão/adoção automática e é reportado com motivo e próximo passo.
+- [x] List/status/show apresentam resultado, autorização, fila e impedimentos sem colapsar dimensões; listagem parcial ou falha remota não comprova ausência de Ticket/label/PR.
+- [x] Polling usa padrão de 60 segundos configurável, respeita headers/rate limit/backoff e não sobrepõe consultas descontroladamente; pausa impede novos disparos, não acompanhamento.
+- [x] Fluxo padrão não altera labels, assignees, Projects ou status personalizados nem captura a especificação pelo controlador.
+- [x] Testes de fluxo com persistência real e integração GitHub autorizada demonstram admissão única e diagnóstico; despacho aguarda a avaliação de dependências e a fatia de ativação.
 
 ## Referências e validação
 
@@ -25,3 +25,7 @@
 ## Autorização e limites
 
 Publicação é planejamento aprovado, não autorização de construção, uso de host/credenciais/GitHub/modelos reais, injeção de falhas ou piloto. Obter autorização pertinente antes da execução. Não alterar decisões aprovadas silenciosamente; lacuna de desenho volta ao operador. Merge e avaliação humana não são delegados aos agentes.
+
+## Answer
+
+Resolvido em 2026-11-14: admissão única durável com polling, list/status/show e associação nativa de PR; gate local 719/0; dois ensaios reais no GitHub (Sanmoo/java-springboot-event-sourcing, issues #1 e #3) sem mutações. Evidência: `docs/evidence/07-unique-ticket-admission.md`.

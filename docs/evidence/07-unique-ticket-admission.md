@@ -204,3 +204,9 @@ HEAD `738f5e9`; raiz exclusiva `/home/sanmoo/software-factory-test/verify07-gEoq
 - Banco `control.sqlite*`: 0 ocorrências de `ghs_`, `PRIVATE KEY` ou texto do corpo da issue. Cópia da chave removida.
 
 **Observação AC3 / limitação:** a issue #1 tem o PR #2 *merged* na branch `factory/issue-1-a49bd5a1e147`, de outra factory. O GitHub não liga esse PR à issue: não há palavra-chave de fechamento, evento de referência cruzada nem `closedByPullRequestsReferences`. A Factory não usa convenções de branch alheias como prova, então a admissão segue o contrato observável. Não houve PR real com palavra-chave para exercitar o bloqueio AC3 (criar PR está fora da autorização); esse caso está coberto pelos testes de fluxo locais.
+
+## Repetição real após as correções da revisão — 2026-11-14
+
+HEAD `fd054fb`, nova raiz exclusiva, mesmo driver e guards. Registro: [JSON](07-real-github-admission-rerun-2026-11-14.json). Os mesmos dois Works foram admitidos (#3 seq 1, #1 seq 2), com publicação `complete` e 0 PRs associados, agora com `GET /issues/{3,1}/timeline` reais e um único `GET /pulls` no ciclo. A timeline da #1 tem só referências cruzadas de *issues*, não de PRs. Os tokens foram somente leitura (`metadata+issues:read` ×2 finalidades, `metadata+pull_requests:read`). Restart sem duplicata, exits 0, banco sem segredo ou corpo, nenhuma mutação.
+
+**Decisão em aberto, registrada (não é critério novo):** uma referência cruzada nativa de PR não pode ser apagada no GitHub. Pela regra conservadora, o Ticket fica bloqueado até decisão do operador, e não há comando aprovado de "ignorar associação".
