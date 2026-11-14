@@ -32,4 +32,7 @@ export type ReadBinding = { endpoint: string; context: ToolContext; signal: Abor
   /** Trusted host precondition: selected native truncated Bash output. Default deny. */
   copyOutput?: boolean;
   /** Exact Host-selected reviewer copies; absent is empty, never Builder authority. */
-  selectedOutputCopies?: readonly string[] };
+  selectedOutputCopies?: readonly string[];
+  /** Transient Builder credential delivered in memory by the host handshake (spec §8.1), already registered in `records` for filtering.
+   * Never accepted from tool JSON, never persisted; reaches only NEW Builder Bash commands as explicit environment via stdin. */
+  credential?: Readonly<{ token: string }> };

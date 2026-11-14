@@ -9,6 +9,8 @@ import { currentSchema, metadata, ownedEnvironment, type BootRef } from './lifec
 import type { EnvironmentRef } from './prepare.js';
 import { connectReadTools, contextSchema, serveReadToolBindings, type GuestOwner, type ToolContext, type ReadBinding } from './read-tools.js';
 
+const credentialSchema = z.strictObject({ context: contextSchema, token: z.string().min(1).max(1024).regex(/^[a-zA-Z0-9._~+/-]+=*$/) });
+
 function frame(id: string, kind: string, payload: Envelope['payload'], replyTo: string | null = null): Envelope {
   return { protocol_version: protocolVersion, controller_run_id: null, message_id: id, reply_to: replyTo, kind, payload };
 }
@@ -24,9 +26,26 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
   const records = await createRecords({ root });
   const lifetimes = new Map<Channel, AbortController>();
   const invocations = new Set<string>();
+  // Transient Builder credentials delivered on a host-boot channel BEFORE its launch (spec §8.1); memory only, one per channel.
+  const credentials = new Map<Channel, Readonly<{ token: string; invocationId: string }>>();
   let sequence = 0;
   const server = await listen(join(directory, 'owner'), {
     async message(request, channel, peer) {
+      if (request.kind === 'deliver-credential') {
+        const parsed = credentialSchema.safeParse(request.payload);
+        const context = parsed.success ? parsed.data.context : undefined;
+        if (!parsed.success || !context || context.role !== 'builder' || lifetimes.has(channel) || credentials.has(channel) ||
+            context.workId !== peer.binding.workId || context.environmentRef !== peer.binding.environmentRef ||
+            context.bootRef !== peer.binding.bootRef || invocations.has(context.invocationId)) {
+          await channel.send(frame(request.message_id, 'credential-result', { status: 'failure', code: 'CREDENTIAL_DELIVERY_DENIED' }, request.message_id));
+          return;
+        }
+        // Registered in the SAME owner Records used by this invocation's tool captures before acknowledging; no await in between.
+        records.registerSecret(parsed.data.token);
+        credentials.set(channel, Object.freeze({ token: parsed.data.token, invocationId: context.invocationId }));
+        await channel.send(frame(request.message_id, 'credential-result', { status: 'delivered' }, request.message_id));
+        return;
+      }
       if (request.kind === 'launch-worker') {
         const parsed = workerLaunchSchema.safeParse(request.payload);
         if (!parsed.success || lifetimes.has(channel) || (parsed.data.copyOutput === true &&
@@ -36,8 +55,10 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
           return;
         }
         const context = Object.freeze({ ...parsed.data.context });
+        const credential = credentials.get(channel);
         if (context.workId !== peer.binding.workId || context.environmentRef !== peer.binding.environmentRef ||
-            context.bootRef !== peer.binding.bootRef || invocations.has(context.invocationId)) {
+            context.bootRef !== peer.binding.bootRef || invocations.has(context.invocationId) ||
+            (credential !== undefined && (credential.invocationId !== context.invocationId || context.role !== 'builder'))) {
           await channel.send(frame(request.message_id, 'worker-launch-result', { status: 'failure', code: 'STALE_TOOL_CONTEXT' }, request.message_id));
           return;
         }
@@ -50,6 +71,7 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
         const endpoint = join(directory, `b${++sequence}`);
         try {
           await bindings.add({ ...privateCapabilities, copyOutput: parsed.data.copyOutput === true, endpoint, context, signal: lifetime.signal, records,
+            ...(credential === undefined ? {} : { credential: Object.freeze({ token: credential.token }) }),
             ...(parsed.data.selectedOutputCopies === undefined ? {} : { selectedOutputCopies: parsed.data.selectedOutputCopies }),
             ...(parsed.data.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: parsed.data.editSourceMaxBytes }),
             ...(parsed.data.imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes: parsed.data.imageSourceMaxBytes }) });
@@ -94,7 +116,7 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
       await bindings.add({ ...privateCapabilities, copyOutput: false, endpoint, context, signal: lifetime.signal, records });
       await channel.send(frame(request.message_id, 'binding-result', { status: 'success', endpoint }, request.message_id));
     },
-    closed(_error, _peer, channel) { lifetimes.get(channel)?.abort(); },
+    closed(_error, _peer, channel) { lifetimes.get(channel)?.abort(); credentials.delete(channel); },
   }, { kind: 'host-boot', binding: Object.freeze({ ...identity }) });
   let closing: Promise<void> | undefined;
   return { close() {

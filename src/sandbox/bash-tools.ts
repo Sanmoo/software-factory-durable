@@ -15,6 +15,11 @@ export const bashProgressSchema = z.strictObject({ context: z.record(z.string(),
   sequence: safeCount, bytes: safeCount,
   data: z.string().min(4).max(32768).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/) });
 export type BashProgress = z.infer<typeof bashProgressSchema>;
+// Guest-only fixed prelude (never run on the host). The token arrives on stdin, never in argv or the exec wire environment, and is exported
+// only to this command's process tree as GH_TOKEN plus a gh credential helper for GitHub HTTPS (spec §8: no stored secret, no remote URL).
+export const credentialPrelude = 'IFS= read -r GH_TOKEN || exit 97; export GH_TOKEN; export GH_HOST=github.com GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 ' +
+  'GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=credential.https://github.com.helper "GIT_CONFIG_VALUE_0=!/usr/bin/gh auth git-credential" ' +
+  'GH_CONFIG_DIR="${GH_CONFIG_DIR:-/tmp/factory-gh-config}"; exec /bin/bash -c "$1"';
 
 /** Existing owner only. The callback's cwd/env never crosses this authority boundary.
  * UTF-8 is intentionally fatal (Records default): arbitrary binary Bash is OPEN.
@@ -26,6 +31,8 @@ export function boundBashTools(options: ReadBinding & { vm: GuestOwner }, valid:
   // select policy. Host must select native-truncated output; no second truncator.
   const copyAllowed = options.copyOutput === true && options.profileOrigin === 'factory-development-gondolin-0.14.0-stdin-capacity-v1';
   const copy = boundStreamCopyTools(options, valid, revoke, publishedCopies);
+  // Snapshot before any await; a Builder-only, host-delivered value.
+  const credential = bound.role === 'builder' && options.credential ? options.credential.token : undefined;
   let latest: { reference: { workId: string; id: string }; bytes: number; callId: string } | undefined;
   let running = false;
   return async (context: ToolContext, call: BashCall, progress: (frame: BashProgress) => Promise<void>): Promise<ReadResult> => {
@@ -70,8 +77,10 @@ export function boundBashTools(options: ReadBinding & { vm: GuestOwner }, valid:
       // Gondolin merges env:{} with its VM default and omits an empty wire env;
       // the guest daemon may retain gEnv. Clear it at the fixed guest exec boundary.
       // Both guest executables are profile prerequisites, never host fallbacks.
-      const process = options.vm.exec(['/usr/bin/env', '-i', '/bin/bash', '-c', call.command], { stdout: 'pipe', stderr: 'pipe',
-        signal: AbortSignal.any([options.signal, lifetime.signal]), windowBytes: 65536, env: {}, cwd: '/workspace', stdin: '' });
+      const argv = credential === undefined ? ['/usr/bin/env', '-i', '/bin/bash', '-c', call.command]
+        : ['/usr/bin/env', '-i', '/bin/bash', '-c', credentialPrelude, 'factory-builder-credential', call.command];
+      const process = options.vm.exec(argv, { stdout: 'pipe', stderr: 'pipe',
+        signal: AbortSignal.any([options.signal, lifetime.signal]), windowBytes: 65536, env: {}, cwd: '/workspace', stdin: credential === undefined ? '' : `${credential}\n` });
       void process.result.catch(() => {});
       // SDK's ordered output stream preserves stdout/stderr arrival order. Every
       // release awaits protected Records.write BEFORE awaited native capture admission.
