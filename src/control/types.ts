@@ -1,4 +1,4 @@
-import type { AccessDiagnostic, BuilderCredentials, BuilderGrantMetadata, GitHubScope, ProposalHandoff, ProposalIdentity, ReviewerRole, ReviewOpinion, RevocationResult } from '../contracts/index.js';
+import type { AccessDiagnostic, BuilderCredentials, BuilderGrantMetadata, GitHubScope, HandoffDeclarations, ProposalHandoff, ProposalIdentity, ReviewerRole, ReviewOpinion, RevocationResult } from '../contracts/index.js';
 import type { CheckoutRequest, EnvironmentRef, PreparedWork, StartResult, StopResult, BootRef } from '../sandbox/index.js';
 import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion, SessionObservation, WorkerSessionRef } from '../workers/index.js';
 export type { SessionObservation, WorkerSessionRef as SessionRef } from '../workers/index.js';
@@ -60,8 +60,10 @@ export type ExecutionPorts = {
     /** Q6 `observe` (ticket 11): whether a preserved Builder session can be continued by the planned next Builder activation. Absent: replaced. */
     observe?(input: { workId: string; executionId: string; invocationId: string; session: WorkerSessionRef;
       next: Pick<Invocation, 'skillPack' | 'copyOutput' | 'editSourceMaxBytes'> & { handoff: boolean } }): Promise<{ session: SessionObservation; limitations: string[] }> };
-  /** Ticket 12: when composed, the Builder hands off for parallel Standards/Spec reviews inside the SAME Execution/Slot/boot. */
-  reviews?: { reviewer: Pick<Invocation, 'modelBudget' | 'imageSourceMaxBytes'> };
+  /** Ticket 12: when composed, the Builder hands off for parallel Standards/Spec reviews inside the SAME Execution/Slot/boot.
+   * Ticket 13 `rounds.max`: repeated captures per Builder activation (handoffs with treatments/gates plus the Host's closing capture),
+   * exemptions (unchanged content, identical commit) and the end-of-Execution verification. Absent = the single ticket 12 round. */
+  reviews?: { reviewer: Pick<Invocation, 'modelBudget' | 'imageSourceMaxBytes'>; rounds?: { max: number } };
   credentials: BuilderCredentials;
   /** Local monotonic clock of live Execution duration/timeout (default `performance.now()`); separate from the polling clock. Tests substitute it. */
   clock?: PollingClock;
@@ -146,13 +148,24 @@ export type ExecutionView = {
     session?: WorkerSessionRef | null } | null;
   held: { code: string; phase: string; at: string; nextStep: string } | null;
   completion: { automatic: false; reason: string };
-  /** Review rounds of this Execution (ticket 12); absent when reviews are not composed. Reviewers never hold a Slot of their own. */
-  review?: { rounds: ReviewRoundView[] };
+  /** Review rounds of this Execution (ticket 12); absent when reviews are not composed. Reviewers never hold a Slot of their own.
+   * Ticket 13: `firstRound` continues the round numbers of earlier Executions of the Work; `verification` is Control's presence/correlation
+   * check of opinions, treatments, gates and waivers over the final captured content (never a semantic certification). */
+  review?: { rounds: ReviewRoundView[]; firstRound?: number; verification?: VerificationView | null };
   /** Ticket 19 (absent on earlier records): budget charge and duration/timeout evidence of this Execution. */
   charge?: ExecutionCharge;
   timing?: ExecutionTiming;
 };
-export type ReviewerView = { invocationId: string; phaseId: string; promptSha256: string; state: 'requested' | 'started' | 'ended' | 'failed';
+/** Ticket 13: end-of-Execution verification (spec §6.4/§9.3). `verified` only with no reason; every reason is independent and explicit. */
+export type VerificationView = { at: string; status: 'verified' | 'not-verified'; reasons: string[];
+  /** The review round whose two opinions apply to the final content, and how that applicability is demonstrated. */
+  reviewedRound: number | null; finalRound: number | null; contentSha256: string | null;
+  applicability: { kind: 'reviewed' | 'unchanged' | 'identical-commit' | 'none'; head: string | null; reviewedHead: string | null };
+  gates: { id: string; outcome: string; current: boolean; boundToFinalContent: boolean; requiredCheck: string | null }[];
+  treatments: { round: number; role: ReviewerRole; findingId: string; outcome: 'fixed' | 'not-adopted' | 'missing' }[];
+  /** GitHub required checks named by gates: always still evaluated by the GitHub readiness (a waiver never satisfies them). */
+  requiredChecks: string[] };
+export type ReviewerView = { invocationId: string; phaseId: string; promptSha256: string; state: 'requested' | 'started' | 'ended' | 'failed' | 'not-required';
   requestedAt: string; receiptId: string | null; endedAt: string | null; opinion: ReviewOpinion | null; failure: { code: string } | null;
   /** How the end of this reviewer's activity is known: its completion was received, it never launched, or it is unconfirmed (round held). */
   cessation: 'completion-observed' | 'never-started' | 'unconfirmed' | null;
@@ -160,6 +173,12 @@ export type ReviewerView = { invocationId: string; phaseId: string; promptSha256
 /** One durable review round (spec §5.6/§6.4): handoff, identity before/after, both reviewers, conclusion and the delivery to the Builder. */
 export type ReviewRoundView = {
   round: number; attempt: number; state: 'reviewing' | 'concluded' | 'delivered';
+  /** Ticket 13: `exemption` = no reviewer ran because the content of the last reviewed round is demonstrably unchanged (`unchanged`) or
+   * held exactly by a new commit (`identical-commit`); `closing` = the Host's capture after the Builder session ended. Absent = review. */
+  kind?: 'review' | 'exemption'; closing?: boolean;
+  exemption?: { kind: 'unchanged' | 'identical-commit'; reviewedRound: number; head: string; reviewedHead: string; contentSha256: string } | null;
+  /** Treatments and Host gate evidence the Builder host attached to this capture. */
+  declarations?: HandoffDeclarations | null;
   handoff: { at: string; invocationId: string; status: 'captured' | 'failure'; code: string | null; detail: string | null; summary: ProposalHandoff | null };
   versions: { spec: ProposalHandoff['spec']; instructions: ProposalHandoff['instructions']; base: string | null; head: string | null;
     profile: { skillPack: { name: string; manifestSha256: string } | null; builder: ExecutionView['request']['policies']; reviewer: Pick<Invocation, 'modelBudget' | 'imageSourceMaxBytes'> } };
@@ -250,7 +269,7 @@ export type WorkView = {
   history: ({ at: string; event: 'admitted'; origin: 'github-polling'; sequence: number } |
     { at: string; event: 'dependencies-changed'; origin: 'github-polling'; before: DependencyEvaluation['conclusion'] | null; after: DependencyEvaluation['conclusion']; evaluationId: string } |
     { at: string; event: 'execution-reserved' | 'execution-prepared' | 'execution-booted' | 'activation-requested' | 'execution-started' | 'execution-ended' | 'execution-held' | 'execution-released' | 'slot-released' |
-      'review-handoff' | 'reviewer-started' | 'reviewer-ended' | 'review-concluded' | 'review-delivered';
+      'review-handoff' | 'reviewer-started' | 'reviewer-ended' | 'review-concluded' | 'review-delivered' | 'review-exempted' | 'review-verified';
       origin: 'controller-dispatch'; executionId: string; detail?: string } |
     { at: string; event: 'question-recorded' | 'question-published' | 'question-answered'; origin: 'controller-dispatch' | 'controller-publication' | 'github-comment' | 'local-cli';
       questionId: string; detail?: string } |
