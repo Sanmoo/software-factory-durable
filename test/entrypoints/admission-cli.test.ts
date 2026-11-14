@@ -92,7 +92,7 @@ test('CLI list/show expose one durable Work per eligible Ticket across repeated 
   assert.ok(trace.filter(entry => entry.method === 'POST').every(entry => entry.endpoint === '/app/installations/2/access_tokens'));
   assert.ok(trace.filter(entry => entry.method === 'POST').every(entry => !Object.values(entry.permissions ?? {}).includes('write')), 'polling grants are read-only');
   assert.ok(!trace.some(entry => /\/(labels|assignees|projects|comments)\b/.test(entry.endpoint.split('?')[0]!)));
-  assert.ok(trace.filter(entry => entry.method === 'POST').length <= 4, 'grants are reused across polls of one owner (two purposes per owner)');
+  assert.ok(trace.filter(entry => entry.method === 'POST').length <= 6, 'grants are reused across polls of one owner (tracker-read, repository-read, association-read per owner)');
   const database = Buffer.concat(await Promise.all(['control.sqlite', 'control.sqlite-wal'].map(name => readFile(join(root, 'data', name)).catch(() => Buffer.alloc(0)))));
   for (const forbidden of ['SPEC-BODY', 'synthetic-installation-secret', 'PRIVATE KEY']) assert.equal(database.includes(Buffer.from(forbidden)), false, forbidden);
 });

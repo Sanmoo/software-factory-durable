@@ -115,6 +115,8 @@ test('AC3: an associated pull request not recognised as own blocks admission and
   assert.equal(held.holds[0]!.code, 'FOREIGN_PULL_REQUEST');
   assert.deepEqual(held.holds[0]!.pullRequests, [{ pullRequestId: 9041, number: 41, url: 'https://github.com/acme/project/pull/41', state: 'closed', merged: true, association: ['closing-reference'] }]);
   assert.match(held.holds[0]!.nextStep, /neither adopted nor admitted/);
+  assert.doesNotMatch(held.holds[0]!.nextStep, /close it/, 'a closed/merged foreign PR keeps blocking; closing is not a remedy');
+  assert.match(held.holds[0]!.nextStep, /closed or merged/);
   // Unknown publication state is not absence either.
   remote.pulls = {};
   remote.publicationFailure = { code: 'GITHUB_QUERY_FAILED' };
@@ -210,4 +212,39 @@ test('AC6/AC7: only read operations are used and dispatch stays held pending dep
   await h.stop();
   const database = await readFile(h.storagePath);
   assert.equal(database.includes(Buffer.from('ready-for-agent')), true, 'admission evidence is durable');
+});
+
+test('AC5: one findPublication per repository cycle is shared by every authorized candidate; per-Ticket incomplete holds', async t => {
+  const remote: Remote = { issues: [remoteIssue(1), remoteIssue(2), remoteIssue(3), remoteIssue(4, { labels: [] })], pulls: { 2: [foreignPull(42)] },
+    incompleteAssociation: { 3: { code: 'ASSOCIATION_UNIDENTIFIED' } } };
+  const h = await harness(t, remote);
+  const { time } = await h.start();
+  await time.sleeping();
+  const publications = h.github.calls.filter(c => c.method === 'findPublication');
+  assert.equal(publications.length, 1);
+  assert.deepEqual((publications[0]!.args as { issueNumbers: number[] }).issueNumbers, [1, 2, 3]);
+  const view = await h.list();
+  assert.deepEqual(view.works.map(w => w.ticket.number), [1]);
+  assert.deepEqual(view.polling.repositories[0]!.candidates!.map(c => [c.ticket.number, c.outcome === 'held' ? c.holds.map(x => [x.code, x.observedCode ?? null]) : c.outcome]),
+    [[1, 'admitted'], [2, [['FOREIGN_PULL_REQUEST', null]]], [3, [['PUBLICATION_UNKNOWN', 'ASSOCIATION_UNIDENTIFIED']]]]);
+  time.advance(); await time.sleeping();
+  const second = h.github.calls.filter(c => c.method === 'findPublication');
+  assert.equal(second.length, 2);
+  assert.deepEqual((second[1]!.args as { issueNumbers: number[] }).issueNumbers, [2, 3], 'indexed Ticket 1 is not re-evaluated');
+});
+
+test('AC5: unexpected per-candidate evaluation failures feed the same bounded backoff', async t => {
+  const remote: Remote = { issues: [remoteIssue(1)], pulls: {}, readThrows: true };
+  const h = await harness(t, remote);
+  const { time } = await h.start();
+  const delays = [];
+  for (let i = 0; i < 2; i++) { delays.push(await time.sleeping()); time.advance(); }
+  delays.push(await time.sleeping());
+  assert.deepEqual(delays, [60000, 120000, 240000]);
+  const held = (await h.list()).polling.repositories[0]!.candidates![0]!;
+  assert.deepEqual(held.outcome === 'held' && held.holds.map(x => [x.code, x.observedCode]), [['TICKET_READ_UNAVAILABLE', 'POLLING_QUERY_FAILED']]);
+  delete remote.readThrows;
+  time.advance();
+  assert.equal(await time.sleeping(), 60000, 'success restores the configured interval');
+  assert.equal((await h.list()).works.length, 1);
 });

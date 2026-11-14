@@ -10,6 +10,10 @@ export type Remote = {
   issues: RemoteIssue[];
   pulls: Record<number, PullRequestCandidate[]>;
   listFailure?: Unavailable; readFailure?: Unavailable; publicationFailure?: Unavailable;
+  /** Per-Ticket incomplete association (e.g. timeline unavailable). */
+  incompleteAssociation?: Record<number, Unavailable>;
+  /** readTicket throws (unexpected adapter failure). */
+  readThrows?: boolean;
   /** Extra refs returned by the listing, e.g. from another repository. */
   extraListed?: TicketRef[];
   hang?: Promise<void>;
@@ -28,12 +32,12 @@ export function foreignPull(number: number, overrides: Partial<PullRequestCandid
 }
 
 export function githubDoubles(remote: Remote) {
-  const calls: { method: string; at: number }[] = [];
+  const calls: { method: string; at: number; args?: unknown }[] = [];
   let active = 0;
   let maxActive = 0;
   const observedAt = () => new Date().toISOString();
-  const track = async <T>(method: string, body: () => T | Promise<T>): Promise<T> => {
-    calls.push({ method, at: calls.length });
+  const track = async <T>(method: string, body: () => T | Promise<T>, args?: unknown): Promise<T> => {
+    calls.push({ method, at: calls.length, args });
     active++; maxActive = Math.max(maxActive, active);
     try {
       if (remote.hang) await remote.hang;
@@ -48,6 +52,7 @@ export function githubDoubles(remote: Remote) {
       kind: 'observed', source: 'github-rest', observedAt: observedAt(), repository: s.repository, repositoryId: 3, label: s.label, completeness: 'complete',
       candidates: [...remote.issues.filter(i => i.state === 'open' && i.labels.some(l => l.name === s.label)).map(i => i.ref), ...(remote.extraListed ?? [])], limitations: [] })),
     readTicket: ref => track('readTicket', (): TicketObservation => {
+      if (remote.readThrows) throw new Error('synthetic unexpected adapter failure');
       if (remote.readFailure) return failure(ref.repository, remote.readFailure);
       const found = remote.issues.find(i => i.ref.number === ref.number && i.ref.repository === ref.repository);
       if (!found) return failure(ref.repository, { code: 'GITHUB_NOT_FOUND_OR_HIDDEN' });
@@ -58,8 +63,10 @@ export function githubDoubles(remote: Remote) {
   const repository: CodeRepository = {
     checkAccess() { throw new Error('not used by admission'); },
     findPublication: correlation => track('findPublication', (): PublicationObservation => remote.publicationFailure ? failure(correlation.repo.repository, remote.publicationFailure) : ({
-      kind: 'observed', source: 'github-rest', observedAt: observedAt(), repository: correlation.repo.repository, repositoryId: 3, completeness: 'complete',
-      candidates: remote.pulls[correlation.issueNumber] ?? [], limitations: ['synthetic'] })),
+      kind: 'observed', source: 'github-rest', observedAt: observedAt(), repository: correlation.repo.repository, repositoryId: 3, limitations: ['synthetic'],
+      issues: Object.fromEntries(correlation.issueNumbers.map(n => [String(n), remote.incompleteAssociation?.[n]
+        ? { completeness: 'incomplete' as const, code: remote.incompleteAssociation[n].code, nextStep: 'synthetic' }
+        : { completeness: 'complete' as const, candidates: remote.pulls[n] ?? [] }])) }), correlation),
   };
   return { tracker, repository, calls, concurrency: () => maxActive };
 }

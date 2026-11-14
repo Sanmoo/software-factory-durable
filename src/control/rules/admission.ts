@@ -49,7 +49,9 @@ export function evaluatePublication(input: { facts: PublicationFacts; ownBranche
   return { clear: false, holds: [{ code: 'FOREIGN_PULL_REQUEST',
     pullRequests: foreign.map(({ pullRequestId, number, url, state, merged, association }) => ({ pullRequestId, number, url, state, merged, association })),
     nextStep: 'A pull request associated with this Ticket is not recognised as the Factory\'s own; it is neither adopted nor admitted automatically. ' +
-      'Operator must decide on GitHub: finish it manually, or close it / remove its closing reference, then polling re-evaluates the Ticket.' }] };
+      'Open, closed or merged associated pull requests all keep blocking: closing one does not remove the association. Operator must decide on GitHub ' +
+      '(handle the Ticket manually, or remove the association: edit the closing keyword/reference out of the pull request, or unlink it from Development); ' +
+      'polling then re-evaluates the Ticket. A native timeline cross-reference cannot be deleted, so such a Ticket stays an operator decision.' }] };
 }
 
 /** Next poll delay for one repository: interval on success; service-indicated wait prevails; bounded exponential backoff on failures. */

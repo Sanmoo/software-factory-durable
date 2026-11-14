@@ -1,6 +1,6 @@
 import type { TicketRef } from '../../issue-tracker/index.js';
 import type { AccessDependencies, CandidateView, ConfiguredRepository, PollingClock, PollingView, RepositoryPollView } from '../types.js';
-import { evaluateEntry, evaluatePublication, pollDelaySeconds, type Hold } from '../rules/admission.js';
+import { evaluateEntry, evaluatePublication, pollDelaySeconds, type Hold, type PublicationFacts } from '../rules/admission.js';
 import type { AdmissionEvidence, AdmissionResult } from './admission.js';
 
 const maxTimer = 2 ** 31 - 1;
@@ -41,61 +41,96 @@ export function createPoller(deps: {
     }
   };
 
-  async function evaluate(entry: RepositoryState, ref: TicketRef): Promise<{ view: CandidateView; waitSeconds?: number }> {
-    const held = (holds: Hold[], observedAt = new Date().toISOString()): CandidateView => ({ ticket: ref, observedAt, outcome: 'held', holds });
+  // Transient/unexpected failures of per-candidate reads count as a failed cycle for backoff, like a failed listing.
+  const transient = new Set(['POLLING_QUERY_FAILED', 'GITHUB_TRANSPORT_UNAVAILABLE', 'GITHUB_QUERY_FAILED', 'GITHUB_READ_FAILED']);
+  type Pending = { ref: TicketRef; configured: ConfiguredRepository; ticket: TicketRef; observedAt: string; label: { id: number; name: string } };
+  type Outcome = { view: CandidateView; waitSeconds?: number; failed?: boolean };
+  const held = (ref: TicketRef, holds: Hold[], observedAt = new Date().toISOString()): CandidateView => ({ ticket: ref, observedAt, outcome: 'held', holds });
+
+  /** Phase 1: index, pause, configured repository and current Ticket facts. Authorized candidates wait for the shared publication read. */
+  async function entry(ref: TicketRef): Promise<Outcome | { pending: Pending }> {
     const existing = await deps.indexed(ref);
     if (existing) return { view: { ticket: ref, observedAt: new Date().toISOString(), outcome: 'existing', work_id: existing } };
-    if (await deps.paused()) return { view: held([{ code: 'GLOBAL_PAUSE', nextStep: 'Global pause holds new admissions; tracking continues. Unpause to admit on the next poll.' }]) };
+    if (await deps.paused()) return { view: held(ref, [{ code: 'GLOBAL_PAUSE', nextStep: 'Global pause holds new admissions; tracking continues. Unpause to admit on the next poll.' }]) };
     const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === ref.repository.toLowerCase());
     if (!configured) {
       const result = evaluateEntry({ configuredLabel: undefined, listed: ref, facts: { kind: 'unavailable', code: 'NOT_READ', nextStep: '' } });
-      return { view: held(result.authorized ? [] : result.holds) };
+      return { view: held(ref, result.authorized ? [] : result.holds) };
     }
     const facts = await guarded(configured.repository, () => tracker.readTicket(ref));
-    const entryDecision = evaluateEntry({ configuredLabel: configured.label, listed: ref, facts });
-    if (!entryDecision.authorized || facts.kind !== 'observed') {
-      return { view: held(entryDecision.authorized ? [] : entryDecision.holds, facts.observedAt), ...(facts.kind === 'unavailable' && facts.waitSeconds !== undefined ? { waitSeconds: facts.waitSeconds } : {}) };
-    }
-    const publication = await guarded(configured.repository, () => repository.findPublication({ repo: configured, issueNumber: ref.number, knownBranches: [] }));
-    const publicationDecision = evaluatePublication({ facts: publication, ownBranches: [] });
-    if (!publicationDecision.clear || publication.kind !== 'observed') {
-      return { view: held(publicationDecision.clear ? [] : publicationDecision.holds, publication.observedAt),
-        ...(publication.kind === 'unavailable' && publication.waitSeconds !== undefined ? { waitSeconds: publication.waitSeconds } : {}) };
-    }
-    const admitted = await deps.admit({ ticket: facts.ticket, repository: { repository: configured.repository, repositoryId: facts.ticket.repositoryId, base: configured.base },
-      observedAt: facts.observedAt, label: entryDecision.label, publication: { observedAt: publication.observedAt, limitations: publication.limitations } });
-    if (admitted.kind === 'paused') return { view: held([{ code: 'GLOBAL_PAUSE', nextStep: 'Pause committed before admission; unpause to admit on the next poll.' }]) };
-    return { view: { ticket: ref, observedAt: new Date().toISOString(), outcome: admitted.kind, work_id: admitted.work_id } };
+    const decision = evaluateEntry({ configuredLabel: configured.label, listed: ref, facts });
+    if (decision.authorized && facts.kind === 'observed') return { pending: { ref, configured, ticket: facts.ticket, observedAt: facts.observedAt, label: decision.label } };
+    return { view: held(ref, decision.authorized ? [] : decision.holds, facts.observedAt),
+      ...(facts.kind === 'unavailable' && facts.waitSeconds !== undefined ? { waitSeconds: facts.waitSeconds } : {}),
+      ...(facts.kind === 'unavailable' && transient.has(facts.code) ? { failed: true } : {}) };
   }
 
-  async function cycle(entry: RepositoryState) {
-    const listing = await guarded(entry.scope.repository, () => tracker.listCandidates(entry.scope));
-    let delay: number;
-    if (listing.kind !== 'observed') {
-      entry.failures++;
-      delay = pollDelaySeconds({ intervalSeconds: interval, outcome: 'unavailable', consecutiveFailures: entry.failures, ...(listing.waitSeconds !== undefined ? { waitSeconds: listing.waitSeconds } : {}) });
-      entry.view = { repository: entry.scope.repository, label: entry.scope.label, state: 'unavailable', observedAt: listing.observedAt, completeness: 'incomplete',
-        absenceProven: false, code: listing.code, ...(listing.waitSeconds !== undefined ? { waitSeconds: listing.waitSeconds } : {}),
-        nextStep: `Listing unavailable; absence of Tickets, labels or pull requests is not concluded. ${listing.nextStep}`,
-        consecutiveFailures: entry.failures, nextPollInSeconds: delay, candidates: null };
-    } else {
-      entry.failures = 0;
-      const candidates: CandidateView[] = [];
-      let waitSeconds: number | undefined;
-      for (const ref of listing.candidates) {
-        if (waitSeconds !== undefined) {
-          candidates.push({ ticket: ref, observedAt: new Date().toISOString(), outcome: 'not-evaluated', reason: 'GitHub wait window open; evaluated on a later poll.' });
+  /** Phase 2: ONE pull request listing per configured repository per cycle, shared by every authorized candidate, then admission. */
+  async function publish(pending: Pending[]): Promise<Map<Pending, Outcome>> {
+    const outcomes = new Map<Pending, Outcome>();
+    const groups = new Map<ConfiguredRepository, Pending[]>();
+    for (const item of pending) groups.set(item.configured, [...(groups.get(item.configured) ?? []), item]);
+    for (const [configured, items] of groups) {
+      const publication = await guarded(configured.repository, () => repository.findPublication({ repo: configured, issueNumbers: items.map(item => item.ref.number), knownBranches: [] }));
+      for (const item of items) {
+        const issue = publication.kind === 'observed' ? publication.issues[String(item.ref.number)] : undefined;
+        const facts: PublicationFacts = publication.kind !== 'observed'
+          ? publication
+          : !issue ? { kind: 'unavailable', code: 'PUBLICATION_NOT_REPORTED', nextStep: 'The adapter did not report this Ticket; nothing is concluded.' }
+          : issue.completeness === 'incomplete' ? { kind: 'unavailable', code: issue.code, nextStep: issue.nextStep, ...(issue.waitSeconds !== undefined ? { waitSeconds: issue.waitSeconds } : {}) }
+          : { kind: 'observed', repositoryId: publication.repositoryId, candidates: issue.candidates };
+        const decision = evaluatePublication({ facts, ownBranches: [] });
+        if (!decision.clear || publication.kind !== 'observed') {
+          outcomes.set(item, { view: held(item.ref, decision.clear ? [] : decision.holds, publication.observedAt),
+            ...(facts.kind === 'unavailable' && facts.waitSeconds !== undefined ? { waitSeconds: facts.waitSeconds } : {}),
+            ...(facts.kind === 'unavailable' && transient.has(facts.code) ? { failed: true } : {}) });
           continue;
         }
-        const result = await evaluate(entry, ref);
-        candidates.push(result.view);
-        waitSeconds = result.waitSeconds;
+        const admitted = await deps.admit({ ticket: item.ticket, repository: { repository: configured.repository, repositoryId: item.ticket.repositoryId, base: configured.base },
+          observedAt: item.observedAt, label: item.label, publication: { observedAt: publication.observedAt, limitations: publication.limitations } });
+        outcomes.set(item, admitted.kind === 'paused'
+          ? { view: held(item.ref, [{ code: 'GLOBAL_PAUSE', nextStep: 'Pause committed before admission; unpause to admit on the next poll.' }]) }
+          : { view: { ticket: item.ref, observedAt: new Date().toISOString(), outcome: admitted.kind, work_id: admitted.work_id } });
       }
-      delay = pollDelaySeconds({ intervalSeconds: interval, outcome: 'observed', consecutiveFailures: 0, ...(waitSeconds !== undefined ? { waitSeconds } : {}) });
-      entry.view = { repository: entry.scope.repository, label: entry.scope.label, state: 'observed', observedAt: listing.observedAt, completeness: 'complete',
-        absenceProven: false, ...(waitSeconds !== undefined ? { code: 'GITHUB_WAIT_WINDOW', waitSeconds } : {}), consecutiveFailures: 0, nextPollInSeconds: delay, candidates };
     }
-    entry.dueAt = deps.clock.monotonic() + delay * 1000;
+    return outcomes;
+  }
+
+  async function cycle(entry_: RepositoryState) {
+    const listing = await guarded(entry_.scope.repository, () => tracker.listCandidates(entry_.scope));
+    let delay: number;
+    if (listing.kind !== 'observed') {
+      entry_.failures++;
+      delay = pollDelaySeconds({ intervalSeconds: interval, outcome: 'unavailable', consecutiveFailures: entry_.failures, ...(listing.waitSeconds !== undefined ? { waitSeconds: listing.waitSeconds } : {}) });
+      entry_.view = { repository: entry_.scope.repository, label: entry_.scope.label, state: 'unavailable', observedAt: listing.observedAt, completeness: 'incomplete',
+        absenceProven: false, code: listing.code, ...(listing.waitSeconds !== undefined ? { waitSeconds: listing.waitSeconds } : {}),
+        nextStep: `Listing unavailable; absence of Tickets, labels or pull requests is not concluded. ${listing.nextStep}`,
+        consecutiveFailures: entry_.failures, nextPollInSeconds: delay, candidates: null };
+    } else {
+      const slots: (Outcome | { pending: Pending } | { notEvaluated: TicketRef })[] = [];
+      let waitSeconds: number | undefined;
+      const wait = (outcome: Outcome) => { if (outcome.waitSeconds !== undefined) waitSeconds = Math.max(waitSeconds ?? 0, outcome.waitSeconds); };
+      for (const ref of listing.candidates) {
+        if (waitSeconds !== undefined) { slots.push({ notEvaluated: ref }); continue; }
+        const result = await entry(ref);
+        if ('view' in result) wait(result);
+        slots.push(result);
+      }
+      const pending = slots.flatMap(slot => 'pending' in slot ? [slot.pending] : []);
+      const published = pending.length && waitSeconds === undefined ? await publish(pending) : new Map<Pending, Outcome>();
+      for (const outcome of published.values()) wait(outcome);
+      const outcomes: Outcome[] = slots.map(slot => 'notEvaluated' in slot
+        ? { view: { ticket: slot.notEvaluated, observedAt: new Date().toISOString(), outcome: 'not-evaluated', reason: 'GitHub wait window open; evaluated on a later poll.' } }
+        : 'pending' in slot ? published.get(slot.pending) ?? { view: { ticket: slot.pending.ref, observedAt: new Date().toISOString(), outcome: 'not-evaluated', reason: 'GitHub wait window open; evaluated on a later poll.' } }
+        : slot);
+      const failed = outcomes.some(outcome => outcome.failed);
+      entry_.failures = failed ? entry_.failures + 1 : 0;
+      delay = pollDelaySeconds({ intervalSeconds: interval, outcome: failed ? 'unavailable' : 'observed', consecutiveFailures: entry_.failures, ...(waitSeconds !== undefined ? { waitSeconds } : {}) });
+      entry_.view = { repository: entry_.scope.repository, label: entry_.scope.label, state: 'observed', observedAt: listing.observedAt, completeness: 'complete',
+        absenceProven: false, ...(waitSeconds !== undefined ? { code: 'GITHUB_WAIT_WINDOW', waitSeconds } : failed ? { code: 'CANDIDATE_EVALUATION_FAILED' } : {}),
+        consecutiveFailures: entry_.failures, nextPollInSeconds: delay, candidates: outcomes.map(outcome => outcome.view) };
+    }
+    entry_.dueAt = deps.clock.monotonic() + delay * 1000;
   }
 
   return {
