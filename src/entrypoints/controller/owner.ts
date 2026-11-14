@@ -12,6 +12,7 @@ import { createCodeRepository } from '../../code-repository/index.js';
 const command = z.strictObject({ request_id: z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/),
   operation: z.enum(['pause', 'unpause']), origin: z.literal('local-cli') });
 const query = z.discriminatedUnion('kind', [z.strictObject({ kind: z.literal('status') }), z.strictObject({ kind: z.literal('access') }),
+  z.strictObject({ kind: z.literal('list') }), z.strictObject({ kind: z.literal('show'), work_id: z.uuid() }),
   z.strictObject({ kind: z.literal('request'), request_id: z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/) })]);
 
 async function own(root: string): Promise<number> {
@@ -37,8 +38,10 @@ async function own(root: string): Promise<number> {
   process.on('SIGTERM', terminate);
   const effective = validated.configuration.effective;
   const github = createGitHubAccess({ root: paths.root, ...effective.githubApp });
+  // Polling cadence comes only from the validated configuration (default 60 s); no reload or per-Work override.
   const control = await openControl({ storagePath: paths.storagePath, runtimeInventory: await controllerRuntimeInventory(paths.root),
-    access: { tracker: createIssueTracker({ github }), repository: createCodeRepository({ github }), repositories: effective.repositories } });
+    access: { tracker: createIssueTracker({ github, scopes: effective.repositories }), repository: createCodeRepository({ github }), repositories: effective.repositories },
+    polling: { intervalSeconds: effective.pollingSeconds } });
   const status = await control.inspect({ kind: 'status' });
   if (!('controller_run_id' in status)) throw new Error('INVALID_CONTROL_STATUS');
   const runId = status.controller_run_id;
