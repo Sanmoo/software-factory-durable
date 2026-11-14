@@ -1,9 +1,10 @@
 import type { AccessDiagnostic, BuilderCredentials, BuilderGrantMetadata, GitHubScope, HandoffDeclarations, ProposalHandoff, ProposalIdentity, ReviewerRole, ReviewOpinion, RevocationResult } from '../contracts/index.js';
-import type { CheckoutRequest, EnvironmentRef, PreparedWork, StartResult, StopResult, BootRef } from '../sandbox/index.js';
+import type { CheckoutRequest, EnvironmentRef, PreparedWork, RemoveResult, StartResult, StopResult, BootRef } from '../sandbox/index.js';
 import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion, SessionObservation, WorkerSessionRef, OpinionObservation } from '../workers/index.js';
 export type { SessionObservation, WorkerSessionRef as SessionRef } from '../workers/index.js';
 import type { IssueTracker, TicketRef } from '../issue-tracker/index.js';
-import type { CodeRepository } from '../code-repository/index.js';
+import type { BranchCleanupResult, CodeRepository, PullRequestFacts } from '../code-repository/index.js';
+export type { BranchCleanupResult, PullRequestFacts } from '../code-repository/index.js';
 import type { Hold } from './rules/admission.js';
 import type { BlockerView, DependencyReason } from './rules/dependencies.js';
 
@@ -120,8 +121,10 @@ export type ExecutionPorts = {
   capacity: number;
   /** Host Builder policies applied to every initial Builder invocation. */
   builder: Pick<Invocation, 'skillPack' | 'modelBudget' | 'copyOutput' | 'editSourceMaxBytes'>;
+  /** Ticket 17: removal of OWN environments and preservation of their evidence after a confirmed delivery. Absent = no environment cleanup. */
+  cleanup?: CleanupPorts;
 };
-export type CredentialWithdrawal = 'ended' | 'external-wait' | 'cancelled' | 'held' | 'refused' | 'owner-stopped' | 'controller-restart' | 'timeout';
+export type CredentialWithdrawal = 'ended' | 'external-wait' | 'cancelled' | 'held' | 'refused' | 'owner-stopped' | 'controller-restart' | 'timeout' | 'delivered';
 /**
  * One budget counter of a Work (spec §4.4): the limit captured from the repository configuration at admission, explicit grants, the
  * consumptions (each one confirmed start) and the single Execution holding an atomic reservation (null when none).
@@ -466,7 +469,8 @@ export type ReadinessView = {
 export type WorkView = {
   work_id: string; cycle: number; predecessor: string | null;
   ticket: TicketRef; repository: { repository: string; repositoryId: number; base: string };
-  result: 'open';
+  /** `delivered` (ticket 17): a human merged the Work's own pull request and the Factory confirmed it; no new agent action follows. */
+  result: 'open' | 'delivered';
   authorization: { state: 'authorized'; source: 'github-rest'; observedAt: string;
     basis: { repositoryConfigured: true; issueState: 'open'; label: { id: number; name: string } };
     publication: { observedAt: string; completeness: 'complete'; associatedPullRequests: 0; limitations: string[] };
@@ -502,6 +506,10 @@ export type WorkView = {
   limits: LimitsView;
   /** Concrete scope updates authorized by the operator (ticket 11), in acceptance order. Later Ticket/link edits are never one. */
   scopeUpdates?: ScopeUpdateView[];
+  /** Ticket 17 (absent on earlier records): observation of the own pull request and the confirmed merge that delivers the Work. */
+  delivery?: DeliveryView | null;
+  /** Ticket 17: cleanup of the Work's own resources after delivery, shown SEPARATELY from the delivery (a failed cleanup never undoes it). */
+  cleanup?: CleanupView | null;
   admittedAt: string;
   history: ({ at: string; event: 'admitted'; origin: 'github-polling'; sequence: number } |
     { at: string; event: 'dependencies-changed'; origin: 'github-polling'; before: DependencyEvaluation['conclusion'] | null; after: DependencyEvaluation['conclusion']; evaluationId: string } |
@@ -522,7 +530,9 @@ export type WorkView = {
     { at: string; event: 'checks-evaluated'; origin: 'controller-checks'; detail: string } |
     { at: string; event: 'readiness-evaluated' | 'readiness-intended' | 'readiness-attempted' | 'readiness-confirmed' | 'readiness-not-applied' | 'readiness-human-flag';
       origin: 'controller-readiness'; detail: string } |
-    { at: string; event: 'readiness-authorized'; origin: 'local-cli'; detail: string })[];
+    { at: string; event: 'readiness-authorized'; origin: 'local-cli'; detail: string } |
+    { at: string; event: 'delivery-observed' | 'delivery-confirmed' | 'cleanup-evaluated' | 'evidence-preserved' | 'cleanup-intended' | 'cleanup-result';
+      origin: 'controller-delivery'; detail: string })[];
 };
 export type CounterView = { limit: number; granted: number; effectiveLimit: number; consumed: number; reserved: 0 | 1; reservedBy: string | null; available: number; exhausted: boolean };
 /** `elapsedMs` is a monotonic measurement (live or measured) or null; `unknown` is never shown as zero. */
@@ -572,3 +582,50 @@ export interface Control {
   /** `uncertain`: stopped, but some own activity is not confirmed ceased or not durably settled (cessation unconfirmed, Slot held); the next boot reconciles it (ticket 26) and it is never a clean stop (ticket 33). */
   run(signal: AbortSignal): Promise<{ kind: 'clean' | 'failed' | 'uncertain' }>;
 }
+
+// ---- Ticket 17: confirmed delivery and owned cleanup (spec §12.3) ----
+/** Identity of the Work's own pull request as the publication discovery linked it (ticket 14); the only PR whose merge delivers the cycle. */
+export type OwnPullRequestIdentity = { pullRequestId: number; nodeId: string; number: number; url: string; headRef: string; base: string };
+/** One read of the own pull request. `unavailable` concludes nothing (no merge, closure or absence). */
+export type MergeObservation = { at: string; observedAt: string | null;
+  outcome: 'open' | 'closed-unmerged' | 'merged' | 'identity-mismatch' | 'merge-unconfirmed' | 'unavailable'; reasons: string[] };
+/** Confirmed merge facts: what makes the Work delivered (never an issue/PR closure or a Builder message). */
+export type MergeFacts = { mergedAt: string; mergeCommitSha: string; headSha: string; pullRequestId: number; number: number; url: string };
+export type DeliveryView = {
+  state: 'watching' | 'delivered';
+  pullRequest: OwnPullRequestIdentity;
+  /** Bounded latest observations (identical consecutive outcomes counted once). */
+  observations: MergeObservation[];
+  /** `duringActivity`: the Execution that was active when the merge was confirmed (it is interrupted; no new action follows). */
+  merge: (MergeFacts & { confirmedAt: string; observedAt: string; duringActivity: string | null }) | null;
+  nextStep: string;
+};
+export type CleanupResourceKind = 'environment' | 'checkout' | 'local-branch' | 'temporaries' | 'remote-branch';
+export type CleanupOutcome = 'removed' | 'absent' | 'partial' | 'failed' | 'refused' | 'indeterminate';
+/** Intent recorded BEFORE the effect, result after it; an intent without result (crash) becomes `indeterminate`, never success. */
+export type CleanupAttempt = { effectId: string; intentAt: string; resultAt: string | null; outcome: CleanupOutcome | 'intended'; code: string | null };
+export type CleanupResourceView = { id: string; kind: CleanupResourceKind; target: string; environment: string | null; ownership: string;
+  state: 'pending' | CleanupOutcome; attempts: CleanupAttempt[] };
+export type PlannedCleanupResource = Omit<CleanupResourceView, 'state' | 'attempts'>;
+/** Evidence of an environment preserved in the protected records area BEFORE it may be removed. */
+export type EvidencePreservationView = { environment: string; state: 'preserved' | 'absent' | 'failed'; at: string; code: string | null;
+  reference: { workId: string; id: string; manifestSha256: string; files: number; bytes: number } | null };
+export type CleanupView = {
+  /** `waiting`: not eligible yet (reasons); `pending`: some own resource is not concluded (failed/partial/indeterminate/refused/not tried);
+   * `complete`: every planned own resource is removed or proven absent. */
+  state: 'waiting' | 'pending' | 'complete';
+  eligibility: { eligible: boolean; reasons: string[]; checkedAt: string };
+  evidence: EvidencePreservationView[];
+  resources: CleanupResourceView[];
+  protected: { target: string; reason: string }[];
+  sweeps: number; lastSweepAt: string | null;
+  nextStep: string;
+};
+export type EvidencePreservation = { status: 'preserved'; reference: NonNullable<EvidencePreservationView['reference']> } | { status: 'absent' } | { status: 'failed'; code: string };
+/** Ticket 17 trusted composition ports: Sandbox removal of an OWN environment and Records preservation of its evidence. */
+export type CleanupPorts = {
+  remove(input: { environment: EnvironmentRef; cleanup: unknown }): Promise<RemoveResult>;
+  preserve(input: { workId: string; environment: EnvironmentRef }): Promise<EvidencePreservation>;
+  /** Seconds between automatic retries of a pending cleanup (default 86400: daily), besides one sweep at each controller boot. */
+  retrySeconds?: number;
+};
