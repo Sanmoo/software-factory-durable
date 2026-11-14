@@ -29,7 +29,9 @@ test('AC4: the versioned Factory pack declares implement/code-review/pr/tdd/code
   assert.match(await readFile(join(builderSkillPack.directory, 'LICENSE.mattpocock-skills'), 'utf8'), /^MIT License/);
   const implement = await readFile(join(builderSkillPack.directory, 'skills/implement/SKILL.md'), 'utf8');
   for (const rule of ['Preserve the request BEFORE implementing', 'Never overwrite', 'LAST, write each `sources.json`', '"sha256"', '"revision"',
-    'do not ask for broader access', 'do not adopt an auxiliary document', 'BLOCKED:', 'Do **not** push']) assert.ok(implement.includes(rule), rule);
+    'do not ask for broader access', 'do not adopt an auxiliary document', 'call the `ask_user` tool', 'This ends the activation', 'Do **not** push',
+    '## 4. Resume after an answer', 'Never repeat the last tool call blindly', 'ask again with a new question']) assert.ok(implement.includes(rule), rule);
+  assert.ok(!implement.includes('BLOCKED:'), 'blockers become durable Questions (ticket 10), not a final message');
   assert.match(await readFile(join(builderSkillPack.directory, 'skills/tdd/SKILL.md'), 'utf8'), /A label is not that approval/);
 });
 
@@ -80,7 +82,7 @@ test('AC4/AC6: the Builder starts with /implement resolved by the SDK from the F
   assert.ok(!body.includes('skills/implement/SKILL.md</location>'), 'implement is not model-invocable, only explicit');
   assert.doesNotMatch(body, /personal-canary/);
   const receipt = JSON.parse(await readFile(join(dir, 'records', context.workId, 'evidence', result.receipt.id, 'output'), 'utf8')).event;
-  assert.deepEqual(receipt.skillPack, { id: 'factory-skills-v1', version: '1.0.0', manifestSha256: (await loadSkillPack()).manifestSha256 });
+  assert.deepEqual(receipt.skillPack, { id: 'factory-skills-v1', version: '1.1.0', manifestSha256: (await loadSkillPack()).manifestSha256 });
   assert.equal(receipt.promptSha256, createHash('sha256').update(prompt).digest('hex'));
   assert.equal(receipt.modelBudget, null);
   await assert.rejects(createWorkerSession({ profile, sandbox, records }).activate({ context: { ...context, role: 'spec', invocationId: 'spec-09' }, prompt: 'x',

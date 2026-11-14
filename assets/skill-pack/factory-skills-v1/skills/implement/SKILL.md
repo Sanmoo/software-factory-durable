@@ -32,10 +32,14 @@ Do this at the start of the first Execution, before any change to the checkout. 
    link, or access denied), or an approval required by a skill (such as the TDD seams) is not already given concretely, do NOT work around it:
    do not ask for broader access, do not use another credential, do not adopt an auxiliary document as a silent replacement.
    Write `sources.json` with `"complete": false` and a `"missing": [{"origin": ..., "reason": ..., "needed": ...}]` list, implement
-   nothing, and end your turn with a final message starting `BLOCKED:` that states exactly what is missing and what answer is needed.
-   This Execution cannot complete automatically in that case.
+   nothing, and call the `ask_user` tool once: `question` states exactly what is missing or which approval is needed and what answer
+   would unblock you; `context` says what you already checked. Never put secrets in it. This ends the activation: stop immediately after
+   the tool result and do not call any other tool. The Factory publishes the question and resumes this Work later (section 4).
 
 The controller never reads or certifies these copies; they exist for you and for the later reviewers.
+
+Use `ask_user` the same way whenever, later in the work, you need information or an approval you do not have (an unresolved conflict
+between instructions, a decision the Ticket leaves to the operator). Ask one complete, self-contained question; never guess the answer.
 
 ## 2. Implement
 
@@ -52,3 +56,17 @@ The controller never reads or certifies these copies; they exist for you and for
 
 End with a short final message: the preserved version `vN`, the commits you made (hashes), the commands you ran with their results,
 and anything left undone. Do not claim success for a gate you did not run.
+
+## 4. Resume after an answer
+
+A recovery instruction (not `/implement`) starts a NEW session on the same Work after an operator answered your question. It names the
+Ticket, your branch, the checkout, the previous Execution, the question and the accepted answer. Your workspace, branch, commits and
+`/artifacts` are preserved; your previous session is not.
+
+1. Re-read this skill, then inspect what already exists: `/artifacts/spec/`, `/artifacts/instructions/` and `git -C /workspace/checkout log`
+   on your branch since the base commit. Never repeat the last tool call blindly; check its effect first.
+2. Treat the answer as authoritative only for the question it answers. If it adds or changes a requirement or a source, preserve a NEW
+   version `vN+1` (section 1) that records the answer as a source (`"origin": "factory-question:<question-id>"`, its text copied into the
+   version); never edit an earlier version.
+3. Continue with section 2. If the answer is insufficient or raises a new blocker, ask again with a new question (`ask_user`); do not
+   reinterpret the old answer as a general approval.
