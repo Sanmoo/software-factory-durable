@@ -3,7 +3,7 @@ import { constants, createReadStream } from 'node:fs';
 import { chmod, copyFile, lstat, mkdir, readdir, readFile, readlink, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { execFile, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, posix, resolve } from 'node:path';
 import { arch, platform, release as kernelRelease } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { protocolVersion } from '../protocol/index.js';
@@ -29,7 +29,7 @@ function fail(code: string): never { throw new Error(code); }
 const environment = { PATH: process.env.PATH ?? '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' };
 
 /** Copies a tree preserving permission bits (never setuid/setgid/sticky), relative in-tree links only; refuses other entry types. */
-async function copyTree(source: string, target: string, accept: (relative: string, directory: boolean) => boolean = () => true, relative = ''): Promise<void> {
+export async function copyTree(source: string, target: string, accept: (relative: string, directory: boolean) => boolean = () => true, relative = ''): Promise<void> {
   const from = relative ? join(source, relative) : source, to = relative ? join(target, relative) : target;
   const info = await lstat(from);
   if (info.isDirectory()) {
@@ -45,18 +45,29 @@ async function copyTree(source: string, target: string, accept: (relative: strin
     await chmod(to, info.mode & 0o777 & ~0o022);
   } else if (info.isSymbolicLink()) {
     const link = await readlink(from);
-    if (isAbsolute(link) || !resolve(dirname(from), link).startsWith(source + '/')) fail('RELEASE_SOURCE_LINK_ESCAPES');
+    // The copy keeps the relative link; containment is decided on the RESOLVED target, never on its lexical spelling.
+    const real = isAbsolute(link) ? undefined : await realpath(from).catch(() => undefined);
+    const base = await realpath(source);
+    if (real === undefined || !(real === base || real.startsWith(base + '/')) || isAbsolute(link)) fail('RELEASE_SOURCE_LINK_ESCAPES');
     await symlink(link, to);
   } else fail('RELEASE_SOURCE_ENTRY_UNSUPPORTED');
 }
 
 type LockPackage = { version?: string; integrity?: string; license?: string; dev?: boolean; optional?: boolean; hasInstallScript?: boolean;
+  os?: string[]; cpu?: string[];
   dependencies?: Record<string, string>; optionalDependencies?: Record<string, string>; peerDependencies?: Record<string, string>;
   peerDependenciesMeta?: Record<string, { optional?: boolean }> };
 const sdkPackage = 'node_modules/@earendil-works/pi-coding-agent';
+/** npm `os`/`cpu` semantics: a list of allowed values, or of `!`-negated excluded values. */
+function excludedBy(list: readonly string[] | undefined, value: string) {
+  if (!Array.isArray(list) || list.length === 0) return false;
+  return list.some(item => item.startsWith('!')) ? list.includes(`!${value}`) : !list.includes(value);
+}
 
 /** Runtime closure from the lockfile (Node resolution order): production dependencies plus the private SDK profile's dependencies.
  * The SDK package itself is replaced by its verified private copy (which carries its own nested dependencies). */
+export type OmittedEdge = { from: string; dependency: string; reason: 'platform-excluded' | 'optional-peer' };
+const upstreamSdkName = '@earendil-works/pi-coding-agent';
 export async function runtimeClosure(project: string) {
   const lock = JSON.parse(await readFile(join(project, 'package-lock.json'), 'utf8')) as { lockfileVersion: number; packages: Record<string, LockPackage> };
   if (lock.lockfileVersion !== 3) fail('RELEASE_LOCKFILE_UNSUPPORTED');
@@ -69,28 +80,100 @@ export async function runtimeClosure(project: string) {
       if (!base) return undefined;
     }
   };
+  // The upstream SDK identity, wherever it appears: a renamed/nested copy would load unpatched code.
+  const identity = async (key: string) => {
+    try {
+      const manifest = JSON.parse(await readFile(join(project, key, 'package.json'), 'utf8')) as { name?: unknown };
+      if (manifest.name === upstreamSdkName && key !== sdkPackage) fail('RELEASE_SDK_UPSTREAM_REQUIRED');
+    } catch (error) { if (error instanceof Error && error.message === 'RELEASE_SDK_UPSTREAM_REQUIRED') throw error; fail('RELEASE_DEPENDENCY_MANIFEST_INVALID'); }
+  };
   const seen = new Set<string>();
+  const omitted: OmittedEdge[] = [];
   const visit = async (key: string): Promise<void> => {
     if (seen.has(key)) return;
     seen.add(key);
+    await identity(key);
     const entry = packages[key]!;
-    for (const [names, optional] of [[entry.dependencies, false], [entry.optionalDependencies, true], [entry.peerDependencies, false]] as const) {
+    for (const [names, kind] of [[entry.dependencies, 'required'], [entry.optionalDependencies, 'optional'],
+      [entry.peerDependencies, 'peer']] as const) {
       for (const name of Object.keys(names ?? {})) {
-        const optionalPeer = names === entry.peerDependencies && entry.peerDependenciesMeta?.[name]?.optional === true;
+        const optionalPeer = kind === 'peer' && entry.peerDependenciesMeta?.[name]?.optional === true;
         const found = locate(key, name);
-        if (!found || !await present(found)) {
-          if (optional || optionalPeer || (found && packages[found]!.optional)) continue;
+        if (!found) {
+          // Optional peers are normally not installed; anything else without a lock entry would need shipping and is refused.
+          if (optionalPeer) { omitted.push({ from: key, dependency: name, reason: 'optional-peer' }); continue; }
           fail('RELEASE_DEPENDENCY_MISSING');
         }
-        if (found === sdkPackage) fail('RELEASE_SDK_UPSTREAM_REQUIRED'); // A runtime dependency would load the unpatched upstream SDK.
+        const target = packages[found]!;
+        if (!await present(found)) {
+          // Only an optional package whose os/cpu gate EXCLUDES this build platform is legitimately absent; every other missing edge
+          // (including an optional package this platform could install) is an incomplete closure.
+          const gated = (kind === 'optional' || target.optional === true) && (excludedBy(target.os, platform()) || excludedBy(target.cpu, arch()));
+          if (gated) { omitted.push({ from: key, dependency: name, reason: 'platform-excluded' }); continue; }
+          fail('RELEASE_DEPENDENCY_MISSING');
+        }
         await visit(found);
       }
     }
   };
   for (const name of Object.keys(packages['']?.dependencies ?? {})) await visit(locate('', name) ?? fail('RELEASE_DEPENDENCY_MISSING'));
+  // The private SDK profile is prepared before the build; its package must be present for the closure to be complete.
+  if (!await present(sdkPackage)) fail('RELEASE_DEPENDENCY_MISSING');
   await visit(sdkPackage);
   const keys = [...seen].filter(key => key !== sdkPackage && !key.startsWith(`${sdkPackage}/`)).sort(compare);
-  return { lockfileSha256: sha(await readFile(join(project, 'package-lock.json'))), keys, packages, sdk: packages[sdkPackage]! };
+  // The private SDK copy ships the upstream package's own nested dependencies; they are accounted relative to that copy.
+  const sdkKeys = [...seen].filter(key => key.startsWith(`${sdkPackage}/`)).map(key => key.slice(sdkPackage.length + 1)).sort(compare);
+  return { lockfileSha256: sha(await readFile(join(project, 'package-lock.json'))), keys, sdkKeys, packages, omitted: omitted.sort((a, b) => compare(`${a.from}/${a.dependency}`, `${b.from}/${b.dependency}`)), sdk: packages[sdkPackage]! };
+}
+
+/** A shipped dependency tree: `root` (release-relative, '' for the top level) holds `node_modules`; `keys` are lock keys relative to it. */
+export type ShippedClosure = { root: string; keys: readonly string[] };
+
+/** Release-relative paths under a `node_modules` segment that no package of the computed closures owns (pure; sorted, at most 32). */
+export function unaccountedShippedPaths(entries: readonly TreeEntry[], closures: readonly ShippedClosure[], links: readonly string[] = []): string[] {
+  const within = (root: string, path: string) => root === '' ? path : path.startsWith(`${root}/`) ? path.slice(root.length + 1) : undefined;
+  // A file or directory of the deepest owning package that is not inside another (unaccounted) nested node_modules.
+  const owned = (keys: readonly string[], relative: string) => {
+    const owner = keys.filter(key => relative.startsWith(`${key}/`)).sort((x, y) => y.length - x.length)[0];
+    return owner !== undefined && !relative.slice(owner.length + 1).split('/').includes('node_modules');
+  };
+  // npm bin links: `node_modules/.bin` of a closure root or of a package's nested node_modules, whose links point into an owned package file.
+  const binDirectory = (keys: readonly string[], relative: string) =>
+    relative === 'node_modules/.bin' || keys.some(key => relative === `${key}/node_modules/.bin`);
+  const unaccounted: string[] = [];
+  for (const entry of entries) {
+    const path = entry[0];
+    if (!path.split('/').includes('node_modules')) continue;
+    if (entry[1] === 'l' && links.includes(path)) continue; // An explicitly allowed dependency link (verified by its own profile).
+    const closure = closures.filter(candidate => {
+      const relative = within(candidate.root, path);
+      return relative !== undefined && (relative === 'node_modules' || relative.startsWith('node_modules/'));
+    }).sort((x, y) => y.root.length - x.root.length)[0];
+    const relative = closure ? within(closure.root, path) : undefined;
+    if (closure === undefined || relative === undefined) { unaccounted.push(path); continue; }
+    const { keys } = closure;
+    const accounted = keys.includes(relative) || owned(keys, relative) ||
+      // A directory leading to a package (`node_modules` itself, a scope, a parent's nested `node_modules`) or an npm bin directory.
+      (entry[1] === 'd' && (relative === 'node_modules' || keys.some(key => key.startsWith(`${relative}/`)) || binDirectory(keys, relative))) ||
+      (entry[1] === 'l' && binDirectory(keys, dirname(relative)) && owned(keys, posix.normalize(posix.join(dirname(relative), entry[2]))));
+    if (!accounted) unaccounted.push(path);
+  }
+  return unaccounted.sort(compare).slice(0, 32);
+}
+
+/**
+ * Every shipped entry under a `node_modules` path belongs to a package of the computed closure, and no shipped package declares the upstream
+ * SDK identity (`name` in any package.json below node_modules): the upstream SDK is only ever loaded as its verified private copy.
+ */
+export async function verifyShippedPackages(release: string, entries: readonly TreeEntry[], closures: readonly ShippedClosure[], links: readonly string[] = []) {
+  const unaccounted = unaccountedShippedPaths(entries, closures, links);
+  if (unaccounted.length > 0) fail(`RELEASE_UNACCOUNTED_PACKAGE ${unaccounted[0]}`);
+  for (const entry of entries) {
+    if (entry[1] !== 'f' || basename(entry[0]) !== 'package.json' || !entry[0].split('/').includes('node_modules')) continue;
+    let name: unknown;
+    try { name = (JSON.parse(await readFile(join(release, entry[0]), 'utf8')) as { name?: unknown }).name; } catch { continue; } // Not a manifest.
+    if (name === upstreamSdkName) fail('RELEASE_SDK_UPSTREAM_REQUIRED');
+  }
 }
 
 async function licenseFiles(directory: string) {
@@ -117,10 +200,15 @@ exec /usr/bin/env -u NODE_OPTIONS -u NODE_PATH -u NODE_COMPILE_CACHE NODE_DISABL
   "$root/releases/${id}/node/bin/node" "$root/releases/${id}/dist/src/entrypoints/cli.js" "$@"
 `;
 
+const privateSdk = '.scratch/factory-development-sdk-v3', privateSdkSdk = `${privateSdk}/sdk`;
 export type BuildInput = { release: string; output: string; guestAssets: { directory: string; manifestSha256: string }; nodeHome?: string };
 
 export async function buildRelease(input: BuildInput) {
   const id = releaseIdSchema.parse(input.release);
+  const output = resolve(input.output);
+  // Never adopt an existing output directory (not even an empty one): a build starts from an absent path it creates exclusively.
+  const existing = await lstat(output).catch(() => undefined);
+  if (existing) throw new Error('RELEASE_OUTPUT_EXISTS');
   const project = await realpath(applicationRoot());
   if ((await verifyReleaseTree(project)).kind !== 'development') fail('RELEASE_SOURCE_NOT_DEVELOPMENT');
   const packageJson = JSON.parse(await readFile(join(project, 'package.json'), 'utf8')) as { name: string; version: string; type: string;
@@ -143,8 +231,7 @@ export async function buildRelease(input: BuildInput) {
     dirty: (await git('status', '--porcelain', '--untracked-files=normal')).length > 0 };
   const closure = await runtimeClosure(project);
 
-  // Exclusive output: an existing directory is never adopted or overwritten.
-  const output = resolve(input.output);
+  // Exclusive output: created here, never adopted or overwritten.
   await mkdir(output, { mode: 0o700 });
   if (await realpath(output) !== output) fail('RELEASE_OUTPUT_NOT_CANONICAL');
   const payload = join(output, 'payload');
@@ -158,7 +245,7 @@ export async function buildRelease(input: BuildInput) {
   await mkdir(join(releaseDirectory, 'assets'), { mode: 0o755 });
   await copyTree(join(project, 'assets/skill-pack'), join(releaseDirectory, 'assets/skill-pack'));
   await mkdir(join(releaseDirectory, '.scratch'), { mode: 0o755 });
-  await copyTree(join(project, '.scratch/factory-development-sdk-v3'), join(releaseDirectory, '.scratch/factory-development-sdk-v3'));
+  await copyTree(join(project, privateSdk), join(releaseDirectory, privateSdk));
   for (const directory of ['docs', 'docs/evidence', 'provenance']) await mkdir(join(releaseDirectory, directory), { mode: 0o755 });
   await copyTree(join(project, 'docs/evidence/gondolin-sdk-v1'), join(releaseDirectory, 'docs/evidence/gondolin-sdk-v1'));
   for (const file of ['05-sdk-read-operations-candidate.patch', '05-sdk-async-bash-v2.patch', '05-sdk-lexical-queue-v3.patch']) {
@@ -173,7 +260,7 @@ export async function buildRelease(input: BuildInput) {
       if (parent === 'node_modules') break;
       await mkdir(join(releaseDirectory, parent), { recursive: true, mode: 0o755 });
     }
-    await copyTree(join(project, key), join(releaseDirectory, key), relative => relative !== 'node_modules');
+    await copyTree(join(project, key), join(releaseDirectory, key), relative => !relative.split('/').includes('node_modules'));
     const entry = closure.packages[key]!;
     const manifest = JSON.parse(await readFile(join(project, key, 'package.json'), 'utf8')) as { name: string; version: string; license?: string;
       licenses?: { type?: string }[] }; // `licenses` is the legacy array form some packages still declare.
@@ -193,7 +280,7 @@ export async function buildRelease(input: BuildInput) {
   await copyTree(join(nodeHome, 'LICENSE'), join(releaseDirectory, 'node/LICENSE'));
   // The SAME pinned Gondolin profile, prepared by its closed preparation inside the release (relative dependency link).
   const gondolinRelease = await prepareReleaseGondolinSdk(releaseDirectory);
-  const sdkProfileBytes = await readFile(join(releaseDirectory, '.scratch/factory-development-sdk-v3/profile.json'));
+  const sdkProfileBytes = await readFile(join(releaseDirectory, privateSdk, 'profile.json'));
   if (JSON.stringify(JSON.parse(sdkProfileBytes.toString())) !== JSON.stringify(sdkEvidence)) fail('RELEASE_SDK_PROFILE_DRIFT');
 
   // Guest assets: every regular file of the pinned directory, re-verified at the copy.
@@ -221,12 +308,13 @@ export async function buildRelease(input: BuildInput) {
   const licenses: Record<string, number> = {};
   for (const item of runtimePackages) licenses[item.license ?? 'UNKNOWN'] = (licenses[item.license ?? 'UNKNOWN'] ?? 0) + 1;
   const files = await inventoryTree(releaseDirectory);
+  await verifyShippedPackages(releaseDirectory, files, [{ root: '', keys: closure.keys }, { root: privateSdkSdk, keys: closure.sdkKeys }],
+    [`${gondolinSdkProfile.directory}/node_modules`]);
   const manifest = {
     schemaVersion: 1, kind: 'software-factory-release', release: id, builtAt: new Date().toISOString(),
     node: { version: process.versions.node, path: 'node/bin/node', sha256: await hashFile(join(releaseDirectory, 'node/bin/node')), license: 'node/LICENSE' },
     launcher: { path: 'factory', sha256: sha(launcherBytes) },
-    guestAssets: { path: `assets/guest/${input.guestAssets.manifestSha256}`, manifestSha256: input.guestAssets.manifestSha256, files: await inventoryTree(assetsDirectory),
-      pinned: ['manifest.json', ...['kernel', 'initramfs', 'rootfs'].map(key => assetManifest.assets?.[key] ?? fail('RELEASE_GUEST_ASSETS_INVALID'))] },
+    guestAssets: { path: `assets/guest/${input.guestAssets.manifestSha256}`, manifestSha256: input.guestAssets.manifestSha256, files: await inventoryTree(assetsDirectory) },
     production: { ...productionProfile, promptSha256: Object.fromEntries(Object.entries(productionProfile.prompts).map(([role, text]) => [role, sha(text)])) },
     qualification: { status: 'unqualified', statement: 'This release asserts the integrity and exact composition of the distributed set only. It claims no functional ' +
       'coverage: VM boot, Docker/TLS, real GitHub, model and pilot behaviour, and features not yet integrated (later MVP tickets) are qualified separately ' +
@@ -238,7 +326,7 @@ export async function buildRelease(input: BuildInput) {
         modules: process.versions.modules }, provenance: `Copied from the pinned local installation ${nodeHome} (bin/node, LICENSE only); upstream release checksums were not re-verified offline.` },
       sqlite: { implementation: 'node:sqlite built into the private Node (no separate native binding)', version: process.versions.sqlite },
       runtime: { lockfileSha256: closure.lockfileSha256, lockfileVersion: 3, packageJsonSha256: sha(JSON.stringify(releasePackage, null, 2) + '\n'),
-        packages: runtimePackages, licenses, installScriptsAlreadyRun: runtimePackages.filter(item => item.hasInstallScript).map(item => item.name),
+        packages: runtimePackages, omittedEdges: closure.omitted, licenses, installScriptsAlreadyRun: runtimePackages.filter(item => item.hasInstallScript).map(item => item.name),
         excluded: 'Development dependencies (TypeScript, ESLint, dependency-cruiser, @types) and the upstream SDK package (replaced by its private profile).' },
       pi: { codingAgent: { version: closure.sdk.version ?? null, integrity: closure.sdk.integrity ?? null, license: closure.sdk.license ?? null,
         profile: sdkEvidence, profileSha256: sha(sdkProfileBytes) },

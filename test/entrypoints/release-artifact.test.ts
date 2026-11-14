@@ -14,7 +14,7 @@ after(async () => { if (work) await rm(work, { recursive: true, force: true }); 
 test('build: one exclusive archive with checksum and manifest pinning Node/SDKs/SQLite/Gondolin/assets/profile/tooling, and nothing of development', async () => {
   assert.deepEqual((await readdir(output)).sort(), ['build-report.json', 'release-manifest.json', `software-factory-${id}.tar`, `software-factory-${id}.tar.sha256`]);
   assert.equal(await readFile(join(output, `${report.archive}.sha256`), 'utf8'), `${sha(await readFile(join(output, report.archive)))}  ${report.archive}\n`);
-  await assert.rejects(buildRelease({ release: id, output, guestAssets: { directory: join(work, 'synthetic-assets'), manifestSha256 } }), { code: 'EEXIST' });
+  await assert.rejects(buildRelease({ release: id, output, guestAssets: { directory: join(work, 'synthetic-assets'), manifestSha256 } }), /RELEASE_OUTPUT_EXISTS/);
   const listing = spawnSync('tar', ['-tf', join(output, report.archive)], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).stdout.trim().split('\n');
   assert.ok(listing.every(path => path === 'factory' || path.startsWith(`releases/`) || path.startsWith('assets/')), 'only launcher, release and assets');
   assert.ok(listing.includes(`releases/${id}/node/bin/node`) && listing.includes(`releases/${id}/dist/src/entrypoints/cli.js`));
@@ -89,7 +89,8 @@ test('a release serves only its own canonical root; wrong extraction and changed
   await writeFile(target, changed);
   try {
     const tampered = factory(root, ['doctor', '--json']);
-    assert.equal(tampered.status, 2, tampered.stderr); // This root has no configuration yet; the release check is blocked regardless.
+    assert.equal(tampered.status, 3, tampered.stderr); // A blocked release is its own top-level result, before configuration codes.
+    assert.equal(JSON.parse(tampered.stdout).code, 'RELEASE_INVALID');
     const integrity = check(JSON.parse(tampered.stdout).checks, 'release:integrity');
     assert.equal(integrity?.status, 'blocked');
     assert.match(integrity!.message, /RELEASE_INTEGRITY_MISMATCH at assets\/skill-pack\/factory-skills-v3\/manifest.json/);
@@ -97,3 +98,61 @@ test('a release serves only its own canonical root; wrong extraction and changed
   } finally { await writeFile(target, original); }
 });
 
+
+test('a release verifies EVERY distributed byte and fails closed without a manifest, before storage and independent of root', async () => {
+  const extract = async (name: string) => {
+    const directory = join(work, name);
+    await mkdir(directory, { mode: 0o700 });
+    const result = spawnSync('tar', ['-xpkf', join(output, report.archive), '-C', directory], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    return directory;
+  };
+  const configuration = (text: string) => text.replace('operators: []', 'operators: [operador]')
+    .replaceAll('{ provider: null, model: null }', '{ provider: openai, model: gpt-6-luna }').replace('appId: null', 'appId: 123');
+  // (1) A guest-asset file whose bytes change while the release manifest still claims the original hash: refused by release integrity.
+  const tampered = await extract('asset-tampered');
+  assert.equal(spawnSync(join(tampered, 'factory'), ['setup', '--json']).status, 0);
+  const asset = join(tampered, 'assets', 'guest', manifestSha256, 'rootfs.ext4');
+  const original = await readFile(asset);
+  await writeFile(asset, 'rootfs fixturf\n'); // same size, different bytes
+  try {
+    await writeFile(join(tampered, 'config.yaml'), configuration(await readFile(join(tampered, 'config.yaml'), 'utf8')));
+    const doctor = spawnSync(join(tampered, 'factory'), ['doctor', '--json'], { encoding: 'utf8' });
+    assert.equal(doctor.status, 3, doctor.stderr);
+    const reportJson = JSON.parse(doctor.stdout);
+    assert.equal(reportJson.code, 'RELEASE_INVALID');
+    // Assets live outside releases/<id>, so their exact bytes are the release:assets check (recomputed, never copied).
+    assert.equal(check(reportJson.checks, 'release:integrity')?.status, 'ok');
+    const assets = check(reportJson.checks, 'release:assets');
+    assert.equal(assets?.status, 'blocked');
+    assert.match(assets!.message, new RegExp(`RELEASE_INTEGRITY_MISMATCH at assets/guest/${manifestSha256}/rootfs.ext4`));
+    // The controller verifies the assets BEFORE opening storage, even with a complete configuration.
+    const owner = spawnSync(join(tampered, 'factory'), ['run'], { encoding: 'utf8' });
+    assert.equal(owner.status, 2, owner.stderr);
+    assert.match(owner.stderr, /RELEASE_INVALID/);
+    await assert.rejects(stat(join(tampered, 'data', 'control.sqlite')), { code: 'ENOENT' });
+    await assert.rejects(stat(join(tampered, 'run', 'control.sock')), { code: 'ENOENT' });
+  } finally { await writeFile(asset, original); }
+  // (2) A release whose manifest is missing or unreadable never falls back to "development", and its root stays pinned.
+  const manifestless = await extract('manifestless');
+  await rm(join(manifestless, 'releases', id, 'release-manifest.json'));
+  const missing = spawnSync(join(manifestless, 'factory'), ['doctor', '--json'], { encoding: 'utf8' });
+  assert.equal(missing.status, 3, missing.stderr);
+  assert.equal(JSON.parse(missing.stdout).code, 'RELEASE_INVALID');
+  assert.match(check(JSON.parse(missing.stdout).checks, 'release:integrity')!.message, /RELEASE_MANIFEST_MISSING/);
+  // Even with private paths prepared and a complete configuration, the controller refuses the release before storage.
+  const prepared = spawnSync(join(manifestless, 'factory'), ['setup', '--json'], { encoding: 'utf8' });
+  assert.match(prepared.stdout, /RELEASE_MANIFEST_MISSING/);
+  await writeFile(join(manifestless, 'config.yaml'), configuration(await readFile(join(manifestless, 'config.yaml'), 'utf8')));
+  const refused = spawnSync(join(manifestless, 'factory'), ['run'], { encoding: 'utf8' });
+  assert.equal(refused.status, 2, refused.stderr);
+  assert.match(refused.stderr, /"code":"RELEASE_INVALID".*RELEASE_MANIFEST_MISSING/);
+  await assert.rejects(stat(join(manifestless, 'data', 'control.sqlite')), { code: 'ENOENT' });
+  const foreign = join(work, 'manifestless-foreign');
+  const cli = join(manifestless, 'releases', id, 'dist/src/entrypoints/cli.js');
+  const node = join(manifestless, 'releases', id, 'node/bin/node');
+  const elsewhere = spawnSync(node, [cli, 'setup', '--root', foreign, '--json'], { encoding: 'utf8' });
+  assert.equal(elsewhere.status, 2);
+  assert.match(elsewhere.stderr, /RELEASE_ROOT_MISMATCH/);
+  await assert.rejects(stat(foreign), { code: 'ENOENT' });
+});
