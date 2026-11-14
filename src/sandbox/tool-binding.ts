@@ -44,5 +44,6 @@ export type ReadBinding = { endpoint: string; context: ToolContext; signal: Abor
   /** Exact Host-selected reviewer copies; absent is empty, never Builder authority. */
   selectedOutputCopies?: readonly string[];
   /** Transient Builder credential delivered in memory by the host handshake (spec §8.1), already registered in `records` for filtering.
-   * Never accepted from tool JSON, never persisted; reaches only NEW Builder Bash commands as explicit environment via stdin. */
-  credential?: Readonly<{ token: string }> };
+   * Never accepted from tool JSON, never persisted. `current()` is read once at each NEW Builder Bash command, which receives it as explicit
+   * environment via stdin; a renewal replaces it for later commands only and a withdrawal makes it undefined (ticket 20). */
+  credential?: Readonly<{ current(): string | undefined }> };

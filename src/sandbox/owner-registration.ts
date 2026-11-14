@@ -26,23 +26,39 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
   const records = await createRecords({ root });
   const lifetimes = new Map<Channel, AbortController>();
   const invocations = new Set<string>();
-  // Transient Builder credentials delivered on a host-boot channel BEFORE its launch (spec §8.1); memory only, one per channel.
-  const credentials = new Map<Channel, Readonly<{ token: string; invocationId: string }>>();
+  // Transient Builder credentials of a host-boot channel (spec §8.1): the first delivery precedes its launch; after the launch the SAME
+  // invocation may receive renewals (new commands only) and a final withdrawal (ticket 20). Memory only; one mutable holder per channel.
+  const credentials = new Map<Channel, { token: string | undefined; readonly invocationId: string; withdrawn: boolean }>();
   let sequence = 0;
   const server = await listen(join(directory, 'owner'), {
     async message(request, channel, peer) {
-      if (request.kind === 'deliver-credential') {
-        const parsed = credentialSchema.safeParse(request.payload);
+      if (request.kind === 'deliver-credential' || request.kind === 'withdraw-credential') {
+        const withdrawal = request.kind === 'withdraw-credential';
+        const parsed = (withdrawal ? z.strictObject({ context: contextSchema }) : credentialSchema).safeParse(request.payload);
         const context = parsed.success ? parsed.data.context : undefined;
-        if (!parsed.success || !context || context.role !== 'builder' || lifetimes.has(channel) || credentials.has(channel) ||
-            context.workId !== peer.binding.workId || context.environmentRef !== peer.binding.environmentRef ||
-            context.bootRef !== peer.binding.bootRef || invocations.has(context.invocationId)) {
-          await channel.send(frame(request.message_id, 'credential-result', { status: 'failure', code: 'CREDENTIAL_DELIVERY_DENIED' }, request.message_id));
+        const holder = credentials.get(channel);
+        const sameBoot = context !== undefined && context.workId === peer.binding.workId && context.environmentRef === peer.binding.environmentRef &&
+          context.bootRef === peer.binding.bootRef;
+        // Initial: before this channel's launch, for a never-launched invocation. Renewal/withdrawal: after the launch, for THE invocation
+        // the initial credential was bound to, while its lifetime is open and it was not withdrawn. Reviewers never qualify.
+        const initial = !withdrawal && !lifetimes.has(channel) && !holder && !invocations.has(context?.invocationId ?? '');
+        const later = holder !== undefined && !holder.withdrawn && lifetimes.has(channel) && !lifetimes.get(channel)!.signal.aborted &&
+          holder.invocationId === context?.invocationId;
+        if (!parsed.success || !context || context.role !== 'builder' || !sameBoot || !(initial || later)) {
+          await channel.send(frame(request.message_id, 'credential-result', { status: 'failure', code: withdrawal ? 'CREDENTIAL_WITHDRAWAL_DENIED' : 'CREDENTIAL_DELIVERY_DENIED' }, request.message_id));
           return;
         }
-        // Registered in the SAME owner Records used by this invocation's tool captures before acknowledging; no await in between.
-        records.registerSecret(parsed.data.token);
-        credentials.set(channel, Object.freeze({ token: parsed.data.token, invocationId: context.invocationId }));
+        if (withdrawal) {
+          holder!.token = undefined; holder!.withdrawn = true;
+          await channel.send(frame(request.message_id, 'credential-result', { status: 'withdrawn' }, request.message_id));
+          return;
+        }
+        const value = 'token' in parsed.data && typeof parsed.data.token === 'string' ? parsed.data.token : '';
+        if (!value) return;
+        // Registered in the SAME owner Records used by this invocation's tool captures before acknowledging/using; no await in between.
+        records.registerSecret(value);
+        if (holder) holder.token = value;
+        else credentials.set(channel, { token: value, invocationId: context.invocationId, withdrawn: false });
         await channel.send(frame(request.message_id, 'credential-result', { status: 'delivered' }, request.message_id));
         return;
       }
@@ -71,7 +87,7 @@ export async function serveOwnerRegistration(root: string, identity: { workId: s
         const endpoint = join(directory, `b${++sequence}`);
         try {
           await bindings.add({ ...privateCapabilities, copyOutput: parsed.data.copyOutput === true, endpoint, context, signal: lifetime.signal, records,
-            ...(credential === undefined ? {} : { credential: Object.freeze({ token: credential.token }) }),
+            ...(credential === undefined ? {} : { credential: Object.freeze({ current: () => credential.token }) }),
             ...(parsed.data.selectedOutputCopies === undefined ? {} : { selectedOutputCopies: parsed.data.selectedOutputCopies }),
             ...(parsed.data.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: parsed.data.editSourceMaxBytes }),
             ...(parsed.data.imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes: parsed.data.imageSourceMaxBytes }) });

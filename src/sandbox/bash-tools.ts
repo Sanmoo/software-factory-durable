@@ -31,8 +31,8 @@ export function boundBashTools(options: ReadBinding & { vm: GuestOwner }, valid:
   // select policy. Host must select native-truncated output; no second truncator.
   const copyAllowed = options.copyOutput === true && options.profileOrigin === 'factory-development-gondolin-0.14.0-stdin-capacity-v1';
   const copy = boundStreamCopyTools(options, valid, revoke, publishedCopies);
-  // Snapshot before any await; a Builder-only, host-delivered value.
-  const credential = bound.role === 'builder' && options.credential ? options.credential.token : undefined;
+  // Builder-only, host-delivered holder; its CURRENT value is snapshotted per command (renewal reaches new commands only).
+  const holder = bound.role === 'builder' ? options.credential : undefined;
   let latest: { reference: { workId: string; id: string }; bytes: number; callId: string } | undefined;
   let running = false;
   return async (context: ToolContext, call: BashCall, progress: (frame: BashProgress) => Promise<void>): Promise<ReadResult> => {
@@ -49,6 +49,8 @@ export function boundBashTools(options: ReadBinding & { vm: GuestOwner }, valid:
     }
     if (running) return failure('BASH_IN_PROGRESS');
     running = true;
+    // Synchronous snapshot before the first await: this command and its subprocesses keep this value even if a renewal arrives meanwhile.
+    const credential = holder?.current();
     latest = undefined; // Every new command invalidates its predecessor before effects.
     const lifetime = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;

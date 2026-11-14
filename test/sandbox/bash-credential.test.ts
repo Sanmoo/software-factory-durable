@@ -12,7 +12,7 @@ import type { GuestOwner, ToolContext } from '../../src/sandbox/read-tools.js';
 const context: ToolContext = { workId: 'work', executionId: 'execution', invocationId: 'invocation', role: 'builder', environmentRef: 'environment', bootRef: 'boot', phaseId: 'phase' };
 const token = 'ghs_syntheticBuilderToken0123456789';
 
-async function harness(t: { after(fn: () => Promise<void>): void }, credential?: { token: string }) {
+async function harness(t: { after(fn: () => Promise<void>): void }, credential?: { token: string }, gate?: Promise<void>) {
   const root = await mkdtemp('/tmp/bcred-');
   t.after(() => rm(root, { recursive: true, force: true }));
   const records = await createRecords({ root });
@@ -21,17 +21,21 @@ async function harness(t: { after(fn: () => Promise<void>): void }, credential?:
   const vm: GuestOwner = { exec(argv, options) {
     seen.push({ argv, env: options.env, stdin: options.stdin });
     const output = execFileSync(argv[0]!, argv.slice(1).map(arg => arg.replaceAll('/workspace', root)), { input: typeof options.stdin === 'string' ? options.stdin : '', cwd: root, env: {} });
-    return { async *output() { yield { stream: 'stdout' as const, data: output }; }, result: Promise.resolve({ exitCode: 0 }) };
+    const first = seen.length === 1;
+    return { async *output() { if (first && gate) await gate; yield { stream: 'stdout' as const, data: output }; }, result: Promise.resolve({ exitCode: 0 }) };
   } };
   const signal = new AbortController();
-  const bash = boundBashTools({ endpoint: '/unused', records, context, signal: signal.signal, vm, ...(credential ? { credential } : {}) }, () => !signal.signal.aborted, () => signal.abort());
+  // The owner's mutable in-memory holder: renewal replaces the value, withdrawal clears it (ticket 20).
+  const holder: { token: string | undefined } = { token: credential?.token };
+  const bash = boundBashTools({ endpoint: '/unused', records, context, signal: signal.signal, vm, ...(credential ? { credential: { current: () => holder.token } } : {}) },
+    () => !signal.signal.aborted, () => signal.abort());
   const run = async (command: string) => {
     const result = await bash(context, { name: 'bash', command, callId: `c${seen.length}` }, async () => {});
     assert.equal(result.status, 'success', JSON.stringify(result));
     if (result.status !== 'success') throw new Error('unreachable');
     return readFile(join(root, context.workId, 'evidence', result.reference.id, 'output'), 'utf8');
   };
-  return { run, seen, root };
+  return { run, seen, root, holder, records };
 }
 
 test('AC5: the Builder credential reaches guest commands as explicit GH_TOKEN/gh credential helper via stdin, never argv/exec env; output is filtered', async t => {
@@ -57,4 +61,26 @@ test('AC5: without a delivered credential the exact previous guest argv/stdin is
   assert.equal(output.trim(), 'unset');
   assert.deepEqual(h.seen[0]!.argv, ['/usr/bin/env', '-i', '/bin/bash', '-c', 'echo "${GH_TOKEN-unset}"']);
   assert.equal(h.seen[0]!.stdin, '');
+});
+
+test('ticket 20 AC2: a renewed credential reaches only NEW commands; a command already running keeps the environment it started with', async t => {
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const h = await harness(t, { token }, gate);
+  const renewed = 'ghs_syntheticRenewedToken9876543210';
+  const running = h.run('echo "running:${#GH_TOKEN}"');
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(h.seen.length, 1, 'the first command is in flight');
+  // Renewal delivered while the first command runs: registered for filtering first, then swapped in memory.
+  h.records.registerSecret(renewed);
+  h.holder.token = renewed;
+  release();
+  await running;
+  const after = await h.run('echo "$GH_TOKEN"');
+  assert.doesNotMatch(after, /ghs_synthetic/, 'the renewed value is filtered as well');
+  assert.deepEqual(h.seen.map(call => call.stdin), [`${token}\n`, `${renewed}\n`], 'the running command kept the old value; the next command received the new one');
+  // Withdrawal (end / external wait / cancellation): new commands receive nothing; the previous argv shape without prelude is used.
+  h.holder.token = undefined;
+  assert.equal((await h.run('echo "${GH_TOKEN-unset}"')).trim(), 'unset');
+  assert.deepEqual([h.seen[2]!.argv.length, h.seen[2]!.stdin], [5, '']);
 });
