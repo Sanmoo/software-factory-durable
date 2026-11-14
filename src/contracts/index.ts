@@ -49,4 +49,6 @@ export interface BuilderCredentials {
 /** Host-side Contents:read credential for the Factory-exclusive bare cache fetch (spec §7.3/§8). In memory only. */
 export interface RepositoryFetchCredentials {
   fetch(repository: GitHubScope): Promise<{ readonly token: string; expiresAt: string }>;
+  /** One self-revocation attempt right after the fetch (ticket 20 review); never retried, never claims cessation. */
+  revoke(grant: { readonly token: string }): Promise<RevocationResult>;
 }

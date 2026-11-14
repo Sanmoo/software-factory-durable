@@ -53,7 +53,7 @@ test('AC2/AC3: Factory-exclusive bare cache, then an independent no-hardlinks cl
   const project = await upstream(w.dir, 'project');
   const fetches: string[] = [];
   const checkouts = createCheckouts({ root: w.root, remoteUrl: () => `file://${project.path}`,
-    fetch: { async fetch(scope) { fetches.push(scope.repository); return { token: 'synthetic-fetch-token', expiresAt: new Date(Date.now() + 3600000).toISOString() }; } } });
+    fetch: { revoke: async () => ({ kind: 'revoked' as const, nextStep: 'synthetic' }), async fetch(scope) { fetches.push(scope.repository); return { token: 'synthetic-fetch-token', expiresAt: new Date(Date.now() + 3600000).toISOString() }; } } });
   const env = await w.environment('env-a');
   const result = await checkouts.prepare(env, request('acme/project', 3, 'factory/work-a'));
   assert.equal(result.status, 'success', JSON.stringify(result));
@@ -101,7 +101,7 @@ test('AC2/AC3: same repository is sequenced fetch -> completed clone; distinct r
   const libGate = new Promise<void>(resolve => { releaseLib = resolve; });
   const envs = { a: await w.environment('env-a'), b: await w.environment('env-b'), c: await w.environment('env-c') };
   const checkouts = createCheckouts({ root: w.root, remoteUrl: scope => `file://${repos[scope.repository as keyof typeof repos].path}`,
-    fetch: { async fetch(scope) {
+    fetch: { revoke: async () => ({ kind: 'revoked' as const, nextStep: 'synthetic' }), async fetch(scope) {
       const cloned = (await Promise.all([envs.a, envs.b].map(env => access(join(env, 'checkout.json')).then(() => 1, () => 0)))).reduce((x, y) => x + y, 0);
       events.push(`fetch:${scope.repository}:${cloned ? 'project-cloned' : 'none-cloned'}`);
       if (scope.repository === 'acme/lib') await libGate;
@@ -130,7 +130,7 @@ test('a failed preparation leaves an explicit tombstone: never retried or adopte
   const project = await upstream(w.dir, 'project');
   let calls = 0;
   const checkouts = createCheckouts({ root: w.root, remoteUrl: () => `file://${project.path}`,
-    fetch: { async fetch() { calls++; throw Object.assign(new Error('GITHUB_TOKEN_ISSUANCE_UNKNOWN'), { code: 'GITHUB_TOKEN_ISSUANCE_UNKNOWN' }); } } });
+    fetch: { revoke: async () => ({ kind: 'revoked' as const, nextStep: 'synthetic' }), async fetch() { calls++; throw Object.assign(new Error('GITHUB_TOKEN_ISSUANCE_UNKNOWN'), { code: 'GITHUB_TOKEN_ISSUANCE_UNKNOWN' }); } } });
   const env = await w.environment('env-a');
   assert.deepEqual(await checkouts.prepare(env, request('acme/project', 3, 'factory/work-a')), { status: 'failure', code: 'CHECKOUT_FETCH_CREDENTIAL_UNAVAILABLE' });
   assert.deepEqual(await checkouts.prepare(env, request('acme/project', 3, 'factory/work-a')), { status: 'indeterminate', code: 'CHECKOUT_PREPARATION_INCOMPLETE' });
@@ -165,7 +165,7 @@ test('AC3/AC4: Sandbox.prepare composes the own checkout and seeds versioned Fac
   const packManifest = JSON.stringify({ id: 'pack-v1', files: [{ path: 'skills/implement/SKILL.md', sha256: sha('implement v1') }] });
   await writeFile(join(pack, 'manifest.json'), packManifest);
   const sandbox = createSandbox({ root: w.root, guestAssets, remoteUrl: () => `file://${project.path}`, artifactSeeds: [{ name: 'factory/skill-pack/pack-v1', directory: pack }],
-    repositoryFetch: { async fetch() { return { token: 't', expiresAt: new Date(Date.now() + 3600000).toISOString() }; } } });
+    repositoryFetch: { revoke: async () => ({ kind: 'revoked' as const, nextStep: 'synthetic' }), async fetch() { return { token: 't', expiresAt: new Date(Date.now() + 3600000).toISOString() }; } } });
   const checkout = request('acme/project', 3, 'factory/work-09');
   const first = await sandbox.prepare({ workId, configuration, checkout });
   assert.equal(first.status, 'success', JSON.stringify(first));
@@ -200,7 +200,7 @@ test('review 1 audit: a first checkout is only made in a never-booted environmen
   const w = await world(t);
   const project = await upstream(w.dir, 'project');
   const checkouts = createCheckouts({ root: w.root, remoteUrl: () => `file://${project.path}`,
-    fetch: { async fetch() { return { token: 't', expiresAt: new Date(Date.now() + 3600000).toISOString() }; } } });
+    fetch: { revoke: async () => ({ kind: 'revoked' as const, nextStep: 'synthetic' }), async fetch() { return { token: 't', expiresAt: new Date(Date.now() + 3600000).toISOString() }; } } });
   const booted = await w.environment('env-booted');
   await mkdir(join(booted, 'boot-11111111-2222-4333-8444-555555555555'));
   assert.deepEqual(await checkouts.prepare(booted, request('acme/project', 3, 'factory/b')), { status: 'failure', code: 'CHECKOUT_REQUIRES_UNBOOTED_ENVIRONMENT' });
@@ -219,7 +219,7 @@ test('review 9: cache mutation is serialised across processes by a per-repositor
   const project = await upstream(w.dir, 'project');
   let fetches = 0;
   const options = { root: w.root, lockWaitSeconds: 1, remoteUrl: () => `file://${project.path}`,
-    fetch: { async fetch() { fetches++; return { token: 't', expiresAt: new Date(Date.now() + 3600000).toISOString() }; } } };
+    fetch: { revoke: async () => ({ kind: 'revoked' as const, nextStep: 'synthetic' }), async fetch() { fetches++; return { token: 't', expiresAt: new Date(Date.now() + 3600000).toISOString() }; } } };
   // First preparation creates the cache and leaves an idle state.
   assert.equal((await createCheckouts(options).prepare(await w.environment('env-1'), request('acme/project', 3, 'factory/1'))).status, 'success');
   assert.deepEqual(JSON.parse(await readFile(join(w.root, 'cache', 'git', '3.state.json'), 'utf8')).state, 'idle');
@@ -241,4 +241,23 @@ test('review 9: cache mutation is serialised across processes by a per-repositor
   await assert.rejects(access(join(env3, 'workspace', 'checkout')));
   assert.equal(JSON.parse(await readFile(join(w.root, 'cache', 'git', '3.state.json'), 'utf8')).state, 'mutating', 'never repaired automatically');
   assert.ok(fetches >= 1);
+});
+
+test('ticket 20 review: the host fetch credential is self-revoked right after the fetch (also when the fetch fails); only its outcome is recorded', async t => {
+  const w = await world(t);
+  const project = await upstream(w.dir, 'project');
+  const revoked: string[] = [];
+  const fetch = { async fetch() { return { token: `synthetic-fetch-token-${revoked.length}`, expiresAt: new Date(Date.now() + 3600000).toISOString() }; },
+    async revoke(grant: { token: string }) { revoked.push(grant.token); return { kind: 'revoked' as const, code: 'GITHUB_TOKEN_REVOKED', nextStep: 'synthetic' }; } };
+  const checkouts = createCheckouts({ root: w.root, remoteUrl: () => `file://${project.path}`, fetch });
+  const env = await w.environment('env-r');
+  assert.equal((await checkouts.prepare(env, request('acme/project', 3, 'factory/work-r'))).status, 'success');
+  assert.deepEqual(revoked, ['synthetic-fetch-token-0']);
+  const metadata = JSON.parse(await readFile(join(env, 'checkout.json'), 'utf8'));
+  assert.equal(metadata.fetchCredentialRevocation, 'revoked');
+  assert.doesNotMatch(JSON.stringify(metadata), /synthetic-fetch-token/);
+  const broken = createCheckouts({ root: w.root, remoteUrl: () => `file://${join(w.dir, 'missing')}`, fetch });
+  const other = await w.environment('env-s');
+  assert.notEqual((await broken.prepare(other, request('acme/missing', 9, 'factory/work-s'))).status, 'success');
+  assert.deepEqual(revoked, ['synthetic-fetch-token-0', 'synthetic-fetch-token-1'], 'a failed fetch still revokes its credential');
 });

@@ -433,5 +433,7 @@ export function createRepositoryFetchCredentials(options: { github: GitHubAccess
     if (!configured) throw new CredentialIssuanceError('FETCH_REPOSITORY_NOT_CONFIGURED', 'known-rejected', 'Only configured executable repositories are fetched.');
     const grant = await options.github.transient({ ...configured, workflows: false }, 'repository-fetch');
     return Object.freeze({ token: grant.token, expiresAt: grant.expiresAt });
+  }, revoke(grant) {
+    return options.github.revoke(typeof grant?.token === 'string' ? grant.token : '');
   } };
 }

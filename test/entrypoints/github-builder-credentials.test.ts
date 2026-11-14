@@ -64,6 +64,9 @@ test('AC2: the host cache fetch credential is Contents read for a configured rep
   assert.match(grant.token, /-r3$/);
   assert.deepEqual((await world.trace()).filter(entry => entry.method === 'POST').map(entry => entry.permissions), [{ metadata: 'read', contents: 'read' }]);
   await assert.rejects(fetch.fetch({ repository: 'acme/other', installationId: 2, workflows: false }), /FETCH_REPOSITORY_NOT_CONFIGURED/);
+  // Ticket 20 review: the host fetch credential is self-revoked after use.
+  assert.equal((await fetch.revoke(grant)).kind, 'revoked');
+  assert.deepEqual(await world.revoked(), [grant.token]);
 });
 
 test('an uncertain token POST throws GITHUB_TOKEN_ISSUANCE_UNKNOWN without a second POST', async t => {

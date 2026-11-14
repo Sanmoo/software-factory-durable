@@ -14,7 +14,9 @@ const repositoryName = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
 const branchName = /^(?!-)(?!.*\.\.)(?!.*\/\/)(?!.*@\{)[A-Za-z0-9._/-]{1,200}(?<![./])$/;
 const metadataSchema = z.strictObject({ version: z.literal(1), path: z.literal('/workspace/checkout'), repository: z.string(), repositoryId: z.number().int().positive(),
   base: z.string(), branch: z.string(), baseCommit: z.string().regex(/^[0-9a-f]{40,64}$/), origin: z.string(), preparedAt: z.iso.datetime(),
-  cache: z.literal('factory-exclusive-bare'), clone: z.literal('no-hardlinks') });
+  cache: z.literal('factory-exclusive-bare'), clone: z.literal('no-hardlinks'),
+  // Outcome kind of the self-revocation of the one-fetch host credential (absent in metadata written before ticket 20).
+  fetchCredentialRevocation: z.enum(['revoked', 'already-invalid', 'failed', 'unknown', 'impossible', 'not-attempted']).optional() });
 
 class CheckoutFailure extends Error {
   constructor(readonly status: 'failure' | 'indeterminate', readonly code: string) { super(code); }
@@ -90,7 +92,12 @@ export function createCheckouts(options: { root: string; fetch: RepositoryFetchC
     let token: string;
     try { token = (await options.fetch.fetch({ repository: request.repository, installationId: request.installationId, workflows: false })).token; }
     catch { throw new CheckoutFailure('failure', 'CHECKOUT_FETCH_CREDENTIAL_UNAVAILABLE'); }
-    const release = await acquireLock(join(cacheRoot, `${request.repositoryId}.lock`), options.lockWaitSeconds ?? 600);
+    // Used by ONE fetch only: self-revoked right after it (success or failure), once; only the outcome kind is kept (ticket 20 review).
+    let revocation: Promise<string> | undefined;
+    const revokeFetch = () => revocation ??= options.fetch.revoke({ token }).then(result => result.kind, () => 'unknown');
+    let release: () => Promise<void>;
+    try { release = await acquireLock(join(cacheRoot, `${request.repositoryId}.lock`), options.lockWaitSeconds ?? 600); }
+    catch (error) { await revokeFetch(); throw error; }
     try {
       // An interrupted earlier mutation (crash between fetch and clone) is refused until the operator reconciles it (spec §7.3).
       const statePath = join(cacheRoot, `${request.repositoryId}.state.json`);
@@ -102,17 +109,20 @@ export function createCheckouts(options: { root: string; fetch: RepositoryFetchC
         await rename(temporary, statePath);
       };
       await state('mutating');
-      const view = await mutate(environment, request, home, cache, cacheRoot, token);
+      const view = await mutate(environment, request, home, cache, cacheRoot, token, revokeFetch);
       await state('idle');
       return view;
-    } finally { await release(); }
+    } finally { await revokeFetch(); await release(); }
   }
 
-  async function mutate(environment: string, request: CheckoutRequest, home: string, cache: string, cacheRoot: string, token: string): Promise<CheckoutView> {
+  async function mutate(environment: string, request: CheckoutRequest, home: string, cache: string, cacheRoot: string, token: string,
+    revokeFetch: () => Promise<string>): Promise<CheckoutView> {
     if (!await exists(cache)) await run(['init', '--quiet', '--bare', '--template=', cache], cacheRoot, home);
     const upstream = options.remoteUrl?.({ repository: request.repository }) ?? github(request.repository);
     // A failed fetch never proves an updated base; nothing below runs without it.
-    await run(['fetch', '--quiet', '--no-tags', '--no-recurse-submodules', upstream, `+refs/heads/${request.base}:refs/heads/${request.base}`], cache, home, token);
+    try { await run(['fetch', '--quiet', '--no-tags', '--no-recurse-submodules', upstream, `+refs/heads/${request.base}:refs/heads/${request.base}`], cache, home, token); }
+    finally { await revokeFetch(); }
+    const fetchCredentialRevocation = await revokeFetch();
     const baseCommit = await run(['rev-parse', '--verify', `refs/heads/${request.base}^{commit}`], cache, home);
     const checkout = join(environment, 'workspace', 'checkout');
     // cwd is the Factory-owned home, never the workspace: no repository discovery above the new checkout. Only this never-booted,
@@ -125,7 +135,7 @@ export function createCheckouts(options: { root: string; fetch: RepositoryFetchC
       (await readdir(join(checkout, '.git', 'hooks')).catch(() => [])).length) throw new CheckoutFailure('indeterminate', 'CHECKOUT_VERIFICATION_FAILED');
     const preparedAt = new Date().toISOString();
     await durableJson(join(environment, 'checkout.json'), { version: 1, path: '/workspace/checkout', repository: request.repository, repositoryId: request.repositoryId,
-      base: request.base, branch: request.branch, baseCommit, origin, preparedAt, cache: 'factory-exclusive-bare', clone: 'no-hardlinks' });
+      base: request.base, branch: request.branch, baseCommit, origin, preparedAt, cache: 'factory-exclusive-bare', clone: 'no-hardlinks', fetchCredentialRevocation });
     return { path: '/workspace/checkout', repository: request.repository, repositoryId: request.repositoryId, base: request.base, branch: request.branch,
       baseCommit, origin, reused: false, preparedAt };
   }
