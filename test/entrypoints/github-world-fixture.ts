@@ -28,7 +28,9 @@ export type WorldIssue = {
 };
 export type WorldPull = {
   id: number; node_id: string; number: number; title: string; body: string | null; state: 'open' | 'closed'; merged_at: string | null;
-  head: { ref: string; repo: { id: number } | null }; user: { id: number; login: string; type: string };
+  head: { ref: string; sha?: string; repo: { id: number } | null }; user: { id: number; login: string; type: string };
+  /** Ticket 14 (defaults: not draft, base main, head sha 'c'*40). */
+  draft?: boolean; base?: { ref: string };
 };
 /** Issue comment as GitHub REST returns it (html_url/performed_via_github_app computed by the fixture when absent). */
 export type WorldComment = { id: number; issue: number; repository?: string; node_id?: string; body: string | null; user: { id: number; login: string; type: string };
@@ -42,6 +44,11 @@ export type World = {
   /** Status of DELETE /installation/token (default 204). */
   revokeFault?: number;
   pulls: WorldPull[];
+  /** Ticket 14: branch tips of acme/project (`refs/heads/<name>` → commit sha), served at /git/matching-refs/heads/<prefix>.
+   * POST /git/refs (contents:write) adds one; POST /pulls (pull_requests:write) creates a pull request authored by the App bot. */
+  refs?: Record<string, string>;
+  /** POST /pulls: answer with this status; `created` decides whether the pull request was created anyway (ambiguous 5xx). */
+  pullFault?: { status: number; created: boolean };
   pageSize?: number;
   /** endpoint substring → synthetic failure. */
   faults?: Record<string, { status: number; headers?: Record<string, string>; /** Raw (possibly non-JSON) body. */ body?: string }>;
@@ -161,13 +168,13 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
   const sequence = readFileSync(${JSON.stringify(traceFile)}, 'utf8').split('\\n').filter(line => line.includes('access_tokens')).length + 1;
   body = { token: 'synthetic-installation-secret-' + sequence + '-r' + target.id, expires_at: new Date(now + (world.tokenLifetimeSeconds ?? 3600) * 1000).toISOString(), permissions: request.permissions,
     repositories: [{ id: target.id, full_name: target.name, owner: { login: target.name.split('/')[0] } }] };
-  appendFileSync(issuedFile, JSON.stringify({ token: body.token, expiresAt: body.expires_at }) + '\\n');
+  appendFileSync(issuedFile, JSON.stringify({ token: body.token, expiresAt: body.expires_at, permissions: request.permissions }) + '\\n');
   status = 201;
   } else if (endpoint === '/installation/token' && method === 'DELETE' && !app) {
   // Self-revocation of the installation token used for the request: 204, no body; the token is invalid afterwards (a fault prevents it).
   status = world.revokeFault ?? 204; raw = '';
   if (status === 204 && !Object.keys(world.faults ?? {}).some(fragment => endpoint.includes(fragment))) appendFileSync(revokedFile, JSON.stringify({ token }) + '\\n');
-  } else if (app || (method !== 'GET' && !(method === 'POST' && /^\\/repos\\/[^/]+\\/[^/]+\\/issues\\/\\d+\\/comments$/.test(path)))) process.exit(16);
+  } else if (app || (method !== 'GET' && !(method === 'POST' && /^\\/repos\\/[^/]+\\/[^/]+\\/(issues\\/\\d+\\/comments|git\\/refs|pulls)$/.test(path)))) process.exit(16);
   else if (!repo) process.exit(11);
   else if (rest === '') body = { id: repo.id, full_name: repo.name, owner: { login: repo.name.split('/')[0] } };
   else if (rest === '/issues') {
@@ -200,7 +207,37 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
   trace.body = request.body;
   if (fault) { status = fault.status; body = { message: 'synthetic-installation-secret-leak' }; for (const [name, value] of Object.entries(fault.headers ?? {})) headers += name + ': ' + value + '\\r\\n'; }
   else { status = 201; body = { ...comment, html_url: 'https://github.com/' + repo.name + '/issues/' + number + '#issuecomment-' + comment.id }; }
+  } else if ((rest === '/git/refs' || rest === '/pulls') && method === 'POST') {
+  // Ticket 14: the Builder's direct publication (push = ref creation, PR creation) with ITS delivered grant; permissions are enforced.
+  if (args[args.indexOf('--input') + 1] !== '-') process.exit(19);
+  let input = ''; for await (const data of process.stdin) input += data;
+  const request = JSON.parse(input);
+  const granted = known?.permissions ?? {};
+  trace.body = input;
+  const refs = world.refs ?? {};
+  if (rest === '/git/refs') {
+    if (granted.contents !== 'write') { status = 403; body = { message: 'Resource not accessible by integration' }; }
+    else if (Object.keys(request).sort().join() !== 'ref,sha' || !/^refs\\/heads\\//.test(request.ref) || !/^[0-9a-f]{40}$/.test(request.sha)) process.exit(20);
+    else if (refs[request.ref.slice(11)] !== undefined) { status = 422; body = { message: 'Reference already exists' }; }
+    else { refs[request.ref.slice(11)] = request.sha; world.refs = refs; writeFileSync(${JSON.stringify(worldFile)}, JSON.stringify(world));
+      status = 201; body = { ref: request.ref, object: { sha: request.sha, type: 'commit' } }; }
+  } else if (granted.pull_requests !== 'write') { status = 403; body = { message: 'Resource not accessible by integration' }; }
+  else if (refs[request.head] === undefined) { status = 422; body = { message: 'Validation Failed: head does not exist' }; }
+  else {
+    const number = Math.max(0, ...world.pulls.map(p => p.number), ...world.issues.map(i => i.number)) + 1;
+    const created = { id: 9000 + number, node_id: 'PR_node' + number, number, title: request.title, body: request.body ?? null, state: 'open', merged_at: null, draft: request.draft === true,
+      head: { ref: request.head, sha: refs[request.head], repo: { id: repo.id } }, base: { ref: request.base }, user: { id: 41898282, login: 'factory-app[bot]', type: 'Bot' } };
+    const fault = world.pullFault;
+    if (!fault || fault.created) { world.pulls = [...world.pulls, created]; writeFileSync(${JSON.stringify(worldFile)}, JSON.stringify(world)); }
+    if (fault) { status = fault.status; body = { message: 'synthetic' }; }
+    else { status = 201; body = { ...created, html_url: 'https://github.com/' + repo.name + '/pull/' + number }; }
+  }
   } else if (method !== 'GET') process.exit(16);
+  else if (/^\\/git\\/matching-refs\\/heads\\/.+$/.test(rest)) {
+  const prefix = decodeURIComponent(url.pathname.split('/git/matching-refs/heads/')[1]);
+  body = page(Object.entries(world.refs ?? {}).filter(([name]) => name.startsWith(prefix)).sort()
+    .map(([name, sha]) => ({ ref: 'refs/heads/' + name, node_id: 'REF_' + name, object: { sha, type: 'commit' } })));
+  }
   else if (/^\\/issues\\/\\d+\\/comments$/.test(rest)) {
   const number = Number(rest.split('/')[2]);
   if (!issuesOf(repo).some(i => i.number === number)) { status = 404; body = { message: 'Not Found' }; }
@@ -213,7 +250,8 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
   else { status = 404; body = { message: 'Not Found' }; }
   } else if (rest === '/pulls' && repo.id === 3) {
   if (url.searchParams.get('state') !== 'all') process.exit(17);
-  body = page(world.pulls.map(p => ({ ...p, html_url: 'https://github.com/acme/project/pull/' + p.number, base: { repo: { id: 3 } } })));
+  body = page(world.pulls.map(p => ({ draft: false, ...p, head: { sha: 'c'.repeat(40), ...p.head }, html_url: 'https://github.com/acme/project/pull/' + p.number,
+    base: { ref: p.base?.ref ?? 'main', repo: { id: 3 } } })));
   } else process.exit(11);
   for (const [fragment, fault] of Object.entries(world.faults ?? {})) if (endpoint.includes(fragment) && !app) {
   status = fault.status; body = { message: 'synthetic-installation-secret-leak' }; if (fault.body !== undefined) raw = fault.body;

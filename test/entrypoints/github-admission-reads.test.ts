@@ -143,7 +143,8 @@ test('findPublication reports closing-reference, native timeline and known-branc
   assert.deepEqual(result.candidates.map(candidate => [candidate.number, candidate.association]),
     [[10, ['closing-reference', 'cross-reference']], [11, ['cross-reference']], [12, ['closing-reference']], [13, ['closing-reference']], [16, ['known-branch']], [17, ['development-link']]]);
   assert.deepEqual(result.candidates[2], { pullRequestId: 9012, nodeId: 'PR_node12', number: 12, url: 'https://github.com/acme/project/pull/12', state: 'closed', merged: true,
-    headRef: 'human/change-12', headRepositoryId: 3, author: { id: 10, login: 'someone', type: 'User' }, association: ['closing-reference'] });
+    headRef: 'human/change-12', headRepositoryId: 3, author: { id: 10, login: 'someone', type: 'User' }, association: ['closing-reference'],
+    headSha: 'c'.repeat(40), baseRef: 'main', draft: false, body: null });
   assert.ok(observed.kind === 'observed' && observed.limitations.some(limitation => /other repositories/i.test(limitation)));
   assert.ok(observed.kind === 'observed' && !observed.limitations.some(limitation => /manual .*not observable/i.test(limitation)), 'limitation text stays accurate');
 });

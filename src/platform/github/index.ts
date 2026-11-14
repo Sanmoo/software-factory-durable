@@ -23,6 +23,11 @@ const permissions = {
   // Initial Builder grant of ticket 09 (spec §8 ceiling Contents W/PR W is NOT needed before publication, ticket 14): read the Ticket and
   // repository sources of ITS repository only. Never Workflows, never another repository.
   'builder-start': { metadata: 'read', contents: 'read', issues: 'read' },
+  // Ticket 14 publication activation (spec §8 Builder ceiling: Contents W, Pull requests W): the Builder pushes ITS branch and opens ITS
+  // draft PR directly with Git/gh in the guest. Issued only after Control's verification and discovery; never Workflows/other repository.
+  'builder-publish': { metadata: 'read', contents: 'write', pull_requests: 'write', issues: 'read' },
+  // Discovery of the own publication (ticket 14): remote refs of the own branch (Contents R) + pull requests (R).
+  'publication-read': { metadata: 'read', contents: 'read', pull_requests: 'read' },
   // Host fetch into the Factory-exclusive bare cache (spec §8: clone/fetch uses Contents R).
   'repository-fetch': { metadata: 'read', contents: 'read' },
   // Controller publication of a durable Question on its Ticket issue (spec §5.5): one POST of an issue comment, nothing else.
@@ -30,11 +35,11 @@ const permissions = {
 } as const;
 type Purpose = keyof typeof permissions;
 type DiagnosticPurpose = 'tracker' | 'repository' | 'dependency';
-export type ReadPurpose = 'tracker-read' | 'repository-read' | 'association-read' | 'dependency-read';
+export type ReadPurpose = 'tracker-read' | 'repository-read' | 'association-read' | 'dependency-read' | 'publication-read';
 /** Token-free metadata of each reduced read grant (principal/scope evidence; never the token). */
 export const readPermissions: Readonly<Record<ReadPurpose, Readonly<Record<string, 'read'>>>> = {
   'tracker-read': permissions['tracker-read'], 'repository-read': permissions['repository-read'],
-  'association-read': permissions['association-read'], 'dependency-read': permissions['dependency-read'] };
+  'association-read': permissions['association-read'], 'dependency-read': permissions['dependency-read'], 'publication-read': permissions['publication-read'] };
 const repositorySchema = z.object({ id: z.number().int().positive().safe(), full_name: z.string(), owner: z.object({ login: z.string() }) });
 const permissionSchema = z.record(z.string(), z.enum(['read', 'write']));
 class AccessFailure extends Error {
@@ -84,7 +89,7 @@ export interface GitHubAccess {
 export type TokenRevocation = RevocationResult['kind'] | 'not-issued';
 export type GitHubWrite = { ok: true; observedAt: string; repositoryId: number; value: unknown; revocation: TokenRevocation } |
   { ok: false; outcome: 'known-failure' | 'unknown'; observedAt: string; code: string; waitSeconds?: number; nextStep: string; revocation: TokenRevocation };
-export type TransientPurpose = 'builder-start' | 'repository-fetch';
+export type TransientPurpose = 'builder-start' | 'builder-publish' | 'repository-fetch';
 export type TransientGrant = { token: string; expiresAt: string; repositoryId: number; permissions: Readonly<Record<string, 'read' | 'write'>> };
 /** Coded failure of a transient issuance; message is the code only (never a token or key). */
 export class CredentialIssuanceError extends Error {
@@ -475,9 +480,11 @@ export function createBuilderCredentials(options: { github: GitHubAccess; reposi
       const configured = options.repositories.find(scope => scope.repository.toLowerCase() === context.repository.repository.toLowerCase() &&
         scope.installationId === context.repository.installationId);
       if (!configured) throw new CredentialIssuanceError('BUILDER_REPOSITORY_NOT_CONFIGURED', 'known-rejected', 'Only configured executable repositories receive a Builder grant.');
+      const purpose = context.purpose ?? 'builder-start';
+      if (purpose !== 'builder-start' && purpose !== 'builder-publish') throw new CredentialIssuanceError('BUILDER_PURPOSE_INVALID', 'known-rejected', 'Only the fixed Builder purposes exist.');
       const issuedAt = new Date().toISOString();
-      const grant = await options.github.transient({ ...configured, workflows: false }, 'builder-start');
-      return { delivery: Object.freeze({ token: grant.token }), metadata: { role: 'builder', purpose: 'builder-start', repository: configured.repository,
+      const grant = await options.github.transient({ ...configured, workflows: false }, purpose);
+      return { delivery: Object.freeze({ token: grant.token }), metadata: { role: 'builder', purpose, repository: configured.repository,
         repositoryId: grant.repositoryId, installationId: configured.installationId, permissions: grant.permissions, issuedAt, expiresAt: grant.expiresAt } };
     },
     async revoke(grant) {

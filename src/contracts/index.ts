@@ -27,11 +27,19 @@ export type AccessDiagnostic = {
   grant?: { role: 'controller'; purpose: 'tracker' | 'repository' | 'dependency'; permissions: Readonly<Record<string, 'read' | 'write'>>; expiresAt: string };
 }
 
+/**
+ * Fixed Builder grant purposes (spec §8 table, §2.1): `builder-start` reads the Ticket and sources (implementation, reviews, recovery);
+ * `builder-publish` (ticket 14) is the ONLY one with Contents W + Pull requests W, issued only to a publication activation that Control
+ * requested after the end-of-Execution verification, for the Builder to push its own branch and open its own draft PR directly (Git/API).
+ * Never Workflows, never another repository; the model never chooses it.
+ */
+export type BuilderGrantPurpose = 'builder-start' | 'builder-publish';
 /** Token-free metadata of one reduced Builder grant (spec §8.1): the ONLY part that may enter durable state. */
-export type BuilderGrantMetadata = { role: 'builder'; purpose: 'builder-start'; repository: string; repositoryId: number; installationId: number;
+export type BuilderGrantMetadata = { role: 'builder'; purpose: BuilderGrantPurpose; repository: string; repositoryId: number; installationId: number;
   permissions: Readonly<Record<string, 'read' | 'write'>>; issuedAt: string; expiresAt: string };
-/** Active Work/Execution/repository; the composition already binds the authorized configuration and purpose. */
-export type BuilderCredentialContext = { workId: string; executionId: string; repository: GitHubScope };
+/** Active Work/Execution/repository; the composition already binds the authorized configuration. `purpose` is Control's choice for the
+ * activity (absent = `builder-start`), never the model's. */
+export type BuilderCredentialContext = { workId: string; executionId: string; repository: GitHubScope; purpose?: BuilderGrantPurpose };
 /** Transient delivery + metadata. `delivery` is never serialized, persisted, prompted, logged or put in a Git remote. */
 export type BuilderGrant = { metadata: BuilderGrantMetadata; delivery: { readonly token: string } };
 /**
@@ -55,6 +63,8 @@ export interface RepositoryFetchCredentials {
 
 /** Stable correlation marker of a published Question (spec §5.5): first line `<!-- software-factory:question:<question-id> -->`. */
 export const questionMarkerPrefix = 'software-factory:question:';
+/** Stable correlation marker of a Work's own pull request (spec §9.1, ticket 14): first line of its body `<!-- software-factory:work:<work-id> -->`. */
+export const publicationMarkerPrefix = 'software-factory:work:';
 /** Reviewer roles bound by the Host (spec §5.6/§6.4); never chosen by a model. */
 export type ReviewerRole = 'standards' | 'spec';
 /** One finding identifiable by its basis: a documented rule (preserved instruction), a requirement (preserved request) or a heuristic. */

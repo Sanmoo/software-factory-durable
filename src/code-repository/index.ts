@@ -9,13 +9,19 @@ export type PullRequestCandidate = {
   pullRequestId: number; nodeId: string; number: number; url: string; state: 'open' | 'closed'; merged: boolean;
   headRef: string; headRepositoryId: number | null; author: { id: number; login: string; type: string };
   association: ('closing-reference' | 'cross-reference' | 'development-link' | 'known-branch')[];
+  /** Ticket 14: facts Control needs to recognize its OWN publication (head commit, base, draft flag, body with the correlation marker). */
+  headSha: string; baseRef: string; draft: boolean; body: string | null;
 };
+/** Tip of a known own branch as read from the remote: a complete listing proves `absent`; a failed read is `unknown`, never absence. */
+export type BranchRef = { state: 'present'; sha: string } | { state: 'absent' } | { state: 'unknown'; code: string; nextStep: string };
 /** Per Ticket: complete association, or incomplete (never an empty list standing in for absence). */
 export type IssuePublication = { completeness: 'complete'; candidates: PullRequestCandidate[] } |
   { completeness: 'incomplete'; code: string; waitSeconds?: number; nextStep: string };
 /** An unavailable query never proves the absence of an associated or own pull request. */
 export type PublicationObservation = { kind: 'observed'; source: 'github-rest'; observedAt: string; repository: string; repositoryId: number;
-  issues: Record<string, IssuePublication>; limitations: string[] } |
+  issues: Record<string, IssuePublication>; limitations: string[];
+  /** One entry per known branch (empty when none was given, e.g. admission). */
+  branches: Record<string, BranchRef> } |
   { kind: 'unavailable'; source: 'github-rest'; observedAt: string; repository: string; completeness: 'incomplete'; code: string; waitSeconds?: number; nextStep: string };
 
 export interface CodeRepository {
@@ -26,7 +32,9 @@ export interface CodeRepository {
 const pullSchema = z.object({
   id: z.number().int().positive().safe(), node_id: z.string().min(1).max(256), number: z.number().int().positive().safe(), html_url: z.string().url(),
   state: z.enum(['open', 'closed']), merged_at: z.string().nullable().optional(), title: z.string().nullable().optional(), body: z.string().nullable().optional(),
-  head: z.object({ ref: z.string().min(1).max(512), repo: z.object({ id: z.number().int().positive().safe() }).nullable() }),
+  draft: z.boolean(),
+  head: z.object({ ref: z.string().min(1).max(512), sha: z.string().regex(/^[0-9a-f]{40}$/), repo: z.object({ id: z.number().int().positive().safe() }).nullable() }),
+  base: z.object({ ref: z.string().min(1).max(512) }),
   user: z.object({ id: z.number().int().positive().safe(), login: z.string(), type: z.string() }),
 });
 const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
@@ -72,9 +80,26 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
         nextStep: `Pull request #${number} is associated by the timeline but absent from the complete listing; association cannot be evaluated.` };
       candidates.push({ pullRequestId: pull.id, nodeId: pull.node_id, number: pull.number, url: pull.html_url, state: pull.state, merged: Boolean(pull.merged_at),
         headRef: pull.head.ref, headRepositoryId: pull.head.repo?.id ?? null, author: { id: pull.user.id, login: pull.user.login, type: pull.user.type },
-        association: order.filter(kind => kinds.has(kind)) });
+        association: order.filter(kind => kinds.has(kind)), headSha: pull.head.sha, baseRef: pull.base.ref, draft: pull.draft,
+        // Bounded copy of the body: Control only looks for its correlation marker and checks the description's shape.
+        body: typeof pull.body === 'string' ? pull.body.slice(0, 65536) : null });
     }
     return { completeness: 'complete', candidates };
+  }
+  /** Remote tip of one own branch: a complete matching-refs listing filtered to the exact ref (absence only from a complete listing). */
+  async function branchRef(repo: GitHubScope, branch: string, repositoryId: number): Promise<BranchRef> {
+    if (!/^(?!-)(?!.*\.\.)(?!.*\/\/)(?!.*@\{)[A-Za-z0-9._/-]{1,200}(?<![./])$/.test(branch)) return { state: 'unknown', code: 'INVALID_BRANCH', nextStep: 'Branch name rejected locally; nothing was read.' };
+    const read = await options.github.read(repo, 'publication-read', async session => {
+      if (session.repositoryId !== repositoryId) throw new InvalidGitHubObservation();
+      const parsed = z.array(z.object({ ref: z.string(), object: z.object({ sha: z.string().regex(/^[0-9a-f]{40}$/), type: z.string() }) }))
+        .safeParse(await session.list(`/repos/${repo.repository}/git/matching-refs/heads/${branch.split('/').map(encodeURIComponent).join('/')}`));
+      if (!parsed.success) throw new InvalidGitHubObservation();
+      const exact = parsed.data.filter(item => item.ref === `refs/heads/${branch}`);
+      if (exact.length > 1 || (exact[0] && exact[0].object.type !== 'commit')) throw new InvalidGitHubObservation();
+      return exact[0]?.object.sha ?? null;
+    });
+    if (!read.ok) return { state: 'unknown', code: read.code, nextStep: `Remote branch unknown (absence not concluded). ${read.nextStep}` };
+    return read.value === null ? { state: 'absent' } : { state: 'present', sha: read.value };
   }
   return {
     checkAccess(repo, base) {
@@ -102,7 +127,10 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
         ...(pulls.waitSeconds !== undefined ? { waitSeconds: pulls.waitSeconds } : {}), nextStep: pulls.nextStep };
       const issues: Record<string, IssuePublication> = {};
       for (const issueNumber of numbers) issues[String(issueNumber)] = await associate(repo, issueNumber, pulls.value, pulls.repositoryId, correlation.knownBranches);
-      return { kind: 'observed', source: 'github-rest', observedAt: pulls.observedAt, repository: repo.repository, repositoryId: pulls.repositoryId, issues, limitations: [
+      const branches: Record<string, BranchRef> = {};
+      for (const branch of [...new Set(correlation.knownBranches)]) branches[branch] = await branchRef(repo, branch, pulls.repositoryId);
+      return { kind: 'observed', source: 'github-rest', observedAt: pulls.observedAt, repository: repo.repository, repositoryId: pulls.repositoryId, issues, branches, limitations: [
+        ...(correlation.knownBranches.length ? ['Own branch tips are read from the remote refs (Contents read) separately from the pull request listing.'] : []),
         'Association = GitHub closing keywords in pull request title/body, native issue-timeline cross-references and Development links (connected/disconnected) for pull requests of this repository, and known own branches.',
         'Pull requests in other repositories that reference the Ticket are not treated as associated (they cannot be own publications of this repository).',
         'A Development link whose pull request is not identified in the timeline makes the Ticket incomplete, never clear.',

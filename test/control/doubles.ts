@@ -10,6 +10,8 @@ export type Unavailable = { code: string; waitSeconds?: number };
 export type Remote = {
   issues: RemoteIssue[];
   pulls: Record<number, PullRequestCandidate[]>;
+  /** Ticket 14: remote tips of known branches (absent key = absent ref); `unknown` = the ref read failed. */
+  refs?: Record<string, string | 'unknown'>;
   listFailure?: Unavailable; readFailure?: Unavailable; publicationFailure?: Unavailable;
   /** Per-Ticket incomplete association (e.g. timeline unavailable). */
   incompleteAssociation?: Record<number, Unavailable>;
@@ -50,7 +52,8 @@ export function remoteIssue(number: number, overrides: Partial<RemoteIssue> = {}
 }
 export function foreignPull(number: number, overrides: Partial<PullRequestCandidate> = {}): PullRequestCandidate {
   return { pullRequestId: 9000 + number, nodeId: `PR_node${number}`, number, url: `https://github.com/acme/project/pull/${number}`, state: 'open', merged: false,
-    headRef: `human/${number}`, headRepositoryId: 3, author: { id: 10, login: 'someone', type: 'User' }, association: ['closing-reference'], ...overrides };
+    headRef: `human/${number}`, headRepositoryId: 3, author: { id: 10, login: 'someone', type: 'User' }, association: ['closing-reference'],
+    headSha: 'c'.repeat(40), baseRef: 'main', draft: false, body: null, ...overrides };
 }
 
 export function githubDoubles(remote: Remote) {
@@ -128,7 +131,10 @@ export function githubDoubles(remote: Remote) {
       kind: 'observed', source: 'github-rest', observedAt: observedAt(), repository: correlation.repo.repository, repositoryId: 3, limitations: ['synthetic'],
       issues: Object.fromEntries(correlation.issueNumbers.map(n => [String(n), remote.incompleteAssociation?.[n]
         ? { completeness: 'incomplete' as const, code: remote.incompleteAssociation[n].code, nextStep: 'synthetic' }
-        : { completeness: 'complete' as const, candidates: remote.pulls[n] ?? [] }])) }), correlation),
+        : { completeness: 'complete' as const, candidates: [...(remote.pulls[n] ?? [])] }])),
+      branches: Object.fromEntries(correlation.knownBranches.map(branch => [branch, remote.refs?.[branch] === 'unknown'
+        ? { state: 'unknown' as const, code: 'GITHUB_QUERY_FAILED', nextStep: 'synthetic' }
+        : remote.refs?.[branch] ? { state: 'present' as const, sha: remote.refs[branch]! } : { state: 'absent' as const }])) }), correlation),
   };
   return { tracker, repository, calls, concurrency: () => maxActive };
 }
