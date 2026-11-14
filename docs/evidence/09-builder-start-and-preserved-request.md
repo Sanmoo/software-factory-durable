@@ -128,7 +128,7 @@ com aprovação explícita de que seams/testes não são necessários (decisão 
 ## Ensaio real (receita one-shot)
 
 Receita: `dist/test/entrypoints/builder09-qualification.js` (fonte `test/entrypoints/builder09-qualification.ts`). `--plan` é inerte e imprime
-os limites. Fases one-shot com tombstone `*-intent.json` exclusivo em `$HOME/software-factory-test/y5/q09-builder-v1/` (criado na `preflight`;
+os limites. Fases one-shot com tombstone `*-intent.json` exclusivo em `$HOME/software-factory-test/y5/q09-builder-v2/` (criado na `preflight`;
 existir = consumido). Sem retry; falha grava `*-held.json`.
 
 Pré-requisitos (operador/supervisor): raiz `y5` privada (0700) com o store OAuth da Factory já existente (`credentials/`, primeiro login do 05) e

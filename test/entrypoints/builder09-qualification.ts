@@ -6,8 +6,8 @@ import type { ExecutionView } from '../../src/control/index.js';
 // Builder grant is read-only (builder-start: metadata/contents/issues read) and publication is not part of ticket 09.
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const observations = `${root}/q09-builder-v1`;
-const revision = 'q09-builder-v1';
+const observations = `${root}/q09-builder-v2`;
+const revision = 'q09-builder-v2';
 const phases = ['preflight', 'run', 'inspect', 'stop-environment'] as const;
 type Phase = typeof phases[number];
 const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 'main', installationId: 177599217, workflows: false, label: 'ready-for-agent' };
