@@ -19,7 +19,7 @@ test('ticket 19 recipe: import and --plan are inert and declare the fixed bounds
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
   assert.deepEqual(plan.phases, ['preflight', 'run', 'inspect', 'stop-environment']);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q19-limits-v1', 'own namespace, never an earlier qualification');
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q19-limits-v2', 'own namespace, never an earlier qualification (v1 was consumed by a real preflight)');
   assert.deepEqual([plan.repository.timeoutSeconds, plan.repository.correctionLimit, plan.repository.recoveryLimit], [90, 1, 0]);
   assert.deepEqual(plan.expectedTicket, { number: 3, repositoryId: 1256893534 });
   assert.match(plan.github.builderPurpose, /builder-start \{metadata:read, contents:read, issues:read\}/);
