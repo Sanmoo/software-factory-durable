@@ -151,4 +151,16 @@ Observações esperadas:
 
 ## Gate local
 
-(preenchido abaixo)
+Node 24.21.0 com `env -u NODE_OPTIONS -u NODE_COMPILE_CACHE NODE_DISABLE_COMPILE_CACHE=1 timeout 60`, sem npm/npx, após `rm -rf dist`
+(HEAD `daf7216` + este documento): `dependency-cruiser` sem violações (248 módulos, 1391 dependências); `eslint . --max-warnings 0` exit 0;
+`tsc -p tsconfig.json` exit 0; **106 arquivos** `dist/test/**/*.test.js`, um por vez (`--experimental-test-module-mocks --test
+--test-concurrency=1`): **798 pass, 0 fail, 10 skipped, 1 cancelled**. O cancelado é `entrypoints/normal-oauth` (arquivo não alterado aqui)
+atingindo o limite de 60 s por arquivo: isolado com limite de 150 s passa **18/18 em 64 s** (o caso `deadline` sozinho leva 30,8 s), sob carga
+de outros gates em paralelo no host. A comparação com a base `6be3eda` numa cópia temporária não foi possível (fixtures dependentes de
+caminho falham fora da worktree). Registrado como estouro de tempo a observar, sem regressão demonstrada. Os 10 skips são os mesmos de antes
+(host-dependentes); `test/sandbox/gondolin.test.ts` continua `skip:true`.
+
+Novos/ampliados: `control/credential-lifecycle` (7, inclui crash por SIGKILL de processo filho `credential-crash-child`),
+`entrypoints/credential-lifecycle` (1, I-local), `entrypoints/credential20-qualification` (5, receita inerte/agenda/provedor/veredito),
+`github-builder-credentials` (+1), `bash-credential` (+2), `owner-credential` (+2), `activate-credential` (+2); ajustados `execution-flow`
+(dublê com `deliver`, campos novos do registro) e `builder09-qualification` (composição com `deliver`).
