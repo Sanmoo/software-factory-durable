@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { ExecutionPorts } from '../../control/index.js';
 import { createSandbox, type GuestAssetPin } from '../../sandbox/index.js';
+import { preserveEvidence } from '../../records/index.js';
 import { createWorkers, skillPackContinues, skillPacks, type SkillPackId } from '../../workers/index.js';
 import { createBuilderCredentials, createRepositoryFetchCredentials, type GitHubAccess } from '../../platform/github/index.js';
 import { factorySkillPackIds, type GitHubScope } from '../../contracts/index.js';
@@ -69,6 +70,21 @@ export async function composeProductionExecution(input: ProductionInput): Promis
     // No `deadlineMs` policy: the worker gets no clock from production (spec §4.4). `modelBudget` bounds requests/tools/bytes only.
     // Per-repository correction/recovery limits and the optional `timeoutSeconds` (ticket 19) reach Control with the configured repositories.
     builder: { ...productionProfile.builder, skillPack },
+    // Ticket 17: after a confirmed delivery, Control removes only OWN environments (the Sandbox re-proves ownership and cessation) once
+    // their review/request/instruction evidence is preserved in the protected records area (the installation root, never mounted).
+    cleanup: {
+      remove: input => sandbox.remove(input),
+      async preserve({ workId, environment }) {
+        let absent = false;
+        const result = await preserveEvidence({ root: input.root, workId, label: environment, stage: async destination => {
+          const exported = await sandbox.exportEvidence({ environment, destination });
+          if (exported.status === 'absent') absent = true;
+          else if (exported.status === 'failure') throw new Error(exported.code);
+        } });
+        return absent && result.status === 'preserved' ? { status: 'absent' } : result;
+      },
+      retrySeconds: 86400,
+    },
   };
   const sha = (text: string) => createHash('sha256').update(text).digest('hex');
   return { status: 'composed', ports, summary: { guestAssets: input.guestAssets, artifactSeeds: [pack.seedName],
