@@ -167,7 +167,10 @@ test('Builder composition has host-fixed lexical Write and independent host-gate
   const worker = await readFile('src/workers/worker-session.ts', 'utf8');
   // Exact host policy: an explicit zero-byte budget enables Edit too; neither
   // model args nor context fields can opt in, and reviewers remain read-only.
-  assert.ok(worker.includes(`  const editEnabled = invocation.context.role === 'builder' && invocation.editSourceMaxBytes !== undefined;
+  // OAuth composition adds a containing try block; indentation is not policy.
+  // Preserve the exact complete gate/brace sequence while ignoring line indentation.
+  const withoutIndentation = (value: string) => value.replace(/^[ \t]+/gm, '');
+  assert.ok(withoutIndentation(worker).includes(withoutIndentation(`  const editEnabled = invocation.context.role === 'builder' && invocation.editSourceMaxBytes !== undefined;
   const customTools: ToolDefinition[] = invocation.context.role === 'builder'
     ? [builderWrite(invocation.context, options.sandbox, critical), builderBash(invocation.context, options.sandbox, critical, copyOutput)]
     : [reviewerRead(invocation.context, options.sandbox, critical)];
@@ -179,7 +182,7 @@ test('Builder composition has host-fixed lexical Write and independent host-gate
   if (editEnabled) {
     customTools.push(builderEdit(invocation.context, options.sandbox, critical));
     tools.push('edit');
-  }`), 'default tools and independent Read/Edit additions must stay inside their exact host gates');
+  }`)), 'default tools and independent Read/Edit additions must stay inside their exact host gates');
   // No second, unguarded adapter construction or active Edit name elsewhere.
   assert.equal(worker.match(/\bbuilderEdit\s*\(/g)?.length, 1);
   assert.equal(worker.match(/['"]edit['"]/g)?.length, 1);

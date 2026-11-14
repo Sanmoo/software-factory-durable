@@ -285,7 +285,9 @@ function boundMutation(options: Options, valid: () => boolean, revoke: () => voi
       const argv = ['/usr/bin/python3', '-I', '-S', '-c', conditional ? guestConditionalProgram : guestWriteProgram, call.operation, call.path];
       if (conditional) argv.push(String(call.expectedBytes), call.expectedDigest);
       const process = options.vm.exec(argv, {
-        stdout: 'pipe', stderr: 'ignore', signal: AbortSignal.any([options.signal, commandLifetime.signal]), windowBytes: 65536,
+        // Native output() merges two required pipes. Drain/discard both below;
+        // diagnostics still never reach SDK, evidence or display.
+        stdout: 'pipe', stderr: 'pipe', signal: AbortSignal.any([options.signal, commandLifetime.signal]), windowBytes: 65536,
         env: {}, cwd: '/', stdin: content,
       });
       void process.result.catch(() => {});

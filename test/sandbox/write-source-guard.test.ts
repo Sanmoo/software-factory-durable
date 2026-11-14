@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import { nativeOwner } from './native-owner.fixture.js';
 import { createSandbox, type ToolContext } from '../../src/sandbox/index.js';
@@ -7,6 +9,35 @@ import { createSandbox, type ToolContext } from '../../src/sandbox/index.js';
 import { parser } from './write-source-guard.fixture.js';
 const context: ToolContext = { workId: 'guard-work', executionId: 'guard-exec', invocationId: 'guard-invocation',
   role: 'builder', environmentRef: 'guard-env', bootRef: 'guard-boot', phaseId: 'guard-phase' };
+
+test('owner mutation drains both pipes required by native ExecProcess.output without publishing guest diagnostics', async t => {
+  for (const operation of ['mkdir', 'create'] as const) await t.test(operation, async t => {
+    let outputAttempts = 0, drained = 0;
+    const f = await nativeOwner(context, { exec(_argv, options) {
+      return { async *output() {
+        outputAttempts++;
+        // Actual pinned ExecProcess.output contract (exec.js:295–302), not VM execution.
+        if (options?.stdout !== 'pipe' || options.stderr !== 'pipe') throw new Error('stdout/stderr are not piped');
+        for (const stream of ['stdout', 'stderr'] as const) {
+          drained++;
+          yield { stream, data: Buffer.from('private-guest-diagnostic synthetic-secret'), text: 'private-guest-diagnostic synthetic-secret' };
+        }
+      }, result: Promise.resolve({ exitCode: 0 }) };
+    } });
+    t.after(() => f.close());
+    const sandbox = createSandbox({ root: f.root, toolEndpoint: f.owner.endpoint });
+    const call = operation === 'mkdir' ? { name: 'write' as const, operation, path: '/workspace', callId: 'pipes' }
+      : { name: 'write' as const, operation, path: '/workspace/new', content: 'alpha\n', callId: 'pipes' };
+    const result = await sandbox.executeTool(context, call);
+    assert.equal(outputAttempts, 1);
+    assert.equal(result.status, 'success');
+    assert.equal(drained, 2);
+    if (result.status !== 'success') throw new Error('Expected protected mutation result');
+    const evidence = await readFile(join(f.root, 'records', context.workId, 'evidence', result.reference.id, 'output'), 'utf8');
+    assert.doesNotMatch(evidence, /private-guest-diagnostic|synthetic-secret/);
+    assert.equal(Buffer.from(result.data, 'base64').length, 0);
+  });
+});
 
 test('guest write SOURCE guards existing FD authority before truncation and ENOENT-only exclusive create', async t => {
   let source = '';
