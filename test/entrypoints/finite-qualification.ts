@@ -11,11 +11,29 @@ type Phase = typeof phases[number];
 const configuration = { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1', memoryMiB: 2048, vcpus: 2, diskGiB: 40, shutdownGraceSeconds: 30, minFreeSpaceGiB: 4 };
 const guestAssets = { directory: '/home/sanmoo/software-factory-test/assets32/assets', manifestSha256: '4b6e90d356b2f93a2f7ec014f2778c1ce2fea8cfd8a19894fdb8112aa95038c1' };
 const syntheticSource = 'Qualification synthetic source only.\n';
+// Fixed identity emitted by the accepted startWorker sdkProfile, not an SDK import.
+const expectedSdkProfile = Object.freeze({ id: 'factory-development-pi-1.5.2-read-async-bash-lexical-v3', version: '1.5.2',
+  integrity: 'sha512-mUWI04rqF1Vd/m1q+Ps1XeWsTXEVvRUnsmRa83I3Dzua0Tx5bYS93imeqtIfrXf7PkkaR6ERz+AuQhIJlom5yA==',
+  upstreamSHA256: 'e6159de5e4d94ae22968b6524237ef3d4f0374a107e2321ed5c29e93d66c8efc',
+  upstreamTreeSHA256: '7d0961cce25f6c802b22aaa028206cd610de386442d2e6b732d71367ef006391',
+  patchSHA256: '5e45a7c2953db293a14db0138bb31f8ac9e95eb13512afd42f1f49b77c98e066',
+  resultSHA256: '06867a067ebbadca2e06f75ccb4e682cd7e37b9683d41a71562f770b3105a209',
+  asyncPatchSHA256: '1ee38f2bdb71480b5b6206e72dbed32ac9214acbe0afe9b7e5137ea8f63cdc1e',
+  candidatePatchSHA256: 'fd85bbd3c22fff3cb90dd990cb2608f18884d15dcd3820fb2f790b6e42a4dd01',
+  candidateManifestSHA256: 'b6aaa5391d251867e41e8fc80973a1da79c7df3e38cdd18d11e705d939809b69',
+  lexicalPatchSHA256: 'e3e88f8e6a53c9b58164c85c9866cfcf5a31b9fd415fdad7ce136976d8fd96d0',
+  lexicalCandidateManifestSHA256: '923d916bae558e6d21978593b2effb716dec80398bb5b0a66271fefcfc0f42a2' });
+function matchesSdkProfile(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const profile = value as Record<string, unknown>;
+  return Object.keys(profile).length === Object.keys(expectedSdkProfile).length &&
+    Object.entries(expectedSdkProfile).every(([key, expected]) => profile[key] === expected);
+}
 
 export function plan() {
-  return { revision, root, login: 'OPERATOR-REPORTED only; credentials untouched by plan/tests', phases, configuration, guestAssets, nativeCalls: 11, providerPosts: 15,
+  return { revision, root, sdkProfile: expectedSdkProfile, login: 'OPERATOR-REPORTED only; credentials untouched by plan/tests', phases, configuration, guestAssets, nativeCalls: 11, providerPosts: 15,
     realModel: { provider: 'openai', model: 'gpt-6-luna', api: 'openai-responses', maxRequests: 2, reads: 1, estimatedUSD: 10, providerBillingHardCap: false },
-    transport: { address: '127.0.0.1', port: 18705, path: '/q05-qual-v1/chat/completions', bodyLimit, headers: 8192, response: 65536, socketsPerPhase: 1 },
+    transport: { address: '127.0.0.1', port: 18705, path: '/q05-qual-v1/chat/completions', bodyLimit, headers: 8192, response: 65536, activeRequestsPerPhase: 1, connectionsPerPhase: { w1: 9, w2: 2, w3: 2, w4: 2 }, simultaneousSocketsPerPhase: { w1: 9, w2: 2, w3: 2, w4: 2 } },
     // Fixed ASCII schedule: 1MiB native Bash continuation + four <=50KiB
     // Read pages + commands/prompts/tool schemas (<128KiB) + escaping. Bash
     // digits/newlines expand <=2x; SDK's 1MiB result ceiling includes line data.
@@ -130,7 +148,7 @@ export async function runPhase(phase: Phase) {
     const path = first?.path ?? '';
     if (phase !== 'w1' && !copyPattern.test(path)) throw new Error('COPY_IDENTITY_HELD');
     const { createWorkers } = await import('../../src/workers/index.js');
-    const profileId = 'factory-development-pi-1.5.2-read-async-bash-lexical-v3' as const;
+    const profileId = expectedSdkProfile.id;
     const real = phase === 'model';
     const workers = createWorkers({ root, knownSecrets: real ? [] : ['q05-secret-v1', 'q05-dummy-key-v1'], profile: real ? {
       id: profileId, systemPrompt: 'Read source.txt once and report only its synthetic text.', auth: 'factory-oauth', providerId: 'openai', modelId: 'gpt-6-luna', api: 'openai-responses',
@@ -201,7 +219,7 @@ export async function runPhase(phase: Phase) {
       const receiptInfo = await fs.lstat(startOutput);
       if (!receiptInfo.isFile() || receiptInfo.size > 65536) throw new Error('START_RECEIPT_LIMIT');
       const event = JSON.parse(await fs.readFile(startOutput, 'utf8')).event;
-      if (event.suppliedContext?.invocationId !== `q05-${phase}` || event.suppliedContext?.bootRef !== boot || event.suppliedContext?.workId !== workId || event.profile !== profileId || event.providerId !== (real ? 'openai' : 'q05-qualification-fixture') || event.modelId !== (real ? 'gpt-6-luna' : 'qual-model') || event.observedProcess?.pid === process.pid || !Number.isSafeInteger(event.observedProcess?.pid)) throw new Error('START_RECEIPT_HELD');
+      if (event.suppliedContext?.invocationId !== `q05-${phase}` || event.suppliedContext?.bootRef !== boot || event.suppliedContext?.workId !== workId || !matchesSdkProfile(event.profile) || event.providerId !== (real ? 'openai' : 'q05-qualification-fixture') || event.modelId !== (real ? 'gpt-6-luna' : 'qual-model') || event.observedProcess?.pid === process.pid || !Number.isSafeInteger(event.observedProcess?.pid)) throw new Error('START_RECEIPT_HELD');
       let published = path;
       if (phase === 'w1') {
         if (!JSON.stringify(results[0]).includes('Successfully wrote 6 bytes') || !JSON.stringify(results[1]).includes('Successfully replaced') || !JSON.stringify(results[1]).includes('beta')) throw new Error('WRITE_EDIT_HELD');

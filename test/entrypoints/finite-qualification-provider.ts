@@ -4,6 +4,14 @@ export const largeBytes = 1114130;
 export const bodyLimit = 2 * 1024 * 1024;
 export const copyPattern = /^\/artifacts\/factory-output-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.txt$/;
 export type Case = 'w1' | 'w2' | 'w3' | 'w4';
+const postLimit = (which: Case) => which === 'w1' ? 9 : 2;
+function exactPrompt(content: unknown, expected: string) {
+  if (content === expected) return true;
+  if (!Array.isArray(content) || content.length !== 1) return false;
+  const block: unknown = content[0];
+  return block !== null && typeof block === 'object' && !Array.isArray(block) &&
+    Object.keys(block).length === 2 && 'type' in block && block.type === 'text' && 'text' in block && block.text === expected;
+}
 const largeCommand = "printf 'Q05-BEGIN\\n'; for ((i=0;i<65536;i++)); do printf '0123456789abcdef\\n'; done; printf 'Q05-END\\n'";
 const smallCommand = "printf 'q05-'; printf 'secret-v1\\n'";
 export function schedule(which: Case, path = '') {
@@ -24,7 +32,7 @@ export function createFixture(which: Case, selectedPath = '') {
   let path = selectedPath;
   let attempts = 0, accepted = 0, emitted = 0, results = 0;
   let held = false, active = false;
-  let socket: IncomingMessage['socket'] | undefined;
+  const ownedConnections = new Set<IncomingMessage['socket']>();
   function observation() { return { attempts, accepted, emitted, results, held, path }; }
   function checkResult(content: string, slot: number) {
     if (which === 'w2' || which === 'w3' || (which === 'w1' && slot === 2)) {
@@ -46,10 +54,12 @@ export function createFixture(which: Case, selectedPath = '') {
     attempts++; // Includes invalid, extra, concurrent, and previously frozen attempts.
     let acquired = false;
     try {
-      if (held || active || attempts > (which === 'w1' ? 9 : 2)) throw new Error('ATTEMPT_LIMIT');
+      if (held || active || attempts > postLimit(which)) throw new Error('ATTEMPT_LIMIT');
       active = true; acquired = true;
-      if (socket && socket !== req.socket) throw new Error('SOCKET_OWNER');
-      socket = req.socket;
+      // A new connection for a subsequent POST is not an HTTP retry. Keep both
+      // total acquisitions and active requests finite without pinning fetch pools.
+      if (!ownedConnections.has(req.socket) && ownedConnections.size >= postLimit(which)) throw new Error('CONNECTION_LIMIT');
+      ownedConnections.add(req.socket);
       if (req.method !== 'POST' || req.url !== '/q05-qual-v1/chat/completions' || req.socket.remoteAddress !== '127.0.0.1' ||
           req.headers.host !== '127.0.0.1:18705' || req.headers.authorization !== 'Bearer q05-dummy-key-v1' ||
           req.headers['content-type'] !== 'application/json') throw new Error('REQUEST_BOUNDARY');
@@ -65,7 +75,7 @@ export function createFixture(which: Case, selectedPath = '') {
       if (held) throw new Error('CONCURRENT_FREEZE');
       const body = JSON.parse(Buffer.concat(chunks, bytes).toString('utf8')) as { model?: unknown; stream?: unknown; messages?: { role: string; content: unknown; tool_call_id?: string }[] };
       if (body.model !== 'qual-model' || body.stream !== true || !Array.isArray(body.messages) || body.messages.length > 24 ||
-          !body.messages.some(m => m.role === 'user' && m.content === `q05-${which}`)) throw new Error('SCHEDULE');
+          !body.messages.some(m => m.role === 'user' && exactPrompt(m.content, `q05-${which}`))) throw new Error('SCHEDULE');
       const tools = body.messages.filter(m => m.role === 'tool');
       if (tools.length !== accepted) throw new Error('RESULT_SEQUENCE');
       for (const [index, tool] of tools.entries()) if (tool.tool_call_id !== `q05-${which}-${index}` || typeof tool.content !== 'string') throw new Error('TOOL_ID');
@@ -102,11 +112,11 @@ export async function startProvider(which: Case, path = '') {
     }
     return closing;
   }
-  server.maxRequestsPerSocket = which === 'w1' ? 9 : 2;
+  server.maxRequestsPerSocket = postLimit(which);
   server.keepAliveTimeout = 15000;
   server.on('connection', socket => {
     connections++;
-    if (connections > 1 || socket.remoteAddress !== '127.0.0.1') { fixture.freeze(); socket.destroy(); void close(); return; }
+    if (connections > postLimit(which) || sockets.size >= postLimit(which) || socket.remoteAddress !== '127.0.0.1') { rejectedTransport++; fixture.freeze(); socket.destroy(); void close(); return; }
     sockets.add(socket); socket.on('close', () => sockets.delete(socket));
   });
   server.on('clientError', (_error, socket) => { rejectedTransport++; fixture.freeze(); socket.destroy(); void close(); });

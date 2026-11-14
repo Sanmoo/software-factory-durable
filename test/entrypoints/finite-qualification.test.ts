@@ -18,6 +18,7 @@ let workerMode: 'reject' | 'success' = 'reject';
 let listenAttempts = 0;
 let closeRequests = 0;
 let freezeDuringEvidence = false;
+let receiptProfileOverride: unknown;
 let transportServer: EventEmitter;
 let serverHandler: (req: unknown, res: unknown) => void;
 const activations: { context: { invocationId: string; role: string }; selectedOutputCopies?: string[]; profile: unknown }[] = [];
@@ -83,14 +84,14 @@ mock.module('../../src/workers/index.js', { namedExports: { createWorkers: (conf
       files.set(`${evidence}/${id}/complete.json`, JSON.stringify({ bytes: Buffer.byteLength(content) }));
       files.set(`${evidence}/${id}/output`, content);
     };
-    addEvidence(receiptId, JSON.stringify({ event: { suppliedContext: invocation.context, profile: 'factory-development-pi-1.5.2-read-async-bash-lexical-v3', providerId: configuration.profile.providerId, modelId: configuration.profile.modelId, observedProcess: { pid: 123 } } }));
+    addEvidence(receiptId, JSON.stringify({ event: { suppliedContext: invocation.context, profile: receiptProfileOverride ?? recipe.plan().sdkProfile, providerId: configuration.profile.providerId, modelId: configuration.profile.modelId, observedProcess: { pid: 123 } } }));
     const completed = (async () => {
       if (real) {
         assert.equal(configuration.profile.auth, 'factory-oauth');
         assert.equal(configuration.profile.providerId, 'openai'); assert.equal(configuration.profile.modelId, 'gpt-6-luna');
         results.push({ role: 'toolResult', toolName: 'read', isError: false, content: [{ type: 'text', text: 'Qualification synthetic source only.\n' }] });
       } else {
-        const messages: unknown[] = [{ role: 'user', content: invocation.prompt }];
+        const messages: unknown[] = [{ role: 'user', content: which === 'w1' ? [{ type: 'text', text: invocation.prompt }] : invocation.prompt }];
         const socket = Object.assign(new EventEmitter(), { remoteAddress: '127.0.0.1' });
         const n = which === 'w1' ? 9 : 2;
         for (let i = 0; i < n; i++) {
@@ -257,13 +258,57 @@ test('static payload and finite HTTP fit: native1MiB continuation fits unchanged
   assert.equal(provider.schedule('w1').filter(call => call.name === 'bash').length, 2);
 });
 
-test('one owned socket only: reconnect freezes before accepting result', async () => {
+test('two valid sequential POSTs may use different owned sockets without a retry', async () => {
   const fixture = provider.createFixture('w2', copyPath);
   const messages: unknown[] = [{ role: 'user', content: 'q05-w2' }];
   await fixture.handle(request(JSON.stringify({ model: 'qual-model', stream: true, messages })) as never, new Response() as never);
   messages.push({ role: 'tool', tool_call_id: 'q05-w2-0', content: 'READ_PATH_DENIED' });
   await fixture.handle(request(JSON.stringify({ model: 'qual-model', stream: true, messages })) as never, new Response() as never);
-  assert.equal(fixture.observation().attempts, 2); assert.equal(fixture.observation().accepted, 1); assert.equal(fixture.observation().held, true);
+  assert.equal(fixture.observation().attempts, 2); assert.equal(fixture.observation().accepted, 2); assert.equal(fixture.observation().held, false);
+});
+
+test('native exact text-block prompt is accepted, images and extra text are refused', async () => {
+  for (const content of [ 'q05-w2', [{ type: 'text', text: 'q05-w2' }] ]) {
+    const fixture = provider.createFixture('w2', copyPath);
+    await fixture.handle(request(JSON.stringify({ model: 'qual-model', stream: true, messages: [{ role: 'user', content }] })) as never, new Response() as never);
+    assert.equal(fixture.observation().attempts, 1); assert.equal(fixture.observation().accepted, 1); assert.equal(fixture.observation().held, false);
+  }
+  for (const content of [ [{ type: 'text', text: 'q05-w2 extra' }], [{ type: 'image_url', image_url: { url: 'closed.invalid' } }],
+    [{ type: 'text', text: 'q05-w2' }, { type: 'text', text: 'extra' }], [{ type: 'text', text: 'q05-w2', extra: true }] ]) {
+    const fixture = provider.createFixture('w2', copyPath);
+    await fixture.handle(request(JSON.stringify({ model: 'qual-model', stream: true, messages: [{ role: 'user', content }] })) as never, new Response() as never);
+    assert.equal(fixture.observation().attempts, 1); assert.equal(fixture.observation().accepted, 0); assert.equal(fixture.observation().held, true);
+  }
+});
+
+test('string or drifted profile receipts are rejected instead of accepting only the ID', async () => {
+  for (const profile of [recipe.plan().sdkProfile.id, { ...recipe.plan().sdkProfile, version: 'wrong' },
+    { ...recipe.plan().sdkProfile, resultSHA256: '0'.repeat(64) }]) {
+    files.clear(); dirs.clear(); workerMode = 'success'; freezeDuringEvidence = false; receiptProfileOverride = profile;
+    try {
+      await recipe.runPhase('prepare'); await recipe.runPhase('start');
+      await assert.rejects(recipe.runPhase('w1'), /QUALIFICATION_HELD/);
+      assert.ok(!files.has('/home/sanmoo/software-factory-test/y5/q05-qualification-v1/w1-result.json'));
+    } finally { receiptProfileOverride = undefined; }
+  }
+  assert.equal(forbidden, 0);
+});
+
+test('owned connection acquisitions and simultaneous sockets remain bounded by the phase POST ceiling', async () => {
+  const fixture = await provider.startProvider('w2', copyPath);
+  const socket = () => {
+    const emitter = new EventEmitter();
+    return Object.assign(emitter, { remoteAddress: '127.0.0.1', destroyed: false,
+      destroy() { this.destroyed = true; emitter.emit('close'); } });
+  };
+  const first = socket(), second = socket(), extra = socket();
+  transportServer.emit('connection', first); transportServer.emit('connection', second);
+  assert.equal(fixture.observation().connections, 2); assert.equal(fixture.observation().held, false);
+  transportServer.emit('connection', extra);
+  assert.equal(fixture.observation().connections, 3); assert.equal(fixture.observation().held, true);
+  assert.equal(fixture.observation().rejectedTransport, 1);
+  assert.equal(first.destroyed && second.destroyed && extra.destroyed, true);
+  await fixture.close(); assert.equal(forbidden, 0);
 });
 
 test('concurrent request freezes original too; no late result/response advancement', async () => {
