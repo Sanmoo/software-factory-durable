@@ -4,17 +4,17 @@
 
 **Blocked by:** [10: Perguntar ao operador, cessar e retomar pela fila](10-durable-questions-and-queued-resumption.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
-- [ ] Retomada revalida requisitos e usa fila/categoria/posição existentes; sessão compatível recebe resposta/feedback/motivo via continue, não reinicia implement por conveniência.
-- [ ] Sessão incompatível/perdida é substituída com motivo e contexto recuperável, referenciando Trabalho, pedido, instruções, Git, artefatos e efeitos conhecidos; contexto insuficiente bloqueia em vez de mandar continue vazio.
-- [ ] Update-scope e resposta correlacionada suficiente autorizam somente mudança concreta; durante atividade ficam para próxima ativação segura, sem escritor paralelo ou injeção que amplie escopo.
-- [ ] Próxima Execução preserva nova versão completa antes de implementar; versões anteriores não são sobrescritas e edição posterior do link não é gatilho/autorização de mudança ou reparo.
-- [ ] Fontes preservadas continuam utilizáveis se origem desaparecer; captura incompleta ou fonte necessária privada inacessível gera recuperação/pergunta, sem coletor no controlador nem ampliação de credenciais.
-- [ ] Instruções aplicáveis por caminho e precedência são preservadas; conflito exige pergunta, e instrução modificada pelo Builder não dispensa política, gates ou limites.
-- [ ] Provas com agentes e sessões reais cobrem continuação compatível, substituição, captura interrompida e autorização parcial de escopo, distinguindo entrega de contexto de checkpoint/consumo comprovado.
+- [x] Retomada revalida requisitos e usa fila/categoria/posição existentes; sessão compatível recebe resposta/feedback/motivo via continue, não reinicia implement por conveniência.
+- [x] Sessão incompatível/perdida é substituída com motivo e contexto recuperável, referenciando Trabalho, pedido, instruções, Git, artefatos e efeitos conhecidos; contexto insuficiente bloqueia em vez de mandar continue vazio.
+- [x] Update-scope e resposta correlacionada suficiente autorizam somente mudança concreta; durante atividade ficam para próxima ativação segura, sem escritor paralelo ou injeção que amplie escopo.
+- [x] Próxima Execução preserva nova versão completa antes de implementar; versões anteriores não são sobrescritas e edição posterior do link não é gatilho/autorização de mudança ou reparo.
+- [x] Fontes preservadas continuam utilizáveis se origem desaparecer; captura incompleta ou fonte necessária privada inacessível gera recuperação/pergunta, sem coletor no controlador nem ampliação de credenciais.
+- [x] Instruções aplicáveis por caminho e precedência são preservadas; conflito exige pergunta, e instrução modificada pelo Builder não dispensa política, gates ou limites.
+- [x] Provas com agentes e sessões reais cobrem continuação compatível, substituição, captura interrompida e autorização parcial de escopo, distinguindo entrega de contexto de checkpoint/consumo comprovado.
 
 ## Referências e validação
 
@@ -25,3 +25,7 @@
 ## Autorização e limites
 
 Publicação é planejamento aprovado, não autorização de construção, uso de host/credenciais/GitHub/modelos reais, injeção de falhas ou piloto. Obter autorização pertinente antes da execução. Não alterar decisões aprovadas silenciosamente; lacuna de desenho volta ao operador. Merge e avaliação humana não são delegados aos agentes.
+
+## Answer
+
+Resolvido em 2026-11-14: continuação de sessão compatível com `continue`, substituição explícita quando incompatível ou perdida, mudança de escopo autorizada aplicada só na próxima ativação segura e edição posterior do Ticket sem efeito de autorização. Gate local 934/0; ensaio real com pergunta, resposta, continue e substituição. Evidência: `docs/evidence/11-context-continuation-and-authorized-scope.md`.

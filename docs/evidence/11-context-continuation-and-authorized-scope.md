@@ -269,3 +269,16 @@ Novos arquivos de teste: `continuation-rules` (7), `continuation-flow` (15), `se
 `skill-pack-v4` (1), `update-scope-cli` (1), `context11-qualification` (1), `context11-recipe-safety` (2), fixture
 `fixtures/continue-provider-preload`. Ajustados: `question-flow` (base de retomada + decisão de sessão com dublês), `execution-commits`
 (`scopeUpdateIds`/`QUESTION_ANSWERED`), `question-rules` (prompt de recuperação limitado/objeto).
+
+## Ensaio real autorizado — 2026-11-14 (supervisor)
+
+HEAD `7532220`, namespace `y5/q11-context-v1`, issue sintética #3 de `Sanmoo/java-springboot-event-sourcing`. Registros: `11-real-context-{ask,continue,scope,inspect}-2026-11-14.json`.
+
+- **ask:** o Builder real (`gpt-6-luna`, pack v4) preservou o ticket (`spec/v1`, `complete:false`), tentou a fonte privada obrigatória `Sanmoo/factory-private-spec/SPEC.md` (HTTP 404), **não adivinhou nem escreveu nada** e chamou `ask_user` pedindo a redação exata. A pergunta foi publicada pelo bot (marcador `fa33ba3d…`), a credencial retirada, o boot parado e o Slot liberado.
+- **Operador** (controlador parado): resposta `/factory answer fa33ba3d…` de `Sanmoo` com a redação exata, e edição do corpo da #3 adicionando B1 (adotar) e B2 (não adotar).
+- **continue:** resposta aceita e mesmo ambiente reaproveitado com boot novo. `Workers.observe` deu `compatible`, então o owner copiou a sessão preservada e retomou com `continue` **na mesma sessão** (`request.session.mode: continue`, `reason: SESSION_COMPATIBLE`; a sessão tem 42 mensagens, a retomada está no índice 18, com 12 turnos e 11 ferramentas depois). O Builder escreveu `docs/factory-context.md` com **exatamente** a redação da resposta e commitou.
+- **scope:** `update-scope q11-scope-1` aceito com o Work ocioso, autorizando uma única mudança concreta. A política do Builder foi deliberadamente alterada (sem `edit`), e a observação deu `incompatible / SESSION_PROFILE_CHANGED`, diferença `tools`. Por isso a sessão foi **substituída** com instrução explícita de recuperação (`mode: replace`, `reason: SESSION_INCOMPATIBLE`). O Builder aplicou só a mudança autorizada (`docs/factory-question.md`, com a linha `Context continuation: verified.`) e o escopo terminou `consumed` após cessação confirmada.
+- **Edição posterior não autoriza:** B1/B2 do corpo editado aparecem só na releitura do ticket pelo Builder (`gh issue view`); **nenhum** dos dois foi adotado no conteúdo final. Diff final: `docs/factory-context.md` (+3) e `docs/factory-question.md` (+2), commits `71e992b` e `25fff0f`, sem push.
+- **Observação menor:** como o arquivo da mudança de escopo não existia, o Builder o criou e repetiu nele a frase de contexto antes da linha autorizada. É uma adição pequena além do pedido literal; fica registrada.
+- **Segredos:** `storage`, `records` (48 arquivos) e `observations` (9) sem `ghs_` nem chave privada.
+- **Defeito do harness:** a fase `inspect` gravou `inspect-result.json` completo e depois saiu com código 1 (falha após o `save`, provavelmente no fechamento da cópia do storage). A fase é one-shot e não foi repetida; a evidência está completa.
