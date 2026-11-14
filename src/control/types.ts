@@ -326,6 +326,46 @@ export type DependencyState = { latest: DependencyEvaluation | null;
   lastComplete: { evaluationId: string; observedAt: string; conclusion: DependencyEvaluation['conclusion'] } | null };
 export type Selection = { next: string | null; skipped: { work_id: string; reasons: string[] }[] };
 /** Orthogonal dimensions of one Work (spec §3.3): result, authorization, queue, impediments, execution, publication. */
+/** Semantic state of one current result (spec §9.2 table): check-run and commit-status semantics are distinct. */
+export type CheckClassification = 'satisfied' | 'waiting' | 'failed' | 'operational' | 'uncertain';
+/** One current (or other-origin/other-SHA) result as GitHub reported it, with its attempt among same-name runs of its check suite. */
+export type CheckResultView = { kind: 'check-run' | 'status'; id: number; name: string; sha: string; origin: string; status: string; conclusion: string | null;
+  classification: CheckClassification; attempt: { suite: number | null; superseded: number } | null; url: string | null };
+/** A requirement GitHub enforces for merging into the base: context + integration, accumulated from every source, with its pertinent SHA. */
+export type CheckRequirementView = { context: string; integrationId: number | null; sources: string[]; strict: boolean; sha: string;
+  state: CheckClassification | 'indeterminate'; results: CheckResultView[]; otherOrigin: CheckResultView[]; reasons: string[] };
+/** An independent reason: `wait` (CI, no Slot), `repair` (pertinent failure), `operational`/`uncertain` (no Builder by guessing),
+ * `indeterminate` (unknown/partial/unsupported), `ownership`, `strict`, `closed`. Several coexist; none erases another. */
+export type CheckReason = { category: 'wait' | 'repair' | 'operational' | 'uncertain' | 'indeterminate' | 'ownership' | 'strict' | 'closed'; code: string; subject?: string };
+/**
+ * Ticket 15 (spec §9.2): explanation of the required checks of the own PR's current head at one instant. Not readiness (ticket 16), not
+ * a repair trigger (ticket 22) and not a snapshot: separate reads between `observedAt` and `completedAt`, each with its completeness.
+ * `satisfied` only with complete reads, every requirement satisfied and no other reason.
+ */
+export type ChecksEvaluation = {
+  at: string; observedAt: string | null; completedAt: string | null;
+  outcome: 'satisfied' | 'waiting' | 'failing' | 'blocked' | 'indeterminate' | 'not-applicable';
+  reasons: CheckReason[];
+  pullRequest: { number: number; url: string | null; headSha: string | null; headRef: string | null; baseRef: string | null; baseTip: string | null;
+    mergeCommitSha: string | null; state: 'open' | 'closed' | null; merged: boolean | null; draft: boolean | null } ;
+  /** GitHub mergeability: confirmed conflict, none, or unknown (still computing / unreadable). Not a checks reason by itself. */
+  conflict: 'none' | 'conflict' | 'unknown';
+  strict: { required: boolean; sources: string[]; state: 'not-required' | 'up-to-date' | 'behind' | 'unknown'; behindBy: number | null };
+  requiredSet: 'empty-complete' | 'non-empty' | 'unknown';
+  requirements: CheckRequirementView[];
+  /** Current results no requirement names: visible only, never a repair by themselves (bounded). */
+  optional: CheckResultView[];
+  /** Results reported for another commit than the current head (never borrowed). */
+  otherSha: CheckResultView[];
+  /** Every active rule of the base and how it was interpreted; `unsupported` makes the evaluation indeterminate. */
+  modalities: { type: string; source: string; interpretation: 'required-checks' | 'not-check-related' | 'human-stage' | 'unsupported' }[];
+  completeness: Record<'pullRequest' | 'baseTip' | 'classic' | 'rules' | 'checkRuns' | 'statuses' | 'comparison' | 'recheck', string>;
+  /** Local gates the Builder declared as GitHub required checks (ticket 13) versus what GitHub requires; a GitHub result never proves a local gate. */
+  localGates: { declared: string[]; requiredByGitHub: string[]; notRequiredByGitHub: string[] };
+  notes: string[]; nextStep: string; limitations: string[];
+};
+/** Latest explanation and a bounded history of earlier ones (old heads stay visible as history, never as current evidence). */
+export type ChecksView = { latest: ChecksEvaluation; history: { at: string; headSha: string | null; outcome: ChecksEvaluation['outcome']; reasons: string[] }[] };
 export type WorkView = {
   work_id: string; cycle: number; predecessor: string | null;
   ticket: TicketRef; repository: { repository: string; repositoryId: number; base: string };
@@ -343,6 +383,8 @@ export type WorkView = {
   pullRequest: { number: number; url: string } | null;
   /** Ticket 14 (absent on earlier records): publication of the verified content, its discoveries and the linked own PR. */
   publication?: PublicationView | null;
+  /** Ticket 15 (absent on earlier records): explanation of the GitHub required checks of the linked own PR's current head. */
+  checks?: ChecksView | null;
   /** Earlier Executions of this Work, oldest first (a recovery Execution replaces `execution`, never erasing its predecessor). */
   previousExecutions: ExecutionView[];
   /** Question identities of this Work, in recording order. */
@@ -376,7 +418,8 @@ export type WorkView = {
       scopeUpdateId: string; detail?: string } |
     { at: string; event: 'execution-reconciled' | 'recovery-wait-kept'; origin: 'controller-recovery'; executionId: string | null; detail: string } |
     { at: string; event: 'publication-evaluated' | 'publication-requested' | 'publication-started' | 'publication-linked' | 'publication-blocked' | 'publication-discovery-incomplete';
-      origin: 'controller-publication'; executionId: string | null; detail: string })[];
+      origin: 'controller-publication'; executionId: string | null; detail: string } |
+    { at: string; event: 'checks-evaluated'; origin: 'controller-checks'; detail: string })[];
 };
 export type CounterView = { limit: number; granted: number; effectiveLimit: number; consumed: number; reserved: 0 | 1; reservedBy: string | null; available: number; exhausted: boolean };
 /** `elapsedMs` is a monotonic measurement (live or measured) or null; `unknown` is never shown as zero. */
