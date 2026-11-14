@@ -5,7 +5,7 @@ import { lstat, open, mkdtemp, rm } from 'node:fs/promises';
 import { join, isAbsolute } from 'node:path';
 import { sign } from 'node:crypto';
 import { z } from 'zod';
-import type { AccessDiagnostic, GitHubScope } from '../../contracts/index.js';
+import type { AccessDiagnostic, BuilderCredentials, GitHubScope, RepositoryFetchCredentials } from '../../contracts/index.js';
 
 const version = '2026-03-10';
 const permissions = {
@@ -20,6 +20,11 @@ const permissions = {
   'dependency-read': { metadata: 'read', issues: 'read' },
   // Preflight of a repository accessible only for dependency reads: never the tracker ceiling (issues:write).
   dependency: { metadata: 'read', issues: 'read' },
+  // Initial Builder grant of ticket 09 (spec §8 ceiling Contents W/PR W is NOT needed before publication, ticket 14): read the Ticket and
+  // repository sources of ITS repository only. Never Workflows, never another repository.
+  'builder-start': { metadata: 'read', contents: 'read', issues: 'read' },
+  // Host fetch into the Factory-exclusive bare cache (spec §8: clone/fetch uses Contents R).
+  'repository-fetch': { metadata: 'read', contents: 'read' },
 } as const;
 type Purpose = keyof typeof permissions;
 type DiagnosticPurpose = 'tracker' | 'repository' | 'dependency';
@@ -58,6 +63,15 @@ export interface GitHubAccess {
   diagnose(scope: GitHubScope, purpose: DiagnosticPurpose, inspect: (session: GitHubSession) => Promise<void | string[]>): Promise<AccessDiagnostic>;
   /** GET-only reads under a reduced in-memory grant reused until near expiry; honours rate-limit windows without sending requests. */
   read<T>(scope: GitHubScope, purpose: ReadPurpose, inspect: (session: GitHubSession) => Promise<T>): Promise<GitHubRead<T>>;
+  /** One NEW reduced grant whose token leaves this module transiently (Builder delivery or host cache fetch). Never cached or retried;
+   * an unknown issuance outcome throws GITHUB_TOKEN_ISSUANCE_UNKNOWN. The token is registered for filtering before it is returned. */
+  transient(scope: GitHubScope, purpose: TransientPurpose): Promise<TransientGrant>;
+}
+export type TransientPurpose = 'builder-start' | 'repository-fetch';
+export type TransientGrant = { token: string; expiresAt: string; repositoryId: number; permissions: Readonly<Record<string, 'read' | 'write'>> };
+/** Coded failure of a transient issuance; message is the code only (never a token or key). */
+export class CredentialIssuanceError extends Error {
+  constructor(readonly code: string, readonly outcome: 'known-rejected' | 'unknown', readonly nextStep: string) { super(code); }
 }
 
 const unknownIssuanceStep = 'Token issuance outcome is unknown. Do not repeat POST automatically; operator must reconcile the possible live grant and expiry before a deliberate new issuance (controller restart).';
@@ -306,7 +320,16 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
     nextStep: error instanceof AccessFailure && error.nextStep ? error.nextStep : error instanceof AccessFailure && error.code === 'GITHUB_RATE_LIMITED' ? 'Wait the reported seconds before retrying this repository/purpose; no automatic retry.' : 'Operator must verify the named repository, App/installation, private key, explicit Workflows setting, permissions and REST compatibility; no personal fallback or repair.',
   });
 
-  return { async diagnose(scope, purpose, inspect) {
+  return { async transient(scope, purpose) {
+    try {
+      const grant = await issue(scope, purpose);
+      return { token: grant.token, expiresAt: grant.expiresAt, repositoryId: grant.repositoryId, permissions: permissions[purpose] };
+    } catch (error) {
+      const typed = failure(error);
+      throw new CredentialIssuanceError(error instanceof TokenIssuanceFailure && error.outcome === 'unknown' ? 'GITHUB_TOKEN_ISSUANCE_UNKNOWN' : typed.code,
+        error instanceof TokenIssuanceFailure && error.outcome === 'unknown' ? 'unknown' : 'known-rejected', filter(typed.nextStep));
+    }
+  }, async diagnose(scope, purpose, inspect) {
     let directory: string | undefined;
     const observedAt = new Date().toISOString();
     const result = (report: Omit<AccessDiagnostic, 'observedAt' | 'repository' | 'certifiesMergeSafety' | 'source' | 'purpose'>): AccessDiagnostic =>
@@ -355,5 +378,37 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
       const typed = failure(error);
       return sanitized({ ok: false as const, observedAt, ...typed, code: typed.code === 'GITHUB_DIAGNOSTIC_FAILED' ? 'GITHUB_READ_FAILED' : typed.code });
     } finally { if (directory) await rm(directory, { recursive: true, force: true }); }
+  } };
+}
+
+/**
+ * Builder credential projection (spec §8.1): issues for the Work's OWN configured repository only, with the fixed initial purpose; the
+ * caller cannot request permissions. Revocation is not implemented before the active credential lifecycle (ticket 20): it is reported as
+ * not attempted, never as revoked; the grant expires at `expiresAt` (<= 1 h).
+ */
+export function createBuilderCredentials(options: { github: GitHubAccess; repositories: readonly GitHubScope[] }): BuilderCredentials {
+  return {
+    async issue(context) {
+      const configured = options.repositories.find(scope => scope.repository.toLowerCase() === context.repository.repository.toLowerCase() &&
+        scope.installationId === context.repository.installationId);
+      if (!configured) throw new CredentialIssuanceError('BUILDER_REPOSITORY_NOT_CONFIGURED', 'known-rejected', 'Only configured executable repositories receive a Builder grant.');
+      const issuedAt = new Date().toISOString();
+      const grant = await options.github.transient({ ...configured, workflows: false }, 'builder-start');
+      return { delivery: Object.freeze({ token: grant.token }), metadata: { role: 'builder', purpose: 'builder-start', repository: configured.repository,
+        repositoryId: grant.repositoryId, installationId: configured.installationId, permissions: grant.permissions, issuedAt, expiresAt: grant.expiresAt } };
+    },
+    async revoke() {
+      return { kind: 'not-attempted', nextStep: 'Revocation belongs to the active credential lifecycle (ticket 20); the grant expires at its expiresAt.' };
+    },
+  };
+}
+
+/** Host fetch credential for the Factory-exclusive cache (Contents R) of a configured executable repository. */
+export function createRepositoryFetchCredentials(options: { github: GitHubAccess; repositories: readonly GitHubScope[] }): RepositoryFetchCredentials {
+  return { async fetch(repository) {
+    const configured = options.repositories.find(scope => scope.repository.toLowerCase() === repository.repository.toLowerCase() && scope.installationId === repository.installationId);
+    if (!configured) throw new CredentialIssuanceError('FETCH_REPOSITORY_NOT_CONFIGURED', 'known-rejected', 'Only configured executable repositories are fetched.');
+    const grant = await options.github.transient({ ...configured, workflows: false }, 'repository-fetch');
+    return Object.freeze({ token: grant.token, expiresAt: grant.expiresAt });
   } };
 }
