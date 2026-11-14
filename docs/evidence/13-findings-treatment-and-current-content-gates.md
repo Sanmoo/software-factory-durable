@@ -204,3 +204,24 @@ Observações esperadas (`run-result.json`, `inspect-result.json`):
 
 Node 24.21.0 com `env -u NODE_OPTIONS -u NODE_COMPILE_CACHE NODE_DISABLE_COMPILE_CACHE=1 timeout 60`, sem npm/npx, após `rm -rf dist`; `normal-oauth`
 com 90 s. Ver [§ Gate final](#gate-final).
+
+## Gate final
+
+Código no HEAD `f49a777` (os commits posteriores `6a8de7c`/`ea530f3` mudam somente este documento), após `rm -rf dist`:
+
+- `dependency-cruiser --config .dependency-cruiser.cjs --output-type err-long .`: sem violações (301 módulos, 1777 dependências).
+- `eslint . --max-warnings 0`: exit 0. `tsc -p tsconfig.json`: exit 0.
+- **141 arquivos** `dist/test/**/*.test.js`, um por vez (`--experimental-test-module-mocks --test --test-concurrency=1`, `normal-oauth` com 90 s):
+  **927 pass, 0 fail, 10 skipped, 0 cancelled**.
+
+Os 10 skips são os mesmos das integrações anteriores (host-dependentes); `test/sandbox/gondolin.test.ts` continua `skip:true`.
+Novos arquivos de teste (25 testes): `handoff-content` (2), `gate-evidence` (3), `review-rounds-session` (2), `review-continuation` (2),
+`skill-pack-v4` (2), `review13-rules` (6), `review13-flow` (5), `review13-question-flow` (1), `review13-qualification` (2).
+
+Flake observado UMA vez, sob três gates de tickets paralelos na mesma máquina: `entrypoints/admission-cli` ("only the execution barrier holds")
+falhou numa execução e passou 14/14 isolado (e nas duas execuções completas do gate); é um teste de processo do Controlador que lê
+`dispatch.reasons` enquanto um novo ciclo de polling reavalia dependências — não toca as superfícies deste ticket e não foi alterado.
+
+Nota de integração: o ticket 19 (paralelo) removeu o prazo de relógio implícito do worker (só `deadlineMs` explícito do Host, ausente em produção).
+Nesta base o `modelBudget` ainda define prazos (`builder-v1` 30 min, `reviewer-v1` 15 min por ativação); o código deste ticket não adiciona nem altera
+prazos, e a receita impõe os seus próprios (60 min, 4 capturas, ≤ 8 ativações de revisor).
