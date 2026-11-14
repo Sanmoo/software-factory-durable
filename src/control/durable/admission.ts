@@ -142,8 +142,9 @@ export async function ownCycles(session: Session, issueIds: number[]): Promise<R
     const records: Record<string, OwnCycle | undefined> = {};
     for (const id of new Set([...(entry ? [entry.current, ...entry.previous] : []), ...(remembered ?? []).map(item => item.work_id)])) {
       const work = (await session.snapshot(works, id, BACKGROUND_CONTEXT))?.work;
-      // Delivery/merge confirmation is not produced before publication tickets; a Work record is never delivered here.
-      if (work) records[id] = { work_id: id, cycle: work.cycle, result: work.result, mergeConfirmed: false };
+      // Ticket 17 produces delivery: `delivered` only with the confirmed merge of the cycle's own pull request recorded in the same commit.
+      if (work) records[id] = { work_id: id, cycle: work.cycle, result: work.result,
+        mergeConfirmed: work.result === 'delivered' && work.delivery?.state === 'delivered' && Boolean(work.delivery.merge) };
     }
     const facts = ownCycleFor({ ...(entry ? { indexed: entry } : {}), ...(remembered ? { memory: remembered } : {}), records });
     if (facts) result[issueId] = facts;

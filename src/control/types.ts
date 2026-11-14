@@ -561,6 +561,8 @@ export type ControlStatus = {
   slots: { capacity: number; held: number };
   historyLength: number;
   works: { total: number; open: number };
+  /** Ticket 17: delivered Works and their cleanup, counted separately (a pending cleanup never undoes a delivery). */
+  delivery: { delivered: number; cleanup: { waiting: number; pending: number; complete: number } };
   queues: { normal: number; repair: number };
   dependencies: { satisfied: number; pending: number; inconclusive: number; notEvaluated: number };
   questions: { open: number; answered: number; unpublished: number };

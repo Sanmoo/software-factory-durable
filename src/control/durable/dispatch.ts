@@ -182,6 +182,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
   const startedAt = new Map<string, number>();
   const running = new Map<string, Promise<void>>();
   const lifecycles = new Map<string, ReturnType<typeof credentialLifecycle>>();
+  // Ticket 17: interruption of a running activity whose Work was delivered (merge confirmed) meanwhile.
+  const deliveries = new Map<string, () => void>();
   const stopping = new AbortController();
   let last: DispatchObservation | null = null;
   // Ticket 26: activities whose cessation an administrative stop could not confirm (the stop is then uncertain, never clean).
@@ -664,6 +666,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
   };
     // Activity scope of THIS Execution: the timeout interrupts it (Builder and reviewers) without stopping the owner.
     const interrupt = new AbortController();
+    // Ticket 17: why the activity scope was interrupted — the timeout (default) or a confirmed delivery (merge observed meanwhile).
+    const interruption: { reason: 'timeout' | 'delivered' } = { reason: 'timeout' };
+    deliveries.set(work.work_id, () => { interruption.reason = 'delivered'; interrupt.abort(); });
     const activitySignal = AbortSignal.any([stopping.signal, interrupt.signal]);
     const interrupted = () => interrupt.signal.aborted;
     const wait = <T>(promise: Promise<T>): Promise<T> => untilStopped(new Promise<T>((resolve, reject) => {
@@ -905,6 +910,16 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       await releaseAfterCessation(session, work.work_id, executionId, stop?.cessationConfirmed ? 'confirmed' : 'unconfirmed');
       observe(work.work_id, stop?.cessationConfirmed ? 'ended-slot-released' : 'ended-cessation-unconfirmed');
     } catch (error) {
+      if (interrupted() && !stopping.signal.aborted && interruption.reason === 'delivered') {
+        // Ticket 17: the own PR was merged while this activity ran. Delivery is already recorded; the agent takes no new action: its
+        // credentials are withdrawn/revoked, its own boot stopped and the Slot released only after confirmed cessation (cleanup waits for it).
+        await lifecycle?.withdraw('delivered', { notifyWorker: true }).catch(() => {});
+        await recordEnd(session, work.work_id, executionId, 'failure', 'WORK_DELIVERED', null, elapsed()).catch(() => {});
+        const stop = await stopOwnBoot('work delivered');
+        await releaseAfterCessation(session, work.work_id, executionId, stop?.cessationConfirmed ? 'confirmed' : 'unconfirmed').catch(() => {});
+        observe(work.work_id, stop?.cessationConfirmed ? 'delivered-slot-released' : 'delivered-cessation-unconfirmed', ['WORK_DELIVERED']);
+        return;
+      }
       if (interrupted() && !stopping.signal.aborted) {
         // Timeout (spec §4.4/§5.7): recorded before the interruption; credentials withdrawn, own boot stopped, Slot only after cessation.
         // Blocked by EXECUTION_TIMEOUT for intervention: no retry, no new clock for it.
@@ -960,7 +975,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       await hold(`${phase.toUpperCase()}_${code}`, proven
         ? 'No worker was launched; the reservation was released without consumption. Never retried automatically.'
         : 'Execution outcome is uncertain at this phase; never retried automatically. Operator recovery (ticket 26).', proven).catch(() => {});
-    } finally { timerStop.abort(); lifecycles.delete(work.work_id); liveExecutions.delete(executionId); startedAt.delete(executionId); }
+    } finally { timerStop.abort(); lifecycles.delete(work.work_id); deliveries.delete(work.work_id); liveExecutions.delete(executionId); startedAt.delete(executionId); }
   }
 
   return {
@@ -973,6 +988,15 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       return start === undefined ? null : Math.max(0, clock.monotonic() - start);
     },
     /** External wait / cancellation entry (tickets 10/25): withdraws the active Execution's credentials and attempts their revocation. */
+    /** Ticket 17: whether an Execution of this Work runs in THIS owner (cleanup never touches a Work in use). */
+    running: (work_id: string) => running.has(work_id),
+    /** Ticket 17: a confirmed delivery interrupts the Work's running activity (before activation, `confirmActivation` refuses it). */
+    interruptDelivered(work_id: string): 'interrupted' | 'not-running' {
+      const stop = deliveries.get(work_id);
+      if (!stop) return 'not-running';
+      stop();
+      return 'interrupted';
+    },
     async withdraw(work_id: string, reason: Extract<CredentialWithdrawal, 'external-wait' | 'cancelled'>): Promise<'withdrawn' | 'not-active'> {
       const lifecycle = lifecycles.get(work_id);
       if (!lifecycle) return 'not-active';

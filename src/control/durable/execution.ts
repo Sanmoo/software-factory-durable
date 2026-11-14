@@ -227,6 +227,8 @@ export const confirmActivation = (session: Session, work_id: string, executionId
   sessionDecision: ExecutionView['request']['session'] = null) =>
   advance(session, work_id, executionId, { state: 'reserved', phases: ['booted'] }, (execution, work, facts) => {
     const reasons = facts.paused ? ['GLOBAL_PAUSE'] : [];
+    // Ticket 17: a Work delivered (merged) meanwhile is never activated: no new agent action after delivery.
+    if (work.result !== 'open') reasons.push('WORK_NOT_OPEN');
     reasons.push(...dispatchBlockers({ impediments: work.impediments, evaluation: work.dependencies?.latest ?? null, currentAttempt: attemptId }));
     if (work.dependencies?.latest?.conclusion !== 'satisfied' && !reasons.length) reasons.push('DEPENDENCIES_NOT_SATISFIED');
     if (!execution.slot.held) reasons.push('SLOT_NOT_HELD');

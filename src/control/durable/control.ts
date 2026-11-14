@@ -22,6 +22,7 @@ import { grantBudget, openCorrection, requestOperationalRecovery } from './budge
 import { reconcileBoot } from './recovery.js';
 import { dispatchGate } from '../rules/recovery.js';
 import { backoffRunning } from './recovery-request.js';
+import { createDeliveryDesk } from './delivery-desk.js';
 
 const requestId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
 const inputSchema = z.union([z.strictObject({ request_id: requestId, operation: z.enum(['pause', 'unpause']), origin: z.literal('local-cli') }),
@@ -44,6 +45,8 @@ const limitations = [
   'A Question waiting for an answer occupies no Slot; an accepted answer removes only its own impediment and never starts an agent directly: the Work resumes through its queue position after revalidation.',
   'A resumed Builder continues its previous session only when that session was recorded, is intact and compatible; otherwise it is replaced with a recorded reason and an explicit recovery instruction. Delivering context is not proof that the Builder consumed it.',
   'Only `update-scope` (or an accepted answer) authorizes a concrete change of the request, for the next safe activation; a later Ticket or link edit is never a trigger or an authorization.',
+  'Delivery (ticket 17) is only a human merge of the Work\'s own pull request, confirmed by its identity; closing the Ticket or the pull request, or any agent message, is not delivery. The Factory never merges.',
+  'Cleanup after delivery removes only own resources (own environments with their checkout/local branch/temporaries, the own remote branch under its own cleanup grant), after confirmed cessation and preserved evidence; base, shared cache, other Works and Docker are never touched. A failed or pending cleanup is shown separately and never undoes delivery.',
 ];
 
 // Module-internal seam for the external-wait/cancellation flows of this module (not part of the public Control contract).
@@ -97,7 +100,7 @@ export async function openControl(options: { storagePath: string;
     record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation),
     // Ticket 15: required-checks tracking after the dispatch tick (off its critical path), whatever the dispatch barrier or pause.
     // Ticket 16: readiness after the checks explanation (its evidence), whatever the pause (tracking, not a new trigger).
-    afterCycle: async () => { await desk?.cycle(); if (dispatchReason === null) await dispatcher?.tick(); await checks?.pass(tracking.signal).catch(() => {});
+    afterCycle: async () => { await delivery?.cycle(); await desk?.cycle(); if (dispatchReason === null) await dispatcher?.tick(); await checks?.pass(tracking.signal).catch(() => {});
       await readiness?.pass(tracking.signal).catch(() => {}); },
   }) : undefined;
   const tracking = new AbortController();
@@ -111,6 +114,11 @@ export async function openControl(options: { storagePath: string;
     currentAttempt: repository => poller.currentAttempt(repository), readWorks: () => readWorks(state), ownCycles: issueIds => ownCycles(state, issueIds),
     record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation), paused: async () => (await readInstallation(state)).paused,
     heldSlots: () => heldSlots(state), questionRecorded: () => desk?.kick(), controllerRunId: controller_run_id, runBlockers });
+  // Ticket 17: delivery observation and owned cleanup, in the same owner loop (tracking reads run whatever the dispatch barrier; cleanup
+  // itself revalidates cessation per Work). Before the dispatcher tick, so a merge observed now is never followed by a new activation.
+  const delivery = options.access && options.polling ? createDeliveryDesk({ session: state, repository: options.access.repository, repositories: options.access.repositories,
+    cleanup: options.execution?.cleanup, running: work_id => dispatcher?.running(work_id) ?? false,
+    interrupt: async work_id => dispatcher?.interruptDelivered(work_id), readWorks: () => readWorks(state), stopped: () => stopped }) : undefined;
   const pollingView = (): PollingView => poller?.view() ?? { state: 'disabled', intervalSeconds: null, cycles: 0, lastCycleAt: null, source: 'in-memory-observation', repositories: [] };
   // Work-level reasons preventing a start now; the dependency evaluation must belong to the repository's current polling round.
   const blockers = (work: WorkRecord) => [...dispatchBlockers({ impediments: work.impediments, evaluation: work.dependencies.latest,
@@ -197,6 +205,9 @@ export async function openControl(options: { storagePath: string;
       return { controller_run_id, paused: current.paused, dispatch: dispatchReason ? 'closed' : 'open', dispatchReason,
         slots: { capacity: options.execution?.capacity ?? 0, held: await heldSlots(state) }, historyLength: current.history.length,
         works: { total: works.length, open: works.filter(work => work.result === 'open').length },
+        delivery: { delivered: works.filter(work => work.result === 'delivered').length, cleanup: {
+          waiting: works.filter(work => work.cleanup?.state === 'waiting').length, pending: works.filter(work => work.cleanup?.state === 'pending').length,
+          complete: works.filter(work => work.cleanup?.state === 'complete').length } },
         queues: { normal: works.filter(work => work.queue.pending && work.queue.category === 'normal').length, repair: 0 },
         dependencies: { satisfied: works.filter(work => work.dependencies.latest?.conclusion === 'satisfied').length,
           pending: works.filter(work => work.dependencies.latest?.conclusion === 'pending').length,
