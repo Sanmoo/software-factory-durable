@@ -1,76 +1,48 @@
 import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
-import { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node';
-import { createSession, defineDoc, defineDocFamily } from '@earendil-works/pi-durable';
-import { SqliteStorage } from '@earendil-works/pi-durable/storage/sqlite';
 import { z } from 'zod';
-import type { AccessDependencies, Control, ControlInput, ControlReceipt } from '../types.js';
+import type { AccessDependencies, Control, ControlStatus, DispatchReason, Impediment, ListView, PollingOptions, PollingView, WorkView } from '../types.js';
+import { openStore } from './store.js';
+import { acceptPauseCommand, admitTicket, indexedWork, initialize, readInstallation, readRequest, readWork, readWorks, type WorkRecord } from './admission.js';
+import { createPoller, systemClock } from './polling.js';
 
 const inputSchema = z.strictObject({
   request_id: z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/),
   operation: z.enum(['pause', 'unpause']), origin: z.literal('local-cli'),
 });
-type History = { request_id: string; operation: 'pause' | 'unpause'; before: boolean; after: boolean; origin: 'local-cli' };
-type Installation = { paused: boolean; history: History[] };
-const installation = defineDoc<Installation>({ kind: 'factory.installation', version: 1, scope: 'session',
-  initial: () => ({ paused: false, history: [] }), checkpointWhen: () => true });
-const requests = defineDocFamily<{ input: ControlInput | null; receipt: ControlReceipt | null }, null>({
-  kind: 'factory.request', version: 1, scope: 'session', family: true, initial: () => ({ input: null, receipt: null }), checkpointWhen: () => true,
-});
+const workIdSchema = z.uuid();
+const limitations = [
+  'Candidate observations are in-memory results of the latest poll, not authority; they are rebuilt after restart.',
+  'A failed or partial query, or absence from a listing, never proves absence of a Ticket, label or pull request, nor withdrawal of authorization.',
+  'Dispatch is held: native dependency evaluation and execution activation are not part of this increment.',
+];
 
 /** Bootstrap must already hold the stable canonical-storage flock for this owner's entire lifetime. */
-export async function openControl(options: { storagePath: string; runtimeInventory: 'empty' | 'unknown'; access?: AccessDependencies }): Promise<Control> {
-  // Closed before any storage open; this increment exposes no scheduler, task, or external-effect entrypoint.
-  let dispatchReason: 'RECONCILIATION_REQUIRED' | 'EXECUTION_NOT_ENABLED' = 'RECONCILIATION_REQUIRED';
+export async function openControl(options: { storagePath: string; runtimeInventory: 'empty' | 'unknown'; access?: AccessDependencies; polling?: PollingOptions }): Promise<Control> {
+  // Closed before any storage open; this increment exposes no dispatch, task, or external-effect entrypoint.
+  let dispatchReason: DispatchReason = 'RECONCILIATION_REQUIRED';
   const controller_run_id = randomUUID();
-  const database = await openNodeSqliteDatabase(options.storagePath);
-  let session;
-  let persistence;
-  try {
-    await database.exec('PRAGMA synchronous = FULL');
-    const version = await database.get<{ version: string; source: string }>('SELECT sqlite_version() AS version, sqlite_source_id() AS source');
-    const journal = await database.get<{ journal_mode: string }>('PRAGMA journal_mode');
-    const sync = await database.get<{ synchronous: number }>('PRAGMA synchronous');
-    const parts = version?.version.split('.').map(Number) ?? [];
-    if (!version || parts.length !== 3 || parts.some(Number.isNaN) ||
-      (parts[0]! * 1000000 + parts[1]! * 1000 + parts[2]!) < 3051003 || journal?.journal_mode !== 'wal' || sync?.synchronous !== 2) {
-      throw new Error('UNSUPPORTED_SQLITE_DURABILITY');
-    }
-    persistence = { sqliteVersion: version.version, sqliteSourceId: version.source, journalMode: 'wal' as const, synchronous: 'FULL' as const };
-    session = createSession(await SqliteStorage.open(database));
-    await session.commit(async tx => { await tx.doc(installation); }, BACKGROUND_CONTEXT);
-  } catch (error) {
-    if (session) await session.close(BACKGROUND_CONTEXT).catch(() => {});
-    else await database.close().catch(() => {});
-    throw error;
-  }
-  const state = session;
-  const verifiedPersistence = persistence;
+  const store = await openStore(options.storagePath);
+  const state = store.session;
+  try { await initialize(state); } catch (error) { await store.close().catch(() => {}); throw error; }
+  const poller = options.access && options.polling ? createPoller({
+    access: options.access, intervalSeconds: options.polling.intervalSeconds, clock: options.polling.clock ?? systemClock,
+    paused: async () => (await readInstallation(state)).paused,
+    indexed: ticket => indexedWork(state, ticket),
+    admit: evidence => admitTicket(state, evidence),
+  }) : undefined;
+  const pollingView = (): PollingView => poller?.view() ?? { state: 'disabled', intervalSeconds: null, cycles: 0, lastCycleAt: null, source: 'in-memory-observation', repositories: [] };
+  const present = (work: WorkRecord, paused: boolean): WorkView => {
+    const impediments: Impediment[] = [...work.impediments,
+      ...(paused ? [{ code: 'GLOBAL_PAUSE', scope: 'installation' as const, nextStep: 'Unpause to allow new triggers; unpausing removes no individual impediment.' }] : [])];
+    return { ...work, impediments, dispatch: { state: 'held', reasons: [...work.impediments.map(item => item.code), dispatchReason, ...(paused ? ['GLOBAL_PAUSE'] : [])] } };
+  };
   let running = false;
   return {
     async accept(input) {
       const parsed = inputSchema.safeParse(input);
       if (!parsed.success) return { kind: 'refused', code: 'INVALID_COMMAND' };
-      const command = parsed.data;
-      // No deferred persistence; the receipt, history and pause change share this real Session commit.
-      return state.commit(async tx => {
-        const current = await tx.doc(installation);
-        const request = await tx.doc(requests, command.request_id, null);
-        if (request.input) {
-          if (request.input.operation !== command.operation || request.input.origin !== command.origin) {
-            return { kind: 'refused' as const, code: 'REQUEST_ID_CONFLICT' as const };
-          }
-          return { ...request.receipt! };
-        }
-        const paused = command.operation === 'pause';
-        const receipt: ControlReceipt = { kind: 'durable', request_id: command.request_id, operation: command.operation,
-          paused, historySequence: current.history.length + 1 };
-        current.history.push({ request_id: command.request_id, operation: command.operation, before: current.paused, after: paused, origin: command.origin });
-        current.paused = paused;
-        request.input = command;
-        request.receipt = receipt;
-        return receipt;
-      }, BACKGROUND_CONTEXT);
+      return acceptPauseCommand(state, parsed.data);
     },
     async inspect(query) {
       if (query.kind === 'access') {
@@ -85,17 +57,35 @@ export async function openControl(options: { storagePath: string; runtimeInvento
       }
       if (query.kind === 'request') {
         if (!inputSchema.shape.request_id.safeParse(query.request_id).success) throw new Error('INVALID_REQUEST_ID');
-        const request = await state.snapshot(requests, query.request_id, BACKGROUND_CONTEXT);
-        return { kind: 'request', receipt: request?.receipt ?? null };
+        return { kind: 'request', receipt: await readRequest(state, query.request_id) };
       }
-      const current = await state.snapshot(installation, BACKGROUND_CONTEXT);
-      if (!current) throw new Error('INSTALLATION_STATE_MISSING');
-      return { controller_run_id, paused: current.paused, dispatch: 'closed', dispatchReason,
-        historyLength: current.history.length, persistence: verifiedPersistence };
+      const current = await readInstallation(state);
+      if (query.kind === 'show') {
+        if (!workIdSchema.safeParse(query.work_id).success) throw new Error('INVALID_WORK_ID');
+        const work = await readWork(state, query.work_id);
+        if (!work) return { kind: 'work-not-found', work_id: query.work_id, nextStep: 'No Work with this identity in the controller authority; use `factory list`.' };
+        const lastPolled = pollingView().repositories.flatMap(repo => repo.candidates ?? [])
+          .find(candidate => candidate.ticket.issueId === work.ticket.issueId && candidate.ticket.repositoryId === work.ticket.repositoryId) ?? null;
+        return { kind: 'work', work: present(work, current.paused), lastPolled };
+      }
+      const works = await readWorks(state);
+      if (query.kind === 'list') {
+        return { kind: 'list', paused: current.paused, dispatch: 'closed', dispatchReason, works: works.map(work => present(work, current.paused)),
+          queues: { normal: works.filter(work => work.queue.pending && work.queue.category === 'normal').map(work => work.work_id), repair: [] },
+          polling: pollingView(), limitations } satisfies ListView;
+      }
+      const polling = pollingView();
+      return { controller_run_id, paused: current.paused, dispatch: 'closed', dispatchReason, historyLength: current.history.length,
+        works: { total: works.length, open: works.filter(work => work.result === 'open').length },
+        queues: { normal: works.filter(work => work.queue.pending && work.queue.category === 'normal').length, repair: 0 },
+        polling: { ...polling, repositories: polling.repositories.map(({ candidates: _candidates, ...repo }) => repo) },
+        persistence: store.persistence } satisfies ControlStatus;
     },
     async run(signal) {
       if (running) throw new Error('CONTROL_ALREADY_RUNNING');
       running = true;
+      const loop = new AbortController();
+      let polling: Promise<void> = Promise.resolve();
       try {
         // Authoritative persisted task inventory, not an empty fake scheduler. Unknown runtime resources stay closed.
         const tasks = await state.commit(tx => tx.scanTasks({}, 1), BACKGROUND_CONTEXT);
@@ -104,11 +94,18 @@ export async function openControl(options: { storagePath: string; runtimeInvento
           if (signal.aborted) resolve('stop');
           else signal.addEventListener('abort', () => resolve('stop'), { once: true });
         });
-        const outcome = await Promise.race([aborted, state.closed]);
+        // Polling is tracking/admission only; it never dispatches. A durable-authority failure ends the owner as failed.
+        if (poller) polling = poller.run(loop.signal);
+        const outcome = await Promise.race([aborted, state.closed.then(() => 'closed' as const),
+          ...(poller ? [polling.then(() => 'polling-ended' as const, () => 'polling-failed' as const)] : [])]);
+        loop.abort();
+        await polling.catch(() => {});
         await state.close(BACKGROUND_CONTEXT);
         const end = await state.closed;
         return { kind: outcome === 'stop' && end.kind === 'closed' ? 'clean' : 'failed' };
       } catch {
+        loop.abort();
+        await polling.catch(() => {});
         await state.close(BACKGROUND_CONTEXT).catch(() => {});
         return { kind: 'failed' };
       }
