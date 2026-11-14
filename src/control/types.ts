@@ -48,6 +48,9 @@ export type ExecutionPorts = {
     stop(input: { environment: EnvironmentRef; boot: BootRef; reason: string }): Promise<StopResult>;
     /** Ticket 12: Host identity of a handed-off proposal (confined reads); required when `reviews` is composed. */
     observeProposal?(input: { environment: EnvironmentRef; round: number }): Promise<ProposalIdentity>;
+    /** Ticket 13: Host confirmation of a preserved-source authorization (confined, no-follow read: the file exists and is listed in the
+     * version's sources.json). Absent = no preserved-source authorization is ever correlated. */
+    verifyPreservedSource?(input: { environment: EnvironmentRef; reference: string }): Promise<{ status: 'verified' | 'invalid'; code: string }>;
   };
   workers: { activate(invocation: Invocation, delivery?: ActivationDelivery, events?: ActivationEvents): Promise<{ worker: string;
     started: Promise<{ receipt: { workId: string; id: string }; invocation: { executionId: string; invocationId: string } }>; completed: Promise<WorkerCompletion>;
@@ -62,7 +65,9 @@ export type ExecutionPorts = {
       next: Pick<Invocation, 'skillPack' | 'copyOutput' | 'editSourceMaxBytes'> & { handoff: boolean } }): Promise<{ session: SessionObservation; limitations: string[] }> };
   /** Ticket 12: when composed, the Builder hands off for parallel Standards/Spec reviews inside the SAME Execution/Slot/boot.
    * Ticket 13 `rounds.max`: repeated captures per Builder activation (handoffs with treatments/gates plus the Host's closing capture),
-   * exemptions (unchanged content, identical commit) and the end-of-Execution verification. Absent = the single ticket 12 round. */
+   * exemptions (unchanged content, identical commit) and the end-of-Execution verification. Absent = the single ticket 12 round.
+   * PRODUCTION COMPOSITION: whenever the release profile enables reviews, it must also pass `rounds` (e.g. `{ max: 4 }`) so findings and
+   * gates can be treated without a new Execution; the release-profile composition is ticket 32's, not this module's. */
   reviews?: { reviewer: Pick<Invocation, 'modelBudget' | 'imageSourceMaxBytes'>; rounds?: { max: number } };
   credentials: BuilderCredentials;
   /** Local monotonic clock of live Execution duration/timeout (default `performance.now()`); separate from the polling clock. Tests substitute it. */

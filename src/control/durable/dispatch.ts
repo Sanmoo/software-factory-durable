@@ -596,7 +596,20 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           await recordEnd(session, work.work_id, executionId, 'question', code, bound ? request.questionId : null, elapsed(), completed.session ?? null);
         } else {
           // Ticket 13: Control's presence/correlation verification of opinions, treatments, gates and waivers, before the end is recorded.
-          if (ports.reviews?.rounds && completed.status === 'success') await recordVerification(session, work.work_id, executionId);
+          // Preserved-source authorizations are confirmed by the Host first (confined no-follow read); unverified ones never count.
+          if (ports.reviews?.rounds && completed.status === 'success') {
+            const shown = (await deps.readWorks()).find(item => item.work_id === work.work_id)?.execution;
+            const references = [...new Set((shown?.review?.rounds ?? []).flatMap(item => [...(item.declarations?.treatments ?? []), ...(item.declarations?.gates ?? [])])
+              .flatMap(entry => entry.authorization?.kind === 'preserved-source' ? [entry.authorization.reference.split('#')[0]!] : []))].slice(0, 32);
+            const sources: string[] = [];
+            for (const reference of references) {
+              const result = ports.sandbox.verifyPreservedSource
+                ? await ports.sandbox.verifyPreservedSource({ environment: environment!, reference }).catch(() => ({ status: 'invalid' as const, code: 'PRESERVED_SOURCE_UNAVAILABLE' }))
+                : { status: 'invalid' as const, code: 'PRESERVED_SOURCE_NOT_COMPOSED' };
+              if (result.status === 'verified') sources.push(reference);
+            }
+            await recordVerification(session, work.work_id, executionId, { sources });
+          }
           await recordEnd(session, work.work_id, executionId, completed.status === 'success' ? 'completed' : 'failure', completed.status === 'success' ? null : completed.code,
             null, elapsed(), completed.status === 'success' ? completed.session ?? null : null);
           if (completed.status === 'failure') await questionUncertain();

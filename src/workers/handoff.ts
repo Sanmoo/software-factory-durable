@@ -179,15 +179,21 @@ sys.stdout.write(json.dumps(summary, sort_keys=True))
 `;
 
 const hex40 = /^[0-9a-f]{40}$/;
-/** Fixed Builder-binding Bash command (Host-originated): the program arrives on a quoted heredoc, never interpolated. */
-export function handoffCommand(round: number, baseCommit: string): string {
+const command = (round: number, baseCommit: string, mode: 'capture' | 'probe') => {
   if (!Number.isInteger(round) || round < 1 || round > 99 || !hex40.test(baseCommit)) throw new Error('HANDOFF_INPUT_INVALID');
   if (handoffCaptureProgram.includes('FACTORY_HANDOFF_EOF')) throw new Error('HANDOFF_INPUT_INVALID');
-  return `exec /usr/bin/python3 -I -S - /workspace/checkout /artifacts ${round} ${baseCommit} /workspace/checkout /artifacts <<'FACTORY_HANDOFF_EOF'\n${handoffCaptureProgram}\nFACTORY_HANDOFF_EOF\n`;
-}
+  const extra = mode === 'probe' ? ' probe' : '';
+  return `exec /usr/bin/python3 -I -S - /workspace/checkout /artifacts ${round} ${baseCommit} /workspace/checkout /artifacts${extra} <<'FACTORY_HANDOFF_EOF'\n${handoffCaptureProgram}\nFACTORY_HANDOFF_EOF\n`;
+};
+/** Fixed Builder-binding Bash command (Host-originated): the program arrives on a quoted heredoc, never interpolated. */
+export const handoffCommand = (round: number, baseCommit: string) => command(round, baseCommit, 'capture');
+/** Ticket 13: the same constant program in probe mode (Host content snapshot before/after a Builder command; writes nothing). */
+export const contentProbeCommand = (baseCommit: string) => command(1, baseCommit, 'probe');
 
 const guestPath = (prefix: string) => z.string().max(4096).refine(path => path.startsWith(prefix) && !path.split('/').includes('..'));
 const sha256 = z.string().regex(/^[0-9a-f]{64}$/);
+/** Host parse of a probe's stdout; anything else is an unavailable snapshot (never a guessed identity). */
+export const contentProbeSchema = z.strictObject({ sha256, clean: z.boolean(), headMatches: z.boolean() });
 const count = z.number().int().nonnegative().max(1_000_000);
 const patch = z.strictObject({ path: guestPath('/artifacts/review/r'), bytes: count.max(Number.MAX_SAFE_INTEGER), sha256 });
 const version = z.strictObject({ version: z.string().regex(/^v[1-9][0-9]{0,3}$/), sources: guestPath('/artifacts/'), sha256 }).nullable();

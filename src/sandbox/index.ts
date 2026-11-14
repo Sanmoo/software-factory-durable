@@ -15,6 +15,7 @@ export type { CheckoutRequest, CheckoutView } from './checkout.js';
 export type { ArtifactSeed } from './artifact-seeds.js';
 // Host-side read-only observation of guest-writable trees (never host git/commands in them).
 export { readConfined } from './confined.js';
+import { readConfined } from './confined.js';
 export { inspectCheckout, type CheckoutInspection } from './checkout-inspection.js';
 import { observeProposal } from './proposal-identity.js';
 export type PreparedWork = PrepareResult | { status: 'success'; environment: EnvironmentRef; checkout: CheckoutView; seeds: { name: string; manifestSha256: string; reused: boolean }[] };
@@ -79,6 +80,28 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
     async observeProposal({ environment, round }: { environment: EnvironmentRef; round: number }) {
       if (!/^env-[a-f0-9]{64}$/.test(environment)) return { status: 'refused' as const, code: 'ENVIRONMENT_REF_INVALID' };
       return observeProposal(join(await realpath(root), 'environments', environment), round);
+    },
+    /**
+     * Ticket 13 (review fix 3): Host confirmation of a preserved-source authorization. Confined, no-follow reads only: the referenced
+     * file must exist under /artifacts/<kind>/<version>/ AND be listed in that version's sources.json. Control never trusts a path prefix.
+     */
+    async verifyPreservedSource({ environment, reference }: { environment: EnvironmentRef; reference: string }) {
+      if (!/^env-[a-f0-9]{64}$/.test(environment)) return { status: 'invalid' as const, code: 'ENVIRONMENT_REF_INVALID' };
+      const match = /^\/artifacts\/(spec|instructions)\/(v[1-9][0-9]{0,3})\/([^#]+)$/.exec(reference.split('#')[0]!);
+      if (!match) return { status: 'invalid' as const, code: 'AUTHORIZATION_REFERENCE_INVALID' };
+      const kind = match[1]!, version = match[2]!, file = match[3]!;
+      if (file.split('/').some(part => part === '' || part === '.' || part === '..')) return { status: 'invalid' as const, code: 'AUTHORIZATION_REFERENCE_INVALID' };
+      try {
+        const artifacts = join(await realpath(root), 'environments', environment, 'artifacts');
+        const index = await readConfined(artifacts, `${kind}/${version}/sources.json`, 4 * 1024 * 1024);
+        if (!index) return { status: 'invalid' as const, code: 'PRESERVED_SOURCE_INDEX_MISSING' };
+        const sources = JSON.parse(index.toString('utf8')) as { sources?: { copy?: unknown }[] };
+        const listed = new Set((sources.sources ?? []).flatMap(entry => typeof entry.copy === 'string' ? [entry.copy.replace(/^\.\//, '')] : []));
+        if (!listed.has(file)) return { status: 'invalid' as const, code: 'PRESERVED_SOURCE_NOT_LISTED' };
+        const content = await readConfined(artifacts, `${kind}/${version}/${file}`, 16 * 1024 * 1024);
+        if (!content) return { status: 'invalid' as const, code: 'PRESERVED_SOURCE_MISSING' };
+        return { status: 'verified' as const, code: 'PRESERVED_SOURCE_VERIFIED' };
+      } catch { return { status: 'invalid' as const, code: 'PRESERVED_SOURCE_UNSAFE' }; }
     },
     async remove({ environment, cleanup }: { environment: EnvironmentRef; cleanup: unknown }) {
       return removeEnvironment(root, environment, cleanup);

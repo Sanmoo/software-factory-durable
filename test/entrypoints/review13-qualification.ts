@@ -4,7 +4,7 @@ export { readBounded, sessionToolCalls, snapshotStorage };
 
 // TEST ONLY. Ticket 13 one-shot real qualification recipe (findings treatment, repeated rounds, identical commit, gate evidence).
 // Import and `--plan` are inert. Every other phase is a REAL effect and requires an explicit operator grant: real GitHub (App, read-only
-// grants), a real Gondolin/KVM VM and the real model for ONE Builder and at most THREE rounds of its two reviewers (Standards, Spec).
+// grants), a real Gondolin/KVM VM and the real model for ONE Builder and at most FOUR review rounds of its two reviewers (Standards, Spec).
 // Phases are one-shot: an exclusive intent tombstone precedes effects; a consumed phase never reruns; nothing is retried automatically.
 // No GitHub write is possible: every grant is read-only and publication is not part of ticket 13.
 
@@ -55,8 +55,8 @@ export const ticketBody = [
   '2. A `## Steps` section with a numbered list of exactly three steps: build, review, merge.',
   '3. A `## Rollback` section saying the file can be deleted at any time without other changes.',
   '', 'Documentation only: the operator explicitly approves that no tests, seams or code changes are needed.',
-  '', 'Validation (documented gate, run from the repository root `/workspace/checkout`; it must exit 0):',
-  '`test -f docs/FACTORY_SMOKE.md && grep -q \'^## Steps\' docs/FACTORY_SMOKE.md && grep -q \'^## Rollback\' docs/FACTORY_SMOKE.md`'].join('\n');
+  '', 'Validation (documented gate; the bash tool always runs in `/workspace`, so declare cwd `/workspace` and put the directory change inside the command; it must exit 0):',
+  '`cd /workspace/checkout && test -f docs/FACTORY_SMOKE.md && grep -q \'^## Steps\' docs/FACTORY_SMOKE.md && grep -q \'^## Rollback\' docs/FACTORY_SMOKE.md`'].join('\n');
 
 export function plan() {
   return { revision, root, observations, phases, repository, expectedTicket, configuration, guestAssets,
@@ -237,8 +237,10 @@ export async function runPhase(phase: Phase) {
     if (phase === 'inspect') {
       const { readConfined } = await import('../../src/sandbox/index.js');
       const { workerRuntimeDirectory } = await import('../../src/platform/host/index.js');
-      const evidence = async (id: string | null | undefined) => id
-        ? fs.readFile(`${root}/${work.work_id}/evidence/${id}/output`, 'utf8').then(text => text.slice(0, 65536), () => null) : null;
+      // Records are host-owned evidence: read them with the same confined, no-follow, size-bounded read used for guest trees.
+      const records = `${root}/${work.work_id}/evidence`;
+      const evidence = async (id: string | null | undefined) => !id ? null
+        : readConfined(records, `${id}/output`, 65536).then(bytes => bytes?.toString('utf8') ?? null, () => null);
       const artifacts = `${environmentDirectory}/artifacts`;
       const confined = async (relative: string, max = 1024 * 1024) => readConfined(artifacts, relative, max)
         .then(bytes => bytes === null ? { absent: true } : { bytes: bytes.length, text: bytes.toString('utf8').slice(0, 262144) }, (error: Error) => ({ error: error.message }));

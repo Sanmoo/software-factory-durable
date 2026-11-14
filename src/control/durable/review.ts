@@ -136,7 +136,7 @@ export function recordDelivery(session: Session, work_id: string, executionId: s
  * Ticket 13 end-of-Execution verification commit, while the Execution is still STARTED (before its end is recorded): the pure rule over the
  * durable rounds, with the Questions referenced by authorizations read in the SAME commit. Presence/correlation only, never semantics.
  */
-export async function recordVerification(session: Session, work_id: string, executionId: string) {
+export async function recordVerification(session: Session, work_id: string, executionId: string, input: { sources: string[] }) {
   return session.commit(async tx => {
     const document = await tx.doc(works, work_id, null);
     const work = document.work;
@@ -149,7 +149,10 @@ export async function recordVerification(session: Session, work_id: string, exec
       const question = (await tx.doc(questions, id, null)).question;
       if (question) known.set(id, { workId: question.workId, state: question.state });
     }
-    const verification = verifyExecution({ at: new Date().toISOString(), workId: work_id, rounds: execution.review.rounds, question: id => known.get(id) ?? null });
+    // Preserved sources were verified by the Host BEFORE this commit (confined reads); here only the verified set is used.
+    const sources = new Set(input.sources.slice(0, 32));
+    const verification = verifyExecution({ at: new Date().toISOString(), workId: work_id, rounds: execution.review.rounds, question: id => known.get(id) ?? null,
+      source: reference => sources.has(reference) });
     execution.review.verification = verification;
     history(work, 'review-verified', executionId, `${verification.status}${verification.reasons.length ? `:${verification.reasons.slice(0, 8).join(',')}` : ''}`.slice(0, 512));
     return JSON.parse(JSON.stringify(verification)) as typeof verification;

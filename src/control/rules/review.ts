@@ -138,12 +138,13 @@ export function exemptionPrompt(input: { round: number; exemption: NonNullable<R
     'call handoff again; otherwise finish with your final message (each finding id with fixed / not adopted: justification, the gates and their real results).';
 }
 
-const authorizationOk = (value: ConcreteAuthorization | null, facts: { workId: string; versions: Pick<ReviewRoundView['versions'], 'spec' | 'instructions'> | null;
-  question(id: string): { workId: string; state: 'open' | 'answered' } | null }) => {
+/** A concrete authorization is valid only when Control could CORRELATE it: an answered Question of this Work, or a preserved source that
+ * the Host confirmed exists and is listed in that version's sources.json (never a path-prefix guess). */
+const authorizationOk = (value: ConcreteAuthorization | null, facts: { workId: string;
+  question(id: string): { workId: string; state: 'open' | 'answered' } | null; source(reference: string): boolean }) => {
   if (!value) return true;
   if (value.kind === 'question') { const question = facts.question(value.questionId); return question?.workId === facts.workId && question.state === 'answered'; }
-  const path = value.reference.split('#')[0]!;
-  return [facts.versions?.spec, facts.versions?.instructions].some(version => version && path.startsWith(version.sources.replace(/sources\.json$/, '')));
+  return facts.source(value.reference.split('#')[0]!);
 };
 
 /**
@@ -152,7 +153,9 @@ const authorizationOk = (value: ConcreteAuthorization | null, facts: { workId: s
  * absence of evidence is never success; a human waiver never satisfies a GitHub required check.
  */
 export function verifyExecution(input: { at: string; workId: string; rounds: readonly ReviewRoundView[];
-  question(id: string): { workId: string; state: 'open' | 'answered' } | null }): VerificationView {
+  question(id: string): { workId: string; state: 'open' | 'answered' } | null;
+  /** True only for a preserved source file the Host verified (exists, regular/no-follow, listed in that version's sources.json). */
+  source(reference: string): boolean }): VerificationView {
   const reasons: string[] = [];
   const rounds = input.rounds;
   const last = rounds.at(-1);
@@ -179,19 +182,30 @@ export function verifyExecution(input: { at: string; workId: string; rounds: rea
   const finalContent = last.handoff.summary?.content?.sha256 ?? null;
   // Every finding of every review round is treated in a LATER capture; the latest treatment counts.
   const treatments: VerificationView['treatments'] = [];
+  const facts = { workId: input.workId, question: input.question, source: input.source };
   rounds.forEach((round, position) => {
     if ((round.kind ?? 'review') !== 'review') return;
+    const sourceContent = round.handoff.summary?.content?.sha256 ?? null;
     for (const role of reviewerRoles) for (const finding of round.reviewers[role].opinion?.findings ?? []) {
       const later = rounds.slice(position + 1);
-      const treatment = [...later].reverse().flatMap(item => item.declarations?.treatments ?? [])
-        .find(item => item.round === round.round && item.role === role && item.findingId === finding.id);
+      // The FIRST capture that declares a treatment for this finding fixes WHEN it was treated; later restatements do not move it.
+      const declaration = later.find(item => (item.declarations?.treatments ?? [])
+        .some(candidate => candidate.round === round.round && candidate.role === role && candidate.findingId === finding.id));
+      const treatment = declaration?.declarations?.treatments
+        .find(candidate => candidate.round === round.round && candidate.role === role && candidate.findingId === finding.id);
       treatments.push({ round: round.round, role, findingId: finding.id, outcome: treatment?.outcome ?? 'missing' });
       const key = `${round.round}/${role}/${finding.id}`;
-      if (!treatment) { reasons.push(`FINDING_UNTREATED:${key}`); continue; }
-      // A fix is a content change: it must be reviewed by a later round on different content.
-      if (treatment.outcome === 'fixed' && !later.some(item => (item.kind ?? 'review') === 'review' && item.handoff.summary?.content?.sha256 &&
-          item.handoff.summary.content.sha256 !== round.handoff.summary?.content?.sha256)) reasons.push(`FIX_NOT_REVIEWED:${key}`);
-      if (!authorizationOk(treatment.authorization, { workId: input.workId, versions: reviewed.versions, question: input.question })) reasons.push(`AUTHORIZATION_NOT_CORRELATED:${key}`);
+      if (!treatment || !declaration) { reasons.push(`FINDING_UNTREATED:${key}`); continue; }
+      const valid = treatment.authorization === null ? null : authorizationOk(treatment.authorization, facts);
+      if (treatment.outcome === 'not-adopted' && finding.basis === 'requirement') {
+        // A requirement decision always needs the operator's answered Question; a preserved source is not an approval of a requirement.
+        if (treatment.authorization === null) reasons.push(`REQUIREMENT_NON_ADOPTION_NOT_AUTHORIZED:${key}`);
+        else if (treatment.authorization.kind !== 'question' || !valid) reasons.push(`AUTHORIZATION_NOT_CORRELATED:${key}`);
+      } else if (treatment.authorization !== null && !valid) reasons.push(`AUTHORIZATION_NOT_CORRELATED:${key}`);
+      // A fix is a content change: it must be reviewed on different content by a round AFTER the treatment was declared.
+      // The declaring capture itself starts the round that reviews the changed content, so `>=` is still strictly after the declaration.
+      if (treatment.outcome === 'fixed' && !(sourceContent !== null && rounds.some(item => item.round >= declaration.round && (item.kind ?? 'review') === 'review' &&
+          item.handoff.summary?.content?.sha256 && item.handoff.summary.content.sha256 !== sourceContent))) reasons.push(`FIX_NOT_REVIEWED:${key}`);
     }
   });
   for (const round of rounds) for (const item of round.declarations?.treatments ?? []) {
@@ -211,7 +225,7 @@ export function verifyExecution(input: { at: string; workId: string; rounds: rea
     else if (gate.outcome === 'unverified') reasons.push(`GATE_RESULT_UNVERIFIED:${gate.id}`);
     else if (gate.outcome === 'not-run') reasons.push(`GATE_NOT_RUN:${gate.id}`);
     else if (gate.outcome === 'waived') {
-      if (!gate.authorization || !authorizationOk(gate.authorization, { workId: input.workId, versions: reviewed.versions, question: input.question })) reasons.push(`WAIVER_NOT_AUTHORIZED:${gate.id}`);
+      if (!gate.authorization || !authorizationOk(gate.authorization, facts)) reasons.push(`WAIVER_NOT_AUTHORIZED:${gate.id}`);
       if (gate.requiredCheck) reasons.push(`WAIVER_CANNOT_BYPASS_REQUIRED_CHECK:${gate.id}`);
     }
     return { id: gate.id, outcome: gate.outcome, current: gate.current, boundToFinalContent: bound, requiredCheck: gate.requiredCheck };

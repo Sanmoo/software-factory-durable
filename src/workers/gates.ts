@@ -32,48 +32,65 @@ export const resolvedDeclarationsSchema = z.strictObject({
     sequence: z.number().int().positive().nullable(), current: z.boolean(), reason: text(500).nullable(), authorization: authorization.nullable() })).max(16),
 });
 
-type BashEntry = { sequence: number; command: string; exitCode: number | null; output: { workId: string; id: string } | null; code: string | null };
-const mutating = new Set(['write', 'edit', 'bash']);
+/** The Host's own observation of one Builder Bash execution: the protected result plus the content snapshot taken around it. */
+export type BashObservation = { command: string; cwd: string; exitCode: number | null; output: { workId: string; id: string } | null; code: string | null;
+  contentBeforeSha: string | null; contentAfterSha: string | null };
+const maxCalls = 4096;
 
 /**
- * Host ledger of the Builder's own tool executions in ONE invocation (order and real Bash results). It is the only source of gate
- * evidence: the protected result of the Bash call (exit code + protected output reference) the Host itself observed.
+ * Host ledger of the Builder's own tool executions in ONE invocation and of the real Bash results (exit code + protected output
+ * reference + content snapshots taken by the Host before and after each command). It is the only source of gate evidence.
+ *
+ * Order is the start order reported by the SDK. Bash is sequential, so Bash-to-Bash order is exact; write/edit may overlap, so their
+ * relative order with a Bash call is only bounded by start time. Gate validity does not depend on that order: a gate is current only by
+ * CONTENT (the command changed nothing and the captured proposal still has exactly the content it ran on), never by tool names.
+ * The ledger is bounded; when full, every declared run gate is explicitly unverified (GATE_LEDGER_EXHAUSTED), never silently stale.
  */
-export function createToolLedger() {
+export function createToolLedger(options: { maxCalls?: number } = {}) {
+  const limit = options.maxCalls ?? maxCalls;
   let sequence = 0;
+  let exhausted = false;
   const calls: { sequence: number; name: string; callId: string; bash?: BashEntry }[] = [];
+  type BashEntry = Omit<BashObservation, never> & { sequence: number };
   return {
-    /** A tool execution starts (before any effect), keyed by the SDK tool call id; bounded. */
-    begin(name: string, callId: string) { if (calls.length < 4096) calls.push({ sequence: ++sequence, name, callId }); },
-    /** The Builder Bash outcome observed by the Host: a real exit code and protected output, or a lost/unknown result. */
-    bash(callId: string, entry: Omit<BashEntry, 'sequence'>) {
+    /** A tool execution starts (before any effect), keyed by the SDK tool call id. */
+    begin(name: string, callId: string) {
+      if (calls.length >= limit) { exhausted = true; return; }
+      calls.push({ sequence: ++sequence, name, callId });
+    },
+    /** The Builder Bash outcome observed by the Host: a real result or a lost one, with the content snapshots around the command. */
+    bash(callId: string, entry: BashObservation) {
       const call = [...calls].reverse().find(item => item.callId === callId && item.name === 'bash');
       if (call && !call.bash) call.bash = { ...entry, sequence: call.sequence };
     },
-    /** Resolves declared gates against the ledger: evidence comes from the latest Bash call with EXACTLY the declared command. */
-    resolve(input: Declarations): HandoffDeclarations {
+    exhausted: () => exhausted,
+    /**
+     * Resolves declared gates against the ledger. A `run` gate takes its exit code/protected output from the LATEST Bash call with
+     * exactly the declared command and is `current` only when: the declared cwd is the ACTUAL cwd, both content snapshots exist, the
+     * command itself did not change the content (before === after) and the captured proposal still has that content (after === capture).
+     */
+    resolve(input: Declarations, facts: { captureContentSha: string | null }): HandoffDeclarations {
       const declared = input.gates ?? [];
       const evidence = (item: (typeof declared)[number]) => {
         const auth: ConcreteAuthorization | null = item.authorization ?? null;
         const base = { id: item.id, source: item.source, command: item.command, cwd: item.cwd, requiredCheck: item.requiredCheck ?? null, declared: item.status,
           reason: item.reason ?? null, authorization: auth, exitCode: null, output: null, sequence: null, current: false };
         if (item.status !== 'run') return { ...base, outcome: item.status, code: null };
+        if (exhausted) return { ...base, outcome: 'unverified' as const, code: 'GATE_LEDGER_EXHAUSTED' };
         const match = [...calls].reverse().find(call => call.bash?.command === item.command)?.bash;
         if (!match) return { ...base, outcome: 'unverified' as const, code: 'GATE_RESULT_NOT_FOUND' };
-        return { ...base, exitCode: match.exitCode, output: match.output, sequence: match.sequence, current: true,
-          outcome: match.exitCode === null ? 'unknown' as const : match.exitCode === 0 ? 'passed' as const : 'failed' as const, code: match.code };
+        let currentCode: string | null = null;
+        if (match.cwd !== item.cwd) currentCode = 'GATE_CWD_MISMATCH';
+        else if (facts.captureContentSha === null) currentCode = 'GATE_CONTENT_UNAVAILABLE';
+        else if (match.contentBeforeSha === null || match.contentAfterSha === null) currentCode = 'GATE_SNAPSHOT_UNAVAILABLE';
+        else if (match.contentBeforeSha !== match.contentAfterSha) currentCode = 'GATE_MUTATED_CONTENT';
+        else if (match.contentAfterSha !== facts.captureContentSha) currentCode = 'GATE_NOT_CURRENT';
+        return { ...base, exitCode: match.exitCode, output: match.output, sequence: match.sequence, current: currentCode === null,
+          outcome: match.exitCode === null ? 'unknown' as const : match.exitCode === 0 ? 'passed' as const : 'failed' as const, code: match.code ?? currentCode };
       };
-      const gates: GateEvidence[] = declared.map(evidence);
-      const gateCalls = new Set(gates.flatMap(item => item.sequence === null ? [] : [item.sequence]));
-      for (const item of gates) {
-        if (item.sequence === null) continue;
-        // Correlated with the captured content only if nothing that may change it ran after it (other declared gate runs excepted).
-        const later = calls.find(call => call.sequence > item.sequence! && mutating.has(call.name) && !gateCalls.has(call.sequence));
-        if (later) { item.current = false; item.code ??= 'GATE_NOT_CURRENT'; }
-      }
       const treatments: FindingTreatment[] = (input.treatments ?? []).map(item => ({ round: item.round, role: item.role, findingId: item.findingId, outcome: item.outcome,
         justification: item.justification, evidence: item.evidence ?? null, authorization: item.authorization ?? null }));
-      return { treatments, gates };
+      return { treatments, gates: declared.map(evidence) };
     },
   };
 }

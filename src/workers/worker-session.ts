@@ -16,7 +16,7 @@ import { builderEdit } from './edit.js';
 import { startWorker, type ReviewerProfile, type Invocation } from './worker-start.js';
 import { builderAskUser, type AskedQuestion } from './ask-user.js';
 import type { WorkerQuestionRequest } from '../platform/host/index.js';
-import { builderHandoff, captureHandoff, suspendable, type BuilderDirective, type HandoffEvent } from './builder-handoff.js';
+import { builderHandoff, captureHandoff, probeContent, suspendable, type BuilderDirective, type HandoffEvent } from './builder-handoff.js';
 import { createToolLedger } from './gates.js';
 import { composeOpinion, createReadObserver, opinionSchema } from './review.js';
 import type { ReviewOpinion } from '../contracts/index.js';
@@ -135,7 +135,8 @@ export async function executeSession(options: Options, invocation: Invocation, r
       const editEnabled = invocation.context.role === 'builder' && invocation.editSourceMaxBytes !== undefined;
       const customTools: ToolDefinition[] = invocation.context.role === 'builder'
         ? [builderWrite(invocation.context, options.sandbox, critical), builderBash(invocation.context, options.sandbox, critical, copyOutput,
-          ledger ? (callId, observation) => ledger.bash(callId, observation) : undefined)]
+          ledger ? (callId, observation) => ledger.bash(callId, observation) : undefined,
+          ledger ? () => probeContent(invocation.context, options.sandbox, invocation.handoff!.baseCommit, signal) : undefined)]
         : [reviewerRead(invocation.context, options.sandbox, critical)];
       const tools = invocation.context.role === 'builder' ? ['write', 'bash'] : ['read'];
       // Builder Read: selected output copies (copyOutput) and/or the files of its own pack version (owner-enforced exact paths).
@@ -212,8 +213,10 @@ export async function executeSession(options: Options, invocation: Invocation, r
           if (!gate.pending() && closing === null) break;
           // Suspended: the Host (not the model) captures the proposal through the Builder's own binding, then waits for the directive.
           const round = closing ?? gate.round();
-          const declarations = closing === null ? gate.declarations() : undefined;
+          const raw = closing === null ? gate.declarations() : undefined;
           const captured = await captureHandoff(invocation.context, options.sandbox, round, invocation.handoff!.baseCommit, signal);
+          // Gates are resolved only now, against the content the capture actually recorded (review fix 1); no capture = no content.
+          const declarations = raw && ledger ? ledger.resolve(raw, { captureContentSha: captured.status === 'captured' ? captured.summary.content?.sha256 ?? null : null }) : undefined;
           const event: HandoffEvent = { ...captured, ...(closing === null ? {} : { closing: true as const }), ...(declarations ? { declarations } : {}) };
           const directive = await options.onHandoff!(event);
           if (signal.aborted || interrupted || directive.kind !== 'review-results' || directive.round !== round || (directive.end && closing === null)) { interrupted = true; break; }

@@ -72,10 +72,14 @@ type DrainAwareOptions = Parameters<BashOperations['exec']>[2] & {
 
 /** Native Bash with COMPLETE remote operations. Only explicit trusted Host policy
  * copies completed native-truncated output. Host spill remains private SDK state. */
-export type BashObservation = { command: string; exitCode: number | null; output: { workId: string; id: string } | null; code: string | null };
+import type { BashObservation } from './gates.js';
+/** The Bash tool's fixed working directory (Host policy): declared gate cwds must equal it; directory changes go inside the command. */
+export const bashCwd = '/workspace';
 export function builderBash(context: ToolContext, sandbox: ToolProjection, onCritical: () => void = () => {}, copyOutput = false,
   /** Ticket 13: the Host's own record of each completed (or lost) Bash result, the only source of gate evidence. */
-  observe?: (callId: string, observation: BashObservation) => void): ToolDefinition {
+  observe?: (callId: string, observation: BashObservation) => void,
+  /** Ticket 13: the Host's content snapshot around the command (same identity as the capture); null when unavailable. */
+  snapshot?: () => Promise<string | null>): ToolDefinition {
   const copyEnabled = copyOutput === true;
   let failed = false;
   let timeoutFailure = false;
@@ -84,7 +88,7 @@ export function builderBash(context: ToolContext, sandbox: ToolProjection, onCri
     exposeSessionEnvironment: false,
     // Replace, never inherit the SDK's parent environment clone. Owner independently
     // selects EMPTY env and /workspace, regardless of this untrusted callback input.
-    spawnHook: ({ command }) => ({ command, cwd: '/workspace', env: {} }),
+    spawnHook: ({ command }) => ({ command, cwd: bashCwd, env: {} }),
     operations: { async exec(command, _cwd, options: DrainAwareOptions) {
       if (typeof options.onDataAsync !== 'function') throw new Error('BASH_ASYNC_CAPTURE_REQUIRED');
       if (failed) throw new Error('BASH_INVOCATION_REVOKED');
@@ -120,13 +124,19 @@ export function builderBash(context: ToolContext, sandbox: ToolProjection, onCri
       // another concurrent callback can choose this source reference.
       let completed: Extract<ReadResult, { status: 'success' }> | undefined;
       let observed = false;
+      let beforeSha: string | null = null;
+      let afterSha: string | null = null;
       const record = (code: string | null) => {
         if (observed || !observe) return;
         observed = true;
-        observe(callId, { command: input.command, exitCode: completed && 'exitCode' in completed ? completed.exitCode ?? null : null, output: completed ? { ...completed.reference } : null, code: completed ? null : code });
+        observe(callId, { command: input.command, cwd: bashCwd, exitCode: completed && 'exitCode' in completed ? completed.exitCode ?? null : null,
+          output: completed ? { ...completed.reference } : null, code: completed ? null : code, contentBeforeSha: beforeSha, contentAfterSha: afterSha });
       };
       try {
-        const result = await native(value => { completed = value; record(null); }).execute(callId, input, signal, onUpdate);
+        if (snapshot && !signal?.aborted) beforeSha = await snapshot().catch(() => null);
+        const result = await native(value => { completed = value; }).execute(callId, input, signal, onUpdate);
+        if (snapshot && !signal?.aborted) afterSha = await snapshot().catch(() => null);
+        record(null);
         if (!copyEnabled || result.details?.truncation?.truncated !== true) return result;
         if (!completed || signal?.aborted || failed) throw new Error('BASH_COPY_UNAVAILABLE');
         const reply = await sandbox.executeTool(context, { name: 'bash', operation: 'copy-output',
@@ -135,6 +145,7 @@ export function builderBash(context: ToolContext, sandbox: ToolProjection, onCri
         return guestPresentation(result, copiedPath(reply, context.workId));
       }
       catch {
+        if (snapshot && !signal?.aborted) afterSha = await snapshot().catch(() => null);
         record('BASH_EFFECTS_OR_CAPTURE_UNKNOWN');
         critical();
         if (signal?.aborted) throw new Error('Command aborted (effects unknown)');

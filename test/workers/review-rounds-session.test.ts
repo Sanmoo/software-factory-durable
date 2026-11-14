@@ -40,18 +40,26 @@ function provider(t: { mock: { method: typeof import('node:test').mock.method } 
   });
   return bodies;
 }
-const gate = (id: string, command: string, extra: object = {}) => ({ id, source: '/artifacts/spec/v1/ticket.json#validation', command, cwd: '/workspace/checkout', status: 'run', ...extra });
+const gate = (id: string, command: string, extra: object = {}) => ({ id, source: '/artifacts/spec/v1/ticket.json#validation', command, cwd: '/workspace', status: 'run', ...extra });
+/** The Host's own content probe (ticket 13 review fix 1): the SAME constant program in probe mode, chosen by the Host only. */
+const isProbe = (command: string) => command.includes(' /artifacts probe <<');
+const isCapture = (command: string) => /^exec \/usr\/bin\/python3 -I -S - \/workspace\/checkout \/artifacts ([0-9]+) [0-9a-f]{40} \/workspace\/checkout \/artifacts <<'FACTORY_HANDOFF_EOF'\n/.test(command);
 
-test('AC1-AC3: repeated handoffs carry treatments and Host gate evidence from the real Bash results; the round limit and the closing capture are enforced', { timeout: 20000 }, async t => {
+test('AC1-AC3: repeated handoffs carry treatments and Host gate evidence from the real Bash results and their content snapshots; the round limit and the closing capture are enforced', { timeout: 20000 }, async t => {
   const commands: string[] = [];
-  const exits: Record<string, number[]> = { 'npm test': [1, 0], 'npm run lint': [0], 'echo fix >> docs/a.md': [0] };
+  let content = '1';
+  const exits: Record<string, number[]> = { 'npm test': [1, 0], 'npm run lint': [0], 'echo fix >> docs/a.md': [0], 'npm run build': [0] };
   const f = await nativeOwner(builder, { exec(argv) {
     const command = argv[argv.length - 1]!;
     commands.push(command);
-    const capture = /^exec \/usr\/bin\/python3 -I -S - \/workspace\/checkout \/artifacts ([0-9]+) /.exec(command);
+    if (isProbe(command)) return { async *output() { yield { stream: 'stdout' as const, data: Buffer.from(JSON.stringify({ sha256: content.repeat(64), clean: false, headMatches: false })) }; },
+      result: Promise.resolve({ exitCode: 0 }) };
+    const capture = /^exec \/usr\/bin\/python3 -I -S - \/workspace\/checkout \/artifacts ([0-9]+) [0-9a-f]{40} \/workspace\/checkout \/artifacts <<'FACTORY_HANDOFF_EOF'\n/.exec(command);
     const round = capture ? Number(capture[1]) : 0;
+    if (command.includes('echo fix')) { content = '2'; return { async *output() { yield { stream: 'stdout' as const, data: Buffer.from('') }; }, result: Promise.resolve({ exitCode: 0 }) }; }
+    if (command === 'npm run build') { content = '3'; return { async *output() { yield { stream: 'stdout' as const, data: Buffer.from('') }; }, result: Promise.resolve({ exitCode: 0 }) }; }
     const exitCode = capture ? 0 : exits[command]?.shift() ?? 127;
-    return { async *output() { yield { stream: 'stdout' as const, data: Buffer.from(capture ? JSON.stringify(summary(round, round === 1 ? '1' : '2')) : `ran ${command}\n`) }; },
+    return { async *output() { yield { stream: 'stdout' as const, data: Buffer.from(capture ? JSON.stringify(summary(round, content)) : `ran ${command}\n`) }; },
       result: Promise.resolve({ exitCode }) };
   } });
   t.after(() => f.close());
@@ -63,6 +71,9 @@ test('AC1-AC3: repeated handoffs carry treatments and Host gate evidence from th
     { tools: [{ name: 'bash', arguments: { command: 'echo fix >> docs/a.md' } }] },
     { tools: [{ name: 'handoff', arguments: { treatments: [{ round: 1, role: 'spec', findingId: 'S1', outcome: 'fixed', justification: 'Appended the missing line.' }],
       gates: [gate('lint', 'npm run lint')] } }] },
+    { tools: [{ name: 'bash', arguments: { command: 'npm run build' } }] },
+    { tools: [{ name: 'handoff', arguments: { gates: [gate('build', 'npm run build'), gate('build-wrong-cwd', 'npm run build', { cwd: '/workspace/checkout' }),
+      gate('test', 'npm test')] } }] },
     { tools: [{ name: 'handoff', arguments: {} }] },
     { text: 'Done: S1 fixed; lint was not re-run after the fix.' }]);
   const directory = join(f.root, 'profile'); await mkdir(join(directory, 'sessions'), { recursive: true, mode: 0o700 });
@@ -70,15 +81,16 @@ test('AC1-AC3: repeated handoffs carry treatments and Host gate evidence from th
   const directives: BuilderDirective[] = [
     { kind: 'review-results', round: 1, prompt: 'FACTORY REVIEW RESULTS round 1: spec finding S1.' },
     { kind: 'review-results', round: 2, prompt: 'FACTORY REVIEW RESULTS round 2: both clean.' },
-    { kind: 'review-results', round: 3, prompt: 'Closing capture recorded.', end: true }];
+    { kind: 'review-results', round: 3, prompt: 'FACTORY REVIEW RESULTS round 3: both clean.' },
+    { kind: 'review-results', round: 4, prompt: 'Closing capture recorded.', end: true }];
   const session = createWorkerSession({ profile: profile(directory), records: f.records, sandbox: createSandbox({ root: f.root, toolEndpoint: f.owner.endpoint }),
     async onHandoff(event) { events.push(event); return directives.shift()!; } });
-  const result = await session.activate({ context: builder, prompt: 'Implement.', signal: f.authority.signal, handoff: { baseCommit: base, rounds: { first: 1, max: 3 } } });
+  const result = await session.activate({ context: builder, prompt: 'Implement.', signal: f.authority.signal, handoff: { baseCommit: base, rounds: { first: 1, max: 4 } } });
   assert.equal(result.status, 'completed');
-  assert.equal(bodies.length, 9, 'no provider request after the closing directive ended the activation');
+  assert.equal(bodies.length, 11, 'no provider request after the closing directive ended the activation');
   assert.match(bodies[4]!, /HANDOFF_DECLARATIONS_INVALID/, 'a waiver without authorization is refused before any capture');
-  assert.match(bodies[8]!, /HANDOFF_ROUND_LIMIT/, 'the last capture is reserved for the closing one');
-  assert.deepEqual(events.map(event => [event.round, event.status, event.closing ?? false]), [[1, 'captured', false], [2, 'captured', false], [3, 'captured', true]]);
+  assert.match(bodies[10]!, /HANDOFF_ROUND_LIMIT/, 'the last capture is reserved for the closing one');
+  assert.deepEqual(events.map(event => [event.round, event.status, event.closing ?? false]), [[1, 'captured', false], [2, 'captured', false], [3, 'captured', false], [4, 'captured', true]]);
   const first = events[0]!.declarations!;
   assert.deepEqual(first.gates.map(item => [item.id, item.outcome, item.exitCode, item.current, item.code]),
     [['test', 'passed', 0, true, null], ['lint', 'passed', 0, true, null], ['typecheck', 'unverified', null, false, 'GATE_RESULT_NOT_FOUND']]);
@@ -87,9 +99,16 @@ test('AC1-AC3: repeated handoffs carry treatments and Host gate evidence from th
   assert.match(output.data.toString('utf8'), /ran npm test/, 'the referenced protected output is the latest run of that command');
   const second = events[1]!.declarations!;
   assert.deepEqual(second.treatments.map(item => [item.round, item.role, item.findingId, item.outcome]), [[1, 'spec', 'S1', 'fixed']]);
-  assert.deepEqual(second.gates.map(item => [item.id, item.outcome, item.current, item.code]), [['lint', 'passed', false, 'GATE_NOT_CURRENT']], 'a later Bash change makes the gate not current');
-  assert.equal(events[2]!.declarations, undefined, 'the closing capture is the Host\'s own: no declarations');
-  assert.equal(commands.filter(command => command.startsWith('exec /usr/bin/python3')).length, 3);
+  assert.deepEqual(second.gates.map(item => [item.id, item.outcome, item.current, item.code]), [['lint', 'passed', false, 'GATE_NOT_CURRENT']],
+    'the content changed after that lint run: a later Bash (even outside a declared gate) makes it not current');
+  const third = events[2]!.declarations!;
+  assert.deepEqual(third.gates.map(item => [item.id, item.outcome, item.current, item.code]),
+    [['build', 'passed', false, 'GATE_MUTATED_CONTENT'], ['build-wrong-cwd', 'passed', false, 'GATE_CWD_MISMATCH'],
+      ['test', 'passed', false, 'GATE_NOT_CURRENT']],
+    'the mutating build is not evidence of the captured content, the wrong cwd is not evidence, and the earlier test ran on other content');
+  assert.equal(events[3]!.declarations, undefined, 'the closing capture is the Host\'s own: no declarations');
+  assert.equal(commands.filter(command => isCapture(command)).length, 4, 'the probes are Host content snapshots, not captures');
+  assert.ok(commands.filter(command => isProbe(command)).length >= 8, 'content is probed before/after every model Bash command');
   const transcript = await readFile(result.sessionFile!, 'utf8');
   assert.match(transcript, /FACTORY REVIEW RESULTS round 2/);
   assert.doesNotMatch(transcript, /Closing capture recorded/, 'the ending directive is not sent to the model');

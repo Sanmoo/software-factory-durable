@@ -51,6 +51,12 @@ function doubles(control: () => Control, script: { captures: HandoffEvent[]; ver
       async start() { return { status: 'success', boot: 'boot-11111111-2222-4333-8444-555555555555' as never }; },
       async stop() { kinds.push('stop'); return { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'observed' }; },
       async observeProposal(input) { kinds.push(`observe-r${input.round}`); return identity(input.round); },
+      async verifyPreservedSource(input) {
+        kinds.push(`verify-source:${input.reference}`);
+        // Only the sources listed in the preserved copy count; an unlisted reference is never an authorization.
+        return input.reference === '/artifacts/spec/v1/ticket.json' ? { status: 'verified' as const, code: 'PRESERVED_SOURCE_VERIFIED' }
+          : { status: 'invalid' as const, code: 'PRESERVED_SOURCE_NOT_LISTED' };
+      },
     },
     credentials: {
       async issue() { return { delivery: { token: 'ghs_synthetic' }, metadata: { role: 'builder', purpose: 'builder-start', repository: 'acme/project', repositoryId: 3, installationId: 2,
@@ -223,4 +229,21 @@ test('AC6/AC7: a failed closing capture ends the activation and never verifies: 
   const verification = h.work.execution!.review!.verification!;
   assert.equal(verification.status, 'not-verified');
   assert.deepEqual(verification.reasons, ['FINAL_CAPTURE_UNAVAILABLE', 'STANDARDS_OPINION_MISSING', 'SPEC_OPINION_MISSING', 'REVIEW_INCOMPLETE', 'REVIEW_NOT_APPLICABLE', 'GATES_NOT_BOUND_TO_FINAL_CONTENT']);
+});
+
+test('AC1/AC6 review fix 3: a preserved-source authorization is verified by the Host (exists + listed) before Control counts it', async t => {
+  const treatment = (reference: string) => ({ round: 1, role: 'standards' as const, findingId: 'H1', outcome: 'not-adopted' as const,
+    justification: 'Heuristic; the Ticket itself fixes the file name.', evidence: null, authorization: { kind: 'preserved-source' as const, reference } });
+  const good = await harness(t, { captures: [
+    capture(1, '1', { declarations: { gates: [gate('docs', 'passed')] } }),
+    capture(2, '1', { declarations: { treatments: [treatment('/artifacts/spec/v1/ticket.json#body')], gates: [gate('docs', 'passed')] } }),
+    capture(3, '1', { closing: true })], verdicts: role => role === 'standards' ? ['H1'] : 'clean' });
+  assert.deepEqual([good.work.execution!.review!.verification!.status, good.work.execution!.review!.verification!.reasons], ['verified', []]);
+  assert.ok(good.execution.kinds.includes('verify-source:/artifacts/spec/v1/ticket.json'), 'the Host verified the preserved source');
+  const bad = await harness(t, { captures: [
+    capture(1, '1', { declarations: { gates: [gate('docs', 'passed')] } }),
+    capture(2, '1', { declarations: { treatments: [treatment('/artifacts/spec/v1/not-listed.md#body')], gates: [gate('docs', 'passed')] } }),
+    capture(3, '1', { closing: true })], verdicts: role => role === 'standards' ? ['H1'] : 'clean' });
+  assert.deepEqual([bad.work.execution!.review!.verification!.status, bad.work.execution!.review!.verification!.reasons],
+    ['not-verified', ['AUTHORIZATION_NOT_CORRELATED:1/standards/H1']]);
 });

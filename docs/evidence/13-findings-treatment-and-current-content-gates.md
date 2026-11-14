@@ -21,13 +21,15 @@ Ativada só quando a composição declara `ExecutionPorts.reviews.rounds = { max
    a ferramenta `handoff` aceita `gates` e `treatments`, valida-os (zod estrito, ≤ 16 KiB resolvidos) e recusa sem consumir rodada quando inválidos;
    `HANDOFF_ROUND_LIMIT` reserva a última captura para o fechamento. Os números de rodada continuam os de Execuções anteriores do Trabalho
    (`first`), pois `/artifacts/review/r<N>` é preservado e exclusivo.
-3. **Evidência de gate = resultado protegido real.** `createToolLedger` (`src/workers/gates.ts`) registra cada ferramenta do Builder em ordem e,
-   via novo observador de `builderBash`, o **código de saída real e a referência protegida da saída** que o owner devolveu ao host.
-   Um gate `run` é resolvido pela **última chamada Bash com exatamente o comando declarado**: `passed`/`failed` pelo exit code; `unknown` se o
-   resultado se perdeu (efeitos/captura desconhecidos); `unverified` (`GATE_RESULT_NOT_FOUND`) se o comando nunca rodou. Saída/estado declarados
-   pelo modelo não são entrada do schema. `current=false` (`GATE_NOT_CURRENT`) quando um write/edit/outro Bash rodou depois (outros gates declarados
-   excetuados). `not-run` exige motivo; `waived` exige autorização concreta (`question` respondida ou fonte preservada `/artifacts/spec|instructions/vN/...`);
-   `requiredCheck` nomeia o check GitHub correspondente.
+3. **Evidência de gate = resultado protegido real + snapshot de conteúdo.** `createToolLedger` (`src/workers/gates.ts`) registra cada ferramenta do
+   Builder e, via observador de `builderBash`, o **código de saída real, a referência protegida da saída e o `cwd` real** (`/workspace`) que o owner
+   devolveu ao host. O host roda o MESMO programa constante da captura em modo `probe` (não escreve) antes e depois de cada Bash e registra o
+   `content.sha256` correspondente. Um gate `run` é resolvido pela **última chamada Bash com exatamente o comando declarado** e só é **atual** quando:
+   o `cwd` declarado == o real; os dois snapshots existem; `antes == depois` (o comando não mudou conteúdo, inclusive um "gate" mutante) e
+   `depois == content.sha256` da captura (nada mudou depois, inclusive por processo em background). `passed`/`failed` pelo exit code; `unknown` se
+   o resultado se perdeu; `unverified` se o comando nunca rodou ou o ledger esgotou. Saída/estado declarados pelo modelo não são entrada do schema.
+   Códigos: `GATE_CWD_MISMATCH`, `GATE_CONTENT_UNAVAILABLE`, `GATE_SNAPSHOT_UNAVAILABLE`, `GATE_MUTATED_CONTENT`, `GATE_NOT_CURRENT`,
+   `GATE_LEDGER_EXHAUSTED`. `not-run` exige motivo; `waived` exige autorização concreta; `requiredCheck` nomeia o check GitHub correspondente.
 4. **Captura de fechamento.** Quando a sessão do Builder termina sem handoff pendente, o host captura mais uma vez (sem requisição ao modelo) e
    notifica `closing: true`; a diretiva pode trazer `end: true` (a ativação termina sem novo prompt) ou resultados de uma rodada forçada.
 5. **Classificação pelo Control (`classifyCapture`, regra pura).** Nenhuma rodada nova **somente** quando a última rodada revisada concluiu com os
@@ -54,6 +56,22 @@ Ativada só quando a composição declara `ExecutionPorts.reviews.rounds = { max
    achado (heurística ≠ violação; discordância interna sem arbitragem; dúvida de requisito/dispensa/aprovação de skill → `ask_user`), novo `handoff`
    com `treatments`/`gates` até o Factory dizer que não há rodada nova. O prompt do Control acrescenta `review-rounds=multi` (também na recuperação).
 
+## Correções da revisão estática independente (rodada 2, sobre `4bac40a`)
+
+Testes escritos/ajustados primeiro (vermelhos de compilação/asserção) e implementação depois, com a suíte focada verde.
+
+| # | Achado | Correção | Teste |
+| --- | --- | --- | --- |
+| 1 HIGH | gate declarado que muta conteúdo mantinha outro gate "atual"; mutador em background não invalidava | evidência ligada a **snapshot de conteúdo**: o host roda o MESMO programa constante da captura em modo `probe` (sem escrever) antes e depois de cada Bash; um gate `run` só é atual se `cwd` real, os dois snapshots existirem, `antes == depois` (o próprio comando não mudou conteúdo) e `depois == content.sha256 da captura`; nomes/ordem de ferramentas não participam | `gate-evidence` fix 1 (gate real C0 + gate mutante declarado C1, mutador em background entre/antes/depois, snapshot ausente, captura sem conteúdo), `review-rounds-session` (probes reais no binding, gate mutante e gate em outro cwd) |
+| 2 HIGH/MED | `cwd` declarado nunca correlacionado | o ledger registra o cwd REAL do Bash (`/workspace` fixo); divergência → `GATE_CWD_MISMATCH` (não atual); skill v4 exige declarar `/workspace` e `cd ... &&` dentro do comando; ticket da receita idem | `gate-evidence` fix 2, `review-rounds-session` (cwd errado), `skill-pack-v4` |
+| 3 MED | autorização por fonte preservada era só prefixo de caminho | porto opcional `sandbox.verifyPreservedSource` faz leitura confinada sem seguir link: arquivo existe e está listado no `sources.json` da versão; o Control só usa o conjunto verificado (sem porto ⇒ nenhuma autorização de fonte vale) | `preserved-source` (S), `review13-rules` fix 3, `review13-flow` fix 3 |
+| 4 MED | não acolhimento de achado `requirement` sem autorização | não acolhimento de base `requirement` exige Pergunta respondida do MESMO Trabalho (`REQUIREMENT_NON_ADOPTION_NOT_AUTHORIZED`); heurística continua só com justificativa; fonte preservada não aprova requisito; skill v4 diz o mesmo | `review13-rules` fix 4, `review13-question-flow` (caminho autorizado já coberto), `skill-pack-v4` |
+| 5 LOW/MED | `FIX_NOT_REVIEWED` aceitava revisão anterior ao tratamento | a rodada de conteúdo diferente precisa ser a que DECLAROU o tratamento ou posterior (`>=`), nunca uma revisão anterior | `review13-rules` fix 5 |
+| 6 LOW | ledger parava em 4096 chamadas e usava ordem de início silenciosamente | ao esgotar, todo gate `run` resolve `unverified`/`GATE_LEDGER_EXHAUSTED` (nunca silencioso); ordem de início documentada no código (Bash sequencial; write/edit podem sobrepor; a validade é por conteúdo, não por ordem) | `gate-evidence` fix 6 |
+| 7 LOW | ticket inerte sem `reviews.rounds` na composição de produção | `ExecutionPorts.reviews.rounds` documenta a obrigação da composição da release (ticket 32 compõe os portos executáveis; esta base ainda não os tem) e a evidência registra a nota de integração; pacote `factory-skills-v4` é mecânico para renumerar (v5) se a integração já trouxer outro v4 | `review13-qualification` (`maxRounds` 4), `skill-pack-v4` |
+| 8 LOW | receita dizia "até TRÊS rodadas" com `max` 4; evidência de gate lida com `fs.readFile` não confinado | cabeçalho/limites dizem QUATRO; a evidência de gate é lida com `readConfined` (sem link, limitada) | `review13-qualification` (plano: 4 capturas, ≤8 ativações), revisão estática do arquivo |
+| 10 NOTE | verificação não bloqueia a conclusão | `ExecutionView.review.verification` exposto; a evidência e o comentário do tipo registram que prontidão (tickets 14/15) DEVE consumi-lo e nunca tratar `completed` como sucesso | `review13-flow`, `review13-question-flow` |
+
 ## Mapa AC → evidência
 
 Níveis: **R** regras puras; **S** Control real + Pi Durable/SQLite temporário + dublês (GitHub, relógio, Sandbox/Workers); **I-local** SDK Pi real
@@ -61,12 +79,12 @@ Níveis: **R** regras puras; **S** Control real + Pi Durable/SQLite temporário 
 
 | AC | Testes | Nível | Lacuna |
 | --- | --- | --- | --- |
-| 1 Achado → corrigido/não acolhido com justificativa/evidência; dúvida/dispensa/aprovação → `ask user` sem autorização prévia | `gate-evidence` AC1 (schema de tratamento), `review13-rules` AC1/AC6 (não tratado, fix não revisado, achado desconhecido, autorização não correlacionada), `review13-flow` AC1/AC5 (não acolhido sem rodada nova), `review13-question-flow` AC1 (pergunta → resposta → recuperação continua a numeração → não acolhimento autorizado pela Pergunta respondida → `verified`), `skill-pack-v4` | R + I-local + S | Julgamento real do Builder (receita) |
-| 2 Gates com fonte, comando/cwd, resultado/status/log reais correlacionados a conteúdo/Execução; sucesso/falha/ausência/dispensa distintos | `gate-evidence` AC2/AC3, `review-rounds-session` (exit codes reais do owner, referência protegida lida de volta, `typecheck` nunca executado → `unverified`), `review13-rules` AC2/AC3/AC6 | R + I-local | `cwd` é declarado (o processo roda em `/workspace` fixo; o comando carrega o `cd`) |
+| 1 Achado → corrigido/não acolhido com justificativa/evidência; dúvida/dispensa/aprovação → `ask user` sem autorização prévia | `gate-evidence` AC1 (schema de tratamento), `review13-rules` AC1/AC6 (não tratado, fix revisado só depois do tratamento, achado desconhecido, requisito sem Pergunta, fonte não listada), `review13-flow` AC1/AC5/fix 3 (não acolhido sem rodada nova; fonte verificada pelo host), `review13-question-flow` AC1 (pergunta → resposta → recuperação continua a numeração → não acolhimento autorizado pela Pergunta respondida → `verified`), `preserved-source` (S), `skill-pack-v4` | R + I-local + S | Julgamento real do Builder (receita) |
+| 2 Gates com fonte, comando/cwd, resultado/status/log reais correlacionados a conteúdo/Execução; sucesso/falha/ausência/dispensa distintos | `gate-evidence` AC2/AC3/fix 1/2/6 (snapshot antes/depois, gate mutante, background, cwd real, esgotamento), `review-rounds-session` (exit codes e snapshots reais do owner, referência protegida lida de volta, `typecheck` nunca executado → `unverified`), `review13-rules` AC2/AC3/AC6 | R + I-local | Custo de dois `probe` por comando Bash no ensaio real |
 | 3 Resultado da ferramenta protegida sustenta evidência; falha/instrução faltante/impossibilidade exige orientação | `gate-evidence` (saída/exit declarados recusados pelo schema; resultado perdido = `unknown`), `review-rounds-session` (dispensa sem autorização recusada antes da captura; gate obsoleto após Bash), `review13-rules`/`review13-flow` (`GATE_NOT_RUN`, `GATE_RESULT_UNKNOWN`), `skill-pack-v4` (`not-run` + `ask_user`) | R + I-local + S | Pedido de orientação depende do modelo seguir a skill |
 | 4 Proposta/contexto mudado → parecer atual dos dois; sessões compatíveis; sem reaproveitar aprovação | `review13-rules` AC4/AC5 (toda mudança de conteúdo/versões/merge-base/identidade → rodada; rodada anterior incompleta → rodada), `review13-flow` AC1 (os DOIS revisores rodam de novo, `continueFrom` das sessões da r1, parecer da r2 é novo) e AC4 (mudança sem handoff → rodada forçada no fechamento), `review-continuation` AC4 (sessão continuada: a requisição da r2 contém a conversa da r1; arquivo original intacto; fora do boot/link/ausente/incompatível → substituição registrada) | R + S + I-local | Cópia de sessão só entre lançamentos do mesmo boot |
 | 5 Justificativa sem mudar contexto e commit comprovadamente idêntico não exigem rodada; correspondência/vínculo demonstrados | `handoff-content` (H: commit do conteúdo revisado mantém `content.sha256`, `clean`, `headMatches`; mudança, staged pendente e arquivo novo distinguem), `review13-rules` AC4/AC5, `review13-flow` AC1/AC5 (isenções `identical-commit` com `head`/`reviewedHead`/`contentSha256` e `unchanged`, sem ativar revisores) | H + R + S | `headMatches` vem do git do guest (cooperativo, §6.4); o host confirma hashes dos arquivos e a ref = HEAD (`consistent`) |
-| 6 Controle verifica presença/correlação de pareceres, tratamentos, gates e dispensas; sem semântica; dispensa não contorna check obrigatório | `review13-rules` AC6 (todas as razões), `review13-flow` (verificação durável antes de `execution-ended`; `requiredChecks`), `review13-question-flow` | R + S | A prontidão GitHub (tickets 14/15) ainda não consome `verification` |
+| 6 Controle verifica presença/correlação de pareceres, tratamentos, gates e dispensas; sem semântica; dispensa não contorna check obrigatório | `review13-rules` AC6 (todas as razões), `review13-flow` (verificação durável antes de `execution-ended`; `requiredChecks`; fonte verificada pelo host), `review13-question-flow` | R + S | A prontidão GitHub (tickets 14/15) DEVE consumir `review.verification`; `completed` nunca é sucesso |
 | 7 Provas com agentes reais: corrigido, não acolhido, rodada após mudança, commit idêntico, falha/resultado perdido; ausência ≠ sucesso | `review13-flow` AC6/AC7 (revisor falho não vira aprovação; resultado perdido; captura de fechamento falha → `end` e `not-verified`), receita `review13-qualification` (+ inércia/limites/guarda) | S + I-local | **Ensaio real a executar pelo supervisor** |
 
 Mutações (JS compilado, restauradas; cada uma detectada): (M1) gate sempre `passed` → `gate-evidence` falha; (M2) `identical-commit` sem `clean`/`headMatches`
@@ -90,16 +108,18 @@ pelas mutações M1–M8.
    após a sessão terminar; se o conteúdo mudou, o Control roda uma rodada forçada e entrega os resultados (a sessão continua). A última captura da
    política é reservada para isso; na última vaga os resultados são registrados e a ativação termina (`end`). Alternativa rejeitada: só observar
    identidade do host (não vê arquivo rastreado não indexado nem novo arquivo).
-2. **Gate = última execução Bash com o comando exato, antes do handoff.** Correlação com o conteúdo por ordem (nada mutável depois) e pela identidade
-   de conteúdo da captura em que foi declarado; o `cwd` declarado é registro documental (o processo roda em `/workspace` fixo). Commitar depois dos
-   gates os torna não atuais: a skill v4 manda commitar antes e rodar os gates por último. Um commit idêntico posterior mantém os gates ligados ao
-   mesmo conteúdo, mas a última declaração precisa ser atual.
+2. **Gate = última execução Bash com o comando exato + snapshot de conteúdo.** A validade é por CONTEÚDO (o comando não mudou nada e a captura tem
+   exatamente o conteúdo em que ele rodou), nunca por nome/ordem de ferramentas: cobre gate mutante, mutador em background e comandos depois do gate.
+   O `cwd` real é `/workspace` (política fixa do Bash); a skill v4 exige declarar esse cwd e expressar diretórios dentro do comando
+   (`cd /workspace/checkout && ...`). A ordem de início do ledger é documentada (Bash sequencial; write/edit podem sobrepor), mas não decide a
+   validade. Custo: dois `probe` por comando Bash do Builder (mesmo programa constante, sem escrita); falha do probe ⇒ gate nunca atual.
 3. **Confiança na prova do commit idêntico.** `headMatches`/`clean` são calculados pelo git do guest (programa constante do host, nunca do modelo);
    o host corrobora por leituras confinadas os hashes dos arquivos e que a ref da branch é o HEAD capturado. Não há verificação de objetos Git pelo
    host (packs/deltas); contra escritor hostil no guest a §6.4 já declara a captura cooperativa.
-4. **Autorização concreta.** Só Pergunta Factory respondida do mesmo Trabalho ou fonte preservada sob a versão revisada; o Control verifica
-   presença/correlação, nunca o conteúdo. Discordância interna com justificativa não exige pergunta; o Control não distingue semanticamente "dúvida
-   de requisito" de "discordância" — isso é da skill (`ask_user`).
+4. **Autorização concreta.** Pergunta Factory respondida do mesmo Trabalho; fonte preservada só vale se o HOST confirmar (leitura confinada, sem
+   link) que o arquivo existe e está listado no `sources.json` daquela versão. Não acolhimento de achado `requirement` exige Pergunta respondida
+   (fonte preservada não é aprovação de requisito); heurística aceita justificativa sozinha. O Control verifica presença/correlação, nunca o conteúdo;
+   a distinção semântica "dúvida de requisito × discordância" continua na skill (`ask_user`).
 5. **Gate não executado ≠ dispensa ≠ sucesso.** `not-run` (sem autorização) mantém a Execução `not-verified` com `GATE_NOT_RUN:<id>`; a orientação
    concreta do operador a uma pergunta entra como **dispensa** (`waived` + autorização), que é outro estado e não vira `passed`; para um check GitHub
    obrigatório a dispensa continua insuficiente. Assim "falha não resolvida/instrução faltante/impossibilidade" fica explícito e nunca vira verde.
@@ -112,8 +132,10 @@ pelas mutações M1–M8.
    (60 min, 4 capturas, ≤ 8 ativações de revisor). Na ÚLTIMA captura da política os resultados são registrados e a ativação termina (`end`): se ela
    for uma rodada com achados, o Builder não os trata nesta ativação e a verificação os reporta como não tratados (nunca sucesso), com o operador
    decidindo a continuação. Limites configuráveis de correções/recoveries são do ticket 19.
-8. **Pacote `factory-skills-v4`.** Ticket 11 (paralelo) pode também precisar de nova versão do pacote; se ambos criarem `factory-skills-v4`, a
-   integração precisa renumerar um deles (decisão de integração, não deste ticket).
+8. **Pacote `factory-skills-v4` e composição de produção.** Ticket 11 (paralelo) pode também precisar de nova versão do pacote; se a integração já
+   trouxer outro `factory-skills-v4`, este é renumerado para v5 mecanicamente (`assets/skill-pack/factory-skills-v4` → v5, entrada em `skillPacks`,
+   enum do bootstrap, testes, receita e esta evidência). O ticket 32 compõe os portos executáveis da release (arquivo ausente nesta base): quando
+   habilitar reviews, deve passar `reviews.rounds = { max: 4 }` para o fluxo multi-rodada; sem `rounds` o comportamento é o de uma rodada do ticket 12.
 9. **Recuperação parcial** (parecer válido + retry só do falho) continua no ticket 28: aqui um revisor falho torna a rodada `incomplete` e a próxima
    captura roda os dois de novo.
 

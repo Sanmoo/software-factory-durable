@@ -45,7 +45,9 @@ const exempt = (number: number, kind: 'unchanged' | 'identical-commit', reviewed
   round(number, { ...input, kind: 'exemption', exemption: { kind, reviewedRound, head: (input.head ?? 'b').repeat(40), reviewedHead: 'b'.repeat(40), contentSha256: (input.content ?? '7').repeat(64) } });
 const questions: Record<string, { workId: string; state: 'open' | 'answered' }> = { '22222222-2222-4333-8444-555555555555': { workId: 'w', state: 'answered' },
   '33333333-2222-4333-8444-555555555555': { workId: 'other', state: 'answered' } };
-const verify = (rounds: ReviewRoundView[]) => verifyExecution({ at: 'now', workId: 'w', rounds, question: id => questions[id] ?? null });
+const sources = new Set(['/artifacts/spec/v1/ticket.json']);
+const verify = (rounds: ReviewRoundView[]) => verifyExecution({ at: 'now', workId: 'w', rounds, question: id => questions[id] ?? null,
+  source: reference => sources.has(reference.split('#')[0]!) });
 
 test('AC4/AC5: a changed content or context needs a new round; unchanged content and a commit holding exactly the reviewed content do not', () => {
   const reviewed = [round(1)];
@@ -106,6 +108,45 @@ test('AC1/AC6: untreated findings, a fix never reviewed, unknown findings and un
     exempt(3, 'unchanged', 1, { closing: true })]);
   assert.equal(result.status, 'not-verified');
   assert.deepEqual(result.reasons.sort(), ['AUTHORIZATION_NOT_CORRELATED:1/spec/S3', 'FINDING_UNTREATED:1/spec/S2', 'FIX_NOT_REVIEWED:1/spec/S1', 'TREATMENT_UNKNOWN_FINDING:1/spec/S9']);
+});
+
+test('AC1 review fix 4: a requirement-basis non-adoption needs the operator\'s answered Question; a heuristic one may stand on its justification alone', () => {
+  const declared = (treatments: HandoffDeclarations['treatments']) => ({ treatments, gates: [gate('docs', 'passed')] });
+  const finding = (id: string) => ({ round: 1, role: 'spec' as const, findingId: id, outcome: 'not-adopted' as const, justification: 'The Ticket does not require it.', evidence: null, authorization: null });
+  // Requirement finding, no authorization: not verified, even with an identical commit and passing gates.
+  let result = verify([round(1, { findings: { spec: ['S1'] } }), exempt(2, 'unchanged', 1, { declarations: declared([finding('S1')]) }), exempt(3, 'unchanged', 1, { closing: true })]);
+  assert.deepEqual([result.status, result.reasons], ['not-verified', ['REQUIREMENT_NON_ADOPTION_NOT_AUTHORIZED:1/spec/S1']]);
+  // The answered Question of THIS Work authorizes it; a preserved source alone does not for a requirement finding.
+  result = verify([round(1, { findings: { spec: ['S1'] } }), exempt(2, 'unchanged', 1, { declarations: declared([{ ...finding('S1'),
+    authorization: { kind: 'question', questionId: '22222222-2222-4333-8444-555555555555' } }]) }), exempt(3, 'unchanged', 1, { closing: true })]);
+  assert.deepEqual([result.status, result.reasons], ['verified', []]);
+  result = verify([round(1, { findings: { spec: ['S1'] } }), exempt(2, 'unchanged', 1, { declarations: declared([{ ...finding('S1'),
+    authorization: { kind: 'preserved-source', reference: '/artifacts/spec/v1/ticket.json#body' } }]) }), exempt(3, 'unchanged', 1, { closing: true })]);
+  assert.deepEqual(result.reasons, ['AUTHORIZATION_NOT_CORRELATED:1/spec/S1']);
+  // A heuristic finding (Standards) keeps justification-only.
+  result = verify([round(1, { findings: { standards: ['H1'] } }), exempt(2, 'unchanged', 1, { declarations: declared([{ ...finding('H1'), role: 'standards' }]) }),
+    exempt(3, 'unchanged', 1, { closing: true })]);
+  assert.deepEqual([result.status, result.reasons], ['verified', []]);
+});
+
+test('AC1 review fix 3: a preserved-source authorization only counts when the file exists and is listed in that version\'s sources.json', () => {
+  const unlisted = { kind: 'preserved-source' as const, reference: '/artifacts/spec/v1/not-listed.md#body' };
+  const result = verify([round(1, { findings: { standards: ['H1'] } }), exempt(2, 'unchanged', 1, { declarations: { treatments: [{ round: 1, role: 'standards',
+    findingId: 'H1', outcome: 'not-adopted', justification: 'Heuristic.', evidence: null, authorization: unlisted }], gates: [gate('docs', 'passed')] } }),
+    exempt(3, 'unchanged', 1, { closing: true })]);
+  assert.deepEqual(result.reasons, ['AUTHORIZATION_NOT_CORRELATED:1/standards/H1']);
+});
+
+test('AC1 review fix 5: a fix is only reviewed by a different-content round AFTER its treatment was declared', () => {
+  const fix = { round: 1, role: 'spec' as const, findingId: 'S1', outcome: 'fixed' as const, justification: 'Added it.', evidence: null, authorization: null };
+  // r2 reviewed changed content but BEFORE the treatment was declared (r3): the fix is not reviewed.
+  let result = verify([round(1, { findings: { spec: ['S1'] } }), round(2, { content: '8' }),
+    exempt(3, 'unchanged', 2, { declarations: { treatments: [fix], gates: [gate('docs', 'passed')] } }), exempt(4, 'unchanged', 2, { closing: true })]);
+  assert.ok(result.reasons.includes('FIX_NOT_REVIEWED:1/spec/S1'), result.reasons.join(','));
+  // A review of the changed content AFTER the treatment declaration satisfies it.
+  result = verify([round(1, { findings: { spec: ['S1'] } }), exempt(2, 'unchanged', 1, { declarations: { treatments: [fix], gates: [gate('docs', 'passed')] } }),
+    round(3, { content: '8' }), exempt(4, 'unchanged', 2, { closing: true })]);
+  assert.equal(result.reasons.includes('FIX_NOT_REVIEWED:1/spec/S1'), false, result.reasons.join(','));
 });
 
 test('AC2/AC3/AC6: failed, lost, unverified, stale, not run and unauthorized gates are distinct and never success; a waiver never satisfies a required check', () => {

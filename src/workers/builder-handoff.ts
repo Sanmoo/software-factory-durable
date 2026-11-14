@@ -3,8 +3,8 @@ import { Type } from 'typebox';
 import type { ToolDefinition } from '#factory-pi';
 import type { HandoffDeclarations, ProposalHandoff } from '../contracts/index.js';
 import type { ToolContext, ToolProjection } from '../sandbox/index.js';
-import { handoffCommand, parseHandoffSummary } from './handoff.js';
-import { declarationsMaxBytes, declarationsSchema, type createToolLedger } from './gates.js';
+import { contentProbeCommand, contentProbeSchema, handoffCommand, parseHandoffSummary } from './handoff.js';
+import { declarationsMaxBytes, declarationsSchema, type createToolLedger, type Declarations } from './gates.js';
 
 /**
  * A suspended capture of the Builder proposal. Ticket 13: `declarations` are the treatments/gate evidence the Host resolved for this
@@ -32,7 +32,8 @@ export function builderHandoff(policy?: HandoffRounds, ledger?: ReturnType<typeo
   // Gate evidence can only come from the Host ledger; a multi-round policy without it is a composition error, never a silent gap.
   if (policy && !ledger) throw new Error('HANDOFF_LEDGER_REQUIRED');
   let suspended = false, pending = false, rounds = 0, batch = 0;
-  let declarations: HandoffDeclarations | undefined;
+  // Ticket 13 review fix 1: the model's declarations are stored RAW; the Host resolves them against the capture's content snapshot.
+  let declarations: Declarations | undefined;
   const legacy: ToolDefinition = {
     name: 'handoff', label: 'handoff', executionMode: 'sequential',
     description: 'Factory review handoff. Call it exactly once, alone, when your proposal is complete in /workspace/checkout (committed or not; a clean ' +
@@ -71,15 +72,14 @@ export function builderHandoff(policy?: HandoffRounds, ledger?: ReturnType<typeo
       const parsed = declarationsSchema.safeParse(args ?? {});
       if (!parsed.success) return refused(`HANDOFF_DECLARATIONS_INVALID: no handoff happened. Fix and call handoff again: ${parsed.error.issues.slice(0, 5)
         .map(issue => `${issue.path.join('.') || '(root)'}: ${issue.message}`).join('; ').slice(0, 1500)}`);
-      const resolved = ledger!.resolve(parsed.data);
-      if (Buffer.byteLength(JSON.stringify(resolved)) > declarationsMaxBytes) return refused('HANDOFF_DECLARATIONS_TOO_LARGE: no handoff happened. Shorten justifications, reasons and commands.');
-      declarations = resolved;
+      if (Buffer.byteLength(JSON.stringify(parsed.data)) > declarationsMaxBytes) return refused('HANDOFF_DECLARATIONS_TOO_LARGE: no handoff happened. Shorten justifications, reasons and commands.');
+      declarations = parsed.data;
       rounds++; suspended = true; pending = true;
       return { content: [{ type: 'text' as const, text: `Handoff accepted for capture round ${policy!.first + rounds - 1}. Your tools are suspended; stop now and wait.` }],
         details: { round: policy!.first + rounds - 1 }, terminate: true };
     } };
   return { tool: policy ? multi : legacy, suspended: () => suspended, pending: () => pending, round: () => (policy?.first ?? 1) + rounds - 1,
-    /** The declarations resolved for the pending handoff (ticket 13), consumed once. */
+    /** The raw declarations of the pending handoff (ticket 13), consumed once and resolved by the Host after the capture. */
     declarations() { const value = declarations; declarations = undefined; return value; },
     /** Ticket 13: the Host's closing capture after the session ended, while a capture is left; suspends the tools meanwhile. */
     closing(): number | null {
@@ -117,4 +117,21 @@ export async function captureHandoff(context: ToolContext, sandbox: ToolProjecti
     if (bytes > 65536) return { round, status: 'failure', code: 'HANDOFF_CAPTURE_TOO_LARGE' };
     return { round, status: 'captured', summary: parseHandoffSummary(Buffer.concat(chunks).toString('utf8'), round, baseCommit) };
   } catch { return { round, status: 'failure', code: 'HANDOFF_CAPTURE_INVALID' }; }
+}
+
+/**
+ * Ticket 13 review fix 1: Host content snapshot of the Builder checkout through the Builder's own binding. The same constant program as
+ * the capture, in probe mode (writes nothing). Any failure is an unavailable snapshot, never a guessed identity, so gates fail closed.
+ */
+export async function probeContent(context: ToolContext, sandbox: ToolProjection, baseCommit: string, signal: AbortSignal): Promise<string | null> {
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  try {
+    const result = await sandbox.executeTool(context, { name: 'bash', command: contentProbeCommand(baseCommit), timeout: 120, callId: `probe-${randomUUID()}` }, data => {
+      bytes += data.length;
+      if (bytes <= 4096) chunks.push(Buffer.from(data));
+    }, signal);
+    if (result.status !== 'success' || result.format !== 'text' || result.exitCode !== 0 || bytes > 4096) return null;
+    return contentProbeSchema.parse(JSON.parse(Buffer.concat(chunks).toString('utf8'))).sha256;
+  } catch { return null; }
 }
