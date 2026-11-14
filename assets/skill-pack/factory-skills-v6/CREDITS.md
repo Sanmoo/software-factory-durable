@@ -14,11 +14,16 @@
   a new session with the replacement reason and recoverable context), §5 (`continue` in the same session), §6 (only concrete scope
   authorizations change the request; later edits are not triggers; a new version is preserved first), §7 (instruction precedence; changed
   instructions never waive policy/gates/limits) and incomplete captures resumed as a new version. v1, v2 and v3 are unchanged.
-- `factory-skills-v6` (6.0.0, ticket 14) = `factory-skills-v4` plus direct publication when the Factory requests it: `implement` §2 (no
-  publication while implementing) and §8 (publication activation: unchanged content, explicit lease, one draft PR, never merge/approve),
-  `pr` (short Summary/Validation/Risk body with the Factory marker and the Ticket link, no transcripts or local paths as links, and the
-  "Factory publication" procedure) and `prompts/pr.md`. v1–v4 are unchanged. (`factory-skills-v5` is the ticket 13 version; when this
-  branch is rebased on it, v6 is re-derived from v5 with the same changes.)
+- `factory-skills-v5` (5.0.0, ticket 13) = `factory-skills-v4` plus repeated review rounds: with `review-rounds=multi` (`implement` §3,
+  `prompts/implement.md`) the Builder hands off again after treating the results, with a treatment for every LISTED finding (never a
+  placeholder for a reviewer without findings) and the documented gates (run as the last commands in the Factory bash cwd `/workspace`, with
+  directory changes inside the command; a declared gate that changes the checkout is not evidence; results are taken by the Factory from
+  its own record of the Bash calls and its content snapshots), requires the operator's answered question to not adopt a requirement
+  finding, and finishes only after the Factory says no new round is needed. It keeps v4's continuation protocol. v1–v4 are unchanged.
+- `factory-skills-v6` (6.0.0, ticket 14) = `factory-skills-v5` plus direct publication when the Factory requests it: `implement` §2 (no
+  publication while implementing) and §8 (publish-only activation: unchanged verified commit, explicit lease, own branch only, one draft PR
+  or an update of the own PR, never merge/approve/ready), `pr` (short Summary/Validation/Risk body with the Factory marker and the Ticket
+  link, no transcripts or local paths as links, and the "Factory publication" procedure) and `prompts/pr.md`. v1–v5 are unchanged.
 - This pack is distributed with the Factory and versioned as a whole; it is never synchronised with a personal profile, registry or installer.
 - `factory-skills-v2` (2.0.0) derives from `factory-skills-v1` 1.0.0: `implement` turns blockers into one durable Factory question
   (`ask_user`) and adds section 4 (resume after an answer); the prompt templates point at this version's guest paths. Same

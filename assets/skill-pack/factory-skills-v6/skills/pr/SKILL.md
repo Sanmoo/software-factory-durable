@@ -175,7 +175,7 @@ The blast radius is the potential impact or scope of the changes introduced by t
 
 ## Factory publication
 
-Only inside a publication activation (a `publish` message or a "Factory publication instruction"), with the facts it gives you:
+Only inside a publish-only activation (a "Factory publication instruction"), with the facts it gives you:
 
 1. Write the body to `/artifacts/publication/pr-body.md`, first line the marker, with `Closes #<ticket-number>`.
 2. Do not change the checkout: HEAD stays the verified commit.
@@ -183,5 +183,6 @@ Only inside a publication activation (a `publish` message or a "Factory publicat
    once, or not at all when the remote already holds the commit.
 4. `gh pr list --repo <repo> --head <branch> --state all --json number,url,isDraft`: if a pull request exists, do not create another.
 5. Otherwise, once: `gh pr create --repo <repo> --draft --base <base> --head <branch> --title "<short title>" --body-file /artifacts/publication/pr-body.md`.
-6. Never merge, approve, mark ready, close, push elsewhere, use a plain force push, or edit labels/assignees/other pull requests. On a failure
+   When the instruction names your own pull request, do not create one: update only its body with `gh pr edit <number> --repo <repo> --body-file ...`.
+6. Never merge, approve, mark ready, close, push elsewhere, use a plain force push, push a tag, or edit labels/assignees/other pull requests. On a failure
    or an unclear outcome, inspect instead of repeating, and report. The Factory discovers the publication itself.

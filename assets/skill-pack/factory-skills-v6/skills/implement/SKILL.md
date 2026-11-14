@@ -1,6 +1,6 @@
 ---
 name: implement
-description: "Implement the Factory Ticket of this Execution: preserve its request and instructions first, implement test-first in the Work's own checkout, hand off for the Factory reviews when enabled, continue or recover after an answer or an authorized scope change, and publish directly only when the Factory requests it. Started explicitly by /implement."
+description: "Implement the Factory Ticket of this Execution: preserve its request and instructions first, implement test-first in the Work's own checkout, hand off for the Factory reviews with gates and treatments (repeated rounds when enabled), continue or recover after an answer or an authorized scope change, and publish directly only when the Factory requests it. Started explicitly by /implement."
 disable-model-invocation: true
 ---
 
@@ -62,22 +62,50 @@ between instructions, a decision the Ticket leaves to the operator). Ask one com
 ## 3. Hand off for review, then finish
 
 **When the invocation's execution context contains `reviews=factory-handoff`**, the implementation is finished by calling the
-`handoff` tool, NOT by a final message:
+`handoff` tool, NOT by a final message.
 
-1. When the proposal is complete in `/workspace/checkout` (committed or not; a clean tree is not required), call `handoff` exactly
-   once, alone in its turn, with no other tool call beside it. Then stop: the Factory suspends all your tools and turns, records the
-   proposal under `/artifacts/review/r<N>/` and runs the independent Standards and Spec reviewers.
-2. Wait. The effective review results (or reviewer failures) arrive as your next message, in the same session.
-3. Treat every finding: fix it (re-running the relevant checks), or justify why you do not adopt it, with evidence. A heuristic is a
-   judgement call, not a mandatory violation. A failed, cancelled or incomplete review is NOT an approval and NOT zero findings: say so.
-   Do not call `handoff` again in this Factory version. A finding that needs a requirement decision or an approval you do not have is a
-   question for the operator (`ask_user`, section 1.6), never a guess.
-4. Then finish as below, adding, per finding id, `fixed` or `not adopted: <justification>`.
+**Gates.** Identify the documented gates of this repository and Ticket: tests, typecheck, lint and any other command the Ticket, its
+referenced documents or the preserved instructions require, each with its source (`<preserved copy path>#<section>`), its exact command
+and the directory it runs in. The Factory `bash` tool ALWAYS runs in `/workspace`: declare that as the gate `cwd` and put any directory
+change inside the command (`cd /workspace/checkout && npm test`), never only in the declared cwd. Commit first, then run the gates with
+`bash` as your LAST commands before each `handoff` (anything you run or write after a gate makes it not current, and so does any command
+that changes the checkout, even if you also declare it as a gate). The Factory takes each gate's result (exit code and protected output)
+and its content snapshot ONLY from its own record of your `bash` calls with exactly that command: never claim a result you did not get, and
+never copy or edit output as evidence.
+A gate you cannot run (missing instruction, impossible in this guest, or a failure you cannot resolve) is not success: declare it
+`not-run` with the reason AND ask the operator (`ask_user`) for explicit guidance, unless a concrete prior authorization already exists.
+A gate is `waived` only with such an authorization (`{"kind":"question","questionId":...}` of an answered Factory question, or
+`{"kind":"preserved-source","reference":"/artifacts/spec/vN/<copy>#<section>"}`). A waiver never satisfies a GitHub required check: name
+it in `requiredCheck` when the gate corresponds to one.
+
+**Rounds** (when the context also contains `review-rounds=multi`):
+
+1. When the proposal is complete in `/workspace/checkout` (committed or not), call `handoff` alone in its turn, with
+   `gates` (every documented gate: `id`, `source`, `command`, `cwd`, `status` `run`|`not-run`|`waived`, `reason`, `authorization`,
+   `requiredCheck`) and, after the first round, `treatments`. Then stop: the Factory suspends all your tools and turns.
+2. The Factory's answer arrives as your next message: either the Standards/Spec results of a new round, or the notice that no new round
+   is needed (your content is unchanged since the last reviewed round, or a commit holds exactly the reviewed content).
+3. Treat EVERY finding of a round: fix it (then re-run the relevant gates), or do not adopt it with a justification and evidence. A
+   heuristic is a judgement call, not a mandatory violation, and an internal disagreement needs no arbitration by itself. A finding that
+   states a REQUIREMENT (Spec axis) that you do not adopt, a waiver, or an approval required by a skill (such as TDD seams) without a
+   concrete prior authorization is a question for the operator (`ask_user`, section 1.6), never a guess; a requirement non-adoption needs
+   the operator's ANSWERED question as its `authorization`. A failed, cancelled or incomplete review is NOT an approval and NOT zero findings.
+4. Call `handoff` again with `treatments` for every finding of that round (`round`, `role`, `findingId`, `outcome` `fixed`|`not-adopted`,
+   `justification`, optional `evidence`/`authorization`) and your `gates`. Treat ONLY the findings the delivered results list, with their
+   exact ids: a reviewer or round without findings gets no treatment, and you never invent a placeholder treatment (such as `none`) for it;
+   `handoff` refuses an unlisted finding with `HANDOFF_TREATMENT_UNKNOWN_FINDING` (no round is used: fix the treatments and call it again). Any change of content gets a new round of BOTH reviewers;
+   a justification outside the proposal or a commit of exactly the reviewed content does not. Repeat until the Factory says no new round
+   is needed, or until `handoff` is refused with `HANDOFF_ROUND_LIMIT`.
+5. Then finish with your final message. The Factory captures the proposal once more after you finish; if it changed since the last
+   capture, a new review round starts and its results arrive as another message to treat.
+
+**Single round** (no `review-rounds=multi`): call `handoff` exactly once, alone in its turn, treat every finding of the delivered results
+as in step 3 and finish, listing per finding id `fixed` or `not adopted: <justification>`. Do not call `handoff` again.
 
 If a blocker (section 1.6) stops you before a proposal exists, do not hand off: call `ask_user` as section 1.6 says.
 
-Finish with a short final message: the preserved version `vN`, the commits you made (hashes), the commands you ran with their results,
-the review round treatment (when reviews ran) and anything left undone. Do not claim success for a gate you did not run.
+Finish with a short final message: the preserved version `vN`, the commits you made (hashes), each gate with its real result (or why it
+was not run), the treatment of every finding (when reviews ran) and anything left undone. Do not claim success for a gate you did not run.
 
 ## 4. Resume in a NEW session (recovery instruction)
 
@@ -126,18 +154,22 @@ conversation: it carries the accepted answer to your question and/or authorized 
   yourself: they never waive the Factory policy, the reviews/handoff, the tests/gates or your limits, and never widen your access.
   The preserved `instructions/vN` remain the reference for the reviewers.
 
-## 8. Publication requested by the Factory (`publish` message or publication instruction)
+## 8. Publication requested by the Factory (publish-only activation)
 
 After the Execution ended and the Factory verified the reviews, treatments and gates over the final content, it looks for your own
-publication and, when there is none, starts a publication activation: a message that starts with `publish` in this same session, or a
-"Factory publication instruction" in a new session. Only then you hold a credential that can push your own branch and open your own pull
-request. Follow that request and section "Factory publication" of the `pr` skill exactly:
+publication and, when there is none (or a later verified commit must update your own pull request), starts a PUBLISH-ONLY activation:
+a new session that starts with "Factory publication instruction", without the `handoff` and `edit` tools. Only then you hold a credential
+that can push your own branch and open or update your own pull request. Follow that instruction and section "Factory publication" of the
+`pr` skill exactly:
 
-1. Never change the content: no edit, commit, amend, rebase or reset. HEAD must stay the verified commit the request names.
-2. Draft the description with the `pr` skill; its first line is the Factory marker the request gives you.
-3. Push only your own branch, only that commit, only with the explicit lease the request gives (`--force-with-lease=refs/heads/<branch>:<expected>`),
-   or do not push when the request says the remote already holds the commit. Never recapture a new expectation, never a plain force push.
-4. Check that no pull request exists for your branch; then create ONE draft pull request against the base. Never merge, approve, mark it
-   ready, close it, or touch other branches, pull requests, labels or assignees. Opening it does not finish the Ticket.
+1. Never change the content: no edit, write into the checkout, commit, amend, rebase or reset. HEAD must stay the verified commit the
+   instruction names; any other content is never accepted by the Factory.
+2. Draft the description with the `pr` skill; its first line is the Factory marker the instruction gives you.
+3. Push only your own branch, only that commit, only with the explicit lease the instruction gives (`--force-with-lease=refs/heads/<branch>:<expected>`),
+   or do not push when the instruction says the remote already holds the commit. Never recapture a new expectation, never a plain force
+   push, never another branch or a tag (the Factory checks every ref of the repository after the activation).
+4. Check that no pull request exists for your branch; then create ONE draft pull request against the base (or, when the instruction names
+   your own pull request, only update its description). Never merge, approve, mark it ready, close it, or touch other branches, pull
+   requests, labels or assignees. Opening it does not finish the Ticket.
 5. If a command fails or its outcome is unclear, inspect (`git ls-remote origin`, `gh pr list`) instead of repeating it, and report.
    The Factory discovers and verifies the publication itself; your final message is not evidence.
