@@ -42,6 +42,12 @@ test('AC3: `factory update-scope <work> --reason` identifies the request first, 
   assert.deepEqual((await cli('update-scope', work, '--reason', 'Only touch docs/ please.', '--request-id', 'scope-1')).json, first.json, 'same identity and content: same result');
   assert.deepEqual((await cli('update-scope', work, '--reason', 'Changed reason text here.', '--request-id', 'scope-1')).json, { kind: 'refused', code: 'REQUEST_ID_CONFLICT' });
   assert.deepEqual((await cli('request', 'scope-1')).json, { kind: 'request', receipt: first.json });
+  // Ticket 16: `authorize-readiness <work> --reason` follows the same shape; with no Work, a durable not-applied receipt (nothing authorized).
+  assert.equal((await cli('authorize-readiness', work, 'no flag')).code, 2);
+  const authorize = await cli('authorize-readiness', work, '--reason', 'Restore ready after the human draft.', '--request-id', 'ready-1');
+  assert.equal(authorize.code, 2, authorize.stderr);
+  assert.match(authorize.stderr, /REQUEST_IDENTIFIED.*ready-1/);
+  assert.deepEqual(authorize.json, { kind: 'durable', request_id: 'ready-1', operation: 'authorize-readiness', work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', purpose: null });
   owner.child.kill('SIGTERM');
   assert.equal((await owner.result).code, 0);
 });

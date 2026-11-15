@@ -38,6 +38,9 @@ export type Remote = {
   incompleteInputs?: number;
   /** Ticket 15: readPullRequest observations by PR number (absent = unavailable GITHUB_NOT_FOUND_OR_HIDDEN). */
   pullRequests?: Record<number, PullRequestObservation>;
+  /** Ticket 16: setDraft outcomes consumed one per call (absent = applied). `unknown-*`: the caller learns nothing; whether the flag changed is
+   * decided here. An applied conversion changes `pullRequests[n].pullRequest.draft` (the next readPullRequest observes it). */
+  drafts?: ('applied' | 'known-failure' | 'unknown-applied' | 'unknown-not-applied')[];
 };
 let commentSequence = 80000;
 /** A comment as the tracker adapter reports it. */
@@ -150,11 +153,20 @@ export function githubDoubles(remote: Remote) {
     readPullRequest: query => track('readPullRequest', (): PullRequestObservation => {
       const found = remote.pullRequests?.[query.number];
       if (found?.kind === 'observed' && query.unless && found.pullRequest.state === 'open' && found.pullRequest.headSha === query.unless.headSha &&
-        found.pullRequest.baseRef === query.unless.baseRef) return { kind: 'unchanged', source: 'github-rest', observedAt: observedAt(), repository: query.repo.repository,
+        found.pullRequest.baseRef === query.unless.baseRef &&
+        (query.unless.draft === undefined || found.pullRequest.draft === query.unless.draft)) return { kind: 'unchanged', source: 'github-rest', observedAt: observedAt(), repository: query.repo.repository,
         headSha: found.pullRequest.headSha, baseRef: found.pullRequest.baseRef };
-      return found ??
+      return found ? structuredClone(found) :
       { kind: 'unavailable', source: 'github-rest', observedAt: observedAt(), repository: query.repo.repository, code: 'GITHUB_NOT_FOUND_OR_HIDDEN', nextStep: 'synthetic' };
     }, query),
+    setDraft: (pr, draft, effect) => track('setDraft', () => {
+      const outcome = remote.drafts?.shift() ?? 'applied';
+      const found = remote.pullRequests?.[pr.number];
+      if ((outcome === 'applied' || outcome === 'unknown-applied') && found?.kind === 'observed' && found.pullRequest.nodeId === pr.nodeId) found.pullRequest.draft = draft;
+      if (outcome === 'applied') return { kind: 'applied' as const, observedAt: observedAt(), draft, headSha: found?.kind === 'observed' ? found.pullRequest.headSha : 'c'.repeat(40), revocation: 'revoked' };
+      return { kind: outcome === 'known-failure' ? 'known-failure' as const : 'unknown' as const, observedAt: observedAt(), code: outcome === 'known-failure' ? 'GITHUB_GRAPHQL_FORBIDDEN' : 'GITHUB_TRANSPORT_UNAVAILABLE',
+        nextStep: 'synthetic', revocation: 'revoked' };
+    }, { pr, draft, effect }),
   };
   return { tracker, repository, calls, concurrency: () => maxActive };
 }

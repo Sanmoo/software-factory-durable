@@ -71,6 +71,9 @@ export type World = {
   transportFailures?: string[];
   /** Ticket 15: required-checks world of acme/project (read-only GET endpoints). */
   checks?: ChecksWorld;
+  /** Ticket 16: POST graphql (draft mutations): answer with this status / GraphQL `errors`; `applied` decides whether the flag changed anyway;
+   * `nodeId` reports another node in a success payload. */
+  graphqlFault?: { status: number; errors?: object[]; applied: boolean; nodeId?: string };
 };
 /**
  * Ticket 15 (read-only): `GET /pulls/{n}` (the `pulls` entry + `details`), `GET /branches/{b}` (`branches`), `GET /branches/{b}/protection/
@@ -106,7 +109,9 @@ export function commitStatus(id: number, context: string, state: string, overrid
   return { id, context, state, creator: { id: 77, login: 'ci-bot[bot]', type: 'Bot' }, created_at: `2026-11-14T10:${String(id % 60).padStart(2, '0')}:00Z`,
     updated_at: '2026-11-14T10:59:00Z', target_url: `https://ci.example/${id}`, ...overrides };
 }
-export type TraceEntry = { method: string; endpoint: string; credential: 'app-jwt' | 'installation'; permissions?: Record<string, string>; body?: string };
+/** `sequence`: the issuance number of an access_tokens POST; `grant`: the issuance number of the installation token a request used. */
+export type TraceEntry = { method: string; endpoint: string; credential: 'app-jwt' | 'installation'; permissions?: Record<string, string>; body?: string;
+  sequence?: number; grant?: number };
 
 export function issue(number: number, overrides: Partial<WorldIssue> = {}): WorldIssue {
   return { id: 7000 + number, node_id: `I_node${number}`, number, title: `Ticket ${number}`, body: `SPEC-BODY-${number} must never be captured`,
@@ -161,7 +166,8 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
   const repositories = world.repositories ?? [{ name: 'acme/project', id: 3, installation: 2 }];
   const repoByName = name => repositories.find(r => r.name.toLowerCase() === String(name).toLowerCase());
   let body, raw, status = 200, headers = '';
-  const trace = { method, endpoint, credential: app ? 'app-jwt' : 'installation' };
+  const trace = { method, endpoint, credential: app ? 'app-jwt' : 'installation', ...(!app && token ? { grant: Number(token.split('-')[3]) } : {}) };
+  let graphqlErrors = false;
   const url = new URL(endpoint, 'https://api.github.com');
   // GitHub names are case-insensitive and may be addressed by numeric id.
   let path = url.pathname.replace(/^\\/repositories\\/(\\d+)(?=\\/|$)/, (all, id) => { const r = repositories.find(r => r.id === Number(id)); return r ? '/repos/' + r.name : all; }).toLowerCase();
@@ -214,6 +220,7 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
   trace.permissions = request.permissions;
   trace.repository = target.name;
   const sequence = readFileSync(${JSON.stringify(traceFile)}, 'utf8').split('\\n').filter(line => line.includes('access_tokens')).length + 1;
+  trace.sequence = sequence;
   body = { token: 'synthetic-installation-secret-' + sequence + '-r' + target.id, expires_at: new Date(now + (world.tokenLifetimeSeconds ?? 3600) * 1000).toISOString(), permissions: request.permissions,
     repositories: [{ id: target.id, full_name: target.name, owner: { login: target.name.split('/')[0] } }] };
   appendFileSync(issuedFile, JSON.stringify({ token: body.token, expiresAt: body.expires_at, permissions: request.permissions }) + '\\n');
@@ -222,6 +229,27 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
   // Self-revocation of the installation token used for the request: 204, no body; the token is invalid afterwards (a fault prevents it).
   status = world.revokeFault ?? 204; raw = '';
   if (status === 204 && !Object.keys(world.faults ?? {}).some(fragment => endpoint.includes(fragment))) appendFileSync(revokedFile, JSON.stringify({ token }) + '\\n');
+  } else if (endpoint === 'graphql' && method === 'POST' && !app) {
+  // Ticket 16: the two draft mutations of a pull request of the token's repository, nothing else (any other GraphQL document exits 22).
+  if (args[args.indexOf('--input') + 1] !== '-') process.exit(19);
+  let input = ''; for await (const data of process.stdin) input += data;
+  const request = JSON.parse(input);
+  trace.body = input;
+  const field = /^mutation\\(\\$id: ID!, \\$cid: String\\) \\{ (markPullRequestReadyForReview|convertPullRequestToDraft)\\(input: \\{pullRequestId: \\$id, clientMutationId: \\$cid\\}\\) \\{ clientMutationId pullRequest \\{ id number isDraft headRefOid \\} \\} \\}$/.exec(request.query ?? '')?.[1];
+  if (!field || Object.keys(request).sort().join() !== 'query,variables' || Object.keys(request.variables ?? {}).sort().join() !== 'cid,id') process.exit(22);
+  const target = world.pulls.find(p => p.node_id === request.variables.id && token.split('-').at(-1) === 'r3');
+  const granted = known?.permissions ?? {};
+  const fault = world.graphqlFault;
+  const draft = field === 'convertPullRequestToDraft';
+  const apply = () => { target.draft = draft; const detail = world.checks?.details?.[target.number]; if (detail) detail.draft = draft; writeFileSync(${JSON.stringify(worldFile)}, JSON.stringify(world)); };
+  if (!target) { graphqlErrors = true; body = { data: { [field]: null }, errors: [{ type: 'NOT_FOUND', message: 'Could not resolve to a node' }] }; }
+  else if (granted.pull_requests !== 'write') { graphqlErrors = true; body = { data: { [field]: null }, errors: [{ type: 'FORBIDDEN', message: 'Resource not accessible by integration' }] }; }
+  else if (fault) {
+    if (fault.applied) apply();
+    status = fault.status;
+    if (fault.errors) { graphqlErrors = true; body = { data: { [field]: null }, errors: fault.errors }; }
+    else body = status === 200 ? { data: { [field]: { clientMutationId: request.variables.cid, pullRequest: { id: fault.nodeId ?? target.node_id, number: target.number, isDraft: draft, headRefOid: target.head.sha ?? 'c'.repeat(40) } } } } : { message: 'synthetic' };
+  } else { apply(); body = { data: { [field]: { clientMutationId: request.variables.cid, pullRequest: { id: target.node_id, number: target.number, isDraft: draft, headRefOid: target.head.sha ?? 'c'.repeat(40) } } } }; }
   } else if (app || (method !== 'GET' && !(method === 'POST' && /^\\/repos\\/[^/]+\\/[^/]+\\/(issues\\/\\d+\\/comments|git\\/refs|pulls)$/.test(path)))) process.exit(16);
   else if (!repo) process.exit(11);
   else if (rest === '') body = { id: repo.id, full_name: repo.name, owner: { login: repo.name.split('/')[0] } };
@@ -357,7 +385,7 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
   if (world.exhaustRateLimit && !app && status === 200) headers += 'x-ratelimit-remaining: 0\\r\\nx-ratelimit-reset: ' + (Math.floor(Date.now() / 1000) + 600) + '\\r\\n';
   appendFileSync(${JSON.stringify(traceFile)}, JSON.stringify(trace) + '\\n');
   process.stdout.write('HTTP/2.0 ' + status + ' Test\\r\\nx-github-api-version-selected: 2026-03-10\\r\\n' + headers + '\\r\\n' + (raw ?? JSON.stringify(body)));
-  process.exit(status >= 200 && status < 300 ? 0 : 1);
+  process.exit(status >= 200 && status < 300 && !graphqlErrors ? 0 : 1);
   `, { mode: 0o700 });
   const preload = join(root, 'native-fixture.mjs');
   await writeFile(preload, `import { installNativeAppFixture } from ${JSON.stringify(pathToFileURL(resolve('dist/test/entrypoints/native-app-fixture.js')).href)}; installNativeAppFixture(${JSON.stringify(executable)}, ${JSON.stringify(scenario)});`);

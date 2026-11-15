@@ -6,6 +6,7 @@ import type { AccessDependencies, Control, ControlStatus, DispatchReason, Execut
 import { heldSlots, initializeSlots, reconcileDurations, reconcileLostCredentials } from './execution.js';
 import { createDispatcher, isLiveCredentialExecution, isLiveExecution } from './dispatch.js';
 import { createChecksTracker } from './checks.js';
+import { acceptReadinessAuthorization, createReadinessDesk } from './readiness.js';
 import { openStore } from './store.js';
 import { recordRunEnd, recordRunStart } from './migration.js';
 import { currentFormat } from './format.js';
@@ -29,14 +30,16 @@ const inputSchema = z.union([z.strictObject({ request_id: requestId, operation: 
   z.strictObject({ request_id: requestId, operation: z.literal('answer'), question_id: z.uuid(), origin: z.literal('local-cli'),
     text: z.string().max(2000).refine(text => text.trim().length > 0 && text === text.trim() && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) }),
   // Ticket 11: concreteness is a durable decision of the commit (queryable `not-applied`), only the shape is checked here.
-  z.strictObject({ request_id: requestId, operation: z.literal('update-scope'), work_id: z.uuid(), reason: z.string().min(1).max(2000), origin: z.literal('local-cli') })]);
+  z.strictObject({ request_id: requestId, operation: z.literal('update-scope'), work_id: z.uuid(), reason: z.string().min(1).max(2000), origin: z.literal('local-cli') }),
+  z.strictObject({ request_id: requestId, operation: z.literal('authorize-readiness'), work_id: z.uuid(), reason: z.string().min(1).max(2000), origin: z.literal('local-cli') })]);
 const workIdSchema = z.uuid();
 const limitations = [
   'Candidate observations are in-memory results of the latest poll, not authority; they are rebuilt after restart.',
   'A failed or partial query, or absence from a listing, never proves absence of a Ticket, label or pull request, nor withdrawal of authorization.',
   'Dispatch opens only after the boot reconciliation: execution boundaries composed, no unknown runtime resource, task or orphan Slot; interrupted Executions are ceased (never adopted) and settled from durable evidence. A Work whose own cessation or start stays uncertain keeps its Slot/reservation and is blocked; independents proceed with the remaining capacity. Each dispatch then revalidates authorization and dependencies of its own attempt before reserving.',
   'An operational recovery waits its persisted delay (5/15/45 s by recoveries already consumed, never anticipated by events or restarts) and is checked again at the next polling round after it.',
-  'An ended Builder Execution never completes the Work automatically and nothing is retried automatically. Publication (ticket 14) requires the end-of-Execution verification of a committed content; the Builder pushes its own branch and opens its own draft PR directly, only in a publication activation Control requested after a complete discovery found nothing. Control links its own PR only by correlation (marker, App bot author, own branch/repository/base, verified head); opening it never ends the Ticket. Readiness is not enabled in this increment.',
+  'An ended Builder Execution never completes the Work automatically and nothing is retried automatically. Publication (ticket 14) requires the end-of-Execution verification of a committed content; the Builder pushes its own branch and opens its own draft PR directly, only in a publication activation Control requested after a complete discovery found nothing. Control links its own PR only by correlation (marker, App bot author, own branch/repository/base, verified head); opening it never ends the Ticket.',
+  'Readiness (ticket 16) is the controller\'s evaluation of current evidence (published own PR, verified content and two current opinions, treatments, gates, GitHub required checks of the current head, confirmed absence of conflict, no impediment or concurrent activity), confirmed by a fresh recheck immediately before any draft/ready conversion. The conversion is a Factory effect under a fresh single-use grant, intended before, observed and confirmed after, never repeated implicitly; a ready flag alone certifies nothing. Human review, approval and merge are human only.',
   'Native dependency evaluations are re-done every polling round; only an evaluation of the current round can release, never an older or pre-restart one.',
   'A Question waiting for an answer occupies no Slot; an accepted answer removes only its own impediment and never starts an agent directly: the Work resumes through its queue position after revalidation.',
   'A resumed Builder continues its previous session only when that session was recorded, is intact and compatible; otherwise it is replaced with a recorded reason and an explicit recovery instruction. Delivering context is not proof that the Builder consumed it.',
@@ -93,11 +96,16 @@ export async function openControl(options: { storagePath: string;
     ownCycles: issueIds => ownCycles(state, issueIds),
     record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation),
     // Ticket 15: required-checks tracking after the dispatch tick (off its critical path), whatever the dispatch barrier or pause.
-    afterCycle: async () => { await desk?.cycle(); if (dispatchReason === null) await dispatcher?.tick(); await checks?.pass(tracking.signal).catch(() => {}); },
+    // Ticket 16: readiness after the checks explanation (its evidence), whatever the pause (tracking, not a new trigger).
+    afterCycle: async () => { await desk?.cycle(); if (dispatchReason === null) await dispatcher?.tick(); await checks?.pass(tracking.signal).catch(() => {});
+      await readiness?.pass(tracking.signal).catch(() => {}); },
   }) : undefined;
   const tracking = new AbortController();
   const checks = options.access && options.polling ? createChecksTracker({ session: state, access: options.access, readWorks: () => readWorks(state),
     busy: work_id => dispatcher?.active(work_id) ?? false, clock: options.polling.clock ?? systemClock, minIntervalMs: options.polling.intervalSeconds * 1000 }) : undefined;
+  const readiness = options.access && options.polling ? createReadinessDesk({ session: state, access: options.access, readWorks: () => readWorks(state),
+    installation: () => dispatchReason === 'RECONCILIATION_REQUIRED' ? 'reconciliation-required' : 'settled', clock: options.polling.clock ?? systemClock,
+    minIntervalMs: options.polling.intervalSeconds * 1000 }) : undefined;
   if (options.execution && options.access && poller) dispatcher = createDispatcher({ session: state, access: options.access, ports: options.execution,
     currentAttempt: repository => poller.currentAttempt(repository), readWorks: () => readWorks(state), ownCycles: issueIds => ownCycles(state, issueIds),
     record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation), paused: async () => (await readInstallation(state)).paused,
@@ -140,6 +148,7 @@ export async function openControl(options: { storagePath: string;
       // Local CLI under the administrator account's trust; correlation/single answer are checked in the commit.
       // Ticket 11: recorded for the next safe activation; never delivered to a running Builder, never a launch.
       if (parsed.data.operation === 'update-scope') return acceptScopeUpdate(state, parsed.data);
+      if (parsed.data.operation === 'authorize-readiness') return acceptReadinessAuthorization(state, parsed.data);
       if (parsed.data.operation === 'answer') return acceptAnswer(state, { request_id: parsed.data.request_id, question_id: parsed.data.question_id, text: parsed.data.text, origin: { kind: 'local-cli' } });
       if (parsed.data.operation === 'grant') return grantBudget(state, parsed.data, configuredRepository);
       return acceptPauseCommand(state, parsed.data);

@@ -204,6 +204,7 @@ export async function runPhase(phase: Phase) {
       log({ call: 'pause-copy', receipt: paused });
       const control = await openControl({ storagePath, runtimeInventory: 'unknown', polling: { intervalSeconds: pollingSeconds },
         access: { tracker: readOnlyTracker(tracker, log), repository: { checkAccess: (repo, base) => codeRepository.checkAccess(repo, base), findPublication: correlation => codeRepository.findPublication(correlation),
+          setDraft: async () => ({ kind: 'known-failure' as const, observedAt: new Date().toISOString(), code: 'RECIPE_NO_READINESS', nextStep: 'This recipe never converts draft/ready; nothing was sent.', revocation: 'not-issued' }),
           async readPullRequest(query) {
             const result = await codeRepository.readPullRequest(query);
             log({ call: 'read-pull-request', number: query.number, kind: result.kind, ...(result.kind === 'observed' ? { headSha: result.pullRequest.headSha } : result.kind === 'unavailable' ? { code: result.code } : { unchanged: result.headSha }) });

@@ -115,7 +115,9 @@ export function createChecksTracker(deps: ChecksTrackerOptions) {
         else {
           try {
             observation = await deps.access.repository.readPullRequest({ repo: configured, number: target.number,
-              ...(light ? { unless: { headSha: latest.pullRequest.headSha!, baseRef: latest.pullRequest.baseRef! } } : {}) });
+              ...(light ? { unless: { headSha: latest.pullRequest.headSha!, baseRef: latest.pullRequest.baseRef!,
+                // Ticket 16: a draft/ready flip (e.g. a human draft) makes the light read a full one.
+                ...(latest.pullRequest.draft !== null ? { draft: latest.pullRequest.draft } : {}) } } : {}) });
           } catch { observation = unavailable('PULL_REQUEST_QUERY_FAILED'); }
         }
         if (signal.aborted) return;

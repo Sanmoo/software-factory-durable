@@ -26,8 +26,9 @@ export type PullRequestFacts = { pullRequestId: number; nodeId: string; number: 
   headRef: string; headSha: string; headRepositoryId: number | null; baseRef: string; baseSha: string; mergeCommitSha: string | null;
   /** GitHub's tri-state: true, false, or null while it is still computing. */
   mergeable: boolean | null; mergeableState: string | null; author: { id: number; login: string; type: string } };
-/** `unless`: a light read — when the open PR still has exactly this head and base, only the PR is read and `unchanged` is returned. */
-export type PullRequestQuery = { repo: GitHubScope; number: number; unless?: { headSha: string; baseRef: string } };
+/** `unless`: a light read — when the open PR still has exactly this head and base (and, ticket 16, this draft flag when given), only the PR is
+ * read and `unchanged` is returned. */
+export type PullRequestQuery = { repo: GitHubScope; number: number; unless?: { headSha: string; baseRef: string; draft?: boolean } };
 /** Base tip and requirements (classic + rules), read at collection start and again at its end. */
 export type Requirements = { baseTip: Known<string>; classic: Known<ClassicChecks>; rules: Known<BranchRule[]> };
 /** Separate GET reads under one reduced `checks-read` grant: NOT an atomic snapshot; the PR and the requirements are re-read at the end. */
@@ -149,7 +150,8 @@ export function createPullRequestReader(options: { github: GitHubAccess }) {
     if (!first.ok) return { kind: 'unavailable', source: 'github-rest', observedAt: first.observedAt, repository: repo.repository, code: first.code,
       ...(first.waitSeconds !== undefined ? { waitSeconds: first.waitSeconds } : {}), nextStep: `The pull request could not be read; nothing about its checks is concluded. ${first.nextStep}` };
     const pull = facts(first.value);
-    if (query.unless && pull.state === 'open' && !pull.merged && pull.headSha === query.unless.headSha && pull.baseRef === query.unless.baseRef) {
+    if (query.unless && pull.state === 'open' && !pull.merged && pull.headSha === query.unless.headSha && pull.baseRef === query.unless.baseRef &&
+      (query.unless.draft === undefined || pull.draft === query.unless.draft)) {
       return { kind: 'unchanged', source: 'github-rest', observedAt: first.observedAt, repository: repo.repository, headSha: pull.headSha, baseRef: pull.baseRef };
     }
     const base = pull.baseRef;

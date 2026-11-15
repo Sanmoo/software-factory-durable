@@ -27,7 +27,10 @@ export type ControlInput = { request_id: string; operation: 'pause' | 'unpause';
   /** Explicit additional budget for ONE counter of a Work (spec §11.3 `grant`), from the authorized local ingress. */
   { request_id: string; operation: 'grant'; work_id: string; counter: 'corrections' | 'recoveries'; amount: number; origin: 'local-cli' } |
   /** Ticket 11 (spec §11.3): authorize ONE concrete new version of the Work's request; never applied to a running activity. */
-  { request_id: string; operation: 'update-scope'; work_id: string; reason: string; origin: 'local-cli' };
+  { request_id: string; operation: 'update-scope'; work_id: string; reason: string; origin: 'local-cli' } |
+  /** Ticket 16 (spec §9.3): authorize ONE restoration of ready after an unexpected human draft, or ONE repeat of a conversion that was not
+   * applied. Never a readiness certificate: the conversion still needs a complete current evaluation and the pre-conversion recheck. */
+  { request_id: string; operation: 'authorize-readiness'; work_id: string; reason: string; origin: 'local-cli' };
 /** `answer`: `accepted` removed only that Question's impediment; `not-applied` (already answered, unknown, closed Work...) changed nothing. */
 export type ControlReceipt = { kind: 'durable'; request_id: string; operation: 'pause' | 'unpause'; paused: boolean; historySequence: number } |
   { kind: 'durable'; request_id: string; operation: 'answer'; question_id: string; outcome: 'accepted' | 'not-applied'; reason: string | null; work_id: string | null } |
@@ -37,7 +40,10 @@ export type ControlReceipt = { kind: 'durable'; request_id: string; operation: '
   /** `accepted`: recorded for the next activation (the Work re-enters its queue position if it was idle after a completed Execution);
    * `deferred`: an activity is running or held, nothing reaches it, the change waits for the next safe activation; `not-applied`: nothing changed. */
   { kind: 'durable'; request_id: string; operation: 'update-scope'; work_id: string; outcome: 'accepted' | 'deferred' | 'not-applied'; reason: string | null;
-    scopeUpdateId: string | null; appliesAt: 'next-activation' | null };
+    scopeUpdateId: string | null; appliesAt: 'next-activation' | null } |
+  /** `accepted`: recorded for the next conversion of that purpose (consumed once); `not-applied`: nothing to authorize, nothing changed. */
+  { kind: 'durable'; request_id: string; operation: 'authorize-readiness'; work_id: string; outcome: 'accepted' | 'not-applied'; reason: string | null;
+    purpose: 'human-draft' | 'repeat-conversion' | null };
 export type ControlQuery = { kind: 'status' } | { kind: 'request'; request_id: string } | { kind: 'access' } | { kind: 'list' } | { kind: 'show'; work_id: string } |
   { kind: 'question'; question_id: string };
 export type DispatchReason = 'RECONCILIATION_REQUIRED' | 'EXECUTION_NOT_ENABLED';
@@ -400,6 +406,52 @@ export type ChecksEvaluation = {
 };
 /** Latest explanation and a bounded history of earlier ones (old heads stay visible as history, never as current evidence). */
 export type ChecksView = { latest: ChecksEvaluation; history: { at: string; headSha: string | null; outcome: ChecksEvaluation['outcome']; reasons: string[] }[] };
+/**
+ * Ticket 16 (spec §3.3/§9.3): one independent reason why readiness is not established. `confirmed`: the condition is known lost or unmet
+ * (the Factory restores draft when it placed ready); `uncertain`: transient, incomplete or unknown (internal confirmation withdrawn, flag kept).
+ */
+export type ReadinessReason = { area: 'ownership' | 'publication' | 'content' | 'checks' | 'conflict' | 'impediment' | 'dependencies' | 'concurrency' | 'installation' | 'closed';
+  certainty: 'confirmed' | 'uncertain'; code: string; subject?: string };
+/** The correlated external facts one evaluation used. A change of identity/head/base/requirements before a conversion invalidates it. */
+export type ReadinessBasis = { pullRequest: number; nodeId: string; headSha: string | null; baseRef: string | null; baseTip: string | null; strict: boolean;
+  requirements: string | null; verifiedHead: string | null; contentSha256: string | null; checksAt: string | null; checksOutcome: ChecksEvaluation['outcome'] | null;
+  draft: boolean | null };
+/** `recheck`: computed from the fresh complete read taken immediately before a conversion; `recorded`: from the latest recorded explanation. */
+export type ReadinessEvaluation = { at: string; source: 'recorded' | 'recheck'; decision: 'ready' | 'not-ready' | 'unknown'; reasons: ReadinessReason[];
+  basis: ReadinessBasis; notes: string[] };
+/**
+ * One draft/ready conversion, a Factory (controller) effect: intent committed BEFORE the remote mutation, the attempt outside any commit, an
+ * independent observation (discovery) and the durable confirmation. Never repeated implicitly: a `not-applied` conversion of the same basis
+ * needs an operator authorization (or a new basis).
+ */
+export type ReadinessEffect = { effectId: string; action: 'mark-ready' | 'convert-to-draft'; reason: string; basis: ReadinessBasis; intendedAt: string;
+  state: 'intended' | 'attempted' | 'confirmed' | 'not-applied';
+  /** The operator authorization this conversion consumed (request id), if any. */
+  authorization: string | null;
+  attempt: { at: string; outcome: 'applied' | 'known-failure' | 'unknown'; code: string | null; revocation: string } | null;
+  observation: { at: string; draft: boolean | null; headSha: string | null; code: string | null } | null; settledAt: string | null };
+/**
+ * Ticket 16: readiness dimension of a Work's own PR. Internal readiness (`internal`), the GitHub draft/ready flag (`flag`), human review and
+ * delivery are distinct: a ready flag alone never certifies readiness; human review/approval and merge are never performed by the Factory.
+ */
+export type ReadinessView = {
+  internal: 'ready' | 'not-ready' | 'unknown'; since: string;
+  latest: ReadinessEvaluation;
+  /** The flag the Factory itself established (`publication`: the draft it published; `readiness-effect`: a confirmed conversion;
+   * `operator-authorized`: an unexpected human draft the operator authorized to restore), and the flag last observed on GitHub. */
+  flag: { factory: 'draft' | 'ready'; origin: 'publication' | 'readiness-effect' | 'operator-authorized'; at: string; observed: 'draft' | 'ready' | 'unknown'; observedAt: string | null };
+  /** Draft observed while the Factory had placed ready (not its own effect): respected; restoring it needs an operator authorization. */
+  humanDraft: { observedAt: string; headSha: string | null } | null;
+  /** Ready observed while the Factory had it as draft: visible only, never a certification nor a flag the Factory reverts. */
+  humanReady: { observedAt: string } | null;
+  authorization: { request_id: string; at: string; reason: string; purpose: 'human-draft' | 'repeat-conversion' } | null;
+  effect: ReadinessEffect | null;
+  /** Earlier settled conversions, oldest first (bounded). */
+  effects: ReadinessEffect[];
+  /** Presentation of the separate stages (spec §3.3): never merged into one status. */
+  stages: { internal: 'ready' | 'not-ready' | 'unknown'; flag: 'draft' | 'ready' | 'unknown'; humanReview: 'human-stage'; delivery: 'not-delivered' };
+  nextStep: string;
+};
 export type WorkView = {
   work_id: string; cycle: number; predecessor: string | null;
   ticket: TicketRef; repository: { repository: string; repositoryId: number; base: string };
@@ -419,6 +471,8 @@ export type WorkView = {
   publication?: PublicationView | null;
   /** Ticket 15 (absent on earlier records): explanation of the GitHub required checks of the linked own PR's current head. */
   checks?: ChecksView | null;
+  /** Ticket 16 (absent on earlier records): internal readiness, the draft/ready flag and the conversions of the own PR. */
+  readiness?: ReadinessView | null;
   /** Earlier Executions of this Work, oldest first (a recovery Execution replaces `execution`, never erasing its predecessor). */
   previousExecutions: ExecutionView[];
   /** Question identities of this Work, in recording order. */
@@ -454,7 +508,10 @@ export type WorkView = {
     { at: string; event: 'execution-reconciled' | 'recovery-wait-kept'; origin: 'controller-recovery'; executionId: string | null; detail: string } |
     { at: string; event: 'publication-evaluated' | 'publication-requested' | 'publication-started' | 'publication-linked' | 'publication-blocked' | 'publication-discovery-incomplete';
       origin: 'controller-publication'; executionId: string | null; detail: string } |
-    { at: string; event: 'checks-evaluated'; origin: 'controller-checks'; detail: string })[];
+    { at: string; event: 'checks-evaluated'; origin: 'controller-checks'; detail: string } |
+    { at: string; event: 'readiness-evaluated' | 'readiness-intended' | 'readiness-attempted' | 'readiness-confirmed' | 'readiness-not-applied' | 'readiness-human-flag';
+      origin: 'controller-readiness'; detail: string } |
+    { at: string; event: 'readiness-authorized'; origin: 'local-cli'; detail: string })[];
 };
 export type CounterView = { limit: number; granted: number; effectiveLimit: number; consumed: number; reserved: 0 | 1; reservedBy: string | null; available: number; exhausted: boolean };
 /** `elapsedMs` is a monotonic measurement (live or measured) or null; `unknown` is never shown as zero. */

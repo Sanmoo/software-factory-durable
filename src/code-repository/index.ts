@@ -35,11 +35,19 @@ export type PublicationObservation = { kind: 'observed'; source: 'github-rest'; 
   branches: Record<string, BranchRef>; refs?: RefsListing; baseProtection?: BaseProtection } |
   { kind: 'unavailable'; source: 'github-rest'; observedAt: string; repository: string; completeness: 'incomplete'; code: string; waitSeconds?: number; nextStep: string };
 
+/** Outcome of one draft/ready conversion. `applied`: GitHub's answer to the mutation (not yet the independent observation Control requires);
+ * `known-failure`: certainly not applied; `unknown`: may have been applied — read the pull request before any repetition. */
+export type DraftConversion = { kind: 'applied'; observedAt: string; draft: boolean; headSha: string; revocation: string } |
+  { kind: 'known-failure' | 'unknown'; observedAt: string; code: string; waitSeconds?: number; nextStep: string; revocation: string };
+
 export interface CodeRepository {
   checkAccess(repo: GitHubScope, base: string): Promise<AccessDiagnostic>;
   findPublication(correlation: PublicationCorrelation): Promise<PublicationObservation>;
   /** Q4B `readPullRequest` (ticket 15): current facts of a known own PR and the data its applicable checks need; never decides readiness. */
   readPullRequest(query: PullRequestQuery): Promise<PullRequestObservation>;
+  /** Q4B `setDraft(pr, draft, effect)` (ticket 16): one draft/ready conversion of a known own PR, correlated by the effect identity. The
+   * decision and its evidence belong to Control; a remote flag never stands in for internal readiness. Never review, approval or merge. */
+  setDraft(pr: { repo: GitHubScope; number: number; nodeId: string }, draft: boolean, effect: { effectId: string }): Promise<DraftConversion>;
 }
 
 const pullSchema = z.object({
@@ -155,6 +163,15 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
   }
   return {
     readPullRequest: createPullRequestReader(options),
+    async setDraft(pr, draft, effect) {
+      const written = await options.github.setDraft(pr.repo, { number: pr.number, nodeId: pr.nodeId }, draft, effect.effectId);
+      if (written.ok) {
+        const value = written.value as { draft: boolean; headSha: string };
+        return { kind: 'applied', observedAt: written.observedAt, draft: value.draft, headSha: value.headSha, revocation: written.revocation };
+      }
+      return { kind: written.outcome, observedAt: written.observedAt, code: written.code, ...(written.waitSeconds !== undefined ? { waitSeconds: written.waitSeconds } : {}),
+        nextStep: written.nextStep, revocation: written.revocation };
+    },
     checkAccess(repo, base) {
       return options.github.diagnose(repo, 'repository', async session => {
         if (!base || /[\x00-\x20\x7f]/.test(base)) throw new InvalidGitHubObservation();

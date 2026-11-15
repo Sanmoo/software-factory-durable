@@ -130,7 +130,7 @@ test('review MED 2: per-Work minimum interval, backoff honouring waitSeconds, li
   assert.equal(h.reads().length, 1, 'not due before the minimum interval');
   await h.pass(30000);
   const light = h.reads().at(-1)!.args as { unless?: unknown };
-  assert.deepEqual([h.reads().length, light.unless], [2, { headSha: ownHead, baseRef: 'main' }], 'a stable explanation of an unchanged head: light read only');
+  assert.deepEqual([h.reads().length, light.unless], [2, { headSha: ownHead, baseRef: 'main', draft: true }], 'a stable explanation of an unchanged head: light read only');
   remote.pullRequests![7] = observed([{ id: 1, name: 'build' }], { pullRequest: { ...observed([]).pullRequest, headSha: 'e'.repeat(40) },
     recheck: complete({ headSha: 'e'.repeat(40), baseRef: 'main', state: 'open', merged: false }) });
   await h.pass(60000);

@@ -274,7 +274,7 @@ export async function runPhase(phase: Phase) {
         runtimeInventory: 'empty',
         access: { tracker, repository: { checkAccess: (repo, base) => codeRepository.checkAccess(repo, base),
           // Ticket 15 (GET-only checks explanation of the linked own PR) composes unchanged.
-          readPullRequest: query => codeRepository.readPullRequest(query), async findPublication(correlation) {
+          readPullRequest: query => codeRepository.readPullRequest(query), setDraft: async () => ({ kind: 'known-failure' as const, observedAt: new Date().toISOString(), code: 'RECIPE_NO_READINESS', nextStep: 'This recipe never converts draft/ready; nothing was sent.', revocation: 'not-issued' }), async findPublication(correlation) {
           if (!discovering && lost.refuses(correlation.knownBranches)) { log({ call: 'find-publication-refused', knownBranches: correlation.knownBranches }); throw new Error('RECIPE_LOST_RESULT'); }
           const result = await codeRepository.findPublication(correlation);
           log({ call: 'find-publication', knownBranches: correlation.knownBranches, kind: result.kind, ...(result.kind === 'observed' ? { branches: result.branches,
