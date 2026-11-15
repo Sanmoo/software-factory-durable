@@ -24,12 +24,13 @@ export function reviewerFailure(reviewer: Pick<ReviewerView, 'state' | 'opinion'
 const transient = new Set(['WORKER_MODEL_UNAVAILABLE', 'WORKER_PROVIDER_UNAVAILABLE', 'WORKER_INTERRUPTED', 'WORKER_CHANNEL_CLOSED', 'WORKER_EXECUTION_UNCERTAIN',
   'WORKER_START_UNCERTAIN', 'TOOL_CHANNEL_CLOSED', 'REVIEWER_INTERRUPTED', 'OPINION_MISSING', 'REVIEW_VERDICT_INVALID', 'REVIEW_VERDICT_ROLE_MISMATCH',
   'REVIEW_VERDICT_BASIS_INVALID', 'REVIEW_VERDICT_TOO_LARGE']);
-/** Upper bound of the opinion schema (`attempt` ≤ 9): beyond it no attempt identity exists. */
-export const maxReviewerAttempt = 9;
+/** Operator decision 2026-11-15: at most TWO retries per role per round (attempt 3 is the last), whatever the recoveries budget left;
+ * the next failure holds the Execution (`REVIEWER_RETRY_LIMIT`) for the operator. */
+export const maxReviewerRetries = 2;
 
 export type RetryDecision = { kind: 'retry'; attempt: number; waitSeconds: number } |
   { kind: 'not-retried'; code: 'REVIEWER_CESSATION_UNCONFIRMED' | 'REVIEWER_FAILURE_NOT_TRANSIENT' | 'RECOVERY_LIMIT_REACHED' | 'RECOVERY_RESERVATION_BUSY' |
-    'RECOVERY_BUDGET_UNAVAILABLE' | 'PROPOSAL_CHANGED' | 'PROPOSAL_IDENTITY_UNKNOWN' | 'REVIEWER_ATTEMPTS_EXHAUSTED' } | { kind: 'none' };
+    'RECOVERY_BUDGET_UNAVAILABLE' | 'PROPOSAL_CHANGED' | 'PROPOSAL_IDENTITY_UNKNOWN' | 'REVIEWER_RETRY_LIMIT' } | { kind: 'none' };
 
 /** The proposal identity re-observed is NOT the one the round started on (or cannot be shown to be): never reviewed on the old input. */
 export function identityChange(before: ProposalIdentity | null, now: ProposalIdentity | null): 'PROPOSAL_CHANGED' | 'PROPOSAL_IDENTITY_UNKNOWN' | null {
@@ -51,7 +52,7 @@ export function retryDecision(input: { reviewer: Pick<ReviewerView, 'state' | 'o
   if (input.reviewer.cessation !== 'completion-observed' && input.reviewer.cessation !== 'never-started') return { kind: 'not-retried', code: 'REVIEWER_CESSATION_UNCONFIRMED' };
   if (!transient.has(failure.code)) return { kind: 'not-retried', code: 'REVIEWER_FAILURE_NOT_TRANSIENT' };
   const attempt = (input.reviewer.attempt ?? 1) + 1;
-  if (attempt > maxReviewerAttempt) return { kind: 'not-retried', code: 'REVIEWER_ATTEMPTS_EXHAUSTED' };
+  if (attempt > 1 + maxReviewerRetries) return { kind: 'not-retried', code: 'REVIEWER_RETRY_LIMIT' };
   const changed = identityChange(input.before, input.now);
   if (changed) return { kind: 'not-retried', code: changed };
   if (!input.counter) return { kind: 'not-retried', code: 'RECOVERY_BUDGET_UNAVAILABLE' };
@@ -67,6 +68,11 @@ export function retryDecision(input: { reviewer: Pick<ReviewerView, 'state' | 'o
 export function incorporable(opinion: ReviewOpinion, expected: { role: ReviewerRole; round: number; attempt: number; invocationId: string; handoffIndexSha256: string }): boolean {
   return opinion.role === expected.role && opinion.round === expected.round && opinion.attempt === expected.attempt && opinion.invocationId === expected.invocationId &&
     opinion.input.handoffIndexSha256 === expected.handoffIndexSha256;
+}
+
+/** Operator decision 2026-11-15: opinions are carried ONLY into an operational recovery; after an administrative stop both review again. */
+export function carryBasis(interruption: ExecutionView['interruption'] | undefined): string | null {
+  return interruption?.reason === 'OPERATIONAL_RECOVERY' ? interruption.previousExecutionId : null;
 }
 
 /** The interrupted round a recovery Execution may carry opinions from: the LAST review round of the interrupted Execution, if its cessation is confirmed. */

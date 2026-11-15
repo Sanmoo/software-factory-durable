@@ -6,7 +6,7 @@ import type { ProposalIdentity, ReviewOpinion } from '../../contracts/index.js';
 import type { HandoffEvent } from '../../workers/index.js';
 import { classifyCapture, deliveryPrompt, exemptionPrompt, lastReviewed, planReviews, type CaptureClass, type ReviewPlan } from '../rules/review.js';
 import { recordConclusion, recordDelivery, recordHandoff, recordReviewerEnd, recordReviewerStart, recordVerification } from './review.js';
-import { carryPlan, carrySource, identityChange, preservedReviewContext, reviewerFailure, incorporable, retryDecision, reviewProfile, undiscovered, type CarryPlan } from '../rules/review-recovery.js';
+import { carryBasis, carryPlan, carrySource, identityChange, preservedReviewContext, reviewerFailure, incorporable, retryDecision, reviewProfile, undiscovered, type CarryPlan } from '../rules/review-recovery.js';
 import { recordNotRetried, recordReviewerRetry, releaseReviewerRetry } from './review-recovery.js';
 import type { AccessDependencies, CredentialWithdrawal, DependencyEvaluation, ExecutionPorts, ExecutionView, FactoryAppIdentity } from '../types.js';
 import { evaluateEntry } from '../rules/admission.js';
@@ -341,6 +341,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     // Retries of ONE round are serialized: the Work has a single recoveries reservation, so a second failed role waits until the first
     // retry settled it (consumed with its start, released on a proven non-start) instead of being dropped as RECOVERY_RESERVATION_BUSY.
     let retryLock: Promise<unknown> = Promise.resolve();
+    let retryLimited = false;
     const serialized = <T>(fn: () => Promise<T>): Promise<T> => { const run = retryLock.then(fn); retryLock = run.catch(() => {}); return run; };
     const retryOnce = (plan: ReviewPlan): Promise<ReviewPlan | null> => serialized(async () => {
       if (event.status !== 'captured') return null;
@@ -354,6 +355,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       if (decision.kind === 'not-retried') {
         // Unconfirmed cessation keeps the existing hold path (the round is never concluded on it); the rest is recorded explicitly.
         if (decision.code !== 'REVIEWER_CESSATION_UNCONFIRMED') await recordNotRetried(session, work.work_id, executionId, round, plan.role, decision.code);
+        if (decision.code === 'REVIEWER_RETRY_LIMIT') retryLimited = true;
         return null;
       }
       const next = planReviews({ executionId, round, attempt: decision.attempt, handoff: event.summary,
@@ -397,6 +399,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         if (!await stillRunning(work.work_id, executionId, round)) return hold('REVIEWER_RECOVERY_FAILED',
           'The partial review recovery failed unexpectedly; both reviewers ended, nothing is retried automatically and the Builder stays suspended. Operator recovery (ticket 26/28).');
       }
+      // Operator decision 2026-11-15: two failed retries of the same role in this round hold the Execution, whatever budget remains.
+      if (retryLimited && !await stillRunning(work.work_id, executionId, round)) return hold('REVIEWER_RETRY_LIMIT',
+        'A reviewer failed again after its 2 automatic retries in this round; nothing more is retried and the Builder stays suspended. Inspect the reviewer failures (`factory show`) and decide explicitly.');
     }
     checkStop();
     if (await stillRunning(work.work_id, executionId, round)) return hold('REVIEWER_CESSATION_UNCONFIRMED',
@@ -419,10 +424,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
   function interruptedPrevious(work: WorkRecord | undefined, executionId: string): ExecutionView | null {
     const execution = work?.execution;
     if (!execution || execution.executionId !== executionId) return null;
-    // Ticket 26's interruption basis: an operational recovery or a clean administrative continuation (both after confirmed cessation).
-    const basis = execution.interruption ?? null;
-    if (!basis) return null;
-    return work.previousExecutions.find(item => item.executionId === basis.previousExecutionId) ?? null;
+    // Ticket 26's interruption basis, ONLY an operational recovery (operator decision 2026-11-15; after an administrative stop both review again).
+    const previousId = carryBasis(execution.interruption);
+    return previousId ? work.previousExecutions.find(item => item.executionId === previousId) ?? null : null;
   }
 
   async function stillRunning(work_id: string, executionId: string, round: number) {

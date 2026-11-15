@@ -16,8 +16,9 @@ import { ticketBody } from './review13-qualification.js';
 // phase never reruns. No GitHub write is possible: every grant is read-only and publication is not part of ticket 28.
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const observations = `${root}/q28-partial-v1`;
-const revision = 'q28-partial-v1';
+// v2: fresh namespace for the operator decisions of 2026-11-15 (carry only after operational recovery; at most 2 retries per role per round).
+const observations = `${root}/q28-partial-v2`;
+const revision = 'q28-partial-v2';
 const phases = ['preflight', 'run', 'inspect', 'stop-environment'] as const;
 type Phase = typeof phases[number];
 const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 'main', installationId: 177599217, workflows: false, label: 'ready-for-agent' };
@@ -54,7 +55,7 @@ export function plan() {
     model: { provider: 'openai', model: 'gpt-6-luna', api: 'openai-responses', auth: 'factory-oauth (operator first-login store under root/credentials)', sameModelForAllRoles: true,
       builder: { skillPack, budget: 'builder-v1', maxRequests: 60, maxToolCalls: 120, deadlineMinutes: 30, captures: rounds.max },
       reviewers: { roles: ['standards', 'spec'], budget: 'reviewer-v1', maxRequestsEach: 24, maxToolCallsEach: 80, deadlineMinutesEach: 15, tools: ['read'],
-        maxActivations: activationsMax, retries: { standards: 0, spec: 1 } },
+        maxActivations: activationsMax, retries: { standards: 0, spec: 1 }, controlRetryCapPerRolePerRound: 2 },
       maxRequestsTotal: total, providerRetries: 0, sdkRetries: 0, providerBillingHardCap: false },
     ticket: { number: expectedTicket.number, body: ticketBody, provocation: 'Builder system prompt: first proposal omits ## Rollback (changed content in a later round)' },
     provocations: [

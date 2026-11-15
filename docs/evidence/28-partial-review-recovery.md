@@ -106,13 +106,12 @@ regras falhou já na importação dos novos símbolos) e depois verdes com a cor
    invocação): mantém o hold `REVIEWER_CESSATION_UNCONFIRMED` e segue a recuperação de 26 (parada do boot = cessação), depois o carry com descoberta.
 4. **Carry só após `OPERATIONAL_RECOVERY`** (não após resposta/escopo: pode mudar contexto). Lido estruturalmente de `execution.interruption`
    até o rebase sobre 26 (sem efeito antes dele).
-5. Pendentes do rebase sobre 26: **feitos** (ver § Composição com o ticket 26). O carry também vale após parada administrativa limpa
-   (`ADMINISTRATIVE_STOP`, cessação confirmada); confirmar com o operador se deve ficar restrito a `OPERATIONAL_RECOVERY`.
+5. Pendentes do rebase sobre 26: **feitos** (ver § Composição com o ticket 26).
 
 ## Ensaio real (receita one-shot)
 
 `test/entrypoints/review28-qualification.ts` (import e `--plan` inertes, testados). Fases `preflight`, `run`, `inspect`, `stop-environment`
-(tombstone exclusivo; nunca reexecuta). Observações em `/home/sanmoo/software-factory-test/y5/q28-partial-v1`. GitHub só leitura (Ticket #3
+(tombstone exclusivo; nunca reexecuta). Observações em `/home/sanmoo/software-factory-test/y5/q28-partial-v2`. GitHub só leitura (Ticket #3
 sintético em `Sanmoo/java-springboot-event-sourcing`), 1 VM, modelo real `openai/gpt-6-luna` via factory-oauth, retries de SDK/provider 0.
 
 Provocações declaradas: (1) Spec r1a1 com `deadlineMs` 20 s do Host (worker real interrompido pelo próprio prazo, parecer `cancelled`
@@ -140,7 +139,7 @@ Observações esperadas (`inspect-result.json`): r1 `standards.source = records-
 rodada com conteúdo mudado com as duas ativações `a1`; Execução `ended`, Slot liberado com cessação confirmada; sem token nos artefatos.
 Se Spec r1a1 terminar `REVIEWER_OUTCOME_UNCERTAIN` (canal fechado pelo prazo), a Execução fica `held` `REVIEWER_CESSATION_UNCONFIRMED`
 sem retry — registrar como achado. **Fora desta revisão da receita**: corte real do controlador no handoff com VM/modelo (padrão `recovery26-qualification.ts`, filhos sob
-`flock` e SIGKILL) — proposta de `q28-partial-v2`; localmente coberto por `review28-crash.test.ts` com dublês de host/revisores.
+`flock` e SIGKILL) — proposta de `q28-partial-v3`; localmente coberto por `review28-crash.test.ts` com dublês de host/revisores.
 
 ## Gate local
 
@@ -158,3 +157,24 @@ paralela de outros gates e passaram ao rerodar sozinhos (flakes conhecidos). Nov
 Após o rebase sobre `4f56f25` e a composição com 26 (`6902843`): tsc 0 erros, eslint limpo, dependency-cruiser sem violações (366 módulos,
 2257 dependências); **176 arquivos um por vez: 1100 pass, 0 fail, 10 skipped** (`test/sandbox/gondolin.test.ts` segue `skip: true`).
 Novos desde a rodada anterior: `review28-crash` 2 (cortes SIGKILL reais), `review28-rules` 9.
+
+## Decisões do operador (2026-11-15)
+
+1. **Carry só após recuperação operacional** (`interruption.reason = OPERATIONAL_RECOVERY`); após `ADMINISTRATIVE_STOP` os dois revisores
+   revisam de novo. Regra pura `carryBasis` (testada) usada pelo dispatch.
+2. **Teto de 2 retries por papel por rodada** (tentativa 3 é a última), independentemente do orçamento `recoveries` restante: a falha
+   seguinte é registrada `notRetried: REVIEWER_RETRY_LIMIT` e a Execução fica `held` `REVIEWER_RETRY_LIMIT` (Builder suspenso, nada entregue;
+   no reboot 26 trata o código como bloqueante). Substitui o limite técnico anterior (`attempt ≤ 9`). Testes: regras (tentativa 2 → retry,
+   tentativa 3 → limite mesmo com orçamento 10) e fluxo (Spec falha a1/a2/a3 → 2 consumidos, hold, sem entrega). Vermelho observado antes.
+3. **Classificação de falhas transitórias mantida** (whitelist em `src/control/rules/review-recovery.ts`): `WORKER_MODEL_UNAVAILABLE`,
+   `WORKER_PROVIDER_UNAVAILABLE`, `WORKER_INTERRUPTED`, `WORKER_CHANNEL_CLOSED`, `WORKER_EXECUTION_UNCERTAIN`, `WORKER_START_UNCERTAIN`,
+   `TOOL_CHANNEL_CLOSED`, `REVIEWER_INTERRUPTED`, `OPINION_MISSING`, `REVIEW_VERDICT_INVALID`, `REVIEW_VERDICT_ROLE_MISMATCH`,
+   `REVIEW_VERDICT_BASIS_INVALID`, `REVIEW_VERDICT_TOO_LARGE` — e só com cessação conhecida (`completion-observed`/`never-started`).
+   Nunca re-obtidos: configuração/perfil (`REVIEWER_UNAVAILABLE`, `WORKER_PROFILE_*`, `WORKER_LAUNCH_INVALID`, `STALE_TOOL_CONTEXT`), correlação
+   e integridade (`OPINION_NOT_CORRELATED`, `REVIEWER_START_RECEIPT_CONFLICT`), sessão (`SESSION_*`), `RETRY_NOT_LAUNCHED`, e qualquer código
+   não listado; parecer `incomplete` é resultado real (nunca re-obtido nem levado).
+
+Receita real autorizada pelo operador (execução pelo supervisor, depois do ensaio real do ticket 14): revisão **`q28-partial-v2`**, namespace
+novo `/home/sanmoo/software-factory-test/y5/q28-partial-v2` (revisão nova por causa destas regras; este agente não lê nada sob `software-factory-test`, o `preflight` cria o diretório em modo exclusivo e recusa um existente). Compatível com as
+decisões: um único retry provocado de Spec na r1 (≤ 2), Standards nunca re-tentado, nenhuma recuperação operacional (sem carry). Limites
+inalterados: ≤ 276 requisições de modelo, 75 min.

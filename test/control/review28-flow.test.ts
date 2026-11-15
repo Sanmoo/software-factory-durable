@@ -274,3 +274,12 @@ test('review MED 6: a failure inside one role\'s recovery never abandons the sib
   assert.equal(h.shown!.budget!.recoveries.reserved, null);
   assert.equal(h.execution.directives.length, 0, 'nothing is delivered to the suspended Builder');
 });
+
+test('operator decision 2026-11-15: after 2 failed retries of the same role in the round the Execution is held REVIEWER_RETRY_LIMIT, even with budget left', async t => {
+  const h = await harness(t, { captures: [capture(1, '1', true)], behaviour: role => role === 'spec' ? 'fail' : 'clean' }, { recoveryLimit: 10 });
+  const round = h.work.execution!.review!.rounds[0]!;
+  assert.deepEqual(activations(h.execution.kinds), ['activate-builder', 'activate-standards-r1a1', 'activate-spec-r1a1', 'activate-spec-r1a2', 'activate-spec-r1a3']);
+  assert.deepEqual([round.reviewers.spec.attempt, round.reviewers.spec.notRetried?.code, h.shown!.budget!.recoveries.consumed], [3, 'REVIEWER_RETRY_LIMIT', 2]);
+  assert.deepEqual([h.work.execution!.state, h.work.execution!.held?.code], ['held', 'REVIEWER_RETRY_LIMIT']);
+  assert.equal(h.execution.directives.length, 0, 'nothing is delivered: the Builder stays suspended for the operator');
+});

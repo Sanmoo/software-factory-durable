@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { opinionCorrelated, verifyExecution } from '../../src/control/rules/review.js';
-import { carryPlan, carrySource, identityChange, incorporable, notRetriedReasons, packIdentity, preservedReviewContext, retryDecision, reviewerFailure, reviewerRetryWait,
+import { carryBasis, carryPlan, carrySource, identityChange, incorporable, notRetriedReasons, packIdentity, preservedReviewContext, retryDecision, reviewerFailure, reviewerRetryWait,
   reviewProfile, sameReviewProfile, undiscovered } from '../../src/control/rules/review-recovery.js';
 import { pendingReviewerReservations, settleReviewerReservations } from '../../src/control/durable/review-recovery.js';
 import type { WorkRecord } from '../../src/control/durable/admission.js';
@@ -57,7 +57,10 @@ test('AC2/AC3: only a failure with known cessation, transient cause, unchanged p
   assert.equal(code(failure, { counter: counter({ consumed: 3, granted: 1 }) }).kind, 'retry', 'an explicit grant counts');
   assert.equal(notRetried(code(failure, { counter: counter({ reserved: 'other' }) })), 'RECOVERY_RESERVATION_BUSY');
   assert.equal(notRetried(code(failure, { counter: null })), 'RECOVERY_BUDGET_UNAVAILABLE');
-  assert.equal(notRetried(code({ ...failure, attempt: 9 })), 'REVIEWER_ATTEMPTS_EXHAUSTED');
+  // Operator decision 2026-11-15: at most 2 retries per role per round (attempt 3 is the last), whatever the recoveries budget.
+  assert.equal(code({ ...failure, attempt: 2 }).kind, 'retry', 'the second retry');
+  assert.equal(notRetried(code({ ...failure, attempt: 3 })), 'REVIEWER_RETRY_LIMIT');
+  assert.equal(notRetried(code({ ...failure, attempt: 3 }, { counter: counter({ limit: 10 }) })), 'REVIEWER_RETRY_LIMIT', 'budget left does not lift the cap');
   // A recorded failure opinion (invalid verdict, cancellation) is a failure, never zero findings.
   assert.deepEqual(reviewerFailure(view('spec', 1, { opinion: opinion('spec', 1, { conclusion: 'cancelled', code: 'REVIEWER_INTERRUPTED' }) })), { code: 'REVIEWER_INTERRUPTED' });
   assert.equal(code(view('spec', 1, { opinion: opinion('spec', 1, { conclusion: 'failure', code: 'REVIEW_VERDICT_INVALID' }) })).kind, 'retry');
@@ -196,4 +199,11 @@ test('ticket 26 composition: a reviewer recorded interrupted with the boot (fail
   assert.deepEqual([Object.keys(plan).sort(), plan.standards?.from.discovered], [['spec', 'standards'], true]);
   assert.deepEqual(undiscovered(round(4, { spec: { state: 'failed', opinion: null, failure: { code: 'WORKER_INTERRUPTED' }, cessation: 'completion-observed' } })), [],
     'a recorded failure is an outcome, not a lost notification');
+});
+
+test('operator decision 2026-11-15: opinions are carried ONLY after an operational recovery; after an administrative stop both review again', () => {
+  assert.equal(carryBasis({ previousExecutionId: 'e1', reason: 'OPERATIONAL_RECOVERY', code: 'CONTROLLER_CRASH' }), 'e1');
+  assert.equal(carryBasis({ previousExecutionId: 'e1', reason: 'ADMINISTRATIVE_STOP', code: 'ADMINISTRATIVE_STOP' }), null);
+  assert.equal(carryBasis(null), null);
+  assert.equal(carryBasis(undefined), null);
 });

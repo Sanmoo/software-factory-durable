@@ -17,10 +17,11 @@ test('AC7 recipe: import and --plan are inert and declare the fixed bounds and t
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q28-partial-v1');
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q28-partial-v2');
   assert.deepEqual(plan.phases, ['preflight', 'run', 'inspect', 'stop-environment']);
   assert.deepEqual([plan.model.builder.maxRequests, plan.model.reviewers.maxRequestsEach, plan.model.reviewers.maxActivations, plan.model.reviewers.retries,
     plan.model.maxRequestsTotal, plan.model.providerRetries, plan.model.sdkRetries], [60, 24, { standards: 4, spec: 5 }, { standards: 0, spec: 1 }, 276, 0, 0]);
+  assert.equal(plan.model.reviewers.controlRetryCapPerRolePerRound, 2, 'the provoked single Spec retry stays within the operator cap');
   assert.equal(plan.provocations.length, 2);
   assert.match(plan.provocations[0], /^spec r1a1: Host deadlineMs 20000/);
   assert.match(plan.provocations[1], /^standards r1a1: its completion reaches Control without the opinion/);
