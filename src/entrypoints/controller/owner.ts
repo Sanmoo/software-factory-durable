@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { inspectStorage, openControl, type ControlInput } from '../../control/index.js';
 import { upgradeBlocksStart } from './upgrade.js';
 import { listen, protocolVersion, type Envelope } from '../../protocol/index.js';
-import { controllerPaths, verifyControllerLock } from '../../platform/host/index.js';
+import { controllerPaths, startFailureCause, verifyControllerLock } from '../../platform/host/index.js';
 import { inventoryRuntime, reconcileInterruptedCaches } from '../../sandbox/index.js';
 import { readConfiguration } from '../configuration.js';
 import { inspectRelease } from '../release.js';
@@ -134,7 +134,8 @@ async function own(root: string): Promise<number> {
   }
 }
 try { process.exitCode = await own(process.argv[2] ?? '.'); }
-catch {
-  console.error(JSON.stringify({ code: 'CONTROLLER_START_FAILED', message: 'Exclusive private storage and compatible persistence are required; no automatic repair.' }));
+catch (error) {
+  console.error(JSON.stringify({ code: 'CONTROLLER_START_FAILED', ...startFailureCause(error),
+    message: 'Exclusive private storage and compatible persistence are required; no automatic repair.' }));
   process.exitCode = 3;
 }

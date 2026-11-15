@@ -11,12 +11,22 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 export { planWorkerLaunch, launchWorker, prepareReviewerContinuation, workerOwnerEndpoint, workerRuntimeDirectory, unitState, type WorkerBootHost } from './worker-launch.js';
 
+/** A refused installation path, with the relative path that caused it (diagnosable; never repaired). */
+export class InstallationPathError extends Error {
+  constructor(readonly code: 'PRIVATE_INSTALLATION_REQUIRED' | 'UNSAFE_CONTROL_PATH', readonly path: string) { super(code); }
+}
+/** Stable cause of a start refusal for operator diagnostics: an upper-case code from this codebase, and the relative path when known. */
+export function startFailureCause(error: unknown): { cause: string; path?: string } {
+  const message = error instanceof Error && /^[A-Z][A-Z0-9_]{2,63}$/.test(error.message) ? error.message
+    : error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' && /^E[A-Z]+$/.test(error.code) ? `FS_${error.code}` : 'UNEXPECTED';
+  return { cause: message, ...(error instanceof InstallationPathError ? { path: error.path } : {}) };
+}
 export async function controllerPaths(root: string) {
   const canonicalRoot = await realpath(root);
   for (const directory of ['data', 'run', 'environments']) {
     const info = await lstat(join(canonicalRoot, directory));
     if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0) {
-      throw new Error('PRIVATE_INSTALLATION_REQUIRED');
+      throw new InstallationPathError('PRIVATE_INSTALLATION_REQUIRED', directory);
     }
   }
   const storagePath = join(canonicalRoot, 'data', 'control.sqlite');
@@ -25,7 +35,7 @@ export async function controllerPaths(root: string) {
     try {
       const info = await lstat(path);
       if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0) {
-        throw new Error('UNSAFE_CONTROL_PATH');
+        throw new InstallationPathError('UNSAFE_CONTROL_PATH', path === lockPath ? 'data/control.lock' : 'data/control.sqlite');
       }
     } catch (error) {
       if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;

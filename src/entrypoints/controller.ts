@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { controllerPaths, prepareControllerLock } from '../platform/host/index.js';
+import { controllerPaths, prepareControllerLock, startFailureCause } from '../platform/host/index.js';
 
 /** `upgrade <command> [...]` (ticket 33) runs the upgrade owner under the SAME canonical-storage lock instead of the controller owner. */
 async function launch(root: string, upgrade: string[] | undefined): Promise<number> {
@@ -25,7 +25,8 @@ async function launch(root: string, upgrade: string[] | undefined): Promise<numb
   } finally { process.off('SIGINT', interrupt); process.off('SIGTERM', terminate); }
 }
 try { process.exitCode = await launch(process.argv[2] ?? '.', process.argv[3] === 'upgrade' ? process.argv.slice(4) : undefined); }
-catch {
-  console.error(JSON.stringify({ code: 'CONTROLLER_START_FAILED', message: 'Check private installation paths and flock prerequisites; no takeover or repair.' }));
+catch (error) {
+  console.error(JSON.stringify({ code: 'CONTROLLER_START_FAILED', ...startFailureCause(error),
+    message: 'Check the named private installation path (owner, no group/other access, regular file/directory) and flock prerequisites; no takeover or repair.' }));
   process.exitCode = 3;
 }

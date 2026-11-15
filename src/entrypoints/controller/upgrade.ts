@@ -8,7 +8,7 @@ import type { Diagnostic } from '../../contracts/index.js';
 import { factorySkillPackIds } from '../../contracts/index.js';
 import { controlStorageMigrations, inspectStorage, migrateStorage, type StorageInspection } from '../../control/index.js';
 import { protocolVersion } from '../../protocol/index.js';
-import { controllerPaths, verifyControllerLock } from '../../platform/host/index.js';
+import { controllerPaths, startFailureCause, verifyControllerLock } from '../../platform/host/index.js';
 import { environmentDependencies } from '../../sandbox/index.js';
 import { configurationSchemaVersion, readConfiguration } from '../configuration.js';
 import { applicationRoot, inspectRelease, parseReleaseManifest, productionModelChecks, productionProfile, releaseIdSchema, releaseLauncher,
@@ -411,7 +411,7 @@ async function main(args: string[]): Promise<number> {
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try { process.exitCode = await main(process.argv.slice(2)); }
   catch (error) {
-    console.error(JSON.stringify({ code: 'UPGRADE_FAILED', reason: error instanceof Error ? error.message.slice(0, 128) : 'UNKNOWN',
+    console.error(JSON.stringify({ code: 'UPGRADE_FAILED', ...startFailureCause(error),
       message: 'Nothing is retried or repaired: `upgrade status` shows the journal; resume or roll back explicitly.' }));
     process.exitCode = 4;
   }
