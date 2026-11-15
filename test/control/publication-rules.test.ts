@@ -100,12 +100,18 @@ test('AC4/AC6: the expected branch name is not authorship; unknown PRs, several 
   // After a publication attempt, an empty first read never proves absence: no automatic repetition.
   assert.deepEqual(blocked({ expect, attempted: true, observation: observed([], { state: 'absent' }) }), ['blocked', ['PUBLICATION_OUTCOME_UNCONFIRMED', 'REMOTE_BRANCH_ABSENT']]);
   assert.deepEqual(blocked({ expect, attempted: true, observation: observed([]) }), ['blocked', ['PUBLICATION_OUTCOME_UNCONFIRMED', 'REMOTE_BRANCH_AT_VERIFIED_HEAD']]);
+  // Ticket 21 supersedes the ticket 14 block here: a head the Factory never linked or pushed is a DIVERGENCE (Question), never a repetition.
   const notVerified = decideDiscovery({ expect, attempted: true, observation: observed([own({ headSha: 'e'.repeat(40) })], { state: 'present', sha: 'e'.repeat(40) }) });
-  assert.deepEqual([notVerified.outcome, notVerified.reasons], ['blocked', ['PUBLISHED_HEAD_NOT_VERIFIED']]);
-  assert.equal(notVerified.outcome === 'blocked' && notVerified.pullRequest?.number, 4, 'an own PR is linked, never recreated, even when it cannot be accepted');
+  assert.deepEqual([notVerified.outcome, notVerified.reasons[0]], ['diverged', `HUMAN_CHANGE_NOT_ATTRIBUTABLE:${'e'.repeat(40)}`]);
+  assert.equal(notVerified.outcome === 'diverged' && notVerified.pullRequest.number, 4, 'an own PR is kept, never recreated, even when it cannot be accepted');
+  const older = decideDiscovery({ expect, attempted: true, previousHeads: ['e'.repeat(40)], observation: observed([own({ headSha: 'e'.repeat(40) })], { state: 'present', sha: 'e'.repeat(40) }) });
+  assert.deepEqual([older.outcome, older.reasons], ['blocked', ['PUBLISHED_HEAD_NOT_VERIFIED']], 'an earlier Factory head after an attempt still blocks (ticket 14)');
   assert.deepEqual(blocked({ expect, attempted: true, observation: observed([own({ draft: false })]) }), ['blocked', ['PULL_REQUEST_NOT_DRAFT']]);
   assert.deepEqual(blocked({ expect, attempted: true, observation: observed([own({ state: 'closed', merged: true })]) }), ['blocked', ['OWN_PULL_REQUEST_MERGED']]);
-  assert.deepEqual(blocked({ expect, attempted: true, observation: observed([own()], { state: 'present', sha: 'e'.repeat(40) }) }), ['blocked', ['REMOTE_BRANCH_CHANGED']]);
+  assert.deepEqual(blocked({ expect, attempted: true, observation: observed([own()], { state: 'present', sha: 'e'.repeat(40) }) }),
+    ['diverged', [`HUMAN_CHANGE_NOT_ATTRIBUTABLE:${'e'.repeat(40)}`]], 'ticket 21: the branch moved past the own PR head outside the Factory');
+  assert.deepEqual(blocked({ expect, attempted: true, previousHeads: ['e'.repeat(40)], observation: observed([own()], { state: 'present', sha: 'e'.repeat(40) }) }),
+    ['blocked', ['REMOTE_BRANCH_CHANGED']], 'a branch back at an earlier Factory head still blocks (ticket 14)');
   assert.deepEqual(blocked({ expect, attempted: true, observation: observed([own(), own({ number: 9, pullRequestId: 9009, headRef: 'human/x', body: 'Closes #3', author: { id: 10, login: 'h', type: 'User' } })]) }),
     ['blocked', ['UNKNOWN_PULL_REQUEST:9']], 'an unknown associated PR is never adopted nor ignored');
   // Review LOW: a non-conformant description is never linked as published.
@@ -137,7 +143,7 @@ test('review MED 6: a later verified head updates the linked own PR once; the sa
   assert.deepEqual(decideDiscovery({ expect, attempted: true, previousHeads: [old], observation: observed([own({ headSha: old })], { state: 'present', sha: old }) }).reasons,
     ['PUBLISHED_HEAD_NOT_VERIFIED'], 'an attempted head is never re-requested');
   assert.deepEqual(decideDiscovery({ expect, attempted: false, previousHeads: [], observation: observed([own({ headSha: old })], { state: 'present', sha: old }) }).reasons,
-    ['PUBLISHED_HEAD_NOT_VERIFIED'], 'only a head the Factory itself linked may be updated');
+    [`HUMAN_CHANGE_NOT_ATTRIBUTABLE:${old}`], 'only a head the Factory itself linked may be updated; any other is a divergence (ticket 21)');
 });
 
 test('AC3: the description is short summary/validation/risk with the marker and the Ticket link; no transcript or local path presented as a link', () => {

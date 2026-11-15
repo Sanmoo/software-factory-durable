@@ -73,13 +73,16 @@ type DrainAwareOptions = Parameters<BashOperations['exec']>[2] & {
 /** Native Bash with COMPLETE remote operations. Only explicit trusted Host policy
  * copies completed native-truncated output. Host spill remains private SDK state. */
 import type { BashObservation } from './gates.js';
+import { pushDenied, type PushPolicy } from './push-policy.js';
 /** The Bash tool's fixed working directory (Host policy): declared gate cwds must equal it; directory changes go inside the command. */
 export const bashCwd = '/workspace';
 export function builderBash(context: ToolContext, sandbox: ToolProjection, onCritical: () => void = () => {}, copyOutput = false,
   /** Ticket 13: the Host's own record of each completed (or lost) Bash result, the only source of gate evidence. */
   observe?: (callId: string, observation: BashObservation) => void,
   /** Ticket 13: the Host's content snapshot around the command (same identity as the capture); null when unavailable. */
-  snapshot?: () => Promise<string | null>): ToolDefinition {
+  snapshot?: () => Promise<string | null>,
+  /** Review HIGH (ticket 21): the exact push of a publication activation (absent = no push allowed). */
+  pushPolicy?: PushPolicy): ToolDefinition {
   const copyEnabled = copyOutput === true;
   let failed = false;
   let timeoutFailure = false;
@@ -117,6 +120,9 @@ export function builderBash(context: ToolContext, sandbox: ToolProjection, onCri
       if (context.role !== 'builder') throw new Error('BASH_ROLE_DENIED');
       if (failed) throw new Error('BASH_INVOCATION_REVOKED');
       const input = args as { command: string; timeout?: number };
+      // Refused before the guest sees it (no effect, so not a critical failure of the invocation).
+      const denied = typeof input.command === 'string' ? pushDenied(input.command, pushPolicy) : null;
+      if (denied) throw new Error(denied);
       if (input.timeout !== undefined && (!Number.isFinite(input.timeout) || input.timeout <= 0 || input.timeout * 1000 > 2147483647)) {
         throw new Error('Invalid timeout: must be finite, positive and within native timer range');
       }

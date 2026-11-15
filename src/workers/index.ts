@@ -252,6 +252,7 @@ export function createWorkers(configuration?: Configuration) {
       ...(invocation.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: invocation.editSourceMaxBytes }),
       ...(invocation.handoff === undefined ? {} : { handoff: invocation.handoff }),
       ...(invocation.review === undefined ? {} : { review: invocation.review }),
+      ...(invocation.pushPolicy === undefined ? {} : { pushPolicy: invocation.pushPolicy }),
       // Ticket 11: continue the preserved session (Builder only; the owner re-checks identity/hash before copying it for the new worker).
       ...(invocation.continuation === undefined ? {} : { continueSession: { ref: invocation.continuation.session.ref, sha256: invocation.continuation.session.sha256,
         sessionId: invocation.continuation.session.sessionId, bytes: invocation.continuation.session.bytes } }),
@@ -259,11 +260,12 @@ export function createWorkers(configuration?: Configuration) {
     if (!request.success || invocation.signal.aborted) throw new Error('WORKER_LAUNCH_INVALID');
     if (delivery?.credential !== undefined && (request.data.context.role !== 'builder' || typeof delivery.credential.token !== 'string')) throw new Error('WORKER_LAUNCH_INVALID');
     const context = request.data.context;
-    const { imageSourceMaxBytes, editSourceMaxBytes, copyOutput, selectedOutputCopies, skillPack, skillPackFiles, modelBudget, deadlineMs, secretAckTimeoutMs, handoff, review, continueSession, ...baseRequest } = request.data;
-    const payload = { ...baseRequest, ...(handoff === undefined ? {} : { handoff: { baseCommit: handoff.baseCommit, ...(handoff.rounds ? { rounds: { ...handoff.rounds } } : {}) } }),
+    const { imageSourceMaxBytes, editSourceMaxBytes, copyOutput, selectedOutputCopies, skillPack, skillPackFiles, modelBudget, deadlineMs, secretAckTimeoutMs, handoff, review, continueSession, pushPolicy, ...baseRequest } = request.data;
+    const payload = { ...baseRequest, ...(handoff === undefined ? {} : { handoff: { baseCommit: handoff.baseCommit, ...(handoff.rounds ? { rounds: { ...handoff.rounds } } : {}), ...(handoff.preserve ? { preserve: handoff.preserve } : {}) } }),
       ...(review === undefined ? {} : { review: { round: review.round, attempt: review.attempt, handoffIndexSha256: review.handoffIndexSha256,
         required: [...review.required], missing: [...review.missing], ...(review.continueFrom === undefined ? {} : { continueFrom: review.continueFrom }) } }), ...(skillPack === undefined ? {} : { skillPack }), ...(skillPackFiles === undefined ? {} : { skillPackFiles: [...skillPackFiles] }), ...(modelBudget === undefined ? {} : { modelBudget }), ...(deadlineMs === undefined ? {} : { deadlineMs }), ...(secretAckTimeoutMs === undefined ? {} : { secretAckTimeoutMs }), ...(selectedOutputCopies === undefined ? {} : { selectedOutputCopies: [...selectedOutputCopies] }), ...(copyOutput === undefined ? {} : { copyOutput }), ...(imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes }),
-      ...(editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes }), ...(continueSession === undefined ? {} : { continueSession: { ...continueSession } }) };
+      ...(editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes }), ...(continueSession === undefined ? {} : { continueSession: { ...continueSession } }),
+      ...(pushPolicy === undefined ? {} : { pushPolicy: { branch: pushPolicy.branch, expected: pushPolicy.expected, head: pushPolicy.head, ...(pushPolicy.remote === undefined ? {} : { remote: pushPolicy.remote }) } }) };
     const endpoint = await workerOwnerEndpoint(configuration.root, context);
     const channel = await connect(endpoint, { kind: 'host-boot', binding: { workId: context.workId,
       environmentRef: context.environmentRef, bootRef: context.bootRef } });

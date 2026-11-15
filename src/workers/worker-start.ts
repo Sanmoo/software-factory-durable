@@ -29,7 +29,11 @@ export type Invocation = { context: ToolContext; prompt: string; signal: AbortSi
   /** Builder only (ticket 12): the Host handoff tool and suspension for the Factory reviews, with the Execution's base commit. */
   handoff?: { baseCommit: string;
     /** Ticket 13: repeated rounds (treatments, gates, closing capture); absent = the single ticket 12 round. */
-    rounds?: { first: number; max: number } | undefined };
+    rounds?: { first: number; max: number } | undefined;
+    /** Ticket 21: the authorized remote tip every capture checks as an ancestor of HEAD (reconciliation Execution only). */
+    preserve?: string | undefined };
+  /** Builder only (ticket 21 review): the exact push Control allows in a publication activation; absent = no push. */
+  pushPolicy?: { branch: string; expected: string | null; head: string; remote?: string | undefined };
   /** Standards/Spec only (ticket 12): the round/attempt, handoff identity and the inputs that must be read for a clean conclusion. */
   review?: ReviewInput;
   /** Builder only (ticket 11): continue THIS preserved compatible session (Host-copied before the worker exists); the prompt is `continue ...`. */
@@ -64,7 +68,7 @@ export async function startWorker(profile: ReviewerProfile, records: Awaited<Ret
     skillPack: pack ? { id: pack.id, version: pack.version, manifestSha256: pack.manifestSha256 } : null,
     modelBudget: invocation.modelBudget ?? null,
     deadlineMs: invocation.deadlineMs ?? null,
-    handoff: invocation.handoff ? { baseCommit: invocation.handoff.baseCommit } : null,
+    handoff: invocation.handoff ? { baseCommit: invocation.handoff.baseCommit, ...(invocation.handoff.preserve ? { preserve: invocation.handoff.preserve } : {}) } : null,
     // Ticket 11 (spec §6.1): the session format and whether this activation continues a preserved session (identity/hash) or starts one.
     session: { format: 'pi-session-jsonl-v3', mode: invocation.continuedSession ? 'continue' : 'new',
       ...(invocation.continuedSession ? { sessionId: invocation.continuedSession.sessionId, sha256: invocation.continuedSession.sha256 } : {}) },

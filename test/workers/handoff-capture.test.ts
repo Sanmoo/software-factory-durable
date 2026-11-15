@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile, unlink } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { handoffCaptureProgram, handoffCommand } from '../../src/workers/handoff.js';
+import { handoffCaptureProgram, handoffCommand, parseHandoffSummary } from '../../src/workers/handoff.js';
 import { captureHandoff } from '../../src/workers/builder-handoff.js';
 
 // The capture program is GUEST code (constant, Factory-owned, run by the Host through the Builder's own binding). This test runs the same
@@ -121,4 +121,31 @@ test('real-run fix 2: every failure writes one machine code line to stderr, and 
   } };
   assert.deepEqual(await captureHandoff(context, sandbox, 1, f.base, new AbortController().signal),
     { round: 1, status: 'failure', code: 'HANDOFF_CAPTURE_FAILED', detail: 'GIT_FAILED:git-head' });
+});
+
+test('ticket 21: with `preserve` the capture reports whether the authorized remote tip is an ancestor of HEAD (constant program, never the model)', async t => {
+  const f = await fixture(t);
+  const human = git(f.checkout, 'rev-parse', 'HEAD'); // the "remote" commit to preserve
+  const capture = (round: string, preserve: string) => JSON.parse(execFileSync('/usr/bin/python3', ['-I', '-S', '-c', handoffCaptureProgram, f.checkout, f.artifacts, round, f.base,
+    '/workspace/checkout', '/artifacts', 'capture', preserve], { encoding: 'utf8', stdio: 'pipe' }));
+  git(f.checkout, 'stash', '-q', '-u');
+  await writeFile(join(f.checkout, 'factory.txt'), 'factory on top\n');
+  git(f.checkout, 'add', '.'); git(f.checkout, 'commit', '-q', '-m', 'factory rebased on top of the human commit');
+  const kept = capture('1', human);
+  assert.deepEqual(kept.preserved, { commit: human, ancestor: true });
+  assert.deepEqual(JSON.parse(await readFile(join(f.artifacts, 'review', 'r1', 'index.json'), 'utf8')).preserved, kept.preserved, 'the index carries it too');
+  git(f.checkout, 'reset', '-q', '--hard', f.base); // the human commit dropped (rewritten history)
+  await writeFile(join(f.checkout, 'factory.txt'), 'factory only\n');
+  git(f.checkout, 'add', '.'); git(f.checkout, 'commit', '-q', '-m', 'factory without the human commit');
+  assert.deepEqual(capture('2', human).preserved, { commit: human, ancestor: false });
+  assert.deepEqual(capture('3', '9'.repeat(40)).preserved, { commit: '9'.repeat(40), ancestor: false }, 'a commit never fetched is not preserved');
+  assert.equal(JSON.parse(run(f, '4')).preserved, undefined, 'absent unless asked');
+  assert.throws(() => execFileSync('/usr/bin/python3', ['-I', '-S', '-c', handoffCaptureProgram, f.checkout, f.artifacts, '5', f.base, '/workspace/checkout', '/artifacts', 'probe', human],
+    { stdio: 'pipe' }), /status 2|exit/i, 'probe mode never takes a preserve argument');
+  assert.match(handoffCommand(1, f.base, human), new RegExp(` capture ${human} <<'FACTORY_HANDOFF_EOF'`));
+  assert.throws(() => handoffCommand(1, f.base, 'not-a-commit'), /HANDOFF_INPUT_INVALID/);
+  const summary = JSON.stringify(kept);
+  assert.throws(() => parseHandoffSummary(summary, 1, f.base), /HANDOFF_CAPTURE_INVALID/, 'an unrequested ancestry answer is refused');
+  assert.throws(() => parseHandoffSummary(summary, 1, f.base, '9'.repeat(40)), /HANDOFF_CAPTURE_INVALID/, 'an answer about another commit is refused');
+  assert.deepEqual(parseHandoffSummary(summary, 1, f.base, human).preserved, { commit: human, ancestor: true });
 });

@@ -1,5 +1,5 @@
 import { publicationMarkerPrefix } from '../../contracts/index.js';
-import type { BranchObservation, ExecutionView, FactoryAppIdentity, PublicationDiscovery, PublicationView } from '../types.js';
+import type { BranchObservation, DivergenceComparison, ExecutionView, FactoryAppIdentity, PublicationDiscovery, PublicationView } from '../types.js';
 import { fenced } from './continuation.js';
 
 // Pure rules of ticket 14 (spec §2.1/§9.1): what may be published, which pull request is the Work's own, the discovery decision, the
@@ -33,6 +33,13 @@ export function publishableContent(execution: ExecutionView): { ok: true; verifi
     else if (verification.contentSha256 !== content.sha256) reasons.push('VERIFICATION_CONTENT_MISMATCH');
     else if (!/^[0-9a-f]{40}$/.test(summary.head)) reasons.push('VERIFIED_HEAD_UNKNOWN');
     else if (summary.branch !== execution.request.branch) reasons.push('VERIFIED_BRANCH_MISMATCH');
+    // Ticket 21: a reconciliation Execution publishes only a head that still contains the authorized remote tip (human commits preserved),
+    // as the Host capture established it (never the model's word).
+    const reconciliation = execution.request.reconciliation;
+    if (reconciliation && summary) {
+      if (summary.preserved?.commit !== reconciliation.authorizedRemote) reasons.push('HUMAN_CHANGE_PRESERVATION_UNKNOWN');
+      else if (!summary.preserved.ancestor) reasons.push('HUMAN_CHANGE_NOT_PRESERVED');
+    }
   }
   if (reasons.length || !summary || !content || !verification) return { ok: false, reasons: reasons.length ? reasons : ['FINAL_CAPTURE_CONTENT_UNKNOWN'] };
   return { ok: true, verified: { executionId: execution.executionId, head: summary.head, contentSha256: content.sha256, verifiedAt: verification.at,
@@ -69,7 +76,57 @@ export type RefsFacts = { state: 'complete'; refs: Record<string, string> } | { 
 export type ProtectionFacts = { state: 'pull-request-required'; sources: string[] } | { state: 'not-required'; reason: string } | { state: 'unknown'; code: string };
 export type DiscoveryObservation = { kind: 'incomplete'; code: string } |
   { kind: 'observed'; repositoryId: number; candidates: CandidateFacts[]; branch: BranchObservation | { state: 'unknown'; code: string };
-    refs: RefsFacts; baseProtection: ProtectionFacts };
+    refs: RefsFacts; baseProtection: ProtectionFacts;
+    /** Ticket 21: comparison of the Factory-known tip with the current own branch tip (only read when they differ). */
+    comparison?: DivergenceComparison;
+    /** Review HIGH: push activity of the own branch, and the comparison of each required/observed tip with the current tip. */
+    activity?: { state: 'complete'; entries: { before: string; after: string; type: string; actor: { login: string; id: number } | null; at: string }[]; truncated: boolean } |
+      { state: 'unknown'; code: string };
+    ancestry?: Record<string, DivergenceComparison> };
+/**
+ * Ticket 21: what Control knows of its own remote history. `heads`: every head the Factory linked or pushed (attributable); `expected`:
+ * the expectation of the next write (lease of the last attempt, the authorized remote, or the last linked head); `authorized`: the ONE
+ * concrete divergence the operator's answer authorized (`preserved`: the verified basis contains it, as its capture established).
+ */
+export type KnownRemote = { heads: readonly string[]; pullRequestId: number | null; expected: BranchObservation | null;
+  authorized: { remote: string; mode: 'incorporate' | 'discard'; preserved: boolean } | null;
+  /** Review HIGH: commits others pushed that Control observed (with the paths they changed, when known) and that no answer waived: every
+   * one must stay an ancestor of a new own head, with those paths untouched, before it is linked. */
+  required?: readonly { tip: string; paths: readonly string[] | null }[]; waived?: readonly string[] };
+const zero = /^0{40}$/;
+/**
+ * Review HIGH (Control-side, never the prompt): before a NEW own head is linked, every commit someone else pushed — observed by Control
+ * (divergences, discoveries) or reported by the branch's push activity, including a tip a Factory push replaced — must be an ancestor of
+ * that head (comparison `ahead`/`identical`) and the paths its change touched must be unchanged since it (ancestry alone does not exclude a
+ * revert). Unknown activity/comparison decides nothing.
+ */
+export function preservationCheck(head: string, known: KnownRemote, observation: Extract<DiscoveryObservation, { kind: 'observed' }>, app: FactoryAppIdentity, attributable: (sha: string) => boolean):
+  { kind: 'preserved' } | { kind: 'incomplete'; code: string } | { kind: 'lost'; tip: string; reason: string; comparison: DivergenceComparison } {
+  const activity = observation.activity;
+  if (!activity) return { kind: 'incomplete', code: 'ACTIVITY_NOT_REPORTED' };
+  if (activity.state !== 'complete') return { kind: 'incomplete', code: `ACTIVITY_UNKNOWN:${activity.code}` };
+  if (activity.truncated) return { kind: 'incomplete', code: 'ACTIVITY_TRUNCATED' };
+  const waived = new Set(known.waived ?? []);
+  const required = new Map<string, readonly string[] | null>();
+  const add = (tip: string, paths: readonly string[] | null) => {
+    if (zero.test(tip) || tip === head || attributable(tip) || waived.has(tip)) return;
+    const earlier = required.get(tip);
+    required.set(tip, earlier === undefined ? paths : earlier === null ? paths : paths === null ? earlier : [...new Set([...earlier, ...paths])]);
+  };
+  for (const item of known.required ?? []) add(item.tip, item.paths);
+  const bySelf = (actor: { login: string; id: number } | null) => Boolean(actor && actor.id === app.id && actor.login.toLowerCase() === app.login.toLowerCase());
+  // A push by someone else leaves its tip; a Factory push that REPLACED a tip it never made (a recaptured lease) leaves the replaced one.
+  for (const entry of activity.entries) add(bySelf(entry.actor) ? entry.before : entry.after, null);
+  for (const [tip, paths] of required) {
+    const compared = observation.ancestry?.[tip];
+    if (!compared) return { kind: 'incomplete', code: `PRESERVATION_UNKNOWN:${tip}` };
+    if (compared.state !== 'complete') return { kind: 'incomplete', code: `PRESERVATION_UNKNOWN:${tip}:${compared.code}` };
+    if (compared.status !== 'ahead' && compared.status !== 'identical') return { kind: 'lost', tip, reason: `NOT_AN_ANCESTOR:${compared.status}`, comparison: compared };
+    const touched = paths ? compared.files.filter(path => paths.includes(path)) : [];
+    if (touched.length) return { kind: 'lost', tip, reason: `HUMAN_CONTENT_CHANGED:${touched.slice(0, 4).join(',')}`, comparison: compared };
+  }
+  return { kind: 'preserved' };
+}
 type Summary = PublicationDiscovery['candidates'];
 export type DiscoveryDecision = { outcome: 'linked'; pullRequest: CandidateFacts; reasons: []; candidates: Summary } |
   /** Request a publication activation: create ONE draft PR, or (`update`) push a later verified basis to the linked own PR. */
@@ -79,7 +136,14 @@ export type DiscoveryDecision = { outcome: 'linked'; pullRequest: CandidateFacts
   /** An associated pull request that is not own, before any attempt: never adopted; re-read on a later cycle (ticket 07 operator path). */
   { outcome: 'held'; reasons: string[]; candidates: Summary } |
   { outcome: 'incomplete'; reasons: string[]; candidates: Summary } |
-  { outcome: 'blocked'; reasons: string[]; pullRequest: CandidateFacts | null; candidates: Summary };
+  { outcome: 'blocked'; reasons: string[]; pullRequest: CandidateFacts | null; candidates: Summary } |
+  /** Ticket 21: the own branch/PR holds a head the Factory never linked or pushed: the next write is blocked and the operator is asked. */
+  { outcome: 'diverged'; reasons: string[]; pullRequest: CandidateFacts; expected: BranchObservation; current: string;
+    trigger: 'update' | 'lease-failed' | 'after-publication'; comparison: DivergenceComparison; uncertainties: string[]; candidates: Summary;
+    /** `lost`: the own head does not preserve `current` (a commit someone else pushed); never linked. */
+    kind?: 'change' | 'lost' } |
+  /** Ticket 21: the linked own PR now targets another base (changed outside the Factory): nothing continues until it is restored. */
+  { outcome: 'base-changed'; reasons: string[]; pullRequest: CandidateFacts; from: string; to: string; candidates: Summary };
 
 /** Refs that changed between the snapshot of the request and now, other than the Work's own branch (bounded list). */
 export function unexpectedRefChanges(before: Record<string, string>, now: Record<string, string>, ownBranch: string): string[] {
@@ -96,13 +160,20 @@ export function unexpectedRefChanges(before: Record<string, string>, now: Record
  */
 export function decideDiscovery(input: { expect: Expect; attempted: boolean; previousHeads?: readonly string[]; refsBefore?: Record<string, string> | null;
   /** The only attempt of this head expected the own branch ABSENT (it pushed); no PR-only continuation ran yet. */
-  prOnlyRecovery?: boolean; observation: DiscoveryObservation }): DiscoveryDecision {
+  prOnlyRecovery?: boolean; known?: KnownRemote; observation: DiscoveryObservation }): DiscoveryDecision {
   const { expect, observation } = input;
   if (observation.kind === 'incomplete') return { outcome: 'incomplete', reasons: [observation.code], candidates: [] };
   // Without the pinned App identity nothing can be recognized as own: decide nothing (resolved again on a later cycle).
   if (!expect.app) return { outcome: 'incomplete', reasons: ['FACTORY_APP_IDENTITY_UNKNOWN'], candidates: [] };
   const classified = observation.candidates.map(candidate => ({ candidate, ...classifyCandidate(candidate, expect) }));
   const candidates: Summary = classified.map(item => ({ number: item.candidate.number, url: item.candidate.url, own: item.own, reasons: item.reasons }));
+  // Ticket 21: the LINKED own PR (same immutable id) whose only difference is its base: a target-branch change, never "another PR".
+  const rebased = input.known?.pullRequestId != null ? classified.find(item => item.candidate.pullRequestId === input.known!.pullRequestId &&
+    item.reasons.length === 1 && item.reasons[0] === 'OTHER_BASE') : undefined;
+  if (rebased && rebased.candidate.state === 'open' && !rebased.candidate.merged) {
+    return { outcome: 'base-changed', reasons: [`BASE_TARGET_CHANGED:${expect.base}->${rebased.candidate.baseRef}`], pullRequest: rebased.candidate,
+      from: expect.base, to: rebased.candidate.baseRef, candidates };
+  }
   const own = classified.filter(item => item.own).map(item => item.candidate);
   const foreign = classified.filter(item => !item.own).map(item => item.candidate);
   const blocked = (reasons: string[], pullRequest: CandidateFacts | null = null): DiscoveryDecision => ({ outcome: 'blocked', reasons, pullRequest, candidates });
@@ -127,21 +198,67 @@ export function decideDiscovery(input: { expect: Expect; attempted: boolean; pre
     return { outcome: 'absent', expectedRemote, update, refs: { ...observation.refs.refs }, reasons: [], candidates };
   };
   if (pull) {
+    const known = input.known ?? null;
+    const live = pull.state === 'open' && !pull.merged;
+    const heads = new Set([...(known?.heads ?? []), ...(input.previousHeads ?? [])]);
+    const attributable = (sha: string) => sha === expect.head || heads.has(sha);
+    // The remote tip of the own branch (its ref when read, else the PR head).
+    const current = tip.state === 'present' ? tip.sha : pull.headSha;
+    const authorized = known?.authorized ?? null;
+    // Ticket 21: the ONE concrete divergence the operator authorized: the next write leases exactly that remote tip (never a recapture).
+    if (live && authorized && !input.attempted && pull.headSha === authorized.remote && current === authorized.remote && pull.headSha !== expect.head) {
+      if (authorized.mode === 'incorporate' && !authorized.preserved) return blocked(['HUMAN_CHANGE_NOT_PRESERVED'], pull);
+      if (!pull.draft) return blocked(['PULL_REQUEST_NOT_DRAFT'], pull);
+      return request({ state: 'present', sha: authorized.remote }, pull);
+    }
+    const updatable = !input.attempted && (input.previousHeads ?? []).includes(pull.headSha) && tip.state === 'present' && tip.sha === pull.headSha && pull.draft;
+    // Ticket 21 (spec §10.1): a head the Factory never linked or pushed — a human push, or a push that raced our lease — blocks the next
+    // write. Never a recapture of the tip as a new lease: the operator is asked with the concrete divergence.
+    if (live && !updatable && tip.state !== 'unknown' && (!attributable(pull.headSha) || !attributable(current)) && !(authorized && current === authorized.remote && pull.headSha === current)) {
+      const divergent = !attributable(current) ? current : pull.headSha;
+      const expected = known?.expected ?? { state: 'present' as const, sha: [...heads].at(-1) ?? pull.headSha };
+      const comparison = observation.comparison ?? { state: 'unknown' as const, code: 'COMPARISON_NOT_READ' };
+      const uncertainties: string[] = [];
+      if (comparison.state !== 'complete') uncertainties.push(`DIFFERENCES_UNKNOWN:${comparison.code}`);
+      else {
+        if (comparison.to !== divergent) uncertainties.push('COMPARISON_OF_ANOTHER_TIP');
+        if (comparison.truncated) uncertainties.push('COMPARISON_TRUNCATED');
+        if (comparison.behindBy > 0) uncertainties.push(`FACTORY_COMMITS_MISSING_ON_REMOTE:${comparison.behindBy}`);
+        if (comparison.commits.some(commit => !commit.author)) uncertainties.push('AUTHORSHIP_NOT_PROVEN_FOR_SOME_COMMITS');
+      }
+      if (pull.headSha !== current) uncertainties.push(`PULL_REQUEST_HEAD_DIFFERS_FROM_BRANCH:${pull.headSha}`);
+      // After an attempt: the verified head among the new commits = our push landed and someone pushed after it; absent from a COMPLETE
+      // comparison = the lease failed; otherwise unknown.
+      const landed = comparison.state === 'complete' && comparison.commits.some(commit => commit.sha === expect.head);
+      const trigger = !input.attempted ? 'update' : landed ? 'after-publication'
+        : comparison.state === 'complete' && !comparison.truncated && comparison.to === divergent ? 'lease-failed' : 'after-publication';
+      if (input.attempted && trigger === 'after-publication' && !landed) uncertainties.push('LEASE_OUTCOME_UNKNOWN');
+      return { outcome: 'diverged', reasons: [`HUMAN_CHANGE_NOT_ATTRIBUTABLE:${divergent}`, ...(trigger === 'lease-failed' ? ['LEASE_FAILED'] : [])], pullRequest: pull,
+        expected, current: divergent, trigger, comparison, uncertainties, candidates };
+    }
     const reasons: string[] = [];
     if (pull.merged) reasons.push('OWN_PULL_REQUEST_MERGED');
     else if (pull.state === 'closed') reasons.push('OWN_PULL_REQUEST_CLOSED');
     if (pull.headSha !== expect.head) {
       // A later verified basis: the linked own PR at an earlier Factory head is UPDATED (never a second PR), once per verified head.
-      if (!reasons.length && !input.attempted && (input.previousHeads ?? []).includes(pull.headSha) && tip.state === 'present' && tip.sha === pull.headSha && pull.draft) {
-        return request({ state: 'present', sha: pull.headSha }, pull);
-      }
+      if (!reasons.length && updatable) return request({ state: 'present', sha: pull.headSha }, pull);
       reasons.push('PUBLISHED_HEAD_NOT_VERIFIED');
     } else if (tip.state === 'present' && tip.sha !== pull.headSha) reasons.push('REMOTE_BRANCH_CHANGED');
     else if (tip.state === 'absent' && pull.state === 'open') reasons.push('REMOTE_BRANCH_MISSING');
     if (!pull.draft && pull.state === 'open') reasons.push('PULL_REQUEST_NOT_DRAFT');
     const description = descriptionCheck(pull.body, { workId: expect.workId, ticketNumber: expect.ticketNumber });
     if (!description.conformant) reasons.push(`DESCRIPTION_NONCONFORMANT:${description.reasons.join('+')}`);
-    return reasons.length ? blocked(reasons, pull) : { outcome: 'linked', pullRequest: pull, reasons: [], candidates };
+    if (reasons.length) return blocked(reasons, pull);
+    if (known) {
+      const preserved = preservationCheck(pull.headSha, known, observation, expect.app, attributable);
+      if (preserved.kind === 'incomplete') return { outcome: 'incomplete', reasons: [preserved.code], candidates };
+      if (preserved.kind === 'lost') {
+        return { outcome: 'diverged', kind: 'lost', reasons: [`LOST_HUMAN_CHANGE:${preserved.tip}`, preserved.reason], pullRequest: pull, current: preserved.tip,
+          expected: known.expected ?? { state: 'present', sha: pull.headSha }, trigger: 'after-publication', comparison: preserved.comparison,
+          uncertainties: [`OWN_HEAD_DOES_NOT_PRESERVE:${pull.headSha}`], candidates };
+      }
+    }
+    return { outcome: 'linked', pullRequest: pull, reasons: [], candidates };
   }
   if (tip.state === 'unknown') return { outcome: 'incomplete', reasons: [`REMOTE_BRANCH_UNKNOWN:${tip.code}`], candidates };
   const where = tip.state === 'absent' ? 'REMOTE_BRANCH_ABSENT' : tip.sha === expect.head ? 'REMOTE_BRANCH_AT_VERIFIED_HEAD' : 'REMOTE_BRANCH_UNKNOWN_CHANGE';
@@ -194,12 +311,15 @@ export const publicationPromptBudgetBytes = 15000;
  */
 export function publicationPrompt(input: { reason: string; executionId: string; previousExecutionId: string; skillDirectory: string;
   repository: string; base: string; branch: string; head: string; marker: string; ticket: { number: number; url: string }; workId: string; checkout: string;
-  expectedRemote: BranchObservation; pullRequest: number | null; verified: { reviewedRound: number | null; gates: { id: string; outcome: string }[]; requiredChecks: string[] } }):
+  expectedRemote: BranchObservation; pullRequest: number | null; verified: { reviewedRound: number | null; gates: { id: string; outcome: string }[]; requiredChecks: string[] };
+  /** Ticket 21/18: the exact remote token of the push/ls-remote (`origin` or the configured https URL); the Builder push policy gets the SAME value. */
+  remote?: string }):
   { kind: 'prompt'; prompt: string } | { kind: 'too-large'; bytes: number } {
   const lease = input.expectedRemote.state === 'absent' ? '' : input.expectedRemote.sha;
   // Ticket 18 (real run q18-v3): the remote is the CONFIGURED repository's URL, never the guest-writable checkout's `origin` (it may be
   // missing or point elsewhere); the delivered publish grant authenticates github.com HTTPS for this command only.
-  const remote = `https://github.com/${input.repository}.git`;
+  // Ticket 21: the Builder push policy receives the SAME token (Control passes it explicitly; default = this configured URL form).
+  const remote = input.remote ?? `https://github.com/${input.repository}.git`;
   const pushCommand = fenced(`git -C ${input.checkout} push --force-with-lease=refs/heads/${input.branch}:${lease} ${remote} ${input.head}:refs/heads/${input.branch}`);
   const push = input.expectedRemote.state === 'present' && input.expectedRemote.sha === input.head
     ? [`2. The remote branch ${input.branch} already holds the verified commit ${input.head}: do NOT push.`]
@@ -223,6 +343,8 @@ export function publicationPrompt(input: { reason: string; executionId: string; 
       `(HEAD must stay ${input.head}); a changed content is never accepted by the Factory.`,
     ...push, ...pr,
     `${input.pullRequest === null ? 5 : 4}. If a command fails or its outcome is unclear, never repeat it blindly: inspect (git ls-remote ${remote}, gh pr list --repo ${input.repository}) and report what you observed.`,
+    'Run the push command ALONE as its own bash call, exactly as written (no `&&`, `;`, other commands or options): the Factory Host refuses anything else. ' +
+      'A PUSH_POLICY_DENIED is a LOCAL refusal: nothing was sent and it is not a publication attempt; correct it ONCE by running the exact command alone, then continue.',
     'Never merge, approve, mark ready, close, push to the base or to any other branch or tag, force-push without that explicit lease, or change labels, assignees or other pull requests. ' +
       'End with a short final message (the pull request URL). The Factory discovers and verifies the publication itself; your message is not evidence.'];
   const prompt = [`Factory publication instruction (publish-only session, reason: ${input.reason}): Execution ${input.executionId} publishes the content verified at the end of ` +
@@ -240,10 +362,23 @@ const active = (execution: ExecutionView | null) => execution !== null && execut
  */
 export const publicationAttempted = (work: Pick<WorkFacts, 'publication'>) => {
   const head = work.publication?.verified?.head;
-  return head !== undefined && (work.publication?.attempts ?? []).some(item => item.head === head);
+  return head !== undefined && work.publication !== null && work.publication !== undefined && attemptsOf(work.publication, head).length > 0;
 };
+/**
+ * Attempts of `head` that count: all of them, or — while an operator authorization of ONE concrete divergence is in force (ticket 21) —
+ * only those that leased exactly the authorized remote tip (an attempt refused by a lease before the authorization is not repeated
+ * blindly: the authorization is what allows a new attempt with the new, explicit expectation).
+ */
+export function attemptsOf(publication: Pick<PublicationView, 'attempts' | 'reconciliation'>, head: string) {
+  const lease = publication.reconciliation && (publication.reconciliation.state === 'authorized' || publication.reconciliation.state === 'executing')
+    ? publication.reconciliation.authorizedRemote : null;
+  return (publication.attempts ?? []).filter(item => item.head === head &&
+    (lease === null || (item.expectedRemote?.state === 'present' && item.expectedRemote.sha === lease)));
+}
 export type PublicationStep = { kind: 'none' } | { kind: 'evaluate'; basisExecutionId: string } |
-  { kind: 'discover'; trigger: PublicationDiscovery['trigger']; attempted: boolean };
+  { kind: 'discover'; trigger: PublicationDiscovery['trigger']; attempted: boolean } |
+  /** Ticket 21: a divergence Question is pending: its accepted answer (if any) is resolved, nothing else happens. */
+  { kind: 'resolve'; divergenceId: string; questionId: string };
 /**
  * The next publication step of a Work, from its durable record: nothing while an Execution is active or its cessation is not confirmed;
  * evaluate a NEW completed implementation basis (also after a published one: it may update the own PR); discover when awaiting discovery or
@@ -261,6 +396,12 @@ export function publicationStep(work: WorkFacts): PublicationStep {
   if (!last?.end || last.end.cessation !== 'confirmed') return { kind: 'none' };
   const publication = work.publication ?? null;
   if (publication?.state === 'blocked') return { kind: 'none' };
+  if (publication?.state === 'diverged') {
+    const divergence = publication.divergences?.at(-1);
+    return divergence && divergence.state === 'awaiting-answer' ? { kind: 'resolve', divergenceId: divergence.divergenceId, questionId: divergence.questionId } : { kind: 'none' };
+  }
+  // A changed base is re-read every cycle until restored (spec §10.1: no continuation before that).
+  if (publication?.state === 'base-changed') return { kind: 'discover', trigger: 'reconciliation', attempted: publicationAttempted(work) };
   if (!last.request.publication && last.end.outcome === 'completed' && publication?.basisExecutionId !== last.executionId) return { kind: 'evaluate', basisExecutionId: last.executionId };
   if (publication?.state === 'awaiting-discovery') {
     const attempted = publicationAttempted(work);

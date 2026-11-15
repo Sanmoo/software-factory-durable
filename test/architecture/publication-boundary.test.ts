@@ -53,7 +53,9 @@ test('AC1/AC5: no controller push/PR-creation path, no Git/gh wrapper or shell p
   assert.doesNotMatch(reader, /comment\(|transient\(|revoke\(|'POST'|'PATCH'|'PUT'|'DELETE'/, 'readPullRequest never writes');
   assert.match(github, /'checks-read': \{ metadata: 'read', contents: 'read', pull_requests: 'read', checks: 'read', statuses: 'read', administration: 'read' \}/);
   // No shell parsing of Builder commands or effect-registration tool for push/PR (Q7): the Workers and Sandbox never look for them.
-  for (const file of files.filter(item => /^src\/(workers|sandbox|platform)\//.test(item.path))) {
+  // Ticket 21 review (supervisor/operator decision): ONE Builder-Host REFUSAL policy (`src/workers/push-policy.ts`) names the exact leased push
+  // Control allows; it never publishes, registers effects or wraps git/gh, it only refuses other push forms before the guest sees them.
+  for (const file of files.filter(item => /^src\/(workers|sandbox|platform)\//.test(item.path) && item.path !== 'src/workers/push-policy.ts')) {
     assert.doesNotMatch(file.text, /registrar_efeito|register_effect|git push|gh pr create|pr create/, file.path);
   }
 });

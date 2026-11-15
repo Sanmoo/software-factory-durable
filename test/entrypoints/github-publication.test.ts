@@ -115,3 +115,23 @@ test('review MED 4: discovery lists every branch and tag tip and reports whether
   assert.equal(((await repository.findPublication({ repo: worldScope, issueNumbers: [3], knownBranches: [], refs: true }) as { refs?: { state: string } }).refs)!.state, 'unknown',
     'a failed listing is never a partial snapshot');
 });
+
+test('ticket 21: with `compareFrom` discovery reads the comparison of the Factory-known tip with the own branch tip (commits with linked accounts, files)', async t => {
+  const human = '1'.repeat(40);
+  const commit = (sha: string, author: { login: string; id: number } | null, name: string, message: string) => ({ sha, author, commit: { author: { name }, message } });
+  const world = await githubWorld(t, { issues: [issue(3)], pulls: [], refs: { [branch]: human }, checks: { compare: { [`${head}...${human}`]: { status: 'ahead', ahead_by: 2, behind_by: 0,
+    total_commits: 2, commits: [commit('2'.repeat(40), { login: 'operator-one', id: 77 }, 'Operator', 'Fix wording\n\nlonger body'), commit(human, null, 'Unknown Person', 'Second edit')],
+    files: [{ filename: 'docs/a.md' }] } } } });
+  const github = createGitHubAccess({ root: world.root, executable: world.executable, appId: 1, privateKeyFile: 'credentials/app.pem' });
+  const repository = createCodeRepository({ github });
+  const observed = await repository.findPublication({ repo: worldScope, issueNumbers: [3], knownBranches: [branch], compareFrom: head });
+  assert.ok(observed.kind === 'observed');
+  if (observed.kind !== 'observed') return;
+  assert.deepEqual(observed.comparison, { state: 'complete', from: head, to: human, status: 'ahead', aheadBy: 2, behindBy: 0, files: ['docs/a.md'], truncated: false,
+    commits: [{ sha: '2'.repeat(40), author: { login: 'operator-one', id: 77 }, authorName: 'Operator', subject: 'Fix wording' },
+      { sha: human, author: null, authorName: 'Unknown Person', subject: 'Second edit' }] });
+  const same = await repository.findPublication({ repo: worldScope, issueNumbers: [3], knownBranches: [branch], compareFrom: human });
+  assert.ok(same.kind === 'observed' && same.comparison === undefined, 'nothing to compare when the tip is the expectation');
+  const missing = await repository.findPublication({ repo: worldScope, issueNumbers: [3], knownBranches: [branch], compareFrom: 'e'.repeat(40) });
+  assert.ok(missing.kind === 'observed' && missing.comparison?.state === 'unknown', 'a failed comparison is unknown, never an empty difference');
+});

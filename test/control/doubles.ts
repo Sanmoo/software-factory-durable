@@ -1,7 +1,7 @@
 // Test doubles for the IssueTracker/CodeRepository contracts and the polling clock.
 // They replace GitHub only; Control, Pi Durable and SQLite stay real in every flow test.
 import type { IssueTracker, TicketRef, CandidateObservation, TicketObservation, TrackerScope, DependencyNode, DependencyProblem, TrackerComment } from '../../src/issue-tracker/index.js';
-import type { CodeRepository, PublicationObservation, PullRequestCandidate, PullRequestObservation } from '../../src/code-repository/index.js';
+import type { BranchComparison, CodeRepository, PublicationObservation, PullRequestCandidate, PullRequestObservation } from '../../src/code-repository/index.js';
 import type { PollingClock } from '../../src/control/types.js';
 
 export type RemoteIssue = { ref: TicketRef; state: 'open' | 'closed'; labels: { id: number; name: string }[]; pullRequest?: boolean; reread?: Partial<TicketRef>;
@@ -41,6 +41,14 @@ export type Remote = {
   /** Ticket 16: setDraft outcomes consumed one per call (absent = applied). `unknown-*`: the caller learns nothing; whether the flag changed is
    * decided here. An applied conversion changes `pullRequests[n].pullRequest.draft` (the next readPullRequest observes it). */
   drafts?: ('applied' | 'known-failure' | 'unknown-applied' | 'unknown-not-applied')[];
+  /** Ticket 21: comparisons by `from...to` (absent = one synthetic commit `to` linked to operator-one; `unknown` = the read fails). */
+  comparisons?: Record<string, BranchComparison | 'unknown'>;
+  /** Review HIGH: push activity of each branch (appended by the publication doubles and human pushes); `activityUnknown` fails it. */
+  activity?: Record<string, { before: string; after: string; type: string; actor: { login: string; id: number } | null; at: string }[]>; activityUnknown?: boolean;
+  /** Review HIGH: commit graph (sha -> parents) for ancestry comparisons, and the files changed between two commits (`from...to`). */
+  graph?: Record<string, string[]>; changes?: Record<string, string[]>;
+  /** Ticket 21: tip of the base `main` in the refs listing (default 'b'*40); changing it models the base merely advancing. */
+  main?: string;
 };
 let commentSequence = 80000;
 /** A comment as the tracker adapter reports it. */
@@ -147,9 +155,10 @@ export function githubDoubles(remote: Remote) {
         ? { state: 'unknown' as const, code: 'GITHUB_QUERY_FAILED', nextStep: 'synthetic' }
         : remote.refs?.[branch] ? { state: 'present' as const, sha: remote.refs[branch]! } : { state: 'absent' as const }])),
       ...(correlation.refs ? { refs: remote.refsUnknown ? { state: 'unknown' as const, code: 'GITHUB_QUERY_FAILED' } : { state: 'complete' as const, refs: {
-        'refs/heads/main': 'b'.repeat(40), ...Object.fromEntries(Object.entries(remote.refs ?? {}).filter(([, sha]) => sha !== 'unknown').map(([name, sha]) => [`refs/heads/${name}`, sha])),
+        'refs/heads/main': remote.main ?? 'b'.repeat(40), ...Object.fromEntries(Object.entries(remote.refs ?? {}).filter(([, sha]) => sha !== 'unknown').map(([name, sha]) => [`refs/heads/${name}`, sha])),
         ...Object.fromEntries(Object.entries(remote.tags ?? {}).map(([name, sha]) => [`refs/tags/${name}`, sha])) } } } : {}),
-      ...(correlation.base !== undefined ? { baseProtection: structuredClone(remote.baseProtection ?? { state: 'pull-request-required' as const, sources: ['ruleset:1'] }) } : {}) }), correlation),
+      ...(correlation.base !== undefined ? { baseProtection: structuredClone(remote.baseProtection ?? { state: 'pull-request-required' as const, sources: ['ruleset:1'] }) } : {}),
+      ...comparisonOf(remote, correlation.compareFrom, correlation.knownBranches[0]), ...preservationOf(remote, correlation.preserve, correlation.knownBranches[0]) }), correlation),
     readPullRequest: query => track('readPullRequest', (): PullRequestObservation => {
       const found = remote.pullRequests?.[query.number];
       if (found?.kind === 'observed' && query.unless && found.pullRequest.state === 'open' && found.pullRequest.headSha === query.unless.headSha &&
@@ -202,4 +211,42 @@ export function manualClock() {
       pending.resolve();
     },
   };
+}
+
+/** Ticket 21: the comparison findPublication reports for `compareFrom...<tip of the first known branch>` when they differ. */
+function comparisonOf(remote: Remote, from: string | undefined, branch: string | undefined): { comparison?: BranchComparison } {
+  const to = branch === undefined ? undefined : remote.refs?.[branch];
+  if (!from || !to || to === 'unknown' || to === from) return {};
+  const configured = remote.comparisons?.[`${from}...${to}`];
+  if (configured === 'unknown') return { comparison: { state: 'unknown', code: 'GITHUB_QUERY_FAILED' } };
+  return { comparison: structuredClone(configured ?? { state: 'complete', from, to, status: 'ahead', aheadBy: 1, behindBy: 0, files: ['docs/a.md'], truncated: false,
+    commits: [{ sha: to, author: { login: 'operator-one', id: 5 }, authorName: 'Operator One', subject: 'Human edit on the Factory branch' }] }) };
+}
+
+/** Review HIGH: whether `ancestor` is reachable from `head` in the synthetic graph. */
+export function reachable(remote: Remote, ancestor: string, head: string): boolean {
+  const seen = new Set<string>();
+  const queue = [head];
+  while (queue.length) {
+    const sha = queue.shift()!;
+    if (sha === ancestor) return true;
+    if (seen.has(sha)) continue;
+    seen.add(sha);
+    queue.push(...(remote.graph?.[sha] ?? []));
+  }
+  return false;
+}
+function preservationOf(remote: Remote, preserve: string[] | undefined, branch: string | undefined) {
+  if (!preserve || branch === undefined) return {};
+  const head = remote.refs?.[branch];
+  const entries = remote.activity?.[branch] ?? [];
+  const activity = remote.activityUnknown ? { state: 'unknown' as const, code: 'GITHUB_QUERY_FAILED' } : { state: 'complete' as const, entries: structuredClone(entries), truncated: false };
+  if (!head || head === 'unknown') return { activity };
+  const ancestry: Record<string, BranchComparison> = {};
+  for (const tip of new Set([...preserve, ...entries.flatMap(item => [item.before, item.after])])) {
+    if (/^0{40}$/.test(tip) || tip === head) continue;
+    const status = tip === head ? 'identical' : reachable(remote, tip, head) ? 'ahead' : 'diverged';
+    ancestry[tip] = { state: 'complete', from: tip, to: head, status, aheadBy: 1, behindBy: status === 'ahead' ? 0 : 1, commits: [], files: remote.changes?.[`${tip}...${head}`] ?? [], truncated: false };
+  }
+  return { activity, ancestry };
 }

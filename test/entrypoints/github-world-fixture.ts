@@ -52,6 +52,8 @@ export type World = {
   /** Ticket 14: tags of acme/project (name → sha) served at /git/matching-refs/tags. */
   tags?: Record<string, string>;
   /** Ticket 14: rules applying to a branch (/rules/branches/<b>), rulesets by id (/rulesets/<id>) and classic protection (/branches/<b>/protection; absent = 404). */
+  /** Ticket 21 review: push activity by ref (`refs/heads/x`), served at GET /activity?ref=. */
+  activity?: Record<string, object[]>;
   branchRules?: Record<string, { type: string; ruleset_id?: number }[]>; rulesets?: Record<string, { enforcement: string; current_user_can_bypass?: string }>;
   classicProtection?: Record<string, object>;
   /** Ticket 14: the App slug served by GET /app (default factory-app) and whether its bot user exists. */
@@ -95,7 +97,8 @@ export type ChecksWorld = {
   /** Added to the reported total_count of check-run pages (a listing GitHub truncated or that changed between pages). */
   checkRunsTotalOffset?: number;
   statuses?: Record<string, object[]>;
-  compare?: Record<string, { status: string; ahead_by: number; behind_by: number }>;
+  /** Ticket 21: also the commit/file lists of a divergence comparison (`total_commits`, `commits`, `files`). */
+  compare?: Record<string, { status: string; ahead_by: number; behind_by: number } & Record<string, unknown>>;
   /** Internal counter of pull request reads (written by the fixture). */
   reads?: Record<string, number>;
 };
@@ -391,6 +394,9 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
   const found = issuesOf(repo).find(i => i.number === Number(rest.split('/')[2]));
   if (found) body = shape(found);
   else { status = 404; body = { message: 'Not Found' }; }
+  } else if (rest === '/activity' && repo.id === 3) {
+  // Ticket 21 review: push activity of a branch (none recorded by this fixture unless given).
+  body = page((world.activity ?? {})[url.searchParams.get('ref') ?? ''] ?? []);
   } else if (rest === '/pulls' && repo.id === 3) {
   const state = url.searchParams.get('state');
   const headFilter = url.searchParams.get('head'), baseFilter = url.searchParams.get('base');

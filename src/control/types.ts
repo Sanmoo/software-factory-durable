@@ -204,7 +204,10 @@ export type ExecutionView = {
     /** Resumption basis (re-checked in the admission commit): the previous Execution and what authorizes the new activation — its answered
      * Question and/or concrete scope updates. `NEW_BOOT_REPLACEMENT_SESSION` is the ticket-10 record of an answered Question. */
     resume?: { previousExecutionId: string; questionId: string | null; answerSha256: string | null; scopeUpdateIds?: string[];
-      reason: 'QUESTION_ANSWERED' | 'SCOPE_UPDATED' | 'NEW_BOOT_REPLACEMENT_SESSION' | 'PUBLICATION_REQUESTED' } | null;
+      reason: 'QUESTION_ANSWERED' | 'SCOPE_UPDATED' | 'NEW_BOOT_REPLACEMENT_SESSION' | 'PUBLICATION_REQUESTED' | 'RECONCILIATION_AUTHORIZED' } | null;
+    /** Ticket 21: a reconciliation Execution incorporating ONE concrete remote divergence the operator authorized (its Question/answer),
+     * with the expectation and the authorized remote tip captured BEFORE preparation; never a renewal of scope or budget. */
+    reconciliation?: ReconciliationRequest | null;
     /** Ticket 14: a publication activation requested by Control after discovery found no own pull request. It carries exactly the
      * verified commit, the Work's branch/base, the correlation marker and the remote expectation (lease) observed BEFORE preparation. */
     publication?: PublicationRequest | null;
@@ -247,6 +250,37 @@ export type BranchObservation = { state: 'absent' } | { state: 'present'; sha: s
 export type PublicationRequest = { basisExecutionId: string; head: string; branch: string; base: string; marker: string; expectedRemote: BranchObservation;
   /** An update of the Work's own pull request (a later verified basis): its number; null = create ONE draft pull request. */
   pullRequest?: number | null };
+/**
+ * Ticket 21 (spec §10.1): what a reconciliation Execution may do. `authorizedRemote` is the remote tip of the divergence the answer
+ * authorized: it must stay an ancestor of the new head (the capture checks it) and is the ONLY lease the next publication may use.
+ * `strategy`: rebase of the Factory's own commits onto it by default, unless the repository's AGENTS documents another update strategy.
+ */
+export type ReconciliationRequest = { divergenceId: string; questionId: string; answerSha256: string; expected: BranchObservation; authorizedRemote: string;
+  localHead: string; strategy: 'rebase-unless-agents-documents-another' };
+/** One commit of a divergence as GitHub's comparison reports it (author when GitHub links it to an account; otherwise unproven). */
+export type DivergenceCommit = { sha: string; author: { login: string; id: number } | null; authorName: string | null; subject: string };
+/** Comparison of the Factory-known tip with the current remote tip of the own branch (`unknown`: differences not established). */
+export type DivergenceComparison = { state: 'complete'; from: string; to: string; status: string; aheadBy: number; behindBy: number; commits: DivergenceCommit[];
+  files: string[]; truncated: boolean } | { state: 'unknown'; code: string };
+/**
+ * Ticket 21 (spec §10.1): a remote change of the Work's own branch NOT attributable to the Factory (or a failed lease), presented to the
+ * operator as a Question: identities, the known/current/local refs, differences, provable authorship, uncertainties and the proposal.
+ * It blocks the next write. `authorized`/`discard-authorized`: the answer authorized exactly THIS divergence; `not-authorized`: the answer was
+ * not an authorization (a new evaluation asks again); `superseded`: the remote changed again before the publication (new divergence).
+ */
+export type DivergenceView = { divergenceId: string; detectedAt: string; trigger: 'update' | 'lease-failed' | 'after-publication';
+  repository: string; branch: string; base: string; pullRequest: { number: number; url: string } | null;
+  expected: BranchObservation; current: string; local: string | null; comparison: DivergenceComparison; uncertainties: string[];
+  proposal: 'incorporate';
+  /** `lost` (review HIGH): the Factory's own head does NOT preserve a commit someone else pushed (`current` = that commit). */
+  kind?: 'change' | 'lost';
+  questionId: string; state: 'awaiting-answer' | 'authorized' | 'discard-authorized' | 'not-authorized' | 'superseded' | 'resolved';
+  resolvedAt: string | null; answer: { sha256: string; author: string; decision: 'incorporate' | 'discard' | 'not-authorized'; code: string | null } | null };
+/** Ticket 21: the authorization in force for the publication (one concrete divergence), consumed when the reconciled head is linked. */
+export type ReconciliationView = { divergenceId: string; questionId: string; answerSha256: string; mode: 'incorporate' | 'discard'; authorizedRemote: string;
+  expected: BranchObservation; authorizedAt: string; author: string; state: 'authorized' | 'executing' | 'consumed' | 'superseded' | 'failed'; executionId: string | null;
+  /** `failed`: why the reconciliation produced nothing publishable (the branch is evaluated again and a new Question asked). */
+  failure?: string[] | null };
 /** Pinned GitHub identity of the Factory App's bot user (from GET /app and the bot user), the only author an own PR may have. */
 export type FactoryAppIdentity = { login: string; id: number };
 /** The Work's own pull request, recognized by correlation (marker, App bot author, own branch/repository/base); never adopted otherwise. */
@@ -254,7 +288,7 @@ export type OwnPullRequest = { pullRequestId: number; nodeId: string; number: nu
   headRef: string; headSha: string; base: string; author: { id: number; login: string; type: string }; linkedAt: string; bodySha256: string | null };
 /** One discovery (safe read) of the own publication: Git remote ref + pull requests of the repository correlated to the Work. */
 export type PublicationDiscovery = { at: string; observedAt: string | null; trigger: 'verified' | 'after-publication' | 'reconciliation';
-  outcome: 'linked' | 'absent' | 'held' | 'incomplete' | 'blocked'; reasons: string[]; branch: BranchObservation | { state: 'unknown'; code: string };
+  outcome: 'linked' | 'absent' | 'held' | 'incomplete' | 'blocked' | 'diverged' | 'base-changed'; reasons: string[]; branch: BranchObservation | { state: 'unknown'; code: string };
   candidates: { number: number; url: string; own: boolean; reasons: string[] }[] };
 /**
  * Publication dimension of a Work (spec §3.3/§9.1, ticket 14). `not-publishable`: the basis Execution's content is not verified (its
@@ -263,7 +297,10 @@ export type PublicationDiscovery = { at: string; observedAt: string | null; trig
  * linking would be unsafe (unknown PR/change, several candidates, outcome not confirmed after an attempt...), explicit operator decision.
  */
 export type PublicationView = {
-  state: 'not-publishable' | 'awaiting-discovery' | 'requested' | 'published' | 'blocked';
+  /** Ticket 21: `diverged` = a remote change not attributable to the Factory waits for the operator's answer (Question); `reconciling` = the
+   * answer authorized incorporating it and a reconciliation Execution is queued/running; `base-changed` = the own PR's base was changed by
+   * someone else: nothing continues until the base is restored (re-read each cycle). */
+  state: 'not-publishable' | 'awaiting-discovery' | 'requested' | 'published' | 'blocked' | 'diverged' | 'reconciling' | 'base-changed';
   basisExecutionId: string; marker: string; branch: string; base: string;
   /** The content the end-of-Execution verification (ticket 13) established: the only commit a publication may carry. */
   verified: { executionId: string; head: string; contentSha256: string; verifiedAt: string | null; reviewedRound: number | null;
@@ -286,6 +323,13 @@ export type PublicationView = {
   refsBefore?: Record<string, string> | null;
   /** The own PR a requested publication updates (a later verified basis); null = create. */
   update?: number | null;
+  /** Ticket 21: divergences of the own branch presented to the operator (latest last, bounded) and the authorization in force. */
+  divergences?: DivergenceView[];
+  reconciliation?: ReconciliationView | null;
+  /** Ticket 21: the own PR's base observed changed (from the Work's base), until restored. */
+  baseChange?: { from: string; to: string; observedAt: string; pullRequest: number } | null;
+  /** Review HIGH: commits pushed by others whose loss the operator explicitly authorized (`discard <tip>`): no longer required at linking. */
+  waived?: string[];
 };
 /**
  * Ticket 13: end-of-Execution verification (spec §6.4/§9.3). `verified` only with no reason; every reason is independent and explicit.
@@ -356,7 +400,9 @@ export type ReviewRoundView = {
  * publication effect (intent -> attempt -> observation/discovery) and the single accepted answer with its author/origin.
  */
 export type QuestionView = {
-  questionId: string; workId: string; executionId: string; invocationId: string; recordedAt: string; recordedFrom: 'worker-notification' | 'worker-completion';
+  questionId: string; workId: string; executionId: string; invocationId: string; recordedAt: string;
+  /** `controller-divergence` (ticket 21): asked by Control itself about a concrete remote divergence (no worker; `executionId` is the basis). */
+  recordedFrom: 'worker-notification' | 'worker-completion' | 'controller-divergence';
   content: { question: string; context: string; sha256: string; reference: { workId: string; id: string } };
   destination: { kind: 'issue'; ticket: TicketRef };
   state: 'open' | 'answered';
@@ -580,7 +626,9 @@ export type WorkView = {
     { at: string; event: 'scope-update-accepted' | 'scope-update-delivered' | 'scope-update-reoffered' | 'scope-update-consumed'; origin: 'local-cli' | 'controller-dispatch';
       scopeUpdateId: string; detail?: string } |
     { at: string; event: 'execution-reconciled' | 'recovery-wait-kept'; origin: 'controller-recovery'; executionId: string | null; detail: string } |
-    { at: string; event: 'publication-evaluated' | 'publication-requested' | 'publication-started' | 'publication-linked' | 'publication-blocked' | 'publication-discovery-incomplete';
+    { at: string; event: 'publication-evaluated' | 'publication-requested' | 'publication-started' | 'publication-linked' | 'publication-blocked' | 'publication-discovery-incomplete' |
+      /* ticket 21 */ 'publication-diverged' | 'reconciliation-authorized' | 'reconciliation-not-authorized' | 'reconciliation-superseded' | 'publication-base-changed' | 'publication-base-restored' |
+      'reconciliation-failed';
       origin: 'controller-publication'; executionId: string | null; detail: string } |
     { at: string; event: 'checks-evaluated'; origin: 'controller-checks'; detail: string } |
     { at: string; event: 'readiness-evaluated' | 'readiness-intended' | 'readiness-attempted' | 'readiness-confirmed' | 'readiness-not-applied' | 'readiness-human-flag';

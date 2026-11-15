@@ -25,3 +25,14 @@
 ## Autorização e limites
 
 Publicação é planejamento aprovado, não autorização de construção, uso de host/credenciais/GitHub/modelos reais, injeção de falhas ou piloto. Obter autorização pertinente antes da execução. Não alterar decisões aprovadas silenciosamente; lacuna de desenho volta ao operador. Merge e avaliação humana não são delegados aos agentes.
+
+## Comments
+
+- 2026-11-15 (implementation, branch `implement/software-factory-mvp-21`): local increment and one-shot recipe
+  `test/entrypoints/humanchanges21-qualification.ts` (namespace `y5/q21-human-v1`) ready; `test:ci` PASS. Real run NOT executed: needs operator
+  authorization, the NEW synthetic issue pinned in the recipe, and the operator's human pushes/answers. See
+  [evidence 21](../../../docs/evidence/21-human-changes-and-explicit-lease.md).
+- 2026-11-15: operator accepted the 5 open points of evidence 21 as MVP limits (different compatible base not authorizable; divergence
+  detected only when a write is pending; reconciliation interrupted before start is fail-closed; no rebase onto a newer base with human
+  commits; Questions on the issue). Static-review fixes in a follow-up commit (Control-side preservation check before linking, Builder push
+  policy, failed reconciliation, restore re-evaluation, precedence, exact answers, recipe guards).

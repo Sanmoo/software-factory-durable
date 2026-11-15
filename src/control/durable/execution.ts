@@ -9,8 +9,9 @@ import { dispatchBlockers } from '../rules/dependencies.js';
 import { installation, legacyCredentialLifecycle, ticketIndex, works, type WorkRecord } from './admission.js';
 import { questions } from './questions.js';
 import { pendingScope } from './scope.js';
-import { markPublicationAttempt } from './publication.js';
-import { publicationResumes } from '../rules/publication.js';
+import { markPublicationAttempt, markReconciliationExecution } from './publication.js';
+import { attemptsOf, publicationResumes } from '../rules/publication.js';
+import { authorizationInForce } from '../rules/divergence.js';
 import type { Session } from './store.js';
 import { classifyInterruption } from '../rules/recovery.js';
 import { applyRecoveryRequest, backoffRunning } from './recovery-request.js';
@@ -61,9 +62,11 @@ export const activeExecution = (execution: ExecutionView | null) => execution !=
  * Writes the Execution identity, its Slot, the dispatch intent and the Work's own branch. Nothing external happens before this commit.
  */
 export async function admitExecution(session: Session, input: { work_id: string; attemptId: string; capacity: number; authorizationObservedAt: string;
-  request: Omit<ExecutionView['request'], 'baseCommit' | 'checkout' | 'promptSha256' | 'skillPack' | 'resume' | 'scopeUpdateIds' | 'session' | 'publication'> & {
+  request: Omit<ExecutionView['request'], 'baseCommit' | 'checkout' | 'promptSha256' | 'skillPack' | 'resume' | 'scopeUpdateIds' | 'session' | 'publication' | 'reconciliation'> & {
     /** Ticket 14: present only for a publication activation; re-checked against the Work's requested publication in this commit. */
-    publication?: ExecutionView['request']['publication'] };
+    publication?: ExecutionView['request']['publication'];
+    /** Ticket 21: present only for a reconciliation Execution; re-checked against the authorization in force in this commit. */
+    reconciliation?: ExecutionView['request']['reconciliation'] };
   /** Configured limits of the repository: initialize a budget absent on a pre-19 Work, and the per-Execution timeout (absent = none). */
   limits?: { correctionLimit?: number | undefined; recoveryLimit?: number | undefined; timeoutSeconds?: number | undefined };
   /** Recovery basis after an answered Question; re-checked in this commit (the answer and the previous Execution must still match). */
@@ -97,6 +100,23 @@ export async function admitExecution(session: Session, input: { work_id: string;
       if (!input.resume || input.resume.reason !== 'QUESTION_ANSWERED' || input.resume.previousExecutionId !== previous.executionId || input.resume.questionId !== previous.end.questionId ||
           question?.state !== 'answered' || question.answer?.sha256 !== input.resume.answerSha256 || question.workId !== input.work_id ||
           question.executionId !== previous.executionId || !sameScope) reasons.push('RESUME_BASIS_CHANGED');
+    } else if (previous && work.publication?.state === 'reconciling' && !input.resume && input.interruption && input.request.reconciliation) {
+      // Real run q21-human-v4: ticket 26's recovery of the interrupted reconciliation carries exactly its reconciliation request, bound to it.
+      const authorization = authorizationInForce(work.publication);
+      if (!authorization || authorization.state !== 'executing' || authorization.executionId !== previous.executionId ||
+          input.interruption.previousExecutionId !== previous.executionId ||
+          JSON.stringify(previous.request.reconciliation ?? null) !== JSON.stringify(input.request.reconciliation)) reasons.push('RESUME_BASIS_CHANGED');
+    } else if (previous && work.publication?.state === 'reconciling') {
+      // Ticket 21: exactly the ONE divergence the accepted answer authorized (its Question, answer hash, expectation and remote tip).
+      const authorization = authorizationInForce(work.publication);
+      const asked = input.request.reconciliation;
+      const question = authorization ? (await tx.doc(questions, authorization.questionId, null)).question : null;
+      if (!input.resume || input.resume.reason !== 'RECONCILIATION_AUTHORIZED' || input.resume.previousExecutionId !== previous.executionId || !authorization ||
+          authorization.mode !== 'incorporate' || authorization.state !== 'authorized' || !asked || asked.divergenceId !== authorization.divergenceId ||
+          asked.questionId !== authorization.questionId || asked.answerSha256 !== authorization.answerSha256 || asked.authorizedRemote !== authorization.authorizedRemote ||
+          JSON.stringify(asked.expected) !== JSON.stringify(authorization.expected) || input.resume.questionId !== authorization.questionId ||
+          input.resume.answerSha256 !== authorization.answerSha256 || question?.state !== 'answered' || question.answer?.sha256 !== authorization.answerSha256 ||
+          question.workId !== input.work_id || (input.resume.scopeUpdateIds ?? []).length) reasons.push('RESUME_BASIS_CHANGED');
     } else if (previous?.end?.outcome === 'completed' && scopeUpdateIds.length) {
       // After a COMPLETED Execution only an authorized concrete scope change resumes the Work (never a later Ticket/link edit).
       if (!input.resume || input.resume.reason !== 'SCOPE_UPDATED' || input.resume.previousExecutionId !== previous.executionId || input.resume.questionId !== null || !sameScope) reasons.push('RESUME_BASIS_CHANGED');
@@ -110,6 +130,9 @@ export async function admitExecution(session: Session, input: { work_id: string;
           (asked.pullRequest ?? null) !== (requested.update ?? null) || publicationAttemptedHead(requested, asked.head, asked) ||
           input.request.branch !== requested.branch) reasons.push('RESUME_BASIS_CHANGED');
     } else if (input.resume) reasons.push('RESUME_BASIS_CHANGED');
+    // A reconciliation request travels only with its authorization, or with the answer to a Question its own Execution asked (same request).
+    if (input.request.reconciliation && input.resume?.reason !== 'RECONCILIATION_AUTHORIZED' && !((input.resume?.reason === 'QUESTION_ANSWERED' || (!input.resume && input.interruption)) &&
+        JSON.stringify(previous?.request.reconciliation ?? null) === JSON.stringify(input.request.reconciliation))) reasons.push('RESUME_BASIS_CHANGED');
     // A publication activation started earlier and its effects are not discovered yet: nothing else runs before the discovery (spec §9.1).
     if (work.publication?.state === 'awaiting-discovery') reasons.push('PUBLICATION_DISCOVERY_PENDING');
     if (input.request.publication && input.resume?.reason !== 'PUBLICATION_REQUESTED') reasons.push('RESUME_BASIS_CHANGED');
@@ -140,8 +163,11 @@ export async function admitExecution(session: Session, input: { work_id: string;
       slot: { held: true, capacity: input.capacity, reservedAt: now, releasedAt: null },
       admission: { attemptId: input.attemptId, evaluationId: latest!.evaluationId, authorizationObservedAt: input.authorizationObservedAt, activationAttemptId: null, activationEvaluationId: null },
       dispatch: { intent: 'prepare-start-activate', phase: 'reserved', environment: null, boot: null, updatedAt: now },
-      request: { ...requestOf(input.request), baseCommit: null, checkout: null, promptSha256: null, skillPack: null, resume: input.resume ?? null, scopeUpdateIds, session: null,
-        ...(input.request.publication ? { publication: structuredClone(input.request.publication) } : {}) },
+      request: { ...requestOf(input.request), baseCommit: null, checkout: null, promptSha256: null, skillPack: null, resume: input.resume ?? null,
+        // Review MED: a reconciliation Execution takes no scope update (they stay pending for the next activation).
+        scopeUpdateIds: input.resume?.reason === 'RECONCILIATION_AUTHORIZED' || (input.request.reconciliation && !input.resume) ? [] : scopeUpdateIds, session: null,
+        ...(input.request.publication ? { publication: structuredClone(input.request.publication) } : {}),
+        ...(input.request.reconciliation ? { reconciliation: structuredClone(input.request.reconciliation) } : {}) },
       credential: null, credentialIssuance: null, credentialRenewals: [],
       credentialLifecycle: { state: 'none', withdrawnAt: null, reason: null, renewal: 'enabled', renewalStop: null, workerNotice: null },
       start: null, end: null, held: null,
@@ -157,6 +183,7 @@ export async function admitExecution(session: Session, input: { work_id: string;
     work.execution = execution;
     work.branch = input.request.branch;
     work.queue = { ...work.queue, pending: false };
+    markReconciliationExecution(work, execution);
     history(work, 'execution-reserved', executionId);
     return { kind: 'reserved' as const, execution: structuredClone(execution) };
   }, BACKGROUND_CONTEXT);
@@ -167,13 +194,17 @@ export async function admitExecution(session: Session, input: { work_id: string;
  * pushing attempt (it expected the branch absent), whose request names the remote already at that head and creates no update.
  */
 const publicationAttemptedHead = (publication: NonNullable<WorkRecord['publication']>, head: string, asked?: { expectedRemote: { state: string; sha?: string }; pullRequest?: number | null }) => {
-  const attempts = (publication.attempts ?? []).filter(item => item.head === head);
+  // Ticket 21: under an authorization of one concrete divergence only the attempts that leased exactly its remote tip count.
+  const attempts = attemptsOf(publication, head);
   if (!attempts.length) return false;
   const prOnly = attempts.length === 1 && attempts[0]!.expectedRemote?.state === 'absent' && asked?.expectedRemote.state === 'present' && asked.expectedRemote.sha === head &&
     (asked.pullRequest ?? null) === null;
   return !prOnly;
 };
-const requestOf = <T extends { publication?: unknown }>(request: T): Omit<T, 'publication'> => { const { publication: _publication, ...rest } = request; return rest; };
+const requestOf = <T extends { publication?: unknown; reconciliation?: unknown }>(request: T): Omit<T, 'publication' | 'reconciliation'> => {
+  const { publication: _publication, reconciliation: _reconciliation, ...rest } = request;
+  return rest;
+};
 /** Motive of the next activation: a pending operational recovery, else the open correction (charged once), else nothing to charge. */
 function motiveOf(work: WorkRecord): Motive {
   if (work.pendingRecovery) return { kind: 'recovery', correctionId: work.correction?.correctionId ?? null };

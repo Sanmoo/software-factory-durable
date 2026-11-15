@@ -136,11 +136,11 @@ export function suspendable(tool: ToolDefinition, gate: ReturnType<typeof builde
 }
 
 /** Host-originated fixed capture through the Builder's own binding (no model input); output reaches the Host only via filtered progress. */
-export async function captureHandoff(context: ToolContext, sandbox: ToolProjection, round: number, baseCommit: string, signal: AbortSignal): Promise<HandoffEvent> {
+export async function captureHandoff(context: ToolContext, sandbox: ToolProjection, round: number, baseCommit: string, signal: AbortSignal, preserve?: string): Promise<HandoffEvent> {
   const chunks: Buffer[] = [];
   let bytes = 0;
   try {
-    const result = await sandbox.executeTool(context, { name: 'bash', command: handoffCommand(round, baseCommit), timeout: 300, callId: `handoff-${randomUUID()}` }, data => {
+    const result = await sandbox.executeTool(context, { name: 'bash', command: handoffCommand(round, baseCommit, preserve), timeout: 300, callId: `handoff-${randomUUID()}` }, data => {
       bytes += data.length;
       if (bytes <= 65536) chunks.push(Buffer.from(data));
     }, signal);
@@ -150,7 +150,7 @@ export async function captureHandoff(context: ToolContext, sandbox: ToolProjecti
       return { round, status: 'failure', code: 'HANDOFF_CAPTURE_FAILED', ...(line ? { detail: `${line[1]}:${line[2]}` } : {}) };
     }
     if (bytes > 65536) return { round, status: 'failure', code: 'HANDOFF_CAPTURE_TOO_LARGE' };
-    return { round, status: 'captured', summary: parseHandoffSummary(Buffer.concat(chunks).toString('utf8'), round, baseCommit) };
+    return { round, status: 'captured', summary: parseHandoffSummary(Buffer.concat(chunks).toString('utf8'), round, baseCommit, preserve) };
   } catch { return { round, status: 'failure', code: 'HANDOFF_CAPTURE_INVALID' }; }
 }
 

@@ -21,9 +21,13 @@ export const summary = (round: number, head: string, branch: string, committed: 
 export const gate = (outcome: GateEvidence['outcome']): GateEvidence => ({ id: 't1', source: '/artifacts/spec/v1/ticket.json#validation', command: 'check t1', cwd: '/workspace', requiredCheck: null,
   declared: 'run', outcome, code: null, exitCode: outcome === 'passed' ? 0 : 1, output: { workId: 'w', id: '11111111-2222-4333-8444-555555555555' }, sequence: 3, current: true,
   reason: null, authorization: null });
-export type Activation = { prompt: string; phaseId: string; executionId: string; continuation: unknown; handoff: unknown; editSourceMaxBytes: unknown; token: string };
+export type Activation = { prompt: string; phaseId: string; executionId: string; continuation: unknown; handoff: unknown; editSourceMaxBytes: unknown; token: string; pushPolicy?: unknown };
 /** One Builder activation: an implementation with one review round + the closing capture (ticket 13), or a direct publication. */
-export type Script = { kind: 'implement'; head: string; gate?: GateEvidence['outcome']; committed?: boolean } |
+export type Script = { kind: 'implement'; head: string; gate?: GateEvidence['outcome']; committed?: boolean;
+    /** Ticket 21: what the Host capture's ancestry check reports for the authorized tip (default: preserved); `during` runs at activation. */
+    preserves?: boolean; during?: (remote: Remote, activation: Activation) => void;
+    /** Real run q21-human-v4: the worker fails at once with this code (e.g. WORKER_INTERRUPTED after WORKER_PROVIDER_UNAVAILABLE). */
+    failure?: string } |
   { kind: 'publish'; publish: (remote: Remote, activation: Activation) => void | Promise<void>; end: 'success' | 'failure' | 'receipt-lost' };
 
 export const facts = (prompt: string) => ({ workId: /Work ([0-9a-f-]{36})/.exec(prompt)![1]!, branch: /your branch (\S+);/.exec(prompt)![1]!, head: /verified commit ([0-9a-f]{40})/.exec(prompt)![1]! });
@@ -93,7 +97,8 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
         }
         const script = scripts.shift() ?? { kind: 'implement', head: 'd'.repeat(40) };
         const activation: Activation = { prompt: invocation.prompt, phaseId: invocation.context.phaseId, executionId: invocation.context.executionId,
-          continuation: invocation.continuation ?? null, handoff: invocation.handoff ?? null, editSourceMaxBytes: invocation.editSourceMaxBytes, token: delivery?.credential?.token ?? '' };
+          continuation: invocation.continuation ?? null, handoff: invocation.handoff ?? null, editSourceMaxBytes: invocation.editSourceMaxBytes, token: delivery?.credential?.token ?? '',
+          pushPolicy: invocation.pushPolicy ?? null };
         calls.push({ kind: 'activate', detail: activation });
         const session = sessionRef(++sessions);
         if (script.kind === 'publish') {
@@ -110,8 +115,17 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
         // Implementation with ticket 13's handoff: round 1 (gate declared) reviewed by both reviewers, then the Host's closing capture.
         const branch = /branch=(\S+)/.exec(invocation.prompt)![1]!;
         const committed = script.committed ?? true;
-        const queue: HandoffEvent[] = [{ round: 1, status: 'captured', summary: summary(1, script.head, branch, committed), declarations: { treatments: [], gates: [gate(script.gate ?? 'passed')] } },
-          { round: 2, status: 'captured', summary: summary(2, script.head, branch, committed), closing: true }];
+        script.during?.(remote, activation);
+        if (script.failure) {
+          const code = script.failure;
+          return { worker: invocation.context.invocationId, started: Promise.resolve(receipt(invocation)), completed: Promise.resolve({ status: 'failure' as const, code }),
+            ...(invocation.handoff ? { handoffs: { async next() { return null; } } } : {}), close() {} };
+        }
+        // Ticket 21: the Host capture checks the authorized remote tip as an ancestor of HEAD when the invocation asks for it.
+        const preserve = invocation.handoff && 'preserve' in invocation.handoff ? invocation.handoff.preserve : undefined;
+        const withPreserved = (value: ProposalHandoff): ProposalHandoff => preserve ? { ...value, preserved: { commit: preserve, ancestor: script.preserves ?? true } } : value;
+        const queue: HandoffEvent[] = [{ round: 1, status: 'captured', summary: withPreserved(summary(1, script.head, branch, committed)), declarations: { treatments: [], gates: [gate(script.gate ?? 'passed')] } },
+          { round: 2, status: 'captured', summary: withPreserved(summary(2, script.head, branch, committed)), closing: true }];
         const first = invocation.handoff && 'rounds' in invocation.handoff && invocation.handoff.rounds ? invocation.handoff.rounds.first : 1;
         for (const event of queue) { event.round += first - 1; if (event.status === 'captured') event.summary.round = event.round; captures.set(event.round, event); }
         let finish!: () => void;
@@ -139,3 +153,35 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
   return { ports, calls };
 }
 
+
+/**
+ * Ticket 21: the Builder's direct publication with GIT LEASE SEMANTICS — the push of the prompt's explicit `--force-with-lease=<ref>:<oid>`
+ * applies only when the remote branch is exactly at that oid (empty = absent); otherwise nothing changes (the lease failed). The own PR then
+ * follows the branch (or is created once).
+ */
+export const leasedPublish = (remote: Remote, activation: Activation) => {
+  const lease = /--force-with-lease=refs\/heads\/(\S+):([0-9a-f]{40})? \S+ ([0-9a-f]{40}):refs\/heads\/\S+/.exec(activation.prompt);
+  const { workId, branch, head } = facts(activation.prompt);
+  if (lease) {
+    const current = remote.refs?.[branch];
+    if ((lease[2] ?? undefined) !== (current === undefined ? undefined : current)) return; // stale info: rejected by the lease
+    pushAs(remote, branch, head, { login: app.login, id: app.id });
+  }
+  const existing = (remote.pulls[3] ?? []).find(item => item.headRef === branch);
+  if (existing) existing.headSha = remote.refs?.[branch] ?? existing.headSha;
+  else remote.pulls[3] = [...(remote.pulls[3] ?? []), ownPull(workId, branch, head)];
+};
+/** Ticket 21: a human pushes `sha` to the Work's branch (the own PR follows the branch). */
+export const humanPush = (remote: Remote, branch: string, sha: string) => {
+  const before = remote.refs?.[branch];
+  // A human fast-forward commit on top of the current tip.
+  if (before && before !== 'unknown') (remote.graph ??= {})[sha] = [...new Set([...(remote.graph?.[sha] ?? []), before])];
+  pushAs(remote, branch, sha, { login: 'operator-one', id: 5 });
+  for (const pull of remote.pulls[3] ?? []) if (pull.headRef === branch) pull.headSha = sha;
+};
+/** A ref update as GitHub's push activity reports it. */
+export const pushAs = (remote: Remote, branch: string, sha: string, actor: { login: string; id: number }) => {
+  const before = remote.refs?.[branch];
+  ((remote.activity ??= {})[branch] ??= []).unshift({ before: before && before !== 'unknown' ? before : '0'.repeat(40), after: sha, type: 'push', actor, at: new Date().toISOString() });
+  (remote.refs ??= {})[branch] = sha;
+};

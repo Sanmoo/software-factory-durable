@@ -73,6 +73,18 @@ test('AC3: activate exposes the Builder handoff and delivers the review results 
     'ticket 13: the listed finding ids travel with the results');
 });
 
+test('ticket 21: the reconciliation Builder launch carries the authorized remote tip the Host capture checks (`preserve`); a malformed one refuses the launch', async t => {
+  const o = await owner(t, () => ({ status: 'success', receipt }));
+  const facade = createWorkers({ root: o.root, profile: oauth, knownSecrets: [] });
+  const handle = await facade.activate({ context: context('builder', 'builder-r'), prompt: 'Factory reconciliation instruction', signal: new AbortController().signal,
+    modelBudget: 'builder-v1', handoff: { baseCommit: 'a'.repeat(40), rounds: { first: 5, max: 4 }, preserve: '1'.repeat(40) } });
+  t.after(() => handle.close());
+  await handle.started;
+  assert.deepEqual(o.received.find(message => message.kind === 'launch-worker')!.payload.handoff, { baseCommit: 'a'.repeat(40), rounds: { first: 5, max: 4 }, preserve: '1'.repeat(40) });
+  await assert.rejects(facade.activate({ context: context('builder', 'builder-bad'), prompt: 'x', signal: new AbortController().signal,
+    handoff: { baseCommit: 'a'.repeat(40), preserve: 'HEAD' } }), /WORKER_LAUNCH_INVALID/, 'only an exact commit id, never a ref the guest resolves');
+});
+
 test('AC4/AC5: reviewers launch with their own configured profile, budget and review input; the opinion must be this invocation\'s', async t => {
   const o = await owner(t, launch => {
     const invocationId = (launch.payload.context as { invocationId: string }).invocationId;

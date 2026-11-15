@@ -11,7 +11,19 @@ import { deliveryOperations, type BranchCleanupResult, type BranchCleanupSelecti
 export type PublicationCorrelation = { repo: GitHubScope; issueNumbers: number[]; knownBranches: string[];
   /** Ticket 14: also report every branch/tag tip of the repository (complete listings) and whether `base` requires pull requests with no
    * bypass for the reading App (rulesets / classic protection). Refs and rules are facts; Control decides. */
-  refs?: boolean; base?: string };
+  refs?: boolean; base?: string;
+  /** Ticket 21: compare this commit (the Factory-known tip) with the current tip of the FIRST known branch when they differ. */
+  compareFrom?: string;
+  /** Review HIGH: also list the push activity of the FIRST known branch and compare each of these tips, and every tip that activity
+   * reports, with its current tip (ancestry + files changed since). */
+  preserve?: string[] };
+/** Review HIGH: push activity of a branch as GitHub reports it (who moved it from which tip to which). */
+export type BranchActivity = { state: 'complete'; entries: { before: string; after: string; type: string; actor: { login: string; id: number } | null; at: string }[]; truncated: boolean } |
+  { state: 'unknown'; code: string };
+/** Ticket 21: GitHub's comparison of two commits of the own branch (bounded commit/file lists; `truncated` when GitHub has more). */
+export type BranchComparison = { state: 'complete'; from: string; to: string; status: string; aheadBy: number; behindBy: number;
+  commits: { sha: string; author: { login: string; id: number } | null; authorName: string | null; subject: string }[]; files: string[]; truncated: boolean } |
+  { state: 'unknown'; code: string };
 /** Repository-wide branch/tag tips (`refs/heads/x`, `refs/tags/y`) from complete listings; a failed or capped read is unknown. */
 export type RefsListing = { state: 'complete'; refs: Record<string, string> } | { state: 'unknown'; code: string };
 /** `pull-request-required`: an active pull_request rule the App cannot bypass (ruleset `current_user_can_bypass: never`) or classic
@@ -33,7 +45,8 @@ export type IssuePublication = { completeness: 'complete'; candidates: PullReque
 export type PublicationObservation = { kind: 'observed'; source: 'github-rest'; observedAt: string; repository: string; repositoryId: number;
   issues: Record<string, IssuePublication>; limitations: string[];
   /** One entry per known branch (empty when none was given, e.g. admission). */
-  branches: Record<string, BranchRef>; refs?: RefsListing; baseProtection?: BaseProtection } |
+  branches: Record<string, BranchRef>; refs?: RefsListing; baseProtection?: BaseProtection; comparison?: BranchComparison;
+  activity?: BranchActivity; ancestry?: Record<string, BranchComparison> } |
   { kind: 'unavailable'; source: 'github-rest'; observedAt: string; repository: string; completeness: 'incomplete'; code: string; waitSeconds?: number; nextStep: string };
 
 /** Outcome of one draft/ready conversion. `applied`: GitHub's answer to the mutation (not yet the independent observation Control requires);
@@ -160,6 +173,38 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
     if (!read.ok) return { state: 'unknown', code: read.code };
     return read.value.length ? { state: 'pull-request-required', sources: read.value } : { state: 'not-required', reason: 'NO_PULL_REQUEST_RULE_WITHOUT_APP_BYPASS' };
   }
+  /** Ticket 21: `from...to` comparison (Contents read). Commits are reported oldest first, at most 50; files at most 100. */
+  async function compare(repo: GitHubScope, from: string, to: string): Promise<BranchComparison> {
+    const commit = z.object({ sha: z.string().regex(/^[0-9a-f]{40}$/), author: z.object({ login: z.string().max(100), id: z.number().int().positive().safe() }).nullable(),
+      commit: z.object({ author: z.object({ name: z.string().max(512).nullable().optional() }).nullable().optional(), message: z.string() }) });
+    const read = await options.github.read(repo, 'publication-read', async session => {
+      const parsed = z.object({ status: z.string().max(32), ahead_by: z.number().int().nonnegative().safe(), behind_by: z.number().int().nonnegative().safe(),
+        total_commits: z.number().int().nonnegative().safe(), commits: z.array(commit), files: z.array(z.object({ filename: z.string().max(4096) })).optional() })
+        .safeParse(await session.get(`/repos/${repo.repository}/compare/${from}...${to}`));
+      if (!parsed.success) throw new InvalidGitHubObservation();
+      return parsed.data;
+    });
+    if (!read.ok) return { state: 'unknown', code: read.code };
+    const value = read.value;
+    return { state: 'complete', from, to, status: value.status, aheadBy: value.ahead_by, behindBy: value.behind_by,
+      commits: value.commits.slice(0, 50).map(item => ({ sha: item.sha, author: item.author ? { login: item.author.login, id: item.author.id } : null,
+        authorName: item.commit.author?.name ?? null, subject: (item.commit.message.split('\n')[0] ?? '').slice(0, 200) })),
+      files: (value.files ?? []).slice(0, 100).map(item => item.filename),
+      truncated: value.total_commits > Math.min(50, value.commits.length) || (value.files?.length ?? 0) > 100 };
+  }
+  /** Review HIGH: push activity of one branch (bounded: 100 entries; more = truncated). */
+  async function activityOf(repo: GitHubScope, branch: string): Promise<BranchActivity> {
+    const entry = z.object({ before: z.string().regex(/^[0-9a-f]{40}$/), after: z.string().regex(/^[0-9a-f]{40}$/), activity_type: z.string().max(64), timestamp: z.string().max(64),
+      actor: z.object({ login: z.string().max(100), id: z.number().int().positive().safe() }).nullable().optional() });
+    const read = await options.github.read(repo, 'publication-read', async session => {
+      const parsed = z.array(entry).safeParse(await session.list(`/repos/${repo.repository}/activity?ref=${encodeURIComponent(`refs/heads/${branch}`)}`, { maxPages: 1 }));
+      if (!parsed.success) throw new InvalidGitHubObservation();
+      return parsed.data;
+    });
+    if (!read.ok) return { state: 'unknown', code: read.code };
+    return { state: 'complete', truncated: read.value.length >= 100, entries: read.value.slice(0, 100).map(item => ({ before: item.before, after: item.after, type: item.activity_type,
+      actor: item.actor ? { login: item.actor.login, id: item.actor.id } : null, at: item.timestamp })) };
+  }
   /** Remote tip of one own branch: a complete matching-refs listing filtered to the exact ref (absence only from a complete listing). */
   async function branchRef(repo: GitHubScope, branch: string, repositoryId: number): Promise<BranchRef> {
     if (!/^(?!-)(?!.*\.\.)(?!.*\/\/)(?!.*@\{)[A-Za-z0-9._/-]{1,200}(?<![./])$/.test(branch)) return { state: 'unknown', code: 'INVALID_BRANCH', nextStep: 'Branch name rejected locally; nothing was read.' };
@@ -221,9 +266,24 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
       const branches: Record<string, BranchRef> = {};
       for (const branch of [...new Set(correlation.knownBranches)]) branches[branch] = await branchRef(repo, branch, pulls.repositoryId);
       const refs = correlation.refs ? await refsListing(repo) : undefined;
+      const first = correlation.knownBranches[0] !== undefined ? branches[correlation.knownBranches[0]] : undefined;
+      const comparison = correlation.compareFrom && /^[0-9a-f]{40}$/.test(correlation.compareFrom) && first?.state === 'present' && first.sha !== correlation.compareFrom
+        ? await compare(repo, correlation.compareFrom, first.sha) : undefined;
+      let activity: BranchActivity | undefined;
+      let ancestry: Record<string, BranchComparison> | undefined;
+      if (correlation.preserve && correlation.knownBranches[0] !== undefined) {
+        activity = await activityOf(repo, correlation.knownBranches[0]);
+        if (first?.state === 'present') {
+          const tips = [...new Set([...correlation.preserve, ...(activity.state === 'complete' ? activity.entries.flatMap(item => [item.after, item.before]) : [])])]
+            .filter(tip => /^[0-9a-f]{40}$/.test(tip) && !/^0{40}$/.test(tip) && tip !== first.sha);
+          ancestry = {};
+          // Bounded: at most 16 comparisons; a tip beyond the bound is absent (unknown to Control, never assumed preserved).
+          for (const tip of tips.slice(0, 16)) ancestry[tip] = await compare(repo, tip, first.sha);
+        }
+      }
       const baseProtection = correlation.base !== undefined ? await protection(repo, correlation.base) : undefined;
       return { kind: 'observed', source: 'github-rest', observedAt: pulls.observedAt, repository: repo.repository, repositoryId: pulls.repositoryId, issues, branches,
-        ...(refs ? { refs } : {}), ...(baseProtection ? { baseProtection } : {}), limitations: [
+        ...(refs ? { refs } : {}), ...(baseProtection ? { baseProtection } : {}), ...(comparison ? { comparison } : {}), ...(activity ? { activity } : {}), ...(ancestry ? { ancestry } : {}), limitations: [
         ...(correlation.knownBranches.length ? ['Own branch tips are read from the remote refs (Contents read) separately from the pull request listing.'] : []),
         'Association = GitHub closing keywords in pull request title/body, native issue-timeline cross-references and Development links (connected/disconnected) for pull requests of this repository, and known own branches.',
         'Pull requests in other repositories that reference the Ticket are not treated as associated (they cannot be own publications of this repository).',

@@ -102,6 +102,11 @@ export type ProposalHandoff = {
    * HEAD hashed by content). Absent in captures of earlier Factory versions: then no exemption can be demonstrated.
    */
   content?: { sha256: string; clean: boolean; headMatches: boolean };
+  /**
+   * Ticket 21: present only when the Host asked (a reconciliation Execution): whether the remote tip whose divergence the operator authorized
+   * to incorporate is an ancestor of HEAD — the human commits are preserved, never rewritten or dropped. Computed by the capture program.
+   */
+  preserved?: { commit: string; ancestor: boolean };
 };
 /**
  * Ticket 13 (spec §6.3/§6.4): a concrete PRIOR authorization referenced by a treatment or a gate waiver: an answered Factory Question

@@ -22,8 +22,9 @@ import { intactRequest, readQuestion, readQuestions, recordContentLost, register
 import { pendingScope } from './scope.js';
 import { recoveryPrompt, type KnownContext } from '../rules/questions.js';
 import { continuationPrompt, initialPrompt, promptBudgetBytes, recoveryContext, scopeSection, sessionDecision } from '../rules/continuation.js';
-import { decideDiscovery, publicationAttempted, publicationPrompt, publicationResumes, publicationStep, type DiscoveryObservation } from '../rules/publication.js';
-import { evaluatePublication, recordDiscovery } from './publication.js';
+import { attemptsOf, decideDiscovery, publicationAttempted, publicationPrompt, publicationResumes, publicationStep, type DiscoveryObservation } from '../rules/publication.js';
+import { authorizationInForce, comparisonBase, knownRemote, preservationTips, reconciliationNotice, reconciliationPrompt } from '../rules/divergence.js';
+import { evaluatePublication, recordDiscovery, resolveDivergence } from './publication.js';
 import { purposeOf } from './execution.js';
 import type { SessionRef } from '../types.js';
 import { interruptionRecoveryPrompt } from '../rules/recovery.js';
@@ -37,6 +38,16 @@ const maxTimer = 2147483647;
 const publishOnly = (policies: ExecutionPorts['builder']): ExecutionPorts['builder'] => {
   const { editSourceMaxBytes: _edit, ...rest } = policies;
   return rest;
+};
+/** Ticket 21/18: the ONE remote token of the publish-only instruction and of the Builder push policy (same value, never two forms). */
+/** The configured repository's URL (ticket 18: never the guest-writable `origin`). */
+const publicationRemote = (repository: string) => `https://github.com/${repository}.git`;
+/** Real run q21-human-v4: the authorization is `executing`, bound to exactly the previous (reconciliation) Execution, interrupted for a recovery. */
+const reconciliationInterrupted = (work: WorkRecord, previous: ExecutionView) => {
+  const authorization = work.publication ? authorizationInForce(work.publication) : null;
+  const interruption = interruptionBasis(work);
+  return Boolean(authorization && authorization.state === 'executing' && authorization.executionId === previous.executionId && interruption &&
+    interruption.previousExecutionId === previous.executionId && previous.request.reconciliation?.divergenceId === authorization.divergenceId);
 };
 const codeOf = (error: unknown, fallback: string) => error instanceof Error && /^[A-Z_]{1,64}$/.test(error.message) ? error.message : fallback;
 // Executions whose grants are held in THIS process's memory: boot reconciliation of another run/Control in-process never relabels them.
@@ -465,7 +476,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         prepared: { baseCommit: prepared.checkout.baseCommit, branch: prepared.checkout.branch, checkout: prepared.checkout.path, reused: prepared.checkout.reused },
         trigger: { answer: true, scopeUpdates: updates.length } });
       if (!context.sufficient) return { kind: 'insufficient', reasons: context.reasons };
-      const prompt = [interruptionRecoveryPrompt({ ticketUrl: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
+      const reconciling = execution.request.reconciliation ? reconciliationNotice(execution.request.reconciliation, execution.request.branch, prepared.checkout.path,
+        publicationRemote(work.repository.repository)) : null;
+      const prompt = [...(reconciling ? [reconciling, ''] : []), interruptionRecoveryPrompt({ ticketUrl: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
         baseCommit: prepared.checkout.baseCommit, branch: execution.request.branch, checkout: prepared.checkout.path, workId: work.work_id,
         executionId: execution.executionId, skillDirectory, previousExecutionId: basis.previousExecutionId, reason: basis.reason, code: basis.code,
         reviews: Boolean(ports.reviews) }), ...(updates.length ? ['', ...scopeSection(updates)] : [])].join('\n');
@@ -486,6 +499,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       return { kind: 'ready', prompt: initial.prompt, resume: null, decision: null, continuation: null };
     }
     if (resume.reason === 'PUBLICATION_REQUESTED') return publicationPlan(work, execution, prepared, pack, current ?? null, skillDirectory);
+    if (resume.reason === 'RECONCILIATION_AUTHORIZED') return reconciliationPlan(work, execution, prepared, current ?? null, skillDirectory);
     const answered = resume.questionId ? await readQuestion(session, resume.questionId) : null;
     if (resume.questionId && (!answered?.answer || answered.answer.sha256 !== resume.answerSha256 || answered.workId !== work.work_id ||
         answered.executionId !== resume.previousExecutionId)) return { kind: 'refused', reasons: ['RESUME_BASIS_CHANGED'] };
@@ -561,8 +575,43 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const prompt = publicationPrompt({ reason: decision.reason, executionId: execution.executionId, previousExecutionId: previous.executionId, skillDirectory,
       repository: work.repository.repository, base: request.base, branch: request.branch, head: request.head, marker: request.marker,
       ticket: { number: work.ticket.number, url: work.ticket.url }, workId: work.work_id, checkout: prepared.checkout.path, expectedRemote: request.expectedRemote,
-      pullRequest: request.pullRequest ?? null,
+      pullRequest: request.pullRequest ?? null, remote: publicationRemote(work.repository.repository),
       verified: { reviewedRound: requested.verified.reviewedRound, gates: requested.verified.gates, requiredChecks: requested.verified.requiredChecks } });
+    if (prompt.kind === 'too-large') return { kind: 'insufficient', reasons: ['PROMPT_TOO_LARGE'] };
+    return { kind: 'ready', prompt: prompt.prompt, resume, decision, continuation: null };
+  }
+
+  /**
+   * Ticket 21 (spec §10.1): the reconciliation Execution's first prompt — ALWAYS a new session with a self-contained instruction carrying the
+   * one authorized divergence (expectation, authorized remote tip, local result, the remote commits to preserve). Refused when the
+   * authorization changed since admission; insufficient context blocks before any credential.
+   */
+  async function reconciliationPlan(work: WorkRecord, execution: ExecutionView, prepared: { checkout: { baseCommit: string; branch: string; path: string; reused: boolean } },
+    current: WorkRecord | null, skillDirectory: string): Promise<Plan> {
+    const request = execution.request.reconciliation;
+    const resume = execution.request.resume!;
+    const authorization = current?.publication ? authorizationInForce(current.publication) : null;
+    if (!request || !authorization || authorization.divergenceId !== request.divergenceId || authorization.authorizedRemote !== request.authorizedRemote ||
+        authorization.executionId !== execution.executionId) return { kind: 'refused', reasons: ['RECONCILIATION_BASIS_CHANGED'] };
+    const answered = await readQuestion(session, request.questionId);
+    if (!answered?.answer || answered.answer.sha256 !== request.answerSha256 || answered.workId !== work.work_id) return { kind: 'refused', reasons: ['RECONCILIATION_BASIS_CHANGED'] };
+    const previous = current?.previousExecutions.find(item => item.executionId === resume.previousExecutionId) ?? null;
+    if (!previous) return { kind: 'insufficient', reasons: ['PREVIOUS_EXECUTION_MISSING'] };
+    const context = recoveryContext({ previous: { baseCommit: previous.request.baseCommit, branch: previous.request.branch, checkout: previous.request.checkout },
+      prepared: { baseCommit: prepared.checkout.baseCommit, branch: prepared.checkout.branch, checkout: prepared.checkout.path, reused: prepared.checkout.reused },
+      trigger: { answer: true, scopeUpdates: 0 } });
+    if (!context.sufficient) return { kind: 'insufficient', reasons: context.reasons };
+    const divergence = current?.publication?.divergences?.find(item => item.divergenceId === request.divergenceId) ?? null;
+    const commits = divergence?.comparison.state === 'complete' ? divergence.comparison.commits.map(commit => ({ sha: commit.sha,
+      label: `${commit.author ? `@${commit.author.login}` : 'account unproven'} ${commit.subject}`.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 140) })) : [];
+    const decision = { mode: 'replace' as const, reason: 'RECONCILIATION_SESSION', previousExecutionId: previous.executionId, previous: previous.end?.session ?? null,
+      decidedAt: new Date().toISOString() };
+    const note = ''; // exact answers only (review LOW): nothing beyond the keyword reaches the Builder
+    const prompt = reconciliationPrompt({ executionId: execution.executionId, previousExecutionId: previous.executionId, skillDirectory, ticketUrl: work.ticket.url,
+      workId: work.work_id, repository: work.repository.repository, base: work.repository.base, baseCommit: prepared.checkout.baseCommit, branch: execution.request.branch,
+      checkout: prepared.checkout.path, pullRequest: current?.pullRequest ?? null, expected: request.expected, authorizedRemote: request.authorizedRemote,
+      localHead: request.localHead, questionId: request.questionId,
+      answer: { author: answered.answer.author.kind === 'github' ? `@${answered.answer.author.login}` : 'local administrator', note }, commits });
     if (prompt.kind === 'too-large') return { kind: 'insufficient', reasons: ['PROMPT_TOO_LARGE'] };
     return { kind: 'ready', prompt: prompt.prompt, resume, decision, continuation: null };
   }
@@ -589,7 +638,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
   }
   /** The single attempt of the verified head pushed (expected the branch absent): one PR-only continuation is still possible. */
   const prOnlyRecovery = (publication: NonNullable<WorkRecord['publication']>) => {
-    const attempts = (publication.attempts ?? []).filter(item => item.head === publication.verified?.head);
+    const attempts = publication.verified ? attemptsOf(publication, publication.verified.head) : [];
     return attempts.length === 1 && attempts[0]!.expectedRemote?.state === 'absent';
   };
   /** Returns whether a discovery read was made. */
@@ -601,19 +650,31 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       const attempted = publicationAttempted({ publication: evaluated });
       step = { kind: 'discover', trigger: attempted ? 'after-publication' : 'verified', attempted };
     }
+    if (step.kind === 'resolve') {
+      // Ticket 21: the accepted answer of the divergence Question (a local read; the answer itself arrived by the Question desk).
+      const resolved = await resolveDivergence(session, listed.work_id, step.divergenceId);
+      if (resolved !== 'waiting' && resolved !== 'stale') observe(listed.work_id, `reconciliation-${resolved.decision}`, resolved.code ? [resolved.code] : []);
+      return false;
+    }
     if (step.kind !== 'discover') return false;
     const work = await readWork(session, listed.work_id);
     const publication = work?.publication;
     if (!work || !publication?.verified || running.has(work.work_id)) return false;
     const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase());
     const app = await appIdentity();
+    // Ticket 21: the Factory's own remote history and the authorization in force (its basis must be the reconciliation Execution).
+    const authorization = authorizationInForce(publication);
+    const basis = [...(work.previousExecutions ?? []), ...(work.execution ? [work.execution] : [])].find(item => item.executionId === publication.basisExecutionId);
+    const known = knownRemote(publication, step.attempted, Boolean(authorization && basis?.request.reconciliation?.divergenceId === authorization.divergenceId));
+    const compareFrom = comparisonBase(known);
     let observation: DiscoveryObservation;
     let observedAt: string | null = null;
     if (!configured) observation = { kind: 'incomplete', code: 'REPOSITORY_NOT_CONFIGURED' };
     else {
       try {
         const read = await deps.access.repository.findPublication({ repo: configured, issueNumbers: [work.ticket.number], knownBranches: [publication.branch],
-          refs: true, base: publication.base });
+          refs: true, base: publication.base, ...(compareFrom ? { compareFrom } : {}),
+          preserve: preservationTips(known) });
         observedAt = read.observedAt;
         const issue = read.kind === 'observed' ? read.issues[String(work.ticket.number)] : undefined;
         const tip = read.kind === 'observed' ? read.branches[publication.branch] : undefined;
@@ -623,12 +684,14 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           : { kind: 'observed', repositoryId: read.repositoryId, candidates: issue.candidates,
             branch: !tip ? { state: 'unknown', code: 'BRANCH_NOT_REPORTED' } : tip.state === 'unknown' ? { state: 'unknown', code: tip.code } : tip,
             refs: !read.refs ? { state: 'unknown', code: 'REFS_NOT_REPORTED' } : read.refs.state === 'complete' ? read.refs : { state: 'unknown', code: read.refs.code },
-            baseProtection: !read.baseProtection ? { state: 'unknown', code: 'BASE_PROTECTION_NOT_REPORTED' } : read.baseProtection };
+            baseProtection: !read.baseProtection ? { state: 'unknown', code: 'BASE_PROTECTION_NOT_REPORTED' } : read.baseProtection,
+            ...(read.comparison ? { comparison: read.comparison } : {}), ...(read.activity ? { activity: read.activity } : {}),
+            ...(read.ancestry ? { ancestry: read.ancestry } : {}) };
       } catch { observation = { kind: 'incomplete', code: 'PUBLICATION_QUERY_FAILED' }; }
     }
     const decision = decideDiscovery({ expect: { workId: work.work_id, ticketNumber: work.ticket.number, branch: publication.branch, base: publication.base,
       repositoryId: work.repository.repositoryId, head: publication.verified.head, app }, attempted: step.attempted, previousHeads: publication.linkedHeads ?? [],
-      prOnlyRecovery: prOnlyRecovery(publication),
+      prOnlyRecovery: prOnlyRecovery(publication), known,
       refsBefore: publication.refsBefore ?? null, observation });
     const recorded = await recordDiscovery(session, work.work_id, { basisExecutionId: publication.basisExecutionId, executionId: work.execution?.executionId ?? null,
       trigger: step.trigger, observedAt, ticketNumber: work.ticket.number, decision,
@@ -831,10 +894,16 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         return { status: 'recorded' as const };
       };
       const handle = await ports.workers.activate({ context: { workId: work.work_id, executionId, invocationId: execution.invocationId, role: 'builder',
-        environmentRef: environment, bootRef: boot, phaseId: execution.request.publication ? 'builder-publication' : plan.continuation ? 'builder-continuation' : resume || execution.interruption ? 'builder-recovery' : 'builder-initial' },
+        environmentRef: environment, bootRef: boot, phaseId: execution.request.publication ? 'builder-publication' : execution.request.reconciliation && resume?.reason !== 'QUESTION_ANSWERED' ? 'builder-reconciliation'
+          : plan.continuation ? 'builder-continuation' : resume || execution.interruption ? 'builder-recovery' : 'builder-initial' },
         prompt, signal: activitySignal, ...(execution.request.publication ? publishOnly(ports.builder) : ports.builder),
+        // Ticket 21 review: the exact leased push Control derived; any other push form is refused by the Builder Host.
+        ...(execution.request.publication ? { pushPolicy: { branch: execution.request.publication.branch, head: execution.request.publication.head, remote: publicationRemote(work.repository.repository),
+          expected: execution.request.publication.expectedRemote.state === 'present' ? execution.request.publication.expectedRemote.sha : null } } : {}),
         // Publish-only (review HIGH 1): no handoff for a publication activation; its Builder can never open a review round.
-        ...(ports.reviews && !execution.request.publication ? { handoff: { baseCommit: prepared.checkout.baseCommit, ...(ports.reviews.rounds ? { rounds: { first: firstRound, max: ports.reviews.rounds.max } } : {}) } } : {}), ...(plan.continuation ? { continuation: { session: plan.continuation } } : {}) },
+        ...(ports.reviews && !execution.request.publication ? { handoff: { baseCommit: prepared.checkout.baseCommit, ...(ports.reviews.rounds ? { rounds: { first: firstRound, max: ports.reviews.rounds.max } } : {}),
+          // Ticket 21: every capture of a reconciliation Execution checks that the authorized remote tip is still an ancestor of HEAD.
+          ...(execution.request.reconciliation ? { preserve: execution.request.reconciliation.authorizedRemote } : {}) } } : {}), ...(plan.continuation ? { continuation: { session: plan.continuation } } : {}) },
       { credential: grant.delivery }, { question: onQuestion });
       activated = true;
       await lifecycle.attach(handle.worker);
@@ -1063,10 +1132,26 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       const scopeUpdateIds = pendingScope(work).map(update => update.scopeUpdateId);
       let resume: NonNullable<ExecutionView['request']['resume']> | undefined;
       let publication: NonNullable<ExecutionView['request']['publication']> | undefined;
+      let reconciliation: NonNullable<ExecutionView['request']['reconciliation']> | undefined;
       if (previous?.end?.outcome === 'question') {
         const answered = previous.end.questionId ? await readQuestion(session, previous.end.questionId) : null;
         if (!answered?.answer || answered.workId !== work.work_id || answered.executionId !== previous.executionId) { observe(work.work_id, 'refused', ['QUESTION_NOT_ANSWERED']); return; }
         resume = { previousExecutionId: previous.executionId, questionId: answered.questionId, answerSha256: answered.answer.sha256, scopeUpdateIds, reason: 'QUESTION_ANSWERED' };
+        // Ticket 21: a reconciliation Execution that asked keeps its reconciliation request (the same authorization, the same preservation check).
+        if (previous.request.reconciliation) reconciliation = structuredClone(previous.request.reconciliation);
+      } else if (previous && work.publication?.state === 'reconciling' && reconciliationInterrupted(work, previous)) {
+        // Real run q21-human-v4: the reconciliation Execution was interrupted (transient worker failure): ticket 26's operational recovery
+        // continues it with the SAME reconciliation request (preserve check, later lease) and the authorization stays bound (no resume).
+        reconciliation = structuredClone(previous.request.reconciliation!);
+      } else if (previous && work.publication?.state === 'reconciling') {
+        // Ticket 21: the ONE divergence the accepted answer authorized to incorporate (re-checked in the admission commit).
+        const authorization = authorizationInForce(work.publication);
+        const divergence = work.publication.divergences?.find(item => item.divergenceId === authorization?.divergenceId);
+        if (!authorization || authorization.mode !== 'incorporate' || authorization.state !== 'authorized' || !divergence) { observe(work.work_id, 'refused', ['RECONCILIATION_NOT_AUTHORIZED']); return; }
+        resume = { previousExecutionId: previous.executionId, questionId: authorization.questionId, answerSha256: authorization.answerSha256, scopeUpdateIds: [], reason: 'RECONCILIATION_AUTHORIZED' };
+        reconciliation = { divergenceId: authorization.divergenceId, questionId: authorization.questionId, answerSha256: authorization.answerSha256,
+          expected: structuredClone(authorization.expected), authorizedRemote: authorization.authorizedRemote, localHead: divergence.local ?? previous.review?.rounds.at(-1)?.handoff.summary?.head ?? '',
+          strategy: 'rebase-unless-agents-documents-another' };
       } else if (previous?.end?.outcome === 'completed' && scopeUpdateIds.length) {
         resume = { previousExecutionId: previous.executionId, questionId: null, answerSha256: null, scopeUpdateIds, reason: 'SCOPE_UPDATED' };
       } else if (previous && work.publication?.state === 'requested' && work.publication.verified && work.publication.expectedRemote &&
@@ -1081,7 +1166,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       const { attemptId } = await freshEvaluation(work);
       const admission = await admitExecution(session, { ...(interruption ? { interruption } : {}), now: (ports.calendar ?? Date).now(), work_id: work.work_id, attemptId, capacity: ports.capacity, authorizationObservedAt: authorization.observedAt,
         request: { ticket: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
-          branch: `factory/${work.ticket.number}-${work.work_id.slice(0, 8)}`, policies: publication ? publishOnly(ports.builder) : { ...ports.builder }, ...(publication ? { publication } : {}) }, ...(resume ? { resume } : {}),
+          branch: `factory/${work.ticket.number}-${work.work_id.slice(0, 8)}`, policies: publication ? publishOnly(ports.builder) : { ...ports.builder }, ...(publication ? { publication } : {}),
+          ...(reconciliation ? { reconciliation } : {}) }, ...(resume ? { resume } : {}),
         limits: deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase()) ?? {} });
       if (admission.kind === 'refused') { observe(work.work_id, 'refused', admission.reasons); return; }
       observe(work.work_id, 'reserved');

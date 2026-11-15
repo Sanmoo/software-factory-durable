@@ -8,7 +8,10 @@ import type { ProposalHandoff } from '../contracts/index.js';
  * staged, unstaged, new (untracked, not ignored) and removed paths, each with presence/mode/hash, plus HEAD/branch/base/merge-base and
  * the latest COMPLETE preserved request/instructions versions. No commit, clean tree, copy or snapshot is required. Git runs in the guest
  * with hooks/fsmonitor/pager/external diff disabled; this is a cooperative capture, not a freeze against concurrent writers.
- * argv: checkout artifacts round baseCommit checkoutView artifactsView.
+ * argv: checkout artifacts round baseCommit checkoutView artifactsView [mode] [preserve].
+ * Ticket 21: `preserve` (capture mode only) is the remote tip of the Work's branch whose concrete divergence the operator authorized to be
+ * incorporated; the summary then states whether that commit is an ancestor of HEAD (`git merge-base --is-ancestor`), computed by this
+ * constant program, never declared by the model.
  */
 export const handoffCaptureProgram = String.raw`import hashlib, json, os, re, stat, subprocess, sys
 stage = "input"
@@ -21,11 +24,14 @@ def unexpected(kind, value, trace):
     sys.stderr.flush()
     os._exit(5)
 sys.excepthook = unexpected
-if len(sys.argv) not in (7, 8):
+if len(sys.argv) not in (7, 8, 9):
     fail("INPUT_INVALID", 2)
 checkout, artifacts, rnd, base, checkout_view, artifacts_view = sys.argv[1:7]
-mode = sys.argv[7] if len(sys.argv) == 8 else "capture"
+mode = sys.argv[7] if len(sys.argv) >= 8 else "capture"
+preserve = sys.argv[8] if len(sys.argv) == 9 else None
 if mode not in ("capture", "probe") or not re.fullmatch(r"[1-9][0-9]?", rnd) or not re.fullmatch(r"[0-9a-f]{40}", base):
+    fail("INPUT_INVALID", 2)
+if preserve is not None and (mode != "capture" or not re.fullmatch(r"[0-9a-f]{40}", preserve)):
     fail("INPUT_INVALID", 2)
 out = os.path.join(artifacts, "review", "r" + rnd)
 view = artifacts_view + "/review/r" + rnd
@@ -46,6 +52,14 @@ head = text(git("rev-parse", "--verify", "HEAD^{commit}")).strip()
 branch = text(git("symbolic-ref", "-q", "--short", "HEAD", ok=(0, 1))).strip() or None
 stage = "git-merge-base"
 merge_base = text(git("merge-base", base, "HEAD", ok=(0, 1))).strip() or None
+preserved = None
+if preserve is not None:
+    # Ticket 21: 0 = ancestor; 1 = not an ancestor; 128 = the commit is not even present locally (never incorporated).
+    stage = "git-preserve"
+    p = subprocess.run(G + ["merge-base", "--is-ancestor", preserve, "HEAD"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
+    if p.returncode not in (0, 1, 128):
+        fail("GIT_FAILED")
+    preserved = {"commit": preserve, "ancestor": p.returncode == 0}
 entries = {}
 def entry(path):
     return entries.setdefault(path, {"path": path, "guestPath": checkout_view + "/" + path, "committed": None, "staged": None,
@@ -175,6 +189,8 @@ def latest(kind):
 summary = {"version": 1, "round": int(rnd), "index": view + "/index.json", "head": head, "branch": branch, "base": base, "mergeBase": merge_base,
            "counts": counts, "patches": patches, "spec": latest("spec"), "instructions": latest("instructions"),
            "changed": changed[:20], "changedTruncated": len(changed) > 20, "content": content}
+if preserved is not None:
+    summary["preserved"] = preserved
 index = dict(summary, checkout=checkout_view, entries=ordered,
              reviewerNote="Read each listed guestPath and patch with the read tool, with offset/limit to continue; read beyond the hunks for context.")
 index_bytes = json.dumps(index, indent=1, sort_keys=True).encode()
@@ -184,14 +200,15 @@ sys.stdout.write(json.dumps(summary, sort_keys=True))
 `;
 
 const hex40 = /^[0-9a-f]{40}$/;
-const command = (round: number, baseCommit: string, mode: 'capture' | 'probe') => {
+const command = (round: number, baseCommit: string, mode: 'capture' | 'probe', preserve?: string) => {
   if (!Number.isInteger(round) || round < 1 || round > 99 || !hex40.test(baseCommit)) throw new Error('HANDOFF_INPUT_INVALID');
+  if (preserve !== undefined && (mode !== 'capture' || !hex40.test(preserve))) throw new Error('HANDOFF_INPUT_INVALID');
   if (handoffCaptureProgram.includes('FACTORY_HANDOFF_EOF')) throw new Error('HANDOFF_INPUT_INVALID');
-  const extra = mode === 'probe' ? ' probe' : '';
+  const extra = mode === 'probe' ? ' probe' : preserve !== undefined ? ` capture ${preserve}` : '';
   return `exec /usr/bin/python3 -I -S - /workspace/checkout /artifacts ${round} ${baseCommit} /workspace/checkout /artifacts${extra} <<'FACTORY_HANDOFF_EOF'\n${handoffCaptureProgram}\nFACTORY_HANDOFF_EOF\n`;
 };
 /** Fixed Builder-binding Bash command (Host-originated): the program arrives on a quoted heredoc, never interpolated. */
-export const handoffCommand = (round: number, baseCommit: string) => command(round, baseCommit, 'capture');
+export const handoffCommand = (round: number, baseCommit: string, preserve?: string) => command(round, baseCommit, 'capture', preserve);
 /** Ticket 13: the same constant program in probe mode (Host content snapshot before/after a Builder command; writes nothing). */
 export const contentProbeCommand = (baseCommit: string) => command(1, baseCommit, 'probe');
 
@@ -209,10 +226,13 @@ export const handoffSummarySchema = z.strictObject({
   patches: z.strictObject({ committed: patch, staged: patch, unstaged: patch }), spec: version, instructions: version,
   changed: z.array(guestPath('/workspace/checkout/')).max(20), changedTruncated: z.boolean(),
   content: z.strictObject({ sha256, clean: z.boolean(), headMatches: z.boolean() }).optional(),
+  preserved: z.strictObject({ commit: z.string().regex(hex40), ancestor: z.boolean() }).optional(),
 });
 /** Strict parse of the program's stdout (already filtered by Records); anything else is a failed capture, never a guessed handoff. */
-export function parseHandoffSummary(stdout: string, round: number, baseCommit: string): ProposalHandoff {
+export function parseHandoffSummary(stdout: string, round: number, baseCommit: string, preserve?: string): ProposalHandoff {
   const parsed = handoffSummarySchema.parse(JSON.parse(stdout));
   if (parsed.round !== round || parsed.base !== baseCommit || parsed.index !== `/artifacts/review/r${round}/index.json`) throw new Error('HANDOFF_CAPTURE_INVALID');
+  // Ticket 21: the ancestry answer must be about exactly the requested commit, and present only when requested.
+  if ((parsed.preserved?.commit ?? null) !== (preserve ?? null)) throw new Error('HANDOFF_CAPTURE_INVALID');
   return parsed as ProposalHandoff;
 }

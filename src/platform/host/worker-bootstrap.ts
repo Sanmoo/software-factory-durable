@@ -36,7 +36,13 @@ const bootstrap = z.strictObject({
   handoff: z.strictObject({ baseCommit: z.string().regex(/^[0-9a-f]{40}$/),
     // Ticket 13: repeated capture rounds of this invocation (first round number, at most `max` captures including the closing one).
     rounds: z.strictObject({ first: z.number().int().min(1).max(98), max: z.number().int().min(2).max(8) })
-      .refine(value => value.first + value.max - 1 <= 99).optional() }).optional(),
+      .refine(value => value.first + value.max - 1 <= 99).optional(),
+    // Ticket 21: the authorized remote tip the capture checks as an ancestor of HEAD (reconciliation Execution only).
+    preserve: z.string().regex(/^[0-9a-f]{40}$/).optional() }).optional(),
+  // Ticket 21 review: the exact push of a publication activation (Builder only).
+  pushPolicy: z.strictObject({ branch: z.string().regex(/^factory\/[0-9]+-[0-9a-f]{8}$/), expected: z.string().regex(/^[0-9a-f]{40}$/).nullable(),
+    head: z.string().regex(/^[0-9a-f]{40}$/),
+    remote: z.string().regex(/^(origin|https:\/\/github\.com\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+\.git)$/).optional() }).optional(),
   review: z.strictObject({ round: z.number().int().min(1).max(99), attempt: z.number().int().min(1).max(9), handoffIndexSha256: z.string().regex(/^[0-9a-f]{64}$/),
     required: z.array(z.string().max(1024).regex(/^\/(workspace|artifacts)\//)).max(32).readonly(),
     missing: z.array(z.enum(['handoff-index', 'spec-version', 'instructions-version'])).max(3).readonly(),
@@ -60,7 +66,8 @@ const bootstrap = z.strictObject({
 
 function rolePolicies(input: { context: { role: string }; copyOutput?: boolean | undefined; selectedOutputCopies?: readonly string[] | undefined;
   skillPackFiles?: readonly string[] | undefined;
-  skillPack?: string | undefined; modelBudget?: string | undefined; handoff?: unknown; review?: unknown; continueSession?: unknown; continuedSession?: unknown }) {
+  skillPack?: string | undefined; modelBudget?: string | undefined; handoff?: unknown; pushPolicy?: unknown; review?: unknown; continueSession?: unknown; continuedSession?: unknown }) {
+  if (input.pushPolicy !== undefined && input.context.role !== 'builder') return false;
   // A session continuation is a Builder policy only, and never both the launch form and the bootstrap form.
   if ((input.continueSession !== undefined || input.continuedSession !== undefined) && (input.context.role !== 'builder' ||
       (input.continueSession !== undefined && input.continuedSession !== undefined))) return false;
@@ -74,7 +81,7 @@ function rolePolicies(input: { context: { role: string }; copyOutput?: boolean |
     !(input.context.role !== 'builder' && input.copyOutput === true);
 }
 export const workerBootstrapSchema = bootstrap.refine(rolePolicies, 'WORKER_POLICY_ROLE_DENIED');
-export const workerLaunchSchema =  bootstrap.pick({ context: true, knownSecrets: true, prompt: true, imageSourceMaxBytes: true, editSourceMaxBytes: true, copyOutput: true, selectedOutputCopies: true, skillPack: true, skillPackFiles: true, modelBudget: true, deadlineMs: true, secretAckTimeoutMs: true, handoff: true, review: true, continueSession: true }).extend({ profile: launchProfile }).strict().refine(rolePolicies, 'WORKER_POLICY_ROLE_DENIED')
+export const workerLaunchSchema =  bootstrap.pick({ context: true, knownSecrets: true, prompt: true, imageSourceMaxBytes: true, editSourceMaxBytes: true, copyOutput: true, selectedOutputCopies: true, skillPack: true, skillPackFiles: true, modelBudget: true, deadlineMs: true, secretAckTimeoutMs: true, handoff: true, pushPolicy: true, review: true, continueSession: true }).extend({ profile: launchProfile }).strict().refine(rolePolicies, 'WORKER_POLICY_ROLE_DENIED')
   // The continued session is resolved by the owner launcher from `continueFrom`, never supplied by the launch request.
   .refine(input => input.review?.session === undefined, 'WORKER_POLICY_ROLE_DENIED');
 export type WorkerLaunch = z.infer<typeof workerLaunchSchema>;
