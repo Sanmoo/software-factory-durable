@@ -11,8 +11,8 @@ export { readBounded, snapshotStorage };
 // controller itself never pushes or creates a pull request. Composes ticket 13's multi-round reviews and end-of-Execution verification.
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const observations = `${root}/q14-publication-v6`;
-const revision = 'q14-publication-v6';
+const observations = `${root}/q14-publication-v7`;
+const revision = 'q14-publication-v7';
 const phases = ['preflight', 'run', 'discover', 'inspect', 'stop-environment'] as const;
 type Phase = typeof phases[number];
 const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 'main', installationId: 177599217, workflows: false, label: 'ready-for-agent' };
@@ -21,7 +21,9 @@ const githubApp = { appId: 5569788, privateKeyFile: 'credentials/app.pem' };
 const configuration = { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1', memoryMiB: 4096, vcpus: 2, diskGiB: 40, shutdownGraceSeconds: 30, minFreeSpaceGiB: 4 } as const;
 const guestAssets = { directory: '/home/sanmoo/software-factory-test/assets34/assets', manifestSha256: '8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807' } as const;
 const runDeadlineMs = 80 * 60 * 1000;
-const discoverDeadlineMs = 10 * 60 * 1000;
+const discoverDeadlineMs = 25 * 60 * 1000;
+/** Leftover of the consumed v6 run (its push landed, `gh pr create` failed for lack of an exported PATH): tolerated only at exactly this tip. */
+export const leftoverBranches: Readonly<Record<string, string>> = { 'refs/heads/factory/3-28c75e5a': '8c0495962444a3cd9331d83529c10d6eead6422e' };
 /** Ticket 13 composition: captures per Builder activation (handoffs + closing) and reviewer rounds at most. */
 const rounds = { max: 4 } as const;
 /** Long cadence: the dispatcher tick (discovery + selection) follows each polling cycle; the first cycle runs at start. */
@@ -70,17 +72,20 @@ export function plan() {
       reviewerCredentials: 'none',
       writes: ['Builder (guest, direct): 1 git push creating refs/heads/factory/3-<work8> at the verified commit with --force-with-lease=refs/heads/<branch>: (branch must not exist)',
         'Builder (guest, direct): 1 draft pull request factory/3-<work8> -> main whose body starts with <!-- software-factory:work:<work-id> --> and contains Closes #3',
+        'discover (only in the PR-only recovery): at most 1 draft pull request creation by the Builder, never a push',
         'App: access_tokens issuance POSTs and DELETE /installation/token self-revocations of the grants',
         'controller: at most one Question comment on issue #3 only if the Builder asks (ask_user); the recipe then stops (no answer)'],
       never: ['merge', 'approval', 'ready-for-review conversion', 'push to main or any other branch', 'labels/assignees/Projects', 'closing the issue or the PR', 'branch deletion/cleanup'] },
     effects: [
       'preflight: read-only GitHub: the configured label lists exactly Ticket #3; ticket, native blocked_by and its associated pull requests (must be NONE); every branch/tag tip ' +
-        '(no `factory/3-` branch may exist); main must require pull requests with NO bypass for the App (ruleset current_user_can_bypass never, or classic required reviews without App bypass); the App bot identity',
+        '(no `factory/3-` branch may exist except the v6 leftover factory/3-28c75e5a at exactly 8c04959; it is another Work\'s branch, never adopted); main must require pull requests with NO bypass for the App (ruleset current_user_can_bypass never, or classic required reviews without App bypass); the App bot identity',
       'run: new Control storage; implementation Execution (ticket 13 rounds, verification); next tick: discovery (own branch tip, all refs, base protection, correlated PRs) -> absent -> ' +
         'publication requested; next cycle: ONE publish-only activation (new boot, same Work checkout, builder-publish grant, new session without handoff/edit) where the Builder pushes and ' +
         'creates the draft PR directly. From the moment the publication activation is observed, the recipe makes every discovery read of the own branch FAIL (lost result provoked): ' +
         'Control records nothing about the PR. The owner stops when the publication Execution ended and its boot was stopped (or any hold/block, or the 80 min deadline)',
-      'discover: a NEW owner process on the SAME storage with the real adapter: it must discover and link the own draft PR before anything else (no prepare/activation/grant allowed)',
+      'discover: a NEW owner process on the SAME storage with the real adapter: it must discover and link the own draft PR before anything else. Only if the push landed but no PR ' +
+        'exists (own branch absent in the request snapshot, now at exactly the verified head, no other ref changed) Control requests ONE PR-only continuation (no push): the ' +
+        'recipe then allows exactly one prepare, one publication Builder and its publish grant(s) (at most 2), nothing else; stops at published/blocked or 25 min',
       'inspect: read-only on an exclusive COPY: Control view (publication record, discoveries, Executions); checkout through a Factory-owned bare copy (never host git on the guest tree); ' +
         'confined read of /artifacts/publication/pr-body.md; tool names, read paths and bash command texts of each worker session (host runtime directory); read-only GitHub: own PR facts, main tip, issue state',
       'stop-environment: own boot of the last recorded Execution when it may still run: public Sandbox.stop of that exact boot',
@@ -97,6 +102,30 @@ export function plan() {
       'discover: publication.state published, pullRequest {draft: true, headSha = verified head, headRef = own branch, base main, author = pinned App bot}, Work.pullRequest set, ' +
         'description conformant (otherwise blocked DESCRIPTION_NONCONFORMANT with its reasons), no unexpected ref change vs refsBefore, no new Execution; issue open; main tip unchanged; PR open, draft, not merged',
       'no token in storage/receipts/sessions/observations'],
+  };
+}
+
+/** `factory/<ticket>-` branches other than the known leftover at exactly its recorded tip (another tip of it is not tolerated). */
+export function unexpectedFactoryBranches(refs: Record<string, string>): string[] {
+  return Object.keys(refs).filter(ref => ref.startsWith(`refs/heads/factory/${expectedTicket.number}-`) && leftoverBranches[ref] !== refs[ref]);
+}
+
+/**
+ * Discover-phase guard: at most ONE PR-only continuation (ticket 14 real-run recovery). Allowed only while Control's own publication
+ * requests it — `requested` with the remote ALREADY at the verified head (no push) — and for its renewal; nothing else is ever launched.
+ */
+export function recoveryGuard(maxGrants = 2) {
+  let prepared = false, activated = false, grants = 0;
+  const prOnly = (publication: { state: string; expectedRemote?: { state: string; sha?: string } | null; verified?: { head: string } | null } | null | undefined) =>
+    Boolean(publication && publication.state === 'requested' && publication.expectedRemote?.state === 'present' && publication.expectedRemote.sha === publication.verified?.head);
+  return {
+    prepare(publication: Parameters<typeof prOnly>[0]) { if (prepared || !prOnly(publication)) return false; prepared = true; return true; },
+    activate(context: { role: string; phaseId: string }) { if (activated || !prepared || context.role !== 'builder' || context.phaseId !== 'builder-publication') return false; activated = true; return true; },
+    issue(purpose: string | undefined, publication: Parameters<typeof prOnly>[0], running: boolean) {
+      if (purpose !== 'builder-publish' || grants >= maxGrants || !(prOnly(publication) || (running && publication?.state === 'awaiting-discovery'))) return false;
+      grants++;
+      return true;
+    },
   };
 }
 
@@ -207,7 +236,7 @@ export async function runPhase(phase: Phase) {
       const publication = await codeRepository.findPublication({ repo: repository, issueNumbers: [expectedTicket.number], knownBranches: [], refs: true, base: repository.base });
       const associated = publication.kind === 'observed' ? publication.issues[String(expectedTicket.number)] : undefined;
       const refs = publication.kind === 'observed' && publication.refs?.state === 'complete' ? publication.refs.refs : null;
-      const factoryBranches = refs ? Object.keys(refs).filter(ref => ref.startsWith(`refs/heads/factory/${expectedTicket.number}-`)) : null;
+      const factoryBranches = refs ? unexpectedFactoryBranches(refs) : null;
       const app = await github.appIdentity(repository);
       if (publication.kind !== 'observed' || associated?.completeness !== 'complete' || associated.candidates.length || !refs || factoryBranches?.length ||
         !refs[`refs/heads/${repository.base}`] || publication.baseProtection?.state !== 'pull-request-required' || !app) {
@@ -236,6 +265,7 @@ export async function runPhase(phase: Phase) {
       let prepared = 0;
       const guard = activationGuard();
       const grants = grantGuard();
+      const recovery = recoveryGuard();
       const lost = lostResult();
       const discovering = phase === 'discover';
       const shown = async () => workOf(await control.inspect({ kind: 'list' }));
@@ -255,8 +285,9 @@ export async function runPhase(phase: Phase) {
           reviews: { reviewer, rounds },
           credentials: { async issue(context) {
             const work = await shown();
-            const allowed = !discovering && work?.ticket.number === expectedTicket.number && grants(context.purpose, { publicationState: work.publication?.state ?? null,
-              publicationActivation: Boolean(work.execution?.request.publication) && work.execution?.executionId === context.executionId && work.execution.state !== 'ended' });
+            const running = Boolean(work?.execution?.request.publication) && work?.execution?.executionId === context.executionId && work.execution.state !== 'ended';
+            const allowed = work?.ticket.number === expectedTicket.number && (discovering ? recovery.issue(context.purpose, work.publication, running)
+              : grants(context.purpose, { publicationState: work.publication?.state ?? null, publicationActivation: running }));
             log({ call: 'issue', purpose: context.purpose ?? 'builder-start', allowed });
             if (!allowed) throw Object.assign(new Error('RECIPE_GRANT_GUARD'), { outcome: 'known-rejected' });
             const grant = await builderCredentials.issue(context);
@@ -267,7 +298,8 @@ export async function runPhase(phase: Phase) {
             async prepare(input) {
               log({ call: 'prepare', workId: input.workId, checkout: input.checkout });
               const work = await shown();
-              if (discovering || ++prepared > 2 || work?.work_id !== input.workId || work.ticket.number !== expectedTicket.number) return { status: 'failure', code: 'RECIPE_ONE_SHOT_GUARD' };
+              const ok = work?.work_id === input.workId && work.ticket.number === expectedTicket.number && (discovering ? recovery.prepare(work.publication) : ++prepared <= 2);
+              if (!ok) return { status: 'failure', code: 'RECIPE_ONE_SHOT_GUARD' };
               const result = await sandbox.prepare(input);
               log({ call: 'prepare-result', result });
               return result;
@@ -286,7 +318,7 @@ export async function runPhase(phase: Phase) {
             log({ call: 'activate', context: invocation.context, promptSha256: (await import('node:crypto')).createHash('sha256').update(invocation.prompt).digest('hex'),
               promptHead: invocation.prompt.split('\n')[0]!.slice(0, 160), continuation: Boolean(invocation.continuation), review: invocation.review ?? null, handoff: invocation.handoff ?? null,
               credentialDelivered: delivery?.credential !== undefined });
-            if (discovering || !guard(invocation.context, invocation.review)) throw new Error('RECIPE_ONE_SHOT_GUARD');
+            if (discovering ? !recovery.activate(invocation.context) : !guard(invocation.context, invocation.review)) throw new Error('RECIPE_ONE_SHOT_GUARD');
             // From here on the Factory must not learn the publication result in this phase (provoked lost result).
             if (invocation.context.phaseId === 'builder-publication') lost.provoke();
             const handle = await workers.activate(invocation, delivery, activationEvents);
