@@ -30,18 +30,20 @@ export type UpgradeContext = { root: string; storagePath: string; target: Upgrad
   observe?: (step: 'journal' | 'migrated' | 'selected') => Promise<void> | void };
 export type UpgradeCommand = 'check' | 'apply' | 'status' | 'resume' | 'rollback';
 
-const stateSchema = z.enum(['migrating', 'migrated', 'selecting', 'completed', 'rolled-back']);
+const stateSchema = z.enum(['guarding', 'migrating', 'migrated', 'selecting', 'completed', 'rolled-back']);
 const side = z.strictObject({ release: releaseIdSchema, manifestSha256: z.string().regex(/^[0-9a-f]{64}$/), launcherSha256: z.string().regex(/^[0-9a-f]{64}$/),
   storageFormat: z.number().int(), migratesFrom: z.array(z.number().int()) });
 const journalSchema = z.strictObject({ version: z.literal(1), upgradeId: z.uuid(), createdAt: z.iso.datetime(), from: side, to: side,
-  migration: z.string().nullable(), state: stateSchema, steps: z.array(z.strictObject({ state: stateSchema, at: z.iso.datetime() })).max(32) });
+  migration: z.string().nullable(),
+  /** Preserved digest recorded at apply, BEFORE anything changed: re-verified before the migration commit and before the selection. */
+  expected: z.strictObject({ preservedDigest: z.string().regex(/^[0-9a-f]{64}$/).nullable() }), state: stateSchema, steps: z.array(z.strictObject({ state: stateSchema, at: z.iso.datetime() })).max(32) });
 export type UpgradeJournal = z.infer<typeof journalSchema>;
 const terminal = (state: UpgradeJournal['state']) => state === 'completed' || state === 'rolled-back';
 
 export type UpgradeReport = { code: string; command: UpgradeCommand; from: { release: string } | null; to: { release: string }; journal: UpgradeJournal | null;
   storage: StorageSummary | null; migration: { required: string | null; requested: string | null }; checks: Diagnostic[]; nextStep: string };
 type StorageSummary = { state: 'absent' | 'present'; format: number | null; operational: string | null; paused: boolean | null; problems: string[];
-  preserved: unknown; lifecycle: unknown; migrations: unknown[] };
+  preserved: unknown; stateDigest: string | null; activity: unknown; lifecycle: unknown; migrations: unknown[] };
 
 const sha = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');
 const journalDirectory = (root: string) => join(root, 'data', 'upgrade');
@@ -50,7 +52,7 @@ const previousLauncherPath = (root: string, upgradeId: string) => join(journalDi
 
 async function syncDirectory(path: string) { const handle = await open(path, constants.O_RDONLY | constants.O_DIRECTORY); try { await handle.sync(); } finally { await handle.close(); } }
 /** Durable atomic replacement: exclusive temporary, fsync, rename, fsync of the directory. */
-async function writeAtomically(path: string, bytes: string, mode: number) {
+async function writeAtomically(path: string, bytes: string | Buffer, mode: number) {
   const temporary = `${path}.${randomUUID()}.tmp`;
   const handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, mode);
   try { await handle.writeFile(bytes); await handle.chmod(mode); await handle.sync(); } finally { await handle.close(); }
@@ -77,19 +79,20 @@ async function saveJournal(root: string, journal: UpgradeJournal, state: Upgrade
 }
 
 /** Which release `<root>/factory` selects: the release whose manifest pins exactly the launcher's SHA-256 (by bytes, never by name). */
-async function selectedRelease(root: string): Promise<{ id: string; directory: string; manifest: ReleaseManifest; manifestSha256: string; launcherSha256: string } | { id: null; launcherSha256: string | null }> {
+async function selectedRelease(root: string): Promise<{ id: string; directory: string; manifest: ReleaseManifest; manifestSha256: string; launcherSha256: string; bytes: Buffer } | { id: null; launcherSha256: string | null }> {
   let launcherSha256: string | null = null;
+  let bytes: Buffer | undefined;
   try {
     const info = await lstat(join(root, 'factory'));
-    if (info.isFile() && info.uid === process.getuid?.() && (info.mode & 0o022) === 0) launcherSha256 = sha(await readFile(join(root, 'factory')));
+    if (info.isFile() && info.uid === process.getuid?.() && (info.mode & 0o022) === 0) { bytes = await readFile(join(root, 'factory')); launcherSha256 = sha(bytes); }
   } catch { /* No launcher: nothing is selected. */ }
   if (!launcherSha256) return { id: null, launcherSha256 };
   const matches = [];
   for (const id of (await readdir(join(root, 'releases')).catch(() => [] as string[])).sort()) {
     if (!releaseIdSchema.safeParse(id).success) continue;
-    const bytes = await readFile(join(root, 'releases', id, releaseManifestName)).catch(() => undefined);
-    const parsed = bytes ? parseReleaseManifest(bytes) : undefined;
-    if (parsed && parsed.manifest.release === id && parsed.manifest.launcher.sha256 === launcherSha256) matches.push({ id, directory: join(root, 'releases', id), ...parsed, launcherSha256 });
+    const manifestBytes = await readFile(join(root, 'releases', id, releaseManifestName)).catch(() => undefined);
+    const parsed = manifestBytes ? parseReleaseManifest(manifestBytes) : undefined;
+    if (parsed && parsed.manifest.release === id && parsed.manifest.launcher.sha256 === launcherSha256) matches.push({ id, directory: join(root, 'releases', id), ...parsed, launcherSha256, bytes: bytes! });
   }
   return matches.length === 1 ? matches[0]! : { id: null, launcherSha256 };
 }
@@ -98,9 +101,10 @@ const check = (id: string, ok: boolean, message: string, nextStep: string, unver
   ({ id, status: ok ? (unverified ? 'unverified' : 'ok') : 'blocked', message, nextStep });
 
 function summary(inspection: StorageInspection): StorageSummary {
-  if (inspection.kind === 'absent') return { state: 'absent', format: null, operational: null, paused: null, problems: [], preserved: null, lifecycle: null, migrations: [] };
+  if (inspection.kind === 'absent') return { state: 'absent', format: null, operational: null, paused: null, problems: [], preserved: null, stateDigest: null, activity: null, lifecycle: null, migrations: [] };
   return { state: 'present', format: inspection.format, operational: inspection.operational, paused: inspection.installation?.paused ?? null,
-    problems: inspection.problems.map(problem => `${problem.code}: ${problem.detail}`), preserved: inspection.preserved, lifecycle: inspection.installation?.lifecycle ?? null,
+    problems: inspection.problems.map(problem => `${problem.code}: ${problem.detail}`), preserved: inspection.preserved, stateDigest: inspection.stateDigest,
+    activity: inspection.activity, lifecycle: inspection.installation?.lifecycle ?? null,
     migrations: inspection.installation?.migrations ?? [] };
 }
 
@@ -157,11 +161,16 @@ async function compatibility(context: UpgradeContext, phase: 'before-migration' 
       : inspection.format === null ? 'Empty storage: nothing to pause.' : 'Installation not paused.',
     'With the current release: `factory pause`, then stop the controller (Ctrl+C or service stop) and confirm the clean exit; then check again.'));
     const lifecycle = inspection.installation?.lifecycle as { current: { runId: string } | null; last: { end: string; runId: string } | null } | null | undefined;
-    const clean = !lifecycle ? null : lifecycle.current ? false : lifecycle.last === null ? null : lifecycle.last.end === 'clean';
-    checks.push(check('upgrade:stop', clean !== false, clean === true ? 'The last controller run recorded a clean stop (confirmed cessation and persistence).'
-      : clean === false ? lifecycle!.current ? `Controller run ${lifecycle!.current.runId} never recorded its end (crash or forced stop).` : `The last run ended ${lifecycle!.last!.end}, not clean.`
-        : 'No controller run end is recorded in this storage (format 1, or no run since its migration): a clean stop cannot be proved, so the new release reconciles at boot as after an interruption.',
-    'Start the current release, let its boot reconcile, keep it paused and stop it cleanly; a stop intention never turns a crash into a clean stop.', clean === null));
+    const settled = inspection.activity.unsettled.length === 0 && inspection.activity.heldSlots === 0;
+    // Clean-stop evidence: the recorded clean end of the last run, or (no end recorded: format 1, or no run since a migration) durably
+    // settled activity. A run that never recorded its end (crash/forced stop) or an unsettled activity blocks until a reconciling boot settles it.
+    const stop = lifecycle?.current ? { ok: false, message: `Controller run ${lifecycle.current.runId} never recorded its end (crash or forced stop).` }
+      : lifecycle?.last?.end === 'clean' && settled ? { ok: true, message: 'The last controller run recorded a clean stop (confirmed cessation and persistence).' }
+        : lifecycle?.last && lifecycle.last.end !== 'clean' ? { ok: false, message: `The last run ended ${lifecycle.last.end}, not clean.` }
+          : settled ? { ok: true, message: 'No run end is recorded (format 1, or no run since a migration); the durable state proves no unsettled Execution and no held Slot.' }
+            : { ok: false, message: `No clean stop is recorded and ${inspection.activity.unsettled.length} Execution(s) are unsettled / ${inspection.activity.heldSlots} Slot(s) held.` };
+    checks.push(check('upgrade:stop', stop.ok, stop.message,
+      'Start the current release, let its boot reconcile the interrupted activity (cessation confirmed, Slots released), keep it paused and stop it cleanly; a stop intention never turns a crash into a clean stop.'));
   } else {
     checks.push(check('upgrade:storage', true, 'No Control storage yet: nothing to migrate or preserve.', 'Nothing to do.'));
   }
@@ -197,36 +206,63 @@ function launcherFor(manifest: ReleaseManifest): string {
   if (sha(bytes) !== manifest.launcher.sha256) throw new Error('UPGRADE_LAUNCHER_MISMATCH');
   return bytes;
 }
-async function select(root: string, bytes: string, expectedSha256: string) {
+async function select(root: string, bytes: string | Buffer, expectedSha256: string) {
   if (sha(bytes) !== expectedSha256) throw new Error('UPGRADE_LAUNCHER_MISMATCH');
   const current = await readFile(join(root, 'factory')).catch(() => undefined);
   if (current && sha(current) === expectedSha256) return; // Already selected (resume after the rename).
   await writeAtomically(join(root, 'factory'), bytes, 0o755);
 }
+/**
+ * The launcher in place from the journal until the end of the upgrade: it selects NO release and starts nothing, so neither the previous
+ * release (a pre-33 one cannot read the journal) nor the new one can run, inspect or unpause during the upgrade (ticket 33 review).
+ */
+export const guardLauncher = (journal: Pick<UpgradeJournal, 'upgradeId' | 'to'>) => `#!/bin/sh
+# Software Factory installation launcher DURING upgrade ${journal.upgradeId} to release ${journal.to.release}: it selects no release and starts nothing.
+echo '{"code":"UPGRADE_INCOMPLETE","upgradeId":"${journal.upgradeId}","release":"${journal.to.release}","message":"An upgrade is in progress: run upgrade status, resume or rollback with releases/${journal.to.release}. Nothing was started."}' >&2
+exit 2
+`;
 
 function report(command: UpgradeCommand, code: string, context: UpgradeContext, fields: Partial<UpgradeReport> & { nextStep: string }): UpgradeReport {
   return { code, command, from: null, to: { release: context.target.manifest.release }, journal: null, storage: null, migration: { required: null, requested: null }, checks: [], ...fields };
 }
 const startStep = 'Start the controller with `./factory run` (the installation stays paused), inspect `./factory status`, `list`, `show <work>` and pending Questions (answerable), then `./factory unpause`.';
+const verificationStep = 'Nothing is selected and the guard launcher stays: the storage no longer matches what this upgrade verified. Inspect it (`upgrade status`). ' +
+  'While it is still in the previous format, `upgrade rollback` reselects the previous release; otherwise restore your own external storage protection to the ' +
+  'pre-upgrade copy (outside the Factory; GitHub is never undone) and run `upgrade resume`, which verifies again before anything.';
+
+/** The storage is exactly what this upgrade verified (and, after the migration, carries its own migration record). */
+async function verifiedStorage(context: UpgradeContext, journal: UpgradeJournal, migrated: boolean) {
+  const inspection = await inspectStorage(context.storagePath);
+  if (inspection.kind === 'absent') return { ok: journal.expected.preservedDigest === null, inspection };
+  const own = (inspection.installation?.migrations ?? []).some(item => (item as { upgradeId?: unknown }).upgradeId === journal.upgradeId);
+  const ok = inspection.operational !== 'incompatible' && inspection.preserved?.digest === journal.expected.preservedDigest &&
+    (!migrated || (inspection.format === journal.to.storageFormat && own));
+  return { ok, inspection };
+}
 
 async function finish(context: UpgradeContext, journal: UpgradeJournal, command: UpgradeCommand): Promise<UpgradeReport> {
   const { root, target } = context;
+  const blockedReport = (code: string, inspection: StorageInspection, nextStep = verificationStep) =>
+    report(command, code, context, { journal, storage: summary(inspection), from: { release: journal.from.release }, nextStep });
+  if (journal.state === 'guarding') {
+    await select(root, guardLauncher(journal), sha(guardLauncher(journal)));
+    await saveJournal(root, journal, journal.migration ? 'migrating' : 'selecting');
+    await context.observe?.('journal');
+  }
   if (journal.state === 'migrating') {
     if (!journal.migration) throw new Error('UPGRADE_JOURNAL_INCONSISTENT');
-    const result = await migrateStorage(context.storagePath, { upgradeId: journal.upgradeId, release: journal.to.release, previousRelease: journal.from.release });
-    if (result.kind === 'refused') {
-      return report(command, 'UPGRADE_MIGRATION_REFUSED', context, { journal, storage: summary(result.inspection), from: { release: journal.from.release },
-        nextStep: 'The storage is unchanged (format 1); `upgrade rollback` reselects nothing new and closes this upgrade. Never edit the storage to get around it.' });
-    }
-    if (result.kind === 'not-needed' && journal.migration) {
-      // Only this upgrade's own record proves its migration; a format change by anyone else is not adopted.
-      return report(command, 'UPGRADE_MIGRATION_UNPROVEN', context, { journal, storage: summary(result.inspection), from: { release: journal.from.release },
-        nextStep: 'The storage changed outside this upgrade; inspect it. Nothing was selected.' });
-    }
+    const result = await migrateStorage(context.storagePath, { upgradeId: journal.upgradeId, release: journal.to.release, previousRelease: journal.from.release,
+      ...(journal.expected.preservedDigest ? { expectedDigest: journal.expected.preservedDigest } : {}) });
+    if (result.kind === 'refused') return blockedReport(result.code === 'MIGRATION_VERIFICATION_FAILED' ? 'UPGRADE_VERIFICATION_FAILED' : 'UPGRADE_MIGRATION_REFUSED', result.inspection);
+    // Only this upgrade's own record proves its migration; a format change by anyone else is never adopted.
+    if (result.kind === 'not-needed') return blockedReport('UPGRADE_MIGRATION_UNPROVEN', result.inspection);
     await saveJournal(root, journal, 'migrated');
     await context.observe?.('migrated');
   }
   if (journal.state === 'migrated' || journal.state === 'selecting') {
+    // Always re-verified before the selection (resume included): never select on an unverified storage.
+    const verified = await verifiedStorage(context, journal, journal.migration !== null);
+    if (!verified.ok) return blockedReport('UPGRADE_VERIFICATION_FAILED', verified.inspection);
     if (journal.state === 'migrated') await saveJournal(root, journal, 'selecting');
     await select(root, launcherFor(target.manifest), journal.to.launcherSha256);
     await context.observe?.('selected');
@@ -256,27 +292,41 @@ export async function upgrade(context: UpgradeContext, command: UpgradeCommand, 
     }
     if (command === 'resume') {
       // Re-verified before continuing: the target, the configuration and (while not migrated yet) the full storage compatibility.
-      const verified = await compatibility(context, journal.state === 'migrating' ? 'before-migration' : 'after-migration');
+      const verified = await compatibility(context, journal.state === 'migrating' || journal.state === 'guarding' ? 'before-migration' : 'after-migration');
       const blocked = verified.checks.filter(item => item.status === 'blocked' && item.id !== 'upgrade:previous');
       if (blocked.length) return report(command, 'UPGRADE_INCOMPATIBLE', context, { journal, checks: verified.checks, storage: verified.storage, from: { release: journal.from.release },
         nextStep: 'Resolve the blocked checks (nothing was changed by this resume), then resume again, or roll back while still possible.' });
       return finish(context, journal, command);
     }
     if (journal.state === 'rolled-back') return report(command, 'UPGRADE_NOT_IN_PROGRESS', context, { journal, nextStep: 'Already rolled back.' });
-    // Rollback: only to the recorded previous release, only when its declared formats include the storage's current format.
+    // Rollback: only to the recorded previous release, with the same pre-checks as an apply TO it (pause, stop, registry, configuration,
+    // environments/assets, storage format it operates); an unknown format (no storage) is refused.
+    const previousDirectory = join(root, 'releases', journal.from.release);
+    const intact = await verifyReleaseTree(previousDirectory);
+    if (intact.kind !== 'release' || intact.manifestSha256 !== journal.from.manifestSha256 || intact.manifest.launcher.sha256 !== journal.from.launcherSha256) {
+      return report(command, 'ROLLBACK_PREVIOUS_RELEASE_INVALID', context, { journal, nextStep: 'The previous release no longer matches its manifest; reselecting it is refused.' });
+    }
     const inspection = await inspectStorage(context.storagePath);
     const format = inspection.kind === 'storage' ? inspection.format : null;
-    if (format !== null && format !== journal.from.storageFormat) {
+    if (format === null) {
+      return report(command, 'ROLLBACK_FORMAT_UNKNOWN', context, { journal, storage: summary(inspection), from: { release: journal.from.release },
+        nextStep: `No storage format is established; keep ${journal.to.release} (\`upgrade resume\` if incomplete). A rollback needs a storage in a format the previous release operates.` });
+    }
+    if (format !== journal.from.storageFormat) {
       return report(command, 'ROLLBACK_FORMAT_UNSUPPORTED', context, { journal, storage: summary(inspection), from: { release: journal.from.release },
         nextStep: `Release ${journal.from.release} operates storage format ${journal.from.storageFormat} only; this storage is format ${format}. There is no universal rollback: keep ${journal.to.release}, or restore your own external storage protection (outside the Factory; GitHub is never undone).` });
     }
-    const previousDirectory = join(root, 'releases', journal.from.release);
-    const intact = await verifyReleaseTree(previousDirectory);
-    if (intact.kind !== 'release' || intact.manifestSha256 !== journal.from.manifestSha256) {
-      return report(command, 'ROLLBACK_PREVIOUS_RELEASE_INVALID', context, { journal, nextStep: 'The previous release no longer matches its manifest; reselecting it is refused.' });
+    const towards: UpgradeContext = { ...context, target: { directory: previousDirectory, manifest: intact.manifest, manifestSha256: intact.manifestSha256, checks: [],
+      guestAssets: { directory: join(root, intact.manifest.guestAssets.path), manifestSha256: intact.manifest.guestAssets.manifestSha256 } } };
+    const prechecks = await compatibility(towards, 'after-migration');
+    const refused = prechecks.checks.filter(item => item.status === 'blocked' && item.id !== 'upgrade:previous' && item.id !== 'upgrade:target');
+    if (refused.length) {
+      return report(command, 'ROLLBACK_INCOMPATIBLE', context, { journal, checks: refused, storage: prechecks.storage, from: { release: journal.from.release },
+        nextStep: 'Nothing was changed. Resolve the blocked checks (each has its next step) and roll back again.' });
     }
-    const bytes = await readFile(previousLauncherPath(root, journal.upgradeId), 'utf8');
-    await select(root, bytes, intact.manifest.launcher.sha256);
+    // Exactly the bytes hashed when the previous selection was identified (kept at apply time).
+    const bytes = await readFile(previousLauncherPath(root, journal.upgradeId));
+    await select(root, bytes, journal.from.launcherSha256);
     await saveJournal(root, journal, 'rolled-back');
     return report(command, 'UPGRADE_ROLLED_BACK', context, { journal, from: { release: journal.from.release }, storage: summary(inspection),
       nextStep: `Release ${journal.from.release} is selected again; start it with ./factory run (still paused).` });
@@ -307,15 +357,15 @@ export async function upgrade(context: UpgradeContext, command: UpgradeCommand, 
       migratesFrom: previousSupport.migratesFrom },
     to: { release: target.manifest.release, manifestSha256: target.manifestSha256, launcherSha256: target.manifest.launcher.sha256, storageFormat: verified.support.format,
       migratesFrom: verified.support.migratesFrom },
-    migration: verified.required, state: verified.required ? 'migrating' : 'selecting', steps: [] };
+    migration: verified.required, expected: { preservedDigest: verified.inspection.kind === 'storage' ? verified.inspection.preserved?.digest ?? null : null },
+    state: 'guarding', steps: [] };
   launcherFor(target.manifest); // The shipped launcher must reproduce the manifest pin BEFORE anything is written.
   await mkdir(journalDirectory(root), { mode: 0o700, recursive: true });
   // A closed earlier upgrade keeps its journal under its own id (history; never reused).
   if (journal && terminal(journal.state)) await rename(journalPath(root), join(journalDirectory(root), `${journal.upgradeId}.journal.json`));
   // The previous selection is kept byte-for-byte for rollback (the launcher only, never a copy of storage).
-  await writeAtomically(previousLauncherPath(root, created.upgradeId), await readFile(join(root, 'factory'), 'utf8'), 0o600);
+  await writeAtomically(previousLauncherPath(root, created.upgradeId), previous.bytes, 0o600);
   await saveJournal(root, created, created.state);
-  await context.observe?.('journal');
   const result = await finish(context, created, command);
   return { ...result, checks: verified.checks, migration: fields.migration };
 }

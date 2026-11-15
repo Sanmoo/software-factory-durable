@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { spawnSync } from 'node:child_process';
 import { chmod, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { inspectStorage, type StorageInspection } from '../../src/control/index.js';
+import { inspectStorage, openControl, type StorageInspection } from '../../src/control/index.js';
 import { readJournal, upgrade, upgradeBlocksStart, type UpgradeReport } from '../../src/entrypoints/controller/upgrade.js';
 import { verifyReleaseTree } from '../../src/entrypoints/release.js';
 import { storageWithPendingQuestion, writeFormatOne } from '../control/upgrade-fixture.js';
@@ -39,7 +39,9 @@ test('check verifies every compatibility point read-only; apply refuses a requir
   assert.deepEqual(blocked(checked), []);
   assert.deepEqual(checked.checks.map(item => item.id), ['upgrade:target', 'upgrade:previous', 'upgrade:configuration', 'upgrade:storage', 'upgrade:registry', 'upgrade:pause',
     'upgrade:stop', 'upgrade:protocol', 'upgrade:profiles', 'upgrade:environments']);
-  assert.equal(checked.checks.find(item => item.id === 'upgrade:stop')!.status, 'unverified', 'format 1 cannot prove a clean stop');
+  const stop = checked.checks.find(item => item.id === 'upgrade:stop')!;
+  assert.equal(stop.status, 'ok', 'format 1 records no run end: the evidence is the durably settled activity');
+  assert.match(stop.message, /no unsettled Execution and no held Slot/);
   assert.deepEqual([checked.from, checked.migration.required, checked.storage!.format, checked.storage!.paused], [{ release: 'mvp-32.1' }, 'factory-storage-1-to-2', 1, true]);
   for (const [options, code] of [[{}, 'UPGRADE_MIGRATION_NOT_REQUESTED'], [{ migrate: 'something-else' }, 'UPGRADE_MIGRATION_NOT_APPLICABLE']] as const) {
     assert.equal((await upgrade(context, 'apply', options)).code, code);
@@ -50,7 +52,7 @@ test('check verifies every compatibility point read-only; apply refuses a requir
   const after = await snapshot(root, context.storagePath);
   assert.equal(after.launcher, target.manifest.launcher.sha256, 'the explicit selection now names the new release');
   assert.deepEqual([after.journal !== 'invalid' && after.journal?.state, after.journal !== 'invalid' && after.journal?.steps.map(step => step.state)],
-    ['completed', ['migrating', 'migrated', 'selecting', 'completed']]);
+    ['completed', ['guarding', 'migrating', 'migrated', 'selecting', 'completed']]);
   assert.deepEqual(storageOf(after.storage).preserved, storageOf(before.storage).preserved, 'ids, queues, Questions, Slots and history preserved');
   assert.equal(storageOf(after.storage).format, 2);
   assert.equal((await verifyReleaseTree(previous.directory)).kind, 'release', 'previous release preserved intact');
@@ -117,7 +119,15 @@ test('real SIGKILL after each durable step: the interruption is detected, the co
     const storage = storageOf(await inspectStorage(context.storagePath));
     assert.equal(storage.format, cut === 'journal' ? 1 : 2, `${cut}: never a partially migrated storage`);
     assert.deepEqual(storage.preserved, before.preserved);
-    assert.equal(sha(await readFile(join(root, 'factory'))), cut === 'selected' ? target.manifest.launcher.sha256 : previous.manifest.launcher.sha256);
+    const selected = sha(await readFile(join(root, 'factory')));
+    if (cut === 'selected') assert.equal(selected, target.manifest.launcher.sha256);
+    else {
+      // From the journal on, <root>/factory is the guard launcher: NO release (not the pre-33 v1) can start until resume or rollback.
+      assert.notEqual(selected, previous.manifest.launcher.sha256);
+      const v1 = spawnSync(join(root, 'factory'), ['run'], { encoding: 'utf8', timeout: 30000 });
+      assert.equal(v1.status, 2, `${cut}: the launcher starts nothing during the upgrade`);
+      assert.equal(JSON.parse(v1.stderr.trim()).code, 'UPGRADE_INCOMPLETE');
+    }
     assert.equal((await upgradeBlocksStart(root))?.code, 'UPGRADE_INCOMPLETE');
     assert.equal((await upgrade(context, 'status')).code, 'UPGRADE_INCOMPLETE');
     assert.equal((await upgrade(context, 'apply', { migrate: 'factory-storage-1-to-2' })).code, 'UPGRADE_IN_PROGRESS');
@@ -168,4 +178,58 @@ test('the controller owner refuses an incomplete upgrade and an unmigrated stora
   // While another owner holds the canonical lock, the upgrade cannot run (no takeover).
   const holder = spawnSync('flock', ['--exclusive', '--nonblock', join(root, 'data', 'control.lock'), node, controller, root, 'upgrade', 'status'], { encoding: 'utf8', timeout: 30000 });
   assert.equal(holder.status, 73, holder.stderr);
+});
+
+test('resume re-verifies the migrated storage against the journal: a changed state blocks the selection with an explicit exit', async t => {
+  const { root, context, target } = await rootWithFormatOne(t);
+  const killed = spawnSync(node, [child, root, 'migrated', 'apply', 'factory-storage-1-to-2'], { encoding: 'utf8', timeout: 30000 });
+  assert.equal(killed.signal, 'SIGKILL');
+  // The storage changes after the migration commit (here through the public Control; a stale or foreign writer in reality).
+  const control = await openControl({ storagePath: context.storagePath, runtimeInventory: 'unknown' });
+  assert.equal((await control.accept({ request_id: 'unpause-x', operation: 'unpause', origin: 'local-cli' }) as { kind: string }).kind, 'durable');
+  assert.equal((await control.accept({ request_id: 'pause-x', operation: 'pause', origin: 'local-cli' }) as { kind: string }).kind, 'durable');
+  const aborted = new AbortController(); aborted.abort(); await control.run(aborted.signal);
+  const resumed = await upgrade(context, 'resume');
+  assert.equal(resumed.code, 'UPGRADE_VERIFICATION_FAILED');
+  assert.match(resumed.nextStep, /external storage protection/);
+  assert.notEqual(sha(await readFile(join(root, 'factory'))), target.manifest.launcher.sha256, 'never selected');
+  const journal = await readJournal(root);
+  assert.equal(journal !== 'invalid' && journal?.state, 'migrated');
+  assert.equal((await upgradeBlocksStart(root))?.code, 'UPGRADE_INCOMPLETE');
+});
+
+test('format 1 without clean-stop evidence needs durably settled activity; otherwise the upgrade is blocked', async t => {
+  const fixture = await installation();
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const source = join(fixture.root, 'run', 'source.sqlite');
+  await storageWithPendingQuestion(source, { cessation: false });
+  await writeFormatOne(source, fixture.context.storagePath);
+  const checked = await upgrade(fixture.context, 'check');
+  assert.equal(checked.code, 'UPGRADE_INCOMPATIBLE');
+  assert.ok(blocked(checked).includes('upgrade:stop'));
+  assert.match(checked.checks.find(item => item.id === 'upgrade:stop')!.message, /unsettled/);
+});
+
+test('rollback applies the same pre-checks as apply (pause, stop, environments, configuration) and refuses an unknown format', async t => {
+  const fixture = await installation({ previousStorage: true });
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  await storageWithPendingQuestion(fixture.context.storagePath);
+  await chmod(fixture.context.storagePath, 0o600);
+  assert.equal((await upgrade(fixture.context, 'apply')).code, 'UPGRADE_COMPLETED');
+  const control = await openControl({ storagePath: fixture.context.storagePath, runtimeInventory: 'unknown' });
+  await control.accept({ request_id: 'unpause-y', operation: 'unpause', origin: 'local-cli' });
+  const aborted = new AbortController(); aborted.abort(); await control.run(aborted.signal);
+  const refused = await upgrade(fixture.context, 'rollback');
+  assert.deepEqual([refused.code, blocked(refused)], ['ROLLBACK_INCOMPATIBLE', ['upgrade:pause']]);
+  assert.equal(sha(await readFile(join(fixture.root, 'factory'))), fixture.target.manifest.launcher.sha256);
+  const again = await openControl({ storagePath: fixture.context.storagePath, runtimeInventory: 'unknown' });
+  await again.accept({ request_id: 'pause-y', operation: 'pause', origin: 'local-cli' });
+  const stopped = new AbortController(); stopped.abort(); await again.run(stopped.signal);
+  assert.equal((await upgrade(fixture.context, 'rollback')).code, 'UPGRADE_ROLLED_BACK');
+  assert.equal(sha(await readFile(join(fixture.root, 'factory'))), fixture.previous.manifest.launcher.sha256);
+  // No storage at all: the format a release would operate is unknown, so the rollback is refused.
+  const fresh = await installation({ previousStorage: true });
+  t.after(() => rm(fresh.root, { recursive: true, force: true }));
+  assert.equal((await upgrade(fresh.context, 'apply')).code, 'UPGRADE_COMPLETED');
+  assert.equal((await upgrade(fresh.context, 'rollback')).code, 'ROLLBACK_FORMAT_UNKNOWN');
 });

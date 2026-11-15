@@ -27,8 +27,7 @@ test('upgrade recipe: import and --plan are inert; fresh exclusive base, v1 = th
   assert.deepEqual([plan.bounds.github, plan.bounds.model, plan.bounds.retries], ['none', 'none', 0]);
   for (const phase of plan.phases) {
     const tombstone = recipe.tombstonePath(phase);
-    assert.equal(tombstone, `/home/sanmoo/software-factory-test/r33-v1.${phase}-intent.json`);
-    assert.equal(tombstone.startsWith(`${plan.base}/`), false);
+    assert.equal(tombstone, `/home/sanmoo/software-factory-test/r33-v1/intent-${phase}.json`, 'inside the base, no sibling file');
   }
   await assert.rejects(recipe.main(['retry']), /EXACT_PHASE_REQUIRED/);
   await assert.rejects(recipe.main(['build', 'install-v1']), /EXACT_PHASE_REQUIRED/);

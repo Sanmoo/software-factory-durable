@@ -70,7 +70,7 @@ modelo ou GitHub reais.
 
 Arquivo: `test/entrypoints/release33-qualification.ts` (import e `--plan` inertes; teste
 `release33-qualification.test.ts`). Pré-requisitos: checkout limpo e compilado (`tsc`), perfis SDK privados
-preparados, `r32-v2/build` intacto (somente leitura), nenhuma base/tombstone `r33-v1` existente, ~6 GiB livres.
+preparados, `r32-v2/build` intacto (somente leitura), base `r33-v1` inexistente, ~6 GiB livres.
 
 ```sh
 N='env -u NODE_OPTIONS -u NODE_COMPILE_CACHE NODE_DISABLE_COMPILE_CACHE=1 /home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node'
@@ -81,7 +81,7 @@ done
 ```
 
 - Base nova `/home/sanmoo/software-factory-test/r33-v1` (raiz `root/`, `build/`, `observations/`), tombstones
-  irmãos `r33-v1.<fase>-intent.json`; cada fase roda uma vez; nada é repetido ou reparado.
+  dentro dela (`intent-<fase>.json`); cada fase roda uma vez; nada é repetido ou reparado.
 - v1 = `r32-v2/build/software-factory-mvp-32.1.tar` (formato 1, sem ferramenta de upgrade), somente leitura.
   v2 = `mvp-33.1` construída deste checkout com assets34 (`8efa506a…`).
 - `config.yaml` sem repositórios (nenhum alvo de polling, nenhum token, Perguntas recusadas localmente) e
@@ -106,6 +106,31 @@ done
   formato 1 é reexpresso a partir do estado do Control atual (a v1 real só o opera, não o escreve); o caso
   `unpause` com a v1 confia em não haver Trabalho elegível (nenhum repositório configurado); a migração é
   exercida no par real r32 → r33, não em ambientes/discos reais.
+
+## Correções da revisão estática (supervisor, d4c36ca)
+
+- **Verificação antes do commit**: o journal grava o digest preservado no apply; a migração o confere antes
+  do commit e a instalação convertida dentro dele (divergência não grava nada). Antes de selecionar (resume
+  incluído) o storage é sempre reverificado (formato, registro próprio da migração, digest); falha →
+  `UPGRADE_VERIFICATION_FAILED`, journal bloqueado, nada selecionado, saída explícita (rollback enquanto no
+  formato anterior; senão proteção externa + `resume`).
+- **Nenhuma release roda durante o upgrade**: o journal começa em `guarding` e `<root>/factory` vira um
+  launcher-guarda que não seleciona release (`UPGRADE_INCOMPLETE`, saída 2) até `completed`/`rolled-back`;
+  prova por processo real após cada SIGKILL. O apply inteiro roda sob o `flock`. Rollback restaura exatamente
+  os bytes do launcher anterior hasheados na identificação da seleção.
+- **Fim de run**: `clean` só quando nenhuma Execução está não assentada e nenhum Slot está retido após a
+  parada (último commit do run); senão `uncertain` (também o resultado de `run`).
+- **Evidência de parada no upgrade**: fim `clean` registrado, ou — sem fim registrado (formato 1 ou nenhum run
+  desde a migração) — atividade durável assentada; run sem fim (crash) ou atividade não assentada bloqueia,
+  com próximo passo de boot reconciliador (ticket 26).
+- **Storage estrito**: só banco sem nenhuma tabela é novo; banco estranho/ilegível e documentos Factory sem o
+  de instalação → `STORAGE_INCOMPATIBLE` (nunca criação preguiçosa). `stateDigest` cobre todos os documentos.
+- **Rollback**: mesmas pré-verificações do apply em direção à release anterior (pausa, parada, registry,
+  configuração, ambientes/assets, formato); formato desconhecido (sem storage) → `ROLLBACK_FORMAT_UNKNOWN`.
+- **Receita**: tombstones dentro da base (`<base>/intent-<fase>.json`, base criada exclusivamente antes);
+  a recusa da v1 é registrada pelo código (guarda `UPGRADE_INCOMPLETE`; v1 direta `RELEASE_INVALID`).
+- Aceitos pelo supervisor: `inspectStorage`/`migrateStorage` são funções de **bootstrap** (não operações do
+  Controle); `upgrade check` lendo o storage sob o lock sem controlador é comando de manutenção do operador.
 
 ## Decisões de desenho abertas (para o operador)
 

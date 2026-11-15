@@ -5,8 +5,8 @@
 // no VM, worker, model or network); v2 is extracted NEXT TO v1, then the real v2 CLI checks/refuses/applies the upgrade under the
 // canonical-storage flock; the migration is interrupted twice by real SIGKILLs of the v2 upgrade code, the v1 launcher is refused on the
 // migrated storage, rollback is refused, resume completes, and v2 starts paused, answers the Question over the real local protocol and stops
-// cleanly. Bounds: no network, GitHub, credential, model, VM/QEMU boot, systemd unit, sudo or package installation; nothing outside `base` and
-// its sibling phase tombstones `<base>.<phase>-intent.json` is written. Configuration authorizes NO repository (no polling target, no token).
+// cleanly. Bounds: no network, GitHub, credential, model, VM/QEMU boot, systemd unit, sudo or package installation; nothing outside `base` is written
+// (phase tombstones `<base>/intent-<phase>.json`). Configuration authorizes NO repository (no polling target, no token).
 // Phases are one-shot: an exclusive intent tombstone precedes each effect; a consumed phase never reruns; nothing is retried or repaired.
 
 const revision = 'r33-v1';
@@ -24,8 +24,8 @@ const phases = ['build', 'install-v1', 'seed-v1', 'extract-v2', 'check-and-refus
 type Phase = typeof phases[number];
 const previous: Record<Phase, Phase | null> = { build: null, 'install-v1': 'build', 'seed-v1': 'install-v1', 'extract-v2': 'seed-v1',
   'check-and-refusals': 'extract-v2', 'interrupted-migration': 'check-and-refusals', 'start-v2': 'interrupted-migration' };
-/** One-shot tombstone, a SIBLING of the base: consumed even when a failure happens before (or during) the base creation. */
-export function tombstonePath(phase: Phase) { return `${base}.${phase}-intent.json`; }
+/** One-shot tombstone INSIDE the base (no sibling file): the base itself is created exclusively first, so a consumed build never reruns. */
+export function tombstonePath(phase: Phase) { return `${base}/intent-${phase}.json`; }
 const configuration = `schemaVersion: 1
 operators: [operador]
 models:
@@ -40,7 +40,7 @@ repositories: []
 export function plan() {
   return { revision, base, observations, output, root, v1, v2, guestAssets, migration, questionId, phases,
     prerequisites: ['the checkout is committed and clean; tsc emitted dist/ from HEAD immediately before', 'private SDK profiles prepared and verified (the build re-verifies them)',
-      `${v1.build}/${v1.archive} with its .sha256 sidecar and build-report.json (read only)`, 'neither base nor any <base>.<phase>-intent.json tombstone exists',
+      `${v1.build}/${v1.archive} with its .sha256 sidecar and build-report.json (read only)`, 'the base does not exist (tombstones live inside it)',
       'about 6 GiB free under /home/sanmoo/software-factory-test'],
     effects: [
       `build: tombstone, mkdir base/observations (exclusive); buildRelease ${v2.release} into base/build (assets34 copied after pin verification); archive + sidecar + report`,
@@ -48,7 +48,7 @@ export function plan() {
       'seed-v1: under flock of root/data/control.lock: the current Control (doubled execution/GitHub, in-process) produces Work #3 waiting on a published open Question and Work #4, pause, clean stop; that state is re-expressed as format 1 in root/data/control.sqlite (public Pi Durable API); then the REAL v1 controller (root/factory run) serves it: status/question over the real protocol, SIGINT exit 0',
       `extract-v2: verify the v2 archive; tar -xpf --skip-old-files releases assets into root (the launcher is NOT extracted; identical asset files are kept); releases/${v1.release} and assets inventories unchanged`,
       'check-and-refusals: v2 `upgrade check` (UPGRADE_MIGRATION_REQUIRED); while the v1 controller runs: refused by the lock; v1 unpause → v2 check UPGRADE_INCOMPATIBLE (upgrade:pause); v1 pause again; v2 `upgrade apply` without --migrate → UPGRADE_MIGRATION_NOT_REQUESTED; storage/launcher/journal unchanged',
-      `interrupted-migration: every dist/src file of the v2 release proven byte-identical to this checkout; the v2 upgrade code SIGKILLed after the journal (storage still format 1); v2 status UPGRADE_INCOMPLETE; v2 resume SIGKILLed after the migration commit; root/factory run (v1 launcher) refused on the migrated storage without writing; v2 rollback ROLLBACK_FORMAT_UNSUPPORTED; v2 resume UPGRADE_COMPLETED`,
+      `interrupted-migration: every dist/src file of the v2 release proven byte-identical to this checkout; the v2 upgrade code SIGKILLed after the journal (storage still format 1); v2 status UPGRADE_INCOMPLETE; v2 resume SIGKILLed after the migration commit; root/factory (guard launcher) starts nothing (UPGRADE_INCOMPLETE); v1 invoked directly refuses before storage (RELEASE_INVALID: not selected); v2 rollback ROLLBACK_FORMAT_UNSUPPORTED; v2 resume UPGRADE_COMPLETED`,
       'start-v2: root/factory doctor (v2 selected); root/factory run (paused); status/list/show/question; answer the pending Question (local CLI); SIGINT; upgrade status shows the recorded clean stop',
     ],
     bounds: { network: 'none (no repository configured: no polling target, no token request, Question desk refused locally)', github: 'none', credentials: 'none (placeholder file only)',
@@ -59,7 +59,7 @@ export function plan() {
       'seed-v1-result: seed exit 0 with 2 Works and the Question open/published; v1 run status paused, questions.open 1; v1 exit 0 after SIGINT',
       'extract-v2-result: releases/mvp-33.1 present; v1 tree and assets inventories identical before/after; root/factory still selects v1',
       'check-and-refusals-result: check UPGRADE_MIGRATION_REQUIRED (no blocked check; upgrade:stop unverified: format 1 records no lifecycle); lock refusal exit 73; unpaused → UPGRADE_INCOMPATIBLE [upgrade:pause]; apply without --migrate UPGRADE_MIGRATION_NOT_REQUESTED; preserved digest and launcher unchanged, no data/upgrade',
-      'interrupted-migration-result: cut 1 SIGKILL, journal migrating, storage format 1; status UPGRADE_INCOMPLETE; cut 2 SIGKILL, journal migrated, storage format 2 with the same preserved digest; v1 run exit 3 (CONTROLLER_START_FAILED) and storage unchanged; rollback ROLLBACK_FORMAT_UNSUPPORTED; resume UPGRADE_COMPLETED; launcher = v2 pin; exactly one migration record',
+      'interrupted-migration-result: cut 1 SIGKILL after the guard launcher and journal, journal migrating, storage format 1; status UPGRADE_INCOMPLETE; cut 2 SIGKILL, journal migrated, storage format 2 with the same preserved digest; guarded exit 2 code UPGRADE_INCOMPLETE; v1Refused exit 2 with RELEASE_INVALID; afterV1.report.storage.preserved = afterCut2 and stateDigest unchanged; rollback ROLLBACK_FORMAT_UNSUPPORTED; resume UPGRADE_COMPLETED; launcher = v2 pin; exactly one migration record',
       'start-v2-result: doctor release mvp-33.1, release:selected ok; status paused true, storage.format 2, questions.open 1; question open; answer exit 0; question answered; run exit 0; upgrade status lifecycle.last.end clean',
     ],
   };
@@ -126,8 +126,9 @@ export async function runPhase(phase: Phase) {
   if (!phases.includes(phase)) throw new Error('UNKNOWN_PHASE');
   const { fs, save, exists } = await io();
   if (phase === 'build') {
+    await fs.mkdir(base, { mode: 0o700 }); // EXCLUSIVE: an existing base means the build was consumed
     await fs.writeFile(tombstonePath(phase), JSON.stringify({ revision, phase, at: new Date().toISOString() }) + '\n', { flag: 'wx', mode: 0o600 });
-    await fs.mkdir(base, { mode: 0o700 }); await fs.mkdir(observations, { mode: 0o700 }); // EXCLUSIVE
+    await fs.mkdir(observations, { mode: 0o700 });
   } else {
     const before = previous[phase];
     if (before && !(await exists(`${before}-result`))) throw new Error('PREVIOUS_PHASE_REQUIRED');
@@ -220,12 +221,17 @@ export async function runPhase(phase: Phase) {
       const afterCut1 = await upgradeStatus();
       const cut2 = await locked(v2.release, `${dist}release33-cut-child.js`, [root, release, 'migrated', 'resume']);
       const afterCut2 = await upgradeStatus();
-      const v1Refused = await command(`${root}/factory`, ['run'], 120000);
+      // The installation launcher is the guard during the upgrade: it starts nothing (v1 cannot run, inspect or unpause).
+      const guarded = await command(`${root}/factory`, ['run'], 120000);
+      // v1 invoked directly (bypassing the launcher) refuses before its storage: it is not the selected release.
+      const v1Refused = await command('/usr/bin/env', ['-u', 'NODE_OPTIONS', '-u', 'NODE_PATH', '-u', 'NODE_COMPILE_CACHE', 'NODE_DISABLE_COMPILE_CACHE=1',
+        `${root}/releases/${v1.release}/node/bin/node`, `${root}/releases/${v1.release}/dist/src/entrypoints/cli.js`, 'run'], 120000);
       const afterV1 = await upgradeStatus();
       const rollback = await v2cli(['upgrade', 'rollback']);
       const resume = await v2cli(['upgrade', 'resume']);
       await save('interrupted-migration-result', { status: 'observed', cut1: { status: cut1.status, signal: cut1.signal, stderr: cut1.stderr }, afterCut1,
-        cut2: { status: cut2.status, signal: cut2.signal, stderr: cut2.stderr }, afterCut2, v1Refused, afterV1, rollback: { status: rollback.status, report: json(rollback.stdout) },
+        cut2: { status: cut2.status, signal: cut2.signal, stderr: cut2.stderr }, afterCut2, guarded: { status: guarded.status, code: json(guarded.stderr.trim().split('\n').at(-1) ?? '')?.code ?? null, stderr: guarded.stderr },
+        v1Refused: { status: v1Refused.status, codes: v1Refused.stderr.split('\n').map(line => json(line)?.code).filter(Boolean), stderr: v1Refused.stderr }, afterV1, rollback: { status: rollback.status, report: json(rollback.stdout) },
         resume: { status: resume.status, report: json(resume.stdout) }, launcherSha256: await launcher() });
       return;
     }
