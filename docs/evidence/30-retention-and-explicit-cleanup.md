@@ -52,7 +52,7 @@ disabled, the build recompiled and the new tests run; each mutation turned them 
 - No cancel-first requirement → flow AC5–7 and rules AC5/AC7 red.
 - Failed/indeterminate retried by the next sweep → flow AC8 red.
 
-## Decisions taken here (for supervisor review)
+## Decisions taken here (accepted by the supervisor: 1, 2, 3; 5 = local recipe; 6 = reviewer sessions)
 
 1. **"Open" for cleanup = result `open` or `closed-unmerged`.** Both cycles can still continue (`reopen` + `resume`). Every selection is
    refused with `CANCEL_REQUIRED`, consistent with spec §12.4 for `forget`. Explicit cleanup therefore applies only to `cancelled` and
@@ -75,15 +75,34 @@ disabled, the build recompiled and the new tests run; each mutation turned them 
 Retention and cleanup do **not** cover it, and they must not. While the cycle can continue, `IMPEDIMENT:RECOVERY_BLOCKED` is a protection:
 the request capture and every detail stay. Explicit cleanup of such a Work is refused until `cancel`. After `cancel` the details can be
 cleaned explicitly; that is an abandonment, not an unblock. Unblocking (an explicit operator decision to take the recovery without the
-unreadable request) belongs to recovery, tickets 26/27. Ticket 26's decision 3 already routes it to `resume`, which does not lift it today.
+unreadable request) belongs to recovery, tickets 26/27. **Supervisor (decision 4): accepted. It is an open item owned by 26/27, tracked by
+the supervisor.** Ticket 26's decision 3 already routes it to `resume`, which does not lift it today.
 
-## Real-run recipe
+## Real-run recipe (LOCAL only, supervisor decision 5; not run here)
 
-None was written. This ticket changes no GitHub, VM or model boundary. Its boundaries are the Records filesystem, the Sandbox removal, the
-SQLite authority and the CLI/socket/owner path, and the local suite exercises each of them for real. The V-14 "P" part (cleanup of a real
-delivery) is ticket 17's `q17-delivery-v4`, already run. Still open, for an operator decision: a local-only run over a COPY of a real
-installation (e.g. `y5/q17-delivery-v4` → `y5/q30-retention-v1`) that checks the inventory of Records produced by real runs. It could fold
-into the ticket 18/35 journey.
+`test/entrypoints/retention30-qualification.ts`, namespace `/home/sanmoo/software-factory-test/y5/q30-retention-v1`. Import and `--plan` are
+inert (`retention30-qualification.test.ts`). The phases are one-shot, each with an exclusive intent tombstone and no retry:
+
+1. **`preflight`.** Makes the namespace with an exclusive mkdir. COPIES `y5/q17-delivery-v4/authority` into `authority/`; a format-1 copy is
+   migrated 1→2 with 33's `migrateStorage` via 17's `prepareAuthority`, and only the copy. Finds the delivered Work of Ticket #3 in an inert
+   view of the copy. Copies `y5/<work>/` privately into `records/<work>/`: directories 0700, regular files only, a symlink or special file is
+   refused. Records the inventory and the sha256 of the source storage.
+2. **`sweep`.** Owner A runs with calendar = merge + 1 day: the boot sweep finds the details `retained`, and a `cleanup-plan` of
+   logs/sessions/environment is recorded but never confirmed. Owner B then runs with calendar = merge + 31 days: the boot sweep removes the
+   copy's expired details.
+3. **`inspect`.** Writes `verdict.json`. Its checks: still delivered, `dueAt`, A retained, plan recorded, B expired with removed = before,
+   evidence kept, source sha256 unchanged, zero remote/Sandbox calls.
+
+There is no network:
+- tracker and CodeRepository are local refusing doubles, and their calls are counted;
+- Sandbox, Workers and credentials are refused;
+- no App key is copied or read;
+- a `remote-branch` selection is refused by the recipe itself (`RECIPE_REMOTE_SELECTION_REFUSED`).
+
+`retention30-recipe-storage.test.ts` runs the same core on temporary fixtures: the private copy, the symlink refusal, the two real owner runs
+through the public `openControl` with the production `detailPorts`, and a verdict of `met`.
+
+The V-14 "P" part (cleanup of a real delivery) remains ticket 17's `q17-delivery-v4`, already run.
 
 ## Gaps
 

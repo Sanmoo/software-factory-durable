@@ -188,3 +188,16 @@ export async function store(t: { after(fn: () => Promise<void> | void): void }, 
   await initialize(opened.session);
   return opened;
 }
+
+/** Ticket 30 recipe tests: the seeded Work as ticket 17 leaves a delivered one after a complete cleanup (merge confirmed at `confirmedAt`). */
+export async function markDelivered(session: Session, work_id: string, confirmedAt: string) {
+  await session.commit(async tx => {
+    const work = (await tx.doc(works, work_id, null)).work!;
+    work.result = 'delivered';
+    work.delivery = { state: 'delivered', pullRequest: { pullRequestId: 9042, nodeId: 'PR_own42', number: 42, url: 'https://github.com/acme/project/pull/42', headRef: 'factory/3-own', base: 'main', heads: [headSha] },
+      observations: [], merge: { mergedAt: confirmedAt, mergeCommitSha: 'b'.repeat(40), headSha, pullRequestId: 9042, number: 42, url: 'https://github.com/acme/project/pull/42',
+        confirmedAt, observedAt: confirmedAt, duringActivity: null }, lastReadAt: confirmedAt, nextStep: '' };
+    work.cleanup = { state: 'complete', eligibility: { eligible: true, reasons: [], checkedAt: confirmedAt }, evidence: [], resources: [], protected: [], sweeps: 1,
+      lastSweepAt: confirmedAt, nextStep: '' };
+  }, BACKGROUND_CONTEXT);
+}
