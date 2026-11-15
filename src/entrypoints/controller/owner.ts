@@ -1,10 +1,7 @@
 import { lstat, unlink } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
-import { z } from 'zod';
-import { inspectStorage, openControl, type ControlInput } from '../../control/index.js';
+import { inspectStorage, openControl } from '../../control/index.js';
 import { upgradeBlocksStart } from './upgrade.js';
 import { serveControl } from './serve.js';
-import { listen, protocolVersion, type Envelope } from '../../protocol/index.js';
 import { controllerPaths, startFailureCause, verifyControllerLock } from '../../platform/host/index.js';
 import { inventoryRuntime, reconcileInterruptedCaches } from '../../sandbox/index.js';
 import { readConfiguration } from '../configuration.js';
