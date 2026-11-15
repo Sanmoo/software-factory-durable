@@ -11,6 +11,8 @@ import { resolvedDeclarationsSchema } from './gates.js';
 import { opinionSchema } from './review.js';
 import { observeOpinionRecord, type OpinionObservation } from './opinion-observation.js';
 export type { OpinionObservation } from './opinion-observation.js';
+import { observeQuestionRecord, type QuestionObservation } from './question-observation.js';
+export type { QuestionObservation } from './question-observation.js';
 import type { ReviewOpinion } from '../contracts/index.js';
 import type { BuilderDirective, HandoffEvent } from './builder-handoff.js';
 export type { ReviewerProfile, Invocation } from './worker-start.js';
@@ -169,6 +171,16 @@ export function createWorkers(configuration?: Configuration) {
       const records = await protectedRecords(configuration.root);
       if (!records) return { kind: 'uncertain', code: 'RECORDS_UNAVAILABLE' };
       return observeOpinionRecord(records, input);
+    },
+    /**
+     * Ticket 27 — Q6 `observe`, question facet: the complete `ask_user` request a Builder invocation preserved in the protected Records BEFORE
+     * notifying the Control, located when that notification or its ACK was lost (controller crash). Read-only; never proof of cessation.
+     */
+    async observeQuestion(input: { workId: string; executionId: string; invocationId: string }): Promise<QuestionObservation> {
+      if (!configuration) return { kind: 'uncertain', code: 'WORKER_EXECUTION_NOT_ENABLED' };
+      const records = await protectedRecords(configuration.root);
+      if (!records) return { kind: 'uncertain', code: 'RECORDS_UNAVAILABLE' };
+      return observeQuestionRecord(records, input);
     },
     /**
      * Q6 `observe` (ticket 11): whether the preserved session of an ended Builder invocation can be CONTINUED by the planned next Builder

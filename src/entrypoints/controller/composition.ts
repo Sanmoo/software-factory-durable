@@ -124,7 +124,8 @@ export async function composeProductionExecution(input: ProductionInput): Promis
       // Ticket 26: protected start receipt of an invocation, discovered without its notification.
       observeStart: input => workers.observeStart(input),
       // Ticket 28: a reviewer's complete opinion record located without its notification (partial review recovery).
-      observeOpinion: input => workers.observeOpinion(input) },
+      observeOpinion: input => workers.observeOpinion(input),
+      observeQuestion: input => workers.observeQuestion(input) },
     // Ticket 13: multi-round reviews (treatments, Host-evidenced gates, end-of-Execution verification) with the release's bound.
     // Ticket 28: partial review recovery (only the failed reviewer re-obtained on the unchanged proposal; lost notifications from Records).
     reviews: { reviewer: { ...productionProfile.reviewer }, rounds: { ...productionProfile.reviewRounds }, partialRecovery: true },

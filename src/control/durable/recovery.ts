@@ -1,11 +1,13 @@
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { BootRef, EnvironmentRef } from '../../sandbox/index.js';
 import type { ExecutionPorts, ExecutionView, RecoveryRecord, RecoveryView, RuntimeInventory, StartObservation } from '../types.js';
+import type { QuestionObservation } from '../../workers/index.js';
 import { classifyOverrun, overrunNotExcludedImpediment, timeoutImpediment } from '../rules/budget.js';
 import { classifyInterruption, recoveryImpediment, startDecision } from '../rules/recovery.js';
+import { recoveredQuestionDecision } from '../rules/questions.js';
 import { readWork, ticketIndex, works, type WorkRecord } from './admission.js';
 import { applyConfirmedCessation, consumeReservation, reofferUnlessCompleted, releaseReservation, settleCancelled, slots } from './execution.js';
-import { questions } from './questions.js';
+import { intactRequest, questions, recordQuestionDocument } from './questions.js';
 import { pendingReviewerReservations, settleReviewerReservations } from './review-recovery.js';
 import type { Session } from './store.js';
 
@@ -105,7 +107,9 @@ function boundDiscoveredDuration(work: WorkRecord, execution: ExecutionView, rec
 export async function settleInterruption(session: Session, input: { work_id: string; executionId: string; cessation: Cessation; observation: StartObservation | null;
   trigger: RecoveryRecord['trigger']; controllerRunId: string;
   /** Ticket 28: receipt observations of reviewer retry attempts whose recoveries reservation is outstanding (by invocation). */
-  reviewerReceipts?: Record<string, StartObservation> }): Promise<RecoveryRecord['decision'] | 'stale'> {
+  reviewerReceipts?: Record<string, StartObservation>;
+  /** Ticket 27: the Builder's preserved `ask_user` request of this invocation (Records), when its notification/ACK may have been lost. */
+  question?: QuestionObservation | null }): Promise<RecoveryRecord['decision'] | 'stale'> {
   return session.commit(async tx => {
     const document = await tx.doc(works, input.work_id, null);
     const work = document.work;
@@ -209,8 +213,27 @@ export async function settleInterruption(session: Session, input: { work_id: str
         const question = (await tx.doc(questions, id, null)).question;
         if (question?.executionId === execution.executionId && question.workId === work.work_id) { questionId = id; break; }
       }
-      const outcome = questionId ? 'question' as const : input.trigger === 'administrative-stop' ? 'stopped' as const : 'failure' as const;
-      code = outcome === 'question' ? 'question' : outcome === 'stopped' ? 'ADMINISTRATIVE_STOP' : execution.held?.code ?? 'CONTROLLER_CRASH';
+      // Ticket 27 (spec §5.5 "ACK perdido recupera ... solicitação íntegra com mesma identidade; conteúdo perdido bloqueia"): a request the
+      // worker preserved but the Control never recorded (crash before the commit, or before/after a lost notification) is recorded NOW with
+      // its own identity and content, in this commit; a request that is not intact, or Records that cannot say, blocks (nothing invented).
+      let lostQuestion: string | null = null;
+      if (!questionId && input.question) {
+        const seen = input.question;
+        const document = seen.kind === 'question' ? await tx.doc(questions, seen.request.questionId, null) : null;
+        const known = document?.question ?? null;
+        const decided = recoveredQuestionDecision({ workId: work.work_id, executionId: execution.executionId,
+          observation: seen.kind === 'question' ? { kind: 'question', questionId: seen.request.questionId, sha256: seen.request.sha256, intact: intactRequest(seen.request, work.work_id) } : seen,
+          existing: known ? { workId: known.workId, executionId: known.executionId, sha256: known.content.sha256 } : null });
+        if (decided.kind === 'block') lostQuestion = decided.code;
+        else if (decided.kind === 'bind') questionId = known!.questionId;
+        else if (decided.kind === 'record' && seen.kind === 'question') {
+          const recorded = recordQuestionDocument(document!, work, { executionId: execution.executionId, invocationId: execution.invocationId, request: seen.request,
+            from: 'records-recovery', now });
+          if (recorded.kind !== 'refused') questionId = seen.request.questionId; else lostQuestion = recorded.code;
+        }
+      }
+      const outcome = questionId ? 'question' as const : input.trigger === 'administrative-stop' && !lostQuestion ? 'stopped' as const : 'failure' as const;
+      code = outcome === 'question' ? 'question' : outcome === 'stopped' ? 'ADMINISTRATIVE_STOP' : lostQuestion ?? execution.held?.code ?? 'CONTROLLER_CRASH';
       execution.state = 'ended';
       execution.end = { at: now, outcome, code: outcome === 'question' ? null : code, cessation: 'confirmed', ...(questionId ? { questionId } : {}) };
       reofferUnlessCompleted(work, execution.executionId, outcome, now);
@@ -260,8 +283,13 @@ export async function reconcileExecution(deps: Omit<RecoveryDeps, 'live'>, work:
         .catch(() => ({ kind: 'uncertain' as const, code: 'START_OBSERVATION_FAILED' }));
     }
   }
+  // Ticket 27: the Builder's preserved ask_user request (only after confirmed cessation, when no end was recorded: a lost notification/ACK).
+  const asked = ceased.result === 'confirmed' && !execution.end && deps.ports.workers.observeQuestion &&
+    !['reserved', 'prepared', 'booted'].includes(execution.dispatch.phase)
+    ? await deps.ports.workers.observeQuestion({ workId: work.work_id, executionId: execution.executionId, invocationId: execution.invocationId })
+      .catch(() => ({ kind: 'uncertain' as const, code: 'QUESTION_OBSERVATION_FAILED' })) : null;
   return { cessation: ceased, decision: await settleInterruption(deps.session, { work_id: work.work_id, executionId: execution.executionId, cessation: ceased, observation,
-    trigger, controllerRunId: deps.controllerRunId, reviewerReceipts }) };
+    trigger, controllerRunId: deps.controllerRunId, reviewerReceipts, question: asked }) };
 }
 
 /**

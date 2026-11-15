@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { answerDecision, authorizeCommentAuthor, commentEligibility, parseFactoryCommand, questionCommentBody, questionDestination, recoveryPrompt, validateQuestionRequest } from '../../src/control/rules/questions.js';
+import { answerDecision, authorizeCommentAuthor, commentEligibility, parseFactoryCommand, questionCommentBody, questionDestination, questionDiscoveryNext, questionNeedsDiscovery,
+  questionPublishAllowed, recoveredQuestionDecision, recoveryPrompt, validateQuestionRequest, type QuestionPublicationState } from '../../src/control/rules/questions.js';
 
 // Rules level (Q11): deterministic functions over canonical inputs; no SQLite, GitHub or clock.
 const qid = '0b9c6a52-3d3e-4c8f-9a51-2f7d1e0c4a11';
@@ -109,4 +110,43 @@ test('review 2: only an unedited comment written after the Question was recorded
   assert.deepEqual(commentEligibility({ commentId: 40, createdAt: 2000, updatedAt: 2000 }, question), { eligible: false, code: 'COMMENT_PREDATES_QUESTION' });
   assert.deepEqual(commentEligibility({ commentId: 40, createdAt: 2000, updatedAt: 2000 }, { recordedAt: 1000, publishedCommentId: null }), { eligible: true });
   assert.deepEqual(commentEligibility({ commentId: 60, createdAt: Number.NaN, updatedAt: 2000 }, question), { eligible: false, code: 'COMMENT_TIME_INVALID' });
+});
+
+test('ticket 27 AC3/AC4 (cut battery, rule level): after a possibly sent POST only discovery decides; a complete empty listing is unconfirmed, never a repost', () => {
+  const sent: QuestionPublicationState[] = ['attempting', 'ambiguous', 'unconfirmed'];
+  for (const state of sent) {
+    assert.equal(questionNeedsDiscovery(state), true, state);
+    assert.equal(questionPublishAllowed(state, 0), false, `${state}: never a POST before discovery`);
+    assert.equal(questionDiscoveryNext(state, { kind: 'observed', candidates: 1 }), 'published', `${state}: one own comment is linked`);
+    assert.equal(questionDiscoveryNext(state, { kind: 'observed', candidates: 3 }), 'conflict', `${state}: several are never chosen`);
+    assert.equal(questionDiscoveryNext(state, { kind: 'observed', candidates: 0 }), 'unconfirmed', `${state}: an empty listing is not absence after a send`);
+    assert.notEqual(questionDiscoveryNext(state, { kind: 'observed', candidates: 0 }), 'intended');
+  }
+  // Incomplete reads conclude nothing (a crash-left attempt becomes ambiguous; the others stay).
+  assert.deepEqual(sent.map(state => questionDiscoveryNext(state, { kind: 'incomplete' })), ['ambiguous', 'ambiguous', 'unconfirmed']);
+  // Settled or never-sent states are not discovered and are not changed by a discovery.
+  for (const state of ['intended', 'published', 'failed', 'conflict'] as const) {
+    assert.equal(questionNeedsDiscovery(state), false, state);
+    assert.equal(questionDiscoveryNext(state, { kind: 'observed', candidates: 0 }), state);
+  }
+  // Cut "before send": the intent (Question commit) without the attempt commit was never sent -> one POST. Known failures (nothing created) are
+  // bounded; a conflict or a published comment is never posted again.
+  assert.equal(questionPublishAllowed('intended', 0), true);
+  assert.deepEqual([questionPublishAllowed('failed', 4), questionPublishAllowed('failed', 5), questionPublishAllowed('conflict', 0), questionPublishAllowed('published', 0)],
+    [true, false, false, false]);
+});
+
+test('ticket 27 AC5 (rule level): a preserved request whose ACK was lost is recorded with its identity, or bound to the same Question; lost or conflicting content blocks', () => {
+  const base = { workId: 'w1', executionId: 'e1' };
+  const intact = { kind: 'question' as const, questionId: qid, sha256: 'a'.repeat(64), intact: true };
+  assert.deepEqual(recoveredQuestionDecision({ ...base, observation: null, existing: null }), { kind: 'none' }, 'facet not composed: as before');
+  assert.deepEqual(recoveredQuestionDecision({ ...base, observation: { kind: 'absent' }, existing: null }), { kind: 'none' }, 'complete listing without a request: nothing was asked');
+  assert.deepEqual(recoveredQuestionDecision({ ...base, observation: intact, existing: null }), { kind: 'record' });
+  assert.deepEqual(recoveredQuestionDecision({ ...base, observation: intact, existing: { ...base, sha256: 'a'.repeat(64) } }), { kind: 'bind' }, 'same identity and content: the same record');
+  assert.deepEqual(recoveredQuestionDecision({ ...base, observation: intact, existing: { ...base, sha256: 'b'.repeat(64) } }), { kind: 'block', code: 'QUESTION_ID_CONFLICT' });
+  assert.deepEqual(recoveredQuestionDecision({ ...base, observation: intact, existing: { workId: 'w2', executionId: 'e1', sha256: 'a'.repeat(64) } }), { kind: 'block', code: 'QUESTION_ID_CONFLICT' });
+  assert.deepEqual(recoveredQuestionDecision({ ...base, observation: { ...intact, intact: false }, existing: null }), { kind: 'block', code: 'QUESTION_RECORD_NOT_INTACT' }, 'never invented or repaired');
+  for (const code of ['QUESTION_RECORD_INCOMPLETE', 'QUESTION_LISTING_INCOMPLETE', 'QUESTION_RECORD_MULTIPLE', 'RECORDS_UNAVAILABLE']) {
+    assert.deepEqual(recoveredQuestionDecision({ ...base, observation: { kind: 'uncertain', code }, existing: null }), { kind: 'block', code }, code);
+  }
 });

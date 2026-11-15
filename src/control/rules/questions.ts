@@ -84,6 +84,50 @@ export function validateQuestionRequest(input: { questionId: unknown; question: 
   return { valid: true };
 }
 
+/** Ticket 27: a publication attempt (`begin` committed right before the POST) may have reached GitHub; only discovery decides it. */
+export type QuestionPublicationState = 'intended' | 'attempting' | 'published' | 'ambiguous' | 'unconfirmed' | 'failed' | 'conflict';
+export type QuestionDiscovery = { kind: 'incomplete' } | { kind: 'observed'; candidates: number };
+/**
+ * Ticket 27 (spec §5.5/§9.1, operator decision "an uncertain effect is discovered, never blindly repeated"): the publication state after
+ * ONE discovery of the Question marker following a possibly sent POST. Exactly one own comment = published (linked, never reposted);
+ * several = conflict (none chosen); an incomplete read concludes nothing; a COMPLETE empty listing is NOT proof of absence after a send
+ * (lost transport, lagging listing): `unconfirmed`, discovered again on later cycles and never reposted automatically.
+ */
+export function questionDiscoveryNext(state: QuestionPublicationState, discovery: QuestionDiscovery): QuestionPublicationState {
+  if (state !== 'attempting' && state !== 'ambiguous' && state !== 'unconfirmed') return state;
+  if (discovery.kind === 'incomplete') return state === 'attempting' ? 'ambiguous' : state;
+  if (discovery.candidates === 1) return 'published';
+  if (discovery.candidates > 1) return 'conflict';
+  return 'unconfirmed';
+}
+/** States whose effect may exist on GitHub: discovered (a safe read) before anything else, every pass. */
+export const questionNeedsDiscovery = (state: QuestionPublicationState) => state === 'attempting' || state === 'ambiguous' || state === 'unconfirmed';
+/**
+ * Whether a POST may be sent now: only a Question never sent (`intended`), or one whose every earlier POST was a KNOWN failure (GitHub
+ * refused it or it was refused locally: nothing was created), within a bound. Never after an unknown outcome.
+ */
+export function questionPublishAllowed(state: QuestionPublicationState, knownFailures: number, maxKnownFailures = 5): boolean {
+  return state === 'intended' || (state === 'failed' && knownFailures < maxKnownFailures);
+}
+
+export type RecoveredQuestion = { kind: 'question'; questionId: string; sha256: string; intact: boolean } | { kind: 'absent' } | { kind: 'uncertain'; code: string };
+/**
+ * Ticket 27 (spec §5.5): what boot reconciliation does with the `ask_user` request a Builder invocation preserved in Records, when the Control
+ * has no Question of that Execution (its notification/ACK was lost). An intact request is RECORDED with its own identity (or bound when that
+ * same Question already exists); a not intact, conflicting or unreadable one BLOCKS (content is never invented, the Work never resumes as if
+ * nothing had been asked); a complete listing without one changes nothing.
+ */
+export function recoveredQuestionDecision(input: { observation: RecoveredQuestion | null; workId: string; executionId: string;
+  existing: { workId: string; executionId: string; sha256: string } | null }): { kind: 'none' } | { kind: 'record' } | { kind: 'bind' } | { kind: 'block'; code: string } {
+  const seen = input.observation;
+  if (!seen || seen.kind === 'absent') return { kind: 'none' };
+  if (seen.kind === 'uncertain') return { kind: 'block', code: seen.code };
+  if (!seen.intact) return { kind: 'block', code: 'QUESTION_RECORD_NOT_INTACT' };
+  if (!input.existing) return { kind: 'record' };
+  return input.existing.workId === input.workId && input.existing.executionId === input.executionId && input.existing.sha256 === seen.sha256
+    ? { kind: 'bind' } : { kind: 'block', code: 'QUESTION_ID_CONFLICT' };
+}
+
 export type QuestionDestination<T> = { kind: 'issue'; ticket: T } | { kind: 'pull-request'; pullRequest: { number: number; url: string } };
 /** Own pull request when the Work has one (questions then belong to that surface); otherwise the Ticket issue. */
 export function questionDestination<T>(work: { ticket: T; pullRequest: { number: number; url: string } | null }): QuestionDestination<T> {

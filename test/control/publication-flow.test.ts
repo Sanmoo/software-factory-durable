@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { openControl } from '../../src/control/index.js';
 import type { Control, ExecutionView, ListView, WorkView } from '../../src/control/types.js';
 import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
-import { app, executionDoubles, ownPull, publishOwn, type Activation, type Script } from './publication-doubles.js';
+import { app, executionDoubles, facts, humanPush, ownPull, publishOwn, type Activation, type Script } from './publication-doubles.js';
 import { untilHolds } from '../runner/budget.js';
 
 // Flow level (S): real Control + Pi Durable + temporary SQLite, with ticket 13's REAL review rounds and end-of-Execution verification.
@@ -122,6 +122,42 @@ test('AC6: after cessation with a LOST result (worker failure + owner restart) t
   await h.settle(async () => publicationOf(await h.work()).state === 'published', 'linked after restart');
   await h.cycles(2);
   assert.equal(h.activations().length, 2, 'the push/PR were never repeated');
+});
+
+test('ticket 27 AC7/AC4: lost result + owner restart while a human pushed on top of the Factory push: the preserved expectation diverges; no recapture, no new write', async t => {
+  const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
+  const human = '1'.repeat(40);
+  // The Builder's push and PR landed, then (before any discovery) the human pushed on the same branch; the Builder's result is lost.
+  const pushedThenHuman = (remote: Remote, activation: Activation) => { publishOwn()(remote, activation); humanPush(remote, facts(activation.prompt).branch, human); };
+  const h = await harness(t, remote, [{ kind: 'implement', head: 'd'.repeat(40) }, { kind: 'publish', publish: pushedThenHuman, end: 'failure' }]);
+  const { branch } = await h.implemented();
+  await h.settle(async () => Boolean((await h.work()).execution?.request.publication) && (await h.work()).execution!.end?.cessation === 'confirmed', 'publication ended');
+  await h.stop();
+  await h.start();
+  await h.settle(async () => publicationOf(await h.work()).state === 'diverged', 'diverged after the restart');
+  await h.cycles(3);
+  const publication = publicationOf(await h.work());
+  const divergence = publication.divergences!.at(-1)!;
+  assert.equal(divergence.current, human, 'the human tip is the concrete divergence asked about');
+  assert.deepEqual(publication.attempts!.map(item => [item.head, item.expectedRemote]), [['d'.repeat(40), { state: 'absent' }]],
+    'the expectation the push used is the preserved one; the tip read after the restart never becomes a new lease');
+  assert.equal(h.activations().length, 2, 'no new write (push/PR) without a concrete reconciliation');
+  assert.equal(remote.refs![branch], human, 'the human change is kept');
+  assert.ok((await h.work()).impediments.some(item => item.code === 'HUMAN_CHANGE_RECONCILIATION'));
+});
+
+test('ticket 27 AC2: a publication activation interrupted after its push/PR (operational recovery pending) is DISCOVERED and linked; no recovery Builder repeats it', async t => {
+  const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
+  const h = await harness(t, remote, [{ kind: 'implement', head: 'd'.repeat(40) }, { kind: 'publish', publish: publishOwn(), end: 'failure' }]);
+  let offset = 0;
+  h.execution.ports.calendar = { now: () => Date.now() + offset };
+  await h.implemented();
+  await h.settle(async () => (await h.work())?.publication?.state === 'published', 'linked after the interrupted publication');
+  offset = 3600000; // any persisted recovery wait has passed
+  await h.cycles(4);
+  const work = await h.work();
+  assert.equal(h.activations().length, 2, 'the push/PR are discovered, never repeated by a recovery activation');
+  assert.deepEqual([work.queue.pending, work.pendingRecovery], [false, null], 'the publication outcome settles the interrupted publication activation');
 });
 
 test('review HIGH 2: a lost start receipt is still an attempt (marked at the activation commit): never a second publication activation', async t => {

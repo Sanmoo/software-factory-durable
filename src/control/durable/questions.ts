@@ -4,7 +4,7 @@ import { defineDocFamily } from '@earendil-works/pi-durable';
 import type { WorkerQuestion } from '../../workers/index.js';
 import type { ControlReceipt, QuestionView } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
-import { answerDecision, questionDestination, validateQuestionRequest } from '../rules/questions.js';
+import { answerDecision, questionDestination, questionDiscoveryNext, questionNeedsDiscovery, validateQuestionRequest } from '../rules/questions.js';
 import { linkRequest, requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import type { Session } from './store.js';
 
@@ -50,19 +50,29 @@ export async function registerQuestion(session: Session, input: { work_id: strin
     if (!execution || execution.executionId !== input.executionId || execution.invocationId !== input.invocationId || execution.state !== 'started') {
       return { kind: 'refused' as const, code: 'STALE_EXECUTION' };
     }
-    const now = new Date().toISOString();
-    const destination = questionDestination({ ticket: work.ticket, pullRequest: work.pullRequest });
-    // Own pull requests do not exist before publication (ticket 14); the PR surface is not reachable in this Factory version.
-    if (destination.kind !== 'issue') return { kind: 'refused' as const, code: 'QUESTION_DESTINATION_NOT_ENABLED' };
-    document.question = { questionId: request.questionId, workId: input.work_id, executionId: input.executionId, invocationId: input.invocationId, recordedAt: now,
-      recordedFrom: input.from, content: { question: request.question, context: request.context, sha256: request.sha256, reference: { ...request.reference } },
-      destination, state: 'open',
-      publication: { effectId: randomUUID(), state: 'intended', updatedAt: now, attempts: [], comment: null, nextStep: null }, answer: null, ignored: [] };
-    work.impediments.push({ code: 'QUESTION_PENDING', scope: 'work', since: now, questionId: request.questionId, nextStep: pendingStep(request.questionId) });
-    work.questions = [...(work.questions ?? []), request.questionId];
-    work.history.push({ at: now, event: 'question-recorded', origin: 'controller-dispatch', questionId: request.questionId, detail: input.executionId });
-    return { kind: 'recorded' as const };
+    return recordQuestionDocument(document, work, { executionId: input.executionId, invocationId: input.invocationId, request, from: input.from, now: new Date().toISOString() });
   }, BACKGROUND_CONTEXT);
+}
+
+/**
+ * The Question, its Work impediment and its publication intent, written into the caller's commit (spec §3.4 "Registrar pergunta"). Shared by
+ * the live registration and (ticket 27) the boot recovery of a request whose notification/ACK was lost, so both create the same record.
+ */
+export function recordQuestionDocument(document: { question: QuestionView | null }, work: WorkRecord, input: { executionId: string; invocationId: string;
+  request: WorkerQuestion; from: QuestionView['recordedFrom']; now: string }): RegisterOutcome {
+  const { request, now } = input;
+  const destination = questionDestination({ ticket: work.ticket, pullRequest: work.pullRequest });
+  // Own pull requests do not exist before publication (ticket 14); the PR surface is not reachable in this Factory version.
+  if (destination.kind !== 'issue') return { kind: 'refused', code: 'QUESTION_DESTINATION_NOT_ENABLED' };
+  document.question = { questionId: request.questionId, workId: work.work_id, executionId: input.executionId, invocationId: input.invocationId, recordedAt: now,
+    recordedFrom: input.from, content: { question: request.question, context: request.context, sha256: request.sha256, reference: { ...request.reference } },
+    destination, state: 'open',
+    publication: { effectId: randomUUID(), state: 'intended', updatedAt: now, attempts: [], comment: null, nextStep: null }, answer: null, ignored: [] };
+  work.impediments.push({ code: 'QUESTION_PENDING', scope: 'work', since: now, questionId: request.questionId, nextStep: pendingStep(request.questionId) });
+  work.questions = [...(work.questions ?? []), request.questionId];
+  work.history.push({ at: now, event: 'question-recorded', origin: 'controller-dispatch', questionId: request.questionId,
+    detail: input.from === 'records-recovery' ? `${input.executionId}:records-recovery` : input.executionId });
+  return { kind: 'recorded' };
 }
 
 /**
@@ -166,14 +176,22 @@ export async function recordPublication(session: Session, questionId: string, up
       if (update.outcome === 'published') await published(update.comment);
       else { publication.state = update.outcome === 'failed' ? 'failed' : 'ambiguous'; publication.nextStep = update.nextStep; }
     } else {
-      if (publication.state !== 'attempting' && publication.state !== 'ambiguous') return 'stale' as const;
+      if (!questionNeedsDiscovery(publication.state)) return 'stale' as const;
+      const next = questionDiscoveryNext(publication.state, update.outcome === 'discovery-incomplete' ? { kind: 'incomplete' }
+        : { kind: 'observed', candidates: update.outcome === 'discovered' ? 1 : update.outcome === 'multiple' ? 2 : 0 });
+      // Still unconfirmed after another complete empty listing (re-discovered every cycle): no new attempt entry.
+      if (next === 'unconfirmed' && publication.state === 'unconfirmed' && publication.attempts.at(-1)?.outcome === 'absent') return publication.state;
       attempt(update.outcome, update.outcome === 'discovered' ? undefined : update.code);
-      if (update.outcome === 'discovered') await published(update.comment);
-      else if (update.outcome === 'absent') { publication.state = 'intended'; publication.nextStep = null; }
-      else if (update.outcome === 'multiple') {
+      if (next === 'published' && update.outcome === 'discovered') await published(update.comment);
+      else if (next === 'conflict') {
         publication.state = 'conflict';
         publication.nextStep = 'Several comments carry this Question marker; none is chosen. Operator must inspect the Ticket (keep one, decide explicitly).';
-      } else publication.state = publication.state === 'attempting' ? 'ambiguous' : publication.state;
+      } else if (next === 'unconfirmed') {
+        publication.state = 'unconfirmed';
+        publication.nextStep = `A POST of this Question may have reached GitHub, but a complete listing does not show its marker: it is NOT reposted automatically ` +
+          `(a lost answer or a lagging listing never proves absence); the marker is searched again on every cycle. Operator: inspect the Ticket; the Question ` +
+          `stays answerable locally with \`factory answer ${questionId} <text>\`.`;
+      } else publication.state = next;
     }
     return publication.state;
   }, BACKGROUND_CONTEXT);

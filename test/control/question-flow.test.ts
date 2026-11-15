@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { openControl } from '../../src/control/index.js';
 import type { Control, ControlReceipt, ControlStatus, ExecutionPorts, ListView, QuestionView, ShowView, WorkView } from '../../src/control/types.js';
 import type { QuestionAck, WorkerQuestion } from '../../src/workers/index.js';
-import { comment, githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
+import { comment, factoryAppId, githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
 import { untilHolds } from '../runner/budget.js';
 
 // Flow level (Q11): real Control + Pi Durable + temporary SQLite. Doubled: GitHub tracker/repository, clock and the execution boundaries
@@ -281,16 +281,39 @@ test('AC2: ambiguous publication is discovered before any repost; an incomplete 
   assert.deepEqual(found.publication.attempts.map(item => item.outcome), ['attempting', 'unknown', 'discovery-incomplete', 'discovery-incomplete', 'discovered']);
 });
 
-test('AC2: unknown outcome with a COMPLETE empty discovery reposts once; duplicates found later are a conflict, never chosen', async t => {
+test('AC2 + ticket 27 AC3/AC4: unknown outcome with a COMPLETE empty discovery is unconfirmed, never reposted; a late listing links it; local answer still works', async t => {
   const remote: Remote = { pulls: {}, issues: [remoteIssue(3)], postOutcomes: ['unknown-not-created'] };
   const h = await harness(t, remote, [{ kind: 'ask', questionId: qid(9), question: 'Repost?' }]);
   await h.start();
   await h.until(async () => (await h.byNumber())[3]?.execution?.slot.held === false);
   const work = (await h.byNumber())[3]!;
   await h.until(async () => (await h.show(work.work_id)).questions[0]!.publication.state === 'ambiguous');
+  await h.cycle(); await h.cycle(); await h.cycle();
+  const question = (await h.show(work.work_id)).questions[0]!;
+  assert.equal(question.publication.state, 'unconfirmed', 'the first (and later) empty listing is not proof of absence after a send');
+  assert.equal(h.github.calls.filter(call => call.method === 'postComment').length, 1, 'never reposted implicitly');
+  assert.deepEqual(question.publication.attempts.map(item => item.outcome), ['attempting', 'unknown', 'absent'], 'repeated identical observations are not re-recorded');
+  assert.match(question.publication.nextStep ?? '', /NOT reposted automatically/);
+  assert.equal(h.github.calls.filter(call => call.method === 'findQuestion').length >= 3, true, 'the safe read is repeated every cycle');
+  // The operator path stays open: the Question is answerable locally.
+  const receipt = await answer(h.control(), 'local-27', qid(9), 'Proceed.');
+  assert.equal((receipt as { outcome?: string }).outcome, 'accepted');
+});
+
+test('ticket 27 AC3/AC4: an unconfirmed publication whose comment appears in a later complete listing is linked (discovered), never reposted', async t => {
+  const remote: Remote = { pulls: {}, issues: [remoteIssue(3)], postOutcomes: ['unknown-not-created'] };
+  const h = await harness(t, remote, [{ kind: 'ask', questionId: qid(19), question: 'Late?' }]);
+  await h.start();
+  await h.until(async () => (await h.byNumber())[3]?.execution?.slot.held === false);
+  const work = (await h.byNumber())[3]!;
+  await h.until(async () => (await h.show(work.work_id)).questions[0]!.publication.state === 'ambiguous');
+  await h.cycle();
+  await h.until(async () => (await h.show(work.work_id)).questions[0]!.publication.state === 'unconfirmed');
+  // The lost POST's comment becomes visible later (lagging listing): the next discovery links it.
+  (remote.comments ??= {})[3] = [...(remote.comments[3] ?? []), comment(`<!-- software-factory:question:${qid(19)} -->\nLate?`, { id: 41898282, login: 'factory-app[bot]', type: 'Bot' }, 3, factoryAppId)];
   await h.cycle();
   await h.until(async () => (await h.show(work.work_id)).questions[0]!.publication.state === 'published');
-  assert.equal(h.github.calls.filter(call => call.method === 'postComment').length, 2);
+  assert.equal(h.github.calls.filter(call => call.method === 'postComment').length, 1);
   assert.equal(remote.comments![3]!.length, 1);
 });
 

@@ -21,6 +21,9 @@ export type RecoveryScript = { kind: 'complete' } | { kind: 'hang' } | { kind: '
   /** Activation requested, the worker never wrote its receipt (dies/hangs before it). */
   { kind: 'no-receipt' } |
   { kind: 'ask'; questionId: string; question: string; hangAfterAck?: boolean } |
+  /** Ticket 27: the worker PRESERVES its complete ask_user request in Records (same record as worker-session) and then never notifies the
+   * Control (it dies with the controller): the notification and its ACK are lost. `partial` leaves the record unfinished (content lost). */
+  { kind: 'ask-preserved'; questionId: string; question: string; context?: string; partial?: boolean } |
   /** Hands off ONE captured round to the Factory reviewers (who then run until their boot stops), then waits. */
   { kind: 'handoff' };
 
@@ -76,6 +79,21 @@ export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options:
     const reference = await records.record({ ...context, callId: 'review-opinion' }, { kind: 'review-opinion', ...composed });
     log('opinion-recorded', { role: composed.role, round: review.round, invocationId: invocation.context.invocationId });
     return { ...composed, reference };
+  }
+  /** The worker-session ask_user record (callId `ask-user-<id>`), complete or left partial (an interrupted preservation). */
+  async function preserveQuestion(invocation: Invocation, script: Extract<RecoveryScript, { kind: 'ask-preserved' }>) {
+    const records = await createRecords({ root: dir });
+    const { phaseId, ...context } = invocation.context;
+    const asked = { questionId: script.questionId, question: script.question, context: script.context ?? '', sha256: sha(script.question, script.context ?? '') };
+    const event = { version: 1, kind: 'ask-user', ...asked, phaseId, toolCallId: 'call-27', askedAt: new Date().toISOString() };
+    if (script.partial) {
+      const output = await records.openOutput({ ...context, callId: `ask-user-${script.questionId}` });
+      await output.write(Buffer.from(JSON.stringify({ version: 1, context: { ...context, callId: `ask-user-${script.questionId}` }, event }).slice(0, 40)));
+      log('question-preserved', { questionId: script.questionId, partial: true });
+      return;
+    }
+    const reference = await records.record({ ...context, callId: `ask-user-${script.questionId}` }, event);
+    log('question-preserved', { questionId: script.questionId, reference: reference.id });
   }
   async function writeReceipt(invocation: Invocation) {
     const records = await createRecords({ root: dir });
@@ -172,6 +190,7 @@ export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options:
         const completed = interruptible(invocation.signal, started.then(async start => {
           if (script.kind === 'complete') return { status: 'success' as const, receipt: start.receipt };
           if (script.kind === 'fail') return { status: 'failure' as const, code: script.code };
+          if (script.kind === 'ask-preserved') { await preserveQuestion(invocation, script); await new Promise<never>(() => {}); }
           if (script.kind === 'ask') {
             const question: WorkerQuestion = { questionId: script.questionId, question: script.question, context: '', sha256: sha(script.question, ''),
               reference: { workId: invocation.context.workId, id: '77777777-2222-4333-8444-555555555555' } };
@@ -196,6 +215,8 @@ export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options:
       },
       async deliver(_worker, directive) { log(`deliver-${directive.kind}`); return { status: directive.kind === 'withdraw-credential' ? 'withdrawn' as const : 'delivered' as const }; },
       ...(options.observeStart === false ? {} : { observeStart: (input: { workId: string; executionId: string; invocationId: string }) => workers.observeStart(input) }),
+      // Ticket 27: the REAL question facet (Records) — logged, so a test can prove it was consulted.
+      observeQuestion: (input: { workId: string; executionId: string; invocationId: string }) => { log('observe-question', input); return workers.observeQuestion(input); },
       ...(options.review28 ? { observeOpinion: (input: { workId: string; executionId: string; invocationId: string }) => { log('observe-opinion', input); return workers.observeOpinion(input); } } : {}),
     },
   };

@@ -1,6 +1,6 @@
 import type { AccessDiagnostic, BuilderCredentials, BuilderGrantMetadata, GitHubScope, HandoffDeclarations, ProposalHandoff, ProposalIdentity, ReviewerRole, ReviewOpinion, RevocationResult } from '../contracts/index.js';
 import type { CheckoutRequest, EnvironmentRef, PreparedWork, RemoveResult, StartResult, StopResult, BootRef } from '../sandbox/index.js';
-import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion, SessionObservation, WorkerSessionRef, OpinionObservation } from '../workers/index.js';
+import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion, SessionObservation, WorkerSessionRef, OpinionObservation, QuestionObservation } from '../workers/index.js';
 export type { SessionObservation, WorkerSessionRef as SessionRef } from '../workers/index.js';
 import type { IssueTracker, TicketRef } from '../issue-tracker/index.js';
 import type { BranchCleanupResult, CodeRepository, OwnPullRequestFacts } from '../code-repository/index.js';
@@ -126,7 +126,10 @@ export type ExecutionPorts = {
     observeStart?(input: { workId: string; executionId: string; invocationId: string }): Promise<StartObservation>;
     /** Ticket 28 — Q6 `observe`, opinion facet: the complete opinion record a reviewer invocation preserved before its notification.
      * Absent = a reviewer outcome without its opinion is never recovered from Records (it stays a failure). Not proof of cessation. */
-    observeOpinion?(input: { workId: string; executionId: string; invocationId: string }): Promise<OpinionObservation> };
+    observeOpinion?(input: { workId: string; executionId: string; invocationId: string }): Promise<OpinionObservation>;
+    /** Ticket 27 — Q6 `observe`, question facet: the complete `ask_user` request a Builder invocation preserved before its notification/ACK.
+     * Absent = a Question whose notification and completion were both lost stays only in Records (the Execution then recovers as a failure). */
+    observeQuestion?(input: { workId: string; executionId: string; invocationId: string }): Promise<QuestionObservation> };
   /** Ticket 12: when composed, the Builder hands off for parallel Standards/Spec reviews inside the SAME Execution/Slot/boot.
    * Ticket 13 `rounds.max`: repeated captures per Builder activation (handoffs with treatments/gates plus the Host's closing capture),
    * exemptions (unchanged content, identical commit) and the end-of-Execution verification. Absent = the single ticket 12 round.
@@ -405,11 +408,13 @@ export type ReviewRoundView = {
 export type QuestionView = {
   questionId: string; workId: string; executionId: string; invocationId: string; recordedAt: string;
   /** `controller-divergence` (ticket 21): asked by Control itself about a concrete remote divergence (no worker; `executionId` is the basis). */
-  recordedFrom: 'worker-notification' | 'worker-completion' | 'controller-divergence';
+  /** `records-recovery` (ticket 27): the complete request the worker preserved, recovered from Records at boot after its notification/ACK was lost. */
+  recordedFrom: 'worker-notification' | 'worker-completion' | 'controller-divergence' | 'records-recovery';
   content: { question: string; context: string; sha256: string; reference: { workId: string; id: string } };
   destination: { kind: 'issue'; ticket: TicketRef };
   state: 'open' | 'answered';
-  publication: { effectId: string; state: 'intended' | 'attempting' | 'published' | 'ambiguous' | 'failed' | 'conflict'; updatedAt: string;
+  /** Ticket 27: `unconfirmed` = a possibly sent POST whose complete discovery found nothing (never reposted automatically; discovered again). */
+  publication: { effectId: string; state: 'intended' | 'attempting' | 'published' | 'ambiguous' | 'unconfirmed' | 'failed' | 'conflict'; updatedAt: string;
     attempts: { at: string; outcome: 'attempting' | 'published' | 'failed' | 'unknown' | 'discovered' | 'absent' | 'discovery-incomplete' | 'multiple'; code?: string;
       /** Self-revocation of the single-use publication credential after this attempt. */ revocation?: string }[];
     comment: { commentId: number; url: string } | null; nextStep: string | null };

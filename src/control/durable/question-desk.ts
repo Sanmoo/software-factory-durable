@@ -1,5 +1,6 @@
 import type { IssueTracker } from '../../issue-tracker/index.js';
-import { authorizeCommentAuthor, commentEligibility, parseFactoryCommand, questionCommentBody, type OperatorRef } from '../rules/questions.js';
+import { authorizeCommentAuthor, commentEligibility, parseFactoryCommand, questionCommentBody, questionNeedsDiscovery, questionPublishAllowed,
+  type OperatorRef } from '../rules/questions.js';
 import type { WorkRecord } from './admission.js';
 import { acceptAnswer, readQuestion, readQuestions, recordIgnored, recordInputsCursor, recordPublication } from './questions.js';
 import type { Session } from './store.js';
@@ -9,8 +10,8 @@ const maxKnownFailures = 5;
 /**
  * Question publication and answer ingestion inside the existing owner loop (after each polling iteration; no scheduler/broker).
  * Publication: intent (already committed with the Question) -> attempt commit -> postComment -> observation commit. After an
- * unknown outcome or an attempt interrupted by a crash, the marker is DISCOVERED first; an incomplete search never proves absence and
- * several candidates are never chosen. Ingestion: complete comment listings of Works with open Questions; strict `/factory` prefix,
+ * unknown outcome or an attempt interrupted by a crash, the marker is DISCOVERED first; an incomplete search never proves absence, several
+ * candidates are never chosen and (ticket 27) a complete empty search after a possible send is `unconfirmed`, never a repost. Ingestion: complete comment listings of Works with open Questions; strict `/factory` prefix,
  * configured human operators and this Work's own Ticket only. Neither path launches anything.
  */
 export function createQuestionDesk(deps: { session: Session; tracker: IssueTracker; operators: readonly OperatorRef[]; readWorks(): Promise<WorkRecord[]>; stopped(): boolean }) {
@@ -26,7 +27,7 @@ export function createQuestionDesk(deps: { session: Session; tracker: IssueTrack
         if (question.state !== 'open' || question.destination.kind !== 'issue') continue;
         let state = question.publication.state;
         const ticket = question.destination.ticket;
-        if (state === 'attempting' || state === 'ambiguous') {
+        if (questionNeedsDiscovery(state)) {
           const search = await tracker.findQuestion(ticket, question.questionId).catch(unexpected);
           const update = !search || search.kind !== 'observed' ? { kind: 'discovery' as const, outcome: 'discovery-incomplete' as const, code: search?.code ?? 'TRACKER_UNEXPECTED_FAILURE' }
             : search.candidates.length === 1 ? { kind: 'discovery' as const, outcome: 'discovered' as const, comment: { commentId: search.candidates[0]!.commentId, url: search.candidates[0]!.url } }
@@ -36,7 +37,7 @@ export function createQuestionDesk(deps: { session: Session; tracker: IssueTrack
           state = next;
         }
         const failures = question.publication.attempts.filter(item => item.outcome === 'failed').length;
-        if (!(state === 'intended' || (state === 'failed' && failures < maxKnownFailures)) || deps.stopped()) continue;
+        if (!questionPublishAllowed(state, failures, maxKnownFailures) || deps.stopped()) continue;
         if (await recordPublication(session, question.questionId, { kind: 'begin' }) !== 'attempting') continue;
         const body = questionCommentBody({ questionId: question.questionId, workId: question.workId, executionId: question.executionId,
           question: question.content.question, context: question.content.context });
