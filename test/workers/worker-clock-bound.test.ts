@@ -49,3 +49,23 @@ test('the bootstrap/launch schemas accept deadlineMs only as an explicit bounded
     assert.equal(workerLaunchSchema.safeParse({ ...launch, deadlineMs: value }).success, false, `launch rejects ${String(value)}`);
   }
 });
+
+test('ticket 37: secretAckTimeoutMs may only shorten the secret ACK wait; absent (production) leaves the publisher default', async () => {
+  const launch = { context, knownSecrets: [], prompt: bootstrap.prompt,
+    profile: { id: profile.id, systemPrompt: profile.systemPrompt, auth: profile.auth, providerId: profile.providerId, modelId: profile.modelId, api: profile.api } };
+  assert.equal(workerBootstrapSchema.safeParse(bootstrap).data?.secretAckTimeoutMs, undefined, 'absent is not defaulted here');
+  for (const value of [1, 5000]) {
+    assert.equal(workerBootstrapSchema.safeParse({ ...bootstrap, secretAckTimeoutMs: value }).success, true, `bootstrap accepts ${String(value)}`);
+    assert.equal(workerLaunchSchema.safeParse({ ...launch, secretAckTimeoutMs: value }).success, true, `launch accepts ${String(value)}`);
+  }
+  for (const value of [0, -1, 1.5, 5001, '100', null, Number.POSITIVE_INFINITY]) {
+    assert.equal(workerBootstrapSchema.safeParse({ ...bootstrap, secretAckTimeoutMs: value }).success, false, `bootstrap rejects ${String(value)}`);
+    assert.equal(workerLaunchSchema.safeParse({ ...launch, secretAckTimeoutMs: value }).success, false, `launch rejects ${String(value)}`);
+  }
+  // The worker passes the bootstrap value straight through (undefined → the publisher's 5000 ms default, see secret-ipc.test.ts),
+  // and no production composition sets it.
+  assert.match(await readFile('src/workers/worker-process.ts', 'utf8'), /createSecretPublisher\(process, bootstrap\.context, signal, bootstrap\.secretAckTimeoutMs,/);
+  for (const file of ['src/entrypoints/controller/composition.ts', 'src/control/durable/dispatch.ts']) {
+    assert.doesNotMatch(await readFile(file, 'utf8'), /secretAckTimeoutMs/, file);
+  }
+});

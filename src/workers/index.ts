@@ -238,6 +238,7 @@ export function createWorkers(configuration?: Configuration) {
       // The Host (not the worker or model) derives the exact readable pack paths from the verified manifest of THIS version.
       ...(invocation.skillPack === undefined || invocation.context.role !== 'builder' ? {} : { skillPackFiles: await skillPackGuestFiles(invocation.skillPack) }),
       ...(invocation.modelBudget === undefined ? {} : { modelBudget: invocation.modelBudget }), ...(invocation.deadlineMs === undefined ? {} : { deadlineMs: invocation.deadlineMs }),
+      ...(invocation.secretAckTimeoutMs === undefined ? {} : { secretAckTimeoutMs: invocation.secretAckTimeoutMs }),
       ...(invocation.imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes: invocation.imageSourceMaxBytes }),
       ...(invocation.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: invocation.editSourceMaxBytes }),
       ...(invocation.handoff === undefined ? {} : { handoff: invocation.handoff }),
@@ -249,10 +250,10 @@ export function createWorkers(configuration?: Configuration) {
     if (!request.success || invocation.signal.aborted) throw new Error('WORKER_LAUNCH_INVALID');
     if (delivery?.credential !== undefined && (request.data.context.role !== 'builder' || typeof delivery.credential.token !== 'string')) throw new Error('WORKER_LAUNCH_INVALID');
     const context = request.data.context;
-    const { imageSourceMaxBytes, editSourceMaxBytes, copyOutput, selectedOutputCopies, skillPack, skillPackFiles, modelBudget, deadlineMs, handoff, review, continueSession, ...baseRequest } = request.data;
+    const { imageSourceMaxBytes, editSourceMaxBytes, copyOutput, selectedOutputCopies, skillPack, skillPackFiles, modelBudget, deadlineMs, secretAckTimeoutMs, handoff, review, continueSession, ...baseRequest } = request.data;
     const payload = { ...baseRequest, ...(handoff === undefined ? {} : { handoff: { baseCommit: handoff.baseCommit, ...(handoff.rounds ? { rounds: { ...handoff.rounds } } : {}) } }),
       ...(review === undefined ? {} : { review: { round: review.round, attempt: review.attempt, handoffIndexSha256: review.handoffIndexSha256,
-        required: [...review.required], missing: [...review.missing], ...(review.continueFrom === undefined ? {} : { continueFrom: review.continueFrom }) } }), ...(skillPack === undefined ? {} : { skillPack }), ...(skillPackFiles === undefined ? {} : { skillPackFiles: [...skillPackFiles] }), ...(modelBudget === undefined ? {} : { modelBudget }), ...(deadlineMs === undefined ? {} : { deadlineMs }), ...(selectedOutputCopies === undefined ? {} : { selectedOutputCopies: [...selectedOutputCopies] }), ...(copyOutput === undefined ? {} : { copyOutput }), ...(imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes }),
+        required: [...review.required], missing: [...review.missing], ...(review.continueFrom === undefined ? {} : { continueFrom: review.continueFrom }) } }), ...(skillPack === undefined ? {} : { skillPack }), ...(skillPackFiles === undefined ? {} : { skillPackFiles: [...skillPackFiles] }), ...(modelBudget === undefined ? {} : { modelBudget }), ...(deadlineMs === undefined ? {} : { deadlineMs }), ...(secretAckTimeoutMs === undefined ? {} : { secretAckTimeoutMs }), ...(selectedOutputCopies === undefined ? {} : { selectedOutputCopies: [...selectedOutputCopies] }), ...(copyOutput === undefined ? {} : { copyOutput }), ...(imageSourceMaxBytes === undefined ? {} : { imageSourceMaxBytes }),
       ...(editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes }), ...(continueSession === undefined ? {} : { continueSession: { ...continueSession } }) };
     const endpoint = await workerOwnerEndpoint(configuration.root, context);
     const channel = await connect(endpoint, { kind: 'host-boot', binding: { workId: context.workId,

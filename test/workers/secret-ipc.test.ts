@@ -57,6 +57,24 @@ test('protected start, one pending, held ACK and post-await original-signal fenc
   assert.equal(uses, 0);
 });
 
+test('ticket 37: the production ACK wait is 5000 ms when no Host policy shortens it (undefined is the default, as the worker passes it)', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  for (const timeoutMs of [undefined, 5000]) {
+    const wire = new Wire(), abort = new AbortController();
+    const publisher = createSecretPublisher(wire, context, abort.signal, timeoutMs);
+    publisher.protectedStarted();
+    let settled = false;
+    const pending = publisher.acknowledgeSecrets(values).finally(() => { settled = true; });
+    void pending.catch(() => {});
+    t.mock.timers.tick(4999);
+    await Promise.resolve();
+    assert.equal(settled, false, 'still waiting for the owner ACK at 4999 ms');
+    t.mock.timers.tick(1);
+    await denied(pending);
+    assert.equal(wire.listenerCount('message'), 0);
+  }
+});
+
 test('all seven context fields, wrong UUID/version, unknown fields and malformed replies latch', async () => {
   const mutations: ((reply: Record<string, unknown>) => unknown)[] = [
     ...Object.keys(context).map(key => (reply: Record<string, unknown>) => ({ ...reply, context: { ...context, [key]: 'other' } })),

@@ -145,7 +145,8 @@ export async function run(input: unknown, parentSignal: AbortSignal, ipc?: Worke
     ipc.send({ kind: 'worker-handoff', event }).catch(() => aborted());
   }) : undefined;
   // Sync protected receipt before even importing/creating the native SDK runtime.
-  const secretPublisher = createSecretPublisher(process, bootstrap.context, signal, 5000, () => synchronizationLifetime.abort());
+  // Absent (production) leaves the publisher's own default ACK wait (5000 ms); a Host policy may only shorten it (ticket 37).
+  const secretPublisher = createSecretPublisher(process, bootstrap.context, signal, bootstrap.secretAckTimeoutMs, () => synchronizationLifetime.abort());
   try {
     const receipt = await startWorker(bootstrap.profile, records, invocation);
     const sender = process.send?.bind(process);

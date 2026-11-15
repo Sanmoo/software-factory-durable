@@ -24,6 +24,8 @@ export type Invocation = { context: ToolContext; prompt: string; signal: AbortSi
   /** Explicit invocational clock bound (ticket 19): only a Host policy may set it. Absent means NO implicit cut (spec §4.4);
    * the Execution-level clock is the repository's optional timeout, enforced by the controller. */
   deadlineMs?: number;
+  /** Ticket 37: shorter secret-registration ACK wait (≤ 5000 ms); absent is the production 5000 ms. Only a Host policy may set it. */
+  secretAckTimeoutMs?: number;
   /** Builder only (ticket 12): the Host handoff tool and suspension for the Factory reviews, with the Execution's base commit. */
   handoff?: { baseCommit: string;
     /** Ticket 13: repeated rounds (treatments, gates, closing capture); absent = the single ticket 12 round. */

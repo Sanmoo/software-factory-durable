@@ -3,6 +3,9 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createWorkers } from '../../src/workers/index.js';
 
+/** Worker startup up to its first provider request is ~1-3 s under an 8-way loaded ci lane; 30 s was idle waiting. */
+export const oauthDeadlineMs = 8_000;
+
 export async function normalOAuth(root: string, identity: { workId: string; environmentRef: string; bootRef: string }) {
   const profile = { id: 'factory-development-pi-1.5.2-read-async-bash-lexical-v3' as const, systemPrompt: 'Read only the synthetic source.',
     auth: 'factory-oauth' as const, providerId: 'openai' as const, modelId: 'gpt-6-luna' as const, api: 'openai-responses' as const };
@@ -16,9 +19,13 @@ export async function normalOAuth(root: string, identity: { workId: string; envi
     await assert.rejects(createWorkers({ root, knownSecrets: [], profile: { ...profile, ...override } as typeof profile })
       .activate({ context, prompt: 'Read.', signal: new AbortController().signal }), /WORKER_LAUNCH_INVALID/);
   }
-  // Ticket 19: no implicit clock cut. The Host deadline is an explicit policy; only the `deadline` mode sets one.
+  // Ticket 19: no implicit clock cut. The Host deadline is an explicit policy; only the `deadline` mode sets one. Ticket 37: what it
+  // proves is that the explicit value cuts a held provider request, not its length; it only has to outlast the worker's startup up
+  // to that first request (the preload holds it until the abort).
+  // Ticket 37: `held-ack` proves the fail-closed path of an ACK the owner never sends; the Host policy shortens the 5000 ms wait
+  // (whose default is proven in secret-ipc.test.ts) instead of really waiting it.
   const handle = await workers.activate({ context, prompt: mode === 'prompt-bytes' ? 'π'.repeat(2100) : mode === 'prompt-secret' ? 'Read oauth-access-canary.' : 'Read source.txt then report.',
-    signal: new AbortController().signal, ...(mode === 'deadline' ? { deadlineMs: 30_000 } : {}) });
+    signal: new AbortController().signal, ...(mode === 'deadline' ? { deadlineMs: oauthDeadlineMs } : {}), ...(mode === 'held-ack' ? { secretAckTimeoutMs: 50 } : {}) });
   try {
     if (mode === 'start-failure') {
       await assert.rejects(handle.started);

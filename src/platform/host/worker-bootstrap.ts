@@ -26,6 +26,9 @@ const bootstrap = z.strictObject({
   skillPack: z.enum(factorySkillPackIds).optional(),
   modelBudget: z.enum(['builder-v1', 'reviewer-v1']).optional(),
   deadlineMs: z.number().int().positive().max(86_400_000).optional(),
+  // Ticket 37: how long the worker waits for the owner's ACK of a secret registration before failing closed. Absent (production) is
+  // the publisher's 5000 ms default; a Host may only shorten it (a fixture proving the held-ACK path need not wait 5 s).
+  secretAckTimeoutMs: z.number().int().positive().max(5000).optional(),
   // Host-derived exact guest paths of the seeded files of `skillPack` (Builder Read authority of the pack only).
   skillPackFiles: z.array(z.string().max(512).regex(/^\/artifacts\/factory\/skill-pack\/factory-skills-v[0-9]+\/[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/)
     .refine(path => !path.split('/').some(part => part === '.' || part === '..'))).min(1).max(64).readonly().optional(),
@@ -71,7 +74,7 @@ function rolePolicies(input: { context: { role: string }; copyOutput?: boolean |
     !(input.context.role !== 'builder' && input.copyOutput === true);
 }
 export const workerBootstrapSchema = bootstrap.refine(rolePolicies, 'WORKER_POLICY_ROLE_DENIED');
-export const workerLaunchSchema =  bootstrap.pick({ context: true, knownSecrets: true, prompt: true, imageSourceMaxBytes: true, editSourceMaxBytes: true, copyOutput: true, selectedOutputCopies: true, skillPack: true, skillPackFiles: true, modelBudget: true, deadlineMs: true, handoff: true, review: true, continueSession: true }).extend({ profile: launchProfile }).strict().refine(rolePolicies, 'WORKER_POLICY_ROLE_DENIED')
+export const workerLaunchSchema =  bootstrap.pick({ context: true, knownSecrets: true, prompt: true, imageSourceMaxBytes: true, editSourceMaxBytes: true, copyOutput: true, selectedOutputCopies: true, skillPack: true, skillPackFiles: true, modelBudget: true, deadlineMs: true, secretAckTimeoutMs: true, handoff: true, review: true, continueSession: true }).extend({ profile: launchProfile }).strict().refine(rolePolicies, 'WORKER_POLICY_ROLE_DENIED')
   // The continued session is resolved by the owner launcher from `continueFrom`, never supplied by the launch request.
   .refine(input => input.review?.session === undefined, 'WORKER_POLICY_ROLE_DENIED');
 export type WorkerLaunch = z.infer<typeof workerLaunchSchema>;
