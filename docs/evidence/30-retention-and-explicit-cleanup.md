@@ -52,7 +52,7 @@ disabled, the build recompiled and the new tests run; each mutation turned them 
 - No cancel-first requirement → flow AC5–7 and rules AC5/AC7 red.
 - Failed/indeterminate retried by the next sweep → flow AC8 red.
 
-## Decisions taken here (accepted by the supervisor: 1, 2, 3; 5 = local recipe; 6 = reviewer sessions)
+## Decisions taken here (supervisor: 1 and 3 accepted; 2 accepted, then REVERSED after the independent review — see below; 5 = local recipe; 6 = reviewer sessions)
 
 1. **"Open" for cleanup = result `open` or `closed-unmerged`.** Both cycles can still continue (`reopen` + `resume`). Every selection is
    refused with `CANCEL_REQUIRED`, consistent with spec §12.4 for `forget`. Explicit cleanup therefore applies only to `cancelled` and
@@ -61,7 +61,7 @@ disabled, the build recompiled and the new tests run; each mutation turned them 
    with them, at delivery time. That was earlier than the spec §12.3 table allows (logs/sessions of a delivered Work are retained 30 days).
    They are now copied into `<root>/<work>/sessions/` first, which matches spec §12.1. Deliveries cleaned before this change have no copy:
    nothing is listed for them, and no copy is invented.
-3. **Logs are all Records captures of the Work.** They include tool outputs and event records (Question requests, start receipts, opinions),
+3. **(Superseded by the supervisor's reversal: only tool/command outputs are logs.)** Logs are all Records captures of the Work. They include tool outputs and event records (Question requests, start receipts, opinions),
    because the Records layout does not separate them. The protections keep whatever a pending item still needs; the authoritative content
    (Questions, reviews, decisions) lives in the controller documents and in the preserved evidence.
 4. **No implicit retry, including by retention.** A `failed`/`refused`/`indeterminate` detail removal is not attempted again by the daily
@@ -97,7 +97,7 @@ the supervisor.** Ticket 26's decision 3 already routes it to `resume`, which do
 
 Session ownership no longer depends on a preservation record. A copy is owned when it is named after an Execution of the Work, and it is removed only at the hash the inventory or the plan saw.
 
-## Real-run recipe (LOCAL only, supervisor decision 5: v1 not met, v2 met before the review; v3 pending)
+## Real-run recipe (LOCAL only, supervisor decision 5: v1 not met, v2 met before the review, v3 met after it)
 
 `test/entrypoints/retention30-qualification.ts`, namespace `/home/sanmoo/software-factory-test/y5/q30-retention-v3` (v1/v2 consumed). Import and `--plan` are
 inert (`retention30-qualification.test.ts`). The phases are one-shot, each with an exclusive intent tombstone and no retry:
@@ -169,6 +169,43 @@ Observations copied here and scanned for secrets (only field names such as `auth
 
 Level: real local installation data (P on the Records/SQLite/Control boundaries this ticket changes). The GitHub doubles stay local by
 design; there was no VM or model.
+
+### Run v3 (`q30-retention-v3`, run by the supervisor 2026-11-15, after the review): verdict **MET**, 12/12
+
+v2 was met under decision 2 as first accepted, where all captures counted as logs (88 removed). The supervisor then reversed that decision:
+records that history needs are kept until `forget`. v3 checks the reversed rule on the same real data.
+
+Source: COPY of `q17-delivery-v4/authority` (format 2, no migration). The private Records copy has 284 files and 155103 bytes.
+
+Classification of the real captures:
+- 39 logs (raw tool outputs);
+- 49 kept: 25 host-evidence, 4 worker-start, 2 review-opinion, 2 review-opinion-forward, 8 mutation-intent, 8 mutation-result;
+- 1 preserved evidence directory.
+
+The recipe also writes ONE labelled synthetic session copy (`sessions/0cd35c93-…--rv-5e555e555e555e55.jsonl`, 108 bytes, sha256
+`0eb3c5fb…`), named after a real Execution of the Work.
+
+| Check | Expected | Observed |
+| --- | --- | --- |
+| delivered | delivered | delivered |
+| due-at | 2026-12-15T15:08:56.564Z | same |
+| run A (merge + 1 d) | retained / 0 removed | retained / 0 removed |
+| run A plan | planned (never confirmed) | planned |
+| run B (merge + 31 d) | expired (protected = not met) | expired |
+| run B removed | 39 logs + 1 session = 40 | 40 |
+| removed logs AND sessions | true | true |
+| synthetic session copy | present before, absent after | before true, after false |
+| evidence kept | 1 | 1 |
+| kept records intact | 49 | 49 |
+| source storage sha256 | ce45922c… | unchanged |
+| remote/Sandbox calls | 0 | 0 |
+
+Observations copied here and scanned for secrets (no token, key or credential value):
+- [verdict](30-real-retention-v3-verdict-2026-11-15.json)
+- [preflight](30-real-retention-v3-preflight-result-2026-11-15.json)
+- [run A](30-real-retention-v3-sweep-a-result-2026-11-15.json)
+- [run B](30-real-retention-v3-sweep-b-result-2026-11-15.json)
+- [inspect](30-real-retention-v3-inspect-result-2026-11-15.json)
 
 The V-14 "P" part (cleanup of a real delivery) remains ticket 17's `q17-delivery-v4`, already run.
 

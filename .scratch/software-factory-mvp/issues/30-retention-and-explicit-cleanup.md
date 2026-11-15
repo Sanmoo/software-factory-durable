@@ -4,7 +4,7 @@
 
 **Blocked by:** [17: Confirmar entrega e limpar somente recursos próprios](17-confirmed-delivery-and-owned-cleanup.md); [25: Operar retirada de autorização, cancelamento e novos ciclos](25-authorization-withdrawal-and-work-cycles.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
@@ -42,3 +42,12 @@ Publicação é planejamento aprovado, não autorização de construção, uso d
 - 2026-11-15 (revisão independente de 115df70): decisão 2 revertida pelo supervisor — só saídas de ferramenta/comando e cópias de sessão
   expiram; pareceres, recibos, pedidos/respostas de Pergunta e evidência do 17 ficam até `forget` (ticket 31). Correções MED/LOW aplicadas
   (ver evidência). Ticket reaberto até a receita local v3 (`y5/q30-retention-v3`) passar.
+- 2026-11-15 (supervisor): receita local v3 (`y5/q30-retention-v3`) ATENDIDA 12/12 após as correções da revisão: 39 logs + 1 cópia de
+  sessão sintética rotulada removidos, 49 registros (recibos, pareceres, mutações, evidência Host) e a evidência preservada mantidos.
+
+## Answer
+
+Retenção e cleanup explícito entregues: só detalhes operacionais (saídas de ferramenta/comando e cópias de sessão) expiram 30 dias após o
+merge confirmado; registros que o histórico exige ficam até `forget` (ticket 31). Fluxos storage-real, CLI real e execução local real sobre
+cópia de `q17-delivery-v4` (v3 atendida 12/12). Evidência: [docs/evidence/30-retention-and-explicit-cleanup.md](../../../docs/evidence/30-retention-and-explicit-cleanup.md).
+Item aberto de desbloqueio de `RECOVERY_BLOCKED`: tickets 26/27.
