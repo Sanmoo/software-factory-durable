@@ -41,3 +41,13 @@ Sem rede, GitHub, VM, modelo ou credenciais. Remoções dependem de aprovação 
   `docs/agents/testing.md`. Em `full`, `sandbox/sandbox-storage` falha de forma determinística
   (`observe().cessationConfirmed` é `true`; o teste espera `false`), visto pela primeira vez porque antes ficava
   sempre pulado: precisa de ticket próprio (deriva entre teste e produto), não de quarentena.
+
+- 2026-11-15 (ticket 17 implementer, por instrução do supervisor): `entrypoints/normal-worker` entrou em quarentena (`test/tiers.json`, ticket 37). Ele tem um `timeout: 15000` fixo no próprio teste, sobre uma cadeia inteira adapter→owner→worker Node24. Expirou em 2 de 2 execuções de `ci` (carga 11-19, `ERR_TEST_FAILURE`, cancelado) e passou sozinho (1/1).
+  Na mesma janela, `workers/public-copy-read` falhou 1 vez (`spawnSync … ETIMEDOUT`, `timeout: 25000` fixo no `spawnSync`). Ele reapareceu na execução seguinte (2 de 3 `ci`) e também entrou em quarentena.
+  Na execução seguinte, `entrypoints/publication-composition` (do ticket 14) também falhou. Ele espera `publication.state === 'published'` com um laço fixo de 600 × 10 ms e ainda estava em `awaiting-discovery` após 15,9 s, com carga 10-20. Passa sozinho em 5,6 s. Também entrou em quarentena.
+  Instruções de correção, para os dois e para qualquer timer fixo nas camadas `fast`/`ci`:
+  1. Remover o `timeout` fixo de `test(...)` e de `spawnSync`, e os laços de espera com contagem fixa (600 × 10 ms).
+  2. Sincronizar por eventos observáveis: mensagens `worker-message` / `worker-exit` e o fim do filho, com `spawn` assíncrono e `once('exit')` em vez de `spawnSync`.
+  3. Se um limite for indispensável contra travamento, injetá-lo, derivado de um orçamento relativo informado pelo runner (por exemplo, uma variável de ambiente com o teto da camada dividido pelo número de arquivos da lane). Nunca uma constante de 15 s ou 25 s.
+  4. Ao estourar, o teste falha com a etapa em que parou e mata a árvore de processos, para não vazar filhos.
+  5. Depois da correção, remover a entrada de quarentena e comprovar 3 execuções verdes de `ci` sob carga.
