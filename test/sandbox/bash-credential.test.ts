@@ -48,7 +48,7 @@ test('AC5: the Builder credential reaches guest commands as explicit GH_TOKEN/gh
     assert.ok(call.argv.every(arg => !arg.includes(token)), 'never in argv');
     assert.deepEqual(call.env, {}, 'never in the exec wire environment');
     assert.equal(call.stdin, `${token}\n`);
-    assert.deepEqual(call.argv.slice(0, 7), ['/usr/bin/env', '-i', 'GIT_AUTHOR_NAME=Software Factory Builder', 'GIT_AUTHOR_EMAIL=software-factory-builder@users.noreply.invalid', 'GIT_COMMITTER_NAME=Software Factory Builder', 'GIT_COMMITTER_EMAIL=software-factory-builder@users.noreply.invalid', '/bin/bash']);
+    assert.deepEqual(call.argv.slice(0, 8), ['/usr/bin/env', '-i', 'GIT_AUTHOR_NAME=Software Factory Builder', 'GIT_AUTHOR_EMAIL=software-factory-builder@users.noreply.invalid', 'GIT_COMMITTER_NAME=Software Factory Builder', 'GIT_COMMITTER_EMAIL=software-factory-builder@users.noreply.invalid', 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', '/bin/bash']);
   }
   assert.ok(!(await readdir(h.root, { recursive: true })).some(name => name.includes(token)));
   const user = await h.run('cat; echo "[$0]"');
@@ -59,7 +59,7 @@ test('AC5: without a delivered credential the exact previous guest argv/stdin is
   const h = await harness(t);
   const output = await h.run('echo "${GH_TOKEN-unset}"');
   assert.equal(output.trim(), 'unset');
-  assert.deepEqual(h.seen[0]!.argv, ['/usr/bin/env', '-i', 'GIT_AUTHOR_NAME=Software Factory Builder', 'GIT_AUTHOR_EMAIL=software-factory-builder@users.noreply.invalid', 'GIT_COMMITTER_NAME=Software Factory Builder', 'GIT_COMMITTER_EMAIL=software-factory-builder@users.noreply.invalid', '/bin/bash', '-c', 'echo "${GH_TOKEN-unset}"']);
+  assert.deepEqual(h.seen[0]!.argv, ['/usr/bin/env', '-i', 'GIT_AUTHOR_NAME=Software Factory Builder', 'GIT_AUTHOR_EMAIL=software-factory-builder@users.noreply.invalid', 'GIT_COMMITTER_NAME=Software Factory Builder', 'GIT_COMMITTER_EMAIL=software-factory-builder@users.noreply.invalid', 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', '/bin/bash', '-c', 'echo "${GH_TOKEN-unset}"']);
   assert.equal(h.seen[0]!.stdin, '');
 });
 
@@ -82,7 +82,7 @@ test('ticket 20 AC2: a renewed credential reaches only NEW commands; a command a
   // Withdrawal (end / external wait / cancellation): new commands receive nothing; the previous argv shape without prelude is used.
   h.holder.token = undefined;
   assert.equal((await h.run('echo "${GH_TOKEN-unset}"')).trim(), 'unset');
-  assert.deepEqual([h.seen[2]!.argv.length, h.seen[2]!.stdin], [9, ''], 'no credential prelude (env -i + Factory commit identity + bash -c command)');
+  assert.deepEqual([h.seen[2]!.argv.length, h.seen[2]!.stdin], [10, ''], 'no credential prelude (env -i + Factory commit identity + PATH + bash -c command)');
 });
 
 test('ticket 20 AC7: a renewed synthetic value split across output chunks and streams is filtered before capture and progress', async t => {
@@ -111,4 +111,14 @@ test('ticket 20 AC7: a renewed synthetic value split across output chunks and st
   assert.doesNotMatch(output, /ghs_synthetic|SplitRenewal/);
   assert.doesNotMatch(progress.join(''), /ghs_synthetic|SplitRenewal/, 'streamed progress is filtered too');
   assert.match(output, /before .* after/);
+});
+
+test('ticket 14 real-run fix: guest commands export a fixed PATH that CHILD processes see (gh is Go: it resolves git from its environment)', async t => {
+  for (const credential of [undefined, { token }]) {
+    const h = await harness(t, credential);
+    // /usr/bin/env is a child process: it prints the exported environment, not bash's unexported default PATH.
+    const output = await h.run('/usr/bin/env');
+    assert.match(output, /^PATH=\/usr\/local\/sbin:\/usr\/local\/bin:\/usr\/sbin:\/usr\/bin:\/sbin:\/bin$/m, credential ? 'with the credential prelude' : 'without credential');
+    assert.ok(h.seen[0]!.argv.includes(`PATH=${'/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'}`), 'explicit in the fixed argv, never the host PATH');
+  }
 });

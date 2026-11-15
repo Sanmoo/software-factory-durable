@@ -14,7 +14,7 @@ test('native Bash custom exec streams ordered protected UTF-8 fragments includin
   let streamFinished = false;
   let liveUpdate = false;
   const f = await nativeOwner(context, { exec(argv, options) {
-    assert.deepEqual(argv, ['/usr/bin/env', '-i', 'GIT_AUTHOR_NAME=Software Factory Builder', 'GIT_AUTHOR_EMAIL=software-factory-builder@users.noreply.invalid', 'GIT_COMMITTER_NAME=Software Factory Builder', 'GIT_COMMITTER_EMAIL=software-factory-builder@users.noreply.invalid', '/bin/bash', '-c', 'model command is data'], 'fixed Factory commit identity, never the model\'s or a human\'s');
+    assert.deepEqual(argv, ['/usr/bin/env', '-i', 'GIT_AUTHOR_NAME=Software Factory Builder', 'GIT_AUTHOR_EMAIL=software-factory-builder@users.noreply.invalid', 'GIT_COMMITTER_NAME=Software Factory Builder', 'GIT_COMMITTER_EMAIL=software-factory-builder@users.noreply.invalid', 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', '/bin/bash', '-c', 'model command is data'], 'fixed Factory commit identity, never the model\'s or a human\'s');
     assert.deepEqual(options.env, {}); assert.equal(options.cwd, '/workspace');
     assert.equal(options.stderr, 'pipe');
     return { async *output() { for (let i = 0; i < source.length; i++) yield {

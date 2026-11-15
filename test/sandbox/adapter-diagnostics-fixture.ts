@@ -422,7 +422,7 @@ const sdkDouble = {
       }
       if (nativeBash && argv[0] === '/usr/bin/env') {
         audit('bash');
-        assert.deepEqual(argv, ['/usr/bin/env', '-i', 'GIT_AUTHOR_NAME=Software Factory Builder', 'GIT_AUTHOR_EMAIL=software-factory-builder@users.noreply.invalid', 'GIT_COMMITTER_NAME=Software Factory Builder', 'GIT_COMMITTER_EMAIL=software-factory-builder@users.noreply.invalid', '/bin/bash', '-c', "printf 'syn''thetic-se''cret'; printf 'tail π' >&2"]);
+        assert.deepEqual(argv, ['/usr/bin/env', '-i', 'GIT_AUTHOR_NAME=Software Factory Builder', 'GIT_AUTHOR_EMAIL=software-factory-builder@users.noreply.invalid', 'GIT_COMMITTER_NAME=Software Factory Builder', 'GIT_COMMITTER_EMAIL=software-factory-builder@users.noreply.invalid', 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', '/bin/bash', '-c', "printf 'syn''thetic-se''cret'; printf 'tail π' >&2"]);
         assert.deepEqual(options.env, {}); assert.equal(options.cwd, '/workspace');
         assert.equal(options.stdout, 'pipe'); assert.equal(options.stderr, 'pipe');
         const source = Buffer.from('head π synthetic-secret synthetic-key segredo-🔒-ação\n' + 'filtered output\n'.repeat(80000) + 'tail π');
