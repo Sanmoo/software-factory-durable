@@ -19,7 +19,10 @@ const root = '/home/sanmoo/software-factory-test/y5';
 // v2: fresh namespace for the operator decisions of 2026-11-15 (carry only after operational recovery; at most 2 retries per role per round).
 const observations = `${root}/q28-partial-v2`;
 const revision = 'q28-partial-v2';
-const phases = ['preflight', 'run', 'inspect', 'stop-environment'] as const;
+// `inspect-2` (2026-11-15): the first `inspect` of the real q28-partial-v2 run was consumed held "Session is closed" (it read `show` after
+// closing the storage session); `inspect-2` repeats exactly that read-only inspection on NEW private copies, once.
+const phases = ['preflight', 'run', 'inspect', 'inspect-2', 'stop-environment'] as const;
+const inspections: readonly Phase[] = ['inspect', 'inspect-2'];
 type Phase = typeof phases[number];
 const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 'main', installationId: 177599217, workflows: false, label: 'ready-for-agent' };
 /** Operator decision (option a): a NEW synthetic issue #6 with no associated PR; issue #3 keeps the label with ticket 14's draft PR #5 and is
@@ -76,6 +79,7 @@ export function plan() {
         'ONE Builder, reviewers in parallel on the same boot; the two provocations above; Sandbox.stop; Slot release; 75 min deadline',
       'inspect: read-only on exclusive COPIES: the storage copy (Control view: rounds, attempts, sources, charges, budget, history) and a private copy of the Work\'s ' +
         'Records (listing of every reviewer invocation on the copy); worker session JSONL read-only (bounded reads, tool-call names)',
+      'inspect-2: exactly inspect, once, on NEW private copies (inspect-2-storage-copy, inspect-2-records-copy); no GitHub, VM or model; refused if it already ran',
       'stop-environment: own boot of the recorded Execution when it may still run: public Sandbox.stop of that exact boot',
     ],
     guards: [`guard refusals are known pre-launch refusals (WORKER_LAUNCH_INVALID: never-started, reservation released, not retried); more than ${maxGuardRefusals} stop the run`, 'one-shot intent tombstones', `prepare once and only for the Work of Ticket #${expectedTicket.number}`, 'one Builder; per role at most the activations above, all of the same Execution, ' +
@@ -169,6 +173,33 @@ export function recipeWork<T extends { ticket: { number: number; repositoryId: n
   return works.find(item => item.ticket.number === expectedTicket.number && item.ticket.repositoryId === expectedTicket.repositoryId);
 }
 
+/** One-shot phases: a phase whose intent tombstone exists never runs again; inspections need the recorded run (none reopens the original). */
+export function phaseGuard(phase: Phase, recorded: ReadonlySet<string>): string | null {
+  if (recorded.has(`${phase}-intent`)) return 'PHASE_ALREADY_RAN';
+  if (phase !== 'preflight' && !recorded.has('preflight-result')) return 'PREFLIGHT_REQUIRED';
+  if (inspections.includes(phase) && !recorded.has('run-result')) return 'RUN_RESULT_REQUIRED';
+  return null;
+}
+
+type StoredWork = Extract<Awaited<ReturnType<import('../../src/control/index.js').Control['inspect']>>, { kind: 'list' }>['works'][number];
+/**
+ * Read-only view of a (copied) storage: the list and the `show` of the selected Work are BOTH read before the storage session is closed
+ * (`run` with an aborted signal closes it; reading after it fails "Session is closed" — the held first `inspect`).
+ */
+export async function readStoredControl(storagePath: string, select: (works: StoredWork[]) => StoredWork | undefined) {
+  const { openControl } = await import('../../src/control/index.js');
+  const stored = await openControl({ storagePath, runtimeInventory: 'unknown' });
+  try {
+    const list = await stored.inspect({ kind: 'list' });
+    const work = 'kind' in list && list.kind === 'list' ? select(list.works) : undefined;
+    const shown = work ? await stored.inspect({ kind: 'show', work_id: work.work_id }) : null;
+    return { list, work, shown };
+  } finally {
+    const stopped = new AbortController(); stopped.abort();
+    await stored.run(stopped.signal);
+  }
+}
+
 /** Activation guard of ONE Execution: one Builder; per reviewer role a bounded number of DISTINCT (round, attempt); Spec retries only in round 1. */
 export function activationGuard(max: { standards: number; spec: number } = activationsMax) {
   let execution: string | undefined;
@@ -220,6 +251,11 @@ async function compose() {
 export async function runPhase(phase: Phase) {
   if (!phases.includes(phase)) throw new Error('UNKNOWN_PHASE');
   const { fs, save, exists } = await io();
+  if (phase !== 'preflight') {
+    const refused = phaseGuard(phase, new Set((await Promise.all(['preflight-result', 'run-result', `${phase}-intent`].map(async name => await exists(name) ? name : null)))
+      .filter((name): name is string => name !== null)));
+    if (refused) throw new Error(refused);
+  }
   if (phase === 'preflight') await fs.mkdir(observations, { mode: 0o700 }); // EXCLUSIVE: never adopt an existing qualification
   await save(`${phase}-intent`, { revision, phase, at: new Date().toISOString() });
   try {
@@ -325,19 +361,14 @@ export async function runPhase(phase: Phase) {
       await save('run-result', { status: 'observed', outcome, final, controlStatus: status, events, deadlineReached: Date.now() >= deadline });
       return;
     }
-    const { openControl } = await import('../../src/control/index.js');
+    // Every inspection reads its OWN new private copies (exclusive names per phase); the run's original storage is never opened.
     const copy = await snapshotStorage(observations, `${observations}/${phase}-storage-copy`);
-    const stored = await openControl({ storagePath: copy, runtimeInventory: 'unknown' });
-    const list = await stored.inspect({ kind: 'list' });
-    const stopped = new AbortController(); stopped.abort();
-    await stored.run(stopped.signal);
-    const work = 'kind' in list && list.kind === 'list' ? recipeWork(list.works) : undefined;
+    const { work, shown } = await readStoredControl(copy, works => recipeWork(works));
     if (!work?.execution?.dispatch.environment) throw new Error('NO_EXECUTION_OBSERVED');
-    if (phase === 'inspect') {
-      const shown = await stored.inspect({ kind: 'show', work_id: work.work_id });
+    if (inspections.includes(phase)) {
       // Read-only: the Work's protected Records are COPIED into a private directory of the observations, and only the copy is opened.
       const { createRecords } = await import('../../src/records/index.js');
-      const recordsCopy = `${observations}/inspect-records-copy`;
+      const recordsCopy = `${observations}/${phase}-records-copy`;
       await fs.mkdir(recordsCopy, { mode: 0o700 });
       await fs.cp(`${root}/${work.work_id}`, `${recordsCopy}/${work.work_id}`, { recursive: true, errorOnExist: true, force: false, verbatimSymlinks: true });
       const records = await createRecords({ root: recordsCopy });
@@ -360,8 +391,8 @@ export async function runPhase(phase: Phase) {
           }
         }
       }
-      const workView = 'work' in shown ? { budget: shown.work.budget, history: shown.work.history } : null;
-      await save('inspect-result', { verdict: verdict(work.execution, workView?.budget ?? null), execution: work.execution, work: workView, opinionRecords, sessions });
+      const workView = shown && 'work' in shown ? { budget: shown.work.budget, history: shown.work.history } : null;
+      await save(`${phase}-result`, { verdict: verdict(work.execution, workView?.budget ?? null), execution: work.execution, work: workView, opinionRecords, sessions });
       return;
     }
     const { needsStop } = await import('./builder09-qualification.js');

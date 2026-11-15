@@ -18,7 +18,7 @@ test('AC7 recipe: import and --plan are inert and declare the fixed bounds and t
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
   assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q28-partial-v2');
-  assert.deepEqual(plan.phases, ['preflight', 'run', 'inspect', 'stop-environment']);
+  assert.deepEqual(plan.phases, ['preflight', 'run', 'inspect', 'inspect-2', 'stop-environment']);
   assert.deepEqual([plan.model.builder.maxRequests, plan.model.reviewers.maxRequestsEach, plan.model.reviewers.maxActivations, plan.model.reviewers.retries,
     plan.model.maxRequestsTotal, plan.model.providerRetries, plan.model.sdkRetries], [60, 24, { standards: 4, spec: 5 }, { standards: 0, spec: 1 }, 276, 0, 0]);
   assert.equal(plan.model.reviewers.controlRetryCapPerRolePerRound, 2, 'the provoked single Spec retry stays within the operator cap');
@@ -142,4 +142,14 @@ test('AC7 recipe preflight: the Ticket body and title must be exactly the planne
   assert.deepEqual(recipe.ticketPrecondition({ title: 'Other', body: plan.ticket.body }), { ok: false, code: 'TICKET_TITLE_MISMATCH' });
   assert.deepEqual(recipe.ticketPrecondition({ title: plan.ticket.title, body: `${plan.ticket.body}\nextra` }), { ok: false, code: 'TICKET_BODY_MISMATCH' });
   assert.deepEqual(recipe.ticketPrecondition({ title: plan.ticket.title, body: null }), { ok: false, code: 'TICKET_BODY_MISMATCH' });
+});
+
+test('AC7 recipe inspect-2: one-shot; needs the recorded run; refused once its tombstone exists (the original storage is never opened)', () => {
+  const recorded = (...names: string[]) => new Set(names);
+  assert.equal(recipe.phaseGuard('inspect-2', recorded('preflight-result', 'run-result', 'inspect-intent', 'inspect-held')), null, 'a held inspect does not block inspect-2');
+  assert.equal(recipe.phaseGuard('inspect-2', recorded('preflight-result', 'run-result', 'inspect-2-intent')), 'PHASE_ALREADY_RAN');
+  assert.equal(recipe.phaseGuard('inspect-2', recorded('preflight-result')), 'RUN_RESULT_REQUIRED');
+  assert.equal(recipe.phaseGuard('inspect', recorded('preflight-result', 'run-result', 'inspect-intent')), 'PHASE_ALREADY_RAN');
+  assert.equal(recipe.phaseGuard('run', recorded()), 'PREFLIGHT_REQUIRED');
+  assert.equal(recipe.phaseGuard('run', recorded('preflight-result')), null);
 });

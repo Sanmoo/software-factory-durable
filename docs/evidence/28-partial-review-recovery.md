@@ -235,3 +235,21 @@ Gate do issue #6 (`npm run test:ci` uma vez, em `d0f0cdd`; espera no lock 218 s,
 1 cancelled, 10 skipped, 238 s de 600 s**. As duas falhas estão fora deste diff: `test/runner/runner.test.ts` #11 (estado `R` do neto
 vazado sob carga) e `test/entrypoints/normal-worker.test.ts` (timeout fixo de 15 s); as duas passaram ao rodar sozinhas logo depois.
 Todos os arquivos do ticket 28 passaram (`test:fast` filtrado: 19/19 nos arquivos tocados).
+
+## Ensaio real `q28-partial-v2` (supervisor, 2026-11-15) e `inspect-2`
+
+Resultado relatado pelo supervisor: `preflight` e `run` saíram 0 (Execução `completed`, cessação confirmada; r1 Standards clean / Spec
+findings, r2 ambos clean, r3–r4 `EXEMPT_UNCHANGED`; verificação `verified`; `recoveries.consumed = 1`, `reserved = null`; nenhum qemu restante).
+O `inspect` foi consumido `held` com `Session is closed`.
+
+**Diagnóstico (TDD):** o `inspect` abria a cópia do storage, lia a lista, fechava a sessão com `run(aborted)` e **só depois** lia o `show`
+do Work. Reproduzido com Control real em storage temporário (`review28-inspect.test.ts`: depois de `run(aborted)`, `inspect` rejeita com
+`Session is closed`). Correção: `readStoredControl` lê lista **e** `show` antes de fechar a sessão (fechamento no `finally`); testado.
+
+**`inspect-2`:** fase nova, idêntica ao `inspect`, sobre cópias privadas NOVAS (`inspect-2-storage-copy`, `inspect-2-records-copy`); exige
+`preflight-result` e `run-result`; recusa `PHASE_ALREADY_RAN` se o próprio tombstone existir (`phaseGuard`, testado); o `inspect` consumido não
+a bloqueia; sem GitHub, VM ou modelo; o storage original do run nunca é aberto. Salva `inspect-2-result.json` com o `verdict`.
+
+```sh
+$N dist/test/entrypoints/review28-qualification.js inspect-2
+```
