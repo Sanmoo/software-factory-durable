@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { composeProductionExecution } from '../../src/entrypoints/controller/composition.js';
@@ -35,4 +35,29 @@ test('production composition preserves an own environment\'s evidence into <root
   assert.equal(await readFile(join(root, workId, 'evidence', preserved.reference.id, 'files', 'review', 'r1', 'index.json'), 'utf8'), '{"round":1}');
   const removal = await cleanup.remove({ environment, cleanup: { workId: 'other-work', workDisposition: 'delivered', confirmed: true, evidencePreserved: true } });
   assert.notEqual(removal.status, 'success', 'the Sandbox never removes an environment it cannot prove belongs to that Work');
+});
+
+test('ticket 30: production composition copies a recorded Builder session out of its runtime tree (hash-verified) and composes retention from `retentionDays`', async t => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'factory-retention-composition-')));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const composed = await composeProductionExecution({ root, effective: { ...effective, retentionDays: 9 }, guestAssets, github });
+  assert.equal(composed.status, 'composed');
+  if (composed.status !== 'composed') return;
+  const cleanup = composed.ports.cleanup!;
+  assert.deepEqual([cleanup.retentionDays, cleanup.sweepSeconds], [9, 86400], 'configured days; boot sweep + daily');
+  const details = cleanup.details!;
+  const sessions = join(root, 'r', 'seg', 'w-abc', 'profile', 'sessions');
+  await mkdir(sessions, { recursive: true, mode: 0o700 });
+  const data = Buffer.from(`${JSON.stringify({ type: 'session', version: 3, id: 's-1', cwd: '/workspace' })}\n`);
+  await writeFile(join(sessions, 'one.jsonl'), data, { mode: 0o600 });
+  const sha256 = createHash('sha256').update(data).digest('hex');
+  const session = { ref: 'r/seg/w-abc/profile/sessions/one.jsonl', sessionId: 's-1', sha256, bytes: data.length, format: 'pi-session-jsonl-v3' as const,
+    profile: { sdkProfile: 'p', providerId: 'x', modelId: 'y', skillPack: null, tools: [] } };
+  assert.deepEqual(await details.preserveSession({ workId: 'work-r', executionId: 'e-1', session: { ...session, sha256: 'f'.repeat(64) } }), { status: 'failed', code: 'SESSION_ALTERED' });
+  assert.deepEqual(await details.preserveSession({ workId: 'work-r', executionId: 'e-1', session }), { status: 'preserved', sha256, bytes: data.length });
+  assert.equal(await readFile(join(root, 'work-r', 'sessions', 'e-1.jsonl'), 'utf8'), data.toString());
+  assert.deepEqual(await details.preserveSession({ workId: 'work-r', executionId: 'e-2', session: { ...session, ref: 'r/seg/w-abc/profile/sessions/gone.jsonl' } }),
+    { status: 'lost', code: 'SESSION_FILE_MISSING' });
+  assert.deepEqual((await details.list({ workId: 'work-r' })).items.map(item => item.id), ['session:e-1']);
+  assert.deepEqual(await details.remove({ workId: 'work-r', item: { id: 'session:e-1', kind: 'session', executionId: 'e-1' }, expectedSha256: sha256 }), { outcome: 'removed', code: null });
 });

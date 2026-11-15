@@ -38,7 +38,11 @@ export type ControlInput = { request_id: string; operation: 'pause' | 'unpause';
   { request_id: string; operation: 'cancel' | 'resume' | 'reopen'; work_id: string; origin: 'local-cli' } |
   /** Ticket 25: an explicit new cycle of a Ticket after delivery/cancellation (predecessor + own resources). `keepPredecessorPullRequest`: the
    * operator's explicit decision that a cancelled cycle's own PR that may still be open stays as it is (never adopted, closed or replaced). */
-  { request_id: string; operation: 'new'; ticket: { repository: string; number: number }; keepPredecessorPullRequest: boolean; origin: 'local-cli' };
+  { request_id: string; operation: 'new'; ticket: { repository: string; number: number }; keepPredecessorPullRequest: boolean; origin: 'local-cli' } |
+  /** Ticket 30 (spec §12.4): explicit cleanup. `cleanup-plan` records a plan of losses for the selected details/resources of ONE Work (no effect);
+   * `cleanup-confirm` confirms that plan, which is revalidated now and again per item at execution (an old plan never removes what became needed). */
+  { request_id: string; operation: 'cleanup-plan'; work_id: string; select: ExplicitCleanupSelection[]; origin: 'local-cli' } |
+  { request_id: string; operation: 'cleanup-confirm'; work_id: string; plan_id: string; origin: 'local-cli' };
 /** `answer`: `accepted` removed only that Question's impediment; `not-applied` (already answered, unknown, closed Work...) changed nothing. */
 export type ControlReceipt = { kind: 'durable'; request_id: string; operation: 'pause' | 'unpause'; paused: boolean; historySequence: number } |
   { kind: 'durable'; request_id: string; operation: 'answer'; question_id: string; outcome: 'accepted' | 'not-applied'; reason: string | null; work_id: string | null } |
@@ -56,7 +60,12 @@ export type ControlReceipt = { kind: 'durable'; request_id: string; operation: '
    * suspension lifted pending the next authorization read; new: the new Work `created`); `already-satisfied`: nothing to do (e.g. already
    * cancelled, an activity already running for resume); `not-applied`: refused, nothing changed (`reason`). An ACK never proves cessation or effect. */
   { kind: 'durable'; request_id: string; operation: 'cancel' | 'resume' | 'reopen' | 'new'; work_id: string | null; outcome: 'accepted' | 'already-satisfied' | 'not-applied';
-    reason: string | null; created: string | null };
+    reason: string | null; created: string | null } |
+  /** Ticket 30. `cleanup-plan`: `accepted` = the plan (losses, warnings, refusals) is recorded and waits for `cleanup-confirm`; nothing was removed.
+   * `cleanup-confirm`: `accepted` = confirmed after revalidation, the items still allowed are executed after the ACK (per-item results in
+   * `factory show`); `already-satisfied` = this plan was already confirmed; `not-applied` = refused (`reason`), nothing changed. */
+  { kind: 'durable'; request_id: string; operation: 'cleanup-plan' | 'cleanup-confirm'; work_id: string; outcome: 'accepted' | 'already-satisfied' | 'not-applied';
+    reason: string | null; plan: ExplicitCleanupPlan | null };
 export type ControlQuery = { kind: 'status' } | { kind: 'request'; request_id: string } | { kind: 'access' } | { kind: 'list' } | { kind: 'show'; work_id: string } |
   { kind: 'question'; question_id: string };
 export type DispatchReason = 'RECONCILIATION_REQUIRED' | 'EXECUTION_NOT_ENABLED';
@@ -538,8 +547,11 @@ export type WorkView = {
   scopeUpdates?: ScopeUpdateView[];
   /** Ticket 17 (absent on earlier records): observation of the own pull request and the confirmed merge that delivers the Work. */
   delivery?: DeliveryView | null;
-  /** Ticket 17: cleanup of the Work's own resources after delivery, shown SEPARATELY from the delivery (a failed cleanup never undoes it). */
+  /** Ticket 17: cleanup of the Work's own resources after delivery, shown SEPARATELY from the delivery (a failed cleanup never undoes it).
+   * Ticket 30: also the explicit, operator-confirmed environment cleanup of a cancelled Work (`explicit`). */
   cleanup?: CleanupView | null;
+  /** Ticket 30 (absent on earlier records): retention of the Work's details (logs, sessions) and the explicit cleanup plans. */
+  retention?: RetentionView | null;
   admittedAt: string;
   history: ({ at: string; event: 'admitted'; origin: 'github-polling'; sequence: number } |
     { at: string; event: 'dependencies-changed'; origin: 'github-polling'; before: DependencyEvaluation['conclusion'] | null; after: DependencyEvaluation['conclusion']; evaluationId: string } |
@@ -563,7 +575,8 @@ export type WorkView = {
     { at: string; event: 'readiness-authorized'; origin: 'local-cli'; detail: string } |
     { at: string; event: 'delivery-observed' | 'delivery-confirmed' | 'cleanup-evaluated' | 'evidence-preserved' | 'cleanup-intended' | 'cleanup-result';
       origin: 'controller-delivery'; detail: string } |
-    { at: string; event: CycleEvent; origin: 'controller-cycles' | 'local-cli'; detail: string })[];
+    { at: string; event: CycleEvent; origin: 'controller-cycles' | 'local-cli'; detail: string } |
+    { at: string; event: RetentionEvent; origin: 'controller-retention' | 'local-cli'; detail: string })[];
 };
 /** Ticket 25 history events (cycle, authorization, cancellation, closure/reopen). */
 export type CycleEvent = 'authorization-withdrawn' | 'authorization-restored-observed' | 'authorization-confirmed' | 'cancel-requested' | 'cancellation-ceased' |
@@ -609,6 +622,8 @@ export type ControlStatus = {
     cancelled?: number; closedUnmerged?: number };
   /** Ticket 17: delivered Works and their cleanup, counted separately (a pending cleanup never undoes a delivery). */
   delivery: { delivered: number; cleanup: { waiting: number; pending: number; complete: number } };
+  /** Ticket 30 (absent before it): detail retention. Undelivered Works keep everything until explicit cleanup (their growth is visible here). */
+  retention?: RetentionStatus;
   queues: { normal: number; repair: number };
   dependencies: { satisfied: number; pending: number; inconclusive: number; notEvaluated: number };
   questions: { open: number; answered: number; unpublished: number };
@@ -675,6 +690,9 @@ export type CleanupView = {
   resources: CleanupResourceView[];
   protected: { target: string; reason: string }[];
   sweeps: number; lastSweepAt: string | null;
+  /** Ticket 30: an operator-confirmed explicit cleanup plan executed by this resource cleanup: the environment of a cancelled Work, or ONE
+   * fresh revalidated attempt of the refused/kept/failed own resources of a delivered Work. `consumed` once swept: never repeated implicitly. */
+  explicit?: { request_id: string; planId: string; at: string; consumed: boolean; resources: string[] } | null;
   nextStep: string;
 };
 export type EvidencePreservation = { status: 'preserved'; reference: NonNullable<EvidencePreservationView['reference']> } | { status: 'absent' } | { status: 'failed'; code: string };
@@ -684,4 +702,66 @@ export type CleanupPorts = {
   preserve(input: { workId: string; environment: EnvironmentRef }): Promise<EvidencePreservation>;
   /** Seconds between automatic retries of a pending cleanup (default 86400: daily), besides one sweep at each controller boot. */
   retrySeconds?: number;
+  /** Ticket 30: the Work's details (Records logs and preserved sessions). Absent = no detail retention, preservation or removal is composed. */
+  details?: DetailPorts;
+  /** Ticket 30: days after the confirmed merge when a delivered Work's logs/sessions become eligible (configuration `retentionDays`, default 30). */
+  retentionDays?: number;
+  /** Ticket 30: seconds between retention sweeps (default 86400: daily), besides the sweep at each controller boot after reconciliation. */
+  sweepSeconds?: number;
 };
+
+// ---- Ticket 30: retention and explicit cleanup (spec §12.1/§12.3/§12.4) ----
+export type RetentionEvent = 'retention-evaluated' | 'details-preserved' | 'detail-removal-intended' | 'detail-removal-result' | 'cleanup-planned' | 'cleanup-confirmed' |
+  'cleanup-item-dropped' | 'cleanup-explicit-resources';
+/** What explicit cleanup may select (spec §12.4): details (logs, sessions) and own resources (environment, remote branch). */
+export type ExplicitCleanupSelection = 'logs' | 'sessions' | 'environment' | 'remote-branch';
+/** One detail of a Work found by the Records inventory: a log is a Records capture, a session the preserved copy of a recorded Builder session. */
+export type DetailItem = { id: string; kind: 'log' | 'session'; executionId: string | null; bytes: number;
+  /** `partial`: the capture has no completion marker (it may still be written while its Execution runs). */
+  state: 'complete' | 'partial' };
+/** `complete` only from an intact Records area; an incomplete inventory never proves absence. `evidence`: protected preserved directories (never targets). */
+export type DetailInventory = { completeness: 'complete' | 'incomplete'; observedAt: string; items: DetailItem[]; evidence: number; unknown: string[] };
+export type DetailRemoval = { outcome: 'removed' | 'absent' | 'refused' | 'failed' | 'indeterminate'; code: string | null };
+/** Ticket 30 trusted composition ports over the Records area (host-only, never mounted in a guest). */
+export type DetailPorts = {
+  list(input: { workId: string }): Promise<DetailInventory>;
+  /** Copies a recorded Builder session (verified by its recorded hash) into the Work's Records `sessions/` BEFORE its environment is removed. */
+  preserveSession(input: { workId: string; executionId: string; session: WorkerSessionRef }): Promise<{ status: 'preserved' | 'already'; sha256: string; bytes: number } |
+    { status: 'lost' | 'failed'; code: string }>;
+  /** Confined removal of ONE detail of this Work; a session is removed only while its content still has `expectedSha256`. */
+  remove(input: { workId: string; item: Pick<DetailItem, 'id' | 'kind' | 'executionId'>; expectedSha256: string | null }): Promise<DetailRemoval>;
+};
+export type PreservedSessionView = { executionId: string; sourceRef: string; sha256: string; bytes: number; at: string;
+  state: 'preserved' | 'lost' | 'failed'; code: string | null };
+/** One detail removal: intent recorded BEFORE the effect, result after it; an intent without result (crash) becomes `indeterminate`. */
+export type DetailRemovalView = { effectId: string; id: string; kind: 'log' | 'session'; executionId: string | null; bytes: number;
+  origin: 'retention' | 'explicit'; request_id: string | null; planId: string | null; intentAt: string; resultAt: string | null;
+  outcome: DetailRemoval['outcome'] | 'intended'; code: string | null };
+export type ExplicitCleanupItem = { id: string; kind: 'log' | 'session' | 'environment' | 'remote-branch'; target: string; bytes: number | null; loss: string;
+  /** `planned` → `intended` → result; `dropped`: revalidation found it needed/active now (never removed by this old plan); `handed-to-cleanup`:
+   * an own resource executed by the resource cleanup (its per-resource result is in `cleanup.resources`). */
+  state: 'planned' | 'dropped' | 'handed-to-cleanup' | DetailRemovalView['outcome']; code: string | null };
+export type ExplicitCleanupPlan = { planId: string; request_id: string; work_id: string; createdAt: string; select: ExplicitCleanupSelection[];
+  state: 'planned' | 'confirmed' | 'superseded' | 'executed'; confirmedBy: string | null; confirmedAt: string | null;
+  /** The facts the plan was computed from (result, cancellation, Executions, cleanup); a change makes the plan obsolete and it is revalidated. */
+  basis: string; items: ExplicitCleanupItem[]; refusals: { target: string; code: string; detail: string }[]; losses: string[]; warnings: string[]; nextStep: string };
+export type RetentionView = {
+  /** `undelivered`: kept in full until explicit cleanup (no deadline); `delivered`: logs/sessions eligible from `dueAt` when unprotected. */
+  class: 'undelivered' | 'delivered'; days: number;
+  /** Confirmed merge + `days` (fixed once: the end of a protection later never starts another period). */
+  dueAt: string | null;
+  /** Current reasons the details are protected whatever the deadline (pending Question/effect/cleanup/recovery, activity, cessation). */
+  protections: string[];
+  state: 'retained' | 'protected' | 'eligible' | 'expired' | 'explicitly-cleaned';
+  inventory: { completeness: 'complete' | 'incomplete'; observedAt: string; logs: number; sessions: number; bytes: number; evidence: number; unknown: number } | null;
+  sessions: PreservedSessionView[];
+  removals: DetailRemovalView[];
+  /** Totals of everything removed (the bounded `removals` list keeps only the latest entries). */
+  removed: { logs: number; sessions: number; bytes: number };
+  plans: ExplicitCleanupPlan[];
+  sweeps: number; lastSweepAt: string | null;
+  nextStep: string;
+};
+export type RetentionStatus = { sweeps: number; lastSweepAt: string | null; days: number | null;
+  works: { undelivered: number; retained: number; protected: number; eligible: number; expired: number };
+  details: { logs: number; sessions: number; bytes: number }; removed: { logs: number; sessions: number; bytes: number }; unsettled: number };

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { z } from 'zod';
-import type { AccessDependencies, Control, ControlStatus, DispatchReason, ExecutionPorts, Impediment, LimitsView, ListView, PollingOptions, PollingView, RecoveryView, RuntimeInventory,
+import type { AccessDependencies, Control, ControlStatus, DetailInventory, DispatchReason, ExecutionPorts, Impediment, LimitsView, ListView, PollingOptions, PollingView, RecoveryView, RuntimeInventory,
   WorkView } from '../types.js';
 import { heldSlots, initializeSlots, reconcileDurations, reconcileLostCredentials } from './execution.js';
 import { createDispatcher, isLiveCredentialExecution, isLiveExecution } from './dispatch.js';
@@ -24,6 +24,10 @@ import { dispatchGate } from '../rules/recovery.js';
 import { backoffRunning } from './recovery-request.js';
 import { createDeliveryDesk } from './delivery-desk.js';
 import { acceptCancel, acceptNewCycle, acceptReopen, acceptResume, createCycleDesk, recordAuthorization } from './cycles.js';
+import { createRetentionDesk } from './retention-desk.js';
+import { acceptCleanupConfirm, acceptCleanupPlan, plannedResourcesOf } from './retention.js';
+import { planCleanup } from '../rules/delivery.js';
+import type { PlanFacts } from '../rules/retention.js';
 
 const requestId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
 const inputSchema = z.union([z.strictObject({ request_id: requestId, operation: z.enum(['pause', 'unpause']), origin: z.literal('local-cli') }),
@@ -39,8 +43,13 @@ const inputSchema = z.union([z.strictObject({ request_id: requestId, operation: 
   z.strictObject({ request_id: requestId, operation: z.literal('resume'), work_id: z.uuid(), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('reopen'), work_id: z.uuid(), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('new'), ticket: z.strictObject({ repository: z.string().regex(/^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/),
-    number: z.number().int().positive().max(2 ** 31) }), keepPredecessorPullRequest: z.boolean(), origin: z.literal('local-cli') })]);
+    number: z.number().int().positive().max(2 ** 31) }), keepPredecessorPullRequest: z.boolean(), origin: z.literal('local-cli') }),
+  // Ticket 30 (spec §12.4): explicit cleanup plan and its confirmation.
+  z.strictObject({ request_id: requestId, operation: z.literal('cleanup-plan'), work_id: z.uuid(),
+    select: z.array(z.enum(['logs', 'sessions', 'environment', 'remote-branch'])).min(1).max(4), origin: z.literal('local-cli') }),
+  z.strictObject({ request_id: requestId, operation: z.literal('cleanup-confirm'), work_id: z.uuid(), plan_id: z.uuid(), origin: z.literal('local-cli') })]);
 const workIdSchema = z.uuid();
+const sum = (works: WorkRecord[], value: (work: WorkRecord) => number | undefined) => works.reduce((total, work) => total + (value(work) ?? 0), 0);
 const limitations = [
   'Candidate observations are in-memory results of the latest poll, not authority; they are rebuilt after restart.',
   'A failed or partial query, or absence from a listing, never proves absence of a Ticket, label or pull request, nor withdrawal of authorization.',
@@ -55,6 +64,7 @@ const limitations = [
   'Delivery (ticket 17) is only a human merge of the Work\'s own pull request, confirmed by its identity; closing the Ticket or the pull request, or any agent message, is not delivery. The Factory never merges.',
   'Ticket 25: an observed label removal or issue closure suspends next activations (an active Execution may conclude/publish); restoring them never lifts the suspension: `resume` does, confirmed by the next complete Ticket read. `cancel` records the prohibition first, withdraws the activity credentials, then requests the stop; the Slot is released only after confirmed cessation and nothing on GitHub (branch, PR) is undone. A confirmed merge still delivers a cancelled cycle. An own PR closed without merge keeps the cycle current and undelivered (no automatic reopen/replacement/resume); `reopen` reopens only it and grants nothing. `new` is the only way to another cycle, after delivery or a ceased cancellation.',
   'Cleanup after delivery removes only own resources (own environments with their checkout/local branch/temporaries, the own remote branch under its own cleanup grant), after confirmed cessation and preserved evidence; base, shared cache, other Works and Docker are never touched. A failed or pending cleanup is shown separately and never undoes delivery.',
+  'Ticket 30: logs and sessions of a delivered Work become eligible `retentionDays` (default 30) after the confirmed merge and are removed by the sweep at each controller boot (after reconciliation) and daily, unless still needed (pending Question/effect/cleanup/recovery, activity, unconfirmed cessation); the end of a protection never starts another period. Undelivered Works (open, blocked, cancelled, closed without merge) keep everything until an explicit `factory cleanup`, which plans the losses, needs confirmation, is revalidated at execution and requires `cancel` first for a cycle that can still continue. Summary, history, references, reviews, decisions and preserved evidence stay until explicit history deletion.',
 ];
 
 // Module-internal seam for the external-wait/cancellation flows of this module (not part of the public Control contract).
@@ -108,7 +118,7 @@ export async function openControl(options: { storagePath: string;
     record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation),
     // Ticket 15: required-checks tracking after the dispatch tick (off its critical path), whatever the dispatch barrier or pause.
     // Ticket 16: readiness after the checks explanation (its evidence), whatever the pause (tracking, not a new trigger).
-    afterCycle: async () => { await delivery?.cycle().catch(() => {}); await cycles?.cycle().catch(() => {}); await desk?.cycle(); if (dispatchReason === null) await dispatcher?.tick(); await checks?.pass(tracking.signal).catch(() => {});
+    afterCycle: async () => { await delivery?.cycle().catch(() => {}); await retention?.cycle().catch(() => {}); await cycles?.cycle().catch(() => {}); await desk?.cycle(); if (dispatchReason === null) await dispatcher?.tick(); await checks?.pass(tracking.signal).catch(() => {});
       await readiness?.pass(tracking.signal).catch(() => {}); },
   }) : undefined;
   const tracking = new AbortController();
@@ -130,6 +140,21 @@ export async function openControl(options: { storagePath: string;
   const delivery = options.access && options.polling ? createDeliveryDesk({ session: state, repository: options.access.repository, repositories: options.access.repositories,
     cleanup: options.execution?.cleanup, running: work_id => dispatcher?.running(work_id) ?? false,
     interrupt: async work_id => dispatcher?.interruptDelivered(work_id), readWorks: () => readWorks(state), stopped: () => stopped }) : undefined;
+  // Ticket 30: detail retention (boot sweep after the reconciliation, then daily) and explicit cleanup plans, after the resource cleanup.
+  const retention = options.access && options.polling ? createRetentionDesk({ session: state, details: options.execution?.cleanup?.details, repositories: options.access.repositories,
+    days: options.execution?.cleanup?.retentionDays, sweepSeconds: options.execution?.cleanup?.sweepSeconds, readWorks: () => readWorks(state),
+    readQuestions: work => readQuestions(state, work), running: work_id => dispatcher?.running(work_id) ?? false, settled: () => dispatchReason !== 'RECONCILIATION_REQUIRED',
+    stopped: () => stopped, ...(options.execution?.calendar ? { now: () => options.execution!.calendar!.now() } : {}) }) : undefined;
+  /** Facts of an explicit cleanup plan/confirmation, read just before its commit (inventory included). */
+  const cleanupFacts = async (work_id: string): Promise<(work: WorkRecord) => PlanFacts> => {
+    const work = await readWork(state, work_id);
+    const questions = work ? await readQuestions(state, work) : [];
+    const details = options.execution?.cleanup?.details;
+    const inventory: DetailInventory | null = details ? await details.list({ workId: work_id }).catch(() => null) : null;
+    const running = dispatcher?.running(work_id) ?? false;
+    return current => { const configured = configuredRepository(current.repository.repository) !== undefined;
+      return { running, questions, inventory, repositoryConfigured: configured, plannedResources: plannedResourcesOf(current, planCleanup(current, { repositoryConfigured: configured }).resources) }; };
+  };
   const pollingView = (): PollingView => poller?.view() ?? { state: 'disabled', intervalSeconds: null, cycles: 0, lastCycleAt: null, source: 'in-memory-observation', repositories: [] };
   // Work-level reasons preventing a start now; the dependency evaluation must belong to the repository's current polling round.
   const blockers = (work: WorkRecord) => [...dispatchBlockers({ impediments: work.impediments, evaluation: work.dependencies.latest,
@@ -178,6 +203,9 @@ export async function openControl(options: { storagePath: string;
         return receipt;
       }
       if (parsed.data.operation === 'resume') return acceptResume(state, parsed.data);
+      // Ticket 30: the plan never removes anything; the confirmation is executed by the desks after the ACK (revalidated per item).
+      if (parsed.data.operation === 'cleanup-plan') return acceptCleanupPlan(state, parsed.data, await cleanupFacts(parsed.data.work_id));
+      if (parsed.data.operation === 'cleanup-confirm') return acceptCleanupConfirm(state, parsed.data, await cleanupFacts(parsed.data.work_id));
       if (parsed.data.operation === 'reopen') return acceptReopen(state, parsed.data);
       // Without GitHub access no fresh Ticket read is possible: the request is recorded as not applied (AUTHORIZATION_READ_UNAVAILABLE).
       if (parsed.data.operation === 'new') return acceptNewCycle(state, parsed.data, { configured: configuredRepository,
@@ -231,6 +259,13 @@ export async function openControl(options: { storagePath: string;
         delivery: { delivered: works.filter(work => work.result === 'delivered').length, cleanup: {
           waiting: works.filter(work => work.cleanup?.state === 'waiting').length, pending: works.filter(work => work.cleanup?.state === 'pending').length,
           complete: works.filter(work => work.cleanup?.state === 'complete').length } },
+        retention: { ...(retention?.view().status ?? { sweeps: 0, lastSweepAt: null, days: null }),
+          works: { undelivered: works.filter(work => work.result !== 'delivered').length, retained: works.filter(work => (work.retention?.state ?? 'retained') === 'retained').length,
+            protected: works.filter(work => work.retention?.state === 'protected').length, eligible: works.filter(work => work.retention?.state === 'eligible').length,
+            expired: works.filter(work => work.retention?.state === 'expired').length },
+          details: { logs: sum(works, work => work.retention?.inventory?.logs), sessions: sum(works, work => work.retention?.inventory?.sessions), bytes: sum(works, work => work.retention?.inventory?.bytes) },
+          removed: { logs: sum(works, work => work.retention?.removed.logs), sessions: sum(works, work => work.retention?.removed.sessions), bytes: sum(works, work => work.retention?.removed.bytes) },
+          unsettled: sum(works, work => work.retention?.removals.filter(item => item.outcome === 'indeterminate' || item.outcome === 'intended' || item.outcome === 'failed').length) },
         queues: { normal: works.filter(work => work.queue.pending && work.queue.category === 'normal').length, repair: 0 },
         dependencies: { satisfied: works.filter(work => work.dependencies.latest?.conclusion === 'satisfied').length,
           pending: works.filter(work => work.dependencies.latest?.conclusion === 'pending').length,

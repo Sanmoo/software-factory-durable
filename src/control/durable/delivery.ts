@@ -1,7 +1,7 @@
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { CleanupOutcome, CleanupView, DeliveryView, EvidencePreservation, MergeObservation, OwnPullRequestIdentity, PlannedCleanupResource } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
-import { cleanupNextStep, cleanupState, concluded, deliveryNextStep, mergePlan, ownPullRequestOf, recoverLostIntents, retryable, type MergeDecision } from '../rules/delivery.js';
+import { cleanupNextStep, cleanupState, concluded, deliveryNextStep, explicitCancelledCleanup, mergePlan, ownPullRequestOf, recoverLostIntents, retryable, type MergeDecision } from '../rules/delivery.js';
 import { ticketIndex, works, type WorkRecord } from './admission.js';
 import type { Session } from './store.js';
 import { rememberResult } from './cycles.js';
@@ -13,7 +13,7 @@ const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const history = (work: WorkRecord, event: Extract<WorkRecord['history'][number], { origin: 'controller-delivery' }>['event'], detail: string) =>
   work.history.push({ at: new Date().toISOString(), event, origin: 'controller-delivery', detail: detail.slice(0, 512) });
 const activeExecutionId = (work: WorkRecord) => work.execution && (work.execution.state === 'reserved' || work.execution.state === 'started') ? work.execution.executionId : null;
-const initialCleanup = (at: string): CleanupView => ({ state: 'waiting', eligibility: { eligible: false, reasons: ['NOT_EVALUATED'], checkedAt: at }, evidence: [], resources: [],
+export const initialCleanup = (at: string): CleanupView => ({ state: 'waiting', eligibility: { eligible: false, reasons: ['NOT_EVALUATED'], checkedAt: at }, evidence: [], resources: [],
   protected: [], sweeps: 0, lastSweepAt: null, nextStep: 'Cleanup is evaluated after delivery: it needs confirmed cessation and preserved evidence first.' });
 
 export type MergeRecord = { kind: 'delivered'; duringActivity: string | null } | { kind: 'observed'; outcome: MergeObservation['outcome'] } | { kind: 'stale' };
@@ -59,7 +59,8 @@ export async function recordMergeObservation(session: Session, work_id: string, 
       const remembered = cycles.some(item => item.work_id === work_id) ? cycles.map(item => item.work_id === work_id ? { ...item, result: 'delivered' as const, mergeConfirmed: true } : item)
         : [...cycles, { work_id, cycle: work.cycle, result: 'delivered' as const, mergeConfirmed: true }];
       index.memory = { ...(index.memory ?? {}), [key]: { cycles: remembered } };
-      work.cleanup = initialCleanup(at);
+      // Ticket 30: an explicit cleanup already recorded for the cancelled cycle keeps its per-resource results (never re-planned from zero).
+      work.cleanup = work.cleanup ? { ...work.cleanup, explicit: null, eligibility: { eligible: false, reasons: ['NOT_EVALUATED'], checkedAt: at } } : initialCleanup(at);
       // The cancellation (if any) stays recorded as history: delivery prevails without erasing it (spec §12.3).
       history(work, 'delivery-confirmed', `#${decision.merge.number}:${decision.merge.mergeCommitSha}${during ? `:during:${during}` : ''}${work.cancellation ? `:cancel-requested:${work.cancellation.request_id}` : ''}`);
     } else if (decision.outcome === 'closed-unmerged' && work.result === 'open') {
@@ -83,7 +84,8 @@ async function onDelivered<T>(session: Session, work_id: string, change: (work: 
   return session.commit(async tx => {
     const document = await tx.doc(works, work_id, null);
     const work = document.work;
-    if (!work || work.result !== 'delivered' || work.delivery?.state !== 'delivered' || !work.cleanup) return 'stale' as const;
+    // Ticket 30: or a cancelled Work under an operator-confirmed explicit cleanup not yet swept.
+    if (!work || !work.cleanup || (!explicitCancelledCleanup(work) && (work.result !== 'delivered' || work.delivery?.state !== 'delivered'))) return 'stale' as const;
     const result = change(work, work.cleanup);
     work.cleanup.state = cleanupState({ eligible: work.cleanup.eligibility.eligible, resources: work.cleanup.resources });
     work.cleanup.nextStep = cleanupNextStep(work.cleanup);
@@ -99,6 +101,8 @@ export async function recordSweep(session: Session, work_id: string, input: { el
   protected: { target: string; reason: string }[] }): Promise<CleanupView | 'stale'> {
   return onDelivered(session, work_id, (work, cleanup) => {
     const at = new Date().toISOString();
+    // Ticket 30: an explicit plan names the resources it may touch; nothing else is newly planned under it.
+    if (cleanup.explicit && !cleanup.explicit.consumed) input = { ...input, planned: input.planned.filter(item => cleanup.explicit!.resources.includes(item.id)) };
     const changed = JSON.stringify(cleanup.eligibility.reasons) !== JSON.stringify(input.eligibility.reasons);
     cleanup.eligibility = { ...input.eligibility, checkedAt: at };
     cleanup.resources = mergePlan(recoverLostIntents(cleanup.resources, at), input.planned);
@@ -136,6 +140,16 @@ export async function recordCleanupIntent(session: Session, work_id: string, ids
     const at = new Date().toISOString();
     for (const item of resources) item!.attempts = [...item!.attempts, { effectId, intentAt: at, resultAt: null, outcome: 'intended' as const, code: null }].slice(-20);
     history(work, 'cleanup-intended', `${effectId}:${ids.join(',')}`);
+    return 'recorded' as const;
+  });
+}
+
+/** Ticket 30: the explicit plan was swept once (its attempts recorded): it is never repeated implicitly. */
+export async function consumeExplicitCleanup(session: Session, work_id: string, planId: string) {
+  return onDelivered(session, work_id, (work, cleanup) => {
+    if (!cleanup.explicit || cleanup.explicit.planId !== planId || cleanup.explicit.consumed) return 'stale' as const;
+    cleanup.explicit.consumed = true;
+    work.history.push({ at: new Date().toISOString(), event: 'cleanup-explicit-resources', origin: 'controller-retention', detail: `${planId}:swept`.slice(0, 512) });
     return 'recorded' as const;
   });
 }

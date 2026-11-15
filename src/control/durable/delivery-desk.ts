@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto';
 import type { CodeRepository } from '../../code-repository/index.js';
 import type { EnvironmentRef } from '../../sandbox/index.js';
 import type { CleanupPorts, ConfiguredRepository } from '../types.js';
-import { branchOutcome, cleanupEligibility, decideMerge, environmentOutcomes, ownPullRequestOf, planCleanup, selectPending } from '../rules/delivery.js';
-import { recordCleanupIntent, recordCleanupResult, recordMergeObservation, recordPreservation, recordSweep } from './delivery.js';
+import { branchOutcome, cleanupEligibility, decideMerge, environmentOutcomes, explicitCancelledCleanup, ownPullRequestOf, planCleanup, selectPending } from '../rules/delivery.js';
+import { consumeExplicitCleanup, recordCleanupIntent, recordCleanupResult, recordMergeObservation, recordPreservation, recordSweep } from './delivery.js';
+import { preserveSessions } from './retention.js';
 import type { WorkRecord } from './admission.js';
 import type { Session } from './store.js';
 
@@ -65,8 +66,12 @@ export function createDeliveryDesk(deps: { session: Session; repository: CodeRep
     const view = await recordSweep(deps.session, work.work_id, { eligibility, planned: plan.resources, protected: plan.protected });
     if (view === 'stale' || !eligibility.eligible) return;
     swept.add(work.work_id);
-    const pending = selectPending(view.resources);
+    // Ticket 30: under an explicit plan, a resource already attempted after its confirmation (e.g. an intent lost by a crash, now indeterminate)
+    // is not attempted again: no implicit retry of an operator decision.
+    const explicit = view.explicit && !view.explicit.consumed ? view.explicit : null;
+    const pending = selectPending(view.resources).filter(item => !explicit || !item.attempts.some(attempt => attempt.intentAt >= explicit.at));
     const cleanup = deps.cleanup;
+    const disposition = explicitCancelledCleanup(work) ? 'cancelled' as const : 'delivered' as const;
     for (const environment of [...new Set(pending.flatMap(item => item.environment ? [item.environment] : []))]) {
       if (deps.stopped() || !cleanup) break;
       if (!view.evidence.some(item => item.environment === environment && item.state !== 'failed')) {
@@ -75,11 +80,14 @@ export function createDeliveryDesk(deps: { session: Session; repository: CodeRep
           .catch(() => ({ status: 'failed' as const, code: 'EVIDENCE_PRESERVATION_FAILED' }));
         if (await recordPreservation(deps.session, work.work_id, environment, preserved) === 'stale' || preserved.status === 'failed') continue;
       }
+      // Ticket 30 (spec §12.1/§12.3): the recorded Builder sessions of this environment's Executions are retained details (30 days after the
+      // merge, or until explicit cleanup): they are copied to the Records area BEFORE their runtime directories may be removed.
+      if (cleanup.details && await preserveSessions(deps.session, cleanup.details, work, environment) !== 'preserved') continue;
       const ids = pending.filter(item => item.environment === environment).map(item => item.id);
       const effectId = randomUUID();
       if (await recordCleanupIntent(deps.session, work.work_id, ids, effectId) !== 'recorded') continue;
       // Host assertions for the Sandbox (not credentials): delivered, revalidated now, evidence preserved. Sandbox re-proves ownership/cessation.
-      const removal = await cleanup.remove({ environment: environment as EnvironmentRef, cleanup: { workId: work.work_id, workDisposition: 'delivered', confirmed: true, evidencePreserved: true } })
+      const removal = await cleanup.remove({ environment: environment as EnvironmentRef, cleanup: { workId: work.work_id, workDisposition: disposition, confirmed: true, evidencePreserved: true } })
         .catch(() => ({ status: 'indeterminate' as const, code: 'SANDBOX_REMOVE_UNAVAILABLE', resources: [] }));
       const outcomes = environmentOutcomes(removal);
       await recordCleanupResult(deps.session, work.work_id, effectId, Object.fromEntries(pending.filter(item => item.environment === environment)
@@ -88,10 +96,13 @@ export function createDeliveryDesk(deps: { session: Session; repository: CodeRep
     const branch = pending.find(item => item.kind === 'remote-branch');
     const merge = work.delivery?.merge;
     const own = ownPullRequestOf(work);
-    if (deps.stopped() || !branch || !scope || !merge || !own || !work.branch || !deps.repository.cleanupBranch) return;
+    if (!deps.stopped() && branch && scope && merge && own && work.branch && deps.repository.cleanupBranch && work.result === 'delivered') await sweepBranch(work, branch, scope, merge);
+    if (explicit && !deps.stopped()) await consumeExplicitCleanup(deps.session, work.work_id, explicit.planId);
+  }
+  async function sweepBranch(work: WorkRecord, branch: { id: string }, scope: ConfiguredRepository, merge: NonNullable<NonNullable<WorkRecord['delivery']>['merge']>) {
     const effectId = randomUUID();
     if (await recordCleanupIntent(deps.session, work.work_id, [branch.id], effectId) !== 'recorded') return;
-    const result = await deps.repository.cleanupBranch({ repo: scope, repositoryId: work.repository.repositoryId, branch: work.branch, base: work.repository.base,
+    const result = await deps.repository.cleanupBranch!({ repo: scope, repositoryId: work.repository.repositoryId, branch: work.branch!, base: work.repository.base,
       expectedTip: merge.headSha, pullRequest: { number: merge.number, pullRequestId: merge.pullRequestId } }, { effectId })
       .catch(() => ({ outcome: 'indeterminate' as const, code: 'BRANCH_CLEANUP_UNAVAILABLE', observedAt: '', tip: null, revocation: 'unknown', nextStep: '', effectId }));
     await recordCleanupResult(deps.session, work.work_id, effectId, { [branch.id]: branchOutcome(result) });
@@ -109,8 +120,10 @@ export function createDeliveryDesk(deps: { session: Session; repository: CodeRep
       for (const work of works) {
         if (deps.stopped()) return;
         const cleanup = work.cleanup;
-        if (work.result !== 'delivered' || !cleanup || cleanup.state === 'complete') continue;
-        const due = cleanup.state === 'waiting' || !swept.has(work.work_id) || cleanup.lastSweepAt === null || now() - Date.parse(cleanup.lastSweepAt) >= retryMs;
+        const explicit = Boolean(cleanup?.explicit && !cleanup.explicit.consumed);
+        if (!cleanup || (work.result !== 'delivered' && !explicitCancelledCleanup(work)) || (cleanup.state === 'complete' && !explicit)) continue;
+        // Ticket 30: a confirmed explicit plan is swept at the next cycle (once).
+        const due = explicit || cleanup.state === 'waiting' || !swept.has(work.work_id) || cleanup.lastSweepAt === null || now() - Date.parse(cleanup.lastSweepAt) >= retryMs;
         if (!due) continue;
         // One Work's unexpected failure never stops the others; its records stay as they are (no result is invented).
         try { await sweep(work); } catch (error) { failed(work.work_id, 'cleanup-sweep', error); }

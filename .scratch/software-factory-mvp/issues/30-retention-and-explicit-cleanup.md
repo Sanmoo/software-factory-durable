@@ -26,3 +26,13 @@
 ## Autorização e limites
 
 Publicação é planejamento aprovado, não autorização de construção, uso de host/credenciais/GitHub/modelos reais, injeção de falhas ou piloto. Obter autorização pertinente antes da execução. Não alterar decisões aprovadas silenciosamente; lacuna de desenho volta ao operador. Merge e avaliação humana não são delegados aos agentes.
+
+## Comments
+
+- 2026-11-15 (implement/software-factory-mvp-30, sobre a branch do 25): retenção de logs/sessões (varredura no boot após reconciliação e
+  diária, 30 dias após merge confirmado, configurável por `retentionDays`), proteções, sessões preservadas em Records antes da remoção do
+  ambiente, e cleanup explícito `factory cleanup <work> --select … [--yes]` / `factory cleanup-confirm <work> <plan>` com plano de perdas,
+  confirmação e revalidação por item. Fluxos storage-real com Records/Sandbox reais e CLI real; evidência e mapa AC→teste em
+  [docs/evidence/30-retention-and-explicit-cleanup.md](../../../docs/evidence/30-retention-and-explicit-cleanup.md). Sem receita real
+  (nenhuma fronteira GitHub/VM/modelo alterada); decisões para revisão do supervisor registradas na evidência. Ticket não resolvido até a
+  revisão.

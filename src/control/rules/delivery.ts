@@ -50,7 +50,11 @@ export function decideMerge(own: OwnPullRequestIdentity, expect: { repositoryId:
 }
 
 type CleanupWork = { result: string; branch: string | null; repository: { repository: string; repositoryId: number; base: string };
-  delivery?: Pick<DeliveryView, 'state'> & { merge: Pick<MergeFacts, 'headSha'> | null } | null; execution: ExecutionView | null; previousExecutions: ExecutionView[] };
+  delivery?: Pick<DeliveryView, 'state'> & { merge: Pick<MergeFacts, 'headSha'> | null } | null; execution: ExecutionView | null; previousExecutions: ExecutionView[];
+  /** Ticket 30: a cancelled Work is cleaned only by an operator-confirmed explicit plan, after its cancellation ceased. */
+  cancellation?: { state: 'stopping' | 'ceased' } | null; cleanup?: Pick<CleanupView, 'explicit'> | null };
+/** Ticket 30: the resource cleanup of a cancelled Work exists only as an explicit, confirmed, not yet swept operator plan. */
+export const explicitCancelledCleanup = (work: Pick<CleanupWork, 'result' | 'cleanup'>) => work.result === 'cancelled' && Boolean(work.cleanup?.explicit && !work.cleanup.explicit.consumed);
 const executionsOf = (work: Pick<CleanupWork, 'execution' | 'previousExecutions'>) => [...work.previousExecutions, ...(work.execution ? [work.execution] : [])];
 
 /**
@@ -59,7 +63,8 @@ const executionsOf = (work: Pick<CleanupWork, 'execution' | 'previousExecutions'
  */
 export function cleanupEligibility(work: CleanupWork, running: boolean): { eligible: boolean; reasons: string[] } {
   const reasons: string[] = [];
-  if (work.result !== 'delivered' || work.delivery?.state !== 'delivered' || !work.delivery.merge) reasons.push('NOT_DELIVERED');
+  if (explicitCancelledCleanup(work)) { if (work.cancellation?.state !== 'ceased') reasons.push('CANCELLATION_NOT_CEASED'); }
+  else if (work.result !== 'delivered' || work.delivery?.state !== 'delivered' || !work.delivery.merge) reasons.push('NOT_DELIVERED');
   if (running) reasons.push('ACTIVITY_RUNNING');
   for (const execution of executionsOf(work)) {
     if (execution.slot.held) reasons.push(`SLOT_HELD:${execution.executionId}`);
@@ -89,7 +94,8 @@ export function planCleanup(work: CleanupWork, input: { repositoryConfigured: bo
       { id: `local-branch:${environment}`, kind: 'local-branch', target: `${environment}/workspace/checkout:refs/heads/${branch ?? '?'}`, environment, ownership },
       { id: `temporaries:${environment}`, kind: 'temporaries', target: `${environment}/artifacts + boot runtime directories`, environment, ownership });
   }
-  if (branch && branch !== work.repository.base && input.repositoryConfigured) resources.push({ id: `remote-branch:${branch}`, kind: 'remote-branch',
+  // Ticket 30: a cancelled Work's branch is never deleted (cancellation never undoes GitHub); only a delivered Work's own branch.
+  if (branch && branch !== work.repository.base && input.repositoryConfigured && work.result === 'delivered') resources.push({ id: `remote-branch:${branch}`, kind: 'remote-branch',
     target: `${work.repository.repository}:refs/heads/${branch}`, environment: null,
     ownership: `The Work's own branch; deleted only while its tip is exactly the merged own pull request head ${work.delivery?.merge?.headSha ?? '?'}` });
   return { resources, protected: [

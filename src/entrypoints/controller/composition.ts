@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto';
-import type { AccessDependencies, ConfiguredRepository, ExecutionPorts } from '../../control/index.js';
+import type { AccessDependencies, ConfiguredRepository, DetailPorts, ExecutionPorts } from '../../control/index.js';
 import { createIssueTracker } from '../../issue-tracker/index.js';
 import { createCodeRepository } from '../../code-repository/index.js';
 import { createSandbox, type GuestAssetPin } from '../../sandbox/index.js';
-import { preserveEvidence } from '../../records/index.js';
+import { realpath } from 'node:fs/promises';
+import { listDetails, preserveEvidence, preserveSessionCopy, removeRecordsDetail } from '../../records/index.js';
+import { readSessionFile } from '../../platform/host/index.js';
 import { createWorkers, skillPackContinues, skillPacks, type SkillPackId } from '../../workers/index.js';
 import { createBuilderCredentials, createRepositoryFetchCredentials, type GitHubAccess } from '../../platform/github/index.js';
 import { factorySkillPackIds, type GitHubScope } from '../../contracts/index.js';
@@ -15,7 +17,9 @@ type Role = 'builder' | 'standards' | 'spec';
 export type ProductionInput = {
   root: string;
   /** Validated effective configuration (subset used here); sandbox stays opaque, interpreted by the Sandbox only. */
-  effective: { models: Record<Role, { provider: string; model: string }>; repositories: readonly GitHubScope[]; concurrency: number; sandbox: unknown };
+  effective: { models: Record<Role, { provider: string; model: string }>; repositories: readonly GitHubScope[]; concurrency: number; sandbox: unknown;
+    /** Ticket 30: configuration `retentionDays` (default 30). */
+    retentionDays?: number };
   /** Guest asset pin of the VERIFIED running release (trusted composition data, never YAML). */
   guestAssets: GuestAssetPin;
   github: GitHubAccess;
@@ -34,6 +38,24 @@ export function composeProductionAccess(input: { github: GitHubAccess; effective
   return { tracker: createIssueTracker({ github, scopes: effective.repositories, dependencyScopes }), repository: createCodeRepository({ github }),
     repositories: effective.repositories, dependencyRepositories: dependencyScopes, operators: effective.operators,
     factoryApp: async () => effective.repositories[0] ? github.appIdentity(effective.repositories[0]) : null };
+}
+
+/**
+ * Ticket 30: the Work details over the installation's Records area (host-only, never mounted): inventory, preservation of a recorded Builder
+ * session out of its runtime tree (confined no-follow read, verified against the recorded hash) and confined removal of one detail.
+ */
+export function detailPorts(root: string): DetailPorts {
+  return {
+    list: ({ workId }) => listDetails(root, workId),
+    async preserveSession({ workId, executionId, session }) {
+      const read = await readSessionFile(await realpath(root), session.ref);
+      if (read.state === 'lost') return { status: 'lost', code: read.code };
+      if (read.state !== 'read') return { status: 'failed', code: read.code };
+      if (read.sha256 !== session.sha256) return { status: 'failed', code: 'SESSION_ALTERED' };
+      return preserveSessionCopy(root, workId, executionId, read.data, read.sha256);
+    },
+    remove: ({ workId, item, expectedSha256 }) => removeRecordsDetail(root, workId, item, expectedSha256),
+  };
 }
 
 /** Production Builder skill pack: the latest registered Factory pack able to continue a preserved session (spec §5.5), verified by its manifest. */
@@ -102,6 +124,10 @@ export async function composeProductionExecution(input: ProductionInput): Promis
         return absent && result.status === 'preserved' ? { status: 'absent' } : result;
       },
       retrySeconds: 86400,
+      // Ticket 30: logs/sessions retention (boot sweep after reconciliation, then daily) and explicit cleanup over the Records area.
+      details: detailPorts(input.root),
+      retentionDays: input.effective.retentionDays ?? 30,
+      sweepSeconds: 86400,
     },
   };
   const sha = (text: string) => createHash('sha256').update(text).digest('hex');

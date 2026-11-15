@@ -62,6 +62,23 @@ test('AC3: `factory update-scope <work> --reason` identifies the request first, 
   assert.equal(created.code, 2, created.stderr);
   assert.deepEqual(created.json, { kind: 'durable', request_id: 'new-1', operation: 'new', work_id: null, outcome: 'not-applied', reason: 'TICKET_NOT_KNOWN', created: null });
   assert.deepEqual((await cli('new', 'acme/project#3', '--request-id', 'new-1')).json, { kind: 'refused', code: 'REQUEST_ID_CONFLICT' }, 'same identity, other decision');
+  // Ticket 30: explicit cleanup through the real CLI/socket/owner: plan (identified request, nothing removed) and confirmation; no Work → not-applied.
+  const plan = '0b9c6a52-3d3e-4c8f-9a51-000000000099';
+  for (const bad of [['cleanup', work], ['cleanup', work, '--select'], ['cleanup', work, '--select', 'history'], ['cleanup', work, '--select', 'logs,evidence'],
+    ['cleanup', 'not-a-uuid', '--select', 'logs'], ['cleanup', work, '--select', 'logs', '--yes', '--yes'], ['cleanup-confirm', work], ['cleanup-confirm', work, 'not-a-plan'],
+    ['cleanup', work, '--select', 'logs', '--yes', '--request-id', 'x'.repeat(121)]]) {
+    assert.equal((await cli(...bad)).code, 2, bad.join(' '));
+  }
+  const planned = await cli('cleanup', work, '--select', 'logs,sessions', '--request-id', 'cleanup-1');
+  assert.equal(planned.code, 2, planned.stderr);
+  assert.match(planned.stderr, /REQUEST_IDENTIFIED.*cleanup-1/);
+  assert.deepEqual(planned.json, { kind: 'durable', request_id: 'cleanup-1', operation: 'cleanup-plan', work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', plan: null });
+  const automated = await cli('cleanup', work, '--select', 'logs', '--yes', '--request-id', 'cleanup-2');
+  assert.equal(automated.code, 2, 'automation mode: no plan accepted, so nothing is confirmed');
+  assert.doesNotMatch(automated.stderr, /cleanup-2-confirm/);
+  const confirmed = await cli('cleanup-confirm', work, plan, '--request-id', 'confirm-1');
+  assert.equal(confirmed.code, 2, confirmed.stderr);
+  assert.deepEqual(confirmed.json, { kind: 'durable', request_id: 'confirm-1', operation: 'cleanup-confirm', work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', plan: null });
   owner.child.kill('SIGTERM');
   assert.equal((await owner.result).code, 0);
 });
