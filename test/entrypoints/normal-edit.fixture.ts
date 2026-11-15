@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { createWorkers } from '../../src/workers/index.js';
 import { SessionManager } from '#factory-pi';
 
-export async function normalEdit(root: string, context: { workId: string; environmentRef: string; bootRef: string }) {
-  const mode = process.env.TASK114_EDIT!;
+/** Several modes may share one boot (ticket 37): each is its own activation (`invocationId`), found by its own receipt. */
+export async function normalEdit(root: string, context: { workId: string; environmentRef: string; bootRef: string }, mode = process.env.TASK114_EDIT!, invocationId = 'edit-worker') {
   const workers = createWorkers({ root, knownSecrets: ['synthetic-secret'], profile: {
     id: 'factory-development-pi-1.5.2-read-async-bash-lexical-v3', systemPrompt: 'Private Edit fixture.',
     providerId: 'offline-fixture', modelId: 'reader', apiKey: 'synthetic-key',
@@ -14,7 +14,7 @@ export async function normalEdit(root: string, context: { workId: string; enviro
     ] },
   } });
   const abort = new AbortController();
-  const invocation = { context: { ...context, executionId: 'edit-exec', invocationId: 'edit-worker',
+  const invocation = { context: { ...context, executionId: 'edit-exec', invocationId,
     role: (mode === 'standards' || mode === 'spec' ? mode : 'builder') as 'standards' | 'spec' | 'builder', phaseId: 'edit-phase' },
     prompt: mode, signal: abort.signal, ...(mode === 'absent' ? {} : { editSourceMaxBytes: mode === 'budget' || mode === 'empty' ? 0 : 8192 }) };
   if (mode === 'invalid') {
@@ -36,10 +36,8 @@ export async function normalEdit(root: string, context: { workId: string; enviro
     if (completed.status === 'failure') assert.equal(completed.code, mode === 'eof' ? 'WORKER_EXECUTION_UNCERTAIN' : 'WORKER_INTERRUPTED');
     const receipt = JSON.parse(await readFile(join(root, context.workId, 'evidence', started.receipt.id, 'output'), 'utf8')).event;
     assert.notEqual(receipt.observedProcess.pid, process.pid);
-    const tag = Buffer.from(context.bootRef.slice(5).replaceAll('-', ''), 'hex').toString('base64url');
-    const runtime = join(root, 'r', tag);
-    const launch = (await readdir(runtime)).find(name => name.startsWith('w-'))!;
-    const sessions = join(runtime, launch, 'profile', 'sessions');
+    // This activation's own worker directory (its receipt names it), not the first w-* of the boot.
+    const sessions = join(receipt.profileDirectory, 'sessions');
     const file = (await readdir(sessions, { recursive: true })).find(name => name.endsWith('.jsonl'))!;
     const transcript = await readFile(join(sessions, file), 'utf8');
     assert.doesNotMatch(transcript, /synthetic-secret|synthetic-key/);

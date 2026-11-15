@@ -137,15 +137,25 @@ for (const operation of deniedCommands) {
   Reflect.set(cp, operation, () => { throw new Error('OS_COMMAND_FORBIDDEN'); });
 }
 mock.method(process, 'kill', () => { throw new Error('HOST_SIGNAL_FORBIDDEN'); });
-const nativeOAuth = process.env.TASK178_OAUTH;
+// Ticket 37: a comma-separated list runs those modes as sequential activations of ONE adapter→owner boot (each still a new
+// worker Node); the per-mode state below is reset before each one. A single mode keeps the original one-boot-per-mode shape.
+const oauthModes = process.env.TASK178_OAUTH?.split(',');
+let nativeOAuth = oauthModes?.[0];
+async function selectOAuthMode(next: string) {
+  nativeOAuth = next;
+  await json(join(root!, 'oauth-mode'), next);
+  if (next !== 'missing-store') await json(join(root!, 'credentials', 'chatgpt.json'), { openai: { type: 'oauth', access: 'oauth-access-canary', refresh: 'oauth-refresh-canary', expires: next === 'rotation-ack-fail' ? 0 : Date.now() + 3600000, clientId: 'synthetic-client', scopes: ['chatgpt.tokens.use.direct'] } });
+}
 if (nativeOAuth) {
   await mkdir(join(root, 'credentials'), { mode: 0o700 });
-  await json(join(root, 'oauth-mode'), nativeOAuth);
-  if (nativeOAuth !== 'missing-store') await json(join(root, 'credentials', 'chatgpt.json'), { openai: { type: 'oauth', access: 'oauth-access-canary', refresh: 'oauth-refresh-canary', expires: nativeOAuth === 'rotation-ack-fail' ? 0 : Date.now() + 3600000, clientId: 'synthetic-client', scopes: ['chatgpt.tokens.use.direct'] } });
+  await selectOAuthMode(nativeOAuth);
 }
-const nativeEdit = process.env.TASK114_EDIT;
-let editSource = Buffer.from(nativeEdit === 'empty' ? '' : nativeEdit === 'secret' ? 'old synthetic-secret' : '\ufeffold\r\nsafe █\r\n');
+const editModes = process.env.TASK114_EDIT?.split(',');
+let nativeEdit = editModes?.[0];
+const initialEditSource = (edit: string | undefined) => Buffer.from(edit === 'empty' ? '' : edit === 'secret' ? 'old synthetic-secret' : '\ufeffold\r\nsafe █\r\n');
+let editSource = initialEditSource(nativeEdit);
 let editCommits = 0;
+function selectEditMode(next: string) { nativeEdit = next; editSource = initialEditSource(next); editCommits = 0; }
 let editChild: cp.ChildProcess | undefined;
 const nativeBuilder = process.env.TASK83_NATIVE_BUILDER === '1';
 const nativeBash = process.env.TASK85_NATIVE_BASH === '1';
@@ -587,11 +597,25 @@ mock.method(prototype, 'sync', async function(this: FileHandle) {
     setImmediate(() => {
       const listeners = process.listeners('SIGTERM').filter(listener => !originalTermListeners.has(listener));
       if (listeners.length !== 1) throw new Error('EXPECTED_ONE_ADAPTER_STOP_LISTENER');
+      if (mode === 'normal-worker' && nativeOAuth && oauthModes!.length > 1) {
+        void import('../entrypoints/normal-oauth.fixture.js').then(({ normalOAuth }) => batch(oauthModes!, selectOAuthMode, 'normal-oauth-passed',
+          next => normalOAuth(root!, { workId, environmentRef: environment!, bootRef: boot! }, `oauth-${next}`)))
+          .catch(error => { console.error(error); process.exitCode = 1; }).finally(() => listeners[0]!('SIGTERM'));
+        return;
+      }
       if (mode === 'normal-worker' && nativeOAuth) {
         void import('../entrypoints/normal-oauth.fixture.js').then(async ({ normalOAuth }) => {
           await json(join(root!, 'normal-worker-result.json'), await normalOAuth(root!, { workId, environmentRef: environment!, bootRef: boot! }));
           audit('normal-oauth-passed');
         }).catch(error => { console.error(error); process.exitCode = 1; }).finally(() => listeners[0]!('SIGTERM'));
+        return;
+      }
+      if (mode === 'normal-worker' && nativeEdit && editModes!.length > 1) {
+        void import('../entrypoints/normal-edit.fixture.js').then(({ normalEdit }) => batch(editModes!, async next => { selectEditMode(next); }, 'normal-edit-passed',
+          async next => { const result = await normalEdit(root!, { workId, environmentRef: environment!, bootRef: boot! }, next, `edit-${next}`);
+            if (fs.existsSync(join(root!, 'edit-result'))) fs.renameSync(join(root!, 'edit-result'), join(root!, `edit-result-${next}`));
+            return result; }))
+          .catch(error => { console.error(error); process.exitCode = 1; }).finally(() => listeners[0]!('SIGTERM'));
         return;
       }
       if (mode === 'normal-worker' && nativeEdit) {
@@ -652,6 +676,25 @@ mock.method(prototype, 'sync', async function(this: FileHandle) {
   if (publishing && target === join(path, 'failure.json')) audit('failure-file-synced');
   if (publishing && target === path) audit('failure-durable');
 });
+
+/**
+ * Ticket 37: sequential activations of the SAME boot, one per mode. The audit is segmented (`mode-begin:<m>` .. `mode-end:<m>`) so the
+ * test asserts each mode on its own lines; a failing mode records `mode-error-<m>` and the next one still runs.
+ */
+async function batch(modes: string[], select: (next: string) => Promise<void>, passed: string, run: (next: string) => Promise<unknown>) {
+  for (const next of modes) {
+    await select(next);
+    audit(`mode-begin:${next}`);
+    try {
+      await json(join(root!, `normal-worker-result-${next}.json`), await run(next));
+      audit(passed);
+    } catch (error) {
+      fs.writeFileSync(join(root!, `mode-error-${next}`), String((error as Error).stack ?? error));
+      process.exitCode = 1;
+    }
+    audit(`mode-end:${next}`);
+  }
+}
 
 async function actualOwnedVfsProbe(mounts: Record<string, RealProviderType>) {
   audit('vfs-probe');
