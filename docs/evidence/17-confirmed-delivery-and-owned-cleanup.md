@@ -55,11 +55,18 @@ S = static/unit, I = storage-real integration (Pi Durable + SQLite, real Sandbox
 
 ## Real-run recipe (not run here: no real GitHub, credentials, VM or `$HOME/software-factory-test` were used)
 
-`test/entrypoints/delivery17-qualification.ts`. It targets ticket 14's v8 run: draft PR **#5**, head `factory/3-99fe871b` @ `bfdd439ceba20a424538647f41e55d5ab2d03217`, base `main`, storage `/home/sanmoo/software-factory-test/y5/q14-publication-v8`. That storage is copied, never opened for writing. The recipe uses the fresh namespace `q17-delivery-v2`. The exact human steps are in `plan().operatorStep.steps`:
+`test/entrypoints/delivery17-qualification.ts`. It targets ticket 14's v8 run: draft PR **#5**, head `factory/3-99fe871b` @ `bfdd439ceba20a424538647f41e55d5ab2d03217`, base `main`, storage `/home/sanmoo/software-factory-test/y5/q14-publication-v8`. That storage is copied, never opened for writing. The recipe uses the fresh namespace `q17-delivery-v3`. `q17-delivery-v2` was consumed: its preflight was held on `STORAGE_MIGRATION_REQUIRED` because the v8 storage is format 1, written before ticket 33.
+Preflight now runs `prepareAuthority`:
+- it copies the source into the exclusive `authority/` and inspects the copy;
+- a format-1 copy is migrated explicitly with ticket 33's `migrateStorage` (1→2, `expectedDigest` = the copy's preserved digest, re-verified after);
+- the format and preserved digest before and after are recorded in `preflight-result.authority`;
+- the source is never opened or migrated.
+
+Test: `test/entrypoints/delivery17-recipe-storage.test.ts`. A format-1 fixture is copied and migrated; the original stays byte-identical at format 1; a format-2 source needs no migration; the copy target is exclusive. The exact human steps are in `plan().operatorStep.steps`:
 1. Check PR #5's head and base.
 2. Check "Automatically delete head branches" is OFF.
 3. Mark it Ready for review.
-4. Approve it yourself if ruleset 26435808 requires approval.
+4. Approve it yourself. Approval is REQUIRED: ruleset 26435808 requires 1 approving review, allows merge/squash/rebase, has `delete_branch_on_merge` false, and its only bypass is RepositoryRole 5 in pull_request mode.
 5. Merge with any method the ruleset allows: merge, squash or rebase are all acceptable to the Factory, because none of them changes the PR head SHA that delivery and the branch precondition use.
 6. Never use a bypass or admin merge, never click "Delete branch", and never push to the branch afterwards.
 7. Then run `deliver`. Each phase is one-shot and has an exclusive tombstone. Run each one only with an explicit operator grant:
@@ -76,7 +83,7 @@ node dist/test/entrypoints/delivery17-qualification.js inspect
 **Exact effects:**
 
 - **preflight** (read-only):
-  - copies the q14 v8 storage into `q17-delivery-v2/authority`; the source is never written;
+  - copies the q14 v8 storage into `q17-delivery-v3/authority` and explicitly migrates **only that copy** from format 1 to 2 (digest-checked, before/after digests recorded); the source is never written;
   - inspects that copy: own PR #5 linked with exactly that head, branch and base, Work open, every Execution ended with confirmed cessation;
   - GitHub reads: PR #5 (must be open, not merged, head `bfdd439…`), every `refs/heads` and `refs/tags` tip;
   - host inventory: `environments/*` with owner workId, `r/*`, `cache/git/*`.

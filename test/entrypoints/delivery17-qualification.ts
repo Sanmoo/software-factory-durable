@@ -11,8 +11,8 @@ import { snapshotStorage } from './review12-qualification.js';
 
 const root = '/home/sanmoo/software-factory-test/y5';
 const source = `${root}/q14-publication-v8`;
-const observations = `${root}/q17-delivery-v2`;
-const revision = 'q17-delivery-v2';
+const observations = `${root}/q17-delivery-v3`;
+const revision = 'q17-delivery-v3';
 /** The own draft PR ticket 14's v8 run published and linked (the only PR this recipe may observe as delivered). */
 const expectedPullRequest = { number: 5, headRef: 'factory/3-99fe871b', headSha: 'bfdd439ceba20a424538647f41e55d5ab2d03217', base: 'main' } as const;
 const phases = ['preflight', 'deliver', 'retry', 'inspect'] as const;
@@ -34,11 +34,12 @@ export function plan() {
         'Only after `preflight` succeeded. Open https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5 and check: head factory/3-99fe871b at bfdd439ceba20a424538647f41e55d5ab2d03217, base main, still draft and open.',
         'Repository Settings > General: "Automatically delete head branches" must be OFF (if it is ON the branch disappears with the merge and the expected remote-branch outcome becomes absent instead of removed).',
         'Click "Ready for review" on PR #5 (or `gh pr ready 5` authenticated as yourself).',
-        'If the main ruleset (ruleset 26435808, "pull request required, no App bypass") requires an approving review, approve PR #5 yourself (the author is the App bot, so a human approval is allowed); satisfy any required checks it lists. Never use "bypass rules"/admin merge.',
-        'Merge PR #5 with ANY method the ruleset allows: merge commit, squash or rebase are all acceptable to the Factory, because delivery reads merged/merged_at/merge_commit_sha and the PR head (bfdd439…), which no merge method changes; pick the one the ruleset enables (if several, prefer "Create a merge commit").',
+        'An approving review is REQUIRED: the main ruleset (26435808) requires 1 approving review. Approve PR #5 yourself (the author is the App bot, so your human approval counts). Never use "bypass rules" (the only bypass is RepositoryRole 5 in pull_request mode) or an admin merge.',
+        'Merge PR #5 with merge commit, squash or rebase (all three are allowed by the ruleset and all are acceptable to the Factory: delivery reads merged/merged_at/merge_commit_sha and the PR head bfdd439…, which no merge method changes); prefer "Create a merge commit".',
         'Do NOT click "Delete branch" after merging, do NOT push to factory/3-99fe871b afterwards (a moved tip makes the Factory keep it: refused BRANCH_TIP_CHANGED), and do not reopen the PR or edit issue #3 (its "Closes #3" closure by the merge is expected and is not what delivers).',
         'Then run `deliver`.' ],
-      acceptableMergeMethods: ['merge', 'squash', 'rebase'], requires: 'whatever ruleset 26435808 enables (allowed methods, approvals, checks); the Factory itself never merges' },
+      acceptableMergeMethods: ['merge', 'squash', 'rebase'], approvalRequired: true,
+      requires: 'ruleset 26435808: 1 approving review, allowed methods merge/squash/rebase, delete_branch_on_merge false, bypass only RepositoryRole 5 (pull_request mode); the Factory itself never merges' },
     github: { app: githubApp,
       controllerPurposes: ['delivery-read {metadata:read, contents:read, pull_requests:read} (own PR facts; refs inventory)', 'tracker-read/association-read/dependency-read (polling only)',
         'branch-cleanup {metadata:read, contents:write, pull_requests:read}: ONE fresh grant per branch cleanup attempt, revoked right after'],
@@ -49,7 +50,8 @@ export function plan() {
         'App: access_tokens issuance POSTs and DELETE /installation/token self-revocations'],
       never: ['merge', 'ready conversion', 'approval', 'push', 'deleting any other branch or tag', 'closing/reopening issue or PR', 'labels/assignees/comments'] },
     effects: [
-      'preflight (read-only): exclusive COPY of the q14 storage into q17 authority; inspection of that copy: own PR linked (number/id/node/head/branch/base), Work open, every ' +
+      'preflight (read-only on the source): exclusive COPY of the q14 v8 storage into q17 authority; the COPY (format 1) is migrated 1→2 with ticket 33\'s ' +
+        'digest-checked migrateStorage (before/after preserved digest recorded; the original is never opened or migrated); inspection of that copy: own PR linked (number/id/node/head/branch/base), Work open, every ' +
         'Execution ended with confirmed cessation; GitHub: own PR open and not merged, every branch/tag tip; host inventory: environments (owner workId), boot runtime dirs, shared cache',
       'OPERATOR: human ready + merge of the own PR (no branch auto-deletion)',
       'deliver (real): owner on the q17 authority with the real adapters; dispatch composed but EVERY prepare/start/activate/credential refused; the desk confirms the merge ' +
@@ -89,6 +91,25 @@ export function branchGuard(cleanupBranch: NonNullable<CodeRepository['cleanupBr
     return cleanupBranch(selection, effect);
   };
   return { cleanupBranch: wrapped, calls };
+}
+
+/**
+ * The recipe's own authority: an EXCLUSIVE copy of the source storage. A format-1 copy (written before ticket 33) is migrated explicitly
+ * with ticket 33's digest-checked `migrateStorage` (1→2, preserved digest verified before and after); the source is never opened or
+ * migrated. Anything else (incompatible, unsupported, verification failure) refuses: nothing is adopted implicitly.
+ */
+export async function prepareAuthority(source: string, destination: string, upgradeId: string) {
+  const { inspectStorage, migrateStorage } = await import('../../src/control/index.js');
+  const storagePath = await snapshotStorage(source, destination);
+  const before = await inspectStorage(storagePath);
+  if (before.kind !== 'storage' || !before.preserved) throw new Error('AUTHORITY_STORAGE_UNREADABLE');
+  const summary = (inspection: typeof before) => ({ format: inspection.format, operational: inspection.operational, digest: inspection.preserved?.digest ?? null });
+  if (before.operational === 'ready') return { kind: 'current' as const, storagePath, before: summary(before) };
+  const result = await migrateStorage(storagePath, { upgradeId, release: `recipe:${upgradeId}`, previousRelease: null, expectedDigest: before.preserved.digest });
+  if (result.kind !== 'migrated' || result.after.kind !== 'storage' || result.after.preserved?.digest !== before.preserved.digest) {
+    throw new Error(`AUTHORITY_MIGRATION_${result.kind === 'refused' ? result.code : result.kind.toUpperCase().replaceAll('-', '_')}`);
+  }
+  return { kind: 'migrated' as const, storagePath, migration: result.migration, before: summary(before), after: summary(result.after) };
 }
 
 /** Differences of two ref inventories: what disappeared, appeared or moved. Only the own branch may disappear. */
@@ -205,7 +226,8 @@ export async function runPhase(phase: Phase) {
   await save(`${phase}-intent`, { revision, phase, at: new Date().toISOString() });
   try {
     if (phase === 'preflight') {
-      await snapshotStorage(source, `${observations}/authority`);
+      // Copy only; a format-1 copy is migrated explicitly (digest-checked) and the before/after digests are recorded in the result.
+      const authority = await prepareAuthority(source, `${observations}/authority`, revision);
       const { work } = await view(await snapshotStorage(`${observations}/authority`, `${observations}/preflight-storage-copy`));
       const own = work?.publication;
       const executions = work ? [...work.previousExecutions, ...(work.execution ? [work.execution] : [])] : [];
@@ -218,7 +240,7 @@ export async function runPhase(phase: Phase) {
       const pull = await codeRepository.readPullRequest!({ repo: repository, repositoryId: expectedTicket.repositoryId, number: linked.number,
         pullRequestId: linked.pullRequestId, nodeId: linked.nodeId });
       if (pull.kind !== 'observed' || pull.pullRequest.merged || pull.pullRequest.state !== 'open' || pull.pullRequest.headSha !== expectedPullRequest.headSha) { await save('preflight-held', { pull }); throw new Error('PRECONDITION_HELD'); }
-      await save('preflight-result', { status: 'success', workId: work.work_id, ownPullRequest: linked, linkedHeads: own.linkedHeads ?? [], branch: work.branch, pull, refs: await refs(), inventory: await inventory(),
+      await save('preflight-result', { status: 'success', authority, workId: work.work_id, ownPullRequest: linked, linkedHeads: own.linkedHeads ?? [], branch: work.branch, pull, refs: await refs(), inventory: await inventory(),
         operator: plan().operatorStep });
       return;
     }
