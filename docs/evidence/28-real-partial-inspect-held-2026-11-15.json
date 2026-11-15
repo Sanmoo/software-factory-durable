@@ -1,0 +1,6 @@
+{
+ "phase": "inspect",
+ "status": "held",
+ "code": "Session is closed",
+ "note": "Consumed; no retry."
+}

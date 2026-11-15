@@ -6,9 +6,9 @@ cenários V-08/V-12/V-13 da [matriz de aceite](../../.scratch/software-factory/a
 Base: integração `4f56f25` (tickets 01–13, 19, 20, 26, 32) — rebase sobre 26 integrado; o commit de `Records.find` copiado de 26 ficou vazio
 e foi descartado no rebase (conteúdo idêntico).
 
-**Estado: implementação e suíte local verdes (níveis R/S/I-local); ensaio real NÃO executado por este agente** (sem VM/modelo/GitHub/
-credenciais). Receita one-shot em [§ Ensaio real](#ensaio-real-receita-one-shot). Nenhum checkbox marcado; ticket não resolvido.
-Dublê não comprova fronteira substituída.
+**Estado (2026-11-15): resolvido.** Suíte local verde (R/S/I-local, cortes SIGKILL reais) e ensaio real `q28-partial-v2` executado pelo
+supervisor com autorização do operador: `run` aprovado; `inspect` consumido `held` por defeito da receita, corrigido; `inspect-2` com veredito
+**7/7**. Ver [§ Resultado do ensaio real](#resultado-do-ensaio-real-q28-partial-v2-2026-11-15). Dublê não comprova fronteira substituída.
 
 ## Composição implementada
 
@@ -253,3 +253,33 @@ a bloqueia; sem GitHub, VM ou modelo; o storage original do run nunca é aberto.
 ```sh
 $N dist/test/entrypoints/review28-qualification.js inspect-2
 ```
+
+## Resultado do ensaio real `q28-partial-v2` (2026-11-15)
+
+Executado pelo supervisor (autorização do operador), issue sintético **#6** de `Sanmoo/java-springboot-event-sourcing`, GitHub só leitura,
+1 VM Gondolin/KVM, modelo real `openai/gpt-6-luna` (factory-oauth) para Builder, Standards e Spec. Observações copiadas (varredura de
+segredos sem ocorrências: `ghs_`/`gho_`/`ghp_`/`github_pat_`/`PRIVATE KEY`/`sk-`/`Bearer`/`token`/`refresh`/`password`):
+[preflight](28-real-partial-preflight-2026-11-15.json), [run](28-real-partial-run-2026-11-15.json),
+[inspect held](28-real-partial-inspect-held-2026-11-15.json), [inspect-2](28-real-partial-inspect2-2026-11-15.json).
+
+- `preflight`: #6 único Ticket admissível; #3 (com o PR #5 do ticket 14) listado e segurado (`heldOthers: [3]`); grafo completo.
+- `run` (saída `clean`, sem prazo atingido): **r1** — Standards ativado uma vez; sua conclusão chegou sem o parecer (provocação) e o
+  parecer `clean` foi **localizado no Records real** (`source: records-discovery`, tentativa 1, sem reexecução). Spec a1 com prazo Host de 20 s
+  terminou `WORKER_INTERRUPTED` (conclusão observada); o Control também achou no Records o parecer `cancelled`/`REVIEWER_INTERRUPTED` preservado,
+  reservou 1 unidade de `recoveries`, esperou 5 s persistidos e re-obteve **só o Spec** (a2, `findings`), unidade consumida no início confirmado.
+  A entrega da r1 só ocorreu após o fim dos dois. **r2** (conteúdo corrigido pelo Builder): os dois revisores de novo, tentativa 1, `clean`.
+  **r3–r4**: `EXEMPT_UNCHANGED` (r4 de fechamento). Verificação `verified`; Execução `completed`, cessação confirmada, Slot liberado;
+  `recoveries` 1 consumida, `reserved: null`; nenhum qemu restante. Sessões dos revisores: só `read`; nenhum padrão de token nas sessões.
+- `inspect`: consumido `held` com `Session is closed` (defeito da receita: lia `show` depois de fechar a sessão do storage copiado) — corrigido
+  com TDD (`readStoredControl`), sem impacto no run.
+- `inspect-2` (cópias privadas novas): **veredito `passed: true`, 7/7** — `lost-notification-recovered` `records-discovery:a1:clean`;
+  `provoked-spec-failure` `cancelled:REVIEWER_INTERRUPTED`; `spec-retried-once` `a2:findings:consumed`; `only-spec-r1-retried` `r1/spec`;
+  `budget` `1/null`; `later-round-both-reviewed` (2 rodadas de revisão); `execution-ended` `ended:confirmed`. `limitations: []`.
+
+Cobertura real × local (AC7): revisor falho, notificação perdida e mudança de entrada — **real** (sessões/agentes/processos/Records reais).
+Crash no handoff (corte do controlador, carry + descoberta, liberação de reserva) — **I-local com processos reais** (`review28-crash.test.ts`:
+controlador filho SIGKILL, Control/Pi Durable/SQLite/Records reais; host/revisores dublados); o corte com VM/modelo reais (`q28-partial-v3`)
+não foi executado. **O issue #6 será fechado pelo supervisor ao fim da onda.**
+
+Decisões do operador vigentes: carry só após `OPERATIONAL_RECOVERY`; no máximo 2 retries por papel por rodada (`REVIEWER_RETRY_LIMIT`);
+classificação de falhas transitórias mantida (seção de 2026-11-15); receita no issue #6 (opção a).
