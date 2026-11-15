@@ -74,10 +74,10 @@ Run (compiled, from the repository root, Node command of the gate):
 
 - `preflight`: read-only; v5/v6 registered and loadable, v6 newest and continuation-capable; label lists exactly #3; no associated PR; every
   branch/tag tip recorded and no `factory/3-` branch; `main` requires PRs with no App bypass; the App bot identity pinned.
-- `run`: new storage `…/y5/q14-publication-v6`; implementation Execution (13 rounds ≤ 4); discovery → `requested`; ONE publish-only activation.
+- `run`: new storage `…/y5/q14-publication-v7`; implementation Execution (13 rounds ≤ 4); discovery → `requested`; ONE publish-only activation.
   From that activation on, the recipe makes own-branch discovery reads fail (**provoked lost result**). Stops when the publication Execution
   ended and its boot stopped (or hold/block/`not-publishable`, or 80 min).
-- `discover`: new owner on the SAME storage; no prepare/activation/grant allowed; must link the own PR. Stops at `published`/`blocked` or 10 min.
+- `discover`: new owner on the SAME storage; must link the own PR. Only for the PR-only recovery (push landed, no PR) it allows one prepare, one publication Builder and ≤ 2 publish grants (PR creation only, never a push). Stops at `published`/`blocked` or 25 min.
 - `inspect`: on an exclusive storage copy; bare-copy checkout inspection (never host git on the guest tree); PR body; session tool calls
   with bash texts (tokens masked); read-only GitHub: own PR, own branch, main tip vs preflight, issue state.
 
@@ -92,6 +92,36 @@ with `builder-publish`, `publish` or replacement prompt, lease and `gh pr create
 publication `awaiting-discovery` and `pullRequest: null`; after `discover`: `published`, draft PR at the verified head, no new Execution,
 issue open, `main` unchanged).
 
+## Real run `q14-publication-v6` (2026-11-14, supervisor-authorized, consumed)
+
+Copied results (secret scan: 0 token/key patterns): `14-real-publication-v6-{preflight,run,discover,inspect}-2026-11-14.json`.
+
+- Implementation Execution: ticket 13 rounds, `review.verification` verified; basis recorded `awaiting-discovery` → first discovery
+  `absent` (branch absent, refs snapshot `{refs/heads/main: 8c058c9…}`, base protected) → `requested`.
+- Publish-only activation (`builder-publish`, phaseId `builder-publication`, no handoff/edit): the Builder pushed exactly
+  `git -C /workspace/checkout push --force-with-lease=refs/heads/factory/3-28c75e5a: origin 8c0495962444a3cd9331d83529c10d6eead6422e:refs/heads/factory/3-28c75e5a`
+  (empty lease, correct), ran `gh pr list` (fine), then `gh pr create --draft …` FAILED: "unable to find git executable in PATH".
+  It did not retry; it inspected (`git ls-remote origin && gh pr list`) and reported.
+- Root cause: the Builder Bash argv was `env -i <identity> /bin/bash -c …`; bash only keeps an UNEXPORTED default PATH, so `gh` (Go,
+  resolving `git` from its environment) found none. `git` itself worked through bash's lookup.
+- Factory behaviour was fail-closed: the run phase provoked the lost result; the discover phase found the own branch at the verified head
+  and no PR → `blocked` (`PUBLICATION_OUTCOME_UNCONFIRMED`, `REMOTE_BRANCH_AT_VERIFIED_HEAD`), no repetition, no PR adopted, `main` unchanged,
+  issue open. Remaining GitHub state: branch `factory/3-28c75e5a` at `8c04959…`, no PR.
+
+Fixes (this round):
+1. `src/sandbox/bash-tools.ts` exports a fixed guest `PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin` in every Builder
+   command argv (never the host PATH). Test `bash-credential` "ticket 14 real-run fix": a CHILD process (`/usr/bin/env`) sees it, with and
+   without the credential prelude (red before, green after).
+2. Correlated recovery (AC6), decided in Control rather than by the operator: after ONE pushing attempt, when the own branch was ABSENT in
+   the request's refs snapshot, now holds EXACTLY the verified head, no other ref changed and no PR exists, discovery requests ONE PR-only
+   continuation (`recovery: create-pull-request-only`; prompt: "already holds the verified commit: do NOT push"; `gh pr list` then
+   `gh pr create`). A branch that existed before the window, another head, another changed ref, a missing snapshot or a second failure keep
+   the block. Tests: `publication-rules` "real-run recovery", `publication-flow` "real-run recovery" (push only → PR-only continuation →
+   linked; a second failure → blocked, 2 activations).
+3. Recipe `q14-publication-v7`: preflight tolerates ONLY the v6 leftover `factory/3-28c75e5a` at exactly `8c04959…` (another Work's branch;
+   never adopted — the new Work has its own branch); the discover phase allows at most one PR-only continuation (one prepare, one
+   publication Builder, ≤ 2 publish grants), never a push. The v6 leftover is not recovered by v7 (it belongs to the consumed v6 storage).
+
 ## Open design questions
 
 1. Base protection is read and REQUIRED before any publication request (review MED 4). The spec says the Factory does not certify or
@@ -103,9 +133,10 @@ issue open, `main` unchanged).
    head + refs window), but the guest checkout may diverge from the verified commit after such an activation.
 5. Unexpected ref changes during the window cannot be attributed (a human push at the same time also blocks): explicit operator decision.
 
-## Gate totals (review fixes, after the rebase on `d4483d1`)
+## Gate totals (real-run fixes, on `d4483d1`)
 
-`tsc -p tsconfig.json` rc=0; `eslint . --max-warnings 0` rc=0; dependency-cruiser: no violations (352 modules, 2139 dependencies);
+`tsc -p tsconfig.json` rc=0; `eslint . --max-warnings 0` rc=0; dependency-cruiser: no violations (352 modules, 2140 dependencies);
 every compiled `dist/test/**/*.test.js` run one file at a time with `--experimental-test-module-mocks --test --test-concurrency=1`:
-170 files, 1067 pass, 0 fail, 10 skipped. `workers/sdk-profile.test.js` hit its known inner 15 s timeout under load in the full run and
-passed alone (1/1). `test/sandbox/gondolin.test.ts` stays `skip: true`.
+170 files, 1071 pass, 0 fail, 10 skipped. `workers/sdk-profile.test.js` (unchanged by ticket 14) hit its inner 15 s timeout under a host
+load average of ~7–8 from other sessions, also once alone, and passed alone when the load dropped (1/1). `test/sandbox/gondolin.test.ts`
+stays `skip: true`.
