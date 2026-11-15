@@ -138,7 +138,7 @@ Ticket 14's real run left the own branch `factory/3-28c75e5a` with no PR. Ticket
 - `tsc -p tsconfig.json`: 0 errors.
 - `eslint . --max-warnings 0`: exit 0.
 - `dependency-cruiser --config .dependency-cruiser.cjs --output-type err-long .`: no violations (357 modules, 2166 dependencies).
-- Every compiled `dist/test/**/*.test.js`, run one file at a time with `--experimental-test-module-mocks --test --test-concurrency=1`: **170 files, 1068 passed, 0 failed, 10 skipped**. The skips are pre-existing; `test/sandbox/gondolin.test.ts` stays `skip: true`.
+- Every compiled `dist/test/**/*.test.js`, run one file at a time with `--experimental-test-module-mocks --test --test-concurrency=1`: **170 files, 1073 passed, 0 failed, 10 skipped** after the review fixes (it was 1068 at 7fbad82). `workers/sdk-profile` timed out once under parallel load (it shows `pass=0`); run alone it passes (1/1). The skips are pre-existing; `test/sandbox/gondolin.test.ts` stays `skip: true`.
 - New ticket 17 files (all green), 31 tests in total:
   - `github-delivery` (10)
   - `evidence-export` (2)
