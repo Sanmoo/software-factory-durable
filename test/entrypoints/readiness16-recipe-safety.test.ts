@@ -4,14 +4,14 @@ import { execFile } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { markReadyOnly, readinessGuardScript, settledWork } from './readiness16-qualification.js';
+import { markReadyOnly, phaseGuard, readinessGuardScript, settledWork } from './readiness16-qualification.js';
 import { draftMutations } from '../../src/platform/github/index.js';
 import type { CodeRepository } from '../../src/code-repository/index.js';
 import type { WorkView } from '../../src/control/index.js';
 
 // Recipe safety on temporary fixtures only (never the real root, never a real gh).
-const run = (file: string, args: string[], input?: string) => new Promise<{ code: number; stdout: string }>(resolve => {
-  const child = execFile(file, args, { encoding: 'utf8' }, (error, stdout) => resolve({ code: error && typeof error.code === 'number' ? error.code : 0, stdout }));
+const run = (file: string, args: string[], input?: string, token = 'readiness-token-A') => new Promise<{ code: number; stdout: string }>(resolve => {
+  const child = execFile(file, args, { encoding: 'utf8', env: { PATH: process.env.PATH ?? '', GH_TOKEN: token } }, (error, stdout) => resolve({ code: error && typeof error.code === 'number' ? error.code : 0, stdout }));
   child.stdin?.end(input);
 });
 const node = 'PR_kwDOSuqsXs8AAAABPTSKww';
@@ -37,15 +37,17 @@ test('AC7 guard: GET forwarded; the exact mark-ready of PR #5 only once and only
   }
   assert.equal((await run(guard, post, mutation(draftMutations.markPullRequestReadyForReview))).code, 0, 'the one exact mutation');
   assert.equal((await run(guard, post, mutation(draftMutations.markPullRequestReadyForReview))).code, 97, 'never a second one');
+  assert.equal((await run(guard, ['api', '--method', 'DELETE', '--', '/installation/token'], undefined, 'read-grant-token')).code, 97, 'only the readiness token\'s revocation');
   assert.equal((await run(guard, ['api', '--method', 'DELETE', '--', '/installation/token'])).code, 0);
   assert.equal((await run(guard, ['api', '--method', 'DELETE', '--', '/installation/token'])).code, 97);
+  assert.doesNotMatch(await readFile(trace, 'utf8'), /readiness-token-A|read-grant-token/, 'tokens are never logged');
   for (const args of [['api', '--method', 'POST', '--input', '-', '--', '/repos/a/b/issues/3/comments'], ['api', '--method', 'PUT', '--', '/repos/a/b/pulls/5/merge'],
     ['api', '--method', 'POST', '--input', '-', '--', '/repos/a/b/pulls/5/reviews'], ['api', '--', '/repos/a/b']]) assert.equal((await run(guard, args, '{}')).code, 97, args.join(' '));
   const forwarded = (await readFile(calls, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { args: string[]; body: string | null });
   assert.deepEqual(forwarded.map(item => item.args.at(-1)), ['/repos/a/b/pulls/5', 'graphql', '/installation/token'], 'only GET, the mutation and its revocation reached gh');
   assert.equal(forwarded[1]!.body, mutation(draftMutations.markPullRequestReadyForReview), 'the body is forwarded unchanged');
   const traced = (await readFile(trace, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { kind: string; allowed: boolean });
-  assert.equal(traced.length, 15, 'every request is traced');
+  assert.equal(traced.length, 16, 'every request is traced');
   assert.deepEqual(traced.filter(item => item.allowed).map(item => item.kind), ['read', 'mark-ready', 'revocation']);
 });
 
@@ -66,4 +68,16 @@ test('AC7 wrapper: setDraft only as mark-ready of PR #5 once; the copied Work mu
   assert.deepEqual(settledWork(work({})), { ok: true });
   assert.deepEqual(settledWork(work({ execution: { state: 'ended', slot: { held: false }, end: { cessation: 'unconfirmed' } } })), { ok: false, reason: 'EXECUTION_NOT_SETTLED' });
   assert.deepEqual(settledWork(work({ readiness: {} })), { ok: false, reason: 'READINESS_ALREADY_RECORDED' });
+});
+
+test('review MED 4: convert and inspect run only after a SUCCESSFUL preflight (a held one is consumed), inspect only after convert; each phase once', () => {
+  const none = new Set<string>();
+  assert.equal(phaseGuard('preflight', {}, none), null);
+  assert.equal(phaseGuard('convert', { preflight: { status: 'held' } }, new Set(['preflight-intent'])), 'PREFLIGHT_SUCCESS_REQUIRED');
+  assert.equal(phaseGuard('convert', {}, new Set(['preflight-intent'])), 'PREFLIGHT_SUCCESS_REQUIRED');
+  assert.equal(phaseGuard('convert', { preflight: { status: 'success' } }, new Set(['preflight-intent'])), null);
+  assert.equal(phaseGuard('convert', { preflight: { status: 'success' } }, new Set(['preflight-intent', 'convert-intent'])), 'PHASE_ALREADY_RAN');
+  assert.equal(phaseGuard('inspect', { preflight: { status: 'held' }, convert: { status: 'observed' } }, none), 'PREFLIGHT_SUCCESS_REQUIRED');
+  assert.equal(phaseGuard('inspect', { preflight: { status: 'success' } }, none), 'CONVERT_RESULT_REQUIRED');
+  assert.equal(phaseGuard('inspect', { preflight: { status: 'success' }, convert: { status: 'held' } }, none), null, 'a held convert is still inspected (read-only)');
 });

@@ -56,7 +56,8 @@ test('AC1-AC7 composed: the controller converts its own linked draft PR to ready
   t.after(async () => { if (!stop.signal.aborted) { stop.abort(); await running; } });
   await time.sleeping();
   const work = async () => ((await control.inspect({ kind: 'list' })) as ListView).works[0] as WorkView | undefined;
-  for (let i = 0; i < 800 && !(await work())?.readiness?.effects.length; i++) {
+  // Bounded by iterations, exits as soon as the conversion settled (the extra dependency read makes it slower under load).
+  for (let i = 0; i < 6000 && !(await work())?.readiness?.effects.length; i++) {
     if (time.isSleeping()) time.advance();
     await new Promise(resolve => setTimeout(resolve, 10));
   }

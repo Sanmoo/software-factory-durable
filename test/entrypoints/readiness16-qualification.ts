@@ -35,8 +35,8 @@ export function plan() {
       'readiness-write {metadata:read, pull_requests:write}: ONE fresh grant for the one mutation, revoked right after'],
       writes: ['App: access_tokens issuance POSTs (native HTTPS, not gh): the cached read grants plus ONE readiness-write grant',
         'gh: exactly ONE POST graphql markPullRequestReadyForReview(pullRequestId: PR #5 node) and ONE DELETE /installation/token (its self-revocation)'],
-      guard: 'every phase runs gh behind a wrapper that traces every request and refuses (exit 97, nothing sent) anything but GET without input, except — only in the ' +
-        'convert phase, only once each (wx tombstones) — the exact mark-ready document for PR #5\'s node and then one DELETE /installation/token; the CodeRepository ' +
+      guard: 'every phase runs gh (GitHub access root = this namespace, never y5) behind a wrapper that traces every request and refuses (exit 97, nothing sent) anything but GET without input, except — only in the ' +
+        'convert phase, only once each (wx tombstones) — the exact mark-ready document for PR #5\'s node and then one DELETE /installation/token authenticated by THAT token (matched by its hash, never logged); the CodeRepository ' +
         'is wrapped so setDraft is refused locally unless it is draft=false for PR #5\'s node, once; the IssueTracker is read-only (postComment refused locally)',
       never: ['convertPullRequestToDraft', 'merge', 'approval or review', 'comment', 'push', 'branch/ruleset/protection change', 'rerun/approve of workflows', 'a second mutation'],
       requestBound: 'convert: label poll + 1 checks collection + 1 recheck + 1 observation (each <= 1 PR + 1 branch + 0..1 classic + <=10 rules + <=10 check-run + <=10 status ' +
@@ -79,8 +79,11 @@ export function settledWork(work: WorkView): { ok: true } | { ok: false; reason:
  */
 export function readinessGuardScript(input: { node: string; gh: string; trace: string; directory: string; nodeId: string; document: string }) {
   return `#!${input.node}
-import { appendFileSync, existsSync, openSync, closeSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, openSync, closeSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+// The readiness token is tied to the mutation by its hash (never logged); only ITS self-revocation is allowed afterwards.
+const tokenHash = createHash('sha256').update(process.env.GH_TOKEN ?? '').digest('hex');
 const args = process.argv.slice(2);
 const at = args.indexOf('--method');
 const method = at >= 0 ? args[at + 1] : null;
@@ -95,10 +98,12 @@ if (method === 'POST' && endpoint === 'graphql' && piped && args[args.indexOf('-
   let request = null; try { request = JSON.parse(body); } catch {}
   const exact = request && Object.keys(request).sort().join() === 'query,variables' && request.query === ${JSON.stringify(input.document)} &&
     Object.keys(request.variables ?? {}).sort().join() === 'cid,id' && request.variables.id === ${JSON.stringify(input.nodeId)} && typeof request.variables.cid === 'string';
-  allowed = Boolean(exact) && existsSync(${JSON.stringify(input.directory)} + '/convert-armed') && once('mutation.sent');
+  allowed = Boolean(exact) && Boolean(process.env.GH_TOKEN) && existsSync(${JSON.stringify(input.directory)} + '/convert-armed') && once('mutation.sent');
+  if (allowed) writeFileSync(${JSON.stringify(input.directory)} + '/mutation-token.sha256', tokenHash, { flag: 'wx', mode: 0o600 });
   kind = allowed ? 'mark-ready' : 'refused-mutation';
 } else if (method === 'DELETE' && endpoint === '/installation/token' && !piped) {
-  allowed = existsSync(${JSON.stringify(input.directory)} + '/mutation.sent') && once('revocation.sent');
+  let bound = null; try { bound = readFileSync(${JSON.stringify(input.directory)} + '/mutation-token.sha256', 'utf8'); } catch {}
+  allowed = bound !== null && bound === tokenHash && once('revocation.sent');
   kind = allowed ? 'revocation' : 'refused-revocation';
 }
 appendFileSync(${JSON.stringify(input.trace)}, JSON.stringify({ at: new Date().toISOString(), method, endpoint, allowed, kind, ...(body !== undefined ? { body } : {}) }) + '\\n');
@@ -106,6 +111,18 @@ if (!allowed) { process.stderr.write('RECIPE_GUARD_REFUSED\\n'); process.exit(97
 const result = spawnSync(${JSON.stringify(input.gh)}, args, body === undefined ? { stdio: 'inherit', env: process.env } : { input: body, stdio: ['pipe', 'inherit', 'inherit'], env: process.env });
 process.exit(result.status ?? 1);
 `;
+}
+
+/**
+ * Review MED 4: a phase runs only after the previous one SUCCEEDED (a held preflight/convert is consumed and never followed) and only once.
+ * `results` are the saved result documents (absent = not saved).
+ */
+export function phaseGuard(phase: Phase, results: { preflight?: { status?: unknown } | null; convert?: { status?: unknown } | null }, intents: ReadonlySet<string>): string | null {
+  if (intents.has(`${phase}-intent`)) return 'PHASE_ALREADY_RAN';
+  if (phase === 'preflight') return null;
+  if (results.preflight?.status !== 'success') return 'PREFLIGHT_SUCCESS_REQUIRED';
+  if (phase === 'inspect' && !results.convert) return 'CONVERT_RESULT_REQUIRED';
+  return null;
 }
 
 /** setDraft only as draft=false for PR #5's node, once (local tombstone); everything else refused locally, nothing sent. Calls are logged. */
@@ -138,7 +155,8 @@ async function io() {
     try { await file.writeFile(text); await file.sync(); } finally { await file.close(); }
   };
   const exists = (name: string) => fs.access(`${observations}/${name}.json`).then(() => true, () => false);
-  return { fs, save, exists };
+  const load = (name: string) => fs.readFile(`${observations}/${name}.json`, 'utf8').then(text => JSON.parse(text) as { status?: unknown }, () => null);
+  return { fs, save, exists, load };
 }
 
 async function guardedGh() {
@@ -162,7 +180,8 @@ async function compose() {
   const { createGitHubAccess } = await import('../../src/platform/github/index.js');
   const { createIssueTracker } = await import('../../src/issue-tracker/index.js');
   const { createCodeRepository } = await import('../../src/code-repository/index.js');
-  const github = createGitHubAccess({ root, ...githubApp, executable: await guardedGh() });
+  // The recipe's OWN namespace is the GitHub access root (its run/ holds the transient gh dirs; never y5/run).
+  const github = createGitHubAccess({ root: observations, ...githubApp, executable: await guardedGh() });
   return { tracker: createIssueTracker({ github, scopes: [repository], dependencyScopes: [] }), codeRepository: createCodeRepository({ github }) };
 }
 
@@ -181,8 +200,18 @@ const traceOf = async () => {
 
 export async function runPhase(phase: Phase) {
   if (!phases.includes(phase)) throw new Error('UNKNOWN_PHASE');
-  const { fs, save, exists } = await io();
-  if (phase === 'preflight') await fs.mkdir(observations, { mode: 0o700 }); // EXCLUSIVE: never adopt an existing qualification
+  const { fs, save, exists, load } = await io();
+  if (phase === 'preflight') {
+    await fs.mkdir(observations, { mode: 0o700 }); // EXCLUSIVE: never adopt an existing qualification
+    // Own GitHub access root: private credentials/ (a copy of the App key, removed by inspect) and run/.
+    const { constants } = await import('node:fs');
+    await fs.mkdir(`${observations}/credentials`, { mode: 0o700 }); await fs.mkdir(`${observations}/run`, { mode: 0o700 });
+    await fs.copyFile(`${root}/${githubApp.privateKeyFile}`, `${observations}/${githubApp.privateKeyFile}`, constants.COPYFILE_EXCL);
+    await fs.chmod(`${observations}/${githubApp.privateKeyFile}`, 0o600);
+  }
+  const refused = phaseGuard(phase, { preflight: await load('preflight-result'), convert: await load('convert-result') },
+    new Set((await Promise.all(phases.map(async item => await exists(`${item}-intent`) ? `${item}-intent` : null))).filter((item): item is string => item !== null)));
+  if (refused) throw new Error(refused);
   await save(`${phase}-intent`, { revision, phase, at: new Date().toISOString() });
   try {
     if (phase === 'preflight') {
@@ -206,7 +235,6 @@ export async function runPhase(phase: Phase) {
       if (!ok) throw new Error('OWN_PULL_REQUEST_NOT_AS_EXPECTED');
       return;
     }
-    if (!(await exists('preflight-result'))) throw new Error('PREFLIGHT_REQUIRED');
     if (phase === 'convert') {
       const { tracker, codeRepository } = await compose();
       const { openControl } = await import('../../src/control/index.js');
@@ -255,7 +283,6 @@ export async function runPhase(phase: Phase) {
         requests: trace.length, controlStatus: status, events, deadlineReached: Date.now() >= deadline });
       return;
     }
-    if (!(await exists('convert-result'))) throw new Error('CONVERT_REQUIRED');
     const linked = linkedWork(await view(await snapshotStorage(`${observations}/convert-storage`, `${observations}/inspect-storage-copy`)));
     if (!linked.ok) throw new Error(linked.reason);
     const { codeRepository } = await compose();
@@ -263,6 +290,7 @@ export async function runPhase(phase: Phase) {
     await save('inspect-result', { readiness: linked.work.readiness ?? null, result: linked.work.result, impediments: linked.work.impediments, queue: linked.work.queue,
       history: linked.work.history.filter(item => item.origin === 'controller-readiness' || item.event === 'checks-evaluated'), rereadFacts: again,
       draftAfter: again.kind === 'observed' ? again.pullRequest.draft : null });
+    await fs.rm(`${observations}/${githubApp.privateKeyFile}`, { force: true });
   } catch (error) {
     await save(`${phase}-held`, { phase, status: 'held', code: error instanceof Error ? error.message.slice(0, 128) : 'UNKNOWN', note: 'Consumed; no retry.' }).catch(() => {});
     throw new Error('QUALIFICATION_HELD');

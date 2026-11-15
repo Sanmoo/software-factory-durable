@@ -428,8 +428,17 @@ export type ReadinessEffect = { effectId: string; action: 'mark-ready' | 'conver
   state: 'intended' | 'attempted' | 'confirmed' | 'not-applied';
   /** The operator authorization this conversion consumed (request id), if any. */
   authorization: string | null;
-  attempt: { at: string; outcome: 'applied' | 'known-failure' | 'unknown'; code: string | null; revocation: string } | null;
-  observation: { at: string; draft: boolean | null; headSha: string | null; code: string | null } | null; settledAt: string | null };
+  /** Committed right before the mutation is started: an `intended` conversion WITHOUT it provably never reached GitHub (no grant, no request). */
+  sendingAt?: string | null;
+  /** `headSha`: the head GitHub's mutation response reported (headRefOid). */
+  attempt: { at: string; outcome: 'applied' | 'known-failure' | 'unknown'; code: string | null; revocation: string; headSha?: string | null } | null;
+  observation: { at: string; draft: boolean | null; headSha: string | null; code: string | null } | null; settledAt: string | null;
+  /** Independent reads contradicting an APPLIED mutation response (lag), before the response is taken as the evidence. */
+  contradictions?: number;
+  /** Settled as not applied because it provably never reached GitHub (crash/abort after the intent, before sending). */
+  neverSent?: boolean;
+  /** The head the flag was changed on differs from the evaluated head (a push between the recheck and the mutation). */
+  headMismatch?: { evaluated: string | null; observed: string | null } | null };
 /**
  * Ticket 16: readiness dimension of a Work's own PR. Internal readiness (`internal`), the GitHub draft/ready flag (`flag`), human review and
  * delivery are distinct: a ready flag alone never certifies readiness; human review/approval and merge are never performed by the Factory.
@@ -444,7 +453,9 @@ export type ReadinessView = {
   humanDraft: { observedAt: string; headSha: string | null } | null;
   /** Ready observed while the Factory had it as draft: visible only, never a certification nor a flag the Factory reverts. */
   humanReady: { observedAt: string } | null;
-  authorization: { request_id: string; at: string; reason: string; purpose: 'human-draft' | 'repeat-conversion' } | null;
+  /** One operator authorization, bound to the occurrence it answers (that human draft, or that not-applied conversion) and consumed once. */
+  authorization: { request_id: string; at: string; reason: string; purpose: 'human-draft' | 'repeat-conversion';
+    binding: { kind: 'human-draft'; pullRequest: number; headSha: string | null; observedAt: string } | { kind: 'not-applied'; effectId: string } } | null;
   effect: ReadinessEffect | null;
   /** Earlier settled conversions, oldest first (bounded). */
   effects: ReadinessEffect[];

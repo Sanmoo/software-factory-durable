@@ -104,7 +104,8 @@ export async function openControl(options: { storagePath: string;
   const checks = options.access && options.polling ? createChecksTracker({ session: state, access: options.access, readWorks: () => readWorks(state),
     busy: work_id => dispatcher?.active(work_id) ?? false, clock: options.polling.clock ?? systemClock, minIntervalMs: options.polling.intervalSeconds * 1000 }) : undefined;
   const readiness = options.access && options.polling ? createReadinessDesk({ session: state, access: options.access, readWorks: () => readWorks(state),
-    installation: () => dispatchReason === 'RECONCILIATION_REQUIRED' ? 'reconciliation-required' : 'settled', clock: options.polling.clock ?? systemClock,
+    installation: () => dispatchReason === 'RECONCILIATION_REQUIRED' ? 'reconciliation-required' : 'settled',
+    dependencies: { ownCycles: issueIds => ownCycles(state, issueIds), record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation, { published: true }) }, clock: options.polling.clock ?? systemClock,
     minIntervalMs: options.polling.intervalSeconds * 1000 }) : undefined;
   if (options.execution && options.access && poller) dispatcher = createDispatcher({ session: state, access: options.access, ports: options.execution,
     currentAttempt: repository => poller.currentAttempt(repository), readWorks: () => readWorks(state), ownCycles: issueIds => ownCycles(state, issueIds),

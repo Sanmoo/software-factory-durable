@@ -155,13 +155,15 @@ export async function ownCycles(session: Session, issueIds: number[]): Promise<R
  * Record one evaluation on the CURRENT cycle of its Ticket, in one commit: latest evaluation, last complete one, dependency impediments
  * (others untouched) and a history entry only when the conclusion changes. A Work no longer open/pending/current is left unchanged.
  */
-export async function recordDependencies(session: Session, work_id: string, evaluation: DependencyEvaluation): Promise<'recorded' | 'skipped'> {
+export async function recordDependencies(session: Session, work_id: string, evaluation: DependencyEvaluation,
+  /** Ticket 16: also the published own PR's Work (readiness re-reads its dependencies before every recheck). */
+  options: { published?: boolean } = {}): Promise<'recorded' | 'skipped'> {
   return session.commit(async tx => {
     const index = await tx.doc(ticketIndex);
     const document = await tx.doc(works, work_id, null);
     const work = document.work;
     // Pending queue work, or the Execution reserved for it (revalidation immediately before activation, spec §3.4).
-    if (!work || work.result !== 'open' || !(work.queue.pending || work.execution?.state === 'reserved') ||
+    if (!work || work.result !== 'open' || !(work.queue.pending || work.execution?.state === 'reserved' || (options.published && work.publication?.state === 'published')) ||
       index.tickets[ticketKey(work.ticket)]?.current !== work_id) return 'skipped' as const;
     const previous = work.dependencies ?? { latest: null, lastComplete: null };
     const before = previous.latest?.conclusion ?? null;

@@ -5,6 +5,9 @@ import { ticketKey } from '../rules/admission.js';
 import { evaluateChecks, type ChecksObservation } from '../rules/checks.js';
 import { evaluateReadiness, humanFlag, internalReadiness, readinessAction, readinessFingerprint, readinessNextStep, sameBasis } from '../rules/readiness.js';
 import { checksTarget, recordChecks, type ChecksTarget } from './checks.js';
+import { evaluateWorkDependencies } from './polling.js';
+import type { OwnCycleFacts } from '../rules/dependencies.js';
+import type { DependencyEvaluation } from '../types.js';
 import { requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import type { Session } from './store.js';
 
@@ -82,16 +85,30 @@ export async function intendConversion(session: Session, work_id: string, target
     const view = work.readiness;
     if (!view || unsettled(view.effect) || view.latest.source !== 'recheck' || !sameBasis(view.latest.basis, input.evaluation.basis) ||
       readinessAction({ evaluation: view.latest, view, observed: view.flag.observed }).action !== input.action) return 'stale' as const;
+    // Re-checked IN the intent commit: queue, impediments, Execution, correction, recovery, scope updates, publication/content as they are now.
+    const local = evaluateReadiness({ at: new Date().toISOString(), source: 'recheck', facts: { ...work, current: true }, checks: view.latest.basis.headSha === work.checks?.latest.pullRequest.headSha
+      ? work.checks?.latest ?? null : null, installation: 'settled', dependencyAttempt: null });
+    if (local.decision !== (input.action === 'mark-ready' ? 'ready' : 'not-ready') || local.reasons.some(item => item.area === 'ownership')) return 'stale' as const;
     const at = new Date().toISOString();
     const reason = input.action === 'mark-ready' ? 'READY_FROM_CURRENT_EVIDENCE'
       : `READINESS_LOST:${view.latest.reasons.filter(item => item.certainty === 'confirmed').map(item => item.code).slice(0, 8).join(',')}`;
     const effect: ReadinessEffect = { effectId: randomUUID(), action: input.action, reason, basis: copy(view.latest.basis), intendedAt: at, state: 'intended',
-      authorization: input.authorization, attempt: null, observation: null, settledAt: null };
+      authorization: input.authorization, sendingAt: null, attempt: null, observation: null, settledAt: null, contradictions: 0, neverSent: false, headMismatch: null };
     if (input.authorization && view.authorization?.request_id === input.authorization) view.authorization = null;
     view.effect = effect;
     present(view, []);
     history(work, 'readiness-intended', at, `${effect.action}:${effect.effectId}:${reason}`);
     return copy(effect);
+  });
+}
+
+/** Committed right BEFORE the mutation starts: without it, an `intended` conversion provably never reached GitHub. */
+export async function markSending(session: Session, work_id: string, target: Pick<ChecksTarget, 'nodeId'>, effectId: string): Promise<'recorded' | 'stale'> {
+  return onWork(session, work_id, target.nodeId, work => {
+    const effect = work.readiness?.effect;
+    if (!effect || effect.effectId !== effectId || effect.state !== 'intended' || effect.sendingAt) return 'stale' as const;
+    effect.sendingAt = new Date().toISOString();
+    return 'recorded' as const;
   });
 }
 
@@ -117,16 +134,33 @@ export async function settleConversion(session: Session, work_id: string, target
     if (observation.draft === null) return copy(effect);
     const desired = effect.action === 'convert-to-draft';
     const at = observation.at;
+    if (observation.draft !== desired && effect.attempt?.outcome === 'applied') {
+      // GitHub's own mutation response (flag as desired, our clientMutationId) is the primary evidence: one contrary read is lag, never
+      // "not applied" and never a human flag. Kept pending; read again on later passes.
+      effect.contradictions = (effect.contradictions ?? 0) + 1;
+      present(view, []);
+      return copy(effect);
+    }
     effect.state = observation.draft === desired ? 'confirmed' : 'not-applied';
     effect.settledAt = at;
+    if (effect.state === 'not-applied' && !effect.sendingAt) effect.neverSent = true;
     view.flag.observed = observation.draft ? 'draft' : 'ready'; view.flag.observedAt = at;
     if (effect.state === 'confirmed') {
       view.flag = { ...view.flag, factory: desired ? 'draft' : 'ready', origin: 'readiness-effect', at };
       view.humanDraft = null; view.humanReady = null;
+      // A push between the recheck and the mutation: the flag is the Factory's, but on a head never evaluated. Internal readiness is withdrawn;
+      // the next evaluation sees the head (confirmed loss) and may restore draft over this Factory-placed ready.
+      const heads = [effect.attempt?.headSha ?? null, observation.headSha].filter((item): item is string => item !== null);
+      const other = heads.find(item => item !== effect.basis.headSha);
+      if (other !== undefined) {
+        effect.headMismatch = { evaluated: effect.basis.headSha, observed: other };
+        view.internal = 'unknown'; view.since = at;
+      }
     }
     view.effects = [...view.effects, effect].slice(-10);
     view.effect = null;
-    history(work, effect.state === 'confirmed' ? 'readiness-confirmed' : 'readiness-not-applied', at, `${effect.action}:${effect.effectId}:draft=${observation.draft}`);
+    history(work, effect.state === 'confirmed' ? 'readiness-confirmed' : 'readiness-not-applied', at, `${effect.action}:${effect.effectId}:draft=${observation.draft}` +
+      `${effect.neverSent ? ':never-sent' : ''}${effect.headMismatch ? `:head-mismatch=${effect.headMismatch.observed}` : ''}`);
     present(view, effect.state === 'not-applied' ? ['CONVERSION_NOT_APPLIED_AUTHORIZATION_REQUIRED'] : []);
     return copy(effect);
   });
@@ -156,7 +190,10 @@ Promise<Extract<ControlReceipt, { operation: 'authorize-readiness' }> | { kind: 
     else {
       const at = new Date().toISOString();
       const purpose = view.humanDraft ? 'human-draft' as const : 'repeat-conversion' as const;
-      view.authorization = { request_id: input.request_id, at, reason: input.reason, purpose };
+      // Bound to the occurrence it answers; consumed once by the conversion that uses it.
+      const binding = view.humanDraft ? { kind: 'human-draft' as const, pullRequest: work.publication?.pullRequest?.number ?? 0, headSha: view.humanDraft.headSha, observedAt: view.humanDraft.observedAt }
+        : { kind: 'not-applied' as const, effectId: last!.effectId };
+      view.authorization = { request_id: input.request_id, at, reason: input.reason, purpose, binding };
       work.history.push({ at, event: 'readiness-authorized', origin: 'local-cli', detail: `${purpose}:${input.request_id}` });
       receipt = { kind: 'durable', request_id: input.request_id, operation: 'authorize-readiness', work_id: work.work_id, outcome: 'accepted', reason: null, purpose };
     }
@@ -169,6 +206,8 @@ Promise<Extract<ControlReceipt, { operation: 'authorize-readiness' }> | { kind: 
 export type ReadinessDeskOptions = { session: Session; access: AccessDependencies; readWorks(): Promise<WorkRecord[]>;
   /** Installation-level reconciliation state of THIS run (ticket 26). */
   installation(): 'settled' | 'reconciliation-required';
+  /** Fresh native dependency evaluation before every recheck (spec §9.3: no dependency impediment, as of NOW). */
+  dependencies: { ownCycles(issueIds: number[]): Promise<Record<number, OwnCycleFacts>>; record(work_id: string, evaluation: DependencyEvaluation): Promise<unknown> };
   clock?: { monotonic(): number };
   /** Per-Work minimum interval between fresh rechecks (production: the polling interval). */
   minIntervalMs?: number;
@@ -224,11 +263,19 @@ export function createReadinessDesk(deps: ReadinessDeskOptions) {
         remote++;
         due.set(work.work_id, now + minIntervalMs);
         // 6. Recheck identity/head/base/requirements immediately before converting (a fresh complete read, recorded as the checks explanation).
+        const dependencyAttempt = randomUUID();
+        let dependenciesRead = false;
+        try {
+          const { evaluation } = await evaluateWorkDependencies(deps.access.tracker, deps.dependencies.ownCycles, work.ticket, dependencyAttempt);
+          await deps.dependencies.record(work.work_id, evaluation);
+          dependenciesRead = true;
+        } catch { dependenciesRead = false; }
         const checks = await read();
         if (signal.aborted) return;
         const fresh = (await deps.readWorks()).find(item => item.work_id === work.work_id);
         if (!fresh) continue;
-        const rechecked = evaluateReadiness({ at: new Date().toISOString(), source: 'recheck', facts: { ...fresh, current: true }, checks, installation: deps.installation() });
+        const rechecked = evaluateReadiness({ at: new Date().toISOString(), source: 'recheck', facts: { ...fresh, current: true }, checks, installation: deps.installation(),
+          dependencyAttempt: dependenciesRead ? dependencyAttempt : 'not-read' });
         const after = observedFlag(checks, target.number);
         if (!sameBasis(recorded.basis, rechecked.basis)) rechecked.notes.push('RECHECK_CHANGED_BASIS');
         const current = await recordReadiness(deps.session, work.work_id, target, rechecked, after);
@@ -238,11 +285,14 @@ export function createReadinessDesk(deps: ReadinessDeskOptions) {
         if (decided.action === 'none' || decided.action !== action.action) continue;
         // 7. Intent → mutation outside the commit → attempt → independent observation → durable confirmation.
         const effect = await intendConversion(deps.session, work.work_id, target, { evaluation: rechecked, action: decided.action, authorization: decided.authorization });
+        // Aborted after the intent: nothing is sent (the discovery then settles it as never sent).
         if (effect === 'stale' || signal.aborted) continue;
+        if (await markSending(deps.session, work.work_id, target, effect.effectId) === 'stale') continue;
         let attempt: NonNullable<ReadinessEffect['attempt']>;
         try {
           const result = await deps.access.repository.setDraft({ repo: configured, number: target.number, nodeId: target.nodeId }, decided.action === 'convert-to-draft', { effectId: effect.effectId });
-          attempt = { at: new Date().toISOString(), outcome: result.kind, code: result.kind === 'applied' ? null : result.code, revocation: result.revocation };
+          attempt = { at: new Date().toISOString(), outcome: result.kind, code: result.kind === 'applied' ? null : result.code, revocation: result.revocation,
+            headSha: result.kind === 'applied' ? result.headSha : null };
         } catch { attempt = { at: new Date().toISOString(), outcome: 'unknown', code: 'DRAFT_CONVERSION_FAILED', revocation: 'unknown' }; }
         await recordAttempt(deps.session, work.work_id, target, effect.effectId, attempt);
         await observe(effect);

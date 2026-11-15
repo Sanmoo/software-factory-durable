@@ -16,8 +16,10 @@ function facts(overrides: Partial<ReadinessFacts> = {}): ReadinessFacts {
     dependencies: { latest: { evaluationId: 'd', attemptId: 'p', source: 'github-rest', observedAt: at, evaluatedAt: at, principals: [], completeness: 'complete', conclusion: 'satisfied',
       blockers: [], cycles: [], shared: [], reasons: [], limitations: [] }, lastComplete: null }, queue: { pending: false }, correction: null, pendingRecovery: null, ...overrides };
 }
-const evaluate = (input: { facts?: Partial<ReadinessFacts>; checks?: ChecksEvaluation | null; installation?: 'settled' | 'reconciliation-required'; source?: 'recorded' | 'recheck' } = {}) =>
-  evaluateReadiness({ at, source: input.source ?? 'recheck', facts: facts(input.facts), checks: input.checks === undefined ? checksOf() : input.checks, installation: input.installation ?? 'settled' });
+const evaluate = (input: { facts?: Partial<ReadinessFacts>; checks?: ChecksEvaluation | null; installation?: 'settled' | 'reconciliation-required'; source?: 'recorded' | 'recheck';
+  dependencyAttempt?: string | null } = {}) =>
+  evaluateReadiness({ at, source: input.source ?? 'recheck', facts: facts(input.facts), checks: input.checks === undefined ? checksOf() : input.checks, installation: input.installation ?? 'settled',
+    dependencyAttempt: input.dependencyAttempt === undefined ? 'p' : input.dependencyAttempt });
 const codes = (evaluation: ReadinessEvaluation) => evaluation.reasons.map(item => `${item.certainty}:${item.code}${item.subject ? `:${item.subject}` : ''}`);
 const view = (overrides: Partial<ReadinessView> = {}): Pick<ReadinessView, 'flag' | 'humanDraft' | 'authorization' | 'effects'> => ({
   flag: { factory: 'draft', origin: 'publication', at, observed: 'draft', observedAt: at }, humanDraft: null, authorization: null, effects: [], ...overrides });
@@ -94,7 +96,7 @@ test('AC5: an unexpected human draft is respected until the operator authorizes 
   assert.deepEqual(humanFlag(view({ flag: { factory: 'ready', origin: 'readiness-effect', at, observed: 'ready', observedAt: at } }), 'draft'), { humanDraft: true, humanReady: false });
   const human = view({ humanDraft: { observedAt: at, headSha: head } });
   assert.deepEqual(readinessAction({ evaluation: evaluate(), view: human, observed: 'draft' }).blocked, ['HUMAN_DRAFT_AUTHORIZATION_REQUIRED']);
-  const authorized = view({ humanDraft: { observedAt: at, headSha: head }, authorization: { request_id: 'op-1', at, reason: 'restore', purpose: 'human-draft' } });
+  const authorized = view({ humanDraft: { observedAt: at, headSha: head }, authorization: { request_id: 'op-1', at, reason: 'restore', purpose: 'human-draft', binding: { kind: 'human-draft', pullRequest: 7, headSha: head, observedAt: at } } });
   assert.deepEqual(readinessAction({ evaluation: evaluate(), view: authorized, observed: 'draft' }), { action: 'mark-ready', blocked: [], notes: [], authorization: 'op-1' });
   const notReady = evaluate({ checks: checksOf({ mergeable: false }) });
   assert.equal(readinessAction({ evaluation: notReady, view: authorized, observed: 'draft' }).action, 'none', 'an authorization never replaces the evaluation');
@@ -105,7 +107,7 @@ test('AC3: a conversion that was not applied is never repeated implicitly for th
   const failed = { effectId: 'e1', action: 'mark-ready' as const, reason: 'READY', basis: ready.basis, intendedAt: at, state: 'not-applied' as const, authorization: null,
     attempt: { at, outcome: 'known-failure' as const, code: 'GITHUB_ACCESS_DENIED', revocation: 'revoked' }, observation: { at, draft: true, headSha: head, code: null }, settledAt: at };
   assert.deepEqual(readinessAction({ evaluation: ready, view: view({ effects: [failed] }), observed: 'draft' }).blocked, ['CONVERSION_NOT_APPLIED_AUTHORIZATION_REQUIRED']);
-  const repeat = view({ effects: [failed], authorization: { request_id: 'op-2', at, reason: 'retry', purpose: 'repeat-conversion' } });
+  const repeat = view({ effects: [failed], authorization: { request_id: 'op-2', at, reason: 'retry', purpose: 'repeat-conversion', binding: { kind: 'not-applied', effectId: 'e1' } } });
   assert.deepEqual(readinessAction({ evaluation: ready, view: repeat, observed: 'draft' }), { action: 'mark-ready', blocked: [], notes: [], authorization: 'op-2' });
   const moved = { ...ready, basis: { ...ready.basis, requirements: 'other' } };
   assert.equal(readinessAction({ evaluation: moved, view: view({ effects: [failed] }), observed: 'draft' }).action, 'mark-ready', 'a new basis is a new evaluation');
@@ -124,4 +126,42 @@ test('AC2: identity/head/base/requirements changes invalidate a basis; the base 
   assert.equal(internalReadiness(null, evaluate({ source: 'recorded' })), 'unknown', 'a recorded evaluation alone never confirms readiness');
   assert.equal(internalReadiness(null, evaluate()), 'ready');
   assert.equal(internalReadiness({ internal: 'ready', latest: evaluate() }, evaluate({ source: 'recorded' })), 'ready', 'kept for the same basis');
+});
+
+test('review MED 3: an authorization answers ONE occurrence (that human draft, that not-applied conversion); another occurrence needs a new one', () => {
+  const stale = view({ humanDraft: { observedAt: '2026-11-15T13:00:00.000Z', headSha: head },
+    authorization: { request_id: 'op-1', at, reason: 'restore', purpose: 'human-draft', binding: { kind: 'human-draft', pullRequest: 7, headSha: head, observedAt: at } } });
+  assert.deepEqual(readinessAction({ evaluation: evaluate(), view: stale, observed: 'draft' }).blocked, ['HUMAN_DRAFT_AUTHORIZATION_REQUIRED'], 'a later human draft is another occurrence');
+  const ready = evaluate();
+  const failed = (effectId: string) => ({ effectId, action: 'mark-ready' as const, reason: 'READY', basis: ready.basis, intendedAt: at, state: 'not-applied' as const, authorization: null,
+    attempt: null, observation: { at, draft: true, headSha: head, code: null }, settledAt: at });
+  const other = view({ effects: [failed('e2')], authorization: { request_id: 'op-2', at, reason: 'retry', purpose: 'repeat-conversion', binding: { kind: 'not-applied', effectId: 'e1' } } });
+  assert.deepEqual(readinessAction({ evaluation: ready, view: other, observed: 'draft' }).blocked, ['CONVERSION_NOT_APPLIED_AUTHORIZATION_REQUIRED']);
+});
+
+test('review MED 5: dependencies must come from the fresh read of this evaluation; a stale conclusion is uncertain', () => {
+  assert.deepEqual(codes(evaluate({ dependencyAttempt: 'fresh-round' })), ['uncertain:DEPENDENCIES_NOT_CURRENT']);
+  assert.deepEqual(codes(evaluate({ dependencyAttempt: 'p' })), []);
+  assert.deepEqual(codes(evaluate({ source: 'recorded', dependencyAttempt: null })), [], 'a recorded evaluation never converts nor confirms by itself');
+});
+
+test('review MED 6: strict + base advanced withdraws internal readiness but never converts a ready PR to draft by itself', () => {
+  const strict = { ...observedPull({ rules: [{ type: 'required_status_checks', ruleset: { id: 2, sourceType: 'Repository', source: 'acme/project' }, statusChecks: { strict: true, checks: [] } }] }),
+    comparison: { state: 'complete' as const, value: { status: 'diverged', aheadBy: 1, behindBy: 3 } } };
+  const behind = evaluate({ checks: evaluateChecks({ at, expect, observation: strict }) });
+  assert.deepEqual([behind.decision, codes(behind)], ['unknown', ['uncertain:CHECKS_STRICT_BRANCH_BEHIND_BASE']]);
+  const placed = view({ flag: { factory: 'ready', origin: 'readiness-effect', at, observed: 'ready', observedAt: at } });
+  assert.equal(readinessAction({ evaluation: behind, view: placed, observed: 'ready' }).action, 'none');
+  assert.equal(internalReadiness({ internal: 'ready', latest: evaluate() }, behind), 'unknown');
+});
+
+test('review LOW: disputed ownership blocks every mutation, also back to draft; a conversion that provably never left is re-evaluated once', () => {
+  const disputed = evaluate({ checks: evaluateChecks({ at, expect, observation: { ...observedPull({ draft: false }), pullRequest: { ...observedPull({ draft: false }).pullRequest, author: { id: 5, login: 'x', type: 'User' } } } }) });
+  const placed = view({ flag: { factory: 'ready', origin: 'readiness-effect', at, observed: 'ready', observedAt: at } });
+  assert.deepEqual(readinessAction({ evaluation: disputed, view: placed, observed: 'ready' }), { action: 'none', blocked: ['OWNERSHIP_DISPUTED'], notes: [], authorization: null });
+  const ready = evaluate();
+  const unsent = (effectId: string) => ({ effectId, action: 'mark-ready' as const, reason: 'READY', basis: ready.basis, intendedAt: at, state: 'not-applied' as const, authorization: null,
+    attempt: null, observation: { at, draft: true, headSha: head, code: null }, settledAt: at, neverSent: true });
+  assert.equal(readinessAction({ evaluation: ready, view: view({ effects: [unsent('u1')] }), observed: 'draft' }).action, 'mark-ready', 'never sent: one automatic re-evaluation');
+  assert.deepEqual(readinessAction({ evaluation: ready, view: view({ effects: [unsent('u1'), unsent('u2')] }), observed: 'draft' }).blocked, ['CONVERSION_NOT_APPLIED_AUTHORIZATION_REQUIRED'], 'only once');
 });

@@ -46,7 +46,10 @@ const unsettled = (execution: ExecutionView | null) => execution !== null && (ex
  */
 export function evaluateReadiness(input: { at: string; source: ReadinessEvaluation['source']; facts: ReadinessFacts; checks: ChecksEvaluation | null;
   /** Installation-level reconciliation (ticket 26): `required` = global uncertainty about own runtime resources (a concurrent writer is not excluded). */
-  installation: 'settled' | 'reconciliation-required' }): ReadinessEvaluation {
+  installation: 'settled' | 'reconciliation-required';
+  /** The dependency evaluation THIS evaluation read fresh (its attempt id): the recorded conclusion must be that one, otherwise it is stale
+   * (uncertain). Null: not enforced (a recorded evaluation, which never converts nor confirms readiness by itself). */
+  dependencyAttempt?: string | null }): ReadinessEvaluation {
   const { facts, checks } = input;
   const reasons: ReadinessReason[] = [];
   const notes: string[] = [limitationsNote];
@@ -87,8 +90,11 @@ export function evaluateReadiness(input: { at: string; source: ReadinessEvaluati
       if (reason.category === 'closed') continue;
       // A required result that is waiting, failed, operational, uncertain or behind a strict base is a CONFIRMED unmet requirement; only an
       // incomplete/unsupported/changed read is uncertain. Ownership mismatches are confirmed (never the own PR as linked).
-      const certainty = reason.category === 'indeterminate' ? 'uncertain' : 'confirmed';
-      add(reason.category === 'ownership' ? 'ownership' : 'checks', certainty, `CHECKS_${reason.code}`, reason.subject);
+      // Strict + base advanced (spec §9.3): the base moving alone never converts a ready PR to draft nor triggers reviews: uncertain only.
+      const certainty = reason.category === 'indeterminate' || reason.category === 'strict' ? 'uncertain' : 'confirmed';
+      // A head the Factory never linked is a CONTENT loss of its own PR (someone pushed to its branch), not a dispute of the PR's identity.
+      const area = reason.code === 'HEAD_NOT_LINKED_BY_FACTORY' ? 'content' : reason.category === 'ownership' ? 'ownership' : 'checks';
+      add(area, certainty, `CHECKS_${reason.code}`, reason.subject);
     }
     if (!checks.reasons.length && checks.outcome !== 'satisfied' && checks.outcome !== 'not-applicable') add('checks', 'uncertain', 'CHECKS_NOT_SATISFIED', checks.outcome);
     // Absence of conflict must be CONFIRMED (tri-state): unknown mergeability is uncertain, never a pass and never a repair trigger.
@@ -99,6 +105,7 @@ export function evaluateReadiness(input: { at: string; source: ReadinessEvaluati
   // Every pertinent impediment of the Work (authorization, question, limits, publication, recovery, timeout...), each independent.
   for (const impediment of facts.impediments.slice(0, 32)) add('impediment', 'confirmed', impediment.code, impediment.questionId);
   const conclusion = facts.dependencies.latest?.conclusion ?? null;
+  if (input.dependencyAttempt && facts.dependencies.latest?.attemptId !== input.dependencyAttempt) add('dependencies', 'uncertain', 'DEPENDENCIES_NOT_CURRENT');
   if (conclusion === 'pending') add('dependencies', 'confirmed', 'DEPENDENCIES_PENDING');
   else if (conclusion !== 'satisfied') add('dependencies', 'uncertain', 'DEPENDENCIES_NOT_CONFIRMED', conclusion ?? 'not-evaluated');
   // Concurrency: an unsettled or queued activity may change the content; an installation reconciliation does not exclude a concurrent writer.
@@ -127,16 +134,27 @@ export function readinessAction(input: { evaluation: ReadinessEvaluation; view: 
   const wanted = evaluation.decision === 'ready' && observed === 'draft' ? 'mark-ready' as const
     : evaluation.decision === 'not-ready' && observed === 'ready' ? 'convert-to-draft' as const : null;
   if (!wanted) return none();
+  // A disputed ownership (another PR identity, author, branch, repository, base or a head the Factory never linked) blocks EVERY mutation.
+  if (evaluation.reasons.some(item => item.area === 'ownership')) return none(['OWNERSHIP_DISPUTED']);
   if (wanted === 'convert-to-draft' && view.flag.factory !== 'ready') return none([], ['READY_FLAG_NOT_PLACED_BY_FACTORY']);
   let authorization: string | null = null;
+  const granted = view.authorization;
   if (wanted === 'mark-ready' && view.humanDraft) {
-    if (view.authorization?.purpose !== 'human-draft') return none(['HUMAN_DRAFT_AUTHORIZATION_REQUIRED']);
-    authorization = view.authorization.request_id;
+    // Bound to THIS human draft occurrence (PR, head, instant observed): a later draft is another occurrence.
+    const binding = granted?.binding;
+    if (granted?.purpose !== 'human-draft' || binding?.kind !== 'human-draft' || binding.pullRequest !== evaluation.basis.pullRequest ||
+      binding.headSha !== view.humanDraft.headSha || binding.observedAt !== view.humanDraft.observedAt) return none(['HUMAN_DRAFT_AUTHORIZATION_REQUIRED']);
+    authorization = granted.request_id;
   }
   const failed = [...view.effects].reverse().find(item => item.action === wanted);
   if (failed?.state === 'not-applied' && sameBasis(failed.basis, evaluation.basis) && !authorization) {
-    if (view.authorization?.purpose !== 'repeat-conversion') return none(['CONVERSION_NOT_APPLIED_AUTHORIZATION_REQUIRED']);
-    authorization = view.authorization.request_id;
+    // Provably never sent (crash/abort after the intent, before the request): ONE automatic re-evaluation per basis.
+    const unsent = view.effects.filter(item => item.action === wanted && item.neverSent && sameBasis(item.basis, evaluation.basis)).length;
+    if (!(failed.neverSent && unsent <= 1)) {
+      const binding = granted?.binding;
+      if (granted?.purpose !== 'repeat-conversion' || binding?.kind !== 'not-applied' || binding.effectId !== failed.effectId) return none(['CONVERSION_NOT_APPLIED_AUTHORIZATION_REQUIRED']);
+      authorization = granted.request_id;
+    }
   }
   return { action: wanted, blocked: [], notes: [], authorization };
 }
@@ -159,6 +177,7 @@ export function readinessNextStep(view: Pick<ReadinessView, 'internal' | 'humanD
   if (view.effect && view.effect.state !== 'confirmed' && view.effect.state !== 'not-applied') {
     return 'A conversion was sent or may have been sent: it is discovered (the flag is read again) before anything is repeated.';
   }
+  if (blocked.includes('OWNERSHIP_DISPUTED')) return 'The pull request no longer matches the Factory\'s own (identity, author, branch, repository or base): no conversion in either direction. Operator must inspect it on GitHub.';
   if (blocked.includes('HUMAN_DRAFT_AUTHORIZATION_REQUIRED')) return 'A human converted the PR back to draft: the Factory respects it. `factory authorize-readiness <work> --reason <text>` authorizes ONE restoration after a complete evaluation.';
   if (blocked.includes('CONVERSION_NOT_APPLIED_AUTHORIZATION_REQUIRED')) return 'The conversion was not applied: it is not repeated implicitly. Inspect the reason; `factory authorize-readiness <work> --reason <text>` authorizes ONE new attempt.';
   if (view.internal === 'ready') return 'Ready for human review: the evidence is current. Human review, approval and merge are human only; the Factory never approves or merges.';

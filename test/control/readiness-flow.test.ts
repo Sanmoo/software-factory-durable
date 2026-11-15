@@ -4,29 +4,32 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore } from '../../src/control/durable/store.js';
-import { admitTicket, initialize, readWork, readWorks } from '../../src/control/durable/admission.js';
+import { admitTicket, initialize, ownCycles, readWork, readWorks, recordDependencies } from '../../src/control/durable/admission.js';
+import type { Session } from '../../src/control/durable/store.js';
 import { heldSlots, initializeSlots } from '../../src/control/durable/execution.js';
 import { createChecksTracker, checksTarget } from '../../src/control/durable/checks.js';
 import { acceptReadinessAuthorization, createReadinessDesk } from '../../src/control/durable/readiness.js';
 import type { PullRequestObservation } from '../../src/code-repository/index.js';
-import { githubDoubles, scope, ticket, type Remote } from './doubles.js';
+import { githubDoubles, remoteIssue, scope, ticket, type Remote } from './doubles.js';
 import { observedPull, seedReady } from './readiness-seed.js';
 
 // Ticket 16 flow level (S): real Pi Durable/SQLite commits, the real checks tracker (ticket 15) and readiness desk; GitHub is doubled at the
 // CodeRepository contract. Not evidence of the real GitHub boundary (test/entrypoints/github-readiness*.test.ts and the real-run recipe).
+const dependencies = (session: Session) => ({ ownCycles: (ids: number[]) => ownCycles(session, ids),
+  record: (work_id: string, evaluation: Parameters<typeof recordDependencies>[2]) => recordDependencies(session, work_id, evaluation, { published: true }) });
 async function world(t: { after(fn: () => Promise<void>): void }, remote: Partial<Remote> = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'factory-readiness-flow-'));
   const opened = await openStore(join(dir, 'c.sqlite'));
   t.after(async () => { await opened.close(); await rm(dir, { recursive: true, force: true }); });
   const { session } = opened;
   await initialize(session); await initializeSlots(session);
-  const github = githubDoubles({ issues: [], pulls: {}, pullRequests: { 7: observedPull() }, ...remote });
+  const github = githubDoubles({ issues: [remoteIssue(3)], pulls: {}, pullRequests: { 7: observedPull() }, ...remote });
   let now = 0;
   const access = { tracker: github.tracker, repository: github.repository, repositories: [scope] };
   const clock = { monotonic: () => now };
   const tracker = createChecksTracker({ session, access, readWorks: () => readWorks(session), busy: () => false, clock, minIntervalMs: 60000 });
   let installation: 'settled' | 'reconciliation-required' = 'settled';
-  const desk = createReadinessDesk({ session, access, readWorks: () => readWorks(session), installation: () => installation, clock, minIntervalMs: 60000 });
+  const desk = createReadinessDesk({ session, access, readWorks: () => readWorks(session), installation: () => installation, clock, minIntervalMs: 60000, dependencies: dependencies(session) });
   const result = await admitTicket(session, { ticket: ticket(3), repository: { repository: 'acme/project', repositoryId: 3, base: 'main' }, observedAt: new Date().toISOString(),
     label: { id: 55, name: 'ready-for-agent' }, publication: { observedAt: new Date().toISOString(), limitations: [] } });
   assert.equal(result.kind, 'admitted');
@@ -64,7 +67,10 @@ test('AC3/AC6: a complete current evaluation, a fresh recheck, intent BEFORE the
   assert.equal(checksTarget(after)!.number, 7);
   await h.cycle(); await h.cycle();
   assert.equal(h.calls('setDraft').length, 1, 'stable ready: nothing repeated');
-  assert.ok(h.github.calls.every(call => ['readPullRequest', 'setDraft'].includes(call.method)), 'no other GitHub operation (no review, approval or merge)');
+  assert.ok(h.github.calls.every(call => ['readPullRequest', 'setDraft', 'readDependencyGraph'].includes(call.method)), 'no other GitHub operation (no review, approval or merge)');
+  const methods = h.github.calls.map(call => call.method);
+  assert.ok(methods.indexOf('readDependencyGraph') < methods.indexOf('setDraft'), 'dependencies read fresh before the conversion');
+  assert.equal(after.dependencies.latest!.conclusion, 'satisfied');
 });
 
 test('AC3: an uncertain conversion is discovered before anything else; one that did not apply is never repeated without an operator authorization', async t => {
@@ -98,7 +104,7 @@ test('V-12: an intent committed before a crash is discovered from the flag after
   for (let i = 0; i < 500 && (await h.work()).readiness?.effect?.state !== 'intended'; i++) await new Promise(resolve => setImmediate(resolve));
   assert.equal((await h.work()).readiness!.effect!.state, 'intended');
   const sent: unknown[] = [];
-  const restarted = createReadinessDesk({ session: h.session, readWorks: () => readWorks(h.session), installation: () => 'settled', clock: { monotonic: () => 1e9 },
+  const restarted = createReadinessDesk({ session: h.session, readWorks: () => readWorks(h.session), installation: () => 'settled', clock: { monotonic: () => 1e9 }, dependencies: dependencies(h.session),
     access: { tracker: h.github.tracker, repositories: [scope], repository: { ...h.github.repository, setDraft: async (...args) => { sent.push(args); throw new Error('never'); } } } });
   await restarted.pass(new AbortController().signal);
   const settled = (await h.work()).readiness!;
@@ -109,6 +115,7 @@ test('V-12: an intent committed before a crash is discovered from the flag after
   release();
   await dying;
   assert.equal((await h.work()).readiness!.effects.length, 1, 'the dead owner\'s late steps are stale');
+  assert.match((await h.work()).readiness!.nextStep, /authorize-readiness/, 'it was SENT (sending marker): only an operator authorization repeats it');
 });
 
 test('AC4/AC5: confirmed loss restores draft with its reason; the Factory draft is restored after a complete evaluation; transient reads flip nothing', async t => {
@@ -183,4 +190,78 @@ test('AC2/AC7 race: a change of requirements between the evaluation and the rech
     return count === 2 && result.kind === 'observed' ? { ...result, baseTip: { state: 'complete', value: 'f'.repeat(40) }, final: { ...result.final, baseTip: { state: 'complete', value: 'f'.repeat(40) } } } : result; };
   await g.cycle();
   assert.equal(g.calls('setDraft').length, 1, 'base advancing alone (loose): no invalidation, no review, no rebase');
+});
+
+test('review MED 1: a push between the recheck and the mutation: flag Factory-placed on an unverified head, internal readiness withdrawn, then back to draft', async t => {
+  const remote: Partial<Remote> = { pullRequests: { 7: observedPull() } };
+  const h = await world(t, remote);
+  const setDraft = h.github.repository.setDraft;
+  h.github.repository.setDraft = async (...args) => {
+    // A human pushes right before the mutation lands (GitHub answers with the new headRefOid).
+    remote.pullRequests![7] = observedPull({ headSha: 'e'.repeat(40) });
+    return setDraft(...args);
+  };
+  await h.cycle();
+  const placed = (await h.work()).readiness!;
+  assert.deepEqual([placed.effects[0]!.state, placed.effects[0]!.headMismatch, placed.flag.factory, placed.internal],
+    ['confirmed', { evaluated: 'd'.repeat(40), observed: 'e'.repeat(40) }, 'ready', 'unknown'], 'the flag is ours, readiness is not');
+  h.github.repository.setDraft = setDraft;
+  await h.until(async () => (await h.work()).readiness!.effects.length === 2);
+  const back = (await h.work()).readiness!;
+  assert.deepEqual([back.effects[1]!.action, back.effects[1]!.state, back.internal], ['convert-to-draft', 'confirmed', 'not-ready']);
+  assert.match(back.effects[1]!.reason, /HEAD_NOT_VERIFIED_CONTENT/);
+});
+
+test('review MED 2: an applied mutation contradicted by a lagging read stays pending (never not-applied, never a human ready) until the flag is observed', async t => {
+  const remote: Partial<Remote> = { pullRequests: { 7: observedPull() } };
+  const h = await world(t, remote);
+  const read = h.github.repository.readPullRequest;
+  let lag = true;
+  h.github.repository.readPullRequest = async query => {
+    const result = await read(query);
+    // The observation right after the mutation still shows the old draft flag.
+    if (lag && h.calls('setDraft').length === 1 && result.kind === 'observed') { lag = false; return { ...result, pullRequest: { ...result.pullRequest, draft: true } }; }
+    return result;
+  };
+  await h.cycle();
+  const lagging = (await h.work()).readiness!;
+  assert.deepEqual([lagging.effect?.state, lagging.effect?.contradictions, lagging.effects.length, lagging.humanReady], ['attempted', 1, 0, null]);
+  await h.cycle();
+  const settled = (await h.work()).readiness!;
+  assert.deepEqual([settled.effects.map(item => item.state), settled.humanReady, settled.humanDraft, settled.flag.factory, h.calls('setDraft').length],
+    [['confirmed'], null, null, 'ready', 1]);
+});
+
+test('review MED 5: a dependency now pending blocks the conversion, from the fresh read before the recheck', async t => {
+  const remote: Partial<Remote> = { pullRequests: { 7: observedPull() }, issues: [remoteIssue(3, { blockedBy: [9] }), remoteIssue(9)] };
+  const h = await world(t, remote);
+  await h.cycle();
+  const blocked = (await h.work()).readiness!;
+  assert.equal(h.calls('setDraft').length, 0);
+  assert.ok(blocked.latest.reasons.some(item => item.code === 'DEPENDENCIES_PENDING'), JSON.stringify(blocked.latest.reasons));
+});
+
+test('review LOW: aborted after the intent and before sending: discovered as never sent, then ONE automatic re-evaluation converts it', async t => {
+  const h = await world(t, { pullRequests: { 7: observedPull() } });
+  const stop = new AbortController();
+  const session = new Proxy(h.session, { get(target, name) {
+    const value = Reflect.get(target, name) as unknown;
+    if (typeof value !== 'function') return value;
+    if (name !== 'commit') return (value as (...args: unknown[]) => unknown).bind(target);
+    return async (...args: unknown[]) => { const result = await (value as (...a: unknown[]) => Promise<unknown>).apply(target, args);
+      if (result && typeof result === 'object' && (result as { state?: string }).state === 'intended' && 'effectId' in result) stop.abort(); return result; };
+  } }) as Session;
+  const desk = createReadinessDesk({ session, readWorks: () => readWorks(h.session), installation: () => 'settled', clock: { monotonic: () => 1e9 }, dependencies: dependencies(h.session),
+    access: { tracker: h.github.tracker, repositories: [scope], repository: h.github.repository } });
+  const tracker = createChecksTracker({ session: h.session, access: { tracker: h.github.tracker, repository: h.github.repository, repositories: [scope] }, readWorks: () => readWorks(h.session), busy: () => false });
+  await tracker.pass(new AbortController().signal);
+  await desk.pass(stop.signal);
+  const intended = (await h.work()).readiness!.effect!;
+  assert.deepEqual([intended.state, intended.sendingAt, h.calls('setDraft').length], ['intended', null, 0]);
+  await h.desk.pass(new AbortController().signal);
+  assert.deepEqual((await h.work()).readiness!.effects.map(item => [item.state, item.neverSent]), [['not-applied', true]]);
+  await h.cycle();
+  const done = (await h.work()).readiness!;
+  assert.deepEqual([h.calls('setDraft').length, done.effects.map(item => item.state)], [1, ['not-applied', 'confirmed']], 'one automatic re-evaluation, no operator needed');
+  assert.ok((await h.work()).history.some(item => item.event === 'readiness-not-applied' && /never-sent/.test(item.detail)));
 });
