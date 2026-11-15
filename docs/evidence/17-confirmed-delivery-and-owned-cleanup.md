@@ -187,6 +187,45 @@ A JSON body that fails to parse yields the same code, so the hold record cannot 
 - GraphQL `updateRefs`: `data.updateRefs` and `errors` only, with unknown fields ignored; its real availability for the App token is still checked by the run itself.
 - Ref GET: not used; `matching-refs` is used instead.
 
+## Real run `q17-delivery-v4` (2026-11-15, operator-authorized; run by the supervisor)
+
+Files, copied verbatim and scanned for tokens/keys/JWTs with none found:
+- `17-real-delivery-v4-preflight-2026-11-15.json`
+- `17-real-delivery-v4-deliver-precondition-2026-11-15.json`
+- `17-real-delivery-v4-deliver-2026-11-15.json`
+- `17-real-delivery-v4-retry-2026-11-15.json`
+- `17-real-delivery-v4-inspect-2026-11-15.json`
+
+Sequence:
+1. Preflight (10:37 local).
+2. Ticket 16's real run converted PR #5 to ready (now integrated, 992c7c6).
+3. The operator approved and merged PR #5: merge commit `eb6178d666882a614a9b7716979c2a15bbd262fc`, merged_by Sanmoo, 15:08:08Z.
+4. `deliver`, then `retry` (a new owner process, i.e. a boot sweep), then `inspect`. All exited 0 with outcome `clean`.
+
+| Recipe expectation | Observed | Verdict |
+| --- | --- | --- |
+| preflight: copy of v8 migrated 1→2, digest checked, original untouched | `authority`: `factory-storage-1-to-2`, format 1 → 2, preserved digest `74b96fb5cbb47cc0…` before = after; own PR #5 open at `bfdd439`; refs read | met |
+| deliver precondition: PR #5 merged at `bfdd439` into `main` | `closed`, `merged: true`, `merged_at 15:08:08Z`, head `bfdd439…`, base `main`, `draft: false` (Factory readiness, ticket 16) | met |
+| deliver: `delivered`, merge of own PR #5, `duringActivity` null | `delivery.state delivered`, observation `merged`, merge `{number 5, headSha bfdd439, mergedAt 15:08:08Z, duringActivity null}` | met; `mergeCommitSha: null`, see note 1 |
+| minimal memory delivered + `mergeConfirmed` | `ticketIndex.memory[issue 6391129588].cycles = [{work 99fe871b, cycle 1, result delivered, mergeConfirmed true}]`; `ownCycles` gives the same; on a scratch copy `admitTicket(#3)` → `existing` (no re-admission) | met; see note 2 |
+| evidence preserved before removal | evidence `28ca510d…`: 19 files, 14112 bytes, manifest sha256 `e2f3e2e7…`; then `remove` (event order preserve → remove) | met |
+| environment/checkout/local-branch/temporaries removed; remote-branch failed (provoked); cleanup pending; `status.delivery` `{delivered 1, pending 1}` | exactly that; `branchCalls` `[real:false]`; no activation, prepare or credential was requested (capacity 0) | met |
+| retry: only the remote branch, one real atomic deletion, complete | `branchCalls` `[real:true]`; outcome `removed BRANCH_DELETED`, revocation `revoked`; environments not touched again (no `remove`/`preserve` events); cleanup `complete`; attempts `[RECIPE_PROVOKED_FAILURE, BRANCH_DELETED]` | met. **`updateRefs` is available to the App token** (real proof of the atomic deletion). |
+| inspect: refs diff only the own branch | `removed [refs/heads/factory/3-99fe871b]`, `added []`, `moved [refs/heads/main]` (moved only by the human merge) | met |
+| host: only the own environment's data, own runtime dirs | `env-9724f855…` (owner `99fe871b`): `root.qcow2`, `workspace/`, `artifacts/` gone; `owner.json`, `current.json`, `checkout*.json` and boot records kept, plus `cleanup-request.json`, `removed.json`, `runtime-cleanup-<boot>.json` ×2. Runtime dirs: the 2 boot dirs of that environment removed, all others kept | met |
+| nothing else touched | 22 other environments (q05/q06/q09–q14 Works, including the q14 v6 Work `28c75e5a`) with identical entries; shared cache `cache/git/1256893534.git` unchanged; Work #6 in the same storage still `open`, no Execution started | met |
+| no token in observations | scan clean | met |
+
+**Note 1, `mergeCommitSha: null`.** GitHub's UI reports merge commit `eb6178d…`, but the delivery reads (15:08:53, 15:08:39 precondition, 15:09:12 inspect) all returned `merge_commit_sha` not usable. The parser keeps it when it is present; this is proven with the real merged values in `github-pull-real-shape`. So the response under the pinned `X-GitHub-Api-Version: 2026-03-10` did not carry it: either it was absent or null, and that is not distinguishable from these records.
+
+Fixed: facts now record `reported.mergeCommitSha` (`value`/`null`/`absent`), and the merge keeps `mergeCommitShaReport`, so the next run shows which one it was. Delivery does not depend on it: `merged_at` on the closed own PR is the evidence.
+
+**Note 2, `work.memory` null in inspect.** The minimal memory is not a field of the Work view. It lives in the installation-level ticket index (`factory.ticket-index` → `memory`), written in the same commit as the delivery. I read it from a scratch copy of the inspect storage, with the result shown in the table.
+
+**Ticket 39 finding.** The first human merge attempt was refused by GitHub ("Cannot update this protected ref"): ruleset `update` ("Restrict updates") blocks any update of `main`, including a PR merge, for anyone without bypass. Tickets 15/16 had classified it `not-check-related` and declared PR #5 ready. The operator removed the `update` rule so that the merge could be done without bypass. Ticket 39 now owns the fix, which is to treat merge-blocking base rules as a readiness impediment. Ticket 17 itself is unaffected: it only observes the merge, and the Factory never merges, approves or bypasses.
+
+**Operator steps as actually done:** ticket 16 converted readiness, then a human gave the required approval, then a merge commit, with no bypass and no "Delete branch". This matches `plan().operatorStep`, apart from the ruleset change that ticket 39 records.
+
 ## Gates (this worktree, after the last commit)
 
 **After the rebase onto `b2da9ae` (gate `npm run test:ci` = `scripts/test-runner/run ci`):** RESULT PASS.

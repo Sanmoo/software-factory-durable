@@ -1,0 +1,25 @@
+{
+ "pull": {
+  "kind": "observed",
+  "source": "github-rest",
+  "observedAt": "2026-11-15T15:08:39.198Z",
+  "repositoryId": 1256893534,
+  "pullRequest": {
+   "pullRequestId": 5321820867,
+   "nodeId": "PR_kwDOSuqsXs8AAAABPTSKww",
+   "number": 5,
+   "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5",
+   "state": "closed",
+   "draft": false,
+   "merged": true,
+   "mergedAt": "2026-11-15T15:08:08Z",
+   "mergeCommitSha": null,
+   "headRef": "factory/3-99fe871b",
+   "headSha": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+   "headRepositoryId": 1256893534,
+   "baseRef": "main",
+   "baseRepositoryId": 1256893534
+  }
+ },
+ "readiness": "converted by the Factory (ticket 16) per operator; not verified by this recipe"
+}

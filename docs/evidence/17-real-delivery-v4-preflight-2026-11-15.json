@@ -1,0 +1,469 @@
+{
+ "status": "success",
+ "authority": {
+  "kind": "migrated",
+  "storagePath": "/home/sanmoo/software-factory-test/y5/q17-delivery-v4/authority/control.sqlite",
+  "migration": "factory-storage-1-to-2",
+  "before": {
+   "format": 1,
+   "operational": "migration-required",
+   "digest": "74b96fb5cbb47cc035fba69c92ca5ee4abe0ae1db26b247fc00c6ccc18cd10cf"
+  },
+  "after": {
+   "format": 2,
+   "operational": "ready",
+   "digest": "74b96fb5cbb47cc035fba69c92ca5ee4abe0ae1db26b247fc00c6ccc18cd10cf"
+  }
+ },
+ "workId": "99fe871b-b872-4522-912c-fefd9700edda",
+ "ownPullRequest": {
+  "pullRequestId": 5321820867,
+  "nodeId": "PR_kwDOSuqsXs8AAAABPTSKww",
+  "number": 5,
+  "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5",
+  "state": "open",
+  "merged": false,
+  "draft": true,
+  "headRef": "factory/3-99fe871b",
+  "headSha": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+  "base": "main",
+  "author": {
+   "id": 351187749,
+   "login": "sanmoo-factory[bot]",
+   "type": "Bot"
+  },
+  "linkedAt": "2026-11-15T10:31:44.334Z",
+  "bodySha256": "e9f805bb54a1d283c657e2a4d21bf4286571be98c13a860cbedeff453e8bdd24"
+ },
+ "linkedHeads": [
+  "bfdd439ceba20a424538647f41e55d5ab2d03217"
+ ],
+ "branch": "factory/3-99fe871b",
+ "pull": {
+  "kind": "observed",
+  "source": "github-rest",
+  "observedAt": "2026-11-15T13:37:37.793Z",
+  "repositoryId": 1256893534,
+  "pullRequest": {
+   "pullRequestId": 5321820867,
+   "nodeId": "PR_kwDOSuqsXs8AAAABPTSKww",
+   "number": 5,
+   "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5",
+   "state": "open",
+   "draft": true,
+   "merged": false,
+   "mergedAt": null,
+   "mergeCommitSha": null,
+   "headRef": "factory/3-99fe871b",
+   "headSha": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+   "headRepositoryId": 1256893534,
+   "baseRef": "main",
+   "baseRepositoryId": 1256893534
+  }
+ },
+ "refs": {
+  "refs/heads/factory/3-99fe871b": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+  "refs/heads/main": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c"
+ },
+ "inventory": {
+  "environments": {
+   "env-0d17167a5f60efc53111e3817711db45efe00deba56ff410f486a844e0ae8a41": {
+    "owner": "6f7a804e-236e-4a0d-948c-d5169081eba5",
+    "entries": [
+     "artifacts",
+     "boot-137307bf-e2f3-4321-a17f-ff11ee57e9bf",
+     "checkout-intent.json",
+     "checkout.json",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   },
+   "env-1a5dfcd03ca7e5828e4aba6806f7575e3e189fbf4fd3d9d67a67297608fef17b": {
+    "owner": "a5f25ab7-6e42-4b63-90fb-4660d34d2995",
+    "entries": [
+     "artifacts",
+     "boot-076dd0f1-908a-45db-8c92-287325f66ddb",
+     "checkout-intent.json",
+     "checkout.json",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   },
+   "env-24fa9f68040668eabf7299598aec8e899b58fafaa2c192992d153018af4ce131": {
+    "owner": "876f8245-2a80-41f9-80cc-40ba16087bca",
+    "entries": [
+     "artifacts",
+     "boot-2f34cb5f-3dcc-472c-82f7-6c0985438b4d",
+     "boot-aac928f4-6183-445a-9191-8514475dcd30",
+     "boot-aeee2fe9-9761-453c-b417-4b7ff6bf2561",
+     "checkout-intent.json",
+     "checkout.json",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   },
+   "env-3427342584fb4c9db67a6c468452f4b139db9a2bf51b272feb20925e64d16a81": {
+    "owner": "q05-821c351a-b41c-45a1-9ed0-7839131e0bb3",
+    "entries": [
+     "artifacts",
+     "boot-73b22193-9dcd-44f4-8a83-1fb3cf45830a",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   },
+   "env-3fd513709d907379781801e7df8858dad47f86b4f1d3e3c421d20848c6738c8b": {
+    "owner": "q06-09aa794c-4324-4a8a-af51-596a27845ff4",
+    "entries": [
+     "artifacts",
+     "boot-13d90a60-e3cf-4674-85b9-6aa038d3b80c",
+     "boot-97b0ccf6-79f4-43a0-aee3-2424611be257",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   },
+   "env-473161d181f6ff73f385613104cf265b1ec72b2987aa8bdeb458a37bdf20ff88": {
+    "owner": "28c75e5a-f540-4056-b879-4f7020ea11a8",
+    "entries": [
+     "artifacts",
+     "boot-762e8a60-f8f4-4014-9df3-1db7af889272",
+     "boot-b1969f60-cb9f-4070-b8e3-c1bb359be53b",
+     "checkout-intent.json",
+     "checkout.json",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   },
+   "env-4b0f531128d0d7faa869978dc36a9d4f1595de901ee6613d22f2985f6c0ea0c6": {
+    "owner": "8422dbf8-c962-4463-80ef-3442e94f65d1",
+    "entries": [
+     "artifacts",
+     "boot-76e1931d-0fd1-4121-bace-ad0d63899997",
+     "checkout-intent.json",
+     "checkout.json",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   },
+   "env-714b2183fbed7630da7e179d30c1ae6e7f5c55c07fd2884c8fcb1c7013119b96": {
+    "owner": "q06-f87b756f-e448-4ac7-b161-d4449bc99527",
+    "entries": [
+     "artifacts",
+     "boot-6790610e-db2e-4ae4-a3bf-d6b5cdd44a60",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   },
+   "env-75b775f7973a6d1a614e4552d3135fd5663200acf886765f7470943831f0c7c2": {
+    "owner": "c6a7a2e2-5fb5-43ce-b46c-c1b636cc7651",
+    "entries": [
+     "artifacts",
+     "boot-5e1f076c-2b20-45fd-b162-cd033d272231",
+     "checkout-intent.json",
+     "checkout.json",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   },
+   "env-75f39d6586f0c65cfcafccdc16ced5645e6db91f950362ae901cfefe41c5a7ca": {
+    "owner": "f209e8a1-f7da-42e7-a173-69252ce5854d",
+    "entries": [
+     "artifacts",
+     "boot-1eee6366-72fb-4d8a-bc05-e4e0937ebcf9",
+     "boot-ca39324f-c613-4798-8a4c-0cdaca26f5ba",
+     "checkout-intent.json",
+     "checkout.json",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   },
+   "env-7b1de5b0b6f83cf9757b71e7e0c72ad365e54421ed4bb63217c154199a934329": {
+    "owner": "q05-ba45e930-892f-409f-afa8-95d61c70a6c6",
+    "entries": [
+     "artifacts",
+     "boot-2822adb9-5182-46a6-9033-ba4aed4078e6",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   },
+   "env-9724f855fd065bd79d40b9277c791cc4f82b775834d9d70ee14fe930544b0929": {
+    "owner": "99fe871b-b872-4522-912c-fefd9700edda",
+    "entries": [
+     "artifacts",
+     "boot-399a02b3-52be-4410-8f20-97672187ce1f",
+     "boot-c51a796a-7f93-40ba-a733-5f9e61c2410c",
+     "checkout-intent.json",
+     "checkout.json",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   },
+   "env-9ad204ad81ee93ce8ffe6245445586b8678f126c79d2fd888b4a31621b33afeb": {
+    "owner": "97e80b59-52bc-4952-bc5f-0a7d4dbe3048",
+    "entries": [
+     "artifacts",
+     "boot-05a8cd80-751a-4678-9c04-11d834a8058c",
+     "checkout-intent.json",
+     "checkout.json",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   },
+   "env-a3e73d39893bb47c3b4c81451c3eb84887f0ce21e00798b488a317480955e27f": {
+    "owner": "230358b0-72b4-4412-ad23-c368403677cc",
+    "entries": [
+     "artifacts",
+     "boot-5b97c4a3-71c5-4270-980a-4e7f7fe3ccc7",
+     "boot-77f6786f-39ff-4daf-bfb5-04d409820006",
+     "boot-f0a92094-799e-4496-8d1c-de136085c975",
+     "checkout-intent.json",
+     "checkout.json",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   },
+   "env-a604c02a912491d85dce12a0bf9e5a35b501d23b5d4c9b3e7cfaa3649166ca7c": {
+    "owner": "q05-18ffc9d6-9a2f-4ddf-89b9-2ab10b5fcc5d",
+    "entries": [
+     "artifacts",
+     "boot-fcbc8aac-626c-4637-b3a0-7a7e11745577",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   },
+   "env-ac54df5572efc504b73b735fa280aafb2bcc60c4eeaac30010f5d313b7c57a6c": {
+    "owner": "0d077da1-cbfb-4e29-a1d9-70ef1f545433",
+    "entries": [
+     "artifacts",
+     "boot-1fce9cf1-de2b-471a-a902-539b78eb807c",
+     "checkout-intent.json",
+     "checkout.json",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   },
+   "env-b88abcaa3725a04df5fe5bdbdc43b7b6a6aaa6dbcf4d77ef4fe9aef9f26904c5": {
+    "owner": "860b3ca1-6b76-4a58-8a53-8a15b97653e9",
+    "entries": [
+     "artifacts",
+     "boot-679682b1-3531-4504-8372-c28f98028d3e",
+     "checkout-intent.json",
+     "checkout.json",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   },
+   "env-cbe807715a062a32efd9ec7f1013d57ce770dcc35882325e2c6cdc8cdb807cdc": {
+    "owner": "q06-6e3ea90b-0f0d-497c-8f63-23333c505957",
+    "entries": [
+     "artifacts",
+     "boot-e951e827-c348-41d4-8077-7dae6401195a",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   },
+   "env-cd9751b4519f7d09b9c2bcdaafed6153d122ab8767214915d4cb09faaaae737a": {
+    "owner": "d556544a-5e5b-4051-813c-382c2f0f5a67",
+    "entries": [
+     "artifacts",
+     "boot-4ce9b82d-49bc-442c-a96f-1b8283127de5",
+     "boot-7d76350f-d518-4f6a-844a-eef721eb3865",
+     "boot-a79af328-1496-4f10-a5fd-106087891f42",
+     "checkout-intent.json",
+     "checkout.json",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   },
+   "env-d4e776e1d090a652dc691b6d041b30a8adcb7283479bf5860dbad94e1adae740": {
+    "owner": "q05-096cdef8-35c1-4621-98d1-a6fb3a66b4f7",
+    "entries": [
+     "artifacts",
+     "boot-e66259ce-ac59-498f-91ff-c8c198351928",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   },
+   "env-d5803ea68bf639a4533d25ca96a6688d8ef50da7596adb9028f94e415a0ac4d1": {
+    "owner": "65bf3de7-4e41-4626-9b83-0f5582d8c924",
+    "entries": [
+     "artifacts",
+     "boot-5e99f99c-bcc5-47ba-aa49-acc9c977c56b",
+     "checkout-intent.json",
+     "checkout.json",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   },
+   "env-ecabd427edc72fd22110f25e5b00a9fb28c065e231d04af5dd5852e2b88c09a7": {
+    "owner": "5a018c66-e690-4e8d-a6dc-075df00c98f9",
+    "entries": [
+     "artifacts",
+     "boot-502a4304-25bc-413d-b4f3-9e0fb41eaf1f",
+     "checkout-intent.json",
+     "checkout.json",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   },
+   "env-f5a2e62167a8158e7c0170f75bc44b5c71ed6ae67f66c044eae7ef86a21c99bc": {
+    "owner": "12334f71-99a6-4a3f-b1f4-fb78afbd608b",
+    "entries": [
+     "artifacts",
+     "boot-5884a255-14a1-4f65-ae55-3cf4fdf94b3f",
+     "checkout-intent.json",
+     "checkout.json",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   },
+   "env-f99a1829b898f02a5f1d8c42d86c0dc13d2aa1779eb42579bbbd97b106bb7195": {
+    "owner": "887f7681-3345-4251-bc1f-b907450dc188",
+    "entries": [
+     "artifacts",
+     "boot-1e8a5d76-ea19-4e8b-8a9e-72800a94661c",
+     "checkout-intent.json",
+     "checkout.json",
+     "current.json",
+     "owner.json",
+     "ready.json",
+     "root.qcow2",
+     "workspace"
+    ]
+   }
+  },
+  "runtime": [
+   "5mJZzqxZSY-R_8jBmDUZKA",
+   "6VHoJ8NIQdSAd32uZAEZWg",
+   "8KkglHmeRJaNHN4TYIXJdQ",
+   "B23Q8ZCKRduMkihzJfZt2w",
+   "BajNgHUaRnicBBHYNKgFjA",
+   "E3MHv-LzQyGhf_8R7lfpvw",
+   "E9kKYOPPRnSFuWqgONO4DA",
+   "H86c8d4rRxqpAlObeOuAfA",
+   "HopdduoZTouKnnKACpRmHA",
+   "Hu5jZnL7TYq8BeTgk368-Q",
+   "KCKtuVGCRqaQM7pK7UB45g",
+   "LzTLXz3MRyyC92wJhUOLTQ",
+   "OZoCs1K-RBCPIJdnIYfOHw",
+   "TOm4LUm8RCypbxuCgxJ95Q",
+   "UCpDBCW8QT20854PtB6vHw",
+   "W5fEo3HFQnCYCk5_f-PMxw",
+   "WISiVRShT2WuVTz0_flLPw",
+   "Xh8HbCsgRf2xYs0DPSciMQ",
+   "Xpn5nLzFR7qqSazJyXfFaw",
+   "Z5BhDtsuSuSjv9a1zdRKYA",
+   "Z5aCsTUxRQSDcsKPmAKNPg",
+   "_LyKrGJsRjezoHp-EXRVdw",
+   "c7Ihk53NRPSKgx-zz0WDCg",
+   "d_Z4bzn_Ta-_tQTUCYIABg",
+   "di6KYPj0QBSd8x23r4iScg",
+   "duGTHQ_RQSG6zq0NY4mZlw",
+   "fXY1D9UYT2qESu73Ies4ZQ",
+   "l7DM9nn0Q6Cu4yQkYRviVw",
+   "p5rzKBSWTxCl_RBgh4kfQg",
+   "qsko9GGDRFqRkYUUR13NMA",
+   "ru4v6ZdhRTy0F0t_9r8lYQ",
+   "sZafYMufQHC448G7NZvlOw",
+   "xRp5an-TQLqnM1-eYcJBDA",
+   "yjkyT8YTR5iKTAzayib1ug"
+  ],
+  "cache": [
+   "1256893534.git",
+   "1256893534.git.lock",
+   "1256893534.lock",
+   "1256893534.state.json"
+  ]
+ },
+ "operator": {
+  "between": [
+   "preflight",
+   "deliver"
+  ],
+  "who": "human operator with their own GitHub account (never the Factory/App, never an admin bypass)",
+  "steps": [
+   "Only after `preflight` succeeded. Open https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5 and check: head factory/3-99fe871b at bfdd439ceba20a424538647f41e55d5ab2d03217, base main, still draft and open.",
+   "Repository Settings > General: \"Automatically delete head branches\" must be OFF (if it is ON the branch disappears with the merge and the expected remote-branch outcome becomes absent instead of removed).",
+   "Click \"Ready for review\" on PR #5 (or `gh pr ready 5` authenticated as yourself).",
+   "An approving review is REQUIRED: the main ruleset (26435808) requires 1 approving review. Approve PR #5 yourself (the author is the App bot, so your human approval counts). Never use \"bypass rules\" (the only bypass is RepositoryRole 5 in pull_request mode) or an admin merge.",
+   "Merge PR #5 with merge commit, squash or rebase (all three are allowed by the ruleset and all are acceptable to the Factory: delivery reads merged/merged_at/merge_commit_sha and the PR head bfdd439…, which no merge method changes); prefer \"Create a merge commit\".",
+   "Do NOT click \"Delete branch\" after merging, do NOT push to factory/3-99fe871b afterwards (a moved tip makes the Factory keep it: refused BRANCH_TIP_CHANGED), and do not reopen the PR or edit issue #3 (its \"Closes #3\" closure by the merge is expected and is not what delivers).",
+   "Then run `deliver`."
+  ],
+  "acceptableMergeMethods": [
+   "merge",
+   "squash",
+   "rebase"
+  ],
+  "approvalRequired": true,
+  "requires": "ruleset 26435808: 1 approving review, allowed methods merge/squash/rebase, delete_branch_on_merge false, bypass only RepositoryRole 5 (pull_request mode); the Factory itself never merges"
+ }
+}
