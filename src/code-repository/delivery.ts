@@ -32,12 +32,23 @@ export type BranchCleanupResult = { outcome: 'removed' | 'absent' | 'refused' | 
   tip: string | null; revocation: string; nextStep: string; effectId: string };
 
 const sha = z.string().regex(/^[0-9a-f]{40}$/);
+/**
+ * Single pull request (GET /repos/{repo}/pulls/{n}). Required fields are the ones ticket 14's adapter already parses from REAL GitHub
+ * responses (id, node_id, number, html_url, state, draft, merged_at, head ref/sha/repo, base ref); `merged`, `merge_commit_sha` and
+ * `base.repo` are read when present (they are on the real payload of PR #5, fixture `github-pull-5-real.json`) but a response without them
+ * still parses: the merge is then known ONLY from `merged_at`. Unknown fields are ignored.
+ */
 const pullSchema = z.object({
   id: z.number().int().positive().safe(), node_id: z.string().min(1).max(256), number: z.number().int().positive().safe(), html_url: z.string().url(),
-  state: z.enum(['open', 'closed']), draft: z.boolean(), merged: z.boolean(), merged_at: z.string().nullable(), merge_commit_sha: sha.nullable(),
+  state: z.enum(['open', 'closed']), draft: z.boolean(), merged_at: z.string().min(1).nullable(),
+  merged: z.boolean().optional(), merge_commit_sha: sha.nullable().optional(),
   head: z.object({ ref: z.string().min(1).max(512), sha, repo: z.object({ id: z.number().int().positive().safe() }).nullable() }),
-  base: z.object({ ref: z.string().min(1).max(512), repo: z.object({ id: z.number().int().positive().safe() }).nullable() }),
+  base: z.object({ ref: z.string().min(1).max(512), repo: z.object({ id: z.number().int().positive().safe() }).nullable().optional() }),
 });
+/** Field paths of a schema failure (never values): diagnosable without copying payload content into records. */
+const paths = (error: z.ZodError) => [...new Set(error.issues.map(issue => issue.path.join('.') || '(root)'))].slice(0, 12).join(', ');
+/** `merged` (when GitHub sends it) must agree with `merged_at`; a contradiction is never resolved by guessing. */
+const mergedOf = (pull: z.infer<typeof pullSchema>) => pull.merged === undefined || pull.merged === (pull.merged_at !== null) ? pull.merged_at !== null : null;
 const branchName = /^(?!-)(?!.*\.\.)(?!.*\/\/)(?!.*@\{)[A-Za-z0-9._/-]{1,200}(?<![./])$/;
 const encode = (branch: string) => branch.split('/').map(encodeURIComponent).join('/');
 
@@ -55,19 +66,27 @@ export function deliveryOperations(options: { github: GitHubAccess }) {
   return {
     async readPullRequest(pr: PullRequestRef): Promise<PullRequestObservation> {
       if (!Number.isSafeInteger(pr.number) || pr.number <= 0) throw new Error('INVALID_PULL_REQUEST_REF');
-      const read = await options.github.read(pr.repo, 'delivery-read', async session => {
-        if (session.repositoryId !== pr.repositoryId) throw new InvalidGitHubObservation();
+      type Checked = { ok: true; pull: z.infer<typeof pullSchema>; merged: boolean } | { ok: false; code: string; detail: string };
+      // Each check is reported by its own code (never one generic invalid payload), so a real-run hold names exactly what failed.
+      const read = await options.github.read(pr.repo, 'delivery-read', async (session): Promise<Checked> => {
+        if (session.repositoryId !== pr.repositoryId) return { ok: false, code: 'PULL_REQUEST_REPOSITORY_MISMATCH', detail: 'The read grant is for another repository id than the own Work.' };
         const parsed = pullSchema.safeParse(await session.get(`/repos/${pr.repo.repository}/pulls/${pr.number}`));
-        if (!parsed.success || parsed.data.number !== pr.number ||
-          parsed.data.html_url.toLowerCase() !== `https://github.com/${pr.repo.repository}/pull/${pr.number}`.toLowerCase()) throw new InvalidGitHubObservation();
-        return parsed.data;
+        if (!parsed.success) return { ok: false, code: 'PULL_REQUEST_PAYLOAD_INVALID', detail: `Unexpected pull request fields: ${paths(parsed.error)}.` };
+        if (parsed.data.number !== pr.number || parsed.data.html_url.toLowerCase() !== `https://github.com/${pr.repo.repository}/pull/${pr.number}`.toLowerCase()) {
+          return { ok: false, code: 'PULL_REQUEST_IDENTITY_MISMATCH', detail: 'GitHub answered with another pull request number/URL than the one read.' };
+        }
+        const merged = mergedOf(parsed.data);
+        if (merged === null) return { ok: false, code: 'PULL_REQUEST_MERGE_FACTS_INCONSISTENT', detail: '`merged` contradicts `merged_at`.' };
+        return { ok: true, pull: parsed.data, merged };
       });
       if (!read.ok) return { kind: 'unavailable', source: 'github-rest', observedAt: read.observedAt, code: read.code,
         ...(read.waitSeconds !== undefined ? { waitSeconds: read.waitSeconds } : {}), nextStep: `Pull request state unknown (no merge, closure or absence concluded). ${read.nextStep}` };
-      const pull = read.value;
+      if (!read.value.ok) return { kind: 'unavailable', source: 'github-rest', observedAt: read.observedAt, code: read.value.code,
+        nextStep: `Pull request state unknown (no merge, closure or absence concluded). ${read.value.detail}` };
+      const { pull, merged } = read.value;
       return { kind: 'observed', source: 'github-rest', observedAt: read.observedAt, repositoryId: read.repositoryId, pullRequest: {
-        pullRequestId: pull.id, nodeId: pull.node_id, number: pull.number, url: pull.html_url, state: pull.state, draft: pull.draft, merged: pull.merged,
-        mergedAt: pull.merged_at, mergeCommitSha: pull.merge_commit_sha, headRef: pull.head.ref, headSha: pull.head.sha, headRepositoryId: pull.head.repo?.id ?? null,
+        pullRequestId: pull.id, nodeId: pull.node_id, number: pull.number, url: pull.html_url, state: pull.state, draft: pull.draft, merged,
+        mergedAt: pull.merged_at, mergeCommitSha: pull.merge_commit_sha ?? null, headRef: pull.head.ref, headSha: pull.head.sha, headRepositoryId: pull.head.repo?.id ?? null,
         baseRef: pull.base.ref, baseRepositoryId: pull.base.repo?.id ?? null } };
     },
 
@@ -84,22 +103,24 @@ export function deliveryOperations(options: { github: GitHubAccess }) {
       if (selection.branch === selection.base) return local('BASE_BRANCH_PROTECTED', 'The base branch is never cleaned up.');
       const { repo } = selection;
       const refuse = (code: string, tip: string | null) => ({ outcome: 'refused' as const, tip, code });
+      // A payload that does not have GitHub's shape is a known failure (nothing sent), named by what was read; retried after revalidation.
+      const unreadable = (code: string) => ({ outcome: 'failed' as const, tip: null, code });
       const result = await options.github.cleanup(repo, async session => {
         if (session.repositoryId !== selection.repositoryId) return refuse('REPOSITORY_IDENTITY_MISMATCH', null);
         const repository = z.object({ node_id: z.string().min(1).max(128), default_branch: z.string().min(1) }).safeParse(await session.get(`/repos/${repo.repository}`));
-        if (!repository.success) throw new InvalidGitHubObservation();
+        if (!repository.success) return unreadable('REPOSITORY_PAYLOAD_INVALID');
         if (repository.data.default_branch === selection.branch) return refuse('DEFAULT_BRANCH_PROTECTED', null);
         const pull = pullSchema.safeParse(await session.get(`/repos/${repo.repository}/pulls/${selection.pullRequest.number}`));
-        if (!pull.success) throw new InvalidGitHubObservation();
-        if (pull.data.id !== selection.pullRequest.pullRequestId || !pull.data.merged || pull.data.head.ref !== selection.branch ||
+        if (!pull.success) return unreadable('PULL_REQUEST_PAYLOAD_INVALID');
+        if (pull.data.id !== selection.pullRequest.pullRequestId || mergedOf(pull.data) !== true || pull.data.head.ref !== selection.branch ||
           pull.data.head.sha !== selection.expectedTip || pull.data.head.repo?.id !== selection.repositoryId) return refuse('OWN_PULL_REQUEST_NOT_CONFIRMED', null);
         const owner = repo.repository.split('/')[0]!;
         const open = z.array(z.object({ number: z.number().int().positive() }));
         const heads = open.safeParse(await session.list(`/repos/${repo.repository}/pulls?state=open&head=${encodeURIComponent(`${owner}:${selection.branch}`)}`, { maxPages: 10 }));
-        if (!heads.success) throw new InvalidGitHubObservation();
+        if (!heads.success) return unreadable('PULL_REQUEST_LIST_PAYLOAD_INVALID');
         if (heads.data.length) return refuse('BRANCH_IN_USE_BY_OPEN_PULL_REQUEST', null);
         const stacked = open.safeParse(await session.list(`/repos/${repo.repository}/pulls?state=open&base=${encodeURIComponent(selection.branch)}`, { maxPages: 10 }));
-        if (!stacked.success) throw new InvalidGitHubObservation();
+        if (!stacked.success) return unreadable('PULL_REQUEST_LIST_PAYLOAD_INVALID');
         if (stacked.data.length) return refuse('BRANCH_BASE_OF_OPEN_PULL_REQUEST', null);
         // Tip re-read immediately before the atomic deletion (a complete listing; a capped or failed listing throws: unknown, never absent).
         const tip = await branchTip(session, repo.repository, selection.branch);

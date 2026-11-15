@@ -55,7 +55,7 @@ S = static/unit, I = storage-real integration (Pi Durable + SQLite, real Sandbox
 
 ## Real-run recipe (not run here: no real GitHub, credentials, VM or `$HOME/software-factory-test` were used)
 
-`test/entrypoints/delivery17-qualification.ts`. It targets ticket 14's v8 run: draft PR **#5**, head `factory/3-99fe871b` @ `bfdd439ceba20a424538647f41e55d5ab2d03217`, base `main`, storage `/home/sanmoo/software-factory-test/y5/q14-publication-v8`. That storage is copied, never opened for writing. The recipe uses the fresh namespace `q17-delivery-v3`. `q17-delivery-v2` was consumed: its preflight was held on `STORAGE_MIGRATION_REQUIRED` because the v8 storage is format 1, written before ticket 33.
+`test/entrypoints/delivery17-qualification.ts`. It targets ticket 14's v8 run: draft PR **#5**, head `factory/3-99fe871b` @ `bfdd439ceba20a424538647f41e55d5ab2d03217`, base `main`, storage `/home/sanmoo/software-factory-test/y5/q14-publication-v8`. That storage is copied, never opened for writing. The recipe uses the fresh namespace `q17-delivery-v4`. `q17-delivery-v3` was consumed: its preflight passed the storage step and was held on the PR #5 read (`INVALID_GITHUB_PAYLOAD`, see "Real PR read hold" below). `q17-delivery-v2` was consumed: its preflight was held on `STORAGE_MIGRATION_REQUIRED` because the v8 storage is format 1, written before ticket 33.
 Preflight now runs `prepareAuthority`:
 - it copies the source into the exclusive `authority/` and inspects the copy;
 - a format-1 copy is migrated explicitly with ticket 33's `migrateStorage` (1→2, `expectedDigest` = the copy's preserved digest, re-verified after);
@@ -83,7 +83,7 @@ node dist/test/entrypoints/delivery17-qualification.js inspect
 **Exact effects:**
 
 - **preflight** (read-only):
-  - copies the q14 v8 storage into `q17-delivery-v3/authority` and explicitly migrates **only that copy** from format 1 to 2 (digest-checked, before/after digests recorded); the source is never written;
+  - copies the q14 v8 storage into `q17-delivery-v4/authority` and explicitly migrates **only that copy** from format 1 to 2 (digest-checked, before/after digests recorded); the source is never written;
   - inspects that copy: own PR #5 linked with exactly that head, branch and base, Work open, every Execution ended with confirmed cessation;
   - GitHub reads: PR #5 (must be open, not merged, head `bfdd439…`), every `refs/heads` and `refs/tags` tip;
   - host inventory: `environments/*` with owner workId, `r/*`, `cache/git/*`.
@@ -147,6 +147,41 @@ node dist/test/entrypoints/delivery17-qualification.js inspect
 New outcome: `kept` (`BranchCleanupResult`, `CleanupOutcome`). It is listed in the cleanup `nextStep` among the "refused/kept: never retried automatically" resources.
 
 Ticket 14's real run left the own branch `factory/3-28c75e5a` with no PR. Ticket 17 never touches such a branch: no own PR is linked, so there is no delivery and no cleanup plan. Branch cleanup also requires the merged own PR head to equal the tip.
+
+## Real PR read hold (q17-delivery-v3, 2026-11-15)
+
+The real preflight was held with `readPullRequest(#5) → unavailable INVALID_GITHUB_PAYLOAD`.
+
+**Diagnosis.** The read-only real payload, `test/entrypoints/fixtures/github-pull-5-real.json`, is copied verbatim and contains no secret. It parses under the parser that was held: I fed it through the compiled adapter with only the transport stubbed. So the payload fields, including the nulls of an open draft PR, are not what failed.
+
+That parser turned four different checks into the same `INVALID_GITHUB_PAYLOAD`:
+- the repository-id guard of the read grant;
+- the schema;
+- the PR number;
+- the URL identity.
+
+A JSON body that fails to parse yields the same code, so the hold record cannot say which check failed. The likeliest causes are a response shape under the pinned `X-GitHub-Api-Version: 2026-03-10` that differs from the captured payload (which version produced the capture is not known), or the identity guard. The real record cannot tell these apart.
+
+**Fix:**
+- Required fields are now exactly those ticket 14's adapter already parses from real GitHub responses: id, node_id, number, html_url, state, draft, merged_at, head ref/sha/repo, base ref.
+- `merged`, `merge_commit_sha` and `base.repo` are read when present.
+- The merge is evidenced by `merged_at` on the closed own PR. `merged` must agree with it, otherwise the read returns `PULL_REQUEST_MERGE_FACTS_INCONSISTENT`. `mergeCommitSha` may be null.
+- Each check has its own code: `PULL_REQUEST_REPOSITORY_MISMATCH`, `PULL_REQUEST_PAYLOAD_INVALID` (with the failing field paths, never values), `PULL_REQUEST_IDENTITY_MISMATCH`, and `PULL_REQUEST_MERGE_FACTS_INCONSISTENT`. The next real hold, if any, names its cause.
+- Branch cleanup now reports `REPOSITORY_PAYLOAD_INVALID`, `PULL_REQUEST_PAYLOAD_INVALID` and `PULL_REQUEST_LIST_PAYLOAD_INVALID`, as `failed` with nothing sent.
+
+**Tests:** `test/entrypoints/github-pull-real-shape.test.ts` covers:
+- the verbatim real payload;
+- its merged and closed-unmerged transitions;
+- a lean payload with no `merged`/`merge_commit_sha`;
+- the contradiction case;
+- one distinct code per check.
+
+**Other reads checked against shapes proven real:**
+- `matching-refs`: same schema as ticket 14's real-proven `branchRef`.
+- Open pull request listings filtered by `head` and by `base`: only `number` is required.
+- Repository GET: `node_id` and `default_branch`, both standard repository fields.
+- GraphQL `updateRefs`: `data.updateRefs` and `errors` only, with unknown fields ignored; its real availability for the App token is still checked by the run itself.
+- Ref GET: not used; `matching-refs` is used instead.
 
 ## Gates (this worktree, after the last commit)
 

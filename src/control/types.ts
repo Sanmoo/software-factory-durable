@@ -594,7 +594,8 @@ export type OwnPullRequestIdentity = { pullRequestId: number; nodeId: string; nu
 export type MergeObservation = { at: string; observedAt: string | null;
   outcome: 'open' | 'closed-unmerged' | 'merged' | 'identity-mismatch' | 'merge-unconfirmed' | 'unavailable'; reasons: string[] };
 /** Confirmed merge facts: what makes the Work delivered (never an issue/PR closure or a Builder message). */
-export type MergeFacts = { mergedAt: string; mergeCommitSha: string; headSha: string; pullRequestId: number; number: number; url: string };
+/** `mergeCommitSha`: recorded when GitHub reports it; the merge itself is evidenced by `merged_at` on the closed own PR. */
+export type MergeFacts = { mergedAt: string; mergeCommitSha: string | null; headSha: string; pullRequestId: number; number: number; url: string };
 export type DeliveryView = {
   state: 'watching' | 'delivered';
   pullRequest: OwnPullRequestIdentity;

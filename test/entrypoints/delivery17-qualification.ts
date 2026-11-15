@@ -11,8 +11,8 @@ import { snapshotStorage } from './review12-qualification.js';
 
 const root = '/home/sanmoo/software-factory-test/y5';
 const source = `${root}/q14-publication-v8`;
-const observations = `${root}/q17-delivery-v3`;
-const revision = 'q17-delivery-v3';
+const observations = `${root}/q17-delivery-v4`;
+const revision = 'q17-delivery-v4';
 /** The own draft PR ticket 14's v8 run published and linked (the only PR this recipe may observe as delivered). */
 const expectedPullRequest = { number: 5, headRef: 'factory/3-99fe871b', headSha: 'bfdd439ceba20a424538647f41e55d5ab2d03217', base: 'main' } as const;
 const phases = ['preflight', 'deliver', 'retry', 'inspect'] as const;

@@ -43,6 +43,7 @@ test('delivery requires a confirmed merge of the SAME own pull request; closure,
   assert.deepEqual(decideMerge(own, expect, facts({ pullRequestId: 1, nodeId: 'PR_x', headRef: 'human/x', baseRef: 'dev', headRepositoryId: 99 })), { outcome: 'identity-mismatch',
     reasons: ['PULL_REQUEST_ID_MISMATCH', 'PULL_REQUEST_NODE_MISMATCH', 'HEAD_BRANCH_MISMATCH', 'HEAD_REPOSITORY_MISMATCH', 'BASE_MISMATCH'] });
   assert.deepEqual(decideMerge(own, expect, facts({ mergedAt: null })), { outcome: 'merge-unconfirmed', reasons: ['MERGE_EVIDENCE_INCOMPLETE'] });
+  assert.deepEqual(decideMerge(own, expect, facts({ mergeCommitSha: null })).outcome, 'merged', 'merged_at on the closed own PR is the merge evidence; the merge commit is recorded when reported');
   assert.deepEqual(decideMerge(own, expect, facts({ headSha: 'e'.repeat(40) })), { outcome: 'identity-mismatch', reasons: ['HEAD_NOT_OWN_CONTENT'] },
     'a merged head the Factory never published (third-party push) is not own content');
   assert.deepEqual(decideMerge(own, { ...expect, branch: null }, facts()), { outcome: 'identity-mismatch', reasons: ['OWN_BRANCH_UNKNOWN'] },

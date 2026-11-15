@@ -42,7 +42,7 @@ export function decideMerge(own: OwnPullRequestIdentity, expect: { repositoryId:
   if (reasons.length) return { outcome: 'identity-mismatch', reasons };
   if (facts.state === 'open' && !facts.merged) return { outcome: 'open', reasons: [] };
   if (!facts.merged) return { outcome: 'closed-unmerged', reasons: ['CLOSED_WITHOUT_MERGE'] };
-  if (facts.state !== 'closed' || !facts.mergedAt || !facts.mergeCommitSha) return { outcome: 'merge-unconfirmed', reasons: ['MERGE_EVIDENCE_INCOMPLETE'] };
+  if (facts.state !== 'closed' || !facts.mergedAt) return { outcome: 'merge-unconfirmed', reasons: ['MERGE_EVIDENCE_INCOMPLETE'] };
   // A merged head the Factory never published (e.g. a third-party push) is not the own content of this cycle.
   if (!own.heads.includes(facts.headSha)) return { outcome: 'identity-mismatch', reasons: ['HEAD_NOT_OWN_CONTENT'] };
   return { outcome: 'merged', merge: { mergedAt: facts.mergedAt, mergeCommitSha: facts.mergeCommitSha, headSha: facts.headSha, pullRequestId: facts.pullRequestId,

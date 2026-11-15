@@ -18,7 +18,7 @@ test('AC7 recipe: import and --plan are inert; the plan declares the human merge
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
   assert.deepEqual(plan.phases, ['preflight', 'deliver', 'retry', 'inspect']);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q17-delivery-v3');
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q17-delivery-v4');
   assert.equal(plan.source, '/home/sanmoo/software-factory-test/y5/q14-publication-v8', 'the v8 storage is only copied');
   assert.deepEqual(plan.expectedPullRequest, { number: 5, headRef: 'factory/3-99fe871b', headSha: 'bfdd439ceba20a424538647f41e55d5ab2d03217', base: 'main' });
   assert.match(plan.operatorStep.steps.join('\n'), /Ready for review[\s\S]*Merge PR #5 with merge commit, squash or rebase[\s\S]*Do NOT click "Delete branch"/);
