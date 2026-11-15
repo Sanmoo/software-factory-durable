@@ -187,3 +187,5 @@ Comandos Node exatamente `env -u NODE_OPTIONS -u NODE_COMPILE_CACHE NODE_DISABLE
   intocado). `github-dependency-reads` falhou uma vez sob carga na passada completa e passou 3/3 sozinho (1070 + 1).
 - TDD: os testes da revisão foram executados contra a árvore anterior (compilada à parte com os testes novos) e falharam (MED1/MED3, MED2, MED4,
   MED5, LOW forçada, inventário, checkout); verdes depois. Os cortes SIGKILL originais revelaram o registro `execution.recovery` não persistido.
+- Após a receita v2 (`3d5a279`): `tsc`/eslint/dependency-cruiser OK (357 módulos, 2177 dependências); suíte **171 arquivos, 1073 pass, 0 fail,
+  10 skip**, um arquivo por vez. TDD: os testes da receita v2 falharam antes (funções ausentes, comando e namespace antigos) e passaram depois.
