@@ -10,7 +10,11 @@ import type { Session } from './store.js';
 
 type Limits = Pick<ConfiguredRepository, 'correctionLimit' | 'recoveryLimit'>;
 type GrantInput = { request_id: string; operation: 'grant'; work_id: string; counter: BudgetCounterName; amount: number; origin: 'local-cli' };
-const ensureBudget = (work: WorkRecord, limits: Limits | undefined, at: string) => work.budget ??= initialBudget(limits ?? {}, work.repository.repository, at);
+/** The budget AS STORED in the document: assign first, then read it back (`??=` returns the detached value, whose later mutations are lost). */
+export function ensureBudget(work: WorkRecord, limits: Limits | undefined, at: string) {
+  if (!work.budget) work.budget = initialBudget(limits ?? {}, work.repository.repository, at);
+  return work.budget;
+}
 const copy = (counter: BudgetCounter): BudgetCounter => ({ ...counter });
 
 /**

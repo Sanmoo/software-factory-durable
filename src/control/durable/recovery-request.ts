@@ -8,7 +8,9 @@ import type { WorkRecord } from './admission.js';
  * request keeps the pending one (no earlier deadline, no second unit); an exhausted counter becomes the visible impediment at once.
  */
 export function applyRecoveryRequest(work: WorkRecord, input: { executionId: string | null; code: string; at: string; serviceSeconds?: number | null; reason?: string }) {
-  const budget = work.budget ??= initialBudget({}, work.repository.repository, input.at);
+  // Assign then read back: the stored record, never the detached value `??=` returns.
+  if (!work.budget) work.budget = initialBudget({}, work.repository.repository, input.at);
+  const budget = work.budget;
   const pending = work.pendingRecovery;
   const decision = recoveryRequest({ pending: pending ? { notBeforeMs: pending.notBefore ? Date.parse(pending.notBefore) : null, requestedAtMs: Date.parse(pending.requestedAt) } : null,
     consumed: budget.recoveries.consumed, requestedAtMs: Date.parse(input.at), serviceSeconds: input.serviceSeconds ?? null });
