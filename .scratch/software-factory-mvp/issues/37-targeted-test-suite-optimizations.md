@@ -6,7 +6,7 @@
 
 **Type:** task
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Alvos medidos (a2f0a76, 2026-11-15)
 
@@ -18,11 +18,11 @@
 
 ## Acceptance criteria
 
-- [ ] Cada alvo tem antes/depois medido pelo runner do ticket 36.
-- [ ] Toda remoção ou fusão de teste é proposta numa tabela (teste, motivo, AC/achado de revisão que continua coberto e por qual teste) e só é aplicada após aprovação explícita do operador, em lote.
-- [ ] Nunca remover o único teste de um AC ou de um achado de revisão.
-- [ ] Mudança de produto limitada a tornar injetável o que hoje é fixo (ex.: timeout de ACK), com padrão de produção inalterado e testado.
-- [ ] `npm run test:ci` verde, dentro do teto, três vezes seguidas; tempo total registrado no ticket.
+- [x] Cada alvo tem antes/depois medido pelo runner do ticket 36.
+- [x] Toda remoção ou fusão de teste é proposta numa tabela (teste, motivo, AC/achado de revisão que continua coberto e por qual teste) e só é aplicada após aprovação explícita do operador, em lote.
+- [x] Nunca remover o único teste de um AC ou de um achado de revisão.
+- [x] Mudança de produto limitada a tornar injetável o que hoje é fixo (ex.: timeout de ACK), com padrão de produção inalterado e testado.
+- [x] `npm run test:ci` verde, dentro do teto, três vezes seguidas; tempo total registrado no ticket.
 
 ## Autorização e limites
 
@@ -97,3 +97,78 @@ Sem rede, GitHub, VM, modelo ou credenciais. Remoções dependem de aprovação 
   `protocol` 8, `upgrade` 8). Ficam fora deste escopo; candidatos a um ticket de varredura.
   O ticket fica aberto até o operador aprovar ou recusar a proposta acima. Sem a proposta, os critérios de medição,
   produto e três `ci` verdes já estão cumpridos.
+
+- 2026-11-15 (ticket 37 implementer): **proposta aprovada pelo operador (P1–P5), estado final aplicado.**
+  A tabela acima é a proposta. O estado final de cada item:
+
+  | # | Estado | Teste(s) no fim | AC/achado coberto, e por qual teste |
+  | --- | --- | --- | --- |
+  | P1 | aplicado | `normal-oauth`: os 11 modos de resposta do provider são 11 `test()` sobre **um** boot compartilhado (uma ativação, worker Node24 nova, por modo; o audit é segmentado por `mode-begin/mode-end`). Os 7 modos que travam/revogam/abortam têm cadeia própria. Teste novo: o boot compartilhado fecha uma vez, depois de um spawn por ativação | As mesmas asserções por modo, no próprio teste do modo |
+  | P2 | aplicado | `normal-edit`: `complete`, `mismatch`, `no-match`, `empty`, `budget` sobre um boot compartilhado; `invalid`, `uncertain`, `persist`, `cancel`, `eof`, `secret` isolados | As mesmas asserções por modo. O fixture acha a sessão pela receipt da própria ativação |
+  | P3 | aplicado | `normal-edit`: um teste "Edit disabled (absent, standards, spec)", com três ativações num boot | As mesmas asserções por ativação, dentro do teste fundido. Mais `workers/native-builder-edit` (role/preflight) |
+  | P4 | **não aplicado** | `control/recovery-crash` continua com os 8 SIGKILL reais | Tentei montar o estado do corte em processo: o Control real foi levado ao corte num diretório privado, e o SQLite + WAL e o `host.json` foram copiados. O dono reaberto **no mesmo processo** não reconciliou os cortes `receipt` e `question` como o filho morto (sem `recovery[0]`, sem `end`). O de `reservation` passou, mas com o mesmo risco de estado global do processo. Montar os registros à mão dependeria de detalhes internos do Pi Durable. Para não trocar cobertura por ~3 s, os cortes ficam reais. Nenhuma cobertura foi removida |
+  | P5 | aplicado | `entrypoints/upgrade`: o corte `migrated` (e o resume com SIGKILL) continua sendo morte real. `journal` e `selected` param a mesma chamada de `upgrade` no passo, com um `observe` que nunca retorna | As mesmas asserções por corte (`UPGRADE_INCOMPLETE`, launcher recusado, rollback/resume, migração única) |
+
+  Antes/depois por alvo, na lane `ci` (N=8, sob carga):
+  - `normal-oauth`: 100,9 s na linha de base, 70-87 s com as otimizações de espera, 61-68 s com P1.
+  - `normal-edit`: 79-98 s, 57-62 s com P2/P3. Sozinho: 57 → 27 s, com carga 6-7.
+  - `upgrade`: 19-26 → 17-19 s.
+  O desvio de P4 e o resto estão no `## Answer`.
+
+- 2026-11-15 (ticket 37 implementer): **texto proposto para um ticket de acompanhamento (não criado):**
+
+  > **NN: Guardas de orçamento no lugar dos timers fixos restantes de `fast`/`ci`**
+  >
+  > **What to build:** Trocar os ~110 `timeout:` fixos restantes em testes de `fast`/`ci` (`test()`, `spawnSync`, `fork`).
+  > Os maiores são `controller-ownership` 17, `protocol` 8, `upgrade` 7, `review-session` 7 e `sandbox-adapter-diagnostics` 5,
+  > e o resto está quase todo em `workers/*-process` e `native-*`. Trocar também os ~25 laços de espera com contagem fixa
+  > (`for (let i = 0; i < 400/600/800/1500/2000 …)` em `control/*-flow`, `upgrade-fixture`, `*-cli`, `github-readiness-composed`,
+  > `review28-*`, `recovery-crash`). O substituto é o guarda do ticket 37 (`test/runner/budget.ts`): `ended()` para filhos (spawn
+  > destacado, evento de fim, árvore morta, etapa nomeada), `until()` para condições sem evento e `remainingMs()` onde um
+  > `spawnSync` continuar.
+  >
+  > **Por quê:** é a mesma classe de flake que o ticket 37 corrigiu. Sob carga 15-20 de outras sessões, já estouraram nesta
+  > onda `worker-process` (30 s), `public-bash-copy` (15 s), `normal-edit` (15 s), `github-checks-composed` (800 × 10 ms) e
+  > `publication-composition` (600 × 10 ms).
+  >
+  > **Acceptance criteria:** nenhum `timeout:` numérico nem laço de espera com contagem fixa em `test/**` fora das receitas
+  > `*-qualification`, garantido por um teste estático. O guarda fica em `test/runner/budget.ts`. `npm run test:ci` verde três
+  > vezes seguidas com carga ≥ 12.
+  >
+  > **Blocked by:** 37.
+
+## Answer
+
+Resolvido em 2026-11-15.
+
+**Runner.** Ele passa a cada arquivo o fim do orçamento da camada (`FACTORY_TEST_DEADLINE`) e um diretório privado da
+execução (`FACTORY_TEST_RUN_DIRECTORY`). `test/runner/budget.ts` deriva dele os guardas, sem timeout fixo: `ended()`
+espera o fim de um filho destacado e, ao estourar, mata a árvore e nomeia a etapa; `until()` espera condições sem evento,
+limitado pelo orçamento.
+
+**Quarentena zerada.** `admission-cli`, `normal-worker`, `public-copy-read` e `publication-composition` voltaram. O
+`bash-credential` agora espera por evento e voltou para a lane paralela. O runner test #11 foi corrigido. Os timers fixos
+que estouraram sob carga nesta onda também viraram guarda: `worker-process`, `public-bash-copy`, `normal-edit`, os
+launchers de release e `github-checks-composed`. Quando o build ou a extração falham (por exemplo, com a cota de `/tmp`
+esgotada, EDQUOT), o fixture de release passa a apagar o próprio diretório de trabalho.
+
+**Alvos.**
+1. ACK injetável (`secretAckTimeoutMs` ≤ 5000; produção não define, e o padrão de 5000 ms é provado com relógio falso).
+   `held-ack` levava 6,2 s e agora leva 1,1 s; `deadline` caiu de 30 para 8 s.
+2. Um build de release por execução, compartilhado pelos três arquivos de release (−2 builds de CPU).
+3. `architecture-gate` usa as APIs em processo: 19 → 2,2 s sozinho, 56 → 7-10 s na lane.
+4. P1–P3 aplicados.
+5. Os 5 arquivos com SIGKILL real saíram de `fast`, e P5 foi aplicado. P4 não foi aplicado (ver Comments).
+
+**Gate final.** Três `npm run test:ci` seguidos em HEAD (P1–P3, P5 e as correções desta rodada), todos verdes com
+1327 testes (1317 pass, 10 skip, 0 fail) e quarentena vazia:
+
+| Execução | Total (teto 600 s) | Lane paralela | Carga inicial |
+| --- | --- | --- | --- |
+| 1 | 187,9 s | 168,9 s | 15,0 |
+| 2 | 222,6 s | 202,5 s | 13,5 |
+| 3 | 236,3 s | 211,4 s | 14,7 |
+
+Antes, em 9ca7bfa: 209,3 s com carga 8,7, mas com 4 arquivos em quarentena (não rodavam). e `fast` = 112,7 s com carga 3-6 (antes 154,7 s). Ainda
+abaixo de 6 min, então a auditoria geral de redundância não volta. Fica pendente o ticket de acompanhamento proposto acima.
+
