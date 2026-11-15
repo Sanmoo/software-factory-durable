@@ -230,3 +230,8 @@ O issue #3 continua com o label e com o PR #5 do ticket 14:
   `FOREIGN_PULL_REQUEST` sem Work/Slot; o oráculo lê o #6.
 Limite remanescente: se a associação do PR #5 sumir entre `preflight` e `run`, o #3 poderia ser admitido; a guarda de `prepare` recusa
 preparar outro Work (a Execução dele fica retida e a do #6 espera o Slot) — registrar como achado se ocorrer.
+
+Gate do issue #6 (`npm run test:ci` uma vez, em `d0f0cdd`; espera no lock 218 s, carga 16–19): **FAIL — 1200 testes: 1188 pass, 1 fail,
+1 cancelled, 10 skipped, 238 s de 600 s**. As duas falhas estão fora deste diff: `test/runner/runner.test.ts` #11 (estado `R` do neto
+vazado sob carga) e `test/entrypoints/normal-worker.test.ts` (timeout fixo de 15 s); as duas passaram ao rodar sozinhas logo depois.
+Todos os arquivos do ticket 28 passaram (`test:fast` filtrado: 19/19 nos arquivos tocados).
