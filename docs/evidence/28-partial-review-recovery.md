@@ -47,6 +47,28 @@ sem isso o comportamento dos tickets 12/13 (nenhum retry de revisor) é idêntic
 Novos campos opcionais em `ReviewerView` (`attempt`, `attempts`, `source`, `carried`, `charge`, `retry`, `notRetried`); eventos de histórico
 `reviewer-retried`/`reviewer-not-retried`/`opinion-carried`. Registros anteriores sem esses campos = tentativa 1 por notificação.
 
+## Correções da revisão estática independente (sobre `e9295ab`, TDD vermelho→verde em `3e7537c`)
+
+Vermelho observado: os testes novos foram compilados contra `src` de `e9295ab` (4 fluxos, 1 de pergunta, 1 de paging falharam; o teste de
+regras falhou já na importação dos novos símbolos) e depois verdes com a correção.
+
+- **HIGH 1 reserva presa**: retry registrado e nunca lançado (interrupção/parada na espera, proposta mudou antes do lançamento, falha antes do
+  `activate`) = não início comprovado → `releaseReviewerRetry` libera a reserva (também com a Execução já encerrada); `execute` aguarda o laço
+  de revisão antes de registrar timeout/parada. Início incerto mantém. `settleReviewerReservations` (recibo consome uma vez, ausência após
+  cessação libera, incerteza mantém) para a reconciliação de 26 (chamada no rebase). Testes: fluxo "interrupted during the persisted wait",
+  regras "reconciliation settles".
+- **HIGH 2 perfil do carry**: identidade normalizada do pacote (nome sem `factory/skill-pack/` + manifesto; id sem manifesto nunca casa) e
+  campos de política do revisor; `reviewProfile` única para a rodada gravada e o carry. Teste com as formas de produção (seed de `prepare`,
+  ordem de chaves, prefixo, string).
+- **MED 3**: retries da mesma rodada serializados sobre a reserva única (5 depois 15 s), nunca descartados como `BUSY`.
+- **MED 4**: `preservedReviewContext` (sem carry) no prompt substituto após resposta (`KnownContext.review`, primeiro a cair no limite);
+  teste em `review13-question-flow` (parametrizado; sem `partialRecovery` o prompt é idêntico).
+- **MED 5**: tipagem de `interruption` e teste de fluxo do corte no handoff **ficam para o rebase sobre 26** (não integrado; instrução do supervisor).
+- **MED 6**: `Promise.allSettled`; falha de um laço de recuperação não abandona o irmão; hold `REVIEWER_RECOVERY_FAILED` (ou o hold de cessação).
+- **LOW**: identidade re-observada logo antes do lançamento; observação do Host só para papel falho; leitura do registro em todas as páginas
+  (≤ 256 KiB, sem laço sem progresso); um handle de Records por facade (aberto uma vez); `incomplete` nunca levado; receita: inspect sobre
+  cópia privada do Records, recusas da guarda como `WORKER_LAUNCH_INVALID` (never-started, liberado, não transitório) e no máximo 2.
+
 ## Mapa AC → evidência
 
 | AC | Testes | Nível |
@@ -69,8 +91,9 @@ Novos campos opcionais em `ReviewerView` (`attempt`, `attempts`, `source`, `carr
    invocação): mantém o hold `REVIEWER_CESSATION_UNCONFIRMED` e segue a recuperação de 26 (parada do boot = cessação), depois o carry com descoberta.
 4. **Carry só após `OPERATIONAL_RECOVERY`** (não após resposta/escopo: pode mudar contexto). Lido estruturalmente de `execution.interruption`
    até o rebase sobre 26 (sem efeito antes dele).
-5. **Pendentes do rebase sobre 26**: delegar a espera a `recoveryWait`; incluir `preservedReviewContext` no `interruptionRecoveryPrompt`; teste de
-   fluxo do corte de controlador no handoff (carry + descoberta); unificar inserção de `observeOpinion`/`observeStart` em `workers/index.ts`.
+5. **Pendentes do rebase sobre 26**: delegar a espera a `recoveryWait`; incluir `preservedReviewContext` (com carry) no
+   `interruptionRecoveryPrompt`; chamar `settleReviewerReservations` em `settleInterruption` com `observeStart` por invocação de retry;
+   tipar `interruption`; teste de fluxo do corte de controlador no handoff (carry + descoberta); unificar `observeOpinion`/`observeStart`.
 
 ## Ensaio real (receita one-shot)
 
@@ -112,3 +135,8 @@ Sobre `d4483d1` + commits do ticket 28 (Node 24.21.0, comandos exatos do briefin
 `prepare:sdk` (sdk-profile + gondolin-sdk-profile) ok; **166 arquivos `dist/test/**/*.test.js`, um por vez** (`--experimental-test-module-mocks
 --test --test-concurrency=1`): **1051 pass, 0 fail, 10 skipped** (`test/sandbox/gondolin.test.ts` continua `skip: true`).
 Novos: `review28-rules` 5, `review28-flow` 5, `opinion-observation` 1, `review28-qualification` 3; tickets 12/13 inalterados e verdes.
+
+Após as correções da revisão (`3e7537c`): tsc 0 erros, eslint limpo, dependency-cruiser sem violações (348 módulos, 2122 dependências);
+166 arquivos um por vez: **1060 pass, 0 fail, 10 skipped** — `entrypoints/admission-cli` e `workers/sdk-profile` falharam sob carga
+paralela de outros gates e passaram ao rerodar sozinhos (flakes conhecidos). Novos: `review28-rules` 8, `review28-flow` 9,
+`opinion-observation` 2, `review13-question-flow` 2 (1 novo), `review28-qualification` 3.
