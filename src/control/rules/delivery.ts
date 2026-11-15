@@ -12,10 +12,14 @@ const positive = (value: unknown): value is number => typeof value === 'number' 
  * own branch/repository/base). Read structurally: an absent or incomplete link is no identity, and then nothing can be delivered.
  */
 export function ownPullRequestOf(work: { publication?: unknown }): OwnPullRequestIdentity | null {
-  const publication = work.publication as { pullRequest?: unknown } | null | undefined;
+  const publication = work.publication as { pullRequest?: unknown; linkedHeads?: unknown } | null | undefined;
   const pull = publication?.pullRequest as Record<string, unknown> | null | undefined;
   if (!pull || !positive(pull.pullRequestId) || !text(pull.nodeId, 256) || !positive(pull.number) || !text(pull.url, 2048) || !text(pull.headRef) || !text(pull.base)) return null;
-  return { pullRequestId: pull.pullRequestId, nodeId: pull.nodeId, number: pull.number, url: pull.url, headRef: pull.headRef, base: pull.base };
+  const sha = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
+  const heads = [...new Set([...(Array.isArray(publication?.linkedHeads) ? publication.linkedHeads : []), pull.headSha].filter(sha))];
+  // No published head known: nothing proves which content is the Factory's own, so there is no own identity to deliver.
+  if (!heads.length) return null;
+  return { pullRequestId: pull.pullRequestId, nodeId: pull.nodeId, number: pull.number, url: pull.url, headRef: pull.headRef, base: pull.base, heads };
 }
 
 export type MergeDecision = { outcome: 'merged'; merge: MergeFacts } |
@@ -26,17 +30,21 @@ export type MergeDecision = { outcome: 'merged'; merge: MergeFacts } |
  * GitHub must report it merged with its merge instant and commit. A closure without merge, an open PR, another identity or incomplete
  * merge evidence never deliver. Ticket/issue state and agent messages are not inputs at all.
  */
-export function decideMerge(own: OwnPullRequestIdentity, expect: { repositoryId: number; branch: string; base: string }, facts: PullRequestFacts): MergeDecision {
+export function decideMerge(own: OwnPullRequestIdentity, expect: { repositoryId: number; branch: string | null; base: string }, facts: PullRequestFacts): MergeDecision {
   const reasons: string[] = [];
   if (facts.pullRequestId !== own.pullRequestId || facts.number !== own.number) reasons.push('PULL_REQUEST_ID_MISMATCH');
   if (facts.nodeId !== own.nodeId) reasons.push('PULL_REQUEST_NODE_MISMATCH');
-  if (facts.headRef !== expect.branch || own.headRef !== expect.branch) reasons.push('HEAD_BRANCH_MISMATCH');
+  // The Work's own branch is Control's record, never derived from the linked PR itself (no self-comparison).
+  if (!expect.branch) reasons.push('OWN_BRANCH_UNKNOWN');
+  else if (facts.headRef !== expect.branch || own.headRef !== expect.branch) reasons.push('HEAD_BRANCH_MISMATCH');
   if (facts.headRepositoryId !== expect.repositoryId) reasons.push('HEAD_REPOSITORY_MISMATCH');
-  if (facts.baseRef !== expect.base || own.base !== expect.base || (facts.baseRepositoryId !== null && facts.baseRepositoryId !== expect.repositoryId)) reasons.push('BASE_MISMATCH');
+  if (facts.baseRef !== expect.base || own.base !== expect.base || facts.baseRepositoryId !== expect.repositoryId) reasons.push('BASE_MISMATCH');
   if (reasons.length) return { outcome: 'identity-mismatch', reasons };
   if (facts.state === 'open' && !facts.merged) return { outcome: 'open', reasons: [] };
   if (!facts.merged) return { outcome: 'closed-unmerged', reasons: ['CLOSED_WITHOUT_MERGE'] };
   if (facts.state !== 'closed' || !facts.mergedAt || !facts.mergeCommitSha) return { outcome: 'merge-unconfirmed', reasons: ['MERGE_EVIDENCE_INCOMPLETE'] };
+  // A merged head the Factory never published (e.g. a third-party push) is not the own content of this cycle.
+  if (!own.heads.includes(facts.headSha)) return { outcome: 'identity-mismatch', reasons: ['HEAD_NOT_OWN_CONTENT'] };
   return { outcome: 'merged', merge: { mergedAt: facts.mergedAt, mergeCommitSha: facts.mergeCommitSha, headSha: facts.headSha, pullRequestId: facts.pullRequestId,
     number: facts.number, url: facts.url } };
 }
@@ -107,7 +115,9 @@ export function recoverLostIntents(resources: CleanupResourceView[], at: string)
     return { ...item, state: 'indeterminate', attempts: [...item.attempts.slice(0, -1), { ...last, resultAt: at, outcome: 'indeterminate', code: 'RESULT_NOT_RECORDED' }] };
   });
 }
-export const selectPending = (resources: CleanupResourceView[]) => resources.filter(item => !concluded(item.state));
+/** Retried automatically after revalidation. `refused`/`kept` wait for an explicit operator decision (no fresh write grant for them). */
+export const retryable = (state: CleanupResourceView['state']) => state === 'pending' || state === 'failed' || state === 'partial' || state === 'indeterminate';
+export const selectPending = (resources: CleanupResourceView[]) => resources.filter(item => retryable(item.state));
 export function cleanupState(input: { eligible: boolean; resources: CleanupResourceView[] }): CleanupView['state'] {
   if (input.resources.length && input.resources.every(item => concluded(item.state))) return 'complete';
   return input.eligible ? 'pending' : 'waiting';
@@ -143,6 +153,10 @@ export function deliveryNextStep(state: DeliveryView['state'], last: string | nu
 export function cleanupNextStep(view: Pick<CleanupView, 'state' | 'eligibility' | 'resources'>): string {
   if (view.state === 'complete') return 'Cleanup complete: every own resource is removed or proven absent. History, reviews, decisions and protected records are kept.';
   if (view.state === 'waiting') return `Cleanup waits (${view.eligibility.reasons.join(', ')}). Delivery is not affected.`;
-  const pending = selectPending(view.resources);
-  return `Cleanup pending for ${pending.length} own resource(s) (${pending.map(item => `${item.kind}:${item.state}`).join(', ')}). Delivery stands; only these are retried after revalidation (next controller boot or daily sweep). A refused resource needs an operator decision.`;
+  const open = view.resources.filter(item => !concluded(item.state));
+  const automatic = open.filter(item => retryable(item.state));
+  const operator = open.filter(item => !retryable(item.state));
+  return `Cleanup pending for ${open.length} own resource(s) (${open.map(item => `${item.kind}:${item.state}`).join(', ')}). Delivery stands.` +
+    (automatic.length ? ` ${automatic.length} retried automatically after revalidation (next controller boot or daily sweep).` : '') +
+    (operator.length ? ` ${operator.length} refused/kept: never retried automatically; an operator decides (e.g. kept: atomic delete unavailable).` : '');
 }

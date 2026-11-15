@@ -5,7 +5,7 @@ import { branchOutcome, cleanupEligibility, cleanupState, decideMerge, environme
 import type { CleanupResourceView, ExecutionView, PullRequestFacts } from '../../src/control/types.js';
 
 // Pure ticket 17 rules (spec §12.3): merge confirmation by own PR/cycle identity, cleanup eligibility, the owned plan and per-resource results.
-const own = { pullRequestId: 9042, nodeId: 'PR_own42', number: 42, url: 'https://github.com/acme/project/pull/42', headRef: 'factory/3-abcdef12', base: 'main' };
+const own = { pullRequestId: 9042, nodeId: 'PR_own42', number: 42, url: 'https://github.com/acme/project/pull/42', headRef: 'factory/3-abcdef12', base: 'main', heads: ['a'.repeat(40)] };
 const expect = { repositoryId: 3, branch: 'factory/3-abcdef12', base: 'main' };
 const facts = (overrides: Partial<PullRequestFacts> = {}): PullRequestFacts => ({ pullRequestId: 9042, nodeId: 'PR_own42', number: 42, url: own.url, state: 'closed',
   draft: false, merged: true, mergedAt: '2026-11-14T12:00:00Z', mergeCommitSha: 'b'.repeat(40), headRef: own.headRef, headSha: 'a'.repeat(40), headRepositoryId: 3,
@@ -27,7 +27,10 @@ test('own pull request identity comes only from the publication link (no link, n
   assert.equal(ownPullRequestOf({}), null);
   assert.equal(ownPullRequestOf({ publication: { pullRequest: null } }), null);
   assert.equal(ownPullRequestOf({ publication: { pullRequest: { number: 42 } } }), null, 'incomplete identity is not an identity');
-  assert.deepEqual(ownPullRequestOf({ publication: { branch: own.headRef, base: 'main', pullRequest: { ...own, state: 'open', merged: false } } }), own);
+  const { heads: _heads, ...link } = own;
+  assert.equal(ownPullRequestOf({ publication: { pullRequest: { ...link } } }), null, 'no published head known: no own identity');
+  assert.deepEqual(ownPullRequestOf({ publication: { branch: own.headRef, base: 'main', linkedHeads: ['c'.repeat(40), 'not-a-sha'],
+    pullRequest: { ...link, headSha: 'a'.repeat(40), state: 'open', merged: false } } }), { ...own, heads: ['c'.repeat(40), 'a'.repeat(40)] });
 });
 
 test('delivery requires a confirmed merge of the SAME own pull request; closure, open or another identity never deliver', () => {
@@ -40,6 +43,11 @@ test('delivery requires a confirmed merge of the SAME own pull request; closure,
   assert.deepEqual(decideMerge(own, expect, facts({ pullRequestId: 1, nodeId: 'PR_x', headRef: 'human/x', baseRef: 'dev', headRepositoryId: 99 })), { outcome: 'identity-mismatch',
     reasons: ['PULL_REQUEST_ID_MISMATCH', 'PULL_REQUEST_NODE_MISMATCH', 'HEAD_BRANCH_MISMATCH', 'HEAD_REPOSITORY_MISMATCH', 'BASE_MISMATCH'] });
   assert.deepEqual(decideMerge(own, expect, facts({ mergedAt: null })), { outcome: 'merge-unconfirmed', reasons: ['MERGE_EVIDENCE_INCOMPLETE'] });
+  assert.deepEqual(decideMerge(own, expect, facts({ headSha: 'e'.repeat(40) })), { outcome: 'identity-mismatch', reasons: ['HEAD_NOT_OWN_CONTENT'] },
+    'a merged head the Factory never published (third-party push) is not own content');
+  assert.deepEqual(decideMerge(own, { ...expect, branch: null }, facts()), { outcome: 'identity-mismatch', reasons: ['OWN_BRANCH_UNKNOWN'] },
+    'the own branch comes from Control\'s record, never from the linked PR compared with itself');
+  assert.deepEqual(decideMerge(own, expect, facts({ baseRepositoryId: null })), { outcome: 'identity-mismatch', reasons: ['BASE_MISMATCH'] }, 'an unknown base repository is not accepted');
 });
 
 test('cleanup is eligible only after merge and confirmed cessation of every Execution of the Work', () => {
@@ -88,11 +96,12 @@ test('retries select only pending resources; a lost result is indeterminate, nev
   const resource = (id: string, state: CleanupResourceView['state'], attempts: CleanupResourceView['attempts'] = []): CleanupResourceView =>
     ({ id, kind: 'environment', target: id, environment: null, ownership: 'own', state, attempts });
   const resources = [resource('a', 'removed'), resource('b', 'absent'), resource('c', 'failed'), resource('d', 'indeterminate'), resource('e', 'pending'),
+    resource('r', 'refused'), resource('k', 'kept'),
     resource('f', 'pending', [{ effectId: 'x', intentAt: 't', resultAt: null, outcome: 'intended', code: null }])];
   const recovered = recoverLostIntents(resources, 'now');
   assert.deepEqual(recovered.find(item => item.id === 'f')?.attempts.at(-1), { effectId: 'x', intentAt: 't', resultAt: 'now', outcome: 'indeterminate', code: 'RESULT_NOT_RECORDED' });
   assert.equal(recovered.find(item => item.id === 'f')?.state, 'indeterminate');
-  assert.deepEqual(selectPending(recovered).map(item => item.id), ['c', 'd', 'e', 'f']);
+  assert.deepEqual(selectPending(recovered).map(item => item.id), ['c', 'd', 'e', 'f'], 'refused/kept are never retried automatically (operator decision)');
   assert.equal(cleanupState({ eligible: false, resources: recovered }), 'waiting');
   assert.equal(cleanupState({ eligible: true, resources: recovered }), 'pending');
   assert.equal(cleanupState({ eligible: true, resources: [resource('a', 'removed'), resource('b', 'absent')] }), 'complete');

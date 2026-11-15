@@ -7,6 +7,7 @@ import { recordCleanupIntent } from '../../src/control/durable/delivery.js';
 import { admitExecution, beginRenewal } from '../../src/control/durable/execution.js';
 import { ownCycles, readWork, readWorks } from '../../src/control/durable/admission.js';
 import { scope } from './doubles.js';
+import type { CodeRepository } from '../../src/code-repository/index.js';
 import { deliveryRepository, environment, environmentOf, headSha, merged, ownFacts, realCleanupPorts, sandboxRoot, seedPublishedWork, store } from './delivery-fixture.js';
 
 // Ticket 17 storage-real flows: Pi Durable + SQLite, REAL Sandbox removal / evidence export / Records preservation on synthetic
@@ -39,14 +40,14 @@ test('AC1: only a confirmed merge of the own PR identity delivers; open, closed-
   h.github.pull = 'unavailable';
   await desk.cycle();
   assert.equal((await h.work()).result, 'open', 'a failed read concludes nothing');
-  h.github.pull = ownFacts({ state: 'closed' });
-  await desk.cycle();
-  assert.equal((await h.work()).result, 'open', 'closure without merge is not delivery');
-  assert.match((await h.work()).delivery!.nextStep, /closed WITHOUT merge/);
   h.github.pull = merged({ pullRequestId: 1234, nodeId: 'PR_other' });
   await desk.cycle();
   assert.equal((await h.work()).result, 'open', 'a merged PR with another identity is not this cycle\'s delivery');
   assert.deepEqual((await h.work()).delivery?.observations.at(-1)?.reasons, ['PULL_REQUEST_ID_MISMATCH', 'PULL_REQUEST_NODE_MISMATCH']);
+  h.github.pull = merged({ headSha: 'e'.repeat(40) });
+  await desk.cycle();
+  assert.equal((await h.work()).result, 'open', 'a merge of a head the Factory never published is not own delivery');
+  assert.deepEqual((await h.work()).delivery?.observations.at(-1)?.reasons, ['HEAD_NOT_OWN_CONTENT']);
   assert.equal(h.log.length, 0, 'no cleanup without delivery');
   h.github.pull = merged();
   await desk.cycle();
@@ -59,6 +60,19 @@ test('AC1: only a confirmed merge of the own PR identity delivers; open, closed-
   assert.ok(work.history.some(item => item.event === 'delivery-confirmed'));
   // Producer of ticket 08's own-cycle merge confirmation (minimal memory + Work record).
   assert.deepEqual(await ownCycles(h.session, [7003]), { 7003: { source: 'work', applicable: { work_id: h.work_id, cycle: 1, result: 'delivered', mergeConfirmed: true }, previousCycles: [] } });
+});
+
+test('AC1: a closure without merge is recorded as not delivered and is not re-read automatically (ticket 25 decides the cycle)', async t => {
+  const h = await harness(t);
+  h.github.pull = ownFacts({ state: 'closed' });
+  const desk = h.desk();
+  await desk.cycle();
+  assert.equal((await h.work()).result, 'open');
+  assert.match((await h.work()).delivery!.nextStep, /closed WITHOUT merge/);
+  h.github.pull = merged();
+  await desk.cycle();
+  assert.equal(h.repository.calls.filter(call => call.method === 'readPullRequest').length, 1);
+  assert.equal((await h.work()).result, 'open');
 });
 
 test('AC1: a merge confirmed during an active Execution is delivery; the activity is interrupted and no new agent action is admitted', async t => {
@@ -117,7 +131,7 @@ test('AC2/AC3/AC5: cleanup starts only after merge + confirmed cessation, preser
   assert.equal(h.log.length, 2, 'a complete cleanup is never repeated');
 });
 
-test('AC5/AC6: partial failure keeps delivery, each resource is independent, and a retry selects only the pending ones after revalidation', async t => {
+test('AC5/AC6: partial failure keeps delivery, each resource is independent, and a retry selects only the retryable ones after revalidation', async t => {
   const h = await harness(t);
   h.github.pull = merged();
   h.github.branchOutcomes = ['failed'];
@@ -135,11 +149,13 @@ test('AC5/AC6: partial failure keeps delivery, each resource is independent, and
   await rm(join(h.root, 'outside-hardlink'));
   await desk.cycle();
   work = await h.work();
-  assert.deepEqual(work.cleanup!.resources.map(item => [item.kind, item.state]), [['environment', 'removed'], ['checkout', 'removed'], ['local-branch', 'removed'],
+  assert.deepEqual(work.cleanup!.resources.map(item => [item.kind, item.state]), [['environment', 'removed'], ['checkout', 'refused'], ['local-branch', 'refused'],
     ['temporaries', 'removed'], ['remote-branch', 'removed']]);
-  assert.deepEqual(work.cleanup!.resources.map(item => item.attempts.length), [1, 2, 2, 1, 2], 'concluded resources are not attempted again');
+  assert.deepEqual(work.cleanup!.resources.map(item => item.attempts.length), [1, 1, 1, 1, 2], 'only the failed resource is attempted again; refused waits for an operator');
+  assert.equal(h.log.filter(entry => entry.startsWith('remove')).length, 1, 'no new Sandbox removal for refused resources');
   assert.equal(h.log.filter(entry => entry.startsWith('preserve')).length, 1, 'preserved evidence is not preserved again');
-  assert.equal(work.cleanup!.state, 'complete');
+  assert.equal(work.cleanup!.state, 'pending');
+  assert.match(work.cleanup!.nextStep, /2 refused\/kept: never retried automatically/);
 });
 
 test('AC5: an intent without a recorded result (crash) is indeterminate, never success, and is revalidated on the next boot sweep', async t => {
@@ -180,10 +196,60 @@ test('AC6: the retry cadence is the boot sweep and the daily sweep; a refused ti
   await desk.cycle();
   await desk.cycle();
   const calls = () => h.repository.calls.filter(call => call.method === 'cleanupBranch').length;
-  assert.equal(calls(), 1, 'not retried before the daily sweep');
+  assert.equal(calls(), 1, 'not retried in the same owner');
   assert.deepEqual((await h.work()).cleanup!.resources.find(item => item.kind === 'remote-branch')?.state, 'refused');
   await h.desk(ports).cycle();
-  assert.equal(calls(), 2, 'a new owner (controller boot) sweeps pending cleanup once');
+  assert.equal(calls(), 1, 'a refused branch is never retried automatically, not even by the boot sweep (operator decision)');
   assert.equal(h.github.branch['factory/3-own'], 'e'.repeat(40), 'a branch whose tip is not the merged own head is never deleted');
   assert.equal(environmentOf(h.work_id), h.own.env);
+});
+
+test('AC6: a failed branch cleanup is retried by the boot sweep and the daily sweep only', async t => {
+  const h = await harness(t);
+  h.github.pull = merged();
+  h.github.branchOutcomes = ['failed', 'failed'];
+  let clock = Date.now();
+  const ports = { ...realCleanupPorts(h.root, h.log), retrySeconds: 86400 };
+  const desk = createDeliveryDesk({ session: h.session, repository: h.repository.repository, repositories: [scope], cleanup: ports, running: () => false,
+    interrupt: async () => {}, readWorks: () => readWorks(h.session), stopped: () => false, now: () => clock });
+  const calls = () => h.repository.calls.filter(call => call.method === 'cleanupBranch').length;
+  await desk.cycle(); await desk.cycle();
+  assert.equal(calls(), 1);
+  await h.desk(ports).cycle();
+  assert.equal(calls(), 2, 'boot sweep');
+  clock += 86400 * 1000 + 60000;
+  await desk.cycle();
+  assert.equal(calls(), 3, 'daily sweep');
+  assert.equal((await h.work()).cleanup!.state, 'complete');
+});
+
+test('MED3/MED4: bounded reads rotate least-recently-read first, skip recorded closed-unmerged, and one Work\'s failure never stops the cycle', async t => {
+  const root = await sandboxRoot(t);
+  const { session } = await store(t, root);
+  const ids: string[] = [];
+  for (let n = 1; n <= 10; n++) ids.push(await seedPublishedWork(session, { number: 100 + n, pr: 100 + n }));
+  const read: string[] = [];
+  const byPr = (pr: number) => ids[pr - 101]!;
+  const repository: CodeRepository = { checkAccess() { throw new Error('x'); }, findPublication() { throw new Error('x'); },
+    async readPullRequest(ref) {
+      read.push(byPr(ref.number));
+      // Work 1: a malformed adapter answer makes its own decision throw (unexpected failure of ONE Work).
+      if (ref.number === 101) return { kind: 'observed', source: 'github-rest', observedAt: 'x', repositoryId: 3, pullRequest: null as never };
+      return { kind: 'observed', source: 'github-rest', observedAt: new Date().toISOString(), repositoryId: 3,
+        pullRequest: ownFacts({ number: ref.number, pullRequestId: 9000 + ref.number, nodeId: `PR_own${ref.number}`, url: `https://github.com/acme/project/pull/${ref.number}`,
+          ...(ref.number === 102 ? { state: 'closed' as const } : {}) }) };
+    } };
+  const works = () => readWorks(session);
+  const desk = createDeliveryDesk({ session, repository, repositories: [scope], running: () => false, interrupt: async () => {}, readWorks: works, stopped: () => false });
+  await assert.doesNotReject(desk.cycle());
+  assert.equal(read.length, 8, 'bounded per cycle');
+  assert.ok(desk.view().failures.some(item => item.work_id === ids[0] && item.step === 'merge-observation'), 'the failure is recorded, the others continue');
+  await desk.cycle();
+  const second = read.slice(8);
+  assert.ok(second.includes(ids[8]!) && second.includes(ids[9]!), 'the Works not read in the first cycle are read next (no starvation)');
+  assert.equal(second.includes(ids[1]!), false, 'a recorded closure without merge is not re-read');
+  const throwing = createDeliveryDesk({ session, repository, repositories: [scope], running: () => false, interrupt: async () => {},
+    readWorks: async () => { throw new Error('STORAGE_UNAVAILABLE'); }, stopped: () => false });
+  await assert.doesNotReject(throwing.cycle(), 'never aborts the owner cycle');
+  assert.deepEqual(throwing.view().failures.map(item => item.code), ['STORAGE_UNAVAILABLE']);
 });

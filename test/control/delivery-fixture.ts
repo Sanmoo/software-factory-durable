@@ -134,8 +134,9 @@ export function deliveryRepository(state: { pull: PullRequestFacts | 'unavailabl
 }
 
 /** Admitted Work (real Admit-Work commit) completed by one ended Execution and linked to its own PR, like tickets 09-14 would leave it. */
-export async function seedPublishedWork(session: Session, options: { cessation?: 'confirmed' | 'unconfirmed'; active?: boolean; environmentFor?: (workId: string) => string; number?: number } = {}) {
+export async function seedPublishedWork(session: Session, options: { cessation?: 'confirmed' | 'unconfirmed'; active?: boolean; environmentFor?: (workId: string) => string; number?: number; pr?: number } = {}) {
   const number = options.number ?? 3;
+  const pr = options.pr ?? 42;
   const admitted = await admitTicket(session, { ticket: ticket(number), repository: { repository: 'acme/project', repositoryId: 3, base: 'main' }, observedAt: 'now',
     label: { id: 55, name: 'ready-for-agent' }, publication: { observedAt: 'now', limitations: [] } });
   if (admitted.kind !== 'admitted') throw new Error('NOT_ADMITTED');
@@ -159,10 +160,10 @@ export async function seedPublishedWork(session: Session, options: { cessation?:
       completion: { automatic: false, reason: 'The Builder said: "merged and delivered" (agent text is never delivery evidence).' },
     };
     Object.assign(work, { execution, branch: 'factory/3-own', queue: { ...work.queue, pending: false }, impediments: [],
-      pullRequest: { number: 42, url: 'https://github.com/acme/project/pull/42' } });
+      pullRequest: { number: pr, url: `https://github.com/acme/project/pull/${pr}` } });
     // Ticket 14 publication link (shape of its PublicationView), written here because this branch is based before ticket 14 integrates.
     (work as unknown as { publication: unknown }).publication = { state: 'published', basisExecutionId: 'e-1', marker: `<!-- software-factory:work:${work_id} -->`,
-      branch: 'factory/3-own', base: 'main', pullRequest: { pullRequestId: 9042, nodeId: 'PR_own42', number: 42, url: 'https://github.com/acme/project/pull/42',
+      branch: 'factory/3-own', base: 'main', pullRequest: { pullRequestId: 9000 + pr, nodeId: `PR_own${pr}`, number: pr, url: `https://github.com/acme/project/pull/${pr}`,
         state: 'open', merged: false, draft: true, headRef: 'factory/3-own', headSha, base: 'main', author: { id: 41898282, login: 'factory-app[bot]', type: 'Bot' },
         linkedAt: now, bodySha256: null } };
   }, BACKGROUND_CONTEXT);

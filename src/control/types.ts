@@ -587,7 +587,9 @@ export interface Control {
 
 // ---- Ticket 17: confirmed delivery and owned cleanup (spec §12.3) ----
 /** Identity of the Work's own pull request as the publication discovery linked it (ticket 14); the only PR whose merge delivers the cycle. */
-export type OwnPullRequestIdentity = { pullRequestId: number; nodeId: string; number: number; url: string; headRef: string; base: string };
+export type OwnPullRequestIdentity = { pullRequestId: number; nodeId: string; number: number; url: string; headRef: string; base: string;
+  /** Heads the Factory itself published/linked as this PR's head (ticket 14 `linkedHeads` + the linked head): the only own content. */
+  heads: string[] };
 /** One read of the own pull request. `unavailable` concludes nothing (no merge, closure or absence). */
 export type MergeObservation = { at: string; observedAt: string | null;
   outcome: 'open' | 'closed-unmerged' | 'merged' | 'identity-mismatch' | 'merge-unconfirmed' | 'unavailable'; reasons: string[] };
@@ -600,10 +602,13 @@ export type DeliveryView = {
   observations: MergeObservation[];
   /** `duringActivity`: the Execution that was active when the merge was confirmed (it is interrupted; no new action follows). */
   merge: (MergeFacts & { confirmedAt: string; observedAt: string; duringActivity: string | null }) | null;
+  /** Last read of the own pull request (any outcome): the desk reads the least recently read Works first (no starvation). */
+  lastReadAt?: string | null;
   nextStep: string;
 };
 export type CleanupResourceKind = 'environment' | 'checkout' | 'local-branch' | 'temporaries' | 'remote-branch';
-export type CleanupOutcome = 'removed' | 'absent' | 'partial' | 'failed' | 'refused' | 'indeterminate';
+/** `refused`/`kept` are never retried automatically: an operator decides (no fresh write grant is issued for them). */
+export type CleanupOutcome = 'removed' | 'absent' | 'partial' | 'failed' | 'refused' | 'kept' | 'indeterminate';
 /** Intent recorded BEFORE the effect, result after it; an intent without result (crash) becomes `indeterminate`, never success. */
 export type CleanupAttempt = { effectId: string; intentAt: string; resultAt: string | null; outcome: CleanupOutcome | 'intended'; code: string | null };
 export type CleanupResourceView = { id: string; kind: CleanupResourceKind; target: string; environment: string | null; ownership: string;

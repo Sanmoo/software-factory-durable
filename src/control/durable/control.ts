@@ -100,7 +100,7 @@ export async function openControl(options: { storagePath: string;
     record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation),
     // Ticket 15: required-checks tracking after the dispatch tick (off its critical path), whatever the dispatch barrier or pause.
     // Ticket 16: readiness after the checks explanation (its evidence), whatever the pause (tracking, not a new trigger).
-    afterCycle: async () => { await delivery?.cycle(); await desk?.cycle(); if (dispatchReason === null) await dispatcher?.tick(); await checks?.pass(tracking.signal).catch(() => {});
+    afterCycle: async () => { await delivery?.cycle().catch(() => {}); await desk?.cycle(); if (dispatchReason === null) await dispatcher?.tick(); await checks?.pass(tracking.signal).catch(() => {});
       await readiness?.pass(tracking.signal).catch(() => {}); },
   }) : undefined;
   const tracking = new AbortController();

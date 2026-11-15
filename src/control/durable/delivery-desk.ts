@@ -24,24 +24,36 @@ export function createDeliveryDesk(deps: { session: Session; repository: CodeRep
   const swept = new Set<string>();
   const configured = (repository: string) => deps.repositories.find(scope => scope.repository.toLowerCase() === repository.toLowerCase());
 
-  async function observeMerges() {
+  // In-memory failures of this owner (bounded): one Work's unexpected failure is recorded here and never stops the cycle.
+  const failures: { at: string; work_id: string | null; step: string; code: string }[] = [];
+  const failed = (work_id: string | null, step: string, error: unknown) => {
+    failures.push({ at: new Date().toISOString(), work_id, step, code: error instanceof Error && /^[A-Z_]{1,64}$/.test(error.message) ? error.message : 'UNEXPECTED_FAILURE' });
+    failures.splice(0, Math.max(0, failures.length - 50));
+  };
+
+  async function observeMerges(works: WorkRecord[]) {
     if (!deps.repository.readPullRequest) return;
-    let reads = 0;
-    for (const work of await deps.readWorks()) {
-      if (deps.stopped() || reads >= readsPerCycle) return;
-      const own = work.result === 'open' ? ownPullRequestOf(work as { publication?: unknown }) : null;
-      const scope = configured(work.repository.repository);
-      if (!own || !scope) continue;
-      reads++;
-      const observation = await deps.repository.readPullRequest({ repo: scope, repositoryId: work.repository.repositoryId, number: own.number,
-        pullRequestId: own.pullRequestId, nodeId: own.nodeId }).catch(() => ({ kind: 'unavailable' as const, code: 'DELIVERY_READ_FAILED', observedAt: null }));
-      const decision = observation.kind === 'observed'
-        ? decideMerge(own, { repositoryId: work.repository.repositoryId, branch: work.branch ?? own.headRef, base: work.repository.base }, observation.pullRequest)
-        : { outcome: 'unavailable' as const, reasons: [observation.code] };
-      const recorded = await recordMergeObservation(deps.session, work.work_id, { own, observedAt: observation.observedAt, decision });
-      // Merge during an activity is still delivery; the activity is interrupted so the agent takes no new action (its commits already refuse).
-      if (recorded.kind === 'delivered' && (recorded.duringActivity || deps.running(work.work_id))) await deps.interrupt(work.work_id).catch(() => {});
+    // Least recently read first (never-read first): a bounded number of reads per cycle reaches every Work in turn. A closure without merge
+    // already recorded is not re-read (no reopening/resumption is automatic; ticket 25 owns that cycle decision).
+    const candidates = works.filter(work => work.result === 'open' && ownPullRequestOf(work as { publication?: unknown }) && configured(work.repository.repository) &&
+      work.delivery?.observations.at(-1)?.outcome !== 'closed-unmerged')
+      .sort((a, b) => (a.delivery?.lastReadAt ?? '').localeCompare(b.delivery?.lastReadAt ?? ''));
+    for (const work of candidates.slice(0, readsPerCycle)) {
+      if (deps.stopped()) return;
+      try { await observeOne(work); } catch (error) { failed(work.work_id, 'merge-observation', error); }
     }
+  }
+  async function observeOne(work: WorkRecord) {
+    const own = ownPullRequestOf(work as { publication?: unknown })!;
+    const scope = configured(work.repository.repository)!;
+    const observation = await deps.repository.readPullRequest!({ repo: scope, repositoryId: work.repository.repositoryId, number: own.number,
+      pullRequestId: own.pullRequestId, nodeId: own.nodeId }).catch(() => ({ kind: 'unavailable' as const, code: 'DELIVERY_READ_FAILED', observedAt: null }));
+    const decision = observation.kind === 'observed'
+      ? decideMerge(own, { repositoryId: work.repository.repositoryId, branch: work.branch, base: work.repository.base }, observation.pullRequest)
+      : { outcome: 'unavailable' as const, reasons: [observation.code] };
+    const recorded = await recordMergeObservation(deps.session, work.work_id, { own, observedAt: observation.observedAt, decision });
+    // Merge during an activity is still delivery; the activity is interrupted so the agent takes no new action (its commits already refuse).
+    if (recorded.kind === 'delivered' && (recorded.duringActivity || deps.running(work.work_id))) await deps.interrupt(work.work_id).catch(() => {});
   }
 
   async function sweep(work: WorkRecord) {
@@ -84,17 +96,22 @@ export function createDeliveryDesk(deps: { session: Session; repository: CodeRep
   }
 
   return {
+    view: () => ({ failures: [...failures] }),
+    /** Never throws: the question desk and the dispatcher run after it in the same owner cycle. */
     async cycle() {
       if (deps.stopped()) return;
-      await observeMerges();
-      for (const work of await deps.readWorks()) {
+      let works: WorkRecord[];
+      try { works = await deps.readWorks(); } catch (error) { failed(null, 'read-works', error); return; }
+      await observeMerges(works);
+      try { works = await deps.readWorks(); } catch (error) { failed(null, 'read-works', error); return; }
+      for (const work of works) {
         if (deps.stopped()) return;
         const cleanup = work.cleanup;
         if (work.result !== 'delivered' || !cleanup || cleanup.state === 'complete') continue;
         const due = cleanup.state === 'waiting' || !swept.has(work.work_id) || cleanup.lastSweepAt === null || now() - Date.parse(cleanup.lastSweepAt) >= retryMs;
         if (!due) continue;
         // One Work's unexpected failure never stops the others; its records stay as they are (no result is invented).
-        await sweep(work).catch(() => {});
+        try { await sweep(work); } catch (error) { failed(work.work_id, 'cleanup-sweep', error); }
       }
     },
   };

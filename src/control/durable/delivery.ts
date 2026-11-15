@@ -1,7 +1,7 @@
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { CleanupOutcome, CleanupView, DeliveryView, EvidencePreservation, MergeObservation, OwnPullRequestIdentity, PlannedCleanupResource } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
-import { cleanupNextStep, cleanupState, concluded, deliveryNextStep, mergePlan, ownPullRequestOf, recoverLostIntents, type MergeDecision } from '../rules/delivery.js';
+import { cleanupNextStep, cleanupState, concluded, deliveryNextStep, mergePlan, ownPullRequestOf, recoverLostIntents, retryable, type MergeDecision } from '../rules/delivery.js';
 import { ticketIndex, works, type WorkRecord } from './admission.js';
 import type { Session } from './store.js';
 
@@ -54,6 +54,7 @@ export async function recordMergeObservation(session: Session, work_id: string, 
       work.cleanup = initialCleanup(at);
       history(work, 'delivery-confirmed', `#${decision.merge.number}:${decision.merge.mergeCommitSha}${during ? `:during:${during}` : ''}`);
     }
+    delivery.lastReadAt = at;
     delivery.nextStep = deliveryNextStep(delivery.state, decision.outcome);
     work.delivery = delivery;
     return decision.outcome === 'merged' ? { kind: 'delivered' as const, duringActivity: delivery.merge!.duringActivity } : { kind: 'observed' as const, outcome: decision.outcome };
@@ -111,7 +112,8 @@ export async function recordPreservation(session: Session, work_id: string, envi
 export async function recordCleanupIntent(session: Session, work_id: string, ids: string[], effectId: string): Promise<'recorded' | 'refused' | 'stale'> {
   return onDelivered(session, work_id, (work, cleanup) => {
     const resources = ids.map(id => cleanup.resources.find(item => item.id === id));
-    if (!cleanup.eligibility.eligible || !ids.length || resources.some(item => !item || concluded(item.state))) return 'refused' as const;
+    // Only automatically retryable resources: refused/kept wait for an operator decision (never a fresh write attempt).
+    if (!cleanup.eligibility.eligible || !ids.length || resources.some(item => !item || !retryable(item.state))) return 'refused' as const;
     if (resources.some(item => item!.environment && !cleanup.evidence.some(entry => entry.environment === item!.environment && entry.state !== 'failed'))) return 'refused' as const;
     const at = new Date().toISOString();
     for (const item of resources) item!.attempts = [...item!.attempts, { effectId, intentAt: at, resultAt: null, outcome: 'intended' as const, code: null }].slice(-20);
