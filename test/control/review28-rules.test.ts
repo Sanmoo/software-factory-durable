@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { opinionCorrelated, verifyExecution } from '../../src/control/rules/review.js';
-import { carryPlan, carrySource, incorporable, notRetriedReasons, preservedReviewContext, retryDecision, reviewerFailure, reviewerRetryWait, undiscovered }
-  from '../../src/control/rules/review-recovery.js';
+import { carryPlan, carrySource, identityChange, incorporable, notRetriedReasons, packIdentity, preservedReviewContext, retryDecision, reviewerFailure, reviewerRetryWait,
+  reviewProfile, sameReviewProfile, undiscovered } from '../../src/control/rules/review-recovery.js';
+import { pendingReviewerReservations, settleReviewerReservations } from '../../src/control/durable/review-recovery.js';
+import type { WorkRecord } from '../../src/control/durable/admission.js';
 import type { ProposalHandoff, ProposalIdentity, ReviewOpinion } from '../../src/contracts/index.js';
 import type { BudgetCounter, ExecutionView, ReviewerView, ReviewRoundView } from '../../src/control/types.js';
 
@@ -133,4 +135,54 @@ test('AC6: the substitute session gets the preserved review state as context onl
   assert.match(unknown, /"role":"spec","conclusion":"unknown","code":"OUTCOME_NOT_RECORDED"/, 'an unrecorded outcome is unknown, never clean');
   assert.ok(Buffer.byteLength(preservedReviewContext([delivered], 900)!) <= 900 + 64);
   assert.equal(preservedReviewContext([]), null);
+});
+
+test('review LOW: an INCOMPLETE opinion is never carried as valid; the role is reviewed again', () => {
+  const source = carrySource({ executionId: 'e1', review: { rounds: [round(4, { standards: { opinion: opinion('standards', 4, { conclusion: 'incomplete' }) } })] },
+    end: { at: 'now', outcome: 'failure', code: 'CONTROLLER_CRASH', cessation: 'confirmed' }, request: {} as ExecutionView['request'] });
+  assert.deepEqual(Object.keys(carryPlan({ source, summary: summary(5), identity: observed(), profile })), ['spec']);
+  assert.deepEqual(Object.keys(carryPlan({ source, summary: summary(5), identity: observed(), profile, discovered: {} })), ['spec']);
+});
+
+test('review HIGH 2: the carry compares a normalized pack identity, with the PRODUCTION shapes (seed object from prepare, key order, prefix)', () => {
+  // Production: request.skillPack is the prepared seed {name: 'factory/skill-pack/<id>', manifestSha256}; the policy carries the bare id string.
+  const request = { skillPack: { manifestSha256: 'f'.repeat(64), name: 'factory/skill-pack/factory-skills-v5' }, policies: { skillPack: 'factory-skills-v5' as const } };
+  const recorded = reviewProfile(request as ExecutionView['request'], { modelBudget: 'reviewer-v1', imageSourceMaxBytes: 5242880 });
+  const reparsed = JSON.parse(JSON.stringify({ reviewer: { imageSourceMaxBytes: 5242880, modelBudget: 'reviewer-v1' }, builder: {}, skillPack: { manifestSha256: 'f'.repeat(64), name: 'factory/skill-pack/factory-skills-v5' } }));
+  assert.equal(sameReviewProfile(recorded, reparsed), true, 'key order never matters');
+  assert.equal(sameReviewProfile(recorded, reviewProfile(request as ExecutionView['request'], { modelBudget: 'reviewer-v1', imageSourceMaxBytes: 5242880 })), true);
+  assert.deepEqual(packIdentity('factory-skills-v5'), { name: 'factory-skills-v5', manifestSha256: null });
+  assert.deepEqual(packIdentity(request.skillPack), { name: 'factory-skills-v5', manifestSha256: 'f'.repeat(64) });
+  assert.equal(sameReviewProfile(recorded, { ...recorded, skillPack: 'factory-skills-v5' }), false, 'a bare id cannot demonstrate the same manifest');
+  assert.equal(sameReviewProfile(recorded, { ...recorded, skillPack: { name: 'factory/skill-pack/factory-skills-v5', manifestSha256: 'e'.repeat(64) } }), false);
+  assert.equal(sameReviewProfile(recorded, { ...recorded, reviewer: { modelBudget: 'reviewer-v1' } }), false);
+  // End to end through carryPlan with the recorded production profile.
+  const interrupted = { ...round(4), versions: { ...round(4).versions, profile: recorded } };
+  const source = carrySource({ executionId: 'e1', review: { rounds: [interrupted] }, end: { at: 'now', outcome: 'failure', code: 'CONTROLLER_CRASH', cessation: 'confirmed' },
+    request: {} as ExecutionView['request'] });
+  assert.deepEqual(Object.keys(carryPlan({ source, summary: summary(5), identity: observed(), profile: reparsed })).sort(), ['spec', 'standards']);
+  assert.deepEqual([identityChange(observed(), observed()), identityChange(observed(), observed('j')), identityChange(null, observed())], [null, 'PROPOSAL_CHANGED', 'PROPOSAL_IDENTITY_UNKNOWN']);
+});
+
+test('review HIGH 1: reconciliation settles an outstanding retry reservation — receipt consumes once, proven absence releases, uncertainty keeps', () => {
+  const make = () => {
+    const value = round(1, { spec: { state: 'started', attempt: 2, invocationId: 'spec-e1-r1a2', opinion: null, cessation: null, charge: { counter: 'recoveries', state: 'reserved', settledAt: null } } });
+    const execution = { executionId: 'e1', review: { rounds: [value] } } as unknown as ExecutionView;
+    const work = { budget: { recoveries: { limit: 3, granted: 0, consumed: 0, reserved: 'spec-e1-r1a2' } }, history: [] } as unknown as WorkRecord;
+    return { execution, work, reviewer: value.reviewers.spec };
+  };
+  const consumed = make();
+  assert.deepEqual(pendingReviewerReservations(consumed.execution), [{ round: 1, role: 'spec', invocationId: 'spec-e1-r1a2' }]);
+  assert.deepEqual(settleReviewerReservations(consumed.work, consumed.execution, { cessation: 'confirmed', receipt: () => ({ kind: 'receipt', id: 'r9' }) }),
+    [{ invocationId: 'spec-e1-r1a2', outcome: 'consumed' }]);
+  assert.deepEqual([consumed.work.budget!.recoveries.consumed, consumed.work.budget!.recoveries.reserved, consumed.reviewer.charge?.state, consumed.reviewer.receiptId], [1, null, 'consumed', 'r']);
+  assert.deepEqual(settleReviewerReservations(consumed.work, consumed.execution, { cessation: 'confirmed', receipt: () => ({ kind: 'receipt', id: 'r9' }) }), [], 'consumed once');
+  const released = make();
+  settleReviewerReservations(released.work, released.execution, { cessation: 'confirmed', receipt: () => ({ kind: 'absent' }) });
+  assert.deepEqual([released.work.budget!.recoveries.consumed, released.work.budget!.recoveries.reserved, released.reviewer.charge?.state], [0, null, 'released']);
+  for (const input of [{ cessation: 'confirmed' as const, receipt: () => ({ kind: 'uncertain' as const, code: 'X' }) }, { cessation: 'unconfirmed' as const, receipt: () => ({ kind: 'absent' as const }) }]) {
+    const kept = make();
+    assert.deepEqual(settleReviewerReservations(kept.work, kept.execution, input), [{ invocationId: 'spec-e1-r1a2', outcome: 'kept' }]);
+    assert.deepEqual([kept.work.budget!.recoveries.reserved, kept.reviewer.charge?.state], ['spec-e1-r1a2', 'reserved'], 'never settled by guess');
+  }
 });

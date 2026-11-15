@@ -30,6 +30,8 @@ const rounds = { max: 4 } as const;
 /** Spec: one retry in the whole run (the provoked failure); Standards: none (its lost notification must be recovered from Records). */
 const activationsMax = { standards: rounds.max, spec: rounds.max + 1 } as const;
 const provokedDeadlineMs = 20_000;
+/** Guard refusals tolerated before the run stops activating (each one is a known never-started refusal, never retried). */
+const maxGuardRefusals = 2;
 const sdkProfileId = 'factory-development-pi-1.5.2-read-async-bash-lexical-v3' as const;
 const model = { auth: 'factory-oauth' as const, providerId: 'openai' as const, modelId: 'gpt-6-luna' as const, api: 'openai-responses' as const };
 const prompts = {
@@ -66,11 +68,11 @@ export function plan() {
       'preflight: read-only GitHub: listing of the configured label must contain exactly Ticket #3; ticket and native blocked_by read',
       'run: new Control storage under observations; production-equivalent Execution ports with reviews {rounds max 4, partialRecovery true}; ONE Execution (capacity 1), 1 new VM, ' +
         'ONE Builder, reviewers in parallel on the same boot; the two provocations above; Sandbox.stop; Slot release; 75 min deadline',
-      'inspect: read-only on an exclusive COPY of the storage: Control view (rounds, attempts, sources, charges, budget, history); Records listing of every ' +
-        'reviewer invocation (find, read-only); worker session tool-call names (host runtime directory)',
+      'inspect: read-only on exclusive COPIES: the storage copy (Control view: rounds, attempts, sources, charges, budget, history) and a private copy of the Work\'s ' +
+        'Records (listing of every reviewer invocation on the copy); worker session JSONL read-only (bounded reads, tool-call names)',
       'stop-environment: own boot of the recorded Execution when it may still run: public Sandbox.stop of that exact boot',
     ],
-    guards: ['one-shot intent tombstones', 'prepare once and only for the Work of Ticket #3', 'one Builder; per role at most the activations above, all of the same Execution, ' +
+    guards: [`guard refusals are known pre-launch refusals (WORKER_LAUNCH_INVALID: never-started, reservation released, not retried); more than ${maxGuardRefusals} stop the run`, 'one-shot intent tombstones', 'prepare once and only for the Work of Ticket #3', 'one Builder; per role at most the activations above, all of the same Execution, ' +
       'each a distinct (round, attempt); a Spec attempt > 1 only for round 1', 'no remove/cleanup', 'no push/PR (read-only grants)'],
     expected: [
       'round 1: standards.source records-discovery, state ended, attempt 1, NO second standards activation for round 1',
@@ -163,6 +165,8 @@ export async function runPhase(phase: Phase) {
       const events: unknown[] = [];
       const log = (entry: Record<string, unknown>) => { events.push({ at: new Date().toISOString(), monotonicMs: Math.round(performance.now()), ...entry }); };
       let prepared = 0;
+      let refusals = 0;
+      const stop = new AbortController();
       const guard = activationGuard();
       const provoke = provocation(1); // new storage: the Work's first round is round 1
       const allowed = async (workId: string) => {
@@ -195,7 +199,9 @@ export async function runPhase(phase: Phase) {
           async activate(invocation, delivery, activationEvents) {
             const deadlineMs = provoke.deadline(invocation.context, invocation.review);
             log({ call: 'activate', context: invocation.context, review: invocation.review ?? null, provokedDeadlineMs: deadlineMs ?? null, credentialDelivered: delivery?.credential !== undefined });
-            if (!guard(invocation.context, invocation.review)) throw new Error('RECIPE_ONE_SHOT_GUARD');
+            // A guard refusal is a KNOWN pre-launch refusal (never-started: its reservation is released and it is not transient), so it can
+            // never cascade into free retries; after a bounded number of refusals the run stops activating anything.
+            if (!guard(invocation.context, invocation.review)) { refusals++; if (refusals > maxGuardRefusals) stop.abort(); throw new Error('WORKER_LAUNCH_INVALID'); }
             const handle = await workers.activate(deadlineMs ? { ...invocation, deadlineMs } : invocation, delivery, activationEvents);
             const role = invocation.context.role;
             const completed = handle.completed.then(done => {
@@ -210,7 +216,6 @@ export async function runPhase(phase: Phase) {
         } };
       const control = await openControl({ storagePath: `${observations}/control.sqlite`, runtimeInventory: 'empty',
         access: { tracker, repository: codeRepository, repositories: [repository], dependencyRepositories: [] }, polling: { intervalSeconds: 30 }, execution: ports });
-      const stop = new AbortController();
       const running = control.run(stop.signal);
       const deadline = Date.now() + runDeadlineMs;
       let final: unknown;
@@ -237,8 +242,12 @@ export async function runPhase(phase: Phase) {
     if (!work?.execution?.dispatch.environment) throw new Error('NO_EXECUTION_OBSERVED');
     if (phase === 'inspect') {
       const shown = await stored.inspect({ kind: 'show', work_id: work.work_id });
+      // Read-only: the Work's protected Records are COPIED into a private directory of the observations, and only the copy is opened.
       const { createRecords } = await import('../../src/records/index.js');
-      const records = await createRecords({ root });
+      const recordsCopy = `${observations}/inspect-records-copy`;
+      await fs.mkdir(recordsCopy, { mode: 0o700 });
+      await fs.cp(`${root}/${work.work_id}`, `${recordsCopy}/${work.work_id}`, { recursive: true, errorOnExist: true, force: false, verbatimSymlinks: true });
+      const records = await createRecords({ root: recordsCopy });
       const invocations = (work.execution.review?.rounds ?? []).slice(0, 8).flatMap(round => (['standards', 'spec'] as const).flatMap(role =>
         [...(round.reviewers[role].attempts ?? []).map(item => item.invocationId), round.reviewers[role].invocationId].map(invocationId => ({ round: round.round, role, invocationId }))));
       const opinionRecords = [];

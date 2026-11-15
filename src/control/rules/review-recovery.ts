@@ -36,6 +36,13 @@ export type RetryDecision = { kind: 'retry'; attempt: number; waitSeconds: numbe
   { kind: 'not-retried'; code: 'REVIEWER_CESSATION_UNCONFIRMED' | 'REVIEWER_FAILURE_NOT_TRANSIENT' | 'RECOVERY_LIMIT_REACHED' | 'RECOVERY_RESERVATION_BUSY' |
     'RECOVERY_BUDGET_UNAVAILABLE' | 'PROPOSAL_CHANGED' | 'PROPOSAL_IDENTITY_UNKNOWN' | 'REVIEWER_ATTEMPTS_EXHAUSTED' } | { kind: 'none' };
 
+/** The proposal identity re-observed is NOT the one the round started on (or cannot be shown to be): never reviewed on the old input. */
+export function identityChange(before: ProposalIdentity | null, now: ProposalIdentity | null): 'PROPOSAL_CHANGED' | 'PROPOSAL_IDENTITY_UNKNOWN' | null {
+  if (before?.status !== 'observed' || now?.status !== 'observed' || !before.consistent || !now.consistent) return 'PROPOSAL_IDENTITY_UNKNOWN';
+  if (before.sha256 !== now.sha256 || before.indexSha256 !== now.indexSha256) return 'PROPOSAL_CHANGED';
+  return null;
+}
+
 /**
  * Whether ONE failed reviewer is re-obtained alone in the same round (spec §5.6/§6.4): only with its cessation known (completion observed
  * or never launched), a transient failure, the proposal identity re-observed EQUAL to the identity the round started on (same content and
@@ -50,9 +57,8 @@ export function retryDecision(input: { reviewer: Pick<ReviewerView, 'state' | 'o
   if (!transient.has(failure.code)) return { kind: 'not-retried', code: 'REVIEWER_FAILURE_NOT_TRANSIENT' };
   const attempt = (input.reviewer.attempt ?? 1) + 1;
   if (attempt > maxReviewerAttempt) return { kind: 'not-retried', code: 'REVIEWER_ATTEMPTS_EXHAUSTED' };
-  const { before, now } = input;
-  if (before?.status !== 'observed' || now?.status !== 'observed' || !before.consistent || !now.consistent) return { kind: 'not-retried', code: 'PROPOSAL_IDENTITY_UNKNOWN' };
-  if (before.sha256 !== now.sha256 || before.indexSha256 !== now.indexSha256) return { kind: 'not-retried', code: 'PROPOSAL_CHANGED' };
+  const changed = identityChange(input.before, input.now);
+  if (changed) return { kind: 'not-retried', code: changed };
   if (!input.counter) return { kind: 'not-retried', code: 'RECOVERY_BUDGET_UNAVAILABLE' };
   if (input.counter.reserved) return { kind: 'not-retried', code: 'RECOVERY_RESERVATION_BUSY' };
   if (availableOf(input.counter) === 0) return { kind: 'not-retried', code: 'RECOVERY_LIMIT_REACHED' };
@@ -76,6 +82,30 @@ export function carrySource(previous: Pick<ExecutionView, 'executionId' | 'end' 
   return { executionId: previous.executionId, round };
 }
 
+const carriable = (opinion: ReviewOpinion | null | undefined): opinion is ReviewOpinion => Boolean(opinion && ['clean', 'findings'].includes(opinion.conclusion));
+
+type PackRef = { name: string; manifestSha256: string } | string | null | undefined;
+/** Canonical pack identity: the seed name without its `factory/skill-pack/` prefix and the manifest hash when known (never key order). */
+export function packIdentity(pack: PackRef): { name: string; manifestSha256: string | null } | null {
+  if (!pack) return null;
+  const name = (typeof pack === 'string' ? pack : pack.name).replace(/^factory\/skill-pack\//, '');
+  return { name, manifestSha256: typeof pack === 'string' ? null : pack.manifestSha256 };
+}
+/**
+ * The reviewer profile of the interrupted round and of this capture are the same: same pack (name AND manifest — a side without a manifest
+ * never matches, it cannot be demonstrated) and the same reviewer policy fields. Never a serialized-object comparison.
+ */
+export function sameReviewProfile(a: { skillPack: PackRef; reviewer: { modelBudget?: string | undefined; imageSourceMaxBytes?: number | undefined } },
+  b: { skillPack: PackRef; reviewer: { modelBudget?: string | undefined; imageSourceMaxBytes?: number | undefined } }): boolean {
+  const left = packIdentity(a.skillPack), right = packIdentity(b.skillPack);
+  const packs = left === null && right === null ? true : Boolean(left && right && left.name === right.name && left.manifestSha256 !== null && left.manifestSha256 === right.manifestSha256);
+  return packs && (a.reviewer.modelBudget ?? null) === (b.reviewer.modelBudget ?? null) && (a.reviewer.imageSourceMaxBytes ?? null) === (b.reviewer.imageSourceMaxBytes ?? null);
+}
+/** The profile a round records (`versions.profile`) and a carry compares against: ONE construction for both sides. */
+export function reviewProfile(request: Pick<ExecutionView['request'], 'skillPack' | 'policies'>, reviewer: ReviewRoundView['versions']['profile']['reviewer']): ReviewRoundView['versions']['profile'] {
+  return { skillPack: request.skillPack ? { name: request.skillPack.name, manifestSha256: request.skillPack.manifestSha256 } : null, builder: request.policies, reviewer: { ...reviewer } };
+}
+
 export type CarryPlan = Partial<Record<ReviewerRole, { opinion: ReviewOpinion; from: CarriedOpinionView }>>;
 /**
  * Pure (spec §5.6/§6.4/V-08): which opinions of the interrupted round are still current for this capture. Only when the capture is the SAME
@@ -88,16 +118,16 @@ export function carryPlan(input: { source: { executionId: string; round: ReviewR
   const source = input.source;
   const before = source?.round.handoff.summary;
   if (!source || !before?.content || !sameProposal({ now: input.summary, identity: input.identity, before })) return {};
-  const profile = source.round.versions.profile;
-  if (JSON.stringify(profile.skillPack) !== JSON.stringify(input.profile.skillPack) || JSON.stringify(profile.reviewer) !== JSON.stringify(input.profile.reviewer)) return {};
+  if (!sameReviewProfile(source.round.versions.profile, input.profile)) return {};
   const plan: CarryPlan = {};
   for (const role of reviewerRoles) {
     const reviewer = source.round.reviewers[role];
     const attempt = reviewer.attempt ?? 1;
     const expected = { role, round: source.round.round, attempt, invocationId: reviewer.invocationId, handoffIndexSha256: before.indexSha256 };
-    const recorded = reviewer.state === 'ended' && concluded(reviewer.opinion) && incorporable(reviewer.opinion, expected) ? reviewer.opinion : null;
+    // Only a COMPLETE result is carried (clean/findings); an incomplete opinion (limitation, unread input) is reviewed again.
+    const recorded = reviewer.state === 'ended' && carriable(reviewer.opinion) && incorporable(reviewer.opinion, expected) ? reviewer.opinion : null;
     const found = !recorded && (reviewer.state === 'started' || reviewer.state === 'requested' || reviewer.cessation === 'unconfirmed') ? input.discovered?.[role] ?? null : null;
-    const opinion = recorded ?? (found && concluded(found) && incorporable(found, expected) ? found : null);
+    const opinion = recorded ?? (found && carriable(found) && incorporable(found, expected) ? found : null);
     if (!opinion) continue;
     plan[role] = { opinion, from: { executionId: source.executionId, round: source.round.round, attempt, invocationId: reviewer.invocationId,
       indexSha256: before.indexSha256, contentSha256: before.content.sha256, discovered: !recorded } };
@@ -125,7 +155,7 @@ const fenced = (text: string) => {
  * effective opinion or explicit failure/unknown outcome, and whether its delivery was confirmed. Context only: the substitute treats the
  * findings of the results it receives at its next handoff, never these, so no treatment or charge is duplicated. Bounded.
  */
-export function preservedReviewContext(rounds: readonly ReviewRoundView[], maxBytes = 12000): string | null {
+export function preservedReviewContext(rounds: readonly ReviewRoundView[], maxBytes = 12000, options: { carry: boolean } = { carry: true }): string | null {
   const round = [...rounds].reverse().find(item => (item.kind ?? 'review') === 'review');
   if (!round) return null;
   const reviewers = reviewerRoles.map(role => {
@@ -136,11 +166,12 @@ export function preservedReviewContext(rounds: readonly ReviewRoundView[], maxBy
       : { role, conclusion: failure ? 'failure' : 'unknown', code: failure?.code ?? 'OUTCOME_NOT_RECORDED', findings: [] };
   });
   const delivery = round.delivery?.outcome ?? 'not-requested';
-  const head = `PRESERVED REVIEW STATE of the interrupted Execution — round ${round.round} (${round.state}; conclusion ${round.conclusion ?? 'not concluded'}; ` +
+  const head = `PRESERVED REVIEW STATE of the previous Execution — round ${round.round} (${round.state}; conclusion ${round.conclusion ?? 'not concluded'}; ` +
     `delivery to the previous Builder session: ${delivery}${delivery === 'delivered' ? ', not proof that it was consumed' : ''}). Content ` +
     `${round.handoff.summary?.content?.sha256 ?? 'unknown'} at HEAD ${round.handoff.summary?.head ?? 'unknown'}. This is context only: inspect the current ` +
-    'state; when you hand off, the Factory re-obtains only what is missing and keeps the valid opinions if the proposal is unchanged; treat the findings ' +
-    'of the results it then delivers to you (their round), never these.\n';
+    (options.carry ? 'state; when you hand off, the Factory re-obtains only what is missing and keeps the valid opinions if the proposal is unchanged; '
+      : 'state; when you hand off, the Factory obtains new opinions of both reviewers; ') + 'treat the findings of the results it then delivers to you ' +
+    '(their round), never these.\n';
   let body = JSON.stringify(reviewers);
   if (Buffer.byteLength(head + body) > maxBytes) body = JSON.stringify(reviewers.map(item => ({ role: item.role, conclusion: item.conclusion, findings: item.findings.map(finding => finding.id) })));
   if (Buffer.byteLength(head + body) > maxBytes) body = JSON.stringify(reviewers.map(item => ({ role: item.role, conclusion: item.conclusion })));

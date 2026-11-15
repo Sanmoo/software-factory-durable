@@ -24,7 +24,7 @@ const passed = { id: 'docs', source: '/artifacts/spec/v1/ticket.json#validation'
   outcome: 'passed' as const, code: null, exitCode: 0, output: { workId: 'w', id: '11111111-2222-4333-8444-555555555555' }, sequence: 2, current: true, reason: null, authorization: null };
 type Activation = { captures: HandoffEvent[]; ask?: boolean };
 
-test('AC1: a requirement doubt is asked; the recovery continues the round numbers and the non-adoption is authorized by the answered Question', async t => {
+async function scenario(t: { after(fn: () => Promise<void>): void }, partialRecovery: boolean) {
   const dir = await mkdtemp(join(tmpdir(), 'factory-review13q-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
@@ -42,7 +42,7 @@ test('AC1: a requirement doubt is asked; the recovery continues the round number
   let control: Control | undefined;
   const ports: ExecutionPorts = {
     configuration: { schemaVersion: 1 }, capacity: 1, builder: { skillPack: 'factory-skills-v3', modelBudget: 'builder-v1', copyOutput: true },
-    reviews: { reviewer: { modelBudget: 'reviewer-v1', imageSourceMaxBytes: 5242880 }, rounds: { max: 4 } },
+    reviews: { reviewer: { modelBudget: 'reviewer-v1', imageSourceMaxBytes: 5242880 }, rounds: { max: 4 }, ...(partialRecovery ? { partialRecovery: true } : {}) },
     sandbox: {
       async prepare(input) {
         return { status: 'success', environment: `env-${'c'.repeat(64)}` as never, seeds: [{ name: 'factory/skill-pack/factory-skills-v3', manifestSha256: 'f'.repeat(64), reused: false }],
@@ -136,4 +136,18 @@ test('AC1: a requirement doubt is asked; the recovery continues the round number
   assert.deepEqual([verification.status, verification.reasons], ['verified', []]);
   assert.deepEqual(verification.treatments, [{ round: 2, role: 'spec', findingId: 'S1', outcome: 'not-adopted' }]);
   assert.deepEqual(directives.map(item => [item.round, item.end ?? false]), [[1, false], [2, false], [3, false], [4, true]]);
+  return { builders };
+}
+
+test('AC1: a requirement doubt is asked; the recovery continues the round numbers and the non-adoption is authorized by the answered Question', async t => {
+  const { builders } = await scenario(t, false);
+  assert.doesNotMatch(builders[1]!.prompt, /PRESERVED REVIEW STATE/, 'tickets 12/13 composition: unchanged prompt');
+});
+
+test('ticket 28 AC6: the substitute session receives the preserved review state as context only (delivery is not consumption); both review again', async t => {
+  const { builders } = await scenario(t, true);
+  const prompt = builders[1]!.prompt;
+  assert.match(prompt, /PRESERVED REVIEW STATE of the previous Execution — round 1 \(delivered; conclusion findings; delivery to the previous Builder session: delivered, not proof that it was consumed\)/);
+  assert.match(prompt, /"role":"spec","conclusion":"findings","findings":\[\{"id":"S1"/);
+  assert.match(prompt, /the Factory obtains new opinions of both reviewers; treat the findings of the results it then delivers to you \(their round\), never these/);
 });

@@ -4,7 +4,7 @@ import type { ProposalIdentity, ReviewerRole, ReviewOpinion } from '../../contra
 import type { HandoffEvent } from '../../workers/index.js';
 import type { ExecutionView, ReviewRoundView } from '../types.js';
 import { concludeRound, lastReviewed, reviewerRoles, verifyExecution, type CaptureClass, type ReviewPlan } from '../rules/review.js';
-import { notRetriedReasons, type CarryPlan } from '../rules/review-recovery.js';
+import { notRetriedReasons, reviewProfile, type CarryPlan } from '../rules/review-recovery.js';
 import { works, type WorkRecord } from './admission.js';
 import { budgetHistory } from './execution.js';
 import { questions } from './questions.js';
@@ -69,7 +69,7 @@ export function recordHandoff(session: Session, work_id: string, executionId: st
       handoff: { at, invocationId: execution.invocationId, status: input.event.status, code: input.event.status === 'failure' ? input.event.code : null,
         detail: input.event.status === 'failure' ? input.event.detail ?? null : null, summary },
       versions: { spec: summary?.spec ?? null, instructions: summary?.instructions ?? null, base: summary?.base ?? execution.request.baseCommit, head: summary?.head ?? null,
-        profile: { skillPack: execution.request.skillPack, builder: execution.request.policies, reviewer: { ...input.reviewer } } },
+        profile: reviewProfile(execution.request, input.reviewer) },
       identity: { before: input.before, after: exemption ? input.before : null }, reviewers, applicability: exemption ? 'current' : null,
       conclusion: exemption ? reviewed!.conclusion : null, reasons: exemption ? [`EXEMPT_${exemption.kind.toUpperCase().replace('-', '_')}`] : [], concludedAt: exemption ? at : null, delivery: null };
     execution.review = { ...execution.review, ...(input.firstRound !== undefined || execution.review?.firstRound !== undefined ? { firstRound } : {}), rounds: [...rounds, record] };
@@ -84,7 +84,7 @@ export function recordHandoff(session: Session, work_id: string, executionId: st
 }
 
 /** Ticket 28: settle the `recoveries` unit a retry attempt reserved (counter of the Work, never a parallel review budget). */
-function settleReviewerCharge(work: WorkRecord, executionId: string, reviewer: ReviewRoundView['reviewers'][ReviewerRole], state: 'consumed' | 'released') {
+export function settleReviewerCharge(work: WorkRecord, executionId: string, reviewer: ReviewRoundView['reviewers'][ReviewerRole], state: 'consumed' | 'released') {
   if (reviewer.charge?.state !== 'reserved' || !work.budget) return;
   const counter = work.budget.recoveries;
   if (counter.reserved === reviewer.invocationId) counter.reserved = null;

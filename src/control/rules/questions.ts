@@ -106,7 +106,9 @@ export type KnownContext = { previousExecutions: { executionId: string; outcome:
   questions: { questionId: string; state: string; comment: string | null }[];
   /** Latest Host-captured handoff of an earlier Execution (ticket 12), when one exists: preserved versions and proposal head. */
   versions: { spec: string | null; instructions: string | null; head: string | null } | null;
-  scopeUpdates: readonly ScopeText[] };
+  scopeUpdates: readonly ScopeText[];
+  /** Ticket 28: the preserved review state of the previous Execution (`preservedReviewContext`, already fenced/bounded), context only. */
+  review?: string | null };
 /** Identifiers the Factory itself produced may be quoted; anything else is omitted rather than rendered as prompt text. */
 const versionId = /^v[1-9][0-9]{0,3}$/;
 const commitId = /^[0-9a-f]{40}$/;
@@ -148,7 +150,9 @@ export function recoveryPrompt(input: { ticketUrl: string; repository: string; b
       '- Artifacts: /artifacts (spec/, instructions/, review/r<N>/ of earlier rounds); never overwrite an existing version or round.',
       '- Known effects: no push or pull request was made by the Factory in this version; credentials of earlier Executions were withdrawn.',
       ...known.previousExecutions.slice(-effects).map(item => `- Earlier Execution ${item.executionId}: ${item.outcome}${item.at ? ` at ${item.at}` : ''}.`),
-      ...known.questions.slice(-effects).map(item => `- Question ${item.questionId}: ${item.state}${item.comment ? ` (published ${item.comment})` : ''}.`)] : []),
+      ...known.questions.slice(-effects).map(item => `- Question ${item.questionId}: ${item.state}${item.comment ? ` (published ${item.comment})` : ''}.`),
+      // Dropped first under the size bound (with the earlier effects): it is context, never a requirement.
+      ...(known.review && effects > 0 ? ['', known.review] : [])] : []),
     ...(input.question ? ['', `Question ${input.question.questionId}:`, fenced(input.question.question),
       ...(input.question.context ? withContext ? ['Context you gave:', fenced(input.question.context)]
         : ['(The context you gave is omitted here for size; it is preserved with the question in the Factory.)'] : [])] : []),

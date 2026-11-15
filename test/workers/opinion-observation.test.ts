@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRecords } from '../../src/records/index.js';
 import { createWorkers } from '../../src/workers/index.js';
+import { observeOpinionRecord } from '../../src/workers/opinion-observation.js';
 
 // Integration (I) with the REAL protected Records (temporary private root): ticket 28 opinion facet of Workers.observe. Not evidence of a
 // real reviewer worker, model or lost notification — the opinion record is written here with the reviewer's own record shape.
@@ -47,4 +48,20 @@ test('AC1/AC2: the complete opinion record is located without its notification; 
   assert.deepEqual(await observe('spec-e1-r6a1'), { kind: 'uncertain', code: 'OPINION_RECORD_MULTIPLE' });
 
   assert.deepEqual(await createWorkers().observeOpinion({ workId: 'w1', executionId: 'e1', invocationId: 'x' }), { kind: 'uncertain', code: 'WORKER_EXECUTION_NOT_ENABLED' });
+});
+
+test('review LOW: an opinion record is read across EVERY page (never a single 64 KiB page), bounded', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'factory-opinion28p-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const records = await createRecords({ root });
+  const reference = await records.record(context('spec-e1-r2a1'), composed('spec-e1-r2a1'));
+  // The same real record served in 512-byte pages.
+  const paged = { find: records.find, async read(input: { reference: typeof reference; offset: number; limit: number }) {
+    const page = await records.read({ ...input, limit: 512 });
+    return page;
+  } } as unknown as Parameters<typeof observeOpinionRecord>[0];
+  const found = await observeOpinionRecord(paged, { workId: 'w1', executionId: 'e1', invocationId: 'spec-e1-r2a1' });
+  assert.equal(found.kind, 'opinion');
+  const stuck = { find: records.find, async read() { return { state: 'complete', data: Buffer.from('{'), nextOffset: 0, bytes: 10 }; } } as unknown as Parameters<typeof observeOpinionRecord>[0];
+  assert.deepEqual(await observeOpinionRecord(stuck, { workId: 'w1', executionId: 'e1', invocationId: 'spec-e1-r2a1' }), { kind: 'uncertain', code: 'OPINION_RECORD_INVALID' });
 });

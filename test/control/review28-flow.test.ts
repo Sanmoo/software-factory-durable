@@ -36,7 +36,9 @@ function opinionOf(invocation: Invocation, findings: string[], conclusion?: Revi
 }
 
 function doubles(script: { captures: HandoffEvent[]; behaviour: (role: Role, round: number, attempt: number) => Behaviour;
-  /** The Host identity of round N at its k-th observation (default: the capture's content). */ identity?: (round: number, call: number) => string | null }) {
+  /** The Host identity of round N at its k-th observation (default: the capture's content). */ identity?: (round: number, call: number) => string | null;
+  /** A retry wait (ms) that never ends before an interruption, or that fails. Other durations (the Execution timer) sleep briefly for real. */
+  clock?: { hang?: number; reject?: number } }) {
   const directives: BuilderDirective[] = [];
   const invocations: Invocation[] = [];
   const kinds: string[] = [];
@@ -58,7 +60,14 @@ function doubles(script: { captures: HandoffEvent[]; behaviour: (role: Role, rou
     configuration: { schemaVersion: 1 }, capacity: 1, builder: { skillPack: 'factory-skills-v3', modelBudget: 'builder-v1', copyOutput: true },
     reviews: { reviewer: { modelBudget: 'reviewer-v1', imageSourceMaxBytes: 5242880 }, rounds: { max: 4 }, partialRecovery: true },
     // Retry waits are recorded, not slept: the persisted 5/15/45 s schedule is asserted on the requested durations.
-    clock: { monotonic: () => performance.now(), async sleep(ms) { sleeps.push(ms); kinds.push(`sleep-${ms}`); } },
+    clock: { monotonic: () => performance.now(), sleep(ms, signal) {
+      const retryWait = [5000, 15000, 45000].includes(ms);
+      if (!retryWait) return new Promise<void>(resolve => { const timer = setTimeout(resolve, Math.min(Math.max(ms, 1), 50)); signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true }); });
+      sleeps.push(ms); kinds.push(`sleep-${ms}`);
+      if (script.clock?.reject === ms) return Promise.reject(new Error('CLOCK_FAILED'));
+      if (script.clock?.hang === ms) return new Promise<void>(resolve => { if (signal.aborted) resolve(); else signal.addEventListener('abort', () => resolve(), { once: true }); });
+      return Promise.resolve();
+    } },
     sandbox: {
       async prepare(input) {
         return { status: 'success', environment: `env-${'c'.repeat(64)}` as never, seeds: [{ name: 'factory/skill-pack/factory-skills-v3', manifestSha256: 'f'.repeat(64), reused: false }],
@@ -127,7 +136,7 @@ function doubles(script: { captures: HandoffEvent[]; behaviour: (role: Role, rou
   return { ports, directives, invocations, kinds, sleeps };
 }
 
-async function harness(t: { after(fn: () => Promise<void>): void }, script: Parameters<typeof doubles>[0], limits: { recoveryLimit?: number } = {}) {
+async function harness(t: { after(fn: () => Promise<void>): void }, script: Parameters<typeof doubles>[0], limits: { recoveryLimit?: number; timeoutSeconds?: number } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'factory-review28-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
@@ -225,4 +234,43 @@ test('AC4: the persisted waits follow the recoveries already consumed (5 then 15
   assert.deepEqual([spec.attempt, spec.attempts?.map(item => item.charge?.state ?? null), spec.charge?.state], [3, [null, 'consumed'], 'consumed']);
   assert.equal(h.shown!.budget!.recoveries.consumed, 2);
   assert.equal(h.work.execution!.review!.rounds[0]!.conclusion, 'clean');
+});
+
+test('review HIGH 1: an Execution interrupted during the persisted wait releases the retry reservation (proven non-start), never leaves it stuck', async t => {
+  const h = await harness(t, { captures: [capture(1, '1', true)], behaviour: (role, _round, attempt) => role === 'spec' && attempt === 1 ? 'fail' : 'clean',
+    clock: { hang: 5000 } }, { timeoutSeconds: 1 });
+  const spec = h.work.execution!.review!.rounds[0]!.reviewers.spec;
+  assert.equal(h.work.execution!.end?.code, 'EXECUTION_TIMEOUT');
+  assert.deepEqual([spec.attempt, spec.state, spec.failure?.code, spec.cessation, spec.charge?.state, spec.notRetried?.code],
+    [2, 'failed', 'RETRY_NOT_LAUNCHED', 'never-started', 'released', 'RETRY_NOT_LAUNCHED']);
+  assert.deepEqual([h.shown!.budget!.recoveries.reserved, h.shown!.budget!.recoveries.consumed], [null, 0]);
+  assert.deepEqual(activations(h.execution.kinds), ['activate-builder', 'activate-standards-r1a1', 'activate-spec-r1a1'], 'never launched');
+});
+
+test('review MED 3: both reviewers failing at once are BOTH re-obtained, serialized on the single reservation (5 then 15 s), never dropped as busy', async t => {
+  const h = await harness(t, { captures: [capture(1, '1', true)], behaviour: (_role, _round, attempt) => attempt === 1 ? 'fail' : 'clean' });
+  const round = h.work.execution!.review!.rounds[0]!;
+  assert.deepEqual([round.reviewers.standards.attempt, round.reviewers.spec.attempt, round.reviewers.standards.notRetried ?? null, round.reviewers.spec.notRetried ?? null], [2, 2, null, null]);
+  assert.deepEqual([round.conclusion, h.shown!.budget!.recoveries.consumed, h.shown!.budget!.recoveries.reserved], ['clean', 2, null]);
+  assert.deepEqual(h.execution.sleeps, [5000, 15000]);
+});
+
+test('review LOW: the proposal is re-observed right before the launch; a change during the wait releases the reservation and is never reviewed', async t => {
+  // Round 1 observations: 1 handoff, 2 retry decision, 3 right before the launch (changed), 4 conclusion.
+  const h = await harness(t, { captures: [capture(1, '1', true)], behaviour: (role, _round, attempt) => role === 'spec' && attempt === 1 ? 'fail' : 'clean',
+    identity: (round, call) => round === 1 && call >= 3 ? '9' : null });
+  const round = h.work.execution!.review!.rounds[0]!;
+  assert.deepEqual([round.reviewers.spec.notRetried?.code, round.reviewers.spec.charge?.state, round.applicability], ['PROPOSAL_CHANGED', 'released', 'invalidated']);
+  assert.deepEqual([h.shown!.budget!.recoveries.reserved, h.shown!.budget!.recoveries.consumed], [null, 0]);
+  assert.deepEqual(activations(h.execution.kinds), ['activate-builder', 'activate-standards-r1a1', 'activate-spec-r1a1']);
+});
+
+test('review MED 6: a failure inside one role\'s recovery never abandons the sibling: all roles settle, the reservation is released and the Execution is held', async t => {
+  const h = await harness(t, { captures: [capture(1, '1', true)], behaviour: (role, _round, attempt) => role === 'spec' && attempt === 1 ? 'fail' : 'clean',
+    clock: { reject: 5000 } });
+  const round = h.work.execution!.review!.rounds[0]!;
+  assert.deepEqual([h.work.execution!.state, h.work.execution!.held?.code], ['held', 'REVIEWER_RECOVERY_FAILED']);
+  assert.deepEqual([round.reviewers.standards.state, round.reviewers.spec.charge?.state], ['ended', 'released']);
+  assert.equal(h.shown!.budget!.recoveries.reserved, null);
+  assert.equal(h.execution.directives.length, 0, 'nothing is delivered to the suspended Builder');
 });

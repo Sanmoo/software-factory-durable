@@ -25,6 +25,8 @@ test('AC7 recipe: import and --plan are inert and declare the fixed bounds and t
   assert.match(plan.provocations[0], /^spec r1a1: Host deadlineMs 20000/);
   assert.match(plan.provocations[1], /^standards r1a1: its completion reaches Control without the opinion/);
   assert.equal(plan.github.reviewerCredentials, 'none');
+  assert.match(plan.guards[0], /WORKER_LAUNCH_INVALID: never-started, reservation released, not retried\); more than 2 stop the run/, 'a guard refusal never cascades into free retries');
+  assert.match(plan.effects.find((item: string) => item.startsWith('inspect:')), /private copy of the Work's Records/, 'inspect never opens the live Records');
   assert.match(plan.github.writes, /^none/);
   assert.deepEqual(plan.expectedTicket, { number: 3, repositoryId: 1256893534 });
   await assert.rejects(recipe.main(['retry']), /EXACT_PHASE_REQUIRED/);
