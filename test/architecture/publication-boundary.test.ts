@@ -33,7 +33,11 @@ test('AC1/AC5: no controller push/PR-creation path, no Git/gh wrapper or shell p
   // The CodeRepository contract stays read-only for the implementation publication.
   const repository = files.find(item => item.path === 'src/code-repository/index.ts')!.text;
   const contract = /export interface CodeRepository \{([\s\S]*?)\n\}/.exec(repository)![1]!;
-  assert.deepEqual([...contract.matchAll(/^\s+(\w+)\(/gm)].map(match => match[1]), ['checkAccess', 'findPublication']);
+  // Ticket 15 adds Q4B `readPullRequest`, a GET-only read under the reduced `checks-read` grant (no write permission).
+  assert.deepEqual([...contract.matchAll(/^\s+(\w+)\(/gm)].map(match => match[1]), ['checkAccess', 'findPublication', 'readPullRequest']);
+  const reader = files.find(item => item.path === 'src/code-repository/pull-request.ts')!.text;
+  assert.doesNotMatch(reader, /comment\(|transient\(|revoke\(|'POST'|'PATCH'|'PUT'|'DELETE'/, 'readPullRequest never writes');
+  assert.match(github, /'checks-read': \{ metadata: 'read', contents: 'read', pull_requests: 'read', checks: 'read', statuses: 'read', administration: 'read' \}/);
   // No shell parsing of Builder commands or effect-registration tool for push/PR (Q7): the Workers and Sandbox never look for them.
   for (const file of files.filter(item => /^src\/(workers|sandbox|platform)\//.test(item.path))) {
     assert.doesNotMatch(file.text, /registrar_efeito|register_effect|git push|gh pr create|pr create/, file.path);
