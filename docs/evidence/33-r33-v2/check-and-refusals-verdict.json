@@ -1,0 +1,83 @@
+{
+ "ok": true,
+ "checks": [
+  {
+   "name": "check migration required",
+   "ok": true,
+   "observed": "UPGRADE_MIGRATION_REQUIRED"
+  },
+  {
+   "name": "check nothing blocked",
+   "ok": true,
+   "observed": []
+  },
+  {
+   "name": "refused by the lock while v1 runs",
+   "ok": true,
+   "observed": 73
+  },
+  {
+   "name": "whileRunning: v1 clean exit",
+   "ok": true,
+   "observed": 0
+  },
+  {
+   "name": "unpaused: v1 clean exit",
+   "ok": true,
+   "observed": 0
+  },
+  {
+   "name": "repaused: v1 clean exit",
+   "ok": true,
+   "observed": 0
+  },
+  {
+   "name": "v1 unpause accepted",
+   "ok": true,
+   "observed": 0
+  },
+  {
+   "name": "unpaused check incompatible",
+   "ok": true,
+   "observed": "UPGRADE_INCOMPATIBLE"
+  },
+  {
+   "name": "unpaused check blocks pause",
+   "ok": true,
+   "observed": [
+    "upgrade:pause"
+   ]
+  },
+  {
+   "name": "v1 pause accepted",
+   "ok": true,
+   "observed": 0
+  },
+  {
+   "name": "apply without --migrate refused",
+   "ok": true,
+   "observed": "UPGRADE_MIGRATION_NOT_REQUESTED"
+  },
+  {
+   "name": "storage unchanged",
+   "ok": true,
+   "observed": [
+    "b47f4c2e998f3057340f2cfa34107eeee81743723471fd02b713f8ac275e39b7",
+    "b47f4c2e998f3057340f2cfa34107eeee81743723471fd02b713f8ac275e39b7"
+   ]
+  },
+  {
+   "name": "launcher unchanged",
+   "ok": true,
+   "observed": [
+    "90d7d1172aa4b02bb577d32035e04ee75ca11b08d9a709cf58105fd716057442",
+    "90d7d1172aa4b02bb577d32035e04ee75ca11b08d9a709cf58105fd716057442"
+   ]
+  },
+  {
+   "name": "no journal",
+   "ok": true,
+   "observed": false
+  }
+ ]
+}

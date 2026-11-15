@@ -1,0 +1,150 @@
+{
+ "status": "observed",
+ "seed": {
+  "status": 0,
+  "report": {
+   "works": [
+    {
+     "work_id": "4cb1cfcd-e7db-4d41-888b-b13a93eee4b1",
+     "ticket": 3,
+     "queue": {
+      "category": "normal",
+      "sequence": 1,
+      "pending": true
+     },
+     "impediments": [
+      "QUESTION_PENDING",
+      "GLOBAL_PAUSE"
+     ]
+    },
+    {
+     "work_id": "c65f6198-d05e-487d-89d0-848ba7846c6f",
+     "ticket": 4,
+     "queue": {
+      "category": "normal",
+      "sequence": 2,
+      "pending": true
+     },
+     "impediments": [
+      "GLOBAL_PAUSE"
+     ]
+    }
+   ],
+   "waiting": "4cb1cfcd-e7db-4d41-888b-b13a93eee4b1",
+   "questions": [
+    "0b9c6a52-3d3e-4c8f-9a51-000000000033"
+   ]
+  }
+ },
+ "v1run": {
+  "observed": {
+   "status": {
+    "controller_run_id": "3c94495e-1106-4aff-9af4-e0afa6df5f0a",
+    "paused": true,
+    "dispatch": "open",
+    "dispatchReason": null,
+    "slots": {
+     "capacity": 1,
+     "held": 0
+    },
+    "historyLength": 1,
+    "works": {
+     "total": 2,
+     "open": 2
+    },
+    "queues": {
+     "normal": 2,
+     "repair": 0
+    },
+    "dependencies": {
+     "satisfied": 2,
+     "pending": 0,
+     "inconclusive": 0,
+     "notEvaluated": 0
+    },
+    "questions": {
+     "open": 1,
+     "answered": 0,
+     "unpublished": 0
+    },
+    "selection": {
+     "next": null
+    },
+    "polling": {
+     "state": "disabled",
+     "intervalSeconds": 60,
+     "cycles": 0,
+     "lastCycleAt": null,
+     "source": "in-memory-observation",
+     "repositories": []
+    },
+    "persistence": {
+     "sqliteVersion": "3.53.4",
+     "sqliteSourceId": "2026-07-24 19:02:57 bf7c7f30031888f4e796e429ab3978879485813aaca6f641c7b33e4e09459bcc",
+     "journalMode": "wal",
+     "synchronous": "FULL"
+    }
+   },
+   "question": {
+    "kind": "question",
+    "question": {
+     "questionId": "0b9c6a52-3d3e-4c8f-9a51-000000000033",
+     "workId": "4cb1cfcd-e7db-4d41-888b-b13a93eee4b1",
+     "executionId": "81e5971b-be5f-4963-8d7d-af935c179377",
+     "invocationId": "builder-81e5971b-be5f-4963-8d7d-af935c179377",
+     "recordedAt": "2026-11-15T10:19:59.960Z",
+     "recordedFrom": "worker-notification",
+     "content": {
+      "question": "Which file name should the doc use?",
+      "context": "Ticket names none.",
+      "sha256": "ff0359b0673ed47849bb6fa9ddf6fa44060b88ba262d9726b337e6a0e1f6bd75",
+      "reference": {
+       "workId": "4cb1cfcd-e7db-4d41-888b-b13a93eee4b1",
+       "id": "77777777-2222-4333-8444-555555555555"
+      }
+     },
+     "destination": {
+      "kind": "issue",
+      "ticket": {
+       "tracker": "github",
+       "repository": "acme/project",
+       "repositoryId": 3,
+       "issueId": 7003,
+       "nodeId": "I_node3",
+       "number": 3,
+       "url": "https://github.com/acme/project/issues/3"
+      }
+     },
+     "state": "open",
+     "publication": {
+      "effectId": "e0fe21b8-ded3-4c19-b649-770ee1f089a4",
+      "state": "published",
+      "updatedAt": "2026-11-15T10:19:59.976Z",
+      "attempts": [
+       {
+        "at": "2026-11-15T10:19:59.969Z",
+        "outcome": "attempting"
+       },
+       {
+        "at": "2026-11-15T10:19:59.976Z",
+        "outcome": "published"
+       }
+      ],
+      "comment": {
+       "commentId": 80001,
+       "url": "https://github.com/acme/project/issues/3#issuecomment-80001"
+      },
+      "nextStep": null
+     },
+     "answer": null,
+     "ignored": []
+    }
+   }
+  },
+  "end": {
+   "code": 0,
+   "signal": null
+  },
+  "stderr": ""
+ }
+}

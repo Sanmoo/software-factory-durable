@@ -1,0 +1,174 @@
+{
+ "note": "Summary of install-v1-result.json (full file 166 KB kept in the consumed base).",
+ "archive": {
+  "archiveSha256": "b4210a0ad7ebd677538e4563bdd4cdd1cae50ba7cbd41803743be17de389310d",
+  "sidecarMatches": true,
+  "reportMatches": true,
+  "entries": 23573,
+  "violations": []
+ },
+ "setup": {
+  "status": 0
+ },
+ "doctor": {
+  "status": 3,
+  "code": "PREREQUISITES_MISSING",
+  "release": "mvp-32.1",
+  "configurationValid": true,
+  "checks": [
+   {
+    "id": "release:integrity",
+    "status": "ok"
+   },
+   {
+    "id": "release:location",
+    "status": "ok"
+   },
+   {
+    "id": "release:selected",
+    "status": "ok"
+   },
+   {
+    "id": "release:node",
+    "status": "ok"
+   },
+   {
+    "id": "permissions:releases",
+    "status": "ok"
+   },
+   {
+    "id": "permissions:assets",
+    "status": "ok"
+   },
+   {
+    "id": "release:assets",
+    "status": "ok"
+   },
+   {
+    "id": "release:qualification",
+    "status": "unverified"
+   },
+   {
+    "id": "guest-assets:manifest",
+    "status": "ok"
+   },
+   {
+    "id": "guest-assets:kernel",
+    "status": "ok"
+   },
+   {
+    "id": "guest-assets:initramfs",
+    "status": "ok"
+   },
+   {
+    "id": "guest-assets:rootfs",
+    "status": "ok"
+   },
+   {
+    "id": "sandbox-release",
+    "status": "unverified"
+   },
+   {
+    "id": "qemu-system-x86_64",
+    "status": "ok"
+   },
+   {
+    "id": "qemu-img",
+    "status": "ok"
+   },
+   {
+    "id": "systemctl",
+    "status": "ok"
+   },
+   {
+    "id": "filesystem-tools",
+    "status": "ok"
+   },
+   {
+    "id": "kvm-access",
+    "status": "ok"
+   },
+   {
+    "id": "kvm-functional",
+    "status": "unverified"
+   },
+   {
+    "id": "systemd",
+    "status": "unverified"
+   },
+   {
+    "id": "host-platform",
+    "status": "ok"
+   },
+   {
+    "id": "storage",
+    "status": "ok"
+   },
+   {
+    "id": "storage-lock-durability",
+    "status": "unverified"
+   },
+   {
+    "id": "sandbox-tool-channel",
+    "status": "blocked"
+   },
+   {
+    "id": "sandbox-network-policy",
+    "status": "unverified"
+   },
+   {
+    "id": "docker-runtime",
+    "status": "unverified"
+   },
+   {
+    "id": "worker-profile:builder",
+    "status": "ok"
+   },
+   {
+    "id": "worker-profile:standards",
+    "status": "ok"
+   },
+   {
+    "id": "worker-profile:spec",
+    "status": "ok"
+   },
+   {
+    "id": "permissions:root",
+    "status": "ok"
+   },
+   {
+    "id": "permissions:credentials",
+    "status": "ok"
+   },
+   {
+    "id": "permissions:data",
+    "status": "ok"
+   },
+   {
+    "id": "permissions:environments",
+    "status": "ok"
+   },
+   {
+    "id": "permissions:run",
+    "status": "ok"
+   },
+   {
+    "id": "permissions:config.yaml",
+    "status": "ok"
+   },
+   {
+    "id": "credential-file:factory-oauth",
+    "status": "blocked"
+   },
+   {
+    "id": "credential-file:githubApp",
+    "status": "ok"
+   },
+   {
+    "id": "socket-path",
+    "status": "ok"
+   }
+  ]
+ },
+ "launcherSha256": "90d7d1172aa4b02bb577d32035e04ee75ca11b08d9a709cf58105fd716057442"
+}

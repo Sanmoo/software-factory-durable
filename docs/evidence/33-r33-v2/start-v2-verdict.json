@@ -1,0 +1,60 @@
+{
+ "ok": true,
+ "checks": [
+  {
+   "name": "doctor release v2",
+   "ok": true,
+   "observed": "mvp-33.1"
+  },
+  {
+   "name": "v2 selected by doctor",
+   "ok": true,
+   "observed": "ok"
+  },
+  {
+   "name": "v2 controller served",
+   "ok": true,
+   "observed": "ready"
+  },
+  {
+   "name": "starts paused",
+   "ok": true,
+   "observed": true
+  },
+  {
+   "name": "storage format 2",
+   "ok": true,
+   "observed": 2
+  },
+  {
+   "name": "one open Question",
+   "ok": true,
+   "observed": 1
+  },
+  {
+   "name": "Question open before answer",
+   "ok": true,
+   "observed": "open"
+  },
+  {
+   "name": "answer accepted",
+   "ok": true,
+   "observed": 0
+  },
+  {
+   "name": "Question answered",
+   "ok": true,
+   "observed": "answered"
+  },
+  {
+   "name": "v2 clean exit",
+   "ok": true,
+   "observed": 0
+  },
+  {
+   "name": "clean stop recorded",
+   "ok": true,
+   "observed": "clean"
+  }
+ ]
+}

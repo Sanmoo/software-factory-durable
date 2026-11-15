@@ -1,0 +1,42 @@
+{
+ "ok": true,
+ "checks": [
+  {
+   "name": "extracted",
+   "ok": true,
+   "observed": "success"
+  },
+  {
+   "name": "v1 tree unchanged",
+   "ok": true,
+   "observed": [
+    "39e3578eda2374cf8a5f192935c4747270548884dd46f25d3664b6ae6bf17c55",
+    "39e3578eda2374cf8a5f192935c4747270548884dd46f25d3664b6ae6bf17c55"
+   ]
+  },
+  {
+   "name": "assets unchanged",
+   "ok": true,
+   "observed": [
+    "07251f9a524e5c7ece4a4a616d6d1f75e6aeb9575440f7150979b9b36db8226f",
+    "07251f9a524e5c7ece4a4a616d6d1f75e6aeb9575440f7150979b9b36db8226f"
+   ]
+  },
+  {
+   "name": "launcher still v1",
+   "ok": true,
+   "observed": [
+    "90d7d1172aa4b02bb577d32035e04ee75ca11b08d9a709cf58105fd716057442",
+    "90d7d1172aa4b02bb577d32035e04ee75ca11b08d9a709cf58105fd716057442"
+   ]
+  },
+  {
+   "name": "v2 installed",
+   "ok": true,
+   "observed": [
+    "mvp-32.1",
+    "mvp-33.1"
+   ]
+  }
+ ]
+}

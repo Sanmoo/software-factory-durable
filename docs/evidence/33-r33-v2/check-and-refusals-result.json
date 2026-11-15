@@ -1,0 +1,459 @@
+{
+ "status": "observed",
+ "check": {
+  "status": 0,
+  "report": {
+   "code": "UPGRADE_MIGRATION_REQUIRED",
+   "command": "check",
+   "from": {
+    "release": "mvp-32.1"
+   },
+   "to": {
+    "release": "mvp-33.1"
+   },
+   "journal": null,
+   "storage": {
+    "state": "present",
+    "format": 1,
+    "operational": "migration-required",
+    "paused": true,
+    "problems": [],
+    "preserved": {
+     "works": 2,
+     "questions": {
+      "open": 1,
+      "answered": 0
+     },
+     "heldSlots": 0,
+     "requests": 1,
+     "sessions": 0,
+     "digest": "34fe9da85ce80b1247b0a7bd9e89a34dca787b03944fdce6366e9db0e5fc63d6"
+    },
+    "stateDigest": "74f2d382c05bbe7494da64b99765b4b6fe6fa1212ae11becff8d918438847f63",
+    "activity": {
+     "unsettled": [],
+     "heldSlots": 0
+    },
+    "lifecycle": null,
+    "migrations": []
+   },
+   "migration": {
+    "required": "factory-storage-1-to-2",
+    "requested": null
+   },
+   "checks": [
+    {
+     "id": "upgrade:target",
+     "status": "ok",
+     "message": "Release mvp-33.1 verified next to the previous one (manifest 4696d55b0091ba47955ba68de96e8e9989ddfc37f2fa58cee8a4343de344073c).",
+     "nextStep": "Extract the new archive unchanged into releases/<new id> of this root (never over an existing release) and verify it; never repair in place."
+    },
+    {
+     "id": "upgrade:previous",
+     "status": "ok",
+     "message": "Currently selected release mvp-32.1 is preserved intact (manifest 48051fa85ccefd3e7f7ed64cb70c5a0e0e4f22e73c28071516ee6bda7716d7eb).",
+     "nextStep": "The previous release stays installed and unchanged; it can be reselected only while the storage stays in a format it operates."
+    },
+    {
+     "id": "upgrade:configuration",
+     "status": "ok",
+     "message": "config.yaml is valid for the target release and names its worker profile for every role.",
+     "nextStep": "Fix config.yaml explicitly before upgrading; the upgrade never edits configuration."
+    },
+    {
+     "id": "upgrade:storage",
+     "status": "ok",
+     "message": "Storage format 1 needs the supported migration factory-storage-1-to-2 to format 2 (requested explicitly only).",
+     "nextStep": "An incompatible storage blocks the upgrade: never delete or resubmit tasks or documents to get around it; keep the previous release."
+    },
+    {
+     "id": "upgrade:registry",
+     "status": "ok",
+     "message": "No persisted Pi Durable task; the target registers none (compatible registry).",
+     "nextStep": "Never delete or resubmit tasks to get around an incompatible registry."
+    },
+    {
+     "id": "upgrade:pause",
+     "status": "ok",
+     "message": "Installation paused: the new release starts paused.",
+     "nextStep": "With the current release: `factory pause`, then stop the controller (Ctrl+C or service stop) and confirm the clean exit; then check again."
+    },
+    {
+     "id": "upgrade:stop",
+     "status": "ok",
+     "message": "No run end is recorded (format 1, or no run since a migration); the durable state proves no unsettled Execution and no held Slot.",
+     "nextStep": "Start the current release, let its boot reconcile the interrupted activity (cessation confirmed, Slots released), keep it paused and stop it cleanly; a stop intention never turns a crash into a clean stop."
+    },
+    {
+     "id": "upgrade:protocol",
+     "status": "ok",
+     "message": "Target speaks local protocol 1; previous 1. No protocol state is persisted and no previous owner runs (lock held).",
+     "nextStep": "After selection, use only the new launcher; an old CLI is refused by the single supported format."
+    },
+    {
+     "id": "upgrade:profiles",
+     "status": "ok",
+     "message": "Worker profile unchanged; Builder skill pack factory-skills-v4 → factory-skills-v5; 0 preserved Builder session(s): each next activation continues a session only when compatible, otherwise replaces it with a recorded reason and recoverable context.",
+     "nextStep": "No session is converted or migrated; an incompatible session is replaced explicitly at its next activation."
+    },
+    {
+     "id": "upgrade:environments",
+     "status": "ok",
+     "message": "0 persistent environment(s) depend on guest assets 8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807, which the target uses unchanged.",
+     "nextStep": "Keep the previous release, or finish and explicitly clean up the dependent Works first; assets are never removed while disks depend on them."
+    }
+   ],
+   "nextStep": "Apply with the explicit request: upgrade apply --migrate factory-storage-1-to-2 (the previous release cannot operate the migrated storage)."
+  }
+ },
+ "whileRunning": {
+  "observed": {
+   "status": 73,
+   "signal": null,
+   "stdout": "",
+   "stderr": "{\"code\":\"CONTROLLER_ALREADY_RUNNING\",\"message\":\"Canonical storage already has an owner; do not remove the lock file.\"}\n{\"code\":\"CONTROLLER_RUNNING\",\"message\":\"Stop the controller (paused, clean exit) before upgrading; the lock is never taken over.\"}\n"
+  },
+  "end": {
+   "code": 0,
+   "signal": null
+  },
+  "stderr": ""
+ },
+ "unpaused": {
+  "observed": {
+   "status": 0,
+   "signal": null,
+   "stdout": "{\n  \"kind\": \"durable\",\n  \"request_id\": \"56307fb1-0216-43b2-942e-d95c4ff1f7ff\",\n  \"operation\": \"unpause\",\n  \"paused\": false,\n  \"historySequence\": 2\n}\n",
+   "stderr": "{\"code\":\"REQUEST_IDENTIFIED\",\"request_id\":\"56307fb1-0216-43b2-942e-d95c4ff1f7ff\"}\n"
+  },
+  "end": {
+   "code": 0,
+   "signal": null
+  },
+  "stderr": ""
+ },
+ "unpausedCheck": {
+  "status": 2,
+  "report": {
+   "code": "UPGRADE_INCOMPATIBLE",
+   "command": "check",
+   "from": {
+    "release": "mvp-32.1"
+   },
+   "to": {
+    "release": "mvp-33.1"
+   },
+   "journal": null,
+   "storage": {
+    "state": "present",
+    "format": 1,
+    "operational": "migration-required",
+    "paused": false,
+    "problems": [],
+    "preserved": {
+     "works": 2,
+     "questions": {
+      "open": 1,
+      "answered": 0
+     },
+     "heldSlots": 0,
+     "requests": 2,
+     "sessions": 0,
+     "digest": "2f9bcb88889b9a6f7bc59e823eb7c8848bf2126c592b1c9fe5e0c3ab916a1bec"
+    },
+    "stateDigest": "2be9cbfda971c72aa69e75413eb6db2b58038edb5cbc5a8f9651f9a5c194f00f",
+    "activity": {
+     "unsettled": [],
+     "heldSlots": 0
+    },
+    "lifecycle": null,
+    "migrations": []
+   },
+   "migration": {
+    "required": "factory-storage-1-to-2",
+    "requested": null
+   },
+   "checks": [
+    {
+     "id": "upgrade:target",
+     "status": "ok",
+     "message": "Release mvp-33.1 verified next to the previous one (manifest 4696d55b0091ba47955ba68de96e8e9989ddfc37f2fa58cee8a4343de344073c).",
+     "nextStep": "Extract the new archive unchanged into releases/<new id> of this root (never over an existing release) and verify it; never repair in place."
+    },
+    {
+     "id": "upgrade:previous",
+     "status": "ok",
+     "message": "Currently selected release mvp-32.1 is preserved intact (manifest 48051fa85ccefd3e7f7ed64cb70c5a0e0e4f22e73c28071516ee6bda7716d7eb).",
+     "nextStep": "The previous release stays installed and unchanged; it can be reselected only while the storage stays in a format it operates."
+    },
+    {
+     "id": "upgrade:configuration",
+     "status": "ok",
+     "message": "config.yaml is valid for the target release and names its worker profile for every role.",
+     "nextStep": "Fix config.yaml explicitly before upgrading; the upgrade never edits configuration."
+    },
+    {
+     "id": "upgrade:storage",
+     "status": "ok",
+     "message": "Storage format 1 needs the supported migration factory-storage-1-to-2 to format 2 (requested explicitly only).",
+     "nextStep": "An incompatible storage blocks the upgrade: never delete or resubmit tasks or documents to get around it; keep the previous release."
+    },
+    {
+     "id": "upgrade:registry",
+     "status": "ok",
+     "message": "No persisted Pi Durable task; the target registers none (compatible registry).",
+     "nextStep": "Never delete or resubmit tasks to get around an incompatible registry."
+    },
+    {
+     "id": "upgrade:pause",
+     "status": "blocked",
+     "message": "Installation not paused.",
+     "nextStep": "With the current release: `factory pause`, then stop the controller (Ctrl+C or service stop) and confirm the clean exit; then check again."
+    },
+    {
+     "id": "upgrade:stop",
+     "status": "ok",
+     "message": "No run end is recorded (format 1, or no run since a migration); the durable state proves no unsettled Execution and no held Slot.",
+     "nextStep": "Start the current release, let its boot reconcile the interrupted activity (cessation confirmed, Slots released), keep it paused and stop it cleanly; a stop intention never turns a crash into a clean stop."
+    },
+    {
+     "id": "upgrade:protocol",
+     "status": "ok",
+     "message": "Target speaks local protocol 1; previous 1. No protocol state is persisted and no previous owner runs (lock held).",
+     "nextStep": "After selection, use only the new launcher; an old CLI is refused by the single supported format."
+    },
+    {
+     "id": "upgrade:profiles",
+     "status": "ok",
+     "message": "Worker profile unchanged; Builder skill pack factory-skills-v4 → factory-skills-v5; 0 preserved Builder session(s): each next activation continues a session only when compatible, otherwise replaces it with a recorded reason and recoverable context.",
+     "nextStep": "No session is converted or migrated; an incompatible session is replaced explicitly at its next activation."
+    },
+    {
+     "id": "upgrade:environments",
+     "status": "ok",
+     "message": "0 persistent environment(s) depend on guest assets 8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807, which the target uses unchanged.",
+     "nextStep": "Keep the previous release, or finish and explicitly clean up the dependent Works first; assets are never removed while disks depend on them."
+    }
+   ],
+   "nextStep": "Nothing was changed. Resolve every blocked check (see nextStep of each); incompatible state is never deleted, resubmitted or migrated implicitly."
+  }
+ },
+ "repaused": {
+  "observed": {
+   "status": 0,
+   "signal": null,
+   "stdout": "{\n  \"kind\": \"durable\",\n  \"request_id\": \"965ae7e1-9823-4021-a7f0-67cd4cca16df\",\n  \"operation\": \"pause\",\n  \"paused\": true,\n  \"historySequence\": 3\n}\n",
+   "stderr": "{\"code\":\"REQUEST_IDENTIFIED\",\"request_id\":\"965ae7e1-9823-4021-a7f0-67cd4cca16df\"}\n"
+  },
+  "end": {
+   "code": 0,
+   "signal": null
+  },
+  "stderr": ""
+ },
+ "notRequested": {
+  "status": 2,
+  "report": {
+   "code": "UPGRADE_MIGRATION_NOT_REQUESTED",
+   "command": "apply",
+   "from": {
+    "release": "mvp-32.1"
+   },
+   "to": {
+    "release": "mvp-33.1"
+   },
+   "journal": null,
+   "storage": {
+    "state": "present",
+    "format": 1,
+    "operational": "migration-required",
+    "paused": true,
+    "problems": [],
+    "preserved": {
+     "works": 2,
+     "questions": {
+      "open": 1,
+      "answered": 0
+     },
+     "heldSlots": 0,
+     "requests": 3,
+     "sessions": 0,
+     "digest": "2be61a6534810278f15a0006a1339aa9e97160e02797fafa9b8953152c721553"
+    },
+    "stateDigest": "b47f4c2e998f3057340f2cfa34107eeee81743723471fd02b713f8ac275e39b7",
+    "activity": {
+     "unsettled": [],
+     "heldSlots": 0
+    },
+    "lifecycle": null,
+    "migrations": []
+   },
+   "migration": {
+    "required": "factory-storage-1-to-2",
+    "requested": null
+   },
+   "checks": [
+    {
+     "id": "upgrade:target",
+     "status": "ok",
+     "message": "Release mvp-33.1 verified next to the previous one (manifest 4696d55b0091ba47955ba68de96e8e9989ddfc37f2fa58cee8a4343de344073c).",
+     "nextStep": "Extract the new archive unchanged into releases/<new id> of this root (never over an existing release) and verify it; never repair in place."
+    },
+    {
+     "id": "upgrade:previous",
+     "status": "ok",
+     "message": "Currently selected release mvp-32.1 is preserved intact (manifest 48051fa85ccefd3e7f7ed64cb70c5a0e0e4f22e73c28071516ee6bda7716d7eb).",
+     "nextStep": "The previous release stays installed and unchanged; it can be reselected only while the storage stays in a format it operates."
+    },
+    {
+     "id": "upgrade:configuration",
+     "status": "ok",
+     "message": "config.yaml is valid for the target release and names its worker profile for every role.",
+     "nextStep": "Fix config.yaml explicitly before upgrading; the upgrade never edits configuration."
+    },
+    {
+     "id": "upgrade:storage",
+     "status": "ok",
+     "message": "Storage format 1 needs the supported migration factory-storage-1-to-2 to format 2 (requested explicitly only).",
+     "nextStep": "An incompatible storage blocks the upgrade: never delete or resubmit tasks or documents to get around it; keep the previous release."
+    },
+    {
+     "id": "upgrade:registry",
+     "status": "ok",
+     "message": "No persisted Pi Durable task; the target registers none (compatible registry).",
+     "nextStep": "Never delete or resubmit tasks to get around an incompatible registry."
+    },
+    {
+     "id": "upgrade:pause",
+     "status": "ok",
+     "message": "Installation paused: the new release starts paused.",
+     "nextStep": "With the current release: `factory pause`, then stop the controller (Ctrl+C or service stop) and confirm the clean exit; then check again."
+    },
+    {
+     "id": "upgrade:stop",
+     "status": "ok",
+     "message": "No run end is recorded (format 1, or no run since a migration); the durable state proves no unsettled Execution and no held Slot.",
+     "nextStep": "Start the current release, let its boot reconcile the interrupted activity (cessation confirmed, Slots released), keep it paused and stop it cleanly; a stop intention never turns a crash into a clean stop."
+    },
+    {
+     "id": "upgrade:protocol",
+     "status": "ok",
+     "message": "Target speaks local protocol 1; previous 1. No protocol state is persisted and no previous owner runs (lock held).",
+     "nextStep": "After selection, use only the new launcher; an old CLI is refused by the single supported format."
+    },
+    {
+     "id": "upgrade:profiles",
+     "status": "ok",
+     "message": "Worker profile unchanged; Builder skill pack factory-skills-v4 → factory-skills-v5; 0 preserved Builder session(s): each next activation continues a session only when compatible, otherwise replaces it with a recorded reason and recoverable context.",
+     "nextStep": "No session is converted or migrated; an incompatible session is replaced explicitly at its next activation."
+    },
+    {
+     "id": "upgrade:environments",
+     "status": "ok",
+     "message": "0 persistent environment(s) depend on guest assets 8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807, which the target uses unchanged.",
+     "nextStep": "Keep the previous release, or finish and explicitly clean up the dependent Works first; assets are never removed while disks depend on them."
+    }
+   ],
+   "nextStep": "Nothing was changed. Request the migration explicitly: upgrade apply --migrate factory-storage-1-to-2."
+  }
+ },
+ "before": {
+  "status": {
+   "status": 0,
+   "signal": null,
+   "stdout": "{\n \"code\": \"UPGRADE_NONE\",\n \"command\": \"status\",\n \"from\": null,\n \"to\": {\n  \"release\": \"mvp-33.1\"\n },\n \"journal\": null,\n \"storage\": {\n  \"state\": \"present\",\n  \"format\": 1,\n  \"operational\": \"migration-required\",\n  \"paused\": true,\n  \"problems\": [],\n  \"preserved\": {\n   \"works\": 2,\n   \"questions\": {\n    \"open\": 1,\n    \"answered\": 0\n   },\n   \"heldSlots\": 0,\n   \"requests\": 3,\n   \"sessions\": 0,\n   \"digest\": \"2be61a6534810278f15a0006a1339aa9e97160e02797fafa9b8953152c721553\"\n  },\n  \"stateDigest\": \"b47f4c2e998f3057340f2cfa34107eeee81743723471fd02b713f8ac275e39b7\",\n  \"activity\": {\n   \"unsettled\": [],\n   \"heldSlots\": 0\n  },\n  \"lifecycle\": null,\n  \"migrations\": []\n },\n \"migration\": {\n  \"required\": null,\n  \"requested\": null\n },\n \"checks\": [],\n \"nextStep\": \"Nothing pending.\"\n}\n",
+   "stderr": "",
+   "report": {
+    "code": "UPGRADE_NONE",
+    "command": "status",
+    "from": null,
+    "to": {
+     "release": "mvp-33.1"
+    },
+    "journal": null,
+    "storage": {
+     "state": "present",
+     "format": 1,
+     "operational": "migration-required",
+     "paused": true,
+     "problems": [],
+     "preserved": {
+      "works": 2,
+      "questions": {
+       "open": 1,
+       "answered": 0
+      },
+      "heldSlots": 0,
+      "requests": 3,
+      "sessions": 0,
+      "digest": "2be61a6534810278f15a0006a1339aa9e97160e02797fafa9b8953152c721553"
+     },
+     "stateDigest": "b47f4c2e998f3057340f2cfa34107eeee81743723471fd02b713f8ac275e39b7",
+     "activity": {
+      "unsettled": [],
+      "heldSlots": 0
+     },
+     "lifecycle": null,
+     "migrations": []
+    },
+    "migration": {
+     "required": null,
+     "requested": null
+    },
+    "checks": [],
+    "nextStep": "Nothing pending."
+   }
+  },
+  "launcher": "90d7d1172aa4b02bb577d32035e04ee75ca11b08d9a709cf58105fd716057442"
+ },
+ "after": {
+  "status": {
+   "status": 0,
+   "signal": null,
+   "stdout": "{\n \"code\": \"UPGRADE_NONE\",\n \"command\": \"status\",\n \"from\": null,\n \"to\": {\n  \"release\": \"mvp-33.1\"\n },\n \"journal\": null,\n \"storage\": {\n  \"state\": \"present\",\n  \"format\": 1,\n  \"operational\": \"migration-required\",\n  \"paused\": true,\n  \"problems\": [],\n  \"preserved\": {\n   \"works\": 2,\n   \"questions\": {\n    \"open\": 1,\n    \"answered\": 0\n   },\n   \"heldSlots\": 0,\n   \"requests\": 3,\n   \"sessions\": 0,\n   \"digest\": \"2be61a6534810278f15a0006a1339aa9e97160e02797fafa9b8953152c721553\"\n  },\n  \"stateDigest\": \"b47f4c2e998f3057340f2cfa34107eeee81743723471fd02b713f8ac275e39b7\",\n  \"activity\": {\n   \"unsettled\": [],\n   \"heldSlots\": 0\n  },\n  \"lifecycle\": null,\n  \"migrations\": []\n },\n \"migration\": {\n  \"required\": null,\n  \"requested\": null\n },\n \"checks\": [],\n \"nextStep\": \"Nothing pending.\"\n}\n",
+   "stderr": "",
+   "report": {
+    "code": "UPGRADE_NONE",
+    "command": "status",
+    "from": null,
+    "to": {
+     "release": "mvp-33.1"
+    },
+    "journal": null,
+    "storage": {
+     "state": "present",
+     "format": 1,
+     "operational": "migration-required",
+     "paused": true,
+     "problems": [],
+     "preserved": {
+      "works": 2,
+      "questions": {
+       "open": 1,
+       "answered": 0
+      },
+      "heldSlots": 0,
+      "requests": 3,
+      "sessions": 0,
+      "digest": "2be61a6534810278f15a0006a1339aa9e97160e02797fafa9b8953152c721553"
+     },
+     "stateDigest": "b47f4c2e998f3057340f2cfa34107eeee81743723471fd02b713f8ac275e39b7",
+     "activity": {
+      "unsettled": [],
+      "heldSlots": 0
+     },
+     "lifecycle": null,
+     "migrations": []
+    },
+    "migration": {
+     "required": null,
+     "requested": null
+    },
+    "checks": [],
+    "nextStep": "Nothing pending."
+   }
+  },
+  "launcher": "90d7d1172aa4b02bb577d32035e04ee75ca11b08d9a709cf58105fd716057442",
+  "journal": false
+ }
+}

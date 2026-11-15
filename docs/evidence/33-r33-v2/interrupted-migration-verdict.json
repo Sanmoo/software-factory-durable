@@ -1,0 +1,86 @@
+{
+ "ok": true,
+ "checks": [
+  {
+   "name": "cut 1 SIGKILL",
+   "ok": true,
+   "observed": "SIGKILL"
+  },
+  {
+   "name": "after cut 1: incomplete, migrating, format 1",
+   "ok": true,
+   "observed": [
+    "UPGRADE_INCOMPLETE",
+    "migrating",
+    1
+   ]
+  },
+  {
+   "name": "cut 2 SIGKILL",
+   "ok": true,
+   "observed": "SIGKILL"
+  },
+  {
+   "name": "after cut 2: migrated, format 2",
+   "ok": true,
+   "observed": [
+    "migrated",
+    2
+   ]
+  },
+  {
+   "name": "preserved across the migration",
+   "ok": true,
+   "observed": [
+    "2be61a6534810278f15a0006a1339aa9e97160e02797fafa9b8953152c721553",
+    "2be61a6534810278f15a0006a1339aa9e97160e02797fafa9b8953152c721553"
+   ]
+  },
+  {
+   "name": "guard starts nothing",
+   "ok": true,
+   "observed": [
+    2,
+    "UPGRADE_INCOMPLETE"
+   ]
+  },
+  {
+   "name": "v1 direct refused (not selected)",
+   "ok": true,
+   "observed": [
+    "RELEASE_INVALID"
+   ]
+  },
+  {
+   "name": "v1 wrote nothing",
+   "ok": true,
+   "observed": [
+    "b80295342a7b646facd26fdcd846004f741dc884f09ca17777d96f7f3dcf0d85",
+    "b80295342a7b646facd26fdcd846004f741dc884f09ca17777d96f7f3dcf0d85"
+   ]
+  },
+  {
+   "name": "rollback refused",
+   "ok": true,
+   "observed": "ROLLBACK_FORMAT_UNSUPPORTED"
+  },
+  {
+   "name": "resume completed",
+   "ok": true,
+   "observed": "UPGRADE_COMPLETED"
+  },
+  {
+   "name": "v2 selected",
+   "ok": true,
+   "observed": [
+    "aba401a8f5ac813e40be934a21fea8fffd40c70dab6b5bd7a2660c6bef468baa",
+    "aba401a8f5ac813e40be934a21fea8fffd40c70dab6b5bd7a2660c6bef468baa"
+   ]
+  },
+  {
+   "name": "migrated once",
+   "ok": true,
+   "observed": 1
+  }
+ ]
+}

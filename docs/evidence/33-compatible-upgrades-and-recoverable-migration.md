@@ -59,7 +59,7 @@ commit da migração ela ainda opera o formato 1 intacto, e o `resume` reverific
 | 4 Interrupção detectável com caminho de conclusão/recuperação; nunca estado parcial aceito | `upgrade.test.ts` (SIGKILL real após journal, migração e seleção; controlador recusa; resume conclui; rollback antes do commit; recusa depois) | I-local (processo real morto) |
 | 5 Inicia pausada, registry compatível, inspeção antes de despausar; Pergunta respondível | `storage-format.test.ts` (show/status/question após migração, resposta durável); `release-upgrade.test.ts` (release construída: `run` pausado, `question`/`answer` pelo protocolo real, saída 0) | F / I-local |
 | 6 Discos/base/perfil não migrados; assets dependentes não removidos; release antiga só formato compatível | `upgrade.test.ts` (ambiente com outros assets bloqueia; rollback recusado no formato 2); `release-upgrade.test.ts` (inventário da release anterior inalterado) | I-local |
-| 7 Provas reais (Pergunta pendente, incompatibilidade, migração interrompida) por fronteiras públicas | **Receita** `test/entrypoints/release33-qualification.ts` (não executada aqui) | R pendente |
+| 7 Provas reais (Pergunta pendente, incompatibilidade, migração interrompida) por fronteiras públicas | Receita `test/entrypoints/release33-qualification.ts`, execução real **r33-v2 aprovada 54/54** (abaixo); r33-v1 inconclusiva (defeito da receita) | R |
 | 8 Sem backup/restauração/agendamento/certificação | por construção (nenhum código copia storage); `upgrade.ts`/`migration.ts` | S |
 
 Dublês: execução (Sandbox/Workers/credenciais) e GitHub nos fixtures de Pergunta; as releases de
@@ -188,3 +188,31 @@ done
   teste prova que o padrão de falha genérica da r33-v1 reprova todas as fases. (4) base nova `r33-v2`.
 - Gate após a correção (2026-11-15): tsc, eslint e dependency-cruiser (374 módulos) limpos; 177 arquivos um
   por vez: 1096 pass, 0 fail, 10 skip. A receita r33-v2 não foi executada.
+
+## Execução real r33-v2 (supervisor, autorizada pelo operador, 2026-11-15): APROVADA
+
+- Base `/home/sanmoo/software-factory-test/r33-v2` (consumida), logs em `/home/sanmoo/software-factory-test/r33v2-logs/`.
+  Ambiente: `env -i PATH=/usr/local/bin:/usr/bin:/bin HOME LANG=C LC_ALL=C NODE_DISABLE_COMPILE_CACHE=1 XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS`.
+- Vereditos (uma verificação por resultado esperado): build 3/3, install-v1 3/3, seed-v1 6/6, extract-v2 5/5,
+  check-and-refusals 14/14, interrupted-migration 12/12, start-v2 11/11 — **54/54**.
+- Cópias (varridas por formatos de segredo: nenhum achado) em `docs/evidence/33-r33-v2/`: todos os `*-verdict.json`,
+  os resultados de build/extract-v2/seed-v1/check-and-refusals/interrupted-migration e resumos de install-v1 e
+  start-v2 (originais de 166/145 KB ficam na base consumida).
+- Observado:
+  - v1 real (`mvp-32.1`, formato 1) operou o storage com a Pergunta pendente (status pausado, Pergunta aberta, saída 0).
+  - `upgrade check` da v2: `UPGRADE_MIGRATION_REQUIRED`, todos os 10 checks `ok` (parada: atividade assentada).
+    Recusas reais: lock com a v1 rodando (73), v1 despausada → `UPGRADE_INCOMPATIBLE [upgrade:pause]`, apply sem
+    `--migrate` → `UPGRADE_MIGRATION_NOT_REQUESTED`, storage/launcher/journal inalterados.
+  - Dois SIGKILL reais do código de upgrade (após journal + guarda; após o commit da migração no resume): journal
+    `migrating`/`migrated`, formato 1 → 2 com o mesmo digest preservado; guarda `UPGRADE_INCOMPLETE` (exit 2); v1
+    direta `RELEASE_INVALID` sem escrever (stateDigest igual); rollback `ROLLBACK_FORMAT_UNSUPPORTED`; resume
+    `UPGRADE_COMPLETED`; launcher = pin da v2; uma única migração registrada.
+  - v2 iniciou pausada, `status`/`list`/`show`/`question` antes de despausar; Pergunta aberta → `answer` local
+    aceito → respondida; saída 0; fim registrado `clean`, `reconciled: true`, `reconciliationPending: false`.
+- **Ponto aberto de start-v2 respondido**: a reconciliação de boot do 26 rodou (`status.recovery` presente,
+  `inventory: listed`) e não teve nada a reconciliar (`reconciled 0`, `ceased 0`, `unconfirmed 0`, sem recursos
+  globais/caches); com `environments/` vazio e nenhuma Execução viva, não houve parada/observação de ambiente.
+  Os logs não registram chamada de systemd; isso é ausência observada nesta composição, não prova geral de que a
+  reconciliação nunca toca o host com ambientes reais (coberto pelo ensaio real do 26).
+- Lacunas que permanecem: Pergunta criada com execução dublada e reexpressa como formato 1; nenhum repositório
+  configurado (sem GitHub); nenhum ambiente/disco real envolvido.

@@ -1,0 +1,25 @@
+{
+ "status": "success",
+ "report": {
+  "code": "RELEASE_BUILT",
+  "release": "mvp-33.1",
+  "archive": "software-factory-mvp-33.1.tar",
+  "archiveSha256": "b1183e48cc6f759261629531a3acd434e4739c230a1f2bec8eb4c04bee3382a0",
+  "manifestSha256": "4696d55b0091ba47955ba68de96e8e9989ddfc37f2fa58cee8a4343de344073c",
+  "entries": 23595,
+  "guestAssets": "8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807",
+  "source": {
+   "commit": "b6cd2bb7ec9d413f75fd04e9e042441dda0fef9e",
+   "commitTime": "2026-11-15T07:17:56-03:00",
+   "dirty": false
+  },
+  "extract": "tar -xpkf software-factory-mvp-33.1.tar -C <new canonical installation root>"
+ },
+ "storage": {
+  "format": 2,
+  "migratesFrom": [
+   1
+  ]
+ },
+ "durationMs": 44810
+}

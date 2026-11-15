@@ -1,0 +1,25 @@
+{
+ "ok": true,
+ "checks": [
+  {
+   "name": "release built",
+   "ok": true,
+   "observed": "RELEASE_BUILT"
+  },
+  {
+   "name": "clean source",
+   "ok": true,
+   "observed": false
+  },
+  {
+   "name": "storage declaration",
+   "ok": true,
+   "observed": {
+    "format": 2,
+    "migratesFrom": [
+     1
+    ]
+   }
+  }
+ ]
+}

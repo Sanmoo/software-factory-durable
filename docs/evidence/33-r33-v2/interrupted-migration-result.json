@@ -1,0 +1,512 @@
+{
+ "status": "observed",
+ "cut1": {
+  "status": null,
+  "signal": "SIGKILL",
+  "stderr": ""
+ },
+ "afterCut1": {
+  "status": 2,
+  "signal": null,
+  "stdout": "{\n \"code\": \"UPGRADE_INCOMPLETE\",\n \"command\": \"status\",\n \"from\": {\n  \"release\": \"mvp-32.1\"\n },\n \"to\": {\n  \"release\": \"mvp-33.1\"\n },\n \"journal\": {\n  \"version\": 1,\n  \"upgradeId\": \"3d22a8e4-4634-4368-8738-8c01900b526d\",\n  \"createdAt\": \"2026-11-15T10:22:25.829Z\",\n  \"from\": {\n   \"release\": \"mvp-32.1\",\n   \"manifestSha256\": \"48051fa85ccefd3e7f7ed64cb70c5a0e0e4f22e73c28071516ee6bda7716d7eb\",\n   \"launcherSha256\": \"90d7d1172aa4b02bb577d32035e04ee75ca11b08d9a709cf58105fd716057442\",\n   \"storageFormat\": 1,\n   \"migratesFrom\": []\n  },\n  \"to\": {\n   \"release\": \"mvp-33.1\",\n   \"manifestSha256\": \"4696d55b0091ba47955ba68de96e8e9989ddfc37f2fa58cee8a4343de344073c\",\n   \"launcherSha256\": \"aba401a8f5ac813e40be934a21fea8fffd40c70dab6b5bd7a2660c6bef468baa\",\n   \"storageFormat\": 2,\n   \"migratesFrom\": [\n    1\n   ]\n  },\n  \"migration\": \"factory-storage-1-to-2\",\n  \"expected\": {\n   \"preservedDigest\": \"2be61a6534810278f15a0006a1339aa9e97160e02797fafa9b8953152c721553\"\n  },\n  \"state\": \"migrating\",\n  \"steps\": [\n   {\n    \"state\": \"guarding\",\n    \"at\": \"2026-11-15T10:22:25.835Z\"\n   },\n   {\n    \"state\": \"migrating\",\n    \"at\": \"2026-11-15T10:22:25.843Z\"\n   }\n  ]\n },\n \"storage\": {\n  \"state\": \"present\",\n  \"format\": 1,\n  \"operational\": \"migration-required\",\n  \"paused\": true,\n  \"problems\": [],\n  \"preserved\": {\n   \"works\": 2,\n   \"questions\": {\n    \"open\": 1,\n    \"answered\": 0\n   },\n   \"heldSlots\": 0,\n   \"requests\": 3,\n   \"sessions\": 0,\n   \"digest\": \"2be61a6534810278f15a0006a1339aa9e97160e02797fafa9b8953152c721553\"\n  },\n  \"stateDigest\": \"b47f4c2e998f3057340f2cfa34107eeee81743723471fd02b713f8ac275e39b7\",\n  \"activity\": {\n   \"unsettled\": [],\n   \"heldSlots\": 0\n  },\n  \"lifecycle\": null,\n  \"migrations\": []\n },\n \"migration\": {\n  \"required\": null,\n  \"requested\": null\n },\n \"checks\": [],\n \"nextStep\": \"`upgrade resume` completes this upgrade; `upgrade rollback` reselects the previous release only while the storage is in a format it operates.\"\n}\n",
+  "stderr": "",
+  "report": {
+   "code": "UPGRADE_INCOMPLETE",
+   "command": "status",
+   "from": {
+    "release": "mvp-32.1"
+   },
+   "to": {
+    "release": "mvp-33.1"
+   },
+   "journal": {
+    "version": 1,
+    "upgradeId": "3d22a8e4-4634-4368-8738-8c01900b526d",
+    "createdAt": "2026-11-15T10:22:25.829Z",
+    "from": {
+     "release": "mvp-32.1",
+     "manifestSha256": "48051fa85ccefd3e7f7ed64cb70c5a0e0e4f22e73c28071516ee6bda7716d7eb",
+     "launcherSha256": "90d7d1172aa4b02bb577d32035e04ee75ca11b08d9a709cf58105fd716057442",
+     "storageFormat": 1,
+     "migratesFrom": []
+    },
+    "to": {
+     "release": "mvp-33.1",
+     "manifestSha256": "4696d55b0091ba47955ba68de96e8e9989ddfc37f2fa58cee8a4343de344073c",
+     "launcherSha256": "aba401a8f5ac813e40be934a21fea8fffd40c70dab6b5bd7a2660c6bef468baa",
+     "storageFormat": 2,
+     "migratesFrom": [
+      1
+     ]
+    },
+    "migration": "factory-storage-1-to-2",
+    "expected": {
+     "preservedDigest": "2be61a6534810278f15a0006a1339aa9e97160e02797fafa9b8953152c721553"
+    },
+    "state": "migrating",
+    "steps": [
+     {
+      "state": "guarding",
+      "at": "2026-11-15T10:22:25.835Z"
+     },
+     {
+      "state": "migrating",
+      "at": "2026-11-15T10:22:25.843Z"
+     }
+    ]
+   },
+   "storage": {
+    "state": "present",
+    "format": 1,
+    "operational": "migration-required",
+    "paused": true,
+    "problems": [],
+    "preserved": {
+     "works": 2,
+     "questions": {
+      "open": 1,
+      "answered": 0
+     },
+     "heldSlots": 0,
+     "requests": 3,
+     "sessions": 0,
+     "digest": "2be61a6534810278f15a0006a1339aa9e97160e02797fafa9b8953152c721553"
+    },
+    "stateDigest": "b47f4c2e998f3057340f2cfa34107eeee81743723471fd02b713f8ac275e39b7",
+    "activity": {
+     "unsettled": [],
+     "heldSlots": 0
+    },
+    "lifecycle": null,
+    "migrations": []
+   },
+   "migration": {
+    "required": null,
+    "requested": null
+   },
+   "checks": [],
+   "nextStep": "`upgrade resume` completes this upgrade; `upgrade rollback` reselects the previous release only while the storage is in a format it operates."
+  }
+ },
+ "cut2": {
+  "status": null,
+  "signal": "SIGKILL",
+  "stderr": ""
+ },
+ "afterCut2": {
+  "status": 2,
+  "signal": null,
+  "stdout": "{\n \"code\": \"UPGRADE_INCOMPLETE\",\n \"command\": \"status\",\n \"from\": {\n  \"release\": \"mvp-32.1\"\n },\n \"to\": {\n  \"release\": \"mvp-33.1\"\n },\n \"journal\": {\n  \"version\": 1,\n  \"upgradeId\": \"3d22a8e4-4634-4368-8738-8c01900b526d\",\n  \"createdAt\": \"2026-11-15T10:22:25.829Z\",\n  \"from\": {\n   \"release\": \"mvp-32.1\",\n   \"manifestSha256\": \"48051fa85ccefd3e7f7ed64cb70c5a0e0e4f22e73c28071516ee6bda7716d7eb\",\n   \"launcherSha256\": \"90d7d1172aa4b02bb577d32035e04ee75ca11b08d9a709cf58105fd716057442\",\n   \"storageFormat\": 1,\n   \"migratesFrom\": []\n  },\n  \"to\": {\n   \"release\": \"mvp-33.1\",\n   \"manifestSha256\": \"4696d55b0091ba47955ba68de96e8e9989ddfc37f2fa58cee8a4343de344073c\",\n   \"launcherSha256\": \"aba401a8f5ac813e40be934a21fea8fffd40c70dab6b5bd7a2660c6bef468baa\",\n   \"storageFormat\": 2,\n   \"migratesFrom\": [\n    1\n   ]\n  },\n  \"migration\": \"factory-storage-1-to-2\",\n  \"expected\": {\n   \"preservedDigest\": \"2be61a6534810278f15a0006a1339aa9e97160e02797fafa9b8953152c721553\"\n  },\n  \"state\": \"migrated\",\n  \"steps\": [\n   {\n    \"state\": \"guarding\",\n    \"at\": \"2026-11-15T10:22:25.835Z\"\n   },\n   {\n    \"state\": \"migrating\",\n    \"at\": \"2026-11-15T10:22:25.843Z\"\n   },\n   {\n    \"state\": \"migrated\",\n    \"at\": \"2026-11-15T10:22:41.857Z\"\n   }\n  ]\n },\n \"storage\": {\n  \"state\": \"present\",\n  \"format\": 2,\n  \"operational\": \"ready\",\n  \"paused\": true,\n  \"problems\": [],\n  \"preserved\": {\n   \"works\": 2,\n   \"questions\": {\n    \"open\": 1,\n    \"answered\": 0\n   },\n   \"heldSlots\": 0,\n   \"requests\": 3,\n   \"sessions\": 0,\n   \"digest\": \"2be61a6534810278f15a0006a1339aa9e97160e02797fafa9b8953152c721553\"\n  },\n  \"stateDigest\": \"b80295342a7b646facd26fdcd846004f741dc884f09ca17777d96f7f3dcf0d85\",\n  \"activity\": {\n   \"unsettled\": [],\n   \"heldSlots\": 0\n  },\n  \"lifecycle\": {\n   \"current\": null,\n   \"last\": null\n  },\n  \"migrations\": [\n   {\n    \"upgradeId\": \"3d22a8e4-4634-4368-8738-8c01900b526d\",\n    \"migration\": \"factory-storage-1-to-2\",\n    \"from\": 1,\n    \"to\": 2,\n    \"at\": \"2026-11-15T10:22:41.832Z\",\n    \"release\": \"mvp-33.1\",\n    \"previousRelease\": \"mvp-32.1\"\n   }\n  ]\n },\n \"migration\": {\n  \"required\": null,\n  \"requested\": null\n },\n \"checks\": [],\n \"nextStep\": \"`upgrade resume` completes this upgrade; `upgrade rollback` reselects the previous release only while the storage is in a format it operates.\"\n}\n",
+  "stderr": "",
+  "report": {
+   "code": "UPGRADE_INCOMPLETE",
+   "command": "status",
+   "from": {
+    "release": "mvp-32.1"
+   },
+   "to": {
+    "release": "mvp-33.1"
+   },
+   "journal": {
+    "version": 1,
+    "upgradeId": "3d22a8e4-4634-4368-8738-8c01900b526d",
+    "createdAt": "2026-11-15T10:22:25.829Z",
+    "from": {
+     "release": "mvp-32.1",
+     "manifestSha256": "48051fa85ccefd3e7f7ed64cb70c5a0e0e4f22e73c28071516ee6bda7716d7eb",
+     "launcherSha256": "90d7d1172aa4b02bb577d32035e04ee75ca11b08d9a709cf58105fd716057442",
+     "storageFormat": 1,
+     "migratesFrom": []
+    },
+    "to": {
+     "release": "mvp-33.1",
+     "manifestSha256": "4696d55b0091ba47955ba68de96e8e9989ddfc37f2fa58cee8a4343de344073c",
+     "launcherSha256": "aba401a8f5ac813e40be934a21fea8fffd40c70dab6b5bd7a2660c6bef468baa",
+     "storageFormat": 2,
+     "migratesFrom": [
+      1
+     ]
+    },
+    "migration": "factory-storage-1-to-2",
+    "expected": {
+     "preservedDigest": "2be61a6534810278f15a0006a1339aa9e97160e02797fafa9b8953152c721553"
+    },
+    "state": "migrated",
+    "steps": [
+     {
+      "state": "guarding",
+      "at": "2026-11-15T10:22:25.835Z"
+     },
+     {
+      "state": "migrating",
+      "at": "2026-11-15T10:22:25.843Z"
+     },
+     {
+      "state": "migrated",
+      "at": "2026-11-15T10:22:41.857Z"
+     }
+    ]
+   },
+   "storage": {
+    "state": "present",
+    "format": 2,
+    "operational": "ready",
+    "paused": true,
+    "problems": [],
+    "preserved": {
+     "works": 2,
+     "questions": {
+      "open": 1,
+      "answered": 0
+     },
+     "heldSlots": 0,
+     "requests": 3,
+     "sessions": 0,
+     "digest": "2be61a6534810278f15a0006a1339aa9e97160e02797fafa9b8953152c721553"
+    },
+    "stateDigest": "b80295342a7b646facd26fdcd846004f741dc884f09ca17777d96f7f3dcf0d85",
+    "activity": {
+     "unsettled": [],
+     "heldSlots": 0
+    },
+    "lifecycle": {
+     "current": null,
+     "last": null
+    },
+    "migrations": [
+     {
+      "upgradeId": "3d22a8e4-4634-4368-8738-8c01900b526d",
+      "migration": "factory-storage-1-to-2",
+      "from": 1,
+      "to": 2,
+      "at": "2026-11-15T10:22:41.832Z",
+      "release": "mvp-33.1",
+      "previousRelease": "mvp-32.1"
+     }
+    ]
+   },
+   "migration": {
+    "required": null,
+    "requested": null
+   },
+   "checks": [],
+   "nextStep": "`upgrade resume` completes this upgrade; `upgrade rollback` reselects the previous release only while the storage is in a format it operates."
+  }
+ },
+ "guarded": {
+  "status": 2,
+  "code": "UPGRADE_INCOMPLETE",
+  "stderr": "{\"code\":\"UPGRADE_INCOMPLETE\",\"upgradeId\":\"3d22a8e4-4634-4368-8738-8c01900b526d\",\"release\":\"mvp-33.1\",\"message\":\"An upgrade is in progress: run upgrade status, resume or rollback with releases/mvp-33.1. Nothing was started.\"}\n"
+ },
+ "v1Refused": {
+  "status": 2,
+  "codes": [
+   "RELEASE_INVALID"
+  ],
+  "stderr": "{\"code\":\"RELEASE_INVALID\",\"checks\":[{\"id\":\"release:selected\",\"message\":\"<root>/factory does not select release mvp-32.1.\"}],\"message\":\"Run the verified release of this installation; storage was not opened and nothing is repaired.\"}\n"
+ },
+ "afterV1": {
+  "status": 2,
+  "signal": null,
+  "stdout": "{\n \"code\": \"UPGRADE_INCOMPLETE\",\n \"command\": \"status\",\n \"from\": {\n  \"release\": \"mvp-32.1\"\n },\n \"to\": {\n  \"release\": \"mvp-33.1\"\n },\n \"journal\": {\n  \"version\": 1,\n  \"upgradeId\": \"3d22a8e4-4634-4368-8738-8c01900b526d\",\n  \"createdAt\": \"2026-11-15T10:22:25.829Z\",\n  \"from\": {\n   \"release\": \"mvp-32.1\",\n   \"manifestSha256\": \"48051fa85ccefd3e7f7ed64cb70c5a0e0e4f22e73c28071516ee6bda7716d7eb\",\n   \"launcherSha256\": \"90d7d1172aa4b02bb577d32035e04ee75ca11b08d9a709cf58105fd716057442\",\n   \"storageFormat\": 1,\n   \"migratesFrom\": []\n  },\n  \"to\": {\n   \"release\": \"mvp-33.1\",\n   \"manifestSha256\": \"4696d55b0091ba47955ba68de96e8e9989ddfc37f2fa58cee8a4343de344073c\",\n   \"launcherSha256\": \"aba401a8f5ac813e40be934a21fea8fffd40c70dab6b5bd7a2660c6bef468baa\",\n   \"storageFormat\": 2,\n   \"migratesFrom\": [\n    1\n   ]\n  },\n  \"migration\": \"factory-storage-1-to-2\",\n  \"expected\": {\n   \"preservedDigest\": \"2be61a6534810278f15a0006a1339aa9e97160e02797fafa9b8953152c721553\"\n  },\n  \"state\": \"migrated\",\n  \"steps\": [\n   {\n    \"state\": \"guarding\",\n    \"at\": \"2026-11-15T10:22:25.835Z\"\n   },\n   {\n    \"state\": \"migrating\",\n    \"at\": \"2026-11-15T10:22:25.843Z\"\n   },\n   {\n    \"state\": \"migrated\",\n    \"at\": \"2026-11-15T10:22:41.857Z\"\n   }\n  ]\n },\n \"storage\": {\n  \"state\": \"present\",\n  \"format\": 2,\n  \"operational\": \"ready\",\n  \"paused\": true,\n  \"problems\": [],\n  \"preserved\": {\n   \"works\": 2,\n   \"questions\": {\n    \"open\": 1,\n    \"answered\": 0\n   },\n   \"heldSlots\": 0,\n   \"requests\": 3,\n   \"sessions\": 0,\n   \"digest\": \"2be61a6534810278f15a0006a1339aa9e97160e02797fafa9b8953152c721553\"\n  },\n  \"stateDigest\": \"b80295342a7b646facd26fdcd846004f741dc884f09ca17777d96f7f3dcf0d85\",\n  \"activity\": {\n   \"unsettled\": [],\n   \"heldSlots\": 0\n  },\n  \"lifecycle\": {\n   \"current\": null,\n   \"last\": null\n  },\n  \"migrations\": [\n   {\n    \"upgradeId\": \"3d22a8e4-4634-4368-8738-8c01900b526d\",\n    \"migration\": \"factory-storage-1-to-2\",\n    \"from\": 1,\n    \"to\": 2,\n    \"at\": \"2026-11-15T10:22:41.832Z\",\n    \"release\": \"mvp-33.1\",\n    \"previousRelease\": \"mvp-32.1\"\n   }\n  ]\n },\n \"migration\": {\n  \"required\": null,\n  \"requested\": null\n },\n \"checks\": [],\n \"nextStep\": \"`upgrade resume` completes this upgrade; `upgrade rollback` reselects the previous release only while the storage is in a format it operates.\"\n}\n",
+  "stderr": "",
+  "report": {
+   "code": "UPGRADE_INCOMPLETE",
+   "command": "status",
+   "from": {
+    "release": "mvp-32.1"
+   },
+   "to": {
+    "release": "mvp-33.1"
+   },
+   "journal": {
+    "version": 1,
+    "upgradeId": "3d22a8e4-4634-4368-8738-8c01900b526d",
+    "createdAt": "2026-11-15T10:22:25.829Z",
+    "from": {
+     "release": "mvp-32.1",
+     "manifestSha256": "48051fa85ccefd3e7f7ed64cb70c5a0e0e4f22e73c28071516ee6bda7716d7eb",
+     "launcherSha256": "90d7d1172aa4b02bb577d32035e04ee75ca11b08d9a709cf58105fd716057442",
+     "storageFormat": 1,
+     "migratesFrom": []
+    },
+    "to": {
+     "release": "mvp-33.1",
+     "manifestSha256": "4696d55b0091ba47955ba68de96e8e9989ddfc37f2fa58cee8a4343de344073c",
+     "launcherSha256": "aba401a8f5ac813e40be934a21fea8fffd40c70dab6b5bd7a2660c6bef468baa",
+     "storageFormat": 2,
+     "migratesFrom": [
+      1
+     ]
+    },
+    "migration": "factory-storage-1-to-2",
+    "expected": {
+     "preservedDigest": "2be61a6534810278f15a0006a1339aa9e97160e02797fafa9b8953152c721553"
+    },
+    "state": "migrated",
+    "steps": [
+     {
+      "state": "guarding",
+      "at": "2026-11-15T10:22:25.835Z"
+     },
+     {
+      "state": "migrating",
+      "at": "2026-11-15T10:22:25.843Z"
+     },
+     {
+      "state": "migrated",
+      "at": "2026-11-15T10:22:41.857Z"
+     }
+    ]
+   },
+   "storage": {
+    "state": "present",
+    "format": 2,
+    "operational": "ready",
+    "paused": true,
+    "problems": [],
+    "preserved": {
+     "works": 2,
+     "questions": {
+      "open": 1,
+      "answered": 0
+     },
+     "heldSlots": 0,
+     "requests": 3,
+     "sessions": 0,
+     "digest": "2be61a6534810278f15a0006a1339aa9e97160e02797fafa9b8953152c721553"
+    },
+    "stateDigest": "b80295342a7b646facd26fdcd846004f741dc884f09ca17777d96f7f3dcf0d85",
+    "activity": {
+     "unsettled": [],
+     "heldSlots": 0
+    },
+    "lifecycle": {
+     "current": null,
+     "last": null
+    },
+    "migrations": [
+     {
+      "upgradeId": "3d22a8e4-4634-4368-8738-8c01900b526d",
+      "migration": "factory-storage-1-to-2",
+      "from": 1,
+      "to": 2,
+      "at": "2026-11-15T10:22:41.832Z",
+      "release": "mvp-33.1",
+      "previousRelease": "mvp-32.1"
+     }
+    ]
+   },
+   "migration": {
+    "required": null,
+    "requested": null
+   },
+   "checks": [],
+   "nextStep": "`upgrade resume` completes this upgrade; `upgrade rollback` reselects the previous release only while the storage is in a format it operates."
+  }
+ },
+ "rollback": {
+  "status": 2,
+  "report": {
+   "code": "ROLLBACK_FORMAT_UNSUPPORTED",
+   "command": "rollback",
+   "from": {
+    "release": "mvp-32.1"
+   },
+   "to": {
+    "release": "mvp-33.1"
+   },
+   "journal": {
+    "version": 1,
+    "upgradeId": "3d22a8e4-4634-4368-8738-8c01900b526d",
+    "createdAt": "2026-11-15T10:22:25.829Z",
+    "from": {
+     "release": "mvp-32.1",
+     "manifestSha256": "48051fa85ccefd3e7f7ed64cb70c5a0e0e4f22e73c28071516ee6bda7716d7eb",
+     "launcherSha256": "90d7d1172aa4b02bb577d32035e04ee75ca11b08d9a709cf58105fd716057442",
+     "storageFormat": 1,
+     "migratesFrom": []
+    },
+    "to": {
+     "release": "mvp-33.1",
+     "manifestSha256": "4696d55b0091ba47955ba68de96e8e9989ddfc37f2fa58cee8a4343de344073c",
+     "launcherSha256": "aba401a8f5ac813e40be934a21fea8fffd40c70dab6b5bd7a2660c6bef468baa",
+     "storageFormat": 2,
+     "migratesFrom": [
+      1
+     ]
+    },
+    "migration": "factory-storage-1-to-2",
+    "expected": {
+     "preservedDigest": "2be61a6534810278f15a0006a1339aa9e97160e02797fafa9b8953152c721553"
+    },
+    "state": "migrated",
+    "steps": [
+     {
+      "state": "guarding",
+      "at": "2026-11-15T10:22:25.835Z"
+     },
+     {
+      "state": "migrating",
+      "at": "2026-11-15T10:22:25.843Z"
+     },
+     {
+      "state": "migrated",
+      "at": "2026-11-15T10:22:41.857Z"
+     }
+    ]
+   },
+   "storage": {
+    "state": "present",
+    "format": 2,
+    "operational": "ready",
+    "paused": true,
+    "problems": [],
+    "preserved": {
+     "works": 2,
+     "questions": {
+      "open": 1,
+      "answered": 0
+     },
+     "heldSlots": 0,
+     "requests": 3,
+     "sessions": 0,
+     "digest": "2be61a6534810278f15a0006a1339aa9e97160e02797fafa9b8953152c721553"
+    },
+    "stateDigest": "b80295342a7b646facd26fdcd846004f741dc884f09ca17777d96f7f3dcf0d85",
+    "activity": {
+     "unsettled": [],
+     "heldSlots": 0
+    },
+    "lifecycle": {
+     "current": null,
+     "last": null
+    },
+    "migrations": [
+     {
+      "upgradeId": "3d22a8e4-4634-4368-8738-8c01900b526d",
+      "migration": "factory-storage-1-to-2",
+      "from": 1,
+      "to": 2,
+      "at": "2026-11-15T10:22:41.832Z",
+      "release": "mvp-33.1",
+      "previousRelease": "mvp-32.1"
+     }
+    ]
+   },
+   "migration": {
+    "required": null,
+    "requested": null
+   },
+   "checks": [],
+   "nextStep": "Release mvp-32.1 operates storage format 1 only; this storage is format 2. There is no universal rollback: keep mvp-33.1, or restore your own external storage protection (outside the Factory; GitHub is never undone)."
+  }
+ },
+ "resume": {
+  "status": 0,
+  "report": {
+   "code": "UPGRADE_COMPLETED",
+   "command": "resume",
+   "from": {
+    "release": "mvp-32.1"
+   },
+   "to": {
+    "release": "mvp-33.1"
+   },
+   "journal": {
+    "version": 1,
+    "upgradeId": "3d22a8e4-4634-4368-8738-8c01900b526d",
+    "createdAt": "2026-11-15T10:22:25.829Z",
+    "from": {
+     "release": "mvp-32.1",
+     "manifestSha256": "48051fa85ccefd3e7f7ed64cb70c5a0e0e4f22e73c28071516ee6bda7716d7eb",
+     "launcherSha256": "90d7d1172aa4b02bb577d32035e04ee75ca11b08d9a709cf58105fd716057442",
+     "storageFormat": 1,
+     "migratesFrom": []
+    },
+    "to": {
+     "release": "mvp-33.1",
+     "manifestSha256": "4696d55b0091ba47955ba68de96e8e9989ddfc37f2fa58cee8a4343de344073c",
+     "launcherSha256": "aba401a8f5ac813e40be934a21fea8fffd40c70dab6b5bd7a2660c6bef468baa",
+     "storageFormat": 2,
+     "migratesFrom": [
+      1
+     ]
+    },
+    "migration": "factory-storage-1-to-2",
+    "expected": {
+     "preservedDigest": "2be61a6534810278f15a0006a1339aa9e97160e02797fafa9b8953152c721553"
+    },
+    "state": "completed",
+    "steps": [
+     {
+      "state": "guarding",
+      "at": "2026-11-15T10:22:25.835Z"
+     },
+     {
+      "state": "migrating",
+      "at": "2026-11-15T10:22:25.843Z"
+     },
+     {
+      "state": "migrated",
+      "at": "2026-11-15T10:22:41.857Z"
+     },
+     {
+      "state": "selecting",
+      "at": "2026-11-15T10:23:25.597Z"
+     },
+     {
+      "state": "completed",
+      "at": "2026-11-15T10:23:25.610Z"
+     }
+    ]
+   },
+   "storage": {
+    "state": "present",
+    "format": 2,
+    "operational": "ready",
+    "paused": true,
+    "problems": [],
+    "preserved": {
+     "works": 2,
+     "questions": {
+      "open": 1,
+      "answered": 0
+     },
+     "heldSlots": 0,
+     "requests": 3,
+     "sessions": 0,
+     "digest": "2be61a6534810278f15a0006a1339aa9e97160e02797fafa9b8953152c721553"
+    },
+    "stateDigest": "b80295342a7b646facd26fdcd846004f741dc884f09ca17777d96f7f3dcf0d85",
+    "activity": {
+     "unsettled": [],
+     "heldSlots": 0
+    },
+    "lifecycle": {
+     "current": null,
+     "last": null
+    },
+    "migrations": [
+     {
+      "upgradeId": "3d22a8e4-4634-4368-8738-8c01900b526d",
+      "migration": "factory-storage-1-to-2",
+      "from": 1,
+      "to": 2,
+      "at": "2026-11-15T10:22:41.832Z",
+      "release": "mvp-33.1",
+      "previousRelease": "mvp-32.1"
+     }
+    ]
+   },
+   "migration": {
+    "required": null,
+    "requested": null
+   },
+   "checks": [],
+   "nextStep": "Start the controller with `./factory run` (the installation stays paused), inspect `./factory status`, `list`, `show <work>` and pending Questions (answerable), then `./factory unpause`."
+  }
+ },
+ "launcherSha256": "aba401a8f5ac813e40be934a21fea8fffd40c70dab6b5bd7a2660c6bef468baa",
+ "v2LauncherSha256": "aba401a8f5ac813e40be934a21fea8fffd40c70dab6b5bd7a2660c6bef468baa"
+}

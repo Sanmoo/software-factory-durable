@@ -1,0 +1,305 @@
+{
+ "note": "Summary of start-v2-result.json (full file 145 KB kept in the consumed base).",
+ "doctor": {
+  "status": 3,
+  "code": "PREREQUISITES_MISSING",
+  "release": "mvp-33.1",
+  "checks": [
+   {
+    "id": "release:integrity",
+    "status": "ok"
+   },
+   {
+    "id": "release:location",
+    "status": "ok"
+   },
+   {
+    "id": "release:selected",
+    "status": "ok"
+   },
+   {
+    "id": "release:node",
+    "status": "ok"
+   },
+   {
+    "id": "permissions:releases",
+    "status": "ok"
+   },
+   {
+    "id": "permissions:assets",
+    "status": "ok"
+   },
+   {
+    "id": "release:assets",
+    "status": "ok"
+   },
+   {
+    "id": "release:qualification",
+    "status": "unverified"
+   },
+   {
+    "id": "guest-assets:manifest",
+    "status": "ok"
+   },
+   {
+    "id": "guest-assets:kernel",
+    "status": "ok"
+   },
+   {
+    "id": "guest-assets:initramfs",
+    "status": "ok"
+   },
+   {
+    "id": "guest-assets:rootfs",
+    "status": "ok"
+   },
+   {
+    "id": "sandbox-release",
+    "status": "unverified"
+   },
+   {
+    "id": "qemu-system-x86_64",
+    "status": "ok"
+   },
+   {
+    "id": "qemu-img",
+    "status": "ok"
+   },
+   {
+    "id": "systemctl",
+    "status": "ok"
+   },
+   {
+    "id": "filesystem-tools",
+    "status": "ok"
+   },
+   {
+    "id": "kvm-access",
+    "status": "ok"
+   },
+   {
+    "id": "kvm-functional",
+    "status": "unverified"
+   },
+   {
+    "id": "systemd",
+    "status": "unverified"
+   },
+   {
+    "id": "host-platform",
+    "status": "ok"
+   },
+   {
+    "id": "storage",
+    "status": "ok"
+   },
+   {
+    "id": "storage-lock-durability",
+    "status": "unverified"
+   },
+   {
+    "id": "sandbox-tool-channel",
+    "status": "blocked"
+   },
+   {
+    "id": "sandbox-network-policy",
+    "status": "unverified"
+   },
+   {
+    "id": "docker-runtime",
+    "status": "unverified"
+   },
+   {
+    "id": "worker-profile:builder",
+    "status": "ok"
+   },
+   {
+    "id": "worker-profile:standards",
+    "status": "ok"
+   },
+   {
+    "id": "worker-profile:spec",
+    "status": "ok"
+   },
+   {
+    "id": "permissions:root",
+    "status": "ok"
+   },
+   {
+    "id": "permissions:credentials",
+    "status": "ok"
+   },
+   {
+    "id": "permissions:data",
+    "status": "ok"
+   },
+   {
+    "id": "permissions:environments",
+    "status": "ok"
+   },
+   {
+    "id": "permissions:run",
+    "status": "ok"
+   },
+   {
+    "id": "permissions:config.yaml",
+    "status": "ok"
+   },
+   {
+    "id": "credential-file:factory-oauth",
+    "status": "blocked"
+   },
+   {
+    "id": "credential-file:githubApp",
+    "status": "ok"
+   },
+   {
+    "id": "socket-path",
+    "status": "ok"
+   }
+  ]
+ },
+ "status": {
+  "paused": true,
+  "dispatch": "open",
+  "dispatchReason": null,
+  "slots": {
+   "capacity": 1,
+   "held": 0
+  },
+  "works": {
+   "total": 2,
+   "open": 2
+  },
+  "queues": {
+   "normal": 2,
+   "repair": 0
+  },
+  "questions": {
+   "open": 1,
+   "answered": 0,
+   "unpublished": 0
+  },
+  "polling": {
+   "state": "disabled",
+   "intervalSeconds": 60,
+   "cycles": 0,
+   "lastCycleAt": null,
+   "source": "in-memory-observation",
+   "repositories": []
+  },
+  "persistence": {
+   "sqliteVersion": "3.53.4",
+   "sqliteSourceId": "2026-07-24 19:02:57 bf7c7f30031888f4e796e429ab3978879485813aaca6f641c7b33e4e09459bcc",
+   "journalMode": "wal",
+   "synchronous": "FULL"
+  },
+  "recovery": {
+   "at": "2026-11-15T10:23:48.191Z",
+   "inventory": "listed",
+   "reconciled": 0,
+   "ceased": 0,
+   "unconfirmed": 0,
+   "global": [],
+   "cachePreparing": [],
+   "cache": []
+  },
+  "storage": {
+   "format": 2,
+   "previousRun": null
+  }
+ },
+ "works": [
+  {
+   "work_id": "4cb1cfcd-e7db-4d41-888b-b13a93eee4b1",
+   "ticket": 3,
+   "queue": {
+    "category": "normal",
+    "sequence": 1,
+    "pending": true
+   },
+   "dispatch": {
+    "state": "held",
+    "reasons": [
+     "QUESTION_PENDING",
+     "DEPENDENCIES_NOT_CURRENT",
+     "GLOBAL_PAUSE"
+    ]
+   },
+   "impediments": [
+    "QUESTION_PENDING",
+    "GLOBAL_PAUSE"
+   ]
+  },
+  {
+   "work_id": "c65f6198-d05e-487d-89d0-848ba7846c6f",
+   "ticket": 4,
+   "queue": {
+    "category": "normal",
+    "sequence": 2,
+    "pending": true
+   },
+   "dispatch": {
+    "state": "held",
+    "reasons": [
+     "DEPENDENCIES_NOT_CURRENT",
+     "GLOBAL_PAUSE"
+    ]
+   },
+   "impediments": [
+    "GLOBAL_PAUSE"
+   ]
+  }
+ ],
+ "question": {
+  "before": "open",
+  "after": "answered",
+  "answer": {
+   "status": 0,
+   "stdout": "{\n  \"kind\": \"durable\",\n  \"request_id\": \"ae43997c-3741-4252-ba5a-304330ad964e\",\n  \"operation\": \"answer\",\n  \"question_id\": \"0b9c6a52-3d3e-4c8f-9a51-000000000033\",\n  \"outcome\": \"accepted\",\n  \"reason\": null,\n  \"work_id\": \"4cb1cfcd-e7db-4d41-888b-b13a93eee4b1\"\n}\n"
+  }
+ },
+ "run": {
+  "end": {
+   "code": 0,
+   "signal": null
+  },
+  "stderr": ""
+ },
+ "after": {
+  "code": "UPGRADE_COMPLETED",
+  "lifecycle": {
+   "current": null,
+   "last": {
+    "runId": "85807346-5880-4f4a-ad43-ee83ab90de2a",
+    "startedAt": "2026-11-15T10:23:48.174Z",
+    "endedAt": "2026-11-15T10:23:50.721Z",
+    "end": "clean",
+    "reconciled": true,
+    "reconciliationPending": false
+   }
+  },
+  "migrations": [
+   {
+    "upgradeId": "3d22a8e4-4634-4368-8738-8c01900b526d",
+    "migration": "factory-storage-1-to-2",
+    "from": 1,
+    "to": 2,
+    "at": "2026-11-15T10:22:41.832Z",
+    "release": "mvp-33.1",
+    "previousRelease": "mvp-32.1"
+   }
+  ],
+  "preserved": {
+   "works": 2,
+   "questions": {
+    "open": 0,
+    "answered": 1
+   },
+   "heldSlots": 0,
+   "requests": 4,
+   "sessions": 0,
+   "digest": "1b4724b283c0c4649334d0ce68d484d956de5315bf865ba86b280e2f3eb76d7a"
+  }
+ }
+}

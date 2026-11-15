@@ -1,0 +1,35 @@
+{
+ "ok": true,
+ "checks": [
+  {
+   "name": "seed exit 0",
+   "ok": true,
+   "observed": 0
+  },
+  {
+   "name": "two Works seeded",
+   "ok": true,
+   "observed": 2
+  },
+  {
+   "name": "v1 controller served",
+   "ok": true,
+   "observed": "ready"
+  },
+  {
+   "name": "v1 status paused",
+   "ok": true,
+   "observed": true
+  },
+  {
+   "name": "v1 Question open",
+   "ok": true,
+   "observed": "open"
+  },
+  {
+   "name": "v1 clean exit",
+   "ok": true,
+   "observed": 0
+  }
+ ]
+}
