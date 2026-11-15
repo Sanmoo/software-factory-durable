@@ -43,7 +43,9 @@ let commentSequence = 80000;
 /** A comment as the tracker adapter reports it. */
 export function comment(body: string, author: { id: number; login: string; type: string } = { id: 1, login: 'operator', type: 'User' }, issue = 3, viaApp: number | null = null): TrackerComment {
   const id = ++commentSequence;
-  return { commentId: id, nodeId: `IC_${id}`, url: `https://github.com/acme/project/issues/${issue}#issuecomment-${id}`, author, body, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), viaApp };
+  // One clock read: two reads can straddle a millisecond and make an unedited comment look edited (COMMENT_EDITED).
+  const at = new Date().toISOString();
+  return { commentId: id, nodeId: `IC_${id}`, url: `https://github.com/acme/project/issues/${issue}#issuecomment-${id}`, author, body, createdAt: at, updatedAt: at, viaApp };
 }
 export const factoryAppId = 1;
 export const dependencyPrincipal = { installationId: 2, repository: 'acme/project', repositoryId: 3, role: 'executable' as const, purpose: 'dependency-read' as const,
