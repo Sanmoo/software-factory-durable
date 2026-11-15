@@ -66,13 +66,18 @@ as trilhas em sequência única nem permite aprovar contratos de composição in
   Pi/Claude com seleção por papel, assinatura própria do Operador e continuidade por sessão substituta;
   mudança por parada/configuração/reinício, sem comando de troca nem migração de transcripts.
   Provas próprias convergem neste mapa e no PRD/spec integrado, sem fallback ou execução autorizada.
+- [Localizar a interface de execução e as dependências entre harness e sandbox](issues/05-execution-seam-research.md#answer):
+  pesquisa no MVP `aabe06abfb20e83593020c0fee19b078d235466b`; Workers é o seam candidato, com
+  hipótese Claude host + MCP confinado, sem adoção aprovada. Acoplamentos Pi, suspensão/filtragem/
+  cessação e diferenças v2 de reconstrução/WIP estão rastreados; dez cenários alimentam a spec da prova.
 
 ## Not yet specified
 
 - Compatibilidade real de Docker/Compose/Testcontainers/Ryuk, DNS, binds e portas em Lambda.
 - Viabilidade de SSH/WebSocket, limites, custo e evidências de cessação/rede/credenciais do serviço.
-- Encaixe de CLI/Agent SDK, ferramentas e perfil Claude com as interfaces existentes, sem camada
-  redundante; condições atuais da assinatura e propriedades efetivas de isolamento por papel.
+- Validar as hipóteses de encaixe CLI/Agent SDK, ferramentas e perfil Claude localizadas pela
+  pesquisa da interface, sem camada redundante; confirmar condições aplicáveis da assinatura e
+  propriedades efetivas de isolamento por papel, suspensão, filtragem e cessação.
 - Detalhes do gate Git, reconstrução, rotação e contexto independente de transcript; compatibilidade
   de sessão, perfis versionados e recuperação entre harnesses após reconfiguração da instalação.
 - Localização de loops/ferramentas e combinações harness/sandbox suportadas; capacidades mínimas,
