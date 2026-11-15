@@ -1,0 +1,62 @@
+{
+ "provider": {
+  "attempts": 4,
+  "activations": 2,
+  "held": false,
+  "results": [
+   {
+    "markers": [
+     "a1-c0:AGENTS.md,README.md,build.gradle.kts,"
+    ],
+    "rawTokenShape": false,
+    "at": "2026-11-15T09:31:49.059Z",
+    "activation": 1
+   },
+   {
+    "markers": [
+     "a2-c0:AGENTS.md,README.md,build.gradle.kts,"
+    ],
+    "rawTokenShape": false,
+    "at": "2026-11-15T09:32:53.051Z",
+    "activation": 2
+   }
+  ],
+  "emitted": [
+   {
+    "at": "2026-11-15T09:31:48.957Z",
+    "activation": 1,
+    "call": 0
+   },
+   {
+    "at": "2026-11-15T09:31:49.059Z",
+    "activation": 1,
+    "call": 1
+   },
+   {
+    "at": "2026-11-15T09:32:52.844Z",
+    "activation": 2,
+    "call": 0
+   }
+  ],
+  "prompts": [
+   {
+    "at": "2026-11-15T09:31:48.957Z",
+    "activation": 1,
+    "kind": "implement",
+    "bytes": 353
+   },
+   {
+    "at": "2026-11-15T09:32:52.844Z",
+    "activation": 2,
+    "kind": "recovery",
+    "bytes": 1227
+   }
+  ]
+ },
+ "exits": {
+  "a-tool": "signal:SIGKILL",
+  "b-reservation": "signal:SIGKILL",
+  "c-spawn": "signal:SIGKILL",
+  "d-final": "exit:0"
+ }
+}

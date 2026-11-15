@@ -5,9 +5,9 @@ Autoridade: [ticket 26](../../.scratch/software-factory-mvp/issues/26-execution-
 cenários V-01/V-07/V-12/V-13 da [matriz de aceite](../../.scratch/software-factory/acceptance-and-incremental-plan.md).
 Base: integração `d4483d1` (tickets 01–13, 19, 20, 32). Branch `implement/software-factory-mvp-26`.
 
-**Estado: implementação e suíte local verdes (níveis R/S/I-local, com cortes SIGKILL reais de processo controlador); ensaio real NÃO executado
-por este agente** (sem GitHub/VM/systemd/credenciais/rede/modelo). A receita fixa está em [§ Ensaio real](#ensaio-real-receita-one-shot).
-Nenhum checkbox marcado; ticket não resolvido. Dublê não comprova fronteira substituída.
+**Estado: resolvido.** Implementação e suíte local verdes (níveis R/S/I-local, com cortes SIGKILL reais de processo controlador) e **ensaio real
+aprovado** (`q26-recovery-v2`, executado pelo supervisor com autorização do operador; v1 consumido com defeito de oráculo) — ver
+[§ Ensaios reais](#ensaios-reais-executados). Dublê não comprova fronteira substituída; a fronteira real (VM/systemd/worker/Records) foi provada no v2.
 
 ## Composição implementada
 
@@ -76,7 +76,7 @@ mesmo storage; **I-local** componentes reais com fronteira externa substituída.
 | 5 Incerteza local bloqueia só o afetado; global mantém despacho fechado; recursos desconhecidos não ignorados | `recovery-crash` "local uncertainty" (capacidade 2: um Trabalho retido com Slot, o outro recupera); `recovery-flow` inventário (global); `recovery-rules` portão | S+K, S, R | — |
 | 6 Recuperáveis voltam à fila com contagem separada e espera 5/15/45 s (ou maior do serviço); repetição não antecipa nem renova | `recovery-flow` "live transient failure" (5/15/45, `already-open` mantém prazo, esgotamento, restart não zera), "blocking failure"; `recovery-rules` waits/request/backoff/classify; `budget-flow` (seam ajustado) | S, R | Espera maior indicada pelo serviço: regra pronta, mas nenhum adapter atual entrega `retry-after` ao Control |
 | 7 Parada administrativa limpa só após cessação/persistência; continuação sem recovery; crash/forçada/incerta mantém falha e evidência temporal | `recovery-flow` "administrative stop is clean only…", "stop whose cessation is unconfirmed…", "while the start receipt is awaited…"; `execution-flow`/`budget-flow` (ajustados) | S | Parada real (SIGINT do proprietário com VM): ensaio `d-final` (saída 0) |
-| 8 Provas reais com cortes reserva/spawn/recibo/ferramenta/cache/processos; sem escritor/consumo duplicado; contexto preservado; perda de saída ⇒ inspeção | Local: os 6 cortes SIGKILL (`recovery-crash`), checkout reutilizado + instrução substituta (`recovery-rules`, "tool cut"). Real: [receita](#ensaio-real-receita-one-shot) | S+K / A pendente | Corte de cache real não incluído na receita (deixaria o cache do root em `mutating` para reconciliação manual); ver decisões |
+| 8 Provas reais com cortes reserva/spawn/recibo/ferramenta/cache/processos; sem escritor/consumo duplicado; contexto preservado; perda de saída ⇒ inspeção | Local: os cortes SIGKILL (`recovery-crash`), checkout reutilizado + instrução substituta (`recovery-rules`, "tool cut"). Real: v2 aprovado 10/10 ([§ Ensaios reais](#ensaios-reais-executados)) | S+K + A | Corte de cache real não incluído na receita (deixaria o cache do root em `mutating` para reconciliação manual); ver decisões |
 
 ### Testes de tickets anteriores ajustados (expectativas "até o ticket 26")
 
@@ -122,7 +122,31 @@ Todas com teste vermelho contra o código anterior (verificado compilando a árv
 | Composição com 13 (Execução interrompida no meio de uma rodada) | revisores compartilham o boot: a cessação confirmada do boot é a deles; os não concluídos ficam `failed`/`EXECUTION_INTERRUPTED`, cessação `boot-ceased`, motivo da rodada `EXECUTION_INTERRUPTED`; nada reativado, entregue ou concluído; o Trabalho recupera pela fila (recuperação parcial de rodada é o ticket 28) | `recovery-crash` "ticket 13 composition" |
 | LOW inspect na raiz viva | `inspect` só lê (`Records.find` não cria nada; a cópia do storage fica no namespace da qualificação, como nas receitas 19/20) | — |
 
-## Primeira execução real (`q26-recovery-v1`, consumida) e correções
+## Ensaios reais executados
+
+### v2 — `y5/q26-recovery-v2` (2026-11-15): APROVADO
+
+Executado pelo supervisor com autorização do operador; receita `3d5a279`. Evidência copiada (varredura de segredos sem ocorrências; `secretShapes`
+0 nas duas árvores): [preflight](26-real-recovery-preflight-2026-11-15.json), [prova do corte de ferramenta](26-real-recovery-tool-cut-2026-11-15.json),
+[provedor/saídas dos filhos](26-real-recovery-provider-2026-11-15.json), [inspect/veredito](26-real-recovery-inspect-2026-11-15.json). Nenhum
+`qemu` restante ao fim.
+
+- `verdict.passed = true`, **10/10**: `toolCutReconciled`, `survivorStoppedBeforeNewWork`, `reservationCutReleased`, `spawnCutSettled`,
+  `noTwoWriters`, `recoveryCompletedOnPreservedContext`, `singleConsumption`, `cleanFinalStop`, `providerSchedule`, `toolCutProven`.
+- Saídas dos filhos: `a-tool` SIGKILL, `b-reservation` SIGKILL, `c-spawn` SIGKILL, `d-final` saída 0 (parada limpa). Provedor: 2 ativações
+  (`implement`, depois `recovery`); o comando longo foi entregue ao worker e seu resultado nunca voltou.
+- Prova do corte de ferramenta (guest, lida no host por leitura confinada): `started=true, ended=false` no corte e de novo no `inspect`.
+- Execuções do Trabalho do #3 (`recovery[]` registrado por cada abertura nova):
+  1. inicial — fim `failure` `CONTROLLER_CRASH`, cessação por `sandbox-stop` do boot sobrevivente, início por notificação, decisão
+     `operational-recovery`;
+  2. recovery (corte de reserva) — `released`, cessação `preparation:current-boot-stopped` (o ambiente observado completo com o boot anterior
+     parado), não início (`no-activation-request`), reserva liberada, `requeued`;
+  3. recovery (corte de spawn) — `released`, cessação por `sandbox-stop`, **recibo ausente após a cessação** ⇒ não início, reserva liberada,
+     `requeued` (o ramo de recibo descoberto ficou coberto pelos cortes locais);
+  4. recovery final — boot NOVO do MESMO ambiente, checkout reutilizado, instrução de recuperação, fim `completed`, cessação confirmada.
+- Orçamento: `recoveries {limit 3, consumed 1, reserved null}` — exatamente um início de recovery confirmado.
+
+### v1 — `y5/q26-recovery-v1` (2026-11-14): 8/9, defeito do oráculo (consumido)
 
 Executada pelo supervisor com autorização: 8/9 verificações verdadeiras (`toolCutReconciled`, `survivorStoppedBeforeNewWork`,
 `reservationCutReleased`, `spawnCutSettled`, `noTwoWriters`, `recoveryCompletedOnPreservedContext`, `singleConsumption`, `cleanFinalStop`) e
@@ -135,8 +159,9 @@ antes do corte e no `inspect`; oráculo do provedor sem saída que ele não pode
 mas a captura de texto **retém em memória até (maior segredo registrado − 1) caracteres** para filtrar segredos fragmentados (comportamento
 aprovado em Q8). Com a credencial do Builder registrada (~40+ caracteres), uma linha curta de progresso como `q26-a1-c1-start` fica só em memória
 e se perde num fim abrupto (o processo dono é parado). Teste de caracterização: `test/records/incremental-retention.test.ts`. Não é falha frente ao
-contrato aprovado, mas significa que **progresso curto de um comando em execução não é evidência durável**; se o AC de captura incremental do
-ticket 05 for lido como "persistir progresso durante a execução", é uma lacuna de produto a decidir pelo operador (não alterada aqui).
+contrato aprovado, mas significa que **progresso curto de um comando em execução não é evidência durável**.
+**Decisão do operador (2026-11-15): manter como está** — persistir progresso curto só na conclusão é aceito; a recuperação se apoia no estado do
+guest (workspace preservado e instrução de inspecionar antes de repetir), não na saída perdida.
 Observado também no ensaio real do ticket 14: o prelúdio Bash do Builder não exporta `PATH`; a correção é do ticket 14 e não foi feita aqui.
 
 ## Ensaio real (receita one-shot)

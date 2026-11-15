@@ -1,0 +1,153 @@
+{
+ "status": "success",
+ "ticket": {
+  "tracker": "github",
+  "repository": "Sanmoo/java-springboot-event-sourcing",
+  "repositoryId": 1256893534,
+  "issueId": 6391129588,
+  "nodeId": "I_kwDOSuqsXs8AAAABfPDl9A",
+  "number": 3,
+  "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3"
+ },
+ "graph": {
+  "completeness": "complete",
+  "nodes": 1,
+  "problems": []
+ },
+ "preexisting": [
+  "env-0d17167a5f60efc53111e3817711db45efe00deba56ff410f486a844e0ae8a41",
+  "env-1a5dfcd03ca7e5828e4aba6806f7575e3e189fbf4fd3d9d67a67297608fef17b",
+  "env-24fa9f68040668eabf7299598aec8e899b58fafaa2c192992d153018af4ce131",
+  "env-3427342584fb4c9db67a6c468452f4b139db9a2bf51b272feb20925e64d16a81",
+  "env-3fd513709d907379781801e7df8858dad47f86b4f1d3e3c421d20848c6738c8b",
+  "env-473161d181f6ff73f385613104cf265b1ec72b2987aa8bdeb458a37bdf20ff88",
+  "env-4b0f531128d0d7faa869978dc36a9d4f1595de901ee6613d22f2985f6c0ea0c6",
+  "env-714b2183fbed7630da7e179d30c1ae6e7f5c55c07fd2884c8fcb1c7013119b96",
+  "env-75b775f7973a6d1a614e4552d3135fd5663200acf886765f7470943831f0c7c2",
+  "env-75f39d6586f0c65cfcafccdc16ced5645e6db91f950362ae901cfefe41c5a7ca",
+  "env-7b1de5b0b6f83cf9757b71e7e0c72ad365e54421ed4bb63217c154199a934329",
+  "env-9ad204ad81ee93ce8ffe6245445586b8678f126c79d2fd888b4a31621b33afeb",
+  "env-a3e73d39893bb47c3b4c81451c3eb84887f0ce21e00798b488a317480955e27f",
+  "env-a604c02a912491d85dce12a0bf9e5a35b501d23b5d4c9b3e7cfaa3649166ca7c",
+  "env-ac54df5572efc504b73b735fa280aafb2bcc60c4eeaac30010f5d313b7c57a6c",
+  "env-b88abcaa3725a04df5fe5bdbdc43b7b6a6aaa6dbcf4d77ef4fe9aef9f26904c5",
+  "env-cbe807715a062a32efd9ec7f1013d57ce770dcc35882325e2c6cdc8cdb807cdc",
+  "env-d4e776e1d090a652dc691b6d041b30a8adcb7283479bf5860dbad94e1adae740",
+  "env-d5803ea68bf639a4533d25ca96a6688d8ef50da7596adb9028f94e415a0ac4d1",
+  "env-ecabd427edc72fd22110f25e5b00a9fb28c065e231d04af5dd5852e2b88c09a7",
+  "env-f99a1829b898f02a5f1d8c42d86c0dc13d2aa1779eb42579bbbd97b106bb7195"
+ ],
+ "observed": [
+  {
+   "environment": "env-0d17167a5f60efc53111e3817711db45efe00deba56ff410f486a844e0ae8a41",
+   "condition": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "environment": "env-1a5dfcd03ca7e5828e4aba6806f7575e3e189fbf4fd3d9d67a67297608fef17b",
+   "condition": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "environment": "env-24fa9f68040668eabf7299598aec8e899b58fafaa2c192992d153018af4ce131",
+   "condition": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "environment": "env-3427342584fb4c9db67a6c468452f4b139db9a2bf51b272feb20925e64d16a81",
+   "condition": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "environment": "env-3fd513709d907379781801e7df8858dad47f86b4f1d3e3c421d20848c6738c8b",
+   "condition": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "environment": "env-473161d181f6ff73f385613104cf265b1ec72b2987aa8bdeb458a37bdf20ff88",
+   "condition": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "environment": "env-4b0f531128d0d7faa869978dc36a9d4f1595de901ee6613d22f2985f6c0ea0c6",
+   "condition": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "environment": "env-714b2183fbed7630da7e179d30c1ae6e7f5c55c07fd2884c8fcb1c7013119b96",
+   "condition": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "environment": "env-75b775f7973a6d1a614e4552d3135fd5663200acf886765f7470943831f0c7c2",
+   "condition": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "environment": "env-75f39d6586f0c65cfcafccdc16ced5645e6db91f950362ae901cfefe41c5a7ca",
+   "condition": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "environment": "env-7b1de5b0b6f83cf9757b71e7e0c72ad365e54421ed4bb63217c154199a934329",
+   "condition": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "environment": "env-9ad204ad81ee93ce8ffe6245445586b8678f126c79d2fd888b4a31621b33afeb",
+   "condition": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "environment": "env-a3e73d39893bb47c3b4c81451c3eb84887f0ce21e00798b488a317480955e27f",
+   "condition": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "environment": "env-a604c02a912491d85dce12a0bf9e5a35b501d23b5d4c9b3e7cfaa3649166ca7c",
+   "condition": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "environment": "env-ac54df5572efc504b73b735fa280aafb2bcc60c4eeaac30010f5d313b7c57a6c",
+   "condition": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "environment": "env-b88abcaa3725a04df5fe5bdbdc43b7b6a6aaa6dbcf4d77ef4fe9aef9f26904c5",
+   "condition": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "environment": "env-cbe807715a062a32efd9ec7f1013d57ce770dcc35882325e2c6cdc8cdb807cdc",
+   "condition": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "environment": "env-d4e776e1d090a652dc691b6d041b30a8adcb7283479bf5860dbad94e1adae740",
+   "condition": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "environment": "env-d5803ea68bf639a4533d25ca96a6688d8ef50da7596adb9028f94e415a0ac4d1",
+   "condition": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "environment": "env-ecabd427edc72fd22110f25e5b00a9fb28c065e231d04af5dd5852e2b88c09a7",
+   "condition": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "environment": "env-f99a1829b898f02a5f1d8c42d86c0dc13d2aa1779eb42579bbbd97b106bb7195",
+   "condition": "stopped",
+   "cessationConfirmed": true
+  }
+ ],
+ "cache": [
+  {
+   "repositoryId": 1256893534,
+   "state": "idle"
+  }
+ ]
+}
