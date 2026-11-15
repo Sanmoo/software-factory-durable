@@ -106,8 +106,12 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
       };
       const depcruise = (): Promise<StepResult[]> => tier === 'fast' ? Promise.resolve([])
         : tool('depcruise', ['node_modules/dependency-cruiser/bin/dependency-cruiser.mjs', '--config', '.dependency-cruiser.cjs', '--output-type', 'err-long', '.'], signal).then(step => [step]);
-      // The linters do not read dist/, so they run alongside the compiler.
-      const [compiled, linted, cruised] = await Promise.all([compile(tier, signal), lint(), depcruise()]);
+      // The linters do not read dist/, so they run alongside the compiler. dependency-cruiser resolves the
+      // package.json #factory-* imports to files of the staged SDK (.scratch/factory-development-sdk-v3), which
+      // a fresh tree only has after prepare-sdk: there it waits for the compile stage instead.
+      const staged = existsSync(join(root, '.scratch/factory-development-sdk-v3'));
+      const compiling = compile(tier, signal);
+      const [compiled, linted, cruised] = await Promise.all([compiling, lint(), staged ? depcruise() : compiling.then(depcruise)]);
       return [...compiled, linted, ...cruised];
     },
     listTests: async () => (await testSources(join(root, 'test'), root))
