@@ -3,16 +3,18 @@ import { snapshotStorage } from './review12-qualification.js';
 
 // TEST ONLY. Ticket 17 one-shot real delivery/cleanup qualification recipe. Import and `--plan` are inert. Every other phase is a REAL
 // effect and requires an explicit operator grant (real GitHub App, real host filesystem of the qualification root). It builds on the
-// ticket 14 run (q14-publication-v6): its storage is COPIED (never written) into this recipe's own authority. Phases are one-shot: an
+// ticket 14 run v8 (q14-publication-v8, draft PR #5): its storage is COPIED (never written) into this recipe's own authority. Phases are one-shot: an
 // exclusive intent tombstone precedes effects; a consumed phase never reruns; nothing is retried automatically.
 // The HUMAN MERGE of the own pull request is an OPERATOR step between `preflight` and `deliver`; the Factory never merges or marks ready.
 // GitHub WRITES by the Factory: at most ONE atomic conditional deletion of `refs/heads/<own branch>` (GraphQL updateRefs with beforeOid, retry
 // phase), under its own single-use `branch-cleanup` grant, plus token issuance/self-revocation; never a plain REST DELETE. No VM is booted, no model or Builder runs (every activation is refused).
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const source = `${root}/q14-publication-v6`;
-const observations = `${root}/q17-delivery-v1`;
-const revision = 'q17-delivery-v1';
+const source = `${root}/q14-publication-v8`;
+const observations = `${root}/q17-delivery-v2`;
+const revision = 'q17-delivery-v2';
+/** The own draft PR ticket 14's v8 run published and linked (the only PR this recipe may observe as delivered). */
+const expectedPullRequest = { number: 5, headRef: 'factory/3-99fe871b', headSha: 'bfdd439ceba20a424538647f41e55d5ab2d03217', base: 'main' } as const;
 const phases = ['preflight', 'deliver', 'retry', 'inspect'] as const;
 type Phase = typeof phases[number];
 const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 'main', installationId: 177599217, workflows: false, label: 'ready-for-agent' };
@@ -25,10 +27,18 @@ const phaseDeadlineMs = 10 * 60 * 1000;
 
 export function plan() {
   return { revision, root, source, observations, phases, repository, expectedTicket, guestAssets,
-    requires: 'ticket 14 integrated (own PR linked by its discovery in q14-publication-v6, publication.state published) and ticket 17 on top of it',
-    operatorStep: { between: ['preflight', 'deliver'], who: 'human operator with their own GitHub account (never the Factory/App)',
-      action: 'On GitHub: mark the own draft PR recorded by preflight as ready for review and MERGE it into main, leaving "Delete branch" UNCHECKED ' +
-        '(repository setting "Automatically delete head branches" OFF), so the Factory\'s own cleanup is what deletes the branch. Then run `deliver`.' },
+    requires: 'ticket 14 integrated; q14-publication-v8 storage with publication.state published linking PR #5 (factory/3-99fe871b @ bfdd439, base main); ticket 17 on top',
+    expectedPullRequest,
+    operatorStep: { between: ['preflight', 'deliver'], who: 'human operator with their own GitHub account (never the Factory/App, never an admin bypass)',
+      steps: [
+        'Only after `preflight` succeeded. Open https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5 and check: head factory/3-99fe871b at bfdd439ceba20a424538647f41e55d5ab2d03217, base main, still draft and open.',
+        'Repository Settings > General: "Automatically delete head branches" must be OFF (if it is ON the branch disappears with the merge and the expected remote-branch outcome becomes absent instead of removed).',
+        'Click "Ready for review" on PR #5 (or `gh pr ready 5` authenticated as yourself).',
+        'If the main ruleset (ruleset 26435808, "pull request required, no App bypass") requires an approving review, approve PR #5 yourself (the author is the App bot, so a human approval is allowed); satisfy any required checks it lists. Never use "bypass rules"/admin merge.',
+        'Merge PR #5 with ANY method the ruleset allows: merge commit, squash or rebase are all acceptable to the Factory, because delivery reads merged/merged_at/merge_commit_sha and the PR head (bfdd439…), which no merge method changes; pick the one the ruleset enables (if several, prefer "Create a merge commit").',
+        'Do NOT click "Delete branch" after merging, do NOT push to factory/3-99fe871b afterwards (a moved tip makes the Factory keep it: refused BRANCH_TIP_CHANGED), and do not reopen the PR or edit issue #3 (its "Closes #3" closure by the merge is expected and is not what delivers).',
+        'Then run `deliver`.' ],
+      acceptableMergeMethods: ['merge', 'squash', 'rebase'], requires: 'whatever ruleset 26435808 enables (allowed methods, approvals, checks); the Factory itself never merges' },
     github: { app: githubApp,
       controllerPurposes: ['delivery-read {metadata:read, contents:read, pull_requests:read} (own PR facts; refs inventory)', 'tracker-read/association-read/dependency-read (polling only)',
         'branch-cleanup {metadata:read, contents:write, pull_requests:read}: ONE fresh grant per branch cleanup attempt, revoked right after'],
@@ -197,16 +207,18 @@ export async function runPhase(phase: Phase) {
     if (phase === 'preflight') {
       await snapshotStorage(source, `${observations}/authority`);
       const { work } = await view(await snapshotStorage(`${observations}/authority`, `${observations}/preflight-storage-copy`));
-      const own = (work as { publication?: { state?: string; pullRequest?: { number: number; pullRequestId: number; nodeId: string; headRef: string; headSha: string; base: string } } } | undefined)?.publication;
+      const own = work?.publication;
       const executions = work ? [...work.previousExecutions, ...(work.execution ? [work.execution] : [])] : [];
-      if (!work || work.result !== 'open' || own?.state !== 'published' || !own.pullRequest || executions.some(item => item.slot.held || (item.dispatch.boot && item.end?.cessation !== 'confirmed'))) {
+      const linked = own?.pullRequest;
+      if (!work || work.result !== 'open' || own?.state !== 'published' || !linked || linked.number !== expectedPullRequest.number || linked.headRef !== expectedPullRequest.headRef ||
+        linked.headSha !== expectedPullRequest.headSha || linked.base !== expectedPullRequest.base || work.branch !== expectedPullRequest.headRef || executions.some(item => item.slot.held || (item.dispatch.boot && item.end?.cessation !== 'confirmed'))) {
         await save('preflight-held', { work: work ?? null }); throw new Error('PRECONDITION_HELD');
       }
       const { codeRepository, refs } = await compose();
-      const pull = await codeRepository.readPullRequest!({ repo: repository, repositoryId: expectedTicket.repositoryId, number: own.pullRequest.number,
-        pullRequestId: own.pullRequest.pullRequestId, nodeId: own.pullRequest.nodeId });
-      if (pull.kind !== 'observed' || pull.pullRequest.merged || pull.pullRequest.state !== 'open') { await save('preflight-held', { pull }); throw new Error('PRECONDITION_HELD'); }
-      await save('preflight-result', { status: 'success', workId: work.work_id, ownPullRequest: own.pullRequest, branch: work.branch, pull, refs: await refs(), inventory: await inventory(),
+      const pull = await codeRepository.readPullRequest!({ repo: repository, repositoryId: expectedTicket.repositoryId, number: linked.number,
+        pullRequestId: linked.pullRequestId, nodeId: linked.nodeId });
+      if (pull.kind !== 'observed' || pull.pullRequest.merged || pull.pullRequest.state !== 'open' || pull.pullRequest.headSha !== expectedPullRequest.headSha) { await save('preflight-held', { pull }); throw new Error('PRECONDITION_HELD'); }
+      await save('preflight-result', { status: 'success', workId: work.work_id, ownPullRequest: linked, linkedHeads: own.linkedHeads ?? [], branch: work.branch, pull, refs: await refs(), inventory: await inventory(),
         operator: plan().operatorStep });
       return;
     }
@@ -217,7 +229,7 @@ export async function runPhase(phase: Phase) {
     const { list, status, work } = await view(await snapshotStorage(`${observations}/authority`, `${observations}/inspect-storage-copy`));
     const { codeRepository, refs } = await compose();
     const own = preflight.ownPullRequest as { number: number; pullRequestId: number; nodeId: string };
-    const pull = await codeRepository.readPullRequest!({ repo: repository, repositoryId: expectedTicket.repositoryId, ...own });
+    const pull = await codeRepository.readPullRequest!({ repo: repository, repositoryId: expectedTicket.repositoryId, number: own.number, pullRequestId: own.pullRequestId, nodeId: own.nodeId });
     const after = await refs();
     await save('inspect-result', { work, status, listLimitations: 'kind' in list && list.kind === 'list' ? list.limitations : null, pull,
       refsDiff: refsDiff(preflight.refs as Record<string, string>, after), inventoryBefore: preflight.inventory, inventoryAfter: await inventory(),

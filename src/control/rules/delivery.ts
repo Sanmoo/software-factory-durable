@@ -1,5 +1,5 @@
 import type { BranchCleanupResult, CleanupOutcome, CleanupResourceKind, CleanupResourceView, CleanupView, DeliveryView, ExecutionView, MergeFacts,
-  OwnPullRequestIdentity, PlannedCleanupResource, PullRequestFacts } from '../types.js';
+  OwnPullRequestIdentity, PlannedCleanupResource, PublicationView, PullRequestFacts } from '../types.js';
 
 // Ticket 17 pure rules (spec §12.3): delivery is a confirmed merge of the Work's own pull request; cleanup removes only resources the
 // Factory owns and can prove, after merge, confirmed cessation and preserved evidence; results are per resource and never undo delivery.
@@ -8,16 +8,16 @@ const text = (value: unknown, max = 512): value is string => typeof value === 's
 const positive = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 
 /**
- * The own pull request linked by the publication discovery (ticket 14: `publication.pullRequest`, recognized by marker, App bot author,
- * own branch/repository/base). Read structurally: an absent or incomplete link is no identity, and then nothing can be delivered.
+ * The own pull request linked by the publication discovery (ticket 14 `publication.pullRequest`, recognized by marker, App bot author,
+ * own branch/repository/base) and the heads the Factory itself linked (`linkedHeads` + the linked head). Re-validated at runtime: an absent
+ * or incomplete link, or no known own head, is no identity, and then nothing can be delivered.
  */
-export function ownPullRequestOf(work: { publication?: unknown }): OwnPullRequestIdentity | null {
-  const publication = work.publication as { pullRequest?: unknown; linkedHeads?: unknown } | null | undefined;
-  const pull = publication?.pullRequest as Record<string, unknown> | null | undefined;
+export function ownPullRequestOf(work: { publication?: PublicationView | null }): OwnPullRequestIdentity | null {
+  const publication = work.publication;
+  const pull = publication?.pullRequest;
   if (!pull || !positive(pull.pullRequestId) || !text(pull.nodeId, 256) || !positive(pull.number) || !text(pull.url, 2048) || !text(pull.headRef) || !text(pull.base)) return null;
   const sha = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
-  const heads = [...new Set([...(Array.isArray(publication?.linkedHeads) ? publication.linkedHeads : []), pull.headSha].filter(sha))];
-  // No published head known: nothing proves which content is the Factory's own, so there is no own identity to deliver.
+  const heads = [...new Set([...(publication.linkedHeads ?? []), pull.headSha].filter(sha))];
   if (!heads.length) return null;
   return { pullRequestId: pull.pullRequestId, nodeId: pull.nodeId, number: pull.number, url: pull.url, headRef: pull.headRef, base: pull.base, heads };
 }

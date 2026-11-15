@@ -9,10 +9,10 @@ import type { CleanupPorts, Control, ControlStatus, ExecutionPorts, ListView, Sh
 import { openStore } from '../../src/control/durable/store.js';
 import { works } from '../../src/control/durable/admission.js';
 import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
-import { deliveryRepository, headSha, merged, ownFacts } from './delivery-fixture.js';
+import { deliveryRepository, headSha, merged, ownFacts, ownPublication } from './delivery-fixture.js';
 
 // Flow level: real Control (dispatcher, delivery desk, Pi Durable + SQLite). Doubled: GitHub, clock, Sandbox lifecycle/cleanup, Workers and
-// credentials. The own PR link is seeded in the shape ticket 14 records (this branch precedes its integration). Not evidence of real GitHub/VM.
+// credentials. The own PR link is seeded in ticket 14's typed PublicationView shape (its discovery is exercised by ticket 14's own tests). Not evidence of real GitHub/VM.
 const environment = `env-${'c'.repeat(64)}`;
 function ports(calls: string[]): ExecutionPorts & { cleanup: CleanupPorts } {
   let activations = 0;
@@ -93,8 +93,7 @@ test('AC1/AC7 (control flow): merge observed during an activity delivers, interr
   const seeded = await openStore(storagePath);
   await seeded.session.commit(async tx => {
     const record = (await tx.doc(works, work_id, null)).work!;
-    (record as unknown as { publication: unknown }).publication = { state: 'published', branch: record.execution!.request.branch, base: 'main',
-      pullRequest: { pullRequestId: 9042, nodeId: 'PR_own42', number: 42, url: 'https://github.com/acme/project/pull/42', headRef: record.execution!.request.branch, headSha, base: 'main' } };
+    record.publication = ownPublication(work_id, { branch: record.execution!.request.branch });
   }, BACKGROUND_CONTEXT);
   await seeded.close();
   const branch = (await (async () => { await start(); return work(); })()).execution!.request.branch;

@@ -35,7 +35,7 @@ export function createDeliveryDesk(deps: { session: Session; repository: CodeRep
     if (!deps.repository.readPullRequest) return;
     // Least recently read first (never-read first): a bounded number of reads per cycle reaches every Work in turn. A closure without merge
     // already recorded is not re-read (no reopening/resumption is automatic; ticket 25 owns that cycle decision).
-    const candidates = works.filter(work => work.result === 'open' && ownPullRequestOf(work as { publication?: unknown }) && configured(work.repository.repository) &&
+    const candidates = works.filter(work => work.result === 'open' && ownPullRequestOf(work) && configured(work.repository.repository) &&
       work.delivery?.observations.at(-1)?.outcome !== 'closed-unmerged')
       .sort((a, b) => (a.delivery?.lastReadAt ?? '').localeCompare(b.delivery?.lastReadAt ?? ''));
     for (const work of candidates.slice(0, readsPerCycle)) {
@@ -44,7 +44,7 @@ export function createDeliveryDesk(deps: { session: Session; repository: CodeRep
     }
   }
   async function observeOne(work: WorkRecord) {
-    const own = ownPullRequestOf(work as { publication?: unknown })!;
+    const own = ownPullRequestOf(work)!;
     const scope = configured(work.repository.repository)!;
     const observation = await deps.repository.readPullRequest!({ repo: scope, repositoryId: work.repository.repositoryId, number: own.number,
       pullRequestId: own.pullRequestId, nodeId: own.nodeId }).catch(() => ({ kind: 'unavailable' as const, code: 'DELIVERY_READ_FAILED', observedAt: null }));
@@ -85,7 +85,7 @@ export function createDeliveryDesk(deps: { session: Session; repository: CodeRep
     }
     const branch = pending.find(item => item.kind === 'remote-branch');
     const merge = work.delivery?.merge;
-    const own = ownPullRequestOf(work as { publication?: unknown });
+    const own = ownPullRequestOf(work);
     if (deps.stopped() || !branch || !scope || !merge || !own || !work.branch || !deps.repository.cleanupBranch) return;
     const effectId = randomUUID();
     if (await recordCleanupIntent(deps.session, work.work_id, [branch.id], effectId) !== 'recorded') return;

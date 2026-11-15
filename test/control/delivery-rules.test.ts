@@ -25,12 +25,12 @@ const delivered = { result: 'delivered' as const, branch: own.headRef, repositor
 
 test('own pull request identity comes only from the publication link (no link, no delivery)', () => {
   assert.equal(ownPullRequestOf({}), null);
-  assert.equal(ownPullRequestOf({ publication: { pullRequest: null } }), null);
-  assert.equal(ownPullRequestOf({ publication: { pullRequest: { number: 42 } } }), null, 'incomplete identity is not an identity');
+  assert.equal(ownPullRequestOf({ publication: { pullRequest: null } as never }), null);
+  assert.equal(ownPullRequestOf({ publication: { pullRequest: { number: 42 } } as never }), null, 'incomplete identity is not an identity');
   const { heads: _heads, ...link } = own;
-  assert.equal(ownPullRequestOf({ publication: { pullRequest: { ...link } } }), null, 'no published head known: no own identity');
+  assert.equal(ownPullRequestOf({ publication: { pullRequest: { ...link } } as never }), null, 'no published head known: no own identity');
   assert.deepEqual(ownPullRequestOf({ publication: { branch: own.headRef, base: 'main', linkedHeads: ['c'.repeat(40), 'not-a-sha'],
-    pullRequest: { ...link, headSha: 'a'.repeat(40), state: 'open', merged: false } } }), { ...own, heads: ['c'.repeat(40), 'a'.repeat(40)] });
+    pullRequest: { ...link, headSha: 'a'.repeat(40), state: 'open', merged: false } } as never }), { ...own, heads: ['c'.repeat(40), 'a'.repeat(40)] });
 });
 
 test('delivery requires a confirmed merge of the SAME own pull request; closure, open or another identity never deliver', () => {

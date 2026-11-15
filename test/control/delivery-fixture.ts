@@ -8,7 +8,7 @@ import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { createSandbox, type EnvironmentRef } from '../../src/sandbox/index.js';
 import { preserveEvidence } from '../../src/records/index.js';
 import type { BranchCleanupResult, BranchCleanupSelection, CodeRepository, PullRequestFacts, PullRequestObservation } from '../../src/code-repository/index.js';
-import type { CleanupPorts, ExecutionView } from '../../src/control/types.js';
+import type { CleanupPorts, ExecutionView, PublicationView } from '../../src/control/types.js';
 import { admitTicket, initialize, works } from '../../src/control/durable/admission.js';
 import { openStore, type Session } from '../../src/control/durable/store.js';
 import { ticket } from './doubles.js';
@@ -133,6 +133,18 @@ export function deliveryRepository(state: { pull: PullRequestFacts | 'unavailabl
   return { repository, calls };
 }
 
+/** Ticket 14's record of a linked own draft PR (typed PublicationView), as its discovery leaves it after `publication-linked`. */
+export function ownPublication(work_id: string, options: { branch: string; pr?: number; at?: string; head?: string }): PublicationView {
+  const pr = options.pr ?? 42, at = options.at ?? new Date().toISOString(), head = options.head ?? headSha;
+  return { state: 'published', basisExecutionId: 'e-1', marker: `<!-- software-factory:work:${work_id} -->`, branch: options.branch, base: 'main',
+    verified: { executionId: 'e-1', head, contentSha256: 'd'.repeat(64), verifiedAt: at, reviewedRound: 1, gates: [], requiredChecks: [] },
+    expectedRemote: { state: 'absent' }, requestedAt: at,
+    pullRequest: { pullRequestId: 9000 + pr, nodeId: `PR_own${pr}`, number: pr, url: `https://github.com/acme/project/pull/${pr}`, state: 'open', merged: false, draft: true,
+      headRef: options.branch, headSha: head, base: 'main', author: { id: 41898282, login: 'factory-app[bot]', type: 'Bot' }, linkedAt: at, bodySha256: null },
+    description: { conformant: true, reasons: [] }, discoveries: [], reasons: [], nextStep: null, updatedAt: at,
+    attempts: [{ executionId: 'e-2', head, at }], linkedHeads: [head], refsBefore: null, update: null };
+}
+
 /** Admitted Work (real Admit-Work commit) completed by one ended Execution and linked to its own PR, like tickets 09-14 would leave it. */
 export async function seedPublishedWork(session: Session, options: { cessation?: 'confirmed' | 'unconfirmed'; active?: boolean; environmentFor?: (workId: string) => string; number?: number; pr?: number } = {}) {
   const number = options.number ?? 3;
@@ -161,11 +173,8 @@ export async function seedPublishedWork(session: Session, options: { cessation?:
     };
     Object.assign(work, { execution, branch: 'factory/3-own', queue: { ...work.queue, pending: false }, impediments: [],
       pullRequest: { number: pr, url: `https://github.com/acme/project/pull/${pr}` } });
-    // Ticket 14 publication link (shape of its PublicationView), written here because this branch is based before ticket 14 integrates.
-    (work as unknown as { publication: unknown }).publication = { state: 'published', basisExecutionId: 'e-1', marker: `<!-- software-factory:work:${work_id} -->`,
-      branch: 'factory/3-own', base: 'main', pullRequest: { pullRequestId: 9000 + pr, nodeId: `PR_own${pr}`, number: pr, url: `https://github.com/acme/project/pull/${pr}`,
-        state: 'open', merged: false, draft: true, headRef: 'factory/3-own', headSha, base: 'main', author: { id: 41898282, login: 'factory-app[bot]', type: 'Bot' },
-        linkedAt: now, bodySha256: null } };
+    // Ticket 14's own-PR link, in its real PublicationView shape (state published, linked head recorded in linkedHeads).
+    work.publication = ownPublication(work_id, { branch: 'factory/3-own', pr, at: now });
   }, BACKGROUND_CONTEXT);
   return work_id;
 }

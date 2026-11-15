@@ -1,6 +1,8 @@
 # Ticket 17 — Confirmed delivery and cleanup of owned resources only
 
-Branch `implement/software-factory-mvp-17`, based on integration `d4483d1` (tickets 01–13, 19, 20, 32).
+Branch `implement/software-factory-mvp-17`. It was rebased on 2026-11-15 onto integration `b2da9ae` (01–14, 19, 20, 26, 32, 33, 36).
+After the rebase, ticket 17 reads 14's typed `PublicationView`: `publication.pullRequest` plus `linkedHeads`.
+Tests seed that exact shape (`ownPublication` in `test/control/delivery-fixture.ts`). The notes below about "before 14" describe the original base.
 Ticket 14 (own draft PR publication/discovery) was **not** integrated yet: it was read only, from its worktree.
 Ticket 17 reads the own PR identity from 14's `publication.pullRequest` record **structurally**, through `ownPullRequestOf`.
 Tests seed that record in 14's shape.
@@ -53,13 +55,19 @@ S = static/unit, I = storage-real integration (Pi Durable + SQLite, real Sandbox
 
 ## Real-run recipe (not run here: no real GitHub, credentials, VM or `$HOME/software-factory-test` were used)
 
-`test/entrypoints/delivery17-qualification.ts`. Run it after ticket 14 is integrated **and** its q14 run produced a linked own draft PR (`/home/sanmoo/software-factory-test/y5/q14-publication-v6`). Each phase is one-shot and has an exclusive tombstone. Run each one only with an explicit operator grant:
+`test/entrypoints/delivery17-qualification.ts`. It targets ticket 14's v8 run: draft PR **#5**, head `factory/3-99fe871b` @ `bfdd439ceba20a424538647f41e55d5ab2d03217`, base `main`, storage `/home/sanmoo/software-factory-test/y5/q14-publication-v8`. That storage is copied, never opened for writing. The recipe uses the fresh namespace `q17-delivery-v2`. The exact human steps are in `plan().operatorStep.steps`:
+1. Check PR #5's head and base.
+2. Check "Automatically delete head branches" is OFF.
+3. Mark it Ready for review.
+4. Approve it yourself if ruleset 26435808 requires approval.
+5. Merge with any method the ruleset allows: merge, squash or rebase are all acceptable to the Factory, because none of them changes the PR head SHA that delivery and the branch precondition use.
+6. Never use a bypass or admin merge, never click "Delete branch", and never push to the branch afterwards.
+7. Then run `deliver`. Each phase is one-shot and has an exclusive tombstone. Run each one only with an explicit operator grant:
 
 ```sh
 node dist/test/entrypoints/delivery17-qualification.js --plan       # inert
 node dist/test/entrypoints/delivery17-qualification.js preflight
-#   OPERATOR (human, own GitHub account): mark the recorded own PR ready and MERGE it into main,
-#   leaving "Delete branch" unchecked (repository auto-delete of head branches OFF).
+#   OPERATOR (human, own GitHub account): the steps listed in plan().operatorStep.steps (ready + merge PR #5).
 node dist/test/entrypoints/delivery17-qualification.js deliver
 node dist/test/entrypoints/delivery17-qualification.js retry
 node dist/test/entrypoints/delivery17-qualification.js inspect
@@ -68,9 +76,9 @@ node dist/test/entrypoints/delivery17-qualification.js inspect
 **Exact effects:**
 
 - **preflight** (read-only):
-  - copies the q14 storage into `q17-delivery-v1/authority`; the source is never written;
-  - inspects that copy: own PR linked, Work open, every Execution ended with confirmed cessation;
-  - GitHub reads: the own PR (must be open and not merged), every `refs/heads` and `refs/tags` tip;
+  - copies the q14 v8 storage into `q17-delivery-v2/authority`; the source is never written;
+  - inspects that copy: own PR #5 linked with exactly that head, branch and base, Work open, every Execution ended with confirmed cessation;
+  - GitHub reads: PR #5 (must be open, not merged, head `bfdd439…`), every `refs/heads` and `refs/tags` tip;
   - host inventory: `environments/*` with owner workId, `r/*`, `cache/git/*`.
 - **operator**: a human marks the own PR ready and merges it. This is the only merge, and the Factory never does it.
 - **deliver** (real; only the controller runs):
@@ -82,13 +90,13 @@ node dist/test/entrypoints/delivery17-qualification.js inspect
   - The remote-branch cleanup is **provoked to fail once**: the wrapper returns `failed` without calling GitHub.
   - Expected: delivered, cleanup `pending` with only `remote-branch` pending, `status.delivery = {delivered: 1, cleanup.pending: 1}`.
 - **retry** (real): a new owner process does the boot sweep and revalidates and deletes **only** the own branch.
-  - GitHub write: one fresh `branch-cleanup` grant, one `DELETE /repos/Sanmoo/java-springboot-event-sourcing/git/refs/heads/factory/3-<work8>`, and the grant's self-revocation.
+  - GitHub write: one fresh `branch-cleanup` grant, one atomic `updateRefs` deletion of `refs/heads/factory/3-99fe871b` (beforeOid `bfdd439…`), and the grant's self-revocation.
   - Environments are not touched again.
   - Expected: `remote-branch` `removed` (or `absent` if GitHub had already deleted it), cleanup `complete`.
 - **inspect** (read-only):
   - Control view from a copy;
   - own PR `merged`;
-  - `refsDiff` must be `{removed: [refs/heads/factory/3-<work8>], added: [], moved: []}`;
+  - `refsDiff` must be `{removed: [refs/heads/factory/3-99fe871b], added: [], moved: []}`;
   - the host inventory after the run shows only the own environment's data gone (`owner.json` and `removed.json` kept), the own runtime dirs gone, every other environment and runtime dir unchanged, and the shared cache unchanged;
   - the evidence manifest is present.
 

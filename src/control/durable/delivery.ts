@@ -30,7 +30,7 @@ export async function recordMergeObservation(session: Session, work_id: string, 
     const document = await tx.doc(works, work_id, null);
     const work = document.work;
     const key = work ? ticketKey(work.ticket) : '';
-    if (!work || work.result !== 'open' || index.tickets[key]?.current !== work_id || ownPullRequestOf(work as { publication?: unknown })?.pullRequestId !== input.own.pullRequestId) return { kind: 'stale' as const };
+    if (!work || work.result !== 'open' || index.tickets[key]?.current !== work_id || ownPullRequestOf(work)?.pullRequestId !== input.own.pullRequestId) return { kind: 'stale' as const };
     const at = new Date().toISOString();
     const delivery: DeliveryView = work.delivery ?? { state: 'watching', pullRequest: copy(input.own), observations: [], merge: null, nextStep: '' };
     const { decision } = input;
