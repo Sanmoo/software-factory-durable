@@ -10,7 +10,7 @@ import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './d
 // Ticket 25 flow level: real Control (poller, cycle desk, dispatcher, Pi Durable + SQLite). Doubled: GitHub, clock, Sandbox lifecycle, Workers
 // and credentials. Each activation hangs until the test completes it, or until its activity signal aborts. Not evidence of real GitHub/VM.
 const environment = `env-${'c'.repeat(64)}`;
-function ports(calls: string[], options: { stopConfirmed: () => boolean }) {
+function ports(calls: string[], options: { stopConfirmed: () => boolean; startGate?: () => Promise<void> }) {
   const pending: { complete: () => void }[] = [];
   const execution: ExecutionPorts = {
     configuration: { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1' }, capacity: 1,
@@ -22,7 +22,7 @@ function ports(calls: string[], options: { stopConfirmed: () => boolean }) {
           checkout: { path: '/workspace/checkout', repository: 'acme/project', repositoryId: 3, base: 'main', branch: input.checkout.branch, baseCommit: 'a'.repeat(40),
             origin: 'https://github.com/acme/project.git', reused: pending.length > 0, preparedAt: new Date().toISOString() } };
       },
-      async start() { calls.push('start'); return { status: 'success', boot: 'boot-11111111-2222-4333-8444-555555555555' as never }; },
+      async start() { calls.push('start'); await options.startGate?.(); return { status: 'success', boot: 'boot-11111111-2222-4333-8444-555555555555' as never }; },
       async stop() {
         calls.push('stop');
         return options.stopConfirmed() ? { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'observed' }
@@ -51,13 +51,13 @@ function ports(calls: string[], options: { stopConfirmed: () => boolean }) {
   return { execution, complete: () => pending.at(-1)!.complete() };
 }
 
-async function harness(t: { after(fn: () => Promise<void> | void): void }, remote: Remote, options: { stopConfirmed?: () => boolean } = {}) {
+async function harness(t: { after(fn: () => Promise<void> | void): void }, remote: Remote, options: { stopConfirmed?: () => boolean; startGate?: () => Promise<void> } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'factory-cycles-flow-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const storagePath = join(dir, 'control.sqlite');
   const github = githubDoubles(remote);
   const calls: string[] = [];
-  const { execution, complete } = ports(calls, { stopConfirmed: options.stopConfirmed ?? (() => true) });
+  const { execution, complete } = ports(calls, { stopConfirmed: options.stopConfirmed ?? (() => true), ...(options.startGate ? { startGate: options.startGate } : {}) });
   let current: { control: Control; stop: AbortController; running: Promise<{ kind: string }>; time: ReturnType<typeof manualClock> } | undefined;
   const start = async () => {
     const time = manualClock();
@@ -147,4 +147,24 @@ test('AC2/AC3/AC7 (flow): cancel during a command withdraws credentials first, t
   const successor = list.works.find(item => item.work_id === created.created)!;
   assert.deepEqual([successor.cycle, successor.predecessor], [2, work_id]);
   assert.notEqual(successor.execution?.request.branch, work.execution?.request.branch, 'own branch');
+});
+
+test('review MED (flow): cancel BEFORE activation stops the own boot and releases the Slot only after confirmed cessation; no credential, no Builder', async t => {
+  for (const confirmed of [true, false]) {
+    const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
+    let open!: () => void;
+    const gate = new Promise<void>(resolve => { open = resolve; });
+    const h = await harness(t, remote, { stopConfirmed: () => confirmed, startGate: () => gate });
+    await h.start();
+    await h.until(async () => h.calls.includes('start'), 'boot requested');
+    const work_id = (await h.work()).work_id;
+    assert.equal((await h.accept({ request_id: 'cancel-1', operation: 'cancel', work_id, origin: 'local-cli' })).outcome, 'accepted');
+    open();
+    await h.until(async () => h.calls.includes('stop'), 'own boot stopped');
+    await h.until(async () => (await h.work()).execution?.state !== 'reserved' || (await h.work()).execution?.held !== null, 'settled');
+    const work = await h.work();
+    assert.deepEqual([h.calls.includes('issue'), h.calls.includes('activate')], [false, false]);
+    assert.deepEqual([work.execution?.slot.held, work.cancellation?.state], confirmed ? [false, 'ceased'] : [true, 'stopping'], `stop confirmed=${confirmed}`);
+    await h.stop();
+  }
 });

@@ -29,9 +29,20 @@ e relógio dublês) + **CLI/owner/protocolo reais** sem Work. A execução real 
   `reopenPullRequest` (grant próprio `pull-request-reopen`, Pull requests W, mesmo ponto único de GraphQL do ticket 16) → observação →
   confirmação (`result: open` + `RESUME_REQUIRED`). Resultado desconhecido observado fechado vira `not-applied`, nunca reenviado.
 - **`new <owner/repo#n> [--keep-predecessor-pr]`**: só após entrega ou cancelamento `ceased` (nenhuma Execução ocupando), nunca com ciclo
-  `open`/`closed-unmerged`; publicação não reconciliada recusa; PR próprio possivelmente aberto exige a flag. Cria Work `cycle+1` com
-  `predecessor`, budget/branch/ambiente próprios, índice/memória no mesmo commit, suspenso por `AUTHORIZATION_NOT_CONFIRMED` +
-  `DEPENDENCIES_NOT_EVALUATED`.
+  `open`/`closed-unmerged`; publicação não reconciliada recusa; PR próprio possivelmente aberto exige a flag. Decisão do supervisor: leitura
+  fresca do Ticket ao aceitar; recusa `TICKET_NOT_AUTHORIZED` (sem label/fechada) ou `AUTHORIZATION_READ_UNAVAILABLE`. Cria Work `cycle+1`
+  com `predecessor`, budget/branch/ambiente próprios, índice/memória no mesmo commit, aguardando `DEPENDENCIES_NOT_EVALUATED`.
+
+### Correções da revisão independente (56d7725)
+
+- Merge do PR mantido de um predecessor cancelado (não corrente) entrega esse predecessor; toda leitura avança `lastReadAt`; predecessor
+  com PR observado fechado deixa de ser lido.
+- Só fechamento da issue ou ausência da label (leitura completa) retiram autorização; identidade divergente, PR, leitura indisponível são
+  transitórios (nada durável). `AUTHORIZATION_RESUME_PENDING` só sai com leitura iniciada depois do commit do resume.
+- Publicação: Work cancelado/`closed-unmerged` só reconcilia publicação já tentada (discovery); avaliação/solicitação recusadas no commit.
+- Reopen: resposta `applied` é a evidência primária; leitura contrária fica incerta (re-lida), nunca `not-applied`. Cancel antes do envio
+  liquida sem enviar (re-checado no commit de envio); depois do envio, o efeito é reconciliado sem reviver o ciclo.
+- Cancel antes da ativação: boot próprio parado, Slot só com cessação confirmada (teste de fluxo para os dois casos).
 
 ## AC → testes
 
@@ -52,6 +63,8 @@ e relógio dublês) + **CLI/owner/protocolo reais** sem Work. A execução real 
 própria (cópia da chave `y5/credentials/app.pem`, falha alta se ausente). `--plan`/import inertes; tombstones; `phaseGuard`; gh atrás de
 wrapper (só GET e `DELETE /installation/token`); tracker/CodeRepository sem escrita. Fases: `preflight` → `run` → `new` → `inspect`
 (+ `stop-environment`). A issue sintética (título/corpo fixados em `syntheticTicket`) é criada pelo supervisor após autorização e o número
-é fixado em commit; sem isso toda fase real recusa `TICKET_NOT_PINNED`. Passos humanos em `run`: remover a label, recolocá-la e criar
-`cancel-request.json` enquanto `./mvnw -B verify` roda. Lacuna declarada: merge concorrente/fechamento/reopen reais exigem PR próprio
-publicado e não são exercitados por esta receita.
+é fixado em commit; sem isso toda fase real recusa `TICKET_NOT_PINNED`. Passos humanos em `run`: remover a label, recolocá-la e o supervisor
+rodar o **CLI real** (`cancelCommand`: `node dist/src/entrypoints/cli.js cancel <work> --root …/q25-cancel-v1 --request-id q25-cancel-1 --json`)
+contra o socket do owner da receita (`serveControl`, o mesmo handler do controlador, extraído para `src/entrypoints/controller/serve.ts`)
+enquanto `./mvnw -B verify` roda. Cópia da chave só após o tombstone do preflight; removida só no `finally` do `inspect`. Lacuna (decisão do
+supervisor): merge concorrente/fechamento/reopen reais ficam no nível de fluxo e serão cobertos numa jornada real posterior.

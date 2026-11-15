@@ -32,8 +32,13 @@ export async function recordMergeObservation(session: Session, work_id: string, 
     const work = document.work;
     const key = work ? ticketKey(work.ticket) : '';
     // Ticket 25: a cancelled cycle and an own PR closed without merge are still watched: a confirmed merge always prevails as delivery.
-    if (!work || !['open', 'cancelled', 'closed-unmerged'].includes(work.result) || index.tickets[key]?.current !== work_id ||
-      ownPullRequestOf(work)?.pullRequestId !== input.own.pullRequestId) return { kind: 'stale' as const };
+    // Review HIGH: merge always wins for the Work that OWNS the PR, current or not (a cancelled predecessor whose PR was kept by `new`).
+    const watched = (work?.result === 'open' || work?.result === 'closed-unmerged') ? index.tickets[key]?.current === work_id : work?.result === 'cancelled';
+    if (!work || !watched || ownPullRequestOf(work)?.pullRequestId !== input.own.pullRequestId) {
+      // Review MED-HIGH: every read advances lastReadAt, so a Work that cannot be recorded never sorts first again (no starvation).
+      if (work?.delivery) work.delivery.lastReadAt = new Date().toISOString();
+      return { kind: 'stale' as const };
+    }
     const at = new Date().toISOString();
     const delivery: DeliveryView = work.delivery ?? { state: 'watching', pullRequest: copy(input.own), observations: [], merge: null, nextStep: '' };
     const { decision } = input;

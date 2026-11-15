@@ -14,13 +14,15 @@ const work = (overrides: Partial<WorkView> = {}) => ({ result: 'open', impedimen
 const observed = (state: 'open' | 'closed', labels: string[], extra: { pullRequest?: boolean; number?: number } = {}) => ({ kind: 'observed' as const, ticket: { ...ticket(3), number: extra.number ?? 3 },
   state, labels: labels.map((name, id) => ({ id, name })), pullRequest: extra.pullRequest ?? false });
 
-test('authorization facts: closed, label absent, pull request and identity drift are withdrawals; an unavailable read or unknown repository concludes nothing', () => {
+test('authorization facts: only a confirmed closure or label absence withdraws; an unavailable read or unknown repository concludes nothing', () => {
   const facts = (f: Parameters<typeof authorizationFacts>[0]['facts'], label: string | undefined = 'ready-for-agent') => authorizationFacts({ configuredLabel: label, ticket: ticket(3), facts: f });
   assert.deepEqual(facts(observed('open', ['Ready-For-Agent'])), { kind: 'authorized' });
   assert.deepEqual(facts(observed('closed', ['ready-for-agent'])), { kind: 'withdrawn', codes: ['TICKET_NOT_OPEN'] });
   assert.deepEqual(facts(observed('open', [])), { kind: 'withdrawn', codes: ['LABEL_NOT_PRESENT'] });
-  assert.deepEqual(facts(observed('closed', [], { pullRequest: true })).kind, 'withdrawn');
-  assert.deepEqual(facts(observed('open', ['ready-for-agent'], { number: 4 })), { kind: 'withdrawn', codes: ['TICKET_IDENTITY_MISMATCH'] });
+  assert.deepEqual(facts(observed('closed', [], { pullRequest: true })), { kind: 'withdrawn', codes: ['TICKET_NOT_OPEN', 'LABEL_NOT_PRESENT'] }, 'only the confirmed codes are kept');
+  // Review MED: anything but a confirmed closure or label absence is transient: nothing durable changes.
+  assert.deepEqual(facts(observed('open', ['ready-for-agent'], { number: 4 })), { kind: 'unknown', code: 'TICKET_IDENTITY_MISMATCH' });
+  assert.deepEqual(facts(observed('open', ['ready-for-agent'], { pullRequest: true })), { kind: 'unknown', code: 'TICKET_IS_PULL_REQUEST' });
   assert.deepEqual(facts({ kind: 'unavailable', code: 'GITHUB_RATE_LIMITED', nextStep: '' }), { kind: 'unknown', code: 'GITHUB_RATE_LIMITED' });
   assert.deepEqual(authorizationFacts({ configuredLabel: undefined, ticket: ticket(3), facts: observed('open', []) }), { kind: 'unknown', code: 'REPOSITORY_NOT_CONFIGURED' });
 });
@@ -72,7 +74,8 @@ test('settleCancellation: ceased only when no own Execution occupies anything; a
 
 test('new cycle decision: only after delivery or a ceased cancellation; unreconciled publication and a possibly open own PR need attention', () => {
   const cancelled = (overrides: Partial<WorkView> = {}) => work({ result: 'cancelled', cancellation: { request_id: 'c', requestedAt: at, state: 'ceased', ceasedAt: at, executionId: null, nextStep: '' }, ...overrides });
-  const decide = (w: WorkView | null, keep = false, own = false) => newCycleDecision(w, { keepPredecessorPullRequest: keep, ownPullRequest: own });
+  const decide = (w: WorkView | null, keep = false, own = false, authorization: Parameters<typeof newCycleDecision>[1]['authorization'] = { kind: 'authorized' }) =>
+    newCycleDecision(w, { keepPredecessorPullRequest: keep, ownPullRequest: own, authorization });
   assert.deepEqual(decide(null), { kind: 'refuse', code: 'TICKET_NOT_KNOWN' });
   assert.deepEqual(decide(work()), { kind: 'refuse', code: 'CYCLE_STILL_CURRENT' });
   assert.deepEqual(decide(work({ result: 'closed-unmerged' })), { kind: 'refuse', code: 'CYCLE_STILL_CURRENT' });
@@ -84,4 +87,7 @@ test('new cycle decision: only after delivery or a ceased cancellation; unreconc
   assert.deepEqual(decide(cancelled(), true, true), { kind: 'accept' });
   assert.deepEqual(decide(cancelled({ delivery: { observations: [{ outcome: 'closed-unmerged' }] } as unknown as NonNullable<WorkView['delivery']> }), false, true), { kind: 'accept' }, 'own PR observed closed');
   assert.deepEqual(decide(cancelled(), false, false), { kind: 'accept' });
+  assert.deepEqual(decide(cancelled(), false, false, { kind: 'withdrawn', codes: ['LABEL_NOT_PRESENT'] }), { kind: 'refuse', code: 'TICKET_NOT_AUTHORIZED' });
+  assert.deepEqual(decide(cancelled(), false, false, { kind: 'unknown', code: 'GITHUB_RATE_LIMITED' }), { kind: 'refuse', code: 'AUTHORIZATION_READ_UNAVAILABLE' });
+  assert.deepEqual(decide(work(), false, false, { kind: 'withdrawn', codes: ['X'] }), { kind: 'refuse', code: 'CYCLE_STILL_CURRENT' }, 'cycle rules first');
 });

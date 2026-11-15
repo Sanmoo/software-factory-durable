@@ -42,9 +42,12 @@ test('run verdict: success only with withdrawal and cancel during the activity, 
     { call: 'deliver-withdraw-credential' }, { call: 'activity-aborted' }, { call: 'stop' }];
   assert.deepEqual(runVerdict(work, events), { status: 'success', reasons: [] });
   assert.deepEqual(runVerdict(undefined, events), { status: 'held', reasons: ['WORK_NOT_FOUND'] });
+  const abortedFirst = [{ call: 'activate' }, { call: 'withdrawal-observed', executionState: 'started' }, { call: 'cancel-accepted', executionState: 'started' },
+    { call: 'activity-aborted' }, { call: 'deliver-withdraw-credential' }, { call: 'stop' }];
+  assert.deepEqual(runVerdict(work, abortedFirst).reasons, ['WITHDRAWAL_NOT_BEFORE_ABORT'], 'credentials are withdrawn BEFORE the activity is aborted');
   const late = [{ call: 'activate' }, { call: 'withdrawal-observed', executionState: 'ended' }, { call: 'cancel-accepted', executionState: 'ended' }, { call: 'stop' }, { call: 'deliver-withdraw-credential' }];
   assert.deepEqual(runVerdict({ ...work, execution: { ...work.execution!, slot: { held: true } } } as WorkView, late).reasons,
-    ['WITHDRAWAL_NOT_DURING_ACTIVITY', 'CANCEL_NOT_DURING_ACTIVITY', 'SLOT_NOT_RELEASED_AFTER_CESSATION', 'WITHDRAWAL_NOT_BEFORE_STOP']);
+    ['WITHDRAWAL_NOT_DURING_ACTIVITY', 'CANCEL_NOT_DURING_ACTIVITY', 'SLOT_NOT_RELEASED_AFTER_CESSATION', 'WITHDRAWAL_NOT_BEFORE_ABORT', 'WITHDRAWAL_NOT_BEFORE_STOP']);
 });
 
 test('a missing App key source fails loudly with its path before any effect', async () => {

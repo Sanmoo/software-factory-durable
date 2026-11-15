@@ -22,7 +22,10 @@ test('ticket 25 recipe: import and --plan are inert; own namespace q25-cancel-v1
   assert.match(plan.github.accessRoot, /^\/home\/sanmoo\/software-factory-test\/y5\/q25-cancel-v1 \(own namespace/);
   assert.match(plan.github.writes, /^none by the Factory/);
   assert.match(plan.github.builderPurpose, /read-only/);
-  assert.deepEqual(plan.humanSteps.map((step: { action: string }) => step.action.split(' ')[0]), ['remove', 're-add', 'create', 'leave']);
+  assert.deepEqual(plan.humanSteps.map((step: { action: string }) => step.action.split(' ')[0]), ['remove', 're-add', 'run,', 'leave']);
+  assert.match(plan.humanSteps[2].action, /node dist\/src\/entrypoints\/cli\.js cancel <work id> --root \/home\/sanmoo\/software-factory-test\/y5\/q25-cancel-v1 --request-id q25-cancel-1 --json/,
+    'cancellation through the REAL CLI against the recipe owner socket');
+  assert.ok(plan.notCovered[0].includes('later real journey'));
   assert.equal(plan.syntheticTicket.pinned, false, 'the synthetic issue does not exist yet: the supervisor pins it after creating it');
   assert.equal(plan.model.maxActivations, 1);
   await assert.rejects(recipe.main(['retry']), /EXACT_PHASE_REQUIRED/);

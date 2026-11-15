@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
-import type { AccessDependencies, ControlInput, ControlReceipt, CycleEvent, Impediment, WorkView } from '../types.js';
+import type { AccessDependencies, ConfiguredRepository, ControlInput, ControlReceipt, CycleEvent, Impediment, WorkView } from '../types.js';
+import type { IssueTracker } from '../../issue-tracker/index.js';
 import { ticketKey } from '../rules/admission.js';
 import { initialBudget } from '../rules/budget.js';
 import { authorizationChange, authorizationFacts, cancelDecision, cycleImpediments, hasImpediment, newCycleDecision, occupying, reopenDecision, resumeDecision,
   settleCancellation } from '../rules/cycles.js';
 import { decideMerge, ownPullRequestOf } from '../rules/delivery.js';
-import { requests, ticketIndex, works, type WorkRecord } from './admission.js';
+import { readWorks, requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import type { Session } from './store.js';
 
 // Ticket 25 durable commits and the cycle desk (spec §3.4 "Aceitar comando", "Interromper/cancelar", "Confirmar efeito"; §4.1; §11.3; §12.3).
@@ -107,11 +108,22 @@ export async function acceptReopen(session: Session, input: CycleInput & { opera
 
 /**
  * `new <owner/repo#number>` (spec §4.1): a NEW Work for the Ticket with predecessor, cycle + 1, its own budget, branch and environment, in the
- * same commit as the index (current/previous) and the Ticket memory. It starts suspended until its first complete authorization read and
- * its first dependency evaluation; nothing of the predecessor (PR, branch, environment) is adopted, closed or removed.
+ * same commit as the index (current/previous) and the Ticket memory, only when a fresh Ticket read at acceptance shows it authorized; it
+ * waits for its first dependency evaluation; nothing of the predecessor (PR, branch, environment) is adopted, closed or removed.
  */
 export async function acceptNewCycle(session: Session, input: CycleInput & { operation: 'new' },
-  limits: (repository: string) => { correctionLimit?: number | undefined; recoveryLimit?: number | undefined } | undefined) {
+  deps: { configured(repository: string): ConfiguredRepository | undefined; tracker: Pick<IssueTracker, 'readTicket'> }) {
+  // Supervisor decision: a FRESH complete read of the Ticket when the command is accepted (outside the commit); a replay of the same
+  // request returns its recorded receipt whatever this read says.
+  const current = (await readWorks(session)).find(work => work.ticket.repository.toLowerCase() === input.ticket.repository.toLowerCase() &&
+    work.ticket.number === input.ticket.number && work.result !== 'open' && work.result !== 'closed-unmerged') ?? null;
+  let authorization: ReturnType<typeof authorizationFacts> = { kind: 'unknown', code: 'TICKET_NOT_READ' };
+  if (current) {
+    const facts = await deps.tracker.readTicket(current.ticket).catch(() => ({ kind: 'unavailable' as const, code: 'TICKET_READ_FAILED', nextStep: '' }));
+    authorization = authorizationFacts({ configuredLabel: deps.configured(current.repository.repository)?.label, ticket: current.ticket, facts });
+  }
+  const observedAt = new Date().toISOString();
+  const limits = deps.configured;
   return command(session, input, async tx => {
     const index = await tx.doc(ticketIndex);
     let predecessor: WorkRecord | null = null;
@@ -120,7 +132,9 @@ export async function acceptNewCycle(session: Session, input: CycleInput & { ope
       const work = (await tx.doc(works, entry.current, null)).work;
       if (work && work.ticket.repository.toLowerCase() === input.ticket.repository.toLowerCase() && work.ticket.number === input.ticket.number) { predecessor = work; key = entryKey; break; }
     }
-    const decision = newCycleDecision(predecessor, { keepPredecessorPullRequest: input.keepPredecessorPullRequest, ownPullRequest: predecessor ? ownPullRequestOf(predecessor) !== null : false });
+    const decision = newCycleDecision(predecessor, { keepPredecessorPullRequest: input.keepPredecessorPullRequest, ownPullRequest: predecessor ? ownPullRequestOf(predecessor) !== null : false,
+      // The read must be of THIS predecessor's Ticket (it may have changed between the read and the commit).
+      authorization: predecessor && current?.work_id === predecessor.work_id ? authorization : { kind: 'unknown', code: 'TICKET_NOT_READ' } });
     if (decision.kind === 'refuse') return receiptOf(input, predecessor?.work_id ?? null, 'not-applied', decision.code);
     const configured = limits(predecessor!.repository.repository);
     if (!configured) return receiptOf(input, predecessor!.work_id, 'not-applied', 'REPOSITORY_NOT_CONFIGURED');
@@ -132,11 +146,10 @@ export async function acceptNewCycle(session: Session, input: CycleInput & { ope
     const previous = predecessor!;
     document.work = {
       work_id, cycle: previous.cycle + 1, predecessor: previous.work_id, ticket: copy(previous.ticket), repository: copy(previous.repository), result: 'open',
-      authorization: { ...copy(previous.authorization), state: 'authorized', tracking: 'New cycle requested explicitly; authorization is confirmed by the next complete Ticket read.',
-        lastObservedAt: null, withdrawal: null },
+      authorization: { ...copy(previous.authorization), state: 'authorized', observedAt, tracking: 'New cycle requested explicitly; authorization confirmed by a fresh complete Ticket read at acceptance and tracked by every later read.',
+        lastObservedAt: observedAt, withdrawal: null },
       queue: { category: 'normal', sequence, pending: true },
-      impediments: [{ code: 'DEPENDENCIES_NOT_EVALUATED', scope: 'work', since: at, nextStep: 'Native blocked_by evaluation must complete before any dispatch; the next polling round evaluates it.' },
-        { code: cycleImpediments.notConfirmed, scope: 'work', since: at, nextStep: 'New cycle: the next complete read of the Ticket must show it open with the configured label.' }],
+      impediments: [{ code: 'DEPENDENCIES_NOT_EVALUATED', scope: 'work', since: at, nextStep: 'Native blocked_by evaluation must complete before any dispatch; the next polling round evaluates it.' }],
       dependencies: { latest: null, lastComplete: null }, execution: null, branch: null, pullRequest: null, previousExecutions: [], questions: [], inputs: { cursor: null }, admittedAt: at,
       budget: initialBudget(configured, previous.repository.repository, at), correction: null, pendingRecovery: null,
       history: [{ at, event: 'cycle-created', origin: 'local-cli', detail: `${input.request_id}:predecessor:${previous.work_id}:cycle:${previous.cycle + 1}${input.keepPredecessorPullRequest ? ':predecessor-pr-kept' : ''}` }],
@@ -152,13 +165,14 @@ export async function acceptNewCycle(session: Session, input: CycleInput & { ope
 }
 
 /** One complete authorization read of a CURRENT open Work (cycle desk or dispatch revalidation). Unknown reads are never recorded as change. */
-export async function recordAuthorization(session: Session, work_id: string, observed: { kind: 'authorized' } | { kind: 'withdrawn'; codes: string[] }): Promise<'recorded' | 'stale'> {
+export async function recordAuthorization(session: Session, work_id: string, observed: { kind: 'authorized' } | { kind: 'withdrawn'; codes: string[] },
+  readStartedAt?: string): Promise<'recorded' | 'stale'> {
   return session.commit(async tx => {
     const index = await tx.doc(ticketIndex);
     const work = (await tx.doc(works, work_id, null)).work;
     if (!work || work.result !== 'open' || index.tickets[ticketKey(work.ticket)]?.current !== work_id) return 'stale' as const;
     const at = new Date().toISOString();
-    const change = authorizationChange(work, observed, at);
+    const change = authorizationChange(work, observed, at, readStartedAt ?? at);
     removeImpediments(work, change.remove);
     for (const item of change.add) addImpediment(work, item);
     for (const event of change.events) history(work, event.event, 'controller-cycles', event.detail, at);
@@ -172,8 +186,15 @@ async function beginReopen(session: Session, work_id: string, effectId: string):
   return session.commit(async tx => {
     const work = (await tx.doc(works, work_id, null)).work;
     const reopen = work?.closure?.reopen;
-    if (!work || work.result !== 'closed-unmerged' || reopen?.effectId !== effectId || reopen.state !== 'intended' || reopen.sendingAt) return 'stale' as const;
-    reopen.sendingAt = new Date().toISOString();
+    if (!work || reopen?.effectId !== effectId || reopen.state !== 'intended' || reopen.sendingAt) return 'stale' as const;
+    const at = new Date().toISOString();
+    if (work.result !== 'closed-unmerged') {
+      // Review LOW-MED: cancelled (or otherwise ended) before sending: provably never sent; settled, never sent later.
+      Object.assign(reopen, { state: 'not-applied', attempt: { at, outcome: 'not-sent', code: work.result === 'cancelled' ? 'WORK_CANCELLED' : 'WORK_NOT_CLOSED_UNMERGED' }, settledAt: at });
+      history(work, 'reopen-not-applied', 'controller-cycles', `${effectId}:not-sent:${work.result}`, at);
+      return 'stale' as const;
+    }
+    reopen.sendingAt = at;
     return 'sending' as const;
   }, BACKGROUND_CONTEXT);
 }
@@ -191,7 +212,11 @@ async function recordReopen(session: Session, work_id: string, effectId: string,
       reopen.state = 'attempted';
       history(work, 'reopen-attempted', 'controller-cycles', `${effectId}:${input.attempt.outcome}${input.attempt.code ? `:${input.attempt.code}` : ''}`, at);
     }
-    if (input.observed === 'open' && work.result === 'closed-unmerged') {
+    if (input.observed === 'open' && work.result !== 'closed-unmerged') {
+      // Review LOW-MED: sent, then the Work was cancelled: the effect is reconciled (confirmed); the cycle is NOT revived.
+      Object.assign(reopen, { state: 'confirmed', observation: { at, outcome: 'open' }, settledAt: at });
+      history(work, 'reopen-confirmed', 'controller-cycles', `${effectId}:${work.result}:cycle-not-revived`, at);
+    } else if (input.observed === 'open' && work.result === 'closed-unmerged') {
       Object.assign(reopen, { state: 'confirmed', observation: { at, outcome: 'open' }, settledAt: at });
       work.result = 'open';
       removeImpediments(work, [cycleImpediments.closedUnmerged]);
@@ -200,6 +225,9 @@ async function recordReopen(session: Session, work_id: string, effectId: string,
       work.closure!.nextStep = 'Reopened and confirmed by observation; the Work stays suspended until `factory resume`.';
       history(work, 'reopen-confirmed', 'controller-cycles', effectId, at);
       rememberResult(index, work);
+    } else if (input.observed === 'closed-unmerged' && reopen.attempt?.outcome === 'applied') {
+      // Review MED (as ticket 16 MED 2): GitHub's applied response is the primary evidence; a contrary read may lag. Uncertain: re-read later.
+      reopen.observation = { at, outcome: 'closed-unmerged-contradicting-applied' };
     } else if (input.observed === 'closed-unmerged' && (reopen.state === 'attempted' || reopen.sendingAt)) {
       // Sent (or possibly sent) and still closed: never resent implicitly; another `factory reopen` is a new decision.
       Object.assign(reopen, { state: 'not-applied', observation: { at, outcome: 'closed-unmerged' }, settledAt: at });
@@ -225,10 +253,11 @@ export function createCycleDesk(deps: { session: Session; access: AccessDependen
   async function observeAuthorization(work: WorkRecord) {
     const scope = configured(work.repository.repository);
     let facts;
+    const startedAt = new Date().toISOString();
     try { facts = await deps.access.tracker.readTicket(work.ticket); } catch { return null; }
     const observed = authorizationFacts({ configuredLabel: scope?.label, ticket: work.ticket, facts });
     if (observed.kind === 'unknown') return null;
-    await recordAuthorization(deps.session, work.work_id, observed);
+    await recordAuthorization(deps.session, work.work_id, observed, startedAt);
     return observed;
   }
   async function observeOwn(work: WorkRecord) {
@@ -247,10 +276,11 @@ export function createCycleDesk(deps: { session: Session; access: AccessDependen
     const observed = await observeOwn(work);
     if (observed === null) return; // nothing concluded: kept for a later cycle
     if (observed !== 'closed-unmerged' || effect.state === 'attempted' || effect.sendingAt) { await recordReopen(deps.session, work.work_id, effect.effectId, { observed }); return; }
+    if (work.result !== 'closed-unmerged') { await beginReopen(deps.session, work.work_id, effect.effectId); return; } // settles it, nothing sent
     const scope = configured(work.repository.repository)!;
     const own = ownPullRequestOf(work)!;
     if (!deps.access.repository.reopenPullRequest) { await recordReopen(deps.session, work.work_id, effect.effectId, { attempt: { outcome: 'not-sent', code: 'REOPEN_NOT_COMPOSED' } }); return; }
-    if (await beginReopen(deps.session, work.work_id, effect.effectId) !== 'sending') return;
+    if (await beginReopen(deps.session, work.work_id, effect.effectId) !== 'sending') return; // re-checks cancellation in the sending commit
     const result = await deps.access.repository.reopenPullRequest({ repo: scope, number: own.number, nodeId: own.nodeId }, { effectId: effect.effectId })
       .catch(() => ({ kind: 'unknown' as const, code: 'REOPEN_UNAVAILABLE' }));
     await recordReopen(deps.session, work.work_id, effect.effectId, { attempt: { outcome: result.kind, code: 'code' in result ? result.code : null } });
@@ -271,7 +301,7 @@ export function createCycleDesk(deps: { session: Session; access: AccessDependen
         if (deps.stopped()) return;
         try { await observeAuthorization(work); } catch { failed(work.work_id, 'authorization'); }
       }
-      for (const work of all.filter(item => item.result === 'closed-unmerged' && (item.closure?.reopen?.state === 'intended' || item.closure?.reopen?.state === 'attempted'))) {
+      for (const work of all.filter(item => (item.result === 'closed-unmerged' || item.result === 'cancelled') && (item.closure?.reopen?.state === 'intended' || item.closure?.reopen?.state === 'attempted'))) {
         if (deps.stopped()) return;
         try { await reopen(work); } catch { failed(work.work_id, 'reopen'); }
       }

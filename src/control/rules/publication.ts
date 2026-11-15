@@ -252,7 +252,7 @@ export type PublicationStep = { kind: 'none' } | { kind: 'evaluate'; basisExecut
 export function publicationStep(work: WorkFacts): PublicationStep {
   // Ticket 25: a cancelled Work only reconciles a publication activation already ATTEMPTED (its remote effect may have concluded); it never
   // evaluates a new basis nor requests anything.
-  if (work.result === 'cancelled' && !active(work.execution) && work.publication?.state === 'awaiting-discovery' && publicationAttempted(work)) {
+  if ((work.result === 'cancelled' || work.result === 'closed-unmerged') && !active(work.execution) && work.publication?.state === 'awaiting-discovery' && publicationAttempted(work)) {
     const last = [work.execution, ...[...(work.previousExecutions ?? [])].reverse()].find(item => item?.end) ?? null;
     return last?.end?.cessation === 'confirmed' ? { kind: 'discover', trigger: 'after-publication', attempted: true } : { kind: 'none' };
   }

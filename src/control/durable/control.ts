@@ -179,7 +179,9 @@ export async function openControl(options: { storagePath: string;
       }
       if (parsed.data.operation === 'resume') return acceptResume(state, parsed.data);
       if (parsed.data.operation === 'reopen') return acceptReopen(state, parsed.data);
-      if (parsed.data.operation === 'new') return acceptNewCycle(state, parsed.data, configuredRepository);
+      // Without GitHub access no fresh Ticket read is possible: the request is recorded as not applied (AUTHORIZATION_READ_UNAVAILABLE).
+      if (parsed.data.operation === 'new') return acceptNewCycle(state, parsed.data, { configured: configuredRepository,
+        tracker: options.access?.tracker ?? { readTicket: () => Promise.reject(new Error('TRACKER_NOT_COMPOSED')) } });
       return acceptPauseCommand(state, parsed.data);
     },
     async inspect(query) {

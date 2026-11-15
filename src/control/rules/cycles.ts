@@ -24,15 +24,21 @@ export const occupying = (execution: ExecutionView) => execution.slot.held || ex
 export const hasImpediment = (work: Pick<Work, 'impediments'>, code: string) => work.impediments.some(item => item.code === code);
 
 /**
- * One complete re-read of the Ticket against its configured label. `withdrawn`: the issue is closed, the label is absent, it became a pull
- * request or its identity changed (never inferred from an absence in a listing); `authorized`: open + label; `unknown`: nothing concluded.
+ * One complete re-read of the Ticket against its configured label. `withdrawn`: the issue is closed or the label is absent (never inferred
+ * from an absence in a listing); `authorized`: open + label; `unknown` (unavailable, identity drift, pull request...): nothing concluded.
  */
 export function authorizationFacts(input: { configuredLabel: string | undefined; ticket: Parameters<typeof evaluateEntry>[0]['listed']; facts: TicketFacts }):
   { kind: 'authorized' } | { kind: 'withdrawn'; codes: string[] } | { kind: 'unknown'; code: string } {
   if (input.facts.kind !== 'observed') return { kind: 'unknown', code: input.facts.code };
   if (input.configuredLabel === undefined) return { kind: 'unknown', code: 'REPOSITORY_NOT_CONFIGURED' };
   const decision = evaluateEntry({ configuredLabel: input.configuredLabel, listed: input.ticket, facts: input.facts });
-  return decision.authorized ? { kind: 'authorized' } : { kind: 'withdrawn', codes: decision.holds.map(hold => hold.code) };
+  if (decision.authorized) return { kind: 'authorized' };
+  return confirmedWithdrawal(decision.holds.map(hold => hold.code));
+}
+/** Review MED: only a CONFIRMED observation withdraws (issue closed, label absent in a complete read); any other code is transient. */
+export function confirmedWithdrawal(codes: string[]): { kind: 'withdrawn'; codes: string[] } | { kind: 'unknown'; code: string } {
+  const confirmed = codes.filter(code => code === 'TICKET_NOT_OPEN' || code === 'LABEL_NOT_PRESENT');
+  return confirmed.length ? { kind: 'withdrawn', codes: confirmed } : { kind: 'unknown', code: codes[0] ?? 'AUTHORIZATION_UNKNOWN' };
 }
 
 export type AuthorizationChange = { add: Impediment[]; remove: string[]; events: { event: 'authorization-withdrawn' | 'authorization-restored-observed' | 'authorization-confirmed' |
@@ -42,7 +48,9 @@ export type AuthorizationChange = { add: Impediment[]; remove: string[]; events:
  * What one observation changes on a CURRENT open Work. A withdrawal suspends next activations (the active Execution is not cut); a restored
  * label/reopened issue is only recorded: the suspension stays until `resume` (spec §4.1). Only the authorization impediments are touched.
  */
-export function authorizationChange(work: Pick<Work, 'impediments' | 'authorization'>, observed: { kind: 'authorized' } | { kind: 'withdrawn'; codes: string[] }, at: string): AuthorizationChange {
+export function authorizationChange(work: Pick<Work, 'impediments' | 'authorization'>, observed: { kind: 'authorized' } | { kind: 'withdrawn'; codes: string[] }, at: string,
+  /** When the read STARTED (review LOW): a read begun before a `resume` commit never confirms it. Default: `at`. */
+  readStartedAt = at): AuthorizationChange {
   const withdrawn = hasImpediment(work, cycleImpediments.withdrawn);
   const previous = work.authorization.withdrawal ?? null;
   const change: AuthorizationChange = { add: [], remove: [], events: [], withdrawal: previous, state: withdrawn ? 'withdrawn' : 'authorized' };
@@ -69,7 +77,8 @@ export function authorizationChange(work: Pick<Work, 'impediments' | 'authorizat
     }
     return change;
   }
-  if (hasImpediment(work, cycleImpediments.resumePending)) { change.remove.push(cycleImpediments.resumePending); change.events.push({ event: 'resume-confirmed', detail: 'authorized' }); }
+  const pending = work.impediments.find(item => item.code === cycleImpediments.resumePending);
+  if (pending && (pending.since === undefined || readStartedAt > pending.since)) { change.remove.push(cycleImpediments.resumePending); change.events.push({ event: 'resume-confirmed', detail: 'authorized' }); }
   if (hasImpediment(work, cycleImpediments.notConfirmed)) { change.remove.push(cycleImpediments.notConfirmed); change.events.push({ event: 'authorization-confirmed', detail: 'authorized' }); }
   if (change.remove.length) change.withdrawal = null;
   return change;
@@ -128,9 +137,12 @@ export function reopenDecision(work: Work | null, current: boolean, ownPullReque
 /**
  * `new <ticket>` (spec §4.1): only after delivery or a cancellation whose cessation is confirmed (no Slot held, no own activity), never while
  * the cycle is open/closed-unmerged (cancel first). A cancelled cycle's own PR that may still be open, or a publication not yet reconciled,
- * requires the operator's explicit decision; nothing is adopted, closed or replaced.
+ * requires the operator's explicit decision; nothing is adopted, closed or replaced. The Ticket must authorize work NOW (fresh read: label
+ * present + issue open); an unavailable read never authorizes.
  */
-export function newCycleDecision(predecessor: Work | null, input: { keepPredecessorPullRequest: boolean; ownPullRequest: boolean }):
+export function newCycleDecision(predecessor: Work | null, input: { keepPredecessorPullRequest: boolean; ownPullRequest: boolean;
+  /** The fresh complete Ticket read taken when the command is accepted (supervisor decision): only a current authorization admits a cycle. */
+  authorization: ReturnType<typeof authorizationFacts> }):
   { kind: 'accept' } | { kind: 'refuse'; code: string } {
   if (!predecessor) return { kind: 'refuse', code: 'TICKET_NOT_KNOWN' };
   if (predecessor.result === 'open' || predecessor.result === 'closed-unmerged') return { kind: 'refuse', code: 'CYCLE_STILL_CURRENT' };
@@ -142,5 +154,7 @@ export function newCycleDecision(predecessor: Work | null, input: { keepPredeces
     const lastOutcome = predecessor.delivery?.observations.at(-1)?.outcome;
     if (input.ownPullRequest && lastOutcome !== 'closed-unmerged' && !input.keepPredecessorPullRequest) return { kind: 'refuse', code: 'PREDECESSOR_PULL_REQUEST_OPEN' };
   }
+  if (input.authorization.kind === 'withdrawn') return { kind: 'refuse', code: 'TICKET_NOT_AUTHORIZED' };
+  if (input.authorization.kind === 'unknown') return { kind: 'refuse', code: 'AUTHORIZATION_READ_UNAVAILABLE' };
   return { kind: 'accept' };
 }

@@ -40,7 +40,10 @@ const guestAssets = { directory: '/home/sanmoo/software-factory-test/assets34/as
 const pollingSeconds = 30;
 const waits = { startMinutes: 20, humanStepMinutes: 15, cessationMinutes: 10 } as const;
 const ghTrace = `${observations}/gh-trace.jsonl`;
-const cancelRequest = `${observations}/cancel-request.json`;
+/** The REAL CLI against this recipe's owner socket (`<observations>/run/control.sock`), run from the composed revision's checkout (supervisor decision). */
+export const cancelCommand = (workId: string) => `env -u NODE_OPTIONS -u NODE_COMPILE_CACHE NODE_DISABLE_COMPILE_CACHE=1 node dist/src/entrypoints/cli.js cancel ${workId} ` +
+  `--root ${observations} --request-id q25-cancel-1 --json`;
+const cancelRequestId = 'q25-cancel-1';
 const systemPrompt = 'You are the Software Factory Builder. Follow the Factory skill pack exactly. Work only in /workspace/checkout and /artifacts. ' +
   'Never push, open pull requests, change GitHub state, request broader access or use another credential. When you need information or an ' +
   'approval you do not have, use the ask_user tool instead of working around it.';
@@ -64,17 +67,17 @@ export function plan() {
       { when: 'run: `human-step-2-restore-label.json` appears (the withdrawal was recorded, the activity still running)', who: 'same',
         action: 're-add the label ready-for-agent to the same issue' },
       { when: 'run: `human-step-3-cancel.json` appears (the restoration was observed; the suspension is still in force)', who: 'operator (or the supervisor with explicit authorization)',
-        action: `create ${cancelRequest} with {"work_id": "<work id from the step file>", "authorizedBy": "<who>"} — the recipe then submits the SAME accept({operation:'cancel'}) the CLI owner uses (request id q25-cancel-1). Do it while the build command still runs.` },
+        action: `run, from the composed checkout, the exact command in the step file: ${cancelCommand('<work id>')} — the real CLI over this recipe's owner socket (same schema/accept path as the controller owner); expect a durable receipt {operation: cancel, outcome: accepted}. Do it while the build command still runs.` },
       { when: 'between `run` and `new`', who: 'nobody', action: 'leave the label on the issue (persistent label must not re-trigger the cancelled cycle)' },
     ],
     effects: [
       'preflight: key source check, exclusive namespace + key copy; read-only GitHub: the label lists exactly the synthetic issue; issue open, title/body identical to the pinned ones, no associated pull request, native blocked_by read',
-      'run: Control (new storage, polling 30 s) admits the issue, reserves ONE Execution: fetch+clone, skill pack seed, Sandbox.prepare/start (1 new VM), Builder grant, Workers.activate (1 Builder). Waits for the human steps; on the cancel request: accept cancel (prohibition durable), credentials withdrawn (withdraw-credential to the live worker, ONE self-revocation per known grant), then activity abort, Sandbox.stop, Slot released only after confirmed cessation. Controller stopped once the cancellation is `ceased` or after the cessation wait',
+      'run: Control (new storage, polling 30 s) also serves the local operator socket <observations>/run/control.sock (serveControl, the owner\'s own handler) so the cancellation arrives through the real CLI; it admits the issue, reserves ONE Execution: fetch+clone, skill pack seed, Sandbox.prepare/start (1 new VM), Builder grant, Workers.activate (1 Builder). Waits for the human steps; on the CLI cancel (request id q25-cancel-1): prohibition durable, credentials withdrawn (withdraw-credential to the live worker, ONE self-revocation per known grant), then activity abort, Sandbox.stop, Slot released only after confirmed cessation. Controller stopped once the cancellation is `ceased` or after the cessation wait',
       'new: same storage, Control restarted: `pause` (durable) FIRST, then 2 polling cycles with the label still present (the cancelled cycle must stay untouched: listing outcome existing, no prepare/activate), then accept new {ticket: <repo>#<pinned>} → a cycle-2 Work with predecessor, suspended until its first authorization read, held by GLOBAL_PAUSE; nothing is prepared or activated (every Sandbox/Workers call refused by the recipe)',
       'inspect: read-only: storage copy (Works, Executions, history), gh trace summary, secret scan of the own storage, the issue as GitHub shows it now',
       'stop-environment: only when the run Execution\'s own boot may still run and is observed active: public Sandbox.stop of that exact boot'],
     guards: ['one-shot intent tombstones', 'phase guard (each phase once; run after a successful preflight; new after a run whose cancellation ceased)', 'pinned ticket required',
-      'prepare <= 1 and activate <= 1 in run, 0 in new', 'tracker postComment refused', 'CodeRepository writes refused', 'gh guard (GET + self-revocation only)', 'no retry', 'no cleanup/remove'],
+      'prepare <= 1 and activate <= 1 in run, 0 in new', 'cancel accepted only through the CLI socket with request id q25-cancel-1 (the recipe never calls accept cancel itself)', 'tracker postComment refused', 'CodeRepository writes refused', 'gh guard (GET + self-revocation only)', 'no retry', 'no cleanup/remove'],
     expected: [
       'run/withdrawal: AUTHORIZATION_WITHDRAWN recorded (codes [LABEL_NOT_PRESENT], history authorization-withdrawn) while execution.state stays started; no activity-abort, no new activation',
       'run/restoration: authorization.withdrawal.restoredObservedAt set (history authorization-restored-observed once); AUTHORIZATION_WITHDRAWN still present',
@@ -82,7 +85,7 @@ export function plan() {
       'run/cancel GitHub: gh trace shows only GET and DELETE /installation/token; the issue keeps its label/state; nothing on GitHub was undone or changed',
       'new: after restart, cancelled Work unchanged and nothing prepared/activated in 2 cycles with the label present; new → receipt accepted with `created`; the new Work cycle 2, predecessor = cancelled Work, own budget, branch null, impediments DEPENDENCIES_NOT_EVALUATED then AUTHORIZATION_NOT_CONFIRMED cleared by the first read; dispatch held GLOBAL_PAUSE',
       'no token in storage/observations'],
-    notCovered: ['merge concurrent with cancellation, PR closed without merge and `reopen` need an own published PR: covered by the storage-real flows (cycles-commits/cycles-flow) and ticket 17\'s real merge-during-activity evidence, not by this run'],
+    notCovered: ['merge concurrent with cancellation, PR closed without merge and `reopen` need an own published PR: kept at flow level (cycles-commits/cycles-flow) and ticket 17\'s real merge-during-activity evidence by supervisor decision; a later real journey covers them'],
   };
 }
 
@@ -144,6 +147,7 @@ export function runVerdict(work: WorkView | undefined, events: { call: string; [
   if (execution?.end?.outcome !== 'stopped' || execution.end.code !== 'WORK_CANCELLED') reasons.push('END_NOT_CANCELLED');
   if (execution?.end?.cessation !== 'confirmed' || execution.slot.held) reasons.push('SLOT_NOT_RELEASED_AFTER_CESSATION');
   const order = (call: string) => events.findIndex(item => item.call === call);
+  if (order('deliver-withdraw-credential') < 0 || order('activity-aborted') < 0 || order('deliver-withdraw-credential') > order('activity-aborted')) reasons.push('WITHDRAWAL_NOT_BEFORE_ABORT');
   if (order('deliver-withdraw-credential') < 0 || order('stop') < 0 || order('deliver-withdraw-credential') > order('stop')) reasons.push('WITHDRAWAL_NOT_BEFORE_STOP');
   if (events.filter(item => item.call === 'activate').length !== 1) reasons.push('ACTIVATIONS_NOT_ONE');
   return { status: reasons.length ? 'held' : 'success', reasons };
@@ -263,11 +267,14 @@ async function waitFor<T>(minutes: number, probe: () => Promise<T | null>): Prom
 }
 
 async function runCancellation(save: (name: string, data: unknown) => Promise<void>) {
-  const fs = await import('node:fs/promises');
   const events: { call: string; [key: string]: unknown }[] = [];
   const { control } = await controlFor('run', events);
+  const status = await control.inspect({ kind: 'status' });
+  if (!('controller_run_id' in status)) throw new Error('INVALID_CONTROL_STATUS');
   const stop = new AbortController();
   const running = control.run(stop.signal);
+  const { serveControl } = await import('../../src/entrypoints/controller/serve.js');
+  const server = await serveControl(`${observations}/run/control.sock`, control, status.controller_run_id, () => stop.abort());
   const work = async () => ((await control.inspect({ kind: 'list' })) as ListView).works.find(item => item.ticket.number === syntheticTicket.number);
   const code = (w: WorkView | undefined, impediment: string) => w?.impediments.some(item => item.code === impediment) ?? false;
   let outcome: string = 'completed';
@@ -282,25 +289,28 @@ async function runCancellation(save: (name: string, data: unknown) => Promise<vo
     const restored = await waitFor(waits.humanStepMinutes, async () => { const w = await work(); return w?.authorization.withdrawal?.restoredObservedAt ? w : null; });
     if (!restored) { outcome = 'RESTORATION_NOT_OBSERVED'; return; }
     events.push({ at: new Date().toISOString(), call: 'restoration-observed', suspended: code(restored, 'AUTHORIZATION_WITHDRAWN'), executionState: restored.execution?.state ?? null });
-    await save('human-step-3-cancel', { work_id: started.work_id, action: `create ${cancelRequest} with {"work_id": "${started.work_id}", "authorizedBy": "<who>"} while the build still runs` });
-    const request = await waitFor(waits.humanStepMinutes, async () => {
-      const text = await fs.readFile(cancelRequest, 'utf8').catch(() => null);
-      const parsed = text ? JSON.parse(text) as { work_id?: unknown; authorizedBy?: unknown } : null;
-      return parsed && parsed.work_id === started.work_id && typeof parsed.authorizedBy === 'string' && parsed.authorizedBy.length > 0 ? parsed : null;
+    await save('human-step-3-cancel', { work_id: started.work_id, command: cancelCommand(started.work_id), note: 'run from the composed checkout while the build still runs' });
+    // The cancellation must arrive through the CLI socket: observed as the durable receipt of that request id and the Work's cancellation.
+    let lastState: string | null = null;
+    const cancelled = await waitFor(waits.humanStepMinutes, async () => {
+      const w = await work();
+      if (w?.cancellation?.request_id === cancelRequestId) return w;
+      lastState = w?.execution?.state ?? null;
+      return null;
     });
-    if (!request) { outcome = 'CANCEL_NOT_REQUESTED'; return; }
-    const before = await work();
-    const receipt = await control.accept({ request_id: 'q25-cancel-1', operation: 'cancel', work_id: started.work_id, origin: 'local-cli' });
-    events.push({ at: new Date().toISOString(), call: 'cancel-accepted', receipt, executionState: before?.execution?.state ?? null, authorizedBy: request.authorizedBy });
+    if (!cancelled) { outcome = 'CANCEL_NOT_REQUESTED'; return; }
+    const receipt = await control.inspect({ kind: 'request', request_id: cancelRequestId });
+    events.push({ at: new Date().toISOString(), call: 'cancel-accepted', receipt, executionState: lastState, executionAtCommit: cancelled.cancellation?.executionId ?? null, via: 'cli-socket' });
     const ceased = await waitFor(waits.cessationMinutes, async () => { const w = await work(); return w?.cancellation?.state === 'ceased' ? w : null; });
     if (!ceased) outcome = 'CANCELLATION_NOT_CEASED_IN_WAIT';
   } finally {
     const final = await work();
     const shown = final ? await control.inspect({ kind: 'show', work_id: final.work_id }) as Extract<ShowView, { kind: 'work' }> : null;
-    const status = await control.inspect({ kind: 'status' });
+    const finalStatus = await control.inspect({ kind: 'status' });
     stop.abort();
     const stopped = await running;
-    await save('run-result', { outcome, ...runVerdict(final, events), cancellation: final?.cancellation?.state ?? null, final: shown, controlStatus: status, stopped, events });
+    await server.close().catch(() => {});
+    await save('run-result', { outcome, ...runVerdict(final, events), cancellation: final?.cancellation?.state ?? null, final: shown, controlStatus: finalStatus, stopped, events });
   }
 }
 
@@ -338,16 +348,19 @@ export async function runPhase(phase: Phase) {
     // Before ANY effect (no directory, no intent, no GitHub call): the App key the namespace copies must exist.
     await requireKeySource(path => fs.access(path));
     await fs.mkdir(observations, { mode: 0o700 }); // EXCLUSIVE: never adopt an existing qualification
-    const { constants } = await import('node:fs');
     await fs.mkdir(`${observations}/credentials`, { mode: 0o700 }); await fs.mkdir(`${observations}/run`, { mode: 0o700 });
-    await fs.copyFile(keySource, `${observations}/${githubApp.privateKeyFile}`, constants.COPYFILE_EXCL);
-    await fs.chmod(`${observations}/${githubApp.privateKeyFile}`, 0o600);
   }
   const run = await load('run-result');
   const refused = phaseGuard(phase, { preflight: await load('preflight-result'), run: run ? { cancellation: run.cancellation } : null },
     new Set((await Promise.all(phases.map(async item => await exists(`${item}-intent`) ? `${item}-intent` : null))).filter((item): item is string => item !== null)));
   if (refused) throw new Error(refused);
   await save(`${phase}-intent`, { revision, phase, at: new Date().toISOString() });
+  // Review LOW: the App key copy happens only AFTER the preflight intent tombstone; only the final phase (inspect) removes it.
+  if (phase === 'preflight') {
+    const { constants } = await import('node:fs');
+    await fs.copyFile(keySource, `${observations}/${githubApp.privateKeyFile}`, constants.COPYFILE_EXCL);
+    await fs.chmod(`${observations}/${githubApp.privateKeyFile}`, 0o600);
+  }
   try {
     if (phase === 'preflight') {
       const { github, tracker, codeRepository } = await compose([]);
@@ -378,7 +391,7 @@ export async function runPhase(phase: Phase) {
     await save(`${phase}-held`, { phase, status: 'held', code: error instanceof Error ? error.message.slice(0, 128) : 'UNKNOWN', note: 'Consumed; no retry.' }).catch(() => {});
     throw new Error('QUALIFICATION_HELD');
   } finally {
-    if (phase === 'new' || phase === 'inspect') await fs.rm(`${observations}/${githubApp.privateKeyFile}`, { force: true }).catch(() => {});
+    if (phase === 'inspect') await fs.rm(`${observations}/${githubApp.privateKeyFile}`, { force: true }).catch(() => {});
   }
 }
 

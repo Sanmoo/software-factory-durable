@@ -1,3 +1,4 @@
+import { confirmedWithdrawal } from '../rules/cycles.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { BuilderGrant } from '../../contracts/index.js';
@@ -1051,7 +1052,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       const authorization = await revalidateAuthorization(work);
       if (!authorization.ok) {
         // Ticket 25: an observed withdrawal suspends the Work durably (only `resume` lifts it); an unavailable read concludes nothing.
-        if (!authorization.reasons.some(code => code === 'TICKET_READ_UNAVAILABLE' || code === 'REPOSITORY_NOT_CONFIGURED')) await deps.authorizationWithdrawn?.(work.work_id, authorization.reasons);
+        // Review MED: only a confirmed closure/label absence is durable; every other code is transient.
+        const withdrawal = confirmedWithdrawal(authorization.reasons);
+        if (withdrawal.kind === 'withdrawn') await deps.authorizationWithdrawn?.(work.work_id, withdrawal.codes);
         observe(work.work_id, 'authorization-not-confirmed', authorization.reasons); return;
       }
       // After a Question: only its accepted answer is a recovery basis; after a COMPLETED Execution: only an authorized concrete scope

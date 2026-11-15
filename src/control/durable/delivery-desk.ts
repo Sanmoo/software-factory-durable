@@ -36,7 +36,9 @@ export function createDeliveryDesk(deps: { session: Session; repository: CodeRep
     // Least recently read first (never-read first): a bounded number of reads per cycle reaches every Work in turn. Ticket 25: cancelled cycles
     // and own PRs closed without merge are still read (a human may reopen and merge: a confirmed merge always delivers); reading never
     // reopens, resumes or replaces anything.
-    const candidates = works.filter(work => ['open', 'cancelled', 'closed-unmerged'].includes(work.result) && ownPullRequestOf(work) && configured(work.repository.repository))
+    // A cancelled Work whose own PR was observed closed without merge is no longer read (review MED-HIGH).
+    const candidates = works.filter(work => (work.result === 'open' || work.result === 'closed-unmerged' ||
+        (work.result === 'cancelled' && work.delivery?.observations.at(-1)?.outcome !== 'closed-unmerged')) && ownPullRequestOf(work) && configured(work.repository.repository))
       .sort((a, b) => (a.delivery?.lastReadAt ?? '').localeCompare(b.delivery?.lastReadAt ?? ''));
     for (const work of candidates.slice(0, readsPerCycle)) {
       if (deps.stopped()) return;
