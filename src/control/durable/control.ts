@@ -8,6 +8,7 @@ import { createDispatcher, isLiveCredentialExecution, isLiveExecution } from './
 import { openStore } from './store.js';
 import { recordRunEnd, recordRunStart } from './migration.js';
 import { currentFormat } from './format.js';
+import { unsettledExecutions } from '../rules/quiescence.js';
 import { acceptPauseCommand, admitTicket, indexedWork, initialize, ownCycles, pendingWorks, readInstallation, readRequest, readWork, readWorks, recordDependencies,
   type WorkRecord } from './admission.js';
 import { createPoller, systemClock } from './polling.js';
@@ -243,11 +244,15 @@ export async function openControl(options: { storagePath: string;
         // An administrative stop is clean only after the confirmed cessation and persistence of every own activity (spec §11.4).
         const uncertain = (await dispatcher?.stop())?.uncertain ?? 0;
         await desk?.idle();
-        // Clean only for a requested stop after the confirmed cessation/persistence above; the intention to stop never makes a crash clean.
-        if (started) await recordRunEnd(state, controller_run_id, outcome !== 'stop' ? 'failed' : uncertain ? 'uncertain' : 'clean');
+        // Ticket 33: ONE outcome for the run result and its durable end: clean only for a requested stop whose own activity is confirmed ceased
+        // (ticket 26's dispatcher stop) AND durably settled (no unsettled Execution, no held Slot); otherwise `uncertain`. The intention to stop
+        // never makes an interruption clean. This end is the LAST commit of the run.
+        const settled = unsettledExecutions(await readWorks(state)).length === 0 && await heldSlots(state) === 0;
+        const kind = outcome !== 'stop' ? 'failed' as const : uncertain === 0 && settled ? 'clean' as const : 'uncertain' as const;
+        if (started) await recordRunEnd(state, controller_run_id, kind);
         await state.close(BACKGROUND_CONTEXT);
         const end = await state.closed;
-        return { kind: outcome === 'stop' && end.kind === 'closed' ? uncertain ? 'uncertain' : 'clean' : 'failed' };
+        return { kind: end.kind === 'closed' ? kind : 'failed' };
       } catch {
         loop.abort();
         stopped = true;

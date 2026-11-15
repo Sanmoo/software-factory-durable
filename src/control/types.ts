@@ -366,6 +366,6 @@ export type RecoveryView = { at: string; inventory: 'empty' | 'unknown' | 'liste
 export interface Control {
   accept(input: ControlInput): Promise<ControlReceipt | { kind: 'refused'; code: 'REQUEST_ID_CONFLICT' | 'INVALID_COMMAND' }>;
   inspect(query: ControlQuery): Promise<ControlStatus | { kind: 'request'; receipt: ControlReceipt | null } | AccessView | ListView | ShowView | QuestionQueryView>;
-  /** `uncertain`: stopped, but the cessation of some activity could not be confirmed (the next boot reconciles it as an interruption). */
+  /** `uncertain`: stopped, but some own activity is not confirmed ceased or not durably settled (cessation unconfirmed, Slot held); the next boot reconciles it (ticket 26) and it is never a clean stop (ticket 33). */
   run(signal: AbortSignal): Promise<{ kind: 'clean' | 'failed' | 'uncertain' }>;
 }

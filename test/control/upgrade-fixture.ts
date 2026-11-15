@@ -16,7 +16,7 @@ import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './d
 export const questionId = '0b9c6a52-3d3e-4c8f-9a51-000000000033';
 const sha = (question: string, context: string) => createHash('sha256').update(JSON.stringify({ question, context })).digest('hex');
 
-function ports(): ExecutionPorts {
+function ports(cessation: boolean): ExecutionPorts {
   let asked = false;
   return {
     configuration: { schemaVersion: 1 }, capacity: 1,
@@ -28,7 +28,10 @@ function ports(): ExecutionPorts {
             baseCommit: 'a'.repeat(40), origin: 'https://github.com/acme/project.git', reused: false, preparedAt: new Date().toISOString() } };
       },
       async start() { return { status: 'success', boot: 'boot-11111111-2222-4333-8444-555555555555' as never }; },
-      async stop() { return { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'observed' }; },
+      async stop() {
+        return cessation ? { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'observed' }
+          : { status: 'indeterminate', code: 'STOP_UNCONFIRMED', cessationConfirmed: false };
+      },
     },
     credentials: {
       async issue() {
@@ -57,11 +60,13 @@ function ports(): ExecutionPorts {
 }
 
 /** A storage with one Work waiting on a published open Question and a second Work queued behind it; installation paused; clean stop. */
-export async function storageWithPendingQuestion(storagePath: string) {
+/** `cessation: false`: the boot of the asking Execution is never confirmed ceased (its Slot stays held: an unsettled activity). */
+export async function storageWithPendingQuestion(storagePath: string, options: { cessation?: boolean } = {}) {
+  const cessation = options.cessation ?? true;
   const remote: Remote = { pulls: {}, issues: [remoteIssue(3), remoteIssue(4)] };
   const github = githubDoubles(remote);
   const time = manualClock();
-  const control: Control = await openControl({ storagePath, runtimeInventory: 'empty', execution: ports(),
+  const control: Control = await openControl({ storagePath, runtimeInventory: 'empty', execution: ports(cessation),
     access: { tracker: github.tracker, repository: github.repository, repositories: [scope], operators: ['operator-one'] }, polling: { intervalSeconds: 60, clock: time.clock } });
   const stop = new AbortController();
   const running = control.run(stop.signal);
@@ -69,7 +74,7 @@ export async function storageWithPendingQuestion(storagePath: string) {
   for (let i = 0; i < 800; i++) {
     const work = await show();
     const question = work ? (await control.inspect({ kind: 'show', work_id: work.work_id }) as Extract<ShowView, { kind: 'work' }>).questions[0] : undefined;
-    if (question?.publication.state === 'published' && (await control.inspect({ kind: 'list' }) as ListView).works.length === 2) break;
+    if (question?.publication.state === 'published' && (!cessation || (await control.inspect({ kind: 'list' }) as ListView).works.length === 2)) break;
     if (time.isSleeping()) time.advance();
     await new Promise(resolve => setTimeout(resolve, 5));
   }
@@ -77,9 +82,9 @@ export async function storageWithPendingQuestion(storagePath: string) {
   assert.equal(pause.kind, 'durable');
   const list = await control.inspect({ kind: 'list' }) as ListView;
   stop.abort();
-  assert.deepEqual(await running, { kind: 'clean' });
+  assert.deepEqual(await running, { kind: cessation ? 'clean' : 'uncertain' });
   const waiting = list.works.find(work => work.ticket.number === 3)!;
-  assert.ok(waiting.impediments.some(item => item.code === 'QUESTION_PENDING'), 'the fixture holds a pending Question');
+  assert.ok(!cessation || waiting.impediments.some(item => item.code === 'QUESTION_PENDING'), 'the fixture holds a pending Question');
   return { list, waiting, remote };
 }
 
@@ -102,12 +107,12 @@ async function documentsOf(storage: SqliteStorage) {
  * Copies `source` (any format) into a NEW storage at `target` as format 1, through the public Pi Durable API with version-1 definitions.
  * `extra` adds documents of the given kind/version (used to build incompatible storages). Test fixture only; never a production path.
  */
-export async function writeFormatOne(source: string, target: string, extra: { kind: string; version: number; key?: string; value: JsonObject }[] = []) {
+export async function writeFormatOne(source: string, target: string, extra: { kind: string; version: number; key?: string; value: JsonObject }[] = [], omit: string[] = []) {
   const from = await SqliteStorage.open(await openNodeSqliteDatabase(source));
   const documents = await documentsOf(from);
   await from.close(BACKGROUND_CONTEXT);
   const session = createSession(await SqliteStorage.open(await openNodeSqliteDatabase(target)));
-  const all = [...documents.map(item => ({ ...item, version: item.kind === 'factory.installation' ? 1 : item.version,
+  const all = [...documents.filter(item => !omit.includes(item.kind)).map(item => ({ ...item, version: item.kind === 'factory.installation' ? 1 : item.version,
     value: item.kind === 'factory.installation' ? { paused: item.value.paused, history: item.value.history } as JsonObject : item.value })), ...extra];
   for (const item of all) {
     await session.commit(async tx => {

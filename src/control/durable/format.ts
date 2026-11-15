@@ -7,6 +7,7 @@ import type { JsonValue } from '@earendil-works/chord';
 import type { Cursor, DocumentRecord, JsonObject } from '@earendil-works/pi-durable';
 import { CURRENT_SQLITE_SCHEMA_VERSION, SqliteStorage } from '@earendil-works/pi-durable/storage/sqlite';
 import { controlStorageCompatibility } from '../../contracts/index.js';
+import { unsettledExecutions, type SettlementFacts } from '../rules/quiescence.js';
 
 /**
  * Ticket 33 (spec §11.4): the Control storage FORMATS this release knows, read through the public Pi Durable Storage contract.
@@ -26,7 +27,7 @@ export const supportedMigrations = [{ id: 'factory-storage-1-to-2', from: 1, to:
 export const durableSchemaVersion = CURRENT_SQLITE_SCHEMA_VERSION;
 
 export type StorageProblem = { code: 'STORAGE_BACKEND_INCOMPATIBLE' | 'STORAGE_DOCUMENT_UNKNOWN' | 'STORAGE_DOCUMENT_VERSION_UNSUPPORTED' | 'STORAGE_FORMAT_MIXED' |
-  'STORAGE_REGISTRY_INCOMPATIBLE' | 'STORAGE_UNREADABLE'; detail: string };
+  'STORAGE_REGISTRY_INCOMPATIBLE' | 'STORAGE_UNREADABLE' | 'STORAGE_NOT_FACTORY' | 'STORAGE_INSTALLATION_MISSING'; detail: string };
 export type StorageInspection = { kind: 'absent' } | { kind: 'storage';
   backend: { durableSchema: number | null; supported: number; sqliteVersion: string | null };
   /** Detected Factory format (null: not determinable, see problems). Empty storage (no document yet) is format null and compatible. */
@@ -35,9 +36,15 @@ export type StorageInspection = { kind: 'absent' } | { kind: 'storage';
   tasks: { count: number; kinds: string[] };
   problems: StorageProblem[];
   /** Installation facts, when the installation document is readable at a known version. */
-  installation: { paused: boolean; migrations: unknown[]; lifecycle: { current: unknown; last: unknown } | null } | null;
+  installation: { paused: boolean; migrations: unknown[]; lifecycle: { current: unknown; last: unknown } | null;
+    /** Canonical form of the installation fields every migration preserves (pause and history). */
+    preservedCanonical: string } | null;
   /** Domain counts kept by any migration (ids, queues, Questions, reservations), and the digest of every preserved document. */
   preserved: { works: number; questions: { open: number; answered: number }; heldSlots: number; requests: number; sessions: number; digest: string } | null;
+  /** Digest of EVERY document in full (lifecycle and migration records included): any write changes it. */
+  stateDigest: string | null;
+  /** Durable activity evidence: Executions not settled (see rules/quiescence) and Slots held. */
+  activity: { unsettled: string[]; heldSlots: number };
   /** What is needed before an operational open: nothing, an explicitly requested supported migration, or it is refused. */
   operational: 'ready' | 'migration-required' | 'incompatible' };
 
@@ -46,33 +53,49 @@ const canonical = (value: JsonValue | undefined): string => value === null || ty
     : `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical((value as JsonObject)[key])}`).join(',')}}`;
 /** Installation fields every migration preserves (format 2 additions excluded). */
 const preservedInstallation = (value: JsonObject) => ({ paused: value.paused ?? null, history: value.history ?? null });
+export const preservedCanonical = (value: JsonObject) => canonical(preservedInstallation(value) as JsonObject);
 
-async function durableSchema(database: SqliteDatabase): Promise<number | null> {
-  try { return (await database.get<{ version: number }>('SELECT version FROM durable_schema WHERE singleton = 1'))?.version ?? null; }
-  catch { return null; } // No schema table yet: a storage never opened by Pi Durable (fresh).
+/**
+ * The Pi Durable schema version, `fresh` only for a provably empty database (no table at all), `foreign` for any other database without
+ * the schema table and `unreadable` for any read error: neither is ever opened (SqliteStorage.open would create or migrate it).
+ */
+async function durableSchema(database: SqliteDatabase): Promise<number | 'fresh' | 'foreign' | 'unreadable'> {
+  try {
+    const tables = await database.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type IN ('table', 'view', 'index', 'trigger')");
+    if (tables.length === 0) return 'fresh';
+    if (!tables.some(table => table.name === 'durable_schema')) return 'foreign';
+    const row = await database.get<{ version: number }>('SELECT version FROM durable_schema WHERE singleton = 1');
+    return row && Number.isSafeInteger(row.version) ? row.version : 'unreadable';
+  } catch { return 'unreadable'; }
 }
 
+const empty = { format: null, documents: {}, tasks: { count: 0, kinds: [] }, installation: null, preserved: null, stateDigest: null, activity: { unsettled: [], heldSlots: 0 } };
 /** Examines an open database. `storage` is returned only when the Pi Durable schema is exactly the supported one (opening never migrates). */
 export async function examine(database: SqliteDatabase, options: { create: boolean }): Promise<{ inspection: Extract<StorageInspection, { kind: 'storage' }>; storage?: SqliteStorage }> {
-  const schema = await durableSchema(database);
+  const found = await durableSchema(database);
+  const schema = typeof found === 'number' ? found : null;
   const sqlite = await database.get<{ version: string }>('SELECT sqlite_version() AS version').then(row => row?.version ?? null, () => null);
   const base = { backend: { durableSchema: schema, supported: durableSchemaVersion, sqliteVersion: sqlite }, current: currentFormat };
-  // A file Pi Durable never initialized: empty and compatible; only an operational open creates its schema.
-  if (schema === null && !options.create) {
-    return { inspection: { kind: 'storage', ...base, format: null, documents: {}, tasks: { count: 0, kinds: [] }, installation: null, preserved: null, operational: 'ready', problems: [] } };
+  // A provably empty database: compatible; only an operational open creates its schema.
+  if (found === 'fresh' && !options.create) return { inspection: { kind: 'storage', ...base, ...empty, operational: 'ready', problems: [] } };
+  if (found === 'foreign' || found === 'unreadable') {
+    return { inspection: { kind: 'storage', ...base, ...empty, operational: 'incompatible', problems: [found === 'foreign'
+      ? { code: 'STORAGE_NOT_FACTORY', detail: 'A non-empty SQLite database without the Pi Durable schema: not a Control storage; nothing is created in it.' }
+      : { code: 'STORAGE_UNREADABLE', detail: 'The Pi Durable schema version could not be read; the storage is not opened.' }] } };
   }
   if (schema !== null && schema !== durableSchemaVersion) {
-    return { inspection: { kind: 'storage', ...base, format: null, documents: {}, tasks: { count: 0, kinds: [] }, installation: null, preserved: null, operational: 'incompatible',
+    return { inspection: { kind: 'storage', ...base, ...empty, operational: 'incompatible',
       problems: [{ code: 'STORAGE_BACKEND_INCOMPATIBLE', detail: `Pi Durable SQLite schema ${schema}; this release supports exactly ${durableSchemaVersion} and migrates no backend schema.` }] } };
   }
   const storage = await SqliteStorage.open(database);
   const documents: Record<string, { count: number; versions: Record<string, number> }> = {};
   const problems: StorageProblem[] = [];
   const digest = createHash('sha256');
+  const full = createHash('sha256');
+  const workFacts: SettlementFacts[] = [];
   let installation: Extract<StorageInspection, { kind: 'storage' }>['installation'] = null;
   const counts = { works: 0, open: 0, answered: 0, heldSlots: 0, requests: 0, sessions: 0 };
   let installationVersion: number | null = null;
-  const versionsSeen: number[] = [];
   let cursor: Cursor | undefined;
   do {
     const page = await storage.scanDocuments({ scope: { kind: 'session' }, at: 'current' }, 200, cursor, BACKGROUND_CONTEXT);
@@ -86,14 +109,17 @@ export async function examine(database: SqliteDatabase, options: { create: boole
       if (!Object.values(formats).some(kinds => record.kind in kinds)) problems.push({ code: 'STORAGE_DOCUMENT_UNKNOWN', detail: `Document kind ${record.kind} is not defined by any known format.` });
       else if (known.length === 0) problems.push({ code: 'STORAGE_DOCUMENT_VERSION_UNSUPPORTED', detail: `${record.kind} version ${stored.version} is not part of any known format.` });
       const value = stored.value;
+      full.update(`${record.kind}:${record.key ?? ''}:${stored.version}:${canonical(value)}\n`);
       if (record.kind === 'factory.installation') {
         installationVersion = stored.version;
         const lifecycle = value.lifecycle as { current: unknown; last: unknown } | undefined;
-        installation = { paused: value.paused === true, migrations: ((value.storage as JsonObject | undefined)?.migrations as unknown[] | undefined) ?? [], lifecycle: lifecycle ?? null };
+        installation = { paused: value.paused === true, migrations: ((value.storage as JsonObject | undefined)?.migrations as unknown[] | undefined) ?? [], lifecycle: lifecycle ?? null,
+          preservedCanonical: preservedCanonical(value) };
         digest.update(`installation:${canonical(preservedInstallation(value))}\n`);
       } else digest.update(`${record.kind}:${record.key ?? ''}:${stored.version}:${canonical(value)}\n`);
       if (record.kind === 'factory.work' && value.work) {
         counts.works++;
+        workFacts.push(value.work as SettlementFacts);
         // A preserved Builder session (ticket 11) that a later activation may continue when compatible, or replace with a recorded reason.
         if ((((value.work as JsonObject).execution as JsonObject | null)?.end as JsonObject | null)?.session) counts.sessions++;
       }
@@ -104,7 +130,6 @@ export async function examine(database: SqliteDatabase, options: { create: boole
         if (state === 'open') counts.open++;
         if (state === 'answered') counts.answered++;
       }
-      if (record.kind !== 'factory.installation') versionsSeen.push(stored.version);
     }
     cursor = page.next;
   } while (cursor !== undefined);
@@ -116,6 +141,10 @@ export async function examine(database: SqliteDatabase, options: { create: boole
       problems.push({ code: 'STORAGE_FORMAT_MIXED', detail: `${kind} version ${version} does not belong to format ${detected}.` });
     }
   }
+  // Factory documents without the installation document: never adopted, never completed by a lazily created installation.
+  if (installationVersion === null && Object.keys(documents).length > 0) {
+    problems.push({ code: 'STORAGE_INSTALLATION_MISSING', detail: 'Factory documents exist without the installation document; the storage is not adopted.' });
+  }
   const tasks = await storage.scanTasks({}, 100, undefined, BACKGROUND_CONTEXT);
   const taskKinds = [...new Set(tasks.items.map(task => String((task as { kind?: unknown }).kind)))].sort();
   if (tasks.items.length > 0) problems.push({ code: 'STORAGE_REGISTRY_INCOMPATIBLE', detail: `Persisted Pi Durable task kinds ${taskKinds.join(', ')}; this release registers no task definition.` });
@@ -123,7 +152,7 @@ export async function examine(database: SqliteDatabase, options: { create: boole
     : supportedMigrations.some(migration => migration.from === detected && migration.to === currentFormat) ? 'migration-required' : 'incompatible';
   return { storage, inspection: { kind: 'storage', ...base, format: detected, documents, tasks: { count: tasks.items.length, kinds: taskKinds }, problems, installation,
     preserved: { works: counts.works, questions: { open: counts.open, answered: counts.answered }, heldSlots: counts.heldSlots, requests: counts.requests, sessions: counts.sessions,
-      digest: digest.digest('hex') }, operational } };
+      digest: digest.digest('hex') }, stateDigest: full.digest('hex'), activity: { unsettled: unsettledExecutions(workFacts), heldSlots: counts.heldSlots }, operational } };
 }
 
 /**
