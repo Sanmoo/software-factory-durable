@@ -11,6 +11,7 @@ import { openControl, type ListView, type WorkView } from '../../src/control/ind
 import { manualClock } from '../control/doubles.js';
 import { executionDoubles, type Activation } from '../control/publication-doubles.js';
 import { checkRun, commitStatus, githubWorld, issue, worldScope } from './github-world-fixture.js';
+import { until } from '../runner/budget.js';
 
 // Ticket 15 composed level (I with a substituted boundary): public Control (owner loop, polling, dispatch, ticket 13 rounds, ticket 14's REAL
 // publication flow, the checks tracking step, Pi Durable/SQLite) + the real IssueTracker/CodeRepository adapters, GitHub access, gh
@@ -60,11 +61,15 @@ test('AC1-AC7 composed: after ticket 14 links the own draft PR, the owner loop e
   t.after(async () => { if (!stop.signal.aborted) { stop.abort(); await running; } });
   await time.sleeping();
   const work = async () => ((await control.inspect({ kind: 'list' })) as ListView).works[0] as WorkView | undefined;
-  for (let i = 0; i < 800 && !(await work())?.checks; i++) {
+  // No fixed iteration count (800 x 10 ms expired once at ci load 18, ticket 37): advance the manual polling clock whenever the poller
+  // sleeps until the checks are explained, bounded only by the runner budget.
+  let last: WorkView | undefined;
+  const view = await until(() => `checks explained; last publication: ${JSON.stringify(last?.publication ?? null)}`, async () => {
+    last = await work();
+    if (last?.checks) return last;
     if (time.isSleeping()) time.advance();
-    await new Promise(resolve => setTimeout(resolve, 10));
-  }
-  const view = (await work())!;
+    return undefined;
+  }, 10);
   assert.equal(view.publication?.state, 'published', JSON.stringify(view.publication?.reasons));
   const latest = view.checks!.latest;
   assert.deepEqual([latest.pullRequest.number, latest.pullRequest.headSha], [view.publication!.pullRequest!.number, head], 'the PR ticket 14 linked, at its verified head');
