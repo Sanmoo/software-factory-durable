@@ -73,7 +73,7 @@ stub tracker) and the composed path (condition not reached before wiring the tic
 | Review MED 2 / LOW cadence: interval, backoff + waitSeconds, light reads, window bound, no rewrite | `checks-flow` review MED 2 and AC4/AC7 (identical explanation not committed); `github-checks-reads` light read (one GET) | S + I(sub) |
 | Review LOW classification: newer-suite failed rerun, status origin, unparsed items, 1000 cap, start/end requirements | `checks-rules` AC3 (suites, tied/other-origin/unverifiable status), review LOW unparsed, spec §9.2 step 6; `github-checks-reads` per-item parse, 1000 cap, final re-read | S + I(sub) |
 | Review MED 1: recipe read-only | `checks15-recipe-safety` (gh guard forwards GET only, refuses POST/DELETE/GET+input/no method with exit 97, traces all; read-only tracker never forwards a comment); `checks15-qualification` | S (temp fixtures) |
-| 7 Controlled data + real integration; instant/completeness/limitations, no atomic snapshot | `checks-rules` AC7 (observedAt/completedAt, completeness map, head/base/state change during collection, closed/merged, other PR); `github-checks-reads` AC7 (re-read exposes a push); `checks-flow` AC7 (stale link, bounded/rotating reads, stop); `entrypoints/github-checks-composed` (public Control + real adapters + tick); `checks15-qualification` (recipe inert/guards) | S + I(sub); **P pending** |
+| 7 Controlled data + real integration; instant/completeness/limitations, no atomic snapshot | `checks-rules` AC7 (observedAt/completedAt, completeness map, head/base/state change during collection, closed/merged, other PR); `github-checks-reads` AC7 (re-read exposes a push); `checks-flow` AC7 (stale link, bounded/rotating reads, stop); `entrypoints/github-checks-composed` (public Control + real adapters + tick); `checks15-qualification` (recipe inert/guards) | S + I(sub) + **P** (empty-complete path, see the real run) |
 
 ## One-shot real-run recipe (`test/entrypoints/checks15-qualification.ts`)
 
@@ -117,17 +117,60 @@ comparison. No comment attempt in `events`, no queue/impediment change, `getOnly
 kinds, the operator may (optionally, outside the recipe) add a ruleset with a required check before `evaluate`; the recipe never changes
 repository settings.
 
+## Real run `q15-checks-v2` (2026-11-15, operator-authorized, run by the supervisor; consumed)
+
+Composition: this branch on `b2da9ae` (`6ba2e12`…`4c2a62e`), real App (id 5569788, installation 177599217), real gh behind the GET-only
+guard, copies of `y5/q14-publication-v8`. Raw observations copied (secret scan: no `ghs_/ghp_/gho_/ghu_/github_pat_`, JWT or key
+material): `15-real-checks-preflight-2026-11-15.json`, `15-real-checks-evaluate-2026-11-15.json`, `15-real-checks-inspect-2026-11-15.json`,
+`15-real-checks-copy-migrations-2026-11-15.json` (with the three intent tombstones) and `15-real-checks-gh-trace-2026-11-15.jsonl`.
+
+| Expected (recipe `plan().expected` + guards) | Observed | Verdict |
+| --- | --- | --- |
+| Copies only; each copy migrated explicitly, preserved digest checked before and identical after; original never opened | preflight and evaluate copies `factory-storage-1-to-2`, format 1 → 2, preserved digest `74b96fb5…` before = after, state digest changed only by the migration record (`5e4982e5…` → `cd40bb9d…`); the recipe never opens `q14-publication-v8` (only `copyFile`) | **met** |
+| Preflight: the copied storage links exactly the own PR #5 on `factory/3-99fe871b`; raw facts | publication `published`, branch `factory/3-99fe871b`, base `main`, linkedHeads `[bfdd439…]`; PR #5 open, draft, not merged, head `bfdd439…` (`headStillLinked: true`), author `sanmoo-factory[bot]` (Bot 351187749) | **met** |
+| `checks.latest.pullRequest` = the linked PR; observedAt ≤ completedAt; completeness per read | #5 @ `bfdd439…`, base tip `8c058c9…`; observed 13:30:51.087Z → completed 13:31:04.319Z; pullRequest/baseTip/classic/rules/checkRuns/statuses/comparison/recheck all `complete` | **met** |
+| Requirements = classic + active (also inherited) ruleset required checks, by context+integration, strict per source | classic `none` from the authorized complete branch read (`STATUS_CHECKS_NOT_ENFORCED`: `protected: true` with a summary reporting classic status checks not enforced; the protection detail endpoint was therefore not read); rules of ruleset 26435808 (Repository): `pull_request` (human-stage), `non_fast_forward`, `deletion`, `update` (not-check-related); no `required_status_checks` rule → `requirements: []` | **met** |
+| No required check configured: `empty-complete` only when branch, classic and rules reads were all complete; 403/404 → unknown | `requiredSet: empty-complete`, note `REQUIRED_SET_EMPTY_FROM_COMPLETE_AUTHORIZED_READS`, every read complete, start and final requirement reads identical. The 403/404 branch was not exercised for real (no denial occurred) | **met** (denial path fixture-only) |
+| Outcome as GitHub really reports; unsupported modalities → indeterminate | `satisfied`, `reasons: []`; no workflows/merge-queue/deployments rule exists, so `RULE_NOT_INTERPRETABLE` did not apply | **met** (unsupported path fixture-only) |
+| Conflict from `mergeable`; strict from the base-tip comparison; optional/other-SHA visible only | `mergeable: true` with `mergeable_state: blocked` (the human review rule) → `conflict: none` — the aggregate `blocked` was not read as a conflict or a check failure; strict `not-required`, comparison `ahead` 1 / behind 0; check runs `[]`, statuses `[]` → optional/otherSha empty | **met** |
+| Tracking only: no comment, no queue/impediment change, GET only | evaluate events: `pause-copy` and one `read-pull-request` (observed, full collection); no `post-comment`; queue `pending: false` unchanged; impediments only the presented `GLOBAL_PAUSE` of the recipe's own pause on the copy; `getOnly: true`; gh trace: **32 requests, all `GET`, 0 refused** (preflight 10, evaluate 12 incl. the label poll, inspect 10); App token issuance went over native HTTPS, outside the gh trace | **met** |
+| One explanation recorded, one history event | `checks-evaluated` `satisfied@bfdd439…:` once; `checks.history: []` | **met** |
+| Inspect re-read agrees | second readPullRequest: same head, classic none, check runs/statuses empty | **met** |
+
+Side observation (not a ticket 15 effect): the evaluate owner shows the copied Work with `dispatch.state: executing` and
+`RECONCILIATION_REQUIRED` (the copied q14 publication Execution was not settled for this new owner; `runtimeInventory: 'unknown'` keeps
+dispatch closed). The checks pass still ran because the Execution was neither `reserved` nor `started`, which is the intended rule.
+
+### Coverage gap (honest)
+
+The test repository's `main` has **no required check** (classic status checks not enforced; its ruleset carries only `pull_request`,
+`non_fast_forward`, `deletion`, `update`) and the PR head has **no check run and no status**. The real run therefore proves the read
+paths, the grant, pagination entry, the empty-set-from-complete-reads decision, rule interpretation, mergeability/strict facts, the
+read-only guarantees and the copy migration — but **not** with real data: pending, failing, rerun (same or newer suite),
+skipped/neutral, homonymous check-run + status, integration-tied statuses, other-origin/other-SHA results, strict-behind, unsupported
+modalities, multi-page listings or denied reads. Those are fixture-level only (S / I(sub)).
+
+**Proposal:** a follow-up real run is warranted before readiness (ticket 16) relies on real CI, but it should not block ticket 15: the
+operator (not the Factory, which never holds Workflows) adds to the test repository a trivial GitHub Actions workflow on `pull_request`
+and a repository ruleset requiring its check (strict on), then re-runs this recipe in a fresh namespace twice: once while the run is
+pending (expect `waiting REQUIRED_CHECK_PENDING`), once after success (expect `satisfied` with the Actions integration id), and
+optionally after a manual failing re-run (expect `failing`, latest attempt current). This also answers questions 1–2 below. Suggested
+as part of ticket 16's real evidence or a small dedicated ticket; the operator decides.
+
 ## Design decisions and remaining questions
 
 Operator decisions (supervisor review of `3b096e5`): (1) `STATUS_ORIGIN_UNVERIFIABLE` only when the requirement is bound to an
 integration AND the homonymous status creator cannot be tied to it; a requirement accepting any source counts the status — implemented
 with the slug tie above. (4) Confirmed: 15 explains; tickets 16/22 decide impediments.
 
-Remaining for the real run:
-1. Whether `GET /branches/{base}` reflects ruleset checks in its protection summary (duplicates are deduplicated; hidden detail is
-   `unknown`). Classic "require merge queue" is not exposed by REST (documented limitation).
-2. Real Actions reruns: confirm that a rerun appears as a new attempt (same suite) or a newer suite with a later `started_at`.
-3. `compare` payloads on large diffs may exceed the 2 MiB transport bound → `STRICT_STATE_UNKNOWN` only when strict applies.
+Real-run questions, answered as far as `q15-checks-v2` allows:
+1. **Branch summary vs rulesets — partially answered.** For a base protected only by a ruleset, `GET /branches/main` returned a
+   protection summary reporting classic status checks not enforced, read with the installation token, so classic absence was concluded
+   from an authorized complete read without the Administration detail endpoint. Whether the summary would also list a *ruleset*
+   required check remains unknown (the ruleset has none); the follow-up run above answers it. Classic merge queue: still not exposed.
+2. **Actions reruns — not answered** (no check runs on the head). Follow-up run.
+3. **Compare payload — partially answered.** For a one-commit, one-file diff `compare` returned well within the transport bound
+   (`ahead` 1 / behind 0); large diffs remain untested and only matter under strict.
 
 ## Gate totals (rebased on `b2da9ae`)
 

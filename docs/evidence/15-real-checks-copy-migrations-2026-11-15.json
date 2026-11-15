@@ -1,0 +1,47 @@
+{
+ "preflight": {
+  "kind": "migrated",
+  "migration": "factory-storage-1-to-2",
+  "before": {
+   "format": 1,
+   "preservedDigest": "74b96fb5cbb47cc035fba69c92ca5ee4abe0ae1db26b247fc00c6ccc18cd10cf",
+   "stateDigest": "5e4982e53248d4086af181d05579f10dcffed211d07d287528cd5e26005f2ac3"
+  },
+  "after": {
+   "format": 2,
+   "preservedDigest": "74b96fb5cbb47cc035fba69c92ca5ee4abe0ae1db26b247fc00c6ccc18cd10cf",
+   "stateDigest": "cd40bb9d96407397a7bc5ba7f24fff7a77aca130ff4e0c16c8b59068cec0f1b0"
+  }
+ },
+ "evaluate": {
+  "kind": "migrated",
+  "migration": "factory-storage-1-to-2",
+  "before": {
+   "format": 1,
+   "preservedDigest": "74b96fb5cbb47cc035fba69c92ca5ee4abe0ae1db26b247fc00c6ccc18cd10cf",
+   "stateDigest": "5e4982e53248d4086af181d05579f10dcffed211d07d287528cd5e26005f2ac3"
+  },
+  "after": {
+   "format": 2,
+   "preservedDigest": "74b96fb5cbb47cc035fba69c92ca5ee4abe0ae1db26b247fc00c6ccc18cd10cf",
+   "stateDigest": "addde2c4a26820abfccd5666e6736254a0f8ab4ce3c68aa25e94cc95cf660063"
+  }
+ },
+ "intents": {
+  "preflight": {
+   "revision": "q15-checks-v2",
+   "phase": "preflight",
+   "at": "2026-11-15T13:30:30.411Z"
+  },
+  "evaluate": {
+   "revision": "q15-checks-v2",
+   "phase": "evaluate",
+   "at": "2026-11-15T13:30:45.730Z"
+  },
+  "inspect": {
+   "revision": "q15-checks-v2",
+   "phase": "inspect",
+   "at": "2026-11-15T13:31:07.153Z"
+  }
+ }
+}

@@ -1,0 +1,264 @@
+{
+ "checks": {
+  "latest": {
+   "at": "2026-11-15T13:31:05.896Z",
+   "observedAt": "2026-11-15T13:30:51.087Z",
+   "completedAt": "2026-11-15T13:31:04.319Z",
+   "outcome": "satisfied",
+   "reasons": [],
+   "pullRequest": {
+    "number": 5,
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5",
+    "headSha": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+    "headRef": "factory/3-99fe871b",
+    "baseRef": "main",
+    "baseTip": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+    "mergeCommitSha": null,
+    "state": "open",
+    "merged": false,
+    "draft": true
+   },
+   "conflict": "none",
+   "strict": {
+    "required": false,
+    "sources": [],
+    "state": "not-required",
+    "behindBy": 0
+   },
+   "requiredSet": "empty-complete",
+   "requirements": [],
+   "optional": [],
+   "otherSha": [],
+   "modalities": [
+    {
+     "type": "pull_request",
+     "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+     "interpretation": "human-stage"
+    },
+    {
+     "type": "non_fast_forward",
+     "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+     "interpretation": "not-check-related"
+    },
+    {
+     "type": "deletion",
+     "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+     "interpretation": "not-check-related"
+    },
+    {
+     "type": "update",
+     "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+     "interpretation": "not-check-related"
+    }
+   ],
+   "completeness": {
+    "pullRequest": "complete",
+    "baseTip": "complete",
+    "classic": "complete",
+    "rules": "complete",
+    "checkRuns": "complete",
+    "statuses": "complete",
+    "comparison": "complete",
+    "recheck": "complete"
+   },
+   "localGates": {
+    "declared": [],
+    "requiredByGitHub": [],
+    "notRequiredByGitHub": []
+   },
+   "notes": [
+    "REQUIRED_SET_EMPTY_FROM_COMPLETE_AUTHORIZED_READS"
+   ],
+   "nextStep": "GitHub required checks of the current head are satisfied as observed. This is not readiness (ticket 16) and does not prove a local gate.",
+   "limitations": [
+    "Separate GitHub reads between observedAt and completedAt: not an atomic snapshot of GitHub, its rules and CI; the explanation is valid only as observed.",
+    "Results are correlated to the current head commit; results attached to the test merge commit are not read (merge queue is not supported).",
+    "A commit status cannot be attributed to a GitHub App: a required check bound to an integration that also has a homonymous status is indeterminate.",
+    "A satisfied GitHub requirement (including skipped/neutral) never proves that a local gate ran; local gates are ticket 13 evidence.",
+    "This explanation is neither readiness (ticket 16) nor a repair decision (ticket 22).",
+    "Separate GET reads between observedAt and completedAt: not an atomic snapshot of GitHub, its rules and CI; the pull request and the requirements are re-read at the end.",
+    "Results are read for the current head commit only; results attached to the test merge commit are not read.",
+    "Rules are the active rules GitHub reports for the base branch (repository and inherited rulesets); classic protection is read separately."
+   ]
+  },
+  "history": []
+ },
+ "history": [
+  {
+   "at": "2026-11-15T13:31:05.896Z",
+   "event": "checks-evaluated",
+   "origin": "controller-checks",
+   "detail": "satisfied@bfdd439ceba20a424538647f41e55d5ab2d03217:"
+  }
+ ],
+ "impediments": [
+  {
+   "code": "GLOBAL_PAUSE",
+   "scope": "installation",
+   "nextStep": "Unpause to allow new triggers; unpausing removes no individual impediment."
+  }
+ ],
+ "queue": {
+  "category": "normal",
+  "sequence": 1,
+  "pending": false
+ },
+ "rereadFacts": {
+  "kind": "observed",
+  "source": "github-rest",
+  "observedAt": "2026-11-15T13:31:08.040Z",
+  "completedAt": "2026-11-15T13:31:20.053Z",
+  "repository": "Sanmoo/java-springboot-event-sourcing",
+  "repositoryId": 1256893534,
+  "pullRequest": {
+   "pullRequestId": 5321820867,
+   "nodeId": "PR_kwDOSuqsXs8AAAABPTSKww",
+   "number": 5,
+   "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5",
+   "state": "open",
+   "merged": false,
+   "draft": true,
+   "headRef": "factory/3-99fe871b",
+   "headSha": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+   "headRepositoryId": 1256893534,
+   "baseRef": "main",
+   "baseSha": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+   "mergeCommitSha": null,
+   "mergeable": true,
+   "mergeableState": "blocked",
+   "author": {
+    "id": 351187749,
+    "login": "sanmoo-factory[bot]",
+    "type": "Bot"
+   }
+  },
+  "baseTip": {
+   "state": "complete",
+   "value": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c"
+  },
+  "classic": {
+   "state": "complete",
+   "value": {
+    "kind": "none",
+    "evidence": "STATUS_CHECKS_NOT_ENFORCED"
+   }
+  },
+  "rules": {
+   "state": "complete",
+   "value": [
+    {
+     "type": "pull_request",
+     "ruleset": {
+      "id": 26435808,
+      "sourceType": "Repository",
+      "source": "Sanmoo/java-springboot-event-sourcing"
+     }
+    },
+    {
+     "type": "non_fast_forward",
+     "ruleset": {
+      "id": 26435808,
+      "sourceType": "Repository",
+      "source": "Sanmoo/java-springboot-event-sourcing"
+     }
+    },
+    {
+     "type": "deletion",
+     "ruleset": {
+      "id": 26435808,
+      "sourceType": "Repository",
+      "source": "Sanmoo/java-springboot-event-sourcing"
+     }
+    },
+    {
+     "type": "update",
+     "ruleset": {
+      "id": 26435808,
+      "sourceType": "Repository",
+      "source": "Sanmoo/java-springboot-event-sourcing"
+     }
+    }
+   ]
+  },
+  "checkRuns": {
+   "state": "complete",
+   "value": []
+  },
+  "statuses": {
+   "state": "complete",
+   "value": []
+  },
+  "comparison": {
+   "state": "complete",
+   "value": {
+    "status": "ahead",
+    "aheadBy": 1,
+    "behindBy": 0
+   }
+  },
+  "final": {
+   "baseTip": {
+    "state": "complete",
+    "value": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c"
+   },
+   "classic": {
+    "state": "complete",
+    "value": {
+     "kind": "none",
+     "evidence": "STATUS_CHECKS_NOT_ENFORCED"
+    }
+   },
+   "rules": {
+    "state": "complete",
+    "value": [
+     {
+      "type": "pull_request",
+      "ruleset": {
+       "id": 26435808,
+       "sourceType": "Repository",
+       "source": "Sanmoo/java-springboot-event-sourcing"
+      }
+     },
+     {
+      "type": "non_fast_forward",
+      "ruleset": {
+       "id": 26435808,
+       "sourceType": "Repository",
+       "source": "Sanmoo/java-springboot-event-sourcing"
+      }
+     },
+     {
+      "type": "deletion",
+      "ruleset": {
+       "id": 26435808,
+       "sourceType": "Repository",
+       "source": "Sanmoo/java-springboot-event-sourcing"
+      }
+     },
+     {
+      "type": "update",
+      "ruleset": {
+       "id": 26435808,
+       "sourceType": "Repository",
+       "source": "Sanmoo/java-springboot-event-sourcing"
+      }
+     }
+    ]
+   }
+  },
+  "recheck": {
+   "state": "complete",
+   "value": {
+    "headSha": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+    "baseRef": "main",
+    "state": "open",
+    "merged": false
+   }
+  },
+  "limitations": [
+   "Separate GET reads between observedAt and completedAt: not an atomic snapshot of GitHub, its rules and CI; the pull request and the requirements are re-read at the end.",
+   "Results are read for the current head commit only; results attached to the test merge commit are not read.",
+   "Rules are the active rules GitHub reports for the base branch (repository and inherited rulesets); classic protection is read separately."
+  ]
+ }
+}
