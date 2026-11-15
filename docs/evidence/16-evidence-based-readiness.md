@@ -38,11 +38,11 @@ Branch `implement/software-factory-mvp-16`, rebased on integration `01783ae`. Re
 | 4 confirmed loss → draft with reason; transient → no flip | `readiness-rules` AC4, AC4/AC5, MED 6; `readiness-flow` AC4/AC5. **Operator decision:** the reason is recorded locally (effect `reason`, history, CLI), not posted on the PR | R + S |
 | 5 Factory draft restored; human draft needs authorization; ready flag alone certifies nothing | `readiness-rules` AC5; `readiness-flow` AC5; `update-scope-cli` (CLI `authorize-readiness`) | R + S + I-local |
 | 6 pending human review does not block; no approval/merge | `readiness-rules` AC1/AC6; `github-readiness` AC6; `architecture/publication-boundary` (only the two draft mutations) | R + I-local + static |
-| 7 real conversion, races, correlation | `entrypoints/github-readiness-composed` (real 13/14/15/16 flow over the fixture); recipe tests | I(sub) + **P pending** |
+| 7 real conversion, races, correlation | real conversion: run `q16-readiness-v1` below (**P**); races/correlation: `readiness-flow` AC2/AC7 race, MED 1, MED 2, V-12, LOW; `github-readiness-composed` (real 13/14/15/16 flow over the fixture) | P + S + I(sub) |
 
 Red → green: rules 0/8 against a throwing stub, then 8/8; the adapter/flow tests were red as type errors (missing `setDraft`).
 
-## One-shot real-run recipe (`test/entrypoints/readiness16-qualification.ts`) — not run
+## One-shot real-run recipe (`test/entrypoints/readiness16-qualification.ts`)
 
 `--plan` is inert. Phases `preflight`, `convert`, `inspect`, each once (wx tombstones, held results recorded, no retry), namespace
 `/home/sanmoo/software-factory-test/y5/q16-readiness-v1`, source copies of `q14-publication-v8` migrated explicitly on the copy (ticket 33,
@@ -74,7 +74,36 @@ only a Factory-placed ready is reverted; the draft reason is recorded locally.
 | LOW ownership | any ownership reason blocks every mutation (`OWNERSHIP_DISPUTED`) | `readiness-rules` LOW |
 | LOW recipe root / revocation | GitHub access root = the recipe namespace (own `credentials/` copy of the key, removed by inspect, and `run/`); the guard records the hash of the token that sent the mutation and allows only that token's `DELETE /installation/token` (never logged) | `readiness16-recipe-safety` |
 
-Red → green: the rules review tests failed first (missing parameters/bindings); the flow review tests were written alongside the fix.
+Red → green: the rules review tests failed first (missing parameters/bindings). **TDD red was NOT observed** for the four flow review tests
+(`readiness-flow` MED 1, MED 2, MED 5, LOW never-sent): they were written after the fix and passed at their first run.
+
+## Real run `q16-readiness-v1` (2026-11-15, operator-authorized, run by the supervisor; consumed) — CONVERTED
+
+Composition: this branch at `c28ad28` on `01783ae`, real App (id 5569788, installation 177599217), real gh behind the recipe guard, GitHub
+access root = the namespace (key copy removed afterwards: `credentials/` empty), copies of `y5/q14-publication-v8`. Raw results copied
+(secret scan over all files: no `ghs_/ghp_/gho_/ghu_/github_pat_`, JWT or private-key material; the guard stores only the token's sha256, not copied):
+`16-real-readiness-{preflight,convert,inspect}-2026-11-15.json`, `16-real-readiness-copy-migrations-2026-11-15.json` (with the three intent
+tombstones) and `16-real-readiness-gh-trace-2026-11-15.jsonl`.
+
+| Expected (`plan().expected` + guards) | Observed | Verdict |
+| --- | --- | --- |
+| Copies only, migrated explicitly, preserved digest identical; original never opened | preflight and convert copies `factory-storage-1-to-2`, 1 → 2, preserved `74b96fb5…` before = after (state digest changed only by the migration record) | **met** |
+| Preflight: own PR #5 linked; copied Work settled, no readiness; PR open, draft, at bfdd439 | Work `99fe871b…`, publication `published`; Execution ended completed, cessation confirmed, Slot released; PR #5 open, draft, head `bfdd439…`, node `PR_kwDOSuqsXs8AAAABPTSKww`; y5 inventory (read-only) lists the Work's own environment among 25 — not used, not touched | **met** |
+| Convert: decision ready from the recheck, reasons [] | `latest.decision ready`, `source recheck`, reasons `[]`; basis PR #5 / head `bfdd439` / base `main` tip `8c058c9` / requirements `empty-complete` (ruleset 26435808: `pull_request` human-stage, `non_fast_forward`/`deletion`/`update` not check-related) / verified content `fe9faf…` | **met** |
+| Fresh dependencies before the recheck | trace: `GET /issues/3`, `/issues/3/dependencies/blocked_by` right before the recheck collection | **met** |
+| One effect: intent before attempt, applied, revoked, observation draft=false, confirmed | `mark-ready a6cb87ab…`: intended 14:58:04.568 → sending 14:58:04.571 → POST 14:58:06.048 → DELETE 14:58:07.100 → attempt `applied`, headRefOid `bfdd439`, revocation `revoked` → independent observation 14:58:13.971 draft=false, head `bfdd439` → `confirmed`; `contradictions 0`, no head mismatch | **met** |
+| internal ready, flag.factory ready (readiness-effect), stages distinct | `internal ready`, flag `{factory ready, origin readiness-effect, observed ready}`, stages `{internal ready, flag ready, humanReview human-stage, delivery not-delivered}`; no human draft/ready recorded | **met** |
+| Checks satisfied empty-complete; approval neither blocks nor is touched | checks `satisfied`, `empty-complete`, conflict `none`; the operator's APPROVED review on #5 unchanged (supervisor) | **met** |
+| gh trace: GET only except ONE mark-ready POST and ONE revocation after it; nothing refused | 55 requests: 53 GET, 1 `POST graphql` (variables `{id: PR_kwDOSuqsXs8AAAABPTSKww, cid: a6cb87ab…}`), 1 `DELETE /installation/token` (tied to that token), 0 refused; `exactlyOneMutation: true`; owner outcome `clean`, dispatch `EXECUTION_NOT_ENABLED` | **met** |
+| Inspect: PR open, not merged, draft false, head bfdd439; Work open, no impediment/queue change | `draftAfter false`, open, not merged, head `bfdd439`; Work `open`, queue unchanged (`pending false`), impediments only the presented `GLOBAL_PAUSE` of the recipe's pause on the copy; readiness `ready` | **met** |
+
+Remaining GitHub state: PR #5 ready for review, open, approved by the operator; merge stays human.
+
+### Coverage gap (honest)
+
+The real run proves the happy path of the boundary (one correlated mutation, grant scope, revocation, observation, confirmation, fresh
+dependencies, human-stage review). Convert-to-draft, human draft/authorization, lag, head mismatch, never-sent and unknown outcomes were not
+exercised against real GitHub; they are S / I(sub) only. Real required checks remain absent from the test repository (ticket 15's gap).
 
 ## Limitations
 

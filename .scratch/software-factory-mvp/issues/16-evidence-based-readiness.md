@@ -4,17 +4,17 @@
 
 **Blocked by:** [15: Explicar os checks obrigatórios do PR atual](15-required-checks-evaluation.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
-- [ ] Avaliação combina ownership/estado, conteúdo/spec/instruções, dois pareceres atuais, tratamentos, gates/dispensas, checks, ausência confirmada de conflito e todos os impedimentos pertinentes.
-- [ ] Antes de converter, reconsulta identidade/head/base/requisitos; alteração invalida avaliação externa e exige recalcular, sem reviews/rebase só porque a base avançou.
-- [ ] Intenção do efeito é confirmada antes da mutação remota, seguida de observação e confirmação durável; conversão incerta exige descoberta antes de repetir.
-- [ ] Perda confirmada de condição retira prontidão e converte draft com motivo; consulta transitória/incerta retira confirmação interna sem oscilar a flag por falha de rede.
-- [ ] Draft colocado pela Factory pode ser restaurado após avaliação completa; draft humano inesperado exige autorização antes de reconverter, e flag ready isolada não certifica prontidão.
-- [ ] Review humano pendente não impede por si receber revisão humana e tampouco autoriza o agente a aprovar ou realizar merge.
-- [ ] Provas reais de conversão e testes de corrida/correlação demonstram ausência de verde emprestado, reconsulta prévia e razões independentes de impedimento.
+- [x] Avaliação combina ownership/estado, conteúdo/spec/instruções, dois pareceres atuais, tratamentos, gates/dispensas, checks, ausência confirmada de conflito e todos os impedimentos pertinentes.
+- [x] Antes de converter, reconsulta identidade/head/base/requisitos; alteração invalida avaliação externa e exige recalcular, sem reviews/rebase só porque a base avançou.
+- [x] Intenção do efeito é confirmada antes da mutação remota, seguida de observação e confirmação durável; conversão incerta exige descoberta antes de repetir.
+- [x] Perda confirmada de condição retira prontidão e converte draft com motivo; consulta transitória/incerta retira confirmação interna sem oscilar a flag por falha de rede.
+- [x] Draft colocado pela Factory pode ser restaurado após avaliação completa; draft humano inesperado exige autorização antes de reconverter, e flag ready isolada não certifica prontidão.
+- [x] Review humano pendente não impede por si receber revisão humana e tampouco autoriza o agente a aprovar ou realizar merge.
+- [x] Provas reais de conversão e testes de corrida/correlação demonstram ausência de verde emprestado, reconsulta prévia e razões independentes de impedimento.
 
 ## Referências e validação
 
@@ -26,7 +26,22 @@
 
 Publicação é planejamento aprovado, não autorização de construção, uso de host/credenciais/GitHub/modelos reais, injeção de falhas ou piloto. Obter autorização pertinente antes da execução. Não alterar decisões aprovadas silenciosamente; lacuna de desenho volta ao operador. Merge e avaliação humana não são delegados aos agentes.
 
+## Answer
+
+Prontidão é avaliação do controlador sobre evidências atuais: PR próprio publicado/vinculado (ticket 14), conteúdo verificado com dois
+pareceres atuais, tratamentos e gates (ticket 13), checks obrigatórios do head atual (ticket 15), ausência confirmada de conflito, dependências
+lidas de novo antes de cada reconsulta e nenhum impedimento/atividade concorrente/reconciliação pendente; motivos independentes,
+confirmados ou incertos. Antes de converter, nova leitura completa; base/requisitos/head alterados invalidam e recalculam (avanço da base sozinho
+não dispara nada; strict atrasado só retira a confirmação interna). Conversão é efeito da Factory: intenção durável, marcador de envio, uma
+mutação GraphQL com grant novo de uso único (`readiness-write`) revogado em seguida, observação independente e confirmação; resposta da
+mutação é evidência primária contra leitura atrasada; incerteza exige descoberta; nada repete sem `authorize-readiness` (vinculado à ocorrência)
+ou base nova, salvo uma reavaliação quando o envio comprovadamente não ocorreu. Perda confirmada volta a draft com motivo local (decisão do
+operador) só sobre ready colocado pela Factory; draft humano é respeitado; review humano pendente não bloqueia e agentes nunca aprovam/fazem merge.
+Gate `test:ci` verde; revisão estática (6 MED + LOW) corrigida. Ensaio real `q16-readiness-v1`: PR #5 draft → ready com exatamente uma mutação
+(53 GET + 1 POST + 1 DELETE, 0 recusados), confirmado e inspecionado. Evidência: `docs/evidence/16-evidence-based-readiness.md`.
+
 ## Comments
 
 - 2026-11-15 (implementation, branch `implement/software-factory-mvp-16`): local increment and recipe ready; real run pending operator
   authorization. See [evidence 16](../../../docs/evidence/16-evidence-based-readiness.md).
+- 2026-11-15: real run `q16-readiness-v1` passed (supervisor, operator-authorized); ticket resolved.

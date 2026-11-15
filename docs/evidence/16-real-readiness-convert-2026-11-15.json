@@ -1,0 +1,349 @@
+{
+ "status": "observed",
+ "outcome": {
+  "kind": "clean"
+ },
+ "readiness": {
+  "internal": "ready",
+  "since": "2026-11-15T14:58:04.563Z",
+  "latest": {
+   "at": "2026-11-15T14:58:04.563Z",
+   "source": "recheck",
+   "decision": "ready",
+   "reasons": [],
+   "notes": [
+    "Human review/approval is a human stage: it is never read as a blocker and never performed by the Factory; merge is human only."
+   ],
+   "basis": {
+    "pullRequest": 5,
+    "nodeId": "PR_kwDOSuqsXs8AAAABPTSKww",
+    "headSha": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+    "baseRef": "main",
+    "baseTip": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+    "strict": false,
+    "requirements": "empty-complete||deletion:not-check-related@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing,non_fast_forward:not-check-related@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing,pull_request:human-stage@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing,update:not-check-related@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing|strict:",
+    "verifiedHead": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+    "contentSha256": "fe9fafa542aca0ea395c8a36710d70d9e664c631dcf5093ba5c96c282fccdbcc",
+    "checksAt": "2026-11-15T14:58:03.663Z",
+    "checksOutcome": "satisfied",
+    "draft": true
+   }
+  },
+  "flag": {
+   "factory": "ready",
+   "origin": "readiness-effect",
+   "at": "2026-11-15T14:58:13.971Z",
+   "observed": "ready",
+   "observedAt": "2026-11-15T14:58:13.971Z"
+  },
+  "humanDraft": null,
+  "humanReady": null,
+  "authorization": null,
+  "effect": null,
+  "effects": [
+   {
+    "effectId": "a6cb87ab-7643-4191-a86a-302ffb38e86b",
+    "action": "mark-ready",
+    "reason": "READY_FROM_CURRENT_EVIDENCE",
+    "basis": {
+     "pullRequest": 5,
+     "nodeId": "PR_kwDOSuqsXs8AAAABPTSKww",
+     "headSha": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+     "baseRef": "main",
+     "baseTip": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+     "strict": false,
+     "requirements": "empty-complete||deletion:not-check-related@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing,non_fast_forward:not-check-related@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing,pull_request:human-stage@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing,update:not-check-related@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing|strict:",
+     "verifiedHead": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+     "contentSha256": "fe9fafa542aca0ea395c8a36710d70d9e664c631dcf5093ba5c96c282fccdbcc",
+     "checksAt": "2026-11-15T14:58:03.663Z",
+     "checksOutcome": "satisfied",
+     "draft": true
+    },
+    "intendedAt": "2026-11-15T14:58:04.568Z",
+    "state": "confirmed",
+    "authorization": null,
+    "sendingAt": "2026-11-15T14:58:04.571Z",
+    "attempt": {
+     "at": "2026-11-15T14:58:07.584Z",
+     "outcome": "applied",
+     "code": null,
+     "revocation": "revoked",
+     "headSha": "bfdd439ceba20a424538647f41e55d5ab2d03217"
+    },
+    "observation": {
+     "at": "2026-11-15T14:58:13.971Z",
+     "draft": false,
+     "headSha": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+     "code": null
+    },
+    "settledAt": "2026-11-15T14:58:13.971Z",
+    "contradictions": 0,
+    "neverSent": false,
+    "headMismatch": null
+   }
+  ],
+  "stages": {
+   "internal": "ready",
+   "flag": "ready",
+   "humanReview": "human-stage",
+   "delivery": "not-delivered"
+  },
+  "nextStep": "Ready for human review: the evidence is current. Human review, approval and merge are human only; the Factory never approves or merges."
+ },
+ "checks": {
+  "latest": {
+   "at": "2026-11-15T14:58:13.967Z",
+   "observedAt": "2026-11-15T14:58:07.588Z",
+   "completedAt": "2026-11-15T14:58:13.050Z",
+   "outcome": "satisfied",
+   "reasons": [],
+   "pullRequest": {
+    "number": 5,
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5",
+    "headSha": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+    "headRef": "factory/3-99fe871b",
+    "baseRef": "main",
+    "baseTip": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+    "mergeCommitSha": null,
+    "state": "open",
+    "merged": false,
+    "draft": false
+   },
+   "conflict": "none",
+   "strict": {
+    "required": false,
+    "sources": [],
+    "state": "not-required",
+    "behindBy": 0
+   },
+   "requiredSet": "empty-complete",
+   "requirements": [],
+   "optional": [],
+   "otherSha": [],
+   "modalities": [
+    {
+     "type": "pull_request",
+     "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+     "interpretation": "human-stage"
+    },
+    {
+     "type": "non_fast_forward",
+     "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+     "interpretation": "not-check-related"
+    },
+    {
+     "type": "deletion",
+     "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+     "interpretation": "not-check-related"
+    },
+    {
+     "type": "update",
+     "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+     "interpretation": "not-check-related"
+    }
+   ],
+   "completeness": {
+    "pullRequest": "complete",
+    "baseTip": "complete",
+    "classic": "complete",
+    "rules": "complete",
+    "checkRuns": "complete",
+    "statuses": "complete",
+    "comparison": "complete",
+    "recheck": "complete"
+   },
+   "localGates": {
+    "declared": [],
+    "requiredByGitHub": [],
+    "notRequiredByGitHub": []
+   },
+   "notes": [
+    "REQUIRED_SET_EMPTY_FROM_COMPLETE_AUTHORIZED_READS"
+   ],
+   "nextStep": "GitHub required checks of the current head are satisfied as observed. This is not readiness (ticket 16) and does not prove a local gate.",
+   "limitations": [
+    "Separate GitHub reads between observedAt and completedAt: not an atomic snapshot of GitHub, its rules and CI; the explanation is valid only as observed.",
+    "Results are correlated to the current head commit; results attached to the test merge commit are not read (merge queue is not supported).",
+    "A commit status cannot be attributed to a GitHub App: a required check bound to an integration that also has a homonymous status is indeterminate.",
+    "A satisfied GitHub requirement (including skipped/neutral) never proves that a local gate ran; local gates are ticket 13 evidence.",
+    "This explanation is neither readiness (ticket 16) nor a repair decision (ticket 22).",
+    "Separate GET reads between observedAt and completedAt: not an atomic snapshot of GitHub, its rules and CI; the pull request and the requirements are re-read at the end.",
+    "Results are read for the current head commit only; results attached to the test merge commit are not read.",
+    "Rules are the active rules GitHub reports for the base branch (repository and inherited rulesets); classic protection is read separately."
+   ]
+  },
+  "history": []
+ },
+ "work": {
+  "result": "open",
+  "queue": {
+   "category": "normal",
+   "sequence": 1,
+   "pending": false
+  },
+  "impediments": [
+   {
+    "code": "GLOBAL_PAUSE",
+    "scope": "installation",
+    "nextStep": "Unpause to allow new triggers; unpausing removes no individual impediment."
+   }
+  ],
+  "history": [
+   {
+    "at": "2026-11-15T14:57:55.172Z",
+    "event": "readiness-evaluated",
+    "origin": "controller-readiness",
+    "detail": "ready(recorded):"
+   },
+   {
+    "at": "2026-11-15T14:58:04.568Z",
+    "event": "readiness-intended",
+    "origin": "controller-readiness",
+    "detail": "mark-ready:a6cb87ab-7643-4191-a86a-302ffb38e86b:READY_FROM_CURRENT_EVIDENCE"
+   },
+   {
+    "at": "2026-11-15T14:58:07.584Z",
+    "event": "readiness-attempted",
+    "origin": "controller-readiness",
+    "detail": "mark-ready:applied:revocation=revoked"
+   },
+   {
+    "at": "2026-11-15T14:58:13.971Z",
+    "event": "readiness-confirmed",
+    "origin": "controller-readiness",
+    "detail": "mark-ready:a6cb87ab-7643-4191-a86a-302ffb38e86b:draft=false"
+   }
+  ]
+ },
+ "mutations": [
+  [
+   "POST",
+   "graphql",
+   "mark-ready",
+   true
+  ],
+  [
+   "DELETE",
+   "/installation/token",
+   "revocation",
+   true
+  ]
+ ],
+ "exactlyOneMutation": true,
+ "requests": 45,
+ "controlStatus": {
+  "controller_run_id": "5d41de1c-674a-4155-8b07-eb8a004e541b",
+  "paused": true,
+  "dispatch": "closed",
+  "dispatchReason": "EXECUTION_NOT_ENABLED",
+  "slots": {
+   "capacity": 0,
+   "held": 0
+  },
+  "historyLength": 1,
+  "works": {
+   "total": 1,
+   "open": 1
+  },
+  "queues": {
+   "normal": 0,
+   "repair": 0
+  },
+  "dependencies": {
+   "satisfied": 1,
+   "pending": 0,
+   "inconclusive": 0,
+   "notEvaluated": 0
+  },
+  "questions": {
+   "open": 0,
+   "answered": 0,
+   "unpublished": 0
+  },
+  "selection": {
+   "next": null
+  },
+  "polling": {
+   "state": "sleeping",
+   "intervalSeconds": 120,
+   "cycles": 1,
+   "lastCycleAt": "2026-11-15T14:57:46.713Z",
+   "source": "in-memory-observation",
+   "repositories": [
+    {
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "label": "ready-for-agent",
+     "state": "observed",
+     "observedAt": "2026-11-15T14:57:43.947Z",
+     "completeness": "complete",
+     "absenceProven": false,
+     "consecutiveFailures": 0,
+     "nextPollInSeconds": 91
+    }
+   ]
+  },
+  "persistence": {
+   "sqliteVersion": "3.53.4",
+   "sqliteSourceId": "2026-07-24 19:02:57 bf7c7f30031888f4e796e429ab3978879485813aaca6f641c7b33e4e09459bcc",
+   "journalMode": "wal",
+   "synchronous": "FULL"
+  },
+  "recovery": null,
+  "storage": {
+   "format": 2,
+   "previousRun": null
+  }
+ },
+ "events": [
+  {
+   "at": "2026-11-15T14:57:43.932Z",
+   "call": "pause-copy",
+   "receipt": {
+    "kind": "durable",
+    "request_id": "ba295d7a-425a-4572-9107-1e97fdd3e44c",
+    "operation": "pause",
+    "paused": true,
+    "historySequence": 1
+   }
+  },
+  {
+   "at": "2026-11-15T14:57:55.167Z",
+   "call": "read-pull-request",
+   "number": 5,
+   "kind": "observed",
+   "headSha": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+   "draft": true
+  },
+  {
+   "at": "2026-11-15T14:58:04.559Z",
+   "call": "read-pull-request",
+   "number": 5,
+   "kind": "observed",
+   "headSha": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+   "draft": true
+  },
+  {
+   "at": "2026-11-15T14:58:07.584Z",
+   "call": "set-draft",
+   "number": 5,
+   "draft": false,
+   "effectId": "a6cb87ab-7643-4191-a86a-302ffb38e86b",
+   "result": {
+    "kind": "applied",
+    "observedAt": "2026-11-15T14:58:04.575Z",
+    "draft": false,
+    "headSha": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+    "revocation": "revoked"
+   }
+  },
+  {
+   "at": "2026-11-15T14:58:13.967Z",
+   "call": "read-pull-request",
+   "number": 5,
+   "kind": "observed",
+   "headSha": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+   "draft": false
+  }
+ ],
+ "deadlineReached": false
+}

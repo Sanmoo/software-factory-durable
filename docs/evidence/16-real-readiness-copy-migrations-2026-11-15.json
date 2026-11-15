@@ -1,0 +1,45 @@
+{
+ "preflight-copy-migration": {
+  "kind": "migrated",
+  "migration": "factory-storage-1-to-2",
+  "before": {
+   "format": 1,
+   "preservedDigest": "74b96fb5cbb47cc035fba69c92ca5ee4abe0ae1db26b247fc00c6ccc18cd10cf",
+   "stateDigest": "5e4982e53248d4086af181d05579f10dcffed211d07d287528cd5e26005f2ac3"
+  },
+  "after": {
+   "format": 2,
+   "preservedDigest": "74b96fb5cbb47cc035fba69c92ca5ee4abe0ae1db26b247fc00c6ccc18cd10cf",
+   "stateDigest": "cbcb07d015247fc02b0ca4c95afeebc236bca635c241f93ef47784a8a1a71509"
+  }
+ },
+ "convert-copy-migration": {
+  "kind": "migrated",
+  "migration": "factory-storage-1-to-2",
+  "before": {
+   "format": 1,
+   "preservedDigest": "74b96fb5cbb47cc035fba69c92ca5ee4abe0ae1db26b247fc00c6ccc18cd10cf",
+   "stateDigest": "5e4982e53248d4086af181d05579f10dcffed211d07d287528cd5e26005f2ac3"
+  },
+  "after": {
+   "format": 2,
+   "preservedDigest": "74b96fb5cbb47cc035fba69c92ca5ee4abe0ae1db26b247fc00c6ccc18cd10cf",
+   "stateDigest": "99ba4ed484adac71c160587e2745daf76125c06178035a8727712dd578d0dd74"
+  }
+ },
+ "preflight-intent": {
+  "revision": "q16-readiness-v1",
+  "phase": "preflight",
+  "at": "2026-11-15T14:57:33.845Z"
+ },
+ "convert-intent": {
+  "revision": "q16-readiness-v1",
+  "phase": "convert",
+  "at": "2026-11-15T14:57:43.668Z"
+ },
+ "inspect-intent": {
+  "revision": "q16-readiness-v1",
+  "phase": "inspect",
+  "at": "2026-11-15T14:58:15.993Z"
+ }
+}
