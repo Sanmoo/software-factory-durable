@@ -1,0 +1,841 @@
+{
+ "work": {
+  "work_id": "99fe871b-b872-4522-912c-fefd9700edda",
+  "branch": "factory/3-99fe871b",
+  "pullRequest": {
+   "number": 5,
+   "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5"
+  },
+  "publication": {
+   "state": "published",
+   "basisExecutionId": "589ddac5-6dc2-4511-9cd2-9392fe055947",
+   "marker": "<!-- software-factory:work:99fe871b-b872-4522-912c-fefd9700edda -->",
+   "branch": "factory/3-99fe871b",
+   "base": "main",
+   "verified": {
+    "executionId": "589ddac5-6dc2-4511-9cd2-9392fe055947",
+    "head": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+    "contentSha256": "fe9fafa542aca0ea395c8a36710d70d9e664c631dcf5093ba5c96c282fccdbcc",
+    "verifiedAt": "2026-11-15T10:29:03.403Z",
+    "reviewedRound": 1,
+    "gates": [
+     {
+      "id": "ticket-validation",
+      "outcome": "passed"
+     }
+    ],
+    "requiredChecks": []
+   },
+   "expectedRemote": {
+    "state": "absent"
+   },
+   "requestedAt": "2026-11-15T10:30:40.403Z",
+   "pullRequest": {
+    "pullRequestId": 5321820867,
+    "nodeId": "PR_kwDOSuqsXs8AAAABPTSKww",
+    "number": 5,
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5",
+    "state": "open",
+    "merged": false,
+    "draft": true,
+    "headRef": "factory/3-99fe871b",
+    "headSha": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+    "base": "main",
+    "author": {
+     "id": 351187749,
+     "login": "sanmoo-factory[bot]",
+     "type": "Bot"
+    },
+    "linkedAt": "2026-11-15T10:31:44.334Z",
+    "bodySha256": "e9f805bb54a1d283c657e2a4d21bf4286571be98c13a860cbedeff453e8bdd24"
+   },
+   "description": {
+    "conformant": true,
+    "reasons": []
+   },
+   "discoveries": [
+    {
+     "at": "2026-11-15T10:30:40.403Z",
+     "observedAt": "2026-11-15T10:30:35.379Z",
+     "trigger": "verified",
+     "outcome": "absent",
+     "reasons": [],
+     "branch": {
+      "state": "absent"
+     },
+     "candidates": []
+    },
+    {
+     "at": "2026-11-15T10:31:44.334Z",
+     "observedAt": "2026-11-15T10:31:35.755Z",
+     "trigger": "after-publication",
+     "outcome": "linked",
+     "reasons": [],
+     "branch": {
+      "state": "present",
+      "sha": "bfdd439ceba20a424538647f41e55d5ab2d03217"
+     },
+     "candidates": [
+      {
+       "number": 5,
+       "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5",
+       "own": true,
+       "reasons": []
+      }
+     ]
+    }
+   ],
+   "attempts": [
+    {
+     "executionId": "0cd35c93-4ac9-436a-a4d6-9dbb648480dd",
+     "head": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+     "at": "2026-11-15T10:30:59.390Z",
+     "expectedRemote": {
+      "state": "absent"
+     }
+    }
+   ],
+   "linkedHeads": [
+    "bfdd439ceba20a424538647f41e55d5ab2d03217"
+   ],
+   "refsBefore": {
+    "refs/heads/main": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c"
+   },
+   "update": null,
+   "reasons": [],
+   "nextStep": "Own draft pull request linked. Opening it does not end the Ticket or the Work; readiness and human merge are separate.",
+   "updatedAt": "2026-11-15T10:31:44.334Z"
+  },
+  "impediments": [],
+  "history": [
+   {
+    "at": "2026-11-15T10:26:33.501Z",
+    "event": "execution-reserved",
+    "origin": "controller-dispatch",
+    "executionId": "589ddac5-6dc2-4511-9cd2-9392fe055947"
+   },
+   {
+    "at": "2026-11-15T10:26:39.700Z",
+    "event": "execution-prepared",
+    "origin": "controller-dispatch",
+    "executionId": "589ddac5-6dc2-4511-9cd2-9392fe055947"
+   },
+   {
+    "at": "2026-11-15T10:26:51.768Z",
+    "event": "execution-booted",
+    "origin": "controller-dispatch",
+    "executionId": "589ddac5-6dc2-4511-9cd2-9392fe055947"
+   },
+   {
+    "at": "2026-11-15T10:26:55.211Z",
+    "event": "execution-started",
+    "origin": "controller-dispatch",
+    "executionId": "589ddac5-6dc2-4511-9cd2-9392fe055947",
+    "detail": "514ad044-b746-4003-8a1d-5bcec7063463"
+   },
+   {
+    "at": "2026-11-15T10:29:03.407Z",
+    "event": "execution-ended",
+    "origin": "controller-dispatch",
+    "executionId": "589ddac5-6dc2-4511-9cd2-9392fe055947",
+    "detail": "completed"
+   },
+   {
+    "at": "2026-11-15T10:30:32.461Z",
+    "event": "publication-evaluated",
+    "origin": "controller-publication",
+    "executionId": "589ddac5-6dc2-4511-9cd2-9392fe055947",
+    "detail": "awaiting-discovery:bfdd439ceba20a424538647f41e55d5ab2d03217"
+   },
+   {
+    "at": "2026-11-15T10:30:40.403Z",
+    "event": "publication-requested",
+    "origin": "controller-publication",
+    "executionId": "589ddac5-6dc2-4511-9cd2-9392fe055947",
+    "detail": "remote:absent"
+   },
+   {
+    "at": "2026-11-15T10:30:43.804Z",
+    "event": "execution-reserved",
+    "origin": "controller-dispatch",
+    "executionId": "0cd35c93-4ac9-436a-a4d6-9dbb648480dd"
+   },
+   {
+    "at": "2026-11-15T10:30:45.974Z",
+    "event": "execution-prepared",
+    "origin": "controller-dispatch",
+    "executionId": "0cd35c93-4ac9-436a-a4d6-9dbb648480dd"
+   },
+   {
+    "at": "2026-11-15T10:30:56.071Z",
+    "event": "execution-booted",
+    "origin": "controller-dispatch",
+    "executionId": "0cd35c93-4ac9-436a-a4d6-9dbb648480dd"
+   },
+   {
+    "at": "2026-11-15T10:30:59.390Z",
+    "event": "publication-started",
+    "origin": "controller-publication",
+    "executionId": "0cd35c93-4ac9-436a-a4d6-9dbb648480dd",
+    "detail": "bfdd439ceba20a424538647f41e55d5ab2d03217"
+   },
+   {
+    "at": "2026-11-15T10:30:59.605Z",
+    "event": "execution-started",
+    "origin": "controller-dispatch",
+    "executionId": "0cd35c93-4ac9-436a-a4d6-9dbb648480dd",
+    "detail": "df1a51d1-7c07-41a9-87f3-785f644af2f5"
+   },
+   {
+    "at": "2026-11-15T10:31:28.209Z",
+    "event": "execution-ended",
+    "origin": "controller-dispatch",
+    "executionId": "0cd35c93-4ac9-436a-a4d6-9dbb648480dd",
+    "detail": "completed"
+   },
+   {
+    "at": "2026-11-15T10:31:44.335Z",
+    "event": "publication-linked",
+    "origin": "controller-publication",
+    "executionId": "0cd35c93-4ac9-436a-a4d6-9dbb648480dd",
+    "detail": "#5:bfdd439ceba20a424538647f41e55d5ab2d03217"
+   }
+  ]
+ },
+ "executions": [
+  {
+   "executionId": "589ddac5-6dc2-4511-9cd2-9392fe055947",
+   "mode": "initial",
+   "state": "ended",
+   "request": {
+    "ticket": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "base": "main",
+    "branch": "factory/3-99fe871b",
+    "policies": {
+     "skillPack": "factory-skills-v6",
+     "modelBudget": "builder-v1",
+     "copyOutput": true,
+     "editSourceMaxBytes": 8192
+    },
+    "baseCommit": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+    "checkout": "/workspace/checkout",
+    "promptSha256": "387f33a156285501aeaeda803db9be19ff37d7c2cca0e6d6c051164b86824322",
+    "skillPack": {
+     "name": "factory/skill-pack/factory-skills-v6",
+     "manifestSha256": "919b8a4baf20a7d963b846a85a228476109144827528993e15be66b694f69490"
+    },
+    "resume": null,
+    "scopeUpdateIds": [],
+    "session": null
+   },
+   "credential": {
+    "role": "builder",
+    "purpose": "builder-start",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "installationId": 177599217,
+    "permissions": {
+     "metadata": "read",
+     "contents": "read",
+     "issues": "read"
+    },
+    "issuedAt": "2026-11-15T10:26:53.711Z",
+    "expiresAt": "2026-11-15T11:26:54Z"
+   },
+   "credentialRenewals": [],
+   "end": {
+    "at": "2026-11-15T10:29:03.407Z",
+    "outcome": "completed",
+    "code": null,
+    "cessation": "confirmed",
+    "session": {
+     "ref": "r/xRp5an-TQLqnM1-eYcJBDA/w-ivvHaN/profile/sessions/2026-11-15T10-26-55-990Z_01a1debe-e975-73c3-beb7-83496935fe25.jsonl",
+     "sessionId": "01a1debe-e975-73c3-beb7-83496935fe25",
+     "sha256": "e6af9b58a4de9cd5c90891cee15e3ea84561340f0047bd0d711eeaa0aab6b504",
+     "bytes": 70874,
+     "format": "pi-session-jsonl-v3",
+     "profile": {
+      "sdkProfile": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+      "providerId": "openai",
+      "modelId": "gpt-6-luna",
+      "skillPack": "factory-skills-v6",
+      "tools": [
+       "ask_user",
+       "bash",
+       "edit",
+       "handoff",
+       "read",
+       "write"
+      ]
+     }
+    }
+   },
+   "held": null,
+   "verification": {
+    "at": "2026-11-15T10:29:03.403Z",
+    "status": "verified",
+    "reasons": [],
+    "reviewedRound": 1,
+    "finalRound": 3,
+    "contentSha256": "fe9fafa542aca0ea395c8a36710d70d9e664c631dcf5093ba5c96c282fccdbcc",
+    "applicability": {
+     "kind": "unchanged",
+     "head": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+     "reviewedHead": "bfdd439ceba20a424538647f41e55d5ab2d03217"
+    },
+    "gates": [
+     {
+      "id": "ticket-validation",
+      "outcome": "passed",
+      "current": true,
+      "boundToFinalContent": true,
+      "requiredCheck": null
+     }
+    ],
+    "treatments": [],
+    "requiredChecks": []
+   }
+  },
+  {
+   "executionId": "0cd35c93-4ac9-436a-a4d6-9dbb648480dd",
+   "mode": "recovery",
+   "state": "ended",
+   "request": {
+    "ticket": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "base": "main",
+    "branch": "factory/3-99fe871b",
+    "policies": {
+     "skillPack": "factory-skills-v6",
+     "modelBudget": "builder-v1",
+     "copyOutput": true
+    },
+    "baseCommit": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+    "checkout": "/workspace/checkout",
+    "promptSha256": "790ef6d1750e72dc30be9442fcbc2f027f2f6b409e1e131974120fa9c058bdb7",
+    "skillPack": {
+     "name": "factory/skill-pack/factory-skills-v6",
+     "manifestSha256": "919b8a4baf20a7d963b846a85a228476109144827528993e15be66b694f69490"
+    },
+    "resume": {
+     "previousExecutionId": "589ddac5-6dc2-4511-9cd2-9392fe055947",
+     "questionId": null,
+     "answerSha256": null,
+     "scopeUpdateIds": [],
+     "reason": "PUBLICATION_REQUESTED"
+    },
+    "scopeUpdateIds": [],
+    "session": {
+     "mode": "replace",
+     "reason": "PUBLISH_ONLY_SESSION",
+     "previousExecutionId": "589ddac5-6dc2-4511-9cd2-9392fe055947",
+     "previous": {
+      "ref": "r/xRp5an-TQLqnM1-eYcJBDA/w-ivvHaN/profile/sessions/2026-11-15T10-26-55-990Z_01a1debe-e975-73c3-beb7-83496935fe25.jsonl",
+      "sessionId": "01a1debe-e975-73c3-beb7-83496935fe25",
+      "sha256": "e6af9b58a4de9cd5c90891cee15e3ea84561340f0047bd0d711eeaa0aab6b504",
+      "bytes": 70874,
+      "format": "pi-session-jsonl-v3",
+      "profile": {
+       "sdkProfile": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+       "providerId": "openai",
+       "modelId": "gpt-6-luna",
+       "skillPack": "factory-skills-v6",
+       "tools": [
+        "ask_user",
+        "bash",
+        "edit",
+        "handoff",
+        "read",
+        "write"
+       ]
+      }
+     },
+     "decidedAt": "2026-11-15T10:30:57.969Z"
+    },
+    "publication": {
+     "basisExecutionId": "589ddac5-6dc2-4511-9cd2-9392fe055947",
+     "head": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+     "branch": "factory/3-99fe871b",
+     "base": "main",
+     "marker": "<!-- software-factory:work:99fe871b-b872-4522-912c-fefd9700edda -->",
+     "expectedRemote": {
+      "state": "absent"
+     },
+     "pullRequest": null
+    }
+   },
+   "credential": {
+    "role": "builder",
+    "purpose": "builder-publish",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "installationId": 177599217,
+    "permissions": {
+     "metadata": "read",
+     "contents": "write",
+     "pull_requests": "write",
+     "issues": "read"
+    },
+    "issuedAt": "2026-11-15T10:30:57.978Z",
+    "expiresAt": "2026-11-15T11:30:59Z"
+   },
+   "credentialRenewals": [],
+   "end": {
+    "at": "2026-11-15T10:31:28.209Z",
+    "outcome": "completed",
+    "code": null,
+    "cessation": "confirmed",
+    "session": {
+     "ref": "r/OZoCs1K-RBCPIJdnIYfOHw/w-PpDQTI/profile/sessions/2026-11-15T10-31-00-506Z_01a1dec2-a499-76d1-86e7-e221646bad40.jsonl",
+     "sessionId": "01a1dec2-a499-76d1-86e7-e221646bad40",
+     "sha256": "bd52df766f217ee8c35d5eb7707a203a24c336b30e1b2eca509c7fb99e6d25fa",
+     "bytes": 25492,
+     "format": "pi-session-jsonl-v3",
+     "profile": {
+      "sdkProfile": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+      "providerId": "openai",
+      "modelId": "gpt-6-luna",
+      "skillPack": "factory-skills-v6",
+      "tools": [
+       "ask_user",
+       "bash",
+       "read",
+       "write"
+      ]
+     }
+    }
+   },
+   "held": null,
+   "verification": null
+  }
+ ],
+ "prBody": {
+  "bytes": 482,
+  "text": "<!-- software-factory:work:99fe871b-b872-4522-912c-fefd9700edda -->\n## Summary\n\nAdd a concise Factory smoke review loop guide to help engineers carry out the documented review process.\n\nCloses #3\n\n## Validation\n\nReviews round 1 applied; ticket-validation=passed. GitHub required checks still evaluated by GitHub: none named.\n\n## Risk\n\n**Door:** two-way — **Blast Radius:** documentation\n\nReview the guidance for accuracy and consistency with the repository's engineering workflow."
+ },
+ "sessions": [
+  {
+   "executionId": "589ddac5-6dc2-4511-9cd2-9392fe055947",
+   "launch": "w-IkuMs7",
+   "file": "2026-11-15T10-28-23-646Z_01a1dec0-3fdd-70ca-b996-6f9ebf8c7e67.jsonl",
+   "bytes": 25878,
+   "calls": [
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/ticket.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/ticket.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    }
+   ],
+   "tokenPattern": false
+  },
+  {
+   "executionId": "589ddac5-6dc2-4511-9cd2-9392fe055947",
+   "launch": "w-aOZZD9",
+   "file": "2026-11-15T10-28-23-614Z_01a1dec0-3fbd-7370-a971-913c658f087a.jsonl",
+   "bytes": 27259,
+   "calls": [
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/docs/agents/issue-tracker.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/docs/agents/triage-labels.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/docs/agents/domain.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    }
+   ],
+   "tokenPattern": false
+  },
+  {
+   "executionId": "589ddac5-6dc2-4511-9cd2-9392fe055947",
+   "launch": "w-ivvHaN",
+   "file": "2026-11-15T10-26-55-990Z_01a1debe-e975-73c3-beb7-83496935fe25.jsonl",
+   "bytes": 70874,
+   "calls": [
+    {
+     "name": "read",
+     "path": "/artifacts/factory/skill-pack/factory-skills-v6/skills/implement/SKILL.md"
+    },
+    {
+     "name": "bash",
+     "command": "cd /workspace/checkout && gh issue view https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3 --json number,title,body,url,updatedAt,author,labels"
+    },
+    {
+     "name": "bash",
+     "command": "cd /workspace/checkout && git status --short && git rev-parse HEAD && git show -s --format=%H 8c058c90b3a0371d5966892ef5f0fd4758cdf90c && find /artifacts/spec -mindepth 1 -maxdepth 1 -type d -printf '%f\\n' 2>/dev/null | sort && find /artifacts/instructions -mindepth 1 -maxdepth 1 -type d -printf '%f\\n' 2>/dev/null | sort && find . -name AGENTS.md -o -name CLAUDE.md | sort && ls -la"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/AGENTS.md"
+    },
+    {
+     "name": "bash",
+     "command": "cd /workspace/checkout && cat AGENTS.md && find docs -maxdepth 2 -type f -print && git ls-tree -r --name-only 8c058c90b3a0371d5966892ef5f0fd4758cdf90c | grep -E '(^|/)(CONTRIBUTING|CODE_STYLE|STYLEGUIDE|AGENTS|CLAUDE)(\\.|$)|(^|/)docs/' | head -100"
+    },
+    {
+     "name": "bash",
+     "command": "cd /workspace/checkout && git show 8c058c90b3a0371d5966892ef5f0fd4758cdf90c:AGENTS.md && for f in docs/agents/issue-tracker.md docs/agents/triage-labels.md docs/agents/domain.md; do echo ===$f; git show 8c058c90b3a0371d5966892ef5f0fd4758cdf90c:$f; done && git show 8c058c90b3a0371d5966892ef5f0fd4758cdf90c:.github/CONTRIBUTING.md 2>/dev/null || true"
+    },
+    {
+     "name": "bash",
+     "command": "set -eu\nmkdir -p /artifacts/spec/v1 /artifacts/instructions/v1\ncd /workspace/checkout\ngh issue view https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3 --json number,title,body,url,updatedAt,author,labels > /artifacts/spec/v1/ticket.json\nfor f in AGENTS.md docs/agents/issue-tracker.md docs/agents/triage-labels.md docs/agents/domain.md; do git show 8c058c90b3a0371d5966892ef5f0fd4758cdf90c:\"$f\" > \"/artifacts/instructions/v1/$f\"; done\nprintf '%s\\n' 'Ticket title: Factory smoke: document the review loop'\nprintf '%s\\n' 'Explicitly referenced repository documents: none.'\nsha256sum /artifacts/spec/v1/ticket.json /artifacts/instructions/v1/AGENTS.md /artifacts/instructions/v1/docs/agents/issue-tracker.md /artifacts/instructions/v1/docs/agents/triage-labels.md /artifacts/instructions/v1/docs/agents/domain.md\n"
+    },
+    {
+     "name": "bash",
+     "command": "find /artifacts/spec /artifacts/instructions -maxdepth 4 -type f -print 2>/dev/null; ls -la /artifacts/spec/v1 /artifacts/instructions/v1 2>/dev/null; date -u +%Y-%m-%dT%H:%M:%SZ"
+    },
+    {
+     "name": "bash",
+     "command": "set -eu\ncd /workspace/checkout\nmkdir -p /artifacts/instructions/v1/docs/agents\nfor f in docs/agents/issue-tracker.md docs/agents/triage-labels.md docs/agents/domain.md; do git show 8c058c90b3a0371d5966892ef5f0fd4758cdf90c:\"$f\" > \"/artifacts/instructions/v1/$f\"; done\nsha256sum /artifacts/spec/v1/ticket.json /artifacts/instructions/v1/AGENTS.md /artifacts/instructions/v1/docs/agents/issue-tracker.md /artifacts/instructions/v1/docs/agents/triage-labels.md /artifacts/instructions/v1/docs/agents/domain.md\n"
+    },
+    {
+     "name": "write",
+     "path": "/artifacts/spec/v1/sources.json"
+    },
+    {
+     "name": "write",
+     "path": "/artifacts/instructions/v1/sources.json.tmp"
+    },
+    {
+     "name": "bash",
+     "command": "mv /artifacts/instructions/v1/sources.json.tmp /artifacts/instructions/v1/sources.json && python3 -m json.tool /artifacts/spec/v1/sources.json >/dev/null && python3 -m json.tool /artifacts/instructions/v1/sources.json >/dev/null && sha256sum /artifacts/spec/v1/ticket.json /artifacts/instructions/v1/AGENTS.md /artifacts/instructions/v1/docs/agents/*.md && git -C /workspace/checkout status --short"
+    },
+    {
+     "name": "write",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "bash",
+     "command": "cd /workspace/checkout && git diff --check && git diff -- docs/FACTORY_SMOKE.md && git status --short && git add docs/FACTORY_SMOKE.md && git commit -m \"docs: add Factory smoke review loop page\""
+    },
+    {
+     "name": "bash",
+     "command": "cd /workspace/checkout && test -f docs/FACTORY_SMOKE.md && grep -q '^## Steps' docs/FACTORY_SMOKE.md && grep -q '^## Rollback' docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "handoff"
+    },
+    {
+     "name": "bash",
+     "command": "cd /workspace/checkout && test -f docs/FACTORY_SMOKE.md && grep -q '^## Steps' docs/FACTORY_SMOKE.md && grep -q '^## Rollback' docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "handoff"
+    }
+   ],
+   "tokenPattern": false
+  },
+  {
+   "executionId": "0cd35c93-4ac9-436a-a4d6-9dbb648480dd",
+   "launch": "w-PpDQTI",
+   "file": "2026-11-15T10-31-00-506Z_01a1dec2-a499-76d1-86e7-e221646bad40.jsonl",
+   "bytes": 25492,
+   "calls": [
+    {
+     "name": "read",
+     "path": "/artifacts/factory/skill-pack/factory-skills-v6/skills/pr/SKILL.md"
+    },
+    {
+     "name": "bash",
+     "command": "git -C /workspace/checkout log -5 --oneline --decorate && git -C /workspace/checkout status --short --branch && git -C /workspace/checkout rev-parse HEAD && git -C /workspace/checkout ls-remote origin refs/heads/factory/3-99fe871b"
+    },
+    {
+     "name": "write",
+     "path": "/artifacts/publication/pr-body.md"
+    },
+    {
+     "name": "bash",
+     "command": "git -C /workspace/checkout push --force-with-lease=refs/heads/factory/3-99fe871b: origin bfdd439ceba20a424538647f41e55d5ab2d03217:refs/heads/factory/3-99fe871b"
+    },
+    {
+     "name": "bash",
+     "command": "gh pr list --repo Sanmoo/java-springboot-event-sourcing --head factory/3-99fe871b --state all --json number,url,isDraft"
+    },
+    {
+     "name": "bash",
+     "command": "gh pr create --repo Sanmoo/java-springboot-event-sourcing --draft --base main --head factory/3-99fe871b --title \"Add Factory smoke review guide\" --body-file /artifacts/publication/pr-body.md"
+    }
+   ],
+   "tokenPattern": false
+  }
+ ],
+ "remote": {
+  "kind": "observed",
+  "source": "github-rest",
+  "observedAt": "2026-11-15T10:31:44.752Z",
+  "repository": "Sanmoo/java-springboot-event-sourcing",
+  "repositoryId": 1256893534,
+  "issues": {
+   "3": {
+    "completeness": "complete",
+    "candidates": [
+     {
+      "pullRequestId": 5321820867,
+      "nodeId": "PR_kwDOSuqsXs8AAAABPTSKww",
+      "number": 5,
+      "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5",
+      "state": "open",
+      "merged": false,
+      "headRef": "factory/3-99fe871b",
+      "headRepositoryId": 1256893534,
+      "author": {
+       "id": 351187749,
+       "login": "sanmoo-factory[bot]",
+       "type": "Bot"
+      },
+      "association": [
+       "closing-reference",
+       "cross-reference",
+       "known-branch"
+      ],
+      "headSha": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+      "baseRef": "main",
+      "draft": true,
+      "body": "<!-- software-factory:work:99fe871b-b872-4522-912c-fefd9700edda -->\n## Summary\n\nAdd a concise Factory smoke review loop guide to help engineers carry out the documented review process.\n\nCloses #3\n\n## Validation\n\nReviews round 1 applied; ticket-validation=passed. GitHub required checks still evaluated by GitHub: none named.\n\n## Risk\n\n**Door:** two-way — **Blast Radius:** documentation\n\nReview the guidance for accuracy and consistency with the repository's engineering workflow."
+     }
+    ]
+   }
+  },
+  "branches": {
+   "factory/3-99fe871b": {
+    "state": "present",
+    "sha": "bfdd439ceba20a424538647f41e55d5ab2d03217"
+   }
+  },
+  "refs": {
+   "state": "complete",
+   "refs": {
+    "refs/heads/factory/3-99fe871b": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+    "refs/heads/main": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c"
+   }
+  },
+  "baseProtection": {
+   "state": "pull-request-required",
+   "sources": [
+    "ruleset:26435808"
+   ]
+  },
+  "limitations": [
+   "Own branch tips are read from the remote refs (Contents read) separately from the pull request listing.",
+   "Association = GitHub closing keywords in pull request title/body, native issue-timeline cross-references and Development links (connected/disconnected) for pull requests of this repository, and known own branches.",
+   "Pull requests in other repositories that reference the Ticket are not treated as associated (they cannot be own publications of this repository).",
+   "A Development link whose pull request is not identified in the timeline makes the Ticket incomplete, never clear.",
+   "Listing and timeline are separate reads, not an atomic remote snapshot."
+  ]
+ },
+ "ticket": {
+  "kind": "observed",
+  "source": "github-rest",
+  "observedAt": "2026-11-15T10:31:55.808Z",
+  "completeness": "complete",
+  "ticket": {
+   "tracker": "github",
+   "repository": "Sanmoo/java-springboot-event-sourcing",
+   "repositoryId": 1256893534,
+   "issueId": 6391129588,
+   "nodeId": "I_kwDOSuqsXs8AAAABfPDl9A",
+   "number": 3,
+   "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3"
+  },
+  "state": "open",
+  "stateReason": null,
+  "labels": [
+   {
+    "id": 12918930265,
+    "name": "ready-for-agent"
+   }
+  ],
+  "pullRequest": false
+ },
+ "baseBefore": {
+  "state": "present",
+  "sha": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c"
+ },
+ "refsBefore": {
+  "refs/heads/main": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c"
+ },
+ "checkout": {
+  "version": 1,
+  "path": "/workspace/checkout",
+  "repository": "Sanmoo/java-springboot-event-sourcing",
+  "repositoryId": 1256893534,
+  "base": "main",
+  "branch": "factory/3-99fe871b",
+  "baseCommit": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+  "origin": "https://github.com/Sanmoo/java-springboot-event-sourcing.git",
+  "preparedAt": "2026-11-15T10:26:39.682Z",
+  "cache": "factory-exclusive-bare",
+  "clone": "no-hardlinks",
+  "fetchCredentialRevocation": "revoked"
+ },
+ "artifacts": [
+  ".factory-profile/storage-v1",
+  "instructions/v1/AGENTS.md",
+  "instructions/v1/docs/agents/domain.md",
+  "instructions/v1/docs/agents/issue-tracker.md",
+  "instructions/v1/docs/agents/triage-labels.md",
+  "instructions/v1/sources.json",
+  "publication/pr-body.md",
+  "review/r1/committed.patch",
+  "review/r1/index.json",
+  "review/r1/staged.patch",
+  "review/r1/unstaged.patch",
+  "review/r2/committed.patch",
+  "review/r2/index.json",
+  "review/r2/staged.patch",
+  "review/r2/unstaged.patch",
+  "review/r3/committed.patch",
+  "review/r3/index.json",
+  "review/r3/staged.patch",
+  "review/r3/unstaged.patch",
+  "spec/v1/sources.json",
+  "spec/v1/ticket.json"
+ ],
+ "specSources": {
+  "text": "{\"version\":\"v1\",\"complete\":true,\"capturedAt\":\"2026-11-15T10:28:00Z\",\"sources\":[{\"origin\":\"https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3\",\"copy\":\"/artifacts/spec/v1/ticket.json\",\"retrievedAt\":\"2026-11-15T10:27:00Z\",\"sha256\":\"e4b7c0b71c2fd9b0daa4fa959ba1b9a55678e50c395d64666e3c479a54bcaed7\",\"revision\":\"2026-11-15T00:00:22Z\"}]}\n"
+ },
+ "instructionSources": {
+  "text": "{\"version\":\"v1\",\"complete\":true,\"capturedAt\":\"2026-11-15T10:28:00Z\",\"sources\":[{\"origin\":\"AGENTS.md\",\"copy\":\"/artifacts/instructions/v1/AGENTS.md\",\"retrievedAt\":\"2026-11-15T10:27:00Z\",\"sha256\":\"d623b8027afdb31af954ad21ba00e29a76a05942f0898209ab0e724761ecf58e\",\"revision\":\"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\",\"scope\":\"/\",\"precedence\":1},{\"origin\":\"docs/agents/issue-tracker.md\",\"copy\":\"/artifacts/instructions/v1/docs/agents/issue-tracker.md\",\"retrievedAt\":\"2026-11-15T10:27:00Z\",\"sha256\":\"418382ab0909b5bd01979828be5ba58806b6518d7b051b327d1c3b7be5e18ea2\",\"revision\":\"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\",\"scope\":\"/\",\"precedence\":2},{\"origin\":\"docs/agents/triage-labels.md\",\"copy\":\"/artifacts/instructions/v1/docs/agents/triage-labels.md\",\"retrievedAt\":\"2026-11-15T10:27:00Z\",\"sha256\":\"aab16579b0800e034baa2509ae16c65de8a8be92908833a29a7ac9292406a1d9\",\"revision\":\"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\",\"scope\":\"/\",\"precedence\":2},{\"origin\":\"docs/agents/domain.md\",\"copy\":\"/artifacts/instructions/v1/docs/agents/domain.md\",\"retrievedAt\":\"2026-11-15T10:27:00Z\",\"sha256\":\"e43b491dfa9935bd169c2e17b00349715fc56eed268b924280938bd02e5e137c\",\"revision\":\"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\",\"scope\":\"/\",\"precedence\":2}]}\n"
+ },
+ "git": {
+  "status": "observed",
+  "head": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+  "branch": "factory/3-99fe871b",
+  "commits": [
+   "bfdd439 docs: add Factory smoke review loop page",
+   "8c058c9 Configure engineering agent skills",
+   "3ed6575 wippy",
+   "90f6ad5 docs: global event position implementation plan",
+   "dafc2a2 docs: global event position design spec",
+   "20fa3b0 fix: restore null return in harness retry to not break non-concurrency failure scenarios",
+   "7f15aea Merge branch 'concurrency-tests'",
+   "0ce69c5 fix: rethrow unexpected exceptions in harness retry instead of swallowing them",
+   "3d6d076 chore(quality): fix SpotBugs and PMD violations in concurrency tests",
+   "a2248bc test(concurrency): add mixed commands scenario",
+   "9ba1af6 test(concurrency): add write and read with minVersion scenario",
+   "55d57fe test(concurrency): add idempotent duplicate requests scenario",
+   "c55e9ac test(concurrency): add authorization and capture scenario",
+   "545ce5f add graphify graph",
+   "3e755bf test(concurrency): add concurrent authorizations scenario",
+   "92877be test(concurrency): add base concurrency integration test class",
+   "3ab8ade test(concurrency): add ConcurrentCommandHarness",
+   "4a9a2c1 test(concurrency): add ConcurrentCommandResult record",
+   "3b0e6c4 polish: clear all deprecation notices, warnings, and PMD violations from check build",
+   "96ae37b style: remove redundant imports in CreditAccountController",
+   "aa55976 fix: flatten AuthorizePurchaseResponse JSON with @JsonUnwrapped to preserve API contract",
+   "12295ab fix: exclude CreditAccountResponse from SpotBugs EI_EXPOSE_REP and add defensive list copy",
+   "d8783df fix: remove unused List import in CreditAccountDtoMapper",
+   "2725901 test: use typed response DTOs in CreditAccountControllerListIT",
+   "8a89f1e test: use typed response DTOs in CreditAccountControllerIT",
+   "2c6c9da refactor: use ErrorResponse in RestExceptionHandler",
+   "1ebf772 refactor: use typed DTOs in PageResponse and CreditAccountController",
+   "0a3ce3e feat: add explicit REST response DTOs and mapper",
+   "4debd91 docs: add design spec for explicit REST response DTOs",
+   "e8fea05 simplify details manually",
+   "92354fa style: remove extra blank lines from CreditAccountUseCaseSupport",
+   "ee3d54a refactor(idempotency): remove duplicated aggregate version column",
+   "09f4955 docs: plan idempotency aggregate version simplification",
+   "c4b2150 chore(quality): allow snake_case tests, update spotbugs exclude, fix static field",
+   "1e47eee chore(quality): fix PMD acceptance test violations",
+   "c971b04 chore(quality): fix PMD violations across main source",
+   "69fbda2 chore(checkstyle): remove unused import and unused variable",
+   "399f9ca test(usecase): cover credit account listing mapping",
+   "d152884 test(projection): cover worker PIT survivor paths",
+   "e6d18fa test(projection): cover capture and release projector paths",
+   "3c05b52 docs: plan targeted PIT survivor coverage",
+   "55cf4d4 test(projection): cover projector limit change, payment and auth",
+   "55cd495 test(projection): cover worker gating, retry and unblock paths",
+   "70a07d3 test(projection): add StaleDeliveryRecovery coverage",
+   "40bcba8 test(projection): add ProjectionGatingResult coverage",
+   "1a67ed8 test(projection): add ProjectionWorkerResult coverage",
+   "ad14654 fix(architecture): resolve qualityTest violations via ProjectionConfig port",
+   "6d4e4a8 test(architecture): deny non-allow-listed Spring in core",
+   "d76b238 refactor(projection): use TransactionRunner port in stale recovery",
+   "af5260c refactor(projection): use TransactionRunner port in worker"
+  ],
+  "diffStat": "docs/FACTORY_SMOKE.md | 11 +++++++++++\n 1 file changed, 11 insertions(+)",
+  "remotes": [
+   {
+    "name": "origin",
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing.git"
+   }
+  ],
+  "alternates": false,
+  "copiedBytes": 839396
+ }
+}

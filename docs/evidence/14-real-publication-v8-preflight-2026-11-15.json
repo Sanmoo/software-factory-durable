@@ -1,0 +1,50 @@
+{
+ "status": "success",
+ "ticket": {
+  "kind": "observed",
+  "source": "github-rest",
+  "observedAt": "2026-11-15T10:26:04.826Z",
+  "completeness": "complete",
+  "ticket": {
+   "tracker": "github",
+   "repository": "Sanmoo/java-springboot-event-sourcing",
+   "repositoryId": 1256893534,
+   "issueId": 6391129588,
+   "nodeId": "I_kwDOSuqsXs8AAAABfPDl9A",
+   "number": 3,
+   "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3"
+  },
+  "state": "open",
+  "stateReason": null,
+  "labels": [
+   {
+    "id": 12918930265,
+    "name": "ready-for-agent"
+   }
+  ],
+  "pullRequest": false
+ },
+ "graph": {
+  "completeness": "complete",
+  "nodes": 1,
+  "problems": []
+ },
+ "base": {
+  "state": "present",
+  "sha": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c"
+ },
+ "refs": {
+  "refs/heads/main": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c"
+ },
+ "baseProtection": {
+  "state": "pull-request-required",
+  "sources": [
+   "ruleset:26435808"
+  ]
+ },
+ "app": {
+  "login": "sanmoo-factory[bot]",
+  "id": 351187749
+ },
+ "associatedPullRequests": 0
+}
