@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { ended, remainingMs, until } from './budget.js';
@@ -22,6 +23,8 @@ test('past the budget a hung child is killed with its whole group and the failur
   try {
     await assert.rejects(ended(child, () => 'stage-canary'), /TEST_BUDGET_EXCEEDED.*last stage: stage-canary/);
   } finally { if (saved === undefined) delete process.env.FACTORY_TEST_DEADLINE; else process.env.FACTORY_TEST_DEADLINE = saved; }
+  // SIGKILL delivery is asynchronous: the event is the pipe the grandchild shares with its parent closing (both files closed).
+  if (child.stdout.readable) await once(child.stdout, 'close');
   // The group was SIGKILLed: the grandchild is gone, a zombie, or on its exit path (PF_EXITING), never alive.
   let alive = false;
   try {
