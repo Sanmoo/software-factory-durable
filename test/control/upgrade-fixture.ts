@@ -16,7 +16,7 @@ import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './d
 export const questionId = '0b9c6a52-3d3e-4c8f-9a51-000000000033';
 const sha = (question: string, context: string) => createHash('sha256').update(JSON.stringify({ question, context })).digest('hex');
 
-function ports(cessation: boolean): ExecutionPorts {
+function ports(cessation: boolean, live = false): ExecutionPorts {
   let asked = false;
   return {
     configuration: { schemaVersion: 1 }, capacity: 1,
@@ -44,7 +44,9 @@ function ports(cessation: boolean): ExecutionPorts {
       async activate(invocation, _delivery, events) {
         const receipt = { workId: invocation.context.workId, id: '99999999-2222-4333-8444-555555555555' };
         const started = Promise.resolve({ receipt, invocation: { executionId: invocation.context.executionId, invocationId: invocation.context.invocationId } });
-        const completed = started.then(async () => {
+        // `live`: the activation never ends by itself (a Builder still running when the owner stops).
+        let end: (value: { status: 'failure'; code: string }) => void = () => {};
+        const completed = live ? new Promise<{ status: 'failure'; code: string }>(resolve => { end = resolve; }) : started.then(async () => {
           if (asked) return { status: 'success' as const, receipt };
           asked = true;
           const question: WorkerQuestion = { questionId, question: 'Which file name should the doc use?', context: 'Ticket names none.',
@@ -52,7 +54,7 @@ function ports(cessation: boolean): ExecutionPorts {
           const ack = await events!.question!(question);
           return { status: 'question' as const, receipt, question: { ...question, acknowledged: ack.status === 'recorded' } };
         });
-        return { worker: invocation.context.invocationId, started, completed, close() {} };
+        return { worker: invocation.context.invocationId, started, completed, close() { end({ status: 'failure', code: 'WORKER_EXECUTION_UNCERTAIN' }); } };
       },
       async deliver(_worker, directive) { return { status: directive.kind === 'credential' ? 'delivered' as const : 'withdrawn' as const }; },
     },
@@ -82,7 +84,8 @@ export async function storageWithPendingQuestion(storagePath: string, options: {
   assert.equal(pause.kind, 'durable');
   const list = await control.inspect({ kind: 'list' }) as ListView;
   stop.abort();
-  assert.deepEqual(await running, { kind: cessation ? 'clean' : 'uncertain' });
+  // Ticket 26: an earlier Execution ended with unconfirmed cessation is not a live activity of THIS stop (its next boot reconciles it).
+  assert.deepEqual(await running, { kind: 'clean' });
   const waiting = list.works.find(work => work.ticket.number === 3)!;
   assert.ok(!cessation || waiting.impediments.some(item => item.code === 'QUESTION_PENDING'), 'the fixture holds a pending Question');
   return { list, waiting, remote };
@@ -127,4 +130,23 @@ export async function writeFormatOne(source: string, target: string, extra: { ki
     }, BACKGROUND_CONTEXT);
   }
   await session.close(BACKGROUND_CONTEXT);
+}
+
+/** Ticket 33 + 26: the owner is stopped while its Builder still runs and the boot stop cannot be confirmed: the run ends `uncertain`. */
+export async function storageStoppedWithLiveActivity(storagePath: string) {
+  const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
+  const github = githubDoubles(remote);
+  const time = manualClock();
+  const control: Control = await openControl({ storagePath, runtimeInventory: 'empty', execution: ports(false, true),
+    access: { tracker: github.tracker, repository: github.repository, repositories: [scope], operators: ['operator-one'] }, polling: { intervalSeconds: 60, clock: time.clock } });
+  const stop = new AbortController();
+  const running = control.run(stop.signal);
+  for (let i = 0; i < 800; i++) {
+    const work = (await control.inspect({ kind: 'list' }) as ListView).works[0];
+    if (work?.execution?.state === 'started') break;
+    if (time.isSleeping()) time.advance();
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+  stop.abort();
+  return running;
 }

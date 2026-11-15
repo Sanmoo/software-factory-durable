@@ -7,7 +7,7 @@ import { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node';
 import { inspectStorage, migrateStorage, openControl, StorageFormatError, type StorageInspection } from '../../src/control/index.js';
 import { openStore } from '../../src/control/durable/store.js';
 import { recordRunStart } from '../../src/control/durable/migration.js';
-import { storageWithPendingQuestion, writeFormatOne } from './upgrade-fixture.js';
+import { storageStoppedWithLiveActivity, storageWithPendingQuestion, writeFormatOne } from './upgrade-fixture.js';
 
 // Flow level (ticket 33 review): strictness of the storage gate, verification BEFORE the migration commit, and the recorded run end.
 async function directory(t: { after(fn: () => Promise<void>): void }) {
@@ -19,13 +19,18 @@ const storage = (inspection: StorageInspection) => { assert.equal(inspection.kin
 const incompatibleOpen = (path: string) => assert.rejects(openControl({ storagePath: path, runtimeInventory: 'unknown' }),
   (error: unknown) => error instanceof StorageFormatError && error.code === 'STORAGE_INCOMPATIBLE');
 
-test('a stop whose activity cessation is not confirmed is recorded uncertain, never clean', async t => {
+test('the run end has ONE source (ticket 26 stop outcome): a stop with a live, unconfirmed activity is uncertain, run result and durable end alike', async t => {
   const dir = await directory(t);
   const path = join(dir, 'control.sqlite');
-  await storageWithPendingQuestion(path, { cessation: false });
+  assert.deepEqual(await storageStoppedWithLiveActivity(path), { kind: 'uncertain' });
   const inspected = storage(await inspectStorage(path));
-  assert.ok(inspected.activity.unsettled.length >= 1, 'the asking Execution is unsettled');
   assert.equal((inspected.installation!.lifecycle as { last: { end: string } }).last.end, 'uncertain');
+  // An earlier Execution ended with unconfirmed cessation is not live at THIS stop (clean), but stays visible as unsettled durable activity.
+  const other = join(dir, 'other.sqlite');
+  await storageWithPendingQuestion(other, { cessation: false });
+  const settledCheck = storage(await inspectStorage(other));
+  assert.equal((settledCheck.installation!.lifecycle as { last: { end: string } }).last.end, 'clean');
+  assert.ok(settledCheck.activity.unsettled.length >= 1);
 });
 
 test('only a provably empty file is fresh: a non-Factory SQLite database is refused and left untouched', async t => {
