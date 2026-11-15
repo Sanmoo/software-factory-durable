@@ -108,13 +108,17 @@ export async function recordRetentionSweep(session: Session, work_id: string, in
       unknown: input.inventory.unknown.length, logs: input.inventory.items.filter(item => item.kind === 'log').length,
       sessions: input.inventory.items.filter(item => item.kind === 'session').length, bytes: input.inventory.items.reduce((sum, item) => sum + item.bytes, 0) };
     const protections = retentionProtections(work, input.facts);
+    const before = view.sweeps === 0 ? 'first' : JSON.stringify([view.state, view.class, view.protections]);
     view.sweeps++; view.lastSweepAt = at;
     refresh(work, view, { now: input.now, protections });
     const decisions = input.inventory && input.inventory.completeness === 'complete' ? classifyDetails(work, input.inventory, { protections, now: input.now, dueAtMs: dueAtMsOf(work, input.days) }) : [];
     // An item whose removal result is unknown is never removed again implicitly; the operator decides through an explicit plan.
     const unsettled = new Set(view.removals.filter(item => item.outcome === 'indeterminate' || item.outcome === 'failed' || item.outcome === 'refused').map(item => item.id));
     const eligible = decisions.filter(item => item.decision === 'eligible' && !unsettled.has(item.item.id));
-    history(work, 'retention-evaluated', `${view.state}:${view.class}:${eligible.length} eligible${protections.length ? `:protected:${protections.join(',')}` : ''}`, at);
+    // History only when the evaluation changed or something becomes removable (a daily sweep of an unchanged Work adds nothing).
+    if (eligible.length || before !== JSON.stringify([view.state, view.class, view.protections])) {
+      history(work, 'retention-evaluated', `${view.state}:${view.class}:${eligible.length} eligible${protections.length ? `:protected:${protections.join(',')}` : ''}`, at);
+    }
     return { eligible, view: copy(view) };
   });
 }

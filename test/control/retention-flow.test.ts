@@ -291,3 +291,12 @@ test('AC5/AC6 (ticket 17 hand-off): a kept/refused own branch of a delivered Wor
   assert.equal(attempts(), 2, 'exactly one fresh attempt for the confirmation');
   assert.deepEqual([work.cleanup!.resources.find(item => item.id === branch.id)!.state, work.cleanup!.explicit?.consumed, work.result], ['kept', true, 'delivered']);
 });
+
+test('a daily sweep of an unchanged Work adds no history (undelivered Works are kept for ever without growing their history)', async t => {
+  const h = await harness(t, { result: 'cancelled' });
+  const desk = h.retentionDesk();
+  for (let index = 0; index < 5; index++) { h.clock.now = Date.now() + index * day; await desk.cycle(); }
+  const work = await h.work();
+  assert.equal(work.retention?.sweeps, 5);
+  assert.equal(work.history.filter(item => item.event === 'retention-evaluated').length, 1);
+});
