@@ -228,3 +228,31 @@ test('review MED 6: a later verified basis updates the SAME own PR once (lease o
   await h.cycles(3);
   assert.equal(h.activations().length, 4, 'nothing repeated');
 });
+
+test('real-run recovery: the push landed but `gh pr create` failed -> ONE PR-only continuation (no push) links the PR; a second failure blocks', async t => {
+  const pushOnly = (remote: Remote, activation: Activation) => {
+    const { branch, head } = /your branch (?<branch>\S+);.*verified commit (?<head>[0-9a-f]{40})/s.exec(activation.prompt)!.groups as { branch: string; head: string };
+    (remote.refs ??= {})[branch] = head; // like the real run: the push succeeded, the PR creation did not
+  };
+  const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
+  const h = await harness(t, remote, [{ kind: 'implement', head: 'd'.repeat(40) }, { kind: 'publish', publish: pushOnly, end: 'success' },
+    { kind: 'publish', publish: publishOwn(), end: 'success' }]);
+  await h.implemented();
+  await h.settle(async () => publicationOf(await h.work())?.state === 'published', 'linked after the PR-only continuation');
+  const [first, second] = h.activations().filter(item => item.phaseId === 'builder-publication');
+  assert.ok(first!.prompt.includes('git -C /workspace/checkout push --force-with-lease'), 'the first activation pushes');
+  assert.ok(second!.prompt.includes('already holds the verified commit') && !second!.prompt.includes('git -C /workspace/checkout push'), 'the continuation never pushes');
+  assert.ok(second!.prompt.includes('gh pr create'));
+  const publication = publicationOf(await h.work());
+  assert.deepEqual(publication.attempts!.map(item => item.expectedRemote), [{ state: 'absent' }, { state: 'present', sha: 'd'.repeat(40) }]);
+  assert.ok((await h.work()).history.some(item => item.event === 'publication-requested' && item.detail.startsWith('create-pull-request-only:')));
+  await h.stop();
+  // The continuation fails too: never a third activation.
+  const again: Remote = { pulls: {}, issues: [remoteIssue(3)] };
+  const g = await harness(t, again, [{ kind: 'implement', head: 'd'.repeat(40) }, { kind: 'publish', publish: pushOnly, end: 'success' }, { kind: 'publish', publish: () => {}, end: 'success' }]);
+  await g.implemented();
+  await g.settle(async () => publicationOf(await g.work())?.state === 'blocked', 'blocked');
+  await g.cycles(3);
+  assert.deepEqual(publicationOf(await g.work()).reasons, ['PUBLICATION_OUTCOME_UNCONFIRMED', 'REMOTE_BRANCH_AT_VERIFIED_HEAD']);
+  assert.equal(g.activations().filter(item => item.phaseId === 'builder-publication').length, 2);
+});

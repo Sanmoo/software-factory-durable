@@ -193,3 +193,21 @@ test('AC4/AC6: the next publication step follows the Work: evaluate a new verifi
   assert.deepEqual(publicationStep(work(execution({ executionId: 'e3' }), { state: 'requested', basisExecutionId: 'e1' })), { kind: 'evaluate', basisExecutionId: 'e3' },
     'a newer verified basis (e.g. after a scope update) is evaluated again');
 });
+
+test('real-run recovery: own branch created in the attempt window at EXACTLY the verified head, no PR -> one PR-only continuation (no push)', () => {
+  const own = `refs/heads/${branch}`;
+  const window = { ...refs, [own]: head };
+  const decide = (input: Partial<Parameters<typeof decideDiscovery>[0]>) => decideDiscovery({ expect, attempted: true, refsBefore: refs, prOnlyRecovery: true,
+    observation: observed([], { state: 'present', sha: head }, { refs: window }), ...input });
+  const recovered = decide({});
+  assert.equal(recovered.outcome, 'absent');
+  assert.ok(recovered.outcome === 'absent' && recovered.recovery === 'create-pull-request-only' && recovered.update === null &&
+    JSON.stringify(recovered.expectedRemote) === JSON.stringify({ state: 'present', sha: head }), 'the remote already holds the commit: no push, only the PR');
+  // Never adopted otherwise: a second PR-only attempt, a branch that existed before the window, another head, or another ref changed.
+  assert.deepEqual(decide({ prOnlyRecovery: false }).reasons, ['PUBLICATION_OUTCOME_UNCONFIRMED', 'REMOTE_BRANCH_AT_VERIFIED_HEAD']);
+  assert.deepEqual(decide({ refsBefore: { ...refs, [own]: head } }).reasons, ['PUBLICATION_OUTCOME_UNCONFIRMED', 'REMOTE_BRANCH_AT_VERIFIED_HEAD']);
+  assert.deepEqual(decide({ observation: observed([], { state: 'present', sha: 'e'.repeat(40) }, { refs: { ...refs, [own]: 'e'.repeat(40) } }) }).reasons,
+    ['PUBLICATION_OUTCOME_UNCONFIRMED', 'REMOTE_BRANCH_UNKNOWN_CHANGE']);
+  assert.deepEqual(decide({ observation: observed([], { state: 'present', sha: head }, { refs: { ...window, 'refs/tags/x': head } }) }).reasons, ['UNEXPECTED_REF_CHANGE:refs/tags/x']);
+  assert.deepEqual(decide({ refsBefore: null }).reasons, ['PUBLICATION_OUTCOME_UNCONFIRMED', 'REMOTE_BRANCH_AT_VERIFIED_HEAD'], 'without the window snapshot nothing is attributable');
+});

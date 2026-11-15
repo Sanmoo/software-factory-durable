@@ -10,6 +10,7 @@ import { installation, legacyCredentialLifecycle, ticketIndex, works, type WorkR
 import { questions } from './questions.js';
 import { pendingScope } from './scope.js';
 import { markPublicationAttempt } from './publication.js';
+import { publicationResumes } from '../rules/publication.js';
 import type { Session } from './store.js';
 import { classifyInterruption } from '../rules/recovery.js';
 import { applyRecoveryRequest, backoffRunning } from './recovery-request.js';
@@ -93,14 +94,14 @@ export async function admitExecution(session: Session, input: { work_id: string;
     } else if (previous?.end?.outcome === 'completed' && scopeUpdateIds.length) {
       // After a COMPLETED Execution only an authorized concrete scope change resumes the Work (never a later Ticket/link edit).
       if (!input.resume || input.resume.reason !== 'SCOPE_UPDATED' || input.resume.previousExecutionId !== previous.executionId || input.resume.questionId !== null || !sameScope) reasons.push('RESUME_BASIS_CHANGED');
-    } else if (work.publication?.state === 'requested' && previous?.end?.outcome === 'completed' && previous.executionId === work.publication.basisExecutionId) {
+    } else if (previous && work.publication?.state === 'requested' && publicationResumes(previous, work.publication.basisExecutionId)) {
       // Ticket 14: the publication activation carries exactly the requested basis, verified commit, branch/base, marker and lease expectation.
       const requested = work.publication;
       const asked = input.request.publication;
       if (!input.resume || input.resume.reason !== 'PUBLICATION_REQUESTED' || input.resume.previousExecutionId !== previous.executionId || input.resume.questionId !== null ||
           !asked || !requested.verified || asked.basisExecutionId !== requested.basisExecutionId || asked.head !== requested.verified.head || asked.branch !== requested.branch ||
           asked.base !== requested.base || asked.marker !== requested.marker || JSON.stringify(asked.expectedRemote) !== JSON.stringify(requested.expectedRemote) ||
-          (asked.pullRequest ?? null) !== (requested.update ?? null) || publicationAttemptedHead(requested, asked.head) ||
+          (asked.pullRequest ?? null) !== (requested.update ?? null) || publicationAttemptedHead(requested, asked.head, asked) ||
           input.request.branch !== requested.branch) reasons.push('RESUME_BASIS_CHANGED');
     } else if (input.resume) reasons.push('RESUME_BASIS_CHANGED');
     // A publication activation started earlier and its effects are not discovered yet: nothing else runs before the discovery (spec §9.1).
@@ -155,8 +156,17 @@ export async function admitExecution(session: Session, input: { work_id: string;
   }, BACKGROUND_CONTEXT);
 }
 
-/** The head was already attempted (recorded at an activation commit): never admitted again. */
-const publicationAttemptedHead = (publication: NonNullable<WorkRecord['publication']>, head: string) => (publication.attempts ?? []).some(item => item.head === head);
+/**
+ * The head was already attempted (recorded at an activation commit): never admitted again — except ONE PR-only continuation after a single
+ * pushing attempt (it expected the branch absent), whose request names the remote already at that head and creates no update.
+ */
+const publicationAttemptedHead = (publication: NonNullable<WorkRecord['publication']>, head: string, asked?: { expectedRemote: { state: string; sha?: string }; pullRequest?: number | null }) => {
+  const attempts = (publication.attempts ?? []).filter(item => item.head === head);
+  if (!attempts.length) return false;
+  const prOnly = attempts.length === 1 && attempts[0]!.expectedRemote?.state === 'absent' && asked?.expectedRemote.state === 'present' && asked.expectedRemote.sha === head &&
+    (asked.pullRequest ?? null) === null;
+  return !prOnly;
+};
 const requestOf = <T extends { publication?: unknown }>(request: T): Omit<T, 'publication'> => { const { publication: _publication, ...rest } = request; return rest; };
 /** Motive of the next activation: a pending operational recovery, else the open correction (charged once), else nothing to charge. */
 function motiveOf(work: WorkRecord): Motive {

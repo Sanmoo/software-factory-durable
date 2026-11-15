@@ -19,7 +19,7 @@ import { intactRequest, readQuestion, readQuestions, recordContentLost, register
 import { pendingScope } from './scope.js';
 import { recoveryPrompt, type KnownContext } from '../rules/questions.js';
 import { continuationPrompt, initialPrompt, promptBudgetBytes, recoveryContext, scopeSection, sessionDecision } from '../rules/continuation.js';
-import { decideDiscovery, publicationAttempted, publicationPrompt, publicationStep, type DiscoveryObservation } from '../rules/publication.js';
+import { decideDiscovery, publicationAttempted, publicationPrompt, publicationResumes, publicationStep, type DiscoveryObservation } from '../rules/publication.js';
 import { evaluatePublication, recordDiscovery } from './publication.js';
 import { purposeOf } from './execution.js';
 import type { SessionRef } from '../types.js';
@@ -466,6 +466,11 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       catch (error) { observe(listed.work_id, 'publication-reconcile-failed', [codeOf(error, 'PUBLICATION_RECONCILE_FAILED')]); }
     }
   }
+  /** The single attempt of the verified head pushed (expected the branch absent): one PR-only continuation is still possible. */
+  const prOnlyRecovery = (publication: NonNullable<WorkRecord['publication']>) => {
+    const attempts = (publication.attempts ?? []).filter(item => item.head === publication.verified?.head);
+    return attempts.length === 1 && attempts[0]!.expectedRemote?.state === 'absent';
+  };
   /** Returns whether a discovery read was made. */
   async function reconcileOne(listed: WorkRecord): Promise<boolean> {
     let step = publicationStep(listed);
@@ -502,6 +507,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     }
     const decision = decideDiscovery({ expect: { workId: work.work_id, ticketNumber: work.ticket.number, branch: publication.branch, base: publication.base,
       repositoryId: work.repository.repositoryId, head: publication.verified.head, app }, attempted: step.attempted, previousHeads: publication.linkedHeads ?? [],
+      prOnlyRecovery: prOnlyRecovery(publication),
       refsBefore: publication.refsBefore ?? null, observation });
     const recorded = await recordDiscovery(session, work.work_id, { basisExecutionId: publication.basisExecutionId, executionId: work.execution?.executionId ?? null,
       trigger: step.trigger, observedAt, ticketNumber: work.ticket.number, decision,
@@ -877,8 +883,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         resume = { previousExecutionId: previous.executionId, questionId: answered.questionId, answerSha256: answered.answer.sha256, scopeUpdateIds, reason: 'QUESTION_ANSWERED' };
       } else if (previous?.end?.outcome === 'completed' && scopeUpdateIds.length) {
         resume = { previousExecutionId: previous.executionId, questionId: null, answerSha256: null, scopeUpdateIds, reason: 'SCOPE_UPDATED' };
-      } else if (work.publication?.state === 'requested' && work.publication.verified && work.publication.expectedRemote && previous?.end?.outcome === 'completed' &&
-          previous.executionId === work.publication.basisExecutionId) {
+      } else if (previous && work.publication?.state === 'requested' && work.publication.verified && work.publication.expectedRemote &&
+          publicationResumes(previous, work.publication.basisExecutionId)) {
         // Ticket 14: the requested publication activation, with exactly the recorded verified commit and lease expectation (re-checked in the commit).
         resume = { previousExecutionId: previous.executionId, questionId: null, answerSha256: null, scopeUpdateIds, reason: 'PUBLICATION_REQUESTED' };
         publication = { basisExecutionId: work.publication.basisExecutionId, head: work.publication.verified.head, branch: work.publication.branch,

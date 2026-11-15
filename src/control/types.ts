@@ -231,7 +231,7 @@ export type PublicationView = {
   reasons: string[]; nextStep: string | null; updatedAt: string;
   /** Publication activations recorded at their ACTIVATION commit (before any launch), bound to the verified head they carried. An attempted
    * head is never requested again; a later verified basis (another head) may update the same own PR. */
-  attempts?: { executionId: string; head: string; at: string }[];
+  attempts?: { executionId: string; head: string; at: string; expectedRemote?: BranchObservation }[];
   /** Heads the Factory linked as its own PR head (the remote tip an update may lease against). */
   linkedHeads?: string[];
   /** Branch/tag tips of the repository observed by the complete read that requested the publication: any other ref that changes during

@@ -58,7 +58,7 @@ export function markPublicationAttempt(work: WorkRecord, execution: ExecutionVie
   const publication = work.publication;
   const request = execution.request.publication;
   if (!request || !publication || publication.state !== 'requested' || publication.basisExecutionId !== request.basisExecutionId) return;
-  publication.attempts = [...(publication.attempts ?? []), { executionId: execution.executionId, head: request.head, at }].slice(-20);
+  publication.attempts = [...(publication.attempts ?? []), { executionId: execution.executionId, head: request.head, at, expectedRemote: { ...request.expectedRemote } }].slice(-20);
   Object.assign(publication, { state: 'awaiting-discovery', updatedAt: at, nextStep: 'A publication activation was requested: its effects are discovered after its cessation, never assumed.' });
   work.history.push({ at, event: 'publication-started', origin: 'controller-publication', executionId: execution.executionId, detail: request.head });
 }
@@ -102,10 +102,12 @@ export async function recordDiscovery(session: Session, work_id: string, input: 
       history(work, 'publication-linked', input.executionId, `#${decision.pullRequest.number}:${decision.pullRequest.headSha}`);
     } else if (decision.outcome === 'absent') {
       Object.assign(publication, { state: 'requested', expectedRemote: decision.expectedRemote, requestedAt: at, refsBefore: decision.refs, update: decision.update?.number ?? null,
-        nextStep: decision.update ? `A later verified basis: a publication activation is queued to update the own pull request #${decision.update.number} (lease on its current head).`
+        nextStep: decision.recovery ? 'The attempt pushed the own branch (absent before the window) at exactly the verified head but no pull request exists: ONE publication ' +
+            'activation is queued to create only the pull request (no push). Never repeated after it.'
+          : decision.update ? `A later verified basis: a publication activation is queued to update the own pull request #${decision.update.number} (lease on its current head).`
           : 'No own publication exists (complete read): a publication activation of the Builder is queued with the observed lease expectation.' });
       work.queue = { ...work.queue, pending: true };
-      history(work, 'publication-requested', input.executionId, decision.expectedRemote.state === 'absent' ? 'remote:absent' : `remote:${decision.expectedRemote.sha}`);
+      history(work, 'publication-requested', input.executionId, `${decision.recovery ? `${decision.recovery}:` : ''}${decision.expectedRemote.state === 'absent' ? 'remote:absent' : `remote:${decision.expectedRemote.sha}`}`);
     } else if (decision.outcome === 'blocked') {
       if (decision.pullRequest) link(decision.pullRequest);
       publication.state = 'blocked';
