@@ -13,6 +13,8 @@
     "test/workers/public-bash-copy.test.ts": { "slow": true, "reason": "Five full adapter→owner→Node24 native Bash forks. ~10 s alone." },
     "test/workers/worker-image-process.test.ts": { "slow": true, "reason": "One fixed-worker Node per image format and variant (8 spawns). ~9 s alone." },
     "test/entrypoints/admission-cli.test.ts": { "quarantine": "ticket 37", "reason": "Flaky, not only in parallel: real 1 s polling controller; `list` landing mid-cycle sees DEPENDENCIES_NOT_CURRENT. Failed 4 of 6 ci runs (parallel and serial lane) and 1 of 4 standalone runs (load 1-10) on 2026-11-15, and on failure leaks its controller so the file never exits. NOT COVERAGE until ticket 37 fixes it." },
+    "test/entrypoints/github-checks-reads.test.ts": { "slow": true, "reason": "9 reads through the gh fixture, each ~10 gh spawns; the 1000-suite cap test pages 10 times. 18.8 s alone at load 12, 26 s in the ci lane (2026-11-15)." },
+    "test/entrypoints/github-checks-composed.test.ts": { "slow": true, "reason": "Full ticket 13+14 flow (polling cycles, reviews, publication, discovery) over the gh fixture before the checks pass. 8.2 s alone at load 12, 11 s in the ci lane." },
     "test/sandbox/bash-credential.test.ts": { "serial": true, "reason": "AC2 test waits a fixed 20 ms for a command to be in flight; under 8-way CPU saturation it is not yet (failed 1 of 3 ci runs in parallel, 2026-11-15). Runs alone until ticket 37 replaces the sleep with an event." }
   }
 }

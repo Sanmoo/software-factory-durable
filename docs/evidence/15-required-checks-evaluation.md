@@ -129,15 +129,12 @@ Remaining for the real run:
 2. Real Actions reruns: confirm that a rerun appears as a new attempt (same suite) or a newer suite with a later `started_at`.
 3. `compare` payloads on large diffs may exceed the 2 MiB transport bound → `STRICT_STATE_UNKNOWN` only when strict applies.
 
-## Gate totals (after the review fixes, base `d4483d1`)
+## Gate totals (rebased on `b2da9ae`)
 
-Node `24.21.0` with `env -u NODE_OPTIONS -u NODE_COMPILE_CACHE NODE_DISABLE_COMPILE_CACHE=1 timeout 90`:
-
-- `tsc -p tsconfig.json`: clean. `eslint . --max-warnings 0`: clean. `dependency-cruiser`: no violations.
-- Every compiled `dist/test/**/*.test.js` one file at a time (`--experimental-test-module-mocks --test --test-concurrency=1`):
-  **168 files, 1066 pass, 0 fail, 10 skipped** (`test/sandbox/gondolin.test.ts` stays `skip: true`). Under parallel machine load
-  `entrypoints/normal-oauth` hit the 90 s outer timeout (17/18 done) and `workers/sdk-profile` exited 1 with no test result; both were rerun
-  alone and passed (18/18, 1/1).
-- Ticket 15 files: `control/checks-rules` 11, `control/checks-flow` 4, `entrypoints/github-checks-reads` 9,
-  `entrypoints/github-checks-composed` 1, `entrypoints/checks15-qualification` 2, `entrypoints/checks15-recipe-safety` 2.
-- Real GitHub (P): **not run** (no authorization in this session); recipe above.
+`npm run test:ci` (`scripts/test-runner/run ci`, machine lock, clean `dist/`): **RESULT: PASS** — static (tsc, prepare-sdk, ESLint
+`--max-warnings 0`, dependency-cruiser) then 194 files (193 parallel N=8 + 1 serial): 1196 tests, 1186 pass, 0 fail, 10 skipped; 200.7 s of
+the 600 s budget at load ~15; `admission-cli` quarantined (ticket 37, not coverage). An earlier ci run on this branch failed only in
+`workers/public-copy-read` (`spawnSync … ETIMEDOUT` under load 14, unrelated to ticket 15); the rerun passed. Ticket 15 files:
+`control/checks-rules` 11, `control/checks-flow` 4, `entrypoints/github-checks-reads` 9 (tier slow), `entrypoints/github-checks-composed` 1
+(tier slow), `entrypoints/checks15-qualification` 2, `entrypoints/checks15-recipe-safety` 3, `architecture/publication-boundary` (gate
+extended for the read-only `readPullRequest`). Real GitHub (P): not run (the supervisor runs the recipe).
