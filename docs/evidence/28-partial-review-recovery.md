@@ -210,3 +210,8 @@ A execução real de `q28-partial-v2` aguarda o rebase sobre o ticket 14 (decis�
   Development; uma referência de timeline nativa não se apaga, e então o issue #3 fica inutilizável para receitas com storage novo).
   O namespace `q28-partial-v2` continua novo do ponto de vista do repositório (nenhuma execução registrada; o `preflight` cria o diretório em
   modo exclusivo e recusa um existente; este agente não lê `software-factory-test`).
+
+Gate após o rebase sobre `b2da9ae` (`npm run test:ci`, carga externa ~14–15): 3ª execução **PASS — 1197 testes: 1187 pass, 0 fail,
+10 skipped, 201.8 s de 600 s** (`admission-cli` em quarentena, ticket 37). As duas execuções anteriores falharam cada uma num arquivo
+diferente, fora deste diff e com tempo fixo/spawn sob carga (`normal-worker`: timeout fixo de 15 s; `public-copy-read`: `spawnSync ETIMEDOUT`);
+ambos passaram sozinhos repetidamente. Os arquivos do ticket 28 passaram nas três.
