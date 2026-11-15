@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createHash } from 'node:crypto';
-import { lstat, mkdir, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { createDeliveryDesk } from '../../src/control/durable/delivery-desk.js';
@@ -13,12 +13,11 @@ import { planCleanup } from '../../src/control/rules/delivery.js';
 import type { PlanFacts } from '../../src/control/rules/retention.js';
 import type { DetailPorts, ExplicitCleanupSelection } from '../../src/control/types.js';
 import { createRecords, listDetails, preserveSessionCopy, removeRecordsDetail } from '../../src/records/index.js';
-import { readSessionFile } from '../../src/platform/host/index.js';
 import { scope } from './doubles.js';
 import { deliveryRepository, environment, merged, ownFacts, realCleanupPorts, sandboxRoot, seedPublishedWork, store } from './delivery-fixture.js';
 
 // Ticket 30 storage-real flows: Pi Durable + SQLite, the REAL Records area (captures written by Records, inventory, session copies, confined
-// removal), REAL Sandbox removal/evidence export on synthetic environments (systemctl double), REAL host session read. Doubled: GitHub
+// removal), REAL Sandbox removal/evidence export on synthetic environments (systemctl double). The host session read is covered in delivery-composition. Doubled: GitHub
 // (CodeRepository) and the calendar (controlled instants). Not evidence of a real VM, GitHub or model.
 const day = 86_400_000;
 const exists = (path: string) => lstat(path).then(() => true, () => false);
@@ -60,10 +59,11 @@ async function harness(t: { after(fn: () => Promise<void> | void): void }, optio
     list: ({ workId }) => listDetails(root, workId),
     async preserveSession({ workId, executionId, session: recorded }) {
       log.push(`preserve-session:${executionId}`);
-      const read = await readSessionFile(root, recorded.ref);
-      if (read.state === 'lost') return { status: 'lost', code: read.code };
-      if (read.state !== 'read' || read.sha256 !== recorded.sha256) return { status: 'failed', code: 'SESSION_ALTERED' };
-      return preserveSessionCopy(root, workId, executionId, read.data, read.sha256);
+      // The confined host read (platform/host `readSessionFile`) is composed and tested in delivery-composition; here a plain read of the same file.
+      const read = await readFile(join(root, recorded.ref)).catch(() => null);
+      if (!read) return { status: 'lost', code: 'SESSION_FILE_MISSING' };
+      if (createHash('sha256').update(read).digest('hex') !== recorded.sha256) return { status: 'failed', code: 'SESSION_ALTERED' };
+      return preserveSessionCopy(root, workId, executionId, read, recorded.sha256);
     },
     async remove({ workId, item, expectedSha256 }) {
       log.push(`remove-detail:${item.id}`);

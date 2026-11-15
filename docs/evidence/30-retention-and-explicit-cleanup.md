@@ -6,8 +6,8 @@ yet; this branch is rebased once the supervisor asks. Authority: spec §12.1, §
 Level of this delivery:
 - **S**: pure rules with controlled instants;
 - **I**: storage-real flows (Pi Durable + SQLite). They use the REAL Records area (captures written by Records, inventory, session copies,
-  confined removal), the REAL Sandbox removal and evidence export on synthetic environments (systemctl double), and the REAL host session read;
-- the REAL CLI → socket → owner path for the two new commands.
+  confined removal), the REAL Sandbox removal and evidence export on synthetic environments (systemctl double), and the REAL Records copy of sessions;
+- the REAL CLI → socket → owner path for the two new commands; the confined host session read is tested through the production composition.
 
 Doubles: GitHub (CodeRepository) and the calendar. No real GitHub, VM, model or credential was used. `$HOME/software-factory-test` was not
 touched.
