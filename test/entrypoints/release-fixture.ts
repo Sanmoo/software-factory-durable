@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { watch } from 'node:fs';
-import { mkdir, mkdtemp, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -69,7 +69,8 @@ async function sharedBuild(work: string): Promise<Built> {
 /** The run's release build (read-only) and a private work directory of the calling file. */
 export async function releaseBuild() {
   const work = await mkdtemp(join(tmpdir(), 'factory-r32-'));
-  return { work, ...await sharedBuild(work) };
+  // A failed build must not leak the work directory (the caller only learns `work` on success).
+  try { return { work, ...await sharedBuild(work) }; } catch (error) { await rm(work, { recursive: true, force: true }); throw error; }
 }
 
 export async function builtRelease() {
@@ -77,6 +78,7 @@ export async function builtRelease() {
   const root = join(work, 'installation');
   await mkdir(root, { mode: 0o700 });
   const extracted = spawnSync('tar', ['-xpkf', join(output, report.archive), '-C', root], { encoding: 'utf8' });
+  if (extracted.status !== 0) await rm(work, { recursive: true, force: true });
   assert.equal(extracted.status, 0, extracted.stderr);
   const factory = (installation: string, args: string[], env: NodeJS.ProcessEnv = {}) =>
     spawnSync(join(installation, 'factory'), args, { cwd: work, encoding: 'utf8', timeout: remainingMs(), env: { ...process.env, ...env } });
