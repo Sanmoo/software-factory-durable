@@ -122,6 +122,23 @@ Todas com teste vermelho contra o código anterior (verificado compilando a árv
 | Composição com 13 (Execução interrompida no meio de uma rodada) | revisores compartilham o boot: a cessação confirmada do boot é a deles; os não concluídos ficam `failed`/`EXECUTION_INTERRUPTED`, cessação `boot-ceased`, motivo da rodada `EXECUTION_INTERRUPTED`; nada reativado, entregue ou concluído; o Trabalho recupera pela fila (recuperação parcial de rodada é o ticket 28) | `recovery-crash` "ticket 13 composition" |
 | LOW inspect na raiz viva | `inspect` só lê (`Records.find` não cria nada; a cópia do storage fica no namespace da qualificação, como nas receitas 19/20) | — |
 
+## Primeira execução real (`q26-recovery-v1`, consumida) e correções
+
+Executada pelo supervisor com autorização: 8/9 verificações verdadeiras (`toolCutReconciled`, `survivorStoppedBeforeNewWork`,
+`reservationCutReleased`, `spawnCutSettled`, `noTwoWriters`, `recoveryCompletedOnPreservedContext`, `singleConsumption`, `cleanFinalStop`) e
+varredura de segredos 0. `providerSchedule` falso por **defeito do oráculo**: exigia o marcador `a1-c1-start` entre os resultados vistos pelo
+provedor, mas a saída de c1 só chegaria ao provedor no PRÓXIMO pedido, que nunca existe porque o controlador morre durante c1. Além disso, não havia
+prova durável de que o comando de guest tinha começado no corte. Correções (v2, TDD): prova de guest durável por arquivos-marcador lidos no host
+antes do corte e no `inspect`; oráculo do provedor sem saída que ele não pode ver; namespace `q26-recovery-v2`.
+
+**Achado sobre a captura incremental (Records/Bash)**: cada pedaço filtrado vai ao arquivo `output` assim que chega (sem `fsync` até `finish`),
+mas a captura de texto **retém em memória até (maior segredo registrado − 1) caracteres** para filtrar segredos fragmentados (comportamento
+aprovado em Q8). Com a credencial do Builder registrada (~40+ caracteres), uma linha curta de progresso como `q26-a1-c1-start` fica só em memória
+e se perde num fim abrupto (o processo dono é parado). Teste de caracterização: `test/records/incremental-retention.test.ts`. Não é falha frente ao
+contrato aprovado, mas significa que **progresso curto de um comando em execução não é evidência durável**; se o AC de captura incremental do
+ticket 05 for lido como "persistir progresso durante a execução", é uma lacuna de produto a decidir pelo operador (não alterada aqui).
+Observado também no ensaio real do ticket 14: o prelúdio Bash do Builder não exporta `PATH`; a correção é do ticket 14 e não foi feita aqui.
+
 ## Ensaio real (receita one-shot)
 
 Receita: `test/entrypoints/recovery26-qualification.ts` (+ provedor `recovery26-provider.ts`, segurança `recovery26-qualification.test.ts`).
@@ -138,20 +155,23 @@ $N dist/test/entrypoints/recovery26-qualification.js inspect       # cópia priv
 $N dist/test/entrypoints/recovery26-qualification.js stop-environment   # só se a última Execução puder estar ativa
 ```
 
-- **Escopo/limites**: root `/home/sanmoo/software-factory-test/y5`, observações `y5/q26-recovery-v1` (namespace novo); somente issue sintética #3
+- **Escopo/limites**: root `/home/sanmoo/software-factory-test/y5`, observações `y5/q26-recovery-v2` (namespace novo; v1 consumido pela primeira execução real); somente issue sintética #3
   de `Sanmoo/java-springboot-event-sourcing` (preflight exige a listagem com exatamente ela); concessões só leitura (`builder-start` e
   `repository-fetch`), ≤ 2 emissões por filho; prepare/activate ≤ 1 por filho e só para o Trabalho do #3; VMs 4096 MiB/2 vCPU/40 GiB; polling
   30 s; prazo 10 min por filho (≈ 25 min no total); provedor local 127.0.0.1:18726 (≤ 4 ativações/12 pedidos; nenhum modelo/OAuth); sem push/PR,
   remove ou cleanup; nenhum git do host em árvore gravável pelo guest; leituras do host no-follow e limitadas; `inspect` só numa cópia exclusiva.
 - **Pré-existentes**: o preflight registra os ambientes já presentes no root (de qualificações anteriores), exige cada um cessado
   (`Sandbox.observe`) e nenhum `run/` desconhecido nem cache do repo em preparo; os filhos os excluem do inventário (decisão registrada).
-- **Cortes** (o provedor vive no orquestrador e sobrevive a todos): `a-tool` SIGKILL ~10 s após o `sleep 600` chegar ao worker (VM + worker
+- **Cortes** (o provedor vive no orquestrador e sobrevive a todos): `a-tool` SIGKILL só depois de o marcador de guest `/workspace/.q26-a1-c1-started`
+  (escrito pelo próprio comando longo ANTES do `sleep 600`) ser OBSERVADO por leitura confinada, no-follow e limitada do workspace do ambiente no
+  host, com o marcador de fim ausente (registrado em `a-tool-cut.json`); a mesma prova é refeita no `inspect` (`toolCutProven`) (VM + worker
   sobrevivem sob systemd); `b-reservation` reconcilia (para o sobrevivente) e se mata na entrada do preparo do recovery; `c-spawn` reconcilia
   (libera a reserva) e se mata logo após o pedido de ativação do recovery; `d-final` reconcilia (recibo descoberto ou ausência após cessação),
   conclui o recovery no checkout preservado e para limpo (saída 0).
 - **Observações esperadas** (`inspect-result.json` → `verdict.checks`, todos `true`): `toolCutReconciled`, `survivorStoppedBeforeNewWork`,
   `reservationCutReleased`, `spawnCutSettled`, `noTwoWriters`, `recoveryCompletedOnPreservedContext`, `singleConsumption`, `cleanFinalStop`,
-  `providerSchedule` (marcador `a1-c1-start` sem `a1-c1-end`; ativações ≥ 2 só com a instrução de recuperação); `secretShapes` zerados.
+  `providerSchedule` (a chamada 1 da ativação 1 — o comando longo — foi emitida e seu resultado nunca voltou; ativações ≥ 2 só com a instrução de
+  recuperação), `toolCutProven` (marcador de início presente, de fim ausente); `secretShapes` zerados.
   Resultado inconclusivo (p. ex. o worker do corte c ainda não escreveu recibo) continua válido se `spawnCutSettled` for satisfeito pelo ramo de
   não início; qualquer `false` reprova.
 - **Fora da receita**: corte real durante `git fetch` do cache. Com a reconciliação sem reparo (MED4) o próximo proprietário marca o cache `idle`

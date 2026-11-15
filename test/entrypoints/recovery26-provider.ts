@@ -10,7 +10,8 @@ export const apiKey = 'q26-dummy-key-v1';
 const ticket = 'https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3';
 const listing = (activation: number) => ({ command: `printf 'q26-a${activation}-c0:%s\\n' "$(ls /workspace/checkout | head -3 | tr '\\n' ',')"`, timeout: 60 });
 export const schedules = [
-  [listing(1), { command: `printf 'q26-a1-c1-start\\n'; sleep 600; printf 'q26-a1-c1-end\\n'`, timeout: 900 }],
+  // Guest-side, durable proof of the tool cut: the start marker file exists BEFORE the long command, the end marker only after it.
+  [listing(1), { command: `printf 'started\\n' > /workspace/.q26-a1-c1-started; printf 'q26-a1-c1-start\\n'; sleep 600; printf 'ended\\n' > /workspace/.q26-a1-c1-ended; printf 'q26-a1-c1-end\\n'`, timeout: 900 }],
   [listing(2)], [listing(3)], [listing(4)],
 ] as const;
 /** At most 4 activations x (1-2 tool rounds + 1 final) requests; anything beyond holds the fixture. */

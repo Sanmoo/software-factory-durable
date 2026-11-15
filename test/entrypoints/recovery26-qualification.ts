@@ -14,8 +14,9 @@ import type { ExecutionPorts, ExecutionView, ListView, RuntimeInventory, WorkVie
 // Phases are one-shot: an exclusive intent tombstone precedes effects; a consumed phase never reruns; nothing is retried automatically.
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const observations = `${root}/q26-recovery-v1`;
-const revision = 'q26-recovery-v1';
+// v1 was consumed by the first real run (its tool-cut oracle could not pass: see docs/evidence/26-*.md).
+const observations = `${root}/q26-recovery-v2`;
+const revision = 'q26-recovery-v2';
 const phases = ['preflight', 'run', 'inspect', 'stop-environment'] as const;
 type Phase = typeof phases[number];
 const steps = ['a-tool', 'b-reservation', 'c-spawn', 'd-final'] as const;
@@ -46,11 +47,11 @@ export function plan() {
     guards: ['one-shot intent tombstones per phase AND per child step', `at most ${maxIssuancesPerStep} Builder issuances per child`, 'prepare/activate only for the Work of Ticket #3, at most once per child',
       'no retry; a held step ends the run', 'no remove/cleanup', 'no push/PR (read-only grants)', 'Records/host reads are confined, no-follow; host git never runs in a guest-writable tree'],
     expected: [
-      'a-tool: child SIGKILLed after provider emitted q26-a1-c1 and the Control shows the Execution started; its boot stays active under systemd (observed by b)',
+      'a-tool: the orchestrator SIGKILLs the child only after the guest start marker /workspace/.q26-a1-c1-started is OBSERVED by a confined no-follow host read of the environment workspace (and the end marker is absent); its boot stays active under systemd (observed by b)',
       'b-reservation: status.recovery {reconciled 1, ceased 1}; Execution 1: end failure CONTROLLER_CRASH, cessation confirmed (sandbox-stop of the survivor boot), recovery[0] {start confirmed:notification, decision operational-recovery}; pendingRecovery waitSeconds 5; the survivor unit inactive with an empty cgroup before any new prepare',
       'c-spawn: Execution 2 (recovery basis OPERATIONAL_RECOVERY) reconciled as not-started (no-boot-before-preparation-recorded), reservation released (recoveries.consumed unchanged), Work requeued',
       'd-final: Execution 3 (spawn cut) cessation confirmed; start either receipt-discovered (consumed exactly once) or not-started (receipt absent after cessation); Execution 4 activated only after Execution 3\'s boot stopped, on a NEW boot of the SAME environment with checkout reused, phaseId builder-recovery, ends completed with cessation confirmed; the d child exits 0 (clean stop)',
-      'budget: recoveries.consumed == number of confirmed recovery starts (1 or 2), reserved null; activations <= 4; provider: a1-c1-start but never a1-c1-end; every later activation prompt is the recovery instruction',
+      'budget: recoveries.consumed == number of confirmed recovery starts (1 or 2), reserved null; activations <= 4; provider: activation 1 call 1 (the long command) emitted, never its result (no a1-c1-end); toolCut: start marker present, end marker absent at inspect; every later activation prompt is the recovery instruction',
       'no ghs_/PRIVATE KEY in storage, observations or records',
     ],
   };
@@ -92,11 +93,25 @@ export function needsStop(execution: ExecutionView): boolean {
 
 type Event = { at: string; step: Step } & Record<string, unknown>;
 /** Verdict from the stored Work, the child events and the provider observation (no secret involved). */
-export function assess(input: { work: WorkView | undefined; events: Event[]; exits: Record<string, string>; provider: { activations: number; results: { markers: string[] }[];
-  prompts: { activation: number; kind: string }[]; held: boolean } }) {
+/** Guest markers read on the host: the long command had started (durable file) and had not finished when the controller was killed. */
+export function toolCutProof(markers: { started: Buffer | null; ended: Buffer | null }) {
+  const started = markers.started?.toString('utf8') === 'started\n';
+  const ended = markers.ended !== null;
+  return { started, ended, proven: started && !ended };
+}
+type ProviderObservation = { activations: number; results: { markers: string[]; activation?: number }[]; emitted: { activation: number; call: number }[];
+  prompts: { activation: number; kind: string }[]; held: boolean };
+/** The provider sees a tool OUTPUT only in the next request, which a cut during c1 never sends: require c1 emitted and never answered. */
+export function providerScheduleCheck(provider: ProviderObservation): boolean {
+  const markers = provider.results.flatMap(result => result.markers);
+  return !provider.held && provider.activations <= 4 && provider.emitted.some(item => item.activation === 1 && item.call === 1) && !markers.includes('a1-c1-end') &&
+    !provider.results.some(result => result.activation === 1 && result.markers.some(marker => marker.startsWith('a1-c1'))) &&
+    provider.prompts.every(prompt => prompt.activation === 1 ? prompt.kind === 'implement' : prompt.kind === 'recovery');
+}
+export function assess(input: { work: WorkView | undefined; events: Event[]; exits: Record<string, string>; provider: ProviderObservation;
+  toolCut?: { started: boolean; ended: boolean; proven: boolean } }) {
   const all = input.work ? [...input.work.previousExecutions, ...(input.work.execution ? [input.work.execution] : [])] : [];
   const [e1, e2, e3, e4] = all;
-  const markers = input.provider.results.flatMap(result => result.markers);
   const at = (step: Step, call: string) => input.events.filter(item => item.step === step && item.call === call);
   const stopBeforeActivate = (() => {
     const d = input.events.filter(item => item.step === 'd-final');
@@ -119,8 +134,8 @@ export function assess(input: { work: WorkView | undefined; events: Event[]; exi
       at('d-final', 'prepare-result').some(item => (item.result as { checkout?: { reused?: boolean } }).checkout?.reused === true),
     singleConsumption: input.work?.budget?.recoveries.consumed === confirmedRecoveries && input.work.budget.recoveries.reserved === null,
     cleanFinalStop: input.exits['d-final'] === 'exit:0',
-    providerSchedule: !input.provider.held && input.provider.activations <= 4 && markers.includes('a1-c1-start') && !markers.includes('a1-c1-end') &&
-      input.provider.prompts.every(prompt => prompt.activation === 1 ? prompt.kind === 'implement' : prompt.kind === 'recovery'),
+    providerSchedule: providerScheduleCheck(input.provider),
+    toolCutProven: input.toolCut?.proven === true,
   };
   return { passed: Object.values(checks).every(Boolean), checks };
 }
@@ -274,16 +289,34 @@ export async function runPhase(phase: Phase) {
       const model = await provider.startProvider();
       const exits: Record<string, string> = {};
       try {
-        // a-tool: SIGKILL ~10 s after the long guest command was handed to the worker and the Control shows the Execution started.
+        // a-tool: SIGKILL only once the guest start marker of the long command is OBSERVED on the host (confined, no-follow, bounded read of the
+        // environment's workspace) and its end marker is absent; the environment comes from the child's own durable prepare event.
+        const { readConfined } = await import('../../src/sandbox/index.js');
+        const markers = async () => {
+          const text = await fs.readFile(`${observations}/a-tool-events.jsonl`, 'utf8').catch(() => '');
+          const prepared = text.split('\n').filter(Boolean).map(line => JSON.parse(line) as Event).find(item => item.call === 'prepare-result');
+          const environment = (prepared?.result as { environment?: string } | undefined)?.environment;
+          if (!environment || !/^env-[a-f0-9]{64}$/.test(environment)) return null;
+          const workspace = `${root}/environments/${environment}/workspace`;
+          const read = (name: string) => readConfined(workspace, name, 64).catch(() => null);
+          return { environment, started: await read('.q26-a1-c1-started'), ended: await read('.q26-a1-c1-ended') };
+        };
         let armed = false;
         exits['a-tool'] = await runChild('a-tool', (output, killChild) => {
           if (armed || !output.includes('STARTED')) return;
-          const waitForCommand = async () => {
-            for (let i = 0; i < 300 && !model.observation().emitted.some(item => item.activation === 1 && item.call === 1); i++) await new Promise(resolve => setTimeout(resolve, 1000));
-            await new Promise(resolve => setTimeout(resolve, 10000));
+          const waitForMarker = async () => {
+            for (let i = 0; i < 300; i++) {
+              const observed = await markers();
+              if (observed && toolCutProof(observed).proven) {
+                await save('a-tool-cut', { at: new Date().toISOString(), environment: observed.environment, proof: toolCutProof(observed) });
+                killChild(); return;
+              }
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+            await save('a-tool-cut', { at: new Date().toISOString(), proof: null, code: 'START_MARKER_NOT_OBSERVED' });
             killChild();
           };
-          armed = true; void waitForCommand();
+          armed = true; void waitForMarker();
         });
         if (exits['a-tool'] !== 'signal:SIGKILL') throw new Error('CUT_A_NOT_REACHED');
         // b/c kill themselves at their cut; d stops cleanly by itself.
@@ -317,7 +350,12 @@ export async function runPhase(phase: Phase) {
       }
       const provider = await read('run-provider') as { provider: Parameters<typeof assess>[0]['provider']; exits: Record<string, string> };
       const receipts = await (await createRecords({ root })).find({ workId: work.work_id, callId: 'worker-start' });
-      await save('inspect-result', { verdict: assess({ work, events, exits: provider.exits, provider: provider.provider }), work, receipts,
+      // The cut proof again at inspect (read-only, confined): the long command started and never finished.
+      const { readConfined } = await import('../../src/sandbox/index.js');
+      const workspace = `${root}/environments/${work.execution.dispatch.environment}/workspace`;
+      const toolCut = toolCutProof({ started: await readConfined(workspace, '.q26-a1-c1-started', 64).catch(() => null),
+        ended: await readConfined(workspace, '.q26-a1-c1-ended', 64).catch(() => null) });
+      await save('inspect-result', { verdict: assess({ work, events, exits: provider.exits, provider: provider.provider, toolCut }), toolCut, work, receipts,
         secretShapes: await secretScan([observations, `${root}/${work.work_id}`]) });
       return;
     }

@@ -20,7 +20,7 @@ test('ticket 26 recipe: import and --plan are inert and declare the fixed cuts a
   assert.equal(forbidden, 0);
   assert.deepEqual(plan.phases, ['preflight', 'run', 'inspect', 'stop-environment']);
   assert.deepEqual(plan.steps, ['a-tool', 'b-reservation', 'c-spawn', 'd-final']);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q26-recovery-v1');
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q26-recovery-v2', 'v1 was consumed by a real run');
   assert.deepEqual(plan.expectedTicket, { number: 3, repositoryId: 1256893534 });
   assert.match(plan.model, /no OAuth\/model request/);
   assert.match(plan.effects[1], /flock --exclusive --nonblock --no-fork/);
@@ -39,7 +39,8 @@ test('ticket 26 recipe: the provider admits /implement only first and afterwards
   const recovery = `Factory recovery instruction for Ticket ${ticket}.\nprevious-execution=0b9c6a52-3d3e-4c8f-9a51-000000000001 ... never repeat a tool call blindly.`;
   assert.equal(provider.promptAllowed(2, recovery), true);
   assert.equal(provider.promptAllowed(1, recovery), false);
-  assert.match(provider.schedules[0]![1]!.command, /q26-a1-c1-start.*sleep 600.*q26-a1-c1-end/);
+  // The tool-cut proof is guest-side and durable: a marker file in /workspace BEFORE the long command, another only after it.
+  assert.match(provider.schedules[0]![1]!.command, /^printf 'started\\n' > \/workspace\/\.q26-a1-c1-started; .*sleep 600; printf 'ended\\n' > \/workspace\/\.q26-a1-c1-ended/);
   for (const call of provider.schedules.flat()) assert.doesNotMatch(call.command, /GH_TOKEN|printenv|\benv\b|git /);
 });
 
@@ -48,6 +49,18 @@ test('ticket 26 recipe: inventory excludes only the recorded pre-existing enviro
     { repositoryId: 7, state: 'preparing' as const }], unknown: ['run/x'] };
   assert.deepEqual(recipe.ownInventory(listed, ['env-a'], 't'), { kind: 'listed', observedAt: 't', environments: [{ environment: 'env-b', workId: 'new' }],
     cache: [{ repositoryId: 1256893534, state: 'idle' }], unknown: ['run/x'] });
-  const verdict = recipe.assess({ work: undefined, events: [], exits: {}, provider: { activations: 0, results: [], prompts: [], held: false } });
+  const verdict = recipe.assess({ work: undefined, events: [], exits: {}, provider: { activations: 0, results: [], emitted: [], prompts: [], held: false } });
   assert.equal(verdict.passed, false);
+});
+
+test('ticket 26 recipe v2: the tool cut is proven by guest markers read on the host, and the provider oracle never needs output it cannot see', () => {
+  assert.deepEqual(recipe.toolCutProof({ started: Buffer.from('started\n'), ended: null }), { started: true, ended: false, proven: true });
+  assert.deepEqual(recipe.toolCutProof({ started: null, ended: null }), { started: false, ended: false, proven: false }, 'no marker: the cut is not proven');
+  assert.deepEqual(recipe.toolCutProof({ started: Buffer.from('started\n'), ended: Buffer.from('ended\n') }), { started: true, ended: true, proven: false });
+  const prompts = [{ activation: 1, kind: 'implement' }, { activation: 2, kind: 'recovery' }];
+  const provider = (results: { markers: string[] }[], emitted: { activation: number; call: number }[]) => ({ activations: 2, held: false, prompts, results, emitted });
+  // c1 was handed to the worker (emitted) and its result never came back: the controller died during it.
+  assert.equal(recipe.providerScheduleCheck(provider([{ markers: ['a1-c0:pom.xml,'] }], [{ activation: 1, call: 0 }, { activation: 1, call: 1 }])), true);
+  assert.equal(recipe.providerScheduleCheck(provider([{ markers: ['a1-c0:pom.xml,'] }], [{ activation: 1, call: 0 }])), false, 'c1 never emitted');
+  assert.equal(recipe.providerScheduleCheck(provider([{ markers: ['a1-c1-end'] }], [{ activation: 1, call: 0 }, { activation: 1, call: 1 }])), false, 'c1 completed: no cut');
 });
