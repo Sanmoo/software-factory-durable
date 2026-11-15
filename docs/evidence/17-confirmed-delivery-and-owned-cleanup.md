@@ -143,6 +143,14 @@ Ticket 14's real run left the own branch `factory/3-28c75e5a` with no PR. Ticket
 
 ## Gates (this worktree, after the last commit)
 
+**After the rebase onto `b2da9ae` (gate `npm run test:ci` = `scripts/test-runner/run ci`):** RESULT PASS.
+- Static: tsc, eslint (`--max-warnings 0`) and depcruise all ran inside the gate.
+- Tests: 196 files, 1203 tests, 1193 passed, 0 failed, 10 skipped.
+- Time: 228.9 s of the 600 s budget, plus 212.4 s lock wait.
+- Quarantined, not coverage, pre-existing: `admission-cli`.
+
+Earlier per-file totals (before the rebase):
+
 - `tsc -p tsconfig.json`: 0 errors.
 - `eslint . --max-warnings 0`: exit 0.
 - `dependency-cruiser --config .dependency-cruiser.cjs --output-type err-long .`: no violations (357 modules, 2166 dependencies).
