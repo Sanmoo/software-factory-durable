@@ -1,4 +1,5 @@
-import type { ExecutionPorts, WorkView } from '../../src/control/index.js';
+import type { WorkView } from '../../src/control/index.js';
+import type { IssueTracker } from '../../src/issue-tracker/index.js';
 import { snapshotStorage } from './review12-qualification.js';
 export { snapshotStorage };
 
@@ -18,6 +19,7 @@ const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 
 const expectedTicket = { number: 3, repositoryId: 1256893534 };
 const githubApp = { appId: 5569788, privateKeyFile: 'credentials/app.pem' };
 const evaluateDeadlineMs = 5 * 60 * 1000;
+const ghTrace = `${observations}/gh-trace.jsonl`;
 /** Long cadence: the first polling cycle runs at start and its tick runs the checks pass; at most two cycles fit in the deadline. */
 const pollingSeconds = 180;
 
@@ -27,18 +29,22 @@ export function plan() {
       'ticket 14 run ended without a held Slot (its stop-environment phase done or not needed): otherwise dispatch stays closed and no tick runs'],
     github: { app: githubApp, controllerPurposes: ['tracker-read', 'association-read', 'dependency-read', 'repository-read',
       'checks-read {metadata:read, contents:read, pull_requests:read, checks:read, statuses:read, administration:read}'],
-      writes: ['App: access_tokens issuance POSTs only (reduced read grants, cached per purpose); no other non-GET request'],
+      writes: ['App: access_tokens issuance POSTs only (reduced read grants, cached per purpose; native HTTPS, not gh); no other non-GET request'],
+      guard: 'evaluate and inspect use a gh wrapper that records every request in gh-trace.jsonl and refuses (exit 97, nothing sent) any method other than GET; the ' +
+        'IssueTracker is read-only (postComment refused locally), so a pending Question copied from q14 can never be published',
       never: ['GitHub write of any kind', 'merge', 'approval', 'ready-for-review conversion', 'rerun/approve of workflows', 'branch/ruleset/protection change', 'comment'],
       requestBound: 'per evaluation: 1 PR + 1 branch + 0..1 required_status_checks + rules pages (<=10) + check-run pages (<=10) + status pages (<=10) + 0..1 compare + 1 PR re-read; ' +
         'at most 2 Works per tick and 2 ticks in the evaluate deadline; plus the normal polling reads of the configured label' },
-    model: 'none', sandbox: 'none (every execution port refuses and is logged)',
+    model: 'none', sandbox: 'none', dispatch: 'disabled (no execution ports composed: EXECUTION_NOT_ENABLED) and the copy is paused first, so no Work is admitted or started',
     effects: [
       'preflight: exclusive observations directory; private COPY of the q14 storage; read-only Control view of the Work of Ticket #3 (publication published, own PR linked); ' +
         'read-only GitHub readPullRequest of that PR (raw facts saved)',
-      'evaluate: ANOTHER private copy becomes the authority of one owner run (runtimeInventory empty, polling 180 s): the first cycle polls, its tick explains the checks ' +
-        'of the linked PR with the real adapter and records WorkView.checks; stop as soon as recorded (or 5 min)',
+      'evaluate: ANOTHER private copy becomes the authority of one owner run, paused first (local pause on the copy), without execution ports (dispatch disabled), ' +
+        'polling 180 s, read-only tracker and GET-only gh guard: after the first polling cycle the checks tracking step explains the linked PR with the real adapter ' +
+        'and records WorkView.checks; stop as soon as recorded (or 5 min); the gh trace must show GET only',
       'inspect: private copy of the evaluate storage: Control show view (checks.latest, checks.history, checks-evaluated events); a second read-only readPullRequest for comparison'],
-    guards: ['one-shot intent tombstones', 'no retry', 'execution ports refuse every prepare/start/stop/activate/deliver/issue/revoke and record the attempt',
+    guards: ['one-shot intent tombstones', 'no retry', 'no execution ports (nothing can be prepared, started, activated or granted)', 'read-only IssueTracker',
+      'gh wrapper: GET only, every request traced',
       'q14 storage never opened in place', 'nothing under the repository changes'],
     expected: [
       'checks.latest.pullRequest = the linked own PR (number, head = ticket 14 linked head unless a later push), observedAt <= completedAt, completeness per read',
@@ -46,16 +52,35 @@ export function plan() {
       'if main has NO required check configured: requiredSet empty-complete only when the branch read, classic detail and rules read were all complete; any 403/404 -> unknown, never empty',
       'outcome: satisfied | waiting | failing | blocked | indeterminate as GitHub really reports; workflows/merge_queue/required_deployments rules -> indeterminate RULE_NOT_INTERPRETABLE',
       'conflict tri-state from mergeable; strict.state from the base tip comparison; optional and other-SHA results only visible',
-      'no execution effect attempted (events empty), no impediment/queue change on the Work, every installation request GET'],
+      'no comment attempted (events empty), no impediment/queue change on the Work, gh-trace.jsonl: every request GET and allowed'],
   };
 }
 
-/** Execution ports of a tracking-only owner: every effect is refused and recorded (a violation of the recipe if it ever happens). */
-export function refusingPorts(log: (entry: Record<string, unknown>) => void): ExecutionPorts {
-  const refuse = (call: string) => async () => { log({ call, refused: true }); throw new Error('RECIPE_TRACKING_ONLY'); };
-  return { configuration: { schemaVersion: 1 }, capacity: 1, builder: { skillPack: 'factory-skills-v1', modelBudget: 'builder-v1', copyOutput: true },
-    sandbox: { prepare: refuse('prepare'), start: refuse('start'), stop: refuse('stop') }, workers: { activate: refuse('activate'), deliver: refuse('deliver') },
-    credentials: { issue: refuse('issue'), revoke: refuse('revoke') } };
+/** The IssueTracker of a tracking-only owner: every read delegates; `postComment` is refused locally (nothing is sent) and recorded. */
+export function readOnlyTracker(tracker: IssueTracker, log: (entry: Record<string, unknown>) => void): IssueTracker {
+  return { checkAccess: scope => tracker.checkAccess(scope), listCandidates: scope => tracker.listCandidates(scope), readTicket: ticket => tracker.readTicket(ticket),
+    readDependencyGraph: ticket => tracker.readDependencyGraph(ticket), readInputs: (ticket, cursor) => tracker.readInputs(ticket, cursor),
+    findQuestion: (ticket, questionId) => tracker.findQuestion(ticket, questionId),
+    async postComment(ticket) {
+      log({ call: 'post-comment', refused: true, ticket: ticket.number });
+      return { kind: 'failed', observedAt: new Date().toISOString(), code: 'RECIPE_READ_ONLY', nextStep: 'The ticket 15 recipe never writes to GitHub; nothing was sent.' };
+    } };
+}
+
+/** Text of the gh wrapper: records every request; refuses (exit 97, the real gh never runs) any request that is not an explicit GET without input. */
+export function ghGuardScript(input: { node: string; gh: string; trace: string }) {
+  return `#!${input.node}
+import { appendFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+const args = process.argv.slice(2);
+const at = args.indexOf('--method');
+const method = at >= 0 ? args[at + 1] : null;
+const allowed = method === 'GET' && !args.includes('--input');
+appendFileSync(${JSON.stringify(input.trace)}, JSON.stringify({ at: new Date().toISOString(), method, endpoint: args.at(-1), allowed }) + '\\n');
+if (!allowed) { process.stderr.write('RECIPE_GET_ONLY\\n'); process.exit(97); }
+const result = spawnSync(${JSON.stringify(input.gh)}, args, { stdio: 'inherit', env: process.env });
+process.exit(result.status ?? 1);
+`;
 }
 
 /** The Work of Ticket #3 with ticket 14's linked own PR, or the reason it is not one. */
@@ -81,11 +106,27 @@ async function io() {
   return { fs, save, exists };
 }
 
+/** gh behind the GET-only guard (written once, exclusively, in the observations directory). */
+async function guardedGh() {
+  const fs = await import('node:fs/promises');
+  const { constants } = await import('node:fs');
+  const target = `${observations}/gh-guard.mjs`;
+  if (!(await fs.access(target).then(() => true, () => false))) {
+    let gh: string | undefined;
+    for (const directory of (process.env.PATH ?? '').split(':').filter(item => item.startsWith('/'))) {
+      if (await fs.access(`${directory}/gh`, constants.X_OK).then(() => true, () => false)) { gh = `${directory}/gh`; break; }
+    }
+    if (!gh) throw new Error('GH_NOT_FOUND');
+    await fs.writeFile(target, ghGuardScript({ node: process.execPath, gh, trace: ghTrace }), { mode: 0o700, flag: 'wx' });
+  }
+  return target;
+}
+
 async function compose() {
   const { createGitHubAccess } = await import('../../src/platform/github/index.js');
   const { createIssueTracker } = await import('../../src/issue-tracker/index.js');
   const { createCodeRepository } = await import('../../src/code-repository/index.js');
-  const github = createGitHubAccess({ root, ...githubApp });
+  const github = createGitHubAccess({ root, ...githubApp, executable: await guardedGh() });
   return { tracker: createIssueTracker({ github, scopes: [repository], dependencyScopes: [] }), codeRepository: createCodeRepository({ github }) };
 }
 
@@ -122,11 +163,18 @@ export async function runPhase(phase: Phase) {
       const events: unknown[] = [];
       const log = (entry: Record<string, unknown>) => { events.push({ at: new Date().toISOString(), ...entry }); };
       const storagePath = await snapshotStorage(q14, `${observations}/evaluate-storage`);
-      const control = await openControl({ storagePath, runtimeInventory: 'empty', execution: refusingPorts(log), polling: { intervalSeconds: pollingSeconds },
-        access: { tracker, repository: { checkAccess: (repo, base) => codeRepository.checkAccess(repo, base), findPublication: correlation => codeRepository.findPublication(correlation),
+      // Pause the COPY first (a local administrative command on the copy): nothing is admitted; no execution ports: nothing can start.
+      const pausing = await openControl({ storagePath, runtimeInventory: 'unknown' });
+      const { randomUUID } = await import('node:crypto');
+      const paused = await pausing.accept({ request_id: randomUUID(), operation: 'pause', origin: 'local-cli' });
+      const pauseStop = new AbortController(); pauseStop.abort();
+      await pausing.run(pauseStop.signal);
+      log({ call: 'pause-copy', receipt: paused });
+      const control = await openControl({ storagePath, runtimeInventory: 'unknown', polling: { intervalSeconds: pollingSeconds },
+        access: { tracker: readOnlyTracker(tracker, log), repository: { checkAccess: (repo, base) => codeRepository.checkAccess(repo, base), findPublication: correlation => codeRepository.findPublication(correlation),
           async readPullRequest(query) {
             const result = await codeRepository.readPullRequest(query);
-            log({ call: 'read-pull-request', number: query.number, kind: result.kind, ...(result.kind === 'observed' ? { headSha: result.pullRequest.headSha } : { code: result.code }) });
+            log({ call: 'read-pull-request', number: query.number, kind: result.kind, ...(result.kind === 'observed' ? { headSha: result.pullRequest.headSha } : result.kind === 'unavailable' ? { code: result.code } : { unchanged: result.headSha }) });
             return result;
           } }, repositories: [repository], dependencyRepositories: [] } });
       const stop = new AbortController();
@@ -144,7 +192,8 @@ export async function runPhase(phase: Phase) {
       stop.abort();
       const outcome = await running;
       const linked = linkedWork(final);
-      await save('evaluate-result', { status: 'observed', outcome, checks: linked.ok ? linked.work.checks ?? null : null, linked: linked.ok ? null : linked.reason,
+      const trace = (await fs.readFile(ghTrace, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { method: string | null; allowed: boolean });
+      await save('evaluate-result', { getOnly: trace.every(entry => entry.method === 'GET' && entry.allowed), requests: trace.length, status: 'observed', outcome, checks: linked.ok ? linked.work.checks ?? null : null, linked: linked.ok ? null : linked.reason,
         work: linked.ok ? { queue: linked.work.queue, impediments: linked.work.impediments, dispatch: linked.work.dispatch } : null, controlStatus: status, events,
         deadlineReached: Date.now() >= deadline });
       return;

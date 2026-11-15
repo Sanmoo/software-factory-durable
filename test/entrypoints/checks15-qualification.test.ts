@@ -22,7 +22,7 @@ test('AC7 recipe: import and --plan are inert and declare a read-only one-shot r
   assert.deepEqual(plan.phases, ['preflight', 'evaluate', 'inspect']);
   assert.deepEqual(plan.expectedTicket, { number: 3, repositoryId: 1256893534 });
   assert.equal(plan.model, 'none');
-  assert.deepEqual(plan.github.writes, ['App: access_tokens issuance POSTs only (reduced read grants, cached per purpose); no other non-GET request']);
+  assert.deepEqual(plan.github.writes, ['App: access_tokens issuance POSTs only (reduced read grants, cached per purpose; native HTTPS, not gh); no other non-GET request']);
   for (const never of ['GitHub write of any kind', 'merge', 'approval', 'ready-for-review conversion']) assert.ok(plan.github.never.includes(never), never);
   assert.ok(plan.requires.some((item: string) => /ticket 14 integrated/.test(item)));
   await assert.rejects(recipe.main(['retry']), /EXACT_PHASE_REQUIRED/);
@@ -30,18 +30,16 @@ test('AC7 recipe: import and --plan are inert and declare a read-only one-shot r
   assert.equal(forbidden, 0);
 });
 
-test('AC7 recipe guards: the tracking-only owner refuses and records every execution effect; only the linked own PR of Ticket #3 qualifies', async () => {
-  const events: Record<string, unknown>[] = [];
-  const ports = recipe.refusingPorts(entry => events.push(entry));
-  await assert.rejects(ports.sandbox.prepare({ workId: 'w', configuration: {}, checkout: {} as never }), /RECIPE_TRACKING_ONLY/);
-  await assert.rejects(ports.credentials.issue({ workId: 'w', executionId: 'e', repository: { repository: 'r/r', installationId: 1, workflows: false } }), /RECIPE_TRACKING_ONLY/);
-  await assert.rejects(ports.workers.activate({} as never), /RECIPE_TRACKING_ONLY/);
-  assert.deepEqual(events, [{ call: 'prepare', refused: true }, { call: 'issue', refused: true }, { call: 'activate', refused: true }]);
+test('AC7 recipe guards: only the linked own PR of Ticket #3 qualifies; the plan declares dispatch disabled, a read-only tracker and the GET-only gh guard', async () => {
   const work = (publication: unknown, extra: Record<string, unknown> = {}) => ({ kind: 'list', works: [{ ticket: { number: 3, repositoryId: 1256893534 }, result: 'open', publication, ...extra }] });
   assert.deepEqual(recipe.linkedWork({ kind: 'list', works: [] }), { ok: false, reason: 'WORK_NOT_FOUND' });
   assert.deepEqual(recipe.linkedWork(work({ state: 'requested', pullRequest: null })), { ok: false, reason: 'OWN_PULL_REQUEST_NOT_LINKED' });
   assert.deepEqual(recipe.linkedWork(work({ state: 'published', pullRequest: { number: 4 } }, { result: 'delivered' })), { ok: false, reason: 'WORK_NOT_OPEN' });
   const linked = recipe.linkedWork(work({ state: 'published', pullRequest: { number: 4 } }));
   assert.deepEqual(linked.ok && linked.pullRequest, { number: 4 });
+  const plan = recipe.plan();
+  assert.match(plan.dispatch, /no execution ports/);
+  assert.match(plan.github.guard, /refuses \(exit 97, nothing sent\) any method other than GET/);
+  assert.match(plan.github.guard, /read-only \(postComment refused locally\)/);
   assert.equal(forbidden, 0);
 });
