@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { composeProductionExecution } from '../../src/entrypoints/controller/composition.js';
 import type { GitHubAccess } from '../../src/platform/github/index.js';
 
@@ -54,10 +54,21 @@ test('ticket 30: production composition copies a recorded Builder session out of
   const session = { ref: 'r/seg/w-abc/profile/sessions/one.jsonl', sessionId: 's-1', sha256, bytes: data.length, format: 'pi-session-jsonl-v3' as const,
     profile: { sdkProfile: 'p', providerId: 'x', modelId: 'y', skillPack: null, tools: [] } };
   assert.deepEqual(await details.preserveSession({ workId: 'work-r', executionId: 'e-1', session: { ...session, sha256: 'f'.repeat(64) } }), { status: 'failed', code: 'SESSION_ALTERED' });
+  // Every agent session of the boot (a reviewer's too), each read confined with its hash; an absent runtime lists nothing.
+  const boot = 'boot-11111111-2222-4333-8444-555555555555';
+  const runtime = join(root, 'r', Buffer.from(boot.slice(5).replaceAll('-', ''), 'hex').toString('base64url'));
+  await mkdir(join(runtime, 'w-rev', 'profile', 'sessions'), { recursive: true, mode: 0o700 });
+  await writeFile(join(runtime, 'w-rev', 'profile', 'sessions', 'r.jsonl'), data, { mode: 0o600 });
+  assert.deepEqual(await details.runtimeSessions!({ boot }), [{ ref: relative(root, join(runtime, 'w-rev', 'profile', 'sessions', 'r.jsonl')), sha256, bytes: data.length }]);
+  assert.deepEqual(await details.runtimeSessions!({ boot: 'boot-99999999-2222-4333-8444-555555555555' }), []);
+  assert.deepEqual(await details.preserveSession({ workId: 'work-r', executionId: 'e-1', name: 'e-1--rv-0123456789abcdef',
+    session: { ref: relative(root, join(runtime, 'w-rev', 'profile', 'sessions', 'r.jsonl')), sha256, bytes: data.length } }), { status: 'preserved', sha256, bytes: data.length });
+  await writeFile(join(runtime, 'w-rev', 'profile', 'sessions', 'bad.jsonl'), 'not a session header', { mode: 0o600 });
+  await assert.rejects(details.runtimeSessions!({ boot }), /SESSION_UNREADABLE/, 'an unreadable session blocks (never skipped silently)');
   assert.deepEqual(await details.preserveSession({ workId: 'work-r', executionId: 'e-1', session }), { status: 'preserved', sha256, bytes: data.length });
   assert.equal(await readFile(join(root, 'work-r', 'sessions', 'e-1.jsonl'), 'utf8'), data.toString());
   assert.deepEqual(await details.preserveSession({ workId: 'work-r', executionId: 'e-2', session: { ...session, ref: 'r/seg/w-abc/profile/sessions/gone.jsonl' } }),
     { status: 'lost', code: 'SESSION_FILE_MISSING' });
-  assert.deepEqual((await details.list({ workId: 'work-r' })).items.map(item => item.id), ['session:e-1']);
+  assert.deepEqual((await details.list({ workId: 'work-r' })).items.map(item => item.id).sort(), ['session:e-1', 'session:e-1--rv-0123456789abcdef']);
   assert.deepEqual(await details.remove({ workId: 'work-r', item: { id: 'session:e-1', kind: 'session', executionId: 'e-1' }, expectedSha256: sha256 }), { outcome: 'removed', code: null });
 });

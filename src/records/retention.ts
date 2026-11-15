@@ -14,7 +14,8 @@ export type RecordsInventory = { completeness: 'complete' | 'incomplete'; observ
 export type RecordsRemoval = { outcome: 'removed' | 'absent' | 'refused' | 'failed' | 'indeterminate'; code: string | null };
 
 const identifier = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
-const sessionName = /^([a-zA-Z0-9][a-zA-Z0-9_-]{0,127})\.jsonl$/;
+/** `<execution>.jsonl` (the recorded Builder session) or `<execution>--rv-<16 hex>.jsonl` (another agent session of the same boot). */
+const sessionName = /^([a-zA-Z0-9][a-zA-Z0-9_-]{0,127}?)(--rv-[0-9a-f]{16})?\.jsonl$/;
 const captureFiles = ['capture.json', 'complete.json', 'output'];
 /** The capture's own files, including a temporary its atomic publication may have left after a crash. */
 const ownCaptureFile = (name: string) => captureFiles.includes(name) || /^(capture|complete)\.json-[0-9a-f-]{36}\.tmp$/.test(name);
@@ -102,7 +103,7 @@ async function listSessions(path: string, result: RecordsInventory) {
     try {
       if (!match) throw new Unsafe();
       const info = await regularFile(join(path, name));
-      result.items.push({ id: `session:${match[1]}`, kind: 'session', executionId: match[1]!, bytes: info.size, state: 'complete' });
+      result.items.push({ id: `session:${match[1]}${match[2] ?? ''}`, kind: 'session', executionId: match[1]!, bytes: info.size, state: 'complete' });
     } catch { result.unknown.push(`sessions/${name}`); result.completeness = 'incomplete'; }
   }
 }
@@ -170,10 +171,10 @@ export async function removeRecordsDetail(root: string, workId: string, item: { 
       return { outcome: 'removed', code: null };
     } catch (error) { return error instanceof Unsafe ? { outcome: 'refused', code: 'LOG_UNSAFE' } : { outcome: 'failed', code: removed ? 'LOG_REMOVAL_PARTIAL' : 'LOG_REMOVAL_FAILED' }; }
   }
-  const executionId = item.id.startsWith('session:') ? item.id.slice(8) : '';
-  if (!identifier.test(executionId) || !expectedSha256) return { outcome: 'refused', code: 'DETAIL_ID_INVALID' };
+  const name = item.id.startsWith('session:') ? item.id.slice(8) : '';
+  if (!sessionName.test(`${name}.jsonl`) || !expectedSha256) return { outcome: 'refused', code: 'DETAIL_ID_INVALID' };
   const sessions = join(directory, 'sessions');
-  const path = join(sessions, `${executionId}.jsonl`);
+  const path = join(sessions, `${name}.jsonl`);
   try {
     try { await regularFile(path); } catch (error) { if (missing(error)) return { outcome: 'absent', code: null }; throw error; }
     if (await hashFile(path) !== expectedSha256) return { outcome: 'refused', code: 'SESSION_CHANGED' };

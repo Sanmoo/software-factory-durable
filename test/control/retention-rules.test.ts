@@ -94,7 +94,7 @@ test('AC5/AC7: explicit plan — losses, warnings and refusals; a cycle that can
     assert.match(plan.refusals[0]!.detail, /`factory cancel <work>` first; cleanup never cancels implicitly/);
   }
   const cancelled = work({ result: 'cancelled', delivery: null, cleanup: null, cancellation: { state: 'ceased' } as WorkView['cancellation'],
-    retention: { removals: [], sessions: [{ executionId: 'e-1', state: 'preserved', sha256: 'f'.repeat(64) }] } as unknown as WorkView['retention'] });
+    retention: { removals: [], sessions: [{ id: 'session:e-1', role: 'builder', executionId: 'e-1', state: 'preserved', sha256: 'f'.repeat(64) }] } as unknown as WorkView['retention'] });
   const plan = planExplicitCleanup(cancelled, ['logs', 'sessions', 'environment', 'remote-branch'],
     facts({ plannedResources: [{ id: 'environment:env-x', kind: 'environment', target: 'env-x/root.qcow2' }, { id: 'remote-branch:b', kind: 'remote-branch', target: 'b' }] }));
   assert.deepEqual(plan.items.map(item => [item.id, item.kind]), [['log:a', 'log'], ['session:e-1', 'session'], ['environment:env-x', 'environment']]);

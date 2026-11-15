@@ -33,6 +33,10 @@ async function harness(t: { after(fn: () => Promise<void> | void): void }, optio
   await mkdir(sessions, { recursive: true, mode: 0o700 });
   const data = Buffer.from(`${JSON.stringify({ type: 'session', version: 3, id: 's-1', cwd: '/workspace' })}\n{"type":"message"}\n`);
   await writeFile(join(sessions, 'one.jsonl'), data, { mode: 0o600 });
+  // A reviewer's session of the same boot (not recorded by the controller): preserved like the Builder's (supervisor decision).
+  const reviewerSessions = join(own.runtime, 'w-rev', 'profile', 'sessions');
+  await mkdir(reviewerSessions, { recursive: true, mode: 0o700 });
+  await writeFile(join(reviewerSessions, 'review.jsonl'), `${JSON.stringify({ type: 'session', version: 3, id: 's-r', cwd: '/workspace' })}\n`, { mode: 0o600 });
   const sha256 = createHash('sha256').update(data).digest('hex');
   await session.commit(async tx => {
     const work = (await tx.doc(works, work_id, null)).work!;
@@ -57,13 +61,25 @@ async function harness(t: { after(fn: () => Promise<void> | void): void }, optio
   // The same composition as production `detailPorts` (records + host session read), with a call log and injectable faults.
   const details: DetailPorts = {
     list: ({ workId }) => listDetails(root, workId),
-    async preserveSession({ workId, executionId, session: recorded }) {
-      log.push(`preserve-session:${executionId}`);
+    async runtimeSessions({ boot }) {
+      const directory = join(root, 'r', Buffer.from(boot.slice(5).replaceAll('-', ''), 'hex').toString('base64url'));
+      const found: { ref: string; sha256: string; bytes: number }[] = [];
+      for (const worker of await readdir(directory).catch(() => [] as string[])) {
+        if (!worker.startsWith('w-')) continue;
+        for (const name of await readdir(join(directory, worker, 'profile', 'sessions')).catch(() => [] as string[])) {
+          const bytes = await readFile(join(directory, worker, 'profile', 'sessions', name));
+          found.push({ ref: relative(root, join(directory, worker, 'profile', 'sessions', name)), sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length });
+        }
+      }
+      return found;
+    },
+    async preserveSession({ workId, executionId, name, session: recorded }) {
+      log.push(`preserve-session:${name ?? executionId}`);
       // The confined host read (platform/host `readSessionFile`) is composed and tested in delivery-composition; here a plain read of the same file.
       const read = await readFile(join(root, recorded.ref)).catch(() => null);
       if (!read) return { status: 'lost', code: 'SESSION_FILE_MISSING' };
       if (createHash('sha256').update(read).digest('hex') !== recorded.sha256) return { status: 'failed', code: 'SESSION_ALTERED' };
-      return preserveSessionCopy(root, workId, executionId, read, recorded.sha256);
+      return preserveSessionCopy(root, workId, name ?? executionId, read, recorded.sha256);
     },
     async remove({ workId, item, expectedSha256 }) {
       log.push(`remove-detail:${item.id}`);
@@ -109,7 +125,10 @@ test('AC1/AC3/AC4/AC8: sessions are preserved before the environment goes; deliv
   const delivered = await h.work();
   assert.equal(delivered.cleanup?.state, 'complete', JSON.stringify(delivered.cleanup?.resources.map(item => [item.id, item.state])));
   // Preservation precedes the removal of its origin: evidence, then the recorded session, then the Sandbox removal.
-  assert.deepEqual(h.log.filter(item => !item.startsWith('remove-detail')), [`preserve:${h.own.env}`, 'preserve-session:e-1', `remove:${h.own.env}`]);
+  const reviewerName = h.log.find(item => item.startsWith('preserve-session:e-1--rv-'))?.slice('preserve-session:'.length);
+  assert.ok(reviewerName, h.log.join('|'));
+  assert.deepEqual(h.log.filter(item => !item.startsWith('remove-detail')), [`preserve:${h.own.env}`, 'preserve-session:e-1', `preserve-session:${reviewerName}`, `remove:${h.own.env}`]);
+  assert.ok(await exists(join(h.root, h.work_id, 'sessions', `${reviewerName}.jsonl`)), 'the reviewer session copy survives too');
   assert.equal(await exists(h.own.runtime), false, 'the runtime tree (with the original session) is gone');
   assert.ok(await exists(h.copy), 'the session copy survives the resource cleanup');
   assert.equal(delivered.retention?.sessions[0]?.state, 'preserved');
@@ -126,7 +145,8 @@ test('AC1/AC3/AC4/AC8: sessions are preserved before the environment goes; deliv
   let view = (await h.work()).retention!;
   assert.deepEqual([view.class, view.state, view.dueAt, view.sweeps], ['delivered', 'retained', new Date(merge + 30 * day).toISOString(), 1]);
   assert.match(view.nextStep, /kept until .* \(30 days after the confirmed merge\)/);
-  assert.deepEqual([view.inventory?.logs, view.inventory?.sessions, view.inventory?.evidence], [2, 1, 1]);
+  assert.deepEqual([view.inventory?.logs, view.inventory?.sessions, view.inventory?.evidence], [2, 2, 1]);
+  assert.deepEqual(view.sessions.map(item => [item.id, item.state]), [['session:e-1', 'preserved'], [`session:${reviewerName}`, 'preserved']]);
   await desk.cycle();
   assert.equal((await h.work()).retention?.sweeps, 1, 'not again before a day');
   desk = h.retentionDesk();
@@ -148,10 +168,10 @@ test('AC1/AC3/AC4/AC8: sessions are preserved before the environment goes; deliv
   await desk.cycle();
   view = (await h.work()).retention!;
   assert.equal(view.dueAt, new Date(merge + 30 * day).toISOString(), 'no new 30 days');
-  assert.deepEqual([view.state, view.removed.logs, view.removed.sessions], ['expired', 2, 1]);
+  assert.deepEqual([view.state, view.removed.logs, view.removed.sessions], ['expired', 2, 2]);
   assert.ok(view.removals.every(item => item.origin === 'retention' && item.outcome === 'removed' && item.resultAt !== null && item.intentAt <= item.resultAt));
   assert.equal(await exists(h.logPath(h.logs[0]!.id)) || await exists(h.logPath(h.logs[1]!.id)) || await exists(h.copy), false);
-  assert.match(view.nextStep, /expired: removed by retention.*2 log\(s\), 1 session\(s\)/);
+  assert.match(view.nextStep, /expired: removed by retention.*2 log\(s\), 2 session\(s\)/);
   // Kept: preserved evidence, the foreign Work's log, history/summary/references; delivery stands.
   const after = await h.work();
   assert.equal((await readdir(join(h.root, h.work_id, 'evidence'))).length, 1, 'only the preserved evidence directory remains');
@@ -188,7 +208,7 @@ test('AC8: partial failure, lost result after a crash (indeterminate) and absenc
   h.clock.now += day;
   await desk.cycle();
   view = (await h.work()).retention!;
-  assert.equal(h.log.filter(item => item.startsWith('remove-detail')).length, 3, 'failed/indeterminate are not retried by the next sweep');
+  assert.equal(h.log.filter(item => item.startsWith('remove-detail')).length, 4, 'failed/indeterminate are not retried by the next sweep');
   assert.equal(view.state, 'eligible');
   // A crash right after the intent (no result recorded): the next sweep makes it indeterminate, never success.
   const intent = await recordDetailIntent(h.session, h.work_id, [{ id: `log:${h.logs[0]!.id}`, kind: 'log', executionId: 'e-1', bytes: 1 }],
@@ -204,7 +224,7 @@ test('AC8: partial failure, lost result after a crash (indeterminate) and absenc
   await desk.cycle();
   view = (await h.work()).retention!;
   assert.deepEqual(outcome('session:e-1'), [['absent', 'ABSENT_IN_COMPLETE_INVENTORY']]);
-  assert.equal(h.log.filter(item => item.startsWith('remove-detail')).length, 3);
+  assert.equal(h.log.filter(item => item.startsWith('remove-detail')).length, 4);
 });
 
 test('AC5/AC6/AC7: explicit cleanup of a cancelled Work — cancel first, plan of losses, supersede/obsolete revalidation, environment then details, foreign never touched', async t => {
@@ -245,7 +265,8 @@ test('AC5/AC6/AC7: explicit cleanup of a cancelled Work — cancel first, plan o
   assert.deepEqual(await h.confirm('c-3b', third.kind === 'durable' ? third.plan!.planId : '').then(item => item.kind === 'durable' && item.outcome), 'already-satisfied');
   await h.delivery.cycle();
   let work = await h.work();
-  assert.deepEqual(h.log.filter(item => !item.startsWith('remove-detail')), [`preserve:${h.own.env}`, 'preserve-session:e-1', `remove:${h.own.env}`]);
+  assert.deepEqual(h.log.filter(item => !item.startsWith('remove-detail')).map(item => item.replace(/--rv-[0-9a-f]+$/, '--rv')),
+    [`preserve:${h.own.env}`, 'preserve-session:e-1', 'preserve-session:e-1--rv', `remove:${h.own.env}`]);
   assert.equal(work.cleanup?.explicit?.consumed, true);
   assert.ok(work.cleanup?.resources.every(item => item.state === 'removed' && item.kind !== 'remote-branch'), JSON.stringify(work.cleanup?.resources));
   assert.equal(h.repository.calls.filter(call => call.method === 'cleanupBranch').length, 0, 'a cancelled Work\'s branch and GitHub are never touched');
@@ -265,8 +286,10 @@ test('AC5/AC6/AC7: explicit cleanup of a cancelled Work — cancel first, plan o
   assert.ok(sessions.kind === 'durable');
   assert.ok(sessions.plan!.warnings.some(item => /`resume` does not recreate a session/.test(item)));
   await h.confirm('c-4', sessions.plan!.planId);
+  assert.equal(sessions.plan!.items.length, 2, 'Builder and reviewer sessions');
   await h.retentionDesk().cycle();
   assert.equal(await exists(h.copy), false);
+  assert.deepEqual(await readdir(join(h.root, h.work_id, 'sessions')), []);
   assert.equal((await h.work()).retention?.state, 'explicitly-cleaned');
 });
 

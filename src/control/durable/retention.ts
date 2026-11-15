@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { ControlInput, ControlReceipt, DetailInventory, DetailPorts, DetailRemoval, DetailRemovalView, ExplicitCleanupPlan, PlannedCleanupResource,
   PreservedSessionView, RetentionEvent, RetentionView } from '../types.js';
@@ -54,10 +54,10 @@ async function onWork<T>(session: Session, work_id: string, change: (work: WorkR
 export async function recordSessionPreservation(session: Session, work_id: string, entry: PreservedSessionView) {
   return onWork(session, work_id, work => {
     const view = retentionOf(work);
-    const existing = view.sessions.find(item => item.executionId === entry.executionId);
+    const existing = view.sessions.find(item => item.id === entry.id);
     if (existing?.state === 'preserved') return 'kept' as const;
-    view.sessions = [...view.sessions.filter(item => item.executionId !== entry.executionId), copy(entry)];
-    history(work, 'details-preserved', `session:${entry.executionId}:${entry.state}${entry.code ? `:${entry.code}` : ''}`, entry.at);
+    view.sessions = [...view.sessions.filter(item => item.id !== entry.id), copy(entry)];
+    history(work, 'details-preserved', `${entry.id}:${entry.state}${entry.code ? `:${entry.code}` : ''}`, entry.at);
     return 'recorded' as const;
   });
 }
@@ -68,18 +68,31 @@ export async function recordSessionPreservation(session: Session, work_id: strin
  * a failed copy blocks the removal of that environment.
  */
 export async function preserveSessions(session: Session, details: DetailPorts, work: WorkRecord, environment: string): Promise<'preserved' | 'failed'> {
-  const executions = [...work.previousExecutions, ...(work.execution ? [work.execution] : [])].filter(item => item.dispatch.environment === environment && item.end?.session);
-  for (const execution of executions) {
-    if (work.retention?.sessions.some(item => item.executionId === execution.executionId && (item.state === 'preserved' || item.state === 'lost'))) continue;
-    const recorded = execution.end!.session!;
-    type Result = Awaited<ReturnType<DetailPorts['preserveSession']>>;
-    const result: Result = await details.preserveSession({ workId: work.work_id, executionId: execution.executionId, session: recorded })
+  const executions = [...work.previousExecutions, ...(work.execution ? [work.execution] : [])].filter(item => item.dispatch.environment === environment);
+  type Result = Awaited<ReturnType<DetailPorts['preserveSession']>>;
+  const done = (id: string) => work.retention?.sessions.some(item => item.id === id && (item.state === 'preserved' || item.state === 'lost'));
+  const preserve = async (execution: { executionId: string }, role: 'builder' | 'reviewer', name: string, source: { ref: string; sha256: string; bytes: number }) => {
+    const id = `session:${name}`;
+    if (done(id)) return 'preserved' as const;
+    const result: Result = await details.preserveSession({ workId: work.work_id, executionId: execution.executionId, ...(role === 'reviewer' ? { name } : {}), session: source })
       .catch((): Result => ({ status: 'failed', code: 'SESSION_PRESERVATION_FAILED' }));
-    const base = { executionId: execution.executionId, sourceRef: recorded.ref, at: new Date().toISOString() };
+    const base = { id, role, executionId: execution.executionId, sourceRef: source.ref, at: new Date().toISOString() };
     await recordSessionPreservation(session, work.work_id, result.status === 'preserved' || result.status === 'already'
       ? { ...base, sha256: result.sha256, bytes: result.bytes, state: 'preserved', code: null }
-      : { ...base, sha256: recorded.sha256, bytes: recorded.bytes, state: result.status, code: 'code' in result ? result.code : null });
-    if (result.status === 'failed') return 'failed';
+      : { ...base, sha256: source.sha256, bytes: source.bytes, state: result.status, code: 'code' in result ? result.code : null });
+    return result.status === 'failed' ? 'failed' as const : 'preserved' as const;
+  };
+  for (const execution of executions) {
+    const recorded = execution.end?.session;
+    if (recorded && await preserve(execution, 'builder', execution.executionId, recorded) === 'failed') return 'failed';
+    // Supervisor decision (ticket 30): the other agent sessions of the same boot (reviewers) are retained details too, copied first as well.
+    if (!execution.dispatch.boot || !details.runtimeSessions) continue;
+    let found: { ref: string; sha256: string; bytes: number }[];
+    try { found = await details.runtimeSessions({ boot: execution.dispatch.boot }); } catch { return 'failed'; }
+    for (const source of found.filter(item => item.ref !== recorded?.ref)) {
+      const name = `${execution.executionId}--rv-${createHash('sha256').update(source.ref).digest('hex').slice(0, 16)}`;
+      if (await preserve(execution, 'reviewer', name, source) === 'failed') return 'failed';
+    }
   }
   return 'preserved';
 }

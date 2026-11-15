@@ -140,13 +140,13 @@ export function planExplicitCleanup(work: Work, select: ExplicitCleanupSelection
       const kind = kindOfSelection[target];
       const found = facts.inventory.items.filter(item => item.kind === kind);
       if (kind === 'session') for (const execution of executionsOf(work)) {
-        if (execution.end?.session && !work.retention?.sessions.some(entry => entry.executionId === execution.executionId)) refusals.push({ target: `session:${execution.executionId}`,
+        if (execution.end?.session && !work.retention?.sessions.some(entry => entry.id === `session:${execution.executionId}`)) refusals.push({ target: `session:${execution.executionId}`,
           code: 'SESSION_IN_ENVIRONMENT', detail: 'This recorded session still lives in its environment runtime: it is preserved when the environment is cleaned; plan `sessions` again after that.' });
       }
       if (!found.length) { refusals.push({ target, code: 'NOTHING_TO_REMOVE', detail: `No ${target} of this Work are present in the Records area.` }); continue; }
       for (const item of found) {
         if (inUse(work, item)) { refusals.push({ target: item.id, code: 'RESOURCE_IN_USE', detail: 'Its Execution has not ended with confirmed cessation.' }); continue; }
-        if (kind === 'session' && !work.retention?.sessions.some(entry => entry.executionId === item.executionId && entry.state === 'preserved')) {
+        if (kind === 'session' && !work.retention?.sessions.some(entry => entry.id === item.id && entry.state === 'preserved')) {
           refusals.push({ target: item.id, code: 'SESSION_NOT_RECORDED', detail: 'No recorded preservation of this session: its ownership cannot be proved, it is kept.' }); continue;
         }
         items.push({ id: item.id, kind, target: item.id, bytes: item.bytes, state: 'planned', code: null,

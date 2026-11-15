@@ -87,7 +87,9 @@ into the ticket 18/35 journey.
 
 ## Gaps
 
-- Only **recorded Builder sessions** count as sessions. Reviewer session files in runtime trees are not recorded by tickets 12/28, so they
-  remain temporaries and go with the environment.
+- ~~Reviewer sessions went with the environment.~~ **Supervisor decision (6):** every agent session file of an Execution's boot runtime
+  (`r/<boot>/w-<id>/profile/sessions/*.jsonl`, reviewers included) is copied into Records (`<execution>--rv-<16 hex of its ref>.jsonl`,
+  role `reviewer`) before the environment is removed, read confined with its hash; an unreadable one blocks that environment's removal.
+  It then follows the same 30-day rule and explicit cleanup. Tests: `retention-flow` AC1/AC5–7, `delivery-composition` ticket 30.
 - `status.retention.sweeps/lastSweepAt` are per owner process, in memory. The per-Work `retention.lastSweepAt` is durable.
 - The Records inventory is read per Work at each sweep (bounded at 20000 entries per Work). No global index exists.

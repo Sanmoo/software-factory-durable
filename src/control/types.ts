@@ -725,13 +725,16 @@ export type DetailRemoval = { outcome: 'removed' | 'absent' | 'refused' | 'faile
 /** Ticket 30 trusted composition ports over the Records area (host-only, never mounted in a guest). */
 export type DetailPorts = {
   list(input: { workId: string }): Promise<DetailInventory>;
-  /** Copies a recorded Builder session (verified by its recorded hash) into the Work's Records `sessions/` BEFORE its environment is removed. */
-  preserveSession(input: { workId: string; executionId: string; session: WorkerSessionRef }): Promise<{ status: 'preserved' | 'already'; sha256: string; bytes: number } |
+  /** Every agent session file in one boot's runtime tree (every `w-<id>/profile/sessions/<file>.jsonl` under `r/<boot>`), read confined, with its current hash. */
+  runtimeSessions?(input: { boot: string }): Promise<{ ref: string; sha256: string; bytes: number }[]>;
+  /** Copies a session (verified by its hash) into the Work's Records `sessions/<name ?? executionId>.jsonl` BEFORE its environment is removed. */
+  preserveSession(input: { workId: string; executionId: string; name?: string; session: Pick<WorkerSessionRef, 'ref' | 'sha256' | 'bytes'> }): Promise<{ status: 'preserved' | 'already'; sha256: string; bytes: number } |
     { status: 'lost' | 'failed'; code: string }>;
   /** Confined removal of ONE detail of this Work; a session is removed only while its content still has `expectedSha256`. */
   remove(input: { workId: string; item: Pick<DetailItem, 'id' | 'kind' | 'executionId'>; expectedSha256: string | null }): Promise<DetailRemoval>;
 };
-export type PreservedSessionView = { executionId: string; sourceRef: string; sha256: string; bytes: number; at: string;
+/** `builder`: the Execution's recorded Builder session; `reviewer`: another agent session found in the same boot runtime (not recorded by Control). */
+export type PreservedSessionView = { id: string; role: 'builder' | 'reviewer'; executionId: string; sourceRef: string; sha256: string; bytes: number; at: string;
   state: 'preserved' | 'lost' | 'failed'; code: string | null };
 /** One detail removal: intent recorded BEFORE the effect, result after it; an intent without result (crash) becomes `indeterminate`. */
 export type DetailRemovalView = { effectId: string; id: string; kind: 'log' | 'session'; executionId: string | null; bytes: number;

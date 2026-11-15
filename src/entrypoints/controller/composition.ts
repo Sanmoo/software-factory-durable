@@ -3,9 +3,10 @@ import type { AccessDependencies, ConfiguredRepository, DetailPorts, ExecutionPo
 import { createIssueTracker } from '../../issue-tracker/index.js';
 import { createCodeRepository } from '../../code-repository/index.js';
 import { createSandbox, type GuestAssetPin } from '../../sandbox/index.js';
-import { realpath } from 'node:fs/promises';
+import { lstat, readdir, realpath } from 'node:fs/promises';
+import { join, relative } from 'node:path';
 import { listDetails, preserveEvidence, preserveSessionCopy, removeRecordsDetail } from '../../records/index.js';
-import { readSessionFile } from '../../platform/host/index.js';
+import { readSessionFile, workerRuntimeDirectory } from '../../platform/host/index.js';
 import { createWorkers, skillPackContinues, skillPacks, type SkillPackId } from '../../workers/index.js';
 import { createBuilderCredentials, createRepositoryFetchCredentials, type GitHubAccess } from '../../platform/github/index.js';
 import { factorySkillPackIds, type GitHubScope } from '../../contracts/index.js';
@@ -47,12 +48,30 @@ export function composeProductionAccess(input: { github: GitHubAccess; effective
 export function detailPorts(root: string): DetailPorts {
   return {
     list: ({ workId }) => listDetails(root, workId),
-    async preserveSession({ workId, executionId, session }) {
+    // Every agent session of one boot (Builder and reviewers): each file read confined (private dirs, no-follow, header) for its hash.
+    async runtimeSessions({ boot }) {
+      const canonical = await realpath(root);
+      const runtime = workerRuntimeDirectory(canonical, boot);
+      const workers = await readdir(runtime).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return [] as string[]; throw error; });
+      const found: { ref: string; sha256: string; bytes: number }[] = [];
+      for (const worker of workers.filter(name => /^w-[A-Za-z0-9]{1,64}$/.test(name)).sort()) {
+        const directory = join(runtime, worker, 'profile', 'sessions');
+        if (!await lstat(directory).then(() => true, () => false)) continue;
+        for (const name of (await readdir(directory)).filter(file => file.endsWith('.jsonl')).sort()) {
+          const ref = relative(canonical, join(directory, name));
+          const read = await readSessionFile(canonical, ref);
+          if (read.state !== 'read') throw new Error('SESSION_UNREADABLE');
+          found.push({ ref, sha256: read.sha256, bytes: read.data.length });
+        }
+      }
+      return found;
+    },
+    async preserveSession({ workId, executionId, name, session }) {
       const read = await readSessionFile(await realpath(root), session.ref);
       if (read.state === 'lost') return { status: 'lost', code: read.code };
       if (read.state !== 'read') return { status: 'failed', code: read.code };
       if (read.sha256 !== session.sha256) return { status: 'failed', code: 'SESSION_ALTERED' };
-      return preserveSessionCopy(root, workId, executionId, read.data, read.sha256);
+      return preserveSessionCopy(root, workId, name ?? executionId, read.data, read.sha256);
     },
     remove: ({ workId, item, expectedSha256 }) => removeRecordsDetail(root, workId, item, expectedSha256),
   };

@@ -46,7 +46,7 @@ export function createRetentionDesk(deps: { session: Session; details?: DetailPo
       if (intent === 'stale' || intent.kind !== 'recorded') return;
       const results: { effectId: string; result: DetailRemoval }[] = [];
       for (const item of slice) {
-        const expectedSha256 = item.kind === 'session' ? work.retention?.sessions.find(entry => entry.executionId === item.executionId && entry.state === 'preserved')?.sha256 ?? null : null;
+        const expectedSha256 = item.kind === 'session' ? work.retention?.sessions.find(entry => entry.id === item.id && entry.state === 'preserved')?.sha256 ?? null : null;
         const result = item.kind === 'session' && !expectedSha256 ? { outcome: 'refused' as const, code: 'SESSION_NOT_RECORDED' }
           : await deps.details!.remove({ workId: work.work_id, item, expectedSha256 }).catch(() => ({ outcome: 'indeterminate' as const, code: 'DETAIL_REMOVAL_UNAVAILABLE' }));
         results.push({ effectId: intent.effects[item.id]!, result });

@@ -37,7 +37,8 @@ test('inventory: logs (complete/partial) with their Execution, preserved session
   assert.equal(listed.evidence, 1, 'preserved evidence is protected, never listed as a detail');
   assert.deepEqual(listed.items.map(item => [item.id, item.kind, item.executionId, item.state]).sort(), [
     [`log:${complete.id}`, 'log', 'e-1', 'complete'], [`log:${partial.reference.id}`, 'log', 'e-1', 'partial'], ['session:e-1', 'session', 'e-1', 'complete']].sort());
-  assert.deepEqual(await listDetails(root, 'w-unknown'), { ...await listDetails(root, 'w-unknown'), completeness: 'complete', items: [] }, 'a Work with no records: complete and empty');
+  const none = await listDetails(root, 'w-unknown');
+  assert.deepEqual({ ...none, observedAt: 'x' }, { completeness: 'complete', observedAt: 'x', items: [], evidence: 0, unknown: [] }, 'a Work with no records: complete and empty');
   await writeFile(join(root, workId, 'stray'), 'x', { mode: 0o600 });
   const stray = await listDetails(root, workId);
   assert.equal(stray.completeness, 'incomplete');
