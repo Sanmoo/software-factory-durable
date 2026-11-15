@@ -228,6 +228,15 @@ Fixed: facts now record `reported.mergeCommitSha` (`value`/`null`/`absent`), and
 
 ## Gates (this worktree, after the last commit)
 
+**After the rebase onto `aff8050` (tickets 15/16 and the ticket 39 doc), `test:ci`:** RESULT PASS.
+- Tests: 1304 total, 1294 passed, 0 failed, 10 skipped.
+- Time: 192.9 s of the 600 s budget.
+- Quarantined, not coverage: `admission-cli`, `normal-worker`, `public-copy-read`, `publication-composition` (all under ticket 37).
+- Rebase adaptations:
+  - the ticket 17 delivery read was renamed `readOwnMerge`, next to the contract's Q4B `readPullRequest` that ticket 15 owns;
+  - the ticket 17 doubles stub `readPullRequest`/`setDraft`;
+  - the controller GraphQL write gate (`publication-boundary`) now admits exactly the `updateRefs` conditional own-branch deletion under `branch-cleanup`.
+
 **After the rebase onto `b2da9ae` (gate `npm run test:ci` = `scripts/test-runner/run ci`):** RESULT PASS.
 - Static: tsc, eslint (`--max-warnings 0`) and depcruise all ran inside the gate.
 - Tests: 196 files, 1203 tests, 1193 passed, 0 failed, 10 skipped.
