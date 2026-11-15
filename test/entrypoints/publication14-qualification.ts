@@ -11,8 +11,8 @@ export { readBounded, snapshotStorage };
 // controller itself never pushes or creates a pull request. Composes ticket 13's multi-round reviews and end-of-Execution verification.
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const observations = `${root}/q14-publication-v7`;
-const revision = 'q14-publication-v7';
+const observations = `${root}/q14-publication-v8`;
+const revision = 'q14-publication-v8';
 const phases = ['preflight', 'run', 'discover', 'inspect', 'stop-environment'] as const;
 type Phase = typeof phases[number];
 const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 'main', installationId: 177599217, workflows: false, label: 'ready-for-agent' };

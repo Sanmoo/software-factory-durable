@@ -16,7 +16,7 @@ test('AC7 recipe: import and --plan are inert and declare the exact GitHub effec
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q14-publication-v7');
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q14-publication-v8');
   assert.deepEqual(plan.phases, ['preflight', 'run', 'discover', 'inspect', 'stop-environment']);
   assert.deepEqual(plan.expectedTicket, { number: 3, repositoryId: 1256893534 });
   assert.equal(plan.github.writes.filter((item: string) => item.startsWith('Builder')).length, 2, 'one push and one draft PR');
