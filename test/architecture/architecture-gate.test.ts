@@ -3,11 +3,22 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { cruise } from 'dependency-cruiser';
+import extractDepcruiseOptions from 'dependency-cruiser/config-utl/extract-depcruise-options';
+import extractTSConfig from 'dependency-cruiser/config-utl/extract-ts-config';
+import { ESLint } from 'eslint';
 
-const checker = resolve('node_modules/dependency-cruiser/bin/dependency-cruiser.mjs');
+// Ticket 37: the same checkers as `npm run check:architecture` (dependency-cruiser with .dependency-cruiser.cjs, ESLint with
+// eslint.config.mjs), through their public APIs in this one process instead of one CLI process per fixture. Each fixture is still its
+// own tree analysed from its own root, exactly as the CLI did with `cwd: root` (the rules are root-relative paths).
 const config = resolve('.dependency-cruiser.cjs');
+const cruiseOptions = await extractDepcruiseOptions(config);
 interface Violation { from: string; to: string; rule: { name: string }; }
+async function inside<T>(root: string, run: () => Promise<T>): Promise<T> {
+  const previous = process.cwd();
+  process.chdir(root);
+  try { return await run(); } finally { process.chdir(previous); }
+}
 async function analyze(files: Record<string, string>) {
   const root = await mkdtemp(join(tmpdir(), 'factory-architecture-'));
   try {
@@ -17,12 +28,11 @@ async function analyze(files: Record<string, string>) {
       await mkdir(dirname(join(root, path)), { recursive: true });
       await writeFile(join(root, path), content);
     }
-    const result = spawnSync(process.execPath, [checker, '--config', config, '--output-type', 'json', '.'], { cwd: root, encoding: 'utf8' });
-    assert.ok(result.stdout, result.stderr);
-    // JSON reporter exits zero for a successfully produced graph; use its validation verdict.
-    assert.equal(result.status, 0, result.stderr);
-    const summary = JSON.parse(result.stdout).summary;
-    return { status: summary.advisedExitCode, violations: summary.violations as Violation[] };
+    const result = await inside(root, () => cruise(['.'], { ...cruiseOptions, outputType: 'json' }, undefined, { tsConfig: extractTSConfig('tsconfig.json') }));
+    const output = typeof result.output === 'string' ? JSON.parse(result.output) : result.output;
+    // The JSON reporter's validation verdict, as with the CLI's JSON output.
+    const summary = output.summary;
+    return { status: summary.advisedExitCode as number, violations: summary.violations as Violation[] };
   } finally { await rm(root, { recursive: true, force: true }); }
 }
 
@@ -119,10 +129,10 @@ async function syntaxViolations(path: string, source: string) {
   try {
     await mkdir(dirname(join(root, path)), { recursive: true });
     await writeFile(join(root, path), source);
-    const result = spawnSync(process.execPath, [resolve('node_modules/eslint/bin/eslint.js'), '--config', resolve('eslint.config.mjs'), '--format', 'json', path],
-      { cwd: root, encoding: 'utf8' });
-    assert.ok(result.stdout, result.stderr);
-    return { status: result.status, messages: JSON.parse(result.stdout)[0].messages as { ruleId: string; message: string }[] };
+    const [result] = await new ESLint({ cwd: root, overrideConfigFile: resolve('eslint.config.mjs') }).lintFiles([path]);
+    assert.ok(result, path);
+    // The CLI's exit status: 1 when any error, 0 otherwise (no --max-warnings here, as before).
+    return { status: result.errorCount > 0 ? 1 : 0, messages: result.messages as { ruleId: string | null; message: string }[] };
   } finally { await rm(root, { recursive: true, force: true }); }
 }
 
