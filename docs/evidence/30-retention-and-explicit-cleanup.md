@@ -80,7 +80,7 @@ the supervisor.** Ticket 26's decision 3 already routes it to `resume`, which do
 
 ## Real-run recipe (LOCAL only, supervisor decision 5; not run here)
 
-`test/entrypoints/retention30-qualification.ts`, namespace `/home/sanmoo/software-factory-test/y5/q30-retention-v1`. Import and `--plan` are
+`test/entrypoints/retention30-qualification.ts`, namespace `/home/sanmoo/software-factory-test/y5/q30-retention-v2`. Import and `--plan` are
 inert (`retention30-qualification.test.ts`). The phases are one-shot, each with an exclusive intent tombstone and no retry:
 
 1. **`preflight`.** Makes the namespace with an exclusive mkdir. COPIES `y5/q17-delivery-v4/authority` into `authority/`; a format-1 copy is
@@ -101,6 +101,27 @@ There is no network:
 
 `retention30-recipe-storage.test.ts` runs the same core on temporary fixtures: the private copy, the symlink refusal, the two real owner runs
 through the public `openControl` with the production `detailPorts`, and a verdict of `met`.
+
+### Run v1 (`q30-retention-v1`, run by the supervisor 2026-11-15): verdict NOT-MET, a harness defect
+
+Met: delivered; `dueAt` 2026-12-15T15:08:56Z; run A retained with 0 removed; plan recorded; evidence kept (1); source unchanged; 0 remote
+calls. Failed: run B `eligible` (expected `expired`), removed 0 (expected 88).
+
+What the observations show (read-only):
+- Run B's sweep found all 88 real logs eligible: complete inventory, no protection.
+- It recorded the first intent batch of 50; `inspect` shows those 50 `removed` and 38 logs left.
+- The recipe had stopped the owner as soon as the per-Work evaluation commit advanced `retention.sweeps`. That commit precedes the removal
+  batches.
+- The verdict read that early snapshot.
+
+The product behaved as designed: the next boot or daily sweep removes the remaining 38 with no new period. The synthetic test had only 2
+logs, so it never spanned a second batch.
+
+Fix (recipe only):
+- The owner run now waits for the desk's COMPLETED sweep (`status.retention.sweeps`).
+- `retention30-recipe-storage.test.ts` now reproduces the real shape with 88 captures. It was red (38 left) before the fix and is green
+  after.
+- The new namespace is `q30-retention-v2`.
 
 The V-14 "P" part (cleanup of a real delivery) remains ticket 17's `q17-delivery-v4`, already run.
 

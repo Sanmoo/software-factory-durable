@@ -11,8 +11,9 @@ import { prepareAuthority } from './delivery17-qualification.js';
 
 const root = '/home/sanmoo/software-factory-test/y5';
 const source = { storage: `${root}/q17-delivery-v4/authority`, records: root };
-const observations = `${root}/q30-retention-v1`;
-const revision = 'q30-retention-v1';
+// v1 was consumed (verdict not-met): its harness stopped the owner after the sweep's FIRST commit, before the batches of removals ended.
+const observations = `${root}/q30-retention-v2`;
+const revision = 'q30-retention-v2';
 const phases = ['preflight', 'sweep', 'inspect'] as const;
 type Phase = typeof phases[number];
 /** Ticket 17's delivered Work: Ticket #3 of the qualification repository (its id is read from the copy, never guessed). */
@@ -110,9 +111,11 @@ export async function ownerRun(input: { storagePath: string; recordsRoot: string
   const running = control.run(stop.signal);
   const deadline = Date.now() + (input.deadlineMs ?? phaseDeadlineMs);
   const show = async () => { const view = await control.inspect({ kind: 'show', work_id: input.workId }); return 'work' in view ? view.work : null; };
+  // Wait for the desk's COMPLETED sweep of this owner (`status.retention.sweeps`, counted after every Work and every removal batch), never the
+  // per-Work evaluation commit, which precedes the removals (v1 stopped there: only the first 50-item batch of 88 logs was removed).
+  const completed = async () => { const status = await control.inspect({ kind: 'status' }); return 'retention' in status ? status.retention?.sweeps ?? 0 : 0; };
+  while (Date.now() < deadline && await completed() < 1) await new Promise(resolve => setTimeout(resolve, 250));
   let work = await show();
-  const initialSweeps = work?.retention?.sweeps ?? 0;
-  while (Date.now() < deadline && (work?.retention?.sweeps ?? 0) <= initialSweeps) { await new Promise(resolve => setTimeout(resolve, 250)); work = await show(); }
   let plan: unknown = null;
   if (input.planSelect) {
     const command = { request_id: input.requestId ?? `${revision}-plan`, operation: 'cleanup-plan', work_id: input.workId, select: localOnly(input.planSelect), origin: 'local-cli' } as ControlInput;

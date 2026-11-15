@@ -22,7 +22,8 @@ test('recipe core: Records copied privately (symlink refused); run A retained + 
   await opened.close();
   const records = await createRecords({ root: source });
   const context = { workId: work_id, executionId: 'e-1', invocationId: 'i-1', role: 'builder' as const, environmentRef: 'env', bootRef: 'boot', callId: 'c-1' };
-  await records.record(context, { tool: 'bash' }); await records.record({ ...context, callId: 'c-2' }, { tool: 'read' });
+  // Real-data shape (q30-retention-v1: 88 logs): more logs than one intent batch (50), so a sweep spans several batches.
+  for (let index = 0; index < 88; index++) await records.record({ ...context, callId: `c-${index}` }, { tool: 'bash', index });
   await preserveEvidence({ root: source, workId: work_id, label: 'env', stage: async () => {} });
   // A symlink anywhere in the source Records refuses the copy.
   const unsafe = join(dir, 'unsafe'); await mkdir(unsafe, { mode: 0o700 }); await symlink('/etc/passwd', join(unsafe, 'x'));
@@ -33,16 +34,17 @@ test('recipe core: Records copied privately (symlink refused); run A retained + 
   const count = async () => { const inventory = await listDetails(recordsRoot, work_id); return { logs: inventory.items.filter(item => item.kind === 'log').length,
     sessions: inventory.items.filter(item => item.kind === 'session').length, evidence: inventory.evidence }; };
   const before = await count();
-  assert.deepEqual(before, { logs: 2, sessions: 0, evidence: 1 });
+  assert.deepEqual(before, { logs: 88, sessions: 0, evidence: 1 });
   const storagePath = join(source, 'control.sqlite');
   const at = Date.parse(confirmedAt);
   const runA = await ownerRun({ storagePath, recordsRoot, workId: work_id, now: at + day, planSelect: ['logs', 'sessions', 'environment'], requestId: 'q30-test-a', deadlineMs: 20000 });
   assert.equal(runA.outcome.kind, 'clean');
   assert.equal(runA.work?.retention?.state, 'retained');
+  assert.equal(runA.status && 'retention' in runA.status ? runA.status.retention?.sweeps : null, 1, 'run A stopped only after its completed boot sweep');
   const runB = await ownerRun({ storagePath, recordsRoot, workId: work_id, now: at + 31 * day, deadlineMs: 20000 });
   const after = await count();
   assert.deepEqual(after, { logs: 0, sessions: 0, evidence: 1 }, 'only the copy\'s logs are gone; evidence kept');
-  assert.equal((await listDetails(source, work_id)).items.length, 2, 'the source Records are untouched');
+  assert.equal((await listDetails(source, work_id)).items.length, 88, 'the source Records are untouched');
   const result = verdict({ confirmedAt, runA, runB, before, after, sourceBefore: 'same', sourceAfter: 'same' });
   assert.equal(result.overall, 'met', JSON.stringify(result.checks.filter(check => !check.met)));
   assert.ok(!('cleanupBranch' in runA.calls) && !('cleanupBranch' in runB.calls));
