@@ -17,6 +17,10 @@ const status = (id: number, context: string, state: string, creatorType = 'Bot')
 const complete = <T>(value: T) => ({ state: 'complete' as const, value });
 const unknown = (code: string) => ({ state: 'unknown' as const, code, nextStep: 'synthetic' });
 function observation(overrides: Partial<Observed> = {}, pull: Partial<Observed['pullRequest']> = {}): Observed {
+  const start = observationAt(overrides, pull);
+  return { ...start, final: overrides.final ?? { baseTip: start.baseTip, classic: start.classic, rules: start.rules } };
+}
+function observationAt(overrides: Partial<Observed>, pull: Partial<Observed['pullRequest']>): Omit<Observed, 'final'> {
   return { kind: 'observed', source: 'github-rest', observedAt: '2026-11-14T12:00:00.000Z', completedAt: '2026-11-14T12:00:03.000Z', repository: 'acme/project', repositoryId: 3,
     pullRequest: { pullRequestId: 9007, nodeId: 'PR_node7', number: 7, url: 'https://github.com/acme/project/pull/7', state: 'open', merged: false, draft: true,
       headRef: 'factory/3-abcdef12', headSha: head, headRepositoryId: 3, baseRef: 'main', baseSha: 'a'.repeat(40), mergeCommitSha: 'e'.repeat(40), mergeable: true,
@@ -79,8 +83,13 @@ test('AC3: the current attempt of the current head and of the required origin de
   assert.deepEqual(otherSha.otherSha.map(item => item.id), [1]);
   const otherOrigin = evaluate(observation({ ...required, checkRuns: complete([run(1, 'build', { appId: 999, checkSuiteId: 600 })]) }));
   assert.deepEqual([otherOrigin.outcome, otherOrigin.requirements[0]!.otherOrigin.map(item => item.id)], ['waiting', [1]], 'another App\'s green does not satisfy');
-  const indistinct = evaluate(observation({ ...required, checkRuns: complete([run(1, 'build'), run(2, 'build', { checkSuiteId: 501, conclusion: 'failure' })]) }));
-  assert.deepEqual(codes(indistinct), ['indeterminate:ATTEMPTS_INDISTINGUISHABLE:build'], 'never the most favourable of two current suites');
+  const newSuite = evaluate(observation({ ...required, checkRuns: complete([run(1, 'build'), run(2, 'build', { checkSuiteId: 501, conclusion: 'failure' })]) }));
+  assert.deepEqual([newSuite.outcome, codes(newSuite), newSuite.requirements[0]!.results.map(item => [item.id, item.attempt?.superseded])],
+    ['failing', ['repair:REQUIRED_CHECK_FAILED:build'], [[2, 1]]], 'a failed rerun in a newer suite is never covered by the older green');
+  const sameTime = evaluate(observation({ ...required, checkRuns: complete([run(1, 'build'), run(2, 'build', { checkSuiteId: 501, conclusion: 'failure', startedAt: run(1, 'build').startedAt })]) }));
+  assert.deepEqual(codes(sameTime), ['indeterminate:ATTEMPTS_INDISTINGUISHABLE:build'], 'suites not ordered by creation time are never resolved favourably');
+  const unknownTime = evaluate(observation({ ...required, checkRuns: complete([run(1, 'build', { startedAt: null }), run(2, 'build', { checkSuiteId: 501, conclusion: 'failure' })]) }));
+  assert.deepEqual(codes(unknownTime), ['indeterminate:ATTEMPTS_INDISTINGUISHABLE:build']);
 });
 
 test('AC3: a required context published both as check-run and as commit status needs BOTH; a status of an App-bound requirement has an unverifiable origin', () => {
@@ -93,8 +102,17 @@ test('AC3: a required context published both as check-run and as commit status n
   const both = evaluate(observation({ ...any, checkRuns: complete([run(1, 'ci')]), statuses: complete([status(9, 'ci', 'success')]) }));
   assert.equal(both.outcome, 'satisfied');
   const bound = { classic: classic(false, [{ context: 'ci', integrationId: 15368 }]) };
-  const unverifiable = evaluate(observation({ ...bound, checkRuns: complete([run(1, 'ci')]), statuses: complete([status(9, 'ci', 'success')]) }));
-  assert.deepEqual(codes(unverifiable), ['indeterminate:STATUS_ORIGIN_UNVERIFIABLE:ci']);
+  const unverifiable = evaluate(observation({ ...bound, checkRuns: complete([run(1, 'ci', { appSlug: null })]), statuses: complete([status(9, 'ci', 'success')]) }));
+  assert.deepEqual(codes(unverifiable), ['indeterminate:STATUS_ORIGIN_UNVERIFIABLE:ci'], 'a Bot creator that cannot be tied to the integration');
+  const otherApp = evaluate(observation({ ...bound, checkRuns: complete([run(1, 'ci')]), statuses: complete([status(9, 'ci', 'failure')]) }));
+  assert.deepEqual([otherApp.outcome, otherApp.requirements[0]!.otherOrigin.map(item => item.origin)], ['satisfied', ['creator:ci[bot](Bot)']],
+    'the integration slug is known from its check runs: another bot is provably another origin');
+  const tiedStatus = (id: number, state: string) => ({ ...status(id, 'ci', state), creator: { id: 41898283, login: 'github-actions[bot]', type: 'Bot' } });
+  const tied = evaluate(observation({ ...bound, checkRuns: complete([run(1, 'ci')]), statuses: complete([status(10, 'ci', 'success'), tiedStatus(9, 'failure')]) }));
+  assert.deepEqual([tied.outcome, tied.requirements[0]!.results.map(item => [item.kind, item.id, item.classification]), tied.requirements[0]!.reasons],
+    ['failing', [['check-run', 1, 'satisfied'], ['status', 9, 'failed']], ['NEWER_STATUS_FROM_OTHER_ORIGIN', 'REQUIRED_CHECK_FAILED']],
+    'the integration-bound status counts even when a newer status of another origin hides it, with an explicit reason');
+  assert.ok(tied.notes.includes('NEWER_STATUS_FROM_OTHER_ORIGIN:ci'));
   const human = evaluate(observation({ ...bound, checkRuns: complete([run(1, 'ci')]), statuses: complete([status(9, 'ci', 'failure', 'User')]) }));
   assert.deepEqual([human.outcome, human.requirements[0]!.otherOrigin.map(item => item.kind)], ['satisfied', ['status']], 'a user status is never the required App');
 });
@@ -174,4 +192,33 @@ test('AC1/AC3: reordered pages give the same explanation; a result duplicated ac
   assert.deepEqual(codes(changed), ['indeterminate:RESULTS_INCONSISTENT:check-runs'], 'a result that changed between pages is never resolved favourably');
   const statuses = evaluate(observation({ classic: classic(false, [{ context: 'ci', integrationId: null }]), statuses: complete([status(4, 'ci', 'success'), status(4, 'ci', 'failure')]) }));
   assert.deepEqual(codes(statuses), ['indeterminate:RESULTS_INCONSISTENT:statuses']);
+});
+
+test('review LOW: an unparsed item makes only its requirement indeterminate; a nameless one or an unparsed rule is never ignored', () => {
+  const required = { classic: classic(false, [{ context: 'build', integrationId: null }, { context: 'lint', integrationId: null }]) };
+  const unparsed = (id: number, name: string) => run(id, name, { status: 'unparsed', conclusion: null, appId: null, appSlug: null, checkSuiteId: null });
+  const one = evaluate(observation({ ...required, checkRuns: complete([run(1, 'build'), unparsed(2, 'lint'), unparsed(3, 'optional')]) }));
+  assert.deepEqual([one.requirements.map(item => item.state), codes(one)], [['satisfied', 'indeterminate'], ['indeterminate:RESULT_UNPARSED:lint']]);
+  assert.ok(one.notes.includes('OPTIONAL_RESULT_UNPARSED:optional'));
+  const nameless = evaluate(observation({ ...required, checkRuns: complete([run(1, 'build'), run(2, 'lint'), unparsed(0, '')]) }));
+  assert.deepEqual(codes(nameless), ['indeterminate:RESULT_UNPARSED_UNNAMED']);
+  const status = evaluate(observation({ ...required, checkRuns: complete([run(1, 'build'), run(2, 'lint')]),
+    statuses: complete([{ id: 0, context: 'lint', state: 'unparsed', creator: null, createdAt: null, updatedAt: null, url: null }]) }));
+  assert.deepEqual(codes(status), ['indeterminate:RESULT_UNPARSED:lint']);
+  const rule = evaluate(observation({ rules: complete([{ type: 'required_status_checks', ruleset: { id: 11, sourceType: 'Repository', source: 'acme/project' }, unparsed: true as const }]) }));
+  assert.deepEqual([rule.requiredSet, codes(rule)], ['unknown', ['indeterminate:RULE_NOT_INTERPRETABLE:required_status_checks@ruleset:11:Repository:acme/project']]);
+});
+
+test('spec §9.2 step 6: a requirement or (strict) base-tip change between the start and the end of the collection invalidates the evaluation', () => {
+  const required = classic(false, [{ context: 'build', integrationId: null }]);
+  const runs = complete([run(1, 'build')]);
+  const changed = evaluate(observation({ classic: required, checkRuns: runs, final: { baseTip: complete(tip), classic: classic(false, [{ context: 'other', integrationId: null }]), rules: complete([]) } }));
+  assert.deepEqual(codes(changed), ['indeterminate:REQUIREMENTS_CHANGED_DURING_COLLECTION']);
+  const lost = evaluate(observation({ classic: required, checkRuns: runs, final: { baseTip: complete(tip), classic: required, rules: unknown('GITHUB_QUERY_FAILED') } }));
+  assert.deepEqual(codes(lost), ['indeterminate:RECHECK_UNAVAILABLE:requirements']);
+  const advanced = evaluate(observation({ classic: required, checkRuns: runs, final: { baseTip: complete('9'.repeat(40)), classic: required, rules: complete([]) } }));
+  assert.deepEqual([advanced.outcome, advanced.notes.includes('BASE_TIP_ADVANCED_DURING_COLLECTION')], ['satisfied', true], 'loose: base advancing is only visible');
+  const strict = classic(true, [{ context: 'build', integrationId: null }]);
+  const strictAdvanced = evaluate(observation({ classic: strict, checkRuns: runs, final: { baseTip: complete('9'.repeat(40)), classic: strict, rules: complete([]) } }));
+  assert.deepEqual(codes(strictAdvanced), ['indeterminate:BASE_TIP_CHANGED_DURING_COLLECTION']);
 });

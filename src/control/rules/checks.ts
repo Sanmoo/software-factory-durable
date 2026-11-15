@@ -10,18 +10,19 @@ type Run = { id: number; name: string; headSha: string; status: string; conclusi
   checkSuiteId: number | null; startedAt: string | null; completedAt: string | null; url: string | null };
 type Status = { id: number; context: string; state: string; creator: { id: number; login: string; type: string } | null; createdAt: string | null;
   updatedAt: string | null; url: string | null };
-type Rule = { type: string; ruleset: { id: number | null; sourceType: string | null; source: string | null }; statusChecks?: { strict: boolean; checks: Check[] } };
+type Rule = { type: string; ruleset: { id: number | null; sourceType: string | null; source: string | null }; statusChecks?: { strict: boolean; checks: Check[] }; unparsed?: true };
+type Classic = { kind: 'none'; evidence: string } | { kind: 'required'; strict: boolean; enforcement: string; checks: Check[] };
 /** Structural copy of the CodeRepository `readPullRequest` observation (Control consumes facts; it never imports the adapter). */
 export type ChecksObservation = { kind: 'unavailable'; source: 'github-rest'; observedAt: string; repository: string; code: string; waitSeconds?: number; nextStep: string } |
   { kind: 'observed'; source: 'github-rest'; observedAt: string; completedAt: string; repository: string; repositoryId: number;
     pullRequest: { pullRequestId: number; nodeId: string; number: number; url: string; state: 'open' | 'closed'; merged: boolean; draft: boolean; headRef: string; headSha: string;
       headRepositoryId: number | null; baseRef: string; baseSha: string; mergeCommitSha: string | null; mergeable: boolean | null; mergeableState: string | null;
       author: { id: number; login: string; type: string } };
-    baseTip: Known<string>;
-    classic: Known<{ kind: 'none'; evidence: string } | { kind: 'required'; strict: boolean; enforcement: string; checks: Check[] }>;
-    rules: Known<Rule[]>; checkRuns: Known<Run[]>; statuses: Known<Status[]>;
+    baseTip: Known<string>; classic: Known<Classic>; rules: Known<Rule[]>; checkRuns: Known<Run[]>; statuses: Known<Status[]>;
     comparison: Known<{ status: string; aheadBy: number; behindBy: number }> | null;
-    recheck: Known<{ headSha: string; baseRef: string; state: 'open' | 'closed'; merged: boolean }>; limitations: string[] };
+    recheck: Known<{ headSha: string; baseRef: string; state: 'open' | 'closed'; merged: boolean }>;
+    /** Requirements re-read at the end of the collection (spec §9.2 step 6). */
+    final: { baseTip: Known<string>; classic: Known<Classic>; rules: Known<Rule[]> }; limitations: string[] };
 /** The Work's linked own PR (ticket 14), the heads the Factory linked, and the local gates the Builder declared as GitHub required checks. */
 export type ChecksExpectation = { own: { pullRequestId: number; nodeId: string; number: number; headRef: string; base: string; authorId: number };
   repositoryId: number; linkedHeads: string[]; localRequiredChecks: string[] };
@@ -126,7 +127,11 @@ export function evaluateChecks(input: { at: string; expect: ChecksExpectation; o
   if (observation.rules.state === 'unknown') reason('indeterminate', 'REQUIREMENTS_UNKNOWN', 'rules');
   else for (const rule of observation.rules.value) {
     const source = sourceOf(rule);
-    if (rule.type === 'required_status_checks' && rule.statusChecks) {
+    if (rule.unparsed) {
+      // Only this rule did not match its expected shape: it may carry requirements, never a waiver.
+      modalities.push({ type: rule.type, source, interpretation: 'unsupported' });
+      reason('indeterminate', 'RULE_NOT_INTERPRETABLE', `${rule.type}@${source}`);
+    } else if (rule.type === 'required_status_checks' && rule.statusChecks) {
       modalities.push({ type: rule.type, source, interpretation: 'required-checks' });
       accumulate(source, rule.statusChecks.strict, rule.statusChecks.checks);
     } else if (humanStage.has(rule.type)) modalities.push({ type: rule.type, source, interpretation: 'human-stage' });
@@ -158,15 +163,20 @@ export function evaluateChecks(input: { at: string; expect: ChecksExpectation; o
   const runs = observation.checkRuns.state === 'complete' ? unique(observation.checkRuns.value, 'check-runs') : [];
   const statuses = observation.statuses.state === 'complete' ? unique(observation.statuses.value, 'statuses') : [];
   const otherSha = runs.filter(run => run.headSha !== head).sort((a, b) => a.id - b.id).slice(0, 30).map(run => runView(run, null));
+  // An item that failed its schema is unknown alone: its name (when readable) makes that requirement indeterminate; a nameless one could be
+  // any requirement's result.
+  const unparsedNames = new Set([...runs.filter(run => run.status === 'unparsed').map(run => run.name), ...statuses.filter(item => item.state === 'unparsed').map(item => item.context)]);
+  if (unparsedNames.has('')) reason('indeterminate', 'RESULT_UNPARSED_UNNAMED');
   const groups = new Map<string, Run[]>();
-  for (const run of runs.filter(item => item.headSha === head)) {
+  for (const run of runs.filter(item => item.headSha === head && item.status !== 'unparsed')) {
     const key = `${run.name}\n${run.appId ?? '?'}\n${run.checkSuiteId ?? `run-${run.id}`}`;
     groups.set(key, [...(groups.get(key) ?? []), run]);
   }
   const currentRuns = [...groups.values()].map(group => { const sorted = [...group].sort((a, b) => b.id - a.id); return { run: sorted[0]!, superseded: sorted.length - 1 }; })
     .sort((a, b) => a.run.id - b.run.id);
+  const parsedStatuses = statuses.filter(item => item.state !== 'unparsed');
   const latestStatus = new Map<string, Status>();
-  for (const status of statuses) {
+  for (const status of parsedStatuses) {
     const known = latestStatus.get(status.context);
     if (!known || status.id > known.id) latestStatus.set(status.context, status);
   }
@@ -174,26 +184,54 @@ export function evaluateChecks(input: { at: string; expect: ChecksExpectation; o
     !reasons.some(item => item.code === 'RESULTS_INCONSISTENT');
   if (observation.checkRuns.state === 'unknown') reason('indeterminate', 'RESULTS_UNKNOWN', 'check-runs');
   if (observation.statuses.state === 'unknown') reason('indeterminate', 'RESULTS_UNKNOWN', 'statuses');
+  // The App slug of an integration, as its own check runs report it: a Bot status whose creator is `<slug>[bot]` is tied to that integration.
+  const slugs = new Map<number, string>();
+  for (const run of runs) if (run.appId !== null && run.appSlug) slugs.set(run.appId, run.appSlug.toLowerCase());
   const views: CheckRequirementView[] = [];
   for (const requirement of requirements.values()) {
     const named = currentRuns.filter(item => item.run.name === requirement.context);
-    const matching = requirement.integrationId === null ? named : named.filter(item => item.run.appId === requirement.integrationId);
+    let matching = requirement.integrationId === null ? named : named.filter(item => item.run.appId === requirement.integrationId);
     const otherOrigin = named.filter(item => !matching.includes(item)).map(item => runView(item.run, item.superseded));
-    const results = matching.map(item => runView(item.run, item.superseded));
     const own: string[] = [];
-    let state: CheckRequirementView['state'];
-    const status = latestStatus.get(requirement.context);
-    let unverifiable = false;
-    if (status) {
-      if (requirement.integrationId === null) results.push(statusView(status, head));
-      else if (status.creator?.type === 'User') otherOrigin.push(statusView(status, head));
-      else { results.push(statusView(status, head)); unverifiable = true; }
+    // Several current suites of the same App and name: the newest suite is the current attempt when creation times are known and distinct
+    // (a failed rerun in a new suite is never covered by an older green); otherwise disagreeing suites are indistinguishable.
+    let indistinct = false;
+    const supersededSuites = new Map<number, number>();
+    for (const app of new Set(matching.map(item => item.run.appId))) {
+      const suites = matching.filter(item => item.run.appId === app);
+      if (suites.length < 2) continue;
+      // UTC ISO-8601 instants of the same shape order lexicographically (pure: no clock or Date parsing).
+      const times = suites.map(item => item.run.startedAt ?? '');
+      if (times.every(time => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(time)) && new Set(times).size === times.length) {
+        const newest = suites[times.indexOf([...times].sort().at(-1)!)]!;
+        supersededSuites.set(newest.run.id, suites.length - 1);
+        matching = matching.filter(item => item.run.appId !== app || item === newest);
+      } else if (new Set(suites.map(item => classifyRun(item.run))).size > 1) indistinct = true;
     }
-    // Several current suites of the same App for the same name that disagree are indistinguishable attempts: never the most favourable.
-    const byApp = new Map<string, Set<CheckClassification>>();
-    for (const item of matching) byApp.set(String(item.run.appId), (byApp.get(String(item.run.appId)) ?? new Set()).add(classifyRun(item.run)));
-    const indistinct = [...byApp.values()].some(classes => classes.size > 1);
+    const results = matching.map(item => runView(item.run, item.superseded + (supersededSuites.get(item.run.id) ?? 0)));
+    let state: CheckRequirementView['state'];
+    let unverifiable = false;
+    const ofContext = parsedStatuses.filter(item => item.context === requirement.context).sort((a, b) => b.id - a.id);
+    if (requirement.integrationId === null) { if (ofContext[0]) results.push(statusView(ofContext[0], head)); }
+    else if (ofContext.length) {
+      // Bound to an integration: only a status whose creator is tied to it counts; any source accepts the latest status (decision 1).
+      const slug = slugs.get(requirement.integrationId);
+      const tied = (item: Status) => slug !== undefined && item.creator?.type === 'Bot' && item.creator.login.toLowerCase() === `${slug}[bot]`;
+      const counted = ofContext.find(tied);
+      if (counted) {
+        results.push(statusView(counted, head));
+        const newer = ofContext.filter(item => item.id > counted.id);
+        if (newer.length) { own.push('NEWER_STATUS_FROM_OTHER_ORIGIN'); notes.push(`NEWER_STATUS_FROM_OTHER_ORIGIN:${requirement.context}`); }
+        otherOrigin.push(...newer.map(item => statusView(item, head)));
+      } else {
+        const latest = ofContext[0]!;
+        // A Bot creator not tied to it (slug unknown) may still be that integration: unverifiable. A User, or another known App's bot, is other origin.
+        if (latest.creator?.type === 'Bot' && slug === undefined) { results.push(statusView(latest, head)); unverifiable = true; }
+        else otherOrigin.push(statusView(latest, head));
+      }
+    }
     if (!resultsKnown) { state = 'indeterminate'; own.push('RESULTS_UNKNOWN'); }
+    else if (unparsedNames.has(requirement.context)) { state = 'indeterminate'; own.push('RESULT_UNPARSED'); reason('indeterminate', 'RESULT_UNPARSED', requirement.context); }
     else if (indistinct) { state = 'indeterminate'; own.push('ATTEMPTS_INDISTINGUISHABLE'); reason('indeterminate', 'ATTEMPTS_INDISTINGUISHABLE', requirement.context); }
     else if (unverifiable) { state = 'indeterminate'; own.push('STATUS_ORIGIN_UNVERIFIABLE'); reason('indeterminate', 'STATUS_ORIGIN_UNVERIFIABLE', requirement.context); }
     else if (!results.length) { state = 'waiting'; own.push('REQUIRED_CHECK_ABSENT'); reason('wait', 'REQUIRED_CHECK_ABSENT', requirement.context); }
@@ -212,6 +250,7 @@ export function evaluateChecks(input: { at: string; expect: ChecksExpectation; o
   const optional = [...currentRuns.filter(item => !requiredNames.has(item.run.name)).map(item => runView(item.run, item.superseded)),
     ...[...latestStatus.values()].filter(item => !requiredNames.has(item.context)).sort((a, b) => a.id - b.id).map(item => statusView(item, head))].slice(0, 30);
   for (const item of optional) if (item.classification !== 'satisfied' && item.classification !== 'waiting') notes.push(`OPTIONAL_NOT_SATISFIED:${item.name}`);
+  for (const name of unparsedNames) if (name && !requiredNames.has(name)) notes.push(`OPTIONAL_RESULT_UNPARSED:${name}`);
   // Strict: confirmed against the CURRENT base tip; loose lag is only visible.
   const comparison = observation.comparison;
   const behindBy = comparison?.state === 'complete' ? comparison.value.behindBy : null;
@@ -231,6 +270,20 @@ export function evaluateChecks(input: { at: string; expect: ChecksExpectation; o
     if (recheck.value.headSha !== head) reason('indeterminate', 'HEAD_CHANGED_DURING_COLLECTION');
     if (recheck.value.baseRef !== pull.baseRef) reason('indeterminate', 'BASE_CHANGED_DURING_COLLECTION');
     if (recheck.value.state !== pull.state || recheck.value.merged !== pull.merged) reason('indeterminate', 'STATE_CHANGED_DURING_COLLECTION');
+  }
+  // Requirements and the base tip recorded at the start are re-read at the end: a change invalidates this evaluation (never a trigger).
+  const final = observation.final;
+  // A read already unknown at the start is reported once (REQUIREMENTS_UNKNOWN); only a start-complete read lost at the end is RECHECK_UNAVAILABLE.
+  const lostAtEnd = ([[observation.classic, final.classic], [observation.rules, final.rules], [observation.baseTip, final.baseTip]] as [Known<unknown>, Known<unknown>][])
+    .some(([before, after]) => before.state === 'complete' && after.state === 'unknown');
+  if (lostAtEnd) reason('indeterminate', 'RECHECK_UNAVAILABLE', 'requirements');
+  else {
+    const same = (a: Known<unknown>, b: Known<unknown>) => a.state !== 'complete' || JSON.stringify(a.value) === JSON.stringify(b.state === 'complete' ? b.value : null);
+    if (!same(observation.classic, final.classic) || !same(observation.rules, final.rules)) reason('indeterminate', 'REQUIREMENTS_CHANGED_DURING_COLLECTION');
+    if (observation.baseTip.state === 'complete' && final.baseTip.state === 'complete' && observation.baseTip.value !== final.baseTip.value) {
+      // Only strict depends on the base tip; base advancing alone is never a trigger (spec §9.3).
+      if (strictSources.length) reason('indeterminate', 'BASE_TIP_CHANGED_DURING_COLLECTION'); else notes.push('BASE_TIP_ADVANCED_DURING_COLLECTION');
+    }
   }
   const requiredByGitHub = declared.filter(name => requiredNames.has(name));
   if (views.length > 100) notes.push(`REQUIREMENTS_VIEW_TRUNCATED:${views.length}`);
