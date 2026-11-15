@@ -103,7 +103,8 @@ export function createRetentionDesk(deps: { session: Session; details?: DetailPo
       ({ failures: [...failures], status: { sweeps, lastSweepAt, days: deps.details ? days : null } }),
     /** Never throws: the desks and the dispatcher after it run in the same owner cycle. */
     async cycle() {
-      if (deps.stopped() || !deps.settled()) return;
+      // No detail ports composed (e.g. a development controller without execution): no retention at all, nothing written to any Work.
+      if (deps.stopped() || !deps.settled() || !deps.details) return;
       let works: WorkRecord[];
       try { works = await deps.readWorks(); } catch (error) { failed(null, 'read-works', error); return; }
       try { await executePlans(works); } catch (error) { failed(null, 'explicit-cleanup', error); }
