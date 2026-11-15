@@ -39,9 +39,10 @@ export function plan() {
         'at most 2 Works per tick and 2 ticks in the evaluate deadline; plus the normal polling reads of the configured label' },
     model: 'none', sandbox: 'none', dispatch: 'disabled (no execution ports composed: EXECUTION_NOT_ENABLED) and the copy is paused first, so no Work is admitted or started',
     effects: [
-      'preflight: exclusive observations directory; private COPY of the q14 storage; read-only Control view of the Work of Ticket #3 (publication published, own PR linked); ' +
+      'preflight: exclusive observations directory; private COPY of the q14 storage, explicitly migrated (format 1 -> current, ticket 33 migrateStorage with the preserved ' +
+        'digest checked before and after; the original is never opened); read-only Control view of the Work of Ticket #3 (publication published, own PR linked); ' +
         'read-only GitHub readPullRequest of that PR (raw facts saved)',
-      'evaluate: ANOTHER private copy becomes the authority of one owner run, paused first (local pause on the copy), without execution ports (dispatch disabled), ' +
+      'evaluate: ANOTHER private copy, explicitly migrated the same way, becomes the authority of one owner run, paused first (local pause on the copy), without execution ports (dispatch disabled), ' +
         'polling 180 s, read-only tracker and GET-only gh guard: after the first polling cycle the checks tracking step explains the linked PR with the real adapter ' +
         'and records WorkView.checks; stop as soon as recorded (or 5 min); the gh trace must show GET only',
       'inspect: private copy of the evaluate storage: Control show view (checks.latest, checks.history, checks-evaluated events); a second read-only readPullRequest for comparison'],
@@ -94,6 +95,26 @@ export function linkedWork(list: unknown): { ok: true; work: WorkView; pullReque
   if (publication?.state !== 'published' || typeof publication.pullRequest?.number !== 'number') return { ok: false, reason: 'OWN_PULL_REQUEST_NOT_LINKED' };
   if (work.result !== 'open') return { ok: false, reason: 'WORK_NOT_OPEN' };
   return { ok: true, work, pullRequest: { number: publication.pullRequest.number, headRef: typeof publication.pullRequest.headRef === 'string' ? publication.pullRequest.headRef : null } };
+}
+
+/**
+ * q14-v8 is format-1 storage (pre ticket 33) and the integrated code refuses an implicit migration (STORAGE_MIGRATION_REQUIRED). Only a
+ * COPY inside `within` (the observations directory) is migrated, explicitly, with ticket 33's `migrateStorage`, checked against the preserved
+ * digest recorded before it; the preserved digest must be identical afterwards. The original is never opened. Returns the digests.
+ */
+export async function migrateCopy(copy: string, within: string, upgradeId: string) {
+  if (!copy.startsWith(`${within}/`) || copy.includes('/../')) throw new Error('MIGRATION_ONLY_ON_A_COPY');
+  const { inspectStorage, migrateStorage } = await import('../../src/control/index.js');
+  const before = await inspectStorage(copy);
+  if (before.kind !== 'storage') throw new Error('COPY_NOT_STORAGE');
+  const digests = (inspection: typeof before) => ({ format: inspection.format, preservedDigest: inspection.preserved?.digest ?? null, stateDigest: inspection.stateDigest });
+  if (before.operational === 'ready') return { kind: 'not-needed' as const, before: digests(before) };
+  if (before.operational !== 'migration-required' || !before.preserved) throw new Error('COPY_STORAGE_INCOMPATIBLE');
+  const result = await migrateStorage(copy, { upgradeId, release: revision, previousRelease: null, expectedDigest: before.preserved.digest });
+  if (result.kind !== 'migrated') throw new Error(result.kind === 'refused' ? `COPY_MIGRATION_${result.code}` : 'COPY_MIGRATION_NOT_APPLIED');
+  const after = result.after;
+  if (after.kind !== 'storage' || after.operational !== 'ready' || after.preserved?.digest !== before.preserved.digest) throw new Error('COPY_MIGRATION_DIGEST_MISMATCH');
+  return { kind: 'migrated' as const, migration: result.migration, before: digests(before), after: digests(after) };
 }
 
 async function io() {
@@ -150,7 +171,10 @@ export async function runPhase(phase: Phase) {
   try {
     if (phase === 'preflight') {
       await fs.access(`${q14}/discover-result.json`);
-      const linked = linkedWork(await view(await snapshotStorage(q14, `${observations}/preflight-storage-copy`)));
+      const copy = await snapshotStorage(q14, `${observations}/preflight-storage-copy`);
+      const migration = await migrateCopy(copy, observations, `${revision}-preflight-copy`);
+      await save('preflight-copy-migration', migration);
+      const linked = linkedWork(await view(copy));
       if (!linked.ok) { await save('preflight-held', { reason: linked.reason }); throw new Error(linked.reason); }
       if (linked.pullRequest.number !== expectedPullRequest.number || linked.pullRequest.headRef !== expectedPullRequest.headRef) {
         await save('preflight-held', { reason: 'NOT_THE_EXPECTED_OWN_PULL_REQUEST', linked: linked.pullRequest }); throw new Error('NOT_THE_EXPECTED_OWN_PULL_REQUEST');
@@ -170,6 +194,7 @@ export async function runPhase(phase: Phase) {
       const events: unknown[] = [];
       const log = (entry: Record<string, unknown>) => { events.push({ at: new Date().toISOString(), ...entry }); };
       const storagePath = await snapshotStorage(q14, `${observations}/evaluate-storage`);
+      await save('evaluate-copy-migration', await migrateCopy(storagePath, observations, `${revision}-evaluate-copy`));
       // Pause the COPY first (a local administrative command on the copy): nothing is admitted; no execution ports: nothing can start.
       const pausing = await openControl({ storagePath, runtimeInventory: 'unknown' });
       const { randomUUID } = await import('node:crypto');

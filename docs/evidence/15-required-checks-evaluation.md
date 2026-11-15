@@ -81,7 +81,14 @@ Read-only against the own **draft PR #5** (head `factory/3-99fe871b` @ `bfdd439`
 (`/home/sanmoo/software-factory-test/y5/q14-publication-v8`, issue #3 of `Sanmoo/java-springboot-event-sourcing`) published and linked;
 observations in the fresh namespace `q15-checks-v2`. **Requires**: q14-v8's `discover-result.json` present. Preflight holds unless the
 copied storage links exactly PR #5 on `factory/3-99fe871b`; a head moved since `bfdd439` is recorded (`headStillLinked`) and explained as
-`HEAD_NOT_LINKED_BY_FACTORY`, never adopted. Explicit operator grant
+`HEAD_NOT_LINKED_BY_FACTORY`, never adopted.
+
+**Storage format.** q14-v8 is format-1 storage (pre ticket 33) and the integrated code refuses implicit migration
+(`STORAGE_MIGRATION_REQUIRED`). Each phase copies it (`snapshotStorage`, exclusive) and then `migrateCopy` migrates ONLY that copy (path
+must be inside `q15-checks-v2/`) with ticket 33's `migrateStorage`, passing the preserved digest inspected before as `expectedDigest`, and
+requires the same preserved digest afterwards; before/after `format`, `preservedDigest` and `stateDigest` are saved as
+`preflight-copy-migration.json` / `evaluate-copy-migration.json`. The q14 original is never opened. Tested on a format-1 fixture
+(`checks15-recipe-safety`): implicit open refused, original bytes unchanged, copy migrated with identical preserved digest, idempotent. Explicit operator grant
 needed (real App key, real GitHub reads). `--plan` prints the exact effects and bounds.
 
 ```
