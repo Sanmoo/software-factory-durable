@@ -3,7 +3,7 @@
 Ticket: [25](../../.scratch/software-factory-mvp/issues/25-authorization-withdrawal-and-work-cycles.md). Spec §3.3 (invariantes 1/7/9),
 §3.4, §4.1, §5.4, §11.3, §12.3. Nível desta entrega: **regras puras + fluxos storage-real** (Pi Durable/SQLite reais; GitHub, Sandbox, Workers
 e relógio dublês) + **CLI/owner/protocolo reais** sem Work. A execução real (GitHub App, VM, modelo, passos humanos) tem receita pronta e
-**não foi executada** (exige autorização do operador e a issue sintética).
+foi **executada com autorização** em 2026-11-15 (abaixo).
 
 ## Desenho
 
@@ -57,7 +57,7 @@ e relógio dublês) + **CLI/owner/protocolo reais** sem Work. A execução real 
 | 7 sem redisparo | `cycles-flow.test.ts` (polling/restart/comandos tardios), `cycles-commits.test.ts` (`admitTicket` → existing, impedimento alheio preservado) |
 | 8 CLI/GitHub/processos | `test/entrypoints/update-scope-cli.test.ts` (CLI+owner+socket reais para cancel/resume/reopen/new); `publication-boundary.test.ts` (única mutação nova); receita real abaixo |
 
-## Receita real (não executada)
+## Receita real
 
 `test/entrypoints/cancel25-qualification.ts`, namespace `/home/sanmoo/software-factory-test/y5/q25-cancel-v1`, raiz de acesso GitHub
 própria (cópia da chave `y5/credentials/app.pem`, falha alta se ausente). `--plan`/import inertes; tombstones; `phaseGuard`; gh atrás de
@@ -68,3 +68,26 @@ rodar o **CLI real** (`cancelCommand`: `node dist/src/entrypoints/cli.js cancel 
 contra o socket do owner da receita (`serveControl`, o mesmo handler do controlador, extraído para `src/entrypoints/controller/serve.ts`)
 enquanto `./mvnw -B verify` roda. Cópia da chave só após o tombstone do preflight; removida só no `finally` do `inspect`. Lacuna (decisão do
 supervisor): merge concorrente/fechamento/reopen reais ficam no nível de fluxo e serão cobertos numa jornada real posterior.
+
+## Execução real `q25-cancel-v1` (2026-11-15) — aprovada
+
+Composição: branch `run/q25-cancel` = 4a3f2fb + pin da issue sintética **#18** (Sanmoo/java-springboot-event-sourcing), GitHub App real,
+VM Gondolin/KVM real, Builder real (gpt-6-luna, 1 ativação). Passos humanos pelo supervisor: label removida 18:06:22, recolocada
+18:06:57, `factory cancel` pelo **CLI real** contra o socket do owner da receita 18:07:28 (recibo durável `accepted`, `q25-cancel-1`).
+
+| Esperado | Observado |
+| --- | --- |
+| Retirada registrada com a Execução ainda ativa | `withdrawal-observed` com `executionState: started`; `AUTHORIZATION_WITHDRAWN` |
+| Reposição só observada | `restoration-observed` com suspensão em vigor |
+| Credenciais antes da interrupção e do stop | eventos `deliver-withdraw-credential` → `activity-aborted` → `stop` → `stop-result`; `credentialLifecycle.reason cancelled`, `workerNotice withdrawn`, grant `revoked` |
+| Fim e Slot | `end {stopped, WORK_CANCELLED, cessation confirmed}`, Slot liberado 21:07:32Z, `cancellation ceased`, controlador parado `clean`; verdict `success`, reasons `[]` |
+| Sem redisparo e `new` | após restart (pausado) nada preparado/ativado (`prepared 0, activated 0`); `new` aceito → ciclo 2 `1299ce8d` com predecessor `e8801f16`, retido por `DEPENDENCIES_NOT_EVALUATED`/`GLOBAL_PAUSE` |
+| GitHub | 43 requisições gh, só GET e `DELETE /installation/token`, 0 recusadas; nenhum comentário/PR/ref alterado |
+| Segredos | `secretScan` limpo (storage); arquivos copiados varridos (sem `ghs_`/chave/token) |
+
+Arquivos: `25-real-cancel-{preflight,run,new,inspect}-2026-11-15.json`, `25-real-cancel-human-step-{1,2,3}-*-2026-11-15.json`,
+`25-real-cancel-gh-trace-2026-11-15.jsonl`. Ao fim: nenhum qemu restante; #18 sem label.
+
+**Lacuna (aceita pelo supervisor):** merge concorrente com cancelamento, PR próprio fechado sem merge e `reopen` só têm prova de fluxo
+(`cycles-commits`, `cycles-flow`, `delivery-flow`) e a evidência real do ticket 17 (merge durante atividade); uma jornada real posterior com
+PR próprio publicado os cobre.

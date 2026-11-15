@@ -1,0 +1,5 @@
+{
+ "work_id": "e8801f16-09c1-4002-961b-a298515f1974",
+ "command": "env -u NODE_OPTIONS -u NODE_COMPILE_CACHE NODE_DISABLE_COMPILE_CACHE=1 node dist/src/entrypoints/cli.js cancel e8801f16-09c1-4002-961b-a298515f1974 --root /home/sanmoo/software-factory-test/y5/q25-cancel-v1 --request-id q25-cancel-1 --json",
+ "note": "run from the composed checkout while the build still runs"
+}

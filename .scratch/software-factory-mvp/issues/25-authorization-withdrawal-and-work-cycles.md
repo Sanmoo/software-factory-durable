@@ -4,18 +4,18 @@
 
 **Blocked by:** [10: Perguntar ao operador, cessar e retomar pela fila](10-durable-questions-and-queued-resumption.md); [14: Publicar e reconhecer o PR draft próprio](14-direct-draft-publication-and-discovery.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
-- [ ] Retirar label/fechar issue impede próximas ativações, mas ativo autorizado pode concluir/publicar; repor label/reabrir issue não remove suspensão sem resume explícito e requisitos atuais.
-- [ ] Cancelamento persiste proibição antes de interromper, fecha novas ferramentas/publicações/renovações e pede parada; capacidade só é liberada após cessação comprovada, preservando artefatos.
-- [ ] Efeito remoto já enviado pode concluir e é reconciliado; cancelamento não fecha PR, apaga branch nem desfaz GitHub, e merge confirmado prevalece como entrega mantendo histórico do cancelamento.
-- [ ] PR fechado sem merge permanece ciclo vigente/não entregue com contadores; fechamento não prova morte de ativo e não provoca substituição, reabertura ou retomada automática.
-- [ ] Reopen opera somente PR próprio fechado sem merge e não concede resume, escopo ou orçamento; retomada exige comando/requisitos próprios.
-- [ ] New após entrega/cancelamento cria Trabalho com predecessor e recursos próprios, somente após cessação/reconciliação necessária; PR anterior ainda aberto exige decisão explícita sem adoção/fechamento silenciosos.
-- [ ] Label persistente, polling, respostas tardias, restart e cleanup não redisparam ciclo; resolver um impedimento não remove os demais.
-- [ ] CLI/GitHub e processos reais cobrem retirada/reposição, fechamento, cancelamento durante comando e merge concorrente, com resultado/impedimentos/histórico compreensíveis.
+- [x] Retirar label/fechar issue impede próximas ativações, mas ativo autorizado pode concluir/publicar; repor label/reabrir issue não remove suspensão sem resume explícito e requisitos atuais.
+- [x] Cancelamento persiste proibição antes de interromper, fecha novas ferramentas/publicações/renovações e pede parada; capacidade só é liberada após cessação comprovada, preservando artefatos.
+- [x] Efeito remoto já enviado pode concluir e é reconciliado; cancelamento não fecha PR, apaga branch nem desfaz GitHub, e merge confirmado prevalece como entrega mantendo histórico do cancelamento.
+- [x] PR fechado sem merge permanece ciclo vigente/não entregue com contadores; fechamento não prova morte de ativo e não provoca substituição, reabertura ou retomada automática.
+- [x] Reopen opera somente PR próprio fechado sem merge e não concede resume, escopo ou orçamento; retomada exige comando/requisitos próprios.
+- [x] New após entrega/cancelamento cria Trabalho com predecessor e recursos próprios, somente após cessação/reconciliação necessária; PR anterior ainda aberto exige decisão explícita sem adoção/fechamento silenciosos.
+- [x] Label persistente, polling, respostas tardias, restart e cleanup não redisparam ciclo; resolver um impedimento não remove os demais.
+- [x] CLI/GitHub e processos reais cobrem retirada/reposição, fechamento, cancelamento durante comando e merge concorrente, com resultado/impedimentos/histórico compreensíveis.
 
 ## Referências e validação
 
@@ -27,6 +27,17 @@
 
 Publicação é planejamento aprovado, não autorização de construção, uso de host/credenciais/GitHub/modelos reais, injeção de falhas ou piloto. Obter autorização pertinente antes da execução. Não alterar decisões aprovadas silenciosamente; lacuna de desenho volta ao operador. Merge e avaliação humana não são delegados aos agentes.
 
+## Answer
+
+Retirada (label removida/issue fechada, só observação confirmada) suspende próximas ativações sem cortar a ativa; reposição só é
+observada; `resume` levanta só a suspensão, confirmada por leitura iniciada depois dele. `cancel` grava a proibição primeiro, retira
+credenciais, aborta, para o boot e libera o Slot só com cessação confirmada; nada no GitHub é desfeito; merge confirmado entrega mesmo
+cancelado (inclusive predecessor não corrente). PR fechado sem merge mantém o ciclo vigente; `reopen` é um efeito observado que nada
+concede; `new` exige entrega/cancelamento cessado e leitura fresca autorizada. `test:ci` verde. Execução real `q25-cancel-v1` na issue
+#18 aprovada (retirada/reposição durante atividade, cancel pelo CLI real, `new` com predecessor). Lacuna aceita pelo supervisor: merge
+durante cancelamento, PR fechado sem merge e reopen ficam no nível de fluxo até uma jornada real posterior. Evidência:
+`docs/evidence/25-authorization-withdrawal-and-work-cycles.md`.
+
 ## Comments
 
 - 2026-11-15 (implement/software-factory-mvp-25): implementação local integrada ao controlador (retirada/resume, cancel, closed-unmerged,
@@ -34,3 +45,5 @@ Publicação é planejamento aprovado, não autorização de construção, uso d
   [docs/evidence/25-authorization-withdrawal-and-work-cycles.md](../../../docs/evidence/25-authorization-withdrawal-and-work-cycles.md).
   Receita real `test/entrypoints/cancel25-qualification.ts` (namespace `y5/q25-cancel-v1`) pronta e **não executada**: exige autorização
   do operador, a issue sintética criada pelo supervisor e seu número fixado em `syntheticTicket`. Ticket não resolvido até a evidência real.
+- 2026-11-15: execução real `q25-cancel-v1` autorizada e aprovada (issue #18, branch run/q25-cancel = 4a3f2fb + pin); resultados copiados
+  para `docs/evidence/25-real-cancel-*-2026-11-15.json[l]` (varredura de segredos limpa). Ticket resolvido.
