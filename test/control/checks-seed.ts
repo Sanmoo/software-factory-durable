@@ -1,13 +1,13 @@
-// TEST ONLY. Seeds a Work whose own draft pull request ticket 14 linked (its `publication` record, as ticket 14 writes it), directly in a
-// real Pi Durable/SQLite store. Until ticket 14 is integrated in this branch this is the only way to reach the "published" state; the
-// shape is ticket 14's PublicationView (state/branch/base/verified.requiredChecks/pullRequest/linkedHeads), consumed structurally.
+// TEST ONLY. Seeds a Work whose own draft pull request ticket 14 linked, as a typed ticket 14 `PublicationView`, directly in a real Pi
+// Durable/SQLite store: the storage-real tracker tests need many Works in exact publication states. The real ticket 14 flow that produces
+// this record is exercised end to end by test/entrypoints/github-checks-composed.test.ts.
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
-import { openStore } from '../../src/control/durable/store.js';
-import { readWorks, works, type WorkRecord } from '../../src/control/durable/admission.js';
+import { works } from '../../src/control/durable/admission.js';
+import type { PublicationView } from '../../src/control/types.js';
 import type { Session } from '../../src/control/durable/store.js';
 
 export const ownHead = 'd'.repeat(40);
-export function publication(workId: string, overrides: { number?: number; headSha?: string; nodeId?: string; linkedHeads?: string[]; requiredChecks?: string[]; state?: string } = {}) {
+export function publication(workId: string, overrides: { number?: number; headSha?: string; nodeId?: string; linkedHeads?: string[]; requiredChecks?: string[]; state?: PublicationView['state'] } = {}): PublicationView & { pullRequest: NonNullable<PublicationView['pullRequest']> } {
   const number = overrides.number ?? 7;
   const headSha = overrides.headSha ?? ownHead;
   return { state: overrides.state ?? 'published', basisExecutionId: 'seeded-execution', marker: `<!-- software-factory:work:${workId} -->`, branch: 'factory/3-abcdef12', base: 'main',
@@ -24,16 +24,6 @@ export async function seedPublished(session: Session, workId: string, overrides:
     if (!document.work) throw new Error('NO_WORK');
     const seeded = publication(workId, overrides);
     document.work = { ...document.work, queue: { ...document.work.queue, pending: false }, publication: seeded,
-      pullRequest: { number: seeded.pullRequest.number, url: seeded.pullRequest.url } } as unknown as WorkRecord;
+      pullRequest: { number: seeded.pullRequest.number, url: seeded.pullRequest.url } };
   }, BACKGROUND_CONTEXT);
-}
-/** Same, on a storage file no Control currently owns (composed tests seed between two Control runs). */
-export async function seedPublishedStorage(storagePath: string, overrides: Parameters<typeof publication>[1] = {}) {
-  const store = await openStore(storagePath);
-  try {
-    const work = (await readWorks(store.session))[0];
-    if (!work) throw new Error('NO_WORK');
-    await seedPublished(store.session, work.work_id, overrides);
-    return work.work_id;
-  } finally { await store.close(); }
 }

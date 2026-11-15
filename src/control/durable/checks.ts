@@ -9,24 +9,17 @@ import type { Session } from './store.js';
 // existing owner loop: safe reads outside any commit, one commit per explanation, never a Slot, a queue entry, an impediment, a repair or a
 // readiness decision. Nothing new: no broker, scheduler or registry.
 
-/** Ticket 14's publication record as stored on the Work; read structurally (this module never re-derives or adopts the own PR). */
-type Linked = { state?: unknown; base?: unknown; linkedHeads?: unknown; verified?: { requiredChecks?: unknown } | null;
-  pullRequest?: { pullRequestId?: unknown; nodeId?: unknown; number?: unknown; headRef?: unknown; headSha?: unknown; author?: { id?: unknown } | null } | null };
 export type ChecksTarget = { number: number; nodeId: string; expect: ChecksExpectation };
-const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 
-/** The linked own PR of an open Work whose publication is `published` (ticket 14), or null: nothing else is ever evaluated. */
+/** The linked own PR of an open Work whose ticket 14 publication is `published`, or null: nothing else is ever evaluated or adopted here. */
 export function checksTarget(work: WorkRecord): ChecksTarget | null {
-  if (work.result !== 'open') return null;
-  const publication = (work as { publication?: unknown }).publication as Linked | null | undefined;
-  const pull = publication?.state === 'published' ? publication.pullRequest : null;
-  if (!pull || typeof pull.number !== 'number' || typeof pull.nodeId !== 'string' || typeof pull.pullRequestId !== 'number' || typeof pull.headRef !== 'string' ||
-    typeof pull.headSha !== 'string' || typeof pull.author?.id !== 'number') return null;
+  const publication = work.result === 'open' && work.publication?.state === 'published' ? work.publication : null;
+  const pull = publication?.pullRequest;
+  if (!publication || !pull) return null;
   return { number: pull.number, nodeId: pull.nodeId, expect: {
-    own: { pullRequestId: pull.pullRequestId, nodeId: pull.nodeId, number: pull.number, headRef: pull.headRef,
-      base: typeof publication!.base === 'string' ? publication!.base : work.repository.base, authorId: pull.author.id },
-    repositoryId: work.repository.repositoryId, linkedHeads: [...new Set([pull.headSha, ...strings(publication!.linkedHeads)])].slice(0, 20),
-    localRequiredChecks: strings(publication!.verified?.requiredChecks).slice(0, 32) } };
+    own: { pullRequestId: pull.pullRequestId, nodeId: pull.nodeId, number: pull.number, headRef: pull.headRef, base: publication.base, authorId: pull.author.id },
+    repositoryId: work.repository.repositoryId, linkedHeads: [...new Set([pull.headSha, ...(publication.linkedHeads ?? [])])].slice(0, 20),
+    localRequiredChecks: [...(publication.verified?.requiredChecks ?? [])].slice(0, 32) } };
 }
 
 const codes = (evaluation: ChecksEvaluation) => evaluation.reasons.map(reason => `${reason.category}:${reason.code}${reason.subject ? `:${reason.subject}` : ''}`);

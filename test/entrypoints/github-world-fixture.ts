@@ -78,7 +78,8 @@ export type World = {
  * (`checkRuns`, paginated object pages with `total_count`), `GET /commits/{sha}/statuses` (`statuses`, paginated) and `GET /compare/{a}...{b}`.
  */
 export type ChecksWorld = {
-  details?: Record<number, { head_sha: string; base_ref?: string; base_sha?: string; draft?: boolean; merged?: boolean; mergeable?: boolean | null;
+  /** Absent for a pull request: it is served as it is in `pulls` (head sha, base ref, draft). */
+  details?: Record<number, { head_sha: string; base_ref?: string | undefined; base_sha?: string; draft?: boolean | undefined; merged?: boolean; mergeable?: boolean | null;
     mergeable_state?: string; merge_commit_sha?: string | null;
     /** From the `afterReads`-th read of this pull request on, it reports this head (a push during the collection). */
     change?: { afterReads: number; head_sha: string } }>;
@@ -286,7 +287,7 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
   const source = kind === 'heads' ? { main: 'b'.repeat(40), ...(world.refs ?? {}) } : (world.tags ?? {});
   body = page(Object.entries(source).filter(([name]) => name.startsWith(prefix)).sort()
     .map(([name, sha]) => ({ ref: 'refs/' + kind + '/' + name, node_id: 'REF_' + name, object: { sha, type: 'commit' } })));
-  } else if (/^\\/rules\\/branches\\/.+$/.test(rest)) {
+  } else if (/^\\/rules\\/branches\\/.+$/.test(rest) && !world.checks) {
   body = page((world.branchRules ?? {})[decodeURIComponent(url.pathname.split('/rules/branches/')[1])] ?? []);
   } else if (/^\\/rulesets\\/\\d+$/.test(rest)) {
   const found = (world.rulesets ?? {})[rest.split('/')[2]];
@@ -308,7 +309,8 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
   if (/^\\/pulls\\/\\d+$/.test(rest)) {
     const number = Number(rest.split('/')[2]);
     const found = world.pulls.find(p => p.number === number);
-    const detail = checks.details?.[number];
+    // Without an explicit detail, the pull request as it is (e.g. the one the Builder created through POST /pulls, ticket 14).
+    const detail = checks.details?.[number] ?? (found ? { head_sha: found.head.sha ?? 'c'.repeat(40), base_ref: found.base?.ref, draft: found.draft } : undefined);
     if (!found || !detail) notFound();
     else {
       const reads = (checks.reads ??= {})[number] = (checks.reads[number] ?? 0) + 1;
@@ -322,7 +324,7 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
     const name = decodeURIComponent(url.pathname.split('/rules/branches/')[1]);
     const reads = (checks.reads ??= {})['rules:' + name] = (checks.reads['rules:' + name] ?? 0) + (url.searchParams.get('page') === '1' ? 1 : 0);
     writeFileSync(${JSON.stringify(worldFile)}, JSON.stringify(world));
-    body = page((checks.rulesChange && reads >= checks.rulesChange.afterReads ? checks.rulesChange.rules : checks.rules)?.[name] ?? []);
+    body = page((checks.rulesChange && reads >= checks.rulesChange.afterReads ? checks.rulesChange.rules : checks.rules ?? world.branchRules)?.[name] ?? []);
   } else if (/^\\/branches\\/.+\\/protection\\/required_status_checks$/.test(rest)) {
     const name = decodeURIComponent(url.pathname.split('/branches/')[1].replace(/\\/protection\\/required_status_checks$/, ''));
     if (checks.requiredStatusChecks?.[name]) body = checks.requiredStatusChecks[name]; else notFound();

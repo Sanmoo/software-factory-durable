@@ -17,10 +17,11 @@ test('AC7 recipe: import and --plan are inert and declare a read-only one-shot r
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q15-checks-v1');
-  assert.match(plan.source, /q14-publication-v6\/control\.sqlite \(copied, never opened in place\)/);
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q15-checks-v2');
+  assert.match(plan.source, /q14-publication-v8\/control\.sqlite \(copied, never opened in place\)/);
   assert.deepEqual(plan.phases, ['preflight', 'evaluate', 'inspect']);
   assert.deepEqual(plan.expectedTicket, { number: 3, repositoryId: 1256893534 });
+  assert.deepEqual(plan.expectedPullRequest, { number: 5, headRef: 'factory/3-99fe871b', linkedHeadPrefix: 'bfdd439', base: 'main' });
   assert.equal(plan.model, 'none');
   assert.deepEqual(plan.github.writes, ['App: access_tokens issuance POSTs only (reduced read grants, cached per purpose; native HTTPS, not gh); no other non-GET request']);
   for (const never of ['GitHub write of any kind', 'merge', 'approval', 'ready-for-review conversion']) assert.ok(plan.github.never.includes(never), never);
@@ -36,7 +37,7 @@ test('AC7 recipe guards: only the linked own PR of Ticket #3 qualifies; the plan
   assert.deepEqual(recipe.linkedWork(work({ state: 'requested', pullRequest: null })), { ok: false, reason: 'OWN_PULL_REQUEST_NOT_LINKED' });
   assert.deepEqual(recipe.linkedWork(work({ state: 'published', pullRequest: { number: 4 } }, { result: 'delivered' })), { ok: false, reason: 'WORK_NOT_OPEN' });
   const linked = recipe.linkedWork(work({ state: 'published', pullRequest: { number: 4 } }));
-  assert.deepEqual(linked.ok && linked.pullRequest, { number: 4 });
+  assert.deepEqual(linked.ok && linked.pullRequest, { number: 4, headRef: null });
   const plan = recipe.plan();
   assert.match(plan.dispatch, /no execution ports/);
   assert.match(plan.github.guard, /refuses \(exit 97, nothing sent\) any method other than GET/);

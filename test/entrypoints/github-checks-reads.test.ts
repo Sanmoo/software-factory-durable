@@ -98,8 +98,8 @@ test('AC7: the re-read after the collection exposes a push during it; an unreada
   assert.ok(observed.kind === 'observed');
   assert.equal(observed.pullRequest.headSha, head);
   assert.deepEqual(observed.recheck.state === 'complete' && observed.recheck.value.headSha, 'f'.repeat(40));
-  const missing = await compose(t, { checks: checksWorld({ details: {} }) });
-  const absent = await missing.repository.readPullRequest({ repo: worldScope, number: 7 });
+  const missing = await compose(t, { checks: checksWorld() });
+  const absent = await missing.repository.readPullRequest({ repo: worldScope, number: 8 });
   assert.deepEqual([absent.kind, absent.kind === 'unavailable' && absent.code], ['unavailable', 'GITHUB_NOT_FOUND_OR_HIDDEN']);
 });
 

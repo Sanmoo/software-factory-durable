@@ -4,19 +4,21 @@ import { snapshotStorage } from './review12-qualification.js';
 export { snapshotStorage };
 
 // TEST ONLY. Ticket 15 one-shot real qualification recipe: explain the required checks of the own draft pull request that ticket 14's real
-// run (q14-publication-v6, issue #3 of Sanmoo/java-springboot-event-sourcing) created and linked. Import and `--plan` are inert. Every other
+// run (q14-publication-v8: draft PR #5, head factory/3-99fe871b @ bfdd439, base main, issue #3 of Sanmoo/java-springboot-event-sourcing) created and linked. Import and `--plan` are inert. Every other
 // phase is a REAL effect and needs an explicit operator grant: real GitHub through the App (READ-ONLY: GET requests plus installation token
 // issuance). No model, no VM/Docker, no GitHub write, no merge/approval/ready conversion. One-shot: an exclusive intent tombstone precedes
 // effects; a consumed phase never reruns; nothing is retried. The ticket 14 run storage is only ever COPIED, never opened in place.
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const q14 = `${root}/q14-publication-v6`;
-const observations = `${root}/q15-checks-v1`;
-const revision = 'q15-checks-v1';
+const q14 = `${root}/q14-publication-v8`;
+const observations = `${root}/q15-checks-v2`;
+const revision = 'q15-checks-v2';
 const phases = ['preflight', 'evaluate', 'inspect'] as const;
 type Phase = typeof phases[number];
 const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 'main', installationId: 177599217, workflows: false, label: 'ready-for-agent' };
 const expectedTicket = { number: 3, repositoryId: 1256893534 };
+/** The own draft PR ticket 14's v8 run published and linked (docs/evidence/14-direct-draft-publication-and-discovery.md). */
+const expectedPullRequest = { number: 5, headRef: 'factory/3-99fe871b', linkedHeadPrefix: 'bfdd439', base: 'main' };
 const githubApp = { appId: 5569788, privateKeyFile: 'credentials/app.pem' };
 const evaluateDeadlineMs = 5 * 60 * 1000;
 const ghTrace = `${observations}/gh-trace.jsonl`;
@@ -24,7 +26,7 @@ const ghTrace = `${observations}/gh-trace.jsonl`;
 const pollingSeconds = 180;
 
 export function plan() {
-  return { revision, root, source: `${q14}/control.sqlite (copied, never opened in place)`, observations, phases, repository, expectedTicket,
+  return { revision, root, source: `${q14}/control.sqlite (copied, never opened in place)`, observations, phases, repository, expectedTicket, expectedPullRequest,
     requires: ['ticket 14 integrated in the composed revision (WorkView.publication)', `${q14}/discover-result.json present: the own draft PR was linked by ticket 14's real run`,
       'ticket 14 run ended without a held Slot (its stop-environment phase done or not needed): otherwise dispatch stays closed and no tick runs'],
     github: { app: githubApp, controllerPurposes: ['tracker-read', 'association-read', 'dependency-read', 'repository-read',
@@ -84,14 +86,14 @@ process.exit(result.status ?? 1);
 }
 
 /** The Work of Ticket #3 with ticket 14's linked own PR, or the reason it is not one. */
-export function linkedWork(list: unknown): { ok: true; work: WorkView; pullRequest: { number: number } } | { ok: false; reason: string } {
+export function linkedWork(list: unknown): { ok: true; work: WorkView; pullRequest: { number: number; headRef: string | null } } | { ok: false; reason: string } {
   const works = (list as { kind?: string; works?: WorkView[] }).kind === 'list' ? (list as { works: WorkView[] }).works : [];
   const work = works.find(item => item.ticket.number === expectedTicket.number && item.ticket.repositoryId === expectedTicket.repositoryId);
   if (!work) return { ok: false, reason: 'WORK_NOT_FOUND' };
-  const publication = (work as { publication?: { state?: string; pullRequest?: { number?: unknown; state?: string } | null } | null }).publication;
+  const publication = (work as { publication?: { state?: string; pullRequest?: { number?: unknown; headRef?: unknown; state?: string } | null } | null }).publication;
   if (publication?.state !== 'published' || typeof publication.pullRequest?.number !== 'number') return { ok: false, reason: 'OWN_PULL_REQUEST_NOT_LINKED' };
   if (work.result !== 'open') return { ok: false, reason: 'WORK_NOT_OPEN' };
-  return { ok: true, work, pullRequest: { number: publication.pullRequest.number } };
+  return { ok: true, work, pullRequest: { number: publication.pullRequest.number, headRef: typeof publication.pullRequest.headRef === 'string' ? publication.pullRequest.headRef : null } };
 }
 
 async function io() {
@@ -150,10 +152,15 @@ export async function runPhase(phase: Phase) {
       await fs.access(`${q14}/discover-result.json`);
       const linked = linkedWork(await view(await snapshotStorage(q14, `${observations}/preflight-storage-copy`)));
       if (!linked.ok) { await save('preflight-held', { reason: linked.reason }); throw new Error(linked.reason); }
+      if (linked.pullRequest.number !== expectedPullRequest.number || linked.pullRequest.headRef !== expectedPullRequest.headRef) {
+        await save('preflight-held', { reason: 'NOT_THE_EXPECTED_OWN_PULL_REQUEST', linked: linked.pullRequest }); throw new Error('NOT_THE_EXPECTED_OWN_PULL_REQUEST');
+      }
       const { codeRepository } = await compose();
       const facts = await codeRepository.readPullRequest({ repo: repository, number: linked.pullRequest.number });
       if (facts.kind !== 'observed' || facts.pullRequest.state !== 'open' || facts.pullRequest.merged) { await save('preflight-held', { facts }); throw new Error('OWN_PULL_REQUEST_NOT_OPEN'); }
-      await save('preflight-result', { status: 'success', work_id: linked.work.work_id, publication: (linked.work as { publication?: unknown }).publication ?? null, facts });
+      // A head moved since ticket 14 linked bfdd439 is recorded (the evaluation then explains it with HEAD_NOT_LINKED_BY_FACTORY), never adopted.
+      await save('preflight-result', { status: 'success', work_id: linked.work.work_id, publication: (linked.work as { publication?: unknown }).publication ?? null, facts,
+        headStillLinked: facts.pullRequest.headSha.startsWith(expectedPullRequest.linkedHeadPrefix) });
       return;
     }
     if (!(await exists('preflight-result'))) throw new Error('PREFLIGHT_REQUIRED');

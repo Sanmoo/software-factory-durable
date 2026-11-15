@@ -1,10 +1,14 @@
 # Ticket 15 — Explain the required checks of the current own PR
 
-Branch `implement/software-factory-mvp-15`, based on integration `d4483d1` (tickets 01–13, 19, 20, 32). Ticket 14 (own draft PR
-publication/discovery) is **not integrated in this base**: Control consumes ticket 14's record of the linked own PR **structurally**
-(`WorkView.publication` with `state: 'published'`, `pullRequest {pullRequestId, nodeId, number, headRef, headSha, author.id}`, `base`,
-`linkedHeads`, `verified.requiredChecks`), exactly the shape of ticket 14's `PublicationView`. Tests that need a linked PR seed that record
-(`test/control/checks-seed.ts`); after the rebase onto 14 the same code reads the typed field and the seed can be replaced by 14's flow.
+Branch `implement/software-factory-mvp-15`, rebased onto integration `b2da9ae` (tickets 01–14, 19, 20, 26, 32, 33, 36). Control reads ticket
+14's typed `WorkView.publication` (`state: 'published'`, `pullRequest`, `base`, `linkedHeads`, `verified.requiredChecks`). The composed test
+(`test/entrypoints/github-checks-composed.test.ts`) now reaches the linked PR through ticket 14's **real** publication flow (ticket 13 rounds,
+Builder double publishing with its own grant through the fixture, discovery and link) before explaining its checks. Only the storage-real
+tracker tests (`test/control/checks-flow.test.ts`) still seed Works in exact publication states, now typed as `PublicationView`
+(`test/control/checks-seed.ts`). Rebase conflicts resolved: `WorkView` (publication + checks), history union, dispatch tick (14's discovery
+kept, ticket 15 not in the tick), fixture routing (14's `rules/branches` route defers to the checks world, which falls back to 14's
+`branchRules`; `GET /pulls/{n}` serves the PR the Builder created when no override exists); ticket 14's recipe wrapper forwards
+`readPullRequest`.
 
 ## Composition
 
@@ -73,14 +77,16 @@ stub tracker) and the composed path (condition not reached before wiring the tic
 
 ## One-shot real-run recipe (`test/entrypoints/checks15-qualification.ts`)
 
-Read-only against the own draft PR that ticket 14's real run (`/home/sanmoo/software-factory-test/y5/q14-publication-v6`, issue #3 of
-`Sanmoo/java-springboot-event-sourcing`) created and linked. **Requires**: this branch rebased onto ticket 14 (so `WorkView.publication` is
-produced by the real flow), q14's `discover-result.json` present (PR linked), and q14 ended without a held Slot. Explicit operator grant
+Read-only against the own **draft PR #5** (head `factory/3-99fe871b` @ `bfdd439`, base `main`) that ticket 14's real v8 run
+(`/home/sanmoo/software-factory-test/y5/q14-publication-v8`, issue #3 of `Sanmoo/java-springboot-event-sourcing`) published and linked;
+observations in the fresh namespace `q15-checks-v2`. **Requires**: q14-v8's `discover-result.json` present. Preflight holds unless the
+copied storage links exactly PR #5 on `factory/3-99fe871b`; a head moved since `bfdd439` is recorded (`headStillLinked`) and explained as
+`HEAD_NOT_LINKED_BY_FACTORY`, never adopted. Explicit operator grant
 needed (real App key, real GitHub reads). `--plan` prints the exact effects and bounds.
 
 ```
 node dist/test/entrypoints/checks15-qualification.js --plan
-node dist/test/entrypoints/checks15-qualification.js preflight   # exclusive q15-checks-v1/, copy of q14 storage, linked PR, raw readPullRequest
+node dist/test/entrypoints/checks15-qualification.js preflight   # exclusive q15-checks-v2/, copy of q14 storage, linked PR, raw readPullRequest
 node dist/test/entrypoints/checks15-qualification.js evaluate    # another copy as authority, one owner run (polling 180 s), stop when checks recorded (≤5 min)
 node dist/test/entrypoints/checks15-qualification.js inspect     # copy of evaluate storage: checks view + second raw readPullRequest
 ```
@@ -90,7 +96,7 @@ node dist/test/entrypoints/checks15-qualification.js inspect     # copy of evalu
 pass, ≤2 passes in 5 min; plus the normal polling reads of the label. No model, no VM/Docker. **Dispatch disabled**: no execution ports are
 composed (`EXECUTION_NOT_ENABLED`) and the evaluate copy is paused first (local pause on the copy), so no Work is admitted or started.
 **Read-only**: the IssueTracker is wrapped so `postComment` is refused locally (a pending Question copied from q14 can never be
-published), and gh runs behind a wrapper (`q15-checks-v1/gh-guard.mjs`) that records every request in `gh-trace.jsonl` and refuses with
+published), and gh runs behind a wrapper (`q15-checks-v2/gh-guard.mjs`) that records every request in `gh-trace.jsonl` and refuses with
 exit 97 — the real gh never runs — anything but an explicit `GET` without input; installation-token issuance is the only POST (native
 HTTPS of the App adapter, not gh). `evaluate-result.getOnly` is computed from the trace. Exclusive intent tombstones, no retry; the q14
 storage is only copied.

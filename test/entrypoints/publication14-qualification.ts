@@ -272,7 +272,9 @@ export async function runPhase(phase: Phase) {
       const control = await openControl({ storagePath: `${observations}/control.sqlite`,
         // Recipe decision: root/environments holds only earlier qualification resources and this storage's own ceased boots.
         runtimeInventory: 'empty',
-        access: { tracker, repository: { checkAccess: (repo, base) => codeRepository.checkAccess(repo, base), async findPublication(correlation) {
+        access: { tracker, repository: { checkAccess: (repo, base) => codeRepository.checkAccess(repo, base),
+          // Ticket 15 (GET-only checks explanation of the linked own PR) composes unchanged.
+          readPullRequest: query => codeRepository.readPullRequest(query), async findPublication(correlation) {
           if (!discovering && lost.refuses(correlation.knownBranches)) { log({ call: 'find-publication-refused', knownBranches: correlation.knownBranches }); throw new Error('RECIPE_LOST_RESULT'); }
           const result = await codeRepository.findPublication(correlation);
           log({ call: 'find-publication', knownBranches: correlation.knownBranches, kind: result.kind, ...(result.kind === 'observed' ? { branches: result.branches,
