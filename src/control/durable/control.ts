@@ -5,6 +5,7 @@ import type { AccessDependencies, Control, ControlStatus, DispatchReason, Execut
   WorkView } from '../types.js';
 import { heldSlots, initializeSlots, reconcileDurations, reconcileLostCredentials } from './execution.js';
 import { createDispatcher, isLiveCredentialExecution, isLiveExecution } from './dispatch.js';
+import { createChecksTracker } from './checks.js';
 import { openStore } from './store.js';
 import { recordRunEnd, recordRunStart } from './migration.js';
 import { currentFormat } from './format.js';
@@ -91,8 +92,12 @@ export async function openControl(options: { storagePath: string;
     pending: repositoryId => pendingWorks(state, repositoryId),
     ownCycles: issueIds => ownCycles(state, issueIds),
     record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation),
-    afterCycle: async () => { await desk?.cycle(); if (dispatchReason === null) await dispatcher?.tick(); },
+    // Ticket 15: required-checks tracking after the dispatch tick (off its critical path), whatever the dispatch barrier or pause.
+    afterCycle: async () => { await desk?.cycle(); if (dispatchReason === null) await dispatcher?.tick(); await checks?.pass(tracking.signal).catch(() => {}); },
   }) : undefined;
+  const tracking = new AbortController();
+  const checks = options.access && options.polling ? createChecksTracker({ session: state, access: options.access, readWorks: () => readWorks(state),
+    busy: work_id => dispatcher?.active(work_id) ?? false, clock: options.polling.clock ?? systemClock, minIntervalMs: options.polling.intervalSeconds * 1000 }) : undefined;
   if (options.execution && options.access && poller) dispatcher = createDispatcher({ session: state, access: options.access, ports: options.execution,
     currentAttempt: repository => poller.currentAttempt(repository), readWorks: () => readWorks(state), ownCycles: issueIds => ownCycles(state, issueIds),
     record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation), paused: async () => (await readInstallation(state)).paused,
@@ -238,6 +243,7 @@ export async function openControl(options: { storagePath: string;
         const outcome = await Promise.race([aborted, state.closed.then(() => 'closed' as const),
           ...(poller ? [polling.then(() => 'polling-ended' as const, () => 'polling-failed' as const)] : [])]);
         loop.abort();
+        tracking.abort();
         stopped = true;
         await polling.catch(() => {});
         // An administrative stop is clean only after the confirmed cessation and persistence of every own activity (spec §11.4).
@@ -253,6 +259,7 @@ export async function openControl(options: { storagePath: string;
         return { kind: end.kind === 'closed' ? kind : 'failed' };
       } catch {
         loop.abort();
+        tracking.abort();
         stopped = true;
         await polling.catch(() => {});
         await dispatcher?.stop().catch(() => {});

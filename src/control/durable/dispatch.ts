@@ -5,7 +5,6 @@ import type { BootRef, EnvironmentRef } from '../../sandbox/index.js';
 import type { ProposalIdentity } from '../../contracts/index.js';
 import type { HandoffEvent } from '../../workers/index.js';
 import { classifyCapture, deliveryPrompt, exemptionPrompt, lastReviewed, planReviews, type CaptureClass, type ReviewPlan } from '../rules/review.js';
-import { createChecksTracker } from './checks.js';
 import { recordConclusion, recordDelivery, recordHandoff, recordReviewerEnd, recordReviewerStart, recordVerification } from './review.js';
 import type { AccessDependencies, CredentialWithdrawal, DependencyEvaluation, ExecutionPorts, ExecutionView, FactoryAppIdentity } from '../types.js';
 import { evaluateEntry } from '../rules/admission.js';
@@ -197,8 +196,6 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     });
   };
   const observe = (work_id: string | null, outcome: string, reasons: string[] = []) => { last = { at: new Date().toISOString(), work_id, outcome, reasons }; };
-  // Ticket 15: explanation of the required checks of linked own PRs (safe reads, durable record); tracking, never a trigger.
-  const checks = createChecksTracker({ session, access: deps.access, readWorks: deps.readWorks, busy: work_id => running.has(work_id) });
 
   async function revalidateAuthorization(work: WorkRecord): Promise<{ ok: true; observedAt: string } | { ok: false; reasons: string[] }> {
     const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase());
@@ -847,6 +844,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
 
   return {
     view: () => ({ running: running.size, last }),
+    /** Whether an activity of this Work runs in THIS process (ticket 15 tracking skips it). */
+    active: (work_id: string) => running.has(work_id),
     /** Live monotonic duration of an Execution running in THIS process, or null (then the durable evidence is presented). */
     liveElapsed(executionId: string): number | null {
       const start = startedAt.get(executionId);
@@ -863,9 +862,6 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       if (stopping.signal.aborted) return;
       // Discovery is tracking (safe reads), not a trigger: it runs while paused too, before any selection.
       await reconcilePublications();
-      if (stopping.signal.aborted) return;
-      // Ticket 15: required-checks tracking runs while paused too (it starts nothing), before any selection; a failure never stops dispatch.
-      await checks.pass(stopping.signal).catch((error: unknown) => observe(null, 'checks-pass-failed', [codeOf(error, 'CHECKS_PASS_FAILED')]));
       if (stopping.signal.aborted || await deps.paused()) return;
       if (await deps.heldSlots() >= ports.capacity) { observe(null, 'no-slot-available'); return; }
       const works = await deps.readWorks();

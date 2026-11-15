@@ -57,33 +57,84 @@ export async function recordChecks(session: Session, work_id: string, target: Pi
   }, BACKGROUND_CONTEXT);
 }
 
+/** Equality of two explanations apart from their instants: an identical one is never rewritten (no commit). */
+export const checksFingerprint = (evaluation: ChecksEvaluation) => JSON.stringify({ ...evaluation, at: null, observedAt: null, completedAt: null });
+const stable = new Set<ChecksEvaluation['outcome']>(['satisfied', 'failing', 'blocked', 'not-applicable']);
+/** Largest service-indicated wait (seconds) of any read of the observation (rate limit), or 0. */
+const waitOf = (observation: ChecksObservation | { kind: 'unchanged' }) => {
+  if (observation.kind === 'unchanged') return 0;
+  if (observation.kind === 'unavailable') return observation.waitSeconds ?? 0;
+  const reads = [observation.baseTip, observation.classic, observation.rules, observation.checkRuns, observation.statuses, observation.comparison, observation.recheck,
+    observation.final.baseTip, observation.final.classic, observation.final.rules];
+  return Math.max(0, ...reads.map(read => read && read.state === 'unknown' ? read.waitSeconds ?? 0 : 0));
+};
+
+export type ChecksTrackerOptions = { session: Session; access: AccessDependencies; readWorks(): Promise<WorkRecord[]>; busy(work_id: string): boolean;
+  /** Monotonic clock (the polling clock in production). */
+  clock?: { monotonic(): number };
+  /** Per-Work minimum interval between reads (production: the polling interval). */
+  minIntervalMs?: number;
+  /** A stable explanation (satisfied/failing/blocked/not-applicable) of an unchanged head is fully re-read only this often; in between a
+   * light read of the PR alone detects a new head. Default: 10 x minIntervalMs. */
+  stableIntervalMs?: number;
+  /** At most this many PR reads per pass. */
+  perPass?: number;
+  /** Rate bound per unit of time: at most `reads` FULL collections per `ms` (sliding window) for the whole installation. */
+  window?: { ms: number; reads: number } };
+
 /**
- * The tracking pass run by the dispatcher tick (after each polling cycle). Bounded: at most `perPass` PR reads per tick, oldest explanation
- * first; a Work with a running activity is skipped. Each read is a GET-only `readPullRequest` of the configured repository.
+ * The checks tracking pass, run by the owner loop AFTER each polling cycle and its dispatch tick (never on the dispatch critical path).
+ * Per Work: a minimum interval, exponential backoff on unavailable reads honouring GitHub's waits, light reads of an unchanged stable head,
+ * and a global sliding-window bound on full collections. A Work with a running activity is skipped. An explanation identical to the
+ * recorded one is not committed. Memory only (rebuilt after restart: then every linked PR is due once).
  */
-export function createChecksTracker(deps: { session: Session; access: AccessDependencies; readWorks(): Promise<WorkRecord[]>; busy(work_id: string): boolean; perPass?: number }) {
+export function createChecksTracker(deps: ChecksTrackerOptions) {
+  const clock = deps.clock ?? { monotonic: () => performance.now() };
+  const minIntervalMs = deps.minIntervalMs ?? 60000;
+  const stableIntervalMs = deps.stableIntervalMs ?? 10 * minIntervalMs;
   const perPass = deps.perPass ?? 2;
-  // In memory: order of the last explanation of each Work in THIS process (rotation only; the record itself is durable).
-  const last = new Map<string, number>();
-  let sequence = 0;
+  const window = deps.window ?? { ms: 10 * 60000, reads: 20 };
+  const schedule = new Map<string, { dueAt: number; fullDueAt: number; failures: number }>();
+  const full: number[] = [];
   return {
     async pass(signal: AbortSignal) {
-      const candidates = (await deps.readWorks()).flatMap(work => { const target = checksTarget(work); return target && !deps.busy(work.work_id) ? [{ work, target }] : []; })
-        .sort((a, b) => (last.get(a.work.work_id) ?? -1) - (last.get(b.work.work_id) ?? -1));
-      for (const { work, target } of candidates.slice(0, perPass)) {
-        if (signal.aborted) return;
-        last.set(work.work_id, ++sequence);
+      const now = clock.monotonic();
+      while (full.length && full[0]! <= now - window.ms) full.shift();
+      const due = (await deps.readWorks()).flatMap(work => {
+        const target = checksTarget(work);
+        const active = work.execution?.state === 'reserved' || work.execution?.state === 'started';
+        const at = schedule.get(work.work_id)?.dueAt ?? Number.NEGATIVE_INFINITY;
+        return target && !active && !deps.busy(work.work_id) && at <= now ? [{ work, target, at }] : [];
+      }).sort((a, b) => a.at - b.at);
+      let reads = 0;
+      for (const { work, target } of due) {
+        if (signal.aborted || reads >= perPass) return;
+        const state = schedule.get(work.work_id) ?? { dueAt: 0, fullDueAt: Number.NEGATIVE_INFINITY, failures: 0 };
+        const latest = work.checks?.latest ?? null;
+        const light = latest !== null && stable.has(latest.outcome) && latest.pullRequest.headSha !== null && latest.pullRequest.baseRef !== null && now < state.fullDueAt;
+        if (!light && full.length >= window.reads) continue;
+        reads++;
         const configured = deps.access.repositories.find(item => item.repository.toLowerCase() === work.repository.repository.toLowerCase());
         const unavailable = (code: string): ChecksObservation => ({ kind: 'unavailable', source: 'github-rest', observedAt: new Date().toISOString(),
           repository: work.repository.repository, code, nextStep: 'Nothing about the checks is concluded; a later cycle reads again.' });
-        let observation: ChecksObservation;
+        let observation: ChecksObservation | { kind: 'unchanged' };
         if (!configured) observation = unavailable('REPOSITORY_NOT_CONFIGURED');
         else {
-          try { observation = await deps.access.repository.readPullRequest({ repo: configured, number: target.number }); }
-          catch { observation = unavailable('PULL_REQUEST_QUERY_FAILED'); }
+          try {
+            observation = await deps.access.repository.readPullRequest({ repo: configured, number: target.number,
+              ...(light ? { unless: { headSha: latest.pullRequest.headSha!, baseRef: latest.pullRequest.baseRef! } } : {}) });
+          } catch { observation = unavailable('PULL_REQUEST_QUERY_FAILED'); }
         }
         if (signal.aborted) return;
-        await recordChecks(deps.session, work.work_id, target, evaluateChecks({ at: new Date().toISOString(), expect: target.expect, observation }));
+        // Every full collection counts against the window, including a light read that found a new head (the adapter then reads everything).
+        if (observation.kind !== 'unchanged') full.push(now);
+        const failures = observation.kind === 'unavailable' ? state.failures + 1 : 0;
+        const delay = Math.max(minIntervalMs * 2 ** Math.min(failures, 4), waitOf(observation) * 1000);
+        schedule.set(work.work_id, { dueAt: now + delay, failures, fullDueAt: observation.kind === 'observed' ? now + stableIntervalMs : observation.kind === 'unchanged' ? state.fullDueAt : 0 });
+        if (observation.kind === 'unchanged') continue;
+        const evaluation = evaluateChecks({ at: new Date().toISOString(), expect: target.expect, observation });
+        if (latest && checksFingerprint(latest) === checksFingerprint(evaluation)) continue;
+        await recordChecks(deps.session, work.work_id, target, evaluation);
       }
     },
   };

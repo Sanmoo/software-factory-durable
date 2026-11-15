@@ -145,8 +145,14 @@ export function githubDoubles(remote: Remote) {
         'refs/heads/main': 'b'.repeat(40), ...Object.fromEntries(Object.entries(remote.refs ?? {}).filter(([, sha]) => sha !== 'unknown').map(([name, sha]) => [`refs/heads/${name}`, sha])),
         ...Object.fromEntries(Object.entries(remote.tags ?? {}).map(([name, sha]) => [`refs/tags/${name}`, sha])) } } } : {}),
       ...(correlation.base !== undefined ? { baseProtection: structuredClone(remote.baseProtection ?? { state: 'pull-request-required' as const, sources: ['ruleset:1'] }) } : {}) }), correlation),
-    readPullRequest: query => track('readPullRequest', (): PullRequestObservation => remote.pullRequests?.[query.number] ??
-      { kind: 'unavailable', source: 'github-rest', observedAt: observedAt(), repository: query.repo.repository, code: 'GITHUB_NOT_FOUND_OR_HIDDEN', nextStep: 'synthetic' }, query),
+    readPullRequest: query => track('readPullRequest', (): PullRequestObservation => {
+      const found = remote.pullRequests?.[query.number];
+      if (found?.kind === 'observed' && query.unless && found.pullRequest.state === 'open' && found.pullRequest.headSha === query.unless.headSha &&
+        found.pullRequest.baseRef === query.unless.baseRef) return { kind: 'unchanged', source: 'github-rest', observedAt: observedAt(), repository: query.repo.repository,
+        headSha: found.pullRequest.headSha, baseRef: found.pullRequest.baseRef };
+      return found ??
+      { kind: 'unavailable', source: 'github-rest', observedAt: observedAt(), repository: query.repo.repository, code: 'GITHUB_NOT_FOUND_OR_HIDDEN', nextStep: 'synthetic' };
+    }, query),
   };
   return { tracker, repository, calls, concurrency: () => maxActive };
 }
