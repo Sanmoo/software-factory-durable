@@ -9,6 +9,9 @@ import type { ToolContext, ToolProjection, ReadResult } from '../sandbox/index.j
 /** Ticket 13: what the model sees when it reads a directory; the code prefix lets the Host observer tell it from a failed read. */
 export const directoryMessage = 'READ_IS_DIRECTORY: this path is a directory, not a file. Read the files it holds by their own paths ' +
   '(listed in the handoff index or in that version\'s sources.json); this is not a failed source read.';
+/** Ticket 14: what the model sees for a path that does not exist (file or directory); the code prefix lets the Host observer tell it apart. */
+export const notFoundMessage = 'READ_NOT_FOUND: this path does not exist. Context that instructions name but that does not exist is not a ' +
+  'limitation and not a failed source read; only required inputs or existing files that cannot be read are.';
 export function reviewerRead(context: ToolContext, sandbox: ToolProjection, criticalFailure = () => {}) {
   const definition = createReadTool('/workspace');
   // Fixed host composition: the shared channel admits one tool at a time.
@@ -19,6 +22,7 @@ export function reviewerRead(context: ToolContext, sandbox: ToolProjection, crit
       function failed(code: string): never {
         // Ticket 13: a directory is a clear answer to the model, not a failed source read (the observer does not count it).
         if (code === 'READ_IS_DIRECTORY') throw new Error(directoryMessage);
+        if (code === 'READ_NOT_FOUND') throw new Error(notFoundMessage);
         if (!['GUEST_READ_FAILED', 'READ_PATH_DENIED', 'READ_BINARY_UNSUPPORTED'].includes(code)) criticalFailure();
         throw new Error(code);
       }

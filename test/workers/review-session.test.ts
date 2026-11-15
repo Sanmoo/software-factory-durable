@@ -22,6 +22,8 @@ const files: Record<string, string> = {
   '/workspace/checkout/src/a.ts': 'export const a = 1;\n',
 };
 const directories = new Set(['/artifacts/spec/v1']);
+/** Paths that do not exist in the guest (ticket 14 real run v7: GLOSSARY.md and docs/adr named by the instructions); the program exits 4. */
+const missing = new Set(['/workspace/checkout/GLOSSARY.md', '/workspace/checkout/docs/adr']);
 type Step = { tools?: { name: string; arguments: object }[]; text?: string };
 const guestReads: string[] = [];
 const vm: GuestOwner = { exec(argv) {
@@ -30,7 +32,7 @@ const vm: GuestOwner = { exec(argv) {
   const content = files[path];
   // The confined guest program exits 3 for a directory (ticket 13 real run: Standards read `/artifacts/spec/v1`).
   return { async *output() { if (content !== undefined) yield { stream: 'stdout' as const, data: Buffer.from(content) }; },
-    result: Promise.resolve({ exitCode: directories.has(path) ? 3 : content === undefined ? 1 : 0 }) };
+    result: Promise.resolve({ exitCode: directories.has(path) ? 3 : missing.has(path) ? 4 : content === undefined ? 1 : 0 }) };
 } };
 const profile = (directory: string) => ({ id: sdkProfile.id, directory, systemPrompt: 'Factory reviewer fixture. No personal resources.',
   providerId: 'offline-fixture', modelId: 'reader', apiKey: 'synthetic-key', provider: { api: 'openai-completions' as const, baseUrl: 'https://offline.invalid',
@@ -170,6 +172,27 @@ test('ticket 13 real-run regression: reading a DIRECTORY is a distinct READ_IS_D
   assert.ok('opinion' in result && result.opinion);
   assert.equal(result.opinion.conclusion, 'clean');
   assert.deepEqual(result.opinion.hostChecks, { reads: 3, failedReads: [], requiredNotFullyRead: [], downgraded: [] });
+});
+
+test('ticket 14 real-run regression: a NONEXISTENT path the instructions name (GLOSSARY.md) is READ_NOT_FOUND, not a failed read; the opinion stays clean', { timeout: 15000 }, async t => {
+  const bodies = provider(t, [{ tools: [{ name: 'read', arguments: { path: '/workspace/checkout/GLOSSARY.md' } }, { name: 'read', arguments: { path: '/workspace/checkout/docs/adr' } }] },
+    { tools: [{ name: 'read', arguments: { path: index } }, { name: 'read', arguments: { path: '/artifacts/spec/v1/sources.json' } }] }, { text: verdict(clean('standards')) }]);
+  const { f, session } = await reviewerSession(t, 'standards');
+  const result = await session.activate({ context: reviewer('standards'), prompt: 'Review round 1.', signal: f.authority.signal,
+    review: review([index, '/artifacts/spec/v1/sources.json']) });
+  assert.match(bodies[1]!.text, /READ_NOT_FOUND: [^"]*does not exist/, 'the model is told the path does not exist');
+  assert.ok('opinion' in result && result.opinion);
+  assert.equal(result.opinion.conclusion, 'clean');
+  assert.deepEqual(result.opinion.hostChecks, { reads: 4, failedReads: [], requiredNotFullyRead: [], downgraded: [] });
+});
+
+test('ticket 14: an ABSENT required input still makes the opinion incomplete (absence is only harmless for optional context)', async () => {
+  const { createReadObserver } = await import('../../src/workers/review.js');
+  const { notFoundMessage } = await import('../../src/workers/read.js');
+  const observer = createReadObserver();
+  observer.observe({ path: '/workspace/checkout/GLOSSARY.md' }, { error: new Error(notFoundMessage) });
+  observer.observe({ path: index }, { error: new Error(notFoundMessage) });
+  assert.deepEqual(observer.summary([index]), { reads: 2, failedReads: [], requiredNotFullyRead: [index] });
 });
 
 test('review fix 10: a read surfaced as an isError result is a failed read, never a full read', async () => {

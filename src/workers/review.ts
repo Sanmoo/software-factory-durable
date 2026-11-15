@@ -49,6 +49,8 @@ export function createReadObserver() {
         const error = 'error' in outcome ? outcome.error : undefined;
         // Ticket 13: reading a directory is an answer (READ_IS_DIRECTORY), never a failed source read and never coverage.
         if (error instanceof Error && error.message.startsWith('READ_IS_DIRECTORY')) return;
+        // Ticket 14: an absent path is an answer too; a REQUIRED input that is absent is still never fully read (incomplete).
+        if (error instanceof Error && error.message.startsWith('READ_NOT_FOUND')) return;
         if (failures.length < 50) failures.push({ path: path.slice(0, 1024), code: error instanceof Error && /^[A-Z_]{1,64}$/.test(error.message) ? error.message : 'READ_FAILED' });
         return;
       }

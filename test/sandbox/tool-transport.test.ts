@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, readdir } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -113,8 +113,24 @@ test('ticket 13: the guest program reports a directory with its own status, surf
   const f = await fixture(t, argv => { program = argv[4]!; return guest(Buffer.alloc(0), 3); });
   assert.deepEqual(await f.execute(), { status: 'failure', code: 'READ_IS_DIRECTORY' });
   assert.match(program, /if not stat\.S_ISREG\(os\.fstat\(fd\)\.st_mode\):\n\s+directory = stat\.S_ISDIR\(os\.fstat\(fd\)\.st_mode\)\n\s+raise ValueError\(\)/);
-  assert.match(program, /sys\.exit\(3 if directory else 1\)/);
+  assert.match(program, /sys\.exit\(3 if directory else 4 if missing else 1\)/, 'ticket 14 adds the not-found status; a directory keeps 3');
   assert.ok(program.indexOf('stat.S_ISDIR(os.fstat(fd).st_mode)') < program.indexOf('os.read(fd,'), 'decided before any source read');
+});
+
+test('ticket 14 real run: the guest program reports a NONEXISTENT path with its own status, surfaced as READ_NOT_FOUND (never GUEST_READ_FAILED)', async t => {
+  let program = '';
+  const f = await fixture(t, argv => { program = argv[4]!; return guest(Buffer.alloc(0), 4); });
+  assert.deepEqual(await f.execute(), { status: 'failure', code: 'READ_NOT_FOUND' });
+  assert.match(program, /except FileNotFoundError:\n\s+missing = True\n\s+raise/);
+  assert.match(program, /sys\.exit\(3 if directory else 4 if missing else 1\)/);
+  assert.ok(program.indexOf('missing = True') < program.indexOf('os.read(fd,'), 'decided before any source read');
+  // The program itself (host python3, never in production): a nonexistent confined path exits 4; an invalid path stays 1.
+  const run = (path: string) => spawnSync('/usr/bin/python3', ['-I', '-S', '-c', program, path, 'reviewer', '[]'], { encoding: 'utf8' }).status;
+  assert.equal(run('/workspace/checkout/GLOSSARY-does-not-exist.md'), 4);
+  assert.equal(run('/etc/passwd'), 1, 'outside the confined roots is still a refusal, never "not found"');
+  // A path that exists but cannot be read stays a failed read.
+  const unreadable = await fixture(t, () => guest(Buffer.alloc(0), 1));
+  assert.deepEqual(await unreadable.execute(), { status: 'failure', code: 'GUEST_READ_FAILED' });
 });
 
 test('guest nonzero status and invalid UTF-8 are explicit errors, not successful or raw output', async t => {

@@ -103,6 +103,11 @@ const guestEditSourceProgram = guestReadProgram.replace('fd = None', 'fd = None\
 // Read-only derived mode; Edit's original FD/source/budget semantics above stay
 // byte-for-byte unchanged. Bounded Host data, never model-supplied Python code.
 const guestCopyAwareReadProgram = guestReadProgram.replace('import os, stat, sys', 'import os, stat, sys, json').replace(
+  // Ticket 14 real run: a NONEXISTENT path has its own status (4), decided at open time before any source byte.
+  'directory = False', 'directory = False\nmissing = False').replace(
+  '    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)',
+  '    try:\n        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)\n    except FileNotFoundError:\n        missing = True\n        raise').replace(
+  'sys.exit(3 if directory else 1)', 'sys.exit(3 if directory else 4 if missing else 1)').replace(
   'len(sys.argv) != 2', 'len(sys.argv) != 4',
 ).replace('    while True:', `    selected = json.loads(sys.argv[3])
     if (sys.argv[2] not in ("builder", "reviewer") or not isinstance(selected, list)
@@ -308,6 +313,8 @@ export async function serveReadTools(options: ReadBinding & { vm: GuestOwner }) 
         const result = await process.result;
         // Ticket 13: status 3 = the path is a directory (decided before any source byte); a distinct, non-failing kind of answer.
         if (result.exitCode === 3 && !editSource && format === 'text' && prefix.length === 0) return failure('READ_IS_DIRECTORY');
+        // Ticket 14: an absent file or directory is an answer (READ_NOT_FOUND), not an unreadable source.
+        if (result.exitCode === 4 && !editSource && format === 'text' && prefix.length === 0) return failure('READ_NOT_FOUND');
         if (result.exitCode !== 0) return failure(format === 'raw' ? 'PROTECTED_READ_UNAVAILABLE' : 'GUEST_READ_FAILED');
         if (!valid()) return failure('STALE_TOOL_CONTEXT');
         const capture = await output.finish();
