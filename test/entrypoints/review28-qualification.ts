@@ -22,7 +22,10 @@ const revision = 'q28-partial-v2';
 const phases = ['preflight', 'run', 'inspect', 'stop-environment'] as const;
 type Phase = typeof phases[number];
 const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 'main', installationId: 177599217, workflows: false, label: 'ready-for-agent' };
-const expectedTicket = { number: 3, repositoryId: 1256893534 };
+/** Operator decision (option a): a NEW synthetic issue #6 with no associated PR; issue #3 keeps the label with ticket 14's draft PR #5 and is
+ * held FOREIGN_PULL_REQUEST by admission (no Work, no Slot). */
+const expectedTicket = { number: 6, repositoryId: 1256893534 };
+const ticketTitle = 'Factory smoke: partial review recovery';
 const githubApp = { appId: 5569788, privateKeyFile: 'credentials/app.pem' };
 const configuration = { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1', memoryMiB: 4096, vcpus: 2, diskGiB: 40, shutdownGraceSeconds: 30, minFreeSpaceGiB: 4 } as const;
 const guestAssets = { directory: '/home/sanmoo/software-factory-test/assets34/assets', manifestSha256: '8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807' } as const;
@@ -57,7 +60,7 @@ export function plan() {
       reviewers: { roles: ['standards', 'spec'], budget: 'reviewer-v1', maxRequestsEach: 24, maxToolCallsEach: 80, deadlineMinutesEach: 15, tools: ['read'],
         maxActivations: activationsMax, retries: { standards: 0, spec: 1 }, controlRetryCapPerRolePerRound: 2 },
       maxRequestsTotal: total, providerRetries: 0, sdkRetries: 0, providerBillingHardCap: false },
-    ticket: { number: expectedTicket.number, body: ticketBody, provocation: 'Builder system prompt: first proposal omits ## Rollback (changed content in a later round)' },
+    ticket: { number: expectedTicket.number, title: ticketTitle, body: ticketBody, provocation: 'Builder system prompt: first proposal omits ## Rollback (changed content in a later round)' },
     provocations: [
       `spec r1a1: Host deadlineMs ${provokedDeadlineMs} on that ONE invocation (real worker interrupted by its own deadline; preserved cancelled opinion)`,
       'standards r1a1: its completion reaches Control without the opinion (notification loss at the recipe facade hop; the real record stays in Records)',
@@ -66,8 +69,9 @@ export function plan() {
       builderPurpose: 'builder-start {metadata:read, contents:read, issues:read} for Sanmoo/java-springboot-event-sourcing only', reviewerCredentials: 'none',
       writes: 'none (no POST/PATCH/PUT/DELETE besides access_tokens issuance)' },
     effects: [
-      'preflight: read-only GitHub: listing of the configured label must contain exactly Ticket #3; ticket and native blocked_by read; NO pull request ' +
-        'associated with Ticket #3 (any state; a fresh storage would hold it FOREIGN_PULL_REQUEST) — never adopted or touched',
+      `preflight: read-only GitHub: the label listing must contain Ticket #${expectedTicket.number} exactly once, and any OTHER listed Ticket (#3 with ticket 14's ` +
+        'draft PR #5) must have an associated pull request so admission holds it FOREIGN_PULL_REQUEST (no Work, no Slot); title and body of the Ticket exactly ' +
+        `the planned ones; ticket and native blocked_by read; NO pull request associated with #${expectedTicket.number}. No PR is ever adopted or touched`,
       'run: new Control storage under observations; production-equivalent Execution ports with reviews {rounds max 4, partialRecovery true}; ONE Execution (capacity 1), 1 new VM, ' +
         'ONE Builder, reviewers in parallel on the same boot; the two provocations above; Sandbox.stop; Slot release; 75 min deadline',
       'inspect: read-only on exclusive COPIES: the storage copy (Control view: rounds, attempts, sources, charges, budget, history) and a private copy of the Work\'s ' +
@@ -139,6 +143,32 @@ export function publicationPrecondition(publication: PublicationObservation):
   return { ok: true };
 }
 
+/**
+ * The label listing may contain other Tickets only if admission will certainly HOLD them (a complete observation with an associated pull
+ * request → FOREIGN_PULL_REQUEST: no Work, no reservation, no Slot); an admissible or unknown one could take the only Slot first.
+ */
+export function candidatesPrecondition(listed: number[], publication: PublicationObservation): { ok: true; held: number[] } | { ok: false; code: string } {
+  if (listed.filter(number => number === expectedTicket.number).length !== 1) return { ok: false, code: 'RECIPE_TICKET_NOT_LISTED' };
+  const held: number[] = [];
+  for (const number of listed.filter(item => item !== expectedTicket.number)) {
+    const issue = publication.kind === 'observed' ? publication.issues[String(number)] : undefined;
+    if (issue?.completeness !== 'complete' || !issue.candidates.length) return { ok: false, code: `OTHER_TICKET_ADMISSIBLE:${number}` };
+    held.push(number);
+  }
+  return { ok: true, held };
+}
+const normalized = (text: string) => text.replaceAll('\r\n', '\n').trim();
+/** The issue the operator created is exactly the planned Ticket (title and body), read-only. */
+export function ticketPrecondition(issue: { title?: unknown; body?: unknown }): { ok: true } | { ok: false; code: 'TICKET_TITLE_MISMATCH' | 'TICKET_BODY_MISMATCH' } {
+  if (typeof issue.title !== 'string' || issue.title.trim() !== ticketTitle) return { ok: false, code: 'TICKET_TITLE_MISMATCH' };
+  if (typeof issue.body !== 'string' || normalized(issue.body) !== normalized(ticketBody)) return { ok: false, code: 'TICKET_BODY_MISMATCH' };
+  return { ok: true };
+}
+/** The recipe's own Work (its Ticket by number AND repository id); never another Work of the storage. */
+export function recipeWork<T extends { ticket: { number: number; repositoryId: number } }>(works: readonly T[]): T | undefined {
+  return works.find(item => item.ticket.number === expectedTicket.number && item.ticket.repositoryId === expectedTicket.repositoryId);
+}
+
 /** Activation guard of ONE Execution: one Builder; per reviewer role a bounded number of DISTINCT (round, attempt); Spec retries only in round 1. */
 export function activationGuard(max: { standards: number; spec: number } = activationsMax) {
   let execution: string | undefined;
@@ -194,17 +224,22 @@ export async function runPhase(phase: Phase) {
   await save(`${phase}-intent`, { revision, phase, at: new Date().toISOString() });
   try {
     if (phase === 'preflight') {
-      const { tracker, codeRepository } = await compose();
+      const { github, tracker, codeRepository } = await compose();
       const listing = await tracker.listCandidates(repository);
-      if (listing.kind !== 'observed' || listing.candidates.length !== 1 || listing.candidates[0]!.number !== expectedTicket.number ||
-        listing.repositoryId !== expectedTicket.repositoryId) { await save('preflight-held', { listing }); throw new Error('PRECONDITION_HELD'); }
-      const ticket = await tracker.readTicket(listing.candidates[0]!);
-      const graph = await tracker.readDependencyGraph(listing.candidates[0]!);
-      // Read-only association check (the same listing Control's admission uses): an associated PR would hold the fresh storage's admission.
-      const publication = await codeRepository.findPublication({ repo: repository, issueNumbers: [expectedTicket.number], knownBranches: [] });
-      const precondition = publicationPrecondition(publication);
-      if (!precondition.ok) { await save('preflight-held', { precondition, publication }); throw new Error('PRECONDITION_HELD'); }
-      await save('preflight-result', { status: 'success', ticket, graph: { completeness: graph.completeness, nodes: graph.nodes.length, problems: graph.problems } });
+      if (listing.kind !== 'observed' || listing.repositoryId !== expectedTicket.repositoryId) { await save('preflight-held', { listing }); throw new Error('PRECONDITION_HELD'); }
+      const listed = listing.candidates.map(item => item.number);
+      // Read-only association check (the same listing Control's admission uses) for EVERY listed Ticket.
+      const publication = await codeRepository.findPublication({ repo: repository, issueNumbers: [...new Set(listed)].slice(0, 20), knownBranches: [] });
+      const candidates = candidatesPrecondition(listed, publication);
+      const own = publicationPrecondition(publication);
+      if (!candidates.ok || !own.ok) { await save('preflight-held', { listed, candidates, own, publication }); throw new Error('PRECONDITION_HELD'); }
+      const ref = listing.candidates.find(item => item.number === expectedTicket.number)!;
+      const read = await github.read(repository, 'tracker-read', session => session.get(`/repos/${repository.repository}/issues/${expectedTicket.number}`));
+      const content = read.ok ? ticketPrecondition(read.value as { title?: unknown; body?: unknown }) : { ok: false as const, code: 'TICKET_READ_UNAVAILABLE' };
+      if (!content.ok) { await save('preflight-held', { content }); throw new Error('PRECONDITION_HELD'); }
+      const ticket = await tracker.readTicket(ref);
+      const graph = await tracker.readDependencyGraph(ref);
+      await save('preflight-result', { status: 'success', ticket, heldOthers: candidates.held, graph: { completeness: graph.completeness, nodes: graph.nodes.length, problems: graph.problems } });
       return;
     }
     if (!(await exists('preflight-result'))) throw new Error('PREFLIGHT_REQUIRED');
@@ -280,7 +315,7 @@ export async function runPhase(phase: Phase) {
       while (Date.now() < deadline) {
         await new Promise(resolve => setTimeout(resolve, 5000));
         const list = await control.inspect({ kind: 'list' });
-        const execution = 'kind' in list && list.kind === 'list' ? list.works.find(work => work.execution)?.execution : undefined;
+        const execution = 'kind' in list && list.kind === 'list' ? recipeWork(list.works)?.execution ?? undefined : undefined;
         if (execution && (['held', 'released'].includes(execution.state) || (execution.state === 'ended' && execution.dispatch.phase === 'stopped'))) { final = list; break; }
       }
       final ??= await control.inspect({ kind: 'list' });
@@ -296,7 +331,7 @@ export async function runPhase(phase: Phase) {
     const list = await stored.inspect({ kind: 'list' });
     const stopped = new AbortController(); stopped.abort();
     await stored.run(stopped.signal);
-    const work = 'kind' in list && list.kind === 'list' ? list.works.find(item => item.execution) : undefined;
+    const work = 'kind' in list && list.kind === 'list' ? recipeWork(list.works) : undefined;
     if (!work?.execution?.dispatch.environment) throw new Error('NO_EXECUTION_OBSERVED');
     if (phase === 'inspect') {
       const shown = await stored.inspect({ kind: 'show', work_id: work.work_id });

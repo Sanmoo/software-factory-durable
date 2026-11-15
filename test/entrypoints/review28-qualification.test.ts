@@ -29,7 +29,7 @@ test('AC7 recipe: import and --plan are inert and declare the fixed bounds and t
   assert.match(plan.guards[0], /WORKER_LAUNCH_INVALID: never-started, reservation released, not retried\); more than 2 stop the run/, 'a guard refusal never cascades into free retries');
   assert.match(plan.effects.find((item: string) => item.startsWith('inspect:')), /private copy of the Work's Records/, 'inspect never opens the live Records');
   assert.match(plan.github.writes, /^none/);
-  assert.deepEqual(plan.expectedTicket, { number: 3, repositoryId: 1256893534 });
+  assert.deepEqual(plan.expectedTicket, { number: 6, repositoryId: 1256893534 });
   await assert.rejects(recipe.main(['retry']), /EXACT_PHASE_REQUIRED/);
   assert.equal(forbidden, 0);
 });
@@ -110,14 +110,36 @@ test('AC7 recipe oracle: a retried Standards, an incomplete Spec a1 taken for th
   assert.equal(d.checks.find(item => item.name === 'execution-ended')!.observed, 'held:REVIEWER_CESSATION_UNCONFIRMED');
 });
 
-test('AC7 recipe preflight: an open (or any) pull request associated with Ticket #3 — e.g. ticket 14 draft PR #5 — holds BEFORE any effect; never adopted', () => {
+test('AC7 recipe preflight: an open (or any) pull request associated with the recipe Ticket holds BEFORE any effect; never adopted', () => {
   const pr5 = { pullRequestId: 55, number: 5, url: 'https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5', state: 'open' as const, merged: false,
     headRef: 'factory/3-abcdef12', headRepositoryId: 1256893534, association: ['closing-reference'] };
-  const held = recipe.publicationPrecondition({ kind: 'observed', repositoryId: 1256893534, issues: { '3': { completeness: 'complete', candidates: [pr5] } } } as never);
+  const held = recipe.publicationPrecondition({ kind: 'observed', repositoryId: 1256893534, issues: { '6': { completeness: 'complete', candidates: [pr5] } } } as never);
   assert.deepEqual(held, { ok: false, code: 'TICKET_HAS_ASSOCIATED_PULL_REQUEST', pullRequests: [{ number: 5, state: 'open', merged: false, headRef: 'factory/3-abcdef12' }] },
     'a fresh Control storage would hold it FOREIGN_PULL_REQUEST: the run could never start an Execution');
-  assert.deepEqual(recipe.publicationPrecondition({ kind: 'observed', repositoryId: 1256893534, issues: { '3': { completeness: 'complete', candidates: [] } } } as never), { ok: true });
-  assert.equal(recipe.publicationPrecondition({ kind: 'observed', repositoryId: 1256893534, issues: { '3': { completeness: 'incomplete', code: 'X', nextStep: 'n' } } } as never).ok, false,
+  assert.deepEqual(recipe.publicationPrecondition({ kind: 'observed', repositoryId: 1256893534, issues: { '6': { completeness: 'complete', candidates: [] } } } as never), { ok: true });
+  assert.equal(recipe.publicationPrecondition({ kind: 'observed', repositoryId: 1256893534, issues: { '6': { completeness: 'incomplete', code: 'X', nextStep: 'n' } } } as never).ok, false,
     'an incomplete observation never proves absence');
   assert.equal(recipe.publicationPrecondition({ kind: 'unavailable', code: 'GITHUB_UNAVAILABLE', nextStep: 'n' } as never).ok, false);
+});
+
+test('AC7 recipe preflight: the label may also list #3, ONLY if it would be held (an associated PR); any other admissible Ticket holds the run', () => {
+  const pr = (number: number) => ({ pullRequestId: number, number, url: `u${number}`, state: 'open' as const, merged: false, headRef: 'factory/3-x', headRepositoryId: 1, association: ['closing-reference'] });
+  const publication = (issues: Record<string, unknown>) => ({ kind: 'observed', repositoryId: 1256893534, issues }) as never;
+  assert.deepEqual(recipe.candidatesPrecondition([3, 6], publication({ '3': { completeness: 'complete', candidates: [pr(5)] }, '6': { completeness: 'complete', candidates: [] } })),
+    { ok: true, held: [3] });
+  assert.deepEqual(recipe.candidatesPrecondition([6], publication({ '6': { completeness: 'complete', candidates: [] } })), { ok: true, held: [] });
+  assert.deepEqual(recipe.candidatesPrecondition([3, 6], publication({ '3': { completeness: 'complete', candidates: [] }, '6': { completeness: 'complete', candidates: [] } })),
+    { ok: false, code: 'OTHER_TICKET_ADMISSIBLE:3' }, 'an admissible #3 could take the only Slot');
+  assert.deepEqual(recipe.candidatesPrecondition([3, 6], publication({ '3': { completeness: 'incomplete', code: 'X', nextStep: 'n' }, '6': { completeness: 'complete', candidates: [] } })),
+    { ok: false, code: 'OTHER_TICKET_ADMISSIBLE:3' }, 'unknown is never held-for-sure');
+  assert.deepEqual(recipe.candidatesPrecondition([3], publication({})), { ok: false, code: 'RECIPE_TICKET_NOT_LISTED' });
+  assert.deepEqual(recipe.candidatesPrecondition([6, 6], publication({})), { ok: false, code: 'RECIPE_TICKET_NOT_LISTED' });
+});
+
+test('AC7 recipe preflight: the Ticket body and title must be exactly the planned ones (read-only issue read)', () => {
+  const plan = recipe.plan();
+  assert.deepEqual(recipe.ticketPrecondition({ title: plan.ticket.title, body: plan.ticket.body.replaceAll('\n', '\r\n') + '\n' }), { ok: true });
+  assert.deepEqual(recipe.ticketPrecondition({ title: 'Other', body: plan.ticket.body }), { ok: false, code: 'TICKET_TITLE_MISMATCH' });
+  assert.deepEqual(recipe.ticketPrecondition({ title: plan.ticket.title, body: `${plan.ticket.body}\nextra` }), { ok: false, code: 'TICKET_BODY_MISMATCH' });
+  assert.deepEqual(recipe.ticketPrecondition({ title: plan.ticket.title, body: null }), { ok: false, code: 'TICKET_BODY_MISMATCH' });
 });

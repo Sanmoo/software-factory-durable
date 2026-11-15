@@ -7,7 +7,8 @@ import { openControl } from '../../src/control/index.js';
 import type { Control, ExecutionPorts, ListView, WorkView } from '../../src/control/types.js';
 import type { ProposalHandoff, ProposalIdentity, ReviewOpinion } from '../../src/contracts/index.js';
 import type { BuilderDirective, HandoffEvent, Invocation, OpinionObservation } from '../../src/workers/index.js';
-import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
+import { foreignPull, githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
+import { recipeWork, verdict } from '../entrypoints/review28-qualification.js';
 
 // Flow level (S): real Control + Pi Durable + temporary SQLite. Doubled: GitHub, clocks, Sandbox lifecycle/identity, Workers (a scripted
 // suspended Builder, scripted reviewers per attempt, a scripted Records opinion facet) and credentials. Ticket 28: partial review recovery
@@ -144,10 +145,11 @@ function doubles(script: { captures: HandoffEvent[]; behaviour: (role: Role, rou
   return { ports, directives, invocations, kinds, sleeps };
 }
 
-async function harness(t: { after(fn: () => Promise<void>): void }, script: Parameters<typeof doubles>[0], limits: { recoveryLimit?: number; timeoutSeconds?: number } = {}) {
+async function harness(t: { after(fn: () => Promise<void>): void }, script: Parameters<typeof doubles>[0], limits: { recoveryLimit?: number; timeoutSeconds?: number } = {},
+  world: { remote?: Remote; ticket?: number } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'factory-review28-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
+  const remote: Remote = world.remote ?? { pulls: {}, issues: [remoteIssue(3)] };
   const github = githubDoubles(remote);
   const execution = doubles(script);
   const control: Control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty', execution: execution.ports,
@@ -155,12 +157,13 @@ async function harness(t: { after(fn: () => Promise<void>): void }, script: Para
   const stop = new AbortController();
   const running = control.run(stop.signal);
   t.after(async () => { stop.abort(); await running; });
-  const work = async () => ((await control.inspect({ kind: 'list' })) as ListView).works.find(item => item.ticket.number === 3) as WorkView | undefined;
+  const list = async () => (await control.inspect({ kind: 'list' })) as ListView;
+  const work = async () => (await list()).works.find(item => item.ticket.number === (world.ticket ?? 3)) as WorkView | undefined;
   for (let i = 0; i < 800; i++) {
     const current = await work();
     if (current?.execution?.slot.held === false || current?.execution?.state === 'held') {
       const shown = await control.inspect({ kind: 'show', work_id: current.work_id });
-      return { execution, work: current, shown: 'work' in shown ? shown.work : undefined };
+      return { execution, work: current, shown: 'work' in shown ? shown.work : undefined, list: await list() };
     }
     await new Promise(resolve => setTimeout(resolve, 5));
   }
@@ -290,4 +293,19 @@ test('operator decision 2026-11-15: after 2 failed retries of the same role in t
   assert.deepEqual([round.reviewers.spec.attempt, round.reviewers.spec.notRetried?.code, h.shown!.budget!.recoveries.consumed], [3, 'REVIEWER_RETRY_LIMIT', 2]);
   assert.deepEqual([h.work.execution!.state, h.work.execution!.held?.code], ['held', 'REVIEWER_RETRY_LIMIT']);
   assert.equal(h.execution.directives.length, 0, 'nothing is delivered: the Builder stays suspended for the operator');
+});
+
+test('q28 recipe world: issue #3 (labeled, with the ticket 14 draft PR attached) is held FOREIGN_PULL_REQUEST — no Work, no Slot — and only #6 runs; the oracle reads #6', async t => {
+  const remote: Remote = { issues: [remoteIssue(3), remoteIssue(6)], pulls: { 3: [foreignPull(5, { state: 'open' })] } };
+  const h = await harness(t, { captures: [capture(1, '1', true)], behaviour: (role, _round, attempt) => role === 'spec' && attempt === 1 ? 'fail' : 'clean' }, {},
+    { remote, ticket: 6 });
+  assert.deepEqual(h.list.works.map(item => item.ticket.number), [6], 'the held Ticket never becomes a Work (nothing reserved, no Slot)');
+  const held = h.list.polling.repositories[0]!.candidates!.find(item => item.ticket.number === 3)!;
+  assert.deepEqual([held.outcome, held.outcome === 'held' && held.holds[0]!.code], ['held', 'FOREIGN_PULL_REQUEST']);
+  assert.deepEqual([h.work.execution!.state, h.work.execution!.slot.held, h.work.execution!.review!.rounds[0]!.reviewers.spec.attempt], ['ended', false, 2]);
+  // The recipe selects ITS Ticket by number and repository id; another Work (or none) never feeds the verdict.
+  const mine = recipeWork(h.list.works.map(item => ({ ...item, ticket: { ...item.ticket, number: item.ticket.number, repositoryId: 1256893534 } })));
+  assert.equal(mine?.ticket.number, 6);
+  assert.equal(recipeWork([{ ...h.work, ticket: { ...h.work.ticket, number: 3, repositoryId: 1256893534 } }]), undefined);
+  assert.equal(verdict(h.work.execution!, h.shown!.budget).checks.find(item => item.name === 'execution-ended')!.ok, true);
 });

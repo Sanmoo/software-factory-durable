@@ -111,7 +111,7 @@ regras falhou já na importação dos novos símbolos) e depois verdes com a cor
 ## Ensaio real (receita one-shot)
 
 `test/entrypoints/review28-qualification.ts` (import e `--plan` inertes, testados). Fases `preflight`, `run`, `inspect`, `stop-environment`
-(tombstone exclusivo; nunca reexecuta). Observações em `/home/sanmoo/software-factory-test/y5/q28-partial-v2`. GitHub só leitura (Ticket #3
+(tombstone exclusivo; nunca reexecuta). Observações em `/home/sanmoo/software-factory-test/y5/q28-partial-v2`. GitHub só leitura (Ticket #6
 sintético em `Sanmoo/java-springboot-event-sourcing`), 1 VM, modelo real `openai/gpt-6-luna` via factory-oauth, retries de SDK/provider 0.
 
 Provocações declaradas: (1) Spec r1a1 com `deadlineMs` 20 s do Host (worker real interrompido pelo próprio prazo, parecer `cancelled`
@@ -215,3 +215,18 @@ Gate após o rebase sobre `b2da9ae` (`npm run test:ci`, carga externa ~14–15):
 10 skipped, 201.8 s de 600 s** (`admission-cli` em quarentena, ticket 37). As duas execuções anteriores falharam cada uma num arquivo
 diferente, fora deste diff e com tempo fixo/spawn sob carga (`normal-worker`: timeout fixo de 15 s; `public-copy-read`: `spawnSync ETIMEDOUT`);
 ambos passaram sozinhos repetidamente. Os arquivos do ticket 28 passaram nas três.
+
+## Ticket da receita: issue #6 (decisão do operador, opção a)
+
+O supervisor criou o issue **#6** (`Sanmoo/java-springboot-event-sourcing`, repositoryId 1256893534, título "Factory smoke: partial review
+recovery", corpo = `ticketBody` do plano, label `ready-for-agent`, sem PR associado). A receita fixa `expectedTicket = {6, 1256893534}`.
+O issue #3 continua com o label e com o PR #5 do ticket 14:
+- `preflight` (só leitura): o #6 aparece uma única vez na listagem; todo outro Ticket listado precisa ter PR associado numa observação
+  completa (admissão o segura `FOREIGN_PULL_REQUEST`: sem Work, sem reserva, sem Slot), senão `OTHER_TICKET_ADMISSIBLE:<n>`; nenhum PR
+  associado ao #6; título e corpo do #6 exatamente os planejados (`TICKET_TITLE_MISMATCH`/`TICKET_BODY_MISMATCH`). Funções puras testadas.
+- `run`/`inspect` selecionam o Work do recipe por número **e** repositoryId (`recipeWork`), nunca "o primeiro Work com Execução";
+  a guarda de `prepare` já recusa qualquer outro Work.
+- Teste de fluxo (Control real + dublês): com #3 rotulado e PR associado mais #6, só o #6 vira Work e executa; o #3 fica `held`
+  `FOREIGN_PULL_REQUEST` sem Work/Slot; o oráculo lê o #6.
+Limite remanescente: se a associação do PR #5 sumir entre `preflight` e `run`, o #3 poderia ser admitido; a guarda de `prepare` recusa
+preparar outro Work (a Execução dele fica retida e a do #6 espera o Slot) — registrar como achado se ocorrer.
