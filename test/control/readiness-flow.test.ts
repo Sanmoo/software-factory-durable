@@ -144,6 +144,34 @@ test('AC4/AC5: confirmed loss restores draft with its reason; the Factory draft 
   assert.deepEqual([(await h.work()).readiness!.internal, h.calls('setDraft').length], ['unknown', writes], 'global reconciliation uncertainty: no conversion either way');
 });
 
+test('ticket 39 AC2/AC3: a merge-blocking base rule never converts to ready; appearing after a Factory ready it is a confirmed loss (back to draft) with its reason', async t => {
+  const rules = (update: boolean) => [{ type: 'pull_request', ruleset: { id: 26435808, sourceType: 'Repository', source: 'acme/project' } },
+    ...(update ? [{ type: 'update', ruleset: { id: 26435808, sourceType: 'Repository', source: 'acme/project' }, parameters: { kind: 'update', updateAllowsFetchAndMerge: false } }] : [])];
+  const blocked = await world(t, { pullRequests: { 7: observedPull({ rules: rules(true) }) } });
+  await blocked.cycle(); await blocked.cycle();
+  const never = (await blocked.work()).readiness!;
+  assert.deepEqual([never.internal, never.flag.factory, blocked.calls('setDraft').length], ['not-ready', 'draft', 0], 'never ready over a merge path that needs a bypass');
+  assert.deepEqual(never.latest.reasons.map(item => [item.area, item.certainty, item.code, item.subject]),
+    [['merge', 'confirmed', 'MERGE_BLOCKED_UPDATE_RESTRICTED', 'update@ruleset:26435808:Repository:acme/project']]);
+  assert.match(never.nextStep, /update@ruleset:26435808:Repository:acme\/project \(UPDATE_RESTRICTED\)\. Operator: adjust the base protection/);
+  assert.match((await blocked.work()).checks!.latest.nextStep, /Operator: adjust the base protection/);
+  // Ready placed by the Factory, then the operator re-enables Restrict updates: confirmed loss, back to draft with the reason.
+  const remote: Partial<Remote> = { pullRequests: { 7: observedPull({ rules: rules(false) }) } };
+  const h = await world(t, remote);
+  await h.cycle();
+  assert.equal((await h.work()).readiness!.flag.factory, 'ready');
+  remote.pullRequests![7] = observedPull({ draft: false, rules: rules(true) });
+  await h.until(async () => (await h.work()).readiness!.effects.length === 2);
+  const lost = (await h.work()).readiness!;
+  assert.deepEqual(lost.effects.map(item => [item.action, item.state, item.reason]), [['mark-ready', 'confirmed', 'READY_FROM_CURRENT_EVIDENCE'],
+    ['convert-to-draft', 'confirmed', 'READINESS_LOST:MERGE_BLOCKED_UPDATE_RESTRICTED']]);
+  assert.deepEqual([lost.internal, lost.flag.factory], ['not-ready', 'draft']);
+  // A human ready over the Factory's draft while blocked: visible, never reverted.
+  const g = await world(t, { pullRequests: { 7: observedPull({ draft: false, rules: rules(true) }) } });
+  await g.cycle();
+  assert.deepEqual([(await g.work()).readiness!.internal, (await g.work()).readiness!.humanReady !== null, g.calls('setDraft').length], ['not-ready', true, 0]);
+});
+
 test('AC5: an unexpected human draft is respected; ONE authorized restoration after a complete evaluation; the ready flag alone certifies nothing', async t => {
   const remote: Partial<Remote> = { pullRequests: { 7: observedPull() } };
   const h = await world(t, remote);

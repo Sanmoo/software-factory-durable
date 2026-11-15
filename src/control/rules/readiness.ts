@@ -1,5 +1,6 @@
 import type { ChecksEvaluation, DependencyState, ExecutionView, Impediment, PublicationView, ReadinessBasis, ReadinessEvaluation, ReadinessReason, ReadinessView,
   ScopeUpdateView } from '../types.js';
+import { mergeStep } from './checks.js';
 import { publicationStep, publishableContent } from './publication.js';
 
 // Pure rules of ticket 16 (spec §3.3, §9.2 steps 1-7, §9.3): internal readiness of the Work's own PR from CURRENT evidence only, and which
@@ -19,7 +20,8 @@ const limitationsNote = 'Human review/approval is a human stage: it is never rea
 /** The requirement set as a comparable identity (context, integration, strictness, interpretations), never a hash of transient results. */
 export function requirementsIdentity(checks: ChecksEvaluation): string {
   const requirements = checks.requirements.map(item => `${item.context}@${item.integrationId ?? '*'}${item.strict ? '!' : ''}<${[...item.sources].sort().join('+')}>`).sort();
-  const modalities = checks.modalities.map(item => `${item.type}:${item.interpretation}@${item.source}`).sort();
+  // Ticket 39: the merge interpretation is part of the identity (a parameter change, e.g. the allowed merge methods, is a new basis).
+  const modalities = checks.modalities.map(item => `${item.type}:${item.interpretation}${item.merge ? `/${item.merge}:${item.reason ?? ''}` : ''}@${item.source}`).sort();
   return `${checks.requiredSet}|${requirements.join(',')}|${modalities.join(',')}|strict:${[...checks.strict.sources].sort().join('+')}`;
 }
 
@@ -88,6 +90,9 @@ export function evaluateReadiness(input: { at: string; source: ReadinessEvaluati
     if (read && verified && checks.pullRequest.headSha !== verified.head) add('content', 'confirmed', 'HEAD_NOT_VERIFIED_CONTENT', checks.pullRequest.headSha ?? 'unknown');
     for (const reason of checks.reasons) {
       if (reason.category === 'closed') continue;
+      // Ticket 39: a base rule that blocks the human merge for anyone without bypass is a CONFIRMED impediment (never readiness); the Factory
+      // never uses or recommends a bypass. After a Factory-placed ready it is a confirmed loss (back to draft, ticket 16).
+      if (reason.category === 'merge') { add('merge', 'confirmed', `MERGE_BLOCKED_${reason.code}`, reason.subject); continue; }
       // A required result that is waiting, failed, operational, uncertain or behind a strict base is a CONFIRMED unmet requirement; only an
       // incomplete/unsupported/changed read is uncertain. Ownership mismatches are confirmed (never the own PR as linked).
       // Strict + base advanced (spec §9.3): the base moving alone never converts a ready PR to draft nor triggers reviews: uncertain only.
@@ -180,6 +185,13 @@ export function readinessNextStep(view: Pick<ReadinessView, 'internal' | 'humanD
   if (blocked.includes('OWNERSHIP_DISPUTED')) return 'The pull request no longer matches the Factory\'s own (identity, author, branch, repository or base): no conversion in either direction. Operator must inspect it on GitHub.';
   if (blocked.includes('HUMAN_DRAFT_AUTHORIZATION_REQUIRED')) return 'A human converted the PR back to draft: the Factory respects it. `factory authorize-readiness <work> --reason <text>` authorizes ONE restoration after a complete evaluation.';
   if (blocked.includes('CONVERSION_NOT_APPLIED_AUTHORIZATION_REQUIRED')) return 'The conversion was not applied: it is not repeated implicitly. Inspect the reason; `factory authorize-readiness <work> --reason <text>` authorizes ONE new attempt.';
+  const merge = view.latest.reasons.filter(item => item.area === 'merge' && item.certainty === 'confirmed')
+    .map(item => ({ category: 'merge' as const, code: item.code.replace(/^MERGE_BLOCKED_/, ''), ...(item.subject !== undefined ? { subject: item.subject } : {}) }));
+  const blockedMerge = mergeStep(merge);
+  if (blockedMerge && view.internal !== 'ready') {
+    const others = view.latest.reasons.filter(item => item.certainty === 'confirmed' && item.area !== 'merge').map(item => item.code).slice(0, 8);
+    return `Not ready. ${blockedMerge}${others.length ? ` Also not ready: ${others.join(', ')}.` : ''}`;
+  }
   if (view.internal === 'ready') return 'Ready for human review: the evidence is current. Human review, approval and merge are human only; the Factory never approves or merges.';
   if (view.internal === 'unknown') return 'Readiness is not confirmed (transient or incomplete evidence): the draft/ready flag is kept and the evidence is read again on a later cycle.';
   return `Not ready: ${view.latest.reasons.filter(item => item.certainty === 'confirmed').map(item => item.code).slice(0, 8).join(', ')}.`;

@@ -12,10 +12,16 @@ export type RequiredCheck = { context: string; integrationId: number | null };
 /** Classic branch protection's required status checks. `none` only from an authorized complete branch read. */
 export type ClassicChecks = { kind: 'none'; evidence: 'BRANCH_NOT_PROTECTED' | 'STATUS_CHECKS_NOT_ENFORCED' } |
   { kind: 'required'; strict: boolean; enforcement: string; checks: RequiredCheck[] };
-/** One ACTIVE rule GitHub applies to the base (repository, organization or enterprise ruleset); `statusChecks` for required_status_checks.
+/** Ticket 39: the parameters of the rules that can affect a human PR merge (GitHub REST ruleset rule parameters), as facts. */
+export type RuleParameters = { kind: 'update'; updateAllowsFetchAndMerge: boolean } |
+  { kind: 'pull_request'; allowedMergeMethods: string[] | null; requiredApprovingReviewCount: number | null; requireCodeOwnerReview: boolean | null;
+    requireLastPushApproval: boolean | null; requiredReviewThreadResolution: boolean | null; dismissStaleReviewsOnPush: boolean | null } |
+  { kind: 'required_deployments'; environments: string[] };
+/** One ACTIVE rule GitHub applies to the base (repository, organization or enterprise ruleset); `statusChecks` for required_status_checks,
+ * `parameters` for update/pull_request/required_deployments (ticket 39).
  * `unparsed`: this rule (only this one) did not match the expected shape; its type is kept when readable ('unparsed' otherwise). */
 export type BranchRule = { type: string; ruleset: { id: number | null; sourceType: string | null; source: string | null };
-  statusChecks?: { strict: boolean; checks: RequiredCheck[] }; unparsed?: true };
+  statusChecks?: { strict: boolean; checks: RequiredCheck[] }; parameters?: RuleParameters; unparsed?: true };
 /** `status: 'unparsed'`: this item (only this one) did not match the expected shape; its name is kept when readable ('' otherwise). */
 export type CheckRunFact = { id: number; name: string; headSha: string; status: string; conclusion: string | null; appId: number | null; appSlug: string | null;
   checkSuiteId: number | null; startedAt: string | null; completedAt: string | null; url: string | null };
@@ -60,6 +66,12 @@ const ruleSchema = z.object({ type: z.string().min(1).max(64), ruleset_id: id.op
   ruleset_source: z.string().max(256).optional(), parameters: z.unknown().optional() });
 const statusChecksParameters = z.object({ strict_required_status_checks_policy: z.boolean(),
   required_status_checks: z.array(z.object({ context, integration_id: integration })).max(500) });
+// Absent parameters are GitHub's defaults (no fetch-and-merge allowance; no restriction from the rule); a present but different shape is unparsed.
+const updateParameters = z.object({ update_allows_fetch_and_merge: z.boolean().optional() }).optional();
+const pullRequestParameters = z.object({ allowed_merge_methods: z.array(z.string().min(1).max(32)).max(8).optional(),
+  required_approving_review_count: z.number().int().nonnegative().safe().optional(), require_code_owner_review: z.boolean().optional(),
+  require_last_push_approval: z.boolean().optional(), required_review_thread_resolution: z.boolean().optional(), dismiss_stale_reviews_on_push: z.boolean().optional() }).optional();
+const deploymentsParameters = z.object({ required_deployment_environments: z.array(z.string().min(1).max(255)).max(100) });
 const runSchema = z.object({ id, name: context, head_sha: sha, status: z.string().max(32), conclusion: z.string().max(32).nullable(),
   started_at: z.string().nullable().optional(), completed_at: z.string().nullable().optional(), app: z.object({ id, slug: z.string().max(256).optional() }).nullable().optional(),
   check_suite: z.object({ id }).nullable().optional(), html_url: z.string().nullable().optional() });
@@ -89,6 +101,25 @@ const rule = (raw: unknown): BranchRule => {
     ruleset: { id: field(raw, 'ruleset_id', id) as number | null, sourceType: null, source: null }, unparsed: true };
   const item = parsed.data;
   const ruleset = { id: item.ruleset_id ?? null, sourceType: item.ruleset_source_type ?? null, source: item.ruleset_source ?? null };
+  if (item.type === 'update') {
+    const parsed = updateParameters.safeParse(item.parameters);
+    return parsed.success ? { type: item.type, ruleset, parameters: { kind: 'update', updateAllowsFetchAndMerge: parsed.data?.update_allows_fetch_and_merge ?? false } }
+      : { type: item.type, ruleset, unparsed: true };
+  }
+  if (item.type === 'pull_request') {
+    const parsed = pullRequestParameters.safeParse(item.parameters);
+    if (!parsed.success) return { type: item.type, ruleset, unparsed: true };
+    const value = parsed.data;
+    return { type: item.type, ruleset, parameters: { kind: 'pull_request', allowedMergeMethods: value?.allowed_merge_methods ?? null,
+      requiredApprovingReviewCount: value?.required_approving_review_count ?? null, requireCodeOwnerReview: value?.require_code_owner_review ?? null,
+      requireLastPushApproval: value?.require_last_push_approval ?? null, requiredReviewThreadResolution: value?.required_review_thread_resolution ?? null,
+      dismissStaleReviewsOnPush: value?.dismiss_stale_reviews_on_push ?? null } };
+  }
+  if (item.type === 'required_deployments') {
+    const parsed = deploymentsParameters.safeParse(item.parameters);
+    return parsed.success ? { type: item.type, ruleset, parameters: { kind: 'required_deployments', environments: parsed.data.required_deployment_environments } }
+      : { type: item.type, ruleset, unparsed: true };
+  }
   if (item.type !== 'required_status_checks') return { type: item.type, ruleset };
   const parameters = statusChecksParameters.safeParse(item.parameters);
   return parameters.success ? { type: item.type, ruleset, statusChecks: { strict: parameters.data.strict_required_status_checks_policy,

@@ -1,4 +1,4 @@
-import type { CheckClassification, CheckReason, CheckRequirementView, CheckResultView, ChecksEvaluation } from '../types.js';
+import type { CheckClassification, CheckReason, CheckRequirementView, CheckResultView, ChecksEvaluation, ModalityView } from '../types.js';
 
 // Pure rules of ticket 15 (spec §9.2): which checks GitHub requires for the own pull request's CURRENT head, and why each requirement is
 // satisfied, waiting, failed, operational, uncertain or indeterminate. No I/O, clock or randomness. Never readiness (ticket 16) and never a
@@ -10,7 +10,12 @@ type Run = { id: number; name: string; headSha: string; status: string; conclusi
   checkSuiteId: number | null; startedAt: string | null; completedAt: string | null; url: string | null };
 type Status = { id: number; context: string; state: string; creator: { id: number; login: string; type: string } | null; createdAt: string | null;
   updatedAt: string | null; url: string | null };
-type Rule = { type: string; ruleset: { id: number | null; sourceType: string | null; source: string | null }; statusChecks?: { strict: boolean; checks: Check[] }; unparsed?: true };
+type Parameters = { kind: 'update'; updateAllowsFetchAndMerge: boolean } |
+  { kind: 'pull_request'; allowedMergeMethods: string[] | null; requiredApprovingReviewCount: number | null; requireCodeOwnerReview: boolean | null;
+    requireLastPushApproval: boolean | null; requiredReviewThreadResolution: boolean | null; dismissStaleReviewsOnPush: boolean | null } |
+  { kind: 'required_deployments'; environments: string[] };
+type Rule = { type: string; ruleset: { id: number | null; sourceType: string | null; source: string | null }; statusChecks?: { strict: boolean; checks: Check[] };
+  parameters?: Parameters; unparsed?: true };
 type Classic = { kind: 'none'; evidence: string } | { kind: 'required'; strict: boolean; enforcement: string; checks: Check[] };
 /** Structural copy of the CodeRepository `readPullRequest` observation (Control consumes facts; it never imports the adapter). */
 export type ChecksObservation = { kind: 'unavailable'; source: 'github-rest'; observedAt: string; repository: string; code: string; waitSeconds?: number; nextStep: string } |
@@ -32,11 +37,74 @@ const limitations = ['Separate GitHub reads between observedAt and completedAt: 
   'A commit status cannot be attributed to a GitHub App: a required check bound to an integration that also has a homonymous status is indeterminate.',
   'A satisfied GitHub requirement (including skipped/neutral) never proves that a local gate ran; local gates are ticket 13 evidence.',
   'This explanation is neither readiness (ticket 16) nor a repair decision (ticket 22).'];
-/** Rule types that never carry check requirements; `pull_request` and `copilot_code_review` belong to the human review stage. */
-const humanStage = new Set(['pull_request', 'copilot_code_review']);
-const notCheckRelated = new Set(['creation', 'update', 'deletion', 'required_linear_history', 'required_signatures', 'non_fast_forward', 'commit_message_pattern',
-  'commit_author_email_pattern', 'committer_email_pattern', 'branch_name_pattern', 'tag_name_pattern', 'file_path_restriction', 'max_file_path_length',
+/** Rule types that only govern creating, deleting, renaming or force-pushing a ref: a PR merge into the existing base is unaffected. */
+const notMergeRelated = new Set(['creation', 'deletion', 'non_fast_forward', 'branch_name_pattern', 'tag_name_pattern']);
+/** Rule types that constrain the commits/files a merge would bring: the Factory does not evaluate them against the PR, so the merge impact is unknown. */
+const mergeImpactUnknown = new Set(['commit_message_pattern', 'commit_author_email_pattern', 'committer_email_pattern', 'file_path_restriction', 'max_file_path_length',
   'file_extension_restriction', 'max_file_size']);
+const linearMethods = ['squash', 'rebase'];
+
+/**
+ * Ticket 39 (spec §9.2/§9.3): how each active base rule affects the HUMAN merge of the own PR, with its source and reason. `blocking`: no
+ * human without bypass can merge it (GitHub refuses, as "Restrict updates" did on 2026-11-15); the Factory never uses or recommends a bypass,
+ * so the operator adjusts the protection. Required checks stay ticket 15's; review requirements are the human stage; an unknown modality,
+ * unreadable parameters or an unevaluated impact are `unknown` (indeterminate), never a waiver. Rules accumulate: the allowed merge methods
+ * are the intersection over every `pull_request` rule that restricts them.
+ */
+export function interpretBaseRules(rules: Rule[]): (ModalityView & Required<Pick<ModalityView, 'merge' | 'reason' | 'notes'>>)[] {
+  let allowed: string[] | null = null;
+  for (const rule of rules) {
+    if (rule.unparsed || rule.parameters?.kind !== 'pull_request' || rule.parameters.allowedMergeMethods === null) continue;
+    const methods: string[] = rule.parameters.allowedMergeMethods;
+    allowed = allowed === null ? [...new Set(methods)] : allowed.filter(method => methods.includes(method));
+  }
+  return rules.map(rule => {
+    const source = sourceOf(rule);
+    const view = (interpretation: ModalityView['interpretation'], merge: NonNullable<ModalityView['merge']>, reason: string, notes: string[] = []) =>
+      ({ type: rule.type, source, interpretation, merge, reason, notes });
+    const parameters = rule.parameters;
+    if (rule.unparsed) return view('unsupported', 'unknown', 'RULE_NOT_INTERPRETABLE');
+    if (rule.type === 'required_status_checks' && rule.statusChecks) return view('required-checks', 'checks', 'REQUIRED_STATUS_CHECKS');
+    if (rule.type === 'pull_request') {
+      const notes: string[] = [];
+      if (parameters?.kind === 'pull_request') {
+        if (parameters.requiredApprovingReviewCount) notes.push(`APPROVALS:${parameters.requiredApprovingReviewCount}`);
+        if (parameters.requireCodeOwnerReview) notes.push('CODE_OWNER_REVIEW');
+        if (parameters.requireLastPushApproval) notes.push('LAST_PUSH_APPROVAL');
+        if (parameters.requiredReviewThreadResolution) notes.push('REVIEW_THREAD_RESOLUTION');
+        if (parameters.allowedMergeMethods !== null) {
+          if (allowed !== null && !allowed.length) return view('merge-blocking', 'blocking', 'NO_ALLOWED_MERGE_METHOD', notes);
+          if (allowed !== null && allowed.length < 3) notes.push(`MERGE_ONLY_BY:${allowed.join(',')}`);
+        }
+      }
+      return view('human-stage', 'human-stage', 'HUMAN_REVIEW_STAGE', notes);
+    }
+    if (rule.type === 'copilot_code_review') return view('human-stage', 'human-stage', 'HUMAN_REVIEW_STAGE');
+    // "Restrict updates": only bypass actors may update the base, a PR merge included. update_allows_fetch_and_merge only lets a fork branch
+    // sync from its upstream; it never opens the PR merge.
+    if (rule.type === 'update') return view('merge-blocking', 'blocking', 'UPDATE_RESTRICTED',
+      parameters?.kind === 'update' && parameters.updateAllowsFetchAndMerge ? ['UPDATE_ALLOWS_FETCH_AND_MERGE_IS_UPSTREAM_SYNC_ONLY'] : []);
+    // The merge goes through a queue whose merge-group checks the Factory does not read (ticket 15 limitation): no supported merge path.
+    if (rule.type === 'merge_queue') return view('merge-blocking', 'blocking', 'MERGE_QUEUE_NOT_SUPPORTED');
+    if (rule.type === 'required_deployments') {
+      if (parameters?.kind !== 'required_deployments') return view('unsupported', 'unknown', 'RULE_NOT_INTERPRETABLE');
+      return parameters.environments.length ? view('merge-blocking', 'blocking', 'DEPLOYMENTS_REQUIRED', parameters.environments.slice(0, 10).map(name => `ENVIRONMENT:${name}`))
+        : view('not-check-related', 'not-blocking', 'NO_DEPLOYMENT_ENVIRONMENT');
+    }
+    // The Factory neither signs nor verifies the signatures of the commits a merge would bring.
+    if (rule.type === 'required_signatures') return view('merge-blocking', 'blocking', 'SIGNED_COMMITS_REQUIRED');
+    if (rule.type === 'required_linear_history') {
+      if (allowed === null) return view('not-check-related', 'unknown', 'MERGE_METHODS_UNKNOWN');
+      const linear = allowed.filter(method => linearMethods.includes(method));
+      return linear.length ? view('not-check-related', 'not-blocking', 'LINEAR_HISTORY_METHOD_ALLOWED', [`MERGE_ONLY_BY:${linear.join(',')}`])
+        : view('merge-blocking', 'blocking', 'LINEAR_HISTORY_NO_ALLOWED_METHOD');
+    }
+    if (notMergeRelated.has(rule.type)) return view('not-check-related', 'not-blocking', 'DOES_NOT_AFFECT_PULL_REQUEST_MERGE');
+    if (mergeImpactUnknown.has(rule.type)) return view('not-check-related', 'unknown', 'MERGE_IMPACT_NOT_EVALUATED');
+    // Required workflows, code scanning/quality, or any rule this version does not know: never a waiver.
+    return view('unsupported', 'unknown', 'RULE_NOT_INTERPRETABLE');
+  });
+}
 const severity: Record<CheckClassification, number> = { satisfied: 0, waiting: 1, uncertain: 2, operational: 3, failed: 4 };
 const waitingRun = new Set(['queued', 'in_progress', 'waiting', 'requested', 'pending']);
 
@@ -70,6 +138,13 @@ const nextSteps: Record<ChecksEvaluation['outcome'], string> = {
   'not-applicable': 'The pull request is closed or merged: its own transitions apply (ticket 17); checks are not evaluated.',
 };
 
+/** Ticket 39: the operator step for base rules that block the human merge (rule, source, reason), or null. Never a bypass. */
+export function mergeStep(reasons: Pick<CheckReason, 'category' | 'code' | 'subject'>[]): string | null {
+  const blocking = reasons.filter(item => item.category === 'merge').slice(0, 8).map(item => `${item.subject ?? 'unknown'} (${item.code})`);
+  return blocking.length ? `The base protection blocks a human merge of this pull request for anyone without bypass: ${blocking.join(', ')}. Operator: adjust the base ` +
+    'protection (that rule of that ruleset or branch protection) so that a human can merge the pull request; the Factory does not use or recommend a bypass, never approves and never merges.' : null;
+}
+
 export function evaluateChecks(input: { at: string; expect: ChecksExpectation; observation: ChecksObservation }): ChecksEvaluation {
   const { expect, observation } = input;
   const reasons: CheckReason[] = [];
@@ -79,13 +154,13 @@ export function evaluateChecks(input: { at: string; expect: ChecksExpectation; o
   const base = (extra: Partial<ChecksEvaluation>): ChecksEvaluation => {
     const categories = new Set(reasons.map(item => item.category));
     const outcome: ChecksEvaluation['outcome'] = categories.has('closed') ? 'not-applicable' : categories.has('indeterminate') || categories.has('ownership') ? 'indeterminate'
-      : categories.has('repair') ? 'failing' : categories.has('operational') || categories.has('uncertain') || categories.has('strict') ? 'blocked'
+      : categories.has('repair') ? 'failing' : categories.has('operational') || categories.has('uncertain') || categories.has('strict') || categories.has('merge') ? 'blocked'
       : categories.has('wait') ? 'waiting' : 'satisfied';
     return { at: input.at, observedAt: null, completedAt: null, outcome, reasons, pullRequest: { number: expect.own.number, url: null, headSha: null, headRef: null, baseRef: null,
       baseTip: null, mergeCommitSha: null, state: null, merged: null, draft: null }, conflict: 'unknown',
       strict: { required: false, sources: [], state: 'unknown', behindBy: null }, requiredSet: 'unknown', requirements: [], optional: [], otherSha: [], modalities: [],
       completeness: { pullRequest: 'not-read', baseTip: 'not-read', classic: 'not-read', rules: 'not-read', checkRuns: 'not-read', statuses: 'not-read', comparison: 'not-read', recheck: 'not-read' },
-      localGates: { declared, requiredByGitHub: [], notRequiredByGitHub: declared }, notes, nextStep: nextSteps[outcome], limitations, ...extra };
+      localGates: { declared, requiredByGitHub: [], notRequiredByGitHub: declared }, notes, nextStep: mergeStep(reasons) ?? nextSteps[outcome], limitations, ...extra };
   };
   if (observation.kind === 'unavailable') {
     reason('indeterminate', 'PULL_REQUEST_UNAVAILABLE', observation.code);
@@ -125,22 +200,18 @@ export function evaluateChecks(input: { at: string; expect: ChecksExpectation; o
   else if (observation.classic.value.kind === 'required') accumulate('classic', observation.classic.value.strict, observation.classic.value.checks);
   const modalities: ChecksEvaluation['modalities'] = [];
   if (observation.rules.state === 'unknown') reason('indeterminate', 'REQUIREMENTS_UNKNOWN', 'rules');
-  else for (const rule of observation.rules.value) {
-    const source = sourceOf(rule);
-    if (rule.unparsed) {
-      // Only this rule did not match its expected shape: it may carry requirements, never a waiver.
-      modalities.push({ type: rule.type, source, interpretation: 'unsupported' });
-      reason('indeterminate', 'RULE_NOT_INTERPRETABLE', `${rule.type}@${source}`);
-    } else if (rule.type === 'required_status_checks' && rule.statusChecks) {
-      modalities.push({ type: rule.type, source, interpretation: 'required-checks' });
-      accumulate(source, rule.statusChecks.strict, rule.statusChecks.checks);
-    } else if (humanStage.has(rule.type)) modalities.push({ type: rule.type, source, interpretation: 'human-stage' });
-    else if (notCheckRelated.has(rule.type)) modalities.push({ type: rule.type, source, interpretation: 'not-check-related' });
-    else {
-      // Required workflows, merge queue, deployments, code scanning, or any rule this version does not know: never a waiver.
-      modalities.push({ type: rule.type, source, interpretation: 'unsupported' });
-      reason('indeterminate', 'RULE_NOT_INTERPRETABLE', `${rule.type}@${source}`);
-    }
+  else {
+    const interpreted = interpretBaseRules(observation.rules.value);
+    observation.rules.value.forEach((rule, index) => {
+      const item = interpreted[index]!;
+      modalities.push(item);
+      const subject = `${rule.type}@${item.source}`;
+      if (item.interpretation === 'required-checks' && rule.statusChecks) accumulate(item.source, rule.statusChecks.strict, rule.statusChecks.checks);
+      // Only this rule did not match its expected shape (it may carry requirements), or its kind is unknown: never a waiver.
+      else if (item.interpretation === 'unsupported') reason('indeterminate', 'RULE_NOT_INTERPRETABLE', subject);
+      else if (item.merge === 'blocking') reason('merge', item.reason, subject);
+      else if (item.merge === 'unknown') reason('indeterminate', item.reason, subject);
+    });
   }
   const unsupported = modalities.some(item => item.interpretation === 'unsupported');
   const requiredSet: ChecksEvaluation['requiredSet'] = observation.classic.state !== 'complete' || observation.rules.state !== 'complete' || unsupported ? 'unknown'

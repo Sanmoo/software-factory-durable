@@ -3,7 +3,7 @@ import type { AccessDiagnostic, GitHubScope } from '../contracts/index.js';
 import { InvalidGitHubObservation, type GitHubAccess } from '../platform/github/index.js';
 import { createPullRequestReader, type PullRequestObservation, type PullRequestQuery } from './pull-request.js';
 
-export type { BranchRule, CheckRunFact, ClassicChecks, Known, PullRequestFacts, PullRequestObservation, PullRequestQuery, RequiredCheck, StatusFact } from './pull-request.js';
+export type { BranchRule, CheckRunFact, ClassicChecks, Known, PullRequestFacts, PullRequestObservation, PullRequestQuery, RequiredCheck, RuleParameters, StatusFact } from './pull-request.js';
 import { deliveryOperations, type BranchCleanupResult, type BranchCleanupSelection, type CleanupEffect, type OwnPullRequestObservation, type PullRequestRef } from './delivery.js';
 
 /** Known repository/branch identities and the Ticket numbers they serve; the caller decides ownership, never this adapter.

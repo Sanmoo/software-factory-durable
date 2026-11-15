@@ -378,8 +378,16 @@ export type CheckResultView = { kind: 'check-run' | 'status'; id: number; name: 
 export type CheckRequirementView = { context: string; integrationId: number | null; sources: string[]; strict: boolean; sha: string;
   state: CheckClassification | 'indeterminate'; results: CheckResultView[]; otherOrigin: CheckResultView[]; reasons: string[] };
 /** An independent reason: `wait` (CI, no Slot), `repair` (pertinent failure), `operational`/`uncertain` (no Builder by guessing),
- * `indeterminate` (unknown/partial/unsupported), `ownership`, `strict`, `closed`. Several coexist; none erases another. */
-export type CheckReason = { category: 'wait' | 'repair' | 'operational' | 'uncertain' | 'indeterminate' | 'ownership' | 'strict' | 'closed'; code: string; subject?: string };
+ * `indeterminate` (unknown/partial/unsupported), `ownership`, `strict`, `closed`, `merge` (ticket 39: a base rule blocks the human merge for
+ * anyone without bypass; the operator adjusts the protection). Several coexist; none erases another. */
+export type CheckReason = { category: 'wait' | 'repair' | 'operational' | 'uncertain' | 'indeterminate' | 'ownership' | 'strict' | 'closed' | 'merge'; code: string; subject?: string };
+/**
+ * Ticket 39: how one active base rule was interpreted, with its source and reason. `merge`: whether it blocks a human merge of the PR for anyone
+ * without bypass (`blocking`), does not affect it, belongs to the human review stage, is a required-checks requirement (ticket 15) or is
+ * unknown (indeterminate, never ready). `merge`/`reason`/`notes` are absent in explanations recorded before ticket 39.
+ */
+export type ModalityView = { type: string; source: string; interpretation: 'required-checks' | 'not-check-related' | 'human-stage' | 'merge-blocking' | 'unsupported';
+  merge?: 'blocking' | 'not-blocking' | 'human-stage' | 'checks' | 'unknown'; reason?: string; notes?: string[] };
 /**
  * Ticket 15 (spec §9.2): explanation of the required checks of the own PR's current head at one instant. Not readiness (ticket 16), not
  * a repair trigger (ticket 22) and not a snapshot: separate reads between `observedAt` and `completedAt`, each with its completeness.
@@ -400,8 +408,9 @@ export type ChecksEvaluation = {
   optional: CheckResultView[];
   /** Results reported for another commit than the current head (never borrowed). */
   otherSha: CheckResultView[];
-  /** Every active rule of the base and how it was interpreted; `unsupported` makes the evaluation indeterminate. */
-  modalities: { type: string; source: string; interpretation: 'required-checks' | 'not-check-related' | 'human-stage' | 'unsupported' }[];
+  /** Every active rule of the base and how it was interpreted; `unsupported` or an unknown merge impact makes the evaluation indeterminate,
+   * a `merge-blocking` rule makes it blocked (ticket 39). */
+  modalities: ModalityView[];
   completeness: Record<'pullRequest' | 'baseTip' | 'classic' | 'rules' | 'checkRuns' | 'statuses' | 'comparison' | 'recheck', string>;
   /** Local gates the Builder declared as GitHub required checks (ticket 13) versus what GitHub requires; a GitHub result never proves a local gate. */
   localGates: { declared: string[]; requiredByGitHub: string[]; notRequiredByGitHub: string[] };
@@ -413,7 +422,7 @@ export type ChecksView = { latest: ChecksEvaluation; history: { at: string; head
  * Ticket 16 (spec §3.3/§9.3): one independent reason why readiness is not established. `confirmed`: the condition is known lost or unmet
  * (the Factory restores draft when it placed ready); `uncertain`: transient, incomplete or unknown (internal confirmation withdrawn, flag kept).
  */
-export type ReadinessReason = { area: 'ownership' | 'publication' | 'content' | 'checks' | 'conflict' | 'impediment' | 'dependencies' | 'concurrency' | 'installation' | 'closed';
+export type ReadinessReason = { area: 'ownership' | 'publication' | 'content' | 'checks' | 'conflict' | 'merge' | 'impediment' | 'dependencies' | 'concurrency' | 'installation' | 'closed';
   certainty: 'confirmed' | 'uncertain'; code: string; subject?: string };
 /** The correlated external facts one evaluation used. A change of identity/head/base/requirements before a conversion invalidates it. */
 export type ReadinessBasis = { pullRequest: number; nodeId: string; headSha: string | null; baseRef: string | null; baseTip: string | null; strict: boolean;

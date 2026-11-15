@@ -61,10 +61,11 @@ test('AC2/AC6: an unknown requirement source, a non-interpretable modality or an
     { type: 'brand_new_rule', ruleset: { id: 14, sourceType: 'Repository', source: 'acme/project' } },
     { type: 'pull_request', ruleset: { id: 12, sourceType: 'Repository', source: 'acme/project' } }]) }));
   assert.equal(modalities.outcome, 'indeterminate');
+  // Ticket 39: merge_queue is known — it blocks the human merge (no supported merge path) — and stays a reason next to the indeterminate ones.
   assert.deepEqual(codes(modalities), ['indeterminate:RULE_NOT_INTERPRETABLE:workflows@ruleset:12:Repository:acme/project',
-    'indeterminate:RULE_NOT_INTERPRETABLE:merge_queue@ruleset:13:Organization:acme', 'indeterminate:RULE_NOT_INTERPRETABLE:brand_new_rule@ruleset:14:Repository:acme/project']);
-  assert.deepEqual(modalities.modalities.find(item => item.type === 'pull_request'), { type: 'pull_request', source: 'ruleset:12:Repository:acme/project', interpretation: 'human-stage' },
-    'a required human review stays visible but does not block the Factory preparation');
+    'merge:MERGE_QUEUE_NOT_SUPPORTED:merge_queue@ruleset:13:Organization:acme', 'indeterminate:RULE_NOT_INTERPRETABLE:brand_new_rule@ruleset:14:Repository:acme/project']);
+  assert.deepEqual(modalities.modalities.find(item => item.type === 'pull_request'), { type: 'pull_request', source: 'ruleset:12:Repository:acme/project', interpretation: 'human-stage',
+    merge: 'human-stage', reason: 'HUMAN_REVIEW_STAGE', notes: [] }, 'a required human review stays visible but does not block the Factory preparation');
   const empty = evaluate(observation());
   assert.deepEqual([empty.outcome, empty.requiredSet, empty.reasons], ['satisfied', 'empty-complete', []]);
   assert.ok(empty.notes.includes('REQUIRED_SET_EMPTY_FROM_COMPLETE_AUTHORIZED_READS'));
