@@ -3,27 +3,26 @@ import { test } from 'node:test';
 import { spawn } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import { prepareController } from './controller-configuration.js';
 import { githubWorld, issue, pull } from './github-world-fixture.js';
+import { ended, killTree, until } from '../runner/budget.js';
 
 // Composition: real CLI, controller owner under flock, protocol socket, Pi Durable/SQLite, adapters, issuer and gh transport.
 // Only gh/GitHub (and the App HTTPS endpoints) are substituted by the local world fixture: NOT evidence of the real GitHub boundary.
 function invoke(root: string, args: string[], fixturePath: string) {
   const child = spawn(process.execPath, ['--import', join(fixturePath, 'native-fixture.mjs'), resolve('dist/src/entrypoints/cli.js'), ...args, '--root', root, '--json'], {
     env: { PATH: `${fixturePath}:${process.env.PATH ?? ''}`, GH_TOKEN: 'synthetic-personal-not-authorized', HOME: '/forbidden-personal-profile' },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    // Own process group: a failed test kills the owner with everything it started, so the file always ends.
+    stdio: ['ignore', 'pipe', 'pipe'], detached: true,
   });
   let stdout = '', stderr = '';
   child.stdout.on('data', data => { stdout += String(data); });
   child.stderr.on('data', data => { stderr += String(data); });
-  return { child, result: new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-    child.once('error', reject); child.once('close', code => resolve({ code, stdout, stderr }));
-  }) };
+  return { child, result: ended(child, () => `factory ${args[0]} (stderr: ${stderr.slice(-300)})`).then(({ code }) => ({ code, stdout, stderr })) };
 }
 type Json = Record<string, any>;
 
-test('CLI list/show expose one durable Work per eligible Ticket across repeated polling and controller restart', { timeout: 45000 }, async t => {
+test('CLI list/show expose one durable Work per eligible Ticket across repeated polling and controller restart', async t => {
   const world = await githubWorld(t, { issues: [issue(1), issue(2), issue(3, { labels: [] })], pulls: [pull(20, { body: 'Fixes #2' })] });
   const root = world.root;
   await prepareController(root);
@@ -41,20 +40,28 @@ test('CLI list/show expose one durable Work per eligible Ticket across repeated 
   async function owner(minimumCycles: number) {
     const process = invoke(root, ['run'], root);
     let stopped = false;
-    t.after(async () => { if (!stopped) { process.child.kill('SIGTERM'); await process.result; } });
-    for (let attempt = 0; attempt < 400; attempt++) {
+    // A failed assertion must not leave the owner running (the file would never end): kill its tree, no graceful wait.
+    t.after(async () => { if (!stopped) { killTree(process.child); await process.result.catch(() => undefined); } });
+    await until(`${minimumCycles} polling cycles`, async () => {
       const status = await cli('status');
-      if (status.code === 0 && status.json!.polling.cycles >= minimumCycles) return { async stop() {
-        stopped = true; process.child.kill('SIGTERM'); const end = await process.result; assert.equal(end.code, 0, end.stderr);
-      } };
-      await delay(50);
-    }
-    throw new Error('controller did not complete polling cycles');
+      return status.code === 0 && status.json!.polling.cycles >= minimumCycles ? true : undefined;
+    }, 50);
+    return { async stop() {
+      stopped = true; process.child.kill('SIGTERM'); const end = await process.result; assert.equal(end.code, 0, end.stderr);
+    } };
   }
+  // The owner polls every second, and a new round renews the current attempt before it re-evaluates dependencies: a `list` landing
+  // mid-round rightly reports DEPENDENCIES_NOT_CURRENT. Assertions about a settled round take a list whose own snapshot shows the
+  // poller sleeping: its polling view is computed with the Works' reasons, after the Works were read with only one storage read in
+  // between, which no polling round (several gh calls) can start and finish within.
+  const settledList = () => until('a list between two polling rounds', async () => {
+    const listed = await cli('list');
+    assert.equal(listed.code, 0, listed.stderr);
+    return listed.json!.polling.state === 'sleeping' ? listed : undefined;
+  }, 10);
 
   let running = await owner(3);
-  const listed = await cli('list');
-  assert.equal(listed.code, 0, listed.stderr);
+  const listed = await settledList();
   const view = listed.json!;
   assert.equal(view.kind, 'list');
   assert.equal(view.dispatch, 'closed');

@@ -3,7 +3,12 @@ import { budgetExceeded, budgetsMs, formatReport, planLanes, shuffle,
 import type { MachineLock } from './lock.ts';
 
 export interface RunOptions { tier: Tier; filters: readonly string[]; seed?: number; budgetMs?: number }
-export interface FileRun { sandboxRoot?: string; randomSeed?: number }
+/**
+ * What a test file receives from its run. `deadline` (epoch ms) is the tier's budget end: a file derives any guard against a hung
+ * child or condition from it instead of a fixed timeout. `shared` is a private directory of this run, removed at its end, for
+ * expensive read-only preparations several files reuse (e.g. one release build).
+ */
+export interface FileRun { sandboxRoot?: string; randomSeed?: number; deadline?: number; shared?: string }
 
 /** Every effect the orchestration needs; real implementations live in steps.ts, tests inject doubles. */
 export interface Steps {
@@ -19,6 +24,7 @@ export interface Steps {
   loadTimings(): Promise<Record<string, number>>;
   saveTimings(timings: Record<string, number>): Promise<void>;
   sandboxRoot(): Promise<{ path: string; cleanup(): Promise<void> }>;
+  runDirectory(): Promise<{ path: string; cleanup(): Promise<void> }>;
   runFile(file: string, run: FileRun, signal: AbortSignal): Promise<FileResult>;
 }
 
@@ -55,7 +61,7 @@ export async function runTier(options: RunOptions, steps: Steps): Promise<Outcom
     const timer = budgetMs === undefined ? undefined : setTimeout(() => controller.abort(), budgetMs);
     const summary: RunSummary = { tier, lockWaitMs: lock?.waitedMs ?? 0, totalMs: 0, budgetMs, load: { start: load, end: load },
       static: [], lanes: [], quarantined: [], skippedSlow: [], filtered: options.filters.length > 0, failures: [] };
-    let sandbox: { path: string; cleanup(): Promise<void> } | undefined;
+    let sandbox: { path: string; cleanup(): Promise<void> } | undefined, shared: { path: string; cleanup(): Promise<void> } | undefined;
     try {
       summary.static = await steps.staticAnalysis(tier, controller.signal);
       for (const step of summary.static) if (!step.ok) {
@@ -69,7 +75,8 @@ export async function runTier(options: RunOptions, steps: Steps): Promise<Outcom
         const plan = planLanes(tier, files, manifest, steps.cpus, timings);
         summary.quarantined = plan.quarantined;
         summary.skippedSlow = plan.skippedSlow;
-        const run: FileRun = {};
+        shared = await steps.runDirectory();
+        const run: FileRun = { shared: shared.path, ...(budgetMs === undefined ? {} : { deadline: started + budgetMs }) };
         if (tier === 'full') { sandbox = await steps.sandboxRoot(); run.sandboxRoot = sandbox.path; }
         summary.lanes.push(await lane('parallel', plan.parallel, plan.concurrency, run, steps, controller.signal));
         summary.lanes.push(await lane('serial', plan.serial, 1, run, steps, controller.signal));
@@ -89,6 +96,7 @@ export async function runTier(options: RunOptions, steps: Steps): Promise<Outcom
     } finally {
       if (timer) clearTimeout(timer);
       await sandbox?.cleanup();
+      await shared?.cleanup();
     }
     summary.totalMs = steps.now() - started;
     summary.load.end = steps.loadAverage();

@@ -1,19 +1,27 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { availableParallelism, homedir, loadavg } from 'node:os';
+import { availableParallelism, homedir, loadavg, tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { checkInstalledDependencies } from './deps.ts';
 import { parseManifest, parseTapCounts, type FileResult, type StepResult, type Tier } from './lib.ts';
 import { acquireMachineLock, machineLockPath } from './lock.ts';
-import type { Steps } from './runner.ts';
+import type { FileRun, Steps } from './runner.ts';
 
 /** The handoff's Node prefix, applied to every child: no inherited NODE_OPTIONS/compile cache. */
 export function childEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const result: NodeJS.ProcessEnv = { ...env, NODE_DISABLE_COMPILE_CACHE: '1' };
   // Real-disk sandbox tests run only in full, against a fresh private root (never an inherited one).
-  for (const name of ['NODE_OPTIONS', 'NODE_COMPILE_CACHE', 'FACTORY_SANDBOX_TEST_ROOT', 'FACTORY_TEST_ROOT']) delete result[name];
+  // The run's deadline and shared directory come only from this run (fileEnvironment), never from an enclosing one.
+  for (const name of ['NODE_OPTIONS', 'NODE_COMPILE_CACHE', 'FACTORY_SANDBOX_TEST_ROOT', 'FACTORY_TEST_ROOT', 'FACTORY_TEST_DEADLINE', 'FACTORY_TEST_RUN_DIRECTORY']) delete result[name];
   return result;
+}
+
+/** The environment of one test file: the child environment plus what its run gives it (see FileRun). */
+export function fileEnvironment(childEnv: NodeJS.ProcessEnv, run: FileRun): NodeJS.ProcessEnv {
+  return { ...childEnv, ...(run.sandboxRoot ? { FACTORY_SANDBOX_TEST_ROOT: run.sandboxRoot } : {}),
+    ...(run.deadline === undefined ? {} : { FACTORY_TEST_DEADLINE: String(run.deadline) }),
+    ...(run.shared ? { FACTORY_TEST_RUN_DIRECTORY: run.shared } : {}) };
 }
 
 interface Exit { code: number | null; output: string; ms: number }
@@ -123,11 +131,14 @@ export function realSteps(root: string, env: NodeJS.ProcessEnv, log: (line: stri
       await mkdir(path, { mode: 0o700 });
       return { path, cleanup: () => rm(parent, { recursive: true, force: true }) };
     },
+    runDirectory: async () => {
+      const path = await mkdtemp(join(tmpdir(), 'sf-test-run-'));
+      return { path, cleanup: () => rm(path, { recursive: true, force: true }) };
+    },
     runFile: async (file, run, signal) => {
       const args = ['--experimental-test-module-mocks', '--test', '--test-reporter=tap',
         ...(run.randomSeed === undefined ? [] : ['--test-randomize', `--test-random-seed=${run.randomSeed}`]), distFile(file)];
-      const fileEnv = run.sandboxRoot ? { ...childEnv, FACTORY_SANDBOX_TEST_ROOT: run.sandboxRoot } : childEnv;
-      const exit = await execute(node, args, root, fileEnv, signal);
+      const exit = await execute(node, args, root, fileEnvironment(childEnv, run), signal);
       const result: FileResult = { file, ms: exit.ms, ok: exit.code === 0 && !signal.aborted, counts: parseTapCounts(exit.output) };
       if (!result.ok) result.output = signal.aborted ? `${file}: stopped by the tier budget` : exit.output;
       return result;

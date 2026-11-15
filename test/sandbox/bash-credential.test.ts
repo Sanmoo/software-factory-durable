@@ -12,7 +12,7 @@ import type { GuestOwner, ToolContext } from '../../src/sandbox/read-tools.js';
 const context: ToolContext = { workId: 'work', executionId: 'execution', invocationId: 'invocation', role: 'builder', environmentRef: 'environment', bootRef: 'boot', phaseId: 'phase' };
 const token = 'ghs_syntheticBuilderToken0123456789';
 
-async function harness(t: { after(fn: () => Promise<void>): void }, credential?: { token: string }, gate?: Promise<void>) {
+async function harness(t: { after(fn: () => Promise<void>): void }, credential?: { token: string }, gate?: Promise<void>, inFlight?: () => void) {
   const root = await mkdtemp('/tmp/bcred-');
   t.after(() => rm(root, { recursive: true, force: true }));
   const records = await createRecords({ root });
@@ -22,7 +22,7 @@ async function harness(t: { after(fn: () => Promise<void>): void }, credential?:
     seen.push({ argv, env: options.env, stdin: options.stdin });
     const output = execFileSync(argv[0]!, argv.slice(1).map(arg => arg.replaceAll('/workspace', root)), { input: typeof options.stdin === 'string' ? options.stdin : '', cwd: root, env: {} });
     const first = seen.length === 1;
-    return { async *output() { if (first && gate) await gate; yield { stream: 'stdout' as const, data: output }; }, result: Promise.resolve({ exitCode: 0 }) };
+    return { async *output() { if (first && gate) { inFlight?.(); await gate; } yield { stream: 'stdout' as const, data: output }; }, result: Promise.resolve({ exitCode: 0 }) };
   } };
   const signal = new AbortController();
   // The owner's mutable in-memory holder: renewal replaces the value, withdrawal clears it (ticket 20).
@@ -66,10 +66,13 @@ test('AC5: without a delivered credential the exact previous guest argv/stdin is
 test('ticket 20 AC2: a renewed credential reaches only NEW commands; a command already running keeps the environment it started with', async t => {
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
-  const h = await harness(t, { token }, gate);
+  let entered!: () => void;
+  const inFlight = new Promise<void>(resolve => { entered = resolve; });
+  const h = await harness(t, { token }, gate, entered);
   const renewed = 'ghs_syntheticRenewedToken9876543210';
   const running = h.run('echo "running:${#GH_TOKEN}"');
-  await new Promise(resolve => setTimeout(resolve, 20));
+  // The event, not a sleep: the owner is consuming the first command's output, which the gate holds open.
+  await inFlight;
   assert.equal(h.seen.length, 1, 'the first command is in flight');
   // Renewal delivered while the first command runs: registered for filtering first, then swapped in memory.
   h.records.registerSecret(renewed);

@@ -11,6 +11,7 @@ import { createCodeRepository } from '../../src/code-repository/index.js';
 import { githubWorld, issue, worldScope } from './github-world-fixture.js';
 import { manualClock } from '../control/doubles.js';
 import { executionDoubles, type Activation } from '../control/publication-doubles.js';
+import { until } from '../runner/budget.js';
 
 // I-local composition (ticket 14): REAL Control + Pi Durable/SQLite, REAL GitHubAccess issuer/transport, IssueTracker, CodeRepository and
 // Builder credentials, with ticket 13's real review rounds; gh/GitHub (and App HTTPS) substituted by the local world fixture, Sandbox and
@@ -55,11 +56,15 @@ test('AC1/AC2/AC6 composition: real adapters discover absence, the Builder publi
   t.after(async () => { if (!stop.signal.aborted) { stop.abort(); await running; } });
   await time.sleeping();
   const work = async () => ((await control.inspect({ kind: 'list' })) as ListView).works[0] as WorkView | undefined;
-  for (let i = 0; i < 600 && (await work())?.publication?.state !== 'published'; i++) {
+  // No fixed iteration count: re-inspect (advancing the manual polling clock whenever the poller sleeps) until published, bounded only
+  // by the runner budget. The last view seen is named if it never gets there.
+  let last: WorkView | undefined;
+  const final = await until(() => `publication published; last: ${JSON.stringify(last?.publication ?? null)}`, async () => {
+    last = await work();
+    if (last?.publication?.state === 'published') return last;
     if (time.isSleeping()) time.advance();
-    await new Promise(resolve => setTimeout(resolve, 10));
-  }
-  const final = (await work())!;
+    return undefined;
+  }, 10);
   assert.equal(final.publication?.state, 'published', JSON.stringify(final.publication?.reasons));
   assert.deepEqual(statuses, [201, 201], 'the Builder created its branch and its draft PR with ITS grant');
   assert.deepEqual([final.publication!.pullRequest!.author.login, final.publication!.pullRequest!.draft, final.publication!.pullRequest!.headSha],
