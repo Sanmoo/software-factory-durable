@@ -3,7 +3,7 @@
 Status: open
 Type: prototype
 Label: wayfinder:prototype
-Map: [Software Factory v2 — sandbox AWS Lambda MicroVMs](../map.md)
+Map: [Software Factory v2 — ambientes reconstruíveis e harnesses substituíveis](../map.md)
 Blocked by: 01
 
 ## Question

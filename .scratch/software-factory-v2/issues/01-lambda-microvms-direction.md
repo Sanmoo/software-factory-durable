@@ -5,7 +5,7 @@ Assignee: operador, assistido pelo agente desta sessão
 Claim context: registro retrospectivo da entrevista aprovada; branch docs/software-factory-v2-lambda, worktree .worktrees/software-factory-v2-lambda/; destino main no checkout principal, sem push.
 Type: grilling
 Label: wayfinder:grilling
-Map: [Software Factory v2 — sandbox AWS Lambda MicroVMs](../map.md)
+Map: [Software Factory v2 — ambientes reconstruíveis e harnesses substituíveis](../map.md)
 Blocked by: none
 
 ## Question

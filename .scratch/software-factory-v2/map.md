@@ -1,56 +1,92 @@
-# Software Factory v2 — sandbox AWS Lambda MicroVMs
+# Software Factory v2 — ambientes reconstruíveis e harnesses substituíveis
 
 Status: open
 Label: wayfinder:map
 
 ## Destination
 
-Avaliar um adapter AWS Lambda MicroVMs e definir a revisão pós-MVP do contrato de sandbox,
-permitindo ambientes reconstruíveis e duração limitada sem exigir VFS ou disco persistente.
-Chegar a um desenho sustentado por provas, não declarar o serviço homologado por pesquisa documental.
+Definir e validar a arquitetura da Software Factory v2 para ambientes reconstruíveis e harnesses
+substituíveis, preservando a continuidade do Trabalho e a autoridade do controlador. Investigar AWS
+Lambda MicroVMs como sandbox e Pi/Claude Code como harnesses concretos, incluindo assinatura própria
+do Operador, sem prometer combinações universais nem homologação por pesquisa documental.
 
 ## Notes
 
-- Esforço pós-MVP autorizado pelo operador. O [PRD](../software-factory/prd.md),
-  a [spec](../software-factory/spec.md) e os tickets de implementação do MVP permanecem intactos.
-- Preferir serviços gerenciados/serverless da AWS; não usar EC2 própria como etapa prévia.
-  A investigação atual concentra-se em Lambda MicroVMs, não numa comparação geral de provedores.
-- Instalação de um operador na própria conta AWS; sem SaaS, multi-tenant ou HA.
-- Usar o vocabulário do PRD. Boot identifica uma ativação concreta do ambiente, não um novo Trabalho.
-  Não criar glossário global ou promover propostas superadas a conceitos do domínio.
+- Um único mapa coordena as duas trilhas e sua convergência. Pesquisas/provas independentes podem
+  avançar em paralelo; contratos compartilhados precisam de decisão e especificação integradas.
+  A investigação de harness não espera a prova Lambda, mas não homologa a composição com ela.
+- O [PRD](../software-factory/prd.md), a [spec](../software-factory/spec.md) e os tickets do MVP
+  permanecem intactos. As direções aprovadas vivem nos respectivos Answers; ampliar este mapa não
+  reinterpreta a decisão de Lambda como aprovação prévia de Claude ou de uma interface nova.
+- Preservar os limites da trilha AWS: gerenciados/serverless, sem EC2 própria como etapa prévia;
+  instalação de um Operador na própria conta, sem SaaS, multi-tenant ou HA. Não comparar provedores
+  genericamente nem adicionar seleção automática, Slots por adapter ou política híbrida por suposição.
+- Usar o vocabulário do PRD. Boot é uma ativação do ambiente, não um novo Trabalho. Harness e sandbox
+  são escolhas distintas; continuidade do Trabalho não exige conservar sessão nativa ou disco.
+  Não criar glossário global nem promover propostas superadas a conceitos do domínio.
 - Seguir o [tracker local](../../docs/agents/issue-tracker.md): tipos/labels `wayfinder:*`,
-  dependências numéricas, `Status: claimed` antes de trabalhar e `## Answer` ao resolver.
-  Aprovação de desenho não comprova viabilidade técnica.
-- A resolução de cada decisão vive no Answer do respectivo ticket; este mapa recebe somente sínteses.
-  Consultar os filhos abertos, desbloqueados e não reivindicados em ordem numérica.
-- Registro desta sessão: branch `docs/software-factory-v2-lambda`, worktree
-  `.worktrees/software-factory-v2-lambda/`; destino `main` no checkout principal deste repositório.
-  Integração local fast-forward e limpeza autorizadas; sem push.
-- Nenhum recurso AWS foi provisionado neste registro. O protótipo tem concordância em princípio,
-  mas exige confirmação específica de conta, região, permissões, orçamento e cleanup antes de executar.
+  dependências numéricas, `Status: claimed` antes do trabalho e `## Answer` ao resolver. Resolução
+  canônica fica no ticket; o mapa recebe sínteses. Consultar filhos abertos, desbloqueados e não
+  reivindicados em ordem numérica; a estrutura abaixo não duplica uma lista de status abertos.
+- Antes de fechar o mapa, resolver lacunas de composição e rastrear requisitos, contratos e aceite
+  integrado. Distinguir aprovação documental, evidência dos protótipos e homologação de produção.
+  Prova necessária ainda ausente exige filho explícito, não suposição na spec.
+- Proveniência do registro inicial: branch `docs/software-factory-v2-lambda`, worktree
+  `.worktrees/software-factory-v2-lambda/`, integração local em main sem push.
+- Registro desta ampliação: branch `docs/v2-unified-map`, worktree `.worktrees/v2-unified-map/`;
+  destino main no checkout principal, integração local fast-forward e limpeza, sem push.
+- Esta ampliação só registra planejamento. Não executa provas, modelos, login ou uso de credenciais,
+  não instala serviços nem provisiona recursos. Cada experimento exige confirmação específica de
+  ambiente/conta, permissões, limites de consumo/prazo/custo e cleanup no seu ticket.
+
+## Work structure
+
+As dependências canônicas são os campos `Blocked by:` dos tickets. A convergência não transforma
+as trilhas em sequência única nem permite aprovar contratos de composição independentemente.
+
+- **Sandbox:** [direção Lambda](issues/01-lambda-microvms-direction.md#answer) →
+  [prova Docker e transporte](issues/02-lambda-microvms-prototype.md).
+- **Harness:** [direção de substituição](issues/04-substitutable-harnesses-direction.md#answer) →
+  [investigar interface existente](issues/05-execution-seam-research.md) →
+  [especificar a prova](issues/06-harness-proof-spec.md) →
+  [prova Pi/Claude](issues/07-harness-compatibility-prototype.md).
+- **Convergência:** ambas as provas →
+  [decidir a composição](issues/08-runtime-sandbox-composition-decision.md) →
+  [consolidar PRD/spec e contratos da v2](issues/03-revised-sandbox-contract.md).
+  Evidências cruzadas adicionais e implementação/validação integrada futura devem ganhar filhos
+  quando o escopo necessário estiver definido, sem inventar uma implementação já autorizada.
 
 ## Decisions so far
 
-- [Definir a direção da v2 para Lambda MicroVMs](issues/01-lambda-microvms-direction.md):
-  contrato por propriedades/capacidades, preservação via Git remoto antes das esperas humanas,
-  reconstrução entre boots e transporte SSH/WebSocket como primeira hipótese a provar;
-  sem alteração do MVP nem homologação de Docker ou do transporte.
+- [Definir a direção da v2 para Lambda MicroVMs](issues/01-lambda-microvms-direction.md#answer):
+  contrato por propriedades/capacidades, preservação Git remoto antes das esperas humanas,
+  reconstrução entre boots e transporte SSH/WebSocket como hipótese; sem alteração do MVP nem
+  homologação de Docker ou transporte.
+- [Definir a direção da v2 para harnesses substituíveis](issues/04-substitutable-harnesses-direction.md#answer):
+  Pi/Claude com seleção por papel, assinatura própria do Operador e continuidade por sessão substituta;
+  mudança por parada/configuração/reinício, sem comando de troca nem migração de transcripts.
+  Provas próprias convergem neste mapa e no PRD/spec integrado, sem fallback ou execução autorizada.
 
 ## Not yet specified
 
-As provas e a revisão implementável são os próximos passos, não decisões resolvidas por este mapa:
-
-- Compatibilidade real de Docker, Compose, Testcontainers/Ryuk, DNS, binds e portas.
-- Viabilidade e custo operacional de SSH sobre WebSocket no ingresso de produção da Lambda.
-- Limites atuais do serviço, evidência de cessação e proteção de rede/credenciais.
-- Detalhamento do gate Git, reconstrução, rotação de boot e compatibilidade de sessão.
-- Interface/configuração revisadas, impacto nos contratos existentes e matriz de aceite da v2.
+- Compatibilidade real de Docker/Compose/Testcontainers/Ryuk, DNS, binds e portas em Lambda.
+- Viabilidade de SSH/WebSocket, limites, custo e evidências de cessação/rede/credenciais do serviço.
+- Encaixe de CLI/Agent SDK, ferramentas e perfil Claude com as interfaces existentes, sem camada
+  redundante; condições atuais da assinatura e propriedades efetivas de isolamento por papel.
+- Detalhes do gate Git, reconstrução, rotação e contexto independente de transcript; compatibilidade
+  de sessão, perfis versionados e recuperação entre harnesses após reconfiguração da instalação.
+- Localização de loops/ferramentas e combinações harness/sandbox suportadas; capacidades mínimas,
+  diagnósticos e provas cruzadas que impeçam aprovação isolada de contratos incompatíveis.
+- Configuração/instalação revisadas, custos/quotas, observabilidade/retenção, impacto nos contratos
+  existentes e matriz de aceite integrada da v2.
 
 ## Out of scope
 
-- Implementar o adapter ou revisar agora o PRD/spec aprovado do MVP.
-- Provisionar AWS, instalar serviços no host ou executar o protótipo sem a confirmação específica.
-- Prometer suporte a Docker, restauração de RAM, snapshots transferíveis ou SSH funcional antes da prova.
-- Adotar S3/git bundle como checkpoint inicial, serviço exec próprio ou outro motor de controle por suposição.
-- Definir seleção automática de adapter, Slots por adapter ou política híbrida sem decisão posterior.
+- Alterar retroativamente o PRD/spec e as decisões aprovadas do MVP.
+- Implementar adapters de produção ou executar provas a partir desta aprovação de planejamento.
+- Compartilhar/intermediar assinatura, extrair tokens, contornar quotas ou fallback pago silencioso.
+- Comando de troca em operação, migração universal de transcripts, framework genérico de plugins,
+  roteamento automático ou promessa de qualquer combinação harness/sandbox.
+- Prometer Docker, restauração de RAM, snapshots transferíveis ou SSH funcional antes das provas.
+- Adotar S3/git bundle como checkpoint inicial, serviço exec próprio ou outro motor por suposição.
 - Publicar branches, GitHub Issues, PRs ou recursos externos automaticamente.
