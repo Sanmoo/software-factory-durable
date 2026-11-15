@@ -22,7 +22,7 @@ repositories: []
 `;
 
 /** A release tree `releases/<id>` with a valid manifest; `storage` false omits the ticket-33 declaration (a pre-33 release: format 1 only). */
-export async function fakeRelease(root: string, id: string, options: { storage?: boolean; skillPack?: string } = {}) {
+export async function fakeRelease(root: string, id: string, options: { storage?: boolean; skillPack?: string; configurationSchema?: number | null } = {}) {
   const directory = join(root, 'releases', id);
   await mkdir(join(directory, 'dist'), { recursive: true, mode: 0o700 });
   await writeFile(join(directory, 'dist', 'marker.txt'), `release ${id}\n`, { mode: 0o644 });
@@ -33,7 +33,8 @@ export async function fakeRelease(root: string, id: string, options: { storage?:
     guestAssets: { path: `assets/guest/${assetsSha256}`, manifestSha256: assetsSha256, files: await inventoryTree(assets) },
     production: { id: productionProfile.id, sdkProfileId: productionProfile.sdkProfileId, builder: { skillPack: options.skillPack ?? 'factory-skills-v5' } },
     qualification: { status: 'unqualified', statement: 'synthetic' },
-    metadata: { protocol: { version: 1 }, ...(options.storage === false ? {} : { storage: { format: 2, migratesFrom: [1] } }) },
+    metadata: { protocol: { version: 1 }, ...(options.configurationSchema === null ? {} : { formats: { configuration: options.configurationSchema ?? 1 } }),
+      ...(options.storage === false ? {} : { storage: { format: 2, migratesFrom: [1] } }) },
     files: await inventoryTree(directory) };
   const bytes = JSON.stringify(manifest) + '\n';
   await writeFile(join(directory, 'release-manifest.json'), bytes, { mode: 0o644 });
@@ -43,7 +44,7 @@ export async function fakeRelease(root: string, id: string, options: { storage?:
 }
 
 /** Root with `previous` selected by its launcher and `target` extracted next to it (not selected). */
-export async function installation(options: { previousStorage?: boolean } = {}) {
+export async function installation(options: { previousStorage?: boolean; previousConfigurationSchema?: number | null } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'factory-upgrade-'));
   for (const name of ['releases', 'assets', 'credentials', 'data', 'environments', 'run']) await mkdir(join(root, name), { mode: 0o700 });
   const assets = join(root, 'assets', 'guest', assetsSha256);
@@ -53,7 +54,8 @@ export async function installation(options: { previousStorage?: boolean } = {}) 
     await writeFile(join(assets, name), text, { mode: 0o644 });
   }
   await writeFile(join(root, 'config.yaml'), configuration, { mode: 0o600 });
-  const previous = await fakeRelease(root, 'mvp-32.1', { storage: options.previousStorage ?? false, skillPack: 'factory-skills-v4' });
+  const previous = await fakeRelease(root, 'mvp-32.1', { storage: options.previousStorage ?? false, skillPack: 'factory-skills-v4',
+    ...(options.previousConfigurationSchema !== undefined ? { configurationSchema: options.previousConfigurationSchema } : {}) });
   await writeFile(join(root, 'factory'), previous.launcher, { mode: 0o755 });
   const target = await fakeRelease(root, 'mvp-33.1');
   const context: UpgradeContext = { root, storagePath: join(root, 'data', 'control.sqlite'),

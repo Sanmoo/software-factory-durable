@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { inspectStorage, openControl, type StorageInspection } from '../../src/control/index.js';
 import { readJournal, upgrade, upgradeBlocksStart, type UpgradeReport } from '../../src/entrypoints/controller/upgrade.js';
 import { verifyReleaseTree } from '../../src/entrypoints/release.js';
-import { storageWithPendingQuestion, writeFormatOne } from '../control/upgrade-fixture.js';
+import { crashAfterStart, reconcilingRun, storageWithPendingQuestion, writeFormatOne } from '../control/upgrade-fixture.js';
 import { installation } from './upgrade-fixture.js';
 
 // I-local (ticket 33): the real upgrade logic against an installation root with real manifests/launchers of synthetic release trees and a
@@ -232,4 +232,44 @@ test('rollback applies the same pre-checks as apply (pause, stop, environments, 
   t.after(() => rm(fresh.root, { recursive: true, force: true }));
   assert.equal((await upgrade(fresh.context, 'apply')).code, 'UPGRADE_COMPLETED');
   assert.equal((await upgrade(fresh.context, 'rollback')).code, 'ROLLBACK_FORMAT_UNKNOWN');
+});
+
+test('after an interruption, only a run that performed ticket 26\'s boot reconciliation and then stopped cleanly is clean-stop evidence', async t => {
+  const fixture = await installation({ previousStorage: true });
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  await storageWithPendingQuestion(fixture.context.storagePath);
+  await chmod(fixture.context.storagePath, 0o600);
+  await crashAfterStart(fixture.context.storagePath, 'killed-run'); // The process dies after its start commit.
+  const stopOf = async () => (await upgrade(fixture.context, 'check')).checks.find(item => item.id === 'upgrade:stop')!;
+  assert.equal((await stopOf()).status, 'blocked');
+  // Runs without execution boundaries reconcile nothing: even stopped cleanly, the interruption stays pending.
+  for (let i = 0; i < 2; i++) {
+    const control = await openControl({ storagePath: fixture.context.storagePath, runtimeInventory: 'unknown' });
+    const stop = new AbortController();
+    const running = control.run(stop.signal);
+    for (let j = 0; j < 200 && !(storageOf(await inspectStorage(fixture.context.storagePath)).installation?.lifecycle as { current?: unknown } | null)?.current; j++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    stop.abort();
+    assert.deepEqual(await running, { kind: 'clean' });
+    const stopped = await stopOf();
+    assert.deepEqual([stopped.status, /reconcil/.test(stopped.message)], ['blocked', true]);
+  }
+  // A reconciling boot (26) followed by a clean stop settles it.
+  const reconciled = await reconcilingRun(fixture.context.storagePath);
+  assert.deepEqual(reconciled.end, { kind: 'clean' });
+  assert.notEqual(reconciled.recovery, null);
+  assert.equal((await stopOf()).status, 'ok');
+});
+
+test('rollback validates config.yaml with the current rules only when the previous release declares the same configuration schema', async t => {
+  for (const schema of [2, null]) {
+    const fixture = await installation({ previousStorage: true, previousConfigurationSchema: schema });
+    t.after(() => rm(fixture.root, { recursive: true, force: true }));
+    await storageWithPendingQuestion(fixture.context.storagePath);
+    await chmod(fixture.context.storagePath, 0o600);
+    assert.equal((await upgrade(fixture.context, 'apply')).code, 'UPGRADE_COMPLETED');
+    assert.equal((await upgrade(fixture.context, 'rollback')).code, 'ROLLBACK_CONFIGURATION_UNVERIFIABLE', String(schema));
+    assert.equal(sha(await readFile(join(fixture.root, 'factory'))), fixture.target.manifest.launcher.sha256);
+  }
 });

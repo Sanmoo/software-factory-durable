@@ -5,6 +5,8 @@ import { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node';
 import { createSession, defineDoc, defineDocFamily, type Cursor, type DocumentRecord, type JsonObject } from '@earendil-works/pi-durable';
 import { SqliteStorage } from '@earendil-works/pi-durable/storage/sqlite';
 import { openControl } from '../../src/control/index.js';
+import { openStore } from '../../src/control/durable/store.js';
+import { recordRunStart } from '../../src/control/durable/migration.js';
 import type { Control, ControlReceipt, ExecutionPorts, ListView, ShowView } from '../../src/control/types.js';
 import type { WorkerQuestion } from '../../src/workers/index.js';
 import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
@@ -149,4 +151,26 @@ export async function storageStoppedWithLiveActivity(storagePath: string) {
   }
   stop.abort();
   return running;
+}
+
+/** One owner run with the execution boundaries composed and a listed (empty) inventory: ticket 26's boot reconciliation runs; clean stop. */
+export async function reconcilingRun(storagePath: string) {
+  const remote: Remote = { pulls: {}, issues: [] };
+  const github = githubDoubles(remote);
+  const time = manualClock();
+  const control: Control = await openControl({ storagePath, runtimeInventory: 'empty', execution: ports(true),
+    access: { tracker: github.tracker, repository: github.repository, repositories: [scope], operators: ['operator-one'] }, polling: { intervalSeconds: 60, clock: time.clock } });
+  const stop = new AbortController();
+  const running = control.run(stop.signal);
+  await time.sleeping();
+  const status = await control.inspect({ kind: 'status' }) as { recovery: unknown };
+  stop.abort();
+  return { end: await running, recovery: status.recovery };
+}
+
+/** The durable state a controller killed right after its start commit leaves behind (no end is ever recorded). */
+export async function crashAfterStart(storagePath: string, runId: string) {
+  const store = await openStore(storagePath);
+  await recordRunStart(store.session, runId);
+  await store.close();
 }

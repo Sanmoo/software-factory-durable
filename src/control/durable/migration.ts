@@ -65,17 +65,20 @@ export async function recordRunStart(session: Session, runId: string): Promise<C
     // Plain copies: transaction documents are not readable after the commit.
     const previous = doc.lifecycle.current ? { runId: doc.lifecycle.current.runId, startedAt: doc.lifecycle.current.startedAt, end: 'crash' as const }
       : doc.lifecycle.last ? JSON.parse(JSON.stringify(doc.lifecycle.last)) as ControllerRunEnd : null;
-    doc.lifecycle.current = { runId, startedAt: new Date().toISOString() };
+    const pending = previous !== null && (previous.end !== 'clean' || (previous as ControllerRunEnd).reconciliationPending === true);
+    doc.lifecycle.current = { runId, startedAt: new Date().toISOString(), pendingReconciliation: pending };
     return previous;
   }, BACKGROUND_CONTEXT);
 }
 
 /** Ticket 33: the end of this run, recorded only after the cessation/persistence outcome is known; never written for a crash. */
-export async function recordRunEnd(session: Session, runId: string, end: ControllerRunEnd['end']) {
+export async function recordRunEnd(session: Session, runId: string, end: ControllerRunEnd['end'], facts: { reconciled: boolean } = { reconciled: false }) {
   await session.commit(async tx => {
     const doc = await tx.doc(installation);
     if (doc.lifecycle.current?.runId !== runId) return;
-    doc.lifecycle.last = { runId: doc.lifecycle.current.runId, startedAt: doc.lifecycle.current.startedAt, endedAt: new Date().toISOString(), end };
+    const pending = (doc.lifecycle.current.pendingReconciliation === true && !facts.reconciled) || end !== 'clean';
+    doc.lifecycle.last = { runId: doc.lifecycle.current.runId, startedAt: doc.lifecycle.current.startedAt, endedAt: new Date().toISOString(), end,
+      reconciled: facts.reconciled, reconciliationPending: pending };
     doc.lifecycle.current = null;
   }, BACKGROUND_CONTEXT);
 }

@@ -29,8 +29,10 @@ const dependencyRepository = z.strictObject({
   repository: text.regex(/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/),
   installationId: positive,
 });
+/** config.yaml schema version this release validates (declared in the release manifest as metadata.formats.configuration). */
+export const configurationSchemaVersion = 1;
 const schema = z.strictObject({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(configurationSchemaVersion),
   // Login, or {login, id}: the pinned immutable GitHub user id (comments then match by id only; spec §11.3 authorized operator).
   operators: z.array(z.union([login, z.strictObject({ login, id: positive })]))
     .refine(values => new Set(values.map(value => (typeof value === 'string' ? value : value.login).toLowerCase())).size === values.length)

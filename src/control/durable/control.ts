@@ -247,7 +247,7 @@ export async function openControl(options: { storagePath: string;
         // activities ticket 26's dispatcher stop confirmed ceased and persisted; otherwise `uncertain`. The intention to stop never makes an
         // interruption clean; the next boot reconciles it (26). This end is the LAST commit of the run.
         const kind = outcome !== 'stop' ? 'failed' as const : uncertain ? 'uncertain' as const : 'clean' as const;
-        if (started) await recordRunEnd(state, controller_run_id, kind);
+        if (started) await recordRunEnd(state, controller_run_id, kind, { reconciled: recovery !== null });
         await state.close(BACKGROUND_CONTEXT);
         const end = await state.closed;
         return { kind: end.kind === 'closed' ? kind : 'failed' };

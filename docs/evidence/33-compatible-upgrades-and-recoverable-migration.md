@@ -156,3 +156,16 @@ done
 - 167 arquivos de teste um por vez: 1054 pass, 0 fail, 10 skip (gondolin `skip: true`).
 - O resultado de `run` mantém o significado anterior ao 26 (o 26 decide `uncertain` para ele); o fim
   durável registrado é `uncertain` sempre que a atividade não está assentada.
+
+### Rebase sobre o ticket 26 (integração 4f56f25)
+
+- Fonte única do fim de run: o resultado de parada do 26 (`uncertain` quando a cessação de uma atividade viva
+  não é confirmada) alimenta `recordRunEnd` e o resultado de `run`. Uma Execução encerrada antes com cessação
+  não confirmada não é atividade viva dessa parada, mas segue visível como atividade não assentada no upgrade.
+- Composição com a reconciliação de boot do 26: cada run registra se fez a reconciliação (`reconciled`) e se
+  uma interrupção anterior continua pendente (`reconciliationPending`). Após crash/`uncertain`/`failed`, só um
+  run que fez a reconciliação do 26 e parou limpo libera `upgrade:stop`; runs sem fronteiras de execução
+  mantêm a pendência.
+- Rollback valida `config.yaml` com as regras atuais só se a release anterior declara o mesmo
+  `metadata.formats.configuration`; senão `ROLLBACK_CONFIGURATION_UNVERIFIABLE`.
+- O commit "keep the run result for ticket 26" ficou obsoleto e foi descartado no rebase.

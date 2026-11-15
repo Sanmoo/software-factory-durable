@@ -10,7 +10,7 @@ import { controlStorageMigrations, inspectStorage, migrateStorage, type StorageI
 import { protocolVersion } from '../../protocol/index.js';
 import { controllerPaths, verifyControllerLock } from '../../platform/host/index.js';
 import { environmentDependencies } from '../../sandbox/index.js';
-import { readConfiguration } from '../configuration.js';
+import { configurationSchemaVersion, readConfiguration } from '../configuration.js';
 import { applicationRoot, inspectRelease, parseReleaseManifest, productionModelChecks, productionProfile, releaseIdSchema, releaseLauncher,
   releaseManifestName, releaseStorageSupport, verifyReleaseTree, type ReleaseManifest } from '../release.js';
 
@@ -160,13 +160,14 @@ async function compatibility(context: UpgradeContext, phase: 'before-migration' 
     checks.push(check('upgrade:pause', paused === true || inspection.format === null, paused === true ? 'Installation paused: the new release starts paused.'
       : inspection.format === null ? 'Empty storage: nothing to pause.' : 'Installation not paused.',
     'With the current release: `factory pause`, then stop the controller (Ctrl+C or service stop) and confirm the clean exit; then check again.'));
-    const lifecycle = inspection.installation?.lifecycle as { current: { runId: string } | null; last: { end: string; runId: string } | null } | null | undefined;
+    const lifecycle = inspection.installation?.lifecycle as { current: { runId: string } | null; last: { end: string; runId: string; reconciliationPending?: boolean } | null } | null | undefined;
     const settled = inspection.activity.unsettled.length === 0 && inspection.activity.heldSlots === 0;
     // Clean-stop evidence: the recorded clean end of the last run, or (no end recorded: format 1, or no run since a migration) durably
     // settled activity. A run that never recorded its end (crash/forced stop) or an unsettled activity blocks until a reconciling boot settles it.
     const stop = lifecycle?.current ? { ok: false, message: `Controller run ${lifecycle.current.runId} never recorded its end (crash or forced stop).` }
-      : lifecycle?.last?.end === 'clean' && settled ? { ok: true, message: 'The last controller run recorded a clean stop (confirmed cessation and persistence).' }
-        : lifecycle?.last && lifecycle.last.end !== 'clean' ? { ok: false, message: `The last run ended ${lifecycle.last.end}, not clean.` }
+      : lifecycle?.last?.end === 'clean' && !lifecycle.last.reconciliationPending && settled ? { ok: true, message: 'The last controller run recorded a clean stop (confirmed cessation and persistence).' }
+        : lifecycle?.last && lifecycle.last.end !== 'clean' ? { ok: false, message: `The last run ended ${lifecycle.last.end}, not clean: a reconciling boot (ticket 26) must settle it.` }
+          : lifecycle?.last?.reconciliationPending ? { ok: false, message: `An earlier interruption was never settled: run ${lifecycle.last.runId} stopped cleanly but did not perform the boot reconciliation (ticket 26).` }
           : settled ? { ok: true, message: 'No run end is recorded (format 1, or no run since a migration); the durable state proves no unsettled Execution and no held Slot.' }
             : { ok: false, message: `No clean stop is recorded and ${inspection.activity.unsettled.length} Execution(s) are unsettled / ${inspection.activity.heldSlots} Slot(s) held.` };
     checks.push(check('upgrade:stop', stop.ok, stop.message,
@@ -315,6 +316,12 @@ export async function upgrade(context: UpgradeContext, command: UpgradeCommand, 
     if (format !== journal.from.storageFormat) {
       return report(command, 'ROLLBACK_FORMAT_UNSUPPORTED', context, { journal, storage: summary(inspection), from: { release: journal.from.release },
         nextStep: `Release ${journal.from.release} operates storage format ${journal.from.storageFormat} only; this storage is format ${format}. There is no universal rollback: keep ${journal.to.release}, or restore your own external storage protection (outside the Factory; GitHub is never undone).` });
+    }
+    // config.yaml is validated with THIS release's rules, which is valid for the previous release only when it declares the same schema.
+    const previousConfiguration = (intact.manifest.metadata.formats as { configuration?: unknown } | undefined)?.configuration;
+    if (previousConfiguration !== configurationSchemaVersion) {
+      return report(command, 'ROLLBACK_CONFIGURATION_UNVERIFIABLE', context, { journal, storage: summary(inspection), from: { release: journal.from.release },
+        nextStep: `Release ${journal.from.release} declares configuration schema ${String(previousConfiguration ?? 'none')}, not ${configurationSchemaVersion}: this release cannot verify config.yaml for it, so the rollback is refused. Keep ${journal.to.release}.` });
     }
     const towards: UpgradeContext = { ...context, target: { directory: previousDirectory, manifest: intact.manifest, manifestSha256: intact.manifestSha256, checks: [],
       guestAssets: { directory: join(root, intact.manifest.guestAssets.path), manifestSha256: intact.manifest.guestAssets.manifestSha256 } } };

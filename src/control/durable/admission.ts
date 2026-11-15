@@ -10,8 +10,14 @@ import type { Session } from './store.js';
 
 type History = { request_id: string; operation: 'pause' | 'unpause'; before: boolean; after: boolean; origin: 'local-cli' };
 /** Ticket 33: one controller run of this storage (spec §11.4: only a confirmed cessation/persistence is a clean stop; a crash leaves `current`). */
-export type ControllerRun = { runId: string; startedAt: string };
-export type ControllerRunEnd = ControllerRun & { endedAt: string; end: 'clean' | 'uncertain' | 'failed' };
+export type ControllerRun = { runId: string; startedAt: string;
+  /** An earlier interruption (crash, uncertain or failed end) not yet settled by a reconciling boot (ticket 26) when this run started. */
+  pendingReconciliation?: boolean };
+export type ControllerRunEnd = ControllerRun & { endedAt: string; end: 'clean' | 'uncertain' | 'failed';
+  /** This run performed ticket 26's boot reconciliation. */
+  reconciled?: boolean;
+  /** An interruption is still not settled after this run (it had one pending and did not reconcile, or it ended interrupted itself). */
+  reconciliationPending?: boolean };
 /** Ticket 33: explicitly requested, supported storage migrations applied to this storage, oldest first. */
 export type StorageMigration = { upgradeId: string; migration: string; from: number; to: number; at: string; release: string; previousRelease: string | null };
 type Installation = { paused: boolean; history: History[];
