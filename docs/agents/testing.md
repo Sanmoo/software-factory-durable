@@ -44,11 +44,14 @@ Lista **apenas exceções**. Arquivo sem entrada é `fast` e paralelo.
 { "schemaVersion": 1, "files": {
   "test/x/y.test.ts": { "slow": true, "reason": "por que é lento, medido" },
   "test/x/z.test.ts": { "serial": true, "reason": "qual estado compartilhado impede paralelo" },
+  "test/x/v.test.ts": { "full": true, "reason": "por que é caro demais para o gate de integração" },
   "test/x/w.test.ts": { "quarantine": "ticket NN", "reason": "o flake observado" }
 } }
 ```
 
 - `slow`: fica fora de `fast`, roda em `ci`/`full`. `serial`: roda na lane serial, depois da paralela.
+- `full`: só no noturno (fora de `fast` e `ci`; o relatório lista como "full only"). Para arquivo caro demais
+  para o gate de integração; a regra que ele prova precisa de um teste barato em `fast`/`ci`.
 - `quarantine`: o arquivo não roda em camada nenhuma e o relatório o lista como **não cobertura**;
   exige ticket. Não há retry automático.
 - Toda entrada exige `reason`; chave desconhecida, flag `false`, caminho fora de `test/**/*.test.ts`

@@ -10,9 +10,9 @@ test('manifest lists only exceptions: slow and/or serial with a justification, q
     'test/a/both.test.ts': { slow: true, serial: true, reason: 'mutates shared staging' },
     'test/a/flaky.test.ts': { quarantine: 'ticket 99', reason: 'races on load' },
   } }, present('test/a/slow.test.ts', 'test/a/both.test.ts', 'test/a/flaky.test.ts'));
-  assert.deepEqual(manifest.get('test/a/slow.test.ts'), { slow: true, serial: false, reason: 'builds a release' });
-  assert.deepEqual(manifest.get('test/a/both.test.ts'), { slow: true, serial: true, reason: 'mutates shared staging' });
-  assert.deepEqual(manifest.get('test/a/flaky.test.ts'), { slow: false, serial: false, quarantine: 'ticket 99', reason: 'races on load' });
+  assert.deepEqual(manifest.get('test/a/slow.test.ts'), { slow: true, serial: false, full: false, reason: 'builds a release' });
+  assert.deepEqual(manifest.get('test/a/both.test.ts'), { slow: true, serial: true, full: false, reason: 'mutates shared staging' });
+  assert.deepEqual(manifest.get('test/a/flaky.test.ts'), { slow: false, serial: false, full: false, quarantine: 'ticket 99', reason: 'races on load' });
   assert.equal(manifest.get('test/a/unlisted.test.ts'), undefined);
 });
 
@@ -23,11 +23,12 @@ test('manifest refuses a missing file, an entry without a flag or reason, unknow
   };
   assert.match(problems({ schemaVersion: 1, files: { 'test/gone.test.ts': { slow: true, reason: 'x' } } }),
     /TIERS_MANIFEST_INVALID[\s\S]*test\/gone\.test\.ts: listed file does not exist/);
-  assert.match(problems({ schemaVersion: 1, files: { 'test/ok.test.ts': { reason: 'x' } } }), /needs slow, serial or quarantine/);
+  assert.match(problems({ schemaVersion: 1, files: { 'test/ok.test.ts': { reason: 'x' } } }), /needs slow, serial, full or quarantine/);
   assert.match(problems({ schemaVersion: 1, files: { 'test/ok.test.ts': { slow: true } } }), /needs a non-empty reason/);
   assert.match(problems({ schemaVersion: 1, files: { 'test/ok.test.ts': { slow: true, reason: 'x', fast: true } } }), /unknown key "fast"/);
   assert.match(problems({ schemaVersion: 1, files: { 'test/ok.test.ts': { slow: false, reason: 'x' } } }), /slow must be true when present/);
   assert.match(problems({ schemaVersion: 1, files: { 'src/x.ts': { slow: true, reason: 'x' } } }), /not a test\/\*\*\/\*\.test\.ts path/);
+  assert.match(problems({ schemaVersion: 1, files: { 'test/ok.test.ts': { full: false, reason: 'x' } } }), /full must be true when present/);
   assert.match(problems({ schemaVersion: 2, files: {} }), /schemaVersion must be 1/);
   assert.match(problems([]), /must be an object/);
 });
@@ -54,6 +55,24 @@ test('lanes: fast excludes slow, ci includes everything, serial runs after, quar
   assert.deepEqual(planLanes('full', files, manifest, 8, {}).parallel, ci.parallel);
   assert.deepEqual(planLanes('ci', files, manifest, 8, { 'test/b.test.ts': 30, 'test/a.test.ts': 2, 'test/slow.test.ts': 9 }).parallel,
     ['test/b.test.ts', 'test/slow.test.ts', 'test/a.test.ts'], 'longest known first');
+});
+
+test('lanes: a full-only file runs only in full (both passes), never in fast or ci, and the report names it', () => {
+  const manifest = parseManifest({ schemaVersion: 1, files: {
+    'test/nightly.test.ts': { full: true, reason: 'r' },
+    'test/nightly-serial.test.ts': { full: true, serial: true, reason: 'r' },
+  } }, () => true);
+  const files = ['test/a.test.ts', 'test/nightly.test.ts', 'test/nightly-serial.test.ts'];
+  for (const tier of ['fast', 'ci'] as const) {
+    const plan = planLanes(tier, files, manifest, 8, {});
+    assert.deepEqual([plan.parallel, plan.serial], [['test/a.test.ts'], []], tier);
+    assert.deepEqual(plan.skippedFull, ['test/nightly-serial.test.ts', 'test/nightly.test.ts'], tier);
+  }
+  const full = planLanes('full', files, manifest, 8, {});
+  assert.deepEqual([full.parallel.sort(), full.serial, full.skippedFull], [['test/a.test.ts', 'test/nightly.test.ts'], ['test/nightly-serial.test.ts'], []]);
+  const report = formatReport({ tier: 'ci', lockWaitMs: 0, totalMs: 1, budgetMs: 600_000, load: { start: [0], end: [0] }, static: [], lanes: [],
+    quarantined: [], skippedSlow: [], skippedFull: ['test/nightly.test.ts'], filtered: false, failures: [] });
+  assert.match(report, /full only, left to the nightly: test\/nightly\.test\.ts/);
 });
 
 test('concurrency: fast uses at most half the cores, ci/full all of them, never zero', () => {

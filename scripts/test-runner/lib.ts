@@ -7,10 +7,11 @@ export const tierNames: readonly Tier[] = ['fast', 'ci', 'full'];
 /** Wall-clock ceilings on this machine, lock wait excluded. Load from other sessions is not an excuse. */
 export const budgetsMs: Readonly<Record<Tier, number | undefined>> = Object.freeze({ fast: 180_000, ci: 600_000, full: undefined });
 
-export interface ManifestEntry { slow: boolean; serial: boolean; quarantine?: string; reason: string }
+/** `full`: nightly only (excluded from fast and ci), for files too expensive for the per-integration gate. */
+export interface ManifestEntry { slow: boolean; serial: boolean; full: boolean; quarantine?: string; reason: string }
 export type Manifest = ReadonlyMap<string, ManifestEntry>;
 
-const entryKeys = new Set(['slow', 'serial', 'quarantine', 'reason']);
+const entryKeys = new Set(['slow', 'serial', 'full', 'quarantine', 'reason']);
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /** `test/tiers.json`: only exceptions. An unlisted file is fast and parallel. */
@@ -28,11 +29,11 @@ export function parseManifest(value: unknown, exists: (file: string) => boolean)
       if (!exists(file)) at('listed file does not exist');
       if (!isRecord(raw)) { at('entry must be an object'); continue; }
       for (const key of Object.keys(raw)) if (!entryKeys.has(key)) at(`unknown key "${key}"`);
-      for (const flag of ['slow', 'serial'] as const) if (flag in raw && raw[flag] !== true) at(`${flag} must be true when present`);
+      for (const flag of ['slow', 'serial', 'full'] as const) if (flag in raw && raw[flag] !== true) at(`${flag} must be true when present`);
       if ('quarantine' in raw && (typeof raw.quarantine !== 'string' || !raw.quarantine.trim())) at('quarantine must name its ticket');
-      if (raw.slow !== true && raw.serial !== true && !('quarantine' in raw)) at('needs slow, serial or quarantine');
+      if (raw.slow !== true && raw.serial !== true && raw.full !== true && !('quarantine' in raw)) at('needs slow, serial, full or quarantine');
       if (typeof raw.reason !== 'string' || !raw.reason.trim()) at('needs a non-empty reason');
-      const entry: ManifestEntry = { slow: raw.slow === true, serial: raw.serial === true, reason: String(raw.reason ?? '') };
+      const entry: ManifestEntry = { slow: raw.slow === true, serial: raw.serial === true, full: raw.full === true, reason: String(raw.reason ?? '') };
       if (typeof raw.quarantine === 'string') entry.quarantine = raw.quarantine;
       entries.set(file, entry);
     }
@@ -47,22 +48,24 @@ export function concurrencyFor(tier: Tier, cpus: number): number {
 
 const byName = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
-export interface LanePlan { parallel: string[]; serial: string[]; concurrency: number; quarantined: string[]; skippedSlow: string[] }
+export interface LanePlan { parallel: string[]; serial: string[]; concurrency: number; quarantined: string[]; skippedSlow: string[]; skippedFull: string[] }
 
 /** Longest known duration first; without history, slow-listed first; then by name. */
 export function planLanes(tier: Tier, files: readonly string[], manifest: Manifest, cpus: number, timings: Readonly<Record<string, number>>): LanePlan {
-  const plan: LanePlan = { parallel: [], serial: [], concurrency: concurrencyFor(tier, cpus), quarantined: [], skippedSlow: [] };
+  const plan: LanePlan = { parallel: [], serial: [], concurrency: concurrencyFor(tier, cpus), quarantined: [], skippedSlow: [], skippedFull: [] };
   const byCost = (a: string, b: string) => (timings[b] ?? -1) - (timings[a] ?? -1)
     || Number(manifest.get(b)?.slow ?? false) - Number(manifest.get(a)?.slow ?? false) || byName(a, b);
   for (const file of [...files].sort(byCost)) {
     const entry = manifest.get(file);
     if (entry?.quarantine) plan.quarantined.push(file);
+    else if (tier !== 'full' && entry?.full) plan.skippedFull.push(file);
     else if (tier === 'fast' && entry?.slow) plan.skippedSlow.push(file);
     else (entry?.serial ? plan.serial : plan.parallel).push(file);
   }
   plan.serial.sort(byName);
   plan.quarantined.sort(byName);
   plan.skippedSlow.sort(byName);
+  plan.skippedFull.sort(byName);
   return plan;
 }
 
@@ -99,7 +102,7 @@ export interface LaneResult { name: string; concurrency: number; ms: number; fil
 export interface RunSummary {
   tier: Tier; lockWaitMs: number; totalMs: number; budgetMs: number | undefined;
   load: { start: readonly number[]; end: readonly number[] };
-  static: StepResult[]; lanes: LaneResult[]; quarantined: string[]; skippedSlow: string[];
+  static: StepResult[]; lanes: LaneResult[]; quarantined: string[]; skippedSlow: string[]; skippedFull?: string[];
   filtered: boolean; failures: string[]; seed?: number;
 }
 
@@ -128,6 +131,7 @@ export function formatReport(summary: RunSummary): string {
     `load average: start ${load(summary.load.start)}, end ${load(summary.load.end)}`];
   if (summary.seed !== undefined) lines.push(`random-order seed: ${summary.seed}`);
   if (summary.skippedSlow.length) lines.push(`slow, left to ci: ${summary.skippedSlow.length} files`);
+  if (summary.skippedFull?.length) lines.push(`full only, left to the nightly: ${summary.skippedFull.join(', ')}`);
   if (summary.quarantined.length) lines.push(`quarantined (not coverage): ${summary.quarantined.join(', ')}`);
   lines.push('slowest files:');
   [...all].sort((a, b) => b.ms - a.ms).slice(0, 10)

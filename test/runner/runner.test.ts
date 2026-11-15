@@ -3,7 +3,7 @@ import { test, mock } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { parseManifest, parseTapCounts, type FileResult } from '../../scripts/test-runner/lib.ts';
 import { runTier, type FileRun, type Steps } from '../../scripts/test-runner/runner.ts';
-import { childEnvironment, execute, fileEnvironment } from '../../scripts/test-runner/steps.ts';
+import { childEnvironment, composeStatic, execute, fileEnvironment } from '../../scripts/test-runner/steps.ts';
 
 const counts = { tests: 1, pass: 1, fail: 0, cancelled: 0, skipped: 0, todo: 0 };
 
@@ -174,4 +174,21 @@ test('a finished test process leaves nothing behind: leaked processes in its gro
     observed = ['Z', 'X'].includes(fields[0]!) || (Number(fields[6]) & 0x4) ? 'dead' : `alive (state ${fields[0]}, flags ${fields[6]})`;
   } catch { /* gone */ }
   assert.ok(observed === 'gone' || observed === 'dead', `the leaked grandchild was killed with its group: ${observed}`);
+});
+
+test('static stage: without the staged SDK depcruise waits for compile (prepare-sdk); with it, all three run together', async () => {
+  for (const staged of [false, true]) {
+    const events: string[] = [];
+    let finishCompile = () => {};
+    const compiled = new Promise<void>(resolve => { finishCompile = resolve; });
+    const result = composeStatic({ staged,
+      compile: async () => { events.push('compile start'); await compiled; events.push('compile end'); return [{ name: 'tsc', ms: 1, ok: true }]; },
+      lint: async () => { events.push('lint'); return { name: 'eslint', ms: 1, ok: true }; },
+      depcruise: async () => { events.push('depcruise'); return [{ name: 'depcruise', ms: 1, ok: true }]; } });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(events.includes('depcruise'), staged, `staged=${staged}: depcruise before compile ends`);
+    finishCompile();
+    assert.deepEqual((await result).map(step => step.name), ['tsc', 'eslint', 'depcruise']);
+    if (!staged) assert.ok(events.indexOf('depcruise') > events.indexOf('compile end'));
+  }
 });

@@ -75,6 +75,7 @@ export async function runTier(options: RunOptions, steps: Steps): Promise<Outcom
         const plan = planLanes(tier, files, manifest, steps.cpus, timings);
         summary.quarantined = plan.quarantined;
         summary.skippedSlow = plan.skippedSlow;
+        summary.skippedFull = plan.skippedFull;
         shared = await steps.runDirectory();
         const run: FileRun = { shared: shared.path, ...(budgetMs === undefined ? {} : { deadline: started + budgetMs }) };
         if (tier === 'full') { sandbox = await steps.sandboxRoot(); run.sandboxRoot = sandbox.path; }
