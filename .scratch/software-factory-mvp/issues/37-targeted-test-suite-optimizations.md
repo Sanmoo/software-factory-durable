@@ -51,3 +51,49 @@ Sem rede, GitHub, VM, modelo ou credenciais. Remoções dependem de aprovação 
   3. Se um limite for indispensável contra travamento, injetá-lo, derivado de um orçamento relativo informado pelo runner (por exemplo, uma variável de ambiente com o teto da camada dividido pelo número de arquivos da lane). Nunca uma constante de 15 s ou 25 s.
   4. Ao estourar, o teste falha com a etapa em que parou e mata a árvore de processos, para não vazar filhos.
   5. Depois da correção, remover a entrada de quarentena e comprovar 3 execuções verdes de `ci` sob carga.
+
+- 2026-11-15 (ticket 37 implementer): **proposta de remoção/fusão — aguarda aprovação do operador, NADA aplicado.**
+  Tudo o que só acelera sem tirar cobertura já foi commitado (ver comentário de medição abaixo). Os alvos 4 e 5 mudam
+  isolamento ou trocam um crash real por estado montado, então entram aqui. Cada linha é aplicável isoladamente.
+
+  | # | Teste(s) | Proposta | Motivo | AC/achado que continua coberto, e por qual teste | Ganho estimado (ci) |
+  | --- | --- | --- | --- | --- | --- |
+  | P1 | `normal-oauth`: modos `success`, `third-request`, `second-tool`, `http429`, `http500`, `mutable-error`, `provider-bytes`, `prompt-bytes`, `tool-args-overflow`, `tool-result-overflow`, `context-bytes` (11) | Continuam 11 `test()`, mas compartilham **um** boot de adapter→owner (`before`), com uma ativação (worker Node24 nova) por teste. Exige o fixture de diagnóstico ler o modo por ativação, e não por processo | Variam só a resposta do provider; o que se prova é o tratamento no worker, não o isolamento do owner. O worker continua novo a cada ativação | Mesmas asserções por modo, no mesmo teste. Os modos que travam/revogam o owner (`held-ack`, `rotation-ack-fail`, `start-failure`, `prompt-secret`, `missing-store`, `abort`, `deadline`) continuam com cadeia própria | ~0,6 s de boot × 11 sozinho; ~15 s na lane |
+  | P2 | `normal-edit`: `complete`, `mismatch`, `no-match`, `empty`, `budget` (5) | Mesmo desenho de P1: um boot compartilhado, uma ativação por teste | Variam a edição pedida, não o owner | Mesmas asserções por modo. Os modos que revogam ou deixam incerteza (`uncertain`, `persist`, `cancel`, `eof`, `secret`) e `invalid` continuam isolados | ~3 s sozinho; ~8 s na lane |
+  | P3 | `normal-edit`: `absent`, `standards`, `spec` (3) | **Fusão** num teste que faz as três ativações (Edit desligado: sem budget, e os dois papéis revisores) numa cadeia | Os três provam a mesma propriedade (ferramenta Edit ausente → só Read), com três boots | As mesmas asserções por ativação, dentro do teste fundido. A política de papel também está em `workers/native-builder-edit` ("role/preflight denial is ZERO RPC") | ~2 s sozinho; ~5 s na lane |
+  | P4 | `control/recovery-crash`: cortes `receipt`, `reservation`, `question` (AC3/AC4) | Trocar o SIGKILL real por estado de crash montado direto no storage (`openStore` + os mesmos registros que o filho grava até o `CUT`), seguido do mesmo `reopen` | É o mesmo mecanismo ("SIGKILL do controlador e reinício na mesma storage") dos cortes `tool` e `spawn`, que ficam reais. O que varia é o ponto de corte, que é estado durável | O mecanismo real fica em `tool cut` (AC1/AC2/AC8) e `spawn cut` (AC3, cessação antes do substituto), e também em `review28-crash` e `controller-ownership` (SIGKILL + lock). AC3 receipt/reservation e AC4 question continuam com as mesmas asserções sobre o estado reconciliado | ~3 s |
+  | P5 | `entrypoints/upgrade`: "real SIGKILL after each durable step" (3 cortes: `journal`, `migrated`, `selected`) | Manter o corte `migrated` com SIGKILL real. `journal` e `selected` viram journal/arquivos montados no estado do corte, com as mesmas asserções de resume/rollback | Um cenário real por mecanismo (testing.md). Os outros dois são variações do ponto de corte | O mecanismo fica no corte `migrated` real. A recusa do launcher (`UPGRADE_INCOMPLETE`) e o resume/rollback por corte continuam com as mesmas asserções | ~3 s |
+  | — | `timeout-flow` (crash AC5/AC6), `credential-lifecycle` (AC6, review 4), `control-public` (descritor do lock), `controller-ownership` | **Sem proposta.** Cada um é o único crash real do seu mecanismo (durações após crash, grant perdido, herança do descritor, liberação do flock) | — | — | — |
+
+  Total proposto: 5 itens. Mudam o isolamento de 16 testes (P1, P2), fundem 3 em 1 (P3) e trocam 5 crashes reais por estado montado (P4, P5).
+  Nenhum é o único teste de um AC ou achado. Economia estimada de ~35 s de lane no `ci` (~15 s em serial).
+  Nada disso é necessário para o teto: o `ci` já fica bem abaixo de 6 min, então a auditoria geral também não volta.
+
+- 2026-11-15 (ticket 37 implementer): **medição e estado.** Antes: `ci` em 9ca7bfa com 4 arquivos em quarentena, total
+  209,3 s, lane paralela 192,0 s, carga inicial 8,7. Depois: rebase sobre b88bcec, HEAD com os commits do ticket 37,
+  **três `ci` verdes seguidos**: 262,9 s, 239,7 s e 208,6 s de 600 s. A carga inicial foi 10,8, 16,4 e 12,8 (outras
+  sessões em paralelo), e todos os 222 arquivos rodaram (1317 pass, 10 skip, quarentena vazia).
+  `fast`: 154,7 s antes e 112,7 s depois, ambos com carga 3-6. Mais tarde, com carga 18-25 e dois `ci` de outros
+  worktrees rodando, dois `fast` estouraram o teto: cada arquivo ficou 2,5-3× mais lento, sem falha de teste.
+  Os tempos de lane são do runner (lane paralela N=8, sob carga). "Sozinho" é `node --test` do arquivo isolado.
+
+  | Alvo | Antes | Depois | Observação |
+  | --- | --- | --- | --- |
+  | 1 `normal-oauth` | 100,9 s na lane; 55 s sozinho (auditoria) | 70-87 s na lane; 31 s sozinho (carga 3,5) | `held-ack` 6,2 → 1,1 s (ACK injetável `secretAckTimeoutMs` ≤ 5000; padrão 5000 provado com relógio falso). `deadline` 30,7 → 8,7 s |
+  | 2 release ×3 | 3 builds; 97-103 s cada na lane | 1 build por execução; 101-156 s cada na lane | CPU: −2 builds completos. A lane não encurta: os três esperam o mesmo build e rodam juntos, e a carga foi maior. Os três juntos, sozinhos: 43 s de relógio |
+  | 3 `architecture-gate` | 55,8 s na lane; 19 s sozinho | 7-9 s na lane; 2,2 s sozinho | APIs do dependency-cruiser e do ESLint em processo |
+  | 4 forks de adapter | — | não aplicado | Muda o isolamento: está na proposta (P1-P3) |
+  | 5 crash/SIGKILL | 5 arquivos com SIGKILL real em `fast` | os 5 em `slow` | A consolidação de cenários está na proposta (P4, P5) |
+
+  Quarentena zerada: `admission-cli`, `normal-worker`, `public-copy-read` e `publication-composition` foram corrigidos
+  e passaram nos três `ci`. O `bash-credential` voltou para a lane paralela. Os timers fixos que estouraram sob carga
+  18 durante esta onda também viraram guarda de orçamento: `worker-process` (30 s), `public-bash-copy` (15 s),
+  `normal-edit` (15 s) e os launchers de release (30/60 s).
+  O guarda (`test/runner/budget.ts`) usa o fim do orçamento da camada (`FACTORY_TEST_DEADLINE`, passado pelo runner),
+  mata a árvore do processo e nomeia a etapa em que parou.
+  Não reproduzidos: `workers/host-launch-plan` e `records/incremental-retention` passaram em 50 execuções sob 6 hogs
+  de CPU. São puros/síncronos, sem timer nem estado compartilhado, e não há log da falha. Não foram alterados.
+  Ainda há ~100 `timeout:` fixos em outros testes de `fast`/`ci` (por exemplo `controller-ownership` 17,
+  `protocol` 8, `upgrade` 8). Ficam fora deste escopo; candidatos a um ticket de varredura.
+  O ticket fica aberto até o operador aprovar ou recusar a proposta acima. Sem a proposta, os critérios de medição,
+  produto e três `ci` verdes já estão cumpridos.
