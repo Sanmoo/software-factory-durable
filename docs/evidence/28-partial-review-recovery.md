@@ -194,3 +194,19 @@ resultado real (nunca re-obtido nem levado). A receita, porém, não tinha vered
 - lista os pareceres `incomplete` em `limitations` (com `hostChecks.downgraded`), separados das falhas.
 
 A execução real de `q28-partial-v2` aguarda o rebase sobre o ticket 14 (decisão do supervisor).
+
+## Rebase sobre `b2da9ae` (tickets 14, 33, 36 integrados)
+
+- Conflitos em `dispatch.ts` resolvidos automaticamente (mergiraf) e revistos; tsc limpo; veredito da receita mantido.
+- Runner do ticket 36: `test/control/review28-crash.test.ts` marcado `slow` (SIGKILL real; um cenário por mecanismo). O teste de fluxo
+  "interrupted during the persisted wait" passou a usar relógio monotônico falso (sem `setTimeout` real; o timer da Execução dispara
+  exatamente durante a espera provocada).
+- **Pré-condição nova da receita (PR #5 do ticket 14):** a receita abre um storage NOVO, que nunca reconhece um PR anterior como próprio;
+  qualquer PR associado ao Ticket #3 (aberto, fechado ou mergeado) seguraria a admissão com `FOREIGN_PULL_REQUEST` e a execução nunca começaria.
+  O `preflight` agora faz a mesma leitura (`findPublication`, só leitura) e segura com `TICKET_HAS_ASSOCIATED_PULL_REQUEST` antes de qualquer
+  efeito, sem adotar nem tocar o PR (função pura `publicationPrecondition`, testada; observação incompleta nunca prova ausência).
+  **Proposta ao operador:** rodar `q28-partial-v2` sobre um issue sintético NOVO com o label (a receita fixa `expectedTicket`; trocar número e
+  `repositoryId` é uma linha), ou remover a associação do PR #5 com o issue #3 (editar a palavra-chave de fechamento/desvincular em
+  Development; uma referência de timeline nativa não se apaga, e então o issue #3 fica inutilizável para receitas com storage novo).
+  O namespace `q28-partial-v2` continua novo do ponto de vista do repositório (nenhuma execução registrada; o `preflight` cria o diretório em
+  modo exclusivo e recusa um existente; este agente não lê `software-factory-test`).

@@ -109,3 +109,15 @@ test('AC7 recipe oracle: a retried Standards, an incomplete Spec a1 taken for th
   const d = recipe.verdict(view(expected(), { state: 'held', held: { code: 'REVIEWER_CESSATION_UNCONFIRMED' } }) as never, budget);
   assert.equal(d.checks.find(item => item.name === 'execution-ended')!.observed, 'held:REVIEWER_CESSATION_UNCONFIRMED');
 });
+
+test('AC7 recipe preflight: an open (or any) pull request associated with Ticket #3 — e.g. ticket 14 draft PR #5 — holds BEFORE any effect; never adopted', () => {
+  const pr5 = { pullRequestId: 55, number: 5, url: 'https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5', state: 'open' as const, merged: false,
+    headRef: 'factory/3-abcdef12', headRepositoryId: 1256893534, association: ['closing-reference'] };
+  const held = recipe.publicationPrecondition({ kind: 'observed', repositoryId: 1256893534, issues: { '3': { completeness: 'complete', candidates: [pr5] } } } as never);
+  assert.deepEqual(held, { ok: false, code: 'TICKET_HAS_ASSOCIATED_PULL_REQUEST', pullRequests: [{ number: 5, state: 'open', merged: false, headRef: 'factory/3-abcdef12' }] },
+    'a fresh Control storage would hold it FOREIGN_PULL_REQUEST: the run could never start an Execution');
+  assert.deepEqual(recipe.publicationPrecondition({ kind: 'observed', repositoryId: 1256893534, issues: { '3': { completeness: 'complete', candidates: [] } } } as never), { ok: true });
+  assert.equal(recipe.publicationPrecondition({ kind: 'observed', repositoryId: 1256893534, issues: { '3': { completeness: 'incomplete', code: 'X', nextStep: 'n' } } } as never).ok, false,
+    'an incomplete observation never proves absence');
+  assert.equal(recipe.publicationPrecondition({ kind: 'unavailable', code: 'GITHUB_UNAVAILABLE', nextStep: 'n' } as never).ok, false);
+});

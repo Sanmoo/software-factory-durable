@@ -66,7 +66,8 @@ export function plan() {
       builderPurpose: 'builder-start {metadata:read, contents:read, issues:read} for Sanmoo/java-springboot-event-sourcing only', reviewerCredentials: 'none',
       writes: 'none (no POST/PATCH/PUT/DELETE besides access_tokens issuance)' },
     effects: [
-      'preflight: read-only GitHub: listing of the configured label must contain exactly Ticket #3; ticket and native blocked_by read',
+      'preflight: read-only GitHub: listing of the configured label must contain exactly Ticket #3; ticket and native blocked_by read; NO pull request ' +
+        'associated with Ticket #3 (any state; a fresh storage would hold it FOREIGN_PULL_REQUEST) — never adopted or touched',
       'run: new Control storage under observations; production-equivalent Execution ports with reviews {rounds max 4, partialRecovery true}; ONE Execution (capacity 1), 1 new VM, ' +
         'ONE Builder, reviewers in parallel on the same boot; the two provocations above; Sandbox.stop; Slot release; 75 min deadline',
       'inspect: read-only on exclusive COPIES: the storage copy (Control view: rounds, attempts, sources, charges, budget, history) and a private copy of the Work\'s ' +
@@ -119,6 +120,23 @@ export function verdict(execution: OracleView, budget: { recoveries: { consumed:
   const limitations = rounds.flatMap(round => (['standards', 'spec'] as const).filter(role => round.reviewers[role].opinion?.conclusion === 'incomplete')
     .map(role => ({ round: round.round, role, downgraded: [...(round.reviewers[role].opinion?.hostChecks.downgraded ?? [])] })));
   return { passed: checks.every(item => item.ok), checks, retriedRoles, limitations };
+}
+
+type PublicationObservation = Awaited<ReturnType<import('../../src/code-repository/index.js').CodeRepository['findPublication']>>;
+/**
+ * Preflight precondition (read-only): the recipe opens a NEW Control storage, which never knows an earlier Factory PR as its own, so ANY pull
+ * request associated with Ticket #3 (open, closed or merged — e.g. ticket 14's draft PR #5) would hold admission FOREIGN_PULL_REQUEST and
+ * the run could never start an Execution. It is never adopted or touched: the run is held before any effect. An incomplete observation
+ * never proves absence.
+ */
+export function publicationPrecondition(publication: PublicationObservation):
+  { ok: true } | { ok: false; code: string; pullRequests?: { number: number; state: string; merged: boolean; headRef: string }[] } {
+  if (publication.kind !== 'observed') return { ok: false, code: `PUBLICATION_UNKNOWN:${publication.code}` };
+  const issue = publication.issues[String(expectedTicket.number)];
+  if (!issue || issue.completeness !== 'complete') return { ok: false, code: `PUBLICATION_UNKNOWN:${issue?.completeness === 'incomplete' ? issue.code : 'NOT_REPORTED'}` };
+  if (issue.candidates.length) return { ok: false, code: 'TICKET_HAS_ASSOCIATED_PULL_REQUEST',
+    pullRequests: issue.candidates.map(item => ({ number: item.number, state: item.state, merged: item.merged, headRef: item.headRef })) };
+  return { ok: true };
 }
 
 /** Activation guard of ONE Execution: one Builder; per reviewer role a bounded number of DISTINCT (round, attempt); Spec retries only in round 1. */
@@ -176,12 +194,16 @@ export async function runPhase(phase: Phase) {
   await save(`${phase}-intent`, { revision, phase, at: new Date().toISOString() });
   try {
     if (phase === 'preflight') {
-      const { tracker } = await compose();
+      const { tracker, codeRepository } = await compose();
       const listing = await tracker.listCandidates(repository);
       if (listing.kind !== 'observed' || listing.candidates.length !== 1 || listing.candidates[0]!.number !== expectedTicket.number ||
         listing.repositoryId !== expectedTicket.repositoryId) { await save('preflight-held', { listing }); throw new Error('PRECONDITION_HELD'); }
       const ticket = await tracker.readTicket(listing.candidates[0]!);
       const graph = await tracker.readDependencyGraph(listing.candidates[0]!);
+      // Read-only association check (the same listing Control's admission uses): an associated PR would hold the fresh storage's admission.
+      const publication = await codeRepository.findPublication({ repo: repository, issueNumbers: [expectedTicket.number], knownBranches: [] });
+      const precondition = publicationPrecondition(publication);
+      if (!precondition.ok) { await save('preflight-held', { precondition, publication }); throw new Error('PRECONDITION_HELD'); }
       await save('preflight-result', { status: 'success', ticket, graph: { completeness: graph.completeness, nodes: graph.nodes.length, problems: graph.problems } });
       return;
     }

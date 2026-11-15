@@ -43,6 +43,8 @@ function doubles(script: { captures: HandoffEvent[]; behaviour: (role: Role, rou
   const invocations: Invocation[] = [];
   const kinds: string[] = [];
   const sleeps: number[] = [];
+  let now = 0;
+  const timers: (() => void)[] = [];
   const records = new Map<string, ReviewOpinion>();
   const observations = new Map<number, number>();
   const identity = (round: number): ProposalIdentity => {
@@ -60,12 +62,18 @@ function doubles(script: { captures: HandoffEvent[]; behaviour: (role: Role, rou
     configuration: { schemaVersion: 1 }, capacity: 1, builder: { skillPack: 'factory-skills-v3', modelBudget: 'builder-v1', copyOutput: true },
     reviews: { reviewer: { modelBudget: 'reviewer-v1', imageSourceMaxBytes: 5242880 }, rounds: { max: 4 }, partialRecovery: true },
     // Retry waits are recorded, not slept: the persisted 5/15/45 s schedule is asserted on the requested durations.
-    clock: { monotonic: () => performance.now(), sleep(ms, signal) {
+    // Fake monotonic clock, no real timer: the Execution timer (any non-retry duration) waits until a provoked hanging retry wait begins,
+    // then the clock jumps past it, so the timeout fires exactly DURING that wait.
+    clock: { monotonic: () => now, sleep(ms, signal) {
       const retryWait = [5000, 15000, 45000].includes(ms);
-      if (!retryWait) return new Promise<void>(resolve => { const timer = setTimeout(resolve, Math.min(Math.max(ms, 1), 50)); signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true }); });
+      if (!retryWait) return new Promise<void>(resolve => { timers.push(() => { now += ms; resolve(); }); signal.addEventListener('abort', () => resolve(), { once: true }); });
       sleeps.push(ms); kinds.push(`sleep-${ms}`);
       if (script.clock?.reject === ms) return Promise.reject(new Error('CLOCK_FAILED'));
-      if (script.clock?.hang === ms) return new Promise<void>(resolve => { if (signal.aborted) resolve(); else signal.addEventListener('abort', () => resolve(), { once: true }); });
+      if (script.clock?.hang === ms) return new Promise<void>(resolve => {
+        if (signal.aborted) { resolve(); return; }
+        signal.addEventListener('abort', () => resolve(), { once: true });
+        for (const fire of timers.splice(0)) fire();
+      });
       return Promise.resolve();
     } },
     sandbox: {
