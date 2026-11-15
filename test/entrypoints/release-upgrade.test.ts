@@ -2,13 +2,11 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { after, before, test } from 'node:test';
 import { spawn, spawnSync } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { chmod, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { buildRelease } from '../../src/entrypoints/release-build.js';
 import { inventoryTree } from '../../src/entrypoints/release.js';
 import { questionId, storageWithPendingQuestion, writeFormatOne } from '../control/upgrade-fixture.js';
-import { manifestSha256 } from './release-fixture.js';
+import { id, releaseBuild } from './release-fixture.js';
 import { configuration, fakeRelease } from './upgrade-fixture.js';
 
 // I-local (ticket 33): the REAL release builder output (private Node, emitted JS, manifest declaring storage format 2) extracted NEXT TO a
@@ -16,19 +14,13 @@ import { configuration, fakeRelease } from './upgrade-fixture.js';
 // The new release's own private Node runs `upgrade check/apply` (CLI → flock → upgrade owner), then the switched launcher starts the real
 // controller (paused, no repository configured: no GitHub/network call), the local CLI reads/answers the pending Question over the real
 // protocol and Ctrl+C stops it cleanly. The pending Question comes from the public Control with doubled execution (upgrade-fixture).
-const id = 'r33-test';
 const sha = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
 let work: string, root: string, archive: string;
+// Ticket 37: the run's shared release build (release-fixture), not a third build of its own; only the extraction root is private.
 before(async () => {
-  work = await mkdtemp(join(tmpdir(), 'factory-r33-'));
-  const assets = join(work, 'synthetic-assets');
-  await mkdir(assets);
-  await writeFile(join(assets, 'manifest.json'), await readFile('test/sandbox/asset-manifest.fixture.json'));
-  await writeFile(join(assets, 'vmlinuz-virt'), 'kernel fixture\n');
-  await writeFile(join(assets, 'initramfs.cpio.lz4'), 'initramfs fixture\n');
-  await writeFile(join(assets, 'rootfs.ext4'), 'rootfs fixture\n');
-  const report = await buildRelease({ release: id, output: join(work, 'build'), guestAssets: { directory: assets, manifestSha256 } });
-  archive = join(work, 'build', report.archive);
+  const built = await releaseBuild();
+  work = built.work;
+  archive = join(built.output, built.report.archive);
   root = join(work, 'root');
   await mkdir(root, { mode: 0o700 });
   for (const name of ['releases', 'assets', 'credentials', 'data', 'environments', 'run']) await mkdir(join(root, name), { mode: 0o700 });

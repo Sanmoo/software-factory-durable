@@ -9,14 +9,14 @@ import { factorySkillPackIds } from '../../src/contracts/index.js';
 import { builtRelease, check, id, manifestSha256, sha, type Check } from './release-fixture.js';
 
 // I-local (ticket 32): artifact layout/manifest pins and explicit failures of a changed, mis-extracted or foreign-root release.
-let work: string, output: string, root: string, report: Awaited<ReturnType<typeof buildRelease>>, factory: Awaited<ReturnType<typeof builtRelease>>['factory'];
-before(async () => ({ work, output, root, report, factory } = await builtRelease()));
+let work: string, assets: string, output: string, root: string, report: Awaited<ReturnType<typeof buildRelease>>, factory: Awaited<ReturnType<typeof builtRelease>>['factory'];
+before(async () => ({ work, assets, output, root, report, factory } = await builtRelease()));
 after(async () => { if (work) await rm(work, { recursive: true, force: true }); });
 
 test('build: one exclusive archive with checksum and manifest pinning Node/SDKs/SQLite/Gondolin/assets/profile/tooling, and nothing of development', async () => {
   assert.deepEqual((await readdir(output)).sort(), ['build-report.json', 'release-manifest.json', `software-factory-${id}.tar`, `software-factory-${id}.tar.sha256`]);
   assert.equal(await readFile(join(output, `${report.archive}.sha256`), 'utf8'), `${sha(await readFile(join(output, report.archive)))}  ${report.archive}\n`);
-  await assert.rejects(buildRelease({ release: id, output, guestAssets: { directory: join(work, 'synthetic-assets'), manifestSha256 } }), /RELEASE_OUTPUT_EXISTS/);
+  await assert.rejects(buildRelease({ release: id, output, guestAssets: { directory: assets, manifestSha256 } }), /RELEASE_OUTPUT_EXISTS/);
   const listing = spawnSync('tar', ['-tf', join(output, report.archive)], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).stdout.trim().split('\n');
   assert.ok(listing.every(path => path === 'factory' || path.startsWith(`releases/`) || path.startsWith('assets/')), 'only launcher, release and assets');
   assert.ok(listing.includes(`releases/${id}/node/bin/node`) && listing.includes(`releases/${id}/dist/src/entrypoints/cli.js`));
