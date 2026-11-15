@@ -59,3 +59,9 @@ touched.
 - A conflict/flag change on an unchanged head is seen within ticket 15's cadence (full re-read every 10 intervals; a draft flip triggers it).
 - The draft-conversion reason is recorded locally (CLI), not posted on the PR.
 - GraphQL has no REST API version: the version header is sent; a missing selected-version header is accepted only for GraphQL.
+
+## Gate totals (rebased on `01783ae`)
+
+`npm run test:ci`: **RESULT: PASS** — 203 files, 1251 tests, 1241 pass, 0 fail, 10 skipped; 202.5 s of 600 s (load 2.4 → 12.5). Ticket 16 files:
+`github-readiness-composed` 11.8 s and `github-readiness` 7.8 s (then tiered `slow`), `readiness16-recipe-safety`, `readiness-flow`, `readiness-rules`,
+`readiness16-qualification`. Real GitHub (P): not run.
