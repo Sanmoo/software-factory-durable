@@ -52,3 +52,18 @@ test('AC5: the delivered results are bounded and say failures are not approvals'
   assert.ok(Buffer.byteLength(JSON.stringify(prompt)) <= 20000, 'bounded as encoded in the protocol frame');
   assert.match(prompt, /REVIEWER_UNAVAILABLE/); assert.match(prompt, /NOT zero findings and NOT an approval/); assert.match(prompt, /F39/);
 });
+
+test('ticket 14 real run v7: the reviewer prompt says that named-but-nonexistent context is NOT a limitation; only required inputs or existing unreadable files are', async () => {
+  const { planReviews } = await import('../../src/control/rules/review.js');
+  const handoff = { version: 1 as const, round: 1, index: '/artifacts/review/r1/index.json', indexSha256: 'a'.repeat(64), head: 'b'.repeat(40), branch: 'factory/3-x', base: 'c'.repeat(40),
+    mergeBase: 'c'.repeat(40), counts: { entries: 1, committed: 1, staged: 0, unstaged: 0, untracked: 0, removed: 0 },
+    patches: { committed: { path: '/artifacts/review/r1/committed.patch', bytes: 1, sha256: 'd'.repeat(64) }, staged: { path: '/artifacts/review/r1/staged.patch', bytes: 0, sha256: 'd'.repeat(64) },
+      unstaged: { path: '/artifacts/review/r1/unstaged.patch', bytes: 0, sha256: 'd'.repeat(64) } },
+    spec: { version: 'v1', sources: '/artifacts/spec/v1/sources.json', sha256: '1'.repeat(64) }, instructions: { version: 'v1', sources: '/artifacts/instructions/v1/sources.json', sha256: '2'.repeat(64) },
+    changed: [], changedTruncated: false };
+  for (const plan of planReviews({ executionId: 'e', round: 1, attempt: 1, handoff })) {
+    assert.match(plan.prompt, /READ_NOT_FOUND/);
+    assert.match(plan.prompt, /does not exist is NOT a limitation/);
+    assert.match(plan.prompt, /Only a REQUIRED input that is missing, or an EXISTING file that cannot be read/);
+  }
+});

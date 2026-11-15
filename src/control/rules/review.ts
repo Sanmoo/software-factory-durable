@@ -41,6 +41,10 @@ export function planReviews(input: { executionId: string; round: number; attempt
       'Read the index first, then the patches, then every changed file in full and whatever context beyond the hunks you need. Declare your coverage scope ' +
         '(incremental or broad) with a justification and the paths you examined. If a needed source is missing or unreadable, a read stays truncated, or the ' +
         'context is insufficient, list it under limitations and conclude "incomplete".',
+      // Ticket 14 real run v7: instructions may name context (a glossary, an ADR directory) the repository does not have.
+      'A read answered READ_NOT_FOUND means the path does not exist. Context the instructions name but which does not exist is NOT a limitation and ' +
+        'never makes your opinion incomplete: judge with what exists (you may mention the absence in a coverage justification). Only a REQUIRED input that ' +
+        'is missing, or an EXISTING file that cannot be read, is a limitation (SOURCE_UNREADABLE).',
       reviewVerdictFormat,
     ].join('\n\n');
     const continueFrom = input.previousSessions?.[role] ?? null;
