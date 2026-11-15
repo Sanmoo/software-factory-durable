@@ -70,7 +70,7 @@ modelo ou GitHub reais.
 
 Arquivo: `test/entrypoints/release33-qualification.ts` (import e `--plan` inertes; teste
 `release33-qualification.test.ts`). Pré-requisitos: checkout limpo e compilado (`tsc`), perfis SDK privados
-preparados, `r32-v2/build` intacto (somente leitura), base `r33-v1` inexistente, ~6 GiB livres.
+preparados, `r32-v2/build` intacto (somente leitura), base `r33-v2` inexistente, ~6 GiB livres.
 
 ```sh
 N='env -u NODE_OPTIONS -u NODE_COMPILE_CACHE NODE_DISABLE_COMPILE_CACHE=1 /home/sanmoo/.local/share/mise/installs/node/24.21.0/bin/node'
@@ -80,7 +80,7 @@ for phase in build install-v1 seed-v1 extract-v2 check-and-refusals interrupted-
 done
 ```
 
-- Base nova `/home/sanmoo/software-factory-test/r33-v1` (raiz `root/`, `build/`, `observations/`), tombstones
+- Base nova `/home/sanmoo/software-factory-test/r33-v2` (raiz `root/`, `build/`, `observations/`), tombstones
   dentro dela (`intent-<fase>.json`); cada fase roda uma vez; nada é repetido ou reparado.
 - v1 = `r32-v2/build/software-factory-mvp-32.1.tar` (formato 1, sem ferramenta de upgrade), somente leitura.
   v2 = `mvp-33.1` construída deste checkout com assets34 (`8efa506a…`).
@@ -171,3 +171,18 @@ done
 - O commit "keep the run result for ticket 26" ficou obsoleto e foi descartado no rebase.
 - Gate após o rebase (2026-11-15): tsc, eslint e dependency-cruiser (373 módulos) limpos; 176 arquivos um
   por vez: 1093 pass, 0 fail, 10 skip. A receita real não foi executada.
+
+## Execução real r33-v1 (supervisor, 2026-11-15): consumida, NÃO conclusiva
+
+- Todas as 7 fases saíram 0, mas toda invocação de controlador/upgrade terminou `CONTROLLER_START_FAILED`
+  (exit 3); só o launcher-guarda respondeu. Nenhuma expectativa da troca foi provada.
+- **Causa raiz (receita)**: a fase `seed-v1` rodou `flock(1)` sobre `root/data/control.lock` ainda inexistente;
+  o flock o criou `0644` (umask do processo). `controllerPaths` exige lock privado e recusou corretamente todo
+  início seguinte (`UNSAFE_CONTROL_PATH`), mas a mensagem genérica escondia a causa. Confirmado somente leitura
+  na base consumida (`data/control.lock` `-rw-r--r--`; `controllerPaths` → `UNSAFE_CONTROL_PATH`).
+- **Correções**: (1) produto — recusas de início trazem `cause` e `path` (`InstallationPathError`:
+  `PRIVATE_INSTALLATION_REQUIRED`/`UNSAFE_CONTROL_PATH`), no controlador, no owner e no upgrade owner; teste
+  `controller-start-cause.test.ts`. (2) receita — o lock é criado como o produto cria (`prepareControllerLock`,
+  0600) antes de qualquer `flock(1)`. (3) receita — cada fase grava `<fase>-verdict.json` com uma verificação por
+  resultado esperado e falha (exit 1) se alguma não for atendida; a fase seguinte exige o veredito anterior `ok`;
+  teste prova que o padrão de falha genérica da r33-v1 reprova todas as fases. (4) base nova `r33-v2`.

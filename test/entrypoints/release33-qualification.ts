@@ -9,7 +9,7 @@
 // (phase tombstones `<base>/intent-<phase>.json`). Configuration authorizes NO repository (no polling target, no token).
 // Phases are one-shot: an exclusive intent tombstone precedes each effect; a consumed phase never reruns; nothing is retried or repaired.
 
-const revision = 'r33-v1';
+const revision = 'r33-v2'; // r33-v1 consumed (2026-11-15): every start refused, data/control.lock 0644 created by a bare flock(1).
 const base = `/home/sanmoo/software-factory-test/${revision}`;
 const observations = `${base}/observations`;
 const output = `${base}/build`;
@@ -89,7 +89,14 @@ const json = (text: string) => { try { return JSON.parse(text) as Record<string,
 const v2cli = (args: string[], timeoutMs = 300000) => command('/usr/bin/env', ['-u', 'NODE_OPTIONS', '-u', 'NODE_PATH', '-u', 'NODE_COMPILE_CACHE', 'NODE_DISABLE_COMPILE_CACHE=1',
   `${root}/releases/${v2.release}/node/bin/node`, `${root}/releases/${v2.release}/dist/src/entrypoints/cli.js`, ...args], timeoutMs);
 /** A test child run with a release's private Node under the canonical-storage flock, as the production owner is. */
-const locked = (release: string, script: string, args: string[]) => command('flock', ['--exclusive', '--nonblock', '--no-fork', `${root}/data/control.lock`,
+const locked = async (release: string, script: string, args: string[]) => {
+  // The lock is created exactly as the product creates it (0600, no-follow) BEFORE flock(1) opens it: a bare flock would create it 0644
+  // with the process umask, which every later start correctly refuses (UNSAFE_CONTROL_PATH: the r33-v1 failure).
+  const { prepareControllerLock } = await import('../../src/platform/host/index.js');
+  await prepareControllerLock(`${root}/data/control.lock`);
+  return lockedCommand(release, script, args);
+};
+const lockedCommand = (release: string, script: string, args: string[]) => command('flock', ['--exclusive', '--nonblock', '--no-fork', `${root}/data/control.lock`,
   `${root}/releases/${release}/node/bin/node`, script, ...args], 300000);
 
 /** Runs `root/factory run` (whichever release it selects), calls `during` once its socket answers, then SIGINT; returns its exit. */
@@ -115,6 +122,87 @@ async function runController(during: (factory: (args: string[]) => ReturnType<ty
   return { observed, end, stderr };
 }
 
+type Json = Record<string, unknown> | null | undefined;
+const at = (value: unknown, ...path: (string | number)[]): unknown => path.reduce<unknown>((item, key) => item && typeof item === 'object' ? (item as Record<string | number, unknown>)[key] : undefined, value);
+const blockedIds = (report: unknown) => ((at(report, 'checks') as { id: string; status: string }[] | undefined) ?? []).filter(item => item.status === 'blocked').map(item => item.id);
+/**
+ * Per-phase VERDICT: one named check per expected outcome of plan().expected. A generic failure (e.g. every start refused) can never pass:
+ * each check names the exact code/state the real composition must produce.
+ */
+export function verdict(phase: Phase, result: Json): { ok: boolean; checks: { name: string; ok: boolean; observed: unknown }[] } {
+  const checks: { name: string; ok: boolean; observed: unknown }[] = [];
+  const expect = (name: string, observed: unknown, ok: boolean) => checks.push({ name, ok, observed });
+  const r = result ?? {};
+  if (phase === 'build') {
+    expect('release built', at(r, 'report', 'code'), at(r, 'report', 'code') === 'RELEASE_BUILT');
+    expect('clean source', at(r, 'report', 'source', 'dirty'), at(r, 'report', 'source', 'dirty') === false);
+    expect('storage declaration', at(r, 'storage'), JSON.stringify(at(r, 'storage')) === JSON.stringify({ format: 2, migratesFrom: [1] }));
+  } else if (phase === 'install-v1') {
+    expect('setup exit 0', at(r, 'setup', 'status'), at(r, 'setup', 'status') === 0);
+    expect('doctor release v1', at(r, 'doctor', 'report', 'release', 'release'), at(r, 'doctor', 'report', 'release', 'release') === v1.release);
+    expect('configuration valid', at(r, 'doctor', 'report', 'configuration', 'valid'), at(r, 'doctor', 'report', 'configuration', 'valid') === true);
+  } else if (phase === 'seed-v1') {
+    expect('seed exit 0', at(r, 'seed', 'status'), at(r, 'seed', 'status') === 0);
+    expect('two Works seeded', at(r, 'seed', 'report', 'works', 'length'), at(r, 'seed', 'report', 'works', 'length') === 2);
+    expect('v1 controller served', at(r, 'v1run', 'observed', 'notReady') ?? 'ready', at(r, 'v1run', 'observed', 'notReady') === undefined);
+    expect('v1 status paused', at(r, 'v1run', 'observed', 'status', 'paused'), at(r, 'v1run', 'observed', 'status', 'paused') === true);
+    expect('v1 Question open', at(r, 'v1run', 'observed', 'question', 'question', 'state'), at(r, 'v1run', 'observed', 'question', 'question', 'state') === 'open');
+    expect('v1 clean exit', at(r, 'v1run', 'end', 'code'), at(r, 'v1run', 'end', 'code') === 0);
+  } else if (phase === 'extract-v2') {
+    expect('extracted', at(r, 'status'), at(r, 'status') === 'success');
+    expect('v1 tree unchanged', [at(r, 'before', 'v1'), at(r, 'after', 'v1')], at(r, 'before', 'v1') === at(r, 'after', 'v1'));
+    expect('assets unchanged', [at(r, 'before', 'assets'), at(r, 'after', 'assets')], at(r, 'before', 'assets') === at(r, 'after', 'assets'));
+    expect('launcher still v1', [at(r, 'before', 'launcher'), at(r, 'after', 'launcher')], at(r, 'before', 'launcher') === at(r, 'after', 'launcher'));
+    expect('v2 installed', at(r, 'releases'), Array.isArray(at(r, 'releases')) && (at(r, 'releases') as string[]).includes(v2.release));
+  } else if (phase === 'check-and-refusals') {
+    expect('check migration required', at(r, 'check', 'report', 'code'), at(r, 'check', 'report', 'code') === 'UPGRADE_MIGRATION_REQUIRED');
+    expect('check nothing blocked', blockedIds(at(r, 'check', 'report')), blockedIds(at(r, 'check', 'report')).length === 0);
+    expect('refused by the lock while v1 runs', at(r, 'whileRunning', 'observed', 'status'), at(r, 'whileRunning', 'observed', 'status') === 73);
+    for (const name of ['whileRunning', 'unpaused', 'repaused']) expect(`${name}: v1 clean exit`, at(r, name, 'end', 'code'), at(r, name, 'end', 'code') === 0);
+    expect('v1 unpause accepted', at(r, 'unpaused', 'observed', 'status'), at(r, 'unpaused', 'observed', 'status') === 0);
+    expect('unpaused check incompatible', at(r, 'unpausedCheck', 'report', 'code'), at(r, 'unpausedCheck', 'report', 'code') === 'UPGRADE_INCOMPATIBLE');
+    expect('unpaused check blocks pause', blockedIds(at(r, 'unpausedCheck', 'report')), JSON.stringify(blockedIds(at(r, 'unpausedCheck', 'report'))) === JSON.stringify(['upgrade:pause']));
+    expect('v1 pause accepted', at(r, 'repaused', 'observed', 'status'), at(r, 'repaused', 'observed', 'status') === 0);
+    expect('apply without --migrate refused', at(r, 'notRequested', 'report', 'code'), at(r, 'notRequested', 'report', 'code') === 'UPGRADE_MIGRATION_NOT_REQUESTED');
+    const digest = (side: string) => at(r, side, 'status', 'report', 'storage', 'stateDigest');
+    expect('storage unchanged', [digest('before'), digest('after')], typeof digest('before') === 'string' && digest('before') === digest('after'));
+    expect('launcher unchanged', [at(r, 'before', 'launcher'), at(r, 'after', 'launcher')], at(r, 'before', 'launcher') === at(r, 'after', 'launcher'));
+    expect('no journal', at(r, 'after', 'journal'), at(r, 'after', 'journal') === false);
+  } else if (phase === 'interrupted-migration') {
+    const state = (side: string) => at(r, side, 'report', 'journal', 'state');
+    const format = (side: string) => at(r, side, 'report', 'storage', 'format');
+    expect('cut 1 SIGKILL', at(r, 'cut1', 'signal'), at(r, 'cut1', 'signal') === 'SIGKILL');
+    expect('after cut 1: incomplete, migrating, format 1', [at(r, 'afterCut1', 'report', 'code'), state('afterCut1'), format('afterCut1')],
+      at(r, 'afterCut1', 'report', 'code') === 'UPGRADE_INCOMPLETE' && state('afterCut1') === 'migrating' && format('afterCut1') === 1);
+    expect('cut 2 SIGKILL', at(r, 'cut2', 'signal'), at(r, 'cut2', 'signal') === 'SIGKILL');
+    expect('after cut 2: migrated, format 2', [state('afterCut2'), format('afterCut2')], state('afterCut2') === 'migrated' && format('afterCut2') === 2);
+    const preserved = (side: string) => at(r, side, 'report', 'storage', 'preserved', 'digest');
+    expect('preserved across the migration', [preserved('afterCut1'), preserved('afterCut2')], typeof preserved('afterCut1') === 'string' && preserved('afterCut1') === preserved('afterCut2'));
+    expect('guard starts nothing', [at(r, 'guarded', 'status'), at(r, 'guarded', 'code')], at(r, 'guarded', 'status') === 2 && at(r, 'guarded', 'code') === 'UPGRADE_INCOMPLETE');
+    expect('v1 direct refused (not selected)', at(r, 'v1Refused', 'codes'), Array.isArray(at(r, 'v1Refused', 'codes')) && (at(r, 'v1Refused', 'codes') as string[]).includes('RELEASE_INVALID'));
+    const full = (side: string) => at(r, side, 'report', 'storage', 'stateDigest');
+    expect('v1 wrote nothing', [full('afterCut2'), full('afterV1')], typeof full('afterCut2') === 'string' && full('afterCut2') === full('afterV1'));
+    expect('rollback refused', at(r, 'rollback', 'report', 'code'), at(r, 'rollback', 'report', 'code') === 'ROLLBACK_FORMAT_UNSUPPORTED');
+    expect('resume completed', at(r, 'resume', 'report', 'code'), at(r, 'resume', 'report', 'code') === 'UPGRADE_COMPLETED');
+    expect('v2 selected', [at(r, 'launcherSha256'), at(r, 'v2LauncherSha256')], typeof at(r, 'launcherSha256') === 'string' && at(r, 'launcherSha256') === at(r, 'v2LauncherSha256'));
+    expect('migrated once', at(r, 'resume', 'report', 'storage', 'migrations', 'length'), at(r, 'resume', 'report', 'storage', 'migrations', 'length') === 1);
+  } else {
+    expect('doctor release v2', at(r, 'doctor', 'report', 'release', 'release'), at(r, 'doctor', 'report', 'release', 'release') === v2.release);
+    const selected = ((at(r, 'doctor', 'report', 'checks') as { id: string; status: string }[] | undefined) ?? []).find(item => item.id === 'release:selected')?.status;
+    expect('v2 selected by doctor', selected, selected === 'ok');
+    expect('v2 controller served', at(r, 'run', 'observed', 'notReady') ?? 'ready', at(r, 'run', 'observed', 'notReady') === undefined);
+    expect('starts paused', at(r, 'run', 'observed', 'status', 'paused'), at(r, 'run', 'observed', 'status', 'paused') === true);
+    expect('storage format 2', at(r, 'run', 'observed', 'status', 'storage', 'format'), at(r, 'run', 'observed', 'status', 'storage', 'format') === 2);
+    expect('one open Question', at(r, 'run', 'observed', 'status', 'questions', 'open'), at(r, 'run', 'observed', 'status', 'questions', 'open') === 1);
+    expect('Question open before answer', at(r, 'run', 'observed', 'question', 'question', 'state'), at(r, 'run', 'observed', 'question', 'question', 'state') === 'open');
+    expect('answer accepted', at(r, 'run', 'observed', 'answer', 'status'), at(r, 'run', 'observed', 'answer', 'status') === 0);
+    expect('Question answered', at(r, 'run', 'observed', 'answered', 'question', 'state'), at(r, 'run', 'observed', 'answered', 'question', 'state') === 'answered');
+    expect('v2 clean exit', at(r, 'run', 'end', 'code'), at(r, 'run', 'end', 'code') === 0);
+    expect('clean stop recorded', at(r, 'after', 'report', 'storage', 'lifecycle', 'last', 'end'), at(r, 'after', 'report', 'storage', 'lifecycle', 'last', 'end') === 'clean');
+  }
+  return { ok: checks.length > 0 && checks.every(item => item.ok), checks };
+}
+
 /** Listing rule: only the launcher, the release tree and the guest assets; never absolute paths or parent references. */
 export function listingViolations(listing: string[], id: string, assets: string) {
   return listing.filter(path => !(path === 'factory' || path === 'releases/' || path === 'assets/' || path === 'assets/guest/' ||
@@ -131,9 +219,18 @@ export async function runPhase(phase: Phase) {
     await fs.mkdir(observations, { mode: 0o700 });
   } else {
     const before = previous[phase];
-    if (before && !(await exists(`${before}-result`))) throw new Error('PREVIOUS_PHASE_REQUIRED');
+    if (before && !(await exists(`${before}-verdict`) && (JSON.parse(await fs.readFile(`${observations}/${before}-verdict.json`, 'utf8')) as { ok?: unknown }).ok === true)) {
+      throw new Error('PREVIOUS_PHASE_REQUIRED');
+    }
     await fs.writeFile(tombstonePath(phase), JSON.stringify({ revision, phase, at: new Date().toISOString() }) + '\n', { flag: 'wx', mode: 0o600 });
   }
+  /** Saves the observation, then the VERDICT of every expected outcome; any unmet expectation fails the phase (exit non-zero). */
+  const conclude = async (name: Phase, result: Record<string, unknown>) => {
+    await save(`${name}-result`, result);
+    const evaluated = verdict(name, result);
+    await save(`${name}-verdict`, evaluated);
+    if (!evaluated.ok) throw new Error('VERDICT_FAILED');
+  };
   try {
     const { createHash } = await import('node:crypto');
     const sha = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
@@ -148,7 +245,7 @@ export async function runPhase(phase: Phase) {
       const report = await buildRelease({ release: v2.release, output, guestAssets });
       if (report.source.dirty) throw new Error('SOURCE_NOT_CLEAN');
       const manifest = JSON.parse(await fs.readFile(`${output}/release-manifest.json`, 'utf8')) as { metadata: { storage?: unknown } };
-      await save('build-result', { status: 'success', report, storage: manifest.metadata.storage ?? null, durationMs: Date.now() - started });
+      await conclude('build', { status: 'success', report, storage: manifest.metadata.storage ?? null, durationMs: Date.now() - started });
       return;
     }
     const verifyArchive = async (directory: string, name: string, id: string) => {
@@ -176,7 +273,7 @@ export async function runPhase(phase: Phase) {
       await fs.writeFile(`${root}/config.yaml`, configuration, { mode: 0o600 });
       await fs.writeFile(`${root}/credentials/github-app.pem`, 'placeholder: not a key; no token is ever requested by this recipe\n', { mode: 0o600, flag: 'wx' });
       const doctor = await command(`${root}/factory`, ['doctor', '--json']);
-      await save('install-v1-result', { status: 'observed', archive, setup, doctor: { status: doctor.status, report: json(doctor.stdout) }, launcherSha256: await launcher() });
+      await conclude('install-v1', { status: 'observed', archive, setup, doctor: { status: doctor.status, report: json(doctor.stdout) }, launcherSha256: await launcher() });
       return;
     }
     if (phase === 'seed-v1') {
@@ -184,7 +281,7 @@ export async function runPhase(phase: Phase) {
       if (seed.status !== 0) { await save('seed-v1-held', { seed }); throw new Error('SEED_FAILED'); }
       const run = await runController(async factory => ({ status: json((await factory(['status', '--json'])).stdout),
         question: json((await factory(['question', questionId, '--json'])).stdout) }));
-      await save('seed-v1-result', { status: 'observed', seed: { status: seed.status, report: json(seed.stdout) }, v1run: run });
+      await conclude('seed-v1', { status: 'observed', seed: { status: seed.status, report: json(seed.stdout) }, v1run: run });
       return;
     }
     if (phase === 'extract-v2') {
@@ -192,7 +289,7 @@ export async function runPhase(phase: Phase) {
       const before = { v1: await tree(`${root}/releases/${v1.release}`), assets: await tree(`${root}/assets`), launcher: await launcher() };
       const extracted = await command('tar', ['-xpf', `${output}/software-factory-${v2.release}.tar`, '-C', root, '--skip-old-files', 'releases', 'assets'], 600000);
       const after = { v1: await tree(`${root}/releases/${v1.release}`), assets: await tree(`${root}/assets`), launcher: await launcher() };
-      await save('extract-v2-result', { status: extracted.status === 0 ? 'success' : 'failure', archive, extracted, before, after, releases: (await fs.readdir(`${root}/releases`)).sort() });
+      await conclude('extract-v2', { status: extracted.status === 0 ? 'success' : 'failure', archive, extracted, before, after, releases: (await fs.readdir(`${root}/releases`)).sort() });
       if (extracted.status !== 0) throw new Error('EXTRACTION_FAILED');
       return;
     }
@@ -205,7 +302,7 @@ export async function runPhase(phase: Phase) {
       const before = { status: await upgradeStatus(), launcher: await launcher() };
       const notRequested = await v2cli(['upgrade', 'apply']);
       const after = { status: await upgradeStatus(), launcher: await launcher(), journal: await fs.lstat(`${root}/data/upgrade`).then(() => true, () => false) };
-      await save('check-and-refusals-result', { status: 'observed', check: { status: check.status, report: json(check.stdout) }, whileRunning, unpaused, unpausedCheck: { status: unpausedCheck.status, report: json(unpausedCheck.stdout) },
+      await conclude('check-and-refusals', { status: 'observed', check: { status: check.status, report: json(check.stdout) }, whileRunning, unpaused, unpausedCheck: { status: unpausedCheck.status, report: json(unpausedCheck.stdout) },
         repaused, notRequested: { status: notRequested.status, report: json(notRequested.stdout) }, before, after });
       return;
     }
@@ -229,10 +326,11 @@ export async function runPhase(phase: Phase) {
       const afterV1 = await upgradeStatus();
       const rollback = await v2cli(['upgrade', 'rollback']);
       const resume = await v2cli(['upgrade', 'resume']);
-      await save('interrupted-migration-result', { status: 'observed', cut1: { status: cut1.status, signal: cut1.signal, stderr: cut1.stderr }, afterCut1,
+      await conclude('interrupted-migration', { status: 'observed', cut1: { status: cut1.status, signal: cut1.signal, stderr: cut1.stderr }, afterCut1,
         cut2: { status: cut2.status, signal: cut2.signal, stderr: cut2.stderr }, afterCut2, guarded: { status: guarded.status, code: json(guarded.stderr.trim().split('\n').at(-1) ?? '')?.code ?? null, stderr: guarded.stderr },
         v1Refused: { status: v1Refused.status, codes: v1Refused.stderr.split('\n').map(line => json(line)?.code).filter(Boolean), stderr: v1Refused.stderr }, afterV1, rollback: { status: rollback.status, report: json(rollback.stdout) },
-        resume: { status: resume.status, report: json(resume.stdout) }, launcherSha256: await launcher() });
+        resume: { status: resume.status, report: json(resume.stdout) }, launcherSha256: await launcher(),
+        v2LauncherSha256: (JSON.parse(await fs.readFile(`${release}/release-manifest.json`, 'utf8')) as { launcher: { sha256: string } }).launcher.sha256 });
       return;
     }
     const doctor = await command(`${root}/factory`, ['doctor', '--json']);
@@ -247,7 +345,7 @@ export async function runPhase(phase: Phase) {
       const answered = json((await factory(['question', questionId, '--json'])).stdout);
       return { status, list, shows, question, answer, answered };
     });
-    await save('start-v2-result', { status: 'observed', doctor: { status: doctor.status, report: json(doctor.stdout) }, run, after: await upgradeStatus() });
+    await conclude('start-v2', { status: 'observed', doctor: { status: doctor.status, report: json(doctor.stdout) }, run, after: await upgradeStatus() });
   } catch (error) {
     await save(`${phase}-held`, { phase, status: 'held', code: error instanceof Error ? error.message.slice(0, 128) : 'UNKNOWN', note: 'Consumed; no retry.' }).catch(() => {});
     throw new Error('QUALIFICATION_HELD');
