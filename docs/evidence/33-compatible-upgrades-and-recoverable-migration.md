@@ -169,3 +169,5 @@ done
 - Rollback valida `config.yaml` com as regras atuais só se a release anterior declara o mesmo
   `metadata.formats.configuration`; senão `ROLLBACK_CONFIGURATION_UNVERIFIABLE`.
 - O commit "keep the run result for ticket 26" ficou obsoleto e foi descartado no rebase.
+- Gate após o rebase (2026-11-15): tsc, eslint e dependency-cruiser (373 módulos) limpos; 176 arquivos um
+  por vez: 1093 pass, 0 fail, 10 skip. A receita real não foi executada.
