@@ -231,6 +231,7 @@ test('MED3/MED4: bounded reads rotate least-recently-read first, skip recorded c
   const read: string[] = [];
   const byPr = (pr: number) => ids[pr - 101]!;
   const repository: CodeRepository = { checkAccess() { throw new Error('x'); }, findPublication() { throw new Error('x'); },
+    readPullRequest() { throw new Error('x'); }, setDraft() { throw new Error('x'); },
     async readOwnMerge(ref) {
       read.push(byPr(ref.number));
       // Work 1: a malformed adapter answer makes its own decision throw (unexpected failure of ONE Work).

@@ -111,6 +111,8 @@ export function deliveryRepository(state: { pull: OwnPullRequestFacts | 'unavail
   const repository: CodeRepository = {
     checkAccess() { throw new Error('not used'); },
     findPublication() { throw new Error('not used'); },
+    readPullRequest() { throw new Error('not used by ticket 17 (ticket 15 checks read)'); },
+    setDraft() { throw new Error('not used by ticket 17'); },
     async readOwnMerge(pr): Promise<OwnPullRequestObservation> {
       calls.push({ method: 'readOwnMerge', args: pr });
       const observedAt = new Date().toISOString();
