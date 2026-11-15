@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { inventoryTree } from '../../src/entrypoints/release.js';
 import { questionId, storageWithPendingQuestion, writeFormatOne } from '../control/upgrade-fixture.js';
 import { id, releaseBuild } from './release-fixture.js';
+import { remainingMs, until } from '../runner/budget.js';
 import { configuration, fakeRelease } from './upgrade-fixture.js';
 
 // I-local (ticket 33): the REAL release builder output (private Node, emitted JS, manifest declaring storage format 2) extracted NEXT TO a
@@ -41,7 +42,7 @@ test('built release: extracted next to the previous one, explicit migration, swi
   await chmod(join(root, 'data', 'control.sqlite'), 0o600);
   const releasesBefore = JSON.stringify(await inventoryTree(join(root, 'releases', 'mvp-32.1')));
   const target = (args: string[]) => spawnSync('/usr/bin/env', ['-u', 'NODE_OPTIONS', '-u', 'NODE_PATH', '-u', 'NODE_COMPILE_CACHE', 'NODE_DISABLE_COMPILE_CACHE=1',
-    join(root, 'releases', id, 'node/bin/node'), join(root, 'releases', id, 'dist/src/entrypoints/cli.js'), ...args], { encoding: 'utf8', timeout: 60000 });
+    join(root, 'releases', id, 'node/bin/node'), join(root, 'releases', id, 'dist/src/entrypoints/cli.js'), ...args], { encoding: 'utf8', timeout: remainingMs() });
   const checked = target(['upgrade', 'check']);
   assert.equal(checked.status, 0, checked.stderr);
   const report = JSON.parse(checked.stdout);
@@ -56,7 +57,7 @@ test('built release: extracted next to the previous one, explicit migration, swi
   assert.equal(JSON.parse(applied.stdout).code, 'UPGRADE_COMPLETED');
   assert.equal(JSON.stringify(await inventoryTree(join(root, 'releases', 'mvp-32.1'))), releasesBefore, 'previous release preserved');
   // The installation launcher now selects the new release; doctor agrees.
-  const factory = (args: string[]) => spawnSync(join(root, 'factory'), args, { encoding: 'utf8', timeout: 60000 });
+  const factory = (args: string[]) => spawnSync(join(root, 'factory'), args, { encoding: 'utf8', timeout: remainingMs() });
   const doctor = JSON.parse(factory(['doctor', '--json']).stdout);
   assert.equal(doctor.release.release, id);
   assert.equal(doctor.checks.find((item: { id: string }) => item.id === 'release:selected').status, 'ok');
@@ -66,13 +67,11 @@ test('built release: extracted next to the previous one, explicit migration, swi
   run.stderr.on('data', chunk => { stderr += String(chunk); });
   const exited = new Promise<number | null>(resolve => run.once('exit', code => resolve(code)));
   try {
-    let status: { status: number | null; stdout: string } = { status: null, stdout: '' };
-    for (let i = 0; i < 100; i++) {
-      status = factory(['status', '--json']);
-      if (status.status === 0) break;
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    assert.equal(status.status, 0, stderr);
+    // The owner is up when its status answers: re-probed, bounded by the runner budget instead of 100 x 100 ms.
+    const status = await until(() => `controller status (stderr: ${stderr.slice(-300)})`, async () => {
+      const probe = factory(['status', '--json']);
+      return probe.status === 0 ? probe : undefined;
+    }, 100);
     const view = JSON.parse(status.stdout).payload ?? JSON.parse(status.stdout);
     assert.deepEqual([view.paused, view.storage.format, view.questions.open], [true, 2, 1]);
     const question = JSON.parse(factory(['question', questionId, '--json']).stdout);
@@ -82,7 +81,7 @@ test('built release: extracted next to the previous one, explicit migration, swi
     assert.equal(JSON.parse(factory(['question', questionId, '--json']).stdout).question.state, 'answered');
   } finally { run.kill('SIGINT'); }
   assert.equal(await exited, 0, stderr);
-  const restarted = spawnSync(join(root, 'factory'), ['upgrade', 'status'], { encoding: 'utf8', timeout: 60000 });
+  const restarted = spawnSync(join(root, 'factory'), ['upgrade', 'status'], { encoding: 'utf8', timeout: remainingMs() });
   assert.equal(JSON.parse(restarted.stdout).code, 'UPGRADE_COMPLETED');
   assert.equal(JSON.parse(restarted.stdout).storage.lifecycle.last.end, 'clean', 'the clean stop is recorded only after confirmed cessation/persistence');
   assert.doesNotMatch(await readFile(join(root, 'data', 'control.sqlite'), 'latin1'), /synthetic-never-read/);

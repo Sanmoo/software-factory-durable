@@ -79,7 +79,7 @@ export async function builtRelease() {
   const extracted = spawnSync('tar', ['-xpkf', join(output, report.archive), '-C', root], { encoding: 'utf8' });
   assert.equal(extracted.status, 0, extracted.stderr);
   const factory = (installation: string, args: string[], env: NodeJS.ProcessEnv = {}) =>
-    spawnSync(join(installation, 'factory'), args, { cwd: work, encoding: 'utf8', timeout: 30000, env: { ...process.env, ...env } });
+    spawnSync(join(installation, 'factory'), args, { cwd: work, encoding: 'utf8', timeout: remainingMs(), env: { ...process.env, ...env } });
   return { work, assets, output, report, root, factory };
 }
 

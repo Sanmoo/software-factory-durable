@@ -1,25 +1,31 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ended } from '../runner/budget.js';
 
 for (const mode of ['ok', 'fail', 'absent', 'false', 'invalid']) test(`public normal native Bash copy ${mode} via guarded SAME owner and fixed new Node24 child`, async () => {
   const root = await mkdtemp('/tmp/p145-');
   try {
     const environment = `env-${createHash('sha256').update('producer-ordering-work').digest('hex')}`;
-    const child = spawnSync(process.execPath, ['--experimental-test-module-mocks', '--import',
+    const child = spawn(process.execPath, ['--experimental-test-module-mocks', '--import',
       fileURLToPath(new URL('../sandbox/adapter-diagnostics-fixture.js', import.meta.url)),
       fileURLToPath(new URL('../../src/entrypoints/adapter.js', import.meta.url)), root, environment,
       'boot-66666666-2222-4333-8444-555555555555'], {
-      timeout: 15000, maxBuffer: 32768, encoding: 'utf8', env: { PATH: '', NODE_DISABLE_COMPILE_CACHE: '1',
+      detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: { PATH: '', NODE_DISABLE_COMPILE_CACHE: '1',
         ADAPTER_DIAGNOSTIC_FIXTURE_MODE: 'normal-worker', TASK83_NATIVE_BUILDER: '1', TASK85_NATIVE_BASH: '1', TASK145_COPY: mode },
     });
-    assert.equal(child.error, undefined, child.error?.message);
+    let stdout = '', stderr = '';
+    child.stdout.on('data', data => { stdout += data; }); child.stderr.on('data', data => { stderr += data; });
+    // No fixed 15 s spawnSync timeout (expired once at ci load 18): the adapter's own exit, bounded by the runner budget.
+    const { code } = await ended(child, () => { try { return readFileSync(join(root, 'audit'), 'utf8').trim().split('\n').slice(-3).join(' | '); } catch { return 'no audit yet'; } });
+    assert.ok(stdout.length <= 32768 && stderr.length <= 32768, 'the chain stays quiet (the former spawnSync maxBuffer bound, per stream)');
     const audit = (await readFile(join(root, 'audit'), 'utf8')).trim().split('\n');
-    assert.equal(child.status, 0, child.stderr + '\n' + audit.join('\n'));
+    assert.equal(code, 0, stderr + '\n' + audit.join('\n'));
     const invalid = mode === 'invalid'; const enabled = mode === 'ok' || mode === 'fail';
     assert.equal(audit.filter(line => line === 'vm-create').length, 1);
     assert.equal(audit.filter(line => line === 'worker-spawn').length, invalid ? 0 : 1);
