@@ -77,7 +77,7 @@ test('AC1/AC2/AC4/AC5 + review HIGH 1: after a REAL verified review, absence req
   assert.deepEqual([publish!.handoff, publish!.editSourceMaxBytes, publish!.continuation], [null, undefined, null]);
   assert.match(publish!.prompt, /^Factory publication instruction \(publish-only session, reason: PUBLISH_ONLY_SESSION\)/);
   assert.equal(h.execution.calls.filter(call => call.kind.startsWith('activate-')).length, 2, 'reviewers ran only for the implementation');
-  assert.ok(publish!.prompt.includes(`--force-with-lease=refs/heads/${work.branch}: origin ${'d'.repeat(40)}:refs/heads/${work.branch}`));
+  assert.ok(publish!.prompt.includes(`--force-with-lease=refs/heads/${work.branch}: https://github.com/acme/project.git ${'d'.repeat(40)}:refs/heads/${work.branch}`));
   assert.deepEqual([publication.branch, publication.base, publication.marker, publication.verified!.head], [work.branch, 'main', `<!-- software-factory:work:${workId} -->`, 'd'.repeat(40)]);
   assert.deepEqual(publication.expectedRemote, { state: 'absent' });
   assert.deepEqual(publication.refsBefore, { 'refs/heads/main': 'b'.repeat(40) }, 'the refs snapshot of the request is preserved');
@@ -209,6 +209,15 @@ test('review MED 4: an unprotected base refuses publication; any other ref chang
   await tagged.settle(async () => publicationOf(await tagged.work())?.state === 'blocked', 'blocked');
   assert.deepEqual(publicationOf(await tagged.work()).reasons, ['UNEXPECTED_REF_CHANGE:refs/tags/v9'], 'Contents W is repository-wide: the push of a tag is detected');
   assert.equal((await tagged.work()).pullRequest?.number, 4, 'the own PR is linked, but not as published');
+  // Ticket 18 backstop: an effect of the publish-only guest outside its scope is a distinct impediment (GitHub permissions cannot separate them).
+  assert.deepEqual((await tagged.work()).impediments.map(item => item.code), ['PUBLICATION_BLOCKED', 'GUEST_EFFECT_OUT_OF_SCOPE']);
+  assert.match((await tagged.work()).impediments[1]!.nextStep, /UNEXPECTED_REF_CHANGE:refs\/tags\/v9/);
+  await tagged.stop();
+  const readied = await harness(t, { pulls: {}, issues: [remoteIssue(3)] }, [{ kind: 'implement', head: 'd'.repeat(40) },
+    { kind: 'publish', publish: publishOwn({ draft: false }), end: 'success' }]);
+  await readied.implemented();
+  await readied.settle(async () => publicationOf(await readied.work())?.state === 'blocked', 'blocked');
+  assert.deepEqual((await readied.work()).impediments.map(item => item.code), ['PUBLICATION_BLOCKED', 'GUEST_EFFECT_OUT_OF_SCOPE'], 'a non-draft own PR right after the guest published');
 });
 
 test('review MED 6: a later verified basis updates the SAME own PR once (lease on its linked head); the published head is never re-published', async t => {

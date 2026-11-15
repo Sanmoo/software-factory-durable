@@ -1,0 +1,54 @@
+{
+ "own": {
+  "pullRequestId": 5326539910,
+  "nodeId": "PR_kwDOSuqsXs8AAAABPXyMhg",
+  "number": 15,
+  "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/15",
+  "state": "open",
+  "merged": false,
+  "draft": true,
+  "headRef": "factory/14-2ece4778",
+  "headSha": "54b268d5b3905d077883524718d2527645e16b5a",
+  "base": "main",
+  "author": {
+   "id": 351187749,
+   "login": "sanmoo-factory[bot]",
+   "type": "Bot"
+  },
+  "linkedAt": "2026-11-15T19:52:50.067Z",
+  "bodySha256": "b336ea8c6070bc6f935b106cf258ac23b5a63abe8dbaa7a623e9d79deca22eb0"
+ },
+ "facts": {
+  "kind": "observed",
+  "source": "github-rest",
+  "observedAt": "2026-11-15T19:54:44.494Z",
+  "repositoryId": 1256893534,
+  "pullRequest": {
+   "pullRequestId": 5326539910,
+   "nodeId": "PR_kwDOSuqsXs8AAAABPXyMhg",
+   "number": 15,
+   "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/15",
+   "state": "closed",
+   "draft": false,
+   "merged": true,
+   "mergedAt": "2026-11-15T19:54:23Z",
+   "mergeCommitSha": null,
+   "headRef": "factory/14-2ece4778",
+   "headSha": "54b268d5b3905d077883524718d2527645e16b5a",
+   "headRepositoryId": 1256893534,
+   "baseRef": "main",
+   "baseRepositoryId": 1256893534,
+   "reported": {
+    "mergeCommitSha": "absent",
+    "merged": "value"
+   }
+  }
+ },
+ "mergedBy": {
+  "login": "Sanmoo",
+  "id": 1881597,
+  "type": "User"
+ },
+ "held": null,
+ "note": "The Factory-made readiness is recorded in run/resume/ready-result; approval and merge were the operator's."
+}

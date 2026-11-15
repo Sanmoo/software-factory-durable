@@ -56,16 +56,40 @@ export const productionProfile = Object.freeze({
     // optional per-repository `timeoutSeconds` is the only deadline (tickets 19) and this release never invents another.
     deadline: 'not set by production composition; only the optional configured per-repository timeoutSeconds applies' }),
   prompts: Object.freeze({
+    // Ticket 18: one Builder system prompt PER SESSION MODE (selected by `productionBuilderPrompt`): each names only the tools that session has.
+    // Implementation/review-round session: write, bash, read, edit, ask_user, handoff. Never publishes.
     builder: 'You are the Software Factory Builder. Follow the Factory skill pack exactly. Work only in /workspace/checkout and /artifacts. Never push, open pull ' +
-      'requests, change GitHub state, request broader access or use another credential. Report blockers instead of working around them. When your proposal is ' +
+      'requests, change GitHub state, request broader access or use another credential. When you need information or an approval you do not have, use the ' +
+      'ask_user tool instead of working around it. Report blockers instead of working around them. Declare only gates whose exact command the Ticket or the ' +
+      'preserved instructions document; never declare a gate to say that none exists. When your proposal is ' +
       'complete, call the handoff tool (alone) for the Factory Standards and Spec reviews and stop; when the results arrive, treat ONLY the findings the results list ' +
       'and follow the skill pack for further rounds (hand off again with your treatments and gates) until the Factory says no new round is needed.',
+    // Publish-only session Control requests (ticket 14): write, bash, read, ask_user — no content change tool beyond those, no review round.
+    builderPublication: 'You are the Software Factory Builder in a publish-only session the Factory requested. Follow the Factory publication instruction and ' +
+      'the pr skill of the Factory skill pack exactly. Work only in /workspace/checkout and /artifacts and change no content of the checkout. Publish only as ' +
+      'instructed: your own branch, the verified commit, the explicit lease, ONE draft pull request (or the description of your own pull request the instruction ' +
+      'names). Never merge, approve, mark ready, push to the base or any other branch or tag, request broader access, use another credential or change anything ' +
+      'else on GitHub. When you need information or an approval you do not have, use the ask_user tool instead of working around it. Report blockers instead ' +
+      'of working around them.',
     standards: 'You are the Software Factory Standards reviewer. You only read; you never change anything. Judge against the preserved instructions, keep ' +
       'documented rules distinct from heuristics. Your final message is ONLY the JSON verdict object you are asked for, with no prose before or after.',
     spec: 'You are the Software Factory Spec reviewer. You only read; you never change anything. Judge against the preserved request only. Your final ' +
       'message is ONLY the JSON verdict object you are asked for, with no prose before or after.',
   }),
 });
+
+/**
+ * Ticket 18: the production Builder system prompt of one session, by its mode and the exact tool set the SDK session will have. The
+ * publish-only session (phase `builder-publication`, no edit, no handoff) gets the publication prompt; an implementation/review-round session
+ * (with the handoff tool) the implementation prompt. Any other combination (e.g. a future reconciliation mode, ticket 21) has no production
+ * prompt yet and refuses the activation before launch, never a prompt naming tools the session lacks.
+ */
+export function productionBuilderPrompt(session: { phaseId: string; tools: readonly string[] }): string {
+  const has = (tool: string) => session.tools.includes(tool);
+  if (session.phaseId === 'builder-publication' && !has('handoff') && !has('edit')) return productionProfile.prompts.builderPublication;
+  if (['builder-initial', 'builder-recovery', 'builder-continuation'].includes(session.phaseId) && has('handoff') && has('edit') && has('ask_user')) return productionProfile.prompts.builder;
+  throw new Error('BUILDER_SESSION_MODE_UNSUPPORTED');
+}
 
 /** The latest id (registry order) whose pack declares the continuation capability; derived, so a newer registered pack supersedes it. */
 export async function latestContinuationPack<T extends string>(ids: readonly T[], continues: (id: T) => Promise<boolean>): Promise<T> {

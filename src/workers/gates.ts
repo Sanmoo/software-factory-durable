@@ -94,3 +94,41 @@ export function createToolLedger(options: { maxCalls?: number } = {}) {
     },
   };
 }
+
+/** The preserved Ticket/instructions file a gate source may cite (`/artifacts/(spec|instructions)/v<N>/<file>[#section]`), or null. */
+export function preservedGateSource(source: string): string | null {
+  const path = source.split('#')[0]!;
+  return /^\/artifacts\/(spec|instructions)\/v[1-9][0-9]{0,3}\/[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/.test(path) && !path.split('/').some(part => part === '..' || part === '.')
+    ? path : null;
+}
+
+/** Command snippets a source documents: inline code spans and fenced block lines (also inside the string values of a JSON Ticket). */
+function documentedCommands(source: string): string[] {
+  let texts = [source];
+  try {
+    const strings: string[] = [];
+    const walk = (value: unknown): void => { if (typeof value === 'string') strings.push(value); else if (value && typeof value === 'object') Object.values(value).forEach(walk); };
+    walk(JSON.parse(source));
+    if (strings.length) texts = strings;
+  } catch { /* not JSON: the text itself */ }
+  const snippets: string[] = [];
+  for (const text of texts) {
+    for (const block of text.matchAll(/```[^\n]*\n([\s\S]*?)```/g)) snippets.push(...block[1]!.split('\n'));
+    for (const span of text.replace(/```[\s\S]*?```/g, '').matchAll(/`([^`\n]+)`/g)) snippets.push(span[1]!);
+  }
+  return snippets.map(normalize).filter(Boolean);
+}
+const normalize = (command: string) => command.replace(/\s+/g, ' ').trim();
+const directoryChange = /^cd \S+$/;
+
+/**
+ * Ticket 18: whether a declared gate command is an executable command its cited source documents — the whole command is a documented
+ * snippet, or one of its `&&`/`;` segments other than a bare directory change is. Prose ("Not applicable: …") never is.
+ */
+export function gateCommandDocumented(command: string, source: string): boolean {
+  const declared = normalize(command);
+  if (!declared || /^(not applicable|n\/a|none|no |there is no|nothing)/i.test(declared)) return false;
+  const snippets = new Set(documentedCommands(source).filter(snippet => !directoryChange.test(snippet)));
+  if (snippets.has(declared) && !directoryChange.test(declared)) return true;
+  return declared.split(/\s*(?:&&|;)\s*/).some(segment => !directoryChange.test(segment) && snippets.has(normalize(segment)));
+}

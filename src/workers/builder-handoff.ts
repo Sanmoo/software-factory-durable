@@ -4,7 +4,7 @@ import type { ToolDefinition } from '#factory-pi';
 import type { HandoffDeclarations, ProposalHandoff } from '../contracts/index.js';
 import type { ToolContext, ToolProjection } from '../sandbox/index.js';
 import { contentProbeCommand, contentProbeSchema, handoffCommand, parseHandoffSummary } from './handoff.js';
-import { declarationsMaxBytes, declarationsSchema, type createToolLedger, type Declarations } from './gates.js';
+import { declarationsMaxBytes, declarationsSchema, gateCommandDocumented, preservedGateSource, type createToolLedger, type Declarations } from './gates.js';
 
 /**
  * A suspended capture of the Builder proposal. Ticket 13: `declarations` are the treatments/gate evidence the Host resolved for this
@@ -32,7 +32,9 @@ const suspendedResult = (text: string) => ({ content: [{ type: 'text' as const, 
  * Host-owned handoff state of one Builder invocation. One review round per invocation in this Factory version (ticket 12); a second
  * request is refused with an explicit result, never silently accepted.
  */
-export function builderHandoff(policy?: HandoffRounds, ledger?: ReturnType<typeof createToolLedger>) {
+export function builderHandoff(policy?: HandoffRounds, ledger?: ReturnType<typeof createToolLedger>,
+  /** Ticket 18: reads one preserved Ticket/instructions file (Host-fixed, confined); null = unreadable. Absent = gate sources not checked. */
+  sources?: (path: string) => Promise<string | null>) {
   // Gate evidence can only come from the Host ledger; a multi-round policy without it is a composition error, never a silent gap.
   if (policy && !ledger) throw new Error('HANDOFF_LEDGER_REQUIRED');
   let suspended = false, pending = false, rounds = 0, batch = 0;
@@ -67,7 +69,7 @@ export function builderHandoff(policy?: HandoffRounds, ledger?: ReturnType<typeo
   // Ticket 13: repeated rounds with treatments and gate declarations; the Host resolves gate evidence from its own ledger.
   const multi: ToolDefinition = { ...legacy,
     description: 'Factory review handoff. Call it alone, when your proposal is complete in /workspace/checkout (committed or not) and after re-running the ' +
-      'documented gates as your LAST commands. Arguments: `gates` (each documented gate: id, source document#section, the EXACT bash command you ran, ' +
+      'documented gates as your LAST commands. Arguments: `gates` (ONLY gates whose exact command the Ticket or preserved instructions document — never one to say none exists: id, source document#section, the EXACT bash command you ran, ' +
       'its documented cwd, status run|not-run|waived, a reason when not run/waived, a waiver references its concrete prior authorization, requiredCheck when ' +
       'it is a GitHub required check) and `treatments` (only for every finding the delivered results listed, never a placeholder for a reviewer without findings: round, role, findingId, outcome fixed|not-adopted, justification, ' +
       'optional evidence/authorization). The Factory takes gate results only from its own record of your Bash calls, suspends ALL your tools and turns, ' +
@@ -87,6 +89,21 @@ export function builderHandoff(policy?: HandoffRounds, ledger?: ReturnType<typeo
       const unknown = [...new Set(unknownTreatments(parsed.data.treatments ?? []))];
       if (unknown.length) return refused(`HANDOFF_TREATMENT_UNKNOWN_FINDING: no handoff happened and no review round was used. Declare treatments ONLY for ` +
         `findings the delivered review results listed (exact round, role and findingId); omit reviewers and rounds without findings. Unknown: ${unknown.slice(0, 16).join(', ')}`.slice(0, 1500));
+      // Ticket 18 (real run q18-v2): every declared gate must carry an executable command its cited preserved source documents; a gate
+      // declared only to say it does not exist would make the Execution unverifiable. Refused here, in session, without using a round.
+      if (sources) {
+        const problems: string[] = [];
+        for (const item of parsed.data.gates ?? []) {
+          const path = preservedGateSource(item.source);
+          if (!path) { problems.push(`${item.id}: ${item.source} is not a preserved Ticket/instructions source (/artifacts/spec|instructions/v<N>/<file>#section)`); continue; }
+          const text = await sources(path).catch(() => null);
+          if (text === null) problems.push(`${item.id}: ${path} could not be read`);
+          else if (!gateCommandDocumented(item.command, text)) problems.push(`${item.id}: its command is not an executable command documented in ${item.source}`);
+        }
+        if (problems.length) return refused(`HANDOFF_GATE_NOT_DOCUMENTED: no handoff happened and no review round was used. Declare ONLY gates whose exact command ` +
+          `the Ticket or the preserved instructions document (cite that file#section and run that command); if none is documented, omit gates — never declare a ` +
+          `gate to say it does not exist. ${problems.slice(0, 8).join('; ')}`.slice(0, 1500));
+      }
       declarations = parsed.data;
       rounds++; suspended = true; pending = true;
       return { content: [{ type: 'text' as const, text: `Handoff accepted for capture round ${policy!.first + rounds - 1}. Your tools are suspended; stop now and wait.` }],
@@ -151,5 +168,21 @@ export async function probeContent(context: ToolContext, sandbox: ToolProjection
     }, signal);
     if (result.status !== 'success' || result.format !== 'text' || result.exitCode !== 0 || bytes > 4096) return null;
     return contentProbeSchema.parse(JSON.parse(Buffer.concat(chunks).toString('utf8'))).sha256;
+  } catch { return null; }
+}
+
+/**
+ * Ticket 18: Host-originated fixed read of ONE preserved Ticket/instructions file through the Builder's own binding (no model input; the path
+ * is re-validated against the preserved-source pattern, so it cannot carry shell syntax), bounded; a symlink or anything else is unreadable.
+ */
+export async function readGateSource(context: ToolContext, sandbox: ToolProjection, path: string, signal: AbortSignal): Promise<string | null> {
+  if (preservedGateSource(path) !== path) return null;
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  try {
+    const result = await sandbox.executeTool(context, { name: 'bash', command: `p='${path}'; [ -f "$p" ] && [ ! -L "$p" ] && head -c 262144 -- "$p"`, timeout: 30,
+      callId: `gate-source-${randomUUID()}` }, data => { bytes += data.length; if (bytes <= 262144) chunks.push(Buffer.from(data)); }, signal);
+    if (result.status !== 'success' || result.format !== 'text' || result.exitCode !== 0 || bytes > 262144) return null;
+    return Buffer.concat(chunks).toString('utf8');
   } catch { return null; }
 }

@@ -250,9 +250,27 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
     if (fault.errors) { graphqlErrors = true; body = { data: { [field]: null }, errors: fault.errors }; }
     else body = status === 200 ? { data: { [field]: { clientMutationId: request.variables.cid, pullRequest: { id: fault.nodeId ?? target.node_id, number: target.number, isDraft: draft, headRefOid: target.head.sha ?? 'c'.repeat(40) } } } } : { message: 'synthetic' };
   } else { apply(); body = { data: { [field]: { clientMutationId: request.variables.cid, pullRequest: { id: target.node_id, number: target.number, isDraft: draft, headRefOid: target.head.sha ?? 'c'.repeat(40) } } } }; }
+  } else if (endpoint === '/graphql' && method === 'POST' && !app) {
+  // Ticket 17 (journey, ticket 18): the atomic conditional deletion of ONE branch ref (updateRefs, beforeOid, afterOid zero, no force) of the
+  // token's repository under a contents:write grant; any other document exits 23. A ref not at beforeOid changes nothing (GitHub semantics).
+  if (args[args.indexOf('--input') + 1] !== '-') process.exit(19);
+  let input = ''; for await (const data of process.stdin) input += data;
+  const request = JSON.parse(input);
+  trace.body = input;
+  const update = request.variables?.refUpdates?.[0];
+  if (!/^mutation\\(\\$repositoryId: ID!, \\$refUpdates: \\[RefUpdate!\\]!\\) \\{ updateRefs\\(/.test(request.query ?? '') || request.variables.refUpdates.length !== 1 ||
+    update.afterOid !== '0'.repeat(40) || update.force !== false || !/^refs\\/heads\\/./.test(update.name)) process.exit(23);
+  const target = repositories.find(r => 'R_' + r.id === request.variables.repositoryId && token.split('-').at(-1) === 'r' + r.id);
+  const granted = known?.permissions ?? {};
+  const branch = update.name.slice(11);
+  const refs = world.refs ?? {};
+  if (!target) { graphqlErrors = true; body = { data: { updateRefs: null }, errors: [{ type: 'NOT_FOUND', message: 'Could not resolve to a node' }] }; }
+  else if (granted.contents !== 'write') { graphqlErrors = true; body = { data: { updateRefs: null }, errors: [{ type: 'FORBIDDEN', message: 'Resource not accessible by integration' }] }; }
+  else if (refs[branch] !== update.beforeOid) { graphqlErrors = true; body = { data: { updateRefs: null }, errors: [{ type: 'UNPROCESSABLE', message: 'A ref was not at its expected beforeOid' }] }; }
+  else { delete refs[branch]; world.refs = refs; writeFileSync(${JSON.stringify(worldFile)}, JSON.stringify(world)); body = { data: { updateRefs: { clientMutationId: null } } }; }
   } else if (app || (method !== 'GET' && !(method === 'POST' && /^\\/repos\\/[^/]+\\/[^/]+\\/(issues\\/\\d+\\/comments|git\\/refs|pulls)$/.test(path)))) process.exit(16);
   else if (!repo) process.exit(11);
-  else if (rest === '') body = { id: repo.id, full_name: repo.name, owner: { login: repo.name.split('/')[0] } };
+  else if (rest === '') body = { id: repo.id, node_id: 'R_' + repo.id, full_name: repo.name, default_branch: 'main', owner: { login: repo.name.split('/')[0] } };
   else if (rest === '/issues') {
   const state = url.searchParams.get('state'); const label = url.searchParams.get('labels');
   body = page(issuesOf(repo).filter(i => (!state || state === 'all' || i.state === state) &&
@@ -344,7 +362,7 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
       const reads = (checks.reads ??= {})[number] = (checks.reads[number] ?? 0) + 1;
       writeFileSync(${JSON.stringify(worldFile)}, JSON.stringify(world));
       const head = detail.change && reads >= detail.change.afterReads ? detail.change.head_sha : detail.head_sha;
-      body = { ...found, html_url: 'https://github.com/acme/project/pull/' + number, draft: detail.draft ?? true, merged: detail.merged ?? false,
+      body = { ...found, html_url: 'https://github.com/acme/project/pull/' + number, draft: detail.draft ?? true, merged: detail.merged ?? Boolean(found.merged_at),
         mergeable: detail.mergeable === undefined ? true : detail.mergeable, mergeable_state: detail.mergeable_state ?? 'clean', merge_commit_sha: detail.merge_commit_sha ?? 'e'.repeat(40),
         head: { ...found.head, sha: head }, base: { ref: detail.base_ref ?? 'main', sha: detail.base_sha ?? 'a'.repeat(40), repo: { id: 3 } } };
     }
@@ -374,8 +392,12 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
   if (found) body = shape(found);
   else { status = 404; body = { message: 'Not Found' }; }
   } else if (rest === '/pulls' && repo.id === 3) {
-  if (url.searchParams.get('state') !== 'all') process.exit(17);
-  body = page(world.pulls.map(p => ({ draft: false, ...p, head: { sha: 'c'.repeat(40), ...p.head }, html_url: 'https://github.com/acme/project/pull/' + p.number,
+  const state = url.searchParams.get('state');
+  const headFilter = url.searchParams.get('head'), baseFilter = url.searchParams.get('base');
+  // Ticket 17: open pull requests by head (owner:branch) or base, as the branch cleanup revalidation lists them.
+  if (state !== 'all' && !(state === 'open' && (headFilter || baseFilter))) process.exit(17);
+  body = page(world.pulls.filter(p => state === 'all' || (p.state === 'open' && (!headFilter || 'acme:' + p.head.ref === headFilter) &&
+    (!baseFilter || (p.base?.ref ?? 'main') === baseFilter))).map(p => ({ draft: false, ...p, head: { sha: 'c'.repeat(40), ...p.head }, html_url: 'https://github.com/acme/project/pull/' + p.number,
     base: { ref: p.base?.ref ?? 'main', repo: { id: 3 } } })));
   } else process.exit(11);
   for (const [fragment, fault] of Object.entries(world.faults ?? {})) if (endpoint.includes(fragment) && !app) {

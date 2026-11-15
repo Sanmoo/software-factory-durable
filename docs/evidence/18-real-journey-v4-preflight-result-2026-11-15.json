@@ -1,0 +1,304 @@
+{
+ "status": "success",
+ "reasons": [],
+ "operator": {
+  "login": "Sanmoo",
+  "id": 1881597
+ },
+ "repositoryNodeId": "R_kgDOSuqsXg",
+ "configuration": {
+  "schemaVersion": 1,
+  "operators": [
+   {
+    "login": "Sanmoo",
+    "id": 1881597
+   }
+  ],
+  "models": {
+   "builder": {
+    "provider": "openai",
+    "model": "gpt-6-luna"
+   },
+   "standards": {
+    "provider": "openai",
+    "model": "gpt-6-luna"
+   },
+   "spec": {
+    "provider": "openai",
+    "model": "gpt-6-luna"
+   }
+  },
+  "githubApp": {
+   "appId": 5569788,
+   "privateKeyFile": "credentials/app.pem"
+  },
+  "sandbox": {
+   "schemaVersion": 1,
+   "profile": "gondolin-qemu-alpine-dev-v1",
+   "memoryMiB": 4096,
+   "vcpus": 2,
+   "diskGiB": 40,
+   "shutdownGraceSeconds": 30,
+   "minFreeSpaceGiB": 4
+  },
+  "repositories": [
+   {
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "base": "main",
+    "installationId": 177599217,
+    "workflows": false,
+    "label": "ready-for-agent",
+    "correctionLimit": 3,
+    "recoveryLimit": 3
+   }
+  ],
+  "dependencyRepositories": [],
+  "concurrency": 1,
+  "pollingSeconds": 60
+ },
+ "skillPack": "factory-skills-v6",
+ "composition": {
+  "guestAssets": {
+   "directory": "/home/sanmoo/software-factory-test/assets34/assets",
+   "manifestSha256": "8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807"
+  },
+  "artifactSeeds": [
+   "factory/skill-pack/factory-skills-v6"
+  ],
+  "profiles": {
+   "builder": {
+    "id": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+    "auth": "factory-oauth",
+    "providerId": "openai",
+    "modelId": "gpt-6-luna",
+    "api": "openai-responses",
+    "systemPromptSha256": "3e23621e43425f1d93f5a6d7d340f11819a936786207611c9068e99fe9dd71ce"
+   },
+   "standards": {
+    "id": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+    "auth": "factory-oauth",
+    "providerId": "openai",
+    "modelId": "gpt-6-luna",
+    "api": "openai-responses",
+    "systemPromptSha256": "b4f5180d47c5836ab16000863645ad330dc4043a718e888b90d6d7216c381398"
+   },
+   "spec": {
+    "id": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+    "auth": "factory-oauth",
+    "providerId": "openai",
+    "modelId": "gpt-6-luna",
+    "api": "openai-responses",
+    "systemPromptSha256": "8b33e480e740f759b485a0ed33b3317cf871ab5d71ee38145632207e3b29a52d"
+   }
+  }
+ },
+ "ticket": {
+  "kind": "observed",
+  "source": "github-rest",
+  "observedAt": "2026-11-15T19:43:18.786Z",
+  "completeness": "complete",
+  "ticket": {
+   "tracker": "github",
+   "repository": "Sanmoo/java-springboot-event-sourcing",
+   "repositoryId": 1256893534,
+   "issueId": 6408593350,
+   "nodeId": "I_kwDOSuqsXs8AAAABfftfxg",
+   "number": 14,
+   "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/14"
+  },
+  "state": "open",
+  "stateReason": null,
+  "labels": [
+   {
+    "id": 12918930265,
+    "name": "ready-for-agent"
+   }
+  ],
+  "pullRequest": false
+ },
+ "text": {
+  "matches": true,
+  "titleSha256": "0d5e60d97c9b9eaa6127ddb21379d105d9841abe8f6db6f14e277e02b7b36a61",
+  "bodySha256": "063ffc3d987dd87fcc7dddab3bdbf44bd9fb6e739ef95ade75cc1a6381531fe8"
+ },
+ "graph": {
+  "completeness": "complete",
+  "nodes": 1,
+  "problems": []
+ },
+ "refs": {
+  "refs/heads/factory/11-bf8df237": "188d81625f44b7343d7221c01b79f2191918dd96",
+  "refs/heads/factory/8-4535224b": "19983968187d7e5cff8ae6a68a998ae70e547727",
+  "refs/heads/main": "eb6178d666882a614a9b7716979c2a15bbd262fc"
+ },
+ "baseProtection": {
+  "state": "pull-request-required",
+  "sources": [
+   "ruleset:26435808"
+  ]
+ },
+ "app": {
+  "login": "sanmoo-factory[bot]",
+  "id": 351187749
+ },
+ "rules": {
+  "ok": true,
+  "rules": [
+   {
+    "type": "pull_request",
+    "ruleset": 26435808
+   },
+   {
+    "type": "non_fast_forward",
+    "ruleset": 26435808
+   },
+   {
+    "type": "deletion",
+    "ruleset": 26435808
+   },
+   {
+    "type": "update",
+    "ruleset": 26435808
+   }
+  ],
+  "restrictUpdates": true
+ },
+ "restrictUpdates": true,
+ "expectedStop": "readiness MERGE_BLOCKED_UPDATE_RESTRICTED (ticket 39): nothing converted; operator decides",
+ "y5Inventory": {
+  "environments": [
+   {
+    "environment": "env-0d17167a5f60efc53111e3817711db45efe00deba56ff410f486a844e0ae8a41",
+    "workId": "6f7a804e-236e-4a0d-948c-d5169081eba5"
+   },
+   {
+    "environment": "env-1a5dfcd03ca7e5828e4aba6806f7575e3e189fbf4fd3d9d67a67297608fef17b",
+    "workId": "a5f25ab7-6e42-4b63-90fb-4660d34d2995"
+   },
+   {
+    "environment": "env-24fa9f68040668eabf7299598aec8e899b58fafaa2c192992d153018af4ce131",
+    "workId": "876f8245-2a80-41f9-80cc-40ba16087bca"
+   },
+   {
+    "environment": "env-3427342584fb4c9db67a6c468452f4b139db9a2bf51b272feb20925e64d16a81",
+    "workId": "q05-821c351a-b41c-45a1-9ed0-7839131e0bb3"
+   },
+   {
+    "environment": "env-3fd513709d907379781801e7df8858dad47f86b4f1d3e3c421d20848c6738c8b",
+    "workId": "q06-09aa794c-4324-4a8a-af51-596a27845ff4"
+   },
+   {
+    "environment": "env-473161d181f6ff73f385613104cf265b1ec72b2987aa8bdeb458a37bdf20ff88",
+    "workId": "28c75e5a-f540-4056-b879-4f7020ea11a8"
+   },
+   {
+    "environment": "env-4b0f531128d0d7faa869978dc36a9d4f1595de901ee6613d22f2985f6c0ea0c6",
+    "workId": "8422dbf8-c962-4463-80ef-3442e94f65d1"
+   },
+   {
+    "environment": "env-5649a7d99415d9c01d7231c15070da5b53b02e1ebaa1e80f4cfa353168b40cc3",
+    "workId": "6dc4d114-81e2-4ee3-9ce1-260ae7e55b91"
+   },
+   {
+    "environment": "env-6a78bd355b5f43317ab048b2a12cd36e20e8f7cb91a7a594860fb1d9e78868e9",
+    "workId": "bf8df237-8213-4ab4-bf8a-a74152e599a6"
+   },
+   {
+    "environment": "env-714b2183fbed7630da7e179d30c1ae6e7f5c55c07fd2884c8fcb1c7013119b96",
+    "workId": "q06-f87b756f-e448-4ac7-b161-d4449bc99527"
+   },
+   {
+    "environment": "env-75b775f7973a6d1a614e4552d3135fd5663200acf886765f7470943831f0c7c2",
+    "workId": "c6a7a2e2-5fb5-43ce-b46c-c1b636cc7651"
+   },
+   {
+    "environment": "env-75f39d6586f0c65cfcafccdc16ced5645e6db91f950362ae901cfefe41c5a7ca",
+    "workId": "f209e8a1-f7da-42e7-a173-69252ce5854d"
+   },
+   {
+    "environment": "env-7b1de5b0b6f83cf9757b71e7e0c72ad365e54421ed4bb63217c154199a934329",
+    "workId": "q05-ba45e930-892f-409f-afa8-95d61c70a6c6"
+   },
+   {
+    "environment": "env-9724f855fd065bd79d40b9277c791cc4f82b775834d9d70ee14fe930544b0929",
+    "workId": "99fe871b-b872-4522-912c-fefd9700edda"
+   },
+   {
+    "environment": "env-9ad204ad81ee93ce8ffe6245445586b8678f126c79d2fd888b4a31621b33afeb",
+    "workId": "97e80b59-52bc-4952-bc5f-0a7d4dbe3048"
+   },
+   {
+    "environment": "env-a3e73d39893bb47c3b4c81451c3eb84887f0ce21e00798b488a317480955e27f",
+    "workId": "230358b0-72b4-4412-ad23-c368403677cc"
+   },
+   {
+    "environment": "env-a604c02a912491d85dce12a0bf9e5a35b501d23b5d4c9b3e7cfaa3649166ca7c",
+    "workId": "q05-18ffc9d6-9a2f-4ddf-89b9-2ab10b5fcc5d"
+   },
+   {
+    "environment": "env-ac54df5572efc504b73b735fa280aafb2bcc60c4eeaac30010f5d313b7c57a6c",
+    "workId": "0d077da1-cbfb-4e29-a1d9-70ef1f545433"
+   },
+   {
+    "environment": "env-b88abcaa3725a04df5fe5bdbdc43b7b6a6aaa6dbcf4d77ef4fe9aef9f26904c5",
+    "workId": "860b3ca1-6b76-4a58-8a53-8a15b97653e9"
+   },
+   {
+    "environment": "env-bf9f67da25cf7c117b0ecff648cc195d8e5a136ec589fd5d87e0b4dc68844ab1",
+    "workId": "d34d952b-fffb-4cfd-8a04-0b02d6bc69d0"
+   },
+   {
+    "environment": "env-cb812628abb34128dd156ef47ab3f4482065c8b453855745e90cd9c2d1be5941",
+    "workId": "2165d400-c6c2-438f-9333-aaff7a4ab518"
+   },
+   {
+    "environment": "env-cbe807715a062a32efd9ec7f1013d57ce770dcc35882325e2c6cdc8cdb807cdc",
+    "workId": "q06-6e3ea90b-0f0d-497c-8f63-23333c505957"
+   },
+   {
+    "environment": "env-cd9751b4519f7d09b9c2bcdaafed6153d122ab8767214915d4cb09faaaae737a",
+    "workId": "d556544a-5e5b-4051-813c-382c2f0f5a67"
+   },
+   {
+    "environment": "env-d0f7f240a0b26f8f6d12d7c59f289ded9fa3ee58ca8caa8a8c0a0efc9fd39a41",
+    "workId": "4535224b-b07d-4c37-b200-09591d4ea4fa"
+   },
+   {
+    "environment": "env-d4e776e1d090a652dc691b6d041b30a8adcb7283479bf5860dbad94e1adae740",
+    "workId": "q05-096cdef8-35c1-4621-98d1-a6fb3a66b4f7"
+   },
+   {
+    "environment": "env-d5803ea68bf639a4533d25ca96a6688d8ef50da7596adb9028f94e415a0ac4d1",
+    "workId": "65bf3de7-4e41-4626-9b83-0f5582d8c924"
+   },
+   {
+    "environment": "env-e0cee70b797ca944a60911c626513382ec513d7bfee612af6c9b9f0a0342f984",
+    "workId": "ae15cdda-9325-4ada-9009-abd0feb2fe18"
+   },
+   {
+    "environment": "env-ecabd427edc72fd22110f25e5b00a9fb28c065e231d04af5dd5852e2b88c09a7",
+    "workId": "5a018c66-e690-4e8d-a6dc-075df00c98f9"
+   },
+   {
+    "environment": "env-f5a2e62167a8158e7c0170f75bc44b5c71ed6ae67f66c044eae7ef86a21c99bc",
+    "workId": "12334f71-99a6-4a3f-b1f4-fb78afbd608b"
+   },
+   {
+    "environment": "env-f99a1829b898f02a5f1d8c42d86c0dc13d2aa1779eb42579bbbd97b106bb7195",
+    "workId": "887f7681-3345-4251-bc1f-b907450dc188"
+   }
+  ],
+  "cache": [
+   {
+    "repositoryId": 1256893534,
+    "state": "idle"
+   }
+  ],
+  "unknown": []
+ },
+ "gh": {
+  "requests": 23,
+  "refused": [],
+  "writes": []
+ }
+}

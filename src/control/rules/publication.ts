@@ -197,7 +197,10 @@ export function publicationPrompt(input: { reason: string; executionId: string; 
   expectedRemote: BranchObservation; pullRequest: number | null; verified: { reviewedRound: number | null; gates: { id: string; outcome: string }[]; requiredChecks: string[] } }):
   { kind: 'prompt'; prompt: string } | { kind: 'too-large'; bytes: number } {
   const lease = input.expectedRemote.state === 'absent' ? '' : input.expectedRemote.sha;
-  const pushCommand = fenced(`git -C ${input.checkout} push --force-with-lease=refs/heads/${input.branch}:${lease} origin ${input.head}:refs/heads/${input.branch}`);
+  // Ticket 18 (real run q18-v3): the remote is the CONFIGURED repository's URL, never the guest-writable checkout's `origin` (it may be
+  // missing or point elsewhere); the delivered publish grant authenticates github.com HTTPS for this command only.
+  const remote = `https://github.com/${input.repository}.git`;
+  const pushCommand = fenced(`git -C ${input.checkout} push --force-with-lease=refs/heads/${input.branch}:${lease} ${remote} ${input.head}:refs/heads/${input.branch}`);
   const push = input.expectedRemote.state === 'present' && input.expectedRemote.sha === input.head
     ? [`2. The remote branch ${input.branch} already holds the verified commit ${input.head}: do NOT push.`]
     : input.expectedRemote.state === 'present'
@@ -219,12 +222,12 @@ export function publicationPrompt(input: { reason: string; executionId: string; 
     `   and it must contain "Closes #${input.ticket.number}". This activation is PUBLISH-ONLY: do not change, commit, amend, rebase or reset anything in ${input.checkout} ` +
       `(HEAD must stay ${input.head}); a changed content is never accepted by the Factory.`,
     ...push, ...pr,
-    `${input.pullRequest === null ? 5 : 4}. If a command fails or its outcome is unclear, never repeat it blindly: inspect (git ls-remote origin, gh pr list) and report what you observed.`,
+    `${input.pullRequest === null ? 5 : 4}. If a command fails or its outcome is unclear, never repeat it blindly: inspect (git ls-remote ${remote}, gh pr list --repo ${input.repository}) and report what you observed.`,
     'Never merge, approve, mark ready, close, push to the base or to any other branch or tag, force-push without that explicit lease, or change labels, assignees or other pull requests. ' +
       'End with a short final message (the pull request URL). The Factory discovers and verifies the publication itself; your message is not evidence.'];
   const prompt = [`Factory publication instruction (publish-only session, reason: ${input.reason}): Execution ${input.executionId} publishes the content verified at the end of ` +
     `Execution ${input.previousExecutionId}. Your workspace (${input.checkout}), branch, commits and /artifacts are preserved. ` +
-    `Before anything else inspect git -C ${input.checkout} log and the remote (git ls-remote origin) and never repeat an earlier effect blindly.`, ...facts, ...steps].join('\n');
+    `Before anything else inspect git -C ${input.checkout} log and the remote (git ls-remote ${remote}) and never repeat an earlier effect blindly.`, ...facts, ...steps].join('\n');
   const bytes = new TextEncoder().encode(prompt).length;
   return bytes <= publicationPromptBudgetBytes ? { kind: 'prompt', prompt } : { kind: 'too-large', bytes };
 }
@@ -264,3 +267,13 @@ export function publicationStep(work: WorkFacts): PublicationStep {
  * that same basis (the PR-only continuation after a pushing attempt). */
 export const publicationResumes = (previous: ExecutionView | null, basisExecutionId: string) => Boolean(previous?.end && (
   (previous.executionId === basisExecutionId && previous.end.outcome === 'completed') || previous.request.publication?.basisExecutionId === basisExecutionId));
+
+/**
+ * Ticket 18 backstop: the blocking reasons that, AFTER a publication attempt, show an effect of the publish-only guest outside its scope —
+ * another ref changed, the own PR not draft, merged or closed, the own branch or head moved, a second own PR. GitHub permissions cannot
+ * separate push from merge (contents:write) nor draft creation from ready/merge (pull_requests:write), so the Builder's guest command
+ * policy is defence in depth and this Control verification is the backstop. (An approval by the PR's own author is impossible on GitHub.)
+ */
+export function guestEffectOutOfScope(reasons: readonly string[]): string[] {
+  return reasons.filter(reason => /^(UNEXPECTED_REF_CHANGE|PULL_REQUEST_NOT_DRAFT|OWN_PULL_REQUEST_MERGED|OWN_PULL_REQUEST_CLOSED|REMOTE_BRANCH_CHANGED|PUBLISHED_HEAD_NOT_VERIFIED|MULTIPLE_OWN_PULL_REQUESTS)\b/.test(reason));
+}

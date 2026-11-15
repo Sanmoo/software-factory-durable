@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { ExecutionView, PublicationDiscovery, PublicationView } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
-import { descriptionCheck, publicationMarker, publicationStep, publishableContent, type DiscoveryDecision } from '../rules/publication.js';
+import { descriptionCheck, guestEffectOutOfScope, publicationAttempted, publicationMarker, publicationStep, publishableContent, type DiscoveryDecision } from '../rules/publication.js';
 import { ticketIndex, works, type WorkRecord } from './admission.js';
 import type { Session } from './store.js';
 
@@ -14,6 +14,7 @@ const history = (work: WorkRecord, event: Extract<WorkRecord['history'][number],
 const executions = (work: WorkRecord) => [...(work.previousExecutions ?? []), ...(work.execution ? [work.execution] : [])];
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 export const publicationImpediment = 'PUBLICATION_BLOCKED';
+export const guestEffectImpediment = 'GUEST_EFFECT_OUT_OF_SCOPE';
 
 async function onWork<T>(session: Session, work_id: string, change: (work: WorkRecord) => T): Promise<T | 'stale'> {
   return session.commit(async tx => {
@@ -113,6 +114,10 @@ export async function recordDiscovery(session: Session, work_id: string, input: 
       publication.state = 'blocked';
       publication.nextStep = `Publication is not repeated or adopted automatically (${decision.reasons.join(', ')}). Operator must inspect the branch and pull requests on GitHub and decide explicitly (ticket 26).`;
       if (!work.impediments.some(item => item.code === publicationImpediment)) work.impediments.push({ code: publicationImpediment, scope: 'work', since: at, nextStep: publication.nextStep });
+      const outOfScope = publicationAttempted(work) ? guestEffectOutOfScope(decision.reasons) : [];
+      if (outOfScope.length && !work.impediments.some(item => item.code === guestEffectImpediment)) work.impediments.push({ code: guestEffectImpediment, scope: 'work', since: at,
+        nextStep: `The publish-only session's effects exceeded its scope (${outOfScope.join(', ')}): GitHub permissions cannot separate push from merge, so Control ` +
+          'verified it after the activation. Nothing is repaired or repeated; operator must inspect the repository (refs, pull requests) and decide explicitly.' });
       history(work, 'publication-blocked', input.executionId, decision.reasons.join(','));
     } else if (decision.outcome === 'held') {
       publication.nextStep = 'A pull request associated with this Ticket is not recognised as the Factory\'s own: it is neither adopted nor ignored, and nothing is ' +

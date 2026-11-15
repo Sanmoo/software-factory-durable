@@ -92,7 +92,12 @@ export type WorkerCompletion = { status: 'success'; receipt: { workId: string; i
   { status: 'question'; receipt: { workId: string; id: string }; question: WorkerQuestion & { acknowledged: boolean }; session?: WorkerSessionRef };
 
 /** `profiles` configures a model/profile per role (spec §6.1: explicit per role, may coincide; no silent fallback between roles). */
-type Configuration = { root: string; profile: WorkerLaunch['profile']; knownSecrets: string[]; profiles?: Partial<Record<'builder' | 'standards' | 'spec', WorkerLaunch['profile']>> };
+/** `builderPrompt` (ticket 18): the Builder system prompt of ONE session, chosen from its mode (phase) and the exact tool set the SDK session
+ * will have (`builderToolNames`, the same prediction session continuation uses), so a prompt never names a tool its session lacks. A throw
+ * refuses the activation before any launch. Absent: the profile's fixed prompt. */
+type Configuration = { root: string; profile: WorkerLaunch['profile']; knownSecrets: string[]; profiles?: Partial<Record<'builder' | 'standards' | 'spec', WorkerLaunch['profile']>>;
+  builderPrompt?: (session: { phaseId: string; tools: string[] }) => string };
+export { builderToolNames } from './session-ref.js';
 const reference = z.strictObject({ workId: z.string(), id: z.uuid() });
 const startSchema = z.strictObject({ receipt: reference, invocation: z.strictObject({ executionId: z.string(), invocationId: z.string() }) });
 const completionSchema = z.discriminatedUnion('status', [
@@ -231,6 +236,10 @@ export function createWorkers(configuration?: Configuration) {
     // reviewer (review input) always needs its own entry. Only legacy single-profile compositions keep using `profile`.
     const roleProfile = configuration.profiles?.[invocation.context.role];
     if ((configuration.profiles !== undefined || invocation.review !== undefined) && !roleProfile) throw new Error('WORKER_PROFILE_NOT_CONFIGURED');
+    const baseProfile = roleProfile ?? configuration.profile;
+    const profile = invocation.context.role === 'builder' && configuration.builderPrompt ? { ...baseProfile, systemPrompt: configuration.builderPrompt({ phaseId: invocation.context.phaseId,
+      tools: builderToolNames({ skillPack: invocation.skillPack, copyOutput: invocation.copyOutput, editSourceMaxBytes: invocation.editSourceMaxBytes, handoff: invocation.handoff !== undefined }) }) }
+      : baseProfile;
     const request = workerLaunchSchema.safeParse({ context: invocation.context, prompt: invocation.prompt,
       ...(invocation.copyOutput === undefined ? {} : { copyOutput: invocation.copyOutput }),
       ...(invocation.selectedOutputCopies === undefined ? {} : { selectedOutputCopies: invocation.selectedOutputCopies }),
@@ -246,7 +255,7 @@ export function createWorkers(configuration?: Configuration) {
       // Ticket 11: continue the preserved session (Builder only; the owner re-checks identity/hash before copying it for the new worker).
       ...(invocation.continuation === undefined ? {} : { continueSession: { ref: invocation.continuation.session.ref, sha256: invocation.continuation.session.sha256,
         sessionId: invocation.continuation.session.sessionId, bytes: invocation.continuation.session.bytes } }),
-      profile: roleProfile ?? configuration.profile, knownSecrets: configuration.knownSecrets });
+      profile, knownSecrets: configuration.knownSecrets });
     if (!request.success || invocation.signal.aborted) throw new Error('WORKER_LAUNCH_INVALID');
     if (delivery?.credential !== undefined && (request.data.context.role !== 'builder' || typeof delivery.credential.token !== 'string')) throw new Error('WORKER_LAUNCH_INVALID');
     const context = request.data.context;

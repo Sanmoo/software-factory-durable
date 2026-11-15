@@ -105,3 +105,23 @@ test('review fix 6: a reviewer with a review input refuses to launch without its
     signal: new AbortController().signal }), /WORKER_PROFILE_NOT_CONFIGURED/, 'with per-role profiles, every role must be explicit');
   assert.equal(o.received.length, 0, 'refused before any launch');
 });
+
+test('ticket 18: the Builder system prompt is chosen per session from its phase and exact tool set; an unsupported mode refuses before launch', async t => {
+  const o = await owner(t, () => ({ status: 'success', receipt }));
+  const seen: { phaseId: string; tools: string[] }[] = [];
+  const workers = createWorkers({ root: o.root, profile: oauth, knownSecrets: [], builderPrompt: session => {
+    seen.push(session);
+    if (session.phaseId === 'refused') throw new Error('BUILDER_SESSION_MODE_UNSUPPORTED');
+    return session.tools.includes('handoff') ? 'implementation prompt' : 'publication prompt';
+  } });
+  const handle = await workers.activate({ context: { ...context('builder', 'builder-p'), phaseId: 'builder-publication' }, prompt: 'publish', signal: new AbortController().signal,
+    skillPack: 'factory-skills-v6', copyOutput: true });
+  t.after(() => handle.close());
+  await handle.started;
+  const launch = o.received.find(message => message.kind === 'launch-worker')!;
+  assert.equal((launch.payload.profile as { systemPrompt: string }).systemPrompt, 'publication prompt');
+  assert.deepEqual(seen, [{ phaseId: 'builder-publication', tools: ['ask_user', 'bash', 'read', 'write'] }]);
+  const launches = o.received.filter(message => message.kind === 'launch-worker').length;
+  await assert.rejects(workers.activate({ context: { ...context('builder', 'builder-r'), phaseId: 'refused' }, prompt: 'x', signal: new AbortController().signal }), /BUILDER_SESSION_MODE_UNSUPPORTED/);
+  assert.equal(o.received.filter(message => message.kind === 'launch-worker').length, launches, 'nothing launched');
+});

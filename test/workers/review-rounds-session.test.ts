@@ -56,6 +56,9 @@ test('AC1-AC3: repeated handoffs carry treatments and Host gate evidence from th
       result: Promise.resolve({ exitCode: 0 }) };
     const capture = /^exec \/usr\/bin\/python3 -I -S - \/workspace\/checkout \/artifacts ([0-9]+) [0-9a-f]{40} \/workspace\/checkout \/artifacts <<'FACTORY_HANDOFF_EOF'\n/.exec(command);
     const round = capture ? Number(capture[1]) : 0;
+    // Ticket 18: the Host reads the gate source the declarations cite (fixed command); this Ticket documents every gate command used here.
+    if (command.startsWith("p='/artifacts/spec/v1/ticket.json'")) return { async *output() { yield { stream: 'stdout' as const,
+      data: Buffer.from(JSON.stringify({ body: 'Gates: `npm test`, `npm run lint`, `npm run typecheck`, `npm run build`, `npm run ci`.' })) }; }, result: Promise.resolve({ exitCode: 0 }) };
     if (command.includes('echo fix')) { content = '2'; return { async *output() { yield { stream: 'stdout' as const, data: Buffer.from('') }; }, result: Promise.resolve({ exitCode: 0 }) }; }
     if (command === 'npm run build') { content = '3'; return { async *output() { yield { stream: 'stdout' as const, data: Buffer.from('') }; }, result: Promise.resolve({ exitCode: 0 }) }; }
     const exitCode = capture ? 0 : exits[command]?.shift() ?? 127;

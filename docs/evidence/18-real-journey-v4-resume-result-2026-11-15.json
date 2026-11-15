@@ -1,0 +1,4807 @@
+{
+ "status": "observed",
+ "expected": "merge-blocked",
+ "met": true,
+ "answerIngestion": "ingested",
+ "answer": {
+  "text": "Use `## Rollback` as the title of the third section.",
+  "sha256": "a6a01cb2a3ea466ce341068fd884a049007ae535c91cfb7b6557524f084ce6c9",
+  "acceptedAt": "2026-11-15T19:46:39.562Z",
+  "author": {
+   "kind": "github",
+   "id": 1881597,
+   "login": "Sanmoo"
+  },
+  "origin": {
+   "kind": "github-comment",
+   "commentId": 6900234781,
+   "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/14#issuecomment-6900234781"
+  }
+ },
+ "outcome": "merge-blocked",
+ "ended": {
+  "kind": "clean"
+ },
+ "final": {
+  "kind": "list",
+  "paused": false,
+  "dispatch": "open",
+  "dispatchReason": null,
+  "slots": {
+   "capacity": 1,
+   "held": 0
+  },
+  "works": [
+   {
+    "work_id": "2ece4778-47f3-4412-8da5-b03d9be4eb47",
+    "cycle": 1,
+    "predecessor": null,
+    "ticket": {
+     "tracker": "github",
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "repositoryId": 1256893534,
+     "issueId": 6408593350,
+     "nodeId": "I_kwDOSuqsXs8AAAABfftfxg",
+     "number": 14,
+     "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/14"
+    },
+    "repository": {
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "repositoryId": 1256893534,
+     "base": "main"
+    },
+    "result": "open",
+    "authorization": {
+     "state": "authorized",
+     "source": "github-rest",
+     "observedAt": "2026-11-15T19:43:44.619Z",
+     "basis": {
+      "repositoryConfigured": true,
+      "issueState": "open",
+      "label": {
+       "id": 12918930265,
+       "name": "ready-for-agent"
+      }
+     },
+     "publication": {
+      "observedAt": "2026-11-15T19:43:45.281Z",
+      "completeness": "complete",
+      "associatedPullRequests": 0,
+      "limitations": [
+       "Association = GitHub closing keywords in pull request title/body, native issue-timeline cross-references and Development links (connected/disconnected) for pull requests of this repository, and known own branches.",
+       "Pull requests in other repositories that reference the Ticket are not treated as associated (they cannot be own publications of this repository).",
+       "A Development link whose pull request is not identified in the timeline makes the Ticket incomplete, never clear.",
+       "Listing and timeline are separate reads, not an atomic remote snapshot."
+      ]
+     },
+     "tracking": "Authorization recorded at admission. Later label removal/closure tracking is not part of this increment; absence from a listing is never treated as withdrawal."
+    },
+    "queue": {
+     "category": "normal",
+     "sequence": 1,
+     "pending": false
+    },
+    "impediments": [],
+    "dependencies": {
+     "latest": {
+      "evaluationId": "57747ad8-912e-4384-b0c9-62d752a90196",
+      "attemptId": "73625b83-e4a8-4a07-ba79-540df9066be1",
+      "source": "github-rest",
+      "observedAt": "2026-11-15T19:51:58.301Z",
+      "evaluatedAt": "2026-11-15T19:51:59.698Z",
+      "principals": [
+       {
+        "installationId": 177599217,
+        "repository": "Sanmoo/java-springboot-event-sourcing",
+        "repositoryId": 1256893534,
+        "role": "executable",
+        "purpose": "dependency-read",
+        "permissions": {
+         "metadata": "read",
+         "issues": "read"
+        }
+       }
+      ],
+      "completeness": "complete",
+      "conclusion": "satisfied",
+      "blockers": [],
+      "cycles": [],
+      "shared": [],
+      "reasons": [],
+      "limitations": [
+       "Only native blocked_by relations are read; prose, \"Depends on\", labels, duplicates and the inverse blocking relation are never substitutes.",
+       "Reads of issues and pages are not an atomic remote snapshot; later changes are seen by the next evaluation.",
+       "Equal counts (issue_dependencies_summary) do not certify the absence of relations GitHub does not show to this installation."
+      ]
+     },
+     "lastComplete": {
+      "evaluationId": "57747ad8-912e-4384-b0c9-62d752a90196",
+      "observedAt": "2026-11-15T19:51:58.301Z",
+      "conclusion": "satisfied"
+     }
+    },
+    "execution": {
+     "executionId": "0860b0f6-7aec-414d-9e20-2297d7be0b57",
+     "invocationId": "builder-0860b0f6-7aec-414d-9e20-2297d7be0b57",
+     "mode": "recovery",
+     "state": "ended",
+     "slot": {
+      "held": false,
+      "capacity": 1,
+      "reservedAt": "2026-11-15T19:51:45.314Z",
+      "releasedAt": "2026-11-15T19:52:32.728Z"
+     },
+     "admission": {
+      "attemptId": "549a9ed8-1ae4-4eaa-aedb-2c261ca53eb2",
+      "evaluationId": "b5fb2550-43c5-4ad5-9b04-a59f35660bae",
+      "authorizationObservedAt": "2026-11-15T19:51:43.606Z",
+      "activationAttemptId": "73625b83-e4a8-4a07-ba79-540df9066be1",
+      "activationEvaluationId": "57747ad8-912e-4384-b0c9-62d752a90196"
+     },
+     "dispatch": {
+      "intent": "prepare-start-activate",
+      "phase": "stopped",
+      "environment": "env-73830d99899ceeab08cbfec9a5fd59000e086957353afab5ea6fd3c8e9263c76",
+      "boot": "boot-7bac0cbb-b7f4-46e7-898f-b4765d3a7002",
+      "updatedAt": "2026-11-15T19:52:30.537Z"
+     },
+     "request": {
+      "ticket": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/14",
+      "repository": "Sanmoo/java-springboot-event-sourcing",
+      "base": "main",
+      "branch": "factory/14-2ece4778",
+      "policies": {
+       "modelBudget": "builder-v1",
+       "copyOutput": true,
+       "skillPack": "factory-skills-v6"
+      },
+      "baseCommit": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+      "checkout": "/workspace/checkout",
+      "promptSha256": "38f3b32bfe21bfa33ef9f7f6e105e3eaa1bf258ad80b6ef36e1608b00d175fb4",
+      "skillPack": {
+       "name": "factory/skill-pack/factory-skills-v6",
+       "manifestSha256": "919b8a4baf20a7d963b846a85a228476109144827528993e15be66b694f69490"
+      },
+      "resume": {
+       "previousExecutionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+       "questionId": null,
+       "answerSha256": null,
+       "scopeUpdateIds": [],
+       "reason": "PUBLICATION_REQUESTED"
+      },
+      "scopeUpdateIds": [],
+      "session": {
+       "mode": "replace",
+       "reason": "PUBLISH_ONLY_SESSION",
+       "previousExecutionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+       "previous": {
+        "ref": "r/0Id6A7fTQ1OFN0RfsVP_DA/w-vQMddk/profile/sessions/2026-11-15T19-44-22-338Z_01a1e0bd-4341-755b-bfad-7a670f2e08e4.jsonl",
+        "sessionId": "01a1e0bd-4341-755b-bfad-7a670f2e08e4",
+        "sha256": "b854c045e33a1ad1aa7e2f1ecc5ddd777e14c97616ca11a0995aebd96daa766c",
+        "bytes": 111358,
+        "format": "pi-session-jsonl-v3",
+        "profile": {
+         "sdkProfile": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+         "providerId": "openai",
+         "modelId": "gpt-6-luna",
+         "skillPack": "factory-skills-v6",
+         "tools": [
+          "ask_user",
+          "bash",
+          "edit",
+          "handoff",
+          "read",
+          "write"
+         ]
+        }
+       },
+       "decidedAt": "2026-11-15T19:51:59.704Z"
+      },
+      "publication": {
+       "basisExecutionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+       "head": "54b268d5b3905d077883524718d2527645e16b5a",
+       "branch": "factory/14-2ece4778",
+       "base": "main",
+       "marker": "<!-- software-factory:work:2ece4778-47f3-4412-8da5-b03d9be4eb47 -->",
+       "expectedRemote": {
+        "state": "absent"
+       },
+       "pullRequest": null
+      }
+     },
+     "credential": {
+      "role": "builder",
+      "purpose": "builder-publish",
+      "repository": "Sanmoo/java-springboot-event-sourcing",
+      "repositoryId": 1256893534,
+      "installationId": 177599217,
+      "permissions": {
+       "metadata": "read",
+       "contents": "write",
+       "pull_requests": "write",
+       "issues": "read"
+      },
+      "issuedAt": "2026-11-15T19:51:59.710Z",
+      "expiresAt": "2026-11-15T20:52:00Z"
+     },
+     "credentialIssuance": {
+      "requestedAt": "2026-11-15T19:51:59.705Z",
+      "outcome": "issued",
+      "code": null,
+      "metadata": {
+       "role": "builder",
+       "purpose": "builder-publish",
+       "repository": "Sanmoo/java-springboot-event-sourcing",
+       "repositoryId": 1256893534,
+       "installationId": 177599217,
+       "permissions": {
+        "metadata": "read",
+        "contents": "write",
+        "pull_requests": "write",
+        "issues": "read"
+       },
+       "issuedAt": "2026-11-15T19:51:59.710Z",
+       "expiresAt": "2026-11-15T20:52:00Z"
+      },
+      "revocation": "revoked",
+      "revocationCode": "GITHUB_TOKEN_REVOKED",
+      "risk": null,
+      "revocationAttemptedAt": "2026-11-15T19:52:30.547Z"
+     },
+     "credentialRenewals": [],
+     "credentialLifecycle": {
+      "state": "withdrawn",
+      "withdrawnAt": "2026-11-15T19:52:30.542Z",
+      "reason": "ended",
+      "renewal": "enabled",
+      "renewalStop": null,
+      "workerNotice": null
+     },
+     "start": {
+      "receiptId": "06d66a01-8114-4b7a-b60d-4a3f0b082e5f",
+      "confirmedAt": "2026-11-15T19:52:01.248Z"
+     },
+     "end": {
+      "at": "2026-11-15T19:52:30.537Z",
+      "outcome": "completed",
+      "code": null,
+      "cessation": "confirmed",
+      "session": {
+       "ref": "r/e6wMu7f0RueJj7R2XTpwAg/w-coQCVI/profile/sessions/2026-11-15T19-52-02-101Z_01a1e0c4-4734-71ad-91aa-41f89db174bb.jsonl",
+       "sessionId": "01a1e0c4-4734-71ad-91aa-41f89db174bb",
+       "sha256": "7bce07a09036d95f6987c8f6be51d12f56197f6e416fa3f4d64a1f9a9200447d",
+       "bytes": 26305,
+       "format": "pi-session-jsonl-v3",
+       "profile": {
+        "sdkProfile": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+        "providerId": "openai",
+        "modelId": "gpt-6-luna",
+        "skillPack": "factory-skills-v6",
+        "tools": [
+         "ask_user",
+         "bash",
+         "read",
+         "write"
+        ]
+       }
+      }
+     },
+     "held": null,
+     "completion": {
+      "automatic": false,
+      "reason": "Publication activation: its effects are discovered by Control after cessation (own branch tip and own draft pull request); the Builder's message is not evidence."
+     },
+     "charge": {
+      "kind": "none",
+      "correctionId": null,
+      "counter": null,
+      "state": "none",
+      "settledAt": null
+     },
+     "timing": {
+      "timeoutSeconds": null,
+      "clock": "controller-monotonic",
+      "origin": "48622d04-8067-4b6a-aff9-1f2e3358d11d",
+      "startedAt": "2026-11-15T19:52:01.248Z",
+      "lastActivity": {
+       "at": "2026-11-15T19:52:30.537Z",
+       "elapsedMs": 29288.364059999993,
+       "event": "ended-completed"
+      },
+      "duration": {
+       "kind": "measured",
+       "elapsedMs": 29288.364059999993,
+       "endedAt": "2026-11-15T19:52:30.537Z"
+      },
+      "timeout": null,
+      "overrun": "not-applicable"
+     },
+     "interruption": null
+    },
+    "branch": "factory/14-2ece4778",
+    "pullRequest": {
+     "number": 15,
+     "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/15"
+    },
+    "previousExecutions": [
+     {
+      "executionId": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a",
+      "invocationId": "builder-2d55c2cc-0e51-4409-a3d6-e7990f4aa82a",
+      "mode": "initial",
+      "state": "ended",
+      "slot": {
+       "held": false,
+       "capacity": 1,
+       "reservedAt": "2026-11-15T19:43:56.287Z",
+       "releasedAt": "2026-11-15T19:46:08.423Z"
+      },
+      "admission": {
+       "attemptId": "ddf4ed2b-512e-482b-9745-515f47617295",
+       "evaluationId": "f4f23866-f849-4565-8567-bbc4915cc6fc",
+       "authorizationObservedAt": "2026-11-15T19:43:54.027Z",
+       "activationAttemptId": "878a1c0e-fb0b-4d94-95f9-e62b639186b4",
+       "activationEvaluationId": "0b64b446-8c74-4455-a7a5-0214a5fd2a31"
+      },
+      "dispatch": {
+       "intent": "prepare-start-activate",
+       "phase": "stopped",
+       "environment": "env-73830d99899ceeab08cbfec9a5fd59000e086957353afab5ea6fd3c8e9263c76",
+       "boot": "boot-0d130844-571e-4580-8bfa-85fe0e0d6d54",
+       "updatedAt": "2026-11-15T19:46:04.694Z"
+      },
+      "request": {
+       "ticket": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/14",
+       "repository": "Sanmoo/java-springboot-event-sourcing",
+       "base": "main",
+       "branch": "factory/14-2ece4778",
+       "policies": {
+        "modelBudget": "builder-v1",
+        "copyOutput": true,
+        "editSourceMaxBytes": 8192,
+        "skillPack": "factory-skills-v6"
+       },
+       "baseCommit": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+       "checkout": "/workspace/checkout",
+       "promptSha256": "f8d54ce7308e80ff5b5f0cf04da2f8e8576042f71640259fe49a322c887d2c62",
+       "skillPack": {
+        "name": "factory/skill-pack/factory-skills-v6",
+        "manifestSha256": "919b8a4baf20a7d963b846a85a228476109144827528993e15be66b694f69490"
+       },
+       "resume": null,
+       "scopeUpdateIds": [],
+       "session": null
+      },
+      "credential": {
+       "role": "builder",
+       "purpose": "builder-start",
+       "repository": "Sanmoo/java-springboot-event-sourcing",
+       "repositoryId": 1256893534,
+       "installationId": 177599217,
+       "permissions": {
+        "metadata": "read",
+        "contents": "read",
+        "issues": "read"
+       },
+       "issuedAt": "2026-11-15T19:44:19.683Z",
+       "expiresAt": "2026-11-15T20:44:20Z"
+      },
+      "credentialIssuance": {
+       "requestedAt": "2026-11-15T19:44:19.678Z",
+       "outcome": "issued",
+       "code": null,
+       "metadata": {
+        "role": "builder",
+        "purpose": "builder-start",
+        "repository": "Sanmoo/java-springboot-event-sourcing",
+        "repositoryId": 1256893534,
+        "installationId": 177599217,
+        "permissions": {
+         "metadata": "read",
+         "contents": "read",
+         "issues": "read"
+        },
+        "issuedAt": "2026-11-15T19:44:19.683Z",
+        "expiresAt": "2026-11-15T20:44:20Z"
+       },
+       "revocation": "revoked",
+       "revocationCode": "GITHUB_TOKEN_REVOKED",
+       "risk": null,
+       "revocationAttemptedAt": "2026-11-15T19:46:04.583Z"
+      },
+      "credentialRenewals": [],
+      "credentialLifecycle": {
+       "state": "withdrawn",
+       "withdrawnAt": "2026-11-15T19:46:04.552Z",
+       "reason": "external-wait",
+       "renewal": "enabled",
+       "renewalStop": null,
+       "workerNotice": "withdrawn"
+      },
+      "start": {
+       "receiptId": "0ba37ae4-2c7a-4807-8704-ef87a1e55744",
+       "confirmedAt": "2026-11-15T19:44:21.246Z"
+      },
+      "end": {
+       "at": "2026-11-15T19:46:04.693Z",
+       "outcome": "question",
+       "code": null,
+       "cessation": "confirmed",
+       "questionId": "fee8adfe-8851-4cff-9327-c46877e909a0",
+       "session": {
+        "ref": "r/DRMIRFceRYCL-oX-Dg1tVA/w-7MEozL/profile/sessions/2026-11-15T19-44-22-338Z_01a1e0bd-4341-755b-bfad-7a670f2e08e4.jsonl",
+        "sessionId": "01a1e0bd-4341-755b-bfad-7a670f2e08e4",
+        "sha256": "40b49f4ffa3b3e2a9e32b997807aa2849b7404213eed3b6bae869342644c8b6e",
+        "bytes": 56043,
+        "format": "pi-session-jsonl-v3",
+        "profile": {
+         "sdkProfile": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+         "providerId": "openai",
+         "modelId": "gpt-6-luna",
+         "skillPack": "factory-skills-v6",
+         "tools": [
+          "ask_user",
+          "bash",
+          "edit",
+          "handoff",
+          "read",
+          "write"
+         ]
+        }
+       }
+      },
+      "held": null,
+      "completion": {
+       "automatic": false,
+       "reason": "An ended Builder Execution never completes the Work automatically: publication requires the end-of-Execution verification and a discovery; readiness is not enabled in this Factory version."
+      },
+      "charge": {
+       "kind": "none",
+       "correctionId": null,
+       "counter": null,
+       "state": "none",
+       "settledAt": null
+      },
+      "timing": {
+       "timeoutSeconds": null,
+       "clock": "controller-monotonic",
+       "origin": "a3ab7368-5164-42df-af67-5794e9e4768e",
+       "startedAt": "2026-11-15T19:44:21.246Z",
+       "lastActivity": {
+        "at": "2026-11-15T19:46:04.693Z",
+        "elapsedMs": 103438.803488,
+        "event": "ended-question"
+       },
+       "duration": {
+        "kind": "measured",
+        "elapsedMs": 103438.803488,
+        "endedAt": "2026-11-15T19:46:04.693Z"
+       },
+       "timeout": null,
+       "overrun": "not-applicable"
+      },
+      "interruption": null
+     },
+     {
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "invocationId": "builder-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "mode": "recovery",
+      "state": "ended",
+      "slot": {
+       "held": false,
+       "capacity": 1,
+       "reservedAt": "2026-11-15T19:46:43.012Z",
+       "releasedAt": "2026-11-15T19:49:45.804Z"
+      },
+      "admission": {
+       "attemptId": "6f177c44-44d5-4303-a2c3-fc81aa436234",
+       "evaluationId": "5aeba0e5-d8e3-43fb-bbc3-1ffd909c9226",
+       "authorizationObservedAt": "2026-11-15T19:46:39.593Z",
+       "activationAttemptId": "49a6e596-2da1-44de-a3b1-8c8865a8d9a1",
+       "activationEvaluationId": "61d5631e-657f-4ed0-afc1-184885ccdf11"
+      },
+      "dispatch": {
+       "intent": "prepare-start-activate",
+       "phase": "stopped",
+       "environment": "env-73830d99899ceeab08cbfec9a5fd59000e086957353afab5ea6fd3c8e9263c76",
+       "boot": "boot-d0877a03-b7d3-4353-8537-445fb153ff0c",
+       "updatedAt": "2026-11-15T19:49:43.850Z"
+      },
+      "request": {
+       "ticket": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/14",
+       "repository": "Sanmoo/java-springboot-event-sourcing",
+       "base": "main",
+       "branch": "factory/14-2ece4778",
+       "policies": {
+        "modelBudget": "builder-v1",
+        "copyOutput": true,
+        "editSourceMaxBytes": 8192,
+        "skillPack": "factory-skills-v6"
+       },
+       "baseCommit": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+       "checkout": "/workspace/checkout",
+       "promptSha256": "1a484a143fa166b1737d0745c732ecaef88d07ed45fa1ca03590a7e12bac78e2",
+       "skillPack": {
+        "name": "factory/skill-pack/factory-skills-v6",
+        "manifestSha256": "919b8a4baf20a7d963b846a85a228476109144827528993e15be66b694f69490"
+       },
+       "resume": {
+        "previousExecutionId": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a",
+        "questionId": "fee8adfe-8851-4cff-9327-c46877e909a0",
+        "answerSha256": "a6a01cb2a3ea466ce341068fd884a049007ae535c91cfb7b6557524f084ce6c9",
+        "scopeUpdateIds": [],
+        "reason": "QUESTION_ANSWERED"
+       },
+       "scopeUpdateIds": [],
+       "session": {
+        "mode": "continue",
+        "reason": "SESSION_COMPATIBLE",
+        "previousExecutionId": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a",
+        "previous": {
+         "ref": "r/DRMIRFceRYCL-oX-Dg1tVA/w-7MEozL/profile/sessions/2026-11-15T19-44-22-338Z_01a1e0bd-4341-755b-bfad-7a670f2e08e4.jsonl",
+         "sessionId": "01a1e0bd-4341-755b-bfad-7a670f2e08e4",
+         "sha256": "40b49f4ffa3b3e2a9e32b997807aa2849b7404213eed3b6bae869342644c8b6e",
+         "bytes": 56043,
+         "format": "pi-session-jsonl-v3",
+         "profile": {
+          "sdkProfile": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+          "providerId": "openai",
+          "modelId": "gpt-6-luna",
+          "skillPack": "factory-skills-v6",
+          "tools": [
+           "ask_user",
+           "bash",
+           "edit",
+           "handoff",
+           "read",
+           "write"
+          ]
+         }
+        },
+        "decidedAt": "2026-11-15T19:47:35.306Z"
+       }
+      },
+      "credential": {
+       "role": "builder",
+       "purpose": "builder-start",
+       "repository": "Sanmoo/java-springboot-event-sourcing",
+       "repositoryId": 1256893534,
+       "installationId": 177599217,
+       "permissions": {
+        "metadata": "read",
+        "contents": "read",
+        "issues": "read"
+       },
+       "issuedAt": "2026-11-15T19:47:35.314Z",
+       "expiresAt": "2026-11-15T20:47:36Z"
+      },
+      "credentialIssuance": {
+       "requestedAt": "2026-11-15T19:47:35.307Z",
+       "outcome": "issued",
+       "code": null,
+       "metadata": {
+        "role": "builder",
+        "purpose": "builder-start",
+        "repository": "Sanmoo/java-springboot-event-sourcing",
+        "repositoryId": 1256893534,
+        "installationId": 177599217,
+        "permissions": {
+         "metadata": "read",
+         "contents": "read",
+         "issues": "read"
+        },
+        "issuedAt": "2026-11-15T19:47:35.314Z",
+        "expiresAt": "2026-11-15T20:47:36Z"
+       },
+       "revocation": "revoked",
+       "revocationCode": "GITHUB_TOKEN_REVOKED",
+       "risk": null,
+       "revocationAttemptedAt": "2026-11-15T19:49:43.859Z"
+      },
+      "credentialRenewals": [],
+      "credentialLifecycle": {
+       "state": "withdrawn",
+       "withdrawnAt": "2026-11-15T19:49:43.856Z",
+       "reason": "ended",
+       "renewal": "enabled",
+       "renewalStop": null,
+       "workerNotice": null
+      },
+      "start": {
+       "receiptId": "fe0b111e-2548-4cc8-a4bb-7bf5037f1d3e",
+       "confirmedAt": "2026-11-15T19:47:37.843Z"
+      },
+      "end": {
+       "at": "2026-11-15T19:49:43.850Z",
+       "outcome": "completed",
+       "code": null,
+       "cessation": "confirmed",
+       "session": {
+        "ref": "r/0Id6A7fTQ1OFN0RfsVP_DA/w-vQMddk/profile/sessions/2026-11-15T19-44-22-338Z_01a1e0bd-4341-755b-bfad-7a670f2e08e4.jsonl",
+        "sessionId": "01a1e0bd-4341-755b-bfad-7a670f2e08e4",
+        "sha256": "b854c045e33a1ad1aa7e2f1ecc5ddd777e14c97616ca11a0995aebd96daa766c",
+        "bytes": 111358,
+        "format": "pi-session-jsonl-v3",
+        "profile": {
+         "sdkProfile": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+         "providerId": "openai",
+         "modelId": "gpt-6-luna",
+         "skillPack": "factory-skills-v6",
+         "tools": [
+          "ask_user",
+          "bash",
+          "edit",
+          "handoff",
+          "read",
+          "write"
+         ]
+        }
+       }
+      },
+      "held": null,
+      "completion": {
+       "automatic": false,
+       "reason": "An ended Builder Execution never completes the Work automatically: publication requires the end-of-Execution verification and a discovery; readiness is not enabled in this Factory version."
+      },
+      "charge": {
+       "kind": "none",
+       "correctionId": null,
+       "counter": null,
+       "state": "none",
+       "settledAt": null
+      },
+      "timing": {
+       "timeoutSeconds": null,
+       "clock": "controller-monotonic",
+       "origin": "48622d04-8067-4b6a-aff9-1f2e3358d11d",
+       "startedAt": "2026-11-15T19:47:37.843Z",
+       "lastActivity": {
+        "at": "2026-11-15T19:49:43.850Z",
+        "elapsedMs": 126012.80275200002,
+        "event": "ended-completed"
+       },
+       "duration": {
+        "kind": "measured",
+        "elapsedMs": 126012.80275200002,
+        "endedAt": "2026-11-15T19:49:43.850Z"
+       },
+       "timeout": null,
+       "overrun": "not-applicable"
+      },
+      "interruption": null,
+      "review": {
+       "firstRound": 1,
+       "rounds": [
+        {
+         "round": 1,
+         "attempt": 1,
+         "state": "delivered",
+         "kind": "review",
+         "closing": false,
+         "exemption": null,
+         "declarations": {
+          "treatments": [],
+          "gates": [
+           {
+            "id": "ticket-validation",
+            "source": "/artifacts/spec/v2/ticket.json#Validation",
+            "command": "cd /workspace/checkout && test -f docs/FACTORY_JOURNEY.md && grep -q '^## Steps' docs/FACTORY_JOURNEY.md && grep -q '^## Rollback' docs/FACTORY_JOURNEY.md",
+            "cwd": "/workspace",
+            "requiredCheck": null,
+            "declared": "run",
+            "outcome": "passed",
+            "code": null,
+            "exitCode": 0,
+            "output": {
+             "workId": "2ece4778-47f3-4412-8da5-b03d9be4eb47",
+             "id": "fc7e713a-d01d-4f77-a34f-a23a712f9d6d"
+            },
+            "sequence": 14,
+            "current": true,
+            "reason": null,
+            "authorization": null
+           }
+          ]
+         },
+         "handoff": {
+          "at": "2026-11-15T19:49:08.189Z",
+          "invocationId": "builder-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+          "status": "captured",
+          "code": null,
+          "detail": null,
+          "summary": {
+           "version": 1,
+           "round": 1,
+           "index": "/artifacts/review/r1/index.json",
+           "indexSha256": "c5b910d17c0ca5b9274074527e8442bc34b8790c82cd09579f1908a8293abdb1",
+           "head": "54b268d5b3905d077883524718d2527645e16b5a",
+           "branch": "factory/14-2ece4778",
+           "base": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+           "mergeBase": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+           "counts": {
+            "entries": 1,
+            "committed": 1,
+            "staged": 0,
+            "unstaged": 0,
+            "untracked": 0,
+            "removed": 0
+           },
+           "patches": {
+            "committed": {
+             "path": "/artifacts/review/r1/committed.patch",
+             "bytes": 409,
+             "sha256": "754e014e3a989b8b2a64eff11e443c18cc6c9f03cc29bfceb2779d1a74d5766d"
+            },
+            "staged": {
+             "path": "/artifacts/review/r1/staged.patch",
+             "bytes": 0,
+             "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            "unstaged": {
+             "path": "/artifacts/review/r1/unstaged.patch",
+             "bytes": 0,
+             "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            }
+           },
+           "spec": {
+            "version": "v2",
+            "sources": "/artifacts/spec/v2/sources.json",
+            "sha256": "63b9fb5a889472a938c92f0f58d4ce7535f0db476133d627bc77aa8b70624e1a"
+           },
+           "instructions": {
+            "version": "v2",
+            "sources": "/artifacts/instructions/v2/sources.json",
+            "sha256": "312514b7808af5d301b190e6c5cbcb5baf72591948464c40b138a71dff71d2d8"
+           },
+           "changed": [
+            "/workspace/checkout/docs/FACTORY_JOURNEY.md"
+           ],
+           "changedTruncated": false,
+           "content": {
+            "sha256": "b1f2befb9382471f4c3f059b1c59def51c4c7169281e36e501a1154c307668f6",
+            "clean": true,
+            "headMatches": true
+           }
+          }
+         },
+         "versions": {
+          "spec": {
+           "version": "v2",
+           "sources": "/artifacts/spec/v2/sources.json",
+           "sha256": "63b9fb5a889472a938c92f0f58d4ce7535f0db476133d627bc77aa8b70624e1a"
+          },
+          "instructions": {
+           "version": "v2",
+           "sources": "/artifacts/instructions/v2/sources.json",
+           "sha256": "312514b7808af5d301b190e6c5cbcb5baf72591948464c40b138a71dff71d2d8"
+          },
+          "base": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+          "head": "54b268d5b3905d077883524718d2527645e16b5a",
+          "profile": {
+           "skillPack": {
+            "name": "factory/skill-pack/factory-skills-v6",
+            "manifestSha256": "919b8a4baf20a7d963b846a85a228476109144827528993e15be66b694f69490"
+           },
+           "builder": {
+            "modelBudget": "builder-v1",
+            "copyOutput": true,
+            "editSourceMaxBytes": 8192,
+            "skillPack": "factory-skills-v6"
+           },
+           "reviewer": {
+            "modelBudget": "reviewer-v1",
+            "imageSourceMaxBytes": 5242880
+           }
+          }
+         },
+         "identity": {
+          "before": {
+           "status": "observed",
+           "sha256": "80fa4b74f006210cd4aba8cfba80a55ae008fb14c162daa7462f233a1bb80373",
+           "indexSha256": "c5b910d17c0ca5b9274074527e8442bc34b8790c82cd09579f1908a8293abdb1",
+           "entries": 1,
+           "consistent": true,
+           "observedAt": "2026-11-15T19:49:08.188Z"
+          },
+          "after": {
+           "status": "observed",
+           "sha256": "80fa4b74f006210cd4aba8cfba80a55ae008fb14c162daa7462f233a1bb80373",
+           "indexSha256": "c5b910d17c0ca5b9274074527e8442bc34b8790c82cd09579f1908a8293abdb1",
+           "entries": 1,
+           "consistent": true,
+           "observedAt": "2026-11-15T19:49:30.343Z"
+          }
+         },
+         "reviewers": {
+          "standards": {
+           "invocationId": "standards-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d-r1a1",
+           "phaseId": "review-r1",
+           "promptSha256": "ee1bb50d4190c377a6521c46e6e5d74e6b8927bab1d02076fb12e9ded67a0c36",
+           "state": "ended",
+           "requestedAt": "2026-11-15T19:49:08.189Z",
+           "receiptId": "110b6012-2bcc-46ba-a793-884206c8beb0",
+           "endedAt": "2026-11-15T19:49:27.700Z",
+           "opinion": {
+            "version": 1,
+            "role": "standards",
+            "round": 1,
+            "attempt": 1,
+            "invocationId": "standards-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d-r1a1",
+            "reference": {
+             "workId": "2ece4778-47f3-4412-8da5-b03d9be4eb47",
+             "id": "933b974f-316e-4fe0-a050-623b0e5ad0b8"
+            },
+            "session": {
+             "file": "/home/sanmoo/software-factory-test/y5/r/0Id6A7fTQ1OFN0RfsVP_DA/w-mWHU8Y/profile/sessions/2026-11-15T19-49-09-153Z_01a1e0c1-a3a1-729b-b163-8471d3c8daa3.jsonl",
+             "mode": "new",
+             "from": null,
+             "code": null
+            },
+            "model": {
+             "providerId": "openai",
+             "modelId": "gpt-6-luna"
+            },
+            "profile": {
+             "id": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+             "modelBudget": "reviewer-v1"
+            },
+            "input": {
+             "handoffIndexSha256": "c5b910d17c0ca5b9274074527e8442bc34b8790c82cd09579f1908a8293abdb1",
+             "required": [
+              "/artifacts/review/r1/index.json",
+              "/artifacts/instructions/v2/sources.json",
+              "/artifacts/review/r1/committed.patch",
+              "/workspace/checkout/docs/FACTORY_JOURNEY.md"
+             ],
+             "missing": []
+            },
+            "conclusion": "clean",
+            "code": null,
+            "coverage": {
+             "scope": "incremental",
+             "justification": "Read the complete index, committed/staged/unstaged patches, changed file, and all preserved standards sources. The change is an isolated documentation addition; the domain instructions identify no applicable glossary or ADR context that would alter the review.",
+             "examined": [
+              "/workspace/checkout/docs/FACTORY_JOURNEY.md",
+              "/artifacts/review/r1/index.json",
+              "/artifacts/review/r1/committed.patch",
+              "/artifacts/review/r1/staged.patch",
+              "/artifacts/review/r1/unstaged.patch",
+              "/artifacts/instructions/v2/sources.json",
+              "/artifacts/instructions/v2/AGENTS.md",
+              "/artifacts/instructions/v2/docs-agents-domain.md"
+             ]
+            },
+            "findings": [],
+            "limitations": [],
+            "hostChecks": {
+             "reads": 10,
+             "failedReads": [],
+             "requiredNotFullyRead": [],
+             "downgraded": []
+            },
+            "finalMessageSha256": "5657cc9f07170d493bf9de2c204d259690d778a44b91c5d496a242f8ea144323",
+            "recordedAt": "2026-11-15T19:49:27.648Z"
+           },
+           "failure": null,
+           "cessation": "completion-observed",
+           "input": {
+            "required": [
+             "/artifacts/review/r1/index.json",
+             "/artifacts/instructions/v2/sources.json",
+             "/artifacts/review/r1/committed.patch",
+             "/workspace/checkout/docs/FACTORY_JOURNEY.md"
+            ],
+            "missing": []
+           },
+           "source": "notification"
+          },
+          "spec": {
+           "invocationId": "spec-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d-r1a1",
+           "phaseId": "review-r1",
+           "promptSha256": "d417e518cfc16e8b3e64f2147a16c42d8131d9bb48ac94585602459cc5fa273c",
+           "state": "ended",
+           "requestedAt": "2026-11-15T19:49:08.189Z",
+           "receiptId": "4901df2a-b73f-4db2-bf6e-26ddcac6c425",
+           "endedAt": "2026-11-15T19:49:30.336Z",
+           "opinion": {
+            "version": 1,
+            "role": "spec",
+            "round": 1,
+            "attempt": 1,
+            "invocationId": "spec-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d-r1a1",
+            "reference": {
+             "workId": "2ece4778-47f3-4412-8da5-b03d9be4eb47",
+             "id": "0c0bdb94-4471-4a34-b1aa-6cda6d098485"
+            },
+            "session": {
+             "file": "/home/sanmoo/software-factory-test/y5/r/0Id6A7fTQ1OFN0RfsVP_DA/w-Kz4Aib/profile/sessions/2026-11-15T19-49-09-179Z_01a1e0c1-a3ba-76f5-bbfe-c4896827685f.jsonl",
+             "mode": "new",
+             "from": null,
+             "code": null
+            },
+            "model": {
+             "providerId": "openai",
+             "modelId": "gpt-6-luna"
+            },
+            "profile": {
+             "id": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+             "modelBudget": "reviewer-v1"
+            },
+            "input": {
+             "handoffIndexSha256": "c5b910d17c0ca5b9274074527e8442bc34b8790c82cd09579f1908a8293abdb1",
+             "required": [
+              "/artifacts/review/r1/index.json",
+              "/artifacts/spec/v2/sources.json",
+              "/artifacts/review/r1/committed.patch",
+              "/workspace/checkout/docs/FACTORY_JOURNEY.md"
+             ],
+             "missing": []
+            },
+            "conclusion": "clean",
+            "code": null,
+            "coverage": {
+             "scope": "broad",
+             "justification": "Read the index, all three patches, the complete changed file, and both preserved request sources. The only changed path is the documentation page, and its content matches the ticket and operator’s answer.",
+             "examined": [
+              "/artifacts/review/r1/index.json",
+              "/artifacts/review/r1/committed.patch",
+              "/artifacts/review/r1/staged.patch",
+              "/artifacts/review/r1/unstaged.patch",
+              "/artifacts/spec/v2/sources.json",
+              "/artifacts/spec/v2/ticket.json",
+              "/artifacts/spec/v2/operator-answer.txt",
+              "/workspace/checkout/docs/FACTORY_JOURNEY.md"
+             ]
+            },
+            "findings": [],
+            "limitations": [],
+            "hostChecks": {
+             "reads": 10,
+             "failedReads": [],
+             "requiredNotFullyRead": [],
+             "downgraded": []
+            },
+            "finalMessageSha256": "8cd01c6ace5f2a4ea1a276de520adcddb867bfd17a4d9be470c2674636dccf4f",
+            "recordedAt": "2026-11-15T19:49:30.294Z"
+           },
+           "failure": null,
+           "cessation": "completion-observed",
+           "input": {
+            "required": [
+             "/artifacts/review/r1/index.json",
+             "/artifacts/spec/v2/sources.json",
+             "/artifacts/review/r1/committed.patch",
+             "/workspace/checkout/docs/FACTORY_JOURNEY.md"
+            ],
+            "missing": []
+           },
+           "source": "notification"
+          }
+         },
+         "applicability": "current",
+         "conclusion": "clean",
+         "reasons": [],
+         "concludedAt": "2026-11-15T19:49:30.344Z",
+         "delivery": {
+          "requestedAt": "2026-11-15T19:49:30.349Z",
+          "outcome": "delivered",
+          "code": null,
+          "promptSha256": "d2a79993f103a94127d2bf04cccb9958d3a1f1fdbf239aa91ebca436f2bb33d8"
+         }
+        },
+        {
+         "round": 2,
+         "attempt": 1,
+         "state": "delivered",
+         "kind": "exemption",
+         "closing": false,
+         "exemption": {
+          "kind": "unchanged",
+          "reviewedRound": 1,
+          "head": "54b268d5b3905d077883524718d2527645e16b5a",
+          "reviewedHead": "54b268d5b3905d077883524718d2527645e16b5a",
+          "contentSha256": "b1f2befb9382471f4c3f059b1c59def51c4c7169281e36e501a1154c307668f6"
+         },
+         "declarations": {
+          "treatments": [],
+          "gates": [
+           {
+            "id": "ticket-validation",
+            "source": "/artifacts/spec/v2/ticket.json#Validation",
+            "command": "cd /workspace/checkout && test -f docs/FACTORY_JOURNEY.md && grep -q '^## Steps' docs/FACTORY_JOURNEY.md && grep -q '^## Rollback' docs/FACTORY_JOURNEY.md",
+            "cwd": "/workspace",
+            "requiredCheck": null,
+            "declared": "run",
+            "outcome": "passed",
+            "code": null,
+            "exitCode": 0,
+            "output": {
+             "workId": "2ece4778-47f3-4412-8da5-b03d9be4eb47",
+             "id": "fc7e713a-d01d-4f77-a34f-a23a712f9d6d"
+            },
+            "sequence": 14,
+            "current": true,
+            "reason": null,
+            "authorization": null
+           }
+          ]
+         },
+         "handoff": {
+          "at": "2026-11-15T19:49:39.802Z",
+          "invocationId": "builder-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+          "status": "captured",
+          "code": null,
+          "detail": null,
+          "summary": {
+           "version": 1,
+           "round": 2,
+           "index": "/artifacts/review/r2/index.json",
+           "indexSha256": "5b175da5e304b044823b07193705a182e55531b7ccf1d517c47b67d4d0b0651e",
+           "head": "54b268d5b3905d077883524718d2527645e16b5a",
+           "branch": "factory/14-2ece4778",
+           "base": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+           "mergeBase": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+           "counts": {
+            "entries": 1,
+            "committed": 1,
+            "staged": 0,
+            "unstaged": 0,
+            "untracked": 0,
+            "removed": 0
+           },
+           "patches": {
+            "committed": {
+             "path": "/artifacts/review/r2/committed.patch",
+             "bytes": 409,
+             "sha256": "754e014e3a989b8b2a64eff11e443c18cc6c9f03cc29bfceb2779d1a74d5766d"
+            },
+            "staged": {
+             "path": "/artifacts/review/r2/staged.patch",
+             "bytes": 0,
+             "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            "unstaged": {
+             "path": "/artifacts/review/r2/unstaged.patch",
+             "bytes": 0,
+             "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            }
+           },
+           "spec": {
+            "version": "v2",
+            "sources": "/artifacts/spec/v2/sources.json",
+            "sha256": "63b9fb5a889472a938c92f0f58d4ce7535f0db476133d627bc77aa8b70624e1a"
+           },
+           "instructions": {
+            "version": "v2",
+            "sources": "/artifacts/instructions/v2/sources.json",
+            "sha256": "312514b7808af5d301b190e6c5cbcb5baf72591948464c40b138a71dff71d2d8"
+           },
+           "changed": [
+            "/workspace/checkout/docs/FACTORY_JOURNEY.md"
+           ],
+           "changedTruncated": false,
+           "content": {
+            "sha256": "b1f2befb9382471f4c3f059b1c59def51c4c7169281e36e501a1154c307668f6",
+            "clean": true,
+            "headMatches": true
+           }
+          }
+         },
+         "versions": {
+          "spec": {
+           "version": "v2",
+           "sources": "/artifacts/spec/v2/sources.json",
+           "sha256": "63b9fb5a889472a938c92f0f58d4ce7535f0db476133d627bc77aa8b70624e1a"
+          },
+          "instructions": {
+           "version": "v2",
+           "sources": "/artifacts/instructions/v2/sources.json",
+           "sha256": "312514b7808af5d301b190e6c5cbcb5baf72591948464c40b138a71dff71d2d8"
+          },
+          "base": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+          "head": "54b268d5b3905d077883524718d2527645e16b5a",
+          "profile": {
+           "skillPack": {
+            "name": "factory/skill-pack/factory-skills-v6",
+            "manifestSha256": "919b8a4baf20a7d963b846a85a228476109144827528993e15be66b694f69490"
+           },
+           "builder": {
+            "modelBudget": "builder-v1",
+            "copyOutput": true,
+            "editSourceMaxBytes": 8192,
+            "skillPack": "factory-skills-v6"
+           },
+           "reviewer": {
+            "modelBudget": "reviewer-v1",
+            "imageSourceMaxBytes": 5242880
+           }
+          }
+         },
+         "identity": {
+          "before": {
+           "status": "observed",
+           "sha256": "1701557b613850cbce5848d2ae706ba1c0485efc22c3bd526837549e26a7b03f",
+           "indexSha256": "5b175da5e304b044823b07193705a182e55531b7ccf1d517c47b67d4d0b0651e",
+           "entries": 1,
+           "consistent": true,
+           "observedAt": "2026-11-15T19:49:39.802Z"
+          },
+          "after": {
+           "status": "observed",
+           "sha256": "1701557b613850cbce5848d2ae706ba1c0485efc22c3bd526837549e26a7b03f",
+           "indexSha256": "5b175da5e304b044823b07193705a182e55531b7ccf1d517c47b67d4d0b0651e",
+           "entries": 1,
+           "consistent": true,
+           "observedAt": "2026-11-15T19:49:39.802Z"
+          }
+         },
+         "reviewers": {
+          "standards": {
+           "invocationId": "standards-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d-r2a1",
+           "phaseId": "review-r2",
+           "promptSha256": "",
+           "state": "not-required",
+           "requestedAt": "2026-11-15T19:49:39.802Z",
+           "receiptId": null,
+           "endedAt": "2026-11-15T19:49:39.802Z",
+           "opinion": null,
+           "failure": null,
+           "cessation": "never-started",
+           "input": {
+            "required": [],
+            "missing": []
+           }
+          },
+          "spec": {
+           "invocationId": "spec-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d-r2a1",
+           "phaseId": "review-r2",
+           "promptSha256": "",
+           "state": "not-required",
+           "requestedAt": "2026-11-15T19:49:39.802Z",
+           "receiptId": null,
+           "endedAt": "2026-11-15T19:49:39.802Z",
+           "opinion": null,
+           "failure": null,
+           "cessation": "never-started",
+           "input": {
+            "required": [],
+            "missing": []
+           }
+          }
+         },
+         "applicability": "current",
+         "conclusion": "clean",
+         "reasons": [
+          "EXEMPT_UNCHANGED"
+         ],
+         "concludedAt": "2026-11-15T19:49:39.802Z",
+         "delivery": {
+          "requestedAt": "2026-11-15T19:49:39.809Z",
+          "outcome": "delivered",
+          "code": null,
+          "promptSha256": "5b202087c9ec1f421b0a27c2bb7830fc624a225d67d70163e3526238f631f77d"
+         }
+        },
+        {
+         "round": 3,
+         "attempt": 1,
+         "state": "delivered",
+         "kind": "exemption",
+         "closing": true,
+         "exemption": {
+          "kind": "unchanged",
+          "reviewedRound": 1,
+          "head": "54b268d5b3905d077883524718d2527645e16b5a",
+          "reviewedHead": "54b268d5b3905d077883524718d2527645e16b5a",
+          "contentSha256": "b1f2befb9382471f4c3f059b1c59def51c4c7169281e36e501a1154c307668f6"
+         },
+         "declarations": null,
+         "handoff": {
+          "at": "2026-11-15T19:49:43.825Z",
+          "invocationId": "builder-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+          "status": "captured",
+          "code": null,
+          "detail": null,
+          "summary": {
+           "version": 1,
+           "round": 3,
+           "index": "/artifacts/review/r3/index.json",
+           "indexSha256": "f688b26b37bd6490b8a34b1b3672edd6091fd3b5b3f5fc55454794f5db0a8852",
+           "head": "54b268d5b3905d077883524718d2527645e16b5a",
+           "branch": "factory/14-2ece4778",
+           "base": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+           "mergeBase": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+           "counts": {
+            "entries": 1,
+            "committed": 1,
+            "staged": 0,
+            "unstaged": 0,
+            "untracked": 0,
+            "removed": 0
+           },
+           "patches": {
+            "committed": {
+             "path": "/artifacts/review/r3/committed.patch",
+             "bytes": 409,
+             "sha256": "754e014e3a989b8b2a64eff11e443c18cc6c9f03cc29bfceb2779d1a74d5766d"
+            },
+            "staged": {
+             "path": "/artifacts/review/r3/staged.patch",
+             "bytes": 0,
+             "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            "unstaged": {
+             "path": "/artifacts/review/r3/unstaged.patch",
+             "bytes": 0,
+             "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            }
+           },
+           "spec": {
+            "version": "v2",
+            "sources": "/artifacts/spec/v2/sources.json",
+            "sha256": "63b9fb5a889472a938c92f0f58d4ce7535f0db476133d627bc77aa8b70624e1a"
+           },
+           "instructions": {
+            "version": "v2",
+            "sources": "/artifacts/instructions/v2/sources.json",
+            "sha256": "312514b7808af5d301b190e6c5cbcb5baf72591948464c40b138a71dff71d2d8"
+           },
+           "changed": [
+            "/workspace/checkout/docs/FACTORY_JOURNEY.md"
+           ],
+           "changedTruncated": false,
+           "content": {
+            "sha256": "b1f2befb9382471f4c3f059b1c59def51c4c7169281e36e501a1154c307668f6",
+            "clean": true,
+            "headMatches": true
+           }
+          }
+         },
+         "versions": {
+          "spec": {
+           "version": "v2",
+           "sources": "/artifacts/spec/v2/sources.json",
+           "sha256": "63b9fb5a889472a938c92f0f58d4ce7535f0db476133d627bc77aa8b70624e1a"
+          },
+          "instructions": {
+           "version": "v2",
+           "sources": "/artifacts/instructions/v2/sources.json",
+           "sha256": "312514b7808af5d301b190e6c5cbcb5baf72591948464c40b138a71dff71d2d8"
+          },
+          "base": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+          "head": "54b268d5b3905d077883524718d2527645e16b5a",
+          "profile": {
+           "skillPack": {
+            "name": "factory/skill-pack/factory-skills-v6",
+            "manifestSha256": "919b8a4baf20a7d963b846a85a228476109144827528993e15be66b694f69490"
+           },
+           "builder": {
+            "modelBudget": "builder-v1",
+            "copyOutput": true,
+            "editSourceMaxBytes": 8192,
+            "skillPack": "factory-skills-v6"
+           },
+           "reviewer": {
+            "modelBudget": "reviewer-v1",
+            "imageSourceMaxBytes": 5242880
+           }
+          }
+         },
+         "identity": {
+          "before": {
+           "status": "observed",
+           "sha256": "3ed51d8d7fc7943e00531eb436af21f19cedc1e627d2a361def9713035a832b1",
+           "indexSha256": "f688b26b37bd6490b8a34b1b3672edd6091fd3b5b3f5fc55454794f5db0a8852",
+           "entries": 1,
+           "consistent": true,
+           "observedAt": "2026-11-15T19:49:43.825Z"
+          },
+          "after": {
+           "status": "observed",
+           "sha256": "3ed51d8d7fc7943e00531eb436af21f19cedc1e627d2a361def9713035a832b1",
+           "indexSha256": "f688b26b37bd6490b8a34b1b3672edd6091fd3b5b3f5fc55454794f5db0a8852",
+           "entries": 1,
+           "consistent": true,
+           "observedAt": "2026-11-15T19:49:43.825Z"
+          }
+         },
+         "reviewers": {
+          "standards": {
+           "invocationId": "standards-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d-r3a1",
+           "phaseId": "review-r3",
+           "promptSha256": "",
+           "state": "not-required",
+           "requestedAt": "2026-11-15T19:49:43.825Z",
+           "receiptId": null,
+           "endedAt": "2026-11-15T19:49:43.825Z",
+           "opinion": null,
+           "failure": null,
+           "cessation": "never-started",
+           "input": {
+            "required": [],
+            "missing": []
+           }
+          },
+          "spec": {
+           "invocationId": "spec-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d-r3a1",
+           "phaseId": "review-r3",
+           "promptSha256": "",
+           "state": "not-required",
+           "requestedAt": "2026-11-15T19:49:43.825Z",
+           "receiptId": null,
+           "endedAt": "2026-11-15T19:49:43.825Z",
+           "opinion": null,
+           "failure": null,
+           "cessation": "never-started",
+           "input": {
+            "required": [],
+            "missing": []
+           }
+          }
+         },
+         "applicability": "current",
+         "conclusion": "clean",
+         "reasons": [
+          "EXEMPT_UNCHANGED"
+         ],
+         "concludedAt": "2026-11-15T19:49:43.825Z",
+         "delivery": {
+          "requestedAt": "2026-11-15T19:49:43.833Z",
+          "outcome": "delivered",
+          "code": null,
+          "promptSha256": "fa4b2dacd72b619cf7bdc06c220308e268710d1b3617f65185109f124180f0d9"
+         }
+        }
+       ],
+       "verification": {
+        "at": "2026-11-15T19:49:43.845Z",
+        "status": "verified",
+        "reasons": [],
+        "reviewedRound": 1,
+        "finalRound": 3,
+        "contentSha256": "b1f2befb9382471f4c3f059b1c59def51c4c7169281e36e501a1154c307668f6",
+        "applicability": {
+         "kind": "unchanged",
+         "head": "54b268d5b3905d077883524718d2527645e16b5a",
+         "reviewedHead": "54b268d5b3905d077883524718d2527645e16b5a"
+        },
+        "gates": [
+         {
+          "id": "ticket-validation",
+          "outcome": "passed",
+          "current": true,
+          "boundToFinalContent": true,
+          "requiredCheck": null
+         }
+        ],
+        "treatments": [],
+        "requiredChecks": []
+       }
+      }
+     }
+    ],
+    "questions": [
+     "fee8adfe-8851-4cff-9327-c46877e909a0"
+    ],
+    "inputs": {
+     "cursor": 6900234781
+    },
+    "admittedAt": "2026-11-15T19:43:50.773Z",
+    "budget": {
+     "corrections": {
+      "limit": 3,
+      "granted": 0,
+      "consumed": 0,
+      "reserved": null
+     },
+     "recoveries": {
+      "limit": 3,
+      "granted": 0,
+      "consumed": 0,
+      "reserved": null
+     },
+     "source": {
+      "kind": "repository-configuration",
+      "repository": "Sanmoo/java-springboot-event-sourcing",
+      "recordedAt": "2026-11-15T19:43:50.773Z"
+     },
+     "grants": []
+    },
+    "correction": null,
+    "pendingRecovery": null,
+    "history": [
+     {
+      "at": "2026-11-15T19:43:50.773Z",
+      "event": "admitted",
+      "origin": "github-polling",
+      "sequence": 1
+     },
+     {
+      "at": "2026-11-15T19:43:54.020Z",
+      "event": "dependencies-changed",
+      "origin": "github-polling",
+      "before": null,
+      "after": "satisfied",
+      "evaluationId": "241fca2d-1288-4606-9838-73be2e03a7b3"
+     },
+     {
+      "at": "2026-11-15T19:43:56.288Z",
+      "event": "execution-reserved",
+      "origin": "controller-dispatch",
+      "executionId": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a"
+     },
+     {
+      "at": "2026-11-15T19:44:03.473Z",
+      "event": "execution-prepared",
+      "origin": "controller-dispatch",
+      "executionId": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a"
+     },
+     {
+      "at": "2026-11-15T19:44:17.335Z",
+      "event": "execution-booted",
+      "origin": "controller-dispatch",
+      "executionId": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a"
+     },
+     {
+      "at": "2026-11-15T19:44:20.939Z",
+      "event": "activation-requested",
+      "origin": "controller-dispatch",
+      "executionId": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a"
+     },
+     {
+      "at": "2026-11-15T19:44:21.247Z",
+      "event": "execution-started",
+      "origin": "controller-dispatch",
+      "executionId": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a",
+      "detail": "0ba37ae4-2c7a-4807-8704-ef87a1e55744"
+     },
+     {
+      "at": "2026-11-15T19:46:04.525Z",
+      "event": "question-recorded",
+      "origin": "controller-dispatch",
+      "questionId": "fee8adfe-8851-4cff-9327-c46877e909a0",
+      "detail": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a"
+     },
+     {
+      "at": "2026-11-15T19:46:04.693Z",
+      "event": "execution-ended",
+      "origin": "controller-dispatch",
+      "executionId": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a",
+      "detail": "question"
+     },
+     {
+      "at": "2026-11-15T19:46:08.423Z",
+      "event": "slot-released",
+      "origin": "controller-dispatch",
+      "executionId": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a"
+     },
+     {
+      "at": "2026-11-15T19:46:10.876Z",
+      "event": "question-published",
+      "origin": "controller-publication",
+      "questionId": "fee8adfe-8851-4cff-9327-c46877e909a0",
+      "detail": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/14#issuecomment-6900233451"
+     },
+     {
+      "at": "2026-11-15T19:46:39.562Z",
+      "event": "question-answered",
+      "origin": "github-comment",
+      "questionId": "fee8adfe-8851-4cff-9327-c46877e909a0",
+      "detail": "github-comment:6900234781"
+     },
+     {
+      "at": "2026-11-15T19:46:43.036Z",
+      "event": "execution-reserved",
+      "origin": "controller-dispatch",
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d"
+     },
+     {
+      "at": "2026-11-15T19:46:53.154Z",
+      "event": "execution-prepared",
+      "origin": "controller-dispatch",
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d"
+     },
+     {
+      "at": "2026-11-15T19:47:32.317Z",
+      "event": "execution-booted",
+      "origin": "controller-dispatch",
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d"
+     },
+     {
+      "at": "2026-11-15T19:47:36.650Z",
+      "event": "activation-requested",
+      "origin": "controller-dispatch",
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d"
+     },
+     {
+      "at": "2026-11-15T19:47:37.843Z",
+      "event": "execution-started",
+      "origin": "controller-dispatch",
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "detail": "fe0b111e-2548-4cc8-a4bb-7bf5037f1d3e"
+     },
+     {
+      "at": "2026-11-15T19:49:08.190Z",
+      "event": "review-handoff",
+      "origin": "controller-dispatch",
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "detail": "r1:captured"
+     },
+     {
+      "at": "2026-11-15T19:49:08.401Z",
+      "event": "reviewer-started",
+      "origin": "controller-dispatch",
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "detail": "r1:standards"
+     },
+     {
+      "at": "2026-11-15T19:49:08.411Z",
+      "event": "reviewer-started",
+      "origin": "controller-dispatch",
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "detail": "r1:spec"
+     },
+     {
+      "at": "2026-11-15T19:49:27.700Z",
+      "event": "reviewer-ended",
+      "origin": "controller-dispatch",
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "detail": "r1:standards:clean"
+     },
+     {
+      "at": "2026-11-15T19:49:30.336Z",
+      "event": "reviewer-ended",
+      "origin": "controller-dispatch",
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "detail": "r1:spec:clean"
+     },
+     {
+      "at": "2026-11-15T19:49:30.344Z",
+      "event": "review-concluded",
+      "origin": "controller-dispatch",
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "detail": "r1:clean:current"
+     },
+     {
+      "at": "2026-11-15T19:49:30.354Z",
+      "event": "review-delivered",
+      "origin": "controller-dispatch",
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "detail": "r1:delivered"
+     },
+     {
+      "at": "2026-11-15T19:49:39.803Z",
+      "event": "review-handoff",
+      "origin": "controller-dispatch",
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "detail": "r2:captured"
+     },
+     {
+      "at": "2026-11-15T19:49:39.803Z",
+      "event": "review-exempted",
+      "origin": "controller-dispatch",
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "detail": "r2:unchanged:r1"
+     },
+     {
+      "at": "2026-11-15T19:49:39.813Z",
+      "event": "review-delivered",
+      "origin": "controller-dispatch",
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "detail": "r2:delivered"
+     },
+     {
+      "at": "2026-11-15T19:49:43.827Z",
+      "event": "review-handoff",
+      "origin": "controller-dispatch",
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "detail": "r3:captured:closing"
+     },
+     {
+      "at": "2026-11-15T19:49:43.827Z",
+      "event": "review-exempted",
+      "origin": "controller-dispatch",
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "detail": "r3:unchanged:r1"
+     },
+     {
+      "at": "2026-11-15T19:49:43.836Z",
+      "event": "review-delivered",
+      "origin": "controller-dispatch",
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "detail": "r3:delivered"
+     },
+     {
+      "at": "2026-11-15T19:49:43.846Z",
+      "event": "review-verified",
+      "origin": "controller-dispatch",
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "detail": "verified"
+     },
+     {
+      "at": "2026-11-15T19:49:43.850Z",
+      "event": "execution-ended",
+      "origin": "controller-dispatch",
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "detail": "completed"
+     },
+     {
+      "at": "2026-11-15T19:49:45.804Z",
+      "event": "slot-released",
+      "origin": "controller-dispatch",
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d"
+     },
+     {
+      "at": "2026-11-15T19:50:41.756Z",
+      "event": "publication-evaluated",
+      "origin": "controller-publication",
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "detail": "awaiting-discovery:54b268d5b3905d077883524718d2527645e16b5a"
+     },
+     {
+      "at": "2026-11-15T19:50:53.118Z",
+      "event": "publication-requested",
+      "origin": "controller-publication",
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "detail": "remote:absent"
+     },
+     {
+      "at": "2026-11-15T19:51:45.318Z",
+      "event": "execution-reserved",
+      "origin": "controller-dispatch",
+      "executionId": "0860b0f6-7aec-414d-9e20-2297d7be0b57"
+     },
+     {
+      "at": "2026-11-15T19:51:47.465Z",
+      "event": "execution-prepared",
+      "origin": "controller-dispatch",
+      "executionId": "0860b0f6-7aec-414d-9e20-2297d7be0b57"
+     },
+     {
+      "at": "2026-11-15T19:51:57.606Z",
+      "event": "execution-booted",
+      "origin": "controller-dispatch",
+      "executionId": "0860b0f6-7aec-414d-9e20-2297d7be0b57"
+     },
+     {
+      "at": "2026-11-15T19:52:01.055Z",
+      "event": "activation-requested",
+      "origin": "controller-dispatch",
+      "executionId": "0860b0f6-7aec-414d-9e20-2297d7be0b57"
+     },
+     {
+      "at": "2026-11-15T19:52:01.055Z",
+      "event": "publication-started",
+      "origin": "controller-publication",
+      "executionId": "0860b0f6-7aec-414d-9e20-2297d7be0b57",
+      "detail": "54b268d5b3905d077883524718d2527645e16b5a"
+     },
+     {
+      "at": "2026-11-15T19:52:01.248Z",
+      "event": "execution-started",
+      "origin": "controller-dispatch",
+      "executionId": "0860b0f6-7aec-414d-9e20-2297d7be0b57",
+      "detail": "06d66a01-8114-4b7a-b60d-4a3f0b082e5f"
+     },
+     {
+      "at": "2026-11-15T19:52:30.537Z",
+      "event": "execution-ended",
+      "origin": "controller-dispatch",
+      "executionId": "0860b0f6-7aec-414d-9e20-2297d7be0b57",
+      "detail": "completed"
+     },
+     {
+      "at": "2026-11-15T19:52:32.729Z",
+      "event": "slot-released",
+      "origin": "controller-dispatch",
+      "executionId": "0860b0f6-7aec-414d-9e20-2297d7be0b57"
+     },
+     {
+      "at": "2026-11-15T19:52:50.068Z",
+      "event": "publication-linked",
+      "origin": "controller-publication",
+      "executionId": "0860b0f6-7aec-414d-9e20-2297d7be0b57",
+      "detail": "#15:54b268d5b3905d077883524718d2527645e16b5a"
+     },
+     {
+      "at": "2026-11-15T19:52:59.497Z",
+      "event": "checks-evaluated",
+      "origin": "controller-checks",
+      "detail": "blocked@54b268d5b3905d077883524718d2527645e16b5a:UPDATE_RESTRICTED:update@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing"
+     },
+     {
+      "at": "2026-11-15T19:52:59.514Z",
+      "event": "readiness-evaluated",
+      "origin": "controller-readiness",
+      "detail": "not-ready(recorded):MERGE_BLOCKED_UPDATE_RESTRICTED:update@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing"
+     }
+    ],
+    "publication": {
+     "state": "published",
+     "basisExecutionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+     "marker": "<!-- software-factory:work:2ece4778-47f3-4412-8da5-b03d9be4eb47 -->",
+     "branch": "factory/14-2ece4778",
+     "base": "main",
+     "verified": {
+      "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "head": "54b268d5b3905d077883524718d2527645e16b5a",
+      "contentSha256": "b1f2befb9382471f4c3f059b1c59def51c4c7169281e36e501a1154c307668f6",
+      "verifiedAt": "2026-11-15T19:49:43.845Z",
+      "reviewedRound": 1,
+      "gates": [
+       {
+        "id": "ticket-validation",
+        "outcome": "passed"
+       }
+      ],
+      "requiredChecks": []
+     },
+     "expectedRemote": {
+      "state": "absent"
+     },
+     "requestedAt": "2026-11-15T19:50:53.118Z",
+     "pullRequest": {
+      "pullRequestId": 5326539910,
+      "nodeId": "PR_kwDOSuqsXs8AAAABPXyMhg",
+      "number": 15,
+      "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/15",
+      "state": "open",
+      "merged": false,
+      "draft": true,
+      "headRef": "factory/14-2ece4778",
+      "headSha": "54b268d5b3905d077883524718d2527645e16b5a",
+      "base": "main",
+      "author": {
+       "id": 351187749,
+       "login": "sanmoo-factory[bot]",
+       "type": "Bot"
+      },
+      "linkedAt": "2026-11-15T19:52:50.067Z",
+      "bodySha256": "b336ea8c6070bc6f935b106cf258ac23b5a63abe8dbaa7a623e9d79deca22eb0"
+     },
+     "description": {
+      "conformant": true,
+      "reasons": []
+     },
+     "discoveries": [
+      {
+       "at": "2026-11-15T19:50:53.118Z",
+       "observedAt": "2026-11-15T19:50:44.355Z",
+       "trigger": "verified",
+       "outcome": "absent",
+       "reasons": [],
+       "branch": {
+        "state": "absent"
+       },
+       "candidates": []
+      },
+      {
+       "at": "2026-11-15T19:52:50.067Z",
+       "observedAt": "2026-11-15T19:52:44.383Z",
+       "trigger": "after-publication",
+       "outcome": "linked",
+       "reasons": [],
+       "branch": {
+        "state": "present",
+        "sha": "54b268d5b3905d077883524718d2527645e16b5a"
+       },
+       "candidates": [
+        {
+         "number": 15,
+         "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/15",
+         "own": true,
+         "reasons": []
+        }
+       ]
+      }
+     ],
+     "attempts": [
+      {
+       "executionId": "0860b0f6-7aec-414d-9e20-2297d7be0b57",
+       "head": "54b268d5b3905d077883524718d2527645e16b5a",
+       "at": "2026-11-15T19:52:01.055Z",
+       "expectedRemote": {
+        "state": "absent"
+       }
+      }
+     ],
+     "linkedHeads": [
+      "54b268d5b3905d077883524718d2527645e16b5a"
+     ],
+     "refsBefore": {
+      "refs/heads/factory/11-bf8df237": "188d81625f44b7343d7221c01b79f2191918dd96",
+      "refs/heads/factory/8-4535224b": "19983968187d7e5cff8ae6a68a998ae70e547727",
+      "refs/heads/main": "eb6178d666882a614a9b7716979c2a15bbd262fc"
+     },
+     "update": null,
+     "reasons": [],
+     "nextStep": "Own draft pull request linked. Opening it does not end the Ticket or the Work; readiness and human merge are separate.",
+     "updatedAt": "2026-11-15T19:52:50.067Z"
+    },
+    "checks": {
+     "latest": {
+      "at": "2026-11-15T19:52:59.497Z",
+      "observedAt": "2026-11-15T19:52:50.076Z",
+      "completedAt": "2026-11-15T19:52:58.454Z",
+      "outcome": "blocked",
+      "reasons": [
+       {
+        "category": "merge",
+        "code": "UPDATE_RESTRICTED",
+        "subject": "update@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing"
+       }
+      ],
+      "pullRequest": {
+       "number": 15,
+       "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/15",
+       "headSha": "54b268d5b3905d077883524718d2527645e16b5a",
+       "headRef": "factory/14-2ece4778",
+       "baseRef": "main",
+       "baseTip": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+       "mergeCommitSha": null,
+       "state": "open",
+       "merged": false,
+       "draft": true
+      },
+      "conflict": "none",
+      "strict": {
+       "required": false,
+       "sources": [],
+       "state": "not-required",
+       "behindBy": 0
+      },
+      "requiredSet": "empty-complete",
+      "requirements": [],
+      "optional": [],
+      "otherSha": [],
+      "modalities": [
+       {
+        "type": "pull_request",
+        "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+        "interpretation": "human-stage",
+        "merge": "human-stage",
+        "reason": "HUMAN_REVIEW_STAGE",
+        "notes": [
+         "APPROVALS:1"
+        ]
+       },
+       {
+        "type": "non_fast_forward",
+        "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+        "interpretation": "not-check-related",
+        "merge": "not-blocking",
+        "reason": "DOES_NOT_AFFECT_PULL_REQUEST_MERGE",
+        "notes": []
+       },
+       {
+        "type": "deletion",
+        "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+        "interpretation": "not-check-related",
+        "merge": "not-blocking",
+        "reason": "DOES_NOT_AFFECT_PULL_REQUEST_MERGE",
+        "notes": []
+       },
+       {
+        "type": "update",
+        "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+        "interpretation": "merge-blocking",
+        "merge": "blocking",
+        "reason": "UPDATE_RESTRICTED",
+        "notes": []
+       }
+      ],
+      "completeness": {
+       "pullRequest": "complete",
+       "baseTip": "complete",
+       "classic": "complete",
+       "rules": "complete",
+       "checkRuns": "complete",
+       "statuses": "complete",
+       "comparison": "complete",
+       "recheck": "complete"
+      },
+      "localGates": {
+       "declared": [],
+       "requiredByGitHub": [],
+       "notRequiredByGitHub": []
+      },
+      "notes": [
+       "REQUIRED_SET_EMPTY_FROM_COMPLETE_AUTHORIZED_READS"
+      ],
+      "nextStep": "The base protection blocks a human merge of this pull request for anyone without bypass: update@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing (UPDATE_RESTRICTED). Operator: adjust the base protection (that rule of that ruleset or branch protection) so that a human can merge the pull request; the Factory does not use or recommend a bypass, never approves and never merges.",
+      "limitations": [
+       "Separate GitHub reads between observedAt and completedAt: not an atomic snapshot of GitHub, its rules and CI; the explanation is valid only as observed.",
+       "Results are correlated to the current head commit; results attached to the test merge commit are not read (merge queue is not supported).",
+       "A commit status cannot be attributed to a GitHub App: a required check bound to an integration that also has a homonymous status is indeterminate.",
+       "A satisfied GitHub requirement (including skipped/neutral) never proves that a local gate ran; local gates are ticket 13 evidence.",
+       "This explanation is neither readiness (ticket 16) nor a repair decision (ticket 22).",
+       "Separate GET reads between observedAt and completedAt: not an atomic snapshot of GitHub, its rules and CI; the pull request and the requirements are re-read at the end.",
+       "Results are read for the current head commit only; results attached to the test merge commit are not read.",
+       "Rules are the active rules GitHub reports for the base branch (repository and inherited rulesets); classic protection is read separately."
+      ]
+     },
+     "history": []
+    },
+    "readiness": {
+     "internal": "not-ready",
+     "since": "2026-11-15T19:52:59.514Z",
+     "latest": {
+      "at": "2026-11-15T19:52:59.514Z",
+      "source": "recorded",
+      "decision": "not-ready",
+      "reasons": [
+       {
+        "area": "merge",
+        "certainty": "confirmed",
+        "code": "MERGE_BLOCKED_UPDATE_RESTRICTED",
+        "subject": "update@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing"
+       }
+      ],
+      "notes": [
+       "Human review/approval is a human stage: it is never read as a blocker and never performed by the Factory; merge is human only."
+      ],
+      "basis": {
+       "pullRequest": 15,
+       "nodeId": "PR_kwDOSuqsXs8AAAABPXyMhg",
+       "headSha": "54b268d5b3905d077883524718d2527645e16b5a",
+       "baseRef": "main",
+       "baseTip": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+       "strict": false,
+       "requirements": "empty-complete||deletion:not-check-related/not-blocking:DOES_NOT_AFFECT_PULL_REQUEST_MERGE@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing,non_fast_forward:not-check-related/not-blocking:DOES_NOT_AFFECT_PULL_REQUEST_MERGE@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing,pull_request:human-stage/human-stage:HUMAN_REVIEW_STAGE@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing,update:merge-blocking/blocking:UPDATE_RESTRICTED@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing|strict:",
+       "verifiedHead": "54b268d5b3905d077883524718d2527645e16b5a",
+       "contentSha256": "b1f2befb9382471f4c3f059b1c59def51c4c7169281e36e501a1154c307668f6",
+       "checksAt": "2026-11-15T19:52:58.454Z",
+       "checksOutcome": "blocked",
+       "draft": true
+      }
+     },
+     "flag": {
+      "factory": "draft",
+      "origin": "publication",
+      "at": "2026-11-15T19:52:50.067Z",
+      "observed": "draft",
+      "observedAt": "2026-11-15T19:52:59.514Z"
+     },
+     "humanDraft": null,
+     "humanReady": null,
+     "authorization": null,
+     "effect": null,
+     "effects": [],
+     "stages": {
+      "internal": "not-ready",
+      "flag": "draft",
+      "humanReview": "human-stage",
+      "delivery": "not-delivered"
+     },
+     "nextStep": "Not ready. The base protection blocks a human merge of this pull request for anyone without bypass: update@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing (UPDATE_RESTRICTED). Operator: adjust the base protection (that rule of that ruleset or branch protection) so that a human can merge the pull request; the Factory does not use or recommend a bypass, never approves and never merges."
+    },
+    "dispatch": {
+     "state": "executing",
+     "reasons": []
+    },
+    "limits": {
+     "corrections": {
+      "limit": 3,
+      "granted": 0,
+      "effectiveLimit": 3,
+      "consumed": 0,
+      "reserved": 0,
+      "reservedBy": null,
+      "available": 3,
+      "exhausted": false
+     },
+     "recoveries": {
+      "limit": 3,
+      "granted": 0,
+      "effectiveLimit": 3,
+      "consumed": 0,
+      "reserved": 0,
+      "reservedBy": null,
+      "available": 3,
+      "exhausted": false
+     },
+     "grants": 0,
+     "timeout": {
+      "seconds": null,
+      "scope": "per-execution",
+      "reached": null,
+      "overrun": "not-applicable"
+     },
+     "duration": {
+      "clock": "controller-monotonic",
+      "startedAt": "2026-11-15T19:52:01.248Z",
+      "lastActivity": {
+       "at": "2026-11-15T19:52:30.537Z",
+       "elapsedMs": 29288.364059999993,
+       "event": "ended-completed"
+      },
+      "lowerBoundMs": null,
+      "calendarEstimateMs": null,
+      "state": "measured",
+      "elapsedMs": 29288.364059999993,
+      "note": "Measured by the controller monotonic clock from the confirmed start to the observed end."
+     },
+     "actions": []
+    }
+   }
+  ],
+  "queues": {
+   "normal": [],
+   "repair": []
+  },
+  "selection": {
+   "next": null,
+   "skipped": []
+  },
+  "polling": {
+   "state": "sleeping",
+   "intervalSeconds": 60,
+   "cycles": 10,
+   "lastCycleAt": "2026-11-15T19:52:44.383Z",
+   "source": "in-memory-observation",
+   "repositories": [
+    {
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "label": "ready-for-agent",
+     "state": "observed",
+     "observedAt": "2026-11-15T19:52:43.609Z",
+     "completeness": "complete",
+     "absenceProven": false,
+     "consecutiveFailures": 0,
+     "nextPollInSeconds": 45,
+     "candidates": [
+      {
+       "ticket": {
+        "tracker": "github",
+        "repository": "Sanmoo/java-springboot-event-sourcing",
+        "repositoryId": 1256893534,
+        "issueId": 6408593350,
+        "nodeId": "I_kwDOSuqsXs8AAAABfftfxg",
+        "number": 14,
+        "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/14"
+       },
+       "observedAt": "2026-11-15T19:52:44.382Z",
+       "outcome": "existing",
+       "work_id": "2ece4778-47f3-4412-8da5-b03d9be4eb47"
+      }
+     ]
+    }
+   ]
+  },
+  "limitations": [
+   "Candidate observations are in-memory results of the latest poll, not authority; they are rebuilt after restart.",
+   "A failed or partial query, or absence from a listing, never proves absence of a Ticket, label or pull request, nor withdrawal of authorization.",
+   "Dispatch opens only after the boot reconciliation: execution boundaries composed, no unknown runtime resource, task or orphan Slot; interrupted Executions are ceased (never adopted) and settled from durable evidence. A Work whose own cessation or start stays uncertain keeps its Slot/reservation and is blocked; independents proceed with the remaining capacity. Each dispatch then revalidates authorization and dependencies of its own attempt before reserving.",
+   "An operational recovery waits its persisted delay (5/15/45 s by recoveries already consumed, never anticipated by events or restarts) and is checked again at the next polling round after it.",
+   "An ended Builder Execution never completes the Work automatically and nothing is retried automatically. Publication (ticket 14) requires the end-of-Execution verification of a committed content; the Builder pushes its own branch and opens its own draft PR directly, only in a publication activation Control requested after a complete discovery found nothing. Control links its own PR only by correlation (marker, App bot author, own branch/repository/base, verified head); opening it never ends the Ticket.",
+   "Readiness (ticket 16) is the controller's evaluation of current evidence (published own PR, verified content and two current opinions, treatments, gates, GitHub required checks of the current head, confirmed absence of conflict, no impediment or concurrent activity), confirmed by a fresh recheck immediately before any draft/ready conversion. The conversion is a Factory effect under a fresh single-use grant, intended before, observed and confirmed after, never repeated implicitly; a ready flag alone certifies nothing. Human review, approval and merge are human only.",
+   "Native dependency evaluations are re-done every polling round; only an evaluation of the current round can release, never an older or pre-restart one.",
+   "A Question waiting for an answer occupies no Slot; an accepted answer removes only its own impediment and never starts an agent directly: the Work resumes through its queue position after revalidation.",
+   "A resumed Builder continues its previous session only when that session was recorded, is intact and compatible; otherwise it is replaced with a recorded reason and an explicit recovery instruction. Delivering context is not proof that the Builder consumed it.",
+   "Only `update-scope` (or an accepted answer) authorizes a concrete change of the request, for the next safe activation; a later Ticket or link edit is never a trigger or an authorization.",
+   "Delivery (ticket 17) is only a human merge of the Work's own pull request, confirmed by its identity; closing the Ticket or the pull request, or any agent message, is not delivery. The Factory never merges.",
+   "Cleanup after delivery removes only own resources (own environments with their checkout/local branch/temporaries, the own remote branch under its own cleanup grant), after confirmed cessation and preserved evidence; base, shared cache, other Works and Docker are never touched. A failed or pending cleanup is shown separately and never undoes delivery."
+  ]
+ },
+ "shown": {
+  "kind": "work",
+  "work": {
+   "work_id": "2ece4778-47f3-4412-8da5-b03d9be4eb47",
+   "cycle": 1,
+   "predecessor": null,
+   "ticket": {
+    "tracker": "github",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "issueId": 6408593350,
+    "nodeId": "I_kwDOSuqsXs8AAAABfftfxg",
+    "number": 14,
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/14"
+   },
+   "repository": {
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "base": "main"
+   },
+   "result": "open",
+   "authorization": {
+    "state": "authorized",
+    "source": "github-rest",
+    "observedAt": "2026-11-15T19:43:44.619Z",
+    "basis": {
+     "repositoryConfigured": true,
+     "issueState": "open",
+     "label": {
+      "id": 12918930265,
+      "name": "ready-for-agent"
+     }
+    },
+    "publication": {
+     "observedAt": "2026-11-15T19:43:45.281Z",
+     "completeness": "complete",
+     "associatedPullRequests": 0,
+     "limitations": [
+      "Association = GitHub closing keywords in pull request title/body, native issue-timeline cross-references and Development links (connected/disconnected) for pull requests of this repository, and known own branches.",
+      "Pull requests in other repositories that reference the Ticket are not treated as associated (they cannot be own publications of this repository).",
+      "A Development link whose pull request is not identified in the timeline makes the Ticket incomplete, never clear.",
+      "Listing and timeline are separate reads, not an atomic remote snapshot."
+     ]
+    },
+    "tracking": "Authorization recorded at admission. Later label removal/closure tracking is not part of this increment; absence from a listing is never treated as withdrawal."
+   },
+   "queue": {
+    "category": "normal",
+    "sequence": 1,
+    "pending": false
+   },
+   "impediments": [],
+   "dependencies": {
+    "latest": {
+     "evaluationId": "57747ad8-912e-4384-b0c9-62d752a90196",
+     "attemptId": "73625b83-e4a8-4a07-ba79-540df9066be1",
+     "source": "github-rest",
+     "observedAt": "2026-11-15T19:51:58.301Z",
+     "evaluatedAt": "2026-11-15T19:51:59.698Z",
+     "principals": [
+      {
+       "installationId": 177599217,
+       "repository": "Sanmoo/java-springboot-event-sourcing",
+       "repositoryId": 1256893534,
+       "role": "executable",
+       "purpose": "dependency-read",
+       "permissions": {
+        "metadata": "read",
+        "issues": "read"
+       }
+      }
+     ],
+     "completeness": "complete",
+     "conclusion": "satisfied",
+     "blockers": [],
+     "cycles": [],
+     "shared": [],
+     "reasons": [],
+     "limitations": [
+      "Only native blocked_by relations are read; prose, \"Depends on\", labels, duplicates and the inverse blocking relation are never substitutes.",
+      "Reads of issues and pages are not an atomic remote snapshot; later changes are seen by the next evaluation.",
+      "Equal counts (issue_dependencies_summary) do not certify the absence of relations GitHub does not show to this installation."
+     ]
+    },
+    "lastComplete": {
+     "evaluationId": "57747ad8-912e-4384-b0c9-62d752a90196",
+     "observedAt": "2026-11-15T19:51:58.301Z",
+     "conclusion": "satisfied"
+    }
+   },
+   "execution": {
+    "executionId": "0860b0f6-7aec-414d-9e20-2297d7be0b57",
+    "invocationId": "builder-0860b0f6-7aec-414d-9e20-2297d7be0b57",
+    "mode": "recovery",
+    "state": "ended",
+    "slot": {
+     "held": false,
+     "capacity": 1,
+     "reservedAt": "2026-11-15T19:51:45.314Z",
+     "releasedAt": "2026-11-15T19:52:32.728Z"
+    },
+    "admission": {
+     "attemptId": "549a9ed8-1ae4-4eaa-aedb-2c261ca53eb2",
+     "evaluationId": "b5fb2550-43c5-4ad5-9b04-a59f35660bae",
+     "authorizationObservedAt": "2026-11-15T19:51:43.606Z",
+     "activationAttemptId": "73625b83-e4a8-4a07-ba79-540df9066be1",
+     "activationEvaluationId": "57747ad8-912e-4384-b0c9-62d752a90196"
+    },
+    "dispatch": {
+     "intent": "prepare-start-activate",
+     "phase": "stopped",
+     "environment": "env-73830d99899ceeab08cbfec9a5fd59000e086957353afab5ea6fd3c8e9263c76",
+     "boot": "boot-7bac0cbb-b7f4-46e7-898f-b4765d3a7002",
+     "updatedAt": "2026-11-15T19:52:30.537Z"
+    },
+    "request": {
+     "ticket": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/14",
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "base": "main",
+     "branch": "factory/14-2ece4778",
+     "policies": {
+      "modelBudget": "builder-v1",
+      "copyOutput": true,
+      "skillPack": "factory-skills-v6"
+     },
+     "baseCommit": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+     "checkout": "/workspace/checkout",
+     "promptSha256": "38f3b32bfe21bfa33ef9f7f6e105e3eaa1bf258ad80b6ef36e1608b00d175fb4",
+     "skillPack": {
+      "name": "factory/skill-pack/factory-skills-v6",
+      "manifestSha256": "919b8a4baf20a7d963b846a85a228476109144827528993e15be66b694f69490"
+     },
+     "resume": {
+      "previousExecutionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "questionId": null,
+      "answerSha256": null,
+      "scopeUpdateIds": [],
+      "reason": "PUBLICATION_REQUESTED"
+     },
+     "scopeUpdateIds": [],
+     "session": {
+      "mode": "replace",
+      "reason": "PUBLISH_ONLY_SESSION",
+      "previousExecutionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "previous": {
+       "ref": "r/0Id6A7fTQ1OFN0RfsVP_DA/w-vQMddk/profile/sessions/2026-11-15T19-44-22-338Z_01a1e0bd-4341-755b-bfad-7a670f2e08e4.jsonl",
+       "sessionId": "01a1e0bd-4341-755b-bfad-7a670f2e08e4",
+       "sha256": "b854c045e33a1ad1aa7e2f1ecc5ddd777e14c97616ca11a0995aebd96daa766c",
+       "bytes": 111358,
+       "format": "pi-session-jsonl-v3",
+       "profile": {
+        "sdkProfile": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+        "providerId": "openai",
+        "modelId": "gpt-6-luna",
+        "skillPack": "factory-skills-v6",
+        "tools": [
+         "ask_user",
+         "bash",
+         "edit",
+         "handoff",
+         "read",
+         "write"
+        ]
+       }
+      },
+      "decidedAt": "2026-11-15T19:51:59.704Z"
+     },
+     "publication": {
+      "basisExecutionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+      "head": "54b268d5b3905d077883524718d2527645e16b5a",
+      "branch": "factory/14-2ece4778",
+      "base": "main",
+      "marker": "<!-- software-factory:work:2ece4778-47f3-4412-8da5-b03d9be4eb47 -->",
+      "expectedRemote": {
+       "state": "absent"
+      },
+      "pullRequest": null
+     }
+    },
+    "credential": {
+     "role": "builder",
+     "purpose": "builder-publish",
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "repositoryId": 1256893534,
+     "installationId": 177599217,
+     "permissions": {
+      "metadata": "read",
+      "contents": "write",
+      "pull_requests": "write",
+      "issues": "read"
+     },
+     "issuedAt": "2026-11-15T19:51:59.710Z",
+     "expiresAt": "2026-11-15T20:52:00Z"
+    },
+    "credentialIssuance": {
+     "requestedAt": "2026-11-15T19:51:59.705Z",
+     "outcome": "issued",
+     "code": null,
+     "metadata": {
+      "role": "builder",
+      "purpose": "builder-publish",
+      "repository": "Sanmoo/java-springboot-event-sourcing",
+      "repositoryId": 1256893534,
+      "installationId": 177599217,
+      "permissions": {
+       "metadata": "read",
+       "contents": "write",
+       "pull_requests": "write",
+       "issues": "read"
+      },
+      "issuedAt": "2026-11-15T19:51:59.710Z",
+      "expiresAt": "2026-11-15T20:52:00Z"
+     },
+     "revocation": "revoked",
+     "revocationCode": "GITHUB_TOKEN_REVOKED",
+     "risk": null,
+     "revocationAttemptedAt": "2026-11-15T19:52:30.547Z"
+    },
+    "credentialRenewals": [],
+    "credentialLifecycle": {
+     "state": "withdrawn",
+     "withdrawnAt": "2026-11-15T19:52:30.542Z",
+     "reason": "ended",
+     "renewal": "enabled",
+     "renewalStop": null,
+     "workerNotice": null
+    },
+    "start": {
+     "receiptId": "06d66a01-8114-4b7a-b60d-4a3f0b082e5f",
+     "confirmedAt": "2026-11-15T19:52:01.248Z"
+    },
+    "end": {
+     "at": "2026-11-15T19:52:30.537Z",
+     "outcome": "completed",
+     "code": null,
+     "cessation": "confirmed",
+     "session": {
+      "ref": "r/e6wMu7f0RueJj7R2XTpwAg/w-coQCVI/profile/sessions/2026-11-15T19-52-02-101Z_01a1e0c4-4734-71ad-91aa-41f89db174bb.jsonl",
+      "sessionId": "01a1e0c4-4734-71ad-91aa-41f89db174bb",
+      "sha256": "7bce07a09036d95f6987c8f6be51d12f56197f6e416fa3f4d64a1f9a9200447d",
+      "bytes": 26305,
+      "format": "pi-session-jsonl-v3",
+      "profile": {
+       "sdkProfile": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+       "providerId": "openai",
+       "modelId": "gpt-6-luna",
+       "skillPack": "factory-skills-v6",
+       "tools": [
+        "ask_user",
+        "bash",
+        "read",
+        "write"
+       ]
+      }
+     }
+    },
+    "held": null,
+    "completion": {
+     "automatic": false,
+     "reason": "Publication activation: its effects are discovered by Control after cessation (own branch tip and own draft pull request); the Builder's message is not evidence."
+    },
+    "charge": {
+     "kind": "none",
+     "correctionId": null,
+     "counter": null,
+     "state": "none",
+     "settledAt": null
+    },
+    "timing": {
+     "timeoutSeconds": null,
+     "clock": "controller-monotonic",
+     "origin": "48622d04-8067-4b6a-aff9-1f2e3358d11d",
+     "startedAt": "2026-11-15T19:52:01.248Z",
+     "lastActivity": {
+      "at": "2026-11-15T19:52:30.537Z",
+      "elapsedMs": 29288.364059999993,
+      "event": "ended-completed"
+     },
+     "duration": {
+      "kind": "measured",
+      "elapsedMs": 29288.364059999993,
+      "endedAt": "2026-11-15T19:52:30.537Z"
+     },
+     "timeout": null,
+     "overrun": "not-applicable"
+    },
+    "interruption": null
+   },
+   "branch": "factory/14-2ece4778",
+   "pullRequest": {
+    "number": 15,
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/15"
+   },
+   "previousExecutions": [
+    {
+     "executionId": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a",
+     "invocationId": "builder-2d55c2cc-0e51-4409-a3d6-e7990f4aa82a",
+     "mode": "initial",
+     "state": "ended",
+     "slot": {
+      "held": false,
+      "capacity": 1,
+      "reservedAt": "2026-11-15T19:43:56.287Z",
+      "releasedAt": "2026-11-15T19:46:08.423Z"
+     },
+     "admission": {
+      "attemptId": "ddf4ed2b-512e-482b-9745-515f47617295",
+      "evaluationId": "f4f23866-f849-4565-8567-bbc4915cc6fc",
+      "authorizationObservedAt": "2026-11-15T19:43:54.027Z",
+      "activationAttemptId": "878a1c0e-fb0b-4d94-95f9-e62b639186b4",
+      "activationEvaluationId": "0b64b446-8c74-4455-a7a5-0214a5fd2a31"
+     },
+     "dispatch": {
+      "intent": "prepare-start-activate",
+      "phase": "stopped",
+      "environment": "env-73830d99899ceeab08cbfec9a5fd59000e086957353afab5ea6fd3c8e9263c76",
+      "boot": "boot-0d130844-571e-4580-8bfa-85fe0e0d6d54",
+      "updatedAt": "2026-11-15T19:46:04.694Z"
+     },
+     "request": {
+      "ticket": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/14",
+      "repository": "Sanmoo/java-springboot-event-sourcing",
+      "base": "main",
+      "branch": "factory/14-2ece4778",
+      "policies": {
+       "modelBudget": "builder-v1",
+       "copyOutput": true,
+       "editSourceMaxBytes": 8192,
+       "skillPack": "factory-skills-v6"
+      },
+      "baseCommit": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+      "checkout": "/workspace/checkout",
+      "promptSha256": "f8d54ce7308e80ff5b5f0cf04da2f8e8576042f71640259fe49a322c887d2c62",
+      "skillPack": {
+       "name": "factory/skill-pack/factory-skills-v6",
+       "manifestSha256": "919b8a4baf20a7d963b846a85a228476109144827528993e15be66b694f69490"
+      },
+      "resume": null,
+      "scopeUpdateIds": [],
+      "session": null
+     },
+     "credential": {
+      "role": "builder",
+      "purpose": "builder-start",
+      "repository": "Sanmoo/java-springboot-event-sourcing",
+      "repositoryId": 1256893534,
+      "installationId": 177599217,
+      "permissions": {
+       "metadata": "read",
+       "contents": "read",
+       "issues": "read"
+      },
+      "issuedAt": "2026-11-15T19:44:19.683Z",
+      "expiresAt": "2026-11-15T20:44:20Z"
+     },
+     "credentialIssuance": {
+      "requestedAt": "2026-11-15T19:44:19.678Z",
+      "outcome": "issued",
+      "code": null,
+      "metadata": {
+       "role": "builder",
+       "purpose": "builder-start",
+       "repository": "Sanmoo/java-springboot-event-sourcing",
+       "repositoryId": 1256893534,
+       "installationId": 177599217,
+       "permissions": {
+        "metadata": "read",
+        "contents": "read",
+        "issues": "read"
+       },
+       "issuedAt": "2026-11-15T19:44:19.683Z",
+       "expiresAt": "2026-11-15T20:44:20Z"
+      },
+      "revocation": "revoked",
+      "revocationCode": "GITHUB_TOKEN_REVOKED",
+      "risk": null,
+      "revocationAttemptedAt": "2026-11-15T19:46:04.583Z"
+     },
+     "credentialRenewals": [],
+     "credentialLifecycle": {
+      "state": "withdrawn",
+      "withdrawnAt": "2026-11-15T19:46:04.552Z",
+      "reason": "external-wait",
+      "renewal": "enabled",
+      "renewalStop": null,
+      "workerNotice": "withdrawn"
+     },
+     "start": {
+      "receiptId": "0ba37ae4-2c7a-4807-8704-ef87a1e55744",
+      "confirmedAt": "2026-11-15T19:44:21.246Z"
+     },
+     "end": {
+      "at": "2026-11-15T19:46:04.693Z",
+      "outcome": "question",
+      "code": null,
+      "cessation": "confirmed",
+      "questionId": "fee8adfe-8851-4cff-9327-c46877e909a0",
+      "session": {
+       "ref": "r/DRMIRFceRYCL-oX-Dg1tVA/w-7MEozL/profile/sessions/2026-11-15T19-44-22-338Z_01a1e0bd-4341-755b-bfad-7a670f2e08e4.jsonl",
+       "sessionId": "01a1e0bd-4341-755b-bfad-7a670f2e08e4",
+       "sha256": "40b49f4ffa3b3e2a9e32b997807aa2849b7404213eed3b6bae869342644c8b6e",
+       "bytes": 56043,
+       "format": "pi-session-jsonl-v3",
+       "profile": {
+        "sdkProfile": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+        "providerId": "openai",
+        "modelId": "gpt-6-luna",
+        "skillPack": "factory-skills-v6",
+        "tools": [
+         "ask_user",
+         "bash",
+         "edit",
+         "handoff",
+         "read",
+         "write"
+        ]
+       }
+      }
+     },
+     "held": null,
+     "completion": {
+      "automatic": false,
+      "reason": "An ended Builder Execution never completes the Work automatically: publication requires the end-of-Execution verification and a discovery; readiness is not enabled in this Factory version."
+     },
+     "charge": {
+      "kind": "none",
+      "correctionId": null,
+      "counter": null,
+      "state": "none",
+      "settledAt": null
+     },
+     "timing": {
+      "timeoutSeconds": null,
+      "clock": "controller-monotonic",
+      "origin": "a3ab7368-5164-42df-af67-5794e9e4768e",
+      "startedAt": "2026-11-15T19:44:21.246Z",
+      "lastActivity": {
+       "at": "2026-11-15T19:46:04.693Z",
+       "elapsedMs": 103438.803488,
+       "event": "ended-question"
+      },
+      "duration": {
+       "kind": "measured",
+       "elapsedMs": 103438.803488,
+       "endedAt": "2026-11-15T19:46:04.693Z"
+      },
+      "timeout": null,
+      "overrun": "not-applicable"
+     },
+     "interruption": null
+    },
+    {
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+     "invocationId": "builder-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+     "mode": "recovery",
+     "state": "ended",
+     "slot": {
+      "held": false,
+      "capacity": 1,
+      "reservedAt": "2026-11-15T19:46:43.012Z",
+      "releasedAt": "2026-11-15T19:49:45.804Z"
+     },
+     "admission": {
+      "attemptId": "6f177c44-44d5-4303-a2c3-fc81aa436234",
+      "evaluationId": "5aeba0e5-d8e3-43fb-bbc3-1ffd909c9226",
+      "authorizationObservedAt": "2026-11-15T19:46:39.593Z",
+      "activationAttemptId": "49a6e596-2da1-44de-a3b1-8c8865a8d9a1",
+      "activationEvaluationId": "61d5631e-657f-4ed0-afc1-184885ccdf11"
+     },
+     "dispatch": {
+      "intent": "prepare-start-activate",
+      "phase": "stopped",
+      "environment": "env-73830d99899ceeab08cbfec9a5fd59000e086957353afab5ea6fd3c8e9263c76",
+      "boot": "boot-d0877a03-b7d3-4353-8537-445fb153ff0c",
+      "updatedAt": "2026-11-15T19:49:43.850Z"
+     },
+     "request": {
+      "ticket": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/14",
+      "repository": "Sanmoo/java-springboot-event-sourcing",
+      "base": "main",
+      "branch": "factory/14-2ece4778",
+      "policies": {
+       "modelBudget": "builder-v1",
+       "copyOutput": true,
+       "editSourceMaxBytes": 8192,
+       "skillPack": "factory-skills-v6"
+      },
+      "baseCommit": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+      "checkout": "/workspace/checkout",
+      "promptSha256": "1a484a143fa166b1737d0745c732ecaef88d07ed45fa1ca03590a7e12bac78e2",
+      "skillPack": {
+       "name": "factory/skill-pack/factory-skills-v6",
+       "manifestSha256": "919b8a4baf20a7d963b846a85a228476109144827528993e15be66b694f69490"
+      },
+      "resume": {
+       "previousExecutionId": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a",
+       "questionId": "fee8adfe-8851-4cff-9327-c46877e909a0",
+       "answerSha256": "a6a01cb2a3ea466ce341068fd884a049007ae535c91cfb7b6557524f084ce6c9",
+       "scopeUpdateIds": [],
+       "reason": "QUESTION_ANSWERED"
+      },
+      "scopeUpdateIds": [],
+      "session": {
+       "mode": "continue",
+       "reason": "SESSION_COMPATIBLE",
+       "previousExecutionId": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a",
+       "previous": {
+        "ref": "r/DRMIRFceRYCL-oX-Dg1tVA/w-7MEozL/profile/sessions/2026-11-15T19-44-22-338Z_01a1e0bd-4341-755b-bfad-7a670f2e08e4.jsonl",
+        "sessionId": "01a1e0bd-4341-755b-bfad-7a670f2e08e4",
+        "sha256": "40b49f4ffa3b3e2a9e32b997807aa2849b7404213eed3b6bae869342644c8b6e",
+        "bytes": 56043,
+        "format": "pi-session-jsonl-v3",
+        "profile": {
+         "sdkProfile": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+         "providerId": "openai",
+         "modelId": "gpt-6-luna",
+         "skillPack": "factory-skills-v6",
+         "tools": [
+          "ask_user",
+          "bash",
+          "edit",
+          "handoff",
+          "read",
+          "write"
+         ]
+        }
+       },
+       "decidedAt": "2026-11-15T19:47:35.306Z"
+      }
+     },
+     "credential": {
+      "role": "builder",
+      "purpose": "builder-start",
+      "repository": "Sanmoo/java-springboot-event-sourcing",
+      "repositoryId": 1256893534,
+      "installationId": 177599217,
+      "permissions": {
+       "metadata": "read",
+       "contents": "read",
+       "issues": "read"
+      },
+      "issuedAt": "2026-11-15T19:47:35.314Z",
+      "expiresAt": "2026-11-15T20:47:36Z"
+     },
+     "credentialIssuance": {
+      "requestedAt": "2026-11-15T19:47:35.307Z",
+      "outcome": "issued",
+      "code": null,
+      "metadata": {
+       "role": "builder",
+       "purpose": "builder-start",
+       "repository": "Sanmoo/java-springboot-event-sourcing",
+       "repositoryId": 1256893534,
+       "installationId": 177599217,
+       "permissions": {
+        "metadata": "read",
+        "contents": "read",
+        "issues": "read"
+       },
+       "issuedAt": "2026-11-15T19:47:35.314Z",
+       "expiresAt": "2026-11-15T20:47:36Z"
+      },
+      "revocation": "revoked",
+      "revocationCode": "GITHUB_TOKEN_REVOKED",
+      "risk": null,
+      "revocationAttemptedAt": "2026-11-15T19:49:43.859Z"
+     },
+     "credentialRenewals": [],
+     "credentialLifecycle": {
+      "state": "withdrawn",
+      "withdrawnAt": "2026-11-15T19:49:43.856Z",
+      "reason": "ended",
+      "renewal": "enabled",
+      "renewalStop": null,
+      "workerNotice": null
+     },
+     "start": {
+      "receiptId": "fe0b111e-2548-4cc8-a4bb-7bf5037f1d3e",
+      "confirmedAt": "2026-11-15T19:47:37.843Z"
+     },
+     "end": {
+      "at": "2026-11-15T19:49:43.850Z",
+      "outcome": "completed",
+      "code": null,
+      "cessation": "confirmed",
+      "session": {
+       "ref": "r/0Id6A7fTQ1OFN0RfsVP_DA/w-vQMddk/profile/sessions/2026-11-15T19-44-22-338Z_01a1e0bd-4341-755b-bfad-7a670f2e08e4.jsonl",
+       "sessionId": "01a1e0bd-4341-755b-bfad-7a670f2e08e4",
+       "sha256": "b854c045e33a1ad1aa7e2f1ecc5ddd777e14c97616ca11a0995aebd96daa766c",
+       "bytes": 111358,
+       "format": "pi-session-jsonl-v3",
+       "profile": {
+        "sdkProfile": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+        "providerId": "openai",
+        "modelId": "gpt-6-luna",
+        "skillPack": "factory-skills-v6",
+        "tools": [
+         "ask_user",
+         "bash",
+         "edit",
+         "handoff",
+         "read",
+         "write"
+        ]
+       }
+      }
+     },
+     "held": null,
+     "completion": {
+      "automatic": false,
+      "reason": "An ended Builder Execution never completes the Work automatically: publication requires the end-of-Execution verification and a discovery; readiness is not enabled in this Factory version."
+     },
+     "charge": {
+      "kind": "none",
+      "correctionId": null,
+      "counter": null,
+      "state": "none",
+      "settledAt": null
+     },
+     "timing": {
+      "timeoutSeconds": null,
+      "clock": "controller-monotonic",
+      "origin": "48622d04-8067-4b6a-aff9-1f2e3358d11d",
+      "startedAt": "2026-11-15T19:47:37.843Z",
+      "lastActivity": {
+       "at": "2026-11-15T19:49:43.850Z",
+       "elapsedMs": 126012.80275200002,
+       "event": "ended-completed"
+      },
+      "duration": {
+       "kind": "measured",
+       "elapsedMs": 126012.80275200002,
+       "endedAt": "2026-11-15T19:49:43.850Z"
+      },
+      "timeout": null,
+      "overrun": "not-applicable"
+     },
+     "interruption": null,
+     "review": {
+      "firstRound": 1,
+      "rounds": [
+       {
+        "round": 1,
+        "attempt": 1,
+        "state": "delivered",
+        "kind": "review",
+        "closing": false,
+        "exemption": null,
+        "declarations": {
+         "treatments": [],
+         "gates": [
+          {
+           "id": "ticket-validation",
+           "source": "/artifacts/spec/v2/ticket.json#Validation",
+           "command": "cd /workspace/checkout && test -f docs/FACTORY_JOURNEY.md && grep -q '^## Steps' docs/FACTORY_JOURNEY.md && grep -q '^## Rollback' docs/FACTORY_JOURNEY.md",
+           "cwd": "/workspace",
+           "requiredCheck": null,
+           "declared": "run",
+           "outcome": "passed",
+           "code": null,
+           "exitCode": 0,
+           "output": {
+            "workId": "2ece4778-47f3-4412-8da5-b03d9be4eb47",
+            "id": "fc7e713a-d01d-4f77-a34f-a23a712f9d6d"
+           },
+           "sequence": 14,
+           "current": true,
+           "reason": null,
+           "authorization": null
+          }
+         ]
+        },
+        "handoff": {
+         "at": "2026-11-15T19:49:08.189Z",
+         "invocationId": "builder-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+         "status": "captured",
+         "code": null,
+         "detail": null,
+         "summary": {
+          "version": 1,
+          "round": 1,
+          "index": "/artifacts/review/r1/index.json",
+          "indexSha256": "c5b910d17c0ca5b9274074527e8442bc34b8790c82cd09579f1908a8293abdb1",
+          "head": "54b268d5b3905d077883524718d2527645e16b5a",
+          "branch": "factory/14-2ece4778",
+          "base": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+          "mergeBase": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+          "counts": {
+           "entries": 1,
+           "committed": 1,
+           "staged": 0,
+           "unstaged": 0,
+           "untracked": 0,
+           "removed": 0
+          },
+          "patches": {
+           "committed": {
+            "path": "/artifacts/review/r1/committed.patch",
+            "bytes": 409,
+            "sha256": "754e014e3a989b8b2a64eff11e443c18cc6c9f03cc29bfceb2779d1a74d5766d"
+           },
+           "staged": {
+            "path": "/artifacts/review/r1/staged.patch",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+           },
+           "unstaged": {
+            "path": "/artifacts/review/r1/unstaged.patch",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+           }
+          },
+          "spec": {
+           "version": "v2",
+           "sources": "/artifacts/spec/v2/sources.json",
+           "sha256": "63b9fb5a889472a938c92f0f58d4ce7535f0db476133d627bc77aa8b70624e1a"
+          },
+          "instructions": {
+           "version": "v2",
+           "sources": "/artifacts/instructions/v2/sources.json",
+           "sha256": "312514b7808af5d301b190e6c5cbcb5baf72591948464c40b138a71dff71d2d8"
+          },
+          "changed": [
+           "/workspace/checkout/docs/FACTORY_JOURNEY.md"
+          ],
+          "changedTruncated": false,
+          "content": {
+           "sha256": "b1f2befb9382471f4c3f059b1c59def51c4c7169281e36e501a1154c307668f6",
+           "clean": true,
+           "headMatches": true
+          }
+         }
+        },
+        "versions": {
+         "spec": {
+          "version": "v2",
+          "sources": "/artifacts/spec/v2/sources.json",
+          "sha256": "63b9fb5a889472a938c92f0f58d4ce7535f0db476133d627bc77aa8b70624e1a"
+         },
+         "instructions": {
+          "version": "v2",
+          "sources": "/artifacts/instructions/v2/sources.json",
+          "sha256": "312514b7808af5d301b190e6c5cbcb5baf72591948464c40b138a71dff71d2d8"
+         },
+         "base": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+         "head": "54b268d5b3905d077883524718d2527645e16b5a",
+         "profile": {
+          "skillPack": {
+           "name": "factory/skill-pack/factory-skills-v6",
+           "manifestSha256": "919b8a4baf20a7d963b846a85a228476109144827528993e15be66b694f69490"
+          },
+          "builder": {
+           "modelBudget": "builder-v1",
+           "copyOutput": true,
+           "editSourceMaxBytes": 8192,
+           "skillPack": "factory-skills-v6"
+          },
+          "reviewer": {
+           "modelBudget": "reviewer-v1",
+           "imageSourceMaxBytes": 5242880
+          }
+         }
+        },
+        "identity": {
+         "before": {
+          "status": "observed",
+          "sha256": "80fa4b74f006210cd4aba8cfba80a55ae008fb14c162daa7462f233a1bb80373",
+          "indexSha256": "c5b910d17c0ca5b9274074527e8442bc34b8790c82cd09579f1908a8293abdb1",
+          "entries": 1,
+          "consistent": true,
+          "observedAt": "2026-11-15T19:49:08.188Z"
+         },
+         "after": {
+          "status": "observed",
+          "sha256": "80fa4b74f006210cd4aba8cfba80a55ae008fb14c162daa7462f233a1bb80373",
+          "indexSha256": "c5b910d17c0ca5b9274074527e8442bc34b8790c82cd09579f1908a8293abdb1",
+          "entries": 1,
+          "consistent": true,
+          "observedAt": "2026-11-15T19:49:30.343Z"
+         }
+        },
+        "reviewers": {
+         "standards": {
+          "invocationId": "standards-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d-r1a1",
+          "phaseId": "review-r1",
+          "promptSha256": "ee1bb50d4190c377a6521c46e6e5d74e6b8927bab1d02076fb12e9ded67a0c36",
+          "state": "ended",
+          "requestedAt": "2026-11-15T19:49:08.189Z",
+          "receiptId": "110b6012-2bcc-46ba-a793-884206c8beb0",
+          "endedAt": "2026-11-15T19:49:27.700Z",
+          "opinion": {
+           "version": 1,
+           "role": "standards",
+           "round": 1,
+           "attempt": 1,
+           "invocationId": "standards-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d-r1a1",
+           "reference": {
+            "workId": "2ece4778-47f3-4412-8da5-b03d9be4eb47",
+            "id": "933b974f-316e-4fe0-a050-623b0e5ad0b8"
+           },
+           "session": {
+            "file": "/home/sanmoo/software-factory-test/y5/r/0Id6A7fTQ1OFN0RfsVP_DA/w-mWHU8Y/profile/sessions/2026-11-15T19-49-09-153Z_01a1e0c1-a3a1-729b-b163-8471d3c8daa3.jsonl",
+            "mode": "new",
+            "from": null,
+            "code": null
+           },
+           "model": {
+            "providerId": "openai",
+            "modelId": "gpt-6-luna"
+           },
+           "profile": {
+            "id": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+            "modelBudget": "reviewer-v1"
+           },
+           "input": {
+            "handoffIndexSha256": "c5b910d17c0ca5b9274074527e8442bc34b8790c82cd09579f1908a8293abdb1",
+            "required": [
+             "/artifacts/review/r1/index.json",
+             "/artifacts/instructions/v2/sources.json",
+             "/artifacts/review/r1/committed.patch",
+             "/workspace/checkout/docs/FACTORY_JOURNEY.md"
+            ],
+            "missing": []
+           },
+           "conclusion": "clean",
+           "code": null,
+           "coverage": {
+            "scope": "incremental",
+            "justification": "Read the complete index, committed/staged/unstaged patches, changed file, and all preserved standards sources. The change is an isolated documentation addition; the domain instructions identify no applicable glossary or ADR context that would alter the review.",
+            "examined": [
+             "/workspace/checkout/docs/FACTORY_JOURNEY.md",
+             "/artifacts/review/r1/index.json",
+             "/artifacts/review/r1/committed.patch",
+             "/artifacts/review/r1/staged.patch",
+             "/artifacts/review/r1/unstaged.patch",
+             "/artifacts/instructions/v2/sources.json",
+             "/artifacts/instructions/v2/AGENTS.md",
+             "/artifacts/instructions/v2/docs-agents-domain.md"
+            ]
+           },
+           "findings": [],
+           "limitations": [],
+           "hostChecks": {
+            "reads": 10,
+            "failedReads": [],
+            "requiredNotFullyRead": [],
+            "downgraded": []
+           },
+           "finalMessageSha256": "5657cc9f07170d493bf9de2c204d259690d778a44b91c5d496a242f8ea144323",
+           "recordedAt": "2026-11-15T19:49:27.648Z"
+          },
+          "failure": null,
+          "cessation": "completion-observed",
+          "input": {
+           "required": [
+            "/artifacts/review/r1/index.json",
+            "/artifacts/instructions/v2/sources.json",
+            "/artifacts/review/r1/committed.patch",
+            "/workspace/checkout/docs/FACTORY_JOURNEY.md"
+           ],
+           "missing": []
+          },
+          "source": "notification"
+         },
+         "spec": {
+          "invocationId": "spec-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d-r1a1",
+          "phaseId": "review-r1",
+          "promptSha256": "d417e518cfc16e8b3e64f2147a16c42d8131d9bb48ac94585602459cc5fa273c",
+          "state": "ended",
+          "requestedAt": "2026-11-15T19:49:08.189Z",
+          "receiptId": "4901df2a-b73f-4db2-bf6e-26ddcac6c425",
+          "endedAt": "2026-11-15T19:49:30.336Z",
+          "opinion": {
+           "version": 1,
+           "role": "spec",
+           "round": 1,
+           "attempt": 1,
+           "invocationId": "spec-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d-r1a1",
+           "reference": {
+            "workId": "2ece4778-47f3-4412-8da5-b03d9be4eb47",
+            "id": "0c0bdb94-4471-4a34-b1aa-6cda6d098485"
+           },
+           "session": {
+            "file": "/home/sanmoo/software-factory-test/y5/r/0Id6A7fTQ1OFN0RfsVP_DA/w-Kz4Aib/profile/sessions/2026-11-15T19-49-09-179Z_01a1e0c1-a3ba-76f5-bbfe-c4896827685f.jsonl",
+            "mode": "new",
+            "from": null,
+            "code": null
+           },
+           "model": {
+            "providerId": "openai",
+            "modelId": "gpt-6-luna"
+           },
+           "profile": {
+            "id": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+            "modelBudget": "reviewer-v1"
+           },
+           "input": {
+            "handoffIndexSha256": "c5b910d17c0ca5b9274074527e8442bc34b8790c82cd09579f1908a8293abdb1",
+            "required": [
+             "/artifacts/review/r1/index.json",
+             "/artifacts/spec/v2/sources.json",
+             "/artifacts/review/r1/committed.patch",
+             "/workspace/checkout/docs/FACTORY_JOURNEY.md"
+            ],
+            "missing": []
+           },
+           "conclusion": "clean",
+           "code": null,
+           "coverage": {
+            "scope": "broad",
+            "justification": "Read the index, all three patches, the complete changed file, and both preserved request sources. The only changed path is the documentation page, and its content matches the ticket and operator’s answer.",
+            "examined": [
+             "/artifacts/review/r1/index.json",
+             "/artifacts/review/r1/committed.patch",
+             "/artifacts/review/r1/staged.patch",
+             "/artifacts/review/r1/unstaged.patch",
+             "/artifacts/spec/v2/sources.json",
+             "/artifacts/spec/v2/ticket.json",
+             "/artifacts/spec/v2/operator-answer.txt",
+             "/workspace/checkout/docs/FACTORY_JOURNEY.md"
+            ]
+           },
+           "findings": [],
+           "limitations": [],
+           "hostChecks": {
+            "reads": 10,
+            "failedReads": [],
+            "requiredNotFullyRead": [],
+            "downgraded": []
+           },
+           "finalMessageSha256": "8cd01c6ace5f2a4ea1a276de520adcddb867bfd17a4d9be470c2674636dccf4f",
+           "recordedAt": "2026-11-15T19:49:30.294Z"
+          },
+          "failure": null,
+          "cessation": "completion-observed",
+          "input": {
+           "required": [
+            "/artifacts/review/r1/index.json",
+            "/artifacts/spec/v2/sources.json",
+            "/artifacts/review/r1/committed.patch",
+            "/workspace/checkout/docs/FACTORY_JOURNEY.md"
+           ],
+           "missing": []
+          },
+          "source": "notification"
+         }
+        },
+        "applicability": "current",
+        "conclusion": "clean",
+        "reasons": [],
+        "concludedAt": "2026-11-15T19:49:30.344Z",
+        "delivery": {
+         "requestedAt": "2026-11-15T19:49:30.349Z",
+         "outcome": "delivered",
+         "code": null,
+         "promptSha256": "d2a79993f103a94127d2bf04cccb9958d3a1f1fdbf239aa91ebca436f2bb33d8"
+        }
+       },
+       {
+        "round": 2,
+        "attempt": 1,
+        "state": "delivered",
+        "kind": "exemption",
+        "closing": false,
+        "exemption": {
+         "kind": "unchanged",
+         "reviewedRound": 1,
+         "head": "54b268d5b3905d077883524718d2527645e16b5a",
+         "reviewedHead": "54b268d5b3905d077883524718d2527645e16b5a",
+         "contentSha256": "b1f2befb9382471f4c3f059b1c59def51c4c7169281e36e501a1154c307668f6"
+        },
+        "declarations": {
+         "treatments": [],
+         "gates": [
+          {
+           "id": "ticket-validation",
+           "source": "/artifacts/spec/v2/ticket.json#Validation",
+           "command": "cd /workspace/checkout && test -f docs/FACTORY_JOURNEY.md && grep -q '^## Steps' docs/FACTORY_JOURNEY.md && grep -q '^## Rollback' docs/FACTORY_JOURNEY.md",
+           "cwd": "/workspace",
+           "requiredCheck": null,
+           "declared": "run",
+           "outcome": "passed",
+           "code": null,
+           "exitCode": 0,
+           "output": {
+            "workId": "2ece4778-47f3-4412-8da5-b03d9be4eb47",
+            "id": "fc7e713a-d01d-4f77-a34f-a23a712f9d6d"
+           },
+           "sequence": 14,
+           "current": true,
+           "reason": null,
+           "authorization": null
+          }
+         ]
+        },
+        "handoff": {
+         "at": "2026-11-15T19:49:39.802Z",
+         "invocationId": "builder-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+         "status": "captured",
+         "code": null,
+         "detail": null,
+         "summary": {
+          "version": 1,
+          "round": 2,
+          "index": "/artifacts/review/r2/index.json",
+          "indexSha256": "5b175da5e304b044823b07193705a182e55531b7ccf1d517c47b67d4d0b0651e",
+          "head": "54b268d5b3905d077883524718d2527645e16b5a",
+          "branch": "factory/14-2ece4778",
+          "base": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+          "mergeBase": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+          "counts": {
+           "entries": 1,
+           "committed": 1,
+           "staged": 0,
+           "unstaged": 0,
+           "untracked": 0,
+           "removed": 0
+          },
+          "patches": {
+           "committed": {
+            "path": "/artifacts/review/r2/committed.patch",
+            "bytes": 409,
+            "sha256": "754e014e3a989b8b2a64eff11e443c18cc6c9f03cc29bfceb2779d1a74d5766d"
+           },
+           "staged": {
+            "path": "/artifacts/review/r2/staged.patch",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+           },
+           "unstaged": {
+            "path": "/artifacts/review/r2/unstaged.patch",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+           }
+          },
+          "spec": {
+           "version": "v2",
+           "sources": "/artifacts/spec/v2/sources.json",
+           "sha256": "63b9fb5a889472a938c92f0f58d4ce7535f0db476133d627bc77aa8b70624e1a"
+          },
+          "instructions": {
+           "version": "v2",
+           "sources": "/artifacts/instructions/v2/sources.json",
+           "sha256": "312514b7808af5d301b190e6c5cbcb5baf72591948464c40b138a71dff71d2d8"
+          },
+          "changed": [
+           "/workspace/checkout/docs/FACTORY_JOURNEY.md"
+          ],
+          "changedTruncated": false,
+          "content": {
+           "sha256": "b1f2befb9382471f4c3f059b1c59def51c4c7169281e36e501a1154c307668f6",
+           "clean": true,
+           "headMatches": true
+          }
+         }
+        },
+        "versions": {
+         "spec": {
+          "version": "v2",
+          "sources": "/artifacts/spec/v2/sources.json",
+          "sha256": "63b9fb5a889472a938c92f0f58d4ce7535f0db476133d627bc77aa8b70624e1a"
+         },
+         "instructions": {
+          "version": "v2",
+          "sources": "/artifacts/instructions/v2/sources.json",
+          "sha256": "312514b7808af5d301b190e6c5cbcb5baf72591948464c40b138a71dff71d2d8"
+         },
+         "base": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+         "head": "54b268d5b3905d077883524718d2527645e16b5a",
+         "profile": {
+          "skillPack": {
+           "name": "factory/skill-pack/factory-skills-v6",
+           "manifestSha256": "919b8a4baf20a7d963b846a85a228476109144827528993e15be66b694f69490"
+          },
+          "builder": {
+           "modelBudget": "builder-v1",
+           "copyOutput": true,
+           "editSourceMaxBytes": 8192,
+           "skillPack": "factory-skills-v6"
+          },
+          "reviewer": {
+           "modelBudget": "reviewer-v1",
+           "imageSourceMaxBytes": 5242880
+          }
+         }
+        },
+        "identity": {
+         "before": {
+          "status": "observed",
+          "sha256": "1701557b613850cbce5848d2ae706ba1c0485efc22c3bd526837549e26a7b03f",
+          "indexSha256": "5b175da5e304b044823b07193705a182e55531b7ccf1d517c47b67d4d0b0651e",
+          "entries": 1,
+          "consistent": true,
+          "observedAt": "2026-11-15T19:49:39.802Z"
+         },
+         "after": {
+          "status": "observed",
+          "sha256": "1701557b613850cbce5848d2ae706ba1c0485efc22c3bd526837549e26a7b03f",
+          "indexSha256": "5b175da5e304b044823b07193705a182e55531b7ccf1d517c47b67d4d0b0651e",
+          "entries": 1,
+          "consistent": true,
+          "observedAt": "2026-11-15T19:49:39.802Z"
+         }
+        },
+        "reviewers": {
+         "standards": {
+          "invocationId": "standards-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d-r2a1",
+          "phaseId": "review-r2",
+          "promptSha256": "",
+          "state": "not-required",
+          "requestedAt": "2026-11-15T19:49:39.802Z",
+          "receiptId": null,
+          "endedAt": "2026-11-15T19:49:39.802Z",
+          "opinion": null,
+          "failure": null,
+          "cessation": "never-started",
+          "input": {
+           "required": [],
+           "missing": []
+          }
+         },
+         "spec": {
+          "invocationId": "spec-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d-r2a1",
+          "phaseId": "review-r2",
+          "promptSha256": "",
+          "state": "not-required",
+          "requestedAt": "2026-11-15T19:49:39.802Z",
+          "receiptId": null,
+          "endedAt": "2026-11-15T19:49:39.802Z",
+          "opinion": null,
+          "failure": null,
+          "cessation": "never-started",
+          "input": {
+           "required": [],
+           "missing": []
+          }
+         }
+        },
+        "applicability": "current",
+        "conclusion": "clean",
+        "reasons": [
+         "EXEMPT_UNCHANGED"
+        ],
+        "concludedAt": "2026-11-15T19:49:39.802Z",
+        "delivery": {
+         "requestedAt": "2026-11-15T19:49:39.809Z",
+         "outcome": "delivered",
+         "code": null,
+         "promptSha256": "5b202087c9ec1f421b0a27c2bb7830fc624a225d67d70163e3526238f631f77d"
+        }
+       },
+       {
+        "round": 3,
+        "attempt": 1,
+        "state": "delivered",
+        "kind": "exemption",
+        "closing": true,
+        "exemption": {
+         "kind": "unchanged",
+         "reviewedRound": 1,
+         "head": "54b268d5b3905d077883524718d2527645e16b5a",
+         "reviewedHead": "54b268d5b3905d077883524718d2527645e16b5a",
+         "contentSha256": "b1f2befb9382471f4c3f059b1c59def51c4c7169281e36e501a1154c307668f6"
+        },
+        "declarations": null,
+        "handoff": {
+         "at": "2026-11-15T19:49:43.825Z",
+         "invocationId": "builder-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+         "status": "captured",
+         "code": null,
+         "detail": null,
+         "summary": {
+          "version": 1,
+          "round": 3,
+          "index": "/artifacts/review/r3/index.json",
+          "indexSha256": "f688b26b37bd6490b8a34b1b3672edd6091fd3b5b3f5fc55454794f5db0a8852",
+          "head": "54b268d5b3905d077883524718d2527645e16b5a",
+          "branch": "factory/14-2ece4778",
+          "base": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+          "mergeBase": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+          "counts": {
+           "entries": 1,
+           "committed": 1,
+           "staged": 0,
+           "unstaged": 0,
+           "untracked": 0,
+           "removed": 0
+          },
+          "patches": {
+           "committed": {
+            "path": "/artifacts/review/r3/committed.patch",
+            "bytes": 409,
+            "sha256": "754e014e3a989b8b2a64eff11e443c18cc6c9f03cc29bfceb2779d1a74d5766d"
+           },
+           "staged": {
+            "path": "/artifacts/review/r3/staged.patch",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+           },
+           "unstaged": {
+            "path": "/artifacts/review/r3/unstaged.patch",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+           }
+          },
+          "spec": {
+           "version": "v2",
+           "sources": "/artifacts/spec/v2/sources.json",
+           "sha256": "63b9fb5a889472a938c92f0f58d4ce7535f0db476133d627bc77aa8b70624e1a"
+          },
+          "instructions": {
+           "version": "v2",
+           "sources": "/artifacts/instructions/v2/sources.json",
+           "sha256": "312514b7808af5d301b190e6c5cbcb5baf72591948464c40b138a71dff71d2d8"
+          },
+          "changed": [
+           "/workspace/checkout/docs/FACTORY_JOURNEY.md"
+          ],
+          "changedTruncated": false,
+          "content": {
+           "sha256": "b1f2befb9382471f4c3f059b1c59def51c4c7169281e36e501a1154c307668f6",
+           "clean": true,
+           "headMatches": true
+          }
+         }
+        },
+        "versions": {
+         "spec": {
+          "version": "v2",
+          "sources": "/artifacts/spec/v2/sources.json",
+          "sha256": "63b9fb5a889472a938c92f0f58d4ce7535f0db476133d627bc77aa8b70624e1a"
+         },
+         "instructions": {
+          "version": "v2",
+          "sources": "/artifacts/instructions/v2/sources.json",
+          "sha256": "312514b7808af5d301b190e6c5cbcb5baf72591948464c40b138a71dff71d2d8"
+         },
+         "base": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+         "head": "54b268d5b3905d077883524718d2527645e16b5a",
+         "profile": {
+          "skillPack": {
+           "name": "factory/skill-pack/factory-skills-v6",
+           "manifestSha256": "919b8a4baf20a7d963b846a85a228476109144827528993e15be66b694f69490"
+          },
+          "builder": {
+           "modelBudget": "builder-v1",
+           "copyOutput": true,
+           "editSourceMaxBytes": 8192,
+           "skillPack": "factory-skills-v6"
+          },
+          "reviewer": {
+           "modelBudget": "reviewer-v1",
+           "imageSourceMaxBytes": 5242880
+          }
+         }
+        },
+        "identity": {
+         "before": {
+          "status": "observed",
+          "sha256": "3ed51d8d7fc7943e00531eb436af21f19cedc1e627d2a361def9713035a832b1",
+          "indexSha256": "f688b26b37bd6490b8a34b1b3672edd6091fd3b5b3f5fc55454794f5db0a8852",
+          "entries": 1,
+          "consistent": true,
+          "observedAt": "2026-11-15T19:49:43.825Z"
+         },
+         "after": {
+          "status": "observed",
+          "sha256": "3ed51d8d7fc7943e00531eb436af21f19cedc1e627d2a361def9713035a832b1",
+          "indexSha256": "f688b26b37bd6490b8a34b1b3672edd6091fd3b5b3f5fc55454794f5db0a8852",
+          "entries": 1,
+          "consistent": true,
+          "observedAt": "2026-11-15T19:49:43.825Z"
+         }
+        },
+        "reviewers": {
+         "standards": {
+          "invocationId": "standards-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d-r3a1",
+          "phaseId": "review-r3",
+          "promptSha256": "",
+          "state": "not-required",
+          "requestedAt": "2026-11-15T19:49:43.825Z",
+          "receiptId": null,
+          "endedAt": "2026-11-15T19:49:43.825Z",
+          "opinion": null,
+          "failure": null,
+          "cessation": "never-started",
+          "input": {
+           "required": [],
+           "missing": []
+          }
+         },
+         "spec": {
+          "invocationId": "spec-3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d-r3a1",
+          "phaseId": "review-r3",
+          "promptSha256": "",
+          "state": "not-required",
+          "requestedAt": "2026-11-15T19:49:43.825Z",
+          "receiptId": null,
+          "endedAt": "2026-11-15T19:49:43.825Z",
+          "opinion": null,
+          "failure": null,
+          "cessation": "never-started",
+          "input": {
+           "required": [],
+           "missing": []
+          }
+         }
+        },
+        "applicability": "current",
+        "conclusion": "clean",
+        "reasons": [
+         "EXEMPT_UNCHANGED"
+        ],
+        "concludedAt": "2026-11-15T19:49:43.825Z",
+        "delivery": {
+         "requestedAt": "2026-11-15T19:49:43.833Z",
+         "outcome": "delivered",
+         "code": null,
+         "promptSha256": "fa4b2dacd72b619cf7bdc06c220308e268710d1b3617f65185109f124180f0d9"
+        }
+       }
+      ],
+      "verification": {
+       "at": "2026-11-15T19:49:43.845Z",
+       "status": "verified",
+       "reasons": [],
+       "reviewedRound": 1,
+       "finalRound": 3,
+       "contentSha256": "b1f2befb9382471f4c3f059b1c59def51c4c7169281e36e501a1154c307668f6",
+       "applicability": {
+        "kind": "unchanged",
+        "head": "54b268d5b3905d077883524718d2527645e16b5a",
+        "reviewedHead": "54b268d5b3905d077883524718d2527645e16b5a"
+       },
+       "gates": [
+        {
+         "id": "ticket-validation",
+         "outcome": "passed",
+         "current": true,
+         "boundToFinalContent": true,
+         "requiredCheck": null
+        }
+       ],
+       "treatments": [],
+       "requiredChecks": []
+      }
+     }
+    }
+   ],
+   "questions": [
+    "fee8adfe-8851-4cff-9327-c46877e909a0"
+   ],
+   "inputs": {
+    "cursor": 6900234781
+   },
+   "admittedAt": "2026-11-15T19:43:50.773Z",
+   "budget": {
+    "corrections": {
+     "limit": 3,
+     "granted": 0,
+     "consumed": 0,
+     "reserved": null
+    },
+    "recoveries": {
+     "limit": 3,
+     "granted": 0,
+     "consumed": 0,
+     "reserved": null
+    },
+    "source": {
+     "kind": "repository-configuration",
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "recordedAt": "2026-11-15T19:43:50.773Z"
+    },
+    "grants": []
+   },
+   "correction": null,
+   "pendingRecovery": null,
+   "history": [
+    {
+     "at": "2026-11-15T19:43:50.773Z",
+     "event": "admitted",
+     "origin": "github-polling",
+     "sequence": 1
+    },
+    {
+     "at": "2026-11-15T19:43:54.020Z",
+     "event": "dependencies-changed",
+     "origin": "github-polling",
+     "before": null,
+     "after": "satisfied",
+     "evaluationId": "241fca2d-1288-4606-9838-73be2e03a7b3"
+    },
+    {
+     "at": "2026-11-15T19:43:56.288Z",
+     "event": "execution-reserved",
+     "origin": "controller-dispatch",
+     "executionId": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a"
+    },
+    {
+     "at": "2026-11-15T19:44:03.473Z",
+     "event": "execution-prepared",
+     "origin": "controller-dispatch",
+     "executionId": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a"
+    },
+    {
+     "at": "2026-11-15T19:44:17.335Z",
+     "event": "execution-booted",
+     "origin": "controller-dispatch",
+     "executionId": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a"
+    },
+    {
+     "at": "2026-11-15T19:44:20.939Z",
+     "event": "activation-requested",
+     "origin": "controller-dispatch",
+     "executionId": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a"
+    },
+    {
+     "at": "2026-11-15T19:44:21.247Z",
+     "event": "execution-started",
+     "origin": "controller-dispatch",
+     "executionId": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a",
+     "detail": "0ba37ae4-2c7a-4807-8704-ef87a1e55744"
+    },
+    {
+     "at": "2026-11-15T19:46:04.525Z",
+     "event": "question-recorded",
+     "origin": "controller-dispatch",
+     "questionId": "fee8adfe-8851-4cff-9327-c46877e909a0",
+     "detail": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a"
+    },
+    {
+     "at": "2026-11-15T19:46:04.693Z",
+     "event": "execution-ended",
+     "origin": "controller-dispatch",
+     "executionId": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a",
+     "detail": "question"
+    },
+    {
+     "at": "2026-11-15T19:46:08.423Z",
+     "event": "slot-released",
+     "origin": "controller-dispatch",
+     "executionId": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a"
+    },
+    {
+     "at": "2026-11-15T19:46:10.876Z",
+     "event": "question-published",
+     "origin": "controller-publication",
+     "questionId": "fee8adfe-8851-4cff-9327-c46877e909a0",
+     "detail": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/14#issuecomment-6900233451"
+    },
+    {
+     "at": "2026-11-15T19:46:39.562Z",
+     "event": "question-answered",
+     "origin": "github-comment",
+     "questionId": "fee8adfe-8851-4cff-9327-c46877e909a0",
+     "detail": "github-comment:6900234781"
+    },
+    {
+     "at": "2026-11-15T19:46:43.036Z",
+     "event": "execution-reserved",
+     "origin": "controller-dispatch",
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d"
+    },
+    {
+     "at": "2026-11-15T19:46:53.154Z",
+     "event": "execution-prepared",
+     "origin": "controller-dispatch",
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d"
+    },
+    {
+     "at": "2026-11-15T19:47:32.317Z",
+     "event": "execution-booted",
+     "origin": "controller-dispatch",
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d"
+    },
+    {
+     "at": "2026-11-15T19:47:36.650Z",
+     "event": "activation-requested",
+     "origin": "controller-dispatch",
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d"
+    },
+    {
+     "at": "2026-11-15T19:47:37.843Z",
+     "event": "execution-started",
+     "origin": "controller-dispatch",
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+     "detail": "fe0b111e-2548-4cc8-a4bb-7bf5037f1d3e"
+    },
+    {
+     "at": "2026-11-15T19:49:08.190Z",
+     "event": "review-handoff",
+     "origin": "controller-dispatch",
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+     "detail": "r1:captured"
+    },
+    {
+     "at": "2026-11-15T19:49:08.401Z",
+     "event": "reviewer-started",
+     "origin": "controller-dispatch",
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+     "detail": "r1:standards"
+    },
+    {
+     "at": "2026-11-15T19:49:08.411Z",
+     "event": "reviewer-started",
+     "origin": "controller-dispatch",
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+     "detail": "r1:spec"
+    },
+    {
+     "at": "2026-11-15T19:49:27.700Z",
+     "event": "reviewer-ended",
+     "origin": "controller-dispatch",
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+     "detail": "r1:standards:clean"
+    },
+    {
+     "at": "2026-11-15T19:49:30.336Z",
+     "event": "reviewer-ended",
+     "origin": "controller-dispatch",
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+     "detail": "r1:spec:clean"
+    },
+    {
+     "at": "2026-11-15T19:49:30.344Z",
+     "event": "review-concluded",
+     "origin": "controller-dispatch",
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+     "detail": "r1:clean:current"
+    },
+    {
+     "at": "2026-11-15T19:49:30.354Z",
+     "event": "review-delivered",
+     "origin": "controller-dispatch",
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+     "detail": "r1:delivered"
+    },
+    {
+     "at": "2026-11-15T19:49:39.803Z",
+     "event": "review-handoff",
+     "origin": "controller-dispatch",
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+     "detail": "r2:captured"
+    },
+    {
+     "at": "2026-11-15T19:49:39.803Z",
+     "event": "review-exempted",
+     "origin": "controller-dispatch",
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+     "detail": "r2:unchanged:r1"
+    },
+    {
+     "at": "2026-11-15T19:49:39.813Z",
+     "event": "review-delivered",
+     "origin": "controller-dispatch",
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+     "detail": "r2:delivered"
+    },
+    {
+     "at": "2026-11-15T19:49:43.827Z",
+     "event": "review-handoff",
+     "origin": "controller-dispatch",
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+     "detail": "r3:captured:closing"
+    },
+    {
+     "at": "2026-11-15T19:49:43.827Z",
+     "event": "review-exempted",
+     "origin": "controller-dispatch",
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+     "detail": "r3:unchanged:r1"
+    },
+    {
+     "at": "2026-11-15T19:49:43.836Z",
+     "event": "review-delivered",
+     "origin": "controller-dispatch",
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+     "detail": "r3:delivered"
+    },
+    {
+     "at": "2026-11-15T19:49:43.846Z",
+     "event": "review-verified",
+     "origin": "controller-dispatch",
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+     "detail": "verified"
+    },
+    {
+     "at": "2026-11-15T19:49:43.850Z",
+     "event": "execution-ended",
+     "origin": "controller-dispatch",
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+     "detail": "completed"
+    },
+    {
+     "at": "2026-11-15T19:49:45.804Z",
+     "event": "slot-released",
+     "origin": "controller-dispatch",
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d"
+    },
+    {
+     "at": "2026-11-15T19:50:41.756Z",
+     "event": "publication-evaluated",
+     "origin": "controller-publication",
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+     "detail": "awaiting-discovery:54b268d5b3905d077883524718d2527645e16b5a"
+    },
+    {
+     "at": "2026-11-15T19:50:53.118Z",
+     "event": "publication-requested",
+     "origin": "controller-publication",
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+     "detail": "remote:absent"
+    },
+    {
+     "at": "2026-11-15T19:51:45.318Z",
+     "event": "execution-reserved",
+     "origin": "controller-dispatch",
+     "executionId": "0860b0f6-7aec-414d-9e20-2297d7be0b57"
+    },
+    {
+     "at": "2026-11-15T19:51:47.465Z",
+     "event": "execution-prepared",
+     "origin": "controller-dispatch",
+     "executionId": "0860b0f6-7aec-414d-9e20-2297d7be0b57"
+    },
+    {
+     "at": "2026-11-15T19:51:57.606Z",
+     "event": "execution-booted",
+     "origin": "controller-dispatch",
+     "executionId": "0860b0f6-7aec-414d-9e20-2297d7be0b57"
+    },
+    {
+     "at": "2026-11-15T19:52:01.055Z",
+     "event": "activation-requested",
+     "origin": "controller-dispatch",
+     "executionId": "0860b0f6-7aec-414d-9e20-2297d7be0b57"
+    },
+    {
+     "at": "2026-11-15T19:52:01.055Z",
+     "event": "publication-started",
+     "origin": "controller-publication",
+     "executionId": "0860b0f6-7aec-414d-9e20-2297d7be0b57",
+     "detail": "54b268d5b3905d077883524718d2527645e16b5a"
+    },
+    {
+     "at": "2026-11-15T19:52:01.248Z",
+     "event": "execution-started",
+     "origin": "controller-dispatch",
+     "executionId": "0860b0f6-7aec-414d-9e20-2297d7be0b57",
+     "detail": "06d66a01-8114-4b7a-b60d-4a3f0b082e5f"
+    },
+    {
+     "at": "2026-11-15T19:52:30.537Z",
+     "event": "execution-ended",
+     "origin": "controller-dispatch",
+     "executionId": "0860b0f6-7aec-414d-9e20-2297d7be0b57",
+     "detail": "completed"
+    },
+    {
+     "at": "2026-11-15T19:52:32.729Z",
+     "event": "slot-released",
+     "origin": "controller-dispatch",
+     "executionId": "0860b0f6-7aec-414d-9e20-2297d7be0b57"
+    },
+    {
+     "at": "2026-11-15T19:52:50.068Z",
+     "event": "publication-linked",
+     "origin": "controller-publication",
+     "executionId": "0860b0f6-7aec-414d-9e20-2297d7be0b57",
+     "detail": "#15:54b268d5b3905d077883524718d2527645e16b5a"
+    },
+    {
+     "at": "2026-11-15T19:52:59.497Z",
+     "event": "checks-evaluated",
+     "origin": "controller-checks",
+     "detail": "blocked@54b268d5b3905d077883524718d2527645e16b5a:UPDATE_RESTRICTED:update@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing"
+    },
+    {
+     "at": "2026-11-15T19:52:59.514Z",
+     "event": "readiness-evaluated",
+     "origin": "controller-readiness",
+     "detail": "not-ready(recorded):MERGE_BLOCKED_UPDATE_RESTRICTED:update@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing"
+    }
+   ],
+   "publication": {
+    "state": "published",
+    "basisExecutionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+    "marker": "<!-- software-factory:work:2ece4778-47f3-4412-8da5-b03d9be4eb47 -->",
+    "branch": "factory/14-2ece4778",
+    "base": "main",
+    "verified": {
+     "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+     "head": "54b268d5b3905d077883524718d2527645e16b5a",
+     "contentSha256": "b1f2befb9382471f4c3f059b1c59def51c4c7169281e36e501a1154c307668f6",
+     "verifiedAt": "2026-11-15T19:49:43.845Z",
+     "reviewedRound": 1,
+     "gates": [
+      {
+       "id": "ticket-validation",
+       "outcome": "passed"
+      }
+     ],
+     "requiredChecks": []
+    },
+    "expectedRemote": {
+     "state": "absent"
+    },
+    "requestedAt": "2026-11-15T19:50:53.118Z",
+    "pullRequest": {
+     "pullRequestId": 5326539910,
+     "nodeId": "PR_kwDOSuqsXs8AAAABPXyMhg",
+     "number": 15,
+     "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/15",
+     "state": "open",
+     "merged": false,
+     "draft": true,
+     "headRef": "factory/14-2ece4778",
+     "headSha": "54b268d5b3905d077883524718d2527645e16b5a",
+     "base": "main",
+     "author": {
+      "id": 351187749,
+      "login": "sanmoo-factory[bot]",
+      "type": "Bot"
+     },
+     "linkedAt": "2026-11-15T19:52:50.067Z",
+     "bodySha256": "b336ea8c6070bc6f935b106cf258ac23b5a63abe8dbaa7a623e9d79deca22eb0"
+    },
+    "description": {
+     "conformant": true,
+     "reasons": []
+    },
+    "discoveries": [
+     {
+      "at": "2026-11-15T19:50:53.118Z",
+      "observedAt": "2026-11-15T19:50:44.355Z",
+      "trigger": "verified",
+      "outcome": "absent",
+      "reasons": [],
+      "branch": {
+       "state": "absent"
+      },
+      "candidates": []
+     },
+     {
+      "at": "2026-11-15T19:52:50.067Z",
+      "observedAt": "2026-11-15T19:52:44.383Z",
+      "trigger": "after-publication",
+      "outcome": "linked",
+      "reasons": [],
+      "branch": {
+       "state": "present",
+       "sha": "54b268d5b3905d077883524718d2527645e16b5a"
+      },
+      "candidates": [
+       {
+        "number": 15,
+        "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/15",
+        "own": true,
+        "reasons": []
+       }
+      ]
+     }
+    ],
+    "attempts": [
+     {
+      "executionId": "0860b0f6-7aec-414d-9e20-2297d7be0b57",
+      "head": "54b268d5b3905d077883524718d2527645e16b5a",
+      "at": "2026-11-15T19:52:01.055Z",
+      "expectedRemote": {
+       "state": "absent"
+      }
+     }
+    ],
+    "linkedHeads": [
+     "54b268d5b3905d077883524718d2527645e16b5a"
+    ],
+    "refsBefore": {
+     "refs/heads/factory/11-bf8df237": "188d81625f44b7343d7221c01b79f2191918dd96",
+     "refs/heads/factory/8-4535224b": "19983968187d7e5cff8ae6a68a998ae70e547727",
+     "refs/heads/main": "eb6178d666882a614a9b7716979c2a15bbd262fc"
+    },
+    "update": null,
+    "reasons": [],
+    "nextStep": "Own draft pull request linked. Opening it does not end the Ticket or the Work; readiness and human merge are separate.",
+    "updatedAt": "2026-11-15T19:52:50.067Z"
+   },
+   "checks": {
+    "latest": {
+     "at": "2026-11-15T19:52:59.497Z",
+     "observedAt": "2026-11-15T19:52:50.076Z",
+     "completedAt": "2026-11-15T19:52:58.454Z",
+     "outcome": "blocked",
+     "reasons": [
+      {
+       "category": "merge",
+       "code": "UPDATE_RESTRICTED",
+       "subject": "update@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing"
+      }
+     ],
+     "pullRequest": {
+      "number": 15,
+      "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/15",
+      "headSha": "54b268d5b3905d077883524718d2527645e16b5a",
+      "headRef": "factory/14-2ece4778",
+      "baseRef": "main",
+      "baseTip": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+      "mergeCommitSha": null,
+      "state": "open",
+      "merged": false,
+      "draft": true
+     },
+     "conflict": "none",
+     "strict": {
+      "required": false,
+      "sources": [],
+      "state": "not-required",
+      "behindBy": 0
+     },
+     "requiredSet": "empty-complete",
+     "requirements": [],
+     "optional": [],
+     "otherSha": [],
+     "modalities": [
+      {
+       "type": "pull_request",
+       "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+       "interpretation": "human-stage",
+       "merge": "human-stage",
+       "reason": "HUMAN_REVIEW_STAGE",
+       "notes": [
+        "APPROVALS:1"
+       ]
+      },
+      {
+       "type": "non_fast_forward",
+       "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+       "interpretation": "not-check-related",
+       "merge": "not-blocking",
+       "reason": "DOES_NOT_AFFECT_PULL_REQUEST_MERGE",
+       "notes": []
+      },
+      {
+       "type": "deletion",
+       "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+       "interpretation": "not-check-related",
+       "merge": "not-blocking",
+       "reason": "DOES_NOT_AFFECT_PULL_REQUEST_MERGE",
+       "notes": []
+      },
+      {
+       "type": "update",
+       "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+       "interpretation": "merge-blocking",
+       "merge": "blocking",
+       "reason": "UPDATE_RESTRICTED",
+       "notes": []
+      }
+     ],
+     "completeness": {
+      "pullRequest": "complete",
+      "baseTip": "complete",
+      "classic": "complete",
+      "rules": "complete",
+      "checkRuns": "complete",
+      "statuses": "complete",
+      "comparison": "complete",
+      "recheck": "complete"
+     },
+     "localGates": {
+      "declared": [],
+      "requiredByGitHub": [],
+      "notRequiredByGitHub": []
+     },
+     "notes": [
+      "REQUIRED_SET_EMPTY_FROM_COMPLETE_AUTHORIZED_READS"
+     ],
+     "nextStep": "The base protection blocks a human merge of this pull request for anyone without bypass: update@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing (UPDATE_RESTRICTED). Operator: adjust the base protection (that rule of that ruleset or branch protection) so that a human can merge the pull request; the Factory does not use or recommend a bypass, never approves and never merges.",
+     "limitations": [
+      "Separate GitHub reads between observedAt and completedAt: not an atomic snapshot of GitHub, its rules and CI; the explanation is valid only as observed.",
+      "Results are correlated to the current head commit; results attached to the test merge commit are not read (merge queue is not supported).",
+      "A commit status cannot be attributed to a GitHub App: a required check bound to an integration that also has a homonymous status is indeterminate.",
+      "A satisfied GitHub requirement (including skipped/neutral) never proves that a local gate ran; local gates are ticket 13 evidence.",
+      "This explanation is neither readiness (ticket 16) nor a repair decision (ticket 22).",
+      "Separate GET reads between observedAt and completedAt: not an atomic snapshot of GitHub, its rules and CI; the pull request and the requirements are re-read at the end.",
+      "Results are read for the current head commit only; results attached to the test merge commit are not read.",
+      "Rules are the active rules GitHub reports for the base branch (repository and inherited rulesets); classic protection is read separately."
+     ]
+    },
+    "history": []
+   },
+   "readiness": {
+    "internal": "not-ready",
+    "since": "2026-11-15T19:52:59.514Z",
+    "latest": {
+     "at": "2026-11-15T19:52:59.514Z",
+     "source": "recorded",
+     "decision": "not-ready",
+     "reasons": [
+      {
+       "area": "merge",
+       "certainty": "confirmed",
+       "code": "MERGE_BLOCKED_UPDATE_RESTRICTED",
+       "subject": "update@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing"
+      }
+     ],
+     "notes": [
+      "Human review/approval is a human stage: it is never read as a blocker and never performed by the Factory; merge is human only."
+     ],
+     "basis": {
+      "pullRequest": 15,
+      "nodeId": "PR_kwDOSuqsXs8AAAABPXyMhg",
+      "headSha": "54b268d5b3905d077883524718d2527645e16b5a",
+      "baseRef": "main",
+      "baseTip": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+      "strict": false,
+      "requirements": "empty-complete||deletion:not-check-related/not-blocking:DOES_NOT_AFFECT_PULL_REQUEST_MERGE@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing,non_fast_forward:not-check-related/not-blocking:DOES_NOT_AFFECT_PULL_REQUEST_MERGE@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing,pull_request:human-stage/human-stage:HUMAN_REVIEW_STAGE@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing,update:merge-blocking/blocking:UPDATE_RESTRICTED@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing|strict:",
+      "verifiedHead": "54b268d5b3905d077883524718d2527645e16b5a",
+      "contentSha256": "b1f2befb9382471f4c3f059b1c59def51c4c7169281e36e501a1154c307668f6",
+      "checksAt": "2026-11-15T19:52:58.454Z",
+      "checksOutcome": "blocked",
+      "draft": true
+     }
+    },
+    "flag": {
+     "factory": "draft",
+     "origin": "publication",
+     "at": "2026-11-15T19:52:50.067Z",
+     "observed": "draft",
+     "observedAt": "2026-11-15T19:52:59.514Z"
+    },
+    "humanDraft": null,
+    "humanReady": null,
+    "authorization": null,
+    "effect": null,
+    "effects": [],
+    "stages": {
+     "internal": "not-ready",
+     "flag": "draft",
+     "humanReview": "human-stage",
+     "delivery": "not-delivered"
+    },
+    "nextStep": "Not ready. The base protection blocks a human merge of this pull request for anyone without bypass: update@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing (UPDATE_RESTRICTED). Operator: adjust the base protection (that rule of that ruleset or branch protection) so that a human can merge the pull request; the Factory does not use or recommend a bypass, never approves and never merges."
+   },
+   "dispatch": {
+    "state": "executing",
+    "reasons": []
+   },
+   "limits": {
+    "corrections": {
+     "limit": 3,
+     "granted": 0,
+     "effectiveLimit": 3,
+     "consumed": 0,
+     "reserved": 0,
+     "reservedBy": null,
+     "available": 3,
+     "exhausted": false
+    },
+    "recoveries": {
+     "limit": 3,
+     "granted": 0,
+     "effectiveLimit": 3,
+     "consumed": 0,
+     "reserved": 0,
+     "reservedBy": null,
+     "available": 3,
+     "exhausted": false
+    },
+    "grants": 0,
+    "timeout": {
+     "seconds": null,
+     "scope": "per-execution",
+     "reached": null,
+     "overrun": "not-applicable"
+    },
+    "duration": {
+     "clock": "controller-monotonic",
+     "startedAt": "2026-11-15T19:52:01.248Z",
+     "lastActivity": {
+      "at": "2026-11-15T19:52:30.537Z",
+      "elapsedMs": 29288.364059999993,
+      "event": "ended-completed"
+     },
+     "lowerBoundMs": null,
+     "calendarEstimateMs": null,
+     "state": "measured",
+     "elapsedMs": 29288.364059999993,
+     "note": "Measured by the controller monotonic clock from the confirmed start to the observed end."
+    },
+    "actions": []
+   }
+  },
+  "lastPolled": {
+   "ticket": {
+    "tracker": "github",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "issueId": 6408593350,
+    "nodeId": "I_kwDOSuqsXs8AAAABfftfxg",
+    "number": 14,
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/14"
+   },
+   "observedAt": "2026-11-15T19:52:44.382Z",
+   "outcome": "existing",
+   "work_id": "2ece4778-47f3-4412-8da5-b03d9be4eb47"
+  },
+  "questions": [
+   {
+    "questionId": "fee8adfe-8851-4cff-9327-c46877e909a0",
+    "workId": "2ece4778-47f3-4412-8da5-b03d9be4eb47",
+    "executionId": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a",
+    "invocationId": "builder-2d55c2cc-0e51-4409-a3d6-e7990f4aa82a",
+    "recordedAt": "2026-11-15T19:46:04.525Z",
+    "recordedFrom": "worker-notification",
+    "content": {
+     "question": "Which title should the third section of docs/FACTORY_JOURNEY.md have: `## Rollback` or `## Removal`?",
+     "context": "I preserved the Ticket as /artifacts/spec/v1/ticket.json and its instructions before implementing. The Ticket explicitly requires the operator to decide this exact section title before writing the documentation, so I have not created or changed any repository files.",
+     "sha256": "9d2d396ed6f97c35065bc6662cd726d29e40868cc85e238e00733d174aaa111e",
+     "reference": {
+      "workId": "2ece4778-47f3-4412-8da5-b03d9be4eb47",
+      "id": "d141dd87-ba27-4755-ac38-86396a68b464"
+     }
+    },
+    "destination": {
+     "kind": "issue",
+     "ticket": {
+      "tracker": "github",
+      "repository": "Sanmoo/java-springboot-event-sourcing",
+      "repositoryId": 1256893534,
+      "issueId": 6408593350,
+      "nodeId": "I_kwDOSuqsXs8AAAABfftfxg",
+      "number": 14,
+      "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/14"
+     }
+    },
+    "state": "answered",
+    "publication": {
+     "effectId": "bd58b855-fdbf-4260-b84a-1ca4c1bbf9a5",
+     "state": "published",
+     "updatedAt": "2026-11-15T19:46:10.876Z",
+     "attempts": [
+      {
+       "at": "2026-11-15T19:46:04.555Z",
+       "outcome": "attempting"
+      },
+      {
+       "at": "2026-11-15T19:46:10.876Z",
+       "outcome": "published",
+       "revocation": "revoked"
+      }
+     ],
+     "comment": {
+      "commentId": 6900233451,
+      "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/14#issuecomment-6900233451"
+     },
+     "nextStep": null
+    },
+    "answer": {
+     "text": "Use `## Rollback` as the title of the third section.",
+     "sha256": "a6a01cb2a3ea466ce341068fd884a049007ae535c91cfb7b6557524f084ce6c9",
+     "acceptedAt": "2026-11-15T19:46:39.562Z",
+     "author": {
+      "kind": "github",
+      "id": 1881597,
+      "login": "Sanmoo"
+     },
+     "origin": {
+      "kind": "github-comment",
+      "commentId": 6900234781,
+      "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/14#issuecomment-6900234781"
+     }
+    },
+    "ignored": []
+   }
+  ]
+ },
+ "questions": [
+  {
+   "questionId": "fee8adfe-8851-4cff-9327-c46877e909a0",
+   "workId": "2ece4778-47f3-4412-8da5-b03d9be4eb47",
+   "executionId": "2d55c2cc-0e51-4409-a3d6-e7990f4aa82a",
+   "invocationId": "builder-2d55c2cc-0e51-4409-a3d6-e7990f4aa82a",
+   "recordedAt": "2026-11-15T19:46:04.525Z",
+   "recordedFrom": "worker-notification",
+   "content": {
+    "question": "Which title should the third section of docs/FACTORY_JOURNEY.md have: `## Rollback` or `## Removal`?",
+    "context": "I preserved the Ticket as /artifacts/spec/v1/ticket.json and its instructions before implementing. The Ticket explicitly requires the operator to decide this exact section title before writing the documentation, so I have not created or changed any repository files.",
+    "sha256": "9d2d396ed6f97c35065bc6662cd726d29e40868cc85e238e00733d174aaa111e",
+    "reference": {
+     "workId": "2ece4778-47f3-4412-8da5-b03d9be4eb47",
+     "id": "d141dd87-ba27-4755-ac38-86396a68b464"
+    }
+   },
+   "destination": {
+    "kind": "issue",
+    "ticket": {
+     "tracker": "github",
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "repositoryId": 1256893534,
+     "issueId": 6408593350,
+     "nodeId": "I_kwDOSuqsXs8AAAABfftfxg",
+     "number": 14,
+     "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/14"
+    }
+   },
+   "state": "answered",
+   "publication": {
+    "effectId": "bd58b855-fdbf-4260-b84a-1ca4c1bbf9a5",
+    "state": "published",
+    "updatedAt": "2026-11-15T19:46:10.876Z",
+    "attempts": [
+     {
+      "at": "2026-11-15T19:46:04.555Z",
+      "outcome": "attempting"
+     },
+     {
+      "at": "2026-11-15T19:46:10.876Z",
+      "outcome": "published",
+      "revocation": "revoked"
+     }
+    ],
+    "comment": {
+     "commentId": 6900233451,
+     "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/14#issuecomment-6900233451"
+    },
+    "nextStep": null
+   },
+   "answer": {
+    "text": "Use `## Rollback` as the title of the third section.",
+    "sha256": "a6a01cb2a3ea466ce341068fd884a049007ae535c91cfb7b6557524f084ce6c9",
+    "acceptedAt": "2026-11-15T19:46:39.562Z",
+    "author": {
+     "kind": "github",
+     "id": 1881597,
+     "login": "Sanmoo"
+    },
+    "origin": {
+     "kind": "github-comment",
+     "commentId": 6900234781,
+     "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/14#issuecomment-6900234781"
+    }
+   },
+   "ignored": []
+  }
+ ],
+ "controlStatus": {
+  "controller_run_id": "48622d04-8067-4b6a-aff9-1f2e3358d11d",
+  "paused": false,
+  "dispatch": "open",
+  "dispatchReason": null,
+  "slots": {
+   "capacity": 1,
+   "held": 0
+  },
+  "historyLength": 0,
+  "works": {
+   "total": 1,
+   "open": 1
+  },
+  "delivery": {
+   "delivered": 0,
+   "cleanup": {
+    "waiting": 0,
+    "pending": 0,
+    "complete": 0
+   }
+  },
+  "queues": {
+   "normal": 0,
+   "repair": 0
+  },
+  "dependencies": {
+   "satisfied": 1,
+   "pending": 0,
+   "inconclusive": 0,
+   "notEvaluated": 0
+  },
+  "questions": {
+   "open": 0,
+   "answered": 1,
+   "unpublished": 0
+  },
+  "selection": {
+   "next": null
+  },
+  "polling": {
+   "state": "sleeping",
+   "intervalSeconds": 60,
+   "cycles": 10,
+   "lastCycleAt": "2026-11-15T19:52:44.383Z",
+   "source": "in-memory-observation",
+   "repositories": [
+    {
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "label": "ready-for-agent",
+     "state": "observed",
+     "observedAt": "2026-11-15T19:52:43.609Z",
+     "completeness": "complete",
+     "absenceProven": false,
+     "consecutiveFailures": 0,
+     "nextPollInSeconds": 45
+    }
+   ]
+  },
+  "persistence": {
+   "sqliteVersion": "3.53.4",
+   "sqliteSourceId": "2026-07-24 19:02:57 bf7c7f30031888f4e796e429ab3978879485813aaca6f641c7b33e4e09459bcc",
+   "journalMode": "wal",
+   "synchronous": "FULL"
+  },
+  "recovery": {
+   "at": "2026-11-15T19:46:29.352Z",
+   "inventory": "listed",
+   "reconciled": 0,
+   "ceased": 0,
+   "unconfirmed": 0,
+   "global": [],
+   "cachePreparing": [],
+   "cache": []
+  },
+  "storage": {
+   "format": 2,
+   "previousRun": {
+    "runId": "a3ab7368-5164-42df-af67-5794e9e4768e",
+    "startedAt": "2026-11-15T19:43:41.737Z",
+    "endedAt": "2026-11-15T19:46:11.832Z",
+    "end": "clean",
+    "reconciled": true,
+    "reconciliationPending": false
+   }
+  }
+ },
+ "inventory": {
+  "listed": {
+   "environments": [
+    {
+     "environment": "env-0d17167a5f60efc53111e3817711db45efe00deba56ff410f486a844e0ae8a41",
+     "workId": "6f7a804e-236e-4a0d-948c-d5169081eba5"
+    },
+    {
+     "environment": "env-1a5dfcd03ca7e5828e4aba6806f7575e3e189fbf4fd3d9d67a67297608fef17b",
+     "workId": "a5f25ab7-6e42-4b63-90fb-4660d34d2995"
+    },
+    {
+     "environment": "env-24fa9f68040668eabf7299598aec8e899b58fafaa2c192992d153018af4ce131",
+     "workId": "876f8245-2a80-41f9-80cc-40ba16087bca"
+    },
+    {
+     "environment": "env-3427342584fb4c9db67a6c468452f4b139db9a2bf51b272feb20925e64d16a81",
+     "workId": "q05-821c351a-b41c-45a1-9ed0-7839131e0bb3"
+    },
+    {
+     "environment": "env-3fd513709d907379781801e7df8858dad47f86b4f1d3e3c421d20848c6738c8b",
+     "workId": "q06-09aa794c-4324-4a8a-af51-596a27845ff4"
+    },
+    {
+     "environment": "env-473161d181f6ff73f385613104cf265b1ec72b2987aa8bdeb458a37bdf20ff88",
+     "workId": "28c75e5a-f540-4056-b879-4f7020ea11a8"
+    },
+    {
+     "environment": "env-4b0f531128d0d7faa869978dc36a9d4f1595de901ee6613d22f2985f6c0ea0c6",
+     "workId": "8422dbf8-c962-4463-80ef-3442e94f65d1"
+    },
+    {
+     "environment": "env-5649a7d99415d9c01d7231c15070da5b53b02e1ebaa1e80f4cfa353168b40cc3",
+     "workId": "6dc4d114-81e2-4ee3-9ce1-260ae7e55b91"
+    },
+    {
+     "environment": "env-6a78bd355b5f43317ab048b2a12cd36e20e8f7cb91a7a594860fb1d9e78868e9",
+     "workId": "bf8df237-8213-4ab4-bf8a-a74152e599a6"
+    },
+    {
+     "environment": "env-714b2183fbed7630da7e179d30c1ae6e7f5c55c07fd2884c8fcb1c7013119b96",
+     "workId": "q06-f87b756f-e448-4ac7-b161-d4449bc99527"
+    },
+    {
+     "environment": "env-73830d99899ceeab08cbfec9a5fd59000e086957353afab5ea6fd3c8e9263c76",
+     "workId": "2ece4778-47f3-4412-8da5-b03d9be4eb47"
+    },
+    {
+     "environment": "env-75b775f7973a6d1a614e4552d3135fd5663200acf886765f7470943831f0c7c2",
+     "workId": "c6a7a2e2-5fb5-43ce-b46c-c1b636cc7651"
+    },
+    {
+     "environment": "env-75f39d6586f0c65cfcafccdc16ced5645e6db91f950362ae901cfefe41c5a7ca",
+     "workId": "f209e8a1-f7da-42e7-a173-69252ce5854d"
+    },
+    {
+     "environment": "env-7b1de5b0b6f83cf9757b71e7e0c72ad365e54421ed4bb63217c154199a934329",
+     "workId": "q05-ba45e930-892f-409f-afa8-95d61c70a6c6"
+    },
+    {
+     "environment": "env-9724f855fd065bd79d40b9277c791cc4f82b775834d9d70ee14fe930544b0929",
+     "workId": "99fe871b-b872-4522-912c-fefd9700edda"
+    },
+    {
+     "environment": "env-9ad204ad81ee93ce8ffe6245445586b8678f126c79d2fd888b4a31621b33afeb",
+     "workId": "97e80b59-52bc-4952-bc5f-0a7d4dbe3048"
+    },
+    {
+     "environment": "env-a3e73d39893bb47c3b4c81451c3eb84887f0ce21e00798b488a317480955e27f",
+     "workId": "230358b0-72b4-4412-ad23-c368403677cc"
+    },
+    {
+     "environment": "env-a604c02a912491d85dce12a0bf9e5a35b501d23b5d4c9b3e7cfaa3649166ca7c",
+     "workId": "q05-18ffc9d6-9a2f-4ddf-89b9-2ab10b5fcc5d"
+    },
+    {
+     "environment": "env-ac54df5572efc504b73b735fa280aafb2bcc60c4eeaac30010f5d313b7c57a6c",
+     "workId": "0d077da1-cbfb-4e29-a1d9-70ef1f545433"
+    },
+    {
+     "environment": "env-b88abcaa3725a04df5fe5bdbdc43b7b6a6aaa6dbcf4d77ef4fe9aef9f26904c5",
+     "workId": "860b3ca1-6b76-4a58-8a53-8a15b97653e9"
+    },
+    {
+     "environment": "env-bf9f67da25cf7c117b0ecff648cc195d8e5a136ec589fd5d87e0b4dc68844ab1",
+     "workId": "d34d952b-fffb-4cfd-8a04-0b02d6bc69d0"
+    },
+    {
+     "environment": "env-cb812628abb34128dd156ef47ab3f4482065c8b453855745e90cd9c2d1be5941",
+     "workId": "2165d400-c6c2-438f-9333-aaff7a4ab518"
+    },
+    {
+     "environment": "env-cbe807715a062a32efd9ec7f1013d57ce770dcc35882325e2c6cdc8cdb807cdc",
+     "workId": "q06-6e3ea90b-0f0d-497c-8f63-23333c505957"
+    },
+    {
+     "environment": "env-cd9751b4519f7d09b9c2bcdaafed6153d122ab8767214915d4cb09faaaae737a",
+     "workId": "d556544a-5e5b-4051-813c-382c2f0f5a67"
+    },
+    {
+     "environment": "env-d0f7f240a0b26f8f6d12d7c59f289ded9fa3ee58ca8caa8a8c0a0efc9fd39a41",
+     "workId": "4535224b-b07d-4c37-b200-09591d4ea4fa"
+    },
+    {
+     "environment": "env-d4e776e1d090a652dc691b6d041b30a8adcb7283479bf5860dbad94e1adae740",
+     "workId": "q05-096cdef8-35c1-4621-98d1-a6fb3a66b4f7"
+    },
+    {
+     "environment": "env-d5803ea68bf639a4533d25ca96a6688d8ef50da7596adb9028f94e415a0ac4d1",
+     "workId": "65bf3de7-4e41-4626-9b83-0f5582d8c924"
+    },
+    {
+     "environment": "env-e0cee70b797ca944a60911c626513382ec513d7bfee612af6c9b9f0a0342f984",
+     "workId": "ae15cdda-9325-4ada-9009-abd0feb2fe18"
+    },
+    {
+     "environment": "env-ecabd427edc72fd22110f25e5b00a9fb28c065e231d04af5dd5852e2b88c09a7",
+     "workId": "5a018c66-e690-4e8d-a6dc-075df00c98f9"
+    },
+    {
+     "environment": "env-f5a2e62167a8158e7c0170f75bc44b5c71ed6ae67f66c044eae7ef86a21c99bc",
+     "workId": "12334f71-99a6-4a3f-b1f4-fb78afbd608b"
+    },
+    {
+     "environment": "env-f99a1829b898f02a5f1d8c42d86c0dc13d2aa1779eb42579bbbd97b106bb7195",
+     "workId": "887f7681-3345-4251-bc1f-b907450dc188"
+    }
+   ],
+   "cache": [
+    {
+     "repositoryId": 1256893534,
+     "state": "idle"
+    }
+   ],
+   "unknown": []
+  },
+  "excluded": [
+   "env-0d17167a5f60efc53111e3817711db45efe00deba56ff410f486a844e0ae8a41",
+   "env-1a5dfcd03ca7e5828e4aba6806f7575e3e189fbf4fd3d9d67a67297608fef17b",
+   "env-24fa9f68040668eabf7299598aec8e899b58fafaa2c192992d153018af4ce131",
+   "env-3427342584fb4c9db67a6c468452f4b139db9a2bf51b272feb20925e64d16a81",
+   "env-3fd513709d907379781801e7df8858dad47f86b4f1d3e3c421d20848c6738c8b",
+   "env-473161d181f6ff73f385613104cf265b1ec72b2987aa8bdeb458a37bdf20ff88",
+   "env-4b0f531128d0d7faa869978dc36a9d4f1595de901ee6613d22f2985f6c0ea0c6",
+   "env-5649a7d99415d9c01d7231c15070da5b53b02e1ebaa1e80f4cfa353168b40cc3",
+   "env-6a78bd355b5f43317ab048b2a12cd36e20e8f7cb91a7a594860fb1d9e78868e9",
+   "env-714b2183fbed7630da7e179d30c1ae6e7f5c55c07fd2884c8fcb1c7013119b96",
+   "env-75b775f7973a6d1a614e4552d3135fd5663200acf886765f7470943831f0c7c2",
+   "env-75f39d6586f0c65cfcafccdc16ced5645e6db91f950362ae901cfefe41c5a7ca",
+   "env-7b1de5b0b6f83cf9757b71e7e0c72ad365e54421ed4bb63217c154199a934329",
+   "env-9724f855fd065bd79d40b9277c791cc4f82b775834d9d70ee14fe930544b0929",
+   "env-9ad204ad81ee93ce8ffe6245445586b8678f126c79d2fd888b4a31621b33afeb",
+   "env-a3e73d39893bb47c3b4c81451c3eb84887f0ce21e00798b488a317480955e27f",
+   "env-a604c02a912491d85dce12a0bf9e5a35b501d23b5d4c9b3e7cfaa3649166ca7c",
+   "env-ac54df5572efc504b73b735fa280aafb2bcc60c4eeaac30010f5d313b7c57a6c",
+   "env-b88abcaa3725a04df5fe5bdbdc43b7b6a6aaa6dbcf4d77ef4fe9aef9f26904c5",
+   "env-bf9f67da25cf7c117b0ecff648cc195d8e5a136ec589fd5d87e0b4dc68844ab1",
+   "env-cb812628abb34128dd156ef47ab3f4482065c8b453855745e90cd9c2d1be5941",
+   "env-cbe807715a062a32efd9ec7f1013d57ce770dcc35882325e2c6cdc8cdb807cdc",
+   "env-cd9751b4519f7d09b9c2bcdaafed6153d122ab8767214915d4cb09faaaae737a",
+   "env-d0f7f240a0b26f8f6d12d7c59f289ded9fa3ee58ca8caa8a8c0a0efc9fd39a41",
+   "env-d4e776e1d090a652dc691b6d041b30a8adcb7283479bf5860dbad94e1adae740",
+   "env-d5803ea68bf639a4533d25ca96a6688d8ef50da7596adb9028f94e415a0ac4d1",
+   "env-e0cee70b797ca944a60911c626513382ec513d7bfee612af6c9b9f0a0342f984",
+   "env-ecabd427edc72fd22110f25e5b00a9fb28c065e231d04af5dd5852e2b88c09a7",
+   "env-f5a2e62167a8158e7c0170f75bc44b5c71ed6ae67f66c044eae7ef86a21c99bc",
+   "env-f99a1829b898f02a5f1d8c42d86c0dc13d2aa1779eb42579bbbd97b106bb7195"
+  ],
+  "own": [
+   {
+    "environment": "env-73830d99899ceeab08cbfec9a5fd59000e086957353afab5ea6fd3c8e9263c76",
+    "workId": "2ece4778-47f3-4412-8da5-b03d9be4eb47"
+   }
+  ]
+ },
+ "events": [
+  {
+   "at": "2026-11-15T19:46:43.065Z",
+   "monotonicMs": 29203,
+   "call": "prepare",
+   "workId": "2ece4778-47f3-4412-8da5-b03d9be4eb47",
+   "checkout": {
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "installationId": 177599217,
+    "base": "main",
+    "branch": "factory/14-2ece4778"
+   }
+  },
+  {
+   "at": "2026-11-15T19:46:53.153Z",
+   "monotonicMs": 39291,
+   "call": "prepare-result",
+   "result": {
+    "status": "success",
+    "environment": "env-73830d99899ceeab08cbfec9a5fd59000e086957353afab5ea6fd3c8e9263c76",
+    "checkout": {
+     "path": "/workspace/checkout",
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "repositoryId": 1256893534,
+     "base": "main",
+     "branch": "factory/14-2ece4778",
+     "baseCommit": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+     "origin": "https://github.com/Sanmoo/java-springboot-event-sourcing.git",
+     "reused": true,
+     "preparedAt": "2026-11-15T19:44:03.454Z"
+    },
+    "seeds": [
+     {
+      "name": "factory/skill-pack/factory-skills-v6",
+      "manifestSha256": "919b8a4baf20a7d963b846a85a228476109144827528993e15be66b694f69490",
+      "reused": true
+     }
+    ]
+   }
+  },
+  {
+   "at": "2026-11-15T19:47:32.316Z",
+   "monotonicMs": 78454,
+   "call": "start",
+   "result": {
+    "status": "success",
+    "boot": "boot-d0877a03-b7d3-4353-8537-445fb153ff0c"
+   }
+  },
+  {
+   "at": "2026-11-15T19:47:35.313Z",
+   "monotonicMs": 81452,
+   "call": "issue",
+   "purpose": "builder-start",
+   "allowed": true
+  },
+  {
+   "at": "2026-11-15T19:47:36.643Z",
+   "monotonicMs": 82781,
+   "call": "issued",
+   "metadata": {
+    "role": "builder",
+    "purpose": "builder-start",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "installationId": 177599217,
+    "permissions": {
+     "metadata": "read",
+     "contents": "read",
+     "issues": "read"
+    },
+    "issuedAt": "2026-11-15T19:47:35.314Z",
+    "expiresAt": "2026-11-15T20:47:36Z"
+   }
+  },
+  {
+   "at": "2026-11-15T19:47:36.662Z",
+   "monotonicMs": 82800,
+   "call": "activate",
+   "role": "builder",
+   "phaseId": "builder-continuation",
+   "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+   "round": null,
+   "credentialDelivered": true
+  },
+  {
+   "at": "2026-11-15T19:49:08.196Z",
+   "monotonicMs": 174334,
+   "call": "activate",
+   "role": "standards",
+   "phaseId": "review-r1",
+   "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+   "round": 1,
+   "credentialDelivered": false
+  },
+  {
+   "at": "2026-11-15T19:49:08.196Z",
+   "monotonicMs": 174334,
+   "call": "activate",
+   "role": "spec",
+   "phaseId": "review-r1",
+   "executionId": "3c8b7d3e-20de-4dcc-a200-7aa4eaa2301d",
+   "round": 1,
+   "credentialDelivered": false
+  },
+  {
+   "at": "2026-11-15T19:49:27.699Z",
+   "monotonicMs": 193837,
+   "call": "completed",
+   "role": "standards",
+   "phaseId": "review-r1",
+   "status": "success"
+  },
+  {
+   "at": "2026-11-15T19:49:30.336Z",
+   "monotonicMs": 196474,
+   "call": "completed",
+   "role": "spec",
+   "phaseId": "review-r1",
+   "status": "success"
+  },
+  {
+   "at": "2026-11-15T19:49:43.843Z",
+   "monotonicMs": 209981,
+   "call": "completed",
+   "role": "builder",
+   "phaseId": "builder-continuation",
+   "status": "success"
+  },
+  {
+   "at": "2026-11-15T19:49:44.408Z",
+   "monotonicMs": 210546,
+   "call": "revoked",
+   "purpose": "builder-start",
+   "kind": "revoked"
+  },
+  {
+   "at": "2026-11-15T19:49:45.804Z",
+   "monotonicMs": 211942,
+   "call": "stop",
+   "input": {
+    "environment": "env-73830d99899ceeab08cbfec9a5fd59000e086957353afab5ea6fd3c8e9263c76",
+    "boot": "boot-d0877a03-b7d3-4353-8537-445fb153ff0c",
+    "reason": "builder execution ended"
+   },
+   "result": {
+    "status": "success",
+    "cessationConfirmed": true,
+    "termination": "unconfirmed",
+    "guestFinalization": "observed"
+   }
+  },
+  {
+   "at": "2026-11-15T19:51:45.321Z",
+   "monotonicMs": 331459,
+   "call": "prepare",
+   "workId": "2ece4778-47f3-4412-8da5-b03d9be4eb47",
+   "checkout": {
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "installationId": 177599217,
+    "base": "main",
+    "branch": "factory/14-2ece4778"
+   }
+  },
+  {
+   "at": "2026-11-15T19:51:47.464Z",
+   "monotonicMs": 333602,
+   "call": "prepare-result",
+   "result": {
+    "status": "success",
+    "environment": "env-73830d99899ceeab08cbfec9a5fd59000e086957353afab5ea6fd3c8e9263c76",
+    "checkout": {
+     "path": "/workspace/checkout",
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "repositoryId": 1256893534,
+     "base": "main",
+     "branch": "factory/14-2ece4778",
+     "baseCommit": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+     "origin": "https://github.com/Sanmoo/java-springboot-event-sourcing.git",
+     "reused": true,
+     "preparedAt": "2026-11-15T19:44:03.454Z"
+    },
+    "seeds": [
+     {
+      "name": "factory/skill-pack/factory-skills-v6",
+      "manifestSha256": "919b8a4baf20a7d963b846a85a228476109144827528993e15be66b694f69490",
+      "reused": true
+     }
+    ]
+   }
+  },
+  {
+   "at": "2026-11-15T19:51:57.606Z",
+   "monotonicMs": 343744,
+   "call": "start",
+   "result": {
+    "status": "success",
+    "boot": "boot-7bac0cbb-b7f4-46e7-898f-b4765d3a7002"
+   }
+  },
+  {
+   "at": "2026-11-15T19:51:59.710Z",
+   "monotonicMs": 345848,
+   "call": "issue",
+   "purpose": "builder-publish",
+   "allowed": true
+  },
+  {
+   "at": "2026-11-15T19:52:01.051Z",
+   "monotonicMs": 347189,
+   "call": "issued",
+   "metadata": {
+    "role": "builder",
+    "purpose": "builder-publish",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "installationId": 177599217,
+    "permissions": {
+     "metadata": "read",
+     "contents": "write",
+     "pull_requests": "write",
+     "issues": "read"
+    },
+    "issuedAt": "2026-11-15T19:51:59.710Z",
+    "expiresAt": "2026-11-15T20:52:00Z"
+   }
+  },
+  {
+   "at": "2026-11-15T19:52:01.058Z",
+   "monotonicMs": 347197,
+   "call": "activate",
+   "role": "builder",
+   "phaseId": "builder-publication",
+   "executionId": "0860b0f6-7aec-414d-9e20-2297d7be0b57",
+   "round": null,
+   "credentialDelivered": true
+  },
+  {
+   "at": "2026-11-15T19:52:30.535Z",
+   "monotonicMs": 376673,
+   "call": "completed",
+   "role": "builder",
+   "phaseId": "builder-publication",
+   "status": "success"
+  },
+  {
+   "at": "2026-11-15T19:52:31.271Z",
+   "monotonicMs": 377409,
+   "call": "revoked",
+   "purpose": "builder-publish",
+   "kind": "revoked"
+  },
+  {
+   "at": "2026-11-15T19:52:32.728Z",
+   "monotonicMs": 378866,
+   "call": "stop",
+   "input": {
+    "environment": "env-73830d99899ceeab08cbfec9a5fd59000e086957353afab5ea6fd3c8e9263c76",
+    "boot": "boot-7bac0cbb-b7f4-46e7-898f-b4765d3a7002",
+    "reason": "builder execution ended"
+   },
+   "result": {
+    "status": "success",
+    "cessationConfirmed": true,
+    "termination": "unconfirmed",
+    "guestFinalization": "observed"
+   }
+  }
+ ],
+ "gh": {
+  "requests": 104,
+  "refused": [],
+  "writes": [
+   [
+    "DELETE",
+    "/installation/token",
+    "revocation",
+    true
+   ],
+   [
+    "DELETE",
+    "/installation/token",
+    "revocation",
+    true
+   ],
+   [
+    "POST",
+    "/repos/Sanmoo/java-springboot-event-sourcing/issues/14/comments",
+    "question-comment",
+    true
+   ],
+   [
+    "DELETE",
+    "/installation/token",
+    "revocation",
+    true
+   ],
+   [
+    "DELETE",
+    "/installation/token",
+    "revocation",
+    true
+   ],
+   [
+    "DELETE",
+    "/installation/token",
+    "revocation",
+    true
+   ]
+  ]
+ },
+ "deadlineReached": false
+}

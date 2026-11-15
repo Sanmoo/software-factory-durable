@@ -16,7 +16,7 @@ import { builderEdit } from './edit.js';
 import { startWorker, type ReviewerProfile, type Invocation } from './worker-start.js';
 import { builderAskUser, type AskedQuestion } from './ask-user.js';
 import type { WorkerQuestionRequest } from '../platform/host/index.js';
-import { builderHandoff, captureHandoff, probeContent, suspendable, type BuilderDirective, type HandoffEvent } from './builder-handoff.js';
+import { builderHandoff, captureHandoff, readGateSource, probeContent, suspendable, type BuilderDirective, type HandoffEvent } from './builder-handoff.js';
 import { createToolLedger } from './gates.js';
 import { composeOpinion, createReadObserver, opinionSchema } from './review.js';
 import type { ReviewOpinion } from '../contracts/index.js';
@@ -174,7 +174,9 @@ export async function executeSession(options: Options, invocation: Invocation, r
       } } as ToolDefinition);
       // Host suspension (spec §5.6): once the Builder hands off, EVERY Builder tool refuses and terminates the batch until the Host
       // delivers the review results; a new model turn while suspended interrupts the session (it is not merely a model phrase/agent_end).
-      const gate = invocation.handoff ? builderHandoff(invocation.handoff.rounds, ledger) : undefined;
+      // Ticket 18: declared gates must carry a command their cited preserved source documents (checked at the handoff, in session).
+      const gate = invocation.handoff ? builderHandoff(invocation.handoff.rounds, ledger, invocation.handoff.rounds
+        ? path => readGateSource(invocation.context, options.sandbox, path, signal) : undefined) : undefined;
       const sessionTools = gate ? [...gated.map(tool => suspendable(tool, gate)), gate.tool] : gated;
       if (gate) {
         // Synchronous backstop: no provider request can even start while suspended (the request itself is refused, not just aborted later).

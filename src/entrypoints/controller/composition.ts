@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto';
-import type { ExecutionPorts } from '../../control/index.js';
+import type { AccessDependencies, ConfiguredRepository, ExecutionPorts } from '../../control/index.js';
+import { createIssueTracker } from '../../issue-tracker/index.js';
+import { createCodeRepository } from '../../code-repository/index.js';
 import { createSandbox, type GuestAssetPin } from '../../sandbox/index.js';
 import { preserveEvidence } from '../../records/index.js';
 import { createWorkers, skillPackContinues, skillPacks, type SkillPackId } from '../../workers/index.js';
 import { createBuilderCredentials, createRepositoryFetchCredentials, type GitHubAccess } from '../../platform/github/index.js';
 import { factorySkillPackIds, type GitHubScope } from '../../contracts/index.js';
-import { latestContinuationPack, productionProfile } from '../release.js';
+import { latestContinuationPack, productionBuilderPrompt, productionProfile } from '../release.js';
 
 export { latestContinuationPack };
 
@@ -18,6 +20,21 @@ export type ProductionInput = {
   guestAssets: GuestAssetPin;
   github: GitHubAccess;
 };
+
+/**
+ * Production composition of Control's GitHub access (the owner's tracking/admission, questions, publication discovery, checks, readiness,
+ * delivery and branch cleanup): executable repositories are Ticket origins; dependency-only repositories are read solely for native
+ * blocked_by, with their own installation; operators answer Questions; the Factory App bot identity is resolved lazily (ticket 14), never
+ * configured. One function for the controller owner, the composed journey test and the ticket 18 recipe (no per-ticket wiring).
+ */
+export function composeProductionAccess(input: { github: GitHubAccess; effective: { repositories: ConfiguredRepository[];
+  dependencyRepositories: readonly { repository: string; installationId: number }[]; operators: (string | { login: string; id?: number })[] } }): AccessDependencies {
+  const { github, effective } = input;
+  const dependencyScopes = effective.dependencyRepositories.map(entry => ({ repository: entry.repository, installationId: entry.installationId, workflows: false }));
+  return { tracker: createIssueTracker({ github, scopes: effective.repositories, dependencyScopes }), repository: createCodeRepository({ github }),
+    repositories: effective.repositories, dependencyRepositories: dependencyScopes, operators: effective.operators,
+    factoryApp: async () => effective.repositories[0] ? github.appIdentity(effective.repositories[0]) : null };
+}
 
 /** Production Builder skill pack: the latest registered Factory pack able to continue a preserved session (spec §5.5), verified by its manifest. */
 export function productionSkillPack(): Promise<SkillPackId> {
@@ -47,7 +64,8 @@ export async function composeProductionExecution(input: ProductionInput): Promis
   const sandbox = createSandbox({ root: input.root, guestAssets: input.guestAssets,
     repositoryFetch: createRepositoryFetchCredentials({ github: input.github, repositories: input.effective.repositories }),
     artifactSeeds: [{ name: pack.seedName, directory: pack.directory }] });
-  const workers = createWorkers({ root: input.root, knownSecrets: [], profile: profiles.builder, profiles });
+  // Ticket 18: the Builder's system prompt is chosen per session mode, naming only the tools of that session.
+  const workers = createWorkers({ root: input.root, knownSecrets: [], profile: profiles.builder, profiles, builderPrompt: productionBuilderPrompt });
   const ports: ExecutionPorts = {
     sandbox: { prepare: input => sandbox.prepare(input), start: input => sandbox.start(input), stop: input => sandbox.stop(input),
       observeProposal: input => sandbox.observeProposal(input),

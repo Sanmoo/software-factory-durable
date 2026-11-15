@@ -8,10 +8,8 @@ import { controllerPaths, startFailureCause, verifyControllerLock } from '../../
 import { inventoryRuntime, reconcileInterruptedCaches } from '../../sandbox/index.js';
 import { readConfiguration } from '../configuration.js';
 import { inspectRelease } from '../release.js';
-import { composeProductionExecution } from './composition.js';
+import { composeProductionAccess, composeProductionExecution } from './composition.js';
 import { createGitHubAccess } from '../../platform/github/index.js';
-import { createIssueTracker } from '../../issue-tracker/index.js';
-import { createCodeRepository } from '../../code-repository/index.js';
 
 const requestId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
 const command = z.union([z.strictObject({ request_id: requestId, operation: z.enum(['pause', 'unpause']), origin: z.literal('local-cli') }),
@@ -77,7 +75,6 @@ async function own(root: string): Promise<number> {
   process.on('SIGINT', terminate);
   process.on('SIGTERM', terminate);
   const effective = validated.configuration.effective;
-  const dependencyScopes = effective.dependencyRepositories.map(entry => ({ repository: entry.repository, installationId: entry.installationId, workflows: false }));
   // Polling cadence comes only from the validated configuration (default 60 s); no reload or per-Work override.
   // Ticket 26: host inventory of own runtime resources, after the lock and before the storage opens (attributed, never ignored).
   // Repair-free reconciliation of host Git caches a dead owner left in preparation (proved quiescent + read-only verified, else kept blocked).
@@ -86,11 +83,8 @@ async function own(root: string): Promise<number> {
   const runtimeInventory = { kind: 'listed' as const, observedAt: new Date().toISOString(), ...listed,
     cache: listed.cache.map(item => ({ ...item, nextStep: caches.find(entry => entry.repositoryId === item.repositoryId)?.nextStep ?? null })) };
   const control = await openControl({ storagePath: paths.storagePath, runtimeInventory,
-    // Executable repositories are Ticket origins; dependency-only repositories are read solely for native blocked_by, with their own installation.
-    access: { tracker: createIssueTracker({ github, scopes: effective.repositories, dependencyScopes }), repository: createCodeRepository({ github }),
-      repositories: effective.repositories, dependencyRepositories: dependencyScopes, operators: effective.operators,
-      // Ticket 14: the Factory App bot identity (GET /app slug + bot user), resolved lazily by Control's first discovery; never a configured guess.
-      factoryApp: async () => effective.repositories[0] ? github.appIdentity(effective.repositories[0]) : null },
+    // Executable repositories are Ticket origins; dependency-only repositories are read solely for native blocked_by (composeProductionAccess).
+    access: composeProductionAccess({ github, effective }),
     polling: { intervalSeconds: effective.pollingSeconds }, ...(composed?.status === 'composed' ? { execution: composed.ports } : {}) });
   const status = await control.inspect({ kind: 'status' });
   if (!('controller_run_id' in status)) throw new Error('INVALID_CONTROL_STATUS');

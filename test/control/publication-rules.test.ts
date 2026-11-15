@@ -163,7 +163,10 @@ test('AC1/AC5: the publication request names the exact commit, branch, base, lea
   if (continued.kind !== 'prompt') return;
   assert.match(continued.prompt, /^Factory publication instruction \(publish-only session/);
   assert.match(continued.prompt, /PUBLISH-ONLY/);
-  assert.ok(continued.prompt.includes(`--force-with-lease=refs/heads/${branch}: origin ${head}:refs/heads/${branch}`), 'empty expectation: the branch must not exist yet');
+  // Ticket 18 real run q18-v3: the guest-writable checkout had lost its `origin`; the instruction names the configured repository URL itself.
+  assert.ok(continued.prompt.includes(`--force-with-lease=refs/heads/${branch}: https://github.com/acme/project.git ${head}:refs/heads/${branch}`), 'empty expectation: the branch must not exist yet');
+  assert.ok(continued.prompt.includes('git ls-remote https://github.com/acme/project.git'));
+  assert.doesNotMatch(continued.prompt, /\borigin\b/, 'never relies on the guest-controlled remote configuration');
   assert.ok(continued.prompt.includes(marker) && continued.prompt.includes('--draft') && continued.prompt.includes('/skills/pr/SKILL.md'));
   assert.doesNotMatch(continued.prompt, /gh pr merge|--admin|gh pr ready|--force(?!-with-lease)/);
   const pushed = publicationPrompt({ ...input, expectedRemote: { state: 'present', sha: head } });
@@ -210,4 +213,13 @@ test('real-run recovery: own branch created in the attempt window at EXACTLY the
     ['PUBLICATION_OUTCOME_UNCONFIRMED', 'REMOTE_BRANCH_UNKNOWN_CHANGE']);
   assert.deepEqual(decide({ observation: observed([], { state: 'present', sha: head }, { refs: { ...window, 'refs/tags/x': head } }) }).reasons, ['UNEXPECTED_REF_CHANGE:refs/tags/x']);
   assert.deepEqual(decide({ refsBefore: null }).reasons, ['PUBLICATION_OUTCOME_UNCONFIRMED', 'REMOTE_BRANCH_AT_VERIFIED_HEAD'], 'without the window snapshot nothing is attributable');
+});
+
+test('ticket 18: after a publication attempt, the reasons that show a guest effect outside the publish-only scope', async () => {
+  const { guestEffectOutOfScope } = await import('../../src/control/rules/publication.js');
+  assert.deepEqual(guestEffectOutOfScope(['UNEXPECTED_REF_CHANGE:refs/heads/main', 'DESCRIPTION_NONCONFORMANT:x', 'PULL_REQUEST_NOT_DRAFT', 'OWN_PULL_REQUEST_MERGED',
+    'OWN_PULL_REQUEST_CLOSED', 'REMOTE_BRANCH_CHANGED', 'PUBLISHED_HEAD_NOT_VERIFIED', 'MULTIPLE_OWN_PULL_REQUESTS:4,5', 'PUBLICATION_OUTCOME_UNCONFIRMED']),
+  ['UNEXPECTED_REF_CHANGE:refs/heads/main', 'PULL_REQUEST_NOT_DRAFT', 'OWN_PULL_REQUEST_MERGED', 'OWN_PULL_REQUEST_CLOSED', 'REMOTE_BRANCH_CHANGED',
+    'PUBLISHED_HEAD_NOT_VERIFIED', 'MULTIPLE_OWN_PULL_REQUESTS:4,5']);
+  assert.deepEqual(guestEffectOutOfScope(['DESCRIPTION_NONCONFORMANT:x', 'PUBLICATION_OUTCOME_UNCONFIRMED']), [], 'a missing or badly described publication is not an out-of-scope effect');
 });
