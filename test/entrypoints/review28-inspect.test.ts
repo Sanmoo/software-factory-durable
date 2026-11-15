@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { openControl } from '../../src/control/index.js';
-import type { ListView } from '../../src/control/types.js';
+import type { ListView } from '../../src/control/index.js';
 import { githubDoubles, manualClock, remoteIssue, scope } from '../control/doubles.js';
 import { readStoredControl } from './review28-qualification.js';
 
