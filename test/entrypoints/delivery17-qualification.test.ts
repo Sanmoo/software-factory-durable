@@ -21,7 +21,10 @@ test('AC7 recipe: import and --plan are inert; the plan declares the human merge
   assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q17-delivery-v4');
   assert.equal(plan.source, '/home/sanmoo/software-factory-test/y5/q14-publication-v8', 'the v8 storage is only copied');
   assert.deepEqual(plan.expectedPullRequest, { number: 5, headRef: 'factory/3-99fe871b', headSha: 'bfdd439ceba20a424538647f41e55d5ab2d03217', base: 'main' });
-  assert.match(plan.operatorStep.steps.join('\n'), /Ready for review[\s\S]*Merge PR #5 with merge commit, squash or rebase[\s\S]*Do NOT click "Delete branch"/);
+  assert.match(plan.operatorStep.steps.join('\n'), /Do NOT convert the PR from draft yourself[\s\S]*approving review is REQUIRED[\s\S]*Merge PR #5 with merge commit, squash or rebase[\s\S]*Do NOT click "Delete branch"/);
+  assert.doesNotMatch(plan.operatorStep.steps.join('\n'), /Click "Ready for review"|gh pr ready/, 'readiness is the Factory\'s (ticket 16), never an operator step');
+  assert.equal(plan.operatorStep.readyBy, 'factory (ticket 16), never the operator');
+  assert.match(plan.operatorStep.deliverPreconditions[0], /merged .* head bfdd439/);
   assert.deepEqual(plan.operatorStep.acceptableMergeMethods, ['merge', 'squash', 'rebase']);
   assert.equal(plan.operatorStep.approvalRequired, true);
   assert.match(plan.operatorStep.steps.join('\n'), /approving review is REQUIRED/);

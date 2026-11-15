@@ -31,14 +31,16 @@ export function plan() {
     expectedPullRequest,
     operatorStep: { between: ['preflight', 'deliver'], who: 'human operator with their own GitHub account (never the Factory/App, never an admin bypass)',
       steps: [
-        'Only after `preflight` succeeded. Open https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5 and check: head factory/3-99fe871b at bfdd439ceba20a424538647f41e55d5ab2d03217, base main, still draft and open.',
+        'Only after `preflight` succeeded. Open https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5 and check: head factory/3-99fe871b at bfdd439ceba20a424538647f41e55d5ab2d03217, base main, open.',
         'Repository Settings > General: "Automatically delete head branches" must be OFF (if it is ON the branch disappears with the merge and the expected remote-branch outcome becomes absent instead of removed).',
-        'Click "Ready for review" on PR #5 (or `gh pr ready 5` authenticated as yourself).',
+        'Do NOT convert the PR from draft yourself: draft→ready is the Factory\'s job (ticket 16 readiness, recorded by its run). Merge only once PR #5 is already NON-draft (ready) by the Factory; if it is still a draft, stop and wait for ticket 16.',
         'An approving review is REQUIRED: the main ruleset (26435808) requires 1 approving review. Approve PR #5 yourself (the author is the App bot, so your human approval counts). Never use "bypass rules" (the only bypass is RepositoryRole 5 in pull_request mode) or an admin merge.',
         'Merge PR #5 with merge commit, squash or rebase (all three are allowed by the ruleset and all are acceptable to the Factory: delivery reads merged/merged_at/merge_commit_sha and the PR head bfdd439…, which no merge method changes); prefer "Create a merge commit".',
         'Do NOT click "Delete branch" after merging, do NOT push to factory/3-99fe871b afterwards (a moved tip makes the Factory keep it: refused BRANCH_TIP_CHANGED), and do not reopen the PR or edit issue #3 (its "Closes #3" closure by the merge is expected and is not what delivers).',
         'Then run `deliver`.' ],
-      acceptableMergeMethods: ['merge', 'squash', 'rebase'], approvalRequired: true,
+      acceptableMergeMethods: ['merge', 'squash', 'rebase'], approvalRequired: true, readyBy: 'factory (ticket 16), never the operator',
+      deliverPreconditions: ['PR #5 merged (merged_at set, closed) with head bfdd439ceba20a424538647f41e55d5ab2d03217 and base main, read by `deliver` before any effect',
+        'readiness converted by the Factory (ticket 16): not verified by this recipe (no ticket 16 record is read); noted in deliver-result as operator-attested'],
       requires: 'ruleset 26435808: 1 approving review, allowed methods merge/squash/rebase, delete_branch_on_merge false, bypass only RepositoryRole 5 (pull_request mode); the Factory itself never merges' },
     github: { app: githubApp,
       controllerPurposes: ['delivery-read {metadata:read, contents:read, pull_requests:read} (own PR facts; refs inventory)', 'tracker-read/association-read/dependency-read (polling only)',
@@ -53,8 +55,8 @@ export function plan() {
       'preflight (read-only on the source): exclusive COPY of the q14 v8 storage into q17 authority; the COPY (format 1) is migrated 1→2 with ticket 33\'s ' +
         'digest-checked migrateStorage (before/after preserved digest recorded; the original is never opened or migrated); inspection of that copy: own PR linked (number/id/node/head/branch/base), Work open, every ' +
         'Execution ended with confirmed cessation; GitHub: own PR open and not merged, every branch/tag tip; host inventory: environments (owner workId), boot runtime dirs, shared cache',
-      'OPERATOR: human ready + merge of the own PR (no branch auto-deletion)',
-      'deliver (real): owner on the q17 authority with the real adapters; dispatch composed but EVERY prepare/start/activate/credential refused; the desk confirms the merge ' +
+      'TICKET 16 (Factory): converts PR #5 draft→ready; OPERATOR: required approval + merge of the own PR (no branch auto-deletion); the operator never converts readiness',
+      'deliver (real): first re-reads PR #5 and holds unless it is merged at head bfdd439 into main (nothing else happens); then owner on the q17 authority with the real adapters; dispatch composed but EVERY prepare/start/activate/credential refused; the desk confirms the merge ' +
         '(Work delivered, minimal memory delivered+mergeConfirmed) and sweeps cleanup: preserves the own environment\'s review/spec/instructions evidence into ' +
         `${root}/<work>/evidence/<id>/ and then REMOVES, via the public Sandbox.remove of the own environment only: root.qcow2, workspace/ (checkout + local branch), artifacts/ and ` +
         'the per-boot runtime directories r/<boot> of that environment. The remote branch cleanup is PROVOKED to fail (every call in deliver returns failed WITHOUT calling GitHub): ' +
@@ -245,7 +247,17 @@ export async function runPhase(phase: Phase) {
       return;
     }
     if (!(await exists('preflight-result'))) throw new Error('PREFLIGHT_REQUIRED');
-    if (phase === 'deliver') { await owner('deliver'); return; }
+    if (phase === 'deliver') {
+      // Precondition read before ANY effect: the operator's merge of the exact own PR. Readiness by ticket 16 is attested, not verified here.
+      const { codeRepository } = await compose();
+      const own = (await load('preflight-result')).ownPullRequest as { number: number; pullRequestId: number; nodeId: string };
+      const pull = await codeRepository.readPullRequest!({ repo: repository, repositoryId: expectedTicket.repositoryId, number: own.number, pullRequestId: own.pullRequestId, nodeId: own.nodeId });
+      if (pull.kind !== 'observed' || !pull.pullRequest.merged || pull.pullRequest.state !== 'closed' || pull.pullRequest.headSha !== expectedPullRequest.headSha ||
+        pull.pullRequest.baseRef !== expectedPullRequest.base) { await save('deliver-held', { reason: 'PR_NOT_MERGED_AS_EXPECTED', pull }); throw new Error('DELIVER_PRECONDITION_HELD'); }
+      await save('deliver-precondition', { pull, readiness: 'converted by the Factory (ticket 16) per operator; not verified by this recipe' });
+      await owner('deliver');
+      return;
+    }
     if (phase === 'retry') { if (!(await exists('deliver-result'))) throw new Error('DELIVER_REQUIRED'); await owner('retry'); return; }
     const preflight = await load('preflight-result');
     const { list, status, work } = await view(await snapshotStorage(`${observations}/authority`, `${observations}/inspect-storage-copy`));

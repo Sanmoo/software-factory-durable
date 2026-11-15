@@ -65,16 +65,20 @@ Preflight now runs `prepareAuthority`:
 Test: `test/entrypoints/delivery17-recipe-storage.test.ts`. A format-1 fixture is copied and migrated; the original stays byte-identical at format 1; a format-2 source needs no migration; the copy target is exclusive. The exact human steps are in `plan().operatorStep.steps`:
 1. Check PR #5's head and base.
 2. Check "Automatically delete head branches" is OFF.
-3. Mark it Ready for review.
-4. Approve it yourself. Approval is REQUIRED: ruleset 26435808 requires 1 approving review, allows merge/squash/rebase, has `delete_branch_on_merge` false, and its only bypass is RepositoryRole 5 in pull_request mode.
-5. Merge with any method the ruleset allows: merge, squash or rebase are all acceptable to the Factory, because none of them changes the PR head SHA that delivery and the branch precondition use.
+3. Do **not** convert the draft yourself: converting draft→ready is the Factory's job (ticket 16, whose real run converts PR #5). Merge only once PR #5 is non-draft.
+4. Approval is REQUIRED (the operator has already approved PR #5).
+5. Merge with merge commit, squash or rebase; prefer a merge commit.
 6. Never use a bypass or admin merge, never click "Delete branch", and never push to the branch afterwards.
-7. Then run `deliver`. Each phase is one-shot and has an exclusive tombstone. Run each one only with an explicit operator grant:
+7. Then run `deliver`.
+
+`deliver` first re-reads PR #5 and holds (`DELIVER_PRECONDITION_HELD`) unless it is merged, closed, at head `bfdd439…` into `main`. That happens before any effect. The Factory-made readiness is noted in `deliver-precondition` as operator-attested; the recipe does not verify ticket 16's record.
+
+The consumed **v4** preflight (passed) remains valid. `deliver`, `retry` and `inspect` only require `preflight-result` in the same namespace, so they run later in `q17-delivery-v4` after ticket 16's conversion and the operator merge. Each phase is one-shot and has an exclusive tombstone. Run each one only with an explicit operator grant:
 
 ```sh
 node dist/test/entrypoints/delivery17-qualification.js --plan       # inert
 node dist/test/entrypoints/delivery17-qualification.js preflight
-#   OPERATOR (human, own GitHub account): the steps listed in plan().operatorStep.steps (ready + merge PR #5).
+#   TICKET 16 converts PR #5 to ready; OPERATOR (human, own account): approval (required) + merge, per plan().operatorStep.steps.
 node dist/test/entrypoints/delivery17-qualification.js deliver
 node dist/test/entrypoints/delivery17-qualification.js retry
 node dist/test/entrypoints/delivery17-qualification.js inspect
@@ -87,7 +91,7 @@ node dist/test/entrypoints/delivery17-qualification.js inspect
   - inspects that copy: own PR #5 linked with exactly that head, branch and base, Work open, every Execution ended with confirmed cessation;
   - GitHub reads: PR #5 (must be open, not merged, head `bfdd439…`), every `refs/heads` and `refs/tags` tip;
   - host inventory: `environments/*` with owner workId, `r/*`, `cache/git/*`.
-- **operator**: a human marks the own PR ready and merges it. This is the only merge, and the Factory never does it.
+- **ticket 16 + operator**: the Factory converts PR #5 to ready (ticket 16). A human approves it (required) and merges it. That merge is the only one, and the Factory never merges.
 - **deliver** (real; only the controller runs):
   - Every prepare/start/activate/credential is refused, so no VM, model or Builder runs.
   - GitHub reads: the own PR and polling reads.
