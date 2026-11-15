@@ -3,8 +3,8 @@
 Autoridade: [ticket 28](../../.scratch/software-factory-mvp/issues/28-partial-review-recovery.md),
 [spec §§4.4/5.3/5.6/6.1/6.4](../../.scratch/software-factory/spec.md), [interfaces Q6](../../.scratch/software-factory/module-public-interfaces.md),
 cenários V-08/V-12/V-13 da [matriz de aceite](../../.scratch/software-factory/acceptance-and-incremental-plan.md).
-Base: integração `d4483d1` (tickets 01–13, 19, 20, 32). Depende de 26 (em `implement/software-factory-mvp-26`, ainda não integrado):
-o código de 26 foi lido em `1bd8d36` (somente leitura) e o desenho compõe com ele; o rebase sobre 26 fica para quando 26 integrar.
+Base: integração `4f56f25` (tickets 01–13, 19, 20, 26, 32) — rebase sobre 26 integrado; o commit de `Records.find` copiado de 26 ficou vazio
+e foi descartado no rebase (conteúdo idêntico).
 
 **Estado: implementação e suíte local verdes (níveis R/S/I-local); ensaio real NÃO executado por este agente** (sem VM/modelo/GitHub/
 credenciais). Receita one-shot em [§ Ensaio real](#ensaio-real-receita-one-shot). Nenhum checkbox marcado; ticket não resolvido.
@@ -69,16 +69,31 @@ regras falhou já na importação dos novos símbolos) e depois verdes com a cor
   (≤ 256 KiB, sem laço sem progresso); um handle de Records por facade (aberto uma vez); `incomplete` nunca levado; receita: inspect sobre
   cópia privada do Records, recusas da guarda como `WORKER_LAUNCH_INVALID` (never-started, liberado, não transitório) e no máximo 2.
 
+## Composição com o ticket 26 (após o rebase sobre `4f56f25`)
+
+- Espera do retry = `recoveryWait` de 26 (sem tabela própria).
+- `execution.interruption` tipado (campo de 26; `OPERATIONAL_RECOVERY` ou `ADMINISTRATIVE_STOP`, ambos após cessação confirmada).
+- 26 registra os revisores de uma rodada interrompida como `failed`/`boot-ceased`/`EXECUTION_INTERRUPTED`: para o 28 isso é desfecho não
+  registrado → o parecer completo é procurado no Records (uma vez) e levado se a proposta/contexto forem os mesmos.
+- `interruptionRecoveryPrompt` + `preservedReviewContext` (versão com carry), descartado se exceder o limite do prompt.
+- `settleInterruption` liquida reservas de retry pendentes com `observeStart` por invocação: recibo consome uma vez, ausência após cessação
+  libera, incerteza mantém e bloqueia com `RECOVERY_START_UNCERTAIN`.
+- `observeStart`/`observeOpinion` compartilham um handle de Records aberto uma vez.
+- Cortes reais (processo filho SIGKILL, `review28-crash.test.ts`, I-local com dublês de host/revisores e Records real): parecer de Standards
+  perdido no handoff é encontrado no Records e levado à rodada 2 da Execução de recuperação (só Spec roda de novo; nada adotado; prompt
+  substituto com o estado preservado; `recoveries.consumed = 1`); corte durante a espera de um retry → reserva liberada pela reconciliação.
+  Vermelho observado contra o `src` rebaseado sem estas mudanças (2 cortes + 1 regra), verde depois.
+
 ## Mapa AC → evidência
 
 | AC | Testes | Nível |
 | --- | --- | --- |
-| 1 notificação perdida localizada/incorporada uma vez | `review28-flow` "lost notification…"; `opinion-observation` (Records real); `review28-rules` incorporable/carryPlan descoberto | S + I-local (Records real); entre Execuções: R (fluxo só após rebase em 26) |
+| 1 notificação perdida localizada/incorporada uma vez | `review28-flow` "lost notification…"; `opinion-observation` (Records real); `review28-crash` corte no handoff; `review28-rules` | S + I-local (Records real, SIGKILL real) |
 | 2 parcial ≠ parecer; ausência/falha/cancelamento explícitos | `opinion-observation` (parcial/múltiplo/inválido); `review28-flow` "unreadable record"; `review28-rules` failure/cancelled | I-local + S + R |
 | 3 preserva válido, recupera só o falho; mudança → dois novos | `review28-flow` AC3/AC4/AC5 e "changed proposal"; `review28-rules` carryPlan mudanças | S + R |
 | 4 limites existentes, sem orçamento paralelo; interrupção pela fila | `review28-flow` budget/esperas/exaustão/não transitória; fila sem sobrevivente = 26 | S; parte de fila: 26 |
 | 5 Builder sem turnos até cessar revisores | `review28-flow` ordem entrega × fins; tickets 12/13 (suspensão no host) | S (+ H dos tickets 12/13) |
-| 6 entrega ≠ consumo; continuação reconstruída sem duplicar | `review28-rules` preservedReviewContext; carry de pareceres na rodada nova (tratamento referencia a rodada nova) | R; fiação no prompt substituto de 26 pendente do rebase |
+| 6 entrega ≠ consumo; continuação reconstruída sem duplicar | `review28-rules` preservedReviewContext; `review13-question-flow` (substituta após resposta); `review28-crash` (substituta após interrupção) | R + S + I-local |
 | 7 provas reais | receita `review28-qualification.ts` (inerte testada) | **não executada** |
 
 ## Decisões de interpretação e questões abertas (operador)
@@ -91,9 +106,8 @@ regras falhou já na importação dos novos símbolos) e depois verdes com a cor
    invocação): mantém o hold `REVIEWER_CESSATION_UNCONFIRMED` e segue a recuperação de 26 (parada do boot = cessação), depois o carry com descoberta.
 4. **Carry só após `OPERATIONAL_RECOVERY`** (não após resposta/escopo: pode mudar contexto). Lido estruturalmente de `execution.interruption`
    até o rebase sobre 26 (sem efeito antes dele).
-5. **Pendentes do rebase sobre 26**: delegar a espera a `recoveryWait`; incluir `preservedReviewContext` (com carry) no
-   `interruptionRecoveryPrompt`; chamar `settleReviewerReservations` em `settleInterruption` com `observeStart` por invocação de retry;
-   tipar `interruption`; teste de fluxo do corte de controlador no handoff (carry + descoberta); unificar `observeOpinion`/`observeStart`.
+5. Pendentes do rebase sobre 26: **feitos** (ver § Composição com o ticket 26). O carry também vale após parada administrativa limpa
+   (`ADMINISTRATIVE_STOP`, cessação confirmada); confirmar com o operador se deve ficar restrito a `OPERATIONAL_RECOVERY`.
 
 ## Ensaio real (receita one-shot)
 
@@ -125,8 +139,8 @@ Observações esperadas (`inspect-result.json`): r1 `standards.source = records-
 `retry.waitSeconds = 5`, `charge.state = consumed`, `budget.recoveries.consumed = 1`, `reserved = null`, entrega da r1 depois dos dois fins;
 rodada com conteúdo mudado com as duas ativações `a1`; Execução `ended`, Slot liberado com cessação confirmada; sem token nos artefatos.
 Se Spec r1a1 terminar `REVIEWER_OUTCOME_UNCERTAIN` (canal fechado pelo prazo), a Execução fica `held` `REVIEWER_CESSATION_UNCONFIRMED`
-sem retry — registrar como achado. **Fora desta revisão**: corte do controlador no handoff (exige a recuperação de 26 na composição; padrão
-`recovery26-qualification.ts` com filhos sob `flock` e SIGKILL) — proposta de `q28-partial-v2` após o rebase.
+sem retry — registrar como achado. **Fora desta revisão da receita**: corte real do controlador no handoff com VM/modelo (padrão `recovery26-qualification.ts`, filhos sob
+`flock` e SIGKILL) — proposta de `q28-partial-v2`; localmente coberto por `review28-crash.test.ts` com dublês de host/revisores.
 
 ## Gate local
 
@@ -140,3 +154,7 @@ Após as correções da revisão (`3e7537c`): tsc 0 erros, eslint limpo, depende
 166 arquivos um por vez: **1060 pass, 0 fail, 10 skipped** — `entrypoints/admission-cli` e `workers/sdk-profile` falharam sob carga
 paralela de outros gates e passaram ao rerodar sozinhos (flakes conhecidos). Novos: `review28-rules` 8, `review28-flow` 9,
 `opinion-observation` 2, `review13-question-flow` 2 (1 novo), `review28-qualification` 3.
+
+Após o rebase sobre `4f56f25` e a composição com 26 (`6902843`): tsc 0 erros, eslint limpo, dependency-cruiser sem violações (366 módulos,
+2257 dependências); **176 arquivos um por vez: 1100 pass, 0 fail, 10 skipped** (`test/sandbox/gondolin.test.ts` segue `skip: true`).
+Novos desde a rodada anterior: `review28-crash` 2 (cortes SIGKILL reais), `review28-rules` 9.
