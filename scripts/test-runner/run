@@ -1,0 +1,6 @@
+#!/bin/sh
+# Test tiers with the project's Node prefix: no inherited NODE_OPTIONS/compile cache, compile cache disabled.
+# The Node on PATH must be the pinned one (package.json engines); cli.ts refuses any other.
+set -eu
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec env -u NODE_OPTIONS -u NODE_COMPILE_CACHE NODE_DISABLE_COMPILE_CACHE=1 node "$here/cli.ts" "$@"

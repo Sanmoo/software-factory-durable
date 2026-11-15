@@ -13,7 +13,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "watch": "tsc -p tsconfig.json --watch",
     "check:architecture": "depcruise --config .dependency-cruiser.cjs --output-type err-long . && eslint . --max-warnings 0",
-    "test": "npm run check:architecture && npm run build && node --test \"dist/test/**/*.test.js\"",
+    "test": "npm run test:ci",
+    "test:fast": "scripts/test-runner/run fast",
+    "test:ci": "scripts/test-runner/run ci",
+    "test:full": "scripts/test-runner/run full",
     "clean": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\"",
     "prepare:sdk": "node dist/src/workers/sdk-profile.js && node dist/src/sandbox/gondolin-sdk-profile.js",
     "prepare:gondolin-sdk": "node dist/src/sandbox/gondolin-sdk-profile.js"

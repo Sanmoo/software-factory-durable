@@ -1,0 +1,28 @@
+#!/bin/sh
+# Nightly `full` tier over a LOCAL branch, in a dedicated detached worktree. No fetch, no network, no install.
+# Run by the user systemd timer in scripts/test-runner/systemd/ (installed explicitly by the operator).
+# A red report becomes a ticket; it never blocks integration.
+#   SF_NIGHTLY_REPO    main checkout (required)
+#   SF_NIGHTLY_BRANCH  branch to test (default integration/software-factory-mvp; later main)
+set -eu
+repo=${SF_NIGHTLY_REPO:?set SF_NIGHTLY_REPO to the main checkout}
+branch=${SF_NIGHTLY_BRANCH:-integration/software-factory-mvp}
+worktree="$repo/.worktrees/nightly-full"
+state="${XDG_STATE_HOME:-$HOME/.local/state}/software-factory/nightly-tests"
+mkdir -p "$state"
+report="$state/full-$(date -u +%Y%m%dT%H%M%SZ).txt"
+log="${report%.txt}.log"
+
+if [ ! -d "$worktree" ]; then
+  git -C "$repo" worktree add --detach "$worktree" "$branch"
+elif [ -n "$(git -C "$worktree" status --porcelain)" ]; then
+  echo "NIGHTLY_WORKTREE_DIRTY: $worktree has local changes; refusing to move it" | tee "$report" >&2
+  exit 1
+else
+  git -C "$worktree" checkout --quiet --detach "$branch"
+fi
+# node_modules in the nightly worktree is maintained by the operator (`npm ci` there); the runner's
+# dependency check turns a drifted tree into a red report instead of installing anything.
+cd "$worktree"
+echo "nightly full: $branch at $(git rev-parse HEAD), report $report"
+exec scripts/test-runner/run full --report "$report" >"$log" 2>&1

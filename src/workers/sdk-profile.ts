@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
 import { cp, lstat, mkdir, readFile, readlink, realpath, readdir, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 
 const run = promisify(execFile);
 const sha = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');
@@ -50,10 +50,10 @@ async function ownedTree(path: string, root = path): Promise<void> {
   if (info.isDirectory()) for (const name of await readdir(path)) await ownedTree(join(path, name), root);
 }
 
-/** Offline development build only. Never modifies the installed upstream package. */
-export async function prepareDevelopmentSdk() {
-  const base = await realpath('.');
-  const installed = await realpath('node_modules/@earendil-works/pi-coding-agent');
+/** Offline development build only. Never modifies the installed upstream package. `project` defaults to the working directory. */
+export async function prepareDevelopmentSdk(project = process.cwd()) {
+  const base = await realpath(project);
+  const installed = await realpath(join(base, 'node_modules/@earendil-works/pi-coding-agent'));
   if (!installed.startsWith(`${base}/node_modules/`)) throw new Error('SDK_INSTALL_NOT_PRIVATE');
   await ownedTree(installed);
   const treeHash = createHash('sha256');
@@ -67,11 +67,11 @@ export async function prepareDevelopmentSdk() {
   }
   await hashTree();
   if (treeHash.digest('hex') !== sdkProfile.upstreamTreeSHA256) throw new Error('SDK_UPSTREAM_DRIFT');
-  const lock = JSON.parse(await readFile('package-lock.json', 'utf8'));
+  const lock = JSON.parse(await readFile(join(base, 'package-lock.json'), 'utf8'));
   const pin = lock.packages['node_modules/@earendil-works/pi-coding-agent'];
   const manifest = JSON.parse(await readFile(join(installed, 'package.json'), 'utf8'));
   const source = await readFile(join(installed, 'dist/core/tools/read.js'), 'utf8');
-  const patch = await readFile('docs/evidence/05-sdk-read-operations-candidate.patch');
+  const patch = await readFile(join(base, 'docs/evidence/05-sdk-read-operations-candidate.patch'));
   if (pin.version !== sdkProfile.version || pin.integrity !== sdkProfile.integrity || manifest.version !== sdkProfile.version ||
       sha(source) !== sdkProfile.upstreamSHA256 || sha(patch) !== sdkProfile.patchSHA256) throw new Error('SDK_UPSTREAM_DRIFT');
   const patched = source.replace('import { resolveReadPathAsync }', 'import { resolveReadPathAsync, resolveToCwd }')
@@ -79,12 +79,12 @@ export async function prepareDevelopmentSdk() {
       'const absolutePath = options?.operations\n                            ? resolveToCwd(path, ctx?.cwd || cwd)\n                            : await resolveReadPathAsync(path, ctx?.cwd || cwd);');
   const resultSHA256 = sha(patched);
   if (resultSHA256 !== sdkProfile.resultSHA256) throw new Error('SDK_PATCH_DRIFT');
-  const asyncPatch = resolve('docs/evidence/05-sdk-async-bash-v2.patch');
+  const asyncPatch = join(base, 'docs/evidence/05-sdk-async-bash-v2.patch');
   if (sha(await readFile(asyncPatch)) !== sdkProfile.asyncPatchSHA256) throw new Error('SDK_PATCH_DRIFT');
   for (const [file, hashes] of Object.entries(correctedFiles)) {
     if (sha(await readFile(join(installed, file))) !== hashes.before) throw new Error('SDK_UPSTREAM_DRIFT');
   }
-  const lexicalPatch = resolve('docs/evidence/05-sdk-lexical-queue-v3.patch');
+  const lexicalPatch = join(base, 'docs/evidence/05-sdk-lexical-queue-v3.patch');
   if (sha(await readFile(lexicalPatch)) !== sdkProfile.lexicalPatchSHA256) throw new Error('SDK_PATCH_DRIFT');
   await run('git', ['apply', '--check', `--directory=${installed}`, '--unsafe-paths', lexicalPatch], { cwd: base, timeout: 10000 });
   // Existing standard patch tooling, never a custom patch interpreter or an install.
@@ -92,9 +92,9 @@ export async function prepareDevelopmentSdk() {
   const evidence = { ...sdkProfile, resultSHA256, asyncBashFiles, lexicalQueueFiles, license: manifest.license,
     standaloneLicense: (await readdir(installed)).includes('LICENSE'), upstreamPackage: manifest.name };
   const profileBytes = JSON.stringify(evidence, null, 2) + '\n';
-  const scratch = resolve('.scratch');
+  const scratch = join(base, '.scratch');
   if (await realpath(scratch) !== scratch) throw new Error('SDK_STAGING_NOT_PRIVATE');
-  const staging = resolve(sdkStagingDirectory);
+  const staging = join(base, sdkStagingDirectory);
   let exists = false;
   await mkdir(staging, { mode: 0o700 }).catch(error => { if (error.code !== 'EEXIST') throw error; exists = true; });
   await ownedTree(staging);

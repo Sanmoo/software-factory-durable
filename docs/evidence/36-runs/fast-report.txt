@@ -1,0 +1,22 @@
+== test-runner: tier fast ==
+lock wait: 0.0 s (not counted in the budget)
+static: tsc 10.6 s, prepare-sdk 1.9 s, eslint 5.6 s
+lane parallel: 168 files, N=4, 83.6 s
+lane serial: 1 files, N=1, 0.3 s
+tests: 1039 (pass 1029, fail 0, cancelled 0, skipped 10, todo 0)
+total: 96.4 s of 180 s budget
+load average: start 1.28 5.02 7.92, end 4.31 5.04 7.65
+slow, left to ci: 11 files
+quarantined (not coverage): test/entrypoints/admission-cli.test.ts
+slowest files:
+  1. 12.8 s test/entrypoints/configuration.test.ts
+  2. 12.6 s test/entrypoints/github-access.test.ts
+  3. 12.4 s test/workers/public-copy-read.test.ts
+  4. 12.1 s test/workers/worker-bash-process.test.ts
+  5. 11.2 s test/workers/worker-process.test.ts
+  6. 10.5 s test/workers/worker-write-process.test.ts
+  7. 10.3 s test/entrypoints/github-dependency-reads.test.ts
+  8. 9.4 s test/workers/native-bom-read.test.ts
+  9. 8.9 s test/workers/worker-question-process.test.ts
+  10. 8.9 s test/workers/session-continuation.test.ts
+RESULT: PASS

@@ -1,0 +1,6 @@
+ci1 start 09:31:03  09:31:03 up 14 days, 23:42,  1 user,  load average: 3.65, 4.88, 7.56
+ci2 start 09:31:06  09:31:06 up 14 days, 23:42,  1 user,  load average: 3.65, 4.88, 7.56
+ci1 rc=0 wall 181 s end 09:34:04  09:34:04 up 14 days, 23:45,  1 user,  load average: 13.46, 8.80, 8.60
+ci2 rc=0 wall 360 s end 09:37:06  09:37:06 up 14 days, 23:48,  1 user,  load average: 14.57, 11.12, 9.50
+ci3 start 09:37:06  09:37:06 up 14 days, 23:48,  1 user,  load average: 14.57, 11.12, 9.50
+ci3 rc=0 wall 224 s end 09:40:50  09:40:50 up 14 days, 23:51,  1 user,  load average: 15.59, 14.03, 11.03

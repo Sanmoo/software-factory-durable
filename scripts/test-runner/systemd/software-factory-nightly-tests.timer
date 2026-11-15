@@ -1,0 +1,10 @@
+# Versioned only. Installation is an explicit operator step (docs/development.md, "Camadas de teste").
+[Unit]
+Description=Nightly Software Factory full test tier
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

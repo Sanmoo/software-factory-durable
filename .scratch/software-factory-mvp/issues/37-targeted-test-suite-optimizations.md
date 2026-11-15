@@ -27,3 +27,17 @@
 ## Autorização e limites
 
 Sem rede, GitHub, VM, modelo ou credenciais. Remoções dependem de aprovação do operador.
+
+## Comments
+
+- 2026-11-15 (ticket 36): `entrypoints/admission-cli` está em **quarentena** em `test/tiers.json` (não é
+  cobertura): controlador real com polling de 1 s; `list` no meio de um ciclo vê `DEPENDENCIES_NOT_CURRENT`.
+  Falhou em 4 de 6 execuções de `ci` (lane paralela e serial) e em 1 de 4 execuções isoladas (carga entre 1 e 10);
+  ao falhar deixa o controlador vivo e o processo do arquivo não termina. Tem ainda `timeout: 45000` fixo.
+  `sandbox/bash-credential` ficou `serial`: o teste do AC2 espera 20 ms fixos por um comando em voo e falhou
+  1 vez em paralelo. Corrigir ambos com evento/relógio injetado e remover as entradas. Também ficam em `fast` arquivos com crash/SIGKILL reais
+  (`control/recovery-crash`, `control/credential-lifecycle`, `control/timeout-flow`,
+  `entrypoints/control-public`, `entrypoints/upgrade`): consolidar conforme o alvo 5 e a regra de
+  `docs/agents/testing.md`. Em `full`, `sandbox/sandbox-storage` falha de forma determinística
+  (`observe().cessationConfirmed` é `true`; o teste espera `false`), visto pela primeira vez porque antes ficava
+  sempre pulado: precisa de ticket próprio (deriva entre teste e produto), não de quarentena.

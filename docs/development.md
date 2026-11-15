@@ -37,12 +37,15 @@ e [do adapter](../.scratch/software-factory/issues/19-gondolin-adapter-contract.
 node --version                    # v24.21.0
 npm --version                     # 11.19.0
 npm ci
-npm test                          # gate local completo, sem credenciais/modelos/remoto/VM
+npm run test:fast                 # ciclo de TDD (≤3 min, sem lock)
+npm run test:ci                   # gate de integração (≤10 min, lock da máquina); `npm test` é o mesmo
 ```
 
-`npm test` executa arquitetura (antes de runtime), limpa somente `dist/`, compila e
-verifica tipos **uma vez** e executa **todos** os testes locais compilados com
-`node:test`/`node:assert/strict`. Fixtures inválidas são criadas em diretórios
+`npm run test:ci` executa arquitetura (dependency-cruiser + ESLint `--max-warnings 0`), limpa somente
+`dist/`, compila e verifica tipos **uma vez** e executa **todos** os testes locais compilados com
+`node:test`/`node:assert/strict`, em paralelo com uma lane serial para as exceções. Camadas, manifesto
+`test/tiers.json`, lock, tetos e regras para quem escreve teste: [docs/agents/testing.md](agents/testing.md)
+(decisão do ticket 36, que substitui a regra "um arquivo compilado por vez" do handoff). Fixtures inválidas são criadas em diretórios
 temporários e analisadas separadamente; não são fontes de runtime nem excluem
 testes autorais da análise. `node_modules/` não é fonte autoral; seus imports
 continuam visíveis ao checker, sem percorrer o conteúdo vendorizado.
@@ -63,10 +66,35 @@ node --test --watch dist/test/entrypoints/configuration.test.js
 ```
 
 Subconjunto/watch não equivale à suíte completa. Antes de integrar: `npm ci`,
-`npm test`, diagnósticos TypeScript/ESLint dos paths alterados e evidências fiéis
-das fronteiras alteradas. Observar tempos com `time npm run check:architecture`,
-`time npm run build` e `time node --test 'dist/test/**/*.test.js'`.
-Não há engine próprio de impacto/cache.
+`npm run test:ci`, diagnósticos TypeScript/ESLint dos paths alterados e evidências fiéis
+das fronteiras alteradas. O relatório do runner traz os tempos (estática, lanes, espera no lock,
+10 arquivos mais lentos). Não há engine próprio de impacto/cache.
+
+### Camada `full` noturna (instalação explícita pelo operador)
+
+`npm run test:full` acrescenta ao `ci` os testes de sandbox de disco real (com
+`FACTORY_SANDBOX_TEST_ROOT` numa raiz privada nova sob `${XDG_CACHE_HOME:-~/.cache}/sft/`, em disco:
+a admissão de storage recusa tmpfs; caminho curto por causa dos sockets) e uma segunda passada em
+ordem aleatória. A execução noturna é versionada, **não instalada**:
+
+- `scripts/test-runner/nightly`: atualiza o worktree destacado `<checkout>/.worktrees/nightly-full`
+  para a ponta local de `integration/software-factory-mvp` (depois `main`), sem fetch nem instalação, e
+  roda `full --report` em `${XDG_STATE_HOME:-~/.local/state}/software-factory/nightly-tests/`.
+  O `node_modules` desse worktree é mantido pelo operador (`npm ci` nele); divergência vira relatório
+  vermelho pelo próprio runner.
+- `scripts/test-runner/systemd/software-factory-nightly-tests.{service,timer}`: unit do usuário (03:30).
+
+Instalação, quando o operador decidir:
+
+```sh
+cp scripts/test-runner/systemd/software-factory-nightly-tests.* ~/.config/systemd/user/
+# ajustar SF_NIGHTLY_REPO e PATH (Node 24.21.0) no .service
+systemctl --user daemon-reload
+systemctl --user enable --now software-factory-nightly-tests.timer
+```
+
+Relatório vermelho vira ticket; nunca bloqueia integração. `systemctl --user status
+software-factory-nightly-tests.service` mostra a última execução.
 
 | Grupo | Execução e fronteira |
 | --- | --- |

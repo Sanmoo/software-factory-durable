@@ -1,0 +1,21 @@
+== test-runner: tier ci ==
+lock wait: 0.0 s (not counted in the budget)
+static: tsc 16.0 s, prepare-sdk 2.0 s, eslint 9.5 s, depcruise 3.6 s
+lane parallel: 179 files, N=8, 204.7 s
+lane serial: 1 files, N=1, 0.3 s
+tests: 1128 (pass 1118, fail 0, cancelled 0, skipped 10, todo 0)
+total: 223.1 s of 600 s budget
+load average: start 14.57 11.12 9.50, end 15.59 14.03 11.03
+quarantined (not coverage): test/entrypoints/admission-cli.test.ts
+slowest files:
+  1. 141.9 s test/entrypoints/release-install.test.ts
+  2. 133.1 s test/entrypoints/release-artifact.test.ts
+  3. 126.0 s test/entrypoints/release-upgrade.test.ts
+  4. 118.5 s test/entrypoints/normal-oauth.test.ts
+  5. 109.8 s test/entrypoints/normal-edit.test.ts
+  6. 66.2 s test/entrypoints/controller-ownership.test.ts
+  7. 61.5 s test/architecture/architecture-gate.test.ts
+  8. 57.3 s test/workers/public-bash-copy.test.ts
+  9. 54.9 s test/workers/sdk-profile.test.ts
+  10. 52.5 s test/workers/worker-image-process.test.ts
+RESULT: PASS

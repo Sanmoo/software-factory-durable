@@ -12,7 +12,8 @@
     "rootDir": ".",
     "outDir": "dist",
     "types": ["node"],
+    "rewriteRelativeImportExtensions": true,
     "paths": { "@factory/*": ["./src/*"] }
   },
-  "include": ["src/**/*.ts", "test/**/*.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"]
 }

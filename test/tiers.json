@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "files": {
+    "test/entrypoints/normal-oauth.test.ts": { "slow": true, "reason": "18 adapter→owner→worker forks; the deadline mode really waits 30 s and held-ack the fixed 5 s ACK timeout (ticket 37). ~55 s alone." },
+    "test/entrypoints/normal-edit.test.ts": { "slow": true, "reason": "14 modes, each forking a whole adapter→owner→Node24 worker chain. ~27 s alone." },
+    "test/entrypoints/release-install.test.ts": { "slow": true, "reason": "Builds and extracts a full release (private Node, SDKs, tar) and runs its launcher. ~27 s alone, ~100 s under 8-way load." },
+    "test/entrypoints/release-artifact.test.ts": { "slow": true, "reason": "Builds a full release archive with checksum/manifest in its own before(). ~24 s alone." },
+    "test/entrypoints/release-upgrade.test.ts": { "slow": true, "reason": "Builds two releases side by side and runs the explicit migration and switch. ~23 s alone." },
+    "test/architecture/architecture-gate.test.ts": { "slow": true, "reason": "20 tests, each spawning dependency-cruiser or ESLint on a synthetic fixture tree. ~19 s alone." },
+    "test/entrypoints/controller-ownership.test.ts": { "slow": true, "reason": "Real controller processes under flock with SIGKILL and restart over the same storage. ~13 s alone." },
+    "test/workers/sdk-profile.test.ts": { "slow": true, "reason": "Copies the 40 MB pinned SDK into a private project and prepares it four times. ~7 s alone, ~40 s under 8-way load." },
+    "test/sandbox/gondolin-sdk-profile.test.ts": { "slow": true, "reason": "Copies and hashes the Gondolin distribution in nine private fixtures. ~7 s alone, ~40 s under 8-way load." },
+    "test/workers/public-bash-copy.test.ts": { "slow": true, "reason": "Five full adapter→owner→Node24 native Bash forks. ~10 s alone." },
+    "test/workers/worker-image-process.test.ts": { "slow": true, "reason": "One fixed-worker Node per image format and variant (8 spawns). ~9 s alone." },
+    "test/entrypoints/admission-cli.test.ts": { "quarantine": "ticket 37", "reason": "Flaky, not only in parallel: real 1 s polling controller; `list` landing mid-cycle sees DEPENDENCIES_NOT_CURRENT. Failed 4 of 6 ci runs (parallel and serial lane) and 1 of 4 standalone runs (load 1-10) on 2026-11-15, and on failure leaks its controller so the file never exits. NOT COVERAGE until ticket 37 fixes it." },
+    "test/sandbox/bash-credential.test.ts": { "serial": true, "reason": "AC2 test waits a fixed 20 ms for a command to be in flight; under 8-way CPU saturation it is not yet (failed 1 of 3 ci runs in parallel, 2026-11-15). Runs alone until ticket 37 replaces the sleep with an event." }
+  }
+}
