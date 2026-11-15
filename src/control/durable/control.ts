@@ -23,6 +23,7 @@ import { reconcileBoot } from './recovery.js';
 import { dispatchGate } from '../rules/recovery.js';
 import { backoffRunning } from './recovery-request.js';
 import { createDeliveryDesk } from './delivery-desk.js';
+import { acceptCancel, acceptNewCycle, acceptReopen, acceptResume, createCycleDesk, recordAuthorization } from './cycles.js';
 
 const requestId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
 const inputSchema = z.union([z.strictObject({ request_id: requestId, operation: z.enum(['pause', 'unpause']), origin: z.literal('local-cli') }),
@@ -32,7 +33,13 @@ const inputSchema = z.union([z.strictObject({ request_id: requestId, operation: 
     text: z.string().max(2000).refine(text => text.trim().length > 0 && text === text.trim() && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) }),
   // Ticket 11: concreteness is a durable decision of the commit (queryable `not-applied`), only the shape is checked here.
   z.strictObject({ request_id: requestId, operation: z.literal('update-scope'), work_id: z.uuid(), reason: z.string().min(1).max(2000), origin: z.literal('local-cli') }),
-  z.strictObject({ request_id: requestId, operation: z.literal('authorize-readiness'), work_id: z.uuid(), reason: z.string().min(1).max(2000), origin: z.literal('local-cli') })]);
+  z.strictObject({ request_id: requestId, operation: z.literal('authorize-readiness'), work_id: z.uuid(), reason: z.string().min(1).max(2000), origin: z.literal('local-cli') }),
+  // Ticket 25 (spec §11.3).
+  z.strictObject({ request_id: requestId, operation: z.literal('cancel'), work_id: z.uuid(), origin: z.literal('local-cli') }),
+  z.strictObject({ request_id: requestId, operation: z.literal('resume'), work_id: z.uuid(), origin: z.literal('local-cli') }),
+  z.strictObject({ request_id: requestId, operation: z.literal('reopen'), work_id: z.uuid(), origin: z.literal('local-cli') }),
+  z.strictObject({ request_id: requestId, operation: z.literal('new'), ticket: z.strictObject({ repository: z.string().regex(/^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/),
+    number: z.number().int().positive().max(2 ** 31) }), keepPredecessorPullRequest: z.boolean(), origin: z.literal('local-cli') })]);
 const workIdSchema = z.uuid();
 const limitations = [
   'Candidate observations are in-memory results of the latest poll, not authority; they are rebuilt after restart.',
@@ -46,6 +53,7 @@ const limitations = [
   'A resumed Builder continues its previous session only when that session was recorded, is intact and compatible; otherwise it is replaced with a recorded reason and an explicit recovery instruction. Delivering context is not proof that the Builder consumed it.',
   'Only `update-scope` (or an accepted answer) authorizes a concrete change of the request, for the next safe activation; a later Ticket or link edit is never a trigger or an authorization.',
   'Delivery (ticket 17) is only a human merge of the Work\'s own pull request, confirmed by its identity; closing the Ticket or the pull request, or any agent message, is not delivery. The Factory never merges.',
+  'Ticket 25: an observed label removal or issue closure suspends next activations (an active Execution may conclude/publish); restoring them never lifts the suspension: `resume` does, confirmed by the next complete Ticket read. `cancel` records the prohibition first, withdraws the activity credentials, then requests the stop; the Slot is released only after confirmed cessation and nothing on GitHub (branch, PR) is undone. A confirmed merge still delivers a cancelled cycle. An own PR closed without merge keeps the cycle current and undelivered (no automatic reopen/replacement/resume); `reopen` reopens only it and grants nothing. `new` is the only way to another cycle, after delivery or a ceased cancellation.',
   'Cleanup after delivery removes only own resources (own environments with their checkout/local branch/temporaries, the own remote branch under its own cleanup grant), after confirmed cessation and preserved evidence; base, shared cache, other Works and Docker are never touched. A failed or pending cleanup is shown separately and never undoes delivery.',
 ];
 
@@ -100,7 +108,7 @@ export async function openControl(options: { storagePath: string;
     record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation),
     // Ticket 15: required-checks tracking after the dispatch tick (off its critical path), whatever the dispatch barrier or pause.
     // Ticket 16: readiness after the checks explanation (its evidence), whatever the pause (tracking, not a new trigger).
-    afterCycle: async () => { await delivery?.cycle().catch(() => {}); await desk?.cycle(); if (dispatchReason === null) await dispatcher?.tick(); await checks?.pass(tracking.signal).catch(() => {});
+    afterCycle: async () => { await delivery?.cycle().catch(() => {}); await cycles?.cycle().catch(() => {}); await desk?.cycle(); if (dispatchReason === null) await dispatcher?.tick(); await checks?.pass(tracking.signal).catch(() => {});
       await readiness?.pass(tracking.signal).catch(() => {}); },
   }) : undefined;
   const tracking = new AbortController();
@@ -113,7 +121,10 @@ export async function openControl(options: { storagePath: string;
   if (options.execution && options.access && poller) dispatcher = createDispatcher({ session: state, access: options.access, ports: options.execution,
     currentAttempt: repository => poller.currentAttempt(repository), readWorks: () => readWorks(state), ownCycles: issueIds => ownCycles(state, issueIds),
     record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation), paused: async () => (await readInstallation(state)).paused,
-    heldSlots: () => heldSlots(state), questionRecorded: () => desk?.kick(), controllerRunId: controller_run_id, runBlockers });
+    heldSlots: () => heldSlots(state), questionRecorded: () => desk?.kick(), controllerRunId: controller_run_id, runBlockers,
+    authorizationWithdrawn: (work_id, codes) => recordAuthorization(state, work_id, { kind: 'withdrawn', codes }) });
+  // Ticket 25: authorization tracking of open Works and the reopen effects, before the dispatcher tick (a withdrawal observed now blocks it).
+  const cycles = options.access && options.polling ? createCycleDesk({ session: state, access: options.access, readWorks: () => readWorks(state), stopped: () => stopped }) : undefined;
   // Ticket 17: delivery observation and owned cleanup, in the same owner loop (tracking reads run whatever the dispatch barrier; cleanup
   // itself revalidates cessation per Work). Before the dispatcher tick, so a merge observed now is never followed by a new activation.
   const delivery = options.access && options.polling ? createDeliveryDesk({ session: state, repository: options.access.repository, repositories: options.access.repositories,
@@ -160,6 +171,15 @@ export async function openControl(options: { storagePath: string;
       if (parsed.data.operation === 'authorize-readiness') return acceptReadinessAuthorization(state, parsed.data);
       if (parsed.data.operation === 'answer') return acceptAnswer(state, { request_id: parsed.data.request_id, question_id: parsed.data.question_id, text: parsed.data.text, origin: { kind: 'local-cli' } });
       if (parsed.data.operation === 'grant') return grantBudget(state, parsed.data, configuredRepository);
+      if (parsed.data.operation === 'cancel') {
+        const receipt = await acceptCancel(state, parsed.data);
+        // The prohibition is durable; the interruption (credentials first, then stop) proceeds after the ACK, never proved by it.
+        if (receipt.kind === 'durable' && receipt.outcome === 'accepted') void dispatcher?.cancel(parsed.data.work_id).catch(() => {});
+        return receipt;
+      }
+      if (parsed.data.operation === 'resume') return acceptResume(state, parsed.data);
+      if (parsed.data.operation === 'reopen') return acceptReopen(state, parsed.data);
+      if (parsed.data.operation === 'new') return acceptNewCycle(state, parsed.data, configuredRepository);
       return acceptPauseCommand(state, parsed.data);
     },
     async inspect(query) {
@@ -204,7 +224,8 @@ export async function openControl(options: { storagePath: string;
       const allQuestions = (await Promise.all(works.map(work => readQuestions(state, work)))).flat();
       return { controller_run_id, paused: current.paused, dispatch: dispatchReason ? 'closed' : 'open', dispatchReason,
         slots: { capacity: options.execution?.capacity ?? 0, held: await heldSlots(state) }, historyLength: current.history.length,
-        works: { total: works.length, open: works.filter(work => work.result === 'open').length },
+        works: { total: works.length, open: works.filter(work => work.result === 'open').length, cancelled: works.filter(work => work.result === 'cancelled').length,
+          closedUnmerged: works.filter(work => work.result === 'closed-unmerged').length },
         delivery: { delivered: works.filter(work => work.result === 'delivered').length, cleanup: {
           waiting: works.filter(work => work.cleanup?.state === 'waiting').length, pending: works.filter(work => work.cleanup?.state === 'pending').length,
           complete: works.filter(work => work.cleanup?.state === 'complete').length } },

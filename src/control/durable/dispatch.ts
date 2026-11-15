@@ -174,7 +174,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
   /** Identity of this controller process: origin of the monotonic elapsed values it records. */
   controllerRunId?: string;
   /** Ticket 26: boot facts of this run and the persisted recovery wait, blocking a Work's start beyond its durable impediments. */
-  runBlockers?(work: WorkRecord): string[] }) {
+  runBlockers?(work: WorkRecord): string[];
+  /** Ticket 25: a dispatch revalidation that observed the Ticket no longer authorizing work (label removed, issue closed) records it durably. */
+  authorizationWithdrawn?(work_id: string, codes: string[]): Promise<unknown> }) {
   const { session, ports } = deps;
   // Live duration/timeout clock (spec §5.7): local monotonic, separate from the polling cadence and from Pi Durable's own timers.
   const clock = ports.clock ?? systemClock;
@@ -182,8 +184,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
   const startedAt = new Map<string, number>();
   const running = new Map<string, Promise<void>>();
   const lifecycles = new Map<string, ReturnType<typeof credentialLifecycle>>();
-  // Ticket 17: interruption of a running activity whose Work was delivered (merge confirmed) meanwhile.
-  const deliveries = new Map<string, () => void>();
+  // Ticket 17/25: interruption of a running activity whose Work was delivered (merge confirmed) or cancelled meanwhile.
+  const interrupts = new Map<string, (reason: 'delivered' | 'cancelled') => void>();
   const stopping = new AbortController();
   let last: DispatchObservation | null = null;
   // Ticket 26: activities whose cessation an administrative stop could not confirm (the stop is then uncertain, never clean).
@@ -667,8 +669,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     // Activity scope of THIS Execution: the timeout interrupts it (Builder and reviewers) without stopping the owner.
     const interrupt = new AbortController();
     // Ticket 17: why the activity scope was interrupted — the timeout (default) or a confirmed delivery (merge observed meanwhile).
-    const interruption: { reason: 'timeout' | 'delivered' } = { reason: 'timeout' };
-    deliveries.set(work.work_id, () => { interruption.reason = 'delivered'; interrupt.abort(); });
+    // Ticket 25: `cancelled` — the operator cancelled the Work (its credentials were withdrawn first). The first reason is kept.
+    const interruption: { reason: 'timeout' | 'delivered' | 'cancelled' } = { reason: 'timeout' };
+    interrupts.set(work.work_id, reason => { if (!interrupt.signal.aborted) interruption.reason = reason; interrupt.abort(); });
     const activitySignal = AbortSignal.any([stopping.signal, interrupt.signal]);
     const interrupted = () => interrupt.signal.aborted;
     const wait = <T>(promise: Promise<T>): Promise<T> => untilStopped(new Promise<T>((resolve, reject) => {
@@ -771,6 +774,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         return;
       }
       const { prompt, resume } = plan;
+      // Ticket 25: cancelled (or delivered) meanwhile: refused BEFORE any credential is issued (the commit below re-checks it anyway).
+      if (interrupted() || (await readWork(session, work.work_id))?.result !== 'open') { await refuse(['WORK_NOT_OPEN']); return; }
       phase = 'credential';
       checkStop();
       // Durable issuance intent BEFORE the call: an issued token is never unknown to the authority.
@@ -794,6 +799,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       const revoke = () => lifecycle!.withdraw('refused', { notifyWorker: false });
       // Withdrawn while issuing or before activation: the Builder is never activated with that grant; the own boot is stopped and held.
       const withdrawnBeforeActivation = async () => {
+        // Ticket 25: a cancellation before activation is a proven non-start; the Slot is released once the own boot cessation is confirmed.
+        if (interrupted() && interruption.reason === 'cancelled') { await refuse(['WORK_CANCELLED']); return; }
         await stopOwnBoot('credentials withdrawn before activation');
         await hold('ACTIVATION_CREDENTIALS_WITHDRAWN', 'The activity credentials were withdrawn before activation; the Builder was not activated. No charge was consumed; the Slot is kept (ticket 26).', true);
       };
@@ -910,6 +917,20 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       await releaseAfterCessation(session, work.work_id, executionId, stop?.cessationConfirmed ? 'confirmed' : 'unconfirmed');
       observe(work.work_id, stop?.cessationConfirmed ? 'ended-slot-released' : 'ended-cessation-unconfirmed');
     } catch (error) {
+      if (interrupted() && !stopping.signal.aborted && interruption.reason === 'cancelled') {
+        // Ticket 25 (spec §5.4/§12.3): the prohibition is durable and the credentials were withdrawn BEFORE this interruption (SDK abort through
+        // the activity signal). A request already sent may conclude; nothing is rolled back. The end is recorded, the own boot stopped and the
+        // Slot released ONLY after confirmed cessation; otherwise it stays held and the next boot reconciles it.
+        await timer?.catch(() => {});
+        await reviewTask?.catch(() => {});
+        await lifecycle?.withdraw('cancelled', { notifyWorker: true }).catch(() => {});
+        const ended = await recordEnd(session, work.work_id, executionId, 'stopped', 'WORK_CANCELLED', null, elapsed()).catch(() => ({ kind: 'stale' as const }));
+        const stop = await stopOwnBoot('work cancelled');
+        if (ended.kind === 'advanced') await releaseAfterCessation(session, work.work_id, executionId, stop?.cessationConfirmed ? 'confirmed' : 'unconfirmed').catch(() => {});
+        else await hold('CANCELLED_START_UNCONFIRMED', 'Cancelled while the start of the activity was not confirmed; the Slot is kept and the next controller boot reconciles it (ticket 26).').catch(() => {});
+        observe(work.work_id, stop?.cessationConfirmed && ended.kind === 'advanced' ? 'cancelled-slot-released' : 'cancelled-cessation-unconfirmed', ['WORK_CANCELLED']);
+        return;
+      }
       if (interrupted() && !stopping.signal.aborted && interruption.reason === 'delivered') {
         // Ticket 17: the own PR was merged while this activity ran. Delivery is already recorded; the agent takes no new action: its
         // credentials are withdrawn/revoked, its own boot stopped and the Slot released only after confirmed cessation (cleanup waits for it).
@@ -975,7 +996,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       await hold(`${phase.toUpperCase()}_${code}`, proven
         ? 'No worker was launched; the reservation was released without consumption. Never retried automatically.'
         : 'Execution outcome is uncertain at this phase; never retried automatically. Operator recovery (ticket 26).', proven).catch(() => {});
-    } finally { timerStop.abort(); lifecycles.delete(work.work_id); deliveries.delete(work.work_id); liveExecutions.delete(executionId); startedAt.delete(executionId); }
+    } finally { timerStop.abort(); lifecycles.delete(work.work_id); interrupts.delete(work.work_id); liveExecutions.delete(executionId); startedAt.delete(executionId); }
   }
 
   return {
@@ -992,9 +1013,20 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     running: (work_id: string) => running.has(work_id),
     /** Ticket 17: a confirmed delivery interrupts the Work's running activity (before activation, `confirmActivation` refuses it). */
     interruptDelivered(work_id: string): 'interrupted' | 'not-running' {
-      const stop = deliveries.get(work_id);
+      const stop = interrupts.get(work_id);
       if (!stop) return 'not-running';
-      stop();
+      stop('delivered');
+      return 'interrupted';
+    },
+    /**
+     * Ticket 25: after the durable cancellation commit, the running activity of THIS owner has its credentials withdrawn (renewal stopped,
+     * worker notified, revocation attempted) FIRST, then its activity scope is interrupted (SDK abort, own boot stop, Slot after cessation).
+     */
+    async cancel(work_id: string): Promise<'interrupted' | 'not-running'> {
+      const stop = interrupts.get(work_id);
+      if (!stop) return 'not-running';
+      await lifecycles.get(work_id)?.withdraw('cancelled', { notifyWorker: true }).catch(() => {});
+      stop('cancelled');
       return 'interrupted';
     },
     async withdraw(work_id: string, reason: Extract<CredentialWithdrawal, 'external-wait' | 'cancelled'>): Promise<'withdrawn' | 'not-active'> {
@@ -1017,7 +1049,11 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       if (!next) { observe(null, 'nothing-eligible'); return; }
       const work = works.find(item => item.work_id === next)!;
       const authorization = await revalidateAuthorization(work);
-      if (!authorization.ok) { observe(work.work_id, 'authorization-not-confirmed', authorization.reasons); return; }
+      if (!authorization.ok) {
+        // Ticket 25: an observed withdrawal suspends the Work durably (only `resume` lifts it); an unavailable read concludes nothing.
+        if (!authorization.reasons.some(code => code === 'TICKET_READ_UNAVAILABLE' || code === 'REPOSITORY_NOT_CONFIGURED')) await deps.authorizationWithdrawn?.(work.work_id, authorization.reasons);
+        observe(work.work_id, 'authorization-not-confirmed', authorization.reasons); return;
+      }
       // After a Question: only its accepted answer is a recovery basis; after a COMPLETED Execution: only an authorized concrete scope
       // change (ticket 11). Both are re-checked in the admission commit; a later Ticket/link edit is never one.
       const previous = resumeBasis(work);

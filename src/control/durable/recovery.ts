@@ -4,7 +4,7 @@ import type { ExecutionPorts, ExecutionView, RecoveryRecord, RecoveryView, Runti
 import { classifyOverrun, overrunNotExcludedImpediment, timeoutImpediment } from '../rules/budget.js';
 import { classifyInterruption, recoveryImpediment, startDecision } from '../rules/recovery.js';
 import { readWork, ticketIndex, works, type WorkRecord } from './admission.js';
-import { applyConfirmedCessation, consumeReservation, reofferUnlessCompleted, releaseReservation, slots } from './execution.js';
+import { applyConfirmedCessation, consumeReservation, reofferUnlessCompleted, releaseReservation, settleCancelled, slots } from './execution.js';
 import { questions } from './questions.js';
 import { pendingReviewerReservations, settleReviewerReservations } from './review-recovery.js';
 import type { Session } from './store.js';
@@ -119,6 +119,8 @@ export async function settleInterruption(session: Session, input: { work_id: str
       execution.recovery = [...(execution.recovery ?? []), { at: now, controllerRunId: input.controllerRunId, trigger: input.trigger, found, cessation: input.cessation, start, decision, code }];
       work.history.push({ at: now, event: 'execution-reconciled', origin: 'controller-recovery', executionId: execution.executionId,
         detail: `${decision}${code ? `:${code}` : ''}; cessation ${input.cessation.result} (${input.cessation.basis}); start ${start.kind}` });
+      // Ticket 25: a cancelled Work is never requeued by its reconciliation; its cancellation ceases once nothing of it can act.
+      settleCancelled(work, now);
       return decision;
     };
     const preActivation = ['reserved', 'prepared', 'booted'].includes(execution.dispatch.phase) && !execution.start;

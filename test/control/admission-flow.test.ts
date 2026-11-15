@@ -52,8 +52,9 @@ test('AC1/AC2: an eligible Ticket is admitted once with qualified identity; repe
   const again = await h.list();
   assert.deepEqual(again.works.map(w => [w.work_id, w.queue.sequence]), [[work.work_id, 1]]);
   assert.equal(again.polling.repositories[0]!.candidates![0]!.outcome, 'existing');
-  // Re-reads only happen for unindexed candidates.
-  assert.equal(h.github.calls.filter(c => c.method === 'readTicket').length, 1);
+  // Admission re-reads only unindexed candidates (1); ticket 25 adds ONE authorization re-read of the open Work per owner cycle (4 cycles),
+  // tracking only: it never admits again.
+  assert.equal(h.github.calls.filter(c => c.method === 'readTicket').length, 1 + 4);
   assert.equal(h.github.calls.filter(c => c.method === 'listCandidates').length, 4);
 });
 

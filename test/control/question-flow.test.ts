@@ -319,8 +319,15 @@ test('AC6/AC7: answer while the controller is down is accepted after restart (di
   view = await h.show(work.work_id);
   assert.equal(h.activations().length, 1, 'withdrawn authorization blocks the resume despite the answer');
   assert.deepEqual([view.work.queue.pending, view.work.queue.sequence], [true, 1]);
-  // Label restored: resumes through the queue.
+  // Ticket 25: the withdrawal is durable; restoring the label does NOT lift it.
+  assert.ok(view.work.impediments.some(item => item.code === 'AUTHORIZATION_WITHDRAWN'));
   remote.issues[0]!.labels = [{ id: 55, name: 'ready-for-agent' }];
+  await h.cycle(); await h.cycle();
+  view = await h.show(work.work_id);
+  assert.equal(h.activations().length, 1, 'restored label alone never resumes');
+  assert.ok(view.work.authorization.withdrawal?.restoredObservedAt, 'restoration observed and shown');
+  // Explicit `resume`, confirmed by the next complete Ticket read: resumes through the queue.
+  assert.equal(((await h.control().accept({ request_id: 'resume-1', operation: 'resume', work_id: work.work_id, origin: 'local-cli' })) as { outcome: string }).outcome, 'accepted');
   await h.cycle();
   await h.settle(async () => h.activations().length === 2, 'resume after authorization restored');
 });

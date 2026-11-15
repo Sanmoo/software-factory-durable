@@ -36,9 +36,12 @@ test('AC1/AC5: no controller push/PR-creation path, no Git/gh wrapper or shell p
   // Ticket 15 adds Q4B `readPullRequest`, a GET-only read under the reduced `checks-read` grant (no write permission).
   // Ticket 16 adds Q4B `setDraft`: the draft/ready flag only, a controller effect decided by Control's readiness evaluation.
   assert.deepEqual([...contract.matchAll(/^\s+(\w+)\(/gm)].map(match => match[1]), ['checkAccess', 'findPublication', 'readPullRequest', 'setDraft']);
-  // The controller's only GraphQL documents are the two fixed draft mutations and (ticket 17) the atomic conditional deletion of the
-  // Work's OWN delivered branch; never review, approval, merge or any other mutation.
-  assert.deepEqual([...github.matchAll(/\{ (\w+)\(input:/g)].map(match => match[1]).sort(), ['convertPullRequestToDraft', 'markPullRequestReadyForReview', 'updateRefs']);
+  // The controller's only GraphQL documents are the two fixed draft mutations, (ticket 17) the atomic conditional deletion of the Work's OWN
+  // delivered branch and (ticket 25) the operator-requested reopen of the Work's OWN pull request closed without merge; never review,
+  // approval, merge or any other mutation.
+  assert.deepEqual([...github.matchAll(/\{ (\w+)\(input:/g)].map(match => match[1]).sort(), ['convertPullRequestToDraft', 'markPullRequestReadyForReview', 'reopenPullRequest', 'updateRefs']);
+  assert.match(github, /'pull-request-reopen': \{ metadata: 'read', pull_requests: 'write' \}/);
+  assert.equal((github.match(/issue\(scope, field === 'reopenPullRequest' \? 'pull-request-reopen' : 'readiness-write'\)/g) ?? []).length, 1, 'one fresh pull request mutation grant site');
   // Ticket 17: updateRefs only deletes ONE ref conditionally (beforeOid, afterOid zero, force false), under the single-use branch-cleanup grant.
   assert.match(github, /refUpdates: \[\{ name: `refs\/heads\/\$\{branch\}`, beforeOid, afterOid: '0'\.repeat\(40\), force: false \}\]/);
   assert.match(github, /'branch-cleanup': \{ metadata: 'read', contents: 'write', pull_requests: 'read' \}/);

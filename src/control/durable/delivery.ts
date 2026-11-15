@@ -4,6 +4,7 @@ import { ticketKey } from '../rules/admission.js';
 import { cleanupNextStep, cleanupState, concluded, deliveryNextStep, mergePlan, ownPullRequestOf, recoverLostIntents, retryable, type MergeDecision } from '../rules/delivery.js';
 import { ticketIndex, works, type WorkRecord } from './admission.js';
 import type { Session } from './store.js';
+import { rememberResult } from './cycles.js';
 
 // Durable commits of ticket 17 (spec §3.4/§12.3). Remote reads and cleanup effects happen OUTSIDE these commits; each commit re-checks the
 // Work, its result and the resource it records. Intent is committed before every effect and its result after it.
@@ -30,7 +31,9 @@ export async function recordMergeObservation(session: Session, work_id: string, 
     const document = await tx.doc(works, work_id, null);
     const work = document.work;
     const key = work ? ticketKey(work.ticket) : '';
-    if (!work || work.result !== 'open' || index.tickets[key]?.current !== work_id || ownPullRequestOf(work)?.pullRequestId !== input.own.pullRequestId) return { kind: 'stale' as const };
+    // Ticket 25: a cancelled cycle and an own PR closed without merge are still watched: a confirmed merge always prevails as delivery.
+    if (!work || !['open', 'cancelled', 'closed-unmerged'].includes(work.result) || index.tickets[key]?.current !== work_id ||
+      ownPullRequestOf(work)?.pullRequestId !== input.own.pullRequestId) return { kind: 'stale' as const };
     const at = new Date().toISOString();
     const delivery: DeliveryView = work.delivery ?? { state: 'watching', pullRequest: copy(input.own), observations: [], merge: null, nextStep: '' };
     const { decision } = input;
@@ -52,7 +55,17 @@ export async function recordMergeObservation(session: Session, work_id: string, 
         : [...cycles, { work_id, cycle: work.cycle, result: 'delivered' as const, mergeConfirmed: true }];
       index.memory = { ...(index.memory ?? {}), [key]: { cycles: remembered } };
       work.cleanup = initialCleanup(at);
-      history(work, 'delivery-confirmed', `#${decision.merge.number}:${decision.merge.mergeCommitSha}${during ? `:during:${during}` : ''}`);
+      // The cancellation (if any) stays recorded as history: delivery prevails without erasing it (spec §12.3).
+      history(work, 'delivery-confirmed', `#${decision.merge.number}:${decision.merge.mergeCommitSha}${during ? `:during:${during}` : ''}${work.cancellation ? `:cancel-requested:${work.cancellation.request_id}` : ''}`);
+    } else if (decision.outcome === 'closed-unmerged' && work.result === 'open') {
+      // Ticket 25 (spec §4.1/§12.3): closed without merge is NOT delivery and proves nothing about a running activity (not interrupted). The
+      // cycle stays current with its counters; nothing is reopened, replaced or resumed automatically.
+      work.result = 'closed-unmerged';
+      work.closure = { observedAt: at, pullRequest: input.own.number, reopen: null,
+        nextStep: 'Own pull request closed without merge: not delivered. Continue: `factory reopen <work>` then `factory resume <work>`; abandon: `factory cancel <work>` then `factory new`.' };
+      if (!work.impediments.some(item => item.code === 'PULL_REQUEST_CLOSED_UNMERGED')) work.impediments.push({ code: 'PULL_REQUEST_CLOSED_UNMERGED', scope: 'work', since: at, nextStep: work.closure.nextStep });
+      work.history.push({ at, event: 'pull-request-closed-unmerged', origin: 'controller-cycles', detail: `#${input.own.number}${activeExecutionId(work) ? `:active:${activeExecutionId(work)}` : ''}` });
+      rememberResult(index, work);
     }
     delivery.lastReadAt = at;
     delivery.nextStep = deliveryNextStep(delivery.state, decision.outcome);

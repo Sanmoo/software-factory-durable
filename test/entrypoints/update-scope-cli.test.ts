@@ -48,6 +48,20 @@ test('AC3: `factory update-scope <work> --reason` identifies the request first, 
   assert.equal(authorize.code, 2, authorize.stderr);
   assert.match(authorize.stderr, /REQUEST_IDENTIFIED.*ready-1/);
   assert.deepEqual(authorize.json, { kind: 'durable', request_id: 'ready-1', operation: 'authorize-readiness', work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', purpose: null });
+  // Ticket 25: cycle commands share the identified-request shape; with no Work every one is a durable not-applied receipt (nothing changed).
+  for (const bad of [['cancel', 'not-a-uuid'], ['resume', work, 'extra'], ['reopen'], ['new', 'acme/project'], ['new', 'acme/project#0'], ['new', 'acme/project#3', '--keep']]) {
+    assert.equal((await cli(...bad)).code, 2, bad.join(' '));
+  }
+  for (const operation of ['cancel', 'resume', 'reopen'] as const) {
+    const result = await cli(operation, work, '--request-id', `${operation}-1`);
+    assert.equal(result.code, 2, result.stderr);
+    assert.match(result.stderr, new RegExp(`REQUEST_IDENTIFIED.*${operation}-1`));
+    assert.deepEqual(result.json, { kind: 'durable', request_id: `${operation}-1`, operation, work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', created: null });
+  }
+  const created = await cli('new', 'acme/project#3', '--keep-predecessor-pr', '--request-id', 'new-1');
+  assert.equal(created.code, 2, created.stderr);
+  assert.deepEqual(created.json, { kind: 'durable', request_id: 'new-1', operation: 'new', work_id: null, outcome: 'not-applied', reason: 'TICKET_NOT_KNOWN', created: null });
+  assert.deepEqual((await cli('new', 'acme/project#3', '--request-id', 'new-1')).json, { kind: 'refused', code: 'REQUEST_ID_CONFLICT' }, 'same identity, other decision');
   owner.child.kill('SIGTERM');
   assert.equal((await owner.result).code, 0);
 });

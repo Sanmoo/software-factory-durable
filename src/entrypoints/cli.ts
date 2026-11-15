@@ -9,9 +9,12 @@ import { setup, setupService, firstHumanLogin } from './setup.js';
 import { doctor } from './doctor.js';
 import { releaseInstallationRoot } from './release.js';
 
-const usage = 'factory <setup|doctor|run|status|list|show <work>|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>)|update-scope <work> --reason <text>|authorize-readiness <work> --reason <text>|request <id>|upgrade <check|apply|status|resume|rollback> [--migrate <id>]> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service [--service-directory <absolute dir>]]; factory login --root <canonical-absolute-installation>';
+const usage = 'factory <setup|doctor|run|status|list|show <work>|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>)|update-scope <work> --reason <text>|authorize-readiness <work> --reason <text>|cancel <work>|resume <work>|reopen <work>|new <owner/repo#number> [--keep-predecessor-pr]|request <id>|upgrade <check|apply|status|resume|rollback> [--migrate <id>]> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service [--service-directory <absolute dir>]]; factory login --root <canonical-absolute-installation>';
 const upgradeUsage = 'factory upgrade <check|apply|status|resume|rollback> [--root <installation>] [--migrate <migration id>] — run with the NEW release: ' +
   '<root>/releases/<id>/node/bin/node <root>/releases/<id>/dist/src/entrypoints/cli.js upgrade ...';
+// Ticket 25 (spec §11.3): cycle commands; `new` names the Ticket as owner/repo#number.
+const cycleCommands = ['cancel', 'resume', 'reopen', 'new'];
+const ticketReference = /^([A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100})#([1-9][0-9]{0,9})$/;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 async function exchange(root: string, kind: 'inspect' | 'accept', payload: Envelope['payload'], id: string, runId: string | null) {
@@ -29,10 +32,11 @@ async function exchange(root: string, kind: 'inspect' | 'accept', payload: Envel
 }
 
 async function operational(root: string, command: string, requestId: string | undefined, requested: string | undefined, json: boolean, text?: string,
-  grant?: { counter: 'corrections' | 'recoveries'; amount: number }) {
+  grant?: { counter: 'corrections' | 'recoveries'; amount: number }, cycle?: { repository: string; number: number; keep: boolean }) {
   const query = (): Envelope['payload'] => command === 'doctor' ? { kind: 'access' } : command === 'list' ? { kind: 'list' }
     : command === 'show' ? { kind: 'show', work_id: requested! } : command === 'question' ? { kind: 'question', question_id: requested! } : { kind: 'request', request_id: requested! };
-  const mutable = command === 'pause' || command === 'unpause' || command === 'answer' || command === 'grant' || command === 'update-scope' || command === 'authorize-readiness';
+  const mutable = command === 'pause' || command === 'unpause' || command === 'answer' || command === 'grant' || command === 'update-scope' || command === 'authorize-readiness' ||
+    cycleCommands.includes(command);
   const id = requestId ?? randomUUID();
   // Present identity BEFORE sending; stdout remains a single machine-readable result.
   if (mutable) console.error(JSON.stringify({ code: 'REQUEST_IDENTIFIED', request_id: id }));
@@ -43,6 +47,8 @@ async function operational(root: string, command: string, requestId: string | un
       mutable ? (command === 'answer' ? { request_id: id, operation: 'answer', question_id: requested!, text: text!, origin: 'local-cli' }
         : command === 'grant' ? { request_id: id, operation: 'grant', work_id: requested!, counter: grant!.counter, amount: grant!.amount, origin: 'local-cli' }
           : command === 'update-scope' || command === 'authorize-readiness' ? { request_id: id, operation: command, work_id: requested!, reason: text!, origin: 'local-cli' }
+          : command === 'cancel' || command === 'resume' || command === 'reopen' ? { request_id: id, operation: command, work_id: requested!, origin: 'local-cli' }
+          : command === 'new' ? { request_id: id, operation: 'new', ticket: { repository: cycle!.repository, number: cycle!.number }, keepPredecessorPullRequest: cycle!.keep, origin: 'local-cli' }
             : { request_id: id, operation: command, origin: 'local-cli' }) : query(),
       mutable ? id : randomUUID(), status.controller_run_id);
     console.log(json ? JSON.stringify(response.payload) : JSON.stringify(response.payload, null, 2));
@@ -118,11 +124,16 @@ export async function main(args: string[]): Promise<number> {
       return 2;
     }
   }
-  let valid = ['setup', 'doctor', 'run', 'status', 'list', 'show', 'question', 'pause', 'unpause', 'answer', 'grant', 'update-scope', 'authorize-readiness', 'request'].includes(command ?? '');
+  let valid = ['setup', 'doctor', 'run', 'status', 'list', 'show', 'question', 'pause', 'unpause', 'answer', 'grant', 'update-scope', 'authorize-readiness', 'request', ...cycleCommands].includes(command ?? '');
   let requestId: string | undefined;
-  const requested = command === 'request' || command === 'show' || command === 'question' || command === 'answer' || command === 'grant' || command === 'update-scope' || command === 'authorize-readiness' ? args[1] : undefined;
+  const requested = command === 'request' || command === 'show' || command === 'question' || command === 'answer' || command === 'grant' || command === 'update-scope' || command === 'authorize-readiness' ||
+    cycleCommands.includes(command ?? '') ? args[1] : undefined;
   if (command === 'request' && !requested?.match(/^[a-zA-Z0-9_-]{1,128}$/)) valid = false;
-  if ((command === 'show' || command === 'question' || command === 'answer' || command === 'grant' || command === 'update-scope' || command === 'authorize-readiness') && !requested?.match(uuid)) valid = false;
+  if ((command === 'show' || command === 'question' || command === 'answer' || command === 'grant' || command === 'update-scope' || command === 'authorize-readiness' ||
+    command === 'cancel' || command === 'resume' || command === 'reopen') && !requested?.match(uuid)) valid = false;
+  const reference = command === 'new' ? ticketReference.exec(requested ?? '') : null;
+  if (command === 'new' && (!reference || Number(reference[2]) > 2 ** 31)) valid = false;
+  let keep = false;
   // `grant <work> --corrections <n>` or `--recoveries <n>`: exactly one counter, a plain positive integer up to 100 (spec §11.3).
   let grant: { counter: 'corrections' | 'recoveries'; amount: number } | undefined;
   if (command === 'grant') {
@@ -135,8 +146,10 @@ export async function main(args: string[]): Promise<number> {
   // `update-scope <work> --reason <text>`: the concrete change, one quoted argument (the controller decides whether it is concrete).
   const text = command === 'answer' ? args[2] : (command === 'update-scope' || command === 'authorize-readiness') && args[2] === '--reason' ? args[3] : undefined;
   if ((command === 'answer' || command === 'update-scope' || command === 'authorize-readiness') && (!text || text !== text.trim() || text.length > 2000 || text.startsWith('--'))) valid = false;
-  for (let index = command === 'answer' ? 3 : command === 'grant' || command === 'update-scope' || command === 'authorize-readiness' ? 4 : command === 'request' || command === 'show' || command === 'question' ? 2 : 1; index < args.length; index++) {
+  for (let index = command === 'answer' ? 3 : command === 'grant' || command === 'update-scope' || command === 'authorize-readiness' ? 4
+    : command === 'request' || command === 'show' || command === 'question' || cycleCommands.includes(command ?? '') ? 2 : 1; index < args.length; index++) {
     if (args[index] === '--authenticated' && command === 'doctor' && !authenticated) authenticated = true;
+    else if (args[index] === '--keep-predecessor-pr' && command === 'new' && !keep) keep = true;
     else if (args[index] === '--service' && command === 'setup' && !service && installation !== undefined) service = true;
     else if (args[index] === '--service-directory' && command === 'setup' && serviceDirectory === undefined &&
       args[index + 1] !== undefined && isAbsolute(args[index + 1]!) && resolve(args[index + 1]!) === args[index + 1]) {
@@ -146,7 +159,8 @@ export async function main(args: string[]): Promise<number> {
     else if (args[index] === '--root' && !rootSeen && args[index + 1] && !args[index + 1]?.startsWith('-')) {
       root = resolve(args[++index]!);
       rootSeen = true;
-    } else if (args[index] === '--request-id' && !requestId && (command === 'pause' || command === 'unpause' || command === 'answer' || command === 'grant' || command === 'update-scope' || command === 'authorize-readiness') &&
+    } else if (args[index] === '--request-id' && !requestId && (command === 'pause' || command === 'unpause' || command === 'answer' || command === 'grant' || command === 'update-scope' || command === 'authorize-readiness' ||
+      cycleCommands.includes(command ?? '')) &&
       args[index + 1]?.match(/^[a-zA-Z0-9_-]{1,128}$/)) requestId = args[++index];
     else { valid = false; break; }
   }
@@ -162,8 +176,8 @@ export async function main(args: string[]): Promise<number> {
   try {
     if (command === 'run') return await launch(root);
     if (command === 'status' || command === 'list' || command === 'show' || command === 'question' || command === 'pause' || command === 'unpause' ||
-        command === 'answer' || command === 'grant' || command === 'update-scope' || command === 'authorize-readiness' || command === 'request') {
-      return await operational(root, command, requestId, requested, json, text, grant);
+        command === 'answer' || command === 'grant' || command === 'update-scope' || command === 'authorize-readiness' || command === 'request' || cycleCommands.includes(command ?? '')) {
+      return await operational(root, command!, requestId, requested, json, text, grant, reference ? { repository: reference[1]!, number: Number(reference[2]), keep } : undefined);
     }
     if (command === 'doctor' && authenticated) return await operational(root, command, undefined, undefined, json);
     if (command === 'doctor') {

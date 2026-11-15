@@ -62,17 +62,25 @@ test('AC1: only a confirmed merge of the own PR identity delivers; open, closed-
   assert.deepEqual(await ownCycles(h.session, [7003]), { 7003: { source: 'work', applicable: { work_id: h.work_id, cycle: 1, result: 'delivered', mergeConfirmed: true }, previousCycles: [] } });
 });
 
-test('AC1: a closure without merge is recorded as not delivered and is not re-read automatically (ticket 25 decides the cycle)', async t => {
-  const h = await harness(t);
+test('AC1 + ticket 25: a closure without merge is not delivery (cycle stays current, closed-unmerged, nothing interrupted); a later confirmed merge still delivers', async t => {
+  const h = await harness(t, { active: true });
+  h.running.add(h.work_id);
   h.github.pull = ownFacts({ state: 'closed' });
   const desk = h.desk();
   await desk.cycle();
-  assert.equal((await h.work()).result, 'open');
-  assert.match((await h.work()).delivery!.nextStep, /closed WITHOUT merge/);
+  const closed = await h.work();
+  assert.equal(closed.result, 'closed-unmerged');
+  assert.match(closed.delivery!.nextStep, /closed WITHOUT merge/);
+  assert.ok(closed.impediments.some(item => item.code === 'PULL_REQUEST_CLOSED_UNMERGED'));
+  assert.equal(closed.closure?.pullRequest, 42);
+  assert.deepEqual(h.interrupts, [], 'closure proves nothing about the running activity: it is not interrupted');
+  assert.equal(closed.execution?.state, 'started');
+  assert.ok(closed.budget, 'counters kept');
+  // Ticket 25: still watched; a human reopen + merge is a confirmed merge of the own PR, which always prevails as delivery.
   h.github.pull = merged();
   await desk.cycle();
-  assert.equal(h.repository.calls.filter(call => call.method === 'readOwnMerge').length, 1);
-  assert.equal((await h.work()).result, 'open');
+  assert.equal(h.repository.calls.filter(call => call.method === 'readOwnMerge').length, 2);
+  assert.equal((await h.work()).result, 'delivered');
 });
 
 test('AC1: a merge confirmed during an active Execution is delivery; the activity is interrupted and no new agent action is admitted', async t => {
@@ -223,7 +231,7 @@ test('AC6: a failed branch cleanup is retried by the boot sweep and the daily sw
   assert.equal((await h.work()).cleanup!.state, 'complete');
 });
 
-test('MED3/MED4: bounded reads rotate least-recently-read first, skip recorded closed-unmerged, and one Work\'s failure never stops the cycle', async t => {
+test('MED3/MED4: bounded reads rotate least-recently-read first, keep watching closed-unmerged, and one Work\'s failure never stops the cycle', async t => {
   const root = await sandboxRoot(t);
   const { session } = await store(t, root);
   const ids: string[] = [];
@@ -248,7 +256,8 @@ test('MED3/MED4: bounded reads rotate least-recently-read first, skip recorded c
   await desk.cycle();
   const second = read.slice(8);
   assert.ok(second.includes(ids[8]!) && second.includes(ids[9]!), 'the Works not read in the first cycle are read next (no starvation)');
-  assert.equal(second.includes(ids[1]!), false, 'a recorded closure without merge is not re-read');
+  // Ticket 25: a recorded closure without merge stays watched (a human may reopen and merge), in the same least-recently-read rotation.
+  assert.equal((await readWorks(session)).find(item => item.work_id === ids[1])?.result, 'closed-unmerged');
   const throwing = createDeliveryDesk({ session, repository, repositories: [scope], running: () => false, interrupt: async () => {},
     readWorks: async () => { throw new Error('STORAGE_UNAVAILABLE'); }, stopped: () => false });
   await assert.doesNotReject(throwing.cycle(), 'never aborts the owner cycle');

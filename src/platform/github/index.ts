@@ -38,6 +38,9 @@ const permissions = {
   // Ticket 16 readiness conversion (spec §9.2 step 7/§9.3), a controller effect: ONE draft/ready GraphQL mutation of the own PR, fresh grant
   // per conversion, used for that mutation only and revoked right after. Pull requests W is the narrowest App permission carrying it.
   'readiness-write': { metadata: 'read', pull_requests: 'write' },
+  // Ticket 25 `reopen <work>` (spec §11.3), a controller effect: ONE reopenPullRequest GraphQL mutation of the Work's OWN pull request closed
+  // without merge, fresh single-use grant revoked right after. Pull requests W only; never merge, review or any other state change.
+  'pull-request-reopen': { metadata: 'read', pull_requests: 'write' },
   // Ticket 17: observation of the Work's own pull request (merge confirmation) and of its own branch tip. Read-only.
   'delivery-read': { metadata: 'read', contents: 'read', pull_requests: 'read' },
   // Ticket 17 (spec §8: "cleanup de branch remota própria recebe token próprio com Contents W"): ONE single-use grant per cleanup attempt,
@@ -49,6 +52,8 @@ const permissions = {
 export const draftMutations = {
   markPullRequestReadyForReview: 'mutation($id: ID!, $cid: String) { markPullRequestReadyForReview(input: {pullRequestId: $id, clientMutationId: $cid}) { clientMutationId pullRequest { id number isDraft headRefOid } } }',
   convertPullRequestToDraft: 'mutation($id: ID!, $cid: String) { convertPullRequestToDraft(input: {pullRequestId: $id, clientMutationId: $cid}) { clientMutationId pullRequest { id number isDraft headRefOid } } }',
+  // Ticket 25: reopen of the Work's own pull request closed without merge (`factory reopen`), under its own single-use grant.
+  reopenPullRequest: 'mutation($id: ID!, $cid: String) { reopenPullRequest(input: {pullRequestId: $id, clientMutationId: $cid}) { clientMutationId pullRequest { id number isDraft headRefOid state } } }',
 } as const;
 type Purpose = keyof typeof permissions;
 type DiagnosticPurpose = 'tracker' | 'repository' | 'dependency';
@@ -111,6 +116,9 @@ export interface GitHubAccess {
    * 5xx, unexpected payload) means the flag may have changed: read the pull request before any repetition.
    */
   setDraft(scope: GitHubScope, pullRequest: { number: number; nodeId: string }, draft: boolean, clientMutationId: string): Promise<GitHubWrite>;
+  /** Ticket 25: ONE `reopenPullRequest` mutation of one pull request node of `scope` under a fresh single-use `pull-request-reopen` grant, revoked
+   * right after. Never retried; `unknown` means it may be open: read the pull request before any repetition. */
+  reopen(scope: GitHubScope, pullRequest: { number: number; nodeId: string }, clientMutationId: string): Promise<GitHubWrite>;
   /**
    * Ticket 17: one FRESH single-use `branch-cleanup` grant for THIS repository (never cached, never the tracking token). `operate` reads with
    * GET and may send at most one closed ATOMIC conditional deletion of one branch ref (`deleteRefIfAt`, GraphQL `updateRefs` with
@@ -358,7 +366,7 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
     const expiry = Date.parse(grant.expires_at);
     if (expiry <= Date.now() + 30000 || expiry > Date.now() + 3660000 || JSON.stringify(Object.entries(grant.permissions).sort()) !== JSON.stringify(Object.entries(required).sort()) ||
       grant.repositories.length !== 1 || grant.repositories[0]!.full_name.toLowerCase() !== scope.repository.toLowerCase() || grant.repositories[0]!.owner.login.toLowerCase() !== owner!.toLowerCase()) throw new AccessFailure('CREDENTIAL_SCOPE_MISMATCH');
-    return { token: grant.token, expiresAt: grant.expires_at, expiry, repositoryId: grant.repositories[0]!.id };
+  return { token: grant.token, expiresAt: grant.expires_at, expiry, repositoryId: grant.repositories[0]!.id };
   }
 
   function session(scope: GitHubScope, directory: string, grant: Grant): GitHubSession {
@@ -430,6 +438,68 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
     } catch { return unknown; } finally { if (directory) await rm(directory, { recursive: true, force: true }); }
   }
 
+  /** The single GraphQL call site of the controller's pull request mutations (tickets 16/25): draft/ready flag or reopen of ONE own pull request
+   * node, fresh single-use grant per mutation, revoked right after, never retried. */
+  async function pullMutation(scope: GitHubScope, pullRequest: { number: number; nodeId: string }, field: keyof typeof draftMutations | null, clientMutationId: string): Promise<GitHubWrite> {
+    let directory: string | undefined;
+    const observedAt = new Date().toISOString();
+    const sanitized = <R>(value: R): R => JSON.parse(filter(JSON.stringify(value))) as R;
+    if (!Number.isSafeInteger(pullRequest.number) || pullRequest.number <= 0 || !/^[A-Za-z0-9_=-]{1,256}$/.test(pullRequest.nodeId) || field === null ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(clientMutationId)) {
+      return { ok: false, outcome: 'known-failure', observedAt, code: 'INVALID_DRAFT_CONVERSION', nextStep: 'Conversion rejected locally; nothing was sent.', revocation: 'not-issued' };
+    }
+    const window = rateWindows.get(scope.installationId) ?? 0;
+    if (window > Date.now()) return sanitized({ ok: false as const, outcome: 'known-failure' as const, observedAt, code: 'GITHUB_RATE_LIMITED',
+      waitSeconds: Math.max(1, Math.ceil((window - Date.now()) / 1000)), nextStep: 'Rate-limit window still open; nothing was sent.', revocation: 'not-issued' as const });
+    let grant: Grant;
+    // Issuance failures happen BEFORE the mutation: the flag certainly did not change.
+    try { grant = await issue(scope, field === 'reopenPullRequest' ? 'pull-request-reopen' : 'readiness-write'); } catch (error) {
+      const typed = failure(error);
+      return sanitized({ ok: false as const, outcome: 'known-failure' as const, observedAt, ...typed,
+        code: error instanceof TokenIssuanceFailure && error.outcome === 'unknown' ? 'GITHUB_TOKEN_ISSUANCE_UNKNOWN' : typed.code, revocation: 'not-issued' as const });
+    }
+    const draft = field === 'convertPullRequestToDraft';
+    let revocation: TokenRevocation = 'unknown';
+    let revoked = false;
+    // Exactly one self-revocation attempt per conversion grant, whatever the mutation outcome.
+    const revoke = async () => { if (revoked) return; revoked = true; revocation = (await revokeToken(grant.token)).kind; };
+    const unknownStep = field === 'reopenPullRequest' ? 'The reopen may have been applied: read the pull request (its state) before any repetition; never resend blindly.'
+      : 'The conversion may have been applied: read the pull request (its draft flag) before any repetition; never resend blindly.';
+    try {
+      directory = await mkdtemp(join(options.root, 'run', 'github-'));
+      // The single-use grant serves this one mutation only (repository identity was verified at issuance), then its self-revocation.
+      let output: { stdout: string; failed: boolean };
+      try { output = await ghExec(directory, grant.token, 'POST', 'graphql', JSON.stringify({ query: draftMutations[field], variables: { id: pullRequest.nodeId, cid: clientMutationId } })); }
+      catch (error) { await revoke(); return sanitized({ ok: false as const, outcome: 'unknown' as const, observedAt, ...failure(error), nextStep: unknownStep, revocation }); }
+      await revoke();
+      let response: { body: unknown; status: number };
+      try { response = parseResponse(scope, output, '/graphql', grant.repositoryId, true); } catch (error) {
+        if (error instanceof AccessFailure && error.code === 'GITHUB_RATE_LIMITED' && error.waitSeconds !== undefined) rateLimit(scope, error.waitSeconds);
+        const typed = failure(error);
+        // GitHub answered 4xx (nothing changed) or rate-limited: known. 5xx/unparseable: unknown.
+        const known = error instanceof AccessFailure && (error.code === 'GITHUB_RATE_LIMITED' || (error.status !== undefined && error.status >= 400 && error.status < 500));
+        return sanitized({ ok: false as const, outcome: known ? 'known-failure' as const : 'unknown' as const, observedAt, ...typed, nextStep: known ? typed.nextStep : unknownStep, revocation });
+      }
+      const parsed = z.object({ data: z.object({ [field]: z.object({ clientMutationId: z.string().nullable(), pullRequest: z.object({ id: z.string(), number: z.number().int(),
+        isDraft: z.boolean(), headRefOid: z.string().regex(/^[0-9a-f]{40}$/), state: z.string().max(16).optional() }) }).nullable() }).nullable().optional(),
+        errors: z.array(z.object({ type: z.string().max(64).optional() })).optional() }).safeParse(response.body);
+      const result = parsed.success ? (parsed.data.data?.[field] ?? null) as { clientMutationId: string | null; pullRequest: { id: string; number: number; isDraft: boolean; headRefOid: string; state?: string } } | null : null;
+      if (parsed.success && parsed.data.errors?.length && !result) {
+        return sanitized({ ok: false as const, outcome: 'known-failure' as const, observedAt, code: `GITHUB_GRAPHQL_${(parsed.data.errors[0]!.type ?? 'ERROR').replace(/[^A-Z_]/g, '').slice(0, 40)}`,
+          nextStep: 'GitHub refused the mutation: the flag did not change. Nothing is repeated automatically.', revocation });
+      }
+      if (!result || result.pullRequest.id !== pullRequest.nodeId || result.pullRequest.number !== pullRequest.number ||
+        (field === 'reopenPullRequest' ? result.pullRequest.state !== 'OPEN' : result.pullRequest.isDraft !== draft) ||
+        result.clientMutationId !== clientMutationId || parsed.data?.errors?.length) {
+        return sanitized({ ok: false as const, outcome: 'unknown' as const, observedAt, code: 'GITHUB_WRITE_UNEXPECTED_PAYLOAD', nextStep: unknownStep, revocation });
+      }
+      return sanitized({ ok: true as const, observedAt, repositoryId: grant.repositoryId, value: { draft: result.pullRequest.isDraft, headSha: result.pullRequest.headRefOid, ...(field === 'reopenPullRequest' ? { state: 'open' } : {}) }, revocation });
+    } catch (error) {
+      await revoke();
+      return sanitized({ ok: false as const, outcome: 'unknown' as const, observedAt, ...failure(error), nextStep: unknownStep, revocation });
+    } finally { if (directory) await rm(directory, { recursive: true, force: true }); }
+  }
+
   return { revoke: revokeToken, appId: options.appId, async appIdentity(scope) {
     const read = await this.read(scope, 'publication-read', async session => {
       if (!appSlug) throw new InvalidGitHubObservation();
@@ -479,62 +549,10 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
         code: typed.code === 'GITHUB_DIAGNOSTIC_FAILED' ? 'GITHUB_WRITE_FAILED' : typed.code,
         nextStep: known ? typed.nextStep : 'Publication outcome is unknown: the comment may exist. Discover it by its marker before any new publication; never repost blindly.', revocation });
     } finally { if (directory) await rm(directory, { recursive: true, force: true }); }
-  }, async setDraft(scope, pullRequest, draft, clientMutationId) {
-    let directory: string | undefined;
-    const observedAt = new Date().toISOString();
-    const sanitized = <R>(value: R): R => JSON.parse(filter(JSON.stringify(value))) as R;
-    if (!Number.isSafeInteger(pullRequest.number) || pullRequest.number <= 0 || !/^[A-Za-z0-9_=-]{1,256}$/.test(pullRequest.nodeId) || typeof draft !== 'boolean' ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(clientMutationId)) {
-      return { ok: false, outcome: 'known-failure', observedAt, code: 'INVALID_DRAFT_CONVERSION', nextStep: 'Conversion rejected locally; nothing was sent.', revocation: 'not-issued' };
-    }
-    const window = rateWindows.get(scope.installationId) ?? 0;
-    if (window > Date.now()) return sanitized({ ok: false as const, outcome: 'known-failure' as const, observedAt, code: 'GITHUB_RATE_LIMITED',
-      waitSeconds: Math.max(1, Math.ceil((window - Date.now()) / 1000)), nextStep: 'Rate-limit window still open; nothing was sent.', revocation: 'not-issued' as const });
-    let grant: Grant;
-    // Issuance failures happen BEFORE the mutation: the flag certainly did not change.
-    try { grant = await issue(scope, 'readiness-write'); } catch (error) {
-      const typed = failure(error);
-      return sanitized({ ok: false as const, outcome: 'known-failure' as const, observedAt, ...typed,
-        code: error instanceof TokenIssuanceFailure && error.outcome === 'unknown' ? 'GITHUB_TOKEN_ISSUANCE_UNKNOWN' : typed.code, revocation: 'not-issued' as const });
-    }
-    const field = draft ? 'convertPullRequestToDraft' : 'markPullRequestReadyForReview';
-    let revocation: TokenRevocation = 'unknown';
-    let revoked = false;
-    // Exactly one self-revocation attempt per conversion grant, whatever the mutation outcome.
-    const revoke = async () => { if (revoked) return; revoked = true; revocation = (await revokeToken(grant.token)).kind; };
-    const unknownStep = 'The conversion may have been applied: read the pull request (its draft flag) before any repetition; never resend blindly.';
-    try {
-      directory = await mkdtemp(join(options.root, 'run', 'github-'));
-      // The single-use grant serves this one mutation only (repository identity was verified at issuance), then its self-revocation.
-      let output: { stdout: string; failed: boolean };
-      try { output = await ghExec(directory, grant.token, 'POST', 'graphql', JSON.stringify({ query: draftMutations[field], variables: { id: pullRequest.nodeId, cid: clientMutationId } })); }
-      catch (error) { await revoke(); return sanitized({ ok: false as const, outcome: 'unknown' as const, observedAt, ...failure(error), nextStep: unknownStep, revocation }); }
-      await revoke();
-      let response: { body: unknown; status: number };
-      try { response = parseResponse(scope, output, '/graphql', grant.repositoryId, true); } catch (error) {
-        if (error instanceof AccessFailure && error.code === 'GITHUB_RATE_LIMITED' && error.waitSeconds !== undefined) rateLimit(scope, error.waitSeconds);
-        const typed = failure(error);
-        // GitHub answered 4xx (nothing changed) or rate-limited: known. 5xx/unparseable: unknown.
-        const known = error instanceof AccessFailure && (error.code === 'GITHUB_RATE_LIMITED' || (error.status !== undefined && error.status >= 400 && error.status < 500));
-        return sanitized({ ok: false as const, outcome: known ? 'known-failure' as const : 'unknown' as const, observedAt, ...typed, nextStep: known ? typed.nextStep : unknownStep, revocation });
-      }
-      const parsed = z.object({ data: z.object({ [field]: z.object({ clientMutationId: z.string().nullable(), pullRequest: z.object({ id: z.string(), number: z.number().int(),
-        isDraft: z.boolean(), headRefOid: z.string().regex(/^[0-9a-f]{40}$/) }) }).nullable() }).nullable().optional(),
-        errors: z.array(z.object({ type: z.string().max(64).optional() })).optional() }).safeParse(response.body);
-      const result = parsed.success ? (parsed.data.data?.[field] ?? null) as { clientMutationId: string | null; pullRequest: { id: string; number: number; isDraft: boolean; headRefOid: string } } | null : null;
-      if (parsed.success && parsed.data.errors?.length && !result) {
-        return sanitized({ ok: false as const, outcome: 'known-failure' as const, observedAt, code: `GITHUB_GRAPHQL_${(parsed.data.errors[0]!.type ?? 'ERROR').replace(/[^A-Z_]/g, '').slice(0, 40)}`,
-          nextStep: 'GitHub refused the mutation: the flag did not change. Nothing is repeated automatically.', revocation });
-      }
-      if (!result || result.pullRequest.id !== pullRequest.nodeId || result.pullRequest.number !== pullRequest.number || result.pullRequest.isDraft !== draft ||
-        result.clientMutationId !== clientMutationId || parsed.data?.errors?.length) {
-        return sanitized({ ok: false as const, outcome: 'unknown' as const, observedAt, code: 'GITHUB_WRITE_UNEXPECTED_PAYLOAD', nextStep: unknownStep, revocation });
-      }
-      return sanitized({ ok: true as const, observedAt, repositoryId: grant.repositoryId, value: { draft: result.pullRequest.isDraft, headSha: result.pullRequest.headRefOid }, revocation });
-    } catch (error) {
-      await revoke();
-      return sanitized({ ok: false as const, outcome: 'unknown' as const, observedAt, ...failure(error), nextStep: unknownStep, revocation });
-    } finally { if (directory) await rm(directory, { recursive: true, force: true }); }
+  }, setDraft(scope, pullRequest, draft, clientMutationId) {
+    return pullMutation(scope, pullRequest, typeof draft !== 'boolean' ? null : draft ? 'convertPullRequestToDraft' : 'markPullRequestReadyForReview', clientMutationId);
+  }, reopen(scope, pullRequest, clientMutationId) {
+    return pullMutation(scope, pullRequest, 'reopenPullRequest', clientMutationId);
   }, async cleanup(scope, operate) {
     let directory: string | undefined;
     const observedAt = new Date().toISOString();

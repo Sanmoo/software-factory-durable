@@ -14,6 +14,12 @@ import { publicationResumes } from '../rules/publication.js';
 import type { Session } from './store.js';
 import { classifyInterruption } from '../rules/recovery.js';
 import { applyRecoveryRequest, backoffRunning } from './recovery-request.js';
+import { settleCancellation } from '../rules/cycles.js';
+
+/** Ticket 25: after a Slot/reservation release, a cancelled Work's cancellation becomes `ceased` when nothing of it can still act. */
+export function settleCancelled(work: WorkRecord, at: string) {
+  if (settleCancellation(work, at)) work.history.push({ at, event: 'cancellation-ceased', origin: 'controller-cycles', detail: 'own activity ceased; Slot released' });
+}
 
 /** The interruption basis still describes the Work: its current Execution ended stopped, or failed with a pending operational recovery. */
 export function interruptionBasis(work: Pick<WorkRecord, 'execution' | 'pendingRecovery'>): NonNullable<ExecutionView['interruption']> | null {
@@ -293,7 +299,8 @@ export async function beginRenewal(session: Session, work_id: string, executionI
     if (!work || !execution || execution.executionId !== executionId) return { kind: 'refused' as const, reasons: ['EXECUTION_NOT_CURRENT'] };
     const lifecycle = lifecycleOf(execution);
     const reasons: string[] = [];
-    if (work.result !== 'open') reasons.push('WORK_NOT_OPEN');
+    // Ticket 25: a closed own PR does not cut a still-authorized activity (closure is not proof of anything about it); cancel/delivery do.
+    if (work.result !== 'open' && work.result !== 'closed-unmerged') reasons.push('WORK_NOT_OPEN');
     if (execution.state !== 'started' || execution.dispatch.phase !== 'started' || execution.held) reasons.push('ACTIVITY_NOT_AUTHORIZED');
     if (lifecycle.state !== 'active') reasons.push('CREDENTIALS_WITHDRAWN');
     if (lifecycle.renewal !== 'enabled') reasons.push('RENEWAL_STOPPED');
@@ -567,10 +574,12 @@ export function applyConfirmedCessation(work: WorkRecord, execution: ExecutionVi
   // Ticket 26: a clean administrative stop continues in a new Execution without a recovery charge; a transient operational failure comes
   // back through the queue as ONE operational recovery after its persisted wait (same commit as the cessation, never lost by a crash).
   if (end.outcome === 'stopped') work.queue = { ...work.queue, pending: true };
-  if (end.outcome === 'failure' && classifyInterruption(end.code).kind === 'recoverable') {
+  // Ticket 25: a cancelled Work never comes back through the queue (no recovery, no continuation).
+  if (end.outcome === 'failure' && classifyInterruption(end.code).kind === 'recoverable' && !work.cancellation) {
     applyRecoveryRequest(work, { executionId, code: end.code ?? 'CONTROLLER_CRASH', at: execution.slot.releasedAt! });
   }
   history(work, 'slot-released', executionId);
+  settleCancelled(work, execution.slot.releasedAt!);
 }
 
 /**
@@ -614,6 +623,7 @@ export async function releaseBeforeStart(session: Session, work_id: string, exec
     releaseReservation(work, execution, execution.held.at);
     work.queue = { ...work.queue, pending: true };
     history(work, 'execution-released', executionId, reasons.join(','));
+    settleCancelled(work, execution.held.at);
     return 'released' as const;
   }, BACKGROUND_CONTEXT);
 }
@@ -640,6 +650,7 @@ export async function blockBeforeStart(session: Session, work_id: string, execut
     if (!work.impediments.some(item => item.code === code)) work.impediments.push({ code, scope: 'work', since: now, nextStep });
     work.queue = { ...work.queue, pending: true };
     history(work, 'execution-released', executionId, code);
+    settleCancelled(work, now);
     return 'blocked' as const;
   }, BACKGROUND_CONTEXT);
 }

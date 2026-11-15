@@ -41,6 +41,11 @@ export type PublicationObservation = { kind: 'observed'; source: 'github-rest'; 
 export type DraftConversion = { kind: 'applied'; observedAt: string; draft: boolean; headSha: string; revocation: string } |
   { kind: 'known-failure' | 'unknown'; observedAt: string; code: string; waitSeconds?: number; nextStep: string; revocation: string };
 
+/** Ticket 25: outcome of ONE reopen of the Work's own pull request. `applied`: GitHub's answer (Control still observes the PR independently);
+ * `known-failure`: certainly not reopened; `unknown`: may be open — read it before any repetition. */
+export type PullRequestReopen = { kind: 'applied'; observedAt: string; revocation: string } |
+  { kind: 'known-failure' | 'unknown'; observedAt: string; code: string; waitSeconds?: number; nextStep: string; revocation: string };
+
 export interface CodeRepository {
   checkAccess(repo: GitHubScope, base: string): Promise<AccessDiagnostic>;
   findPublication(correlation: PublicationCorrelation): Promise<PublicationObservation>;
@@ -54,6 +59,8 @@ export interface CodeRepository {
   readOwnMerge?(pr: PullRequestRef): Promise<OwnPullRequestObservation>;
   /** Ticket 17 (Q4B): delete ONE selected own branch under its own cleanup grant, revalidating ownership/concurrency first. */
   cleanupBranch?(selection: BranchCleanupSelection, effect: CleanupEffect): Promise<BranchCleanupResult>;
+  /** Ticket 25 (`factory reopen`): reopen ONE known own pull request closed without merge, correlated by the effect identity. Never merge. */
+  reopenPullRequest?(pr: { repo: GitHubScope; number: number; nodeId: string }, effect: { effectId: string }): Promise<PullRequestReopen>;
 }
 export type { PullRequestRef, OwnPullRequestFacts, OwnPullRequestObservation, BranchCleanupSelection, CleanupEffect, BranchCleanupResult } from './delivery.js';
 
@@ -176,6 +183,12 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
         const value = written.value as { draft: boolean; headSha: string };
         return { kind: 'applied', observedAt: written.observedAt, draft: value.draft, headSha: value.headSha, revocation: written.revocation };
       }
+      return { kind: written.outcome, observedAt: written.observedAt, code: written.code, ...(written.waitSeconds !== undefined ? { waitSeconds: written.waitSeconds } : {}),
+        nextStep: written.nextStep, revocation: written.revocation };
+    },
+    async reopenPullRequest(pr, effect) {
+      const written = await options.github.reopen(pr.repo, { number: pr.number, nodeId: pr.nodeId }, effect.effectId);
+      if (written.ok) return { kind: 'applied', observedAt: written.observedAt, revocation: written.revocation };
       return { kind: written.outcome, observedAt: written.observedAt, code: written.code, ...(written.waitSeconds !== undefined ? { waitSeconds: written.waitSeconds } : {}),
         nextStep: written.nextStep, revocation: written.revocation };
     },

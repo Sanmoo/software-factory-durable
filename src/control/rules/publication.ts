@@ -250,6 +250,12 @@ export type PublicationStep = { kind: 'none' } | { kind: 'evaluate'; basisExecut
  * held. `blocked` is settled (explicit operator decision; ticket 26).
  */
 export function publicationStep(work: WorkFacts): PublicationStep {
+  // Ticket 25: a cancelled Work only reconciles a publication activation already ATTEMPTED (its remote effect may have concluded); it never
+  // evaluates a new basis nor requests anything.
+  if (work.result === 'cancelled' && !active(work.execution) && work.publication?.state === 'awaiting-discovery' && publicationAttempted(work)) {
+    const last = [work.execution, ...[...(work.previousExecutions ?? [])].reverse()].find(item => item?.end) ?? null;
+    return last?.end?.cessation === 'confirmed' ? { kind: 'discover', trigger: 'after-publication', attempted: true } : { kind: 'none' };
+  }
   if (work.result !== 'open' || active(work.execution)) return { kind: 'none' };
   const last = [work.execution, ...[...(work.previousExecutions ?? [])].reverse()].find(item => item?.end) ?? null;
   if (!last?.end || last.end.cessation !== 'confirmed') return { kind: 'none' };

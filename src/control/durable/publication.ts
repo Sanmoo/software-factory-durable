@@ -21,7 +21,8 @@ async function onWork<T>(session: Session, work_id: string, change: (work: WorkR
     const index = await tx.doc(ticketIndex);
     const document = await tx.doc(works, work_id, null);
     const work = document.work;
-    if (!work || work.result !== 'open' || index.tickets[ticketKey(work.ticket)]?.current !== work_id) return 'stale' as const;
+    // Ticket 25: a cancelled Work's attempted publication is still reconciled (publicationStep gates what may happen to it).
+    if (!work || (work.result !== 'open' && work.result !== 'cancelled') || index.tickets[ticketKey(work.ticket)]?.current !== work_id) return 'stale' as const;
     return change(work);
   }, BACKGROUND_CONTEXT);
 }
@@ -101,6 +102,11 @@ export async function recordDiscovery(session: Session, work_id: string, input: 
       publication.linkedHeads = [...new Set([...(publication.linkedHeads ?? []), decision.pullRequest.headSha])].slice(-20);
       publication.nextStep = 'Own draft pull request linked. Opening it does not end the Ticket or the Work; readiness and human merge are separate.';
       history(work, 'publication-linked', input.executionId, `#${decision.pullRequest.number}:${decision.pullRequest.headSha}`);
+    } else if (decision.outcome === 'absent' && work.result === 'cancelled') {
+      // Cancelled: nothing is requested again (no new publication after a cancellation).
+      Object.assign(publication, { state: 'not-publishable', reasons: ['WORK_CANCELLED'],
+        nextStep: 'The publication attempt left no own pull request and the Work is cancelled: nothing is requested.' });
+      history(work, 'publication-evaluated', input.executionId, 'not-publishable:WORK_CANCELLED');
     } else if (decision.outcome === 'absent') {
       Object.assign(publication, { state: 'requested', expectedRemote: decision.expectedRemote, requestedAt: at, refsBefore: decision.refs, update: decision.update?.number ?? null,
         nextStep: decision.recovery ? 'The attempt pushed the own branch (absent before the window) at exactly the verified head but no pull request exists: ONE publication ' +

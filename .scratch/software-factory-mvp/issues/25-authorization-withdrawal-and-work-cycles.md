@@ -26,3 +26,11 @@
 ## Autorização e limites
 
 Publicação é planejamento aprovado, não autorização de construção, uso de host/credenciais/GitHub/modelos reais, injeção de falhas ou piloto. Obter autorização pertinente antes da execução. Não alterar decisões aprovadas silenciosamente; lacuna de desenho volta ao operador. Merge e avaliação humana não são delegados aos agentes.
+
+## Comments
+
+- 2026-11-15 (implement/software-factory-mvp-25): implementação local integrada ao controlador (retirada/resume, cancel, closed-unmerged,
+  reopen, new) com fluxos storage-real e CLI; evidência e mapa AC→teste em
+  [docs/evidence/25-authorization-withdrawal-and-work-cycles.md](../../../docs/evidence/25-authorization-withdrawal-and-work-cycles.md).
+  Receita real `test/entrypoints/cancel25-qualification.ts` (namespace `y5/q25-cancel-v1`) pronta e **não executada**: exige autorização
+  do operador, a issue sintética criada pelo supervisor e seu número fixado em `syntheticTicket`. Ticket não resolvido até a evidência real.

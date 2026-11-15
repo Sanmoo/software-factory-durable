@@ -31,7 +31,14 @@ export type ControlInput = { request_id: string; operation: 'pause' | 'unpause';
   { request_id: string; operation: 'update-scope'; work_id: string; reason: string; origin: 'local-cli' } |
   /** Ticket 16 (spec §9.3): authorize ONE restoration of ready after an unexpected human draft, or ONE repeat of a conversion that was not
    * applied. Never a readiness certificate: the conversion still needs a complete current evaluation and the pre-conversion recheck. */
-  { request_id: string; operation: 'authorize-readiness'; work_id: string; reason: string; origin: 'local-cli' };
+  { request_id: string; operation: 'authorize-readiness'; work_id: string; reason: string; origin: 'local-cli' } |
+  /** Ticket 25 (spec §4.1/§11.3/§12.3): `cancel` ends the cycle (prohibition first, stop requested, artifacts and GitHub untouched); `resume`
+   * lifts ONLY the suspension of a withdrawn authorization or a reopened PR, revalidated on the next read; `reopen` reopens the Work's OWN pull
+   * request closed without merge (never budget/scope/resume). */
+  { request_id: string; operation: 'cancel' | 'resume' | 'reopen'; work_id: string; origin: 'local-cli' } |
+  /** Ticket 25: an explicit new cycle of a Ticket after delivery/cancellation (predecessor + own resources). `keepPredecessorPullRequest`: the
+   * operator's explicit decision that a cancelled cycle's own PR that may still be open stays as it is (never adopted, closed or replaced). */
+  { request_id: string; operation: 'new'; ticket: { repository: string; number: number }; keepPredecessorPullRequest: boolean; origin: 'local-cli' };
 /** `answer`: `accepted` removed only that Question's impediment; `not-applied` (already answered, unknown, closed Work...) changed nothing. */
 export type ControlReceipt = { kind: 'durable'; request_id: string; operation: 'pause' | 'unpause'; paused: boolean; historySequence: number } |
   { kind: 'durable'; request_id: string; operation: 'answer'; question_id: string; outcome: 'accepted' | 'not-applied'; reason: string | null; work_id: string | null } |
@@ -44,7 +51,12 @@ export type ControlReceipt = { kind: 'durable'; request_id: string; operation: '
     scopeUpdateId: string | null; appliesAt: 'next-activation' | null } |
   /** `accepted`: recorded for the next conversion of that purpose (consumed once); `not-applied`: nothing to authorize, nothing changed. */
   { kind: 'durable'; request_id: string; operation: 'authorize-readiness'; work_id: string; outcome: 'accepted' | 'not-applied'; reason: string | null;
-    purpose: 'human-draft' | 'repeat-conversion' | null };
+    purpose: 'human-draft' | 'repeat-conversion' | null } |
+  /** Ticket 25. `accepted`: recorded (cancel: prohibition durable, stop requested; reopen: effect intended, its result is observed later; resume:
+   * suspension lifted pending the next authorization read; new: the new Work `created`); `already-satisfied`: nothing to do (e.g. already
+   * cancelled, an activity already running for resume); `not-applied`: refused, nothing changed (`reason`). An ACK never proves cessation or effect. */
+  { kind: 'durable'; request_id: string; operation: 'cancel' | 'resume' | 'reopen' | 'new'; work_id: string | null; outcome: 'accepted' | 'already-satisfied' | 'not-applied';
+    reason: string | null; created: string | null };
 export type ControlQuery = { kind: 'status' } | { kind: 'request'; request_id: string } | { kind: 'access' } | { kind: 'list' } | { kind: 'show'; work_id: string } |
   { kind: 'question'; question_id: string };
 export type DispatchReason = 'RECONCILIATION_REQUIRED' | 'EXECUTION_NOT_ENABLED';
@@ -478,12 +490,21 @@ export type ReadinessView = {
 export type WorkView = {
   work_id: string; cycle: number; predecessor: string | null;
   ticket: TicketRef; repository: { repository: string; repositoryId: number; base: string };
-  /** `delivered` (ticket 17): a human merged the Work's own pull request and the Factory confirmed it; no new agent action follows. */
-  result: 'open' | 'delivered';
-  authorization: { state: 'authorized'; source: 'github-rest'; observedAt: string;
+  /** `delivered` (ticket 17): a human merged the Work's own pull request and the Factory confirmed it; no new agent action follows.
+   * Ticket 25: `cancelled` (operator cancel; a later confirmed merge still delivers), `closed-unmerged` (own PR closed without merge: the cycle
+   * stays current and undelivered with its counters; continuing needs `reopen` + `resume`, abandoning needs `cancel` + `new`). */
+  result: 'open' | 'cancelled' | 'closed-unmerged' | 'delivered';
+  authorization: { state: 'authorized' | 'withdrawn'; source: 'github-rest'; observedAt: string;
     basis: { repositoryConfigured: true; issueState: 'open'; label: { id: number; name: string } };
     publication: { observedAt: string; completeness: 'complete'; associatedPullRequests: 0; limitations: string[] };
-    tracking: string };
+    tracking: string;
+    /** Ticket 25: the latest complete authorization read of the Ticket and an observed withdrawal (label removed / issue closed). */
+    lastObservedAt?: string | null;
+    withdrawal?: { observedAt: string; codes: string[]; restoredObservedAt: string | null } | null };
+  /** Ticket 25 (spec §12.3): the operator's cancellation. `stopping` until every own activity is confirmed ceased (Slot released only then). */
+  cancellation?: CancellationView | null;
+  /** Ticket 25: own PR closed without merge and the `reopen` effect (intent → attempt → observation → confirmation; never repeated implicitly). */
+  closure?: ClosureView | null;
   queue: { category: 'normal'; sequence: number; pending: boolean };
   impediments: Impediment[];
   dependencies: DependencyState;
@@ -541,8 +562,22 @@ export type WorkView = {
       origin: 'controller-readiness'; detail: string } |
     { at: string; event: 'readiness-authorized'; origin: 'local-cli'; detail: string } |
     { at: string; event: 'delivery-observed' | 'delivery-confirmed' | 'cleanup-evaluated' | 'evidence-preserved' | 'cleanup-intended' | 'cleanup-result';
-      origin: 'controller-delivery'; detail: string })[];
+      origin: 'controller-delivery'; detail: string } |
+    { at: string; event: CycleEvent; origin: 'controller-cycles' | 'local-cli'; detail: string })[];
 };
+/** Ticket 25 history events (cycle, authorization, cancellation, closure/reopen). */
+export type CycleEvent = 'authorization-withdrawn' | 'authorization-restored-observed' | 'authorization-confirmed' | 'cancel-requested' | 'cancellation-ceased' |
+  'resume-accepted' | 'resume-confirmed' | 'resume-not-confirmed' | 'pull-request-closed-unmerged' | 'reopen-intended' | 'reopen-attempted' | 'reopen-confirmed' |
+  'reopen-not-applied' | 'cycle-created' | 'successor-created';
+/** Ticket 25: cancellation of a Work (spec §3.4 "Interromper/cancelar": request, prohibitions and stop intent; physical confirmation later). */
+export type CancellationView = { request_id: string; requestedAt: string; state: 'stopping' | 'ceased'; ceasedAt: string | null;
+  /** The Execution active (or holding a Slot) when the cancellation was accepted, if any. */
+  executionId: string | null; nextStep: string };
+/** Ticket 25: closure of the own PR without merge and the single reopen effect requested by the operator. */
+export type ClosureView = { observedAt: string; pullRequest: number;
+  reopen: { effectId: string; request_id: string; intendedAt: string; state: 'intended' | 'attempted' | 'confirmed' | 'not-applied'; sendingAt: string | null;
+    attempt: { at: string; outcome: string; code: string | null } | null; observation: { at: string; outcome: string } | null; settledAt: string | null } | null;
+  nextStep: string };
 export type CounterView = { limit: number; granted: number; effectiveLimit: number; consumed: number; reserved: 0 | 1; reservedBy: string | null; available: number; exhausted: boolean };
 /** `elapsedMs` is a monotonic measurement (live or measured) or null; `unknown` is never shown as zero. */
 export type DurationView = { state: 'not-recorded' | 'not-started' | 'running' | 'measured' | 'lower-bound' | 'unknown'; elapsedMs: number | null;
@@ -569,7 +604,9 @@ export type ControlStatus = {
   dispatchReason: DispatchReason | null;
   slots: { capacity: number; held: number };
   historyLength: number;
-  works: { total: number; open: number };
+  works: { total: number; open: number;
+    /** Ticket 25 (absent before it): cancelled Works and own PRs closed without merge, never confused with delivery. */
+    cancelled?: number; closedUnmerged?: number };
   /** Ticket 17: delivered Works and their cleanup, counted separately (a pending cleanup never undoes a delivery). */
   delivery: { delivered: number; cleanup: { waiting: number; pending: number; complete: number } };
   queues: { normal: number; repair: number };
