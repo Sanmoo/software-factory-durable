@@ -186,3 +186,5 @@ done
   0600) antes de qualquer `flock(1)`. (3) receita — cada fase grava `<fase>-verdict.json` com uma verificação por
   resultado esperado e falha (exit 1) se alguma não for atendida; a fase seguinte exige o veredito anterior `ok`;
   teste prova que o padrão de falha genérica da r33-v1 reprova todas as fases. (4) base nova `r33-v2`.
+- Gate após a correção (2026-11-15): tsc, eslint e dependency-cruiser (374 módulos) limpos; 177 arquivos um
+  por vez: 1096 pass, 0 fail, 10 skip. A receita r33-v2 não foi executada.
