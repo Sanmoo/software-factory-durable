@@ -46,7 +46,7 @@ export function decideMerge(own: OwnPullRequestIdentity, expect: { repositoryId:
   // A merged head the Factory never published (e.g. a third-party push) is not the own content of this cycle.
   if (!own.heads.includes(facts.headSha)) return { outcome: 'identity-mismatch', reasons: ['HEAD_NOT_OWN_CONTENT'] };
   return { outcome: 'merged', merge: { mergedAt: facts.mergedAt, mergeCommitSha: facts.mergeCommitSha, headSha: facts.headSha, pullRequestId: facts.pullRequestId,
-    number: facts.number, url: facts.url } };
+    number: facts.number, url: facts.url, mergeCommitShaReport: facts.reported.mergeCommitSha } };
 }
 
 type CleanupWork = { result: string; branch: string | null; repository: { repository: string; repositoryId: number; base: string };

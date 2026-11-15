@@ -54,7 +54,7 @@ test('AC1: only a confirmed merge of the own PR identity delivers; open, closed-
   const work = await h.work();
   assert.equal(work.result, 'delivered');
   assert.deepEqual(work.delivery?.merge && { ...work.delivery.merge, confirmedAt: 'x', observedAt: 'x' }, { mergedAt: '2026-11-14T12:00:00Z', mergeCommitSha: 'b'.repeat(40),
-    headSha, pullRequestId: 9042, number: 42, url: 'https://github.com/acme/project/pull/42', confirmedAt: 'x', observedAt: 'x', duringActivity: null });
+    headSha, pullRequestId: 9042, number: 42, url: 'https://github.com/acme/project/pull/42', mergeCommitShaReport: 'value', confirmedAt: 'x', observedAt: 'x', duringActivity: null });
   assert.deepEqual(h.repository.calls.filter(call => call.method === 'readPullRequest').map(call => (call.args as { number: number }).number), [42, 42, 42, 42, 42],
     'only the linked own PR is read; no tracker/issue state is consulted');
   assert.ok(work.history.some(item => item.event === 'delivery-confirmed'));

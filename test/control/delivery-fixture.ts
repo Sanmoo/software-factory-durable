@@ -100,9 +100,10 @@ export function realCleanupPorts(root: string, log: string[]): CleanupPorts {
 export type RemotePull = PullRequestFacts;
 export function ownFacts(overrides: Partial<PullRequestFacts> = {}): PullRequestFacts {
   return { pullRequestId: 9042, nodeId: 'PR_own42', number: 42, url: 'https://github.com/acme/project/pull/42', state: 'open', draft: false, merged: false, mergedAt: null,
-    mergeCommitSha: null, headRef: 'factory/3-own', headSha, headRepositoryId: 3, baseRef: 'main', baseRepositoryId: 3, ...overrides };
+    mergeCommitSha: null, headRef: 'factory/3-own', headSha, headRepositoryId: 3, baseRef: 'main', baseRepositoryId: 3, reported: { mergeCommitSha: 'null', merged: 'value' }, ...overrides };
 }
-export const merged = (overrides: Partial<PullRequestFacts> = {}) => ownFacts({ state: 'closed', merged: true, mergedAt: '2026-11-14T12:00:00Z', mergeCommitSha: 'b'.repeat(40), ...overrides });
+export const merged = (overrides: Partial<PullRequestFacts> = {}) => ownFacts({ state: 'closed', merged: true, mergedAt: '2026-11-14T12:00:00Z', mergeCommitSha: 'b'.repeat(40),
+  reported: { mergeCommitSha: 'value', merged: 'value' }, ...overrides });
 
 /** CodeRepository double for ticket 17 (only the two delivery operations; everything else throws). */
 export function deliveryRepository(state: { pull: PullRequestFacts | 'unavailable'; branch: Record<string, string>; branchOutcomes?: BranchCleanupResult['outcome'][] }) {

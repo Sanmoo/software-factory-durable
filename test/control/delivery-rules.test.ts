@@ -9,7 +9,7 @@ const own = { pullRequestId: 9042, nodeId: 'PR_own42', number: 42, url: 'https:/
 const expect = { repositoryId: 3, branch: 'factory/3-abcdef12', base: 'main' };
 const facts = (overrides: Partial<PullRequestFacts> = {}): PullRequestFacts => ({ pullRequestId: 9042, nodeId: 'PR_own42', number: 42, url: own.url, state: 'closed',
   draft: false, merged: true, mergedAt: '2026-11-14T12:00:00Z', mergeCommitSha: 'b'.repeat(40), headRef: own.headRef, headSha: 'a'.repeat(40), headRepositoryId: 3,
-  baseRef: 'main', baseRepositoryId: 3, ...overrides });
+  baseRef: 'main', baseRepositoryId: 3, reported: { mergeCommitSha: 'value', merged: 'value' }, ...overrides });
 const env = (n: number) => `env-${String(n).repeat(64)}`;
 const execution = (id: string, overrides: Partial<ExecutionView> = {}): ExecutionView => ({
   executionId: id, invocationId: `i-${id}`, mode: 'initial', state: 'ended', slot: { held: false, capacity: 1, reservedAt: 'x', releasedAt: 'y' },
@@ -37,7 +37,7 @@ test('delivery requires a confirmed merge of the SAME own pull request; closure,
   const merged = decideMerge(own, expect, facts());
   assert.equal(merged.outcome, 'merged');
   assert.deepEqual(merged.outcome === 'merged' && merged.merge, { mergedAt: '2026-11-14T12:00:00Z', mergeCommitSha: 'b'.repeat(40), headSha: 'a'.repeat(40),
-    pullRequestId: 9042, number: 42, url: own.url });
+    pullRequestId: 9042, number: 42, url: own.url, mergeCommitShaReport: 'value' });
   assert.deepEqual(decideMerge(own, expect, facts({ merged: false, mergedAt: null, mergeCommitSha: null })), { outcome: 'closed-unmerged', reasons: ['CLOSED_WITHOUT_MERGE'] });
   assert.deepEqual(decideMerge(own, expect, facts({ state: 'open', merged: false, mergedAt: null, mergeCommitSha: null })), { outcome: 'open', reasons: [] });
   assert.deepEqual(decideMerge(own, expect, facts({ pullRequestId: 1, nodeId: 'PR_x', headRef: 'human/x', baseRef: 'dev', headRepositoryId: 99 })), { outcome: 'identity-mismatch',

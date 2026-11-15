@@ -595,7 +595,9 @@ export type MergeObservation = { at: string; observedAt: string | null;
   outcome: 'open' | 'closed-unmerged' | 'merged' | 'identity-mismatch' | 'merge-unconfirmed' | 'unavailable'; reasons: string[] };
 /** Confirmed merge facts: what makes the Work delivered (never an issue/PR closure or a Builder message). */
 /** `mergeCommitSha`: recorded when GitHub reports it; the merge itself is evidenced by `merged_at` on the closed own PR. */
-export type MergeFacts = { mergedAt: string; mergeCommitSha: string | null; headSha: string; pullRequestId: number; number: number; url: string };
+export type MergeFacts = { mergedAt: string; mergeCommitSha: string | null; headSha: string; pullRequestId: number; number: number; url: string;
+  /** Whether GitHub sent `merge_commit_sha` in the read that confirmed the merge (absent on records written before this field). */
+  mergeCommitShaReport?: 'value' | 'null' | 'absent' };
 export type DeliveryView = {
   state: 'watching' | 'delivered';
   pullRequest: OwnPullRequestIdentity;

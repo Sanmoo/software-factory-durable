@@ -10,7 +10,9 @@ export type PullRequestRef = { repo: GitHubScope; repositoryId: number; number: 
 /** Current facts of a pull request as GitHub reports them. `merged`/`mergedAt`/`mergeCommitSha` are reported, never inferred from `closed`. */
 export type PullRequestFacts = { pullRequestId: number; nodeId: string; number: number; url: string; state: 'open' | 'closed'; draft: boolean;
   merged: boolean; mergedAt: string | null; mergeCommitSha: string | null; headRef: string; headSha: string; headRepositoryId: number | null;
-  baseRef: string; baseRepositoryId: number | null };
+  baseRef: string; baseRepositoryId: number | null;
+  /** What GitHub actually sent for the optional fields (`absent` = no key in the response): a null merge commit is explained, never guessed. */
+  reported: { mergeCommitSha: 'value' | 'null' | 'absent'; merged: 'value' | 'absent' } };
 /** An unavailable read never proves a merge, a closure or its absence. */
 export type PullRequestObservation = { kind: 'observed'; source: 'github-rest'; observedAt: string; repositoryId: number; pullRequest: PullRequestFacts } |
   { kind: 'unavailable'; source: 'github-rest'; observedAt: string; code: string; waitSeconds?: number; nextStep: string };
@@ -87,7 +89,9 @@ export function deliveryOperations(options: { github: GitHubAccess }) {
       return { kind: 'observed', source: 'github-rest', observedAt: read.observedAt, repositoryId: read.repositoryId, pullRequest: {
         pullRequestId: pull.id, nodeId: pull.node_id, number: pull.number, url: pull.html_url, state: pull.state, draft: pull.draft, merged,
         mergedAt: pull.merged_at, mergeCommitSha: pull.merge_commit_sha ?? null, headRef: pull.head.ref, headSha: pull.head.sha, headRepositoryId: pull.head.repo?.id ?? null,
-        baseRef: pull.base.ref, baseRepositoryId: pull.base.repo?.id ?? null } };
+        baseRef: pull.base.ref, baseRepositoryId: pull.base.repo?.id ?? null,
+        reported: { mergeCommitSha: pull.merge_commit_sha === undefined ? 'absent' : pull.merge_commit_sha === null ? 'null' : 'value',
+          merged: pull.merged === undefined ? 'absent' : 'value' } } };
     },
 
     /**

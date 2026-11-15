@@ -15,7 +15,7 @@ test('readPullRequest reports merge facts of the known own pull request under a 
   assert.equal(observation.kind, 'observed');
   assert.deepEqual(observation.kind === 'observed' && observation.pullRequest, { pullRequestId: 9042, nodeId: 'PR_own42', number: 42, url: 'https://github.com/acme/project/pull/42',
     state: 'closed', draft: false, merged: true, mergedAt: '2026-11-14T12:00:00Z', mergeCommitSha: mergeSha, headRef: 'factory/3-abcdef12', headSha: ownSha,
-    headRepositoryId: 3, baseRef: 'main', baseRepositoryId: 3 });
+    headRepositoryId: 3, baseRef: 'main', baseRepositoryId: 3, reported: { mergeCommitSha: 'value', merged: 'value' } });
   const grants = (await world.trace()).filter(entry => entry.permissions);
   assert.deepEqual(grants.map(entry => entry.permissions), [{ metadata: 'read', contents: 'read', pull_requests: 'read' }], 'no write permission for tracking');
 });
