@@ -78,7 +78,7 @@ export function plan() {
         'Records (listing of every reviewer invocation on the copy); worker session JSONL read-only (bounded reads, tool-call names)',
       'stop-environment: own boot of the recorded Execution when it may still run: public Sandbox.stop of that exact boot',
     ],
-    guards: [`guard refusals are known pre-launch refusals (WORKER_LAUNCH_INVALID: never-started, reservation released, not retried); more than ${maxGuardRefusals} stop the run`, 'one-shot intent tombstones', 'prepare once and only for the Work of Ticket #3', 'one Builder; per role at most the activations above, all of the same Execution, ' +
+    guards: [`guard refusals are known pre-launch refusals (WORKER_LAUNCH_INVALID: never-started, reservation released, not retried); more than ${maxGuardRefusals} stop the run`, 'one-shot intent tombstones', `prepare once and only for the Work of Ticket #${expectedTicket.number}`, 'one Builder; per role at most the activations above, all of the same Execution, ' +
       'each a distinct (round, attempt); a Spec attempt > 1 only for round 1', 'no remove/cleanup', 'no push/PR (read-only grants)'],
     expected: [
       'round 1: standards.source records-discovery, state ended, attempt 1, NO second standards activation for round 1',
@@ -129,7 +129,7 @@ export function verdict(execution: OracleView, budget: { recoveries: { consumed:
 type PublicationObservation = Awaited<ReturnType<import('../../src/code-repository/index.js').CodeRepository['findPublication']>>;
 /**
  * Preflight precondition (read-only): the recipe opens a NEW Control storage, which never knows an earlier Factory PR as its own, so ANY pull
- * request associated with Ticket #3 (open, closed or merged — e.g. ticket 14's draft PR #5) would hold admission FOREIGN_PULL_REQUEST and
+ * request associated with the recipe Ticket (open, closed or merged — as ticket 14's draft PR #5 on issue #3) would hold admission FOREIGN_PULL_REQUEST and
  * the run could never start an Execution. It is never adopted or touched: the run is held before any effect. An incomplete observation
  * never proves absence.
  */
