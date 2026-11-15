@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { fork } from 'node:child_process';
-import { once } from 'node:events';
+import { ended } from '../runner/budget.js';
 import { mkdir, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +13,7 @@ import type { ToolContext } from '../../src/sandbox/index.js';
 const context: ToolContext = { workId: 'work-05', executionId: 'execution-05', invocationId: 'standards-05',
   role: 'standards', environmentRef: 'environment-05', bootRef: 'boot-05', phaseId: 'review-1' };
 
-test('fixed worker entrypoint runs native SDK in a new Node process; private receipt precedes filtered native JSONL', { timeout: 30000 }, async t => {
+test('fixed worker entrypoint runs native SDK in a new Node process; private receipt precedes filtered native JSONL', async t => {
   let guestCalls = 0;
   const text = 'prefix\n'.repeat(5000) + 'synthetic-secret synthetic-key\ntarget\nlast';
   const f = await nativeOwner(context, { exec(argv) {
@@ -45,7 +45,7 @@ test('fixed worker entrypoint runs native SDK in a new Node process; private rec
       execPath: process.execPath, execArgv: ['--import', fileURLToPath(new URL('./fixtures/provider-preload.js', import.meta.url))],
       env: { PATH: '', LANG: 'C', LC_ALL: 'C', NODE_DISABLE_COMPILE_CACHE: '1',
         TMPDIR: join(f.root, 't'), XDG_CACHE_HOME: join(f.root, 'c') },
-      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'], detached: true,
     });
     const messages: Array<Record<string, unknown>> = [];
     let output = '';
@@ -65,9 +65,10 @@ test('fixed worker entrypoint runs native SDK in a new Node process; private rec
         }
       })());
     });
-    const exited = once(processChild, 'exit');
+    // No fixed 30 s timeout over the 19 worker spawns (it expired once at ci load 19): each child's own end, bounded by the runner budget.
+    const exited = ended(processChild, () => `worker child; messages so far: ${messages.map(message => String(message.kind)).join(',')}`);
     processChild.send(input);
-    const [code, signal] = await exited;
+    const { code, signal } = await exited;
     await Promise.all(checks);
     assert.equal(signal, null); assert.equal(output, '', 'no raw bootstrap, credential, or SDK diagnostics on stdio');
     return { code, messages, pid: processChild.pid, receiptAtRequest };
