@@ -12,26 +12,37 @@ export type RequiredCheck = { context: string; integrationId: number | null };
 /** Classic branch protection's required status checks. `none` only from an authorized complete branch read. */
 export type ClassicChecks = { kind: 'none'; evidence: 'BRANCH_NOT_PROTECTED' | 'STATUS_CHECKS_NOT_ENFORCED' } |
   { kind: 'required'; strict: boolean; enforcement: string; checks: RequiredCheck[] };
-/** One ACTIVE rule GitHub applies to the base (repository, organization or enterprise ruleset); `statusChecks` for required_status_checks. */
+/** One ACTIVE rule GitHub applies to the base (repository, organization or enterprise ruleset); `statusChecks` for required_status_checks.
+ * `unparsed`: this rule (only this one) did not match the expected shape; its type is kept when readable ('unparsed' otherwise). */
 export type BranchRule = { type: string; ruleset: { id: number | null; sourceType: string | null; source: string | null };
-  statusChecks?: { strict: boolean; checks: RequiredCheck[] } };
+  statusChecks?: { strict: boolean; checks: RequiredCheck[] }; unparsed?: true };
+/** `status: 'unparsed'`: this item (only this one) did not match the expected shape; its name is kept when readable ('' otherwise). */
 export type CheckRunFact = { id: number; name: string; headSha: string; status: string; conclusion: string | null; appId: number | null; appSlug: string | null;
   checkSuiteId: number | null; startedAt: string | null; completedAt: string | null; url: string | null };
+/** `state: 'unparsed'`: this item (only this one) did not match the expected shape; its context is kept when readable ('' otherwise). */
 export type StatusFact = { id: number; context: string; state: string; creator: { id: number; login: string; type: string } | null; createdAt: string | null;
   updatedAt: string | null; url: string | null };
 export type PullRequestFacts = { pullRequestId: number; nodeId: string; number: number; url: string; state: 'open' | 'closed'; merged: boolean; draft: boolean;
   headRef: string; headSha: string; headRepositoryId: number | null; baseRef: string; baseSha: string; mergeCommitSha: string | null;
   /** GitHub's tri-state: true, false, or null while it is still computing. */
   mergeable: boolean | null; mergeableState: string | null; author: { id: number; login: string; type: string } };
-export type PullRequestQuery = { repo: GitHubScope; number: number };
-/** Separate GET reads under one reduced `checks-read` grant: NOT an atomic snapshot; `recheck` re-reads the PR after the collection. */
+/** `unless`: a light read — when the open PR still has exactly this head and base, only the PR is read and `unchanged` is returned. */
+export type PullRequestQuery = { repo: GitHubScope; number: number; unless?: { headSha: string; baseRef: string } };
+/** Base tip and requirements (classic + rules), read at collection start and again at its end. */
+export type Requirements = { baseTip: Known<string>; classic: Known<ClassicChecks>; rules: Known<BranchRule[]> };
+/** Separate GET reads under one reduced `checks-read` grant: NOT an atomic snapshot; the PR and the requirements are re-read at the end. */
 export type PullRequestObservation = { kind: 'unavailable'; source: 'github-rest'; observedAt: string; repository: string; code: string; waitSeconds?: number; nextStep: string } |
-  { kind: 'observed'; source: 'github-rest'; observedAt: string; completedAt: string; repository: string; repositoryId: number; pullRequest: PullRequestFacts;
-    baseTip: Known<string>; classic: Known<ClassicChecks>; rules: Known<BranchRule[]>; checkRuns: Known<CheckRunFact[]>; statuses: Known<StatusFact[]>;
+  { kind: 'unchanged'; source: 'github-rest'; observedAt: string; repository: string; headSha: string; baseRef: string } |
+  ({ kind: 'observed'; source: 'github-rest'; observedAt: string; completedAt: string; repository: string; repositoryId: number; pullRequest: PullRequestFacts;
+    checkRuns: Known<CheckRunFact[]>; statuses: Known<StatusFact[]>;
     /** Base tip...head comparison (strict up-to-date facts); null when the base tip is unknown. */
     comparison: Known<{ status: string; aheadBy: number; behindBy: number }> | null;
-    recheck: Known<{ headSha: string; baseRef: string; state: 'open' | 'closed'; merged: boolean }>; limitations: string[] };
+    recheck: Known<{ headSha: string; baseRef: string; state: 'open' | 'closed'; merged: boolean }>;
+    /** Requirements re-read after the results (spec §9.2 step 6); a difference from the start invalidates the evaluation. */
+    final: Requirements; limitations: string[] } & Requirements);
 
+/** GitHub lists check runs of at most the latest 1000 check suites of a ref: a listing that reaches 1000 items may be capped. */
+export const checkRunsCap = 1000;
 const sha = z.string().regex(/^[0-9a-f]{40}$/);
 const id = z.number().int().positive().safe();
 const user = z.object({ id, login: z.string().min(1).max(256), type: z.string().max(64) });
@@ -62,30 +73,47 @@ const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
   if (!parsed.success) throw new InvalidGitHubObservation();
   return parsed.data;
 };
+/** The readable identity of an item that failed its schema (only that item becomes unknown). */
+const field = (value: unknown, name: string, schema: z.ZodType<string | number>) => {
+  const parsed = schema.safeParse(value !== null && typeof value === 'object' ? (value as Record<string, unknown>)[name] : undefined);
+  return parsed.success ? parsed.data : null;
+};
 const facts = (pull: z.infer<typeof pullSchema>): PullRequestFacts => ({ pullRequestId: pull.id, nodeId: pull.node_id, number: pull.number, url: pull.html_url,
   state: pull.state, merged: pull.merged, draft: pull.draft, headRef: pull.head.ref, headSha: pull.head.sha, headRepositoryId: pull.head.repo?.id ?? null,
   baseRef: pull.base.ref, baseSha: pull.base.sha, mergeCommitSha: pull.merge_commit_sha ?? null, mergeable: pull.mergeable, mergeableState: pull.mergeable_state ?? null,
   author: { id: pull.user.id, login: pull.user.login, type: pull.user.type } });
+const rule = (raw: unknown): BranchRule => {
+  const parsed = ruleSchema.safeParse(raw);
+  if (!parsed.success) return { type: (field(raw, 'type', z.string().min(1).max(64)) as string | null) ?? 'unparsed',
+    ruleset: { id: field(raw, 'ruleset_id', id) as number | null, sourceType: null, source: null }, unparsed: true };
+  const item = parsed.data;
+  const ruleset = { id: item.ruleset_id ?? null, sourceType: item.ruleset_source_type ?? null, source: item.ruleset_source ?? null };
+  if (item.type !== 'required_status_checks') return { type: item.type, ruleset };
+  const parameters = statusChecksParameters.safeParse(item.parameters);
+  return parameters.success ? { type: item.type, ruleset, statusChecks: { strict: parameters.data.strict_required_status_checks_policy,
+    checks: parameters.data.required_status_checks.map(check => ({ context: check.context, integrationId: check.integration_id })) } } : { type: item.type, ruleset, unparsed: true };
+};
+const run = (raw: unknown, head: string): CheckRunFact => {
+  const parsed = runSchema.safeParse(raw);
+  if (!parsed.success) return { id: (field(raw, 'id', id) as number | null) ?? 0, name: (field(raw, 'name', context) as string | null) ?? '', headSha: head, status: 'unparsed',
+    conclusion: null, appId: null, appSlug: null, checkSuiteId: null, startedAt: null, completedAt: null, url: null };
+  const item = parsed.data;
+  return { id: item.id, name: item.name, headSha: item.head_sha, status: item.status, conclusion: item.conclusion, appId: item.app?.id ?? null, appSlug: item.app?.slug ?? null,
+    checkSuiteId: item.check_suite?.id ?? null, startedAt: item.started_at ?? null, completedAt: item.completed_at ?? null, url: item.html_url ?? null };
+};
+const status = (raw: unknown): StatusFact => {
+  const parsed = statusSchema.safeParse(raw);
+  if (!parsed.success) return { id: (field(raw, 'id', id) as number | null) ?? 0, context: (field(raw, 'context', context) as string | null) ?? '', state: 'unparsed',
+    creator: null, createdAt: null, updatedAt: null, url: null };
+  const item = parsed.data;
+  return { id: item.id, context: item.context, state: item.state, creator: item.creator ?? null, createdAt: item.created_at ?? null, updatedAt: item.updated_at ?? null,
+    url: item.target_url ?? null };
+};
 
 export function createPullRequestReader(options: { github: GitHubAccess }) {
   const read = <T>(repo: GitHubScope, inspect: (session: GitHubSession) => Promise<T>) => options.github.read(repo, 'checks-read', inspect);
-  return async function readPullRequest(query: PullRequestQuery): Promise<PullRequestObservation> {
-    const { repo, number } = query;
-    if (!Number.isSafeInteger(number) || number <= 0) throw new Error('INVALID_PULL_REQUEST');
-    const pullOf = async (session: GitHubSession) => {
-      const pull = parse(pullSchema, await session.get(`/repos/${repo.repository}/pulls/${number}`));
-      if (pull.number !== number || pull.html_url.toLowerCase() !== `https://github.com/${repo.repository}/pull/${number}`.toLowerCase()) throw new InvalidGitHubObservation();
-      return pull;
-    };
-    const first = await read(repo, pullOf);
-    if (!first.ok) return { kind: 'unavailable', source: 'github-rest', observedAt: first.observedAt, repository: repo.repository, code: first.code,
-      ...(first.waitSeconds !== undefined ? { waitSeconds: first.waitSeconds } : {}), nextStep: `The pull request could not be read; nothing about its checks is concluded. ${first.nextStep}` };
-    const pull = facts(first.value);
-    const base = pull.baseRef;
-    if (!/^(?!-)(?!.*\.\.)[A-Za-z0-9._/-]{1,200}$/.test(base)) return { kind: 'unavailable', source: 'github-rest', observedAt: first.observedAt, repository: repo.repository,
-      code: 'INVALID_GITHUB_PAYLOAD', nextStep: 'The pull request base is not a supported branch name; nothing about its checks is concluded.' };
-    // Base branch: tip and the classic protection summary (enforcement of required status checks); strictness and integrations need the
-    // protection detail. `none` only from this authorized complete read; a hidden/denied detail is unknown.
+  /** Base branch: tip and the classic protection summary; strictness/integrations from the protection detail; then every active rule. */
+  async function requirements(repo: GitHubScope, base: string): Promise<Requirements> {
     const branch = await read(repo, async session => parse(branchSchema, await session.get(`/repos/${repo.repository}/branches/${path(base)}`)));
     const baseTip: Known<string> = branch.ok ? { state: 'complete', value: branch.value.commit.sha } : known(branch);
     let classic: Known<ClassicChecks>;
@@ -106,29 +134,46 @@ export function createPullRequestReader(options: { github: GitHubAccess }) {
       }));
     }
     // Active rules of the base, including those inherited from organization/enterprise rulesets (GitHub lists only active rules).
-    const rules = known(await read(repo, async session => parse(z.array(ruleSchema), await session.list(`/repos/${repo.repository}/rules/branches/${path(base)}`, { maxPages: 10 }))
-      .map((rule): BranchRule => ({ type: rule.type, ruleset: { id: rule.ruleset_id ?? null, sourceType: rule.ruleset_source_type ?? null, source: rule.ruleset_source ?? null },
-        ...(rule.type === 'required_status_checks' ? { statusChecks: ((parameters: z.infer<typeof statusChecksParameters>) => ({
-          strict: parameters.strict_required_status_checks_policy,
-          checks: parameters.required_status_checks.map(item => ({ context: item.context, integrationId: item.integration_id })) }))(parse(statusChecksParameters, rule.parameters)) } : {}) }))));
-    // Every attempt of every check run and every status of the CURRENT head (complete pagination; 1000 items at most, else unknown).
-    const checkRuns = known(await read(repo, async session => parse(z.array(runSchema), await session.list(`/repos/${repo.repository}/commits/${pull.headSha}/check-runs?filter=all`,
-      { maxPages: 10, items: 'check_runs' })).map((run): CheckRunFact => ({ id: run.id, name: run.name, headSha: run.head_sha, status: run.status, conclusion: run.conclusion,
-      appId: run.app?.id ?? null, appSlug: run.app?.slug ?? null, checkSuiteId: run.check_suite?.id ?? null, startedAt: run.started_at ?? null, completedAt: run.completed_at ?? null,
-      url: run.html_url ?? null }))));
-    const statuses = known(await read(repo, async session => parse(z.array(statusSchema), await session.list(`/repos/${repo.repository}/commits/${pull.headSha}/statuses`, { maxPages: 10 }))
-      .map((item): StatusFact => ({ id: item.id, context: item.context, state: item.state, creator: item.creator ?? null, createdAt: item.created_at ?? null,
-        updatedAt: item.updated_at ?? null, url: item.target_url ?? null }))));
-    const comparison = baseTip.state !== 'complete' ? null : known(await read(repo, async session => {
+    const rules = known(await read(repo, async session => (await session.list(`/repos/${repo.repository}/rules/branches/${path(base)}`, { maxPages: 10 })).map(rule)));
+    return { baseTip, classic, rules };
+  }
+  return async function readPullRequest(query: PullRequestQuery): Promise<PullRequestObservation> {
+    const { repo, number } = query;
+    if (!Number.isSafeInteger(number) || number <= 0) throw new Error('INVALID_PULL_REQUEST');
+    const pullOf = async (session: GitHubSession) => {
+      const pull = parse(pullSchema, await session.get(`/repos/${repo.repository}/pulls/${number}`));
+      if (pull.number !== number || pull.html_url.toLowerCase() !== `https://github.com/${repo.repository}/pull/${number}`.toLowerCase()) throw new InvalidGitHubObservation();
+      return pull;
+    };
+    const first = await read(repo, pullOf);
+    if (!first.ok) return { kind: 'unavailable', source: 'github-rest', observedAt: first.observedAt, repository: repo.repository, code: first.code,
+      ...(first.waitSeconds !== undefined ? { waitSeconds: first.waitSeconds } : {}), nextStep: `The pull request could not be read; nothing about its checks is concluded. ${first.nextStep}` };
+    const pull = facts(first.value);
+    if (query.unless && pull.state === 'open' && !pull.merged && pull.headSha === query.unless.headSha && pull.baseRef === query.unless.baseRef) {
+      return { kind: 'unchanged', source: 'github-rest', observedAt: first.observedAt, repository: repo.repository, headSha: pull.headSha, baseRef: pull.baseRef };
+    }
+    const base = pull.baseRef;
+    if (!/^(?!-)(?!.*\.\.)[A-Za-z0-9._/-]{1,200}$/.test(base)) return { kind: 'unavailable', source: 'github-rest', observedAt: first.observedAt, repository: repo.repository,
+      code: 'INVALID_GITHUB_PAYLOAD', nextStep: 'The pull request base is not a supported branch name; nothing about its checks is concluded.' };
+    const start = await requirements(repo, base);
+    // Every attempt of every check run and every status of the CURRENT head (complete pagination; an item that fails its schema is unknown alone).
+    let checkRuns = known(await read(repo, async session => (await session.list(`/repos/${repo.repository}/commits/${pull.headSha}/check-runs?filter=all`,
+      { maxPages: 10, items: 'check_runs' })).map(item => run(item, pull.headSha))));
+    if (checkRuns.state === 'complete' && checkRuns.value.length >= checkRunsCap) checkRuns = { state: 'unknown', code: 'CHECK_RUNS_LIMIT_REACHED',
+      nextStep: `GitHub lists check runs of at most ${checkRunsCap} check suites per ref: results may be missing, completeness is not concluded.` };
+    const statuses = known(await read(repo, async session => (await session.list(`/repos/${repo.repository}/commits/${pull.headSha}/statuses`, { maxPages: 10 })).map(status)));
+    const tip = start.baseTip;
+    const comparison = tip.state !== 'complete' ? null : known(await read(repo, async session => {
       const compared = parse(z.object({ status: z.string().max(32), ahead_by: z.number().int().nonnegative().safe(), behind_by: z.number().int().nonnegative().safe() }),
-        await session.get(`/repos/${repo.repository}/compare/${baseTip.value}...${pull.headSha}`));
+        await session.get(`/repos/${repo.repository}/compare/${tip.value}...${pull.headSha}`));
       return { status: compared.status, aheadBy: compared.ahead_by, behindBy: compared.behind_by };
     }));
+    const final = await requirements(repo, base);
     const again = await read(repo, pullOf);
     return { kind: 'observed', source: 'github-rest', observedAt: first.observedAt, completedAt: again.observedAt, repository: repo.repository, repositoryId: first.repositoryId,
-      pullRequest: pull, baseTip, classic, rules, checkRuns, statuses, comparison,
+      pullRequest: pull, ...start, checkRuns, statuses, comparison, final,
       recheck: again.ok ? { state: 'complete', value: { headSha: again.value.head.sha, baseRef: again.value.base.ref, state: again.value.state, merged: again.value.merged } } : known(again),
-      limitations: ['Separate GET reads between observedAt and completedAt: not an atomic snapshot of GitHub, its rules and CI; the pull request is re-read at the end.',
+      limitations: ['Separate GET reads between observedAt and completedAt: not an atomic snapshot of GitHub, its rules and CI; the pull request and the requirements are re-read at the end.',
         'Results are read for the current head commit only; results attached to the test merge commit are not read.',
         'Rules are the active rules GitHub reports for the base branch (repository and inherited rulesets); classic protection is read separately.'] };
   };

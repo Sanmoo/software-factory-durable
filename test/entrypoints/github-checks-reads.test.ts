@@ -113,3 +113,44 @@ test('AC1: a rate limit in the middle of the collection leaves the remaining rea
   const trace = await world.trace();
   assert.equal(trace.filter(entry => entry.endpoint.includes('/statuses')).length, 0, 'no request while the window is open');
 });
+
+test('review LOW: an item that fails its schema is unknown alone; the rest of the listing stays complete', async t => {
+  const world = await compose(t, { checks: checksWorld({
+    checkRuns: { [head]: [checkRun(1, 'build'), { id: 2, name: 'lint', head_sha: head, status: 42 }, { garbage: true }] },
+    statuses: { [head]: [commitStatus(20, 'ci/external', 'success'), { id: 21, context: 'ci/other', state: null }] },
+    rules: { main: [{ type: 'required_status_checks', ruleset_id: 11, parameters: { broken: true } }, { type: 'pull_request', ruleset_id: 12 }, { nope: 1 }] } }) });
+  const observed = await world.repository.readPullRequest({ repo: worldScope, number: 7 });
+  assert.ok(observed.kind === 'observed');
+  assert.deepEqual(observed.checkRuns.state === 'complete' && observed.checkRuns.value.map(item => [item.id, item.name, item.status]),
+    [[1, 'build', 'completed'], [2, 'lint', 'unparsed'], [0, '', 'unparsed']]);
+  assert.deepEqual(observed.statuses.state === 'complete' && observed.statuses.value.map(item => [item.id, item.context, item.state]),
+    [[20, 'ci/external', 'success'], [21, 'ci/other', 'unparsed']]);
+  assert.deepEqual(observed.rules.state === 'complete' && observed.rules.value.map(item => [item.type, item.ruleset.id, item.unparsed ?? false]),
+    [['required_status_checks', 11, true], ['pull_request', 12, false], ['unparsed', null, true]]);
+});
+
+test('review LOW: a check-run listing that reaches the 1000 check-suite cap is incomplete', async t => {
+  const runs = Array.from({ length: 1000 }, (_, index) => checkRun(index + 1, `job-${index + 1}`));
+  const world = await compose(t, { checks: checksWorld({ checkRuns: { [head]: runs } }) });
+  const observed = await world.repository.readPullRequest({ repo: worldScope, number: 7 });
+  assert.ok(observed.kind === 'observed');
+  assert.deepEqual([observed.checkRuns.state, observed.checkRuns.state === 'unknown' && observed.checkRuns.code], ['unknown', 'CHECK_RUNS_LIMIT_REACHED']);
+});
+
+test('review MED 2: a light read of an unchanged head reads only the PR; a moved head gets the full collection', async t => {
+  const world = await compose(t, { checks: checksWorld() });
+  const light = await world.repository.readPullRequest({ repo: worldScope, number: 7, unless: { headSha: head, baseRef: 'main' } });
+  assert.deepEqual([light.kind, light.kind === 'unchanged' && light.headSha], ['unchanged', head]);
+  assert.deepEqual((await world.trace()).filter(entry => entry.credential === 'installation' && entry.endpoint !== '/repos/acme/project').map(entry => entry.endpoint),
+    ['/repos/acme/project/pulls/7'], 'one GET');
+  const full = await world.repository.readPullRequest({ repo: worldScope, number: 7, unless: { headSha: 'f'.repeat(40), baseRef: 'main' } });
+  assert.equal(full.kind, 'observed');
+});
+
+test('spec §9.2 step 6: requirements are read at the start and again at the end of the collection', async t => {
+  const world = await compose(t, { checks: checksWorld({ rulesChange: { afterReads: 2, rules: { main: [] } } }) });
+  const observed = await world.repository.readPullRequest({ repo: worldScope, number: 7 });
+  assert.ok(observed.kind === 'observed');
+  assert.deepEqual([observed.rules.state === 'complete' && observed.rules.value.length, observed.final.rules.state === 'complete' && observed.final.rules.value.length], [3, 0]);
+  assert.deepEqual(observed.final.baseTip, { state: 'complete', value: tip });
+});

@@ -85,6 +85,8 @@ export type ChecksWorld = {
   branches?: Record<string, { sha: string; protected: boolean; protection?: object }>;
   requiredStatusChecks?: Record<string, object>;
   rules?: Record<string, object[]>;
+  /** From the `afterReads`-th read of a branch's rules on, these rules are served (a ruleset change during the collection). */
+  rulesChange?: { afterReads: number; rules: Record<string, object[]> };
   checkRuns?: Record<string, object[]>;
   /** Added to the reported total_count of check-run pages (a listing GitHub truncated or that changed between pages). */
   checkRunsTotalOffset?: number;
@@ -318,7 +320,9 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
     }
   } else if (/^\\/rules\\/branches\\/.+$/.test(rest)) {
     const name = decodeURIComponent(url.pathname.split('/rules/branches/')[1]);
-    body = page(checks.rules?.[name] ?? []);
+    const reads = (checks.reads ??= {})['rules:' + name] = (checks.reads['rules:' + name] ?? 0) + (url.searchParams.get('page') === '1' ? 1 : 0);
+    writeFileSync(${JSON.stringify(worldFile)}, JSON.stringify(world));
+    body = page((checks.rulesChange && reads >= checks.rulesChange.afterReads ? checks.rulesChange.rules : checks.rules)?.[name] ?? []);
   } else if (/^\\/branches\\/.+\\/protection\\/required_status_checks$/.test(rest)) {
     const name = decodeURIComponent(url.pathname.split('/branches/')[1].replace(/\\/protection\\/required_status_checks$/, ''));
     if (checks.requiredStatusChecks?.[name]) body = checks.requiredStatusChecks[name]; else notFound();
