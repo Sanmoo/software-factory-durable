@@ -10,7 +10,7 @@ for (const name of ['node:net', 'node:tls', 'node:dns', 'node:child_process', 'n
 }
 const recipe = await import('./cancel25-qualification.js');
 
-test('ticket 25 recipe: import and --plan are inert; own namespace q25-cancel-v1; human steps; no Factory GitHub write; unpinned ticket refuses every real phase', async () => {
+test('ticket 25 recipe: import and --plan are inert; own namespace q25-cancel-v1; human steps; no Factory GitHub write; pinned to the issue #18 of the run', async () => {
   const logged: string[] = [];
   const log = mock.method(console, 'log', (text: string) => { logged.push(text); });
   await recipe.main(['--plan']);
@@ -26,10 +26,9 @@ test('ticket 25 recipe: import and --plan are inert; own namespace q25-cancel-v1
   assert.match(plan.humanSteps[2].action, /node dist\/src\/entrypoints\/cli\.js cancel <work id> --root \/home\/sanmoo\/software-factory-test\/y5\/q25-cancel-v1 --request-id q25-cancel-1 --json/,
     'cancellation through the REAL CLI against the recipe owner socket');
   assert.ok(plan.notCovered[0].includes('later real journey'));
-  assert.equal(plan.syntheticTicket.pinned, false, 'the synthetic issue does not exist yet: the supervisor pins it after creating it');
+  assert.deepEqual([plan.syntheticTicket.pinned, plan.syntheticTicket.number], [true, 18], 'pinned to the issue of the authorized run q25-cancel-v1 (consumed: its namespace exists, so no phase reruns)');
   assert.equal(plan.model.maxActivations, 1);
   await assert.rejects(recipe.main(['retry']), /EXACT_PHASE_REQUIRED/);
   await assert.rejects(recipe.main(['run', 'again']), /EXACT_PHASE_REQUIRED/);
-  await assert.rejects(recipe.main(['preflight']), /TICKET_NOT_PINNED/, 'nothing is created before the ticket is pinned');
   assert.equal(forbidden, 0);
 });
