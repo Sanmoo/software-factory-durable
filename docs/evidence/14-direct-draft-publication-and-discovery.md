@@ -1,6 +1,6 @@
 # Ticket 14 — Direct draft publication and discovery of the own PR
 
-Branch `implement/software-factory-mvp-14`, rebased on integration `d4483d1` (tickets 01–13, 19, 20, 32). Ticket 13's
+Branch `implement/software-factory-mvp-14`, rebased on integration `4f56f25` (tickets 01–13, 19, 20, 26, 32). Ticket 13's
 `ExecutionView.review.verification` and the final capture's `summary.content` are consumed with their real types; the flow and composition
 tests produce them through ticket 13's REAL review rounds (scripted Builder captures + scripted reviewers), no storage seed.
 
@@ -74,7 +74,7 @@ Run (compiled, from the repository root, Node command of the gate):
 
 - `preflight`: read-only; v5/v6 registered and loadable, v6 newest and continuation-capable; label lists exactly #3; no associated PR; every
   branch/tag tip recorded and no `factory/3-` branch; `main` requires PRs with no App bypass; the App bot identity pinned.
-- `run`: new storage `…/y5/q14-publication-v7`; implementation Execution (13 rounds ≤ 4); discovery → `requested`; ONE publish-only activation.
+- `run`: new storage `…/y5/q14-publication-v8`; implementation Execution (13 rounds ≤ 4); discovery → `requested`; ONE publish-only activation.
   From that activation on, the recipe makes own-branch discovery reads fail (**provoked lost result**). Stops when the publication Execution
   ended and its boot stopped (or hold/block/`not-publishable`, or 80 min).
 - `discover`: new owner on the SAME storage; must link the own PR. Only for the PR-only recovery (push landed, no PR) it allows one prepare, one publication Builder and ≤ 2 publish grants (PR creation only, never a push). Stops at `published`/`blocked` or 25 min.
@@ -122,6 +122,29 @@ Fixes (this round):
    never adopted — the new Work has its own branch); the discover phase allows at most one PR-only continuation (one prepare, one
    publication Builder, ≤ 2 publish grants), never a push. The v6 leftover is not recovered by v7 (it belongs to the consumed v6 storage).
 
+## Real run `q14-publication-v7` (2026-11-15, supervisor-authorized, consumed)
+
+Copied results (secret scan: 0 token/key patterns): `14-real-publication-v7-{preflight,run,discover,inspect}-2026-11-15.json`.
+
+- No push and no PR: the implementation Execution ended `completed`, its verification `not-verified` (`REVIEW_INCOMPLETE`), so the
+  publication was `not-publishable` (`REVIEW_NOT_VERIFIED`, `VERIFICATION:REVIEW_INCOMPLETE`) and nothing was requested — correct fail-closed.
+- All 4 rounds: Spec `clean`, Standards `incomplete`, downgraded by the Host for `SOURCE_UNREADABLE`: its reads of
+  `/workspace/checkout/GLOSSARY.md` and `/workspace/checkout/docs/adr` returned `GUEST_READ_FAILED`. Neither path exists in the repository
+  (GitHub 404); the repository's instructions name them. v6 passed review only through model variance.
+- Root cause: the confined guest read program exited 1 for any failure, so a NONEXISTENT path was indistinguishable from an existing
+  unreadable source and was counted in `hostChecks.failedReads`.
+
+Fixes:
+1. The read program (Builder/reviewer reads; the edit-source program unchanged) exits 4 for a path that does not exist, decided at open
+   before any byte; the tool answers `READ_NOT_FOUND`; the model reads "this path does not exist … not a limitation"; the Host read
+   observer does not count it. An existing unreadable file stays `GUEST_READ_FAILED`; an absent REQUIRED input is still never fully read
+   (incomplete). Tests: `tool-transport` (status 4 → `READ_NOT_FOUND`, and the program run by host python3 exits 4 for a nonexistent
+   confined path, 1 outside the roots), `review-session` (reviewer double reading absent `GLOSSARY.md` and `docs/adr` → clean opinion,
+   `failedReads: []`; absent required input → `requiredNotFullyRead`). Red before, green after.
+2. The reviewer prompt (Control's `planReviews`, not a skill pack, so no new pack version) states that named-but-nonexistent context is
+   NOT a limitation; only a missing REQUIRED input or an EXISTING unreadable file is. Test: `review-rules` (red → green).
+3. Recipe namespace `q14-publication-v8`; preflight unchanged (the v6 leftover is tolerated only at its exact tip; its absence is fine).
+
 ## Open design questions
 
 1. Base protection is read and REQUIRED before any publication request (review MED 4). The spec says the Factory does not certify or
@@ -133,10 +156,9 @@ Fixes (this round):
    head + refs window), but the guest checkout may diverge from the verified commit after such an activation.
 5. Unexpected ref changes during the window cannot be attributed (a human push at the same time also blocks): explicit operator decision.
 
-## Gate totals (real-run fixes, on `d4483d1`)
+## Gate totals (v7 fixes, on `4f56f25`)
 
-`tsc -p tsconfig.json` rc=0; `eslint . --max-warnings 0` rc=0; dependency-cruiser: no violations (352 modules, 2140 dependencies);
+`tsc -p tsconfig.json` rc=0; `eslint . --max-warnings 0` rc=0; dependency-cruiser: no violations (369 modules, 2264 dependencies);
 every compiled `dist/test/**/*.test.js` run one file at a time with `--experimental-test-module-mocks --test --test-concurrency=1`:
-170 files, 1071 pass, 0 fail, 10 skipped. `workers/sdk-profile.test.js` (unchanged by ticket 14) hit its inner 15 s timeout under a host
-load average of ~7–8 from other sessions, also once alone, and passed alone when the load dropped (1/1). `test/sandbox/gondolin.test.ts`
-stays `skip: true`.
+179 files, 1112 pass, 0 fail, 10 skipped. `workers/sdk-profile.test.js` (unchanged by ticket 14) hit its inner 15 s timeout under host
+load in the full run and passed alone (1/1). `test/sandbox/gondolin.test.ts` stays `skip: true`.

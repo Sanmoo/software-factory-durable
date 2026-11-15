@@ -1,0 +1,1365 @@
+{
+ "work": {
+  "work_id": "12334f71-99a6-4a3f-b1f4-fb78afbd608b",
+  "branch": "factory/3-12334f71",
+  "pullRequest": null,
+  "publication": {
+   "state": "not-publishable",
+   "basisExecutionId": "d9dac4fc-dd23-4700-918a-457acd16e63f",
+   "marker": "<!-- software-factory:work:12334f71-99a6-4a3f-b1f4-fb78afbd608b -->",
+   "branch": "factory/3-12334f71",
+   "base": "main",
+   "verified": null,
+   "expectedRemote": null,
+   "requestedAt": null,
+   "pullRequest": null,
+   "description": null,
+   "discoveries": [],
+   "attempts": [],
+   "linkedHeads": [],
+   "refsBefore": null,
+   "update": null,
+   "reasons": [
+    "REVIEW_NOT_VERIFIED",
+    "VERIFICATION:REVIEW_INCOMPLETE"
+   ],
+   "nextStep": "Nothing is published: the Execution content is not verified (reasons). A new verified Execution (correction/scope update) is needed.",
+   "updatedAt": "2026-11-15T09:40:02.654Z"
+  },
+  "impediments": [],
+  "history": [
+   {
+    "at": "2026-11-15T09:34:02.814Z",
+    "event": "execution-reserved",
+    "origin": "controller-dispatch",
+    "executionId": "d9dac4fc-dd23-4700-918a-457acd16e63f"
+   },
+   {
+    "at": "2026-11-15T09:34:08.518Z",
+    "event": "execution-prepared",
+    "origin": "controller-dispatch",
+    "executionId": "d9dac4fc-dd23-4700-918a-457acd16e63f"
+   },
+   {
+    "at": "2026-11-15T09:34:20.542Z",
+    "event": "execution-booted",
+    "origin": "controller-dispatch",
+    "executionId": "d9dac4fc-dd23-4700-918a-457acd16e63f"
+   },
+   {
+    "at": "2026-11-15T09:34:23.895Z",
+    "event": "execution-started",
+    "origin": "controller-dispatch",
+    "executionId": "d9dac4fc-dd23-4700-918a-457acd16e63f",
+    "detail": "20565c89-b334-48b9-9f47-49e534818aed"
+   },
+   {
+    "at": "2026-11-15T09:38:46.858Z",
+    "event": "execution-ended",
+    "origin": "controller-dispatch",
+    "executionId": "d9dac4fc-dd23-4700-918a-457acd16e63f",
+    "detail": "completed"
+   },
+   {
+    "at": "2026-11-15T09:40:02.654Z",
+    "event": "publication-evaluated",
+    "origin": "controller-publication",
+    "executionId": "d9dac4fc-dd23-4700-918a-457acd16e63f",
+    "detail": "not-publishable:REVIEW_NOT_VERIFIED,VERIFICATION:REVIEW_INCOMPLETE"
+   }
+  ]
+ },
+ "executions": [
+  {
+   "executionId": "d9dac4fc-dd23-4700-918a-457acd16e63f",
+   "mode": "initial",
+   "state": "ended",
+   "request": {
+    "ticket": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "base": "main",
+    "branch": "factory/3-12334f71",
+    "policies": {
+     "skillPack": "factory-skills-v6",
+     "modelBudget": "builder-v1",
+     "copyOutput": true,
+     "editSourceMaxBytes": 8192
+    },
+    "baseCommit": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+    "checkout": "/workspace/checkout",
+    "promptSha256": "15305a6627ab47aff0369d07f9f14e001dfd813eb5b635fa54403a3ccff02322",
+    "skillPack": {
+     "name": "factory/skill-pack/factory-skills-v6",
+     "manifestSha256": "919b8a4baf20a7d963b846a85a228476109144827528993e15be66b694f69490"
+    },
+    "resume": null,
+    "scopeUpdateIds": [],
+    "session": null
+   },
+   "credential": {
+    "role": "builder",
+    "purpose": "builder-start",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "installationId": 177599217,
+    "permissions": {
+     "metadata": "read",
+     "contents": "read",
+     "issues": "read"
+    },
+    "issuedAt": "2026-11-15T09:34:22.393Z",
+    "expiresAt": "2026-11-15T10:34:23Z"
+   },
+   "credentialRenewals": [],
+   "end": {
+    "at": "2026-11-15T09:38:46.858Z",
+    "outcome": "completed",
+    "code": null,
+    "cessation": "confirmed",
+    "session": {
+     "ref": "r/WISiVRShT2WuVTz0_flLPw/w-1Gv4Lq/profile/sessions/2026-11-15T09-34-24-770Z_01a1de8e-d401-7492-9ba8-e9a97f7b5173.jsonl",
+     "sessionId": "01a1de8e-d401-7492-9ba8-e9a97f7b5173",
+     "sha256": "8c2ab0895cc70cdc0a0aa7ab1c93941b024907aab2d9fb7205d0e9f203cec2e3",
+     "bytes": 69550,
+     "format": "pi-session-jsonl-v3",
+     "profile": {
+      "sdkProfile": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+      "providerId": "openai",
+      "modelId": "gpt-6-luna",
+      "skillPack": "factory-skills-v6",
+      "tools": [
+       "ask_user",
+       "bash",
+       "edit",
+       "handoff",
+       "read",
+       "write"
+      ]
+     }
+    }
+   },
+   "held": null,
+   "verification": {
+    "at": "2026-11-15T09:38:46.854Z",
+    "status": "not-verified",
+    "reasons": [
+     "REVIEW_INCOMPLETE"
+    ],
+    "reviewedRound": 4,
+    "finalRound": 4,
+    "contentSha256": "0707162b8edb73969353a22e3b91870952526293ff7f5e77f12b710954999e6b",
+    "applicability": {
+     "kind": "reviewed",
+     "head": "7d7ef3543207666d87bfc3298160abbfcaf298a5",
+     "reviewedHead": "7d7ef3543207666d87bfc3298160abbfcaf298a5"
+    },
+    "gates": [
+     {
+      "id": "ticket-validation",
+      "outcome": "passed",
+      "current": true,
+      "boundToFinalContent": true,
+      "requiredCheck": null
+     }
+    ],
+    "treatments": [],
+    "requiredChecks": []
+   }
+  }
+ ],
+ "prBody": {
+  "absent": true
+ },
+ "sessions": [
+  {
+   "executionId": "d9dac4fc-dd23-4700-918a-457acd16e63f",
+   "launch": "w-1Gv4Lq",
+   "file": "2026-11-15T09-34-24-770Z_01a1de8e-d401-7492-9ba8-e9a97f7b5173.jsonl",
+   "bytes": 69550,
+   "calls": [
+    {
+     "name": "read",
+     "path": "/artifacts/factory/skill-pack/factory-skills-v6/skills/implement/SKILL.md"
+    },
+    {
+     "name": "bash",
+     "command": "gh issue view https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3 --json number,title,body,url,updatedAt,author,labels; git -C /workspace/checkout status --short --branch; git -C /workspace/checkout show --stat --oneline --no-renames 8c058c90b3a0371d5966892ef5f0fd4758cdf90c; ls -la /artifacts; find /artifacts/spec -maxdepth 2 -type d 2>/dev/null | sort"
+    },
+    {
+     "name": "bash",
+     "command": "set -eu\nmkdir -p /artifacts/spec/v1 /artifacts/instructions/v1\n# Preserve exact ticket response, captured above from the required gh query\ncat > /artifacts/spec/v1/ticket.json <<'EOF'\n{\"author\":{\"id\":\"MDQ6VXNlcjE4ODE1OTc=\",\"is_bot\":false,\"login\":\"Sanmoo\",\"name\":\"Samuel Carvalho Santos\"},\"body\":\"Add a short documentation page `docs/FACTORY_SMOKE.md`. This exact upper-case file name was decided by the operator: keep it even if other docs use another naming style.\\n\\nRequired content:\\n1. A `# Factory smoke` title and one paragraph explaining that this file exists only to exercise the Software Factory review loop.\\n2. A `## Steps` section with a numbered list of exactly three steps: build, review, merge.\\n3. A `## Rollback` section saying the file can be deleted at any time without other changes.\\n\\nDocumentation only: the operator explicitly approves that no tests, seams or code changes are needed. Commit the change on your branch.\\n\\nValidation (documented gate; the bash tool always runs in `/workspace`, so de"
+    },
+    {
+     "name": "bash",
+     "command": "set -eu\ncd /workspace/checkout\nmkdir -p docs\ncat > docs/FACTORY_SMOKE.md <<'EOF'\n# Factory smoke\n\nThis file exists only to exercise the Software Factory review loop.\n\n## Steps\n\n1. build\n2. review\n3. merge\n\n## Rollback\n\nThis file can be deleted at any time without other changes.\nEOF\nnow=$(date -u +%Y-%m-%dT%H:%M:%SZ)\nsha=$(sha256sum /artifacts/spec/v1/ticket.json | awk '{print $1}')\nprintf '{\"version\":\"v1\",\"complete\":true,\"capturedAt\":\"%s\",\"sources\":[{\"origin\":\"https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3\",\"copy\":\"ticket.json\",\"retrievedAt\":\"%s\",\"sha256\":\"%s\",\"revision\":\"2026-11-15T00:00:22Z\"}]}' \"$now\" \"$now\" \"$sha\" > /artifacts/spec/v1/sources.json.tmp\nmv /artifacts/spec/v1/sources.json.tmp /artifacts/spec/v1/sources.json\nsha=$(sha256sum /artifacts/instructions/v1/AGENTS.md | awk '{print $1}')\nprintf '{\"version\":\"v1\",\"complete\":true,\"capturedAt\":\"%s\",\"sources\":[{\"origin\":\"AGENTS.md\",\"copy\":\"AGENTS.md\",\"retrievedAt\":\"%s\",\"sha256\":\"%s\",\"revision\":\"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\","
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/factory/skill-pack/factory-skills-v6/skills/tdd/SKILL.md"
+    },
+    {
+     "name": "bash",
+     "command": "cd /workspace/checkout && git add docs/FACTORY_SMOKE.md && git commit -m \"docs: add Factory smoke review page\" && git rev-parse HEAD && git status --short --branch"
+    },
+    {
+     "name": "bash",
+     "command": "cd /workspace/checkout && test -f docs/FACTORY_SMOKE.md && grep -q '^## Steps' docs/FACTORY_SMOKE.md && grep -q '^## Rollback' docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "handoff"
+    },
+    {
+     "name": "bash",
+     "command": "cd /workspace/checkout && git status --short --branch && git ls-tree -r --name-only 8c058c90b3a0371d5966892ef5f0fd4758cdf90c | grep -E '(^|/)(GLOSSARY\\.md|AGENTS\\.md|CLAUDE\\.md)$' || true && test -f docs/FACTORY_SMOKE.md && grep -q '^## Steps' docs/FACTORY_SMOKE.md && grep -q '^## Rollback' docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "handoff"
+    },
+    {
+     "name": "bash",
+     "command": "cd /workspace/checkout && git status --short --branch && git rev-parse HEAD && test -f docs/FACTORY_SMOKE.md && grep -q '^## Steps' docs/FACTORY_SMOKE.md && grep -q '^## Rollback' docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "handoff"
+    },
+    {
+     "name": "bash",
+     "command": "cd /workspace/checkout && git status --short --branch && test -f docs/FACTORY_SMOKE.md && grep -q '^## Steps' docs/FACTORY_SMOKE.md && grep -q '^## Rollback' docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "handoff"
+    }
+   ],
+   "tokenPattern": false
+  },
+  {
+   "executionId": "d9dac4fc-dd23-4700-918a-457acd16e63f",
+   "launch": "w-6eEZB1",
+   "file": "2026-11-15T09-35-18-174Z_01a1de8f-a49d-76ab-8be4-1f980609e425.jsonl",
+   "bytes": 35312,
+   "calls": [
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/issue-tracker.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/triage-labels.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/domain.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/GLOSSARY.md"
+    }
+   ],
+   "tokenPattern": false
+  },
+  {
+   "executionId": "d9dac4fc-dd23-4700-918a-457acd16e63f",
+   "launch": "w-CHekBP",
+   "file": "2026-11-15T09-35-18-174Z_01a1de8f-a49d-76ab-8be4-1f980609e425.jsonl",
+   "bytes": 111415,
+   "calls": [
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/issue-tracker.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/triage-labels.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/domain.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/GLOSSARY.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/issue-tracker.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/triage-labels.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/domain.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/GLOSSARY.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/adr"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r3/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r3/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r3/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r3/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/issue-tracker.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/triage-labels.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/domain.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/GLOSSARY.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/adr/"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r4/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r4/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r4/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r4/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/issue-tracker.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/triage-labels.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/domain.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/GLOSSARY.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/adr"
+    }
+   ],
+   "tokenPattern": false
+  },
+  {
+   "executionId": "d9dac4fc-dd23-4700-918a-457acd16e63f",
+   "launch": "w-RMdILe",
+   "file": "2026-11-15T09-35-18-281Z_01a1de8f-a508-7540-afb3-f58af07d9f11.jsonl",
+   "bytes": 66676,
+   "calls": [
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/ticket.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/ticket.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r3/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r3/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r3/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r3/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/ticket.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r4/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r4/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r4/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r4/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/ticket.json"
+    }
+   ],
+   "tokenPattern": false
+  },
+  {
+   "executionId": "d9dac4fc-dd23-4700-918a-457acd16e63f",
+   "launch": "w-dhHJ56",
+   "file": "2026-11-15T09-35-18-281Z_01a1de8f-a508-7540-afb3-f58af07d9f11.jsonl",
+   "bytes": 19183,
+   "calls": [
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/ticket.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/sources.json"
+    }
+   ],
+   "tokenPattern": false
+  },
+  {
+   "executionId": "d9dac4fc-dd23-4700-918a-457acd16e63f",
+   "launch": "w-qUYFMw",
+   "file": "2026-11-15T09-35-18-281Z_01a1de8f-a508-7540-afb3-f58af07d9f11.jsonl",
+   "bytes": 50839,
+   "calls": [
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/ticket.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/ticket.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r3/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r3/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r3/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r3/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/ticket.json"
+    }
+   ],
+   "tokenPattern": false
+  },
+  {
+   "executionId": "d9dac4fc-dd23-4700-918a-457acd16e63f",
+   "launch": "w-u9bpaT",
+   "file": "2026-11-15T09-35-18-174Z_01a1de8f-a49d-76ab-8be4-1f980609e425.jsonl",
+   "bytes": 60683,
+   "calls": [
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/issue-tracker.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/triage-labels.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/domain.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/GLOSSARY.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/issue-tracker.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/triage-labels.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/domain.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/GLOSSARY.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/adr"
+    }
+   ],
+   "tokenPattern": false
+  },
+  {
+   "executionId": "d9dac4fc-dd23-4700-918a-457acd16e63f",
+   "launch": "w-uC3auo",
+   "file": "2026-11-15T09-35-18-281Z_01a1de8f-a508-7540-afb3-f58af07d9f11.jsonl",
+   "bytes": 34994,
+   "calls": [
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/ticket.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/spec/v1/ticket.json"
+    }
+   ],
+   "tokenPattern": false
+  },
+  {
+   "executionId": "d9dac4fc-dd23-4700-918a-457acd16e63f",
+   "launch": "w-zqUe16",
+   "file": "2026-11-15T09-35-18-174Z_01a1de8f-a49d-76ab-8be4-1f980609e425.jsonl",
+   "bytes": 86034,
+   "calls": [
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/issue-tracker.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/triage-labels.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/domain.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r1/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/GLOSSARY.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r2/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/issue-tracker.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/triage-labels.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/domain.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/GLOSSARY.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/adr"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r3/index.json"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r3/committed.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r3/staged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/review/r3/unstaged.patch"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/sources.json"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/FACTORY_SMOKE.md"
+    },
+    {
+     "name": "read",
+     "path": "/artifacts/instructions/v1/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/AGENTS.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/issue-tracker.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/triage-labels.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/agents/domain.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/GLOSSARY.md"
+    },
+    {
+     "name": "read",
+     "path": "/workspace/checkout/docs/adr/"
+    }
+   ],
+   "tokenPattern": false
+  }
+ ],
+ "remote": {
+  "kind": "observed",
+  "source": "github-rest",
+  "observedAt": "2026-11-15T10:05:06.167Z",
+  "repository": "Sanmoo/java-springboot-event-sourcing",
+  "repositoryId": 1256893534,
+  "issues": {
+   "3": {
+    "completeness": "complete",
+    "candidates": []
+   }
+  },
+  "branches": {
+   "factory/3-12334f71": {
+    "state": "absent"
+   }
+  },
+  "refs": {
+   "state": "complete",
+   "refs": {
+    "refs/heads/main": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c"
+   }
+  },
+  "baseProtection": {
+   "state": "pull-request-required",
+   "sources": [
+    "ruleset:26435808"
+   ]
+  },
+  "limitations": [
+   "Own branch tips are read from the remote refs (Contents read) separately from the pull request listing.",
+   "Association = GitHub closing keywords in pull request title/body, native issue-timeline cross-references and Development links (connected/disconnected) for pull requests of this repository, and known own branches.",
+   "Pull requests in other repositories that reference the Ticket are not treated as associated (they cannot be own publications of this repository).",
+   "A Development link whose pull request is not identified in the timeline makes the Ticket incomplete, never clear.",
+   "Listing and timeline are separate reads, not an atomic remote snapshot."
+  ]
+ },
+ "ticket": {
+  "kind": "observed",
+  "source": "github-rest",
+  "observedAt": "2026-11-15T10:05:17.081Z",
+  "completeness": "complete",
+  "ticket": {
+   "tracker": "github",
+   "repository": "Sanmoo/java-springboot-event-sourcing",
+   "repositoryId": 1256893534,
+   "issueId": 6391129588,
+   "nodeId": "I_kwDOSuqsXs8AAAABfPDl9A",
+   "number": 3,
+   "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3"
+  },
+  "state": "open",
+  "stateReason": null,
+  "labels": [
+   {
+    "id": 12918930265,
+    "name": "ready-for-agent"
+   }
+  ],
+  "pullRequest": false
+ },
+ "baseBefore": {
+  "state": "present",
+  "sha": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c"
+ },
+ "refsBefore": {
+  "refs/heads/main": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c"
+ },
+ "checkout": {
+  "version": 1,
+  "path": "/workspace/checkout",
+  "repository": "Sanmoo/java-springboot-event-sourcing",
+  "repositoryId": 1256893534,
+  "base": "main",
+  "branch": "factory/3-12334f71",
+  "baseCommit": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+  "origin": "https://github.com/Sanmoo/java-springboot-event-sourcing.git",
+  "preparedAt": "2026-11-15T09:34:08.495Z",
+  "cache": "factory-exclusive-bare",
+  "clone": "no-hardlinks",
+  "fetchCredentialRevocation": "revoked"
+ },
+ "artifacts": [
+  ".factory-profile/storage-v1",
+  "instructions/v1/AGENTS.md",
+  "instructions/v1/sources.json",
+  "review/r1/committed.patch",
+  "review/r1/index.json",
+  "review/r1/staged.patch",
+  "review/r1/unstaged.patch",
+  "review/r2/committed.patch",
+  "review/r2/index.json",
+  "review/r2/staged.patch",
+  "review/r2/unstaged.patch",
+  "review/r3/committed.patch",
+  "review/r3/index.json",
+  "review/r3/staged.patch",
+  "review/r3/unstaged.patch",
+  "review/r4/committed.patch",
+  "review/r4/index.json",
+  "review/r4/staged.patch",
+  "review/r4/unstaged.patch",
+  "spec/v1/sources.json",
+  "spec/v1/ticket.json"
+ ],
+ "specSources": {
+  "text": "{\"version\":\"v1\",\"complete\":true,\"capturedAt\":\"2026-11-15T09:34:59Z\",\"sources\":[{\"origin\":\"https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3\",\"copy\":\"ticket.json\",\"retrievedAt\":\"2026-11-15T09:34:59Z\",\"sha256\":\"e4b7c0b71c2fd9b0daa4fa959ba1b9a55678e50c395d64666e3c479a54bcaed7\",\"revision\":\"2026-11-15T00:00:22Z\"}]}"
+ },
+ "instructionSources": {
+  "text": "{\"version\":\"v1\",\"complete\":true,\"capturedAt\":\"2026-11-15T09:34:59Z\",\"sources\":[{\"origin\":\"AGENTS.md\",\"copy\":\"AGENTS.md\",\"retrievedAt\":\"2026-11-15T09:34:59Z\",\"sha256\":\"d623b8027afdb31af954ad21ba00e29a76a05942f0898209ab0e724761ecf58e\",\"revision\":\"8c058c90b3a0371d5966892ef5f0fd4758cdf90c\",\"scope\":\"/\",\"precedence\":1}]}"
+ },
+ "git": {
+  "status": "observed",
+  "head": "7d7ef3543207666d87bfc3298160abbfcaf298a5",
+  "branch": "factory/3-12334f71",
+  "commits": [
+   "7d7ef35 docs: add Factory smoke review page",
+   "8c058c9 Configure engineering agent skills",
+   "3ed6575 wippy",
+   "90f6ad5 docs: global event position implementation plan",
+   "dafc2a2 docs: global event position design spec",
+   "20fa3b0 fix: restore null return in harness retry to not break non-concurrency failure scenarios",
+   "7f15aea Merge branch 'concurrency-tests'",
+   "0ce69c5 fix: rethrow unexpected exceptions in harness retry instead of swallowing them",
+   "3d6d076 chore(quality): fix SpotBugs and PMD violations in concurrency tests",
+   "a2248bc test(concurrency): add mixed commands scenario",
+   "9ba1af6 test(concurrency): add write and read with minVersion scenario",
+   "55d57fe test(concurrency): add idempotent duplicate requests scenario",
+   "c55e9ac test(concurrency): add authorization and capture scenario",
+   "545ce5f add graphify graph",
+   "3e755bf test(concurrency): add concurrent authorizations scenario",
+   "92877be test(concurrency): add base concurrency integration test class",
+   "3ab8ade test(concurrency): add ConcurrentCommandHarness",
+   "4a9a2c1 test(concurrency): add ConcurrentCommandResult record",
+   "3b0e6c4 polish: clear all deprecation notices, warnings, and PMD violations from check build",
+   "96ae37b style: remove redundant imports in CreditAccountController",
+   "aa55976 fix: flatten AuthorizePurchaseResponse JSON with @JsonUnwrapped to preserve API contract",
+   "12295ab fix: exclude CreditAccountResponse from SpotBugs EI_EXPOSE_REP and add defensive list copy",
+   "d8783df fix: remove unused List import in CreditAccountDtoMapper",
+   "2725901 test: use typed response DTOs in CreditAccountControllerListIT",
+   "8a89f1e test: use typed response DTOs in CreditAccountControllerIT",
+   "2c6c9da refactor: use ErrorResponse in RestExceptionHandler",
+   "1ebf772 refactor: use typed DTOs in PageResponse and CreditAccountController",
+   "0a3ce3e feat: add explicit REST response DTOs and mapper",
+   "4debd91 docs: add design spec for explicit REST response DTOs",
+   "e8fea05 simplify details manually",
+   "92354fa style: remove extra blank lines from CreditAccountUseCaseSupport",
+   "ee3d54a refactor(idempotency): remove duplicated aggregate version column",
+   "09f4955 docs: plan idempotency aggregate version simplification",
+   "c4b2150 chore(quality): allow snake_case tests, update spotbugs exclude, fix static field",
+   "1e47eee chore(quality): fix PMD acceptance test violations",
+   "c971b04 chore(quality): fix PMD violations across main source",
+   "69fbda2 chore(checkstyle): remove unused import and unused variable",
+   "399f9ca test(usecase): cover credit account listing mapping",
+   "d152884 test(projection): cover worker PIT survivor paths",
+   "e6d18fa test(projection): cover capture and release projector paths",
+   "3c05b52 docs: plan targeted PIT survivor coverage",
+   "55cf4d4 test(projection): cover projector limit change, payment and auth",
+   "55cd495 test(projection): cover worker gating, retry and unblock paths",
+   "70a07d3 test(projection): add StaleDeliveryRecovery coverage",
+   "40bcba8 test(projection): add ProjectionGatingResult coverage",
+   "1a67ed8 test(projection): add ProjectionWorkerResult coverage",
+   "ad14654 fix(architecture): resolve qualityTest violations via ProjectionConfig port",
+   "6d4e4a8 test(architecture): deny non-allow-listed Spring in core",
+   "d76b238 refactor(projection): use TransactionRunner port in stale recovery",
+   "af5260c refactor(projection): use TransactionRunner port in worker"
+  ],
+  "diffStat": "docs/FACTORY_SMOKE.md | 13 +++++++++++++\n 1 file changed, 13 insertions(+)",
+  "remotes": [
+   {
+    "name": "origin",
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing.git"
+   }
+  ],
+  "alternates": false,
+  "copiedBytes": 839391
+ }
+}
