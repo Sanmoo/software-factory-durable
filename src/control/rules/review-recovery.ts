@@ -2,16 +2,11 @@
 import type { ProposalHandoff, ProposalIdentity, ReviewerRole, ReviewOpinion } from '../../contracts/index.js';
 import type { BudgetCounter, CarriedOpinionView, ExecutionView, ReviewerView, ReviewRoundView } from '../types.js';
 import { availableOf } from './budget.js';
+import { recoveryWait } from './recovery.js';
 import { reviewerRoles, sameProposal } from './review.js';
 
-/**
- * Persisted waits of operational recoveries (spec §4.4: 5/15/45 s, the last one repeated), indexed by the recoveries the Work already consumed
- * (never reset). The same schedule as ticket 26's `recoveryWaitsSeconds`; on the rebase onto 26 this delegates to its `recoveryWait`.
- */
-export const reviewerRetryWaitsSeconds = [5, 15, 45] as const;
-export function reviewerRetryWait(consumed: number): number {
-  return reviewerRetryWaitsSeconds[Math.min(Math.max(0, Math.floor(consumed)), reviewerRetryWaitsSeconds.length - 1)]!;
-}
+/** The persisted wait of an operational recovery (ticket 26's `recoveryWait`, spec §4.4: 5/15/45 s by the recoveries already consumed). */
+export const reviewerRetryWait = (consumed: number): number => recoveryWait({ attempt: consumed });
 
 /** An opinion is a real reviewer result when it concluded (clean, findings or incomplete); failure/cancellation is a failure, never zero findings. */
 export const concluded = (opinion: ReviewOpinion | null | undefined): opinion is ReviewOpinion =>
@@ -126,7 +121,7 @@ export function carryPlan(input: { source: { executionId: string; round: ReviewR
     const expected = { role, round: source.round.round, attempt, invocationId: reviewer.invocationId, handoffIndexSha256: before.indexSha256 };
     // Only a COMPLETE result is carried (clean/findings); an incomplete opinion (limitation, unread input) is reviewed again.
     const recorded = reviewer.state === 'ended' && carriable(reviewer.opinion) && incorporable(reviewer.opinion, expected) ? reviewer.opinion : null;
-    const found = !recorded && (reviewer.state === 'started' || reviewer.state === 'requested' || reviewer.cessation === 'unconfirmed') ? input.discovered?.[role] ?? null : null;
+    const found = !recorded && outcomeUnrecorded(reviewer) ? input.discovered?.[role] ?? null : null;
     const opinion = recorded ?? (found && carriable(found) && incorporable(found, expected) ? found : null);
     if (!opinion) continue;
     plan[role] = { opinion, from: { executionId: source.executionId, round: source.round.round, attempt, invocationId: reviewer.invocationId,
@@ -137,8 +132,13 @@ export function carryPlan(input: { source: { executionId: string; round: ReviewR
 
 /** Reviewers of the interrupted round whose outcome was never recorded: their complete opinion may sit in Records (lost notification). */
 export const undiscovered = (round: ReviewRoundView | null | undefined): ReviewerRole[] => !round ? [] :
-  reviewerRoles.filter(role => !concluded(round.reviewers[role].opinion) && (['requested', 'started'].includes(round.reviewers[role].state) ||
-    round.reviewers[role].cessation === 'unconfirmed'));
+  reviewerRoles.filter(role => !concluded(round.reviewers[role].opinion) && outcomeUnrecorded(round.reviewers[role]));
+/** No outcome reached Control: still requested/started, unconfirmed, or recorded by ticket 26's reconciliation as interrupted with the boot. */
+function outcomeUnrecorded(reviewer: Pick<ReviewerView, 'state' | 'cessation' | 'failure' | 'opinion'>): boolean {
+  if (reviewer.opinion) return false;
+  return reviewer.state === 'requested' || reviewer.state === 'started' || reviewer.cessation === 'unconfirmed' ||
+    (reviewer.state === 'failed' && reviewer.cessation === 'boot-ceased' && reviewer.failure?.code === 'EXECUTION_INTERRUPTED');
+}
 
 /** Round reasons for failures that were not re-obtained (explicit, never zero findings). */
 export const notRetriedReasons = (round: Pick<ReviewRoundView, 'reviewers'>): string[] =>

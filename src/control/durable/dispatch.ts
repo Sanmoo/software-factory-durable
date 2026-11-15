@@ -415,12 +415,13 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     return true;
   }
 
-  /** The Execution interrupted before this one when ticket 26 readmitted it as an operational recovery (`interruption`), or null. */
+  /** The Execution interrupted before this one when ticket 26 readmitted the Work through the queue (`interruption`), or null. */
   function interruptedPrevious(work: WorkRecord | undefined, executionId: string): ExecutionView | null {
     const execution = work?.execution;
     if (!execution || execution.executionId !== executionId) return null;
-    const basis = (execution as ExecutionView & { interruption?: { previousExecutionId: string; reason: string } | null }).interruption;
-    if (!basis || basis.reason !== 'OPERATIONAL_RECOVERY') return null;
+    // Ticket 26's interruption basis: an operational recovery or a clean administrative continuation (both after confirmed cessation).
+    const basis = execution.interruption ?? null;
+    if (!basis) return null;
     return work.previousExecutions.find(item => item.executionId === basis.previousExecutionId) ?? null;
   }
 
@@ -459,6 +460,11 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         baseCommit: prepared.checkout.baseCommit, branch: execution.request.branch, checkout: prepared.checkout.path, workId: work.work_id,
         executionId: execution.executionId, skillDirectory, previousExecutionId: basis.previousExecutionId, reason: basis.reason, code: basis.code,
         reviews: Boolean(ports.reviews) }), ...(updates.length ? ['', ...scopeSection(updates)] : [])].join('\n');
+      // Ticket 28 (spec §5.6): the preserved review state of the interrupted Execution, context only (a delivery to the old session is not
+      // proof it was consumed); its valid opinions are carried at the next handoff when the proposal is unchanged. Dropped under the bound.
+      const review = ports.reviews?.partialRecovery ? preservedReviewContext(previous.review?.rounds ?? [], 6000, { carry: true }) : null;
+      const withReview = review ? `${prompt}\n\n${review}` : prompt;
+      if (new TextEncoder().encode(withReview).length <= promptBudgetBytes) return { kind: 'ready', prompt: withReview, resume: null, decision: null, continuation: null };
       if (new TextEncoder().encode(prompt).length > promptBudgetBytes) return { kind: 'insufficient', reasons: ['PROMPT_TOO_LARGE'] };
       return { kind: 'ready', prompt, resume: null, decision: null, continuation: null };
     }

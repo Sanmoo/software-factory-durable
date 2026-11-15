@@ -186,3 +186,14 @@ test('review HIGH 1: reconciliation settles an outstanding retry reservation —
     assert.deepEqual([kept.work.budget!.recoveries.reserved, kept.reviewer.charge?.state], ['spec-e1-r1a2', 'reserved'], 'never settled by guess');
   }
 });
+
+test('ticket 26 composition: a reviewer recorded interrupted with the boot (failed/boot-ceased, no opinion) is an unrecorded outcome — looked up in Records, carried if found', () => {
+  const settled = round(4, { standards: { state: 'failed', opinion: null, failure: { code: 'EXECUTION_INTERRUPTED' }, cessation: 'boot-ceased' } });
+  assert.deepEqual(undiscovered(settled), ['standards']);
+  const source = carrySource({ executionId: 'e1', review: { rounds: [settled] }, end: { at: 'now', outcome: 'failure', code: 'CONTROLLER_CRASH', cessation: 'confirmed' },
+    request: {} as ExecutionView['request'] });
+  const plan = carryPlan({ source, summary: summary(5), identity: observed(), profile, discovered: { standards: opinion('standards', 4) } });
+  assert.deepEqual([Object.keys(plan).sort(), plan.standards?.from.discovered], [['spec', 'standards'], true]);
+  assert.deepEqual(undiscovered(round(4, { spec: { state: 'failed', opinion: null, failure: { code: 'WORKER_INTERRUPTED' }, cessation: 'completion-observed' } })), [],
+    'a recorded failure is an outcome, not a lost notification');
+});

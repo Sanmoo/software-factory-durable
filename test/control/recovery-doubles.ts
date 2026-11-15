@@ -4,7 +4,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
-import type { ProposalHandoff } from '../../src/contracts/index.js';
+import type { ProposalHandoff, ReviewOpinion } from '../../src/contracts/index.js';
 import type { ExecutionPorts } from '../../src/control/types.js';
 import { createRecords } from '../../src/records/index.js';
 import { createWorkers, type Invocation, type WorkerQuestion } from '../../src/workers/index.js';
@@ -44,7 +44,11 @@ function writeHost(dir: string, state: HostState) {
 }
 export function updateHost(dir: string, change: (state: HostState) => void) { const state = readHost(dir); change(state); writeHost(dir, state); }
 
-export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options: { capacity?: number; observe?: boolean; observeStart?: boolean; reviews?: boolean;
+/** Ticket 28 reviewer behaviour on the shared boot: `lost` = Standards preserves its complete opinion in Records then its notification is lost
+ * (it runs until the boot stops), Spec just runs; `retry` = Spec fails at once (completion observed) and its retry waits; `complete` = both
+ * reviewers preserve and notify a clean opinion. The handoff captures a content identity so a recovery capture can match it. */
+export type Review28 = 'lost' | 'retry' | 'complete';
+export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options: { capacity?: number; observe?: boolean; observeStart?: boolean; reviews?: boolean; review28?: Review28;
   onPrepare?: () => Promise<void>; onActivate?: (invocation: Invocation) => void | Promise<void> } = {}) {
   const prompts: { executionId: string; phaseId: string; prompt: string }[] = [];
   const log = (kind: string, detail?: unknown) => updateHost(dir, state => { state.log.push({ kind, ...(detail === undefined ? {} : { detail }) }); });
@@ -59,6 +63,20 @@ export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options:
     void result.catch(() => {});
     return result;
   };
+  /** The reviewer worker's complete protected opinion record (same shape as worker-session), returned as its notification would carry it. */
+  async function writeOpinion(invocation: Invocation): Promise<ReviewOpinion> {
+    const records = await createRecords({ root: dir });
+    const { phaseId: _phase, ...context } = invocation.context;
+    const review = invocation.review!;
+    const composed = { version: 1 as const, role: invocation.context.role as 'standards' | 'spec', round: review.round, attempt: review.attempt, invocationId: invocation.context.invocationId,
+      session: { file: null }, model: { providerId: 'openai', modelId: 'gpt-6-luna' }, profile: { id: 'p', modelBudget: 'reviewer-v1' },
+      input: { handoffIndexSha256: review.handoffIndexSha256, required: [...review.required], missing: [...review.missing] }, finalMessageSha256: null,
+      conclusion: 'clean' as const, code: null, coverage: { scope: 'broad' as const, justification: 'all', examined: [] }, findings: [], limitations: [],
+      hostChecks: { reads: 1, failedReads: [], requiredNotFullyRead: [], downgraded: [] }, recordedAt: new Date().toISOString() };
+    const reference = await records.record({ ...context, callId: 'review-opinion' }, { kind: 'review-opinion', ...composed });
+    log('opinion-recorded', { role: composed.role, round: review.round, invocationId: invocation.context.invocationId });
+    return { ...composed, reference };
+  }
   async function writeReceipt(invocation: Invocation) {
     const records = await createRecords({ root: dir });
     const { phaseId: _phase, ...context } = invocation.context;
@@ -68,6 +86,12 @@ export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options:
     configuration: { schemaVersion: 1 }, capacity: options.capacity ?? 1,
     calendar: { now: () => Date.now() + readHost(dir).calendarOffsetMs },
     ...(options.reviews ? { reviews: { reviewer: { modelBudget: 'reviewer-v1' as const, imageSourceMaxBytes: 5242880 } } } : {}),
+    ...(options.review28 ? { reviews: { reviewer: { modelBudget: 'reviewer-v1' as const, imageSourceMaxBytes: 5242880 }, rounds: { max: 2 }, partialRecovery: true },
+      // The persisted retry wait never ends on its own in `retry` (the cut happens during it); other waits end at once.
+      clock: { monotonic: () => performance.now(), sleep: (ms: number, signal: AbortSignal) => new Promise<void>(resolve => {
+        if (options.review28 !== 'retry' || ms !== 5000) { setTimeout(resolve, Math.min(ms, 20)); return; }
+        signal.addEventListener('abort', () => resolve(), { once: true });
+      }) } } : {}),
     builder: { skillPack: 'factory-skills-v4', modelBudget: 'builder-v1', copyOutput: true, editSourceMaxBytes: 8192 },
     sandbox: {
       async observeProposal() { return { status: 'observed', sha256: '1'.repeat(64), indexSha256: 'e'.repeat(64), entries: 1, consistent: true, observedAt: new Date().toISOString() }; },
@@ -111,6 +135,19 @@ export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options:
     },
     workers: {
       async activate(invocation, _delivery, events) {
+        if (invocation.context.role !== 'builder' && options.review28) {
+          log('activate-reviewer', { role: invocation.context.role, review: invocation.review, boot: invocation.context.bootRef });
+          const started = writeReceipt(invocation).then(reference => ({ receipt: reference, invocation: { executionId: invocation.context.executionId, invocationId: invocation.context.invocationId } }));
+          const mode = options.review28;
+          const completed = started.then(async start => {
+            const preserved = mode === 'complete' || (mode === 'lost' && invocation.context.role === 'standards') ? await writeOpinion(invocation) : null;
+            if (mode === 'retry' && invocation.context.role === 'spec') return { status: 'failure' as const, code: 'WORKER_INTERRUPTED' };
+            if (mode === 'complete') return { status: 'success' as const, receipt: start.receipt, opinion: preserved! };
+            return new Promise<never>(() => {}); // runs until its boot stops; a lost notification never arrives
+          });
+          return { worker: invocation.context.invocationId, started: interruptible(invocation.signal, started), completed: interruptible(invocation.signal, completed),
+            close() { log('close-reviewer'); } };
+        }
         if (invocation.context.role !== 'builder') {
           // A reviewer of the SAME boot: receipt first, then it runs until its activation (boot) is gone.
           log('activate-reviewer', { role: invocation.context.role, boot: invocation.context.bootRef });
@@ -148,12 +185,18 @@ export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options:
         let pending = script.kind === 'handoff';
         return { worker: invocation.context.invocationId, started: interruptible(invocation.signal, started), completed, close() { log('close'); },
           ...(script.kind === 'handoff' ? { handoffs: { async next() {
-            if (pending) { pending = false; return { round: 1, status: 'captured' as const, summary: handoffSummary() }; }
+            if (pending) {
+              pending = false;
+              // Ticket 28: the capture numbers continue the Work's rounds and carry the SAME content identity in every Execution.
+              const round = invocation.handoff?.rounds?.first ?? 1;
+              return { round, status: 'captured' as const, summary: { ...handoffSummary(), round, ...(options.review28 ? { content: { sha256: '9'.repeat(64), clean: false, headMatches: false } } : {}) } };
+            }
             await finished; return null;
           } } } : {}) };
       },
       async deliver(_worker, directive) { log(`deliver-${directive.kind}`); return { status: directive.kind === 'withdraw-credential' ? 'withdrawn' as const : 'delivered' as const }; },
       ...(options.observeStart === false ? {} : { observeStart: (input: { workId: string; executionId: string; invocationId: string }) => workers.observeStart(input) }),
+      ...(options.review28 ? { observeOpinion: (input: { workId: string; executionId: string; invocationId: string }) => { log('observe-opinion', input); return workers.observeOpinion(input); } } : {}),
     },
   };
   return { ports, prompts, finish: (index = finishers.length - 1) => finishers[index]?.(), host: () => readHost(dir),

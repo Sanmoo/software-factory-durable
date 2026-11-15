@@ -122,7 +122,13 @@ const handoffEventSchema = z.union([
 export function createWorkers(configuration?: Configuration) {
   // Live activations of THIS facade (memory only): the current recipient of `deliver`. Closed/ended channels are removed.
   const live = new Map<string, { channel: Channel; inbox: ReturnType<typeof mailbox>; context: Invocation['context']; launchId: string; handoff: boolean }>();
-  let opinionRecords: ReturnType<typeof createRecords> | undefined;
+  // The observe facets (start receipt, ticket 26; opinion, ticket 28) share ONE Records handle, opened lazily (its private-root check runs
+  // once); each call is then only a bounded listing and bounded reads. A failed open is retried by the next call.
+  let observedRecords: ReturnType<typeof createRecords> | undefined;
+  const protectedRecords = async (root: string) => {
+    observedRecords ??= createRecords({ root });
+    try { return await observedRecords; } catch { observedRecords = undefined; return null; }
+  };
   return {
     /**
    * Ticket 26 — Q6 `observe`, receipt facet: the complete synchronized start receipt the worker host wrote in the protected Records BEFORE any
@@ -131,8 +137,8 @@ export function createWorkers(configuration?: Configuration) {
    */
   async observeStart(input: { workId: string; executionId: string; invocationId: string }): Promise<StartObservation> {
     if (!configuration) return { kind: 'uncertain', code: 'WORKER_EXECUTION_NOT_ENABLED' };
-    let records: Awaited<ReturnType<typeof createRecords>>;
-    try { records = await createRecords({ root: configuration.root }); } catch { return { kind: 'uncertain', code: 'RECORDS_UNAVAILABLE' }; }
+    const records = await protectedRecords(configuration.root);
+    if (!records) return { kind: 'uncertain', code: 'RECORDS_UNAVAILABLE' };
     const found = await records.find({ workId: input.workId, executionId: input.executionId, invocationId: input.invocationId, callId: 'worker-start' }).catch(() => null);
     if (!found || found.completeness !== 'complete') return { kind: 'uncertain', code: 'START_RECEIPT_LISTING_INCOMPLETE' };
     if (found.captures.length === 0) return { kind: 'absent', completeness: 'complete' };
@@ -155,10 +161,8 @@ export function createWorkers(configuration?: Configuration) {
      */
     async observeOpinion(input: { workId: string; executionId: string; invocationId: string }): Promise<OpinionObservation> {
       if (!configuration) return { kind: 'uncertain', code: 'WORKER_EXECUTION_NOT_ENABLED' };
-      // ONE Records handle per facade, opened lazily (its private-root check runs once), then only bounded reads/listings per call.
-      opinionRecords ??= createRecords({ root: configuration.root });
-      let records: Awaited<ReturnType<typeof createRecords>>;
-      try { records = await opinionRecords; } catch { opinionRecords = undefined; return { kind: 'uncertain', code: 'RECORDS_UNAVAILABLE' }; }
+      const records = await protectedRecords(configuration.root);
+      if (!records) return { kind: 'uncertain', code: 'RECORDS_UNAVAILABLE' };
       return observeOpinionRecord(records, input);
     },
     /**

@@ -6,6 +6,7 @@ import { classifyInterruption, recoveryImpediment, startDecision } from '../rule
 import { readWork, ticketIndex, works, type WorkRecord } from './admission.js';
 import { applyConfirmedCessation, consumeReservation, reofferUnlessCompleted, releaseReservation, slots } from './execution.js';
 import { questions } from './questions.js';
+import { pendingReviewerReservations, settleReviewerReservations } from './review-recovery.js';
 import type { Session } from './store.js';
 
 // Ticket 26 (spec §5.2-5.4/§11.4): boot reconciliation of interrupted Executions — own survivors are stopped, never adopted; the start is
@@ -102,7 +103,9 @@ function boundDiscoveredDuration(work: WorkRecord, execution: ExecutionView, rec
  * uncertain start keeps it; the Slot is released only with confirmed cessation; a transient failure becomes ONE operational recovery.
  */
 export async function settleInterruption(session: Session, input: { work_id: string; executionId: string; cessation: Cessation; observation: StartObservation | null;
-  trigger: RecoveryRecord['trigger']; controllerRunId: string }): Promise<RecoveryRecord['decision'] | 'stale'> {
+  trigger: RecoveryRecord['trigger']; controllerRunId: string;
+  /** Ticket 28: receipt observations of reviewer retry attempts whose recoveries reservation is outstanding (by invocation). */
+  reviewerReceipts?: Record<string, StartObservation> }): Promise<RecoveryRecord['decision'] | 'stale'> {
   return session.commit(async tx => {
     const document = await tx.doc(works, input.work_id, null);
     const work = document.work;
@@ -132,6 +135,16 @@ export async function settleInterruption(session: Session, input: { work_id: str
     }
     // This boot's host evidence confirms the cessation: an earlier unconfirmed-cessation block is lifted (the evidence is in `recovery[]`).
     work.impediments = work.impediments.filter(item => item.code !== 'RECOVERY_CESSATION_UNCONFIRMED');
+    // Ticket 28: an outstanding reviewer retry reservation follows the same start evidence — a receipt consumes it once, a complete listing
+    // without one releases it; an uncertain start keeps it and blocks the Work for a decision (never consumed or released by guess).
+    const reviewerSettlement = settleReviewerReservations(work, execution, { cessation: 'confirmed', receipt: invocationId => {
+      const seen = input.reviewerReceipts?.[invocationId];
+      if (seen?.kind === 'receipt') return seen.receipt.invocationId === invocationId && seen.receipt.executionId === execution.executionId
+        ? { kind: 'receipt', id: seen.receipt.id } : { kind: 'uncertain', code: 'START_RECEIPT_MISMATCH' };
+      return seen?.kind === 'absent' ? { kind: 'absent' } : { kind: 'uncertain', code: seen?.kind === 'uncertain' ? seen.code : 'START_RECEIPT_OBSERVATION_NOT_COMPOSED' };
+    } });
+    const keptReviewer = reviewerSettlement.find(item => item.outcome === 'kept');
+    if (keptReviewer) addImpediment(work, recoveryImpediment('RECOVERY_START_UNCERTAIN', `reviewer retry ${keptReviewer.invocationId}`, now));
     const observed = input.observation;
     // A discovered receipt must be THIS Execution's (identity of the invocation the Control reserved), never another one's.
     const matching = observed?.kind === 'receipt' && observed.receipt.workId === input.work_id && observed.receipt.executionId === execution.executionId &&
@@ -237,8 +250,16 @@ export async function reconcileExecution(deps: Omit<RecoveryDeps, 'live'>, work:
   const execution = work.execution!;
   const ceased = cessation ?? await ceaseOwn(deps.ports.sandbox, execution, deps.inventory, work, 'controller recovery: own survivor stopped, not adopted');
   const observation = ceased.result === 'confirmed' && needsReceipt(execution) ? await observeReceipt(deps.ports, work.work_id, execution) : null;
+  // Ticket 28: the start receipt of each reviewer retry still holding a recoveries reservation (only after confirmed cessation).
+  const reviewerReceipts: Record<string, StartObservation> = {};
+  if (ceased.result === 'confirmed' && deps.ports.workers.observeStart) {
+    for (const pending of pendingReviewerReservations(execution).slice(0, 8)) {
+      reviewerReceipts[pending.invocationId] = await deps.ports.workers.observeStart({ workId: work.work_id, executionId: execution.executionId, invocationId: pending.invocationId })
+        .catch(() => ({ kind: 'uncertain' as const, code: 'START_OBSERVATION_FAILED' }));
+    }
+  }
   return { cessation: ceased, decision: await settleInterruption(deps.session, { work_id: work.work_id, executionId: execution.executionId, cessation: ceased, observation,
-    trigger, controllerRunId: deps.controllerRunId }) };
+    trigger, controllerRunId: deps.controllerRunId, reviewerReceipts }) };
 }
 
 /**
