@@ -25,3 +25,8 @@
 ## Autorização e limites
 
 Publicação é planejamento aprovado, não autorização de construção, uso de host/credenciais/GitHub/modelos reais, injeção de falhas ou piloto. Obter autorização pertinente antes da execução. Não alterar decisões aprovadas silenciosamente; lacuna de desenho volta ao operador. Merge e avaliação humana não são delegados aos agentes.
+
+## Comments
+
+- 2026-11-15 (implementation, branch `implement/software-factory-mvp-16`): local increment and recipe ready; real run pending operator
+  authorization. See [evidence 16](../../../docs/evidence/16-evidence-based-readiness.md).
