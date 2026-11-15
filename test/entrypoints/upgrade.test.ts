@@ -9,6 +9,7 @@ import { readJournal, upgrade, upgradeBlocksStart, type UpgradeReport } from '..
 import { verifyReleaseTree } from '../../src/entrypoints/release.js';
 import { crashAfterStart, reconcilingRun, storageWithPendingQuestion, writeFormatOne } from '../control/upgrade-fixture.js';
 import { installation } from './upgrade-fixture.js';
+import { remainingMs } from '../runner/budget.js';
 
 // I-local (ticket 33): the real upgrade logic against an installation root with real manifests/launchers of synthetic release trees and a
 // real Control storage (pending Question produced by the public Control with doubled execution/GitHub). Crash cuts are REAL SIGKILLs of a
@@ -107,12 +108,25 @@ test('incompatibility is refused before any change: not paused, unclean stop, un
   await assert.rejects(stat(join(bad.root, 'data', 'upgrade')), { code: 'ENOENT' });
 });
 
-test('real SIGKILL after each durable step: the interruption is detected, the controller refuses to start, resume completes it or rollback reselects while possible', async t => {
+/**
+ * Ticket 37 P5 (approved): the upgrade stopped right after `cut` without a second process. Its observe hook never returns at that step,
+ * so the call stays frozen there (as a killed process, it does nothing more) and what is durable is exactly what that step left.
+ */
+function frozenAt(context: Parameters<typeof upgrade>[0], cut: 'journal' | 'selected'): Promise<void> {
+  return new Promise(reached => {
+    void upgrade({ ...context, observe: step => { if (step !== cut) return; reached(); return new Promise<never>(() => {}); } }, 'apply', { migrate: 'factory-storage-1-to-2' });
+  });
+}
+
+test('interruption after each durable step (a real SIGKILL at the migration commit; journal and selection frozen at their step): the interruption is detected, the controller refuses to start, resume completes it or rollback reselects while possible', async t => {
   for (const cut of ['journal', 'migrated', 'selected'] as const) {
     const { root, context, previous, target, pending } = await rootWithFormatOne(t);
     const before = storageOf(await inspectStorage(context.storagePath));
-    const killed = spawnSync(node, [child, root, cut, 'apply', 'factory-storage-1-to-2'], { encoding: 'utf8', timeout: 30000 });
-    assert.equal(killed.signal, 'SIGKILL', `${cut}: ${killed.stderr}`);
+    if (cut === 'migrated') {
+      // The one real process death of this mechanism: a SIGKILL right after the migration committed.
+      const killed = spawnSync(node, [child, root, cut, 'apply', 'factory-storage-1-to-2'], { encoding: 'utf8', timeout: remainingMs() });
+      assert.equal(killed.signal, 'SIGKILL', `${cut}: ${killed.stderr}`);
+    } else await frozenAt(context, cut);
     const journal = await readJournal(root);
     assert.ok(journal && journal !== 'invalid');
     assert.equal(journal.state, { journal: 'migrating', migrated: 'migrated', selected: 'selecting' }[cut]);
