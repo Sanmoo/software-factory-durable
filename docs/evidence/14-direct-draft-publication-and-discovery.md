@@ -1,6 +1,6 @@
 # Ticket 14 — Direct draft publication and discovery of the own PR
 
-Branch `implement/software-factory-mvp-14`, rebased on integration `4f56f25` (tickets 01–13, 19, 20, 26, 32). Ticket 13's
+Branch `implement/software-factory-mvp-14`, rebased on integration `60ccdd7` (tickets 01–13, 19, 20, 26, 32, 33, 36). Ticket 13's
 `ExecutionView.review.verification` and the final capture's `summary.content` are consumed with their real types; the flow and composition
 tests produce them through ticket 13's REAL review rounds (scripted Builder captures + scripted reviewers), no storage seed.
 
@@ -145,6 +145,29 @@ Fixes:
    NOT a limitation; only a missing REQUIRED input or an EXISTING unreadable file is. Test: `review-rules` (red → green).
 3. Recipe namespace `q14-publication-v8`; preflight unchanged (the v6 leftover is tolerated only at its exact tip; its absence is fine).
 
+## Real run `q14-publication-v8` (2026-11-15, supervisor-authorized, consumed) — PUBLISHED
+
+Copied results (secret scan: 0 token/key patterns; sessions `tokenPattern: false`): `14-real-publication-v8-{preflight,run,discover,inspect}-2026-11-15.json`.
+Note: the run/discover `final` views show the CURRENT Execution (the publication activation), whose `review.rounds` are `[]` and
+verification `null` by design (publish-only, no handoff); the verified review belongs to the basis Execution, listed in
+`previousExecutions` and in `publication.verified`.
+
+| Expected (`plan().expected`) | Observed (inspect/run/discover) |
+| --- | --- |
+| implementation ended completed, cessation confirmed, `review.verification` verified | basis `589ddac5`: ended completed, cessation confirmed, `builder-start` grant; rounds r1 review (Standards clean, Spec clean), r2/r3 exemptions; verification `verified`, reasons `[]`, contentSha256 `fe9faf…` — **met** |
+| first discovery: trigger verified, outcome absent, branch absent; expectedRemote absent | discoveries[0] `verified`/`absent`; expectedRemote `{absent}`; refsBefore `{refs/heads/main: 8c058c9…}`; base protection `pull-request-required` (`ruleset:26435808`) — **met** |
+| publication Execution: request.publication {basis, head = verified head, branch, base main, marker, expectedRemote absent, pullRequest null}; `builder-publish`; phaseId builder-publication; no handoff; no edit; publish-only prompt; attempt recorded at activation | `0cd35c93`: resume `PUBLICATION_REQUESTED`, request.publication exactly that (head `bfdd439…` = `publication.verified.head`), credential `builder-publish`, phaseId `builder-publication`, handoff absent, policies without `editSourceMaxBytes`, prompt `Factory publication instruction (publish-only session, reason: PUBLISH_ONLY_SESSION)`; attempts `[{0cd35c93, bfdd439…, expectedRemote absent}]` — **met** |
+| publication session: explicit lease + `gh pr create --draft`; no merge/ready/approve | bash records: `git -C /workspace/checkout push --force-with-lease=refs/heads/factory/3-99fe871b: origin bfdd439…:refs/heads/factory/3-99fe871b`, `gh pr list … --head factory/3-99fe871b --state all`, `gh pr create … --draft --base main --head factory/3-99fe871b … --body-file /artifacts/publication/pr-body.md`; no other GitHub write command — **met** |
+| end of run: awaiting-discovery, pullRequest null (Factory did not learn the result from the Builder) | run-result: publication `awaiting-discovery`, `pullRequest: null`, discoveries `[verified/absent]`; the owner stopped after the publication Execution ceased, before any further discovery (no read needed refusing: 0 `find-publication-refused`) — **met** (lost result across an owner restart) |
+| discover: published; draft PR at verified head, own branch, base main, pinned App bot author; Work.pullRequest; description conformant; no unexpected ref change; no new Execution; issue open; main unchanged; PR open/draft/unmerged | discover: no activation/grant; discoveries[1] `after-publication`/`linked`; PR #5 `open`, `draft: true`, `merged: false`, headSha `bfdd439…`, headRef `factory/3-99fe871b`, base `main`, author `sanmoo-factory[bot]` (id 351187749, Bot); Work.pullRequest #5; description `{conformant: true}` (marker, Summary, `Closes #3`, Validation, Risk); refs now `{main: 8c058c9…, factory/3-99fe871b: bfdd439…}` (only the own branch changed); impediments `[]`; issue #3 `open`; main still `8c058c9…` — **met** |
+| no token in storage/receipts/sessions/observations | scan 0 hits; sessions `tokenPattern: false` — **met** |
+
+GitHub state left (by design, used by tickets 15/17): branch `factory/3-99fe871b` at `bfdd439…` and draft PR #5 (`Closes #3`, no labels).
+
+AC6 evidence across the real runs: v8 — lost result across an owner restart, discovered and linked without repetition; v6 — attempt
+whose push landed but PR creation failed, discovered as `PUBLICATION_OUTCOME_UNCONFIRMED`/`REMOTE_BRANCH_AT_VERIFIED_HEAD` and blocked
+(no blind repetition, nothing adopted); multiple candidates, incomplete reads and unknown changes are covered at S/I-local levels.
+
 ## Open design questions
 
 1. Base protection is read and REQUIRED before any publication request (review MED 4). The spec says the Factory does not certify or
@@ -156,9 +179,9 @@ Fixes:
    head + refs window), but the guest checkout may diverge from the verified commit after such an activation.
 5. Unexpected ref changes during the window cannot be attributed (a human push at the same time also blocks): explicit operator decision.
 
-## Gate totals (v7 fixes, on `4f56f25`)
+## Gate (on `60ccdd7`, ticket 36 runner)
 
-`tsc -p tsconfig.json` rc=0; `eslint . --max-warnings 0` rc=0; dependency-cruiser: no violations (369 modules, 2264 dependencies);
-every compiled `dist/test/**/*.test.js` run one file at a time with `--experimental-test-module-mocks --test --test-concurrency=1`:
-179 files, 1112 pass, 0 fail, 10 skipped. `workers/sdk-profile.test.js` (unchanged by ticket 14) hit its inner 15 s timeout under host
-load in the full run and passed alone (1/1). `test/sandbox/gondolin.test.ts` stays `skip: true`.
+`scripts/test-runner/run ci` (= `npm run test:ci`): **PASS** — static tsc 11.1 s, eslint 6.4 s, dependency-cruiser 2.3 s; parallel lane 187
+files (N=8), serial lane 1 file; 1166 tests: 1156 pass, 0 fail, 0 cancelled, 10 skipped; 191.3 s of the 600 s budget; load average start
+1.60/6.74/8.70, end 12.62/10.01/9.62. Quarantined (not coverage, ticket 37): `test/entrypoints/admission-cli.test.ts`. No new tier entry:
+the ticket 14 test files are fast and parallel-safe (temporary storage/fixtures only).
