@@ -1,0 +1,60 @@
+{
+ "revision": "q30-retention-v2",
+ "overall": "met",
+ "checks": [
+  {
+   "id": "delivered",
+   "expected": "delivered",
+   "observed": "delivered",
+   "met": true
+  },
+  {
+   "id": "due-at",
+   "expected": "2026-12-15T15:08:56.564Z",
+   "observed": "2026-12-15T15:08:56.564Z",
+   "met": true
+  },
+  {
+   "id": "run-a-retained",
+   "expected": "retained/0 removed",
+   "observed": "retained/0 removed",
+   "met": true
+  },
+  {
+   "id": "run-a-plan-recorded",
+   "expected": "planned",
+   "observed": "planned",
+   "met": true
+  },
+  {
+   "id": "run-b-expired",
+   "expected": "expired",
+   "observed": "expired",
+   "met": true
+  },
+  {
+   "id": "run-b-removed",
+   "expected": 88,
+   "observed": 88,
+   "met": true
+  },
+  {
+   "id": "evidence-kept",
+   "expected": 1,
+   "observed": 1,
+   "met": true
+  },
+  {
+   "id": "source-unchanged",
+   "expected": "ce45922cf2598437e18e7e0cc3f8b895557629c8a9e13b8b6c96a6cda1036165",
+   "observed": "ce45922cf2598437e18e7e0cc3f8b895557629c8a9e13b8b6c96a6cda1036165",
+   "met": true
+  },
+  {
+   "id": "no-remote-effect",
+   "expected": 0,
+   "observed": 0,
+   "met": true
+  }
+ ]
+}

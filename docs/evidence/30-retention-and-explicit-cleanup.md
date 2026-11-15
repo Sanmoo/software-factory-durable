@@ -78,7 +78,7 @@ cleaned explicitly; that is an abandonment, not an unblock. Unblocking (an expli
 unreadable request) belongs to recovery, tickets 26/27. **Supervisor (decision 4): accepted. It is an open item owned by 26/27, tracked by
 the supervisor.** Ticket 26's decision 3 already routes it to `resume`, which does not lift it today.
 
-## Real-run recipe (LOCAL only, supervisor decision 5; not run here)
+## Real-run recipe (LOCAL only, supervisor decision 5; run by the supervisor: v1 not met, v2 met)
 
 `test/entrypoints/retention30-qualification.ts`, namespace `/home/sanmoo/software-factory-test/y5/q30-retention-v2`. Import and `--plan` are
 inert (`retention30-qualification.test.ts`). The phases are one-shot, each with an exclusive intent tombstone and no retry:
@@ -122,6 +122,34 @@ Fix (recipe only):
 - `retention30-recipe-storage.test.ts` now reproduces the real shape with 88 captures. It was red (38 left) before the fix and is green
   after.
 - The new namespace is `q30-retention-v2`.
+
+### Run v2 (`q30-retention-v2`, run by the supervisor 2026-11-15): verdict **MET**, 9/9
+
+Source: a COPY of `q17-delivery-v4/authority`. It was already format 2 (`current`), so no migration ran; preserved digest `f56ec7e3…`. The
+delivered Work's Records were copied privately: 284 files, 155103 bytes. Inventory: 88 logs, 0 sessions, 1 preserved evidence directory.
+Ticket 17 had cleaned the environment before ticket 30, so no session copy exists for this Work.
+
+| Check | Expected | Observed |
+| --- | --- | --- |
+| delivered | delivered | delivered |
+| due-at | 2026-12-15T15:08:56.564Z (merge confirmed 2026-11-15T15:08:56.564Z + 30 d) | same |
+| run A (merge + 1 d) | retained / 0 removed | retained / 0 removed |
+| run A plan | planned (never confirmed) | planned |
+| run B (merge + 31 d) | expired | expired |
+| run B removed | 88 | 88 |
+| evidence kept | 1 | 1 |
+| source storage sha256 | ce45922c… | ce45922c… (unchanged) |
+| remote/Sandbox calls | 0 | 0 |
+
+Observations copied here and scanned for secrets (only field names such as `authorization` matched; no token, key or credential value):
+- [verdict](30-real-retention-v2-verdict-2026-11-15.json)
+- [preflight](30-real-retention-v2-preflight-result-2026-11-15.json)
+- [run A](30-real-retention-v2-sweep-a-result-2026-11-15.json)
+- [run B](30-real-retention-v2-sweep-b-result-2026-11-15.json)
+- [inspect](30-real-retention-v2-inspect-result-2026-11-15.json)
+
+Level: real local installation data (P on the Records/SQLite/Control boundaries this ticket changes). The GitHub doubles stay local by
+design; there was no VM or model.
 
 The V-14 "P" part (cleanup of a real delivery) remains ticket 17's `q17-delivery-v4`, already run.
 
