@@ -104,6 +104,12 @@ export function builderHandoff(policy?: HandoffRounds, ledger?: ReturnType<typeo
           `the Ticket or the preserved instructions document (cite that file#section and run that command); if none is documented, omit gates — never declare a ` +
           `gate to say it does not exist. ${problems.slice(0, 8).join('; ')}`.slice(0, 1500));
       }
+      // Real run q21-human-v6: a `run` gate is evidenced only by a Bash call of EXACTLY its command; one that ran only inside a larger script
+      // or with another prefix would end unverified after a whole review round. Refused here, in session, with the command to run alone.
+      const unrun = ledger && !ledger.exhausted() ? (parsed.data.gates ?? []).filter(item => item.status === 'run' && ledger.ranOnlyEmbedded(item.command)) : [];
+      if (unrun.length) return refused('HANDOFF_GATE_NOT_RUN: no handoff happened and no review round was used. A gate result is taken only from a bash call of ' +
+        `EXACTLY the declared command. ${unrun.slice(0, 4).map(item => `${item.id}: run exactly this command ALONE as its own bash call, then hand off again: ${item.command}`)
+          .join('; ')}`.slice(0, 1500));
       declarations = parsed.data;
       rounds++; suspended = true; pending = true;
       return { content: [{ type: 'text' as const, text: `Handoff accepted for capture round ${policy!.first + rounds - 1}. Your tools are suspended; stop now and wait.` }],

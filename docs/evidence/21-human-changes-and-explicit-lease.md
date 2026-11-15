@@ -167,3 +167,12 @@ re-run and declare every documented gate; treat every finding; a finding about t
 divergence Question as concrete authorization (correlated by ticket 13's verification); anything else goes to ask_user. Builder Questions
 after the PR link go to the Ticket issue (PR surface not enabled), like the divergence Questions. Recipe: `inspect` runs after any ended
 phase (held or not), never while one runs. Namespace `q21-human-v6`, issue unpinned. Gate: `npm run test:ci` PASS — 1384 tests, 1374 pass, 0 fail, 10 skipped.
+
+## Real run q21-human-v6 (issue #24, consumed) — implementation gate unverified; fixed
+
+Not a regression of the v5 reconciliation duties (that run was the plain implementation). The Builder declared the gate
+`cd /workspace/checkout && test -f … && grep -q '^## Steps' …` but ran it only EMBEDDED: inside its commit script (round 1) and then as
+`cd /workspace && <that command>` (round 2). The Host ledger takes a gate result only from a Bash call of exactly the declared command, so
+both rounds ended `GATE_RESULT_NOT_FOUND` → `GATE_RESULT_UNVERIFIED:ticket-validation`. Fix (workers): the handoff refuses, in session and
+without using a round, a `run` gate whose command ran only embedded (`HANDOFF_GATE_NOT_RUN`, with the exact command to run ALONE); a gate
+that never ran at all keeps ticket 13's semantics (accepted, unverified). Red/green test with the exact v6 shapes. Namespace `q21-human-v7`.

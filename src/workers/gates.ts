@@ -64,6 +64,10 @@ export function createToolLedger(options: { maxCalls?: number } = {}) {
       if (call && !call.bash) call.bash = { ...entry, sequence: call.sequence };
     },
     exhausted: () => exhausted,
+    /** Real run q21-human-v6: the command ran only EMBEDDED (inside a larger script or with another prefix/suffix), never exactly alone —
+     * the one case where its result exists but can never be evidenced. A command that never ran at all stays unverified (ticket 13). */
+    ranOnlyEmbedded: (command: string) => command.trim().length > 0 && !calls.some(call => call.bash?.command === command) &&
+      calls.some(call => call.bash !== undefined && call.bash.command.includes(command.trim())),
     /**
      * Resolves declared gates against the ledger. A `run` gate takes its exit code/protected output from the LATEST Bash call with
      * exactly the declared command and is `current` only when: the declared cwd is the ACTUAL cwd, both content snapshots exist, the

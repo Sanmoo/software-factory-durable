@@ -66,3 +66,26 @@ test('the Host reads the cited source with a fixed command through the Builder b
   }
   assert.equal(commands.length, 1, 'nothing else was sent');
 });
+
+test('real run q21-human-v6: a `run` gate whose EXACT command never ran alone is refused in session (no round used) with the command to run', async () => {
+  const declared = "cd /workspace/checkout && test -f docs/FACTORY_HUMAN_CHANGES.md && grep -q '^## Steps' docs/FACTORY_HUMAN_CHANGES.md";
+  const ticket24 = JSON.stringify({ number: 24, body: `Validation:\n\`${declared}\`` });
+  const ledger = createToolLedger();
+  const observe = (callId: string, command: string) => { ledger.begin('bash', callId); ledger.bash(callId, { command, cwd: '/workspace', exitCode: 0, output: null, code: null, contentBeforeSha: 'a', contentAfterSha: 'a' }); };
+  // Exactly what the Builder did: the gate inside a larger script, then the Ticket's text WITH the `cd /workspace &&` prefix.
+  observe('c1', `set -eu\ncd /workspace/checkout\ngit add docs/FACTORY_HUMAN_CHANGES.md\ngit commit -m "Add"\ncd /workspace && ${declared}\n`);
+  observe('c2', `cd /workspace && ${declared}`);
+  const gate = builderHandoff({ first: 1, max: 4 }, ledger, async () => ticket24);
+  const gateDeclaration = { id: 'ticket-validation', source: '/artifacts/spec/v1/ticket.json#Validation', command: declared, cwd: '/workspace', status: 'run' };
+  const refused = await call(gate, { gates: [gateDeclaration] });
+  assert.equal(refused.isError, true);
+  assert.match(text(refused), /^HANDOFF_GATE_NOT_RUN: no handoff happened and no review round was used/);
+  assert.ok(text(refused).includes(`ticket-validation: run exactly this command ALONE as its own bash call, then hand off again: ${declared}`), text(refused));
+  assert.equal(gate.suspended(), false);
+  observe('c3', declared);
+  const accepted = await call(gate, { gates: [gateDeclaration] });
+  assert.match(text(accepted), /^Handoff accepted for capture round 1/);
+  // A gate that never ran at all is still accepted and ends unverified (ticket 13 semantics, unchanged).
+  const fresh = builderHandoff({ first: 1, max: 4 }, createToolLedger(), async () => ticket24);
+  assert.match(text(await call(fresh, { gates: [gateDeclaration] })), /^Handoff accepted/);
+});
