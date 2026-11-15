@@ -71,13 +71,16 @@ as trilhas em sequência única nem permite aprovar contratos de composição in
   hipótese Claude host + MCP confinado, sem adoção aprovada. Acoplamentos Pi, suspensão/filtragem/
   cessação e diferenças v2 de reconstrução/WIP estão rastreados; dez cenários alimentam a spec da prova.
 
+- [Especificar a prova de harnesses substituíveis com Pi e Claude Code](issues/06-harness-proof-spec.md#answer):
+  [spec local aprovada](harness-proof-spec.md), focada nas diferenças de harness em três jornadas e dois
+  desvios, sem regressão geral do MVP; execução depende de manifesto e autorização operacional própria.
+
 ## Not yet specified
 
 - Compatibilidade real de Docker/Compose/Testcontainers/Ryuk, DNS, binds e portas em Lambda.
 - Viabilidade de SSH/WebSocket, limites, custo e evidências de cessação/rede/credenciais do serviço.
-- Validar as hipóteses de encaixe CLI/Agent SDK, ferramentas e perfil Claude localizadas pela
-  pesquisa da interface, sem camada redundante; confirmar condições aplicáveis da assinatura e
-  propriedades efetivas de isolamento por papel, suspensão, filtragem e cessação.
+- Além da prova local especificada, determinar quais evidências adicionais a composição final exigirá,
+  à luz dos resultados de harness e sandbox; não estender o aceite local automaticamente à produção.
 - Detalhes do gate Git, reconstrução, rotação e contexto independente de transcript; compatibilidade
   de sessão, perfis versionados e recuperação entre harnesses após reconfiguração da instalação.
 - Localização de loops/ferramentas e combinações harness/sandbox suportadas; capacidades mínimas,
