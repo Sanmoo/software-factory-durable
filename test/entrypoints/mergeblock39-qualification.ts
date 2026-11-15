@@ -69,6 +69,14 @@ export function verdict(rules: Pick<BranchRule, 'type' | 'ruleset'>[], interpret
   return { status: reasons.length ? 'held' : 'success', reasons };
 }
 
+export const keySource = `${root}/${githubApp.privateKeyFile}`;
+/** Fails loudly, with the path and what to do, when the App key the preflight copies is missing (nothing has been created yet). */
+export async function requireKeySource(access: (path: string) => Promise<unknown>) {
+  await access(keySource).catch(() => {
+    throw new Error(`APP_KEY_SOURCE_MISSING: ${keySource} is absent; restore the App private key there before preflight (nothing was created, no intent, no GitHub call).`);
+  });
+}
+
 async function io() {
   const fs = await import('node:fs/promises');
   const save = async (name: string, data: unknown) => {
@@ -113,6 +121,8 @@ export async function runPhase(phase: Phase) {
   if (!phases.includes(phase)) throw new Error('UNKNOWN_PHASE');
   const { fs, save, exists, load } = await io();
   if (phase === 'preflight') {
+    // Before ANY effect (no directory, no intent, no GitHub call): the App key the namespace copies must exist.
+    await requireKeySource(path => fs.access(path));
     await fs.mkdir(observations, { mode: 0o700 }); // EXCLUSIVE: never adopt an existing qualification
     const { constants } = await import('node:fs');
     await fs.mkdir(`${observations}/credentials`, { mode: 0o700 }); await fs.mkdir(`${observations}/run`, { mode: 0o700 });
@@ -170,5 +180,8 @@ export async function main(args: string[]) {
   await runPhase(args[0] as Phase);
 }
 if (process.argv[1] === new URL(import.meta.url).pathname) {
-  main(process.argv.slice(2)).then(() => process.exit(0), () => { console.error('Qualification held; no retry.'); process.exit(1); });
+  main(process.argv.slice(2)).then(() => process.exit(0), (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(message.startsWith('APP_KEY_SOURCE_MISSING') ? message : `Qualification held; no retry. (${message.slice(0, 128)})`); process.exit(1);
+  });
 }

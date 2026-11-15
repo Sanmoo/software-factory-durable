@@ -1,11 +1,43 @@
 {
- "provenance": "GET /repos/Sanmoo/java-springboot-event-sourcing/rules/branches/main as the active rules of ruleset 26435808 (re-enabled `update`). Rule types, order, ruleset_id, ruleset_source_type and ruleset_source are the ones the real adapter read in the q16/q17 runs (docs/evidence/16-real-readiness-preflight-2026-11-15.json). Parameter VALUES of pull_request (1 approval, merge/squash/rebase) are the operator-recorded ones (docs/evidence/17-real-delivery-v4-preflight-2026-11-15.json); parameter KEYS follow the GitHub REST ruleset rule schema; the remaining booleans are reconstructed defaults. The raw payload was not saved by those runs (the adapter kept only types): the q39-mergeblock-v1 recipe captures it verbatim.",
+ "provenance": "VERBATIM value of GET /repos/Sanmoo/java-springboot-event-sourcing/rules/branches/main from the real q39-mergeblock-v1 preflight (2026-11-15T15:49:06Z, GET only, operator-authorized; docs/evidence/39-real-mergeblock-preflight-2026-11-15.json). Ruleset 26435808 with update re-enabled.",
  "rules": [
-  { "type": "pull_request", "parameters": { "required_approving_review_count": 1, "dismiss_stale_reviews_on_push": false, "require_code_owner_review": false,
-    "require_last_push_approval": false, "required_review_thread_resolution": false, "allowed_merge_methods": ["merge", "squash", "rebase"] },
-    "ruleset_source_type": "Repository", "ruleset_source": "Sanmoo/java-springboot-event-sourcing", "ruleset_id": 26435808 },
-  { "type": "non_fast_forward", "ruleset_source_type": "Repository", "ruleset_source": "Sanmoo/java-springboot-event-sourcing", "ruleset_id": 26435808 },
-  { "type": "deletion", "ruleset_source_type": "Repository", "ruleset_source": "Sanmoo/java-springboot-event-sourcing", "ruleset_id": 26435808 },
-  { "type": "update", "parameters": { "update_allows_fetch_and_merge": false }, "ruleset_source_type": "Repository", "ruleset_source": "Sanmoo/java-springboot-event-sourcing", "ruleset_id": 26435808 }
+  {
+   "type": "pull_request",
+   "parameters": {
+    "required_approving_review_count": 1,
+    "dismiss_stale_reviews_on_push": true,
+    "required_reviewers": [],
+    "require_code_owner_review": false,
+    "require_last_push_approval": false,
+    "required_review_thread_resolution": false,
+    "require_extra_approval_for_unattributed_changes": true,
+    "allowed_merge_methods": [
+     "merge",
+     "squash",
+     "rebase"
+    ]
+   },
+   "ruleset_source_type": "Repository",
+   "ruleset_source": "Sanmoo/java-springboot-event-sourcing",
+   "ruleset_id": 26435808
+  },
+  {
+   "type": "non_fast_forward",
+   "ruleset_source_type": "Repository",
+   "ruleset_source": "Sanmoo/java-springboot-event-sourcing",
+   "ruleset_id": 26435808
+  },
+  {
+   "type": "deletion",
+   "ruleset_source_type": "Repository",
+   "ruleset_source": "Sanmoo/java-springboot-event-sourcing",
+   "ruleset_id": 26435808
+  },
+  {
+   "type": "update",
+   "ruleset_source_type": "Repository",
+   "ruleset_source": "Sanmoo/java-springboot-event-sourcing",
+   "ruleset_id": 26435808
+  }
  ]
 }

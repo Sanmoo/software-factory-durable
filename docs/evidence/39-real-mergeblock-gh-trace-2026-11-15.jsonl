@@ -1,0 +1,16 @@
+{"at":"2026-11-15T15:49:03.467Z","method":"GET","endpoint":"/repos/Sanmoo/java-springboot-event-sourcing","allowed":true}
+{"at":"2026-11-15T15:49:04.535Z","method":"GET","endpoint":"/repos/Sanmoo/java-springboot-event-sourcing","allowed":true}
+{"at":"2026-11-15T15:49:05.389Z","method":"GET","endpoint":"/repos/Sanmoo/java-springboot-event-sourcing/branches/main","allowed":true}
+{"at":"2026-11-15T15:49:06.326Z","method":"GET","endpoint":"/repos/Sanmoo/java-springboot-event-sourcing/rules/branches/main?per_page=100&page=1","allowed":true}
+{"at":"2026-11-15T15:49:07.101Z","method":"GET","endpoint":"/repos/Sanmoo/java-springboot-event-sourcing/rulesets/26435808","allowed":true}
+{"at":"2026-11-15T15:49:07.968Z","method":"GET","endpoint":"/repos/Sanmoo/java-springboot-event-sourcing/pulls/5","allowed":true}
+{"at":"2026-11-15T15:49:10.592Z","method":"GET","endpoint":"/repos/Sanmoo/java-springboot-event-sourcing","allowed":true}
+{"at":"2026-11-15T15:49:11.459Z","method":"GET","endpoint":"/repos/Sanmoo/java-springboot-event-sourcing/pulls/5","allowed":true}
+{"at":"2026-11-15T15:49:12.282Z","method":"GET","endpoint":"/repos/Sanmoo/java-springboot-event-sourcing/branches/main","allowed":true}
+{"at":"2026-11-15T15:49:13.118Z","method":"GET","endpoint":"/repos/Sanmoo/java-springboot-event-sourcing/rules/branches/main?per_page=100&page=1","allowed":true}
+{"at":"2026-11-15T15:49:13.784Z","method":"GET","endpoint":"/repos/Sanmoo/java-springboot-event-sourcing/commits/bfdd439ceba20a424538647f41e55d5ab2d03217/check-runs?filter=all&per_page=100&page=1","allowed":true}
+{"at":"2026-11-15T15:49:14.447Z","method":"GET","endpoint":"/repos/Sanmoo/java-springboot-event-sourcing/commits/bfdd439ceba20a424538647f41e55d5ab2d03217/statuses?per_page=100&page=1","allowed":true}
+{"at":"2026-11-15T15:49:15.365Z","method":"GET","endpoint":"/repos/Sanmoo/java-springboot-event-sourcing/compare/eb6178d666882a614a9b7716979c2a15bbd262fc...bfdd439ceba20a424538647f41e55d5ab2d03217","allowed":true}
+{"at":"2026-11-15T15:49:16.135Z","method":"GET","endpoint":"/repos/Sanmoo/java-springboot-event-sourcing/branches/main","allowed":true}
+{"at":"2026-11-15T15:49:16.779Z","method":"GET","endpoint":"/repos/Sanmoo/java-springboot-event-sourcing/rules/branches/main?per_page=100&page=1","allowed":true}
+{"at":"2026-11-15T15:49:17.393Z","method":"GET","endpoint":"/repos/Sanmoo/java-springboot-event-sourcing/pulls/5","allowed":true}

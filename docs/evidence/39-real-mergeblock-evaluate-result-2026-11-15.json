@@ -1,0 +1,438 @@
+{
+ "status": "success",
+ "reasons": [],
+ "getOnly": true,
+ "requests": 16,
+ "interpreted": [
+  {
+   "type": "pull_request",
+   "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+   "interpretation": "human-stage",
+   "merge": "human-stage",
+   "reason": "HUMAN_REVIEW_STAGE",
+   "notes": [
+    "APPROVALS:1"
+   ]
+  },
+  {
+   "type": "non_fast_forward",
+   "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+   "interpretation": "not-check-related",
+   "merge": "not-blocking",
+   "reason": "DOES_NOT_AFFECT_PULL_REQUEST_MERGE",
+   "notes": []
+  },
+  {
+   "type": "deletion",
+   "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+   "interpretation": "not-check-related",
+   "merge": "not-blocking",
+   "reason": "DOES_NOT_AFFECT_PULL_REQUEST_MERGE",
+   "notes": []
+  },
+  {
+   "type": "update",
+   "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+   "interpretation": "merge-blocking",
+   "merge": "blocking",
+   "reason": "UPDATE_RESTRICTED",
+   "notes": []
+  }
+ ],
+ "rules": [
+  {
+   "type": "pull_request",
+   "ruleset": {
+    "id": 26435808,
+    "sourceType": "Repository",
+    "source": "Sanmoo/java-springboot-event-sourcing"
+   },
+   "parameters": {
+    "kind": "pull_request",
+    "allowedMergeMethods": [
+     "merge",
+     "squash",
+     "rebase"
+    ],
+    "requiredApprovingReviewCount": 1,
+    "requireCodeOwnerReview": false,
+    "requireLastPushApproval": false,
+    "requiredReviewThreadResolution": false,
+    "dismissStaleReviewsOnPush": true
+   }
+  },
+  {
+   "type": "non_fast_forward",
+   "ruleset": {
+    "id": 26435808,
+    "sourceType": "Repository",
+    "source": "Sanmoo/java-springboot-event-sourcing"
+   }
+  },
+  {
+   "type": "deletion",
+   "ruleset": {
+    "id": 26435808,
+    "sourceType": "Repository",
+    "source": "Sanmoo/java-springboot-event-sourcing"
+   }
+  },
+  {
+   "type": "update",
+   "ruleset": {
+    "id": 26435808,
+    "sourceType": "Repository",
+    "source": "Sanmoo/java-springboot-event-sourcing"
+   },
+   "parameters": {
+    "kind": "update",
+    "updateAllowsFetchAndMerge": false
+   }
+  }
+ ],
+ "pullRequest": {
+  "state": "closed",
+  "merged": true,
+  "mergeable": null,
+  "mergeableState": "unknown"
+ },
+ "counterfactualOpen": {
+  "label": "COUNTERFACTUAL: PR state set to open on a copy of the observation; not a readiness of #5",
+  "outcome": "blocked",
+  "reasons": [
+   {
+    "category": "merge",
+    "code": "UPDATE_RESTRICTED",
+    "subject": "update@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing"
+   }
+  ],
+  "conflict": "unknown",
+  "modalities": [
+   {
+    "type": "pull_request",
+    "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+    "interpretation": "human-stage",
+    "merge": "human-stage",
+    "reason": "HUMAN_REVIEW_STAGE",
+    "notes": [
+     "APPROVALS:1"
+    ]
+   },
+   {
+    "type": "non_fast_forward",
+    "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+    "interpretation": "not-check-related",
+    "merge": "not-blocking",
+    "reason": "DOES_NOT_AFFECT_PULL_REQUEST_MERGE",
+    "notes": []
+   },
+   {
+    "type": "deletion",
+    "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+    "interpretation": "not-check-related",
+    "merge": "not-blocking",
+    "reason": "DOES_NOT_AFFECT_PULL_REQUEST_MERGE",
+    "notes": []
+   },
+   {
+    "type": "update",
+    "source": "ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing",
+    "interpretation": "merge-blocking",
+    "merge": "blocking",
+    "reason": "UPDATE_RESTRICTED",
+    "notes": []
+   }
+  ],
+  "nextStep": "The base protection blocks a human merge of this pull request for anyone without bypass: update@ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing (UPDATE_RESTRICTED). Operator: adjust the base protection (that rule of that ruleset or branch protection) so that a human can merge the pull request; the Factory does not use or recommend a bypass, never approves and never merges."
+ },
+ "observed": {
+  "kind": "observed",
+  "source": "github-rest",
+  "observedAt": "2026-11-15T15:49:09.206Z",
+  "completedAt": "2026-11-15T15:49:17.370Z",
+  "repository": "Sanmoo/java-springboot-event-sourcing",
+  "repositoryId": 1256893534,
+  "pullRequest": {
+   "pullRequestId": 5321820867,
+   "nodeId": "PR_kwDOSuqsXs8AAAABPTSKww",
+   "number": 5,
+   "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5",
+   "state": "closed",
+   "merged": true,
+   "draft": false,
+   "headRef": "factory/3-99fe871b",
+   "headSha": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+   "headRepositoryId": 1256893534,
+   "baseRef": "main",
+   "baseSha": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+   "mergeCommitSha": null,
+   "mergeable": null,
+   "mergeableState": "unknown",
+   "author": {
+    "id": 351187749,
+    "login": "sanmoo-factory[bot]",
+    "type": "Bot"
+   }
+  },
+  "baseTip": {
+   "state": "complete",
+   "value": "eb6178d666882a614a9b7716979c2a15bbd262fc"
+  },
+  "classic": {
+   "state": "complete",
+   "value": {
+    "kind": "none",
+    "evidence": "STATUS_CHECKS_NOT_ENFORCED"
+   }
+  },
+  "rules": {
+   "state": "complete",
+   "value": [
+    {
+     "type": "pull_request",
+     "ruleset": {
+      "id": 26435808,
+      "sourceType": "Repository",
+      "source": "Sanmoo/java-springboot-event-sourcing"
+     },
+     "parameters": {
+      "kind": "pull_request",
+      "allowedMergeMethods": [
+       "merge",
+       "squash",
+       "rebase"
+      ],
+      "requiredApprovingReviewCount": 1,
+      "requireCodeOwnerReview": false,
+      "requireLastPushApproval": false,
+      "requiredReviewThreadResolution": false,
+      "dismissStaleReviewsOnPush": true
+     }
+    },
+    {
+     "type": "non_fast_forward",
+     "ruleset": {
+      "id": 26435808,
+      "sourceType": "Repository",
+      "source": "Sanmoo/java-springboot-event-sourcing"
+     }
+    },
+    {
+     "type": "deletion",
+     "ruleset": {
+      "id": 26435808,
+      "sourceType": "Repository",
+      "source": "Sanmoo/java-springboot-event-sourcing"
+     }
+    },
+    {
+     "type": "update",
+     "ruleset": {
+      "id": 26435808,
+      "sourceType": "Repository",
+      "source": "Sanmoo/java-springboot-event-sourcing"
+     },
+     "parameters": {
+      "kind": "update",
+      "updateAllowsFetchAndMerge": false
+     }
+    }
+   ]
+  },
+  "checkRuns": {
+   "state": "complete",
+   "value": []
+  },
+  "statuses": {
+   "state": "complete",
+   "value": []
+  },
+  "comparison": {
+   "state": "complete",
+   "value": {
+    "status": "behind",
+    "aheadBy": 0,
+    "behindBy": 1
+   }
+  },
+  "final": {
+   "baseTip": {
+    "state": "complete",
+    "value": "eb6178d666882a614a9b7716979c2a15bbd262fc"
+   },
+   "classic": {
+    "state": "complete",
+    "value": {
+     "kind": "none",
+     "evidence": "STATUS_CHECKS_NOT_ENFORCED"
+    }
+   },
+   "rules": {
+    "state": "complete",
+    "value": [
+     {
+      "type": "pull_request",
+      "ruleset": {
+       "id": 26435808,
+       "sourceType": "Repository",
+       "source": "Sanmoo/java-springboot-event-sourcing"
+      },
+      "parameters": {
+       "kind": "pull_request",
+       "allowedMergeMethods": [
+        "merge",
+        "squash",
+        "rebase"
+       ],
+       "requiredApprovingReviewCount": 1,
+       "requireCodeOwnerReview": false,
+       "requireLastPushApproval": false,
+       "requiredReviewThreadResolution": false,
+       "dismissStaleReviewsOnPush": true
+      }
+     },
+     {
+      "type": "non_fast_forward",
+      "ruleset": {
+       "id": 26435808,
+       "sourceType": "Repository",
+       "source": "Sanmoo/java-springboot-event-sourcing"
+      }
+     },
+     {
+      "type": "deletion",
+      "ruleset": {
+       "id": 26435808,
+       "sourceType": "Repository",
+       "source": "Sanmoo/java-springboot-event-sourcing"
+      }
+     },
+     {
+      "type": "update",
+      "ruleset": {
+       "id": 26435808,
+       "sourceType": "Repository",
+       "source": "Sanmoo/java-springboot-event-sourcing"
+      },
+      "parameters": {
+       "kind": "update",
+       "updateAllowsFetchAndMerge": false
+      }
+     }
+    ]
+   }
+  },
+  "recheck": {
+   "state": "complete",
+   "value": {
+    "headSha": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+    "baseRef": "main",
+    "state": "closed",
+    "merged": true
+   }
+  },
+  "limitations": [
+   "Separate GET reads between observedAt and completedAt: not an atomic snapshot of GitHub, its rules and CI; the pull request and the requirements are re-read at the end.",
+   "Results are read for the current head commit only; results attached to the test merge commit are not read.",
+   "Rules are the active rules GitHub reports for the base branch (repository and inherited rulesets); classic protection is read separately."
+  ]
+ },
+ "trace": [
+  {
+   "at": "2026-11-15T15:49:03.467Z",
+   "method": "GET",
+   "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing",
+   "allowed": true
+  },
+  {
+   "at": "2026-11-15T15:49:04.535Z",
+   "method": "GET",
+   "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing",
+   "allowed": true
+  },
+  {
+   "at": "2026-11-15T15:49:05.389Z",
+   "method": "GET",
+   "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/branches/main",
+   "allowed": true
+  },
+  {
+   "at": "2026-11-15T15:49:06.326Z",
+   "method": "GET",
+   "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/rules/branches/main?per_page=100&page=1",
+   "allowed": true
+  },
+  {
+   "at": "2026-11-15T15:49:07.101Z",
+   "method": "GET",
+   "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/rulesets/26435808",
+   "allowed": true
+  },
+  {
+   "at": "2026-11-15T15:49:07.968Z",
+   "method": "GET",
+   "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/pulls/5",
+   "allowed": true
+  },
+  {
+   "at": "2026-11-15T15:49:10.592Z",
+   "method": "GET",
+   "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing",
+   "allowed": true
+  },
+  {
+   "at": "2026-11-15T15:49:11.459Z",
+   "method": "GET",
+   "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/pulls/5",
+   "allowed": true
+  },
+  {
+   "at": "2026-11-15T15:49:12.282Z",
+   "method": "GET",
+   "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/branches/main",
+   "allowed": true
+  },
+  {
+   "at": "2026-11-15T15:49:13.118Z",
+   "method": "GET",
+   "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/rules/branches/main?per_page=100&page=1",
+   "allowed": true
+  },
+  {
+   "at": "2026-11-15T15:49:13.784Z",
+   "method": "GET",
+   "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/commits/bfdd439ceba20a424538647f41e55d5ab2d03217/check-runs?filter=all&per_page=100&page=1",
+   "allowed": true
+  },
+  {
+   "at": "2026-11-15T15:49:14.447Z",
+   "method": "GET",
+   "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/commits/bfdd439ceba20a424538647f41e55d5ab2d03217/statuses?per_page=100&page=1",
+   "allowed": true
+  },
+  {
+   "at": "2026-11-15T15:49:15.365Z",
+   "method": "GET",
+   "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/compare/eb6178d666882a614a9b7716979c2a15bbd262fc...bfdd439ceba20a424538647f41e55d5ab2d03217",
+   "allowed": true
+  },
+  {
+   "at": "2026-11-15T15:49:16.135Z",
+   "method": "GET",
+   "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/branches/main",
+   "allowed": true
+  },
+  {
+   "at": "2026-11-15T15:49:16.779Z",
+   "method": "GET",
+   "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/rules/branches/main?per_page=100&page=1",
+   "allowed": true
+  },
+  {
+   "at": "2026-11-15T15:49:17.393Z",
+   "method": "GET",
+   "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/pulls/5",
+   "allowed": true
+  }
+ ]
+}

@@ -6,7 +6,7 @@ import { evaluateChecks, interpretBaseRules } from '../../src/control/index.js';
 import type { GitHubAccess, GitHubSession } from '../../src/platform/github/index.js';
 
 // Ticket 39 adapter level (I with a stubbed transport): the REAL Q4B readPullRequest parses GitHub's rules payload of ruleset 26435808
-// (fixtures/github-rules-main-26435808.json, provenance inside) and the verbatim real PR #5 payload (fixtures/github-pull-5-real.json,
+// (fixtures/github-rules-main-26435808.json: the VERBATIM real q39 read, with GitHub's extra keys such as required_reviewers) and the verbatim real PR #5 payload (fixtures/github-pull-5-real.json,
 // mergeable_state "blocked"); Control's public interpretation then classifies `update` as merge-blocking. Not evidence of real GitHub
 // (the q39-mergeblock-v1 recipe is).
 const repo = { repository: 'Sanmoo/java-springboot-event-sourcing', installationId: 177599217, workflows: false };
@@ -39,9 +39,9 @@ test('AC1/AC5: the real rules payload of ruleset 26435808 parses with its parame
   assert.equal(observed.pullRequest.mergeableState, 'blocked');
   assert.deepEqual(observed.rules.value.map(rule => [rule.type, rule.ruleset.id, rule.parameters ?? null, rule.unparsed ?? false]), [
     ['pull_request', 26435808, { kind: 'pull_request', allowedMergeMethods: ['merge', 'squash', 'rebase'], requiredApprovingReviewCount: 1, requireCodeOwnerReview: false,
-      requireLastPushApproval: false, requiredReviewThreadResolution: false, dismissStaleReviewsOnPush: false }, false],
+      requireLastPushApproval: false, requiredReviewThreadResolution: false, dismissStaleReviewsOnPush: true }, false],
     ['non_fast_forward', 26435808, null, false], ['deletion', 26435808, null, false],
-    ['update', 26435808, { kind: 'update', updateAllowsFetchAndMerge: false }, false]]);
+    ['update', 26435808, { kind: 'update', updateAllowsFetchAndMerge: false }, false]], 'GitHub sends update WITHOUT parameters: the default (no fetch-and-merge)');
   assert.deepEqual(interpretBaseRules(observed.rules.value).map(item => [item.type, item.merge, item.reason, item.source]), [
     ['pull_request', 'human-stage', 'HUMAN_REVIEW_STAGE', src], ['non_fast_forward', 'not-blocking', 'DOES_NOT_AFFECT_PULL_REQUEST_MERGE', src],
     ['deletion', 'not-blocking', 'DOES_NOT_AFFECT_PULL_REQUEST_MERGE', src], ['update', 'blocking', 'UPDATE_RESTRICTED', src]]);

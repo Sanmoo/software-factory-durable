@@ -1,0 +1,770 @@
+{
+ "status": "success",
+ "present": [
+  "update",
+  "pull_request",
+  "non_fast_forward",
+  "deletion"
+ ],
+ "payloads": {
+  "repository": {
+   "ok": true,
+   "observedAt": "2026-11-15T15:49:02.008Z",
+   "repositoryId": 1256893534,
+   "value": {
+    "id": 1256893534,
+    "node_id": "R_kgDOSuqsXg",
+    "name": "java-springboot-event-sourcing",
+    "full_name": "Sanmoo/java-springboot-event-sourcing",
+    "private": false,
+    "owner": {
+     "login": "Sanmoo",
+     "id": 1881597,
+     "node_id": "MDQ6VXNlcjE4ODE1OTc=",
+     "avatar_url": "https://avatars.githubusercontent.com/u/1881597?v=4",
+     "gravatar_id": "",
+     "url": "https://api.github.com/users/Sanmoo",
+     "html_url": "https://github.com/Sanmoo",
+     "followers_url": "https://api.github.com/users/Sanmoo/followers",
+     "following_url": "https://api.github.com/users/Sanmoo/following{/other_user}",
+     "gists_url": "https://api.github.com/users/Sanmoo/gists{/gist_id}",
+     "starred_url": "https://api.github.com/users/Sanmoo/starred{/owner}{/repo}",
+     "subscriptions_url": "https://api.github.com/users/Sanmoo/subscriptions",
+     "organizations_url": "https://api.github.com/users/Sanmoo/orgs",
+     "repos_url": "https://api.github.com/users/Sanmoo/repos",
+     "events_url": "https://api.github.com/users/Sanmoo/events{/privacy}",
+     "received_events_url": "https://api.github.com/users/Sanmoo/received_events",
+     "type": "User",
+     "user_view_type": "public",
+     "site_admin": false
+    },
+    "html_url": "https://github.com/Sanmoo/java-springboot-event-sourcing",
+    "description": null,
+    "fork": false,
+    "url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing",
+    "forks_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/forks",
+    "keys_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/keys{/key_id}",
+    "collaborators_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/collaborators{/collaborator}",
+    "teams_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/teams",
+    "hooks_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/hooks",
+    "issue_events_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/issues/events{/number}",
+    "events_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/events",
+    "assignees_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/assignees{/user}",
+    "branches_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/branches{/branch}",
+    "tags_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/tags",
+    "blobs_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/git/blobs{/sha}",
+    "git_tags_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/git/tags{/sha}",
+    "git_refs_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/git/refs{/sha}",
+    "trees_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/git/trees{/sha}",
+    "statuses_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/statuses/{sha}",
+    "languages_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/languages",
+    "stargazers_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/stargazers",
+    "contributors_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/contributors",
+    "subscribers_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/subscribers",
+    "subscription_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/subscription",
+    "commits_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/commits{/sha}",
+    "git_commits_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/git/commits{/sha}",
+    "comments_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/comments{/number}",
+    "issue_comment_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/issues/comments{/number}",
+    "contents_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/contents/{+path}",
+    "compare_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/compare/{base}...{head}",
+    "merges_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/merges",
+    "archive_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/{archive_format}{/ref}",
+    "downloads_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/downloads",
+    "issues_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/issues{/number}",
+    "pulls_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/pulls{/number}",
+    "milestones_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/milestones{/number}",
+    "notifications_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/notifications{?since,all,participating}",
+    "labels_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/labels{/name}",
+    "releases_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/releases{/id}",
+    "deployments_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/deployments",
+    "created_at": "2026-06-02T07:14:31Z",
+    "updated_at": "2026-11-01T20:31:16Z",
+    "pushed_at": "2026-11-15T15:09:09Z",
+    "git_url": "git://github.com/Sanmoo/java-springboot-event-sourcing.git",
+    "ssh_url": "git@github.com:Sanmoo/java-springboot-event-sourcing.git",
+    "clone_url": "https://github.com/Sanmoo/java-springboot-event-sourcing.git",
+    "svn_url": "https://github.com/Sanmoo/java-springboot-event-sourcing",
+    "homepage": null,
+    "size": 701,
+    "stargazers_count": 0,
+    "watchers_count": 0,
+    "language": "HTML",
+    "has_issues": true,
+    "has_projects": true,
+    "has_wiki": true,
+    "has_pages": false,
+    "has_discussions": false,
+    "forks_count": 0,
+    "mirror_url": null,
+    "archived": false,
+    "disabled": false,
+    "open_issues_count": 1,
+    "license": null,
+    "allow_forking": true,
+    "is_template": false,
+    "web_commit_signoff_required": false,
+    "has_pull_requests": true,
+    "pull_request_creation_policy": "all",
+    "topics": [],
+    "visibility": "public",
+    "forks": 0,
+    "open_issues": 1,
+    "watchers": 0,
+    "default_branch": "main",
+    "permissions": {
+     "admin": false,
+     "maintain": false,
+     "push": false,
+     "triage": false,
+     "pull": false
+    },
+    "temp_clone_token": "",
+    "security_and_analysis": {
+     "secret_scanning": {
+      "status": "enabled"
+     },
+     "secret_scanning_push_protection": {
+      "status": "enabled"
+     },
+     "dependabot_security_updates": {
+      "status": "disabled"
+     },
+     "secret_scanning_non_provider_patterns": {
+      "status": "disabled"
+     },
+     "secret_scanning_validity_checks": {
+      "status": "disabled"
+     }
+    },
+    "network_count": 0,
+    "subscribers_count": 0
+   }
+  },
+  "branch": {
+   "ok": true,
+   "observedAt": "2026-11-15T15:49:05.337Z",
+   "repositoryId": 1256893534,
+   "value": {
+    "name": "main",
+    "commit": {
+     "sha": "eb6178d666882a614a9b7716979c2a15bbd262fc",
+     "node_id": "C_kwDOSuqsXtoAKGViNjE3OGQ2NjY4ODJhNjE0YTliNzcxNjk3OWMyYTE1YmJkMjYyZmM",
+     "commit": {
+      "author": {
+       "name": "Samuel Carvalho Santos",
+       "email": "sanmoo.cs@gmail.com",
+       "date": "2026-11-15T15:08:08Z"
+      },
+      "committer": {
+       "name": "GitHub",
+       "email": "noreply@github.com",
+       "date": "2026-11-15T15:08:08Z"
+      },
+      "message": "Merge pull request #5 from Sanmoo/factory/3-99fe871b\n\nAdd Factory smoke review guide",
+      "tree": {
+       "sha": "36d4705cc96f9305e1c8a553a6f81e1de48a1867",
+       "url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/git/trees/36d4705cc96f9305e1c8a553a6f81e1de48a1867"
+      },
+      "url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/git/commits/eb6178d666882a614a9b7716979c2a15bbd262fc",
+      "comment_count": 0,
+      "verification": {
+       "verified": true,
+       "reason": "valid",
+       "signature": "-----BEGIN PGP SIGNATURE-----\n\nwsFcBAABCAAQBQJq+crYCRC1aQ7uu5UhlAAAAW4QAHiNZ8JgiYfLYKYySj9M9tJe\nJZDbiT+P3MmPvauVagnfai0TPCfp6x9dWRDJaNIW5Oc6aS49BLakvnY1dTvS+/4L\n8TM0e+Gu0YPHbstGm/5AAxf0Be0h6+47n8zJEUw4LGDtJ1AtEf/ePcz+xMymIQqT\nff0WFJyw/RNg5PSAS/gSoyqwAhUUP6IuatNWy/bjU0lrLPqSFu1beJts00uYZaTp\nRT+bZ+W8tQ01KGFvkT7ohtUgkqVTtH119vgIIO8G3nQ47pRTbRfCMlja5xDKhzW9\nUL6oisUo+TApdMEmaXRgyun0wlxZJrYSRNoQxJEnLL+4j6G6U2uoOQanVamYiS2i\nG/T57CehC5bm4z6jge7NTytfemXsaH41fomzJlhwTnyRTdenkQPfZM7GQNUHdyx1\njY6rJUs9LhoMpvieyMBZqIjIXFTa69UBQLeAUfMqvXcxnB/DberNb474cFHVhenZ\nrVlhwKT+gQP2HNOPWnQyrmiK5xOthCs2nDU4yrDsoS2s3s9u9B9nQ1AqokIJrdRf\nLophkXbHdklUrKZVO3kQJxfQjmgjg24eqKykHXMjBIlYbpqo5KgwPrlM3AthSyXw\nMEGtbeNI9chZBddhOCcFzNjemoJiO5HKmxjCBnuxq/A4G/oIFDZSjoR/sQVf6mW7\nXVoK2VYnlWmUjS/9Winq\n=KkHa\n-----END PGP SIGNATURE-----\n",
+       "payload": "tree 36d4705cc96f9305e1c8a553a6f81e1de48a1867\nparent 8c058c90b3a0371d5966892ef5f0fd4758cdf90c\nparent bfdd439ceba20a424538647f41e55d5ab2d03217\nauthor Samuel Carvalho Santos <sanmoo.cs@gmail.com> 1794755288 -0300\ncommitter GitHub <noreply@github.com> 1794755288 -0300\n\nMerge pull request #5 from Sanmoo/factory/3-99fe871b\n\nAdd Factory smoke review guide",
+       "verified_at": "2026-11-15T15:08:08Z"
+      }
+     },
+     "url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/commits/eb6178d666882a614a9b7716979c2a15bbd262fc",
+     "html_url": "https://github.com/Sanmoo/java-springboot-event-sourcing/commit/eb6178d666882a614a9b7716979c2a15bbd262fc",
+     "comments_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/commits/eb6178d666882a614a9b7716979c2a15bbd262fc/comments",
+     "author": {
+      "login": "Sanmoo",
+      "id": 1881597,
+      "node_id": "MDQ6VXNlcjE4ODE1OTc=",
+      "avatar_url": "https://avatars.githubusercontent.com/u/1881597?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/Sanmoo",
+      "html_url": "https://github.com/Sanmoo",
+      "followers_url": "https://api.github.com/users/Sanmoo/followers",
+      "following_url": "https://api.github.com/users/Sanmoo/following{/other_user}",
+      "gists_url": "https://api.github.com/users/Sanmoo/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/Sanmoo/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/Sanmoo/subscriptions",
+      "organizations_url": "https://api.github.com/users/Sanmoo/orgs",
+      "repos_url": "https://api.github.com/users/Sanmoo/repos",
+      "events_url": "https://api.github.com/users/Sanmoo/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/Sanmoo/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+     },
+     "committer": {
+      "login": "web-flow",
+      "id": 19864447,
+      "node_id": "MDQ6VXNlcjE5ODY0NDQ3",
+      "avatar_url": "https://avatars.githubusercontent.com/u/19864447?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/web-flow",
+      "html_url": "https://github.com/web-flow",
+      "followers_url": "https://api.github.com/users/web-flow/followers",
+      "following_url": "https://api.github.com/users/web-flow/following{/other_user}",
+      "gists_url": "https://api.github.com/users/web-flow/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/web-flow/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/web-flow/subscriptions",
+      "organizations_url": "https://api.github.com/users/web-flow/orgs",
+      "repos_url": "https://api.github.com/users/web-flow/repos",
+      "events_url": "https://api.github.com/users/web-flow/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/web-flow/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+     },
+     "parents": [
+      {
+       "sha": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+       "url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/commits/8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+       "html_url": "https://github.com/Sanmoo/java-springboot-event-sourcing/commit/8c058c90b3a0371d5966892ef5f0fd4758cdf90c"
+      },
+      {
+       "sha": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+       "url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/commits/bfdd439ceba20a424538647f41e55d5ab2d03217",
+       "html_url": "https://github.com/Sanmoo/java-springboot-event-sourcing/commit/bfdd439ceba20a424538647f41e55d5ab2d03217"
+      }
+     ]
+    },
+    "_links": {
+     "self": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/branches/main",
+     "html": "https://github.com/Sanmoo/java-springboot-event-sourcing/tree/main"
+    },
+    "protected": true,
+    "protection": {
+     "enabled": false,
+     "required_status_checks": {
+      "enforcement_level": "off",
+      "contexts": [],
+      "checks": []
+     }
+    },
+    "protection_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/branches/main/protection"
+   }
+  },
+  "rules": {
+   "ok": true,
+   "observedAt": "2026-11-15T15:49:06.262Z",
+   "repositoryId": 1256893534,
+   "value": [
+    {
+     "type": "pull_request",
+     "parameters": {
+      "required_approving_review_count": 1,
+      "dismiss_stale_reviews_on_push": true,
+      "required_reviewers": [],
+      "require_code_owner_review": false,
+      "require_last_push_approval": false,
+      "required_review_thread_resolution": false,
+      "require_extra_approval_for_unattributed_changes": true,
+      "allowed_merge_methods": [
+       "merge",
+       "squash",
+       "rebase"
+      ]
+     },
+     "ruleset_source_type": "Repository",
+     "ruleset_source": "Sanmoo/java-springboot-event-sourcing",
+     "ruleset_id": 26435808
+    },
+    {
+     "type": "non_fast_forward",
+     "ruleset_source_type": "Repository",
+     "ruleset_source": "Sanmoo/java-springboot-event-sourcing",
+     "ruleset_id": 26435808
+    },
+    {
+     "type": "deletion",
+     "ruleset_source_type": "Repository",
+     "ruleset_source": "Sanmoo/java-springboot-event-sourcing",
+     "ruleset_id": 26435808
+    },
+    {
+     "type": "update",
+     "ruleset_source_type": "Repository",
+     "ruleset_source": "Sanmoo/java-springboot-event-sourcing",
+     "ruleset_id": 26435808
+    }
+   ]
+  },
+  "ruleset": {
+   "ok": true,
+   "observedAt": "2026-11-15T15:49:07.043Z",
+   "repositoryId": 1256893534,
+   "value": {
+    "id": 26435808,
+    "name": "mastra-factory-proof-main-review",
+    "target": "branch",
+    "source_type": "Repository",
+    "source": "Sanmoo/java-springboot-event-sourcing",
+    "enforcement": "active",
+    "conditions": {
+     "ref_name": {
+      "exclude": [],
+      "include": [
+       "refs/heads/main"
+      ]
+     }
+    },
+    "rules": [
+     {
+      "type": "pull_request",
+      "parameters": {
+       "required_approving_review_count": 1,
+       "dismiss_stale_reviews_on_push": true,
+       "required_reviewers": [],
+       "require_code_owner_review": false,
+       "require_last_push_approval": false,
+       "required_review_thread_resolution": false,
+       "require_extra_approval_for_unattributed_changes": true,
+       "allowed_merge_methods": [
+        "merge",
+        "squash",
+        "rebase"
+       ]
+      }
+     },
+     {
+      "type": "non_fast_forward"
+     },
+     {
+      "type": "deletion"
+     },
+     {
+      "type": "update"
+     }
+    ],
+    "node_id": "RRS_lACqUmVwb3NpdG9yec5K6qxezgGTYOA",
+    "created_at": "2026-11-03T05:57:48.016-03:00",
+    "updated_at": "2026-11-15T12:18:34.064-03:00",
+    "current_user_can_bypass": "never",
+    "_links": {
+     "self": {
+      "href": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/rulesets/26435808"
+     },
+     "html": {
+      "href": "https://github.com/Sanmoo/java-springboot-event-sourcing/rules/26435808"
+     }
+    }
+   }
+  },
+  "pull": {
+   "ok": true,
+   "observedAt": "2026-11-15T15:49:07.929Z",
+   "repositoryId": 1256893534,
+   "value": {
+    "url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/pulls/5",
+    "id": 5321820867,
+    "node_id": "PR_kwDOSuqsXs8AAAABPTSKww",
+    "html_url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5",
+    "diff_url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5.diff",
+    "patch_url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5.patch",
+    "issue_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/issues/5",
+    "commits_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/pulls/5/commits",
+    "review_comments_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/pulls/5/comments",
+    "review_comment_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/pulls/comments{/number}",
+    "comments_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/issues/5/comments",
+    "statuses_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/statuses/bfdd439ceba20a424538647f41e55d5ab2d03217",
+    "number": 5,
+    "state": "closed",
+    "locked": false,
+    "title": "Add Factory smoke review guide",
+    "user": {
+     "login": "sanmoo-factory[bot]",
+     "id": 351187749,
+     "node_id": "BOT_kgDOFO6zJQ",
+     "avatar_url": "https://avatars.githubusercontent.com/u/1881597?v=4",
+     "gravatar_id": "",
+     "url": "https://api.github.com/users/sanmoo-factory%5Bbot%5D",
+     "html_url": "https://github.com/apps/sanmoo-factory",
+     "followers_url": "https://api.github.com/users/sanmoo-factory%5Bbot%5D/followers",
+     "following_url": "https://api.github.com/users/sanmoo-factory%5Bbot%5D/following{/other_user}",
+     "gists_url": "https://api.github.com/users/sanmoo-factory%5Bbot%5D/gists{/gist_id}",
+     "starred_url": "https://api.github.com/users/sanmoo-factory%5Bbot%5D/starred{/owner}{/repo}",
+     "subscriptions_url": "https://api.github.com/users/sanmoo-factory%5Bbot%5D/subscriptions",
+     "organizations_url": "https://api.github.com/users/sanmoo-factory%5Bbot%5D/orgs",
+     "repos_url": "https://api.github.com/users/sanmoo-factory%5Bbot%5D/repos",
+     "events_url": "https://api.github.com/users/sanmoo-factory%5Bbot%5D/events{/privacy}",
+     "received_events_url": "https://api.github.com/users/sanmoo-factory%5Bbot%5D/received_events",
+     "type": "Bot",
+     "user_view_type": "public",
+     "site_admin": false
+    },
+    "body": "<!-- software-factory:work:99fe871b-b872-4522-912c-fefd9700edda -->\n## Summary\n\nAdd a concise Factory smoke review loop guide to help engineers carry out the documented review process.\n\nCloses #3\n\n## Validation\n\nReviews round 1 applied; ticket-validation=passed. GitHub required checks still evaluated by GitHub: none named.\n\n## Risk\n\n**Door:** two-way — **Blast Radius:** documentation\n\nReview the guidance for accuracy and consistency with the repository's engineering workflow.",
+    "labels": [],
+    "milestone": null,
+    "active_lock_reason": null,
+    "created_at": "2026-11-15T10:31:25Z",
+    "updated_at": "2026-11-15T15:09:10Z",
+    "closed_at": "2026-11-15T15:08:09Z",
+    "merged_at": "2026-11-15T15:08:08Z",
+    "assignees": [],
+    "requested_reviewers": [],
+    "requested_teams": [],
+    "head": {
+     "label": "Sanmoo:factory/3-99fe871b",
+     "ref": "factory/3-99fe871b",
+     "repo": {
+      "id": 1256893534,
+      "node_id": "R_kgDOSuqsXg",
+      "name": "java-springboot-event-sourcing",
+      "full_name": "Sanmoo/java-springboot-event-sourcing",
+      "owner": {
+       "login": "Sanmoo",
+       "id": 1881597,
+       "node_id": "MDQ6VXNlcjE4ODE1OTc=",
+       "avatar_url": "https://avatars.githubusercontent.com/u/1881597?v=4",
+       "gravatar_id": "",
+       "url": "https://api.github.com/users/Sanmoo",
+       "html_url": "https://github.com/Sanmoo",
+       "followers_url": "https://api.github.com/users/Sanmoo/followers",
+       "following_url": "https://api.github.com/users/Sanmoo/following{/other_user}",
+       "gists_url": "https://api.github.com/users/Sanmoo/gists{/gist_id}",
+       "starred_url": "https://api.github.com/users/Sanmoo/starred{/owner}{/repo}",
+       "subscriptions_url": "https://api.github.com/users/Sanmoo/subscriptions",
+       "organizations_url": "https://api.github.com/users/Sanmoo/orgs",
+       "repos_url": "https://api.github.com/users/Sanmoo/repos",
+       "events_url": "https://api.github.com/users/Sanmoo/events{/privacy}",
+       "received_events_url": "https://api.github.com/users/Sanmoo/received_events",
+       "type": "User",
+       "user_view_type": "public",
+       "site_admin": false
+      },
+      "private": false,
+      "fork": false,
+      "archived": false,
+      "disabled": false,
+      "description": null,
+      "homepage": null,
+      "language": "HTML",
+      "visibility": "public",
+      "is_template": false,
+      "topics": [],
+      "forks_count": 0,
+      "forks": 0,
+      "stargazers_count": 0,
+      "watchers_count": 0,
+      "watchers": 0,
+      "open_issues_count": 1,
+      "open_issues": 1,
+      "size": 701,
+      "default_branch": "main",
+      "has_issues": true,
+      "has_projects": true,
+      "has_wiki": true,
+      "has_pages": false,
+      "has_discussions": false,
+      "has_pull_requests": true,
+      "pushed_at": "2026-11-15T15:09:09Z",
+      "created_at": "2026-06-02T07:14:31Z",
+      "updated_at": "2026-11-01T20:31:16Z",
+      "allow_forking": true,
+      "web_commit_signoff_required": false,
+      "pull_request_creation_policy": "all",
+      "license": null,
+      "url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing",
+      "html_url": "https://github.com/Sanmoo/java-springboot-event-sourcing",
+      "archive_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/{archive_format}{/ref}",
+      "assignees_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/assignees{/user}",
+      "blobs_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/git/blobs{/sha}",
+      "branches_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/branches{/branch}",
+      "collaborators_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/collaborators{/collaborator}",
+      "comments_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/comments{/number}",
+      "commits_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/commits{/sha}",
+      "compare_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/compare/{base}...{head}",
+      "contents_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/contents/{+path}",
+      "contributors_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/contributors",
+      "deployments_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/deployments",
+      "downloads_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/downloads",
+      "events_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/events",
+      "forks_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/forks",
+      "git_commits_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/git/commits{/sha}",
+      "git_refs_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/git/refs{/sha}",
+      "git_tags_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/git/tags{/sha}",
+      "git_url": "git://github.com/Sanmoo/java-springboot-event-sourcing.git",
+      "issue_comment_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/issues/comments{/number}",
+      "issue_events_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/issues/events{/number}",
+      "issues_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/issues{/number}",
+      "keys_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/keys{/key_id}",
+      "labels_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/labels{/name}",
+      "languages_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/languages",
+      "merges_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/merges",
+      "milestones_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/milestones{/number}",
+      "notifications_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/notifications{?since,all,participating}",
+      "pulls_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/pulls{/number}",
+      "releases_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/releases{/id}",
+      "ssh_url": "git@github.com:Sanmoo/java-springboot-event-sourcing.git",
+      "stargazers_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/stargazers",
+      "statuses_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/statuses/{sha}",
+      "subscribers_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/subscribers",
+      "subscription_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/subscription",
+      "tags_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/tags",
+      "teams_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/teams",
+      "trees_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/git/trees{/sha}",
+      "clone_url": "https://github.com/Sanmoo/java-springboot-event-sourcing.git",
+      "mirror_url": null,
+      "hooks_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/hooks",
+      "svn_url": "https://github.com/Sanmoo/java-springboot-event-sourcing"
+     },
+     "sha": "bfdd439ceba20a424538647f41e55d5ab2d03217",
+     "user": {
+      "login": "Sanmoo",
+      "id": 1881597,
+      "node_id": "MDQ6VXNlcjE4ODE1OTc=",
+      "avatar_url": "https://avatars.githubusercontent.com/u/1881597?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/Sanmoo",
+      "html_url": "https://github.com/Sanmoo",
+      "followers_url": "https://api.github.com/users/Sanmoo/followers",
+      "following_url": "https://api.github.com/users/Sanmoo/following{/other_user}",
+      "gists_url": "https://api.github.com/users/Sanmoo/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/Sanmoo/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/Sanmoo/subscriptions",
+      "organizations_url": "https://api.github.com/users/Sanmoo/orgs",
+      "repos_url": "https://api.github.com/users/Sanmoo/repos",
+      "events_url": "https://api.github.com/users/Sanmoo/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/Sanmoo/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+     }
+    },
+    "base": {
+     "label": "Sanmoo:main",
+     "ref": "main",
+     "repo": {
+      "id": 1256893534,
+      "node_id": "R_kgDOSuqsXg",
+      "name": "java-springboot-event-sourcing",
+      "full_name": "Sanmoo/java-springboot-event-sourcing",
+      "owner": {
+       "login": "Sanmoo",
+       "id": 1881597,
+       "node_id": "MDQ6VXNlcjE4ODE1OTc=",
+       "avatar_url": "https://avatars.githubusercontent.com/u/1881597?v=4",
+       "gravatar_id": "",
+       "url": "https://api.github.com/users/Sanmoo",
+       "html_url": "https://github.com/Sanmoo",
+       "followers_url": "https://api.github.com/users/Sanmoo/followers",
+       "following_url": "https://api.github.com/users/Sanmoo/following{/other_user}",
+       "gists_url": "https://api.github.com/users/Sanmoo/gists{/gist_id}",
+       "starred_url": "https://api.github.com/users/Sanmoo/starred{/owner}{/repo}",
+       "subscriptions_url": "https://api.github.com/users/Sanmoo/subscriptions",
+       "organizations_url": "https://api.github.com/users/Sanmoo/orgs",
+       "repos_url": "https://api.github.com/users/Sanmoo/repos",
+       "events_url": "https://api.github.com/users/Sanmoo/events{/privacy}",
+       "received_events_url": "https://api.github.com/users/Sanmoo/received_events",
+       "type": "User",
+       "user_view_type": "public",
+       "site_admin": false
+      },
+      "private": false,
+      "fork": false,
+      "archived": false,
+      "disabled": false,
+      "description": null,
+      "homepage": null,
+      "language": "HTML",
+      "visibility": "public",
+      "is_template": false,
+      "topics": [],
+      "forks_count": 0,
+      "forks": 0,
+      "stargazers_count": 0,
+      "watchers_count": 0,
+      "watchers": 0,
+      "open_issues_count": 1,
+      "open_issues": 1,
+      "size": 701,
+      "default_branch": "main",
+      "has_issues": true,
+      "has_projects": true,
+      "has_wiki": true,
+      "has_pages": false,
+      "has_discussions": false,
+      "has_pull_requests": true,
+      "pushed_at": "2026-11-15T15:09:09Z",
+      "created_at": "2026-06-02T07:14:31Z",
+      "updated_at": "2026-11-01T20:31:16Z",
+      "allow_forking": true,
+      "web_commit_signoff_required": false,
+      "pull_request_creation_policy": "all",
+      "license": null,
+      "url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing",
+      "html_url": "https://github.com/Sanmoo/java-springboot-event-sourcing",
+      "archive_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/{archive_format}{/ref}",
+      "assignees_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/assignees{/user}",
+      "blobs_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/git/blobs{/sha}",
+      "branches_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/branches{/branch}",
+      "collaborators_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/collaborators{/collaborator}",
+      "comments_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/comments{/number}",
+      "commits_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/commits{/sha}",
+      "compare_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/compare/{base}...{head}",
+      "contents_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/contents/{+path}",
+      "contributors_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/contributors",
+      "deployments_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/deployments",
+      "downloads_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/downloads",
+      "events_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/events",
+      "forks_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/forks",
+      "git_commits_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/git/commits{/sha}",
+      "git_refs_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/git/refs{/sha}",
+      "git_tags_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/git/tags{/sha}",
+      "git_url": "git://github.com/Sanmoo/java-springboot-event-sourcing.git",
+      "issue_comment_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/issues/comments{/number}",
+      "issue_events_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/issues/events{/number}",
+      "issues_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/issues{/number}",
+      "keys_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/keys{/key_id}",
+      "labels_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/labels{/name}",
+      "languages_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/languages",
+      "merges_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/merges",
+      "milestones_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/milestones{/number}",
+      "notifications_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/notifications{?since,all,participating}",
+      "pulls_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/pulls{/number}",
+      "releases_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/releases{/id}",
+      "ssh_url": "git@github.com:Sanmoo/java-springboot-event-sourcing.git",
+      "stargazers_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/stargazers",
+      "statuses_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/statuses/{sha}",
+      "subscribers_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/subscribers",
+      "subscription_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/subscription",
+      "tags_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/tags",
+      "teams_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/teams",
+      "trees_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/git/trees{/sha}",
+      "clone_url": "https://github.com/Sanmoo/java-springboot-event-sourcing.git",
+      "mirror_url": null,
+      "hooks_url": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/hooks",
+      "svn_url": "https://github.com/Sanmoo/java-springboot-event-sourcing"
+     },
+     "sha": "8c058c90b3a0371d5966892ef5f0fd4758cdf90c",
+     "user": {
+      "login": "Sanmoo",
+      "id": 1881597,
+      "node_id": "MDQ6VXNlcjE4ODE1OTc=",
+      "avatar_url": "https://avatars.githubusercontent.com/u/1881597?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/Sanmoo",
+      "html_url": "https://github.com/Sanmoo",
+      "followers_url": "https://api.github.com/users/Sanmoo/followers",
+      "following_url": "https://api.github.com/users/Sanmoo/following{/other_user}",
+      "gists_url": "https://api.github.com/users/Sanmoo/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/Sanmoo/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/Sanmoo/subscriptions",
+      "organizations_url": "https://api.github.com/users/Sanmoo/orgs",
+      "repos_url": "https://api.github.com/users/Sanmoo/repos",
+      "events_url": "https://api.github.com/users/Sanmoo/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/Sanmoo/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+     }
+    },
+    "_links": {
+     "comments": {
+      "href": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/issues/5/comments"
+     },
+     "commits": {
+      "href": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/pulls/5/commits"
+     },
+     "statuses": {
+      "href": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/statuses/bfdd439ceba20a424538647f41e55d5ab2d03217"
+     },
+     "html": {
+      "href": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5"
+     },
+     "issue": {
+      "href": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/issues/5"
+     },
+     "review_comments": {
+      "href": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/pulls/5/comments"
+     },
+     "review_comment": {
+      "href": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/pulls/comments{/number}"
+     },
+     "self": {
+      "href": "https://api.github.com/repos/Sanmoo/java-springboot-event-sourcing/pulls/5"
+     }
+    },
+    "author_association": "CONTRIBUTOR",
+    "auto_merge": null,
+    "draft": false,
+    "merged": true,
+    "mergeable": null,
+    "rebaseable": null,
+    "mergeable_state": "unknown",
+    "merged_by": {
+     "login": "Sanmoo",
+     "id": 1881597,
+     "node_id": "MDQ6VXNlcjE4ODE1OTc=",
+     "avatar_url": "https://avatars.githubusercontent.com/u/1881597?v=4",
+     "gravatar_id": "",
+     "url": "https://api.github.com/users/Sanmoo",
+     "html_url": "https://github.com/Sanmoo",
+     "followers_url": "https://api.github.com/users/Sanmoo/followers",
+     "following_url": "https://api.github.com/users/Sanmoo/following{/other_user}",
+     "gists_url": "https://api.github.com/users/Sanmoo/gists{/gist_id}",
+     "starred_url": "https://api.github.com/users/Sanmoo/starred{/owner}{/repo}",
+     "subscriptions_url": "https://api.github.com/users/Sanmoo/subscriptions",
+     "organizations_url": "https://api.github.com/users/Sanmoo/orgs",
+     "repos_url": "https://api.github.com/users/Sanmoo/repos",
+     "events_url": "https://api.github.com/users/Sanmoo/events{/privacy}",
+     "received_events_url": "https://api.github.com/users/Sanmoo/received_events",
+     "type": "User",
+     "user_view_type": "public",
+     "site_admin": false
+    },
+    "comments": 0,
+    "review_comments": 0,
+    "maintainer_can_modify": false,
+    "commits": 1,
+    "additions": 11,
+    "deletions": 0,
+    "changed_files": 1
+   }
+  }
+ },
+ "trace": [
+  {
+   "at": "2026-11-15T15:49:03.467Z",
+   "method": "GET",
+   "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing",
+   "allowed": true
+  },
+  {
+   "at": "2026-11-15T15:49:04.535Z",
+   "method": "GET",
+   "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing",
+   "allowed": true
+  },
+  {
+   "at": "2026-11-15T15:49:05.389Z",
+   "method": "GET",
+   "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/branches/main",
+   "allowed": true
+  },
+  {
+   "at": "2026-11-15T15:49:06.326Z",
+   "method": "GET",
+   "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/rules/branches/main?per_page=100&page=1",
+   "allowed": true
+  },
+  {
+   "at": "2026-11-15T15:49:07.101Z",
+   "method": "GET",
+   "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/rulesets/26435808",
+   "allowed": true
+  },
+  {
+   "at": "2026-11-15T15:49:07.968Z",
+   "method": "GET",
+   "endpoint": "/repos/Sanmoo/java-springboot-event-sourcing/pulls/5",
+   "allowed": true
+  }
+ ]
+}
