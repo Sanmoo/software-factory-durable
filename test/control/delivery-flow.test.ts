@@ -55,7 +55,7 @@ test('AC1: only a confirmed merge of the own PR identity delivers; open, closed-
   assert.equal(work.result, 'delivered');
   assert.deepEqual(work.delivery?.merge && { ...work.delivery.merge, confirmedAt: 'x', observedAt: 'x' }, { mergedAt: '2026-11-14T12:00:00Z', mergeCommitSha: 'b'.repeat(40),
     headSha, pullRequestId: 9042, number: 42, url: 'https://github.com/acme/project/pull/42', mergeCommitShaReport: 'value', confirmedAt: 'x', observedAt: 'x', duringActivity: null });
-  assert.deepEqual(h.repository.calls.filter(call => call.method === 'readPullRequest').map(call => (call.args as { number: number }).number), [42, 42, 42, 42, 42],
+  assert.deepEqual(h.repository.calls.filter(call => call.method === 'readOwnMerge').map(call => (call.args as { number: number }).number), [42, 42, 42, 42, 42],
     'only the linked own PR is read; no tracker/issue state is consulted');
   assert.ok(work.history.some(item => item.event === 'delivery-confirmed'));
   // Producer of ticket 08's own-cycle merge confirmation (minimal memory + Work record).
@@ -71,7 +71,7 @@ test('AC1: a closure without merge is recorded as not delivered and is not re-re
   assert.match((await h.work()).delivery!.nextStep, /closed WITHOUT merge/);
   h.github.pull = merged();
   await desk.cycle();
-  assert.equal(h.repository.calls.filter(call => call.method === 'readPullRequest').length, 1);
+  assert.equal(h.repository.calls.filter(call => call.method === 'readOwnMerge').length, 1);
   assert.equal((await h.work()).result, 'open');
 });
 
@@ -231,7 +231,7 @@ test('MED3/MED4: bounded reads rotate least-recently-read first, skip recorded c
   const read: string[] = [];
   const byPr = (pr: number) => ids[pr - 101]!;
   const repository: CodeRepository = { checkAccess() { throw new Error('x'); }, findPublication() { throw new Error('x'); },
-    async readPullRequest(ref) {
+    async readOwnMerge(ref) {
       read.push(byPr(ref.number));
       // Work 1: a malformed adapter answer makes its own decision throw (unexpected failure of ONE Work).
       if (ref.number === 101) return { kind: 'observed', source: 'github-rest', observedAt: 'x', repositoryId: 3, pullRequest: null as never };

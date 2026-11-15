@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { createSandbox, type EnvironmentRef } from '../../src/sandbox/index.js';
 import { preserveEvidence } from '../../src/records/index.js';
-import type { BranchCleanupResult, BranchCleanupSelection, CodeRepository, PullRequestFacts, PullRequestObservation } from '../../src/code-repository/index.js';
+import type { BranchCleanupResult, BranchCleanupSelection, CodeRepository, OwnPullRequestFacts, OwnPullRequestObservation } from '../../src/code-repository/index.js';
 import type { CleanupPorts, ExecutionView, PublicationView } from '../../src/control/types.js';
 import { admitTicket, initialize, works } from '../../src/control/durable/admission.js';
 import { openStore, type Session } from '../../src/control/durable/store.js';
@@ -97,22 +97,22 @@ export function realCleanupPorts(root: string, log: string[]): CleanupPorts {
   };
 }
 
-export type RemotePull = PullRequestFacts;
-export function ownFacts(overrides: Partial<PullRequestFacts> = {}): PullRequestFacts {
+export type RemotePull = OwnPullRequestFacts;
+export function ownFacts(overrides: Partial<OwnPullRequestFacts> = {}): OwnPullRequestFacts {
   return { pullRequestId: 9042, nodeId: 'PR_own42', number: 42, url: 'https://github.com/acme/project/pull/42', state: 'open', draft: false, merged: false, mergedAt: null,
     mergeCommitSha: null, headRef: 'factory/3-own', headSha, headRepositoryId: 3, baseRef: 'main', baseRepositoryId: 3, reported: { mergeCommitSha: 'null', merged: 'value' }, ...overrides };
 }
-export const merged = (overrides: Partial<PullRequestFacts> = {}) => ownFacts({ state: 'closed', merged: true, mergedAt: '2026-11-14T12:00:00Z', mergeCommitSha: 'b'.repeat(40),
+export const merged = (overrides: Partial<OwnPullRequestFacts> = {}) => ownFacts({ state: 'closed', merged: true, mergedAt: '2026-11-14T12:00:00Z', mergeCommitSha: 'b'.repeat(40),
   reported: { mergeCommitSha: 'value', merged: 'value' }, ...overrides });
 
 /** CodeRepository double for ticket 17 (only the two delivery operations; everything else throws). */
-export function deliveryRepository(state: { pull: PullRequestFacts | 'unavailable'; branch: Record<string, string>; branchOutcomes?: BranchCleanupResult['outcome'][] }) {
+export function deliveryRepository(state: { pull: OwnPullRequestFacts | 'unavailable'; branch: Record<string, string>; branchOutcomes?: BranchCleanupResult['outcome'][] }) {
   const calls: { method: string; args: unknown }[] = [];
   const repository: CodeRepository = {
     checkAccess() { throw new Error('not used'); },
     findPublication() { throw new Error('not used'); },
-    async readPullRequest(pr): Promise<PullRequestObservation> {
-      calls.push({ method: 'readPullRequest', args: pr });
+    async readOwnMerge(pr): Promise<OwnPullRequestObservation> {
+      calls.push({ method: 'readOwnMerge', args: pr });
       const observedAt = new Date().toISOString();
       return state.pull === 'unavailable' ? { kind: 'unavailable', source: 'github-rest', observedAt, code: 'GITHUB_QUERY_FAILED', nextStep: 'synthetic' }
         : { kind: 'observed', source: 'github-rest', observedAt, repositoryId: 3, pullRequest: structuredClone(state.pull) };

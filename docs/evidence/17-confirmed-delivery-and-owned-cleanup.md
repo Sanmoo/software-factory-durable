@@ -13,7 +13,7 @@ The real-run recipe needs 14 integrated first.
 | Layer | Module | What it does |
 | --- | --- | --- |
 | GitHub platform | `src/platform/github/index.ts` | New purposes: `delivery-read` (metadata/contents/pull_requests **read**) and `branch-cleanup` (metadata R, **contents W**, pull_requests R). `GitHubAccess.cleanup()` gives each attempt a **fresh single-use** grant that is never cached or used for tracking, and revokes it right after. The session can send only one closed `DELETE /repos/<repo>/git/refs/heads/<branch>`. |
-| CodeRepository (Q4B) | `src/code-repository/delivery.ts` | `readPullRequest(pr)` returns the facts of the known own PR (merged, merged_at, merge commit, head/base); a failed read is `unavailable`. `cleanupBranch(selection, effect)` re-checks, under the cleanup grant: repository identity, not base/default, tip == merged own head, own PR still merged from that head, no open PR on the branch. Then it sends one DELETE and re-reads. Outcomes: `removed`, `absent` (from a complete read only), `refused`, `failed`, `indeterminate`. |
+| CodeRepository (Q4B) | `src/code-repository/delivery.ts` | `readOwnMerge(pr)` returns the facts of the known own PR (merged, merged_at, merge commit, head/base); a failed read is `unavailable`. `cleanupBranch(selection, effect)` re-checks, under the cleanup grant: repository identity, not base/default, tip == merged own head, own PR still merged from that head, no open PR on the branch. Then it sends one DELETE and re-reads. Outcomes: `removed`, `absent` (from a complete read only), `refused`, `failed`, `indeterminate`. |
 | Sandbox | `src/sandbox/evidence-export.ts` | `exportEvidence` copies `artifacts/{review,spec,instructions}` of an own environment with confined no-follow reads. Any symlink or special file fails the whole export. |
 | Records (Q8 `preserve`) | `src/records/preserve.ts` | `preserveEvidence` writes into a new private `<root>/<work>/evidence/<id>/`, hashes and syncs each file and `manifest.json`, then returns a reference. A failed stage leaves nothing behind. |
 | Control rules | `src/control/rules/delivery.ts` | Pure functions: merge decision by own PR/cycle identity, cleanup eligibility, the plan of owned resources and protected targets, per-resource outcome mapping, recovery of lost intents, pending selection, and the operator explanations. |
@@ -118,7 +118,7 @@ node dist/test/entrypoints/delivery17-qualification.js inspect
    - a `git push --force-with-lease=<ref>:<tip>` deletion, which the contract's "sem push mediado" might be read to forbid.
 
    This needs an operator decision; the contract was not changed.
-2. **`cleanupBranch`/`readPullRequest` are optional** on the `CodeRepository` interface. Q4B names both operations; making them optional only keeps the other tickets' doubles compiling. Absent means delivery and branch cleanup are not composed.
+2. **`cleanupBranch`/`readOwnMerge` are optional** on the `CodeRepository` interface. Q4B names both operations; making them optional only keeps the other tickets' doubles compiling. Absent means delivery and branch cleanup are not composed.
 3. The `branch-cleanup` grant also reads pull requests, to revalidate the merged own PR and the absence of an open PR on the branch in the same grant. This stays within the controller's PR ceiling. Please confirm.
 4. **Cancellation (ticket 25) does not exist yet.** "Merge during cancellation" is covered as a merge during an active activity. `recordMergeObservation` accepts only `result: 'open'`. If ticket 25 adds a cancelled state before cessation, delivery must still win there.
 5. A PR closed without merge is only observed and recorded (`closed-unmerged`, not delivered). The cycle/result transition belongs to ticket 25.
@@ -154,7 +154,7 @@ Ticket 14's real run left the own branch `factory/3-28c75e5a` with no PR. Ticket
 
 ## Real PR read hold (q17-delivery-v3, 2026-11-15)
 
-The real preflight was held with `readPullRequest(#5) → unavailable INVALID_GITHUB_PAYLOAD`.
+The real preflight was held with `readOwnMerge(#5) → unavailable INVALID_GITHUB_PAYLOAD`.
 
 **Diagnosis.** The read-only real payload, `test/entrypoints/fixtures/github-pull-5-real.json`, is copied verbatim and contains no secret. It parses under the parser that was held: I fed it through the compiled adapter with only the transport stubbed. So the payload fields, including the nulls of an open draft PR, are not what failed.
 

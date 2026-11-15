@@ -32,7 +32,7 @@ export function createDeliveryDesk(deps: { session: Session; repository: CodeRep
   };
 
   async function observeMerges(works: WorkRecord[]) {
-    if (!deps.repository.readPullRequest) return;
+    if (!deps.repository.readOwnMerge) return;
     // Least recently read first (never-read first): a bounded number of reads per cycle reaches every Work in turn. A closure without merge
     // already recorded is not re-read (no reopening/resumption is automatic; ticket 25 owns that cycle decision).
     const candidates = works.filter(work => work.result === 'open' && ownPullRequestOf(work) && configured(work.repository.repository) &&
@@ -46,7 +46,7 @@ export function createDeliveryDesk(deps: { session: Session; repository: CodeRep
   async function observeOne(work: WorkRecord) {
     const own = ownPullRequestOf(work)!;
     const scope = configured(work.repository.repository)!;
-    const observation = await deps.repository.readPullRequest!({ repo: scope, repositoryId: work.repository.repositoryId, number: own.number,
+    const observation = await deps.repository.readOwnMerge!({ repo: scope, repositoryId: work.repository.repositoryId, number: own.number,
       pullRequestId: own.pullRequestId, nodeId: own.nodeId }).catch(() => ({ kind: 'unavailable' as const, code: 'DELIVERY_READ_FAILED', observedAt: null }));
     const decision = observation.kind === 'observed'
       ? decideMerge(own, { repositoryId: work.repository.repositoryId, branch: work.branch, base: work.repository.base }, observation.pullRequest)

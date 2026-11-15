@@ -71,7 +71,7 @@ test('AC1/AC7 (control flow): merge observed during an activity delivers, interr
   const start = async () => {
     const time = manualClock();
     const control = await openControl({ storagePath, runtimeInventory: 'empty', execution,
-      access: { tracker: github.tracker, repository: { ...github.repository, readPullRequest: delivery.repository.readPullRequest!, cleanupBranch: delivery.repository.cleanupBranch! },
+      access: { tracker: github.tracker, repository: { ...github.repository, readOwnMerge: delivery.repository.readOwnMerge!, cleanupBranch: delivery.repository.cleanupBranch! },
         repositories: [scope] }, polling: { intervalSeconds: 60, clock: time.clock } });
     const stop = new AbortController();
     current = { control, stop, running: control.run(stop.signal), time };

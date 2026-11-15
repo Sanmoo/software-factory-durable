@@ -20,7 +20,7 @@ const stub = (body: unknown, repositoryId = 1256893534): GitHubAccess => ({
   } } as unknown as GitHubAccess);
 
 test('the verbatim real payload of open draft PR #5 parses into its facts', async () => {
-  const observation = await createCodeRepository({ github: stub(await real()) }).readPullRequest!(ref);
+  const observation = await createCodeRepository({ github: stub(await real()) }).readOwnMerge!(ref);
   assert.equal(observation.kind, 'observed');
   assert.deepEqual(observation.kind === 'observed' && observation.pullRequest, { pullRequestId: 5321820867, nodeId: 'PR_kwDOSuqsXs8AAAABPTSKww', number: 5,
     url: 'https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5', state: 'open', draft: true, merged: false, mergedAt: null,
@@ -31,36 +31,36 @@ test('the verbatim real payload of open draft PR #5 parses into its facts', asyn
 test('merged and closed-unmerged transitions of the real payload parse; merge is never inferred from closed', async () => {
   const merged = { ...await real(), state: 'closed', draft: false, merged: true, merged_at: '2026-11-15T12:00:00Z', closed_at: '2026-11-15T12:00:00Z',
     merge_commit_sha: 'c'.repeat(40), merged_by: { login: 'operator', id: 1, type: 'User' }, mergeable: null, mergeable_state: 'unknown' };
-  const facts = await createCodeRepository({ github: stub(merged) }).readPullRequest!(ref);
+  const facts = await createCodeRepository({ github: stub(merged) }).readOwnMerge!(ref);
   assert.deepEqual(facts.kind === 'observed' && [facts.pullRequest.state, facts.pullRequest.merged, facts.pullRequest.mergedAt, facts.pullRequest.mergeCommitSha],
     ['closed', true, '2026-11-15T12:00:00Z', 'c'.repeat(40)]);
   const closed = { ...await real(), state: 'closed', closed_at: '2026-11-15T12:00:00Z' };
-  const unmerged = await createCodeRepository({ github: stub(closed) }).readPullRequest!(ref);
+  const unmerged = await createCodeRepository({ github: stub(closed) }).readOwnMerge!(ref);
   assert.deepEqual(unmerged.kind === 'observed' && [unmerged.pullRequest.state, unmerged.pullRequest.merged, unmerged.pullRequest.mergedAt], ['closed', false, null]);
 });
 
 test('the REAL merge of PR #5 (merge commit eb6178d…, merged_by Sanmoo, 15:08:08Z) keeps merge_commit_sha; when GitHub does not send it the report says absent or null', async () => {
   const mergedReal = { ...await real(), state: 'closed', draft: false, merged: true, merged_at: '2026-11-15T15:08:08Z', closed_at: '2026-11-15T15:08:08Z',
     merge_commit_sha: 'eb6178d666882a614a9b7716979c2a15bbd262fc', merged_by: { login: 'Sanmoo', id: 1, type: 'User' } };
-  const kept = await createCodeRepository({ github: stub(mergedReal) }).readPullRequest!(ref);
+  const kept = await createCodeRepository({ github: stub(mergedReal) }).readOwnMerge!(ref);
   assert.deepEqual(kept.kind === 'observed' && [kept.pullRequest.mergeCommitSha, kept.pullRequest.reported], ['eb6178d666882a614a9b7716979c2a15bbd262fc', { mergeCommitSha: 'value', merged: 'value' }]);
   const { merge_commit_sha: _dropped, ...absent } = mergedReal;
-  const withoutField = await createCodeRepository({ github: stub(absent) }).readPullRequest!(ref);
+  const withoutField = await createCodeRepository({ github: stub(absent) }).readOwnMerge!(ref);
   assert.deepEqual(withoutField.kind === 'observed' && [withoutField.pullRequest.mergeCommitSha, withoutField.pullRequest.reported.mergeCommitSha], [null, 'absent']);
-  const nullField = await createCodeRepository({ github: stub({ ...mergedReal, merge_commit_sha: null }) }).readPullRequest!(ref);
+  const nullField = await createCodeRepository({ github: stub({ ...mergedReal, merge_commit_sha: null }) }).readOwnMerge!(ref);
   assert.deepEqual(nullField.kind === 'observed' && [nullField.pullRequest.mergeCommitSha, nullField.pullRequest.reported.mergeCommitSha], [null, 'null']);
 });
 
 test('API-version tolerance: without `merged`/`merge_commit_sha` the merge comes only from merged_at; contradictory facts are refused', async () => {
   const { merged: _m, merge_commit_sha: _c, ...lean } = await real();
-  const open = await createCodeRepository({ github: stub(lean) }).readPullRequest!(ref);
+  const open = await createCodeRepository({ github: stub(lean) }).readOwnMerge!(ref);
   assert.deepEqual(open.kind === 'observed' && [open.pullRequest.merged, open.pullRequest.mergeCommitSha], [false, null]);
-  const contradictory = await createCodeRepository({ github: stub({ ...await real(), merged: true, merged_at: null }) }).readPullRequest!(ref);
+  const contradictory = await createCodeRepository({ github: stub({ ...await real(), merged: true, merged_at: null }) }).readOwnMerge!(ref);
   assert.deepEqual(contradictory.kind === 'unavailable' && contradictory.code, 'PULL_REQUEST_MERGE_FACTS_INCONSISTENT');
 });
 
 test('each failed check of the read is a DISTINCT code with field paths (never values), not a generic invalid payload', async () => {
-  const repository = (body: unknown, id?: number) => createCodeRepository({ github: stub(body, id) }).readPullRequest!(ref);
+  const repository = (body: unknown, id?: number) => createCodeRepository({ github: stub(body, id) }).readOwnMerge!(ref);
   const mismatch = await repository(await real(), 99);
   assert.deepEqual(mismatch.kind === 'unavailable' && mismatch.code, 'PULL_REQUEST_REPOSITORY_MISMATCH');
   const invalid = await repository({ ...await real(), head: { ref: 'x' } });

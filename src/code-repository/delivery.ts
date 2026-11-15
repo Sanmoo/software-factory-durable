@@ -2,19 +2,19 @@ import { z } from 'zod';
 import type { GitHubScope } from '../contracts/index.js';
 import { InvalidGitHubObservation, type GitHubAccess, type GitHubSession } from '../platform/github/index.js';
 
-// Ticket 17 operations of the approved CodeRepository contract (Q4B): `readPullRequest` (facts of a KNOWN own pull request, never a
+// Ticket 17 operations of the approved CodeRepository contract (Q4B): `readOwnMerge` (facts of a KNOWN own pull request, never a
 // decision) and `cleanupBranch` (deletion of the selected own branch under its own cleanup grant, with ownership/concurrency checks).
 
 /** The own pull request Control already linked (identity recorded by the publication discovery). */
 export type PullRequestRef = { repo: GitHubScope; repositoryId: number; number: number; pullRequestId: number; nodeId: string };
 /** Current facts of a pull request as GitHub reports them. `merged`/`mergedAt`/`mergeCommitSha` are reported, never inferred from `closed`. */
-export type PullRequestFacts = { pullRequestId: number; nodeId: string; number: number; url: string; state: 'open' | 'closed'; draft: boolean;
+export type OwnPullRequestFacts = { pullRequestId: number; nodeId: string; number: number; url: string; state: 'open' | 'closed'; draft: boolean;
   merged: boolean; mergedAt: string | null; mergeCommitSha: string | null; headRef: string; headSha: string; headRepositoryId: number | null;
   baseRef: string; baseRepositoryId: number | null;
   /** What GitHub actually sent for the optional fields (`absent` = no key in the response): a null merge commit is explained, never guessed. */
   reported: { mergeCommitSha: 'value' | 'null' | 'absent'; merged: 'value' | 'absent' } };
 /** An unavailable read never proves a merge, a closure or its absence. */
-export type PullRequestObservation = { kind: 'observed'; source: 'github-rest'; observedAt: string; repositoryId: number; pullRequest: PullRequestFacts } |
+export type OwnPullRequestObservation = { kind: 'observed'; source: 'github-rest'; observedAt: string; repositoryId: number; pullRequest: OwnPullRequestFacts } |
   { kind: 'unavailable'; source: 'github-rest'; observedAt: string; code: string; waitSeconds?: number; nextStep: string };
 /**
  * Selection of ONE own remote branch, already decided by Control: the Work's branch, its base (always protected), the tip the merged own
@@ -66,7 +66,7 @@ async function branchTip(session: GitHubSession, repository: string, branch: str
 
 export function deliveryOperations(options: { github: GitHubAccess }) {
   return {
-    async readPullRequest(pr: PullRequestRef): Promise<PullRequestObservation> {
+    async readOwnMerge(pr: PullRequestRef): Promise<OwnPullRequestObservation> {
       if (!Number.isSafeInteger(pr.number) || pr.number <= 0) throw new Error('INVALID_PULL_REQUEST_REF');
       type Checked = { ok: true; pull: z.infer<typeof pullSchema>; merged: boolean } | { ok: false; code: string; detail: string };
       // Each check is reported by its own code (never one generic invalid payload), so a real-run hold names exactly what failed.

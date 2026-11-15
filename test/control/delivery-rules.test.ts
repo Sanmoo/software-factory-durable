@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { branchOutcome, cleanupEligibility, cleanupState, decideMerge, environmentOutcomes, mergePlan, ownPullRequestOf, planCleanup, recoverLostIntents,
   selectPending } from '../../src/control/rules/delivery.js';
-import type { CleanupResourceView, ExecutionView, PullRequestFacts } from '../../src/control/types.js';
+import type { CleanupResourceView, ExecutionView, OwnPullRequestFacts } from '../../src/control/types.js';
 
 // Pure ticket 17 rules (spec §12.3): merge confirmation by own PR/cycle identity, cleanup eligibility, the owned plan and per-resource results.
 const own = { pullRequestId: 9042, nodeId: 'PR_own42', number: 42, url: 'https://github.com/acme/project/pull/42', headRef: 'factory/3-abcdef12', base: 'main', heads: ['a'.repeat(40)] };
 const expect = { repositoryId: 3, branch: 'factory/3-abcdef12', base: 'main' };
-const facts = (overrides: Partial<PullRequestFacts> = {}): PullRequestFacts => ({ pullRequestId: 9042, nodeId: 'PR_own42', number: 42, url: own.url, state: 'closed',
+const facts = (overrides: Partial<OwnPullRequestFacts> = {}): OwnPullRequestFacts => ({ pullRequestId: 9042, nodeId: 'PR_own42', number: 42, url: own.url, state: 'closed',
   draft: false, merged: true, mergedAt: '2026-11-14T12:00:00Z', mergeCommitSha: 'b'.repeat(40), headRef: own.headRef, headSha: 'a'.repeat(40), headRepositoryId: 3,
   baseRef: 'main', baseRepositoryId: 3, reported: { mergeCommitSha: 'value', merged: 'value' }, ...overrides });
 const env = (n: number) => `env-${String(n).repeat(64)}`;

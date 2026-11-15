@@ -1,5 +1,5 @@
 import type { BranchCleanupResult, CleanupOutcome, CleanupResourceKind, CleanupResourceView, CleanupView, DeliveryView, ExecutionView, MergeFacts,
-  OwnPullRequestIdentity, PlannedCleanupResource, PublicationView, PullRequestFacts } from '../types.js';
+  OwnPullRequestIdentity, PlannedCleanupResource, PublicationView, OwnPullRequestFacts } from '../types.js';
 
 // Ticket 17 pure rules (spec §12.3): delivery is a confirmed merge of the Work's own pull request; cleanup removes only resources the
 // Factory owns and can prove, after merge, confirmed cessation and preserved evidence; results are per resource and never undo delivery.
@@ -30,7 +30,7 @@ export type MergeDecision = { outcome: 'merged'; merge: MergeFacts } |
  * GitHub must report it merged with its merge instant and commit. A closure without merge, an open PR, another identity or incomplete
  * merge evidence never deliver. Ticket/issue state and agent messages are not inputs at all.
  */
-export function decideMerge(own: OwnPullRequestIdentity, expect: { repositoryId: number; branch: string | null; base: string }, facts: PullRequestFacts): MergeDecision {
+export function decideMerge(own: OwnPullRequestIdentity, expect: { repositoryId: number; branch: string | null; base: string }, facts: OwnPullRequestFacts): MergeDecision {
   const reasons: string[] = [];
   if (facts.pullRequestId !== own.pullRequestId || facts.number !== own.number) reasons.push('PULL_REQUEST_ID_MISMATCH');
   if (facts.nodeId !== own.nodeId) reasons.push('PULL_REQUEST_NODE_MISMATCH');

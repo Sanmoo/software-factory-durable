@@ -239,7 +239,7 @@ export async function runPhase(phase: Phase) {
         await save('preflight-held', { work: work ?? null }); throw new Error('PRECONDITION_HELD');
       }
       const { codeRepository, refs } = await compose();
-      const pull = await codeRepository.readPullRequest!({ repo: repository, repositoryId: expectedTicket.repositoryId, number: linked.number,
+      const pull = await codeRepository.readOwnMerge!({ repo: repository, repositoryId: expectedTicket.repositoryId, number: linked.number,
         pullRequestId: linked.pullRequestId, nodeId: linked.nodeId });
       if (pull.kind !== 'observed' || pull.pullRequest.merged || pull.pullRequest.state !== 'open' || pull.pullRequest.headSha !== expectedPullRequest.headSha) { await save('preflight-held', { pull }); throw new Error('PRECONDITION_HELD'); }
       await save('preflight-result', { status: 'success', authority, workId: work.work_id, ownPullRequest: linked, linkedHeads: own.linkedHeads ?? [], branch: work.branch, pull, refs: await refs(), inventory: await inventory(),
@@ -251,7 +251,7 @@ export async function runPhase(phase: Phase) {
       // Precondition read before ANY effect: the operator's merge of the exact own PR. Readiness by ticket 16 is attested, not verified here.
       const { codeRepository } = await compose();
       const own = (await load('preflight-result')).ownPullRequest as { number: number; pullRequestId: number; nodeId: string };
-      const pull = await codeRepository.readPullRequest!({ repo: repository, repositoryId: expectedTicket.repositoryId, number: own.number, pullRequestId: own.pullRequestId, nodeId: own.nodeId });
+      const pull = await codeRepository.readOwnMerge!({ repo: repository, repositoryId: expectedTicket.repositoryId, number: own.number, pullRequestId: own.pullRequestId, nodeId: own.nodeId });
       if (pull.kind !== 'observed' || !pull.pullRequest.merged || pull.pullRequest.state !== 'closed' || pull.pullRequest.headSha !== expectedPullRequest.headSha ||
         pull.pullRequest.baseRef !== expectedPullRequest.base) { await save('deliver-held', { reason: 'PR_NOT_MERGED_AS_EXPECTED', pull }); throw new Error('DELIVER_PRECONDITION_HELD'); }
       await save('deliver-precondition', { pull, readiness: 'converted by the Factory (ticket 16) per operator; not verified by this recipe' });
@@ -263,7 +263,7 @@ export async function runPhase(phase: Phase) {
     const { list, status, work } = await view(await snapshotStorage(`${observations}/authority`, `${observations}/inspect-storage-copy`));
     const { codeRepository, refs } = await compose();
     const own = preflight.ownPullRequest as { number: number; pullRequestId: number; nodeId: string };
-    const pull = await codeRepository.readPullRequest!({ repo: repository, repositoryId: expectedTicket.repositoryId, number: own.number, pullRequestId: own.pullRequestId, nodeId: own.nodeId });
+    const pull = await codeRepository.readOwnMerge!({ repo: repository, repositoryId: expectedTicket.repositoryId, number: own.number, pullRequestId: own.pullRequestId, nodeId: own.nodeId });
     const after = await refs();
     await save('inspect-result', { work, status, listLimitations: 'kind' in list && list.kind === 'list' ? list.limitations : null, pull,
       refsDiff: refsDiff(preflight.refs as Record<string, string>, after), inventoryBefore: preflight.inventory, inventoryAfter: await inventory(),

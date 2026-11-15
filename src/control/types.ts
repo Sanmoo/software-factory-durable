@@ -3,8 +3,8 @@ import type { CheckoutRequest, EnvironmentRef, PreparedWork, RemoveResult, Start
 import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion, SessionObservation, WorkerSessionRef, OpinionObservation } from '../workers/index.js';
 export type { SessionObservation, WorkerSessionRef as SessionRef } from '../workers/index.js';
 import type { IssueTracker, TicketRef } from '../issue-tracker/index.js';
-import type { BranchCleanupResult, CodeRepository, PullRequestFacts } from '../code-repository/index.js';
-export type { BranchCleanupResult, PullRequestFacts } from '../code-repository/index.js';
+import type { BranchCleanupResult, CodeRepository, OwnPullRequestFacts } from '../code-repository/index.js';
+export type { BranchCleanupResult, OwnPullRequestFacts } from '../code-repository/index.js';
 import type { Hold } from './rules/admission.js';
 import type { BlockerView, DependencyReason } from './rules/dependencies.js';
 
