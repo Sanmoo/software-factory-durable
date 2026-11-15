@@ -149,3 +149,10 @@ done
 - `dist/test/**/*.test.js` um arquivo por vez: 165 arquivos, 1045 pass, 0 fail, 10 skip (inclui
   `test/sandbox/gondolin.test.ts` com `skip: true`); depois da receita: `release33-qualification` 1/1,
   `upgrade` 4/4, `storage-format` 3/3, `architecture-gate` 20/20, `typecheck-gate` 1/1.
+
+### Gate após a revisão (2026-11-15)
+
+- tsc, eslint (`--max-warnings 0`) e dependency-cruiser (356 módulos) limpos.
+- 167 arquivos de teste um por vez: 1054 pass, 0 fail, 10 skip (gondolin `skip: true`).
+- O resultado de `run` mantém o significado anterior ao 26 (o 26 decide `uncertain` para ele); o fim
+  durável registrado é `uncertain` sempre que a atividade não está assentada.
