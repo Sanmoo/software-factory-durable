@@ -6,8 +6,8 @@ import { snapshotStorage } from './review12-qualification.js';
 // ticket 14 run (q14-publication-v6): its storage is COPIED (never written) into this recipe's own authority. Phases are one-shot: an
 // exclusive intent tombstone precedes effects; a consumed phase never reruns; nothing is retried automatically.
 // The HUMAN MERGE of the own pull request is an OPERATOR step between `preflight` and `deliver`; the Factory never merges or marks ready.
-// GitHub WRITES by the Factory: at most ONE `DELETE /repos/<repo>/git/refs/heads/<own branch>` (retry phase), under its own single-use
-// `branch-cleanup` grant, plus token issuance/self-revocation. No VM is booted, no model or Builder runs (every activation is refused).
+// GitHub WRITES by the Factory: at most ONE atomic conditional deletion of `refs/heads/<own branch>` (GraphQL updateRefs with beforeOid, retry
+// phase), under its own single-use `branch-cleanup` grant, plus token issuance/self-revocation; never a plain REST DELETE. No VM is booted, no model or Builder runs (every activation is refused).
 
 const root = '/home/sanmoo/software-factory-test/y5';
 const source = `${root}/q14-publication-v6`;
@@ -32,9 +32,10 @@ export function plan() {
     github: { app: githubApp,
       controllerPurposes: ['delivery-read {metadata:read, contents:read, pull_requests:read} (own PR facts; refs inventory)', 'tracker-read/association-read/dependency-read (polling only)',
         'branch-cleanup {metadata:read, contents:write, pull_requests:read}: ONE fresh grant per branch cleanup attempt, revoked right after'],
-      reads: ['GET /repos/<repo>/pulls/<own PR>', 'GET /repos/<repo>/git/matching-refs/heads and /tags (inventory before/after)', 'GET /repos/<repo>',
+      reads: ['GET /repos/<repo>/pulls/<own PR>', 'GET /repos/<repo>/pulls?state=open&base=<own branch> (stacked PRs)', 'GET /repos/<repo>/git/matching-refs/heads and /tags (inventory before/after)', 'GET /repos/<repo>',
         'GET /repos/<repo>/pulls?state=open&head=<owner>:<own branch>', 'polling: label listing, issue #3, its timeline and native blocked_by'],
-      writes: ['retry phase only: at most ONE DELETE /repos/<repo>/git/refs/heads/<own branch> after revalidation (tip == merged own head, own PR merged, no open PR on it, not base/default)',
+      writes: ['retry phase only: at most ONE atomic conditional deletion (GraphQL updateRefs, beforeOid = merged own head, afterOid 0, force false) of refs/heads/<own branch> after ' +
+        'revalidation (own PR merged from that head, no open PR with it as head OR base, not base/default); without updateRefs for the App token the branch is KEPT (kept: atomic delete unavailable)',
         'App: access_tokens issuance POSTs and DELETE /installation/token self-revocations'],
       never: ['merge', 'ready conversion', 'approval', 'push', 'deleting any other branch or tag', 'closing/reopening issue or PR', 'labels/assignees/comments'] },
     effects: [
@@ -44,34 +45,37 @@ export function plan() {
       'deliver (real): owner on the q17 authority with the real adapters; dispatch composed but EVERY prepare/start/activate/credential refused; the desk confirms the merge ' +
         '(Work delivered, minimal memory delivered+mergeConfirmed) and sweeps cleanup: preserves the own environment\'s review/spec/instructions evidence into ' +
         `${root}/<work>/evidence/<id>/ and then REMOVES, via the public Sandbox.remove of the own environment only: root.qcow2, workspace/ (checkout + local branch), artifacts/ and ` +
-        'the per-boot runtime directories r/<boot> of that environment. The remote branch cleanup is PROVOKED to fail once (recipe wrapper returns failed WITHOUT calling GitHub): ' +
+        'the per-boot runtime directories r/<boot> of that environment. The remote branch cleanup is PROVOKED to fail (every call in deliver returns failed WITHOUT calling GitHub): ' +
         'cleanup ends pending with only remote-branch pending; delivery stands',
-      'retry (real): a NEW owner process on the same authority (boot sweep): only the pending remote branch is revalidated and deleted (one DELETE); environments are not touched again',
+      'retry (real): a NEW owner process on the same authority (boot sweep): only the pending remote branch is revalidated and deleted (one atomic deletion); environments are not touched again',
       'inspect (read-only): Control view on a copy; GitHub own PR merged, refs diff vs preflight (only the own branch disappeared); host: own environment data absent with owner.json/' +
         'removed.json kept, own runtime dirs absent, every other environment/runtime dir and the shared cache unchanged, evidence manifest present',
     ],
-    guards: ['one-shot intent tombstones', 'source storage only copied, never opened for writing', 'no prepare/start/activate/credential issuance (refused)',
-      'remote branch cleanup provoked once in deliver, real only in retry', 'no retry inside a phase', 'no Docker/global cleanup (none composed)'],
-    expected: ['deliver: work.result delivered; delivery.merge {number = own PR, mergeCommitSha, headSha = linked head, duringActivity null}; cleanup.evidence[0].state preserved; ' +
+    execution: { capacity: 0, note: 'deliver/retry compose cleanup ports only through ExecutionPorts; capacity 0 means no reservation, hold or activation of any Work' },
+    guards: ['one-shot intent tombstones', 'every branch deletion guarded: none real in deliver, at most one real in retry', 'source storage only copied, never opened for writing', 'no prepare/start/activate/credential issuance (refused)',
+      'no retry inside a phase', 'no Docker/global cleanup (none composed)'],
+    expected: ['retry with updateRefs unavailable to the App token: remote-branch kept (ATOMIC_DELETE_UNAVAILABLE), branch still on GitHub, never retried automatically',
+      'deliver: work.result delivered; delivery.merge {number = own PR, mergeCommitSha, headSha = linked head, duringActivity null}; cleanup.evidence[0].state preserved; ' +
         'resources environment/checkout/local-branch/temporaries removed; remote-branch failed (RECIPE_PROVOKED_FAILURE); cleanup.state pending; status.delivery {delivered:1, cleanup.pending:1}',
-      'retry: remote-branch removed (BRANCH_DELETED, one DELETE), other resources keep one attempt; cleanup.state complete',
+      'retry: remote-branch removed (BRANCH_DELETED, one atomic deletion), other resources keep one attempt; cleanup.state complete',
       'inspect: own branch absent on GitHub, every other ref unchanged, own PR merged; foreign environments and the shared cache unchanged; no token in storage/observations',
       'if GitHub auto-deleted the head branch: remote-branch absent (BRANCH_ABSENT) instead of removed, still complete'],
   };
 }
 
-/** Recipe wrapper: the FIRST branch cleanup returns a known failure WITHOUT calling GitHub (provoked partial failure); later calls are real. */
-export function provokedBranchFailure(cleanupBranch: NonNullable<CodeRepository['cleanupBranch']>, provoke: boolean) {
-  let provoked = !provoke;
-  const calls: { provoked: boolean; at: string }[] = [];
+/**
+ * Recipe guard of EVERY branch deletion: in `deliver` each call returns a provoked known failure WITHOUT calling GitHub; in `retry` only the
+ * first call is real and any further call is refused locally. At most one real atomic deletion per recipe.
+ */
+export function branchGuard(cleanupBranch: NonNullable<CodeRepository['cleanupBranch']>, phase: 'deliver' | 'retry') {
+  let real = 0;
+  const calls: { real: boolean; at: string }[] = [];
+  const local = (code: string, effectId: string): BranchCleanupResult => ({ outcome: 'failed', code, observedAt: new Date().toISOString(), tip: null, revocation: 'not-issued',
+    effectId, nextStep: 'Recipe guard; nothing was sent.' });
   const wrapped: NonNullable<CodeRepository['cleanupBranch']> = async (selection, effect): Promise<BranchCleanupResult> => {
-    if (!provoked) {
-      provoked = true;
-      calls.push({ provoked: true, at: new Date().toISOString() });
-      return { outcome: 'failed', code: 'RECIPE_PROVOKED_FAILURE', observedAt: new Date().toISOString(), tip: null, revocation: 'not-issued', effectId: effect.effectId,
-        nextStep: 'Provoked by the qualification recipe; nothing was sent.' };
-    }
-    calls.push({ provoked: false, at: new Date().toISOString() });
+    if (phase === 'deliver') { calls.push({ real: false, at: new Date().toISOString() }); return local('RECIPE_PROVOKED_FAILURE', effect.effectId); }
+    if (real++ > 0) { calls.push({ real: false, at: new Date().toISOString() }); return local('RECIPE_ONE_DELETE_GUARD', effect.effectId); }
+    calls.push({ real: true, at: new Date().toISOString() });
     return cleanupBranch(selection, effect);
   };
   return { cleanupBranch: wrapped, calls };
@@ -143,12 +147,13 @@ async function owner(phase: 'deliver' | 'retry') {
   const sandbox = createSandbox({ root, guestAssets });
   const events: unknown[] = [];
   const log = (entry: Record<string, unknown>) => { events.push({ at: new Date().toISOString(), ...entry }); };
-  const branch = provokedBranchFailure(codeRepository.cleanupBranch!, phase === 'deliver');
+  const branch = branchGuard(codeRepository.cleanupBranch!, phase);
   const refused = (call: string) => async () => { log({ call, refused: true }); throw new Error('RECIPE_NO_ACTIVATION'); };
   const control = await openControl({ storagePath: `${observations}/authority/control.sqlite`, runtimeInventory: 'empty',
     access: { tracker, repository: { ...codeRepository, cleanupBranch: async (selection, effect) => { const result = await branch.cleanupBranch(selection, effect); log({ call: 'cleanup-branch', selection, result }); return result; } },
       repositories: [repository], dependencyRepositories: [] }, polling: { intervalSeconds: pollingSeconds },
-    execution: { configuration, capacity: 1, builder: { skillPack: 'factory-skills-v6' as never, modelBudget: 'builder-v1', copyOutput: true },
+    // Capacity 0: the dispatcher never reserves a Slot or holds any Work in these phases (only the delivery desk acts).
+    execution: { configuration, capacity: 0, builder: { skillPack: 'factory-skills-v6' as never, modelBudget: 'builder-v1', copyOutput: true },
       credentials: { issue: refused('issue'), revoke: async () => ({ kind: 'not-attempted', nextStep: 'nothing issued' }) },
       sandbox: { prepare: refused('prepare'), start: refused('start'), async stop(input) { const result = await sandbox.stop(input); log({ call: 'stop', input, result }); return result; } },
       workers: { activate: refused('activate'), deliver: async () => ({ status: 'failure', code: 'RECIPE_NO_ACTIVATION' }) },

@@ -94,7 +94,7 @@ node dist/test/entrypoints/delivery17-qualification.js inspect
 
 ## Open design questions / gaps
 
-1. **Remote-branch concurrency.** GitHub REST has no conditional ref deletion, so the precondition is a re-read of the tip immediately before the DELETE. A human push landing in that millisecond window would be deleted (GitHub's "Restore branch" can recover it). There are two atomic alternatives:
+1. ~~**Remote-branch concurrency.**~~ Decided by the supervisor and implemented: atomic `updateRefs` or keep the branch (see Review fixes). Original note: GitHub REST has no conditional ref deletion, so the precondition is a re-read of the tip immediately before the DELETE. A human push landing in that millisecond window would be deleted (GitHub's "Restore branch" can recover it). There are two atomic alternatives:
    - GraphQL `updateRefs` with `beforeOid` (it exists in the schema, but its availability for App tokens has not been verified for real);
    - a `git push --force-with-lease=<ref>:<tip>` deletion, which the contract's "sem push mediado" might be read to forbid.
 
@@ -113,6 +113,25 @@ node dist/test/entrypoints/delivery17-qualification.js inspect
    - `failed`/`indeterminate`/`refused` resources are retried at each controller boot and then daily (`retrySeconds`, default 86400, reusing spec §12.3's sweep cadence).
    - A `refused` resource (e.g. a moved tip) stays visible and asks for an operator decision.
 8. The own PR identity is read structurally from ticket 14's record. After the rebase onto 14 it could be typed directly. The data shape is already identical.
+
+## Review fixes (supervisor static review of 7fbad82)
+
+| Finding | Fix | Tests (red at 7fbad82 → green) |
+| --- | --- | --- |
+| Decision on question 1 / MED 1: race window | The deletion is ATOMIC and conditional: GraphQL `updateRefs` with `{name: refs/heads/<own>, beforeOid: merged own head, afterOid: 0…0, force: false}`. It is sent right after a fresh tip re-read; GitHub changes nothing if the ref moved. There is no REST DELETE path anymore. If `updateRefs` is unavailable for the token, the branch is **kept**: outcome `kept`, code `ATOMIC_DELETE_UNAVAILABLE`, nextStep `kept: atomic delete unavailable`. It is never deleted without a precondition. | `github-delivery`: atomic body and order; race refused with the new tip and nothing deleted; unavailable → kept. The fixture checks the mutation contract. Real availability for the App token is checked in the real run (recipe `expected`). |
+| MED 2: stacked PRs | `pulls?state=open&base=<own branch>`; any result → `refused BRANCH_BASE_OF_OPEN_PULL_REQUEST`, branch kept. | `github-delivery` stacked case |
+| MED 3: starvation | Reads go least-recently-read first (`delivery.lastReadAt`), at most 8 per cycle. A recorded `closed-unmerged` is not re-read. | `delivery-flow` MED3/MED4; closed-unmerged test |
+| MED 4: one throw aborted `afterCycle` | Each Work's observation and sweep sits in its own try/catch, recorded in the desk's in-memory `view().failures`. A `readWorks` failure is caught, `cycle()` never throws, and `afterCycle` also catches it. The question desk and the dispatcher always run. | `delivery-flow` MED3/MED4 |
+| LOW: head SHA ownership | `ownPullRequestOf` carries `heads` = 14's `linkedHeads` ∪ linked `headSha`; without any, there is no own identity. A merged head outside it → `HEAD_NOT_OWN_CONTENT`. | `delivery-rules`, `delivery-flow` AC1 |
+| LOW: branch null / null base repository | A null `work.branch` gives `OWN_BRANCH_UNKNOWN` (no self-comparison). A null `baseRepositoryId` gives `BASE_MISMATCH`. | `delivery-rules` |
+| LOW: refused retried | `refused`/`kept` are never retried automatically: no intent and no fresh write grant (`retryable`). The operator decides, through explicit cleanup in ticket 30. `failed`/`indeterminate`/`pending` are retried at boot and daily. | `delivery-rules`, `delivery-flow` partial/cadence/daily |
+| LOW: truncation | `branchTip` uses a complete `matching-refs` listing. More than 10 pages, or any failed or invalid listing, throws and is reported as `failed`/`indeterminate`, never `absent`. A failed re-read after the deletion → `indeterminate`. | `github-delivery` failed read ≠ absence, lost answer |
+| LOW: evidence path | Kept as `<installation root>/<work>/evidence/<id>/`. This is the existing integrated Records area (`createRecords({root})` / `recordsRoot`, where the boot owner already writes protected outputs; the ticket 13 recipe reads `${root}/${work}/evidence`). It is outside every guest mount. Spec §12.1 names `data/records/<work_id>/evidence/`; moving only the ticket 17 copies would split one Records area in two. **Open:** relocating the whole Records root to `data/records` is a cross-ticket change (Records/Workers/Sandbox owner), outside 17. | n/a (documented) |
+| LOW: recipe | `branchGuard`: every call in `deliver` returns a provoked failure without GitHub; in `retry` at most ONE real call, further calls are refused locally. `deliver`/`retry` use `capacity: 0`, so the dispatcher never reserves or holds any Work. | `delivery17-qualification` |
+
+New outcome: `kept` (`BranchCleanupResult`, `CleanupOutcome`). It is listed in the cleanup `nextStep` among the "refused/kept: never retried automatically" resources.
+
+Ticket 14's real run left the own branch `factory/3-28c75e5a` with no PR. Ticket 17 never touches such a branch: no own PR is linked, so there is no delivery and no cleanup plan. Branch cleanup also requires the merged own PR head to equal the tip.
 
 ## Gates (this worktree, after the last commit)
 
