@@ -178,3 +178,6 @@ Receita real autorizada pelo operador (execução pelo supervisor, depois do ens
 novo `/home/sanmoo/software-factory-test/y5/q28-partial-v2` (revisão nova por causa destas regras; este agente não lê nada sob `software-factory-test`, o `preflight` cria o diretório em modo exclusivo e recusa um existente). Compatível com as
 decisões: um único retry provocado de Spec na r1 (≤ 2), Standards nunca re-tentado, nenhuma recuperação operacional (sem carry). Limites
 inalterados: ≤ 276 requisições de modelo, 75 min.
+
+Gate após as decisões (`ea603d9`): tsc 0 erros, eslint limpo, dependency-cruiser sem violações (366 módulos, 2257 dependências);
+**176 arquivos um por vez: 1102 pass, 0 fail, 10 skipped** (`test/sandbox/gondolin.test.ts` segue `skip: true`).
