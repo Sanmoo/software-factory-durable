@@ -23,7 +23,7 @@ const repositoryId = 1256893534;
  * `ready-for-agent`. `number` is pinned here once it exists (a reviewed one-line commit); 0 = not pinned: every real phase refuses.
  */
 export const syntheticTicket = {
-  number: 0,
+  number: 18,
   title: '[factory-q25] Synthetic: full build summary (cancellation qualification, do not merge)',
   body: [
     'Synthetic qualification Ticket for Software Factory ticket 25 (withdrawal of authorization and cancellation). Nothing produced for it is to be merged.',
