@@ -7,7 +7,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { createSandbox } from '../../src/sandbox/index.js';
+import { createSandbox, type BootRef } from '../../src/sandbox/index.js';
 
 const testRoot = process.env.FACTORY_SANDBOX_TEST_ROOT;
 const configuration = { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1', diskGiB: 1 };
@@ -39,8 +39,18 @@ test('Sandbox.observe exposes measured disk/workspace storage without boot or fo
     await link(join(workspace, 'owned'), join(workspace, 'same-inode'));
     const foreign = join(root, 'foreign'); await mkdir(foreign); await writeFile(join(foreign, 'data'), 'b'.repeat(65536));
     await symlink(foreign, join(workspace, 'escape'));
+    // Ticket 38: lifecycle and storage are independent facets of one observation. Cessation comes only from lifecycle evidence:
+    // since ticket 26 an owned, prepared environment without a published `current.json` is `not-booted` with confirmed cessation
+    // (current.json is renamed and synced before any systemd-run, so no unit can exist) — that is the proof here, not storage.
+    // Storage must never manufacture that proof: with lifecycle evidence missing (an unpublished boot) cessation stays unconfirmed
+    // even though storage is fully observed.
+    const unpublishedBoot = 'boot-00000000-0000-4000-8000-000000000000' as BootRef;
     const observed = await sandbox.observe({ environment });
-    assert.equal(observed.cessationConfirmed, false, 'storage never manufactures no-VM or cessation proof');
+    assert.equal(observed.condition, 'not-booted'); assert.equal(observed.cessationConfirmed, true, 'ticket 26 lifecycle evidence');
+    const unproven = await sandbox.observe({ environment, boot: unpublishedBoot });
+    assert.equal(unproven.condition, 'indeterminate');
+    assert.equal(unproven.cessationConfirmed, false, 'storage never manufactures no-VM or cessation proof');
+    assert.ok('storage' in unproven); assert.equal((unproven.storage as Projection).disk.status, 'observed');
     assert.ok('storage' in observed, 'public observation must expose storage, not private qualification-only metrics');
     const storage = observed.storage as Projection;
     assert.equal(storage.configuredVirtualBytes, '1073741824'); assert.equal(storage.minFreeBytes, '4294967296');
@@ -61,7 +71,9 @@ test('Sandbox.observe exposes measured disk/workspace storage without boot or fo
     execFileSync('/usr/bin/mkfifo', [disk]);
     const fifo = await sandbox.observe({ environment }); assert.ok('storage' in fifo);
     assert.equal((fifo.storage as Projection).disk.status, 'unavailable', 'FIFO cannot hang or report zero usage');
-    assert.equal(fifo.cessationConfirmed, false);
+    assert.equal(fifo.condition, 'not-booted', 'an unavailable storage sample does not alter lifecycle evidence');
+    const fifoUnproven = await sandbox.observe({ environment, boot: unpublishedBoot });
+    assert.equal(fifoUnproven.cessationConfirmed, false);
     await unlink(disk); await rename(saved, disk);
     const victim = join(workspace, 'victim'), moved = join(workspace, 'victim-moved');
     await mkdir(victim); await writeFile(join(victim, 'owned'), 'owned');
