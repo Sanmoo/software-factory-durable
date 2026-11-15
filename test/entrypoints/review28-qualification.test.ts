@@ -63,3 +63,49 @@ test('AC7 recipe provocations: exactly one invocation each, on round 1 attempt 1
   assert.equal(provoke.dropOpinion({ role: 'standards' }, { round: 2, attempt: 1 }, success), success);
   assert.equal(provoke.dropOpinion({ role: 'spec' }, { round: 1, attempt: 1 }, success), success);
 });
+
+// Synthetic Control views (shapes of ExecutionView) for the recipe oracle; no effect.
+type Reviewer = Record<string, unknown>;
+const opinion = (conclusion: string, extra: Record<string, unknown> = {}) => ({ conclusion, code: null, findings: [], hostChecks: { downgraded: [] }, ...extra });
+const reviewer = (extra: Reviewer = {}): Reviewer => ({ state: 'ended', opinion: opinion('clean'), failure: null, cessation: 'completion-observed', source: 'notification', ...extra });
+const view = (rounds: Record<string, Reviewer>[], extra: Record<string, unknown> = {}) => ({ state: 'ended', slot: { held: false }, dispatch: { phase: 'stopped' }, end: { cessation: 'confirmed' },
+  review: { rounds: rounds.map((reviewers, index) => ({ round: index + 1, kind: 'review', reviewers })) }, ...extra });
+const expected = () => [{
+  standards: reviewer({ source: 'records-discovery' }),
+  spec: reviewer({ attempt: 2, attempts: [{ attempt: 1, state: 'ended', opinion: { conclusion: 'cancelled', code: 'REVIEWER_INTERRUPTED' }, failure: null, cessation: 'completion-observed' }],
+    charge: { state: 'consumed' }, retry: { waitSeconds: 5 } }),
+}, { standards: reviewer(), spec: reviewer() }];
+const budget = { recoveries: { consumed: 1, reserved: null } };
+
+test('AC7 recipe oracle: the expected partial recovery passes; a Standards `incomplete` (absent named context) is a limitation, never the provoked failure or a retried role', () => {
+  const ok = recipe.verdict(view(expected()) as never, budget);
+  assert.equal(ok.passed, true, JSON.stringify(ok.checks.filter(item => !item.ok)));
+  // Ticket 14 v7: Standards concludes `incomplete` in EVERY round (missing GLOSSARY.md/docs/adr read as failures). Still a real opinion.
+  const rounds = expected();
+  const incomplete = { opinion: opinion('incomplete', { hostChecks: { downgraded: ['SOURCE_UNREADABLE'] } }) };
+  rounds[0]!.standards = reviewer({ source: 'records-discovery', ...incomplete });
+  rounds[1]!.standards = reviewer(incomplete);
+  const limited = recipe.verdict(view(rounds) as never, budget);
+  assert.equal(limited.passed, true, 'an incomplete opinion neither fails the lost-notification check nor counts as a retry');
+  assert.deepEqual(limited.limitations, [{ round: 1, role: 'standards', downgraded: ['SOURCE_UNREADABLE'] }, { round: 2, role: 'standards', downgraded: ['SOURCE_UNREADABLE'] }]);
+  assert.deepEqual(limited.retriedRoles, ['r1/spec']);
+  assert.equal(limited.checks.find(item => item.name === 'provoked-spec-failure')!.observed, 'cancelled:REVIEWER_INTERRUPTED');
+});
+
+test('AC7 recipe oracle: a retried Standards, an incomplete Spec a1 taken for the provocation, or a stuck reservation fail the verdict', () => {
+  const retriedStandards = expected();
+  retriedStandards[0]!.standards = reviewer({ attempt: 2, attempts: [{ attempt: 1, opinion: opinion('incomplete') }] });
+  const a = recipe.verdict(view(retriedStandards) as never, budget);
+  assert.equal(a.passed, false);
+  assert.deepEqual(a.retriedRoles, ['r1/standards', 'r1/spec']);
+  // An `incomplete` first Spec attempt is a real opinion: Control never retries it, so it can never be the provoked failure.
+  const incompleteSpec = expected();
+  incompleteSpec[0]!.spec = reviewer({ opinion: opinion('incomplete') });
+  const b = recipe.verdict(view(incompleteSpec) as never, { recoveries: { consumed: 0, reserved: null } });
+  assert.equal(b.checks.find(item => item.name === 'provoked-spec-failure')!.ok, false);
+  assert.equal(b.passed, false);
+  const c = recipe.verdict(view(expected()) as never, { recoveries: { consumed: 1, reserved: 'spec-x-r1a2' } });
+  assert.equal(c.checks.find(item => item.name === 'budget')!.ok, false);
+  const d = recipe.verdict(view(expected(), { state: 'held', held: { code: 'REVIEWER_CESSATION_UNCONFIRMED' } }) as never, budget);
+  assert.equal(d.checks.find(item => item.name === 'execution-ended')!.observed, 'held:REVIEWER_CESSATION_UNCONFIRMED');
+});

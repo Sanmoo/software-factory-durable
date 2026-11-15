@@ -86,6 +86,41 @@ export function plan() {
   };
 }
 
+type OracleView = Pick<ExecutionView, 'state' | 'slot' | 'dispatch' | 'end' | 'held' | 'review'>;
+type Check = { name: string; ok: boolean; observed: string };
+const realResult = (conclusion: string | undefined) => conclusion === 'clean' || conclusion === 'findings' || conclusion === 'incomplete';
+/**
+ * Pure oracle of the run (saved by `inspect`). An `incomplete` opinion is a REAL reviewer result (e.g. a limitation such as absent named
+ * context): it is listed under `limitations`, never counted as the provoked failure, a failed reviewer or a retried role. Only attempts
+ * Control actually re-obtained (`attempts[]`) are retries; the provoked Spec failure must be a recorded cancellation/failure of r1a1.
+ */
+export function verdict(execution: OracleView, budget: { recoveries: { consumed: number; reserved: string | null } } | null) {
+  const rounds = (execution.review?.rounds ?? []).filter(round => (round.kind ?? 'review') === 'review');
+  const first = rounds[0];
+  const checks: Check[] = [];
+  const check = (name: string, ok: boolean, observed: string) => checks.push({ name, ok, observed });
+  const standards = first?.reviewers.standards;
+  check('lost-notification-recovered', Boolean(standards && standards.source === 'records-discovery' && (standards.attempt ?? 1) === 1 &&
+    !(standards.attempts?.length) && realResult(standards.opinion?.conclusion)),
+    `${standards?.source ?? 'none'}:a${standards?.attempt ?? 1}:${standards?.opinion?.conclusion ?? standards?.failure?.code ?? 'none'}`);
+  const spec = first?.reviewers.spec;
+  const provoked = spec?.attempts?.[0];
+  const provokedCause = provoked ? provoked.opinion ? `${provoked.opinion.conclusion}:${provoked.opinion.code ?? ''}` : `failure:${provoked.failure?.code ?? ''}` : 'none';
+  check('provoked-spec-failure', Boolean(provoked && provoked.attempt === 1 && !realResult(provoked.opinion?.conclusion) && provoked.cessation === 'completion-observed'), provokedCause);
+  check('spec-retried-once', Boolean(spec && spec.attempt === 2 && spec.attempts?.length === 1 && spec.charge?.state === 'consumed' && spec.retry?.waitSeconds === 5 &&
+    realResult(spec.opinion?.conclusion)), `a${spec?.attempt ?? 1}:${spec?.opinion?.conclusion ?? spec?.failure?.code ?? 'none'}:${spec?.charge?.state ?? 'no-charge'}`);
+  const retriedRoles = rounds.flatMap(round => (['standards', 'spec'] as const).filter(role => (round.reviewers[role].attempts?.length ?? 0) > 0).map(role => `r${round.round}/${role}`));
+  check('only-spec-r1-retried', JSON.stringify(retriedRoles) === JSON.stringify(['r1/spec']), retriedRoles.join(',') || 'none');
+  check('budget', budget?.recoveries.consumed === 1 && budget.recoveries.reserved === null, `${budget?.recoveries.consumed ?? '?'}/${budget?.recoveries.reserved ?? 'null'}`);
+  check('later-round-both-reviewed', rounds.length >= 2 && (['standards', 'spec'] as const).every(role => rounds[1]!.reviewers[role].source !== 'carried' && (rounds[1]!.reviewers[role].attempt ?? 1) === 1),
+    `${rounds.length} rounds`);
+  check('execution-ended', execution.state === 'ended' && execution.slot.held === false && execution.end?.cessation === 'confirmed',
+    execution.state === 'held' ? `held:${execution.held?.code ?? ''}` : `${execution.state}:${execution.end?.cessation ?? 'none'}`);
+  const limitations = rounds.flatMap(round => (['standards', 'spec'] as const).filter(role => round.reviewers[role].opinion?.conclusion === 'incomplete')
+    .map(role => ({ round: round.round, role, downgraded: [...(round.reviewers[role].opinion?.hostChecks.downgraded ?? [])] })));
+  return { passed: checks.every(item => item.ok), checks, retriedRoles, limitations };
+}
+
 /** Activation guard of ONE Execution: one Builder; per reviewer role a bounded number of DISTINCT (round, attempt); Spec retries only in round 1. */
 export function activationGuard(max: { standards: number; spec: number } = activationsMax) {
   let execution: string | undefined;
@@ -268,7 +303,8 @@ export async function runPhase(phase: Phase) {
           }
         }
       }
-      await save('inspect-result', { execution: work.execution, work: 'work' in shown ? { budget: shown.work.budget, history: shown.work.history } : null, opinionRecords, sessions });
+      const workView = 'work' in shown ? { budget: shown.work.budget, history: shown.work.history } : null;
+      await save('inspect-result', { verdict: verdict(work.execution, workView?.budget ?? null), execution: work.execution, work: workView, opinionRecords, sessions });
       return;
     }
     const { needsStop } = await import('./builder09-qualification.js');

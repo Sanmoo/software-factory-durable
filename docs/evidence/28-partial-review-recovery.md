@@ -181,3 +181,16 @@ inalterados: ≤ 276 requisições de modelo, 75 min.
 
 Gate após as decisões (`ea603d9`): tsc 0 erros, eslint limpo, dependency-cruiser sem violações (366 módulos, 2257 dependências);
 **176 arquivos um por vez: 1102 pass, 0 fail, 10 skipped** (`test/sandbox/gondolin.test.ts` segue `skip: true`).
+
+## Oráculo da receita e o `incomplete` de Standards (achado do ensaio real v7 do ticket 14)
+
+No ensaio real do ticket 14, o Standards concluiu `incomplete` em todas as rodadas: as instruções citam `GLOSSARY.md`/`docs/adr` inexistentes e
+a leitura devolveu `GUEST_READ_FAILED`. A correção está no ticket 14. Verificado só por leitura: o Control do 28 já trata `incomplete` como
+resultado real (nunca re-obtido nem levado). A receita, porém, não tinha veredito automático; agora `inspect-result.json` traz
+`verdict` (função pura `verdict` em `review28-qualification.ts`, testada), que:
+- conta como falha provocada só uma tentativa 1 do Spec registrada como `cancelled`/`failure` (nunca um `incomplete`);
+- conta como retry só o que o Control realmente re-obteve (`attempts[]`): o esperado é exatamente `r1/spec`;
+- aceita o parecer de Standards descoberto no Records com qualquer conclusão real, inclusive `incomplete`;
+- lista os pareceres `incomplete` em `limitations` (com `hostChecks.downgraded`), separados das falhas.
+
+A execução real de `q28-partial-v2` aguarda o rebase sobre o ticket 14 (decisão do supervisor).
