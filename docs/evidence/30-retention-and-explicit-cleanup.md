@@ -78,9 +78,28 @@ cleaned explicitly; that is an abandonment, not an unblock. Unblocking (an expli
 unreadable request) belongs to recovery, tickets 26/27. **Supervisor (decision 4): accepted. It is an open item owned by 26/27, tracked by
 the supervisor.** Ticket 26's decision 3 already routes it to `resume`, which does not lift it today.
 
-## Real-run recipe (LOCAL only, supervisor decision 5; run by the supervisor: v1 not met, v2 met)
+## Independent review of 115df70 (fixed with TDD; supervisor reverses decision 2)
 
-`test/entrypoints/retention30-qualification.ts`, namespace `/home/sanmoo/software-factory-test/y5/q30-retention-v2`. Import and `--plan` are
+| Finding | Fix | Tests |
+| --- | --- | --- |
+| Decision 2 reversed: only operational details expire | Records classifies each capture (fail-closed). A raw capture with a tool-call UUID is a **log**. A Records event envelope (start receipt, review opinion and its forward, mutation intent/result, Question request…) is `record:<kind>`. A `probe-*`/`handoff-*` output is `host-evidence`. Anything else is `unknown-kind`. Ticket 17's preserved evidence is never a target. Every class except log is **kept** until `forget` (ticket 31), counted in `inventory.kept` and re-checked at removal (`NOT_A_LOG_CAPTURE`). On the real q17 Records: 39 logs, 49 kept (25 host-evidence, 4 worker-start, 2 opinions, 2 forwards, 16 mutation records), 1 evidence directory, inventory complete. | `retention-details` (real-data shape), `retention-flow` AC1 (kept records remain), recipe storage test |
+| MED: the 500-entry `removals` window allowed an implicit retry | `retention.unsettledIds` keeps every failed/refused/indeterminate id beyond the window. Only an explicit plan or a proven absence clears it. | `retention-flow` "never retried … left the window" (mutation red) |
+| MED: an explicit resource plan executed later was not revalidated for protections | The resource cleanup checks `retentionProtections` (open Question, unsettled effect, activity…) before acting on an explicit plan. If the Work is still needed, the plan is dropped (`BECAME_PROTECTED:…`) and consumed: nothing is removed. Resource states are no longer rewritten to `pending` at confirmation; `explicitPending` selects the plan's resources. | `retention-flow` "revalidated at execution" (mutation red) |
+| MED: an incomplete inventory still planned items | It now plans nothing for logs/sessions, so the losses are exactly what may be removed. | `retention-rules` AC5/AC7 |
+| MED: a crash between `link` and `unlink` blocked a session copy | Records accepts the copy's own leftover temporary (nlink 2 on the same inode). The next preservation repairs it idempotently (hash verified, temporary unlinked). A temporary left before `link` is discarded. Removal takes the temporary with it. | `retention-details` crash-repair test |
+| MED (recipe): protected/0 counted as a pass | Run B must end `expired` and remove logs AND sessions; protected counts as not met. A labelled synthetic session copy, named after a real Execution, exercises session removal. Namespace `q30-retention-v3`. | recipe storage test (protected run → not-met) |
+| LOW: an unreadable or empty reviewer session blocked the environment | It is copied as opaque bytes with its hash (`readConfinedFile`). Only an unsafe file (symlink, foreign, writable) is reported with its code; it keeps the environment, and `nextStep` says what to do. | `delivery-composition`, `retention-flow` unsafe-session test |
+| LOW: a refused/kept resource blocked the details for ever | `CLEANUP_PENDING` now holds only while the cleanup is waiting, a resource is retried automatically, or an explicit plan is unconsumed. The cleanup `nextStep` names `factory cleanup … --select environment|remote-branch`. | `retention-flow` hand-off test (logs expire with a kept branch; mutation red) |
+| LOW: `[logs, environment]` dropped the logs | Explicit detail and resource items no longer wait for the resource cleanup (`CLEANUP_PENDING`/`DETAIL_REMOVAL_UNSETTLED`). | `retention-flow` AC5–7 |
+| LOW: protection facts were read before the intent commit | Questions are read inside the intent commit, and activity is checked at commit time. | `retention-flow` (all removal paths) |
+| LOW: `preserveSessionCopy` accepted any `workId` | It is validated with `identifier`. | `retention-details` |
+| LOW: an all-refused plan superseded a valid one | A plan with no item supersedes nothing. | `retention-flow` "revalidated at execution" |
+
+Session ownership no longer depends on a preservation record. A copy is owned when it is named after an Execution of the Work, and it is removed only at the hash the inventory or the plan saw.
+
+## Real-run recipe (LOCAL only, supervisor decision 5: v1 not met, v2 met before the review; v3 pending)
+
+`test/entrypoints/retention30-qualification.ts`, namespace `/home/sanmoo/software-factory-test/y5/q30-retention-v3` (v1/v2 consumed). Import and `--plan` are
 inert (`retention30-qualification.test.ts`). The phases are one-shot, each with an exclusive intent tombstone and no retry:
 
 1. **`preflight`.** Makes the namespace with an exclusive mkdir. COPIES `y5/q17-delivery-v4/authority` into `authority/`; a format-1 copy is

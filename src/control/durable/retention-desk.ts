@@ -4,6 +4,10 @@ import { classifyDetails, defaultRetentionDays, retentionProtections, revalidate
 import type { WorkRecord } from './admission.js';
 import { dueAtMsOf, plannedResourcesOf, recordDetailIntent, recordDetailResults, recordRetentionSweep, settlePlanItems } from './retention.js';
 import type { Session } from './store.js';
+import { questions as questionDocs } from './questions.js';
+
+type Tx = Parameters<Parameters<Session['commit']>[0]>[0];
+type Removable = { id: string; kind: 'log' | 'session'; executionId: string | null; bytes: number; sha256?: string | null };
 
 const batch = 50;
 
@@ -38,16 +42,24 @@ export function createRetentionDesk(deps: { session: Session; details?: DetailPo
       plannedResources: plannedResourcesOf(work, planCleanup(work, { repositoryConfigured: configured(work.repository.repository) }).resources) };
   }
 
-  async function remove(work: WorkRecord, items: { id: string; kind: 'log' | 'session'; executionId: string | null; bytes: number }[],
-    origin: { kind: 'retention' | 'explicit'; request_id: string | null; planId: string | null }, recheck: (work: WorkRecord) => string | null) {
+  /** Review LOW: the Work's Questions as the intent commit sees them, and whether an activity runs NOW (not values read before the commit). */
+  async function commitFacts(work: WorkRecord, tx: Tx): Promise<Pick<PlanFacts, 'running' | 'questions'>> {
+    const found: QuestionView[] = [];
+    for (const id of work.questions ?? []) { const question = (await tx.doc(questionDocs, id, null)).question; if (question) found.push(question); }
+    return { running: deps.running(work.work_id), questions: found };
+  }
+
+  async function remove(work: WorkRecord, items: Removable[],
+    origin: { kind: 'retention' | 'explicit'; request_id: string | null; planId: string | null }, recheck: (work: WorkRecord, tx: Tx) => Promise<string | null>) {
     for (let index = 0; index < items.length && !deps.stopped(); index += batch) {
       const slice = items.slice(index, index + batch);
       const intent = await recordDetailIntent(deps.session, work.work_id, slice, origin, recheck);
       if (intent === 'stale' || intent.kind !== 'recorded') return;
       const results: { effectId: string; result: DetailRemoval }[] = [];
       for (const item of slice) {
-        const expectedSha256 = item.kind === 'session' ? work.retention?.sessions.find(entry => entry.id === item.id && entry.state === 'preserved')?.sha256 ?? null : null;
-        const result = item.kind === 'session' && !expectedSha256 ? { outcome: 'refused' as const, code: 'SESSION_NOT_RECORDED' }
+        // A session copy is removed only while it still has the hash the inventory (or the confirmed plan) saw.
+        const expectedSha256 = item.kind === 'session' ? item.sha256 ?? null : null;
+        const result = item.kind === 'session' && !expectedSha256 ? { outcome: 'refused' as const, code: 'SESSION_HASH_UNKNOWN' }
           : await deps.details!.remove({ workId: work.work_id, item, expectedSha256 }).catch(() => ({ outcome: 'indeterminate' as const, code: 'DETAIL_REMOVAL_UNAVAILABLE' }));
         results.push({ effectId: intent.effects[item.id]!, result });
       }
@@ -60,11 +72,10 @@ export function createRetentionDesk(deps: { session: Session; details?: DetailPo
     const recorded = await recordRetentionSweep(deps.session, work.work_id, { days, now: now(), facts, inventory: facts.inventory });
     if (recorded === 'stale' || !recorded.eligible.length || !deps.details) return;
     const instant = now();
-    const running = deps.running(work.work_id);
-    // Revalidated inside the intent commit against the record as it is then (delivery, deadline, protections, use).
+    // Revalidated inside the intent commit against the record, its Questions and the activity as they are then (delivery, deadline, protections, use).
     const ids = new Set(recorded.eligible.map(item => item.item.id));
-    await remove(work, recorded.eligible.map(item => item.item), { kind: 'retention', request_id: null, planId: null }, current => {
-      const protections = retentionProtections(current, { running, questions: facts.questions });
+    await remove(work, recorded.eligible.map(item => item.item), { kind: 'retention', request_id: null, planId: null }, async (current, tx) => {
+      const protections = retentionProtections(current, await commitFacts(current, tx));
       const decisions = classifyDetails(current, { items: recorded.eligible.map(item => item.item) }, { protections, now: instant, dueAtMs: dueAtMsOf(current, days) });
       return decisions.every(item => item.decision === 'eligible' && ids.has(item.item.id)) ? null : 'RETENTION_REVALIDATION_REFUSED';
     });
@@ -79,19 +90,20 @@ export function createRetentionDesk(deps: { session: Session; details?: DetailPo
         const facts = await factsOf(work, true);
         // Revalidated per item NOW (spec §12.4): needed/active/absent items are settled without any effect, never removed by the old plan.
         const settle: { id: string; state: 'dropped' | 'absent'; code: string }[] = [];
-        const allowed: { id: string; kind: 'log' | 'session'; executionId: string | null; bytes: number }[] = [];
+        const allowed: Removable[] = [];
         for (const item of pending) {
           const complete = facts.inventory?.completeness === 'complete';
           const present = complete ? facts.inventory!.items.find(entry => entry.id === item.id) : undefined;
           const code = !complete ? 'INVENTORY_INCOMPLETE' : revalidateItem(work, item, facts);
           if (code) settle.push({ id: item.id, state: 'dropped', code });
           else if (!present) settle.push({ id: item.id, state: 'absent', code: 'ABSENT_IN_COMPLETE_INVENTORY' });
-          else allowed.push({ id: item.id, kind: item.kind as 'log' | 'session', executionId: present.executionId, bytes: present.bytes });
+          else allowed.push({ id: item.id, kind: item.kind as 'log' | 'session', executionId: present.executionId, bytes: present.bytes, sha256: item.sha256 ?? null });
         }
         if (settle.length) await settlePlanItems(deps.session, work.work_id, plan.planId, settle, now());
         if (!allowed.length) continue;
-        await remove(work, allowed, { kind: 'explicit', request_id: plan.confirmedBy, planId: plan.planId }, current => {
-          for (const item of pending.filter(entry => allowed.some(candidate => candidate.id === entry.id))) { const code = revalidateItem(current, item, facts); if (code) return code; }
+        await remove(work, allowed, { kind: 'explicit', request_id: plan.confirmedBy, planId: plan.planId }, async (current, tx) => {
+          const live = { ...facts, ...await commitFacts(current, tx) };
+          for (const item of pending.filter(entry => allowed.some(candidate => candidate.id === entry.id))) { const code = revalidateItem(current, item, live); if (code) return code; }
           return null;
         });
       }

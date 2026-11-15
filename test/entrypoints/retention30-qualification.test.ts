@@ -18,11 +18,13 @@ test('recipe: import and --plan are inert; own namespace, COPY of q17-delivery-v
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
   assert.deepEqual(plan.phases, ['preflight', 'sweep', 'inspect']);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q30-retention-v2');
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q30-retention-v3');
   assert.equal(plan.source.storage, '/home/sanmoo/software-factory-test/y5/q17-delivery-v4/authority');
   assert.match(plan.network, /^none:/);
   assert.match(plan.effects[0], /COPY of q17-delivery-v4\/authority.*format-1 copy is migrated.*PRIVATE copy/);
-  assert.match(plan.effects[1], /NEVER confirmed/);
+  assert.match(plan.effects[1], /labelled synthetic session copy/);
+  assert.match(plan.effects[2], /NEVER confirmed/);
+  assert.ok(plan.verdict.some((item: string) => /protected is NOT met/.test(item)));
   assert.deepEqual(plan.localSelection, ['logs', 'sessions', 'environment']);
   assert.throws(() => recipe.localOnly(['logs', 'remote-branch']), /RECIPE_REMOTE_SELECTION_REFUSED/);
   assert.throws(() => recipe.localOnly([]), /RECIPE_REMOTE_SELECTION_REFUSED/);

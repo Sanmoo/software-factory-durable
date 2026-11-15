@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createHash } from 'node:crypto';
-import { lstat, mkdir, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { lstat, mkdir, readdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { createDeliveryDesk } from '../../src/control/durable/delivery-desk.js';
@@ -10,7 +10,7 @@ import { acceptCleanupConfirm, acceptCleanupPlan, plannedResourcesOf, recordDeta
 import { readWork, readWorks, works, type WorkRecord } from '../../src/control/durable/admission.js';
 import { readQuestions } from '../../src/control/durable/questions.js';
 import { planCleanup } from '../../src/control/rules/delivery.js';
-import type { PlanFacts } from '../../src/control/rules/retention.js';
+import { retentionProtections, type PlanFacts } from '../../src/control/rules/retention.js';
 import type { DetailPorts, ExplicitCleanupSelection } from '../../src/control/types.js';
 import { createRecords, listDetails, preserveSessionCopy, removeRecordsDetail } from '../../src/records/index.js';
 import { scope } from './doubles.js';
@@ -49,8 +49,13 @@ async function harness(t: { after(fn: () => Promise<void> | void): void }, optio
   }, BACKGROUND_CONTEXT);
   const records = await createRecords({ root });
   const context = { workId: work_id, executionId: 'e-1', invocationId: 'i-1', role: 'builder' as const, environmentRef: own.env, bootRef: 'boot', callId: 'c-1' };
-  const logs = [await records.record(context, { tool: 'bash', output: 'one' }), await records.record({ ...context, callId: 'c-2' }, { tool: 'read', output: 'two' })];
-  const foreignLog = await records.record({ ...context, workId: 'foreign-work' }, { tool: 'bash' });
+  // Logs = tool/command outputs (raw captures with a tool call id), as in the real q17 run; records history needs are kept (never details).
+  const toolOutput = async (workId: string, text: string) => { const output = await records.openOutput({ ...context, workId, callId: randomUUID() });
+    await output.write(Buffer.from(text)); return (await output.finish()).reference; };
+  const logs = [await toolOutput(work_id, 'one'), await toolOutput(work_id, 'two')];
+  const foreignLog = await toolOutput('foreign-work', 'foreign');
+  const kept = [await records.record({ ...context, callId: 'worker-start' }, { version: 1, kind: 'worker-start' }),
+    await records.record({ ...context, role: 'spec', callId: 'review-opinion' }, { kind: 'review-opinion', verdict: 'approve' })];
   const github = { pull: ownFacts() as ReturnType<typeof ownFacts> | 'unavailable', branch: { 'factory/3-own': 'a'.repeat(40), main: 'c'.repeat(40) } as Record<string, string>,
     branchOutcomes: [] as ('removed' | 'absent' | 'refused' | 'failed' | 'indeterminate' | 'kept')[] };
   const repository = deliveryRepository(github);
@@ -63,10 +68,12 @@ async function harness(t: { after(fn: () => Promise<void> | void): void }, optio
     list: ({ workId }) => listDetails(root, workId),
     async runtimeSessions({ boot }) {
       const directory = join(root, 'r', Buffer.from(boot.slice(5).replaceAll('-', ''), 'hex').toString('base64url'));
-      const found: { ref: string; sha256: string; bytes: number }[] = [];
+      const found: ({ ref: string; sha256: string; bytes: number } | { ref: string; code: string })[] = [];
       for (const worker of await readdir(directory).catch(() => [] as string[])) {
         if (!worker.startsWith('w-')) continue;
         for (const name of await readdir(join(directory, worker, 'profile', 'sessions')).catch(() => [] as string[])) {
+          if ((await lstat(join(directory, worker, 'profile', 'sessions', name))).isSymbolicLink()) {
+            found.push({ ref: relative(root, join(directory, worker, 'profile', 'sessions', name)), code: 'SESSION_PATH_UNSAFE' }); continue; }
           const bytes = await readFile(join(directory, worker, 'profile', 'sessions', name));
           found.push({ ref: relative(root, join(directory, worker, 'profile', 'sessions', name)), sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length });
         }
@@ -91,7 +98,8 @@ async function harness(t: { after(fn: () => Promise<void> | void): void }, optio
   const cleanup = { ...realCleanupPorts(root, log), details, retentionDays: 30 };
   const settled = { value: true };
   const delivery = createDeliveryDesk({ session, repository: repository.repository, repositories: [scope], cleanup, running: id => running.has(id), interrupt: async () => {},
-    readWorks: () => readWorks(session), stopped: () => false, now: () => clock.now });
+    readWorks: () => readWorks(session), stopped: () => false, now: () => clock.now,
+    protections: async work => retentionProtections(work, { running: running.has(work.work_id), questions: await readQuestions(session, work) }) });
   const retentionDesk = () => createRetentionDesk({ session, details, repositories: [scope], days: 30, sweepSeconds: 86400, readWorks: () => readWorks(session),
     readQuestions: work => readQuestions(session, work), running: id => running.has(id), settled: () => settled.value, stopped: () => false, now: () => clock.now });
   const work = async () => (await readWork(session, work_id))!;
@@ -108,7 +116,7 @@ async function harness(t: { after(fn: () => Promise<void> | void): void }, optio
   const confirm = async (request_id: string, plan_id: string) =>
     acceptCleanupConfirm(session, { request_id, operation: 'cleanup-confirm', work_id, plan_id, origin: 'local-cli' }, await facts());
   const logPath = (id: string, workId = work_id) => join(root, workId, 'evidence', id);
-  return { root, session, work_id, own, foreign, logs, foreignLog, sessions, github, repository, log, running, clock, faults, details, delivery, retentionDesk, settled, work, plan,
+  return { root, session, work_id, own, foreign, logs, kept, foreignLog, sessions, github, repository, log, running, clock, faults, details, delivery, retentionDesk, settled, work, plan,
     confirm, logPath, copy: join(root, work_id, 'sessions', 'e-1.jsonl') };
 }
 async function deliver(h: Awaited<ReturnType<typeof harness>>) {
@@ -174,7 +182,8 @@ test('AC1/AC3/AC4/AC8: sessions are preserved before the environment goes; deliv
   assert.match(view.nextStep, /expired: removed by retention.*2 log\(s\), 2 session\(s\)/);
   // Kept: preserved evidence, the foreign Work's log, history/summary/references; delivery stands.
   const after = await h.work();
-  assert.equal((await readdir(join(h.root, h.work_id, 'evidence'))).length, 1, 'only the preserved evidence directory remains');
+  assert.equal((await readdir(join(h.root, h.work_id, 'evidence'))).length, 3, 'the preserved evidence and the records history needs (start receipt, opinion) remain');
+  assert.equal(view.inventory?.kept, 2);
   assert.ok(await exists(h.logPath(h.foreignLog.id, 'foreign-work')));
   assert.deepEqual([after.result, after.delivery?.state, after.cleanup?.evidence.length], ['delivered', 'delivered', 1]);
   assert.ok(after.history.some(item => item.event === 'delivery-confirmed') && after.history.some(item => item.event === 'detail-removal-result'));
@@ -313,6 +322,12 @@ test('AC5/AC6 (ticket 17 hand-off): a kept/refused own branch of a delivered Wor
   const work = await h.work();
   assert.equal(attempts(), 2, 'exactly one fresh attempt for the confirmation');
   assert.deepEqual([work.cleanup!.resources.find(item => item.id === branch.id)!.state, work.cleanup!.explicit?.consumed, work.result], ['kept', true, 'delivered']);
+  // Review LOW: a resource left kept for an operator decision never holds the logs/sessions for ever.
+  h.clock.now = Date.parse(work.delivery!.merge!.confirmedAt) + 31 * day;
+  await h.retentionDesk().cycle();
+  const expired = (await h.work()).retention!;
+  assert.deepEqual([expired.state, expired.protections, expired.removed.logs], ['expired', [], 2]);
+  assert.match(work.cleanup!.nextStep, /factory cleanup <work> --select environment\|remote-branch/);
 });
 
 test('a daily sweep of an unchanged Work adds no history (undelivered Works are kept for ever without growing their history)', async t => {
@@ -322,4 +337,52 @@ test('a daily sweep of an unchanged Work adds no history (undelivered Works are 
   const work = await h.work();
   assert.equal(work.retention?.sweeps, 5);
   assert.equal(work.history.filter(item => item.event === 'retention-evaluated').length, 1);
+});
+
+test('review MED: a failed/indeterminate removal is never retried implicitly, even after it left the bounded removals window', async t => {
+  const h = await harness(t);
+  const merge = await deliver(h);
+  h.faults[`log:${h.logs[0]!.id}`] = 'failed';
+  h.clock.now = merge + 31 * day;
+  await h.retentionDesk().cycle();
+  delete h.faults[`log:${h.logs[0]!.id}`];
+  assert.deepEqual((await h.work()).retention?.unsettledIds, [`log:${h.logs[0]!.id}`]);
+  // The bounded list no longer holds that attempt (500 later removals would do the same).
+  await h.session.commit(async tx => { const work = (await tx.doc(works, h.work_id, null)).work!; work.retention!.removals = []; }, BACKGROUND_CONTEXT);
+  h.clock.now += day;
+  await h.retentionDesk().cycle();
+  assert.equal(h.log.filter(item => item === `remove-detail:log:${h.logs[0]!.id}`).length, 1, 'not attempted again');
+  assert.ok(await exists(h.logPath(h.logs[0]!.id)));
+});
+
+test('review MED/LOW: a confirmed explicit plan is revalidated at execution (unsettled effect → dropped, nothing removed); an all-refused plan supersedes nothing', async t => {
+  const h = await harness(t, { result: 'cancelled' });
+  const plan = await h.plan('p-1', ['logs', 'environment']);
+  assert.ok(plan.kind === 'durable' && plan.plan?.items.length);
+  const refused = await h.plan('p-2', ['remote-branch']);
+  assert.ok(refused.kind === 'durable' && refused.plan?.items.length === 0);
+  const confirmed = await h.confirm('c-1', plan.plan!.planId);
+  assert.ok(confirmed.kind === 'durable' && confirmed.outcome === 'accepted', 'the valid plan was not superseded by the all-refused one');
+  // After the confirmation, an effect of the Work becomes unsettled: the details are needed again.
+  await h.session.commit(async tx => { const work = (await tx.doc(works, h.work_id, null)).work!;
+    work.readiness = { effect: { effectId: 'r-1', state: 'attempted' } } as never; }, BACKGROUND_CONTEXT);
+  await h.delivery.cycle();
+  await h.retentionDesk().cycle();
+  const work = await h.work();
+  assert.deepEqual(h.log.filter(item => item.startsWith('remove')), [], 'nothing removed by the old plan');
+  assert.ok(await exists(h.own.directory) && await exists(h.logPath(h.logs[0]!.id)));
+  assert.equal(work.cleanup?.explicit?.consumed, true, 'consumed: nothing left for any automatic retry');
+  const executed = work.retention!.plans.find(item => item.planId === plan.plan!.planId)!;
+  assert.ok(executed.items.every(item => item.state === 'dropped' && /EFFECT_UNSETTLED:readiness:r-1/.test(item.code ?? '')), JSON.stringify(executed.items));
+  assert.ok(work.cleanup!.resources.every(item => item.attempts.length === 0));
+});
+
+test('review LOW: an unsafe agent session file in the runtime keeps the environment and is reported with its code (never followed)', async t => {
+  const h = await harness(t);
+  await symlink('/etc/hostname', join(h.own.runtime, 'w-rev', 'profile', 'sessions', 'link.jsonl'));
+  await deliver(h);
+  const work = await h.work();
+  assert.equal(h.log.filter(item => item.startsWith('remove:')).length, 0, 'environment kept');
+  assert.ok(await exists(h.own.runtime));
+  assert.ok(work.retention?.sessions.some(item => item.state === 'failed' && item.code === 'SESSION_PATH_UNSAFE'), JSON.stringify(work.retention?.sessions));
 });

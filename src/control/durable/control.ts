@@ -27,7 +27,7 @@ import { acceptCancel, acceptNewCycle, acceptReopen, acceptResume, createCycleDe
 import { createRetentionDesk } from './retention-desk.js';
 import { acceptCleanupConfirm, acceptCleanupPlan, plannedResourcesOf } from './retention.js';
 import { planCleanup } from '../rules/delivery.js';
-import type { PlanFacts } from '../rules/retention.js';
+import { retentionProtections, type PlanFacts } from '../rules/retention.js';
 
 const requestId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
 const inputSchema = z.union([z.strictObject({ request_id: requestId, operation: z.enum(['pause', 'unpause']), origin: z.literal('local-cli') }),
@@ -139,7 +139,8 @@ export async function openControl(options: { storagePath: string;
   // itself revalidates cessation per Work). Before the dispatcher tick, so a merge observed now is never followed by a new activation.
   const delivery = options.access && options.polling ? createDeliveryDesk({ session: state, repository: options.access.repository, repositories: options.access.repositories,
     cleanup: options.execution?.cleanup, running: work_id => dispatcher?.running(work_id) ?? false,
-    interrupt: async work_id => dispatcher?.interruptDelivered(work_id), readWorks: () => readWorks(state), stopped: () => stopped }) : undefined;
+    interrupt: async work_id => dispatcher?.interruptDelivered(work_id), readWorks: () => readWorks(state), stopped: () => stopped,
+    protections: async work => retentionProtections(work, { running: dispatcher?.running(work.work_id) ?? false, questions: await readQuestions(state, work) }) }) : undefined;
   // Ticket 30: detail retention (boot sweep after the reconciliation, then daily) and explicit cleanup plans, after the resource cleanup.
   const retention = options.access && options.polling ? createRetentionDesk({ session: state, details: options.execution?.cleanup?.details, repositories: options.access.repositories,
     days: options.execution?.cleanup?.retentionDays, sweepSeconds: options.execution?.cleanup?.sweepSeconds, readWorks: () => readWorks(state),

@@ -19,7 +19,7 @@ function work(overrides: Record<string, unknown> = {}): Work {
     cleanup: { state: 'complete', resources: [], explicit: null } as unknown as WorkView['cleanup'], ...overrides } as Work;
 }
 const inventory = (items: DetailInventory['items'] = [{ id: 'log:a', kind: 'log', executionId: 'e-1', bytes: 10, state: 'complete' },
-  { id: 'session:e-1', kind: 'session', executionId: 'e-1', bytes: 20, state: 'complete' }]): DetailInventory => ({ completeness: 'complete', observedAt: 'now', items, evidence: 1, unknown: [] });
+  { id: 'session:e-1', kind: 'session', executionId: 'e-1', bytes: 20, state: 'complete', sha256: 'f'.repeat(64) }]): DetailInventory => ({ completeness: 'complete', observedAt: 'now', items, evidence: 1, unknown: [] });
 const facts = (overrides: Partial<PlanFacts> = {}): PlanFacts => ({ running: false, questions: [], inventory: inventory(), repositoryConfigured: true, plannedResources: [], ...overrides });
 
 test('AC1: delivered logs/sessions are eligible `days` after the CONFIRMED merge (configurable); undelivered results never get a deadline', () => {
@@ -55,7 +55,7 @@ test('AC3: needed evidence and resources in use are protected past the deadline;
     ['question', work(), [{ questionId: 'q-1', state: 'open', publication: { state: 'published' } as never }], false, 'QUESTION_OPEN:q-1'],
     ['question effect', work(), [{ questionId: 'q-2', state: 'answered', publication: { state: 'ambiguous' } as never }], false, 'EFFECT_UNSETTLED:question-publication:q-2'],
     ['readiness effect', work({ readiness: { effect: { effectId: 'r-1', state: 'attempted' } } as unknown as WorkView['readiness'] }), [], false, 'EFFECT_UNSETTLED:readiness:r-1'],
-    ['cleanup', work({ cleanup: { state: 'pending', resources: [{ id: 'remote-branch:x', state: 'kept' }] } as unknown as WorkView['cleanup'] }), [], false, 'CLEANUP_PENDING'],
+    ['cleanup', work({ cleanup: { state: 'pending', resources: [{ id: 'remote-branch:x', state: 'failed' }] } as unknown as WorkView['cleanup'] }), [], false, 'CLEANUP_PENDING'],
     ['removal unsettled', work({ retention: { removals: [{ outcome: 'intended' }] } as unknown as WorkView['retention'] }), [], false, 'DETAIL_REMOVAL_UNSETTLED'],
   ];
   for (const [name, subject, questions, running, reason] of cases) {
@@ -108,8 +108,10 @@ test('AC5/AC7: explicit plan — losses, warnings and refusals; a cycle that can
   assert.deepEqual([asked.items.length, asked.refusals[0]?.code], [0, 'PROTECTED']);
   const incomplete = planExplicitCleanup(cancelled, ['logs'], facts({ inventory: { ...inventory(), completeness: 'incomplete' } }));
   assert.ok(incomplete.refusals.some(item => item.code === 'INVENTORY_INCOMPLETE'));
-  const unproven = planExplicitCleanup({ ...cancelled, retention: null }, ['sessions'], facts());
-  assert.deepEqual(unproven.refusals.map(item => item.code), ['SESSION_NOT_RECORDED']);
+  assert.deepEqual(incomplete.items, [], 'review MED: an incomplete inventory plans nothing (losses = what may be removed)');
+  assert.deepEqual(incomplete.losses, []);
+  const unproven = planExplicitCleanup(cancelled, ['sessions'], facts({ inventory: inventory([{ id: 'session:e-9', kind: 'session', executionId: 'e-9', bytes: 1, state: 'complete', sha256: 'a'.repeat(64) }]) }));
+  assert.deepEqual(unproven.refusals.map(item => item.code), ['NOT_OWN_EXECUTION'], 'a session copy not named after an Execution of this Work is kept');
   const stillRunning = planExplicitCleanup({ ...cancelled, execution: execution({ state: 'started' }) }, ['logs'], facts());
   assert.equal(stillRunning.items.length, 0);
   // Delivered: refused/kept own resources are planned for ONE fresh attempt; concluded ones are not selectable.

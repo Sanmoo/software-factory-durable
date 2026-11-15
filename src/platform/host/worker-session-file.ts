@@ -29,8 +29,12 @@ async function privateDirectory(path: string) {
   if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid?.() || (info.mode & 0o077)) throw new Error('SESSION_PATH_UNSAFE');
 }
 type Read = { state: 'read'; data: Buffer; sha256: string; sessionId: string } | { state: 'lost' | 'unsafe' | 'invalid'; code: string };
-/** Reads one preserved session file under `root` (relative `ref`), confined as described above. */
-export async function readSessionFile(root: string, ref: string): Promise<Read> {
+type Opaque = { state: 'read'; data: Buffer; sha256: string } | { state: 'lost' | 'unsafe' | 'invalid'; code: string };
+/**
+ * Ticket 30: confined read of one file of the runtime tree under `root` (relative 6-part `ref`), with the same no-follow/private-path rules,
+ * WITHOUT interpreting its content (an empty or non-session file is still read; size bound 64 MiB). Used to keep other agents' session files.
+ */
+export async function readConfinedFile(root: string, ref: string, options: { allowEmpty?: boolean } = {}): Promise<Opaque> {
   if (!isAbsolute(root) || ref.split('/').length !== 6 || ref.split('/').some(part => !part || part === '.' || part === '..')) return { state: 'unsafe', code: 'SESSION_REF_INVALID' };
   try {
     if (await realpath(root) !== root) return { state: 'unsafe', code: 'SESSION_ROOT_NOT_CANONICAL' };
@@ -48,7 +52,7 @@ export async function readSessionFile(root: string, ref: string): Promise<Read> 
   try {
     const info = await file.stat();
     if (!info.isFile() || info.nlink !== 1 || info.uid !== process.getuid?.() || (info.mode & 0o022)) return { state: 'unsafe', code: 'SESSION_FILE_UNSAFE' };
-    if (info.size === 0 || info.size > sessionFileLimits.maxBytes) return { state: 'invalid', code: 'SESSION_FILE_SIZE' };
+    if ((info.size === 0 && !options.allowEmpty) || info.size > sessionFileLimits.maxBytes) return { state: 'invalid', code: 'SESSION_FILE_SIZE' };
     const data = Buffer.alloc(info.size);
     let offset = 0;
     while (offset < data.length) {
@@ -57,10 +61,16 @@ export async function readSessionFile(root: string, ref: string): Promise<Read> 
       offset += bytesRead;
     }
     if (offset !== info.size || (await file.stat()).size !== info.size) return { state: 'invalid', code: 'SESSION_FILE_CHANGED' };
-    const header = sessionHeader(data);
-    if (!header) return { state: 'invalid', code: 'SESSION_HEADER_INVALID' };
-    return { state: 'read', data, sha256: createHash('sha256').update(data).digest('hex'), sessionId: header.id };
+    return { state: 'read', data, sha256: createHash('sha256').update(data).digest('hex') };
   } catch { return { state: 'invalid', code: 'SESSION_FILE_UNREADABLE' }; } finally { await file.close().catch(() => {}); }
+}
+/** Reads one preserved session file under `root` (relative `ref`), confined as described above, and requires its Builder session header. */
+export async function readSessionFile(root: string, ref: string): Promise<Read> {
+  const read = await readConfinedFile(root, ref);
+  if (read.state !== 'read') return read;
+  const header = sessionHeader(read.data);
+  if (!header) return { state: 'invalid', code: 'SESSION_HEADER_INVALID' };
+  return { ...read, sessionId: header.id };
 }
 
 /** The JSONL v3 header of a Factory Builder session (`cwd` is the guest workspace), or null. */

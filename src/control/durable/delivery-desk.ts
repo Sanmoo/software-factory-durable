@@ -2,9 +2,10 @@ import { randomUUID } from 'node:crypto';
 import type { CodeRepository } from '../../code-repository/index.js';
 import type { EnvironmentRef } from '../../sandbox/index.js';
 import type { CleanupPorts, ConfiguredRepository } from '../types.js';
-import { branchOutcome, cleanupEligibility, decideMerge, environmentOutcomes, explicitCancelledCleanup, ownPullRequestOf, planCleanup, selectPending } from '../rules/delivery.js';
+import { branchOutcome, cleanupEligibility, decideMerge, environmentOutcomes, explicitCancelledCleanup, explicitPending, ownPullRequestOf, planCleanup, selectPending } from '../rules/delivery.js';
 import { consumeExplicitCleanup, recordCleanupIntent, recordCleanupResult, recordMergeObservation, recordPreservation, recordSweep } from './delivery.js';
-import { preserveSessions } from './retention.js';
+import { dropExplicitResources, preserveSessions } from './retention.js';
+import { retentionProtections } from '../rules/retention.js';
 import type { WorkRecord } from './admission.js';
 import type { Session } from './store.js';
 
@@ -18,7 +19,9 @@ const readsPerCycle = 8;
  * for what is still pending. Each sweep revalidates eligibility and ownership before any effect; one resource's failure never stops another.
  */
 export function createDeliveryDesk(deps: { session: Session; repository: CodeRepository; repositories: ConfiguredRepository[]; cleanup?: CleanupPorts | undefined;
-  running(work_id: string): boolean; interrupt(work_id: string): Promise<unknown>; readWorks(): Promise<WorkRecord[]>; stopped(): boolean; now?: () => number }) {
+  running(work_id: string): boolean; interrupt(work_id: string): Promise<unknown>; readWorks(): Promise<WorkRecord[]>; stopped(): boolean; now?: () => number;
+  /** Ticket 30 (review MED): the Work's retention protections NOW (open Question, unsettled effect, activity…), checked before an explicit plan acts. */
+  protections?(work: WorkRecord): Promise<string[]> }) {
   const now = deps.now ?? Date.now;
   const retryMs = (deps.cleanup?.retrySeconds ?? 86400) * 1000;
   // Works swept by THIS owner process (memory only): a restart sweeps every pending cleanup once more (boot sweep).
@@ -61,6 +64,14 @@ export function createDeliveryDesk(deps: { session: Session; repository: CodeRep
 
   async function sweep(work: WorkRecord) {
     const scope = configured(work.repository.repository);
+    // An explicit plan confirmed earlier is revalidated at execution: if the Work's details/resources are needed now, it is dropped, never executed.
+    const planned = work.cleanup?.explicit && !work.cleanup.explicit.consumed ? work.cleanup.explicit : null;
+    if (planned) {
+      // Without the composed reader (no Questions), the Work-level protections still apply (activity, effects, cessation, recovery…).
+      const current = deps.protections ? await deps.protections(work) : retentionProtections(work, { running: deps.running(work.work_id), questions: [] });
+      const needed = current.filter(reason => reason !== 'CLEANUP_PENDING' && reason !== 'DETAIL_REMOVAL_UNSETTLED');
+      if (needed.length) { await dropExplicitResources(deps.session, work.work_id, planned.planId, `BECAME_PROTECTED:${needed.join(',')}`.slice(0, 256), now()); return; }
+    }
     const eligibility = cleanupEligibility(work, deps.running(work.work_id));
     const plan = planCleanup(work, { repositoryConfigured: scope !== undefined });
     const view = await recordSweep(deps.session, work.work_id, { eligibility, planned: plan.resources, protected: plan.protected });
@@ -69,7 +80,7 @@ export function createDeliveryDesk(deps: { session: Session; repository: CodeRep
     // Ticket 30: under an explicit plan, a resource already attempted after its confirmation (e.g. an intent lost by a crash, now indeterminate)
     // is not attempted again: no implicit retry of an operator decision.
     const explicit = view.explicit && !view.explicit.consumed ? view.explicit : null;
-    const pending = selectPending(view.resources).filter(item => !explicit || !item.attempts.some(attempt => attempt.intentAt >= explicit.at));
+    const pending = explicit ? explicitPending(view.resources, explicit) : selectPending(view.resources);
     const cleanup = deps.cleanup;
     const disposition = explicitCancelledCleanup(work) ? 'cancelled' as const : 'delivered' as const;
     for (const environment of [...new Set(pending.flatMap(item => item.environment ? [item.environment] : []))]) {

@@ -4,7 +4,7 @@
 
 **Blocked by:** [17: Confirmar entrega e limpar somente recursos próprios](17-confirmed-delivery-and-owned-cleanup.md); [25: Operar retirada de autorização, cancelamento e novos ciclos](25-authorization-withdrawal-and-work-cycles.md)
 
-**Status:** resolved
+**Status:** ready-for-agent
 
 ## Acceptance criteria
 
@@ -39,8 +39,6 @@ Publicação é planejamento aprovado, não autorização de construção, uso d
 - 2026-11-15 (supervisor): decisões 1–4 aceitas; 6 (sessões de revisores preservadas) implementada; receita local
   `retention30-qualification`: v1 NÃO atendida (defeito da receita: parava o owner antes de os lotes de remoção terminarem; 50 de 88),
   v2 ATENDIDA 9/9 sobre cópia de `q17-delivery-v4`. Item aberto de desbloqueio de `RECOVERY_BLOCKED` pertence aos tickets 26/27.
-
-## Answer
-
-Retenção e cleanup explícito entregues e qualificados (fluxos storage-real + CLI real + execução local real v2 atendida 9/9).
-Evidência: [docs/evidence/30-retention-and-explicit-cleanup.md](../../../docs/evidence/30-retention-and-explicit-cleanup.md).
+- 2026-11-15 (revisão independente de 115df70): decisão 2 revertida pelo supervisor — só saídas de ferramenta/comando e cópias de sessão
+  expiram; pareceres, recibos, pedidos/respostas de Pergunta e evidência do 17 ficam até `forget` (ticket 31). Correções MED/LOW aplicadas
+  (ver evidência). Ticket reaberto até a receita local v3 (`y5/q30-retention-v3`) passar.

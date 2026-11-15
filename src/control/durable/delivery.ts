@@ -1,7 +1,8 @@
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { CleanupOutcome, CleanupView, DeliveryView, EvidencePreservation, MergeObservation, OwnPullRequestIdentity, PlannedCleanupResource } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
-import { cleanupNextStep, cleanupState, concluded, deliveryNextStep, explicitCancelledCleanup, mergePlan, ownPullRequestOf, recoverLostIntents, retryable, type MergeDecision } from '../rules/delivery.js';
+import { cleanupNextStep, cleanupState, concluded, deliveryNextStep, explicitCancelledCleanup, explicitPending, mergePlan, ownPullRequestOf, recoverLostIntents, retryable,
+  type MergeDecision } from '../rules/delivery.js';
 import { ticketIndex, works, type WorkRecord } from './admission.js';
 import type { Session } from './store.js';
 import { rememberResult } from './cycles.js';
@@ -135,7 +136,8 @@ export async function recordCleanupIntent(session: Session, work_id: string, ids
   return onDelivered(session, work_id, (work, cleanup) => {
     const resources = ids.map(id => cleanup.resources.find(item => item.id === id));
     // Only automatically retryable resources: refused/kept wait for an operator decision (never a fresh write attempt).
-    if (!cleanup.eligibility.eligible || !ids.length || resources.some(item => !item || !retryable(item.state))) return 'refused' as const;
+    const explicit = cleanup.explicit && !cleanup.explicit.consumed ? explicitPending(cleanup.resources, cleanup.explicit).map(item => item.id) : [];
+    if (!cleanup.eligibility.eligible || !ids.length || resources.some(item => !item || (!retryable(item.state) && !explicit.includes(item.id)))) return 'refused' as const;
     if (resources.some(item => item!.environment && !cleanup.evidence.some(entry => entry.environment === item!.environment && entry.state !== 'failed'))) return 'refused' as const;
     const at = new Date().toISOString();
     for (const item of resources) item!.attempts = [...item!.attempts, { effectId, intentAt: at, resultAt: null, outcome: 'intended' as const, code: null }].slice(-20);

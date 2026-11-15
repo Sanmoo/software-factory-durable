@@ -41,6 +41,9 @@ function refresh(work: WorkRecord, view: RetentionView, input: { now: number; pr
   view.state = retentionState({ class: view.class, dueAtMs: dueAtMsOf(work, view.days), now: input.now, protections: view.protections, remaining,
     explicit: view.removals.some(item => item.origin === 'explicit' && (item.outcome === 'removed' || item.outcome === 'absent')) });
   view.nextStep = retentionNextStep(view);
+  const failed = view.sessions.filter(item => item.state === 'failed');
+  if (failed.length) view.nextStep += ` ${failed.length} session file(s) could not be copied safely (${failed.map(item => `${item.sourceRef}: ${item.code}`).join('; ').slice(0, 300)}): ` +
+    'their environment is kept (nothing is followed or repaired); inspect or remove that file as the administrator, then the next sweep copies the rest and removes the environment.';
 }
 async function onWork<T>(session: Session, work_id: string, change: (work: WorkRecord, tx: Tx) => T | Promise<T>): Promise<T | 'stale'> {
   return session.commit(async tx => {
@@ -87,10 +90,16 @@ export async function preserveSessions(session: Session, details: DetailPorts, w
     if (recorded && await preserve(execution, 'builder', execution.executionId, recorded) === 'failed') return 'failed';
     // Supervisor decision (ticket 30): the other agent sessions of the same boot (reviewers) are retained details too, copied first as well.
     if (!execution.dispatch.boot || !details.runtimeSessions) continue;
-    let found: { ref: string; sha256: string; bytes: number }[];
+    let found: Awaited<ReturnType<NonNullable<DetailPorts['runtimeSessions']>>>;
     try { found = await details.runtimeSessions({ boot: execution.dispatch.boot }); } catch { return 'failed'; }
     for (const source of found.filter(item => item.ref !== recorded?.ref)) {
       const name = `${execution.executionId}--rv-${createHash('sha256').update(source.ref).digest('hex').slice(0, 16)}`;
+      if ('code' in source) {
+        // Not safely readable (e.g. a symlink or foreign file): never followed or copied; the environment is kept and the record names it.
+        await recordSessionPreservation(session, work.work_id, { id: `session:${name}`, role: 'reviewer', executionId: execution.executionId, sourceRef: source.ref,
+          sha256: '', bytes: 0, at: new Date().toISOString(), state: 'failed', code: source.code });
+        return 'failed';
+      }
       if (await preserve(execution, 'reviewer', name, source) === 'failed') return 'failed';
     }
   }
@@ -116,17 +125,23 @@ export async function recordRetentionSweep(session: Session, work_id: string, in
         Object.assign(item, { outcome: 'absent', code: 'ABSENT_IN_COMPLETE_INVENTORY', resultAt: at });
         count(view, item);
       }
+      // A detail proven absent no longer needs the never-retry mark (nothing remains to remove).
+      if (view.unsettledIds) view.unsettledIds = view.unsettledIds.filter(id => present.has(id));
     }
     if (input.inventory) view.inventory = { completeness: input.inventory.completeness, observedAt: input.inventory.observedAt, evidence: input.inventory.evidence,
       unknown: input.inventory.unknown.length, logs: input.inventory.items.filter(item => item.kind === 'log').length,
-      sessions: input.inventory.items.filter(item => item.kind === 'session').length, bytes: input.inventory.items.reduce((sum, item) => sum + item.bytes, 0) };
+      sessions: input.inventory.items.filter(item => item.kind === 'session').length, bytes: input.inventory.items.reduce((sum, item) => sum + item.bytes, 0),
+      kept: Object.values(input.inventory.kept ?? {}).reduce((sum, value) => sum + value, 0) };
     const protections = retentionProtections(work, input.facts);
     const before = view.sweeps === 0 ? 'first' : JSON.stringify([view.state, view.class, view.protections]);
     view.sweeps++; view.lastSweepAt = at;
     refresh(work, view, { now: input.now, protections });
     const decisions = input.inventory && input.inventory.completeness === 'complete' ? classifyDetails(work, input.inventory, { protections, now: input.now, dueAtMs: dueAtMsOf(work, input.days) }) : [];
     // An item whose removal result is unknown is never removed again implicitly; the operator decides through an explicit plan.
-    const unsettled = new Set(view.removals.filter(item => item.outcome === 'indeterminate' || item.outcome === 'failed' || item.outcome === 'refused').map(item => item.id));
+    // Review MED: the never-retry set survives the bounded `removals` window (`unsettledIds`).
+    const unsettled = new Set([...(view.unsettledIds ?? []),
+      ...view.removals.filter(item => item.outcome === 'indeterminate' || item.outcome === 'failed' || item.outcome === 'refused').map(item => item.id)]);
+    view.unsettledIds = [...unsettled];
     const eligible = decisions.filter(item => item.decision === 'eligible' && !unsettled.has(item.item.id));
     // History only when the evaluation changed or something becomes removable (a daily sweep of an unchanged Work adds nothing).
     if (eligible.length || before !== JSON.stringify([view.state, view.class, view.protections])) {
@@ -146,10 +161,10 @@ const count = (view: RetentionView, item: DetailRemovalView) => {
  * inside this commit — still allows every one of them.
  */
 export async function recordDetailIntent(session: Session, work_id: string, items: { id: string; kind: 'log' | 'session'; executionId: string | null; bytes: number }[],
-  origin: { kind: 'retention' | 'explicit'; request_id: string | null; planId: string | null }, recheck: (work: WorkRecord) => string | null):
+  origin: { kind: 'retention' | 'explicit'; request_id: string | null; planId: string | null }, recheck: (work: WorkRecord, tx: Tx) => string | null | Promise<string | null>):
   Promise<{ kind: 'recorded'; effects: Record<string, string> } | { kind: 'refused'; code: string } | 'stale'> {
-  return onWork(session, work_id, work => {
-    const code = recheck(work);
+  return onWork(session, work_id, async (work, tx) => {
+    const code = await recheck(work, tx);
     if (code) return { kind: 'refused' as const, code };
     const view = retentionOf(work);
     const at = new Date().toISOString();
@@ -179,6 +194,9 @@ export async function recordDetailResults(session: Session, work_id: string, res
       if (!item || item.outcome !== 'intended') continue;
       Object.assign(item, { outcome: result.outcome, code: result.code, resultAt: at });
       count(view, item);
+      const marks = new Set(view.unsettledIds ?? []);
+      if (result.outcome === 'removed' || result.outcome === 'absent') marks.delete(item.id); else marks.add(item.id);
+      view.unsettledIds = [...marks];
       const plan = item.planId ? view.plans.find(entry => entry.planId === item.planId) : undefined;
       const planned = plan?.items.find(entry => entry.id === item.id && entry.state === 'intended');
       if (planned) Object.assign(planned, { state: result.outcome, code: result.code });
@@ -199,6 +217,26 @@ export async function recordDetailResults(session: Session, work_id: string, res
     refresh(work, view, { now, protections: view.protections });
     if (recorded.length) history(work, 'detail-removal-result', `${recorded.length}:${recorded.slice(0, 8).join(',')}`, at);
     return recorded.length ? 'recorded' as const : 'stale' as const;
+  });
+}
+
+/**
+ * Review MED: a confirmed explicit RESOURCE cleanup is revalidated again when the resource cleanup is about to execute it; if the Work's details
+ * are needed now (open Question, unsettled effect, activity…), the plan's resource part is dropped with that reason and the plan consumed: nothing
+ * is removed by it and nothing is left for the automatic retries.
+ */
+export async function dropExplicitResources(session: Session, work_id: string, planId: string, code: string, now: number) {
+  return onWork(session, work_id, work => {
+    if (!work.cleanup?.explicit || work.cleanup.explicit.planId !== planId || work.cleanup.explicit.consumed) return 'stale' as const;
+    work.cleanup.explicit.consumed = true;
+    const view = retentionOf(work);
+    const plan = view.plans.find(entry => entry.planId === planId);
+    const at = new Date().toISOString();
+    for (const item of plan?.items ?? []) if (item.state === 'handed-to-cleanup') Object.assign(item, { state: 'dropped', code });
+    if (plan && plan.items.every(item => item.state !== 'planned' && item.state !== 'intended')) { plan.state = 'executed'; plan.nextStep = explicitPlanNextStep(plan); }
+    history(work, 'cleanup-item-dropped', `${planId}:resources:${code}`, at);
+    refresh(work, view, { now, protections: view.protections });
+    return 'recorded' as const;
   });
 }
 
@@ -250,7 +288,8 @@ export async function acceptCleanupPlan(session: Session, input: CleanupInput & 
     const computed = planExplicitCleanup(work, input.select, current);
     const at = new Date().toISOString();
     const view = retentionOf(work);
-    for (const plan of view.plans) if (plan.state === 'planned') { plan.state = 'superseded'; plan.nextStep = explicitPlanNextStep(plan); }
+    // Review LOW: a plan that can remove nothing never supersedes a valid pending plan.
+    if (computed.items.length) for (const plan of view.plans) if (plan.state === 'planned') { plan.state = 'superseded'; plan.nextStep = explicitPlanNextStep(plan); }
     const plan: ExplicitCleanupPlan = { planId: randomUUID(), request_id: input.request_id, work_id: work.work_id, createdAt: at, select: [...new Set(input.select)], state: 'planned',
       confirmedBy: null, confirmedAt: null, basis: planBasis(work, current), ...computed, nextStep: '' };
     plan.nextStep = explicitPlanNextStep(plan);
@@ -294,8 +333,8 @@ export async function acceptCleanupConfirm(session: Session, input: CleanupInput
     const handed = plan.items.filter(item => item.state === 'handed-to-cleanup');
     if (handed.length) {
       work.cleanup ??= initialCleanup(at);
-      // Delivered: refused/kept/failed/indeterminate become ONE fresh revalidated attempt (the operator's decision); never forced.
-      for (const resource of work.cleanup.resources) if (handed.some(item => item.id === resource.id) && !concluded(resource.state)) resource.state = 'pending';
+      // Delivered: refused/kept/failed/indeterminate get ONE fresh revalidated attempt under this plan (explicitPending); their recorded state is
+      // never rewritten, so a plan dropped at execution leaves nothing to the automatic retries.
       work.cleanup.explicit = { request_id: input.request_id, planId: plan.planId, at, consumed: false, resources: handed.map(item => item.id) };
       history(work, 'cleanup-explicit-resources', `${plan.planId}:${handed.map(item => item.id).join(',')}`, at);
     }

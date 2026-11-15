@@ -718,15 +718,19 @@ export type ExplicitCleanupSelection = 'logs' | 'sessions' | 'environment' | 're
 /** One detail of a Work found by the Records inventory: a log is a Records capture, a session the preserved copy of a recorded Builder session. */
 export type DetailItem = { id: string; kind: 'log' | 'session'; executionId: string | null; bytes: number;
   /** `partial`: the capture has no completion marker (it may still be written while its Execution runs). */
-  state: 'complete' | 'partial' };
+  state: 'complete' | 'partial';
+  /** Sessions: content hash observed by the inventory (removal requires it unchanged). */
+  sha256?: string | null };
 /** `complete` only from an intact Records area; an incomplete inventory never proves absence. `evidence`: protected preserved directories (never targets). */
-export type DetailInventory = { completeness: 'complete' | 'incomplete'; observedAt: string; items: DetailItem[]; evidence: number; unknown: string[] };
+export type DetailInventory = { completeness: 'complete' | 'incomplete'; observedAt: string; items: DetailItem[]; evidence: number; unknown: string[];
+  /** Captures history needs, kept until explicit history deletion (never targets), by class: `record:<kind>`, `host-evidence`, `unknown-kind`. */
+  kept?: Record<string, number> };
 export type DetailRemoval = { outcome: 'removed' | 'absent' | 'refused' | 'failed' | 'indeterminate'; code: string | null };
 /** Ticket 30 trusted composition ports over the Records area (host-only, never mounted in a guest). */
 export type DetailPorts = {
   list(input: { workId: string }): Promise<DetailInventory>;
   /** Every agent session file in one boot's runtime tree (every `w-<id>/profile/sessions/<file>.jsonl` under `r/<boot>`), read confined, with its current hash. */
-  runtimeSessions?(input: { boot: string }): Promise<{ ref: string; sha256: string; bytes: number }[]>;
+  runtimeSessions?(input: { boot: string }): Promise<({ ref: string; sha256: string; bytes: number } | { ref: string; code: string })[]>;
   /** Copies a session (verified by its hash) into the Work's Records `sessions/<name ?? executionId>.jsonl` BEFORE its environment is removed. */
   preserveSession(input: { workId: string; executionId: string; name?: string; session: Pick<WorkerSessionRef, 'ref' | 'sha256' | 'bytes'> }): Promise<{ status: 'preserved' | 'already'; sha256: string; bytes: number } |
     { status: 'lost' | 'failed'; code: string }>;
@@ -741,6 +745,7 @@ export type DetailRemovalView = { effectId: string; id: string; kind: 'log' | 's
   origin: 'retention' | 'explicit'; request_id: string | null; planId: string | null; intentAt: string; resultAt: string | null;
   outcome: DetailRemoval['outcome'] | 'intended'; code: string | null };
 export type ExplicitCleanupItem = { id: string; kind: 'log' | 'session' | 'environment' | 'remote-branch'; target: string; bytes: number | null; loss: string;
+  /** Sessions: hash planned (an item whose content changed since the plan is dropped). */ sha256?: string | null;
   /** `planned` → `intended` → result; `dropped`: revalidation found it needed/active now (never removed by this old plan); `handed-to-cleanup`:
    * an own resource executed by the resource cleanup (its per-resource result is in `cleanup.resources`). */
   state: 'planned' | 'dropped' | 'handed-to-cleanup' | DetailRemovalView['outcome']; code: string | null };
@@ -756,9 +761,12 @@ export type RetentionView = {
   /** Current reasons the details are protected whatever the deadline (pending Question/effect/cleanup/recovery, activity, cessation). */
   protections: string[];
   state: 'retained' | 'protected' | 'eligible' | 'expired' | 'explicitly-cleaned';
-  inventory: { completeness: 'complete' | 'incomplete'; observedAt: string; logs: number; sessions: number; bytes: number; evidence: number; unknown: number } | null;
+  inventory: { completeness: 'complete' | 'incomplete'; observedAt: string; logs: number; sessions: number; bytes: number; evidence: number; unknown: number;
+    /** Records kept until explicit history deletion (receipts, opinions, Question records, Host evidence, unknown kinds). */ kept?: number } | null;
   sessions: PreservedSessionView[];
   removals: DetailRemovalView[];
+  /** Every detail whose removal ended failed/refused/indeterminate, kept beyond the bounded `removals`: never removed implicitly again. */
+  unsettledIds?: string[];
   /** Totals of everything removed (the bounded `removals` list keeps only the latest entries). */
   removed: { logs: number; sessions: number; bytes: number };
   plans: ExplicitCleanupPlan[];

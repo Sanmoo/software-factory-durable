@@ -1,6 +1,6 @@
 import type { DetailInventory, DetailItem, ExecutionView, ExplicitCleanupItem, ExplicitCleanupPlan, ExplicitCleanupSelection, QuestionView, RetentionView, WorkView } from '../types.js';
 import { occupying } from './cycles.js';
-import { concluded } from './delivery.js';
+import { concluded, retryable } from './delivery.js';
 
 // Ticket 30 pure rules (spec §12.1/§12.3/§12.4): which details (logs, sessions) of a Work are retained, protected or eligible, and the
 // explicit cleanup plan of losses. No I/O, storage or clock: callers pass the facts and the instant (milliseconds).
@@ -47,10 +47,11 @@ export function retentionProtections(work: Work, facts: Facts): string[] {
   const continuable = work.result === 'open' || work.result === 'closed-unmerged';
   if (continuable && work.pendingRecovery) reasons.push('RECOVERY_PENDING');
   if (continuable) for (const item of work.impediments) if (recoveryImpediments.includes(item.code)) reasons.push(`IMPEDIMENT:${item.code}`);
-  // Evidence a pending resource cleanup still needs (spec §12.3), and a resource cleanup whose explicit plan is not swept yet.
-  if (work.cleanup && (work.cleanup.state !== 'complete' || (work.cleanup.explicit && !work.cleanup.explicit.consumed))) {
-    const open = work.cleanup.resources.filter(item => !concluded(item.state));
-    if (open.length || work.cleanup.state === 'waiting' || (work.cleanup.explicit && !work.cleanup.explicit.consumed)) reasons.push('CLEANUP_PENDING');
+  // A resource cleanup still in progress (spec §12.3): waiting, an automatically retried resource, or an explicit plan not swept yet. A resource
+  // left refused/kept for an operator decision does NOT protect the details for ever (review LOW): its decision is `factory cleanup`.
+  if (work.cleanup) {
+    const automatic = work.cleanup.resources.some(item => !concluded(item.state) && retryable(item.state));
+    if (work.cleanup.state === 'waiting' || automatic || (work.cleanup.explicit && !work.cleanup.explicit.consumed)) reasons.push('CLEANUP_PENDING');
   }
   if (work.retention?.removals.some(item => item.outcome === 'intended')) reasons.push('DETAIL_REMOVAL_UNSETTLED');
   return [...new Set(reasons)];
@@ -67,12 +68,19 @@ export function classifyDetails(work: Work, inventory: Pick<DetailInventory, 'it
   const dueAt = input.dueAtMs;
   return inventory.items.map(item => {
     if (inUse(work, item)) return { item, decision: 'in-use', reason: 'RESOURCE_IN_USE' };
+    if (!ownDetail(work, item)) return { item, decision: 'retained', reason: 'NOT_OWN_EXECUTION' };
     if (work.result !== 'delivered' || dueAt === null) return { item, decision: 'retained', reason: 'UNDELIVERED_RETAINED_UNTIL_EXPLICIT_CLEANUP' };
     if (input.now < dueAt) return { item, decision: 'retained', reason: 'RETENTION_PERIOD_RUNNING' };
     if (input.protections.length) return { item, decision: 'protected', reason: input.protections.join(',') };
     return { item, decision: 'eligible', reason: 'RETENTION_EXPIRED' };
   });
 }
+
+/** Ownership of a session copy: named after an Execution of THIS Work (logs carry the Work identity in their own capture metadata). */
+export const ownDetail = (work: Pick<Work, 'execution' | 'previousExecutions'>, item: Pick<DetailItem, 'kind' | 'executionId'>) =>
+  item.kind !== 'session' || executionsOf(work).some(execution => execution.executionId === item.executionId);
+/** Protections an explicit detail removal does not wait for: the resource cleanup never needs logs or session copies. */
+const detailIndependent = (reason: string) => reason !== 'CLEANUP_PENDING' && reason !== 'DETAIL_REMOVAL_UNSETTLED';
 
 /** A detail is in use while it may still be written: a partial capture of an Execution not ended with confirmed cessation, or any activity. */
 export function inUse(work: Pick<Work, 'execution' | 'previousExecutions'>, item: DetailItem): boolean {
@@ -132,10 +140,12 @@ export function planExplicitCleanup(work: Work, select: ExplicitCleanupSelection
   }
   for (const target of selection) {
     if (target === 'logs' || target === 'sessions') {
-      if (protections.length) { refusals.push({ target, code: 'PROTECTED', detail: `Still needed: ${protections.join(', ')}.` }); continue; }
+      const blocking = protections.filter(detailIndependent);
+      if (blocking.length) { refusals.push({ target, code: 'PROTECTED', detail: `Still needed: ${blocking.join(', ')}.` }); continue; }
+      // Review MED: an incomplete inventory plans NOTHING (the losses shown are exactly what may be removed).
       if (!facts.inventory || facts.inventory.completeness !== 'complete') {
-        refusals.push({ target, code: 'INVENTORY_INCOMPLETE', detail: 'The Records inventory is incomplete: nothing is selected from it (absence is never assumed).' });
-        if (!facts.inventory) continue;
+        refusals.push({ target, code: 'INVENTORY_INCOMPLETE', detail: 'The Records inventory is incomplete: nothing is selected from it (absence is never assumed). Inspect the Work\'s Records area.' });
+        continue;
       }
       const kind = kindOfSelection[target];
       const found = facts.inventory.items.filter(item => item.kind === kind);
@@ -146,10 +156,10 @@ export function planExplicitCleanup(work: Work, select: ExplicitCleanupSelection
       if (!found.length) { refusals.push({ target, code: 'NOTHING_TO_REMOVE', detail: `No ${target} of this Work are present in the Records area.` }); continue; }
       for (const item of found) {
         if (inUse(work, item)) { refusals.push({ target: item.id, code: 'RESOURCE_IN_USE', detail: 'Its Execution has not ended with confirmed cessation.' }); continue; }
-        if (kind === 'session' && !work.retention?.sessions.some(entry => entry.id === item.id && entry.state === 'preserved')) {
-          refusals.push({ target: item.id, code: 'SESSION_NOT_RECORDED', detail: 'No recorded preservation of this session: its ownership cannot be proved, it is kept.' }); continue;
+        if (!ownDetail(work, item) || (kind === 'session' && !item.sha256)) {
+          refusals.push({ target: item.id, code: 'NOT_OWN_EXECUTION', detail: 'This session copy is not named after an Execution of this Work (or has no hash): its ownership cannot be proved, it is kept.' }); continue;
         }
-        items.push({ id: item.id, kind, target: item.id, bytes: item.bytes, state: 'planned', code: null,
+        items.push({ id: item.id, kind, target: item.id, bytes: item.bytes, sha256: item.sha256 ?? null, state: 'planned', code: null,
           loss: kind === 'log' ? `Log ${item.id} of Execution ${item.executionId ?? '?'} (${item.bytes} bytes) can no longer be read or paged.`
             : `Session of Execution ${item.executionId ?? '?'} (${item.bytes} bytes) is gone: it can never be continued or inspected again.` });
       }
@@ -189,12 +199,13 @@ export function planExplicitCleanup(work: Work, select: ExplicitCleanupSelection
 /** At confirmation and before each effect: an item still allowed by the CURRENT facts, or the code that drops it (an old plan never removes it). */
 export function revalidateItem(work: Work, item: ExplicitCleanupItem, facts: Facts & { inventory?: DetailInventory | null }): string | null {
   if (work.result === 'open' || work.result === 'closed-unmerged') return 'CANCEL_REQUIRED';
-  const protections = retentionProtections(work, facts).filter(reason => item.kind === 'log' || item.kind === 'session' ? true
-    : reason !== 'CLEANUP_PENDING' && reason !== 'DETAIL_REMOVAL_UNSETTLED');
+  // Neither a detail nor an own resource waits for the resource cleanup itself (review LOW: [logs, environment] executes both when allowed).
+  const protections = retentionProtections(work, facts).filter(detailIndependent);
   if (protections.length) return `BECAME_PROTECTED:${protections.join(',')}`;
   if ((item.kind === 'log' || item.kind === 'session') && facts.inventory) {
     const current = facts.inventory.items.find(entry => entry.id === item.id);
     if (current && inUse(work, current)) return 'RESOURCE_IN_USE';
+    if (current && item.kind === 'session' && current.sha256 !== item.sha256) return 'SESSION_CHANGED_SINCE_PLAN';
   }
   return null;
 }

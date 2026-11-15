@@ -124,6 +124,13 @@ export function recoverLostIntents(resources: CleanupResourceView[], at: string)
 /** Retried automatically after revalidation. `refused`/`kept` wait for an explicit operator decision (no fresh write grant for them). */
 export const retryable = (state: CleanupResourceView['state']) => state === 'pending' || state === 'failed' || state === 'partial' || state === 'indeterminate';
 export const selectPending = (resources: CleanupResourceView[]) => resources.filter(item => retryable(item.state));
+/**
+ * Ticket 30 (review MED): the resources ONE confirmed explicit plan may attempt — named by it, not concluded, not attempted since its confirmation —
+ * whatever their state (a refused/kept one gets its single fresh attempt). The recorded state is never rewritten to make it retryable, so a plan
+ * dropped at execution leaves nothing for the automatic retries.
+ */
+export const explicitPending = (resources: CleanupResourceView[], explicit: { resources: string[]; at: string }) => resources.filter(item => explicit.resources.includes(item.id) &&
+  !concluded(item.state) && !item.attempts.some(attempt => attempt.intentAt >= explicit.at));
 export function cleanupState(input: { eligible: boolean; resources: CleanupResourceView[] }): CleanupView['state'] {
   if (input.resources.length && input.resources.every(item => concluded(item.state))) return 'complete';
   return input.eligible ? 'pending' : 'waiting';
@@ -164,5 +171,6 @@ export function cleanupNextStep(view: Pick<CleanupView, 'state' | 'eligibility' 
   const operator = open.filter(item => !retryable(item.state));
   return `Cleanup pending for ${open.length} own resource(s) (${open.map(item => `${item.kind}:${item.state}`).join(', ')}). Delivery stands.` +
     (automatic.length ? ` ${automatic.length} retried automatically after revalidation (next controller boot or daily sweep).` : '') +
-    (operator.length ? ` ${operator.length} refused/kept: never retried automatically; an operator decides (e.g. kept: atomic delete unavailable).` : '');
+    (operator.length ? ` ${operator.length} refused/kept: never retried automatically and they do not hold the logs/sessions; an operator decides with ` +
+      '`factory cleanup <work> --select environment|remote-branch` (one fresh revalidated attempt) or leaves them (e.g. kept: atomic delete unavailable).' : '');
 }

@@ -11,9 +11,13 @@ import { prepareAuthority } from './delivery17-qualification.js';
 
 const root = '/home/sanmoo/software-factory-test/y5';
 const source = { storage: `${root}/q17-delivery-v4/authority`, records: root };
-// v1 was consumed (verdict not-met): its harness stopped the owner after the sweep's FIRST commit, before the batches of removals ended.
-const observations = `${root}/q30-retention-v2`;
-const revision = 'q30-retention-v2';
+// v1 (not met: the harness stopped the owner before the removal batches ended) and v2 (met) were consumed. v3 follows the review: only tool
+// output captures and session copies expire (records history needs are kept), run B MUST remove something, and a labelled synthetic session
+// copy exercises session removal (no real session survived ticket 17's cleanup, which predates ticket 30).
+const observations = `${root}/q30-retention-v3`;
+const revision = 'q30-retention-v3';
+/** The labelled synthetic session copy added to the PRIVATE Records copy (named after a real Execution of the Work; 16 hex). */
+const syntheticSession = { suffix: '--rv-5e555e555e555e55', content: '{"type":"synthetic","note":"q30-retention-v3 recipe: labelled synthetic session copy, not from a real run"}\n' };
 const phases = ['preflight', 'sweep', 'inspect'] as const;
 type Phase = typeof phases[number];
 /** Ticket 17's delivered Work: Ticket #3 of the qualification repository (its id is read from the copy, never guessed). */
@@ -33,6 +37,8 @@ export function plan() {
       'preflight: EXCLUSIVE mkdir of the namespace; COPY of q17-delivery-v4/authority into authority/ (a format-1 copy is migrated 1→2, digests recorded; the source is never opened ' +
         'for writing); inert view of the copy: the delivered Work of Ticket #3 (merge confirmedAt); PRIVATE copy of <y5>/<work>/ into records/<work>/ (directories 0700, regular files ' +
         'only, symlinks/special files refused); inventory of the copy (listDetails); sha256 of the source storage files',
+      'preflight (cont.): ONE labelled synthetic session copy `sessions/<an Execution of the Work>--rv-5e555e555e555e55.jsonl` is written into the PRIVATE Records copy ' +
+        '(no real session survived ticket 17\'s cleanup); its name, hash and label are recorded in preflight-result',
       `sweep: owner A on the authority copy, Records = records/, calendar = confirmedAt + 1 day: boot sweep → retained (dueAt = confirmedAt + ${retentionDays} days); an explicit ` +
         `cleanup-plan of [${localSelection.join(', ')}] is recorded (plan of losses only, NEVER confirmed); owner A stops. Owner B (new process view, boot sweep), calendar = confirmedAt + ` +
         `${retentionDays + 1} days: eligible logs/sessions of the COPY are removed (intent before effect); preserved evidence is kept`,
@@ -41,7 +47,8 @@ export function plan() {
     guards: ['one-shot intent tombstones', 'source storage and Records only copied', 'remote-branch selection refused by the recipe', 'every GitHub port is a local refusing double',
       'no Sandbox removal/preservation, prepare/start/activate/credential (refused)', 'no retry inside a phase'],
     verdict: ['work still delivered with its merge facts', `retention.dueAt = confirmedAt + ${retentionDays} days`, 'run A: state retained, nothing removed',
-      'run A: plan recorded with losses, state planned (not confirmed)', 'run B: state expired (or protected with named reasons), removed counts = logs/sessions before',
+      'run A: plan recorded with losses, state planned (not confirmed)', 'run B: state expired (protected is NOT met), removed = logs + sessions before and > 0 of each',
+      'the synthetic session copy is removed', 'kept records (receipts, opinions, Question records, Host evidence, unknown kinds) unchanged',
       'preserved evidence directories unchanged', 'source storage sha256 unchanged', 'no remote effect: cleanupBranch/setDraft/postComment never called, Sandbox ports never called'],
   };
 }
@@ -129,8 +136,9 @@ export async function ownerRun(input: { storagePath: string; recordsRoot: string
 }
 
 /** Verdict over the observations; every check names expectation and observation. */
+type Counts = { logs: number; sessions: number; evidence: number; kept: number; synthetic?: boolean };
 export function verdict(input: { confirmedAt: string; runA: Awaited<ReturnType<typeof ownerRun>>; runB: Awaited<ReturnType<typeof ownerRun>>;
-  before: { logs: number; sessions: number; evidence: number }; after: { logs: number; sessions: number; evidence: number }; sourceBefore: string; sourceAfter: string }) {
+  before: Counts; after: Counts; sourceBefore: string; sourceAfter: string }) {
   const due = new Date(Date.parse(input.confirmedAt) + retentionDays * day).toISOString();
   const a = input.runA.work?.retention, b = input.runB.work?.retention;
   const planned = input.runA.plan as { kind?: string; plan?: { state?: string; losses?: unknown[] } | null } | null;
@@ -141,9 +149,13 @@ export function verdict(input: { confirmedAt: string; runA: Awaited<ReturnType<t
     { id: 'due-at', expected: due, observed: b?.dueAt ?? null },
     { id: 'run-a-retained', expected: 'retained/0 removed', observed: `${a?.state ?? null}/${(a?.removed.logs ?? 0) + (a?.removed.sessions ?? 0)} removed` },
     { id: 'run-a-plan-recorded', expected: 'planned', observed: planned?.plan?.state ?? planned?.kind ?? null },
-    { id: 'run-b-expired', expected: b?.state === 'protected' ? `protected (${b.protections.join(',')})` : 'expired', observed: b?.state ?? null },
-    { id: 'run-b-removed', expected: b?.state === 'protected' ? 0 : input.before.logs + input.before.sessions, observed: (b?.removed.logs ?? 0) + (b?.removed.sessions ?? 0) },
+    // Review MED: protected/0 is NOT a pass: run B must remove what expired.
+    { id: 'run-b-expired', expected: 'expired', observed: b?.state ?? null },
+    { id: 'run-b-removed', expected: input.before.logs + input.before.sessions, observed: (b?.removed.logs ?? 0) + (b?.removed.sessions ?? 0) },
+    { id: 'run-b-removed-something', expected: true, observed: (b?.removed.logs ?? 0) > 0 && (b?.removed.sessions ?? 0) > 0 },
+    { id: 'synthetic-session-removed', expected: { before: true, after: false }, observed: { before: input.before.synthetic ?? false, after: input.after.synthetic ?? false } },
     { id: 'evidence-kept', expected: input.before.evidence, observed: input.after.evidence },
+    { id: 'kept-records-intact', expected: input.before.kept, observed: input.after.kept },
     { id: 'source-unchanged', expected: input.sourceBefore, observed: input.sourceAfter },
     { id: 'no-remote-effect', expected: 0, observed: remoteCalls },
   ].map(check => ({ ...check, met: JSON.stringify(check.expected) === JSON.stringify(check.observed) }));
@@ -176,8 +188,20 @@ async function view(storagePath: string) {
   return 'kind' in list && list.kind === 'list' ? list.works.find(item => item.ticket.number === expectedTicket.number && item.ticket.repositoryId === expectedTicket.repositoryId &&
     item.result === 'delivered') ?? null : null;
 }
-const counts = (inventory: { items: { kind: string }[]; evidence: number }) =>
-  ({ logs: inventory.items.filter(item => item.kind === 'log').length, sessions: inventory.items.filter(item => item.kind === 'session').length, evidence: inventory.evidence });
+const counts = (inventory: { items: { id: string; kind: string }[]; evidence: number; kept: Record<string, number> }): Counts =>
+  ({ logs: inventory.items.filter(item => item.kind === 'log').length, sessions: inventory.items.filter(item => item.kind === 'session').length, evidence: inventory.evidence,
+    kept: Object.values(inventory.kept).reduce((sum, value) => sum + value, 0), synthetic: inventory.items.some(item => item.id.endsWith(syntheticSession.suffix)) });
+
+/** Writes the labelled synthetic session copy into the PRIVATE Records copy, named after a real Execution of the Work. */
+export async function addSyntheticSession(recordsRoot: string, workId: string, executionId: string) {
+  const { preserveSessionCopy } = await import('../../src/records/index.js');
+  const { createHash } = await import('node:crypto');
+  const data = Buffer.from(syntheticSession.content);
+  const sha256 = createHash('sha256').update(data).digest('hex');
+  const result = await preserveSessionCopy(recordsRoot, workId, `${executionId}${syntheticSession.suffix}`, data, sha256);
+  if (result.status !== 'preserved') throw new Error('SYNTHETIC_SESSION_NOT_WRITTEN');
+  return { file: `sessions/${executionId}${syntheticSession.suffix}.jsonl`, sha256, bytes: data.length, label: `synthetic, written by the ${revision} recipe` };
+}
 
 export async function runPhase(phase: Phase) {
   if (!phases.includes(phase)) throw new Error('UNKNOWN_PHASE');
@@ -194,12 +218,16 @@ export async function runPhase(phase: Phase) {
       if (!work?.delivery?.merge) { await save('preflight-held', { work }); throw new Error('PRECONDITION_HELD'); }
       await fs.mkdir(`${observations}/records`, { mode: 0o700 });
       const copied = await copyRecords(`${source.records}/${work.work_id}`, `${observations}/records/${work.work_id}`);
+      const execution = work.execution?.executionId ?? work.previousExecutions.at(-1)?.executionId;
+      if (!execution) { await save('preflight-held', { reason: 'NO_EXECUTION' }); throw new Error('PRECONDITION_HELD'); }
+      const synthetic = await addSyntheticSession(await fs.realpath(`${observations}/records`), work.work_id, execution);
       const inventory = await listDetails(`${observations}/records`, work.work_id);
-      await save('preflight-result', { status: 'success', authority, workId: work.work_id, confirmedAt: work.delivery.merge.confirmedAt, copied, inventory, before: counts(inventory), sourceBefore });
+      await save('preflight-result', { status: 'success', authority, workId: work.work_id, confirmedAt: work.delivery.merge.confirmedAt, copied, synthetic, inventory,
+        before: counts(inventory), sourceBefore });
       return;
     }
     if (!(await exists('preflight-result'))) throw new Error('PREFLIGHT_REQUIRED');
-    const preflight = await load('preflight-result') as { workId: string; confirmedAt: string; before: { logs: number; sessions: number; evidence: number }; sourceBefore: string };
+    const preflight = await load('preflight-result') as { workId: string; confirmedAt: string; before: Counts; sourceBefore: string };
     const storagePath = `${observations}/authority/control.sqlite`;
     const recordsRoot = await fs.realpath(`${observations}/records`);
     if (phase === 'sweep') {

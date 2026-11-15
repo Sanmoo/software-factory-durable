@@ -6,7 +6,7 @@ import { createSandbox, type GuestAssetPin } from '../../sandbox/index.js';
 import { lstat, readdir, realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { listDetails, preserveEvidence, preserveSessionCopy, removeRecordsDetail } from '../../records/index.js';
-import { readSessionFile, workerRuntimeDirectory } from '../../platform/host/index.js';
+import { readConfinedFile, readSessionFile, workerRuntimeDirectory } from '../../platform/host/index.js';
 import { createWorkers, skillPackContinues, skillPacks, type SkillPackId } from '../../workers/index.js';
 import { createBuilderCredentials, createRepositoryFetchCredentials, type GitHubAccess } from '../../platform/github/index.js';
 import { factorySkillPackIds, type GitHubScope } from '../../contracts/index.js';
@@ -53,21 +53,23 @@ export function detailPorts(root: string): DetailPorts {
       const canonical = await realpath(root);
       const runtime = workerRuntimeDirectory(canonical, boot);
       const workers = await readdir(runtime).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return [] as string[]; throw error; });
-      const found: { ref: string; sha256: string; bytes: number }[] = [];
+      const found: ({ ref: string; sha256: string; bytes: number } | { ref: string; code: string })[] = [];
       for (const worker of workers.filter(name => /^w-[A-Za-z0-9]{1,64}$/.test(name)).sort()) {
         const directory = join(runtime, worker, 'profile', 'sessions');
         if (!await lstat(directory).then(() => true, () => false)) continue;
         for (const name of (await readdir(directory)).filter(file => file.endsWith('.jsonl')).sort()) {
           const ref = relative(canonical, join(directory, name));
-          const read = await readSessionFile(canonical, ref);
-          if (read.state !== 'read') throw new Error('SESSION_UNREADABLE');
-          found.push({ ref, sha256: read.sha256, bytes: read.data.length });
+          // Review LOW: an empty or non-session file is kept as an opaque, hashed byte copy (never interpreted, never blocking); only an unsafe
+          // path/file (symlink, foreign, writable by others) is reported with its code and keeps the environment.
+          const read = await readConfinedFile(canonical, ref, { allowEmpty: true });
+          found.push(read.state === 'read' ? { ref, sha256: read.sha256, bytes: read.data.length } : { ref, code: read.code });
         }
       }
       return found;
     },
     async preserveSession({ workId, executionId, name, session }) {
-      const read = await readSessionFile(await realpath(root), session.ref);
+      // The recorded Builder session must keep its header; another agent's session (named copy) is copied as opaque bytes at its hash.
+      const read = name ? await readConfinedFile(await realpath(root), session.ref, { allowEmpty: true }) : await readSessionFile(await realpath(root), session.ref);
       if (read.state === 'lost') return { status: 'lost', code: read.code };
       if (read.state !== 'read') return { status: 'failed', code: read.code };
       if (read.sha256 !== session.sha256) return { status: 'failed', code: 'SESSION_ALTERED' };

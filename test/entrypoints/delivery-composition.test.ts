@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { composeProductionExecution } from '../../src/entrypoints/controller/composition.js';
@@ -63,12 +63,21 @@ test('ticket 30: production composition copies a recorded Builder session out of
   assert.deepEqual(await details.runtimeSessions!({ boot: 'boot-99999999-2222-4333-8444-555555555555' }), []);
   assert.deepEqual(await details.preserveSession({ workId: 'work-r', executionId: 'e-1', name: 'e-1--rv-0123456789abcdef',
     session: { ref: relative(root, join(runtime, 'w-rev', 'profile', 'sessions', 'r.jsonl')), sha256, bytes: data.length } }), { status: 'preserved', sha256, bytes: data.length });
+  // Review LOW: an empty or non-session file is an opaque hashed copy (never blocking); only an unsafe file is reported with its code.
   await writeFile(join(runtime, 'w-rev', 'profile', 'sessions', 'bad.jsonl'), 'not a session header', { mode: 0o600 });
-  await assert.rejects(details.runtimeSessions!({ boot }), /SESSION_UNREADABLE/, 'an unreadable session blocks (never skipped silently)');
+  await writeFile(join(runtime, 'w-rev', 'profile', 'sessions', 'empty.jsonl'), '', { mode: 0o600 });
+  await symlink('/etc/hostname', join(runtime, 'w-rev', 'profile', 'sessions', 'link.jsonl'));
+  const listed = await details.runtimeSessions!({ boot });
+  const refOf = (name: string) => relative(root, join(runtime, 'w-rev', 'profile', 'sessions', name));
+  assert.deepEqual(listed.find(item => item.ref === refOf('bad.jsonl')), { ref: refOf('bad.jsonl'), sha256: createHash('sha256').update('not a session header').digest('hex'), bytes: 20 });
+  assert.deepEqual(listed.find(item => item.ref === refOf('empty.jsonl')), { ref: refOf('empty.jsonl'), sha256: createHash('sha256').update('').digest('hex'), bytes: 0 });
+  assert.deepEqual(listed.find(item => item.ref === refOf('link.jsonl')), { ref: refOf('link.jsonl'), code: 'SESSION_PATH_UNSAFE' });
+  assert.deepEqual(await details.preserveSession({ workId: 'work-r', executionId: 'e-1', name: 'e-1--rv-00000000000000ee',
+    session: { ref: refOf('empty.jsonl'), sha256: createHash('sha256').update('').digest('hex'), bytes: 0 } }), { status: 'preserved', sha256: createHash('sha256').update('').digest('hex'), bytes: 0 });
   assert.deepEqual(await details.preserveSession({ workId: 'work-r', executionId: 'e-1', session }), { status: 'preserved', sha256, bytes: data.length });
   assert.equal(await readFile(join(root, 'work-r', 'sessions', 'e-1.jsonl'), 'utf8'), data.toString());
   assert.deepEqual(await details.preserveSession({ workId: 'work-r', executionId: 'e-2', session: { ...session, ref: 'r/seg/w-abc/profile/sessions/gone.jsonl' } }),
     { status: 'lost', code: 'SESSION_FILE_MISSING' });
-  assert.deepEqual((await details.list({ workId: 'work-r' })).items.map(item => item.id).sort(), ['session:e-1', 'session:e-1--rv-0123456789abcdef']);
+  assert.deepEqual((await details.list({ workId: 'work-r' })).items.map(item => item.id).sort(), ['session:e-1', 'session:e-1--rv-00000000000000ee', 'session:e-1--rv-0123456789abcdef']);
   assert.deepEqual(await details.remove({ workId: 'work-r', item: { id: 'session:e-1', kind: 'session', executionId: 'e-1' }, expectedSha256: sha256 }), { outcome: 'removed', code: null });
 });
