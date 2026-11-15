@@ -15,12 +15,16 @@ export type DeliveryWorld = {
   defaultBranch?: string;
   /** Status the DELETE answers (default 204, and the ref is deleted only for 204 unless `deleteAnyway`). */
   deleteStatus?: number; deleteAnyway?: boolean;
-  /** The DELETE deletes the ref and then the transport dies (no answer): outcome unknown to the caller. */
+  /** The atomic delete deletes the ref and then the transport dies (no answer): outcome unknown to the caller. */
   deleteTransportLost?: boolean;
+  /** GraphQL `updateRefs` is not in the schema for this token (field unavailable). */
+  graphqlUnavailable?: boolean;
+  /** A human push lands right before the atomic delete is evaluated (race): the ref moves to this tip. */
+  raceTip?: string;
   /** Endpoint substrings whose GET fails with this status. */
   faults?: Record<string, number>;
 };
-export type DeliveryTrace = { method: string; endpoint: string; permissions?: Record<string, string>; token?: string };
+export type DeliveryTrace = { method: string; endpoint: string; permissions?: Record<string, string>; token?: string; body?: string };
 
 export const ownSha = 'a'.repeat(40);
 export const mergeSha = 'b'.repeat(40);
@@ -73,17 +77,36 @@ else if (endpoint === '/app/installations/2/access_tokens' && method === 'POST')
     repositories: [{ id: 3, full_name: 'acme/project', owner: { login: 'acme' } }] };
   status = 201;
 } else if (endpoint === '/installation/token' && method === 'DELETE') { status = 204; raw = ''; appendFileSync(${JSON.stringify(revokedFile)}, token + '\\n'); trace.token = token; }
-else if (rest === null) process.exit(11);
+else if (path === '/graphql' && method === 'POST') {
+  if (!token.startsWith('synthetic-installation-secret-') || args[args.indexOf('--input') + 1] !== '-') process.exit(13);
+  let input = ''; for await (const data of process.stdin) input += data;
+  const request = JSON.parse(input);
+  const update = request.variables?.refUpdates?.[0];
+  if (!/mutation[\\s\\S]*updateRefs/.test(request.query) || request.variables.repositoryId !== 'R_3' || request.variables.refUpdates.length !== 1 ||
+    update.afterOid !== '0'.repeat(40) || update.force !== false || !/^refs\\/heads\\//.test(update.name)) process.exit(21);
+  trace.body = JSON.stringify(request.variables);
+  const branch = update.name.slice('refs/heads/'.length);
+  if (world.raceTip) world.refs[branch] = world.raceTip;
+  if (world.graphqlUnavailable) body = { errors: [{ extensions: { code: 'undefinedField', fieldName: 'updateRefs' }, message: "Field 'updateRefs' doesn't exist on type 'Mutation'" }] };
+  else if (world.refs[branch] !== update.beforeOid) body = { data: { updateRefs: null }, errors: [{ type: 'UNPROCESSABLE', message: 'A ref was not at its expected beforeOid' }] };
+  else { delete world.refs[branch]; body = { data: { updateRefs: { clientMutationId: null } } }; }
+  writeFileSync(${JSON.stringify(worldFile)}, JSON.stringify(world));
+  if (world.deleteTransportLost) { appendFileSync(${JSON.stringify(traceFile)}, JSON.stringify(trace) + '\\n'); process.exit(2); }
+  appendFileSync(${JSON.stringify(traceFile)}, JSON.stringify(trace) + '\\n');
+  // GraphQL answers carry no REST API-version header.
+  process.stdout.write('HTTP/2.0 200 Test\\r\\ncontent-type: application/json\\r\\n\\r\\n' + JSON.stringify(body));
+  process.exit(0);
+} else if (rest === null) process.exit(11);
 else if (Object.entries(world.faults ?? {}).some(([fragment]) => endpoint.includes(fragment)) && method === 'GET') {
   status = Object.entries(world.faults).find(([fragment]) => endpoint.includes(fragment))[1]; body = { message: 'synthetic-installation-secret-leak' };
-} else if (rest === '' && method === 'GET') body = { id: 3, full_name: 'acme/project', owner: { login: 'acme' }, default_branch: world.defaultBranch ?? 'main' };
+} else if (rest === '' && method === 'GET') body = { id: 3, node_id: 'R_3', full_name: 'acme/project', owner: { login: 'acme' }, default_branch: world.defaultBranch ?? 'main' };
 else if (/^\\/pulls\\/\\d+$/.test(rest) && method === 'GET') {
   const found = world.pulls.find(p => p.number === Number(rest.split('/')[2]));
   if (found) body = { ...found, html_url: 'https://github.com/acme/project/pull/' + found.number }; else { status = 404; body = { message: 'Not Found' }; }
 } else if (rest === '/pulls' && method === 'GET') {
   if (url.searchParams.get('state') !== 'open' || url.searchParams.get('per_page') !== '100') process.exit(17);
-  const head = url.searchParams.get('head');
-  body = world.pulls.filter(p => p.state === 'open' && (!head || 'acme:' + p.head.ref === head)).map(p => ({ ...p, html_url: 'https://github.com/acme/project/pull/' + p.number }));
+  const head = url.searchParams.get('head'); const base = url.searchParams.get('base');
+  body = world.pulls.filter(p => p.state === 'open' && (!head || 'acme:' + p.head.ref === head) && (!base || p.base.ref === base)).map(p => ({ ...p, html_url: 'https://github.com/acme/project/pull/' + p.number }));
 } else if (rest.startsWith('/git/matching-refs/heads/') && method === 'GET') {
   const prefix = decodeURIComponent(rest.slice('/git/matching-refs/heads/'.length));
   body = Object.entries(world.refs).filter(([name]) => name.startsWith(prefix)).map(([name, sha]) => ({ ref: 'refs/heads/' + name, object: { sha, type: 'commit' } }));

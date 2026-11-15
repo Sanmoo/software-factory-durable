@@ -27,7 +27,10 @@ test('readPullRequest failure is unavailable, never a merge or a closure', async
   assert.doesNotMatch(JSON.stringify(observation), /synthetic-installation-secret/);
 });
 
-test('cleanupBranch deletes only the own merged branch under its OWN single-use Contents W grant, re-reads it absent and revokes the grant', async t => {
+const restDeletes = (trace: { method: string; endpoint: string }[]) => trace.filter(entry => entry.method === 'DELETE' && entry.endpoint.includes('/git/refs/'));
+const atomic = (trace: { method: string; endpoint: string; body?: string }[]) => trace.filter(entry => entry.method === 'POST' && entry.endpoint === '/graphql');
+
+test('cleanupBranch deletes only the own merged branch ATOMICALLY (updateRefs beforeOid = own tip) under its OWN single-use Contents W grant', async t => {
   const world = await deliveryWorld(t, { pulls: [ownPull()], refs: { 'factory/3-abcdef12': ownSha, main: 'c'.repeat(40), 'human/other': 'd'.repeat(40) } });
   const result = await adapter(world.root, world.executable).cleanupBranch!(selection, { effectId: 'effect-1' });
   assert.equal(result.outcome, 'removed');
@@ -36,8 +39,12 @@ test('cleanupBranch deletes only the own merged branch under its OWN single-use 
   assert.deepEqual((await world.world()).refs, { main: 'c'.repeat(40), 'human/other': 'd'.repeat(40) }, 'base and foreign branches untouched');
   const trace = await world.trace();
   assert.deepEqual(trace.filter(entry => entry.permissions).map(entry => entry.permissions), [{ metadata: 'read', contents: 'write', pull_requests: 'read' }]);
-  assert.deepEqual(trace.filter(entry => entry.method === 'DELETE' && entry.endpoint.includes('/git/refs/')).map(entry => entry.endpoint),
-    ['/repos/acme/project/git/refs/heads/factory/3-abcdef12'], 'exactly one closed DELETE');
+  assert.deepEqual(restDeletes(trace), [], 'never a non-conditional REST DELETE');
+  assert.deepEqual(atomic(trace).map(entry => JSON.parse(entry.body!)), [{ repositoryId: 'R_3',
+    refUpdates: [{ name: 'refs/heads/factory/3-abcdef12', beforeOid: ownSha, afterOid: '0'.repeat(40), force: false }] }], 'exactly one atomic conditional delete');
+  const order = trace.map(entry => entry.endpoint);
+  assert.equal(order[order.indexOf('/graphql') - 1], '/repos/acme/project/git/matching-refs/heads/factory/3-abcdef12?per_page=100&page=1', 'tip re-read immediately before it');
+  assert.ok(order.indexOf('/repos/acme/project/pulls?state=open&base=factory%2F3-abcdef12&per_page=100&page=1') < order.indexOf('/graphql'), 'stacked PRs checked before it');
   assert.equal((await world.revoked()).length, 1);
 });
 
@@ -45,11 +52,11 @@ test('cleanupBranch proves absence only from a complete read and sends nothing',
   const world = await deliveryWorld(t, { pulls: [ownPull()], refs: { main: 'c'.repeat(40) } });
   const result = await adapter(world.root, world.executable).cleanupBranch!(selection, { effectId: 'effect-2' });
   assert.equal(result.outcome, 'absent');
-  assert.equal((await world.trace()).some(entry => entry.method === 'DELETE' && entry.endpoint.includes('/git/refs/')), false);
+  assert.deepEqual(atomic(await world.trace()), []);
   const failing = await deliveryWorld(t, { pulls: [ownPull()], refs: {}, faults: { 'matching-refs': 502 } });
   const unknown = await adapter(failing.root, failing.executable).cleanupBranch!(selection, { effectId: 'effect-3' });
   assert.equal(unknown.outcome, 'failed', 'a failed read is never absence');
-  assert.equal((await failing.trace()).some(entry => entry.method === 'DELETE' && entry.endpoint.includes('/git/refs/')), false);
+  assert.deepEqual(atomic(await failing.trace()), []);
 });
 
 for (const [name, world, code] of [
@@ -57,6 +64,9 @@ for (const [name, world, code] of [
   ['open pull request still uses the branch', { pulls: [ownPull(), ownPull({ id: 9043, node_id: 'PR_43', number: 43, state: 'open', merged: false, merged_at: null, merge_commit_sha: null })],
     refs: { 'factory/3-abcdef12': ownSha } }, 'BRANCH_IN_USE_BY_OPEN_PULL_REQUEST'],
   ['own pull request not merged', { pulls: [ownPull({ merged: false, merged_at: null })], refs: { 'factory/3-abcdef12': ownSha } }, 'OWN_PULL_REQUEST_NOT_CONFIRMED'],
+  ['an open pull request is STACKED on the branch (base = own branch)', { pulls: [ownPull(), ownPull({ id: 9044, node_id: 'PR_44', number: 44, state: 'open', merged: false, merged_at: null,
+    merge_commit_sha: null, head: { ref: 'human/stacked', sha: 'f'.repeat(40), repo: { id: 3 } }, base: { ref: 'factory/3-abcdef12', repo: { id: 3 } } })],
+    refs: { 'factory/3-abcdef12': ownSha } }, 'BRANCH_BASE_OF_OPEN_PULL_REQUEST'],
   ['branch is the default branch', { pulls: [ownPull()], refs: { 'factory/3-abcdef12': ownSha }, defaultBranch: 'factory/3-abcdef12' }, 'DEFAULT_BRANCH_PROTECTED'],
 ] as const) {
   test(`cleanupBranch refuses when ${name}: nothing deleted`, async t => {
@@ -75,6 +85,22 @@ test('cleanupBranch never selects the base and rejects invalid selections locall
   assert.equal((await repository.cleanupBranch!({ ...selection, branch: 'main' }, { effectId: 'x' })).code, 'BASE_BRANCH_PROTECTED');
   assert.equal((await repository.cleanupBranch!({ ...selection, branch: '../main' }, { effectId: 'x' })).code, 'CLEANUP_SELECTION_INVALID');
   assert.deepEqual(await world.trace(), [], 'nothing was issued or sent');
+});
+
+test('a push racing the delete is protected by the atomic precondition: nothing deleted, refused with the new tip', async t => {
+  const world = await deliveryWorld(t, { pulls: [ownPull()], refs: { 'factory/3-abcdef12': ownSha }, raceTip: 'e'.repeat(40) });
+  const result = await adapter(world.root, world.executable).cleanupBranch!(selection, { effectId: 'race' });
+  assert.deepEqual([result.outcome, result.code, result.tip], ['refused', 'BRANCH_TIP_CHANGED', 'e'.repeat(40)]);
+  assert.deepEqual((await world.world()).refs, { 'factory/3-abcdef12': 'e'.repeat(40) });
+});
+
+test('without an atomic conditional delete for this token the branch is KEPT (never deleted without a precondition)', async t => {
+  const world = await deliveryWorld(t, { pulls: [ownPull()], refs: { 'factory/3-abcdef12': ownSha }, graphqlUnavailable: true });
+  const result = await adapter(world.root, world.executable).cleanupBranch!(selection, { effectId: 'kept' });
+  assert.deepEqual([result.outcome, result.code], ['kept', 'ATOMIC_DELETE_UNAVAILABLE']);
+  assert.match(result.nextStep, /kept: atomic delete unavailable/);
+  assert.deepEqual((await world.world()).refs, { 'factory/3-abcdef12': ownSha });
+  assert.deepEqual(restDeletes(await world.trace()), []);
 });
 
 test('cleanupBranch with a lost DELETE answer is indeterminate, then a later attempt revalidates and proves absence', async t => {

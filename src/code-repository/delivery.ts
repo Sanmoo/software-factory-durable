@@ -23,11 +23,12 @@ export type BranchCleanupSelection = { repo: GitHubScope; repositoryId: number; 
 /** Correlation of the attempt (Control's effect id); not an idempotency key on GitHub. */
 export type CleanupEffect = { effectId: string };
 /**
- * `removed`: deleted now and re-read absent; `absent`: a complete read found no such ref (nothing was sent); `refused`: an ownership or
- * concurrency precondition failed (the ref is kept); `failed`: a known failure, nothing deleted; `indeterminate`: the DELETE may have
- * happened (re-read before any new attempt). `revocation`: outcome of the single-use grant's self-revocation.
+ * `removed`: deleted now by the atomic conditional deletion and re-read absent; `absent`: a complete read found no such ref (nothing was
+ * sent); `refused`: an ownership or concurrency precondition failed (the ref is kept); `kept`: no atomic conditional deletion is available
+ * for this token, so the ref is deliberately kept (never deleted without a precondition); `failed`: a known failure, nothing deleted;
+ * `indeterminate`: the deletion may have happened (re-read before any new attempt). `revocation`: the single-use grant's self-revocation.
  */
-export type BranchCleanupResult = { outcome: 'removed' | 'absent' | 'refused' | 'failed' | 'indeterminate'; code: string; observedAt: string;
+export type BranchCleanupResult = { outcome: 'removed' | 'absent' | 'refused' | 'kept' | 'failed' | 'indeterminate'; code: string; observedAt: string;
   tip: string | null; revocation: string; nextStep: string; effectId: string };
 
 const sha = z.string().regex(/^[0-9a-f]{40}$/);
@@ -71,10 +72,10 @@ export function deliveryOperations(options: { github: GitHubAccess }) {
     },
 
     /**
-     * Revalidates, under the cleanup grant and immediately before deleting: repository identity, that the branch is neither the base nor the
-     * default branch, its tip is exactly the expected own tip, the own pull request is still merged from that exact head of this repository,
-     * and no OPEN pull request uses the branch. Then sends the single DELETE and re-reads. GitHub REST has no conditional ref deletion: the
-     * re-read just before the DELETE is the concurrency precondition (residual window documented in the ticket 17 evidence).
+     * Revalidates under the cleanup grant: repository identity, not the base/default branch, the own pull request still merged from
+     * exactly the expected own tip of this repository, no OPEN pull request using the branch as head or as BASE (a stacked PR would be
+     * closed by the deletion). Then re-reads the tip and sends ONE atomic conditional deletion (`updateRefs`, beforeOid = expected tip):
+     * a push landing in between makes GitHub change nothing. Without that mutation the branch is kept; a plain DELETE is never sent.
      */
     async cleanupBranch(selection: BranchCleanupSelection, effect: CleanupEffect): Promise<BranchCleanupResult> {
       const observedAt = new Date().toISOString();
@@ -85,27 +86,33 @@ export function deliveryOperations(options: { github: GitHubAccess }) {
       const refuse = (code: string, tip: string | null) => ({ outcome: 'refused' as const, tip, code });
       const result = await options.github.cleanup(repo, async session => {
         if (session.repositoryId !== selection.repositoryId) return refuse('REPOSITORY_IDENTITY_MISMATCH', null);
-        const repository = z.object({ default_branch: z.string().min(1) }).safeParse(await session.get(`/repos/${repo.repository}`));
+        const repository = z.object({ node_id: z.string().min(1).max(128), default_branch: z.string().min(1) }).safeParse(await session.get(`/repos/${repo.repository}`));
         if (!repository.success) throw new InvalidGitHubObservation();
         if (repository.data.default_branch === selection.branch) return refuse('DEFAULT_BRANCH_PROTECTED', null);
-        const tip = await branchTip(session, repo.repository, selection.branch);
-        if (tip === null) return { outcome: 'absent' as const, tip: null };
-        if (tip !== selection.expectedTip) return refuse('BRANCH_TIP_CHANGED', tip);
         const pull = pullSchema.safeParse(await session.get(`/repos/${repo.repository}/pulls/${selection.pullRequest.number}`));
         if (!pull.success) throw new InvalidGitHubObservation();
         if (pull.data.id !== selection.pullRequest.pullRequestId || !pull.data.merged || pull.data.head.ref !== selection.branch ||
-          pull.data.head.sha !== selection.expectedTip || pull.data.head.repo?.id !== selection.repositoryId) return refuse('OWN_PULL_REQUEST_NOT_CONFIRMED', tip);
+          pull.data.head.sha !== selection.expectedTip || pull.data.head.repo?.id !== selection.repositoryId) return refuse('OWN_PULL_REQUEST_NOT_CONFIRMED', null);
         const owner = repo.repository.split('/')[0]!;
-        const open = z.array(z.object({ number: z.number().int().positive() }))
-          .safeParse(await session.list(`/repos/${repo.repository}/pulls?state=open&head=${encodeURIComponent(`${owner}:${selection.branch}`)}`, { maxPages: 10 }));
-        if (!open.success) throw new InvalidGitHubObservation();
-        if (open.data.length) return refuse('BRANCH_IN_USE_BY_OPEN_PULL_REQUEST', tip);
-        const deleted = await session.deleteBranch(selection.branch);
-        // After the DELETE answered, the re-read is the observation: absent = removed (whatever the status said).
-        const after = await branchTip(session, repo.repository, selection.branch).catch(() => undefined);
-        if (after === null) return { outcome: 'removed' as const, tip };
-        if (after === undefined) return { outcome: 'indeterminate' as const, tip, code: `DELETE_${deleted.status}_REREAD_FAILED` };
-        return { outcome: deleted.status === 204 ? 'indeterminate' as const : 'failed' as const, tip: after, code: `DELETE_${deleted.status}` };
+        const open = z.array(z.object({ number: z.number().int().positive() }));
+        const heads = open.safeParse(await session.list(`/repos/${repo.repository}/pulls?state=open&head=${encodeURIComponent(`${owner}:${selection.branch}`)}`, { maxPages: 10 }));
+        if (!heads.success) throw new InvalidGitHubObservation();
+        if (heads.data.length) return refuse('BRANCH_IN_USE_BY_OPEN_PULL_REQUEST', null);
+        const stacked = open.safeParse(await session.list(`/repos/${repo.repository}/pulls?state=open&base=${encodeURIComponent(selection.branch)}`, { maxPages: 10 }));
+        if (!stacked.success) throw new InvalidGitHubObservation();
+        if (stacked.data.length) return refuse('BRANCH_BASE_OF_OPEN_PULL_REQUEST', null);
+        // Tip re-read immediately before the atomic deletion (a complete listing; a capped or failed listing throws: unknown, never absent).
+        const tip = await branchTip(session, repo.repository, selection.branch);
+        if (tip === null) return { outcome: 'absent' as const, tip: null };
+        if (tip !== selection.expectedTip) return refuse('BRANCH_TIP_CHANGED', tip);
+        const deleted = await session.deleteRefIfAt({ repositoryNodeId: repository.data.node_id, branch: selection.branch, beforeOid: selection.expectedTip });
+        if (deleted.kind === 'unavailable') return { outcome: 'kept' as const, tip, code: deleted.code };
+        // After the answer, the re-read is the observation.
+        const after = await branchTip(session, repo.repository, selection.branch).then(value => value, () => undefined);
+        if (after === undefined) return { outcome: 'indeterminate' as const, tip, code: `${deleted.kind === 'deleted' ? 'DELETED' : deleted.code}_REREAD_FAILED` };
+        if (after === null) return { outcome: deleted.kind === 'deleted' ? 'removed' as const : 'absent' as const, tip };
+        if (after !== selection.expectedTip) return refuse('BRANCH_TIP_CHANGED', after);
+        return { outcome: deleted.kind === 'deleted' ? 'indeterminate' as const : 'failed' as const, tip: after, code: deleted.kind === 'deleted' ? 'DELETED_BUT_PRESENT' : deleted.code };
       }).catch((error: unknown) => ({ thrown: error }));
       if ('thrown' in result) return { outcome: 'indeterminate', code: 'CLEANUP_ADAPTER_FAILED', observedAt, tip: null, revocation: 'unknown', effectId: effect.effectId,
         nextStep: 'Unexpected adapter failure; re-read the branch before any new attempt.' };
@@ -116,7 +123,9 @@ export function deliveryOperations(options: { github: GitHubAccess }) {
       const value = result.value;
       const code = 'code' in value ? value.code : value.outcome === 'absent' ? 'BRANCH_ABSENT' : 'BRANCH_DELETED';
       return { outcome: value.outcome, code, observedAt: result.observedAt, tip: value.tip, revocation: result.revocation, effectId: effect.effectId,
-        nextStep: value.outcome === 'removed' ? 'Own remote branch deleted and re-read absent.' : value.outcome === 'refused'
+        nextStep: value.outcome === 'removed' ? 'Own remote branch deleted atomically and re-read absent.' : value.outcome === 'kept'
+          ? 'kept: atomic delete unavailable for this token (no conditional deletion); the branch is kept and never deleted without a precondition. Operator decides.'
+          : value.outcome === 'refused'
           ? 'Ownership/concurrency precondition failed: the branch is kept (not provably the Factory\'s delivered content). Operator decides on GitHub.' : value.outcome === 'absent'
           ? 'A complete read shows no such branch (e.g. GitHub deleted the head branch after merge); nothing was sent.'
           : 'The deletion outcome is not conclusive; the next sweep re-reads the branch before any new attempt.' };

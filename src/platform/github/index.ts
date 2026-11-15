@@ -113,14 +113,18 @@ export interface GitHubAccess {
   setDraft(scope: GitHubScope, pullRequest: { number: number; nodeId: string }, draft: boolean, clientMutationId: string): Promise<GitHubWrite>;
   /**
    * Ticket 17: one FRESH single-use `branch-cleanup` grant for THIS repository (never cached, never the tracking token). `operate` reads with
-   * GET and may send at most one closed DELETE of one branch ref (`deleteBranch`); the grant is revoked right after, whatever happened.
-   * `unknown` only when that DELETE left and its outcome is not conclusive.
+   * GET and may send at most one closed ATOMIC conditional deletion of one branch ref (`deleteRefIfAt`, GraphQL `updateRefs` with
+   * `beforeOid`); the grant is revoked right after, whatever happened. `unknown` only when that request left and its outcome is not conclusive.
    */
   cleanup<T>(scope: GitHubScope, operate: (session: GitHubCleanupSession) => Promise<T>): Promise<GitHubCleanup<T>>;
 }
-/** Read session plus the single closed ref deletion of a cleanup attempt. A second call is refused locally (nothing sent). */
+/**
+ * Read session plus the single closed ATOMIC ref deletion of a cleanup attempt: GitHub deletes `refs/heads/<branch>` only if it still points
+ * to `beforeOid` (GraphQL `updateRefs`, force false), otherwise changes nothing. A second call is refused locally (nothing sent).
+ * `unavailable`: the token/schema offers no such mutation (nothing changed): the caller keeps the branch, never falls back to a plain DELETE.
+ */
 export interface GitHubCleanupSession extends GitHubSession {
-  deleteBranch(branch: string): Promise<{ status: number }>;
+  deleteRefIfAt(input: { repositoryNodeId: string; branch: string; beforeOid: string }): Promise<{ kind: 'deleted' } | { kind: 'rejected' | 'unavailable'; code: string }>;
 }
 export type GitHubCleanup<T> = { ok: true; observedAt: string; repositoryId: number; value: T; sent: boolean; revocation: TokenRevocation } |
   { ok: false; outcome: 'known-failure' | 'unknown'; observedAt: string; code: string; waitSeconds?: number; nextStep: string; sent: boolean; revocation: TokenRevocation };
@@ -554,19 +558,33 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
       const reads = session(scope, directory, grant);
       await verifyRepository(scope, reads);
       const own = directory;
-      const value = await operate({ ...reads, async deleteBranch(branch) {
-        // Closed operation: one ref of THIS repository, a branch name the Factory itself validates (no other path, method or body).
-        if (sent || !/^(?!-)(?!.*\.\.)(?!.*\/\/)(?!.*@\{)[A-Za-z0-9._/-]{1,200}(?<![./])$/.test(branch)) throw new AccessFailure('CLEANUP_OPERATION_REFUSED');
+      const value = await operate({ ...reads, async deleteRefIfAt({ repositoryNodeId, branch, beforeOid }) {
+        // Closed operation: one ref of THIS repository (its node id as GitHub reported it), a branch name the Factory validates, an exact
+        // expected tip; no other mutation, ref, path or force.
+        if (sent || !/^(?!-)(?!.*\.\.)(?!.*\/\/)(?!.*@\{)[A-Za-z0-9._/-]{1,200}(?<![./])$/.test(branch) || !/^[0-9a-f]{40}$/.test(beforeOid) ||
+          !/^[A-Za-z0-9_=-]{1,128}$/.test(repositoryNodeId)) throw new AccessFailure('CLEANUP_OPERATION_REFUSED');
         sent = true;
-        try {
-          const response = await gh(scope, own, grant.token, `/repos/${scope.repository}/git/refs/heads/${branch.split('/').map(encodeURIComponent).join('/')}`, grant.repositoryId, undefined, 'DELETE');
-          answered = response.status;
-        } catch (error) {
-          // An HTTP answer (e.g. 422 for a ref that no longer exists, 403 by a rule) is conclusive and returned to the caller to interpret.
-          if (!(error instanceof AccessFailure && error.status !== undefined)) throw error;
-          answered = error.status;
+        const query = 'mutation($repositoryId: ID!, $refUpdates: [RefUpdate!]!) { updateRefs(input: { repositoryId: $repositoryId, refUpdates: $refUpdates }) { clientMutationId } }';
+        const output = await ghExec(own, grant.token, 'POST', '/graphql', JSON.stringify({ query,
+          variables: { repositoryId: repositoryNodeId, refUpdates: [{ name: `refs/heads/${branch}`, beforeOid, afterOid: '0'.repeat(40), force: false }] } }));
+        const match = /^HTTP\/[\d.]+ (\d{3})[^\r\n]*\r?\n[\s\S]*?\r?\n\r?\n([\s\S]*)$/.exec(output.stdout);
+        if (!match) throw new AccessFailure('INVALID_GITHUB_RESPONSE');
+        const status = Number(match[1]);
+        // A 5xx answer leaves the outcome unknown (the caller re-reads before anything else); any other answer is conclusive.
+        if (status >= 500) throw new AccessFailure('GITHUB_QUERY_FAILED');
+        answered = status;
+        if (status !== 200) return { kind: 'rejected', code: `GRAPHQL_HTTP_${status}` };
+        let body: unknown;
+        try { body = JSON.parse(match[2]!); } catch { throw new AccessFailure('INVALID_GITHUB_PAYLOAD'); }
+        const parsed = z.object({ data: z.object({ updateRefs: z.object({}).passthrough().nullable() }).nullable().optional(),
+          errors: z.array(z.object({ message: z.string().optional(), type: z.string().optional(), extensions: z.object({ code: z.string().optional() }).passthrough().optional() })).optional() }).safeParse(body);
+        if (!parsed.success) throw new AccessFailure('INVALID_GITHUB_PAYLOAD');
+        const errors = parsed.data.errors ?? [];
+        if (errors.some(error => error.extensions?.code === 'undefinedField' || /doesn't exist on type 'Mutation'|Field 'updateRefs'/.test(error.message ?? ''))) {
+          return { kind: 'unavailable', code: 'ATOMIC_DELETE_UNAVAILABLE' };
         }
-        return { status: answered };
+        if (errors.length || !parsed.data.data?.updateRefs) return { kind: 'rejected', code: errors[0]?.type ? `GRAPHQL_${errors[0].type.replace(/[^A-Z_]/gi, '').toUpperCase().slice(0, 40)}` : 'GRAPHQL_REJECTED' };
+        return { kind: 'deleted' };
       } });
       await revoke();
       return sanitized({ ok: true as const, observedAt, repositoryId: grant.repositoryId, value, sent, revocation });
@@ -574,8 +592,8 @@ export function createGitHubAccess(options: { root: string; appId: number; priva
       if (error instanceof AccessFailure && error.code === 'GITHUB_RATE_LIMITED' && error.waitSeconds !== undefined) rateLimit(scope, error.waitSeconds);
       await revoke();
       const typed = failure(error);
-      // Known: nothing sent, the DELETE answered (any status), or GitHub answered 4xx to it. Unknown: the DELETE left and no conclusive answer.
-      const known = !sent || answered !== undefined || (error instanceof AccessFailure && (error.code === 'GITHUB_RATE_LIMITED' || (error.status !== undefined && error.status >= 400 && error.status < 500)));
+      // Known: nothing sent or the atomic deletion answered conclusively. Unknown: it left and no conclusive answer came back.
+      const known = !sent || answered !== undefined;
       return sanitized({ ok: false as const, outcome: known ? 'known-failure' as const : 'unknown' as const, observedAt, ...typed,
         code: typed.code === 'GITHUB_DIAGNOSTIC_FAILED' ? 'GITHUB_CLEANUP_FAILED' : typed.code,
         nextStep: known ? typed.nextStep : 'The branch deletion may have happened: re-read the ref before any new attempt; never repeated blindly.', sent, revocation });
