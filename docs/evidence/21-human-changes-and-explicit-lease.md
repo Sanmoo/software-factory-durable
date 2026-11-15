@@ -156,3 +156,14 @@ interrupted → recovered → published with the lease on the authorized tip. Re
 Rebased (squashed) onto integration `cc7b411` (ticket 18): the instruction and the push policy use the configured
 `https://github.com/<owner>/<repo>.git` remote from one Control function; the single guest push guard stays `src/workers/push-policy.ts`.
 Namespace `q21-human-v5`, issue unpinned. Gate: `npm run test:ci` PASS — 1382 tests, 1372 pass, 0 fail, 10 skipped, 219.2 s.
+
+## Real run q21-human-v5 (issue #19, consumed) — reconciliation not verified; fixed
+
+Race and the reconciliation itself worked (C1 incorporated, C2 pushed during reconcile, Question 2 published), but the reconciliation's
+verification was `not-verified`: the Builder declared no gate (`GATES_NOT_DECLARED`) and did not adopt the Spec finding about the human file
+without an authorization (`REQUIREMENT_NON_ADOPTION_NOT_AUTHORIZED:7/spec/S1`); its `ask_user` was refused because a Builder Question after
+the PR link had no enabled destination. Fixes: the reconciliation instruction (and its recovery form) carries the implementation duties —
+re-run and declare every documented gate; treat every finding; a finding about the preserved remote commits is not adopted WITH the answered
+divergence Question as concrete authorization (correlated by ticket 13's verification); anything else goes to ask_user. Builder Questions
+after the PR link go to the Ticket issue (PR surface not enabled), like the divergence Questions. Recipe: `inspect` runs after any ended
+phase (held or not), never while one runs. Namespace `q21-human-v6`, issue unpinned. Gate: `npm run test:ci` PASS — 1384 tests, 1374 pass, 0 fail, 10 skipped.

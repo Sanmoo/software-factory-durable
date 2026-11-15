@@ -64,7 +64,7 @@ test('AC1: an ask_user request is bounded text with a stable UUID identity; anyt
 test('AC2: the destination follows the context (own PR when known, else the Ticket issue)', () => {
   const ticket = { tracker: 'github' as const, repository: 'acme/project', repositoryId: 3, issueId: 7003, nodeId: 'I3', number: 3, url: 'https://github.com/acme/project/issues/3' };
   assert.deepEqual(questionDestination({ ticket, pullRequest: null }), { kind: 'issue', ticket });
-  assert.deepEqual(questionDestination({ ticket, pullRequest: { number: 9, url: 'https://github.com/acme/project/pull/9' } }), { kind: 'pull-request', pullRequest: { number: 9, url: 'https://github.com/acme/project/pull/9' } });
+  assert.deepEqual(questionDestination({ ticket, pullRequest: { number: 9, url: 'https://github.com/acme/project/pull/9' } }), { kind: 'issue', ticket }, 'ticket 21 v5: the PR surface is not enabled');
 });
 
 test('AC2: the published comment carries the explicit reply instruction; model text is fenced so it cannot mention, format or fake a command', () => {

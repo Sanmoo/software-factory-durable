@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { attemptsOf, decideDiscovery, publicationMarker, publicationPrompt, publicationStep, publishableContent, type CandidateFacts, type DiscoveryObservation }
   from '../../src/control/rules/publication.js';
-import { divergenceQuestion, knownRemote, reconciliationAnswer, reconciliationPrompt } from '../../src/control/rules/divergence.js';
+import { divergenceQuestion, knownRemote, reconciliationAnswer, reconciliationDuties, reconciliationNotice, reconciliationPrompt } from '../../src/control/rules/divergence.js';
 import { preservationCheck } from '../../src/control/rules/publication.js';
-import { questionLimits, validateQuestionRequest } from '../../src/control/rules/questions.js';
+import { questionDestination, questionLimits, validateQuestionRequest } from '../../src/control/rules/questions.js';
 import type { DivergenceComparison, ExecutionView, PublicationView } from '../../src/control/types.js';
 
 // Rule level (R): pure decisions of ticket 21 (spec §10.1). No I/O; GitHub facts are given as data.
@@ -224,4 +224,26 @@ test('real run q21-human-v3: the publish-only prompt says a local policy denial 
   if (prompt.kind !== 'prompt') return;
   assert.match(prompt.prompt, /Run the push command ALONE as its own bash call/);
   assert.match(prompt.prompt, /PUSH_POLICY_DENIED is a LOCAL refusal: nothing was sent and it is not a publication attempt; correct it ONCE/);
+});
+
+test('real run q21-human-v5: the reconciliation instructions carry the gate-declaration and findings-treatment duties (authorized remote commits, ask_user otherwise)', () => {
+  const prompt = reconciliationPrompt({ executionId: 'r1', previousExecutionId: 'e2', skillDirectory: '/s', ticketUrl: 'https://github.com/acme/project/issues/3', workId,
+    repository: 'acme/project', base: 'main', baseCommit: 'b'.repeat(40), branch, checkout: '/workspace/checkout', pullRequest: { number: 4, url: 'u' },
+    expected: { state: 'present', sha: factory }, authorizedRemote: human, localHead: local, questionId: 'q-authorized', answer: { author: '@operator-one', note: '' }, commits: [] });
+  assert.ok(prompt.kind === 'prompt');
+  if (prompt.kind !== 'prompt') return;
+  for (const text of [reconciliationDuties('q-authorized')[0]!, reconciliationDuties('q-authorized')[1]!]) assert.ok(prompt.prompt.includes(text), text);
+  const duties = reconciliationDuties('q-authorized').join('\n');
+  assert.match(duties, /declare EVERY documented Validation gate/);
+  assert.match(duties, /"authorization": \{ "kind": "question", "questionId": "q-authorized" \}/);
+  assert.match(duties, /ask_user/);
+  assert.match(duties, /never a silent non-adoption/);
+  const notice = reconciliationNotice({ authorizedRemote: human, expected: { state: 'present', sha: factory }, localHead: local, questionId: 'q-authorized' }, branch, '/workspace/checkout', 'origin');
+  assert.ok(notice.includes(reconciliationDuties('q-authorized')[0]!), 'the recovery of a reconciliation keeps the same duties');
+});
+
+test('real run q21-human-v5: a Builder Question after the own PR is linked goes to the Ticket issue (the PR surface is not enabled), never refused', () => {
+  const ticketRef = { number: 3 };
+  assert.deepEqual(questionDestination({ ticket: ticketRef, pullRequest: { number: 4, url: 'https://github.com/acme/project/pull/4' } }), { kind: 'issue', ticket: ticketRef });
+  assert.deepEqual(questionDestination({ ticket: ticketRef, pullRequest: null }), { kind: 'issue', ticket: ticketRef });
 });

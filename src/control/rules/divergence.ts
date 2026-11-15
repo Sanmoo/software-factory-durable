@@ -119,6 +119,20 @@ export function reconciliationAnswer(text: string, divergence: Pick<DivergenceVi
   return { decision: 'not-authorized', code: /^discard\b/.test(answer) ? 'DISCARD_TIP_MISMATCH' : 'ANSWER_NOT_AN_AUTHORIZATION' };
 }
 
+/**
+ * Real run q21-human-v5: the duties of a reconciliation activation, identical to an implementation's (ticket 13): every documented
+ * Validation gate re-run and DECLARED with the handoff on the reconciled content; every review finding treated. A finding about the remote
+ * commits the operator authorized to keep is not adopted WITH the answered Question as its concrete authorization; any other finding that
+ * cannot be addressed goes to ask_user — never a silent non-adoption.
+ */
+export function reconciliationDuties(questionId: string) {
+  return ['Gates: re-run and declare EVERY documented Validation gate of the request with your handoff, exactly as in an implementation (the reconciled content needs ' +
+    'its own passed gate; an earlier result never counts).',
+  `Findings: treat every review finding. A finding that only concerns the remote commits you must preserve is "not-adopted" with "authorization": { "kind": "question", ` +
+    `"questionId": "${questionId}" } (the operator's answered Question that authorized keeping them) and a justification; any other finding you cannot fix: ask_user ` +
+    '(it reaches the operator on the Ticket) — never a silent non-adoption.'];
+}
+
 export const reconciliationPromptBudgetBytes = 15000;
 /**
  * The reconciliation Execution's first prompt (new session, self-contained): incorporate exactly the authorized remote tip, preserving every
@@ -146,6 +160,7 @@ export function reconciliationPrompt(input: { executionId: string; previousExecu
       'rewrite a remote commit, and never rebase onto a newer base in this activation. Resolve conflicts keeping the human intent; if the human change conflicts with the ' +
       'request or you cannot keep it, use ask_user instead of discarding it.',
     '4. Then validate, commit and hand off for the Factory reviews exactly as the implement skill says (the reviews apply to the incorporated content).',
+    ...reconciliationDuties(input.questionId),
     'Never push, force-push, open or edit a pull request: publication is a separate Factory activation with an explicit lease on the authorized tip. This authorization ' +
       'covers only this divergence: it does not change the request, its scope or the budget.'].join('\n');
   for (const commits of [20, 5, 0]) {
@@ -166,5 +181,6 @@ export function reconciliationNotice(request: { authorizedRemote: string; expect
     `(Factory-known tip ${sha(request.expected) ?? 'absent'}, earlier local result ${request.localHead}) preserving every remote commit — rebase your own commits onto it ` +
     'unless the repository AGENTS.md documents another update strategy; it must remain an ancestor of your HEAD.',
   `Check first: git -C ${checkout} fetch ${remote} refs/heads/${branch} and git -C ${checkout} rev-parse FETCH_HEAD must print exactly ${request.authorizedRemote}; ` +
-    'otherwise the remote changed again: stop, change nothing and report it. Never push, force-push, open or edit a pull request; then validate and hand off for review.'].join('\n');
+    'otherwise the remote changed again: stop, change nothing and report it. Never push, force-push, open or edit a pull request; then validate and hand off for review.',
+    ...reconciliationDuties(request.questionId)].join('\n');
 }

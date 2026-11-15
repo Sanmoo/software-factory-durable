@@ -11,8 +11,8 @@ import { readBounded, sessionCommands, snapshotStorage } from './publication14-q
 // operator's own account — never the App, never this recipe. Never a merge, approval, ready conversion, bare --force or base rewrite.
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const observations = `${root}/q21-human-v5`;
-const revision = 'q21-human-v5';
+const observations = `${root}/q21-human-v6`;
+const revision = 'q21-human-v6';
 const phases = ['preflight', 'run', 'race', 'reconcile', 'finish', 'inspect', 'stop-environment'] as const;
 type Phase = typeof phases[number];
 const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 'main', installationId: 177599217, workflows: false, label: 'ready-for-agent' };
@@ -20,7 +20,7 @@ const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 
  * The NEW synthetic issue the supervisor creates after the operator's authorization (title/body below, label `ready-for-agent`, no other
  * open issue with that label). `number` MUST be pinned in a reviewed commit before preflight: 0 refuses every phase (TICKET_NOT_PINNED).
  */
-export const ticket = { number: 19, repositoryId: 1256893534, title: 'Factory qualification: preserve human commits on the Factory branch' } as const;
+export const ticket = { number: 0, repositoryId: 1256893534, title: 'Factory qualification: preserve human commits on the Factory branch' } as const;
 const githubApp = { appId: 5569788, privateKeyFile: 'credentials/app.pem' };
 /** The only operator: preflight pins the immutable user id GitHub reports for this login (repository owner, type User). */
 const operatorLogin = 'Sanmoo';
@@ -56,7 +56,7 @@ export const ticketBody = [
   '`cd /workspace/checkout && test -f docs/FACTORY_HUMAN_CHANGES.md && grep -q \'^## Steps\' docs/FACTORY_HUMAN_CHANGES.md`',
   '', 'This Validation command is the only gate of this Ticket: no typecheck, lint or other gate applies, so do not declare any other gate.'].join('\n');
 /** The concrete scope update of the `race` phase (fixed identity and content): it makes a NEW verified basis, i.e. an update of the branch. */
-export const scopeUpdate = { request_id: 'q21-human-v5-scope-1',
+export const scopeUpdate = { request_id: 'q21-human-v6-scope-1',
   reason: 'Also add a `## Rollback` section to docs/FACTORY_HUMAN_CHANGES.md saying the file can be deleted at any time without other changes (only that).' };
 /** The human commits (operator's own account; plain fast-forward pushes, never --force). Separate files: no textual conflict is provoked. */
 export const humanSteps = {
@@ -108,7 +108,7 @@ export function plan() {
       'reconcile: after answer 1 (incorporate): resolve -> reconciliation Execution (fetch C1, rebase onto it, gates, reviews; capture preserve=C1 must be an ancestor) -> the next discovery is ' +
         'HELD until human step 2 (C2 on top of C1) -> diverged again against the AUTHORIZED tip C1 (a new change needs a new answer), Question 2 published; NO publication; stop',
       'finish: after answer 2: reconciliation Execution (preserve=C2) -> discovery: lease on exactly C2 -> publication of H4 (contains C1 and C2) -> linked; stop',
-      'inspect (only after finish succeeded): storage copy; read-only GitHub: own PR, branch tip, compare C1...head and C2...head (ahead/identical), contents of both human files at the head; session bash push commands',
+      'inspect (after any ended phase, held or not, once nothing still runs): storage copy; read-only GitHub: own PR, branch tip, compare C1...head and C2...head (ahead/identical), contents of both human files at the head; session bash push commands',
       'stop-environment: own boot of the last recorded Execution when it may still run'],
     guards: ['one-shot intent tombstones and phase order', 'per-phase Builder sequence (phaseIds) and reviewers only for the implementation/reconciliation Execution of that phase',
       'builder-publish only while Control requested the publication (<= 2 per publication activation); refused in reconcile', 'prepare <= Builder activations of the phase', 'no retry, no remove/cleanup',
@@ -126,13 +126,19 @@ export function plan() {
 }
 
 /** Phase order: each phase once and only after the previous one SUCCEEDED (a held phase is consumed and never followed). */
-export function phaseGuard(phase: Phase, results: Partial<Record<Phase, { status?: unknown } | null>>, intents: ReadonlySet<string>, pinned = ticket.number > 0): string | null {
+export function phaseGuard(phase: Phase, results: Partial<Record<Phase, { status?: unknown } | null>>, intents: ReadonlySet<string>, pinned = ticket.number > 0,
+  /** Phases that ended (a result or a held record). Real run q21-human-v6: inspect runs after ANY held phase, once nothing is still running. */
+  ended: ReadonlySet<string> = new Set()): string | null {
   if (!pinned) return 'TICKET_NOT_PINNED';
   if (intents.has(`${phase}-intent`)) return 'PHASE_ALREADY_RAN';
   const before: Partial<Record<Phase, Phase>> = { run: 'preflight', race: 'run', reconcile: 'race', finish: 'reconcile' };
   const previous = before[phase];
   if (previous && results[previous]?.status !== 'success') return `${previous.toUpperCase()}_SUCCESS_REQUIRED`;
-  if (phase === 'inspect' && results.finish?.status !== 'success') return 'FINISH_SUCCESS_REQUIRED';
+  if (phase === 'inspect') {
+    if (results.preflight?.status !== 'success') return 'PREFLIGHT_SUCCESS_REQUIRED';
+    const running = (['run', 'race', 'reconcile', 'finish'] as const).filter(item => intents.has(`${item}-intent`) && !ended.has(item));
+    if (running.length) return `PHASE_NOT_ENDED:${running.join(',')}`;
+  }
   if (phase === 'stop-environment' && results.preflight?.status !== 'success') return 'PREFLIGHT_SUCCESS_REQUIRED';
   return null;
 }
@@ -467,7 +473,8 @@ export async function runPhase(phase: Phase) {
   const results: Partial<Record<Phase, { status?: unknown } | null>> = {};
   for (const item of phases) results[item] = await load(`${item}-result`);
   const intents = new Set((await Promise.all(phases.map(async item => await exists(`${item}-intent`) ? `${item}-intent` : null))).filter((item): item is string => item !== null));
-  const refused = phaseGuard(phase, results, intents);
+  const ended = new Set((await Promise.all(phases.map(async item => await exists(`${item}-result`) || await exists(`${item}-held`) ? item : null))).filter((item): item is Phase => item !== null));
+  const refused = phaseGuard(phase, results, intents, ticket.number > 0, ended);
   if (refused) throw new Error(refused);
   await save(`${phase}-intent`, { revision, phase, at: new Date().toISOString() });
   try {

@@ -101,6 +101,7 @@ test('AC3/AC4/AC5/AC7: a human push before the update blocks the write and asks;
   assert.deepEqual(reconcile!.handoff, { baseCommit: 'a'.repeat(40), rounds: { first: 5, max: 4 }, preserve: human }, 'every capture checks the authorized tip as an ancestor');
   assert.match(reconcile!.token, /Start/, 'the reconciliation never holds a write grant');
   assert.ok(reconcile!.prompt.startsWith('Factory reconciliation instruction') && reconcile!.prompt.includes(`rebase ${human}`));
+  assert.ok(reconcile!.prompt.includes('declare EVERY documented Validation gate') && reconcile!.prompt.includes(`"questionId": "${divergence.questionId}"`), 'v5: gate and findings duties');
   assert.equal(publish!.phaseId, 'builder-publication');
   assert.ok(publish!.prompt.includes(`--force-with-lease=refs/heads/${branch}:${human} https://github.com/acme/project.git ${reconciled}:refs/heads/${branch}`), 'lease on exactly the authorized tip');
   assert.deepEqual(publish!.pushPolicy, { branch, head: reconciled, expected: human, remote: 'https://github.com/acme/project.git' }, 'the Builder Host allows only that exact push');

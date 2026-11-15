@@ -17,8 +17,8 @@ test('ticket 21 recipe: import and --plan are inert; own namespace and access ro
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q21-human-v5');
-  assert.match(plan.github.accessRoot, /^\/home\/sanmoo\/software-factory-test\/y5\/q21-human-v5 \(own namespace: credentials\/ copy of \/home\/sanmoo\/software-factory-test\/y5\/credentials\/app\.pem/);
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q21-human-v6');
+  assert.match(plan.github.accessRoot, /^\/home\/sanmoo\/software-factory-test\/y5\/q21-human-v6 \(own namespace: credentials\/ copy of \/home\/sanmoo\/software-factory-test\/y5\/credentials\/app\.pem/);
   assert.deepEqual(plan.phases, ['preflight', 'run', 'race', 'reconcile', 'finish', 'inspect', 'stop-environment']);
   assert.equal(plan.ticket.pinned, false, 'the supervisor pins the NEW issue number in a reviewed commit before any phase');
   assert.match(plan.ticket.body, /docs\/FACTORY_HUMAN_CHANGES\.md/);
@@ -44,8 +44,11 @@ test('phase guard: each phase once, in order, only after the previous one succee
   assert.equal(recipe.phaseGuard('race', { preflight: { status: 'success' } }, none, true), 'RUN_SUCCESS_REQUIRED');
   assert.equal(recipe.phaseGuard('reconcile', { race: { status: 'held' } }, none, true), 'RACE_SUCCESS_REQUIRED');
   assert.equal(recipe.phaseGuard('finish', { reconcile: { status: 'success' } }, none, true), null);
-  assert.equal(recipe.phaseGuard('inspect', { preflight: { status: 'success' } }, none, true), 'FINISH_SUCCESS_REQUIRED', 'inspect only after the final phase succeeded');
-  assert.equal(recipe.phaseGuard('inspect', { finish: { status: 'success' } }, none, true), null);
+  // Real run q21-human-v6: inspect runs after ANY held phase (it observes, it never continues), but never while a phase is still running.
+  const ok = { preflight: { status: 'success' } };
+  assert.equal(recipe.phaseGuard('inspect', ok, new Set(['preflight-intent', 'run-intent', 'race-intent', 'reconcile-intent']), true, new Set(['preflight', 'run', 'race', 'reconcile'])), null);
+  assert.equal(recipe.phaseGuard('inspect', ok, new Set(['preflight-intent', 'run-intent']), true, new Set(['preflight'])), 'PHASE_NOT_ENDED:run');
+  assert.equal(recipe.phaseGuard('inspect', {}, none, true), 'PREFLIGHT_SUCCESS_REQUIRED');
   assert.equal(recipe.phaseGuard('stop-environment', {}, none, true), 'PREFLIGHT_SUCCESS_REQUIRED');
 });
 

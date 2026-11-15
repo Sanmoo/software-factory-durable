@@ -87,7 +87,10 @@ export function validateQuestionRequest(input: { questionId: unknown; question: 
 export type QuestionDestination<T> = { kind: 'issue'; ticket: T } | { kind: 'pull-request'; pullRequest: { number: number; url: string } };
 /** Own pull request when the Work has one (questions then belong to that surface); otherwise the Ticket issue. */
 export function questionDestination<T>(work: { ticket: T; pullRequest: { number: number; url: string } | null }): QuestionDestination<T> {
-  return work.pullRequest ? { kind: 'pull-request', pullRequest: work.pullRequest } : { kind: 'issue', ticket: work.ticket };
+  // Real run q21-human-v5: the PR surface is not enabled in this version, so a Question asked after the own PR is linked goes to the Ticket
+  // issue (where its answers are read), like the divergence Questions — never refused (a refused ask_user left a finding untreated).
+  void work.pullRequest;
+  return { kind: 'issue', ticket: work.ticket };
 }
 
 /** Visible body of a published Question. Model text is fenced (no mentions, markup or line that could look like a command). */
