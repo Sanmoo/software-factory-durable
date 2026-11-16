@@ -11,14 +11,14 @@ for (const name of ['node:net', 'node:tls', 'node:dns', 'node:child_process', 'n
 }
 const recipe = await import('./crashfx27-qualification.js');
 
-test('ticket 27 recipe: import and --plan are inert; own namespace q27-crashfx-v1; the cuts and the never-list are explicit; unpinned issue refuses every phase', async () => {
+test('ticket 27 recipe: import and --plan are inert; own namespace q27-crashfx-v3; the cuts and the never-list are explicit; unpinned issue refuses every phase', async () => {
   const logged: string[] = [];
   const log = mock.method(console, 'log', (text: string) => { logged.push(text); });
   await recipe.main(['--plan']);
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q27-crashfx-v1');
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q27-crashfx-v3');
   assert.deepEqual(plan.phases, ['preflight', 'ask', 'publish', 'inspect', 'stop-environment']);
   assert.deepEqual(plan.steps, ['a-ask', 'b-discover-question', 'c-publish', 'd-discover-publication']);
   assert.equal(plan.ticket.pinned, false);

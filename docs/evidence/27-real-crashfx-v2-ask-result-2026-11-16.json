@@ -1,0 +1,21 @@
+{
+ "status": "success",
+ "exits": {
+  "a-ask": "signal:SIGKILL",
+  "b-discover-question": "exit:0"
+ },
+ "questionId": "e30daae1-6dfb-4e73-ae4f-bea536b8f21d",
+ "work": {
+  "work_id": "24c13883-610d-4812-aa72-373e8eed32f2",
+  "impediments": [
+   {
+    "code": "QUESTION_PENDING",
+    "scope": "work",
+    "since": "2026-11-16T06:47:01.990Z",
+    "questionId": "e30daae1-6dfb-4e73-ae4f-bea536b8f21d",
+    "nextStep": "Answer with a comment `/factory answer e30daae1-6dfb-4e73-ae4f-bea536b8f21d <text>` by a configured operator on the Ticket, or locally with `factory answer e30daae1-6dfb-4e73-ae4f-bea536b8f21d <text>`. The Work then returns to its queue position; nothing starts directly."
+   }
+  ]
+ },
+ "operatorNext": "Answer on the issue from the operator account (controller stopped): `/factory answer e30daae1-6dfb-4e73-ae4f-bea536b8f21d docs/FACTORY_CRASH_A.md`."
+}

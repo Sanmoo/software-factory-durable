@@ -57,11 +57,12 @@ const head = 'b'.repeat(40);
 const push = `git -C /workspace/checkout push --force-with-lease=refs/heads/factory/9-abc: ${configuredRemote} ${head}:refs/heads/factory/9-abc`;
 const execution = (extra: Record<string, unknown>) => ({ executionId: 'e', request: {}, recovery: [{ cessation: { result: 'confirmed' } }], ...extra });
 function world(overrides: { posts?: number; reposts?: number; comments?: number | null; pulls?: number | null; pushes?: string[]; cutB?: boolean; postKind?: string;
-  census?: boolean; answers?: number } = {}) {
+  census?: boolean; answers?: number; askSettledLive?: boolean; askCessation?: 'confirmed' | 'unconfirmed' } = {}) {
   const question = { questionId: qid, state: 'answered', answer: { origin: { kind: 'github-comment' } },
     publication: { state: 'published', attempts: [{ outcome: 'attempting' }, { outcome: 'discovered' }], comment: { commentId: 77 } } } as unknown as QuestionView;
   const work = { questions: [qid], history: Array.from({ length: overrides.answers ?? 1 }, () => ({ event: 'question-answered', questionId: qid })), publication: { state: 'published', branch: 'factory/9-abc', verified: { head }, pullRequest: { headSha: head }, attempts: [{ head, expectedRemote: { state: 'absent' } }] },
-    previousExecutions: [execution({ executionId: 'e1', end: { outcome: 'question', questionId: qid } }), execution({ executionId: 'e2', end: { outcome: 'completed' } })],
+    previousExecutions: [execution({ executionId: 'e1', end: { outcome: 'question', questionId: qid, cessation: overrides.askCessation ?? 'confirmed' },
+      ...(overrides.askSettledLive ? { recovery: [] } : {}) }), execution({ executionId: 'e2', end: { outcome: 'completed' } })],
     execution: execution({ executionId: 'e3', request: { publication: { head } }, end: { outcome: 'failure' } }) } as unknown as WorkView;
   const events = [{ at: 't', step: 'a-ask' as const, call: 'post-returned', kind: overrides.postKind ?? 'published', commentId: 77 },
     ...(overrides.cutB === false ? [] : [{ at: 't', step: 'c-publish' as const, call: 'push-observed' }]),
@@ -83,6 +84,10 @@ test('AC8 verdict: passed only with every check; a duplicate/repetition is FAILE
   assert.deepEqual([world({ comments: null }).status, world({ comments: null }).inconclusive], ['inconclusive', ['REMOTE_READ_INCOMPLETE']], 'an unreadable listing proves nothing');
   assert.deepEqual([world({ postKind: 'unknown' }).status, world({ postKind: 'unknown' }).inconclusive], ['inconclusive', ['CUT_A_ENVIRONMENT_FAULT']], 'a GitHub fault at cut A');
   assert.deepEqual([world({ census: false }).status, world({ census: false }).inconclusive], ['inconclusive', ['PUSH_CENSUS_INCOMPLETE']], 'a capped census may undercount');
+  // Real run v2: the ask Execution ended (question) and its cessation was confirmed LIVE before cut A, so the boot had nothing to reconcile.
+  assert.equal(world({ askSettledLive: true }).status, 'passed', 'a settled ask Execution needs no boot reconciliation record');
+  assert.deepEqual([world({ askSettledLive: true, askCessation: 'unconfirmed' }).status, world({ askSettledLive: true, askCessation: 'unconfirmed' }).checks.questionExecutionSettled],
+    ['failed', false], 'an unconfirmed cessation of the ask Execution never passes');
   assert.deepEqual([world({ answers: 2 }).status, world({ answers: 2 }).checks.singleAnswerAccepted], ['failed', false], 'two accepted answers');
 });
 

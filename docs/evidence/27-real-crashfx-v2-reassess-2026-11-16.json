@@ -1,0 +1,79 @@
+{
+ "reassessedWith": "fixed oracle (questionExecutionSettled)",
+ "source": "q27-crashfx-v2 (copies of inspect-storage-copy, events, results; read-only)",
+ "original": {
+  "status": "failed",
+  "checks": {
+   "questionCut": true,
+   "questionReconciled": false,
+   "questionDiscovered": true,
+   "questionNeverReposted": true,
+   "singleQuestionComment": true,
+   "singleAnswerAccepted": true,
+   "pushCut": true,
+   "publicationReconciled": true,
+   "publicationLinked": true,
+   "singleOwnPullRequest": true,
+   "branchAtVerifiedHead": true,
+   "explicitLeases": true,
+   "atMostOnePushOfHead": true,
+   "cleanStops": true
+  },
+  "inconclusive": [],
+  "failures": []
+ },
+ "verdict": {
+  "status": "passed",
+  "checks": {
+   "questionCut": true,
+   "questionExecutionSettled": true,
+   "questionDiscovered": true,
+   "questionNeverReposted": true,
+   "singleQuestionComment": true,
+   "singleAnswerAccepted": true,
+   "pushCut": true,
+   "publicationReconciled": true,
+   "publicationLinked": true,
+   "singleOwnPullRequest": true,
+   "branchAtVerifiedHead": true,
+   "explicitLeases": true,
+   "atMostOnePushOfHead": true,
+   "cleanStops": true
+  },
+  "inconclusive": [],
+  "failures": []
+ },
+ "askExecution": {
+  "executionId": "7531e90f-453e-46a8-8bdd-6a7ef3af8c42",
+  "end": {
+   "outcome": "question",
+   "cessation": "confirmed",
+   "at": "2026-11-16T06:47:02.045Z"
+  },
+  "recovery": []
+ },
+ "cutA": [
+  {
+   "at": "2026-11-16T06:47:02.014Z",
+   "call": "post-intent"
+  },
+  {
+   "at": "2026-11-16T06:47:02.042Z",
+   "call": "completed"
+  },
+  {
+   "at": "2026-11-16T06:47:04.243Z",
+   "call": "stop",
+   "cessationConfirmed": true
+  },
+  {
+   "at": "2026-11-16T06:47:05.902Z",
+   "call": "post-returned",
+   "commentId": 6909496383
+  },
+  {
+   "at": "2026-11-16T06:47:05.902Z",
+   "call": "cut"
+  }
+ ]
+}

@@ -4,7 +4,7 @@
 
 **Blocked by:** [17: Confirmar entrega e limpar somente recursos próprios](17-confirmed-delivery-and-owned-cleanup.md); [21: Preservar mudanças humanas durante atualização da branch](21-human-changes-and-explicit-lease.md); [26: Recuperar Execuções sem adotar sobreviventes](26-execution-recovery-without-survivor-adoption.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
@@ -26,3 +26,16 @@
 ## Autorização e limites
 
 Publicação é planejamento aprovado, não autorização de construção, uso de host/credenciais/GitHub/modelos reais, injeção de falhas ou piloto. Obter autorização pertinente antes da execução. Não alterar decisões aprovadas silenciosamente; lacuna de desenho volta ao operador. Merge e avaliação humana não são delegados aos agentes.
+
+## Answer
+
+Resolvido em 2026-11-16 ([evidência](../../../docs/evidence/27-external-effect-crash-reconciliation.md)). Inventário de todos os efeitos externos
+(Pergunta, registro/ACK, push/PR do Builder, lease, draft/ready, cleanup, tokens, VM): duas lacunas corrigidas. (1) Uma listagem completa vazia
+depois de um POST de Pergunta possivelmente enviado não republica mais: estado `unconfirmed`, nova descoberta a cada ciclo, resposta local.
+(2) Um ACK/notificação perdido por crash é recuperado de Records no boot, com a mesma identidade e conteúdo; um registro perdido bloqueia.
+Depois da revisão: só um achado positivo muda a recuperação comum; recusas ao vivo são respeitadas; a parada administrativa mantém sua
+intenção; um Trabalho cancelado não recebe POST novo, mas efeitos tardios ainda são descobertos. Provas: regras, fluxos S, SIGKILL real local
+e o ensaio real `q27-crashfx-v2` (issue #36), aprovado 14/14 depois de corrigido um oráculo da receita (a Execução da Pergunta já estava
+assentada ao vivo antes do corte A). Abertos: republicação autorizada de `unconfirmed`; retry de falhas conhecidas da Pergunta (até 5);
+conversão draft/ready incerta de um Trabalho cancelado não é redescoberta.
+

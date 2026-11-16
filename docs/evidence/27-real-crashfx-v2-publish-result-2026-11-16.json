@@ -1,0 +1,146 @@
+{
+ "status": "success",
+ "exits": {
+  "c-publish": "signal:SIGKILL",
+  "d-discover-publication": "exit:0"
+ },
+ "questionId": "e30daae1-6dfb-4e73-ae4f-bea536b8f21d",
+ "work": {
+  "work_id": "24c13883-610d-4812-aa72-373e8eed32f2",
+  "publication": {
+   "state": "published",
+   "basisExecutionId": "08c258a4-e4c9-4256-b5f5-0ba3c2b4a926",
+   "marker": "<!-- software-factory:work:24c13883-610d-4812-aa72-373e8eed32f2 -->",
+   "branch": "factory/36-24c13883",
+   "base": "main",
+   "verified": {
+    "executionId": "08c258a4-e4c9-4256-b5f5-0ba3c2b4a926",
+    "head": "5b88249969dfd378435ce99d8fe7c2102add457c",
+    "contentSha256": "02d52bc4b10e1c2c352b0ea249906da5643b0e331f636de13e0c3477e881e2a8",
+    "verifiedAt": "2026-11-16T06:51:54.255Z",
+    "reviewedRound": 1,
+    "gates": [
+     {
+      "id": "ticket-validation",
+      "outcome": "passed"
+     }
+    ],
+    "requiredChecks": []
+   },
+   "expectedRemote": {
+    "state": "present",
+    "sha": "5b88249969dfd378435ce99d8fe7c2102add457c"
+   },
+   "requestedAt": "2026-11-16T06:55:20.405Z",
+   "pullRequest": {
+    "pullRequestId": 5332546255,
+    "nodeId": "PR_kwDOSuqsXs8AAAABPdgyzw",
+    "number": 37,
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/37",
+    "state": "open",
+    "merged": false,
+    "draft": true,
+    "headRef": "factory/36-24c13883",
+    "headSha": "5b88249969dfd378435ce99d8fe7c2102add457c",
+    "base": "main",
+    "author": {
+     "id": 351187749,
+     "login": "sanmoo-factory[bot]",
+     "type": "Bot"
+    },
+    "linkedAt": "2026-11-16T06:57:15.589Z",
+    "bodySha256": "b63edacf0015f9746cb3b89937d834a5628b9b1059f9e9cf22f0db22f957a42d"
+   },
+   "description": {
+    "conformant": true,
+    "reasons": []
+   },
+   "discoveries": [
+    {
+     "at": "2026-11-16T06:52:51.116Z",
+     "observedAt": "2026-11-16T06:52:37.305Z",
+     "trigger": "verified",
+     "outcome": "absent",
+     "reasons": [],
+     "branch": {
+      "state": "absent"
+     },
+     "candidates": []
+    },
+    {
+     "at": "2026-11-16T06:55:20.405Z",
+     "observedAt": "2026-11-16T06:55:10.643Z",
+     "trigger": "after-publication",
+     "outcome": "absent",
+     "reasons": [],
+     "branch": {
+      "state": "present",
+      "sha": "5b88249969dfd378435ce99d8fe7c2102add457c"
+     },
+     "candidates": []
+    },
+    {
+     "at": "2026-11-16T06:57:15.589Z",
+     "observedAt": "2026-11-16T06:57:09.359Z",
+     "trigger": "after-publication",
+     "outcome": "linked",
+     "reasons": [],
+     "branch": {
+      "state": "present",
+      "sha": "5b88249969dfd378435ce99d8fe7c2102add457c"
+     },
+     "candidates": [
+      {
+       "number": 37,
+       "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/37",
+       "own": true,
+       "reasons": []
+      }
+     ]
+    }
+   ],
+   "attempts": [
+    {
+     "executionId": "e5c8d571-930d-4a9b-9de7-f50454c3d4ca",
+     "head": "5b88249969dfd378435ce99d8fe7c2102add457c",
+     "at": "2026-11-16T06:54:31.824Z",
+     "expectedRemote": {
+      "state": "absent"
+     }
+    },
+    {
+     "executionId": "fa5980a3-b390-4036-a5c4-60f3a1a2bbc8",
+     "head": "5b88249969dfd378435ce99d8fe7c2102add457c",
+     "at": "2026-11-16T06:55:41.984Z",
+     "expectedRemote": {
+      "state": "present",
+      "sha": "5b88249969dfd378435ce99d8fe7c2102add457c"
+     }
+    }
+   ],
+   "linkedHeads": [
+    "5b88249969dfd378435ce99d8fe7c2102add457c"
+   ],
+   "refsBefore": {
+    "refs/heads/factory/11-bf8df237": "188d81625f44b7343d7221c01b79f2191918dd96",
+    "refs/heads/factory/16-3fb011e7": "e99099a2d0db0df13283b5956abbc89754a400c3",
+    "refs/heads/factory/19-f8fb4de4": "21a9343fc4b999f46f45885753e186a3f34c54b4",
+    "refs/heads/factory/25-dacfb638": "dbfc9688d3e70bfa2856697695e9d4b17bbcb99f",
+    "refs/heads/factory/27-c832adb2": "097ce0a3761035de3b2f311632a898189b385348",
+    "refs/heads/factory/29-b167feaa": "140a1baf19d109079688cdd0ba6f2dd071692d5f",
+    "refs/heads/factory/31-36b542ff": "2644c6784a3011068c0dc6ebe094082c5ad5ad62",
+    "refs/heads/factory/36-24c13883": "5b88249969dfd378435ce99d8fe7c2102add457c",
+    "refs/heads/factory/8-4535224b": "19983968187d7e5cff8ae6a68a998ae70e547727",
+    "refs/heads/main": "85822b6c772f37bc16ade6287fec22fa58efc4cf"
+   },
+   "update": null,
+   "reasons": [],
+   "divergences": [],
+   "reconciliation": null,
+   "baseChange": null,
+   "nextStep": "Own draft pull request linked. Opening it does not end the Ticket or the Work; readiness and human merge are separate.",
+   "updatedAt": "2026-11-16T06:57:15.589Z"
+  },
+  "impediments": []
+ }
+}

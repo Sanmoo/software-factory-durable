@@ -1,0 +1,423 @@
+{
+ "verdict": {
+  "status": "failed",
+  "checks": {
+   "questionCut": true,
+   "questionReconciled": false,
+   "questionDiscovered": true,
+   "questionNeverReposted": true,
+   "singleQuestionComment": true,
+   "singleAnswerAccepted": true,
+   "pushCut": true,
+   "publicationReconciled": true,
+   "publicationLinked": true,
+   "singleOwnPullRequest": true,
+   "branchAtVerifiedHead": true,
+   "explicitLeases": true,
+   "atMostOnePushOfHead": true,
+   "cleanStops": true
+  },
+  "inconclusive": [],
+  "failures": []
+ },
+ "questionComments": 1,
+ "ownPullRequests": 1,
+ "branchTip": {
+  "state": "present",
+  "sha": "5b88249969dfd378435ce99d8fe7c2102add457c"
+ },
+ "pushes": [
+  "cd /workspace/checkout && gh issue view https://github.com/Sanmoo/java-springboot-event-sourcing/issues/36 --json number,title,body,url,updatedAt,author,labels && printf '\\n--- ARTIFACT SPEC ---\\n' && find /artifacts/spec -mindepth 1 -maxdepth 1 -type d -printf '%f\\n' 2>/dev/null | sort && printf '\\n--- STATUS ---\\n' && git status --short --branch && printf '\\n--- REPO FILES ---\\n' && git ls-tree --name-only 85822b6c772f37bc16ade6287fec22fa58efc4cf",
+  "set -eu\ncd /workspace/checkout\nprintf '%s\\n' '--- instructions ---'\ncat AGENTS.md\nprintf '%s\\n' '--- docs tree ---'\nfind docs -maxdepth 2 -type f -print | sort\nprintf '%s\\n' '--- capture metadata ---'\ndate -u +%Y-%m-%dT%H:%M:%SZ",
+  "cd /workspace/checkout && git status --short --branch && git ls-tree -r --name-only 85822b6c772f37bc16ade6287fec22fa58efc4cf | grep -E '(^|/)(AGENTS\\.md|CLAUDE\\.md)$|(^|/)(CONTRIBUTING|CODE_OF_CONDUCT|STYLE|CODING)' || true",
+  "set -eu\ncd /workspace/checkout\ngit show 85822b6c772f37bc16ade6287fec22fa58efc4cf:docs/agents/issue-tracker.md >/dev/null\ngit show 85822b6c772f37bc16ade6287fec22fa58efc4cf:docs/agents/triage-labels.md >/dev/null\ngit show 85822b6c772f37bc16ade6287fec22fa58efc4cf:docs/agents/domain.md >/dev/null\ncat > /tmp/spec-manifest.json <<'EOF'\nEOF\nprintf '%s\\n' '--- hashes ---'\nsha256sum /artifacts/spec/v1/ticket.json /artifacts/instructions/v1/AGENTS.md\nprintf '%s\\n' '--- ticket timestamps ---'\ndate -u +%Y-%m-%dT%H:%M:%SZ\n",
+  "set -eu\nmv /artifacts/spec/v1/sources.json.tmp /artifacts/spec/v1/sources.json\nmv /artifacts/instructions/v1/sources.json.tmp /artifacts/instructions/v1/sources.json\n",
+  "find /artifacts/spec -maxdepth 2 -type f -print | sort; find /artifacts/instructions -maxdepth 2 -type f -print | sort; git -C /workspace/checkout status --short --branch; git -C /workspace/checkout log --oneline --decorate -10",
+  "cat /artifacts/spec/v1/ticket.json; printf '\\n---spec sources---\\n'; cat /artifacts/spec/v1/sources.json; printf '\\n---instructions---\\n'; cat /artifacts/instructions/v1/AGENTS.md; printf '\\n---instruction sources---\\n'; cat /artifacts/instructions/v1/sources.json; printf '\\n---files---\\n'; find /workspace/checkout -name AGENTS.md -o -name CLAUDE.md;",
+  "cat /workspace/checkout/AGENTS.md; git -C /workspace/checkout status --porcelain=v1; git -C /workspace/checkout diff --; git -C /workspace/checkout ls-files docs/FACTORY_CRASH_A.md docs/FACTORY_CRASH_B.md; test -e /workspace/checkout/docs/FACTORY_CRASH_A.md && echo A_EXISTS || true; test -e /workspace/checkout/docs/FACTORY_CRASH_B.md && echo B_EXISTS || true;",
+  "find /artifacts -maxdepth 4 -type f -print | sort | sed -n '1,200p';",
+  "set -eu\ncd /workspace/checkout\nprintf '%s\\n' '--- applicable instructions ---'\ncat AGENTS.md\nfor f in docs/AGENTS.md docs/CLAUDE.md; do if test -f \"$f\"; then printf '\\n--- %s ---\\n' \"$f\"; cat \"$f\"; fi; done\nprintf '\\n--- repository guidance files ---\\n'\nfind . -maxdepth 3 \\( -name AGENTS.md -o -name CLAUDE.md \\) -print\nprintf '\\n--- required doc sources ---\\n'\ngit show 85822b6c772f37bc16ade6287fec22fa58efc4cf:docs/agents/issue-tracker.md\ngit show 85822b6c772f37bc16ade6287fec22fa58efc4cf:docs/agents/triage-labels.md\ngit show 85822b6c772f37bc16ade6287fec22fa58efc4cf:docs/agents/domain.md\n",
+  "set -eu\nmkdir -p /artifacts/spec/v2 /artifacts/instructions/v2\ncp /artifacts/spec/v1/ticket.json /artifacts/spec/v2/ticket.json\ncp /artifacts/spec/v1/sources.json /artifacts/spec/v2/prior-ticket-capture.json\ncp /artifacts/instructions/v1/AGENTS.md /artifacts/instructions/v2/AGENTS.md\ncp /workspace/checkout/docs/agents/issue-tracker.md /artifacts/instructions/v2/issue-tracker.md\ncp /workspace/checkout/docs/agents/triage-labels.md /artifacts/instructions/v2/triage-labels.md\ncp /workspace/checkout/docs/agents/domain.md /artifacts/instructions/v2/domain.md\ncp /artifacts/spec/v2/answer.txt /artifacts/spec/v2/factory-question-e30daae1-6dfb-4e73-ae4f-bea536b8f21d.txt\ncat > /artifacts/instructions/v2/AGENTS.md <<'EOF'\n## Agent skills\n\n### Issue tracker\n\nIssues are tracked in GitHub Issues. See `docs/agents/issue-tracker.md`.\n\n### Triage labels\n\nTriage uses the five default labels. See `docs/agents/triage-labels.md`.\n\n### Domain docs\n\nThis repository uses a single-context layout. See `docs/agents/domain.md`.\nEOF\nprint",
+  "set -eu\npython3 - <<'PY'\nimport json, hashlib, pathlib, datetime, os\nroot=pathlib.Path('/artifacts')\nnow=datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00','Z')\ndef entry(origin,copy,revision,scope=None,precedence=None):\n p=root/copy\n d={'origin':origin,'copy':str(p),'retrievedAt':now,'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'revision':revision}\n if scope is not None: d.update(scope=scope,precedence=precedence)\n return d\nspec_sources=[\n entry('https://github.com/Sanmoo/java-springboot-event-sourcing/issues/36','spec/v2/ticket.json','2026-11-16T06:43:18Z'),\n entry('factory-question:e30daae1-6dfb-4e73-ae4f-bea536b8f21d','spec/v2/factory-question-e30daae1-6dfb-4e73-ae4f-bea536b8f21d.txt','answered'),\n]\nins_sources=[\n entry('/workspace/checkout/AGENTS.md','instructions/v2/AGENTS.md','85822b6c772f37bc16ade6287fec22fa58efc4cf','/workspace/checkout',1),\n entry('/workspace/checkout/docs/agents/issue-tracker.md','instructions/v2/issue-tracker.md','85822b6c772f37bc16ade6287fec22fa58efc",
+  "git -C /workspace/checkout add docs/FACTORY_CRASH_A.md && git -C /workspace/checkout commit -m \"docs: add Factory crash qualification page\"",
+  "cd /workspace/checkout && ls docs/FACTORY_CRASH_A.md docs/FACTORY_CRASH_B.md 2>/dev/null | grep -c . | grep -qx 1",
+  "git -C /workspace/checkout status --short --branch; git -C /workspace/checkout log -1 --format='%H%n%s'; git -C /workspace/checkout show --stat --oneline --summary HEAD",
+  "cd /workspace/checkout && ls docs/FACTORY_CRASH_A.md docs/FACTORY_CRASH_B.md 2>/dev/null | grep -c . | grep -qx 1; printf 'gate_exit=%s\\n' \"$?\"",
+  "git -C /workspace/checkout log --oneline -5 && git ls-remote https://github.com/Sanmoo/java-springboot-event-sourcing.git",
+  "git -C /workspace/checkout push --force-with-lease=refs/heads/factory/36-24c13883: https://github.com/Sanmoo/java-springboot-event-sourcing.git 5b88249969dfd378435ce99d8fe7c2102add457c:refs/heads/factory/36-24c13883",
+  "gh pr list --repo Sanmoo/java-springboot-event-sourcing --head factory/36-24c13883 --state all --json number,url,isDraft",
+  "git -C /workspace/checkout log -5 --oneline --decorate && git ls-remote https://github.com/Sanmoo/java-springboot-event-sourcing.git",
+  "git -C /workspace/checkout show --stat --oneline --no-renames 5b88249969dfd378435ce99d8fe7c2102add457c && git -C /workspace/checkout show --format= --no-ext-diff 5b88249969dfd378435ce99d8fe7c2102add457c",
+  "gh pr list --repo Sanmoo/java-springboot-event-sourcing --head factory/36-24c13883 --state all --json number,url,isDraft",
+  "gh pr create --repo Sanmoo/java-springboot-event-sourcing --draft --base main --head factory/36-24c13883 --title \"Add Factory crash qualification page\" --body-file /artifacts/publication/pr-body.md"
+ ],
+ "question": {
+  "questionId": "e30daae1-6dfb-4e73-ae4f-bea536b8f21d",
+  "workId": "24c13883-610d-4812-aa72-373e8eed32f2",
+  "executionId": "7531e90f-453e-46a8-8bdd-6a7ef3af8c42",
+  "invocationId": "builder-7531e90f-453e-46a8-8bdd-6a7ef3af8c42",
+  "recordedAt": "2026-11-16T06:47:01.990Z",
+  "recordedFrom": "worker-notification",
+  "content": {
+   "question": "For Ticket #36, which exact filename should I create: `docs/FACTORY_CRASH_A.md` or `docs/FACTORY_CRASH_B.md`? Reply with one of those paths.",
+   "context": "I preserved the Ticket and root instructions as /artifacts/spec/v1 and /artifacts/instructions/v1. The Ticket explicitly requires the operator to choose one of these filenames before any file is created or edited; neither file has been created.",
+   "sha256": "e7fdf5b63156a135cc968def17af8d1a8e54b4328e0e59db80be922efa373cc0",
+   "reference": {
+    "workId": "24c13883-610d-4812-aa72-373e8eed32f2",
+    "id": "1b641d10-852e-496f-bc33-d6ea40c1d6de"
+   }
+  },
+  "destination": {
+   "kind": "issue",
+   "ticket": {
+    "tracker": "github",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "issueId": 6415794639,
+    "nodeId": "I_kwDOSuqsXs8AAAABfmlBzw",
+    "number": 36,
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/36"
+   }
+  },
+  "state": "answered",
+  "publication": {
+   "effectId": "6ce1c8f0-caa6-46e5-9a97-b76399f1bcc1",
+   "state": "published",
+   "updatedAt": "2026-11-16T06:47:15.336Z",
+   "attempts": [
+    {
+     "at": "2026-11-16T06:47:02.004Z",
+     "outcome": "attempting"
+    },
+    {
+     "at": "2026-11-16T06:47:15.336Z",
+     "outcome": "discovered"
+    }
+   ],
+   "comment": {
+    "commentId": 6909496383,
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/36#issuecomment-6909496383"
+   },
+   "nextStep": null
+  },
+  "answer": {
+   "text": "docs/FACTORY_CRASH_A.md",
+   "sha256": "7c4a430f2ac5cf56a75961279318ff32c2f878edcd0a7d1a3dc568d272f4647c",
+   "acceptedAt": "2026-11-16T06:47:27.868Z",
+   "author": {
+    "kind": "github",
+    "id": 1881597,
+    "login": "Sanmoo"
+   },
+   "origin": {
+    "kind": "github-comment",
+    "commentId": 6909500251,
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/36#issuecomment-6909500251"
+   }
+  },
+  "ignored": []
+ },
+ "work": {
+  "work_id": "24c13883-610d-4812-aa72-373e8eed32f2",
+  "publication": {
+   "state": "published",
+   "basisExecutionId": "08c258a4-e4c9-4256-b5f5-0ba3c2b4a926",
+   "marker": "<!-- software-factory:work:24c13883-610d-4812-aa72-373e8eed32f2 -->",
+   "branch": "factory/36-24c13883",
+   "base": "main",
+   "verified": {
+    "executionId": "08c258a4-e4c9-4256-b5f5-0ba3c2b4a926",
+    "head": "5b88249969dfd378435ce99d8fe7c2102add457c",
+    "contentSha256": "02d52bc4b10e1c2c352b0ea249906da5643b0e331f636de13e0c3477e881e2a8",
+    "verifiedAt": "2026-11-16T06:51:54.255Z",
+    "reviewedRound": 1,
+    "gates": [
+     {
+      "id": "ticket-validation",
+      "outcome": "passed"
+     }
+    ],
+    "requiredChecks": []
+   },
+   "expectedRemote": {
+    "state": "present",
+    "sha": "5b88249969dfd378435ce99d8fe7c2102add457c"
+   },
+   "requestedAt": "2026-11-16T06:55:20.405Z",
+   "pullRequest": {
+    "pullRequestId": 5332546255,
+    "nodeId": "PR_kwDOSuqsXs8AAAABPdgyzw",
+    "number": 37,
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/37",
+    "state": "open",
+    "merged": false,
+    "draft": true,
+    "headRef": "factory/36-24c13883",
+    "headSha": "5b88249969dfd378435ce99d8fe7c2102add457c",
+    "base": "main",
+    "author": {
+     "id": 351187749,
+     "login": "sanmoo-factory[bot]",
+     "type": "Bot"
+    },
+    "linkedAt": "2026-11-16T06:57:15.589Z",
+    "bodySha256": "b63edacf0015f9746cb3b89937d834a5628b9b1059f9e9cf22f0db22f957a42d"
+   },
+   "description": {
+    "conformant": true,
+    "reasons": []
+   },
+   "discoveries": [
+    {
+     "at": "2026-11-16T06:52:51.116Z",
+     "observedAt": "2026-11-16T06:52:37.305Z",
+     "trigger": "verified",
+     "outcome": "absent",
+     "reasons": [],
+     "branch": {
+      "state": "absent"
+     },
+     "candidates": []
+    },
+    {
+     "at": "2026-11-16T06:55:20.405Z",
+     "observedAt": "2026-11-16T06:55:10.643Z",
+     "trigger": "after-publication",
+     "outcome": "absent",
+     "reasons": [],
+     "branch": {
+      "state": "present",
+      "sha": "5b88249969dfd378435ce99d8fe7c2102add457c"
+     },
+     "candidates": []
+    },
+    {
+     "at": "2026-11-16T06:57:15.589Z",
+     "observedAt": "2026-11-16T06:57:09.359Z",
+     "trigger": "after-publication",
+     "outcome": "linked",
+     "reasons": [],
+     "branch": {
+      "state": "present",
+      "sha": "5b88249969dfd378435ce99d8fe7c2102add457c"
+     },
+     "candidates": [
+      {
+       "number": 37,
+       "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/37",
+       "own": true,
+       "reasons": []
+      }
+     ]
+    }
+   ],
+   "attempts": [
+    {
+     "executionId": "e5c8d571-930d-4a9b-9de7-f50454c3d4ca",
+     "head": "5b88249969dfd378435ce99d8fe7c2102add457c",
+     "at": "2026-11-16T06:54:31.824Z",
+     "expectedRemote": {
+      "state": "absent"
+     }
+    },
+    {
+     "executionId": "fa5980a3-b390-4036-a5c4-60f3a1a2bbc8",
+     "head": "5b88249969dfd378435ce99d8fe7c2102add457c",
+     "at": "2026-11-16T06:55:41.984Z",
+     "expectedRemote": {
+      "state": "present",
+      "sha": "5b88249969dfd378435ce99d8fe7c2102add457c"
+     }
+    }
+   ],
+   "linkedHeads": [
+    "5b88249969dfd378435ce99d8fe7c2102add457c"
+   ],
+   "refsBefore": {
+    "refs/heads/factory/11-bf8df237": "188d81625f44b7343d7221c01b79f2191918dd96",
+    "refs/heads/factory/16-3fb011e7": "e99099a2d0db0df13283b5956abbc89754a400c3",
+    "refs/heads/factory/19-f8fb4de4": "21a9343fc4b999f46f45885753e186a3f34c54b4",
+    "refs/heads/factory/25-dacfb638": "dbfc9688d3e70bfa2856697695e9d4b17bbcb99f",
+    "refs/heads/factory/27-c832adb2": "097ce0a3761035de3b2f311632a898189b385348",
+    "refs/heads/factory/29-b167feaa": "140a1baf19d109079688cdd0ba6f2dd071692d5f",
+    "refs/heads/factory/31-36b542ff": "2644c6784a3011068c0dc6ebe094082c5ad5ad62",
+    "refs/heads/factory/36-24c13883": "5b88249969dfd378435ce99d8fe7c2102add457c",
+    "refs/heads/factory/8-4535224b": "19983968187d7e5cff8ae6a68a998ae70e547727",
+    "refs/heads/main": "85822b6c772f37bc16ade6287fec22fa58efc4cf"
+   },
+   "update": null,
+   "reasons": [],
+   "divergences": [],
+   "reconciliation": null,
+   "baseChange": null,
+   "nextStep": "Own draft pull request linked. Opening it does not end the Ticket or the Work; readiness and human merge are separate.",
+   "updatedAt": "2026-11-16T06:57:15.589Z"
+  },
+  "impediments": [],
+  "executions": [
+   {
+    "executionId": "7531e90f-453e-46a8-8bdd-6a7ef3af8c42",
+    "request": {
+     "publication": null
+    },
+    "end": {
+     "at": "2026-11-16T06:47:02.045Z",
+     "outcome": "question",
+     "code": null,
+     "cessation": "confirmed",
+     "questionId": "e30daae1-6dfb-4e73-ae4f-bea536b8f21d",
+     "session": {
+      "ref": "r/ZRcAIYRTRiuGSCn7VWp7NQ/w-U8DLzD/profile/sessions/2026-11-16T06-46-08-045Z_01a1e31b-1fac-7330-9b33-24dc6d4ca3aa.jsonl",
+      "sessionId": "01a1e31b-1fac-7330-9b33-24dc6d4ca3aa",
+      "sha256": "9a2bb667f2d80192379566ed5119a4c9d74871ae04eb8c559d97c42ee1f2da2f",
+      "bytes": 46027,
+      "format": "pi-session-jsonl-v3",
+      "profile": {
+       "sdkProfile": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+       "providerId": "openai",
+       "modelId": "gpt-6-luna",
+       "skillPack": "factory-skills-v6",
+       "tools": [
+        "ask_user",
+        "bash",
+        "edit",
+        "read",
+        "write"
+       ]
+      }
+     }
+    },
+    "recovery": []
+   },
+   {
+    "executionId": "08c258a4-e4c9-4256-b5f5-0ba3c2b4a926",
+    "request": {
+     "publication": null
+    },
+    "end": {
+     "at": "2026-11-16T06:51:54.262Z",
+     "outcome": "completed",
+     "code": null,
+     "cessation": "confirmed",
+     "session": {
+      "ref": "r/65YE6euSQxms6ZXrbi9GZQ/w-rOQckM/profile/sessions/2026-11-16T06-48-25-441Z_01a1e31d-385e-716e-9ff9-0842f4814f14.jsonl",
+      "sessionId": "01a1e31d-385e-716e-9ff9-0842f4814f14",
+      "sha256": "444b0db9ccfe3f6102a36f25b9e3886a651036898f7c5bbc31fa3bf11602e216",
+      "bytes": 69625,
+      "format": "pi-session-jsonl-v3",
+      "profile": {
+       "sdkProfile": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+       "providerId": "openai",
+       "modelId": "gpt-6-luna",
+       "skillPack": "factory-skills-v6",
+       "tools": [
+        "ask_user",
+        "bash",
+        "edit",
+        "handoff",
+        "read",
+        "write"
+       ]
+      }
+     }
+    },
+    "recovery": []
+   },
+   {
+    "executionId": "e5c8d571-930d-4a9b-9de7-f50454c3d4ca",
+    "request": {
+     "publication": {
+      "basisExecutionId": "08c258a4-e4c9-4256-b5f5-0ba3c2b4a926",
+      "head": "5b88249969dfd378435ce99d8fe7c2102add457c",
+      "branch": "factory/36-24c13883",
+      "base": "main",
+      "marker": "<!-- software-factory:work:24c13883-610d-4812-aa72-373e8eed32f2 -->",
+      "expectedRemote": {
+       "state": "absent"
+      },
+      "pullRequest": null
+     }
+    },
+    "end": {
+     "at": "2026-11-16T06:55:01.143Z",
+     "outcome": "failure",
+     "code": "CONTROLLER_CRASH",
+     "cessation": "confirmed"
+    },
+    "recovery": [
+     {
+      "at": "2026-11-16T06:55:01.143Z",
+      "controllerRunId": "02fc7143-e91f-4eeb-923d-10cd5f3456e6",
+      "trigger": "boot",
+      "found": {
+       "state": "started",
+       "phase": "started",
+       "held": null,
+       "end": null,
+       "origin": "fd1bc466-448f-422d-9773-f1add2ae4184"
+      },
+      "cessation": {
+       "result": "confirmed",
+       "basis": "sandbox-stop",
+       "environment": "env-be9ca8ba1affc499204869843d7159ae08932e55afeb5b31ab65bb3229da318d",
+       "boot": "boot-275bbceb-8005-4e51-afdd-7829c1cef105"
+      },
+      "start": {
+       "kind": "confirmed",
+       "detail": "notification:dde534b0-1a4c-4eee-8e0d-800f9066e304"
+      },
+      "decision": "operational-recovery",
+      "code": "CONTROLLER_CRASH",
+      "question": "absent"
+     }
+    ]
+   },
+   {
+    "executionId": "fa5980a3-b390-4036-a5c4-60f3a1a2bbc8",
+    "request": {
+     "publication": {
+      "basisExecutionId": "08c258a4-e4c9-4256-b5f5-0ba3c2b4a926",
+      "head": "5b88249969dfd378435ce99d8fe7c2102add457c",
+      "branch": "factory/36-24c13883",
+      "base": "main",
+      "marker": "<!-- software-factory:work:24c13883-610d-4812-aa72-373e8eed32f2 -->",
+      "expectedRemote": {
+       "state": "present",
+       "sha": "5b88249969dfd378435ce99d8fe7c2102add457c"
+      },
+      "pullRequest": null
+     }
+    },
+    "end": {
+     "at": "2026-11-16T06:56:08.314Z",
+     "outcome": "completed",
+     "code": null,
+     "cessation": "confirmed",
+     "session": {
+      "ref": "r/X1tJCYKsSwmjNz3c-GxBsQ/w-EcadpL/profile/sessions/2026-11-16T06-55-43-325Z_01a1e323-e6dc-7616-88fc-6d64a548d1ae.jsonl",
+      "sessionId": "01a1e323-e6dc-7616-88fc-6d64a548d1ae",
+      "sha256": "386c745eeae4d8bad51ed770d9929dc7a2cbb06373c29d288ca6e6e753355817",
+      "bytes": 27926,
+      "format": "pi-session-jsonl-v3",
+      "profile": {
+       "sdkProfile": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+       "providerId": "openai",
+       "modelId": "gpt-6-luna",
+       "skillPack": "factory-skills-v6",
+       "tools": [
+        "ask_user",
+        "bash",
+        "read",
+        "write"
+       ]
+      }
+     }
+    },
+    "recovery": []
+   }
+  ]
+ },
+ "secretShapes": {
+  "/home/sanmoo/software-factory-test/y5/q27-crashfx-v2": 2
+ }
+}

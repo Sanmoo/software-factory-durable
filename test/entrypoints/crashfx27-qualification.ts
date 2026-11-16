@@ -22,8 +22,9 @@ import { readBounded, sessionCommands, snapshotStorage } from './publication14-q
 // the operator's own account. Never a merge, approval, ready conversion, bare --force, base rewrite, cleanup, or any write by this recipe itself.
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const observations = `${root}/q27-crashfx-v1`;
-const revision = 'q27-crashfx-v1';
+// v1 held at preflight (ticket 24 environments unreadable before ec5ff1d); v2 consumed by the real run (oracle fixed afterwards).
+const observations = `${root}/q27-crashfx-v3`;
+const revision = 'q27-crashfx-v3';
 const phases = ['preflight', 'ask', 'publish', 'inspect', 'stop-environment'] as const;
 type Phase = typeof phases[number];
 const steps = ['a-ask', 'b-discover-question', 'c-publish', 'd-discover-publication'] as const;
@@ -97,7 +98,7 @@ export function plan() {
       'builder-publish only while Control requested the publication (<= 2 per publication activation)', 'prepare <= Builder activations of the step', 'no retry, no remove/cleanup'],
     expected: [
       'a-ask: child killed by SIGKILL after `post-returned` (comment id recorded in the events file); Question publication left `attempting` in storage',
-      'b-discover-question: recovery[0] of the ask Execution {cessation confirmed by sandbox-stop of the survivor, decision settled}; end question; Question attempts [attempting, discovered] with the SAME comment id; zero POSTs in b; clean exit 0',
+      'b-discover-question: the ask Execution ended question with cessation confirmed (live before the cut, or by the boot reconciliation of a survivor: then every recovery record confirms it); Question attempts [attempting, discovered] with the SAME comment id; zero POSTs in b; clean exit 0',
       'c-publish: answer accepted once (operator id); push-observed at the verified head; child killed by SIGKILL',
       'd-discover-publication: interrupted publication Execution settled (cessation confirmed); publication `published` linking ONE own draft PR at the verified head (directly, or after ONE PR-only continuation that never pushes); clean exit 0',
       'inspect: exactly ONE comment with the Question marker; exactly ONE own PR for the branch; branch tip = verified head; every session push names its exact lease and at most ONE push command of the head; no token in storage/sessions/observations',
@@ -167,7 +168,10 @@ export function assess(input: { work: WorkView | undefined; question: QuestionVi
   const headPushes = head ? input.pushes.filter(command => /\bgit\b[\s\S]*\bpush\b/.test(command) && command.includes(head)).length : 0;
   const checks = {
     questionCut: reached.cutA && posted?.kind === 'published',
-    questionReconciled: asked?.recovery?.[0]?.cessation.result === 'confirmed' && asked.end?.outcome === 'question',
+    // The ask Execution ends `question` with CONFIRMED cessation — either live before cut A (its activation ends at the ACK, so the boot can
+    // be stopped before the POST returns: real run v2) or by the boot reconciliation of a survivor (then every recovery record confirms it).
+    questionExecutionSettled: asked?.end?.outcome === 'question' && asked.end.cessation === 'confirmed' &&
+      (asked.recovery ?? []).every(item => item.cessation.result === 'confirmed'),
     questionDiscovered: input.question?.publication.state === 'published' && input.question.publication.attempts.some(item => item.outcome === 'discovered') &&
       input.question.publication.comment?.commentId === posted?.commentId,
     questionNeverReposted: at('b-discover-question', 'post-refused').length + at('c-publish', 'post-refused').length + at('d-discover-publication', 'post-refused').length === 0,
@@ -503,6 +507,9 @@ export async function runPhase(phase: Phase) {
       for (const name of ['ask', 'publish'] as const) Object.assign(exits, ((await load(`${name}-result`)) as { exits?: Partial<Record<Step, string>> } | null)?.exits ?? {});
       const verdict = assess({ work, question, events: await events(), exits, pushes, pushCensusComplete,
         remote: { questionComments, ownPullRequests: own, branchTip: tip?.state === 'present' ? tip.sha : null } });
+      // Real run v2: the scan counted the namespace's own App key copy (BEGIN/END PRIVATE KEY = 2) because it ran before the removal in
+      // `finally`. The last GitHub read is done: the key copy is removed BEFORE the scan, so any hit is a real leak.
+      await fs.rm(`${observations}/${githubApp.privateKeyFile}`, { force: true });
       const { secretScan } = await import('./credential20-qualification.js');
       await save('inspect-result', { verdict, questionComments, ownPullRequests: own, branchTip: tip ?? null, pushes, question, work: { work_id: work.work_id, publication: work.publication,
         impediments: work.impediments, executions: [...work.previousExecutions, work.execution].map(item => ({ executionId: item.executionId, request: { publication: item.request.publication ?? null },
