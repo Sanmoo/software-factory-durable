@@ -5,8 +5,8 @@ Autoridade: [ticket 24](../../.scratch/software-factory-mvp/issues/24-three-buil
 [matriz de aceite](../../.scratch/software-factory/acceptance-and-incremental-plan.md).
 Base: branch do ticket 22 (`84ef010`, sobre o ticket 21 `4852185`), ainda não integrada. Branch `implement/software-factory-mvp-24`.
 
-**Estado: implementação e suíte local verdes (níveis R/S/I-local); ensaio real NÃO executado** (sem GitHub/VM/credenciais/rede/modelo).
-Receita em [§ Ensaio real](#ensaio-real-receita-one-shot). Nenhum checkbox marcado; ticket não resolvido. Dublê não comprova fronteira substituída.
+**Estado: resolvido (decisão do operador, 2026-11-16).** Implementação e suíte local verdes; ensaios reais v1–v3 executados pelo supervisor (seções abaixo); sem v4. AC5 registrado como limite de ambiente/piloto.
+Receita em [§ Ensaio real](#ensaio-real-receita-one-shot). Dublê não comprova fronteira substituída.
 
 ## O que mudou
 
@@ -154,6 +154,18 @@ Resumo derivado em [24-real-q24-three-v3-summary.json](24-real-q24-three-v3-summ
   concorrência instáveis do repositório (falhas diferentes a cada execução sob 2 vCPU). Um v4 só vale se o operador aceitar esse risco ou
   der mais vCPU/memória por guest (o host limita a ~2 GiB × 3). Caso contrário, registrar como limite do ambiente/piloto para decisão do
   operador.
+
+## Decisão do operador (2026-11-16): fechamento sem v4
+
+- O ticket fecha sem v4. O namespace `y5/q24-three-v4` fica sem uso, e a correção do pré-download do wrapper (v4) e o teste dela continuam
+  (inofensivos). Números das issues da receita voltam a 0 (o pin `1f033f8` da v3 já foi consumido).
+- **AC5 é limite de ambiente/piloto.** A parte da Factory está provada: uma passada, três VMs isoladas, Docker do guest com
+  Testcontainers/Ryuk funcionando, containers simultâneos sem colisão em v1 e v3. "Três suites reais verdes ao mesmo tempo" não foi
+  alcançado: `CreditAccountUseCaseConcurrencyIT` (dois testes diferentes) e `JdbcOutboxEventAdapterIT` falharam no guest. A causa é
+  **hipótese NÃO confirmada**: timing sob 2 vCPU/`vfs`/contenção de 3 VMs, ou bug real do repositório. Nunca rodaram no host nem numa VM
+  sozinha. Se um diagnóstico posterior mostrar falha também no host, isso será registrado como limite do repositório, sem mudança no repo
+  de teste.
+- A recomendação sobre o v4 na seção v3 fica superada por esta decisão.
 
 ## Ensaio real (receita one-shot)
 
