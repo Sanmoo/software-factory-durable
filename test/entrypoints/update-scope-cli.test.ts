@@ -61,7 +61,7 @@ test('AC3: `factory update-scope <work> --reason` identifies the request first, 
   // Ticket 41: `resume <work> --override-blocked-recovery <reference> --request-id <id>` (identity required; reference shape checked locally,
   // its exactness by Control). With no Work: a durable not-applied receipt through the real socket/owner; the replay is the same receipt.
   const blocked = 'request:builder-0b9c6a52-3d3e-4c8f-9a51-000000000041:QUESTION_RECORD_INCOMPLETE';
-  for (const bad of [['resume', work, '--override-blocked-recovery', blocked], ['resume', work, '--override-blocked-recovery', 'request:x:Y', '--request-id', 'o-bad'],
+  for (const bad of [['resume', work, '--override-blocked-recovery', blocked], ['resume', work, '--override-blocked-recovery', 'request:x y:CODE', '--request-id', 'o-bad'],
     ['resume', work, '--override-blocked-recovery', '--request-id', 'o-bad'], ['cancel', work, '--override-blocked-recovery', blocked, '--request-id', 'o-bad']]) {
     const result = await cli(...bad);
     assert.equal(result.code, 2, bad.join(' '));

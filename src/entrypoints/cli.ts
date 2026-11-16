@@ -8,6 +8,8 @@ import { pathToFileURL } from 'node:url';
 import { setup, setupService, firstHumanLogin } from './setup.js';
 import { doctor } from './doctor.js';
 import { releaseInstallationRoot } from './release.js';
+// Ticket 41: the blocked reference shown by `factory show`; its shape is shared, Control checks it is exactly the blocked one.
+import { blockedReferencePattern as blockedReference } from '../contracts/index.js';
 
 const usage = 'factory <setup|doctor|run|status|list [--cursor <n> --limit <n>]|show <work> [--cursor <n> --limit <n>]|history <work>|logs <work> [--after <capture>] [--read <capture> [--offset <n>]]|usage [<work>]|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>)|update-scope <work> --reason <text>|authorize-readiness <work> --reason <text>|repair <work> --reason <text>|cancel <work>|resume <work> [--override-blocked-recovery <reference> --request-id <id>]|reopen <work>|new <owner/repo#number> [--keep-predecessor-pr]|cleanup <work> --select <logs,sessions,environment,remote-branch> [--yes]|cleanup-confirm <work> <plan>|forget <work> [--yes]|forget-confirm <work> <plan>|request <id>|upgrade <check|apply|status|resume|rollback> [--migrate <id>]> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service [--service-directory <absolute dir>]] [history|logs: --execution <id> --role <builder|standards|spec> --limit <n>; history: --cursor <n>]; factory login --root <canonical-absolute-installation>';
 const upgradeUsage = 'factory upgrade <check|apply|status|resume|rollback> [--root <installation>] [--migrate <migration id>] — run with the NEW release: ' +
@@ -20,8 +22,6 @@ const cleanupCommands = ['cleanup', 'cleanup-confirm', 'forget', 'forget-confirm
 const cleanupSelection = /^(logs|sessions|environment|remote-branch)(,(logs|sessions|environment|remote-branch)){0,3}$/;
 const ticketReference = /^([A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100})#([1-9][0-9]{0,9})$/;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-// Ticket 41: the blocked reference shown by `factory show` (`request:<invocation>:<finding>`); Control checks it is exactly the blocked one.
-const blockedReference = /^request:(?:[a-z]{1,16}-)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[A-Z][A-Z0-9_]{0,63}$/;
 
 async function exchange(root: string, kind: 'inspect' | 'accept', payload: Envelope['payload'], id: string, runId: string | null) {
   const endpoint = resolve(await realpath(root), 'run', 'control.sock');

@@ -1,4 +1,5 @@
 // Pure recovery rules (ticket 26, spec §4.4/§5.2/§5.3/§5.4/§11.4). No I/O, clock or randomness: callers supply every fact.
+import { blockedReferenceToken } from '../../contracts/index.js';
 import type { Impediment } from '../types.js';
 
 /** Persisted waits of the operational recoveries of one Work (spec §4.4): 5/15/45 s, the last one repeated for explicitly granted extra units. */
@@ -100,11 +101,26 @@ export function recoveryImpediment(code: 'RECOVERY_CESSATION_UNCONFIRMED' | 'REC
 }
 
 /**
- * Ticket 41: the stable reference of a Builder request found in Records but not readable intact (ticket 27 block): the invocation that
- * preserved it and the finding. The operator's override must name it exactly (a later, different block is never overridden by an old decision).
+ * Ticket 41: the token of a blocked request's reference — the invocation that preserved it, else its Records reference, else the Execution —
+ * so a missing or odd identity still yields a reference the operator can name (`blockedRequestReference`, contracts).
  */
-export const blockedRequestReference = (invocationId: string, code: string) => `request:${invocationId}:${code}`;
-export const blockedReferencePattern = /^request:(?:[a-z]{1,16}-)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[A-Z][A-Z0-9_]{0,63}$/;
+export function blockedRequestToken(input: { invocationId: string | null | undefined; records: readonly string[]; executionId: string }): string {
+  for (const candidate of [input.invocationId, ...input.records, input.executionId]) if (candidate && blockedReferenceToken.test(candidate)) return candidate;
+  return 'unidentified';
+}
+
+/**
+ * Ticket 41: only a POSITIVE resolution of THAT request lifts the need for an override: its Question (by the blocked `questionId`, or — when the
+ * record was unreadable — a Question of the same invocation) bound to the Execution, or a LATER reconciliation that recorded it from Records.
+ * A later reconciliation that merely did not block (absent, unresolved...) resolves nothing.
+ */
+export function positiveResolution(input: { blocked: { questionId: string | null; at: string }; executionId: string; invocationId: string;
+  questions: readonly { questionId: string; executionId: string; invocationId: string }[]; recovery: readonly { at: string; question?: string | undefined }[] }): boolean {
+  const { blocked } = input;
+  const own = input.questions.some(item => item.executionId === input.executionId && (blocked.questionId ? item.questionId === blocked.questionId : item.invocationId === input.invocationId));
+  const later = input.recovery.some(item => item.at > blocked.at && item.question !== undefined && (blocked.questionId ? item.question === `recorded:${blocked.questionId}` : item.question.startsWith('recorded:')));
+  return own || later;
+}
 
 /** `RECOVERY_BLOCKED` by a lost Builder request (ticket 27), with the explicit exit of ticket 41. */
 export function blockedRequestImpediment(workId: string, reference: string, code: string, since: string): Impediment {
@@ -116,13 +132,17 @@ export function blockedRequestImpediment(workId: string, reference: string, code
 export type OverrideFacts = {
   work: { result: string; current: boolean; impediments: readonly { code: string }[] } | null;
   execution: { state: string; slotHeld: boolean; end: { outcome: string; code: string | null; cessation: string } | null;
-    blockedRequest?: { reference: string; code: string; override: { reference: string } | null } | undefined; lastRecoveryDecision: string | null } | null;
+    blockedRequest?: { reference: string; code: string; override: { reference: string } | null } | undefined } | null;
   /** The reference the operator named. */
   reference: string;
   /** Live own activity of the Work in this controller process. */
   running: boolean;
-  /** A Question of the Work is bound to that Execution (a complete Records read recorded the request). */
-  questionBound: boolean };
+  /** `positiveResolution` of the blocked request (its Question recorded by a later complete read). */
+  resolved: boolean;
+  /** The Work has a cancellation (stopping or ceased): never continued. */
+  cancelling: boolean;
+  /** An operational recovery is already pending: an override never opens a second or ambiguous one. */
+  pendingRecovery: boolean };
 
 /**
  * Ticket 41 (spec §5.5 "conteúdo perdido bloqueia" + explicit operator decision): whether the operator may continue a Work whose recovery is
@@ -134,6 +154,7 @@ export function overrideBlockedRecoveryDecision(input: OverrideFacts): { kind: '
   if (!work) return { kind: 'refuse', code: 'WORK_NOT_FOUND' };
   if (!work.current) return { kind: 'refuse', code: 'WORK_NOT_CURRENT' };
   if (work.result !== 'open') return { kind: 'refuse', code: work.result === 'cancelled' ? 'WORK_CANCELLED' : work.result === 'delivered' ? 'WORK_DELIVERED' : 'WORK_NOT_OPEN' };
+  if (input.cancelling) return { kind: 'refuse', code: 'WORK_CANCELLING' };
   const blocked = work.impediments.some(item => item.code === 'RECOVERY_BLOCKED');
   const request = execution?.blockedRequest;
   if (!blocked && request?.override?.reference === input.reference) return { kind: 'already', code: 'BLOCKED_RECOVERY_ALREADY_OVERRIDDEN' };
@@ -143,8 +164,9 @@ export function overrideBlockedRecoveryDecision(input: OverrideFacts): { kind: '
   if (input.running || execution.state !== 'ended') return { kind: 'refuse', code: 'EXECUTION_ACTIVE' };
   if (!execution.end || execution.end.cessation !== 'confirmed') return { kind: 'refuse', code: 'CESSATION_NOT_CONFIRMED' };
   if (execution.slotHeld) return { kind: 'refuse', code: 'SLOT_HELD' };
-  if (input.questionBound || execution.lastRecoveryDecision !== 'blocked') return { kind: 'refuse', code: 'REQUEST_RESOLVED_BY_RECORDS' };
+  if (input.resolved) return { kind: 'refuse', code: 'REQUEST_RESOLVED_BY_RECORDS' };
   if (execution.end.outcome !== 'failure' || execution.end.code !== request.code) return { kind: 'refuse', code: 'BLOCK_CHANGED' };
+  if (input.pendingRecovery) return { kind: 'refuse', code: 'RECOVERY_ALREADY_PENDING' };
   return { kind: 'accept', code: request.code };
 }
 

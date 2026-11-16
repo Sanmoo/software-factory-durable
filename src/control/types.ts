@@ -756,7 +756,7 @@ export type WorkView = {
 };
 /** Ticket 41: a lost Builder request that blocks recovery, and the operator's explicit decision to continue without it. */
 export type BlockedRequestView = { reference: string; code: string; questionId: string | null; records: string[]; at: string;
-  override: { request_id: string; operator: { kind: 'local-administrator' }; at: string; reference: string; recoveryRequest: 'requested' | 'already-open' } | null };
+  override: { request_id: string; operator: { kind: 'local-administrator' }; at: string; reference: string; recoveryRequest: 'requested' } | null };
 /** Ticket 25 history events (cycle, authorization, cancellation, closure/reopen). */
 export type CycleEvent = 'authorization-withdrawn' | 'authorization-restored-observed' | 'authorization-confirmed' | 'cancel-requested' | 'cancellation-ceased' |
   'resume-accepted' | 'resume-confirmed' | 'resume-not-confirmed' | 'pull-request-closed-unmerged' | 'reopen-intended' | 'reopen-attempted' | 'reopen-confirmed' |

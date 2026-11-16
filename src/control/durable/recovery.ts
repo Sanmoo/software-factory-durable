@@ -2,8 +2,9 @@ import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { BootRef, EnvironmentRef } from '../../sandbox/index.js';
 import type { ExecutionPorts, ExecutionView, RecoveryRecord, RecoveryView, RuntimeInventory, StartObservation } from '../types.js';
 import type { QuestionObservation } from '../../workers/index.js';
+import { blockedRequestReference } from '../../contracts/index.js';
 import { classifyOverrun, overrunNotExcludedImpediment, timeoutImpediment } from '../rules/budget.js';
-import { blockedRequestImpediment, blockedRequestReference, classifyInterruption, recoveryImpediment, startDecision } from '../rules/recovery.js';
+import { blockedRequestImpediment, blockedRequestToken, classifyInterruption, recoveryImpediment, startDecision } from '../rules/recovery.js';
 import { interruptedEnd, questionRecordFound, recoveredQuestionDecision } from '../rules/questions.js';
 import { readWork, ticketIndex, works, type WorkRecord } from './admission.js';
 import { applyConfirmedCessation, consumeReservation, reofferUnlessCompleted, releaseReservation, settleCancelled, slots } from './execution.js';
@@ -247,9 +248,13 @@ export async function settleInterruption(session: Session, input: { work_id: str
           if (recorded.kind !== 'refused') { questionId = seen.request.questionId; recovered = true; questionNote = `recorded:${questionId}`; } else lostQuestion = recorded.code;
         }
       }
-      // Ticket 41: the lost request keeps a stable reference, the one an explicit operator override must name (nothing of it is reconstructed).
-      if (lostQuestion) execution.blockedRequest = { reference: blockedRequestReference(execution.invocationId, lostQuestion), code: lostQuestion, ...lostRecords, at: now, override: null };
       const ended = interruptedEnd({ questionId, recovered, trigger: input.trigger, blocked: lostQuestion, heldCode: execution.held?.code ?? null });
+      // Ticket 41: when the chosen end IS the block, the lost request keeps a stable reference, the one an explicit operator override must name
+      // (nothing of it is reconstructed). An earlier operator decision on this Execution is never replaced.
+      if (lostQuestion && ended.outcome === 'failure' && ended.code === lostQuestion && !execution.blockedRequest?.override) {
+        execution.blockedRequest = { reference: blockedRequestReference(blockedRequestToken({ invocationId: execution.invocationId, records: lostRecords.records,
+          executionId: execution.executionId }), lostQuestion), code: lostQuestion, ...lostRecords, at: now, override: null };
+      }
       const outcome = ended.outcome;
       code = outcome === 'question' ? 'question' : ended.code ?? 'CONTROLLER_CRASH';
       execution.state = 'ended';
@@ -261,6 +266,10 @@ export async function settleInterruption(session: Session, input: { work_id: str
     applyConfirmedCessation(work, execution, occupancy);
     if (execution.end.outcome === 'failure') {
       const classified = classifyInterruption(execution.end.code);
+      // Ticket 41 (idempotence): a block the operator already overrode is never re-blocked by a later settlement; its recovery stays pending.
+      if (classified.kind === 'blocking' && execution.blockedRequest?.override && execution.blockedRequest.code === classified.code) {
+        return record(startRecord, 'operational-recovery', classified.code);
+      }
       if (classified.kind === 'blocking') {
         const lost = execution.blockedRequest && !execution.blockedRequest.override && execution.blockedRequest.code === classified.code ? execution.blockedRequest : null;
         addImpediment(work, lost ? blockedRequestImpediment(work.work_id, lost.reference, lost.code, now) : recoveryImpediment('RECOVERY_BLOCKED', classified.code, now));

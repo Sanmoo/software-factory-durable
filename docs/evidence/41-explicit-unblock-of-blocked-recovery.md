@@ -8,14 +8,15 @@ não integrado. Branch `implement/software-factory-mvp-41`. **Somente local**: s
 
 - **Referência bloqueada** (`execution.blockedRequest`): quando a reconciliação do 27 encontra o pedido `ask_user` preservado em Records mas
   não íntegro (parcial, múltiplo, ilegível, divergente, conflito de id), grava no mesmo commit do assentamento
-  `reference = request:<invocationId>:<achado>`, o código, o `questionId`/referência Records quando conhecidos e `override: null`. O
+  `reference = request:<token>:<achado>` (token = invocationId; se ausente/estranho, a referência Records; senão a Execução; forma única em `contracts`), o código, o `questionId`/referência Records quando conhecidos e `override: null`. O
   impedimento `RECOVERY_BLOCKED` desse caso traz o comando exato. A semântica de bloqueio do 27 não muda.
 - **Comando**: `factory resume <work> --override-blocked-recovery <reference> --request-id <id>` (identidade obrigatória). Mesmo `resume` do
   25 (mesma deduplicação `requests`); sem a flag, `resume` continua só levantando suspensão de autorização (`NOTHING_TO_RESUME` num bloqueio).
 - **Revalidação no commit** (regra pura `overrideBlockedRecoveryDecision`): Work atual e aberto; `RECOVERY_BLOCKED` presente; bloqueio é de
   pedido perdido; referência **exatamente** igual; sem atividade viva neste processo e Execução `ended`; cessação confirmada; Slot livre;
-  nenhuma Pergunta ligada à Execução e a última reconciliação ainda `blocked` (nenhuma leitura completa posterior resolveu); fim ainda é a
-  falha com o mesmo achado. Recusas são recibos duráveis `not-applied` com motivo.
+  sem cancelamento; nenhuma resolução POSITIVA daquele pedido (`positiveResolution`: a Pergunta do `questionId` bloqueado — ou, sem id, da
+  mesma invocação — ligada à Execução, ou reconciliação posterior `recorded:<id>`); fim ainda é a falha com o mesmo achado; nenhuma
+  recuperação já pendente (`RECOVERY_ALREADY_PENDING`, nunca sucesso ambíguo). Recusas são recibos duráveis `not-applied` com motivo.
 - **Aceite** (um commit): decisão auditável em `blockedRequest.override` (request id, operador `local-administrator`, horário, referência,
   resultado do pedido de recovery), histórico `blocked-recovery-overridden` (`<request id>:<referência>`), remove **só** `RECOVERY_BLOCKED`,
   e abre UMA recuperação operacional pelo caminho normal do 26 (`applyRecoveryRequest`: espera persistida 5/15/45 s, unidade de `recoveries`
@@ -39,6 +40,14 @@ socket reais.
 
 TDD: os testes novos foram vistos vermelhos (símbolos ausentes; depois `INVALID_COMMAND` pela forma real `builder-<uuid>` do invocationId)
 e verdes depois. Corte SIGKILL real não acrescentado: o aceite é um único commit Pi Durable (mecanismo já provado por `recovery-crash`).
+
+## Correções da revisão independente (dd2e8ed)
+
+| Achado | Correção | Teste |
+| --- | --- | --- |
+| MED reconciliação posterior não-bloqueada tornava o override impossível | resolução só positiva (`positiveResolution`) | `override41-flow` "review MED 1" (×2: absent aceita; recorded recusa), `override41-rules` |
+| MED reassentar Execução já sobrescrita re-bloqueava (genérico) | `settleInterruption` idempotente: bloqueio sobrescrito → `operational-recovery`, recovery pendente mantida | `override41-flow` "review MED 2" (vermelho por mutação) |
+| LOW resolução por qualquer Pergunta da Execução; cancelamento; `blockedRequest` gravado sem ser o fim; `already-open` ambíguo; regex duplicada; token ausente | ligada a `questionId`/invocação; `WORK_CANCELLING`; grava só quando o fim é o bloqueio; `RECOVERY_ALREADY_PENDING`; `blockedReferencePattern` em `contracts` (Control, socket, CLI); `blockedRequestToken` com fallback | `override41-rules`, `update-scope-cli` |
 
 ## Pendente no rebase sobre o 29
 

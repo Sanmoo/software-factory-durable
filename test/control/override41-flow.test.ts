@@ -3,7 +3,11 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { untilHolds } from '../runner/budget.js';
+import { openStore } from '../../src/control/durable/store.js';
+import { works } from '../../src/control/durable/admission.js';
+import type { ExecutionView } from '../../src/control/types.js';
 import { openControl } from '../../src/control/index.js';
 import type { Control, ControlInput, ListView, ShowView, WorkView } from '../../src/control/types.js';
 import { githubDoubles, manualClock, remoteIssue, scope } from './doubles.js';
@@ -58,7 +62,13 @@ async function harness(t: { after(fn: () => Promise<void>): void }, options: { r
   const accept = (input: ControlInput) => current!.control.accept(input);
   const override = (work_id: string, reference: string, request_id: string) =>
     accept({ request_id, operation: 'resume', work_id, override_blocked_recovery: reference, origin: 'local-cli' });
-  return { dir, start, halt, work, show, until, blocked, accept, override, current: () => current! };
+  /** With the owner stopped: edits the stored Execution exactly as a later reconciliation/upgrade could have left it (new objects, never in place). */
+  async function seed(work_id: string, change: (execution: ExecutionView) => ExecutionView) {
+    const store = await openStore(join(dir, 'control.sqlite'));
+    await store.session.commit(async tx => { const record = (await tx.doc(works, work_id, null)).work!; record.execution = change(record.execution!); }, BACKGROUND_CONTEXT);
+    await store.close();
+  }
+  return { dir, start, halt, work, show, until, blocked, accept, override, seed, current: () => current! };
 }
 
 test('AC1-AC4: the exact blocked reference is shown; only it is accepted; the decision is audited and the Work returns through ONE operational recovery', async t => {
@@ -141,4 +151,46 @@ test('AC5: a controller that stops right after the commit leaves a recoverable s
   assert.deepEqual([after.history.filter(item => item.event === 'blocked-recovery-overridden').length, after.history.filter(item => item.event === 'recovery-requested').length,
     after.pendingRecovery!.waitSeconds, after.impediments.some(item => item.code === 'RECOVERY_BLOCKED')], [1, 1, 5, false]);
   assert.equal(h.current().doubles.calls('activate').length, 1);
+});
+
+test('review MED 1: a later reconciliation that did NOT resolve the request (restart between block and override) never makes the override impossible', async t => {
+  const h = await harness(t);
+  const work = await h.blocked();
+  const reference = work.execution!.blockedRequest!.reference;
+  await h.halt();
+  await h.seed(work.work_id, execution => ({ ...execution, recovery: [...execution.recovery!, { ...execution.recovery!.at(-1)!, at: new Date(Date.now() + 1000).toISOString(),
+    decision: 'settled', code: null, question: 'absent' }] }));
+  await h.start([]);
+  const receipt = await h.override(work.work_id, reference, 'o41-after-restart');
+  assert.deepEqual(['outcome' in receipt && receipt.outcome, 'reason' in receipt && receipt.reason], ['accepted', null]);
+});
+
+test('review MED 1: a later reconciliation that RECORDED that request resolves it: the override is refused (nothing to continue without)', async t => {
+  const h = await harness(t);
+  const work = await h.blocked();
+  await h.halt();
+  await h.seed(work.work_id, execution => ({ ...execution, recovery: [...execution.recovery!, { ...execution.recovery!.at(-1)!, at: new Date(Date.now() + 1000).toISOString(),
+    decision: 'settled', code: null, question: `recorded:${qid}` }] }));
+  await h.start([]);
+  const receipt = await h.override(work.work_id, work.execution!.blockedRequest!.reference, 'o41-resolved');
+  assert.deepEqual(['outcome' in receipt && receipt.outcome, 'reason' in receipt && receipt.reason], ['not-applied', 'REQUEST_RESOLVED_BY_RECORDS']);
+});
+
+test('review MED 2: settling an overridden Execution again never re-blocks it; its pending recovery proceeds', async t => {
+  const h = await harness(t);
+  const work = await h.blocked();
+  const reference = work.execution!.blockedRequest!.reference;
+  assert.equal('outcome' in (await h.override(work.work_id, reference, 'o41-resettle')) && 'accepted', 'accepted');
+  await h.halt();
+  // The stored end lost its confirmed cessation: the next boot reconciles this Execution again (ticket 26).
+  await h.seed(work.work_id, execution => ({ ...execution, end: { ...execution.end!, cessation: 'unconfirmed' } }));
+  await h.start([]);
+  let after = await h.work();
+  assert.deepEqual([after.execution!.recovery!.at(-1)!.decision, after.execution!.blockedRequest!.override!.request_id, after.impediments.some(item => item.code === 'RECOVERY_BLOCKED')],
+    ['operational-recovery', 'o41-resettle', false]);
+  assert.ok(after.pendingRecovery, 'the recovery the operator opened is kept');
+  h.current().doubles.jumpCalendar(60000);
+  await h.until(async () => h.current().doubles.calls('activate').length === 2 && (await h.work()).execution?.end?.outcome === 'completed', 'recovery ran');
+  after = await h.work();
+  assert.deepEqual([after.budget!.recoveries.consumed, after.execution!.interruption!.reason], [1, 'OPERATIONAL_RECOVERY']);
 });

@@ -7,7 +7,7 @@ import { initialBudget } from '../rules/budget.js';
 import { authorizationChange, authorizationFacts, cancelDecision, cycleImpediments, hasImpediment, newCycleDecision, occupying, reopenDecision, resumeDecision,
   settleCancellation } from '../rules/cycles.js';
 import { decideMerge, ownPullRequestOf } from '../rules/delivery.js';
-import { overrideBlockedRecoveryDecision } from '../rules/recovery.js';
+import { overrideBlockedRecoveryDecision, positiveResolution } from '../rules/recovery.js';
 import { readForgotten, readWork, readWorks, requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import { questions } from './questions.js';
 import { applyRecoveryRequest } from './recovery-request.js';
@@ -106,25 +106,28 @@ async function acceptBlockedRecoveryOverride(session: Session, input: Extract<Cy
     const index = await tx.doc(ticketIndex);
     const work = (await tx.doc(works, input.work_id, null)).work;
     const execution = work?.execution ?? null;
-    let questionBound = false;
-    if (work && execution) for (const id of work.questions ?? []) {
+    const bound: { questionId: string; executionId: string; invocationId: string }[] = [];
+    if (work && execution?.blockedRequest) for (const id of work.questions ?? []) {
       const question = (await tx.doc(questions, id, null)).question;
-      if (question?.executionId === execution.executionId) { questionBound = true; break; }
+      if (question) bound.push({ questionId: question.questionId, executionId: question.executionId, invocationId: question.invocationId });
     }
+    const blocked = execution?.blockedRequest;
     const decision = overrideBlockedRecoveryDecision({
       work: work ? { result: work.result, current: index.tickets[ticketKey(work.ticket)]?.current === work.work_id, impediments: work.impediments } : null,
-      execution: execution ? { state: execution.state, slotHeld: execution.slot.held, end: execution.end ?? null, blockedRequest: execution.blockedRequest,
-        lastRecoveryDecision: execution.recovery?.at(-1)?.decision ?? null } : null,
-      reference: input.override_blocked_recovery, running: facts.running(input.work_id), questionBound });
+      execution: execution ? { state: execution.state, slotHeld: execution.slot.held, end: execution.end ?? null, blockedRequest: blocked } : null,
+      reference: input.override_blocked_recovery, running: facts.running(input.work_id), cancelling: Boolean(work?.cancellation), pendingRecovery: Boolean(work?.pendingRecovery),
+      resolved: Boolean(blocked && execution && positiveResolution({ blocked, executionId: execution.executionId, invocationId: execution.invocationId, questions: bound,
+        recovery: execution.recovery ?? [] })) });
     if (decision.kind === 'refuse') return receiptOf(input, input.work_id, 'not-applied', decision.code);
     if (decision.kind === 'already') return receiptOf(input, input.work_id, 'already-satisfied', decision.code);
     const at = new Date().toISOString();
     removeImpediments(work!, ['RECOVERY_BLOCKED']);
     history(work!, 'blocked-recovery-overridden', 'local-cli', `${input.request_id}:${input.override_blocked_recovery}`, at);
-    const opened = applyRecoveryRequest(work!, { executionId: execution!.executionId, code: decision.code, at, reason: `operator-override:${input.override_blocked_recovery}` });
+    // No recovery was pending (revalidated above), so this opens exactly one new request.
+    applyRecoveryRequest(work!, { executionId: execution!.executionId, code: decision.code, at, reason: `operator-override:${input.override_blocked_recovery}` });
     // Assigned as a new object: a doc value assigned then mutated in place is not what the commit persists.
     execution!.blockedRequest = { ...execution!.blockedRequest!, override: { request_id: input.request_id, operator: { kind: 'local-administrator' }, at,
-      reference: input.override_blocked_recovery, recoveryRequest: opened } };
+      reference: input.override_blocked_recovery, recoveryRequest: 'requested' } };
     return receiptOf(input, work!.work_id, 'accepted', null);
   });
 }

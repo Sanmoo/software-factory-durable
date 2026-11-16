@@ -65,6 +65,13 @@ export interface RepositoryFetchCredentials {
 export const questionMarkerPrefix = 'software-factory:question:';
 /** Ticket 23: stable correlation marker of the controller's reply to a `/factory` command: `<!-- software-factory:reply:<reply-id> -->`. */
 export const replyMarkerPrefix = 'software-factory:reply:';
+/**
+ * Ticket 41: the reference of a Builder request found in Records but not readable intact (it blocks the recovery, ticket 27), shown by
+ * `factory show` and named EXACTLY by `factory resume <work> --override-blocked-recovery <reference>`. One shape for Control, socket and CLI.
+ */
+export const blockedReferencePattern = /^request:[A-Za-z0-9][A-Za-z0-9-]{0,79}:[A-Z][A-Z0-9_]{0,63}$/;
+export const blockedReferenceToken = /^[A-Za-z0-9][A-Za-z0-9-]{0,79}$/;
+export const blockedRequestReference = (token: string, code: string) => `request:${token}:${code}`;
 /** Stable correlation marker of a Work's own pull request (spec §9.1, ticket 14): first line of its body `<!-- software-factory:work:<work-id> -->`. */
 export const publicationMarkerPrefix = 'software-factory:work:';
 /** Reviewer roles bound by the Host (spec §5.6/§6.4); never chosen by a model. */
