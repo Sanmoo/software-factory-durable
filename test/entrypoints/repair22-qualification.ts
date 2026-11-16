@@ -23,7 +23,7 @@ const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 
  * The NEW synthetic issue the supervisor creates after the operator's authorization (title/body below, label `ready-for-agent`, no other
  * open issue with that label). `number` MUST be pinned in a reviewed commit before preflight: 0 refuses every phase (TICKET_NOT_PINNED).
  */
-export const ticket = { number: 0, repositoryId: 1256893534, title: 'Factory qualification: repair a merge conflict of the Factory pull request' } as const;
+export const ticket = { number: 31, repositoryId: 1256893534, title: 'Factory qualification: repair a merge conflict of the Factory pull request' } as const;
 const githubApp = { appId: 5569788, privateKeyFile: 'credentials/app.pem' };
 const operatorLogin = 'Sanmoo';
 const configuration = { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1', memoryMiB: 4096, vcpus: 2, diskGiB: 40, shutdownGraceSeconds: 30, minFreeSpaceGiB: 4 } as const;
