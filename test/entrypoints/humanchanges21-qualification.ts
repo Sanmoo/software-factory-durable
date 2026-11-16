@@ -11,8 +11,8 @@ import { readBounded, sessionCommands, snapshotStorage } from './publication14-q
 // operator's own account — never the App, never this recipe. Never a merge, approval, ready conversion, bare --force or base rewrite.
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const observations = `${root}/q21-human-v7`;
-const revision = 'q21-human-v7';
+const observations = `${root}/q21-human-v8`;
+const revision = 'q21-human-v8';
 const phases = ['preflight', 'run', 'race', 'reconcile', 'finish', 'inspect', 'stop-environment'] as const;
 type Phase = typeof phases[number];
 const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 'main', installationId: 177599217, workflows: false, label: 'ready-for-agent' };
@@ -20,7 +20,7 @@ const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 
  * The NEW synthetic issue the supervisor creates after the operator's authorization (title/body below, label `ready-for-agent`, no other
  * open issue with that label). `number` MUST be pinned in a reviewed commit before preflight: 0 refuses every phase (TICKET_NOT_PINNED).
  */
-export const ticket = { number: 25, repositoryId: 1256893534, title: 'Factory qualification: preserve human commits on the Factory branch' } as const;
+export const ticket = { number: 0, repositoryId: 1256893534, title: 'Factory qualification: preserve human commits on the Factory branch' } as const;
 const githubApp = { appId: 5569788, privateKeyFile: 'credentials/app.pem' };
 /** The only operator: preflight pins the immutable user id GitHub reports for this login (repository owner, type User). */
 const operatorLogin = 'Sanmoo';
@@ -56,7 +56,7 @@ export const ticketBody = [
   '`cd /workspace/checkout && test -f docs/FACTORY_HUMAN_CHANGES.md && grep -q \'^## Steps\' docs/FACTORY_HUMAN_CHANGES.md`',
   '', 'This Validation command is the only gate of this Ticket: no typecheck, lint or other gate applies, so do not declare any other gate.'].join('\n');
 /** The concrete scope update of the `race` phase (fixed identity and content): it makes a NEW verified basis, i.e. an update of the branch. */
-export const scopeUpdate = { request_id: 'q21-human-v7-scope-1',
+export const scopeUpdate = { request_id: 'q21-human-v8-scope-1',
   reason: 'Also add a `## Rollback` section to docs/FACTORY_HUMAN_CHANGES.md saying the file can be deleted at any time without other changes (only that).' };
 /** The human commits (operator's own account; plain fast-forward pushes, never --force). Separate files: no textual conflict is provoked. */
 export const humanSteps = {
@@ -127,7 +127,7 @@ export function plan() {
 
 /** Phase order: each phase once and only after the previous one SUCCEEDED (a held phase is consumed and never followed). */
 export function phaseGuard(phase: Phase, results: Partial<Record<Phase, { status?: unknown } | null>>, intents: ReadonlySet<string>, pinned = ticket.number > 0,
-  /** Phases that ended (a result or a held record). Real run q21-human-v7: inspect runs after ANY held phase, once nothing is still running. */
+  /** Phases that ended (a result or a held record). Real run q21-human-v8: inspect runs after ANY held phase, once nothing is still running. */
   ended: ReadonlySet<string> = new Set()): string | null {
   if (!pinned) return 'TICKET_NOT_PINNED';
   if (intents.has(`${phase}-intent`)) return 'PHASE_ALREADY_RAN';
@@ -162,7 +162,7 @@ export function activationGuard(phase: keyof typeof builderSequence, maxRounds: 
   return (context: { role: string; workId: string; executionId: string; phaseId: string }, review?: { round: number }) => {
     if (context.role === 'builder') {
       // Real run q21-human-v4: ONE operational recovery (ticket 26) of the phase's implementation, another Execution of the same Work.
-      if (!recovered && sequence[next - 1] === 'implementation' && implementation && implementationPhases[phase].includes(context.phaseId) &&
+      if (!recovered && sequence[next - 1] === 'implementation' && implementation && [...implementationPhases[phase], 'builder-continuation', 'builder-recovery'].includes(context.phaseId) &&
           context.workId === implementation.workId && context.executionId !== implementation.executionId) {
         recovered = true;
         implementation = { workId: context.workId, executionId: context.executionId };
@@ -272,6 +272,9 @@ const ended = (execution: ExecutionView | null | undefined) => Boolean(execution
 const divergences = (work: WorkView | undefined) => work?.publication?.divergences ?? [];
 
 type ControlPhase = 'run' | 'race' | 'reconcile' | 'finish';
+/** The open Question of the Work that is NOT a divergence Question (asked by the Builder), if any. */
+export const builderQuestion = (work: WorkView | undefined) => (work?.impediments ?? []).find(item => item.code === 'QUESTION_PENDING' && item.questionId &&
+  !divergences(work).some(divergence => divergence.questionId === item.questionId))?.questionId ?? null;
 /** Whether a Control phase reached its end (or a state that ends it early); `success` says whether it is the expected end. */
 /** `startBasis`: the publication basis when the phase started (real run q21-human-v1: a race that begins PUBLISHED must wait for the update). */
 export function settled(phase: ControlPhase, work: WorkView | undefined, questionsPublished: (id: string) => boolean, startBasis: string | null): { done: boolean; success: boolean } {
@@ -279,6 +282,8 @@ export function settled(phase: ControlPhase, work: WorkView | undefined, questio
   const state = publication?.state ?? '';
   const stuck = ['blocked', 'not-publishable', 'base-changed'].includes(state) || work?.execution?.state === 'held';
   const last = divergences(work).at(-1);
+  // Real run q21-human-v8: a Question the BUILDER asked waits for the operator's answer (surfaced, never auto-answered): not an end.
+  if (!stuck && builderQuestion(work)) return { done: false, success: false };
   if (phase === 'run') return state === 'published' ? { done: true, success: true } : { done: stuck || state === 'diverged', success: false };
   if (phase === 'race' || phase === 'reconcile') {
     const expected = phase === 'race' ? 1 : 2;
@@ -435,6 +440,7 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
       log({ call: 'update-scope', receipt: scopeReceipt });
     }
     const published = new Set<string>();
+    const surfaced = new Set<string>();
     const startBasis = (await shown())?.publication?.basisExecutionId ?? null;
     deadline = Date.now() + deadlines[phase] * 60 * 1000;
     while (Date.now() < deadline) {
@@ -443,6 +449,17 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
       for (const item of divergences(work)) {
         const shownQuestion = await control.inspect({ kind: 'question', question_id: item.questionId }) as { kind: string; question?: { publication: { state: string } } };
         if (shownQuestion.kind === 'question' && shownQuestion.question?.publication.state === 'published') published.add(item.questionId);
+      }
+      // Real run q21-human-v8: surface a Builder Question to the operator (exact id/text) and wait for its answer, bounded.
+      const asked = builderQuestion(work);
+      if (asked && !surfaced.has(asked)) {
+        const shownQuestion = await control.inspect({ kind: 'question', question_id: asked }) as { kind: string; question?: { publication: { state: string }; content: { question: string; context: string } } };
+        if (shownQuestion.kind === 'question' && shownQuestion.question?.publication.state === 'published') {
+          surfaced.add(asked);
+          await save(`operator-question-requested-${surfaced.size}`, { questionId: asked, question: shownQuestion.question.content.question, context: shownQuestion.question.content.context,
+            answerWith: `/factory answer ${asked} <your answer>`, note: 'Asked by the Builder (not a divergence): the operator answers; never answered automatically.', at: new Date().toISOString() });
+          deadline = Math.max(deadline, Date.now() + humanStepMinutes * 60 * 1000);
+        }
       }
       outcome = settled(phase, work, id => published.has(id), startBasis);
       if (outcome.done) break;

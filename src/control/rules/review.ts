@@ -8,8 +8,21 @@ export type ReviewPlan = { role: ReviewerRole; invocationId: string; phaseId: st
     continueFrom?: string } };
 
 /** Pure: the reviewer invocation identities, inputs and prompts of one round (spec §6.4). Spec is never omitted for lack of a source. */
+const commitId = /^[0-9a-f]{40}$/;
+const pathText = /^[A-Za-z0-9._\/ -]{1,200}$/;
+/** Data, never instructions: only exact commit ids and plain paths are quoted (bounded). */
+function authorizedChangesNote(changes: { questionId: string; commits: readonly string[]; files: readonly string[] }) {
+  const commits = changes.commits.filter(item => commitId.test(item)).slice(0, 20);
+  const files = changes.files.filter(item => pathText.test(item)).slice(0, 30);
+  return `Operator-authorized preserved changes (Question ${changes.questionId}): commits ${commits.join(', ') || 'none listed'}; files ${files.join(', ') || 'none listed'}. ` +
+    'These remote commits were made by someone else and the operator authorized keeping them on this branch: they are not the Builder\'s work and not a finding ' +
+    '(neither scope nor requirement). Judge only the Builder\'s own changes on top of them; a Builder change that alters those files is still reviewed normally.';
+}
+
 export function planReviews(input: { executionId: string; round: number; attempt: number; handoff: ProposalHandoff;
-  previousSessions?: Partial<Record<ReviewerRole, string | null>> }): ReviewPlan[] {
+  previousSessions?: Partial<Record<ReviewerRole, string | null>>;
+  /** Ticket 21 (real run q21-human-v7): the remote changes the operator's answered Question authorized a reconciliation to keep, as data. */
+  authorizedChanges?: { questionId: string; commits: readonly string[]; files: readonly string[] } | null }): ReviewPlan[] {
   const { handoff, round, attempt } = input;
   return reviewerRoles.map(role => {
     const preserved = role === 'spec' ? handoff.spec : handoff.instructions;
@@ -45,6 +58,7 @@ export function planReviews(input: { executionId: string; round: number; attempt
       'A read answered READ_NOT_FOUND means the path does not exist. Context the instructions name but which does not exist is NOT a limitation and ' +
         'never makes your opinion incomplete: judge with what exists (you may mention the absence in a coverage justification). Only a REQUIRED input that ' +
         'is missing, or an EXISTING file that cannot be read, is a limitation (SOURCE_UNREADABLE).',
+      ...(input.authorizedChanges ? [authorizedChangesNote(input.authorizedChanges)] : []),
       reviewVerdictFormat,
     ].join('\n\n');
     const continueFrom = input.previousSessions?.[role] ?? null;

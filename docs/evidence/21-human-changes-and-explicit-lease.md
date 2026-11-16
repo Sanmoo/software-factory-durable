@@ -176,3 +176,13 @@ Not a regression of the v5 reconciliation duties (that run was the plain impleme
 both rounds ended `GATE_RESULT_NOT_FOUND` → `GATE_RESULT_UNVERIFIED:ticket-validation`. Fix (workers): the handoff refuses, in session and
 without using a round, a `run` gate whose command ran only embedded (`HANDOFF_GATE_NOT_RUN`, with the exact command to run ALONE); a gate
 that never ran at all keeps ticket 13's semantics (accepted, unverified). Red/green test with the exact v6 shapes. Namespace `q21-human-v7`.
+
+## Real run q21-human-v7 (issue #25, consumed) — Builder Question during reconcile; fixed
+
+The answer was ingested and the reconciliation ran (dbfc968 kept as an ancestor), but the Spec reviewer again flagged the human-added file as
+out of scope and the Builder asked a Question instead of using the authorization; the Work correctly waited for the answer, but the recipe
+neither surfaced Builder Questions nor allowed a question-resumed activation. Fixes: the reconciliation's reviewers receive, as data, the
+operator-authorized preserved commits/files with the authorizing Question id (not the Builder's work, not a finding; Builder changes to
+those files still reviewed); the Builder duty says a finding about them is not-adopted under that authorization, never a new Question. Recipe:
+a Builder Question keeps the phase waiting and is saved to `operator-question-requested-<n>.json` (id/text, never auto-answered; wait ≥60 min);
+one question-resumed or recovery activation is allowed in reconcile/finish. Namespace `q21-human-v8`, issue unpinned.

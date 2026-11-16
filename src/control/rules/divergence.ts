@@ -129,8 +129,8 @@ export function reconciliationDuties(questionId: string) {
   return ['Gates: re-run and declare EVERY documented Validation gate of the request with your handoff, exactly as in an implementation (the reconciled content needs ' +
     'its own passed gate; an earlier result never counts).',
   `Findings: treat every review finding. A finding that only concerns the remote commits you must preserve is "not-adopted" with "authorization": { "kind": "question", ` +
-    `"questionId": "${questionId}" } (the operator's answered Question that authorized keeping them) and a justification; any other finding you cannot fix: ask_user ` +
-    '(it reaches the operator on the Ticket) — never a silent non-adoption.'];
+    `"questionId": "${questionId}" } (the operator's answered Question that authorized keeping them) and a justification — never ask a new Question about them; ` +
+    'any other finding you cannot fix: ask_user (it reaches the operator on the Ticket) — never a silent non-adoption.'];
 }
 
 export const reconciliationPromptBudgetBytes = 15000;

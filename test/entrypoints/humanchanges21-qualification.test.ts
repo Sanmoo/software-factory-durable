@@ -17,8 +17,8 @@ test('ticket 21 recipe: import and --plan are inert; own namespace and access ro
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q21-human-v7');
-  assert.match(plan.github.accessRoot, /^\/home\/sanmoo\/software-factory-test\/y5\/q21-human-v7 \(own namespace: credentials\/ copy of \/home\/sanmoo\/software-factory-test\/y5\/credentials\/app\.pem/);
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q21-human-v8');
+  assert.match(plan.github.accessRoot, /^\/home\/sanmoo\/software-factory-test\/y5\/q21-human-v8 \(own namespace: credentials\/ copy of \/home\/sanmoo\/software-factory-test\/y5\/credentials\/app\.pem/);
   assert.deepEqual(plan.phases, ['preflight', 'run', 'race', 'reconcile', 'finish', 'inspect', 'stop-environment']);
   assert.equal(plan.ticket.pinned, false, 'the supervisor pins the NEW issue number in a reviewed commit before any phase');
   assert.match(plan.ticket.body, /docs\/FACTORY_HUMAN_CHANGES\.md/);
@@ -44,7 +44,7 @@ test('phase guard: each phase once, in order, only after the previous one succee
   assert.equal(recipe.phaseGuard('race', { preflight: { status: 'success' } }, none, true), 'RUN_SUCCESS_REQUIRED');
   assert.equal(recipe.phaseGuard('reconcile', { race: { status: 'held' } }, none, true), 'RACE_SUCCESS_REQUIRED');
   assert.equal(recipe.phaseGuard('finish', { reconcile: { status: 'success' } }, none, true), null);
-  // Real run q21-human-v7: inspect runs after ANY held phase (it observes, it never continues), but never while a phase is still running.
+  // Real run q21-human-v8: inspect runs after ANY held phase (it observes, it never continues), but never while a phase is still running.
   const ok = { preflight: { status: 'success' } };
   assert.equal(recipe.phaseGuard('inspect', ok, new Set(['preflight-intent', 'run-intent', 'race-intent', 'reconcile-intent']), true, new Set(['preflight', 'run', 'race', 'reconcile'])), null);
   assert.equal(recipe.phaseGuard('inspect', ok, new Set(['preflight-intent', 'run-intent']), true, new Set(['preflight'])), 'PHASE_NOT_ENDED:run');
@@ -150,4 +150,17 @@ test('real run q21-human-v4: the reconcile phase allows ONE operational recovery
   assert.equal(guard(c('standards', 'r2'), { round: 5 }), true, 'reviewers of the recovery');
   assert.equal(guard(c('standards', 'r1'), { round: 6 }), false);
   assert.equal(guard(c('builder', 'r3')), false, 'one recovery only');
+});
+
+test('real run q21-human-v7: a Builder Question keeps the phase waiting (surfaced, not auto-answered), and its question-resumed activation is the one allowed extra', () => {
+  const work = (impediments: unknown[], divergences: unknown[] = []) => ({ impediments, publication: { state: 'reconciling', basisExecutionId: 'b', divergences }, execution: { state: 'ended' } }) as never;
+  const pending = work([{ code: 'QUESTION_PENDING', questionId: 'builder-q' }], [{ questionId: 'divergence-q', trigger: 'lease-failed' }]);
+  assert.equal(recipe.builderQuestion(pending), 'builder-q');
+  assert.equal(recipe.builderQuestion(work([{ code: 'QUESTION_PENDING', questionId: 'divergence-q' }], [{ questionId: 'divergence-q' }])), null, 'a divergence Question is not the Builder\'s');
+  assert.deepEqual(recipe.settled('reconcile', pending, () => true, 'b'), { done: false, success: false });
+  const guard = recipe.activationGuard('reconcile');
+  const c = (executionId: string, phaseId: string) => ({ role: 'builder', workId: 'w', executionId, phaseId });
+  assert.equal(guard(c('r1', 'builder-reconciliation')), true);
+  assert.equal(guard(c('r2', 'builder-continuation')), true, 'resumed after the Builder Question was answered');
+  assert.equal(guard(c('r3', 'builder-recovery')), false, 'only one extra activation');
 });

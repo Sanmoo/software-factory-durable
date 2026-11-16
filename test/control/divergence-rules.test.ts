@@ -4,6 +4,7 @@ import { attemptsOf, decideDiscovery, publicationMarker, publicationPrompt, publ
   from '../../src/control/rules/publication.js';
 import { divergenceQuestion, knownRemote, reconciliationAnswer, reconciliationDuties, reconciliationNotice, reconciliationPrompt } from '../../src/control/rules/divergence.js';
 import { preservationCheck } from '../../src/control/rules/publication.js';
+import { planReviews } from '../../src/control/rules/review.js';
 import { questionDestination, questionLimits, validateQuestionRequest } from '../../src/control/rules/questions.js';
 import type { DivergenceComparison, ExecutionView, PublicationView } from '../../src/control/types.js';
 
@@ -246,4 +247,20 @@ test('real run q21-human-v5: a Builder Question after the own PR is linked goes 
   const ticketRef = { number: 3 };
   assert.deepEqual(questionDestination({ ticket: ticketRef, pullRequest: { number: 4, url: 'https://github.com/acme/project/pull/4' } }), { kind: 'issue', ticket: ticketRef });
   assert.deepEqual(questionDestination({ ticket: ticketRef, pullRequest: null }), { kind: 'issue', ticket: ticketRef });
+});
+
+test('real run q21-human-v7: reviewers of a reconciliation get the operator-authorized preserved commits/files with the Question id; the Builder treats findings about them as not-adopted, never a new Question', () => {
+  const handoff = { version: 1, round: 7, index: '/artifacts/review/r7/index.json', indexSha256: 'a'.repeat(64), head: local, branch, base: 'b'.repeat(40), mergeBase: 'b'.repeat(40),
+    counts: { entries: 1, committed: 1, staged: 0, unstaged: 0, untracked: 0, removed: 0 }, patches: { committed: { path: '/artifacts/review/r7/committed.patch', bytes: 1, sha256: 'c'.repeat(64) },
+      staged: { path: '/artifacts/review/r7/staged.patch', bytes: 0, sha256: 'c'.repeat(64) }, unstaged: { path: '/artifacts/review/r7/unstaged.patch', bytes: 0, sha256: 'c'.repeat(64) } },
+    spec: null, instructions: null, changed: [], changedTruncated: false } as never;
+  const authorized = { questionId: 'q-55d485f5', commits: [human], files: ['docs/FACTORY_HUMAN_NOTE.md'] };
+  const plans = planReviews({ executionId: 'r1', round: 7, attempt: 1, handoff, authorizedChanges: authorized });
+  for (const plan of plans) {
+    assert.ok(plan.prompt.includes(`Operator-authorized preserved changes (Question q-55d485f5): commits ${human}; files docs/FACTORY_HUMAN_NOTE.md.`), plan.role);
+    assert.match(plan.prompt, /not the Builder's work and not a finding/);
+  }
+  assert.ok(!planReviews({ executionId: 'r1', round: 7, attempt: 1, handoff }).some(plan => plan.prompt.includes('Operator-authorized')), 'absent outside a reconciliation');
+  const duties = reconciliationDuties('q-55d485f5').join('\n');
+  assert.match(duties, /never ask a new Question about them/);
 });
