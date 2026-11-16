@@ -48,6 +48,17 @@ type TicketIndex = { admissionSequence: number; tickets: Record<string, { curren
   memory?: Record<string, { cycles: OwnCycle[] }>; forgotten?: Record<string, ForgottenWork> };
 export const ticketIndex = defineDoc<TicketIndex>({ kind: 'factory.ticket-index', version: 1, scope: 'session',
   initial: () => ({ admissionSequence: 0, tickets: {}, order: [] }), checkpointWhen: () => true });
+/**
+ * Ticket 31 (review MED): every request whose input carries operator text (answer, update-scope, authorize-readiness) is linked to its Work in
+ * the SAME commit as the request, whatever its outcome (accepted or not-applied), so `forget` erases all of them. Kept on the Work record (an
+ * optional field of `factory.work` v1: no new document kind, the storage format is unchanged).
+ */
+export async function linkRequest(tx: Parameters<Parameters<Session['commit']>[0]>[0], work_id: string, request_id: string) {
+  const document = await tx.doc(works, work_id, null);
+  if (!document.work) return;
+  const linked = document.work.contentRequests ?? [];
+  if (!linked.includes(request_id)) document.work.contentRequests = [...linked, request_id];
+}
 export type WorkRecord = Omit<WorkView, 'dispatch' | 'limits'>;
 export const works = defineDocFamily<{ work: WorkRecord | null }, null>({ kind: 'factory.work', version: 1, scope: 'session', family: true,
   initial: () => ({ work: null }), checkpointWhen: () => true });

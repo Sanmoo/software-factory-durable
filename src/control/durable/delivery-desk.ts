@@ -6,7 +6,8 @@ import { branchOutcome, cleanupEligibility, decideMerge, environmentOutcomes, ex
 import { consumeExplicitCleanup, recordCleanupIntent, recordCleanupResult, recordMergeObservation, recordPreservation, recordSweep } from './delivery.js';
 import { dropExplicitResources, preserveSessions } from './retention.js';
 import { retentionProtections } from '../rules/retention.js';
-import type { WorkRecord } from './admission.js';
+import { readForgotten, type WorkRecord } from './admission.js';
+import { recordForgottenMerge } from './forget.js';
 import type { Session } from './store.js';
 
 /** At most this many own pull request reads per cycle (each one GitHub request); the rest are read on later cycles. */
@@ -60,6 +61,27 @@ export function createDeliveryDesk(deps: { session: Session; repository: CodeRep
     const recorded = await recordMergeObservation(deps.session, work.work_id, { own, observedAt: observation.observedAt, decision });
     // Merge during an activity is still delivery; the activity is interrupted so the agent takes no new action (its commits already refuse).
     if (recorded.kind === 'delivered' && (recorded.duringActivity || deps.running(work.work_id))) await deps.interrupt(work.work_id).catch(() => {});
+  }
+
+  /**
+   * Ticket 31 (review MED): the own PR of a FORGOTTEN cancelled cycle is still read from its memory watch, least recently read first, within the
+   * same bound per cycle; a confirmed merge delivers the memory (spec §12.3). Reading never reopens, resumes or replaces anything.
+   */
+  async function observeForgotten() {
+    if (!deps.repository.readOwnMerge) return;
+    const watched = (await readForgotten(deps.session)).filter(item => item.watch?.state === 'watching' && configured(item.repository.repository))
+      .sort((a, b) => (a.watch!.lastReadAt ?? '').localeCompare(b.watch!.lastReadAt ?? ''));
+    for (const memory of watched.slice(0, readsPerCycle)) {
+      if (deps.stopped()) return;
+      try {
+        const own = memory.watch!.pullRequest;
+        const observation = await deps.repository.readOwnMerge({ repo: configured(memory.repository.repository)!, repositoryId: memory.repository.repositoryId, number: own.number,
+          pullRequestId: own.pullRequestId, nodeId: own.nodeId }).catch(() => ({ kind: 'unavailable' as const, code: 'DELIVERY_READ_FAILED' }));
+        await recordForgottenMerge(deps.session, memory.work_id, observation.kind === 'observed'
+          ? decideMerge(own, { repositoryId: memory.repository.repositoryId, branch: memory.watch!.branch, base: memory.repository.base }, observation.pullRequest)
+          : { outcome: 'unavailable', reasons: [observation.code] });
+      } catch (error) { failed(memory.work_id, 'forgotten-merge-observation', error); }
+    }
   }
 
   async function sweep(work: WorkRecord) {
@@ -127,6 +149,7 @@ export function createDeliveryDesk(deps: { session: Session; repository: CodeRep
       let works: WorkRecord[];
       try { works = await deps.readWorks(); } catch (error) { failed(null, 'read-works', error); return; }
       await observeMerges(works);
+      await observeForgotten().catch(error => failed(null, 'forgotten-merge-observation', error));
       try { works = await deps.readWorks(); } catch (error) { failed(null, 'read-works', error); return; }
       for (const work of works) {
         if (deps.stopped()) return;

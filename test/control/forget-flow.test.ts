@@ -12,8 +12,12 @@ import { acceptForgetConfirm, acceptForgetPlan, beginForget } from '../../src/co
 import { acceptCancel, acceptNewCycle } from '../../src/control/durable/cycles.js';
 import { admitTicket, initialize, ownCycles, readForgotten, readWork, readWorks, requests, ticketIndex, works, type WorkRecord } from '../../src/control/durable/admission.js';
 import { evaluateWorkDependencies } from '../../src/control/durable/polling.js';
-import { questions as questionDocs, readQuestions } from '../../src/control/durable/questions.js';
+import { acceptAnswer, questions as questionDocs, readQuestions } from '../../src/control/durable/questions.js';
 import { openStore } from '../../src/control/durable/store.js';
+import { openControl } from '../../src/control/index.js';
+import { acceptScopeUpdate } from '../../src/control/durable/scope.js';
+import { acceptReadinessAuthorization } from '../../src/control/durable/readiness.js';
+import { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node';
 import { planCleanup } from '../../src/control/rules/delivery.js';
 import { retentionProtections } from '../../src/control/rules/retention.js';
 import type { DetailPorts, QuestionView } from '../../src/control/types.js';
@@ -25,6 +29,11 @@ import { deliveryRepository, environment, markDelivered, merged, ownFacts, realC
 // Sandbox removal/evidence export on synthetic environments (systemctl double), REAL admission, own-cycle memory, native dependency evaluation and
 // `new` over the same storage. Doubled: GitHub (tracker/CodeRepository, calls counted) and the calendar. Not evidence of a real VM, GitHub or model.
 const exists = (path: string) => lstat(path).then(() => true, () => false);
+/** Every document revision the real SQLite store still holds (live rows; free pages are the documented limitation). */
+async function storedRevisions(path: string): Promise<string[]> {
+  const database = await openNodeSqliteDatabase(path);
+  try { return (await database.all<{ content: unknown }>('SELECT content FROM document_revisions')).map(row => String(row.content)); } finally { await database.close(); }
+}
 const admission = (number = 3) => ({ ticket: ticket(number), repository: { repository: 'acme/project', repositoryId: 3, base: 'main' }, observedAt: 'now',
   label: { id: 55, name: 'ready-for-agent' }, publication: { observedAt: 'now', limitations: [] } });
 
@@ -105,6 +114,13 @@ test('AC1/AC3/AC4/AC5/AC7: a delivered Work is forgotten after plan + confirmati
   const h = await harness(t);
   const questionId = await seedContent(h);
   await deliver(h);
+  // Review MED: refused/not-applied requests carrying text are linked to the Work at their own commit (the Work/Question never reference them).
+  const refusedScope = await acceptScopeUpdate(h.session, { request_id: 's-refused', operation: 'update-scope', work_id: h.work_id, reason: 'REFUSED SCOPE TEXT', origin: 'local-cli' });
+  assert.ok(refusedScope.kind === 'durable' && refusedScope.outcome === 'not-applied');
+  const refusedAnswer = await acceptAnswer(h.session, { request_id: 'a-refused', question_id: questionId, text: 'REFUSED ANSWER TEXT', origin: { kind: 'local-cli' } });
+  assert.ok(refusedAnswer.kind === 'durable' && refusedAnswer.outcome === 'not-applied');
+  const refusedReadiness = await acceptReadinessAuthorization(h.session, { request_id: 'r-refused', operation: 'authorize-readiness', work_id: h.work_id, reason: 'REFUSED READINESS TEXT', origin: 'local-cli' });
+  assert.ok(refusedReadiness.kind === 'durable' && refusedReadiness.outcome === 'not-applied');
   const callsBefore = h.repository.calls.length;
   const planned = await h.plan('f-1');
   assert.ok(planned.kind === 'durable' && planned.outcome === 'accepted' && planned.plan, JSON.stringify(planned));
@@ -130,15 +146,25 @@ test('AC1/AC3/AC4/AC5/AC7: a delivered Work is forgotten after plan + confirmati
   assert.deepEqual(answer?.input, { request_id: 'a-1', operation: 'answer', origin: 'local-cli', forgotten: h.work_id });
   assert.equal(answer?.receipt?.kind, 'durable', 'the receipt (no content) stays');
   assert.deepEqual((await h.session.snapshot(requests, 's-1', BACKGROUND_CONTEXT))?.input, { request_id: 's-1', operation: 'update-scope', origin: 'local-cli', forgotten: h.work_id });
+  for (const [id, operation] of [['s-refused', 'update-scope'], ['a-refused', 'answer'], ['r-refused', 'authorize-readiness']] as const) {
+    assert.deepEqual((await h.session.snapshot(requests, id, BACKGROUND_CONTEXT))?.input, { request_id: id, operation, origin: 'local-cli', forgotten: h.work_id }, id);
+  }
+  // Review MED: verified against the REAL store — no stored document revision (retired or rewritten) still holds any of the texts.
+  const revisions = await storedRevisions(join(h.root, 'control.sqlite'));
+  assert.ok(revisions.length > 0);
+  for (const content of ['QUESTION CONTENT', 'ANSWER CONTENT', 'SCOPE REASON CONTENT', 'REFUSED SCOPE TEXT', 'REFUSED ANSWER TEXT', 'REFUSED READINESS TEXT', 'The Builder said']) {
+    assert.ok(!revisions.some(text => text.includes(content)), `revision still holds ${content}`);
+  }
   // Kept: the minimal memory only, with no request content, log or opinion.
   const index = await h.session.snapshot(ticketIndex, BACKGROUND_CONTEXT);
   const memory = index!.forgotten![h.work_id]!;
   assert.deepEqual({ ...memory, forgottenAt: 'x' }, { work_id: h.work_id, ticket: ticket(3), repository: { repository: 'acme/project', repositoryId: 3, base: 'main' }, cycle: 1,
     predecessor: null, sequence: 1, result: 'delivered', pullRequest: { number: 42, pullRequestId: 9042, nodeId: 'PR_own42', url: 'https://github.com/acme/project/pull/42' },
-    mergeConfirmed: true, mergeConfirmedAt: memory.mergeConfirmedAt, label: { id: 55, name: 'ready-for-agent' }, forgottenAt: 'x', request_id: 'f-1-confirm', planId: plan.planId });
+    mergeConfirmed: true, mergeConfirmedAt: memory.mergeConfirmedAt, label: { id: 55, name: 'ready-for-agent' }, questions: [questionId], watch: null, forgottenAt: 'x', request_id: 'f-1-confirm',
+    planId: plan.planId });
   assert.ok(memory.mergeConfirmedAt);
   const stored = JSON.stringify(index);
-  for (const content of ['QUESTION CONTENT', 'ANSWER CONTENT', 'SCOPE REASON CONTENT', 'REVIEW OPINION CONTENT', 'The Builder said', 'tool output']) assert.ok(!stored.includes(content), content);
+  for (const content of ['QUESTION CONTENT', 'ANSWER CONTENT', 'SCOPE REASON CONTENT', 'REVIEW OPINION CONTENT', 'The Builder said', 'tool output', 'REFUSED']) assert.ok(!stored.includes(content), content);
   assert.deepEqual(index!.memory!['github:repository:3:issue:7003']!.cycles, [{ work_id: h.work_id, cycle: 1, result: 'delivered', mergeConfirmed: true }]);
   assert.deepEqual(index!.order, [], 'the forgotten Work leaves the listing order');
   assert.deepEqual(index!.tickets['github:repository:3:issue:7003'], { current: h.work_id, previous: [] }, 'the Ticket stays indexed');
@@ -183,6 +209,9 @@ test('AC4: restart after forget — the reopened storage still answers `existing
   // No own environment recorded (its cleanup is ticket 17's; here only the authority is restarted).
   const work_id = await seedPublishedWork(opened.session, { environmentFor: () => 'no-environment' });
   await markDelivered(opened.session, work_id, new Date().toISOString());
+  const questionId = randomUUID();
+  await opened.session.commit(async tx => { (await tx.doc(works, work_id, null)).work!.questions.push(questionId);
+    (await tx.doc(questionDocs, questionId, null)).question = { questionId, workId: work_id, state: 'answered', publication: { state: 'published' }, ignored: [], answer: null } as never; }, BACKGROUND_CONTEXT);
   const tree = await inspectWorkRecords(dir, work_id);
   const facts = () => ({ running: false, tree, repositoryConfigured: false });
   const planned = await acceptForgetPlan(opened.session, { request_id: 'f-1', operation: 'forget-plan', work_id, origin: 'local-cli' }, facts);
@@ -193,7 +222,7 @@ test('AC4: restart after forget — the reopened storage still answers `existing
     remove: async () => ({ outcome: 'refused', code: 'X' }), inspectTree: ({ workId }) => inspectWorkRecords(dir, workId), forget: ({ workId }) => forgetWorkRecords(dir, workId) },
     repositories: [], readWorks: () => readWorks(opened.session), readQuestions: work => readQuestions(opened.session, work), running: () => false, settled: () => true, stopped: () => false });
   await desk.cycle();
-  assert.equal(await readWork(opened.session, work_id), undefined);
+  assert.equal(await readWork(opened.session, work_id), undefined, JSON.stringify(desk.view().failures));
   await opened.close();
   opened = await openStore(path);
   t.after(() => opened.close());
@@ -202,6 +231,18 @@ test('AC4: restart after forget — the reopened storage still answers `existing
   const facts3 = (await ownCycles(opened.session, [ticket(3).issueId]))[ticket(3).issueId];
   assert.deepEqual(facts3, { source: 'minimal-memory', applicable: { work_id, cycle: 1, result: 'delivered', mergeConfirmed: true }, previousCycles: [] });
   assert.deepEqual((await readForgotten(opened.session)).map(item => [item.work_id, item.result]), [[work_id, 'delivered']]);
+  await opened.close();
+  // Through the public Control (CLI inspect path): the Work and its Question answer `forgotten`, never "not found".
+  const control = await openControl({ storagePath: path, runtimeInventory: 'unknown' });
+  const shown = await control.inspect({ kind: 'show', work_id });
+  assert.ok('kind' in shown && shown.kind === 'work-forgotten' && /not an expired or missing record/.test(shown.nextStep), JSON.stringify(shown));
+  const question = await control.inspect({ kind: 'question', question_id: questionId });
+  assert.ok('kind' in question && question.kind === 'question-forgotten' && question.work_id === work_id, JSON.stringify(question));
+  const unknown = await control.inspect({ kind: 'question', question_id: randomUUID() });
+  assert.ok('kind' in unknown && unknown.kind === 'question-not-found');
+  const stopped = new AbortController(); stopped.abort();
+  await control.run(stopped.signal);
+  opened = await openStore(path);
 });
 
 test('AC2: open, closed-unmerged, protected or resource-holding Works are refused; nothing is changed to make them eligible; a cancelled Work after its environment cleanup is forgotten', async t => {
@@ -246,13 +287,36 @@ test('AC2: open, closed-unmerged, protected or resource-holding Works are refuse
   await h.confirm('cancelled-c', eligible.plan!.planId);
   await h.desk().cycle();
   assert.equal(await h.work(), undefined);
-  const memory = (await readForgotten(h.session))[0]!;
-  assert.deepEqual([memory.result, memory.mergeConfirmed, memory.pullRequest], ['cancelled', false, null]);
+  let memory = (await readForgotten(h.session))[0]!;
+  assert.deepEqual([memory.result, memory.mergeConfirmed, memory.pullRequest, memory.watch?.state, memory.watch?.pullRequest.number], ['cancelled', false, null, 'watching', 42]);
+  assert.match(eligible.plan!.keeps.join('\n'), /own pull request #42 of this cancelled cycle stays watched/);
   // The cancelled own blocker never satisfies, even with the issue closed as completed; it is never external.
   const gh = githubDoubles({ issues: [remoteIssue(3, { state: 'closed', stateReason: 'completed' }), remoteIssue(5, { blockedBy: [3] })], pulls: {} });
   const evaluation = (await evaluateWorkDependencies(gh.tracker, ids => ownCycles(h.session, ids), ticket(5), 'attempt')).evaluation;
   assert.deepEqual([evaluation.conclusion, evaluation.blockers[0]?.classification, evaluation.reasons[0]?.code], ['pending', 'own', 'OWN_CYCLE_CANCELLED']);
   assert.deepEqual(await admitTicket(h.session, admission()), { kind: 'existing', work_id: h.work_id });
+  // Review MED (spec §12.3): the closed PR is still watched from the memory; a human reopens and merges it later → the memory becomes a delivery.
+  const reads = h.repository.calls.filter(call => call.method === 'readOwnMerge').length;
+  await h.delivery.cycle();
+  assert.equal(h.repository.calls.filter(call => call.method === 'readOwnMerge').length, reads + 1, 'read from the memory watch');
+  assert.equal((await readForgotten(h.session))[0]!.result, 'cancelled', 'still closed: nothing changes');
+  h.github.pull = merged();
+  await h.delivery.cycle();
+  memory = (await readForgotten(h.session))[0]!;
+  assert.deepEqual([memory.result, memory.mergeConfirmed, memory.pullRequest?.number, memory.watch?.state], ['delivered', true, 42, 'delivered']);
+  const satisfied = (await evaluateWorkDependencies(gh.tracker, ids => ownCycles(h.session, ids), ticket(5), 'attempt')).evaluation;
+  assert.deepEqual([satisfied.conclusion, satisfied.blockers[0]?.classification], ['satisfied', 'own']);
+  await h.delivery.cycle();
+  assert.equal(h.repository.calls.filter(call => call.method === 'readOwnMerge').length, reads + 2, 'a delivered memory is no longer read');
+  // `new` after the forgotten cycle takes its authorization basis from the FRESH read (label id as observed now), nothing copied or invented.
+  const created = await acceptNewCycle(h.session, { request_id: 'new-c', operation: 'new', ticket: { repository: 'acme/project', number: 3 }, keepPredecessorPullRequest: false, origin: 'local-cli' },
+    { configured: () => scope, tracker: githubDoubles({ issues: [remoteIssue(3, { labels: [{ id: 77, name: 'ready-for-agent' }] })], pulls: {} }).tracker });
+  assert.ok(created.kind === 'durable' && created.outcome === 'accepted' && created.created, JSON.stringify(created));
+  const successor = (await readWork(h.session, created.created!))!;
+  assert.deepEqual([successor.predecessor, successor.cycle, successor.authorization.basis.label], [h.work_id, 2, { id: 77, name: 'ready-for-agent' }]);
+  const refused = await acceptNewCycle(h.session, { request_id: 'new-c2', operation: 'new', ticket: { repository: 'acme/project', number: 3 }, keepPredecessorPullRequest: false, origin: 'local-cli' },
+    { configured: () => scope, tracker: githubDoubles({ issues: [remoteIssue(3)], pulls: {} }).tracker });
+  assert.ok(refused.kind === 'durable' && refused.reason === 'CYCLE_STILL_CURRENT');
 });
 
 test('AC1: revalidated at confirmation and again before the deletion; a crash after the intent is indeterminate; a failure keeps the Work; nothing is retried implicitly', async t => {
@@ -265,11 +329,16 @@ test('AC1: revalidated at confirmation and again before the deletion; a crash af
   h.running.add(h.work_id);
   assert.deepEqual(await reason('p-1c', plan), ['not-applied', 'BECAME_INELIGIBLE:PROTECTED']);
   h.running.delete(h.work_id);
-  assert.deepEqual(await reason('p-1c2', plan), ['already-satisfied', 'PLAN_ALREADY_CONFIRMED'], 'a dropped plan is never confirmed again');
+  assert.deepEqual(await reason('p-1c2', plan), ['not-applied', 'PLAN_DROPPED:BECAME_INELIGIBLE:PROTECTED'], 'a dropped plan answers its real outcome, never already-satisfied');
   // A newer plan supersedes an older unconfirmed one.
   const older = await planId('p-2');
-  plan = await planId('p-3');
+  plan = await planId('p-3x');
   assert.deepEqual(await reason('p-2c', older), ['not-applied', 'PLAN_SUPERSEDED']);
+  // Review LOW: a confirmed plan not started yet (e.g. a restart without the Records port) never blocks: a newer eligible plan supersedes it.
+  const stuck = await planId('p-3s');
+  assert.deepEqual(await reason('p-3sc', stuck), ['accepted', null]);
+  plan = await planId('p-3');
+  assert.deepEqual(await reason('p-3sc2', stuck), ['not-applied', 'PLAN_SUPERSEDED']);
   // Confirmed, then the Records tree changes before the desk runs: the losses shown are no longer exact → dropped before any effect.
   assert.deepEqual(await reason('p-3c', plan), ['accepted', null]);
   await writeFile(join(h.root, h.work_id, 'evidence', 'late-entry'), 'x', { mode: 0o600 });
@@ -288,6 +357,7 @@ test('AC1: revalidated at confirmation and again before the deletion; a crash af
   assert.deepEqual([work.forget?.plans.at(-1)?.state, work.forget?.plans.at(-1)?.effect?.outcome, work.forget?.plans.at(-1)?.code], ['indeterminate', 'indeterminate', 'RESULT_NOT_RECORDED']);
   await h.desk().cycle();
   assert.equal(h.log.filter(item => item.startsWith('forget:')).length, 0, 'never retried implicitly');
+  assert.deepEqual(await reason('p-4c2', plan), ['not-applied', 'PLAN_INDETERMINATE:RESULT_NOT_RECORDED']);
   assert.ok(await exists(join(h.root, h.work_id, 'evidence', 'late-entry')));
   // A failed deletion keeps the Work and is not retried; the next explicit plan + confirmation completes it from what is left.
   plan = await planId('p-5');
@@ -296,6 +366,7 @@ test('AC1: revalidated at confirmation and again before the deletion; a crash af
   await h.desk().cycle();
   work = (await h.work())!;
   assert.deepEqual([work.forget?.plans.at(-1)?.state, work.forget?.plans.at(-1)?.code], ['failed', 'SYNTHETIC_FAILURE']);
+  assert.deepEqual(await reason('p-5c2', plan), ['not-applied', 'PLAN_FAILED:SYNTHETIC_FAILURE']);
   await h.desk().cycle();
   assert.equal(h.log.filter(item => item.startsWith('forget:')).length, 1);
   delete h.faults.forget;

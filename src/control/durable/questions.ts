@@ -5,7 +5,7 @@ import type { WorkerQuestion } from '../../workers/index.js';
 import type { ControlReceipt, QuestionView } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
 import { answerDecision, questionDestination, validateQuestionRequest } from '../rules/questions.js';
-import { requests, ticketIndex, works, type WorkRecord } from './admission.js';
+import { linkRequest, requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import type { Session } from './store.js';
 
 /** Durable Question records (spec §3.2), one document per worker-assigned identity. */
@@ -128,6 +128,8 @@ export async function acceptAnswer(session: Session, input: { request_id: string
     }
     request.input = ingress as never;
     request.receipt = receipt;
+    // Ticket 31: the answer text is linked to the Question's Work whatever the outcome (forget erases it).
+    if (question) await linkRequest(tx, question.workId, input.request_id);
     return JSON.parse(JSON.stringify(receipt)) as typeof receipt;
   }, BACKGROUND_CONTEXT);
 }

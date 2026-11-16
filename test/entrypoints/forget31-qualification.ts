@@ -13,9 +13,12 @@ import { copyRecords, localDoubles } from './retention30-qualification.js';
 // retried. `inspect` writes the verdict file, whose checks fail on a no-op.
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const revision = 'q31-forget-v1';
+// v1 (met 21/21) was consumed; v2 follows the independent review (real environment path guard, Records sources hashed, nested memory keys).
+const revision = 'q31-forget-v2';
 const observations = `${root}/${revision}`;
 const repositoryName = 'Sanmoo/java-springboot-event-sourcing';
+/** Installation root of both source runs (Sandbox root): where the product keeps (and would remove) their environments. Only read (lstat). */
+const environmentRoot = root;
 const cases = {
   delivered: { storage: `${root}/q17-delivery-v4/authority`, records: root, number: 3, result: 'delivered' as const },
   cancelled: { storage: `${root}/q25-cancel-v1`, records: root, number: 18, result: 'cancelled' as const },
@@ -25,9 +28,32 @@ const phases = ['preflight', 'forget', 'inspect'] as const;
 type Phase = typeof phases[number];
 const day = 86_400_000;
 const phaseDeadlineMs = 2 * 60 * 1000;
-/** The only keys a minimal memory may carry (spec §12.4): identities, order/link, result, PR identity/merge fact, label, and the forget origin. */
-export const memoryKeys = ['cycle', 'forgottenAt', 'label', 'mergeConfirmed', 'mergeConfirmedAt', 'planId', 'predecessor', 'pullRequest', 'repository', 'request_id', 'result',
-  'sequence', 'ticket', 'work_id'];
+/** The only keys a minimal memory may carry (spec §12.4), per nested object: identities, order/link, result, PR identity/merge fact, label, Question
+ * ids, the cancelled PR watch, and the forget origin. Any other key at any depth fails the verdict. */
+export const memoryShape: Record<string, string[]> = {
+  '': ['cycle', 'forgottenAt', 'label', 'mergeConfirmed', 'mergeConfirmedAt', 'planId', 'predecessor', 'pullRequest', 'questions', 'repository', 'request_id', 'result',
+    'sequence', 'ticket', 'watch', 'work_id'],
+  ticket: ['issueId', 'nodeId', 'number', 'repository', 'repositoryId', 'tracker', 'url'], repository: ['base', 'repository', 'repositoryId'],
+  pullRequest: ['nodeId', 'number', 'pullRequestId', 'url'], label: ['id', 'name'], watch: ['branch', 'lastOutcome', 'lastReadAt', 'pullRequest', 'state'],
+  'watch.pullRequest': ['base', 'headRef', 'heads', 'nodeId', 'number', 'pullRequestId', 'url'],
+};
+/** Paths (`<object>.<key>`) of a memory that the shape does not allow; `questions` must be ids only and `heads` shas only. */
+export function memoryViolations(memory: Record<string, unknown> | null): string[] {
+  if (!memory) return ['<no memory>'];
+  const violations: string[] = [];
+  const walk = (value: unknown, path: string) => {
+    if (value === null || typeof value !== 'object') return;
+    if (Array.isArray(value)) { for (const item of value) if (typeof item !== 'string' || !/^[0-9a-f-]{1,64}$/i.test(item)) violations.push(`${path}[]`); return; }
+    for (const [key, child] of Object.entries(value)) {
+      const allowed = memoryShape[path];
+      const childPath = path ? `${path}.${key}` : key;
+      if (!allowed?.includes(key)) { violations.push(childPath); continue; }
+      walk(child, childPath);
+    }
+  };
+  walk(memory, '');
+  return violations;
+}
 
 export function plan() {
   return { revision, observations, cases, phases,
@@ -39,8 +65,9 @@ export function plan() {
         'files only, symlinks/special files refused; absent = nothing copied); whole-tree inspection of the copy; sha256 of both source storages',
       'forget, run A (one owner per case on its copy, Records = <case>/records): delivered: forget-plan → forget-confirm → the desk deletes the copy\'s Records area and keeps the ' +
         'minimal memory. cancelled: forget-plan FIRST (expected refused: RESOURCES_PENDING, the environment is an own resource), then cleanup-plan [environment] + cleanup-confirm ' +
-        'answered by the labelled recipe environment port (absent in the copy), then forget-plan → forget-confirm. Then one polling round lists the same Ticket (label still present) ' +
-        'and must answer `existing`',
+        'answered by the labelled recipe environment port, which never removes anything: absent ONLY if the real environment at the source root (<y5>/environments/<env>) is gone, ' +
+        'otherwise refused (then forget-plan again must stay refused and nothing is deleted); otherwise forget-plan → forget-confirm. Then one polling round lists the same Ticket ' +
+        '(label still present) and must answer `existing`',
       'forget, run B (restart: new owner per case): the Ticket listed again must stay `existing`; delivered: an explicit `new` (fresh Ticket read answered locally as authorized) ' +
         'creates cycle 2 with the forgotten predecessor and becomes the current, evaluated cycle',
       'inspect (read-only): inert views of copies of both authorities; whole-tree inspection of the Records copies; sha256 of both sources again; verdict.json',
@@ -48,9 +75,9 @@ export function plan() {
     guards: ['one-shot intent tombstones', 'sources only copied', 'every GitHub port is a local double, writes never answered', 'Sandbox/Workers/credentials refused',
       'labelled recipe environment port refuses if an environment exists in the copy', 'no retry inside a phase'],
     verdict: ['plan accepted with losses (Records files > 0 for delivered)', 'both Works shown as work-forgotten after run A and after the restart', 'Records copies deleted (no tombstone)',
-      'minimal memory: only the allowed keys; delivered keeps PR + merge confirmed, cancelled none', 'cancelled: refused before its environment cleanup, forgotten after it',
+      'minimal memory: only the allowed keys at every depth; delivered keeps PR + merge confirmed, cancelled none (its own PR only in the watch)', 'cancelled: refused before its environment cleanup; forgotten after it when the real environment is gone, still refused and untouched while it exists',
       'polling after forget and after restart answers existing (never admitted again)', 'delivered: explicit new creates cycle 2 with the forgotten predecessor; it is the current one',
-      'cancelled: the successor cycle stays open and current', 'status/list show the forgotten Works and say totals cover only remembered Works', 'sources unchanged',
+      'cancelled: the successor cycle stays open and current', 'status/list show the forgotten Works and say totals cover only remembered Works', 'source storages and real Records sources unchanged',
       'no remote effect: no write call to GitHub, no Sandbox/Workers/credential call'],
   };
 }
@@ -70,21 +97,25 @@ function trackerOf(doubles: ReturnType<typeof localDoubles>, ticket: WorkView['t
 }
 
 /**
- * Labelled recipe stand-in for the explicit environment cleanup of the CANCELLED copy: the copy holds no environment (the real one stays under
- * q25-cancel-v1, untouched), so removal answers every resource absent; it refuses if an environment directory exists under the copy root.
+ * Labelled recipe stand-in for the explicit environment cleanup of the CANCELLED copy. It never removes anything: it answers every resource
+ * absent ONLY when the real environment the product would remove does not exist at the source run's root; if it exists it refuses (the
+ * environment stays an own resource and forget stays refused).
  */
-export function environmentPort(copyRoot: string) {
+export function environmentPort(environmentRoot: string) {
   const calls: string[] = [];
-  const present = async (environment: string) => (await import('node:fs/promises')).lstat(`${copyRoot}/environments/${environment}`).then(() => true, () => false);
+  // Review MED: the path the PRODUCT would remove (`<installation root>/environments/<env>`, the source run's root), never a path of the copy.
+  const present = async (environment: string) => (await import('node:fs/promises')).lstat(`${environmentRoot}/environments/${environment}`).then(() => true, () => false);
   return { calls,
     async remove(input: { environment: string }) {
       calls.push(`remove:${input.environment}`);
-      if (await present(input.environment)) return { status: 'failure' as const, code: 'RECIPE_ENVIRONMENT_PRESENT', resources: [] };
+      if (await present(input.environment)) { calls.push(`refused-present:${input.environment}`); return { status: 'failure' as const, code: 'RECIPE_ENVIRONMENT_PRESENT', resources: [] }; }
+      calls.push(`absent:${input.environment}`);
       return { status: 'success' as const, resources: (['disk', 'workspace', 'artifacts', 'runtime'] as const).map(resource => ({ resource, status: 'absent' as const })) };
     },
     async preserve(input: { environment: string }) {
       calls.push(`preserve:${input.environment}`);
-      return await present(input.environment) ? { status: 'failed' as const, code: 'RECIPE_ENVIRONMENT_PRESENT' } : { status: 'absent' as const };
+      if (await present(input.environment)) { calls.push(`refused-present:${input.environment}`); return { status: 'failed' as const, code: 'RECIPE_ENVIRONMENT_PRESENT' }; }
+      return { status: 'absent' as const };
     } };
 }
 
@@ -98,7 +129,7 @@ export type RunResult = { before?: unknown; firstPlan?: unknown; cleanupPlan?: u
  * (the desk is settled), performs the steps through `Control.accept` (the CLI's own path), waits for their execution and for a polling round
  * listing the same Ticket, then stops cleanly.
  */
-export async function forgetOwnerRun(input: { storagePath: string; copyRoot: string; recordsRoot: string; workId: string; ticket: WorkView['ticket'];
+export async function forgetOwnerRun(input: { storagePath: string; environmentRoot: string; recordsRoot: string; workId: string; ticket: WorkView['ticket'];
   label: { id: number; name: string }; now: number; steps: Step[]; requestPrefix: string; deadlineMs?: number; repositoryName?: string }): Promise<RunResult> {
   const { openControl } = await import('../../src/control/index.js');
   const { detailPorts } = await import('../../src/entrypoints/controller/composition.js');
@@ -106,7 +137,7 @@ export async function forgetOwnerRun(input: { storagePath: string; copyRoot: str
   const details = detailPorts(input.recordsRoot);
   const forgets: string[] = [];
   const counted = { ...details, forget: async (args: { workId: string }) => { forgets.push(args.workId); return details.forget!(args); } };
-  const environment = environmentPort(input.copyRoot);
+  const environment = environmentPort(input.environmentRoot);
   const base = doubles.ports(counted, input.now);
   const ports: ExecutionPorts = { ...base, cleanup: { ...base.cleanup!, remove: environment.remove as never, preserve: environment.preserve as never } };
   const repository = { repository: input.repositoryName ?? repositoryName, base: 'main', installationId: 177599217, workflows: false, label: input.label.name };
@@ -163,10 +194,11 @@ export async function forgetOwnerRun(input: { storagePath: string; copyRoot: str
 
 type Run = RunResult;
 type Tree = { present: boolean; leftover: boolean; files: number; completeness: string };
-export type CaseObservation = { workId: string; successorId: string | null; before: Tree; after: Tree; runA: Run; runB: Run };
+/** `environmentPresent` (cancelled): the real environment the product would remove exists at the source root (observed at preflight). */
+export type CaseObservation = { workId: string; successorId: string | null; before: Tree; after: Tree; runA: Run; runB: Run; environmentPresent?: boolean };
 
 /** Verdict over the observations; every check names expectation and observation. A no-op (nothing forgotten) fails it. */
-export function verdict(input: { delivered: CaseObservation; cancelled: CaseObservation; sourceBefore: string; sourceAfter: string }) {
+export function verdict(input: { delivered: CaseObservation; cancelled: CaseObservation; sourceBefore: unknown; sourceAfter: unknown }) {
   const shown = (run: Run) => (run.shown as { kind?: string } | undefined)?.kind ?? null;
   const memory = (run: Run) => (run.shown as { memory?: Record<string, unknown> } | undefined)?.memory ?? null;
   const receipt = (value: unknown) => value as { outcome?: string; reason?: string | null; created?: string | null; plan?: { state?: string; records?: { files?: number } | null;
@@ -180,7 +212,7 @@ export function verdict(input: { delivered: CaseObservation; cancelled: CaseObse
   const d = input.delivered, c = input.cancelled;
   const remote = [d.runA, d.runB, c.runA, c.runB].reduce((sum, run) => sum + writes.reduce((inner, name) => inner + ((run.calls as Record<string, number>)[name] ?? 0), 0), 0);
   const created = receipt(d.runB.new)?.created ?? null;
-  const keys = (run: Run) => Object.keys(memory(run) ?? {}).sort();
+  const kept = c.environmentPresent === true;
   const checks = [
     { id: 'delivered-plan-accepted', expected: { outcome: 'accepted', state: 'planned', files: d.before.files }, observed: { outcome: receipt(d.runA.firstPlan)?.outcome ?? null,
       state: receipt(d.runA.firstPlan)?.plan?.state ?? null, files: receipt(d.runA.firstPlan)?.plan?.records?.files ?? null } },
@@ -188,26 +220,38 @@ export function verdict(input: { delivered: CaseObservation; cancelled: CaseObse
     { id: 'delivered-forgotten', expected: ['work-forgotten', 'work-forgotten'], observed: [shown(d.runA), shown(d.runB)] },
     { id: 'delivered-records-deleted', expected: { present: false, leftover: false, files: 0 }, observed: { present: d.after.present, leftover: d.after.leftover, files: d.after.files } },
     { id: 'delivered-records-forget-once', expected: [d.workId], observed: [...(d.runA.recordsForget as string[]), ...(d.runB.recordsForget as string[])] },
-    { id: 'delivered-memory', expected: { result: 'delivered', mergeConfirmed: true, pullRequest: true, keys: memoryKeys }, observed: { result: memory(d.runA)?.result ?? null,
-      mergeConfirmed: memory(d.runA)?.mergeConfirmed ?? null, pullRequest: Boolean(memory(d.runA)?.pullRequest), keys: keys(d.runA) } },
+    { id: 'delivered-memory', expected: { result: 'delivered', mergeConfirmed: true, pullRequest: true, keys: [] }, observed: { result: memory(d.runA)?.result ?? null,
+      mergeConfirmed: memory(d.runA)?.mergeConfirmed ?? null, pullRequest: Boolean(memory(d.runA)?.pullRequest), keys: memoryViolations(memory(d.runA)) } },
     { id: 'delivered-existing-after-forget', expected: `existing:${d.workId}`, observed: candidate(d.runA) },
     { id: 'delivered-new-explicit', expected: { outcome: 'accepted', cycle: 2, predecessor: d.workId }, observed: { outcome: receipt(d.runB.new)?.outcome ?? null,
       cycle: listed(d.runB).find(item => item.work_id === created)?.cycle ?? null, predecessor: listed(d.runB).find(item => item.work_id === created)?.predecessor ?? null } },
     { id: 'delivered-existing-after-restart', expected: `existing:${created}`, observed: candidate(d.runB) },
     { id: 'cancelled-refused-before-cleanup', expected: { outcome: 'not-applied', resources: true }, observed: { outcome: receipt(c.runA.firstPlan)?.outcome ?? null,
       resources: (receipt(c.runA.firstPlan)?.plan?.refusals ?? []).some(item => item.code === 'RESOURCES_PENDING') } },
-    { id: 'cancelled-environment-cleanup', expected: 'accepted', observed: receipt(c.runA.cleanupConfirm)?.outcome ?? null },
-    { id: 'cancelled-plan-accepted', expected: 'planned', observed: receipt(c.runA.secondPlan)?.plan?.state ?? null },
-    { id: 'cancelled-forgotten', expected: ['work-forgotten', 'work-forgotten'], observed: [shown(c.runA), shown(c.runB)] },
-    { id: 'cancelled-records-deleted', expected: { present: false, leftover: false }, observed: { present: c.after.present, leftover: c.after.leftover } },
-    { id: 'cancelled-memory', expected: { result: 'cancelled', mergeConfirmed: false, pullRequest: false, keys: memoryKeys }, observed: { result: memory(c.runA)?.result ?? null,
-      mergeConfirmed: memory(c.runA)?.mergeConfirmed ?? null, pullRequest: Boolean(memory(c.runA)?.pullRequest), keys: keys(c.runA) } },
+    // The real environment exists: the stand-in refuses, the environment stays an own resource and forget stays refused (nothing deleted).
+    // It does not: the stand-in answers it absent, then the cancelled cycle is forgotten.
+    ...(kept ? [
+      { id: 'cancelled-environment-kept', expected: { cleanup: 'accepted', port: 'refused-present' }, observed: { cleanup: receipt(c.runA.cleanupConfirm)?.outcome ?? null,
+        port: (c.runA.environmentPort as string[]).length && !(c.runA.environmentPort as string[]).some(item => item.startsWith('absent')) ? 'refused-present' : 'answered-absent' } },
+      { id: 'cancelled-still-refused', expected: { outcome: 'not-applied', resources: true }, observed: { outcome: receipt(c.runA.secondPlan)?.outcome ?? null,
+        resources: (receipt(c.runA.secondPlan)?.plan?.refusals ?? []).some(item => item.code === 'RESOURCES_PENDING') } },
+      { id: 'cancelled-kept', expected: ['work', 'work'], observed: [shown(c.runA), shown(c.runB)] },
+      { id: 'cancelled-records-kept', expected: { present: true, files: c.before.files }, observed: { present: c.after.present, files: c.after.files } },
+    ] : [
+      { id: 'cancelled-environment-cleanup', expected: 'accepted', observed: receipt(c.runA.cleanupConfirm)?.outcome ?? null },
+      { id: 'cancelled-plan-accepted', expected: 'planned', observed: receipt(c.runA.secondPlan)?.plan?.state ?? null },
+      { id: 'cancelled-forgotten', expected: ['work-forgotten', 'work-forgotten'], observed: [shown(c.runA), shown(c.runB)] },
+      { id: 'cancelled-records-deleted', expected: { present: false, leftover: false }, observed: { present: c.after.present, leftover: c.after.leftover } },
+      { id: 'cancelled-memory', expected: { result: 'cancelled', mergeConfirmed: false, pullRequest: false, keys: [] }, observed: { result: memory(c.runA)?.result ?? null,
+        mergeConfirmed: memory(c.runA)?.mergeConfirmed ?? null, pullRequest: Boolean(memory(c.runA)?.pullRequest), keys: memoryViolations(memory(c.runA)) } },
+    ]),
     { id: 'cancelled-successor-current', expected: [`existing:${c.successorId}`, `existing:${c.successorId}`, 'open'],
       observed: [candidate(c.runA), candidate(c.runB), listed(c.runB).find(item => item.work_id === c.successorId)?.result ?? null] },
-    { id: 'list-and-status', expected: { delivered: true, cancelled: true, works: [1, 1] }, observed: { delivered: forgottenIds(d.runB).includes(d.workId) && !listed(d.runB).some(item => item.work_id === d.workId),
+    { id: 'list-and-status', expected: { delivered: true, cancelled: !kept, works: [1, kept ? 0 : 1] }, observed: { delivered: forgottenIds(d.runB).includes(d.workId) && !listed(d.runB).some(item => item.work_id === d.workId),
       cancelled: forgottenIds(c.runB).includes(c.workId) && !listed(c.runB).some(item => item.work_id === c.workId), works: [status(d.runB)?.works ?? null, status(c.runB)?.works ?? null] } },
-    { id: 'status-note', expected: true, observed: [status(d.runB), status(c.runB)].every(item => /covers only the Works still remembered/.test(item?.note ?? '')) },
+    { id: 'status-note', expected: true, observed: /covers only the Works still remembered/.test(status(d.runB)?.note ?? '') },
     { id: 'clean-stops', expected: ['clean', 'clean', 'clean', 'clean'], observed: [d.runA, d.runB, c.runA, c.runB].map(run => (run.outcome as { kind?: string }).kind ?? null) },
+    // Review LOW: the source storages AND the real `<y5>/<work>/` Records sources are hashed (never touched).
     { id: 'sources-unchanged', expected: input.sourceBefore, observed: input.sourceAfter },
     { id: 'no-remote-effect', expected: 0, observed: remote },
   ].map(check => ({ ...check, met: JSON.stringify(check.expected) === JSON.stringify(check.observed) }));
@@ -226,14 +270,32 @@ async function io() {
   const exists = (name: string) => fs.access(`${observations}/${name}.json`).then(() => true, () => false);
   return { fs, save, load, exists };
 }
-async function sourceDigest() {
+/** sha256 of a tree, never following anything (relative path, type and content or link target). */
+async function treeDigest(path: string) {
+  const fs = await import('node:fs/promises');
+  const { createHash } = await import('node:crypto');
+  const hash = createHash('sha256');
+  const walk = async (current: string, relative: string) => {
+    const info = await fs.lstat(current).catch(() => null);
+    if (!info) { hash.update(`${relative}:absent`); return; }
+    if (info.isSymbolicLink()) { hash.update(`${relative}:link:${await fs.readlink(current)}`); return; }
+    if (info.isDirectory()) { hash.update(`${relative}:dir`); for (const name of (await fs.readdir(current)).sort()) await walk(`${current}/${name}`, `${relative}/${name}`); return; }
+    if (info.isFile()) { hash.update(`${relative}:file:`).update(await fs.readFile(current)); return; }
+    hash.update(`${relative}:special`);
+  };
+  await walk(path, '.');
+  return hash.digest('hex');
+}
+async function sourceDigest(workIds: Partial<Record<CaseName, string>> = {}) {
   const fs = await import('node:fs/promises');
   const { createHash } = await import('node:crypto');
   const hash = createHash('sha256');
   for (const item of Object.values(cases)) for (const name of ['control.sqlite', 'control.sqlite-wal', 'control.sqlite-shm']) {
     hash.update(`${item.storage}/${name}`).update(await fs.readFile(`${item.storage}/${name}`).catch(() => Buffer.from('absent')));
   }
-  return hash.digest('hex');
+  const records: Record<string, string> = {};
+  for (const [name, workId] of Object.entries(workIds)) records[name] = await treeDigest(`${cases[name as CaseName].records}/${workId}`);
+  return { storages: hash.digest('hex'), records };
 }
 /** Inert view (list) of an authority snapshot: no polling, no run beyond an aborted start. */
 async function view(storagePath: string) {
@@ -256,8 +318,8 @@ export async function runPhase(phase: Phase) {
   await save(`${phase}-intent`, { revision, phase, at: new Date().toISOString() });
   try {
     if (phase === 'preflight') {
-      const sourceBefore = await sourceDigest();
       const prepared: Record<string, unknown> = {};
+      const ids: Partial<Record<CaseName, string>> = {};
       for (const [name, item] of Object.entries(cases) as [CaseName, typeof cases[CaseName]][]) {
         const caseRoot = `${observations}/${name}`;
         await fs.mkdir(caseRoot, { mode: 0o700 });
@@ -270,17 +332,23 @@ export async function runPhase(phase: Phase) {
         const source = `${item.records}/${work.work_id}`;
         const copied = await fs.lstat(source).then(() => true, () => false) ? await copyRecords(source, `${caseRoot}/records/${work.work_id}`) : { files: 0, bytes: 0, absent: true };
         const tree = await inspectWorkRecords(await fs.realpath(`${caseRoot}/records`), work.work_id);
+        ids[name] = work.work_id;
+        // The environments the product would remove for this Work, at the SOURCE run's installation root (read-only lstat).
+        const environments = [...new Set([...work.previousExecutions, ...(work.execution ? [work.execution] : [])].map(item => item.dispatch.environment)
+          .filter((env): env is string => typeof env === 'string' && /^env-[0-9a-f]{64}$/.test(env)))];
+        const present: Record<string, boolean> = {};
+        for (const env of environments) present[env] = await fs.lstat(`${environmentRoot}/environments/${env}`).then(() => true, () => false);
         prepared[name] = { authority, workId: work.work_id, successorId: successor?.work_id ?? null, ticket: work.ticket, label: work.authorization.basis.label,
-          confirmedAt: work.delivery?.merge?.confirmedAt ?? null, copied, before: treeOf(tree) };
+          confirmedAt: work.delivery?.merge?.confirmedAt ?? null, copied, before: treeOf(tree), environments: present, environmentPresent: Object.values(present).some(Boolean) };
       }
-      await save('preflight-result', { status: 'success', cases: prepared, sourceBefore });
+      await save('preflight-result', { status: 'success', cases: prepared, workIds: ids, sourceBefore: await sourceDigest(ids) });
       return;
     }
     if (!(await exists('preflight-result'))) throw new Error('PREFLIGHT_REQUIRED');
     const preflight = await load('preflight-result') as { cases: Record<CaseName, { workId: string; successorId: string | null; ticket: WorkView['ticket'];
-      label: { id: number; name: string }; confirmedAt: string | null; before: Tree }>; sourceBefore: string };
+      label: { id: number; name: string }; confirmedAt: string | null; before: Tree; environmentPresent: boolean }>; workIds: Partial<Record<CaseName, string>>; sourceBefore: unknown };
     const caseInput = async (name: CaseName) => { const caseRoot = `${observations}/${name}`; const item = preflight.cases[name];
-      return { storagePath: `${caseRoot}/authority/control.sqlite`, copyRoot: caseRoot, recordsRoot: await fs.realpath(`${caseRoot}/records`), workId: item.workId, ticket: item.ticket,
+      return { storagePath: `${caseRoot}/authority/control.sqlite`, environmentRoot, recordsRoot: await fs.realpath(`${caseRoot}/records`), workId: item.workId, ticket: item.ticket,
         label: item.label, now: item.confirmedAt ? Date.parse(item.confirmedAt) + day : Date.now() }; };
     if (phase === 'forget') {
       const d = await caseInput('delivered'), c = await caseInput('cancelled');
@@ -294,11 +362,11 @@ export async function runPhase(phase: Phase) {
     const observed = async (name: CaseName): Promise<CaseObservation> => {
       const item = preflight.cases[name];
       const after = await inspectWorkRecords(await fs.realpath(`${observations}/${name}/records`), item.workId);
-      return { workId: item.workId, successorId: item.successorId, before: item.before, after: treeOf(after),
+      return { workId: item.workId, successorId: item.successorId, before: item.before, after: treeOf(after), environmentPresent: item.environmentPresent,
         runA: await load(`forget-a-${name}-result`) as never, runB: await load(`forget-b-${name}-result`) as never };
     };
     const delivered = await observed('delivered'), cancelled = await observed('cancelled');
-    const result = verdict({ delivered, cancelled, sourceBefore: preflight.sourceBefore, sourceAfter: await sourceDigest() });
+    const result = verdict({ delivered, cancelled, sourceBefore: preflight.sourceBefore, sourceAfter: await sourceDigest(preflight.workIds) });
     const views: Record<string, unknown> = {};
     for (const name of Object.keys(cases) as CaseName[]) {
       const list = await view(await snapshotStorage(`${observations}/${name}/authority`, `${observations}/${name}/inspect-storage-copy`));

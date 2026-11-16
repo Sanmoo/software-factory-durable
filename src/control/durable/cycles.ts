@@ -7,7 +7,7 @@ import { initialBudget } from '../rules/budget.js';
 import { authorizationChange, authorizationFacts, cancelDecision, cycleImpediments, hasImpediment, newCycleDecision, occupying, reopenDecision, resumeDecision,
   settleCancellation } from '../rules/cycles.js';
 import { decideMerge, ownPullRequestOf } from '../rules/delivery.js';
-import { readForgotten, readWorks, requests, ticketIndex, works, type WorkRecord } from './admission.js';
+import { readForgotten, readWork, readWorks, requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import type { Session } from './store.js';
 
 // Ticket 25 durable commits and the cycle desk (spec §3.4 "Aceitar comando", "Interromper/cancelar", "Confirmar efeito"; §4.1; §11.3; §12.3).
@@ -117,13 +117,22 @@ export async function acceptNewCycle(session: Session, input: CycleInput & { ope
   // Supervisor decision: a FRESH complete read of the Ticket when the command is accepted (outside the commit); a replay of the same
   // request returns its recorded receipt whatever this read says.
   const sameTicket = (ticket: { repository: string; number: number }) => ticket.repository.toLowerCase() === input.ticket.repository.toLowerCase() && ticket.number === input.ticket.number;
-  // Ticket 31: a forgotten current cycle is known by its minimal memory only (its Ticket identity is enough for the fresh read).
-  const current: Pick<WorkRecord, 'work_id' | 'ticket' | 'repository'> | null = (await readWorks(session)).find(work => sameTicket(work.ticket) && work.result !== 'open' &&
-    work.result !== 'closed-unmerged') ?? (await readForgotten(session)).filter(item => sameTicket(item.ticket)).at(-1) ?? null;
+  // The Ticket's CURRENT cycle (as the commit finds it). Ticket 31: a forgotten current cycle is known by its minimal memory only.
+  const snapshot = await session.snapshot(ticketIndex, BACKGROUND_CONTEXT);
+  let current: (Pick<WorkRecord, 'work_id' | 'ticket' | 'repository'> & { result: WorkRecord['result'] }) | null = null;
+  for (const entry of Object.values(snapshot?.tickets ?? {})) {
+    const candidate = snapshot?.forgotten?.[entry.current] ?? await readWork(session, entry.current);
+    if (candidate && sameTicket(candidate.ticket)) { current = candidate; break; }
+  }
+  if (current && (current.result === 'open' || current.result === 'closed-unmerged')) current = null;
   let authorization: ReturnType<typeof authorizationFacts> = { kind: 'unknown', code: 'TICKET_NOT_READ' };
+  // Review LOW: the new cycle's authorization basis is the FRESH read (its label as observed now), never one copied or invented.
+  let freshLabel: { id: number; name: string } | null = null;
   if (current) {
     const facts = await deps.tracker.readTicket(current.ticket).catch(() => ({ kind: 'unavailable' as const, code: 'TICKET_READ_FAILED', nextStep: '' }));
-    authorization = authorizationFacts({ configuredLabel: deps.configured(current.repository.repository)?.label, ticket: current.ticket, facts });
+    const configuredLabel = deps.configured(current.repository.repository)?.label;
+    authorization = authorizationFacts({ configuredLabel, ticket: current.ticket, facts });
+    if (facts.kind === 'observed') freshLabel = facts.labels.find(item => item.name === configuredLabel) ?? null;
   }
   const observedAt = new Date().toISOString();
   const limits = deps.configured;
@@ -145,6 +154,7 @@ export async function acceptNewCycle(session: Session, input: CycleInput & { ope
     if (decision.kind === 'refuse') return receiptOf(input, predecessor?.work_id ?? null, 'not-applied', decision.code);
     const configured = limits(predecessor!.repository.repository);
     if (!configured) return receiptOf(input, predecessor!.work_id, 'not-applied', 'REPOSITORY_NOT_CONFIGURED');
+    if (forgotten && !freshLabel) return receiptOf(input, predecessor!.work_id, 'not-applied', 'AUTHORIZATION_READ_UNAVAILABLE');
     const at = new Date().toISOString();
     const work_id = randomUUID();
     const document = await tx.doc(works, work_id, null);
@@ -155,7 +165,7 @@ export async function acceptNewCycle(session: Session, input: CycleInput & { ope
       work_id, cycle: previous.cycle + 1, predecessor: previous.work_id, ticket: copy(previous.ticket), repository: copy(previous.repository), result: 'open',
       authorization: { ...copy(previous.authorization), state: 'authorized', observedAt, tracking: 'New cycle requested explicitly; authorization confirmed by a fresh complete Ticket read at acceptance and tracked by every later read.',
         lastObservedAt: observedAt, withdrawal: null,
-        ...(forgotten ? { source: 'github-rest' as const, basis: { repositoryConfigured: true as const, issueState: 'open' as const, label: forgotten.label ?? { id: 0, name: configured.label } },
+        ...(forgotten && freshLabel ? { source: 'github-rest' as const, basis: { repositoryConfigured: true as const, issueState: 'open' as const, label: { ...freshLabel } },
           publication: { observedAt, completeness: 'complete' as const, associatedPullRequests: 0 as const,
             limitations: [`Predecessor ${forgotten.work_id} was forgotten (history deleted); only its minimal memory remained.`] } } : {}) },
       queue: { category: 'normal', sequence, pending: true },
@@ -181,8 +191,9 @@ export async function acceptNewCycle(session: Session, input: CycleInput & { ope
 function predecessorOf(memory: ForgottenWork): WorkRecord {
   const at = memory.forgottenAt;
   return { work_id: memory.work_id, cycle: memory.cycle, predecessor: memory.predecessor, ticket: copy(memory.ticket), repository: copy(memory.repository), result: memory.result,
+    // Decision facts only (never copied into the new cycle: its authorization comes from the fresh read).
     authorization: { state: 'authorized', source: 'github-rest', observedAt: at, basis: { repositoryConfigured: true, issueState: 'open', label: memory.label ?? { id: 0, name: '' } },
-      publication: { observedAt: at, completeness: 'complete', associatedPullRequests: 0, limitations: [] }, tracking: 'forgotten' },
+      publication: { observedAt: at, completeness: 'complete', associatedPullRequests: 0, limitations: [] }, tracking: 'forgotten-memory' },
     cancellation: memory.result === 'cancelled' ? { request_id: memory.request_id, requestedAt: at, state: 'ceased', ceasedAt: at, executionId: null, nextStep: '' } : null,
     queue: { category: 'normal', sequence: memory.sequence, pending: false }, impediments: [], dependencies: { latest: null, lastComplete: null }, execution: null, branch: null,
     pullRequest: null, publication: null, previousExecutions: [], questions: [], inputs: { cursor: null }, budget: null, correction: null, pendingRecovery: null, admittedAt: at, history: [] };

@@ -81,7 +81,7 @@ warning, and `limitations` says so too.
 
 ## Real-run recipe (LOCAL only)
 
-`test/entrypoints/forget31-qualification.ts`, namespace `/home/sanmoo/software-factory-test/y5/q31-forget-v1`. Import and `--plan` are inert
+`test/entrypoints/forget31-qualification.ts`, namespace `/home/sanmoo/software-factory-test/y5/q31-forget-v1` (consumed; v2 after the review). Import and `--plan` are inert
 (`forget31-qualification.test.ts`). Phases are one-shot with exclusive intent tombstones and no retry:
 
 1. **`preflight`.** COPIES `q17-delivery-v4/authority` (delivered #3) and `q25-cancel-v1` (cancelled #18 cycle 1, open cycle 2). A format-1
@@ -146,6 +146,27 @@ Observations copied here and scanned for secrets (no token, key or credential va
 
 Level: real local installation data (P on the Records/SQLite/Control boundaries this ticket changes). GitHub stays local by design. There was
 no VM or model. The cancelled environment cleanup is a labelled stand-in (supervisor decision 2).
+
+## Independent review of 41ef0e1 (fixed with TDD; recipe namespace `q31-forget-v2`)
+
+| Finding | Fix | Tests |
+| --- | --- | --- |
+| MED: refused/not-applied `answer`/`update-scope` texts were not linked, so they survived forget | Every answer, update-scope and authorize-readiness request is linked to its Work in the SAME commit, whatever its outcome (`work.contentRequests`, an optional field of `factory.work` v1: no new document kind, storage format unchanged). Forget erases all linked inputs plus the ones the Work/Questions reference. | `forget-flow` AC1 (three refused requests erased; mutation red) |
+| MED: rewritten request docs might keep prior revisions | Checked against the REAL store: session documents are current-only, so Pi Durable deletes the earlier revisions of a document rewritten as a base (every Factory doc checkpoints) and of a retired one. The test reads `document_revisions` of the real SQLite file: none of the 7 seeded texts remains. Free pages/WAL stay the documented limitation. | `forget-flow` AC1 (`storedRevisions`) |
+| MED: a cancelled cycle's PR closed without merge can be reopened and merged later, and nothing would observe it | The memory keeps the PR identity in `watch`. The delivery desk keeps reading it (bounded, least recently read first, also after closed-unmerged). A confirmed merge turns the memory into a delivery (result, merge fact, PR, Ticket cycle memory), and the own blocker becomes satisfied. | `forget-flow` AC2 (watched, then merged → delivered + dependency satisfied; no read after delivery; mutation red) |
+| MED: re-confirming a dropped/failed/indeterminate plan answered `already-satisfied` | It now answers `not-applied` with `PLAN_DROPPED:…`, `PLAN_FAILED:…` or `PLAN_INDETERMINATE:…`. | `forget-flow` revalidation test |
+| MED (recipe): the environment stand-in checked a path that never exists | It checks the REAL path the product would remove (`<y5>/environments/<env>`). If that exists it refuses and never answers absent; the cancelled forget then stays refused and nothing is deleted. Preflight records the presence; the verdict expects the matching branch. | `forget31-recipe-storage` (guard + both verdict branches) |
+| LOW: sources hash, nested memory keys | `sources-unchanged` also hashes the real `<y5>/<work>/` Records trees. `memoryViolations` checks every nested key against `memoryShape`, and Question entries must be ids. | `forget31-qualification`, `forget31-recipe-storage` |
+| LOW: `new` after a forgotten cycle fabricated its basis | The new cycle's label comes from the FRESH Ticket read (refused if the read shows none). The current cycle is found the way the commit finds it (index current, forgotten or not). The forgotten-cancelled path is tested. | `forget-flow` AC2 (label id 77 from the read) |
+| LOW: an unsafe entry appearing after the rename was reported `refused` | Once anything has changed, the result is `failed RECORDS_FORGET_PARTIAL[_UNSAFE]` with counts; the tombstone is shown by the next inspection. | `records/forget` mid-removal test |
+| LOW: the readiness request id was parsed from history detail | The `detail.split` is gone: ids come from `work.contentRequests` and the structured fields only. | `forget-flow` AC1 |
+| LOW: `question <id>` of a forgotten Work | The memory keeps Question ids only; the query answers `question-forgotten`. | `forget-flow` AC4 (public Control) |
+| LOW: unsettled ticket-30 removals; a confirmed plan stuck without the Records port | Removals `intended`/`indeterminate` refuse with `DETAIL_REMOVAL_UNSETTLED` (next step: sweep or `factory cleanup`). Only a `removing` plan blocks (`FORGET_IN_PROGRESS`); a confirmed plan not started is superseded by a newer eligible plan, and its next step says so. | `forget-rules`, `forget-flow` revalidation test |
+
+**Recipe v2 note for the supervisor:** at the time of writing, the real q25 environment `y5/environments/env-41d60b6e…` EXISTS. With the
+corrected guard, v2's cancelled case is therefore expected to take the "kept" branch: refused before and after the stand-in, nothing
+deleted. The forget of a cancelled cycle after a real environment cleanup stays proven at I level (`forget-flow` AC2, REAL Sandbox
+removal).
 
 ## Gaps
 

@@ -8,7 +8,7 @@ import { checksTarget, recordChecks, type ChecksTarget } from './checks.js';
 import { evaluateWorkDependencies } from './polling.js';
 import type { OwnCycleFacts } from '../rules/dependencies.js';
 import type { DependencyEvaluation } from '../types.js';
-import { requests, ticketIndex, works, type WorkRecord } from './admission.js';
+import { linkRequest, requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import type { Session } from './store.js';
 
 // Ticket 16 (spec §3.4, §9.2 steps 6-7, §9.3): internal readiness of the linked own PR and its draft/ready conversion, a CONTROLLER effect:
@@ -199,6 +199,7 @@ Promise<Extract<ControlReceipt, { operation: 'authorize-readiness' }> | { kind: 
     }
     request.input = input;
     request.receipt = receipt;
+    if (work) await linkRequest(tx, work.work_id, input.request_id);
     return copy(receipt);
   }, BACKGROUND_CONTEXT);
 }

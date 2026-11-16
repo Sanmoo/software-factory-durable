@@ -68,3 +68,16 @@ test('forget: an interrupted earlier deletion (tombstone left) is visible to the
   assert.equal((await forgetWorkRecords(root, workId)).outcome, 'removed');
   assert.equal(await exists(join(root, `.forget-${workId}`)), false);
 });
+
+test('forget: an unsafe entry appearing mid-removal (after the rename) is a PARTIAL deletion with its counts, never a clean refusal; the next forget completes it', async t => {
+  const { root } = await area(t);
+  const target = join(root, 'outside'); await writeFile(target, 'must survive');
+  const result = await forgetWorkRecords(root, workId, { afterRename: async tombstone => { await symlink(target, join(tombstone, 'aaa-link')); } });
+  assert.equal(result.outcome, 'failed');
+  assert.equal(result.code, 'RECORDS_FORGET_PARTIAL_UNSAFE');
+  assert.equal(typeof result.files, 'number');
+  assert.ok(await exists(target), 'nothing is followed');
+  const tree = await inspectWorkRecords(root, workId);
+  assert.deepEqual([tree.present, tree.leftover, tree.completeness], [false, true, 'incomplete'], 'what is left is the tombstone, shown by the inspection');
+  assert.deepEqual((await forgetWorkRecords(root, workId)).outcome, 'refused', 'still unsafe: refused, nothing touched');
+});

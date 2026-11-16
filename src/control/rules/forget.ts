@@ -36,7 +36,12 @@ export function forgetRefusals(work: Work, facts: ForgetFacts): ForgetRefusal[] 
     `Clean them first (\`factory cleanup <work> --select ${[...new Set(pending.map(id => id.startsWith('remote-branch:') ? 'remote-branch' : 'environment'))].join(',')}\`); forget never removes a resource.`);
   const unsettledPlans = (work.retention?.plans ?? []).filter(plan => plan.state === 'confirmed' && plan.items.some(item => item.state === 'planned' || item.state === 'intended'));
   if (unsettledPlans.length) refuse('CLEANUP_PLAN_PENDING', `A confirmed explicit cleanup is still executing (${unsettledPlans.map(plan => plan.planId).join(', ')}).`);
-  if ((work.forget?.plans ?? []).some(plan => plan.state === 'confirmed' || plan.state === 'removing')) refuse('FORGET_IN_PROGRESS', 'A confirmed forget of this Work is already executing.');
+  // Review LOW: a detail removal of ticket 30 whose result is unknown (intended or indeterminate) is settled first: never deleted underneath it.
+  const unsettled = (work.retention?.removals ?? []).filter(item => item.outcome === 'intended' || item.outcome === 'indeterminate');
+  if (unsettled.length && !protections.includes('DETAIL_REMOVAL_UNSETTLED')) refuse('DETAIL_REMOVAL_UNSETTLED', `${unsettled.length} log/session removal(s) have an unknown result ` +
+    `(${unsettled.slice(0, 4).map(item => item.id).join(', ')}): the next sweep settles an absent one; otherwise decide with \`factory cleanup <work> --select logs,sessions\`.`);
+  // Only a deletion under way blocks; a confirmed plan not started yet is superseded by a newer eligible plan (never stuck, review LOW).
+  if ((work.forget?.plans ?? []).some(plan => plan.state === 'removing')) refuse('FORGET_IN_PROGRESS', 'A forget of this Work is deleting its Records area now.');
   if (!facts.tree) refuse('RECORDS_NOT_COMPOSED', 'No Records area port is composed: the history cannot be deleted (nothing is assumed absent).');
   else if (facts.tree.completeness !== 'complete') refuse('RECORDS_TREE_UNSAFE', `The Records area holds entries that are never followed or removed (${facts.tree.unsafe.slice(0, 5).join(', ') || 'unreadable'}); inspect it as the administrator.`);
   return refusals;
@@ -61,11 +66,15 @@ export function forgetBasis(work: Work, facts: ForgetFacts): string {
 export function minimalMemoryOf(work: Work, input: { at: string; request_id: string; planId: string }): ForgottenWork {
   const delivered = work.result === 'delivered' && work.delivery?.state === 'delivered' && Boolean(work.delivery.merge);
   const pull = delivered ? work.delivery!.pullRequest : null;
+  const own = ownPullRequestOf(work);
   return { work_id: work.work_id, ticket: { ...work.ticket }, repository: { ...work.repository }, cycle: work.cycle, predecessor: work.predecessor, sequence: work.queue.sequence,
     result: work.result === 'delivered' ? 'delivered' : 'cancelled',
     pullRequest: pull ? { number: pull.number, pullRequestId: pull.pullRequestId, nodeId: pull.nodeId, url: pull.url } : null,
     mergeConfirmed: delivered, mergeConfirmedAt: delivered ? work.delivery!.merge!.confirmedAt : null,
     label: work.authorization?.basis?.label ? { id: work.authorization.basis.label.id, name: work.authorization.basis.label.name } : null,
+    questions: [...(work.questions ?? [])],
+    watch: !delivered && own ? { pullRequest: { ...own, heads: [...own.heads] }, branch: work.branch, state: 'watching', lastReadAt: null,
+      lastOutcome: work.delivery?.observations.at(-1)?.outcome ?? null } : null,
     forgottenAt: input.at, request_id: input.request_id, planId: input.planId };
 }
 
@@ -88,6 +97,7 @@ export function forgetLosses(work: Work, facts: ForgetFacts): Pick<ForgetPlan, '
     'The Ticket stays indexed: label, polling and restarts never admit it again; only an explicit `factory new <owner/repo#number>` starts another cycle, which becomes the evaluated one.',
     memory.result === 'delivered' ? 'As a native blocker it stays an OWN Ticket satisfied by this delivered cycle (until a new cycle exists); never re-evaluated as external.'
       : 'As a native blocker it stays an OWN Ticket NOT satisfied by this cancelled cycle; never re-evaluated as external.',
+    ...(memory.watch ? [`The own pull request #${memory.watch.pullRequest.number} of this cancelled cycle stays watched from the memory: a later confirmed human merge still delivers it (spec §12.3).`] : []),
   ];
   const warnings = ['Not erased: GitHub (issue, comments, pull request, branch), copies outside the Records area (backups, exports, earlier copies of the storage, terminal output). Known limitation: the deleted controller records may remain in SQLite free pages/WAL until reused (no VACUUM or secure delete is run). An external copy can bring deleted data back.'];
   return { losses, keeps, warnings, records: tree ? { files: tree.files, bytes: tree.bytes, present: tree.present, leftover: tree.leftover } : null };
@@ -98,7 +108,7 @@ export const forgetPlanNextStep = (plan: Pick<ForgetPlan, 'state' | 'planId' | '
     case 'planned': return `Review the losses, then \`factory forget-confirm <work> ${plan.planId}\`. Nothing was deleted; the plan is revalidated when confirmed and again just before the deletion.`;
     case 'refused': return `Not eligible (${plan.refusals.map(item => item.code).join(', ')}); nothing was deleted and nothing was changed to make it eligible.`;
     case 'superseded': return 'Superseded by a newer plan of this Work: it can no longer be confirmed.';
-    case 'confirmed': return 'Confirmed: revalidated again just before the deletion (intent recorded before it); then only the minimal memory remains.';
+    case 'confirmed': return 'Confirmed: the retention desk (with the Records port composed) revalidates it again just before the deletion (intent recorded before it); then only the minimal memory remains. Until it starts, a newer eligible `factory forget` plan supersedes it.';
     case 'dropped': return `Dropped at revalidation (${plan.code}): nothing was deleted. Plan again if still wanted.`;
     case 'removing': return 'Deleting the Records area (intent recorded); the result follows.';
     case 'failed': return `The deletion did not complete (${plan.code}); the Work and what is left of its Records stay. Nothing is retried implicitly: inspect, then plan again.`;

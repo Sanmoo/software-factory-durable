@@ -77,7 +77,9 @@ export async function inspectWorkRecords(root: string, workId: string): Promise<
  * tree holds anything unsafe. `absent` only when neither exists under the intact private root. A removal cut half-way is `failed` (what is
  * left is only the tombstone, visible to the next inspection).
  */
-export async function forgetWorkRecords(root: string, workId: string): Promise<RecordsForget> {
+export async function forgetWorkRecords(root: string, workId: string,
+  /** Test seam only: runs right after the atomic rename (e.g. to place an entry that appears mid-removal). */
+  hooks: { afterRename?(tombstone: string): Promise<void> } = {}): Promise<RecordsForget> {
   const none = { files: 0, bytes: 0 };
   if (!identifier.test(workId)) return { outcome: 'refused', code: 'WORK_ID_INVALID', ...none };
   let canonical: string;
@@ -87,16 +89,22 @@ export async function forgetWorkRecords(root: string, workId: string): Promise<R
   if (tree.completeness !== 'complete') return { outcome: tree.unsafe.length ? 'refused' : 'failed', code: tree.unsafe.length ? 'RECORDS_TREE_UNSAFE' : 'RECORDS_AREA_UNAVAILABLE', ...none };
   if (!tree.present && !tree.leftover) return { outcome: 'absent', code: null, ...none };
   const removed = { files: 0, bytes: 0 };
+  let renamed = false;
   try {
     if (tree.present) {
       if (tree.leftover) await removeTree(tombstone, removed);
       await rename(area, tombstone);
+      renamed = true;
       await syncDirectory(canonical);
+      await hooks.afterRename?.(tombstone);
     }
     await removeTree(tombstone, removed);
     await syncDirectory(canonical);
     return { outcome: 'removed', code: null, ...removed };
   } catch (error) {
-    return { outcome: error instanceof Unsafe ? 'refused' : 'failed', code: error instanceof Unsafe ? 'RECORDS_TREE_UNSAFE' : removed.files ? 'RECORDS_FORGET_PARTIAL' : 'RECORDS_FORGET_FAILED', ...removed };
+    // Review LOW: once anything changed (renamed or unlinked), the result is a PARTIAL deletion with its counts, never a clean refusal: what is
+    // left is the tombstone, shown by the next inspection. An unsafe entry found before any change is a refusal.
+    if (renamed || removed.files) return { outcome: 'failed', code: error instanceof Unsafe ? 'RECORDS_FORGET_PARTIAL_UNSAFE' : 'RECORDS_FORGET_PARTIAL', ...removed };
+    return { outcome: error instanceof Unsafe ? 'refused' : 'failed', code: error instanceof Unsafe ? 'RECORDS_TREE_UNSAFE' : 'RECORDS_FORGET_FAILED', ...removed };
   }
 }

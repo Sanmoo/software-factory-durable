@@ -40,6 +40,9 @@ test('AC1/AC2: only an ended Work with nothing pending is eligible; open/closed-
   assert.deepEqual(codes(work({ cleanup: { state: 'pending', resources: [{ id: 'remote-branch:x', state: 'kept' }], explicit: null } })), ['RESOURCES_PENDING']);
   assert.deepEqual(codes(work({ retention: { plans: [{ planId: 'p', state: 'confirmed', items: [{ state: 'planned' }] }], removals: [] } })), ['CLEANUP_PLAN_PENDING']);
   assert.deepEqual(codes(work({ forget: { plans: [{ state: 'removing' }] } })), ['FORGET_IN_PROGRESS']);
+  assert.deepEqual(codes(work({ forget: { plans: [{ state: 'confirmed' }] } })), [], 'a confirmed plan not started never blocks (a newer plan supersedes it)');
+  assert.deepEqual(codes(work({ retention: { plans: [], removals: [{ id: 'log:a', outcome: 'indeterminate' }] } })), ['DETAIL_REMOVAL_UNSETTLED']);
+  assert.deepEqual(codes(work({ retention: { plans: [], removals: [{ id: 'log:a', outcome: 'failed' }] } })), [], 'a known failed removal leaves the file: forget deletes it');
   assert.deepEqual(codes(work(), { tree: null }), ['RECORDS_NOT_COMPOSED']);
   assert.deepEqual(codes(work(), { tree: tree({ completeness: 'incomplete', unsafe: ['w-1/evidence/link'] }) }), ['RECORDS_TREE_UNSAFE']);
   // An own environment not removed yet is a pending resource (cancelled: never its branch or GitHub).
@@ -53,7 +56,7 @@ test('AC3: the minimal memory keeps identities, order/link, result and the deliv
   const memory = minimalMemoryOf(work(), { at: 'now', request_id: 'r', planId: 'p' });
   assert.deepEqual(memory, { work_id: 'w-1', ticket: work().ticket, repository: work().repository, cycle: 2, predecessor: 'w-0', sequence: 4, result: 'delivered',
     pullRequest: { number: 42, pullRequestId: 9042, nodeId: 'PR_own42', url: 'https://github.com/acme/project/pull/42' }, mergeConfirmed: true,
-    mergeConfirmedAt: '2026-11-01T00:00:00.000Z', label: { id: 55, name: 'ready-for-agent' }, forgottenAt: 'now', request_id: 'r', planId: 'p' });
+    mergeConfirmedAt: '2026-11-01T00:00:00.000Z', label: { id: 55, name: 'ready-for-agent' }, questions: ['q-1'], watch: null, forgottenAt: 'now', request_id: 'r', planId: 'p' });
   assert.ok(!JSON.stringify(memory).includes('SECRET REQUEST TEXT'));
   const cancelled = minimalMemoryOf(work({ result: 'cancelled', delivery: null }), { at: 'now', request_id: 'r', planId: 'p' });
   assert.deepEqual([cancelled.result, cancelled.pullRequest, cancelled.mergeConfirmed, cancelled.mergeConfirmedAt], ['cancelled', null, false, null]);

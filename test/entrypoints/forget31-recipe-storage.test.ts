@@ -8,7 +8,7 @@ import { createRecords, inspectWorkRecords, preserveEvidence } from '../../src/r
 import { cancelWithSuccessor, markCleaned, markDelivered, seedPublishedWork, store } from '../control/delivery-fixture.js';
 import { ticket } from '../control/doubles.js';
 import { copyRecords } from './retention30-qualification.js';
-import { forgetOwnerRun, verdict, type CaseObservation } from './forget31-qualification.js';
+import { environmentPort, forgetOwnerRun, verdict, type CaseObservation } from './forget31-qualification.js';
 
 // Ticket 31 recipe core on TEMPORARY fixtures (never the real root): a delivered Work (cleanup complete) and a cancelled cycle with an open
 // successor, their Records copied privately, real owner runs through the public `openControl` (CLI accept/inspect path) with the production
@@ -31,7 +31,7 @@ async function source(dir: string, name: string, number: number, kind: 'delivere
   const caseRoot = join(dir, name); await mkdir(join(caseRoot, 'records'), { recursive: true, mode: 0o700 });
   const recordsRoot = await realpath(join(caseRoot, 'records'));
   await copyRecords(join(path, work_id), join(recordsRoot, work_id));
-  return { storagePath: join(path, 'control.sqlite'), copyRoot: caseRoot, recordsRoot, workId: work_id, successor, ticket: ticket(number), label, now: Date.now(),
+  return { storagePath: join(path, 'control.sqlite'), environmentRoot: path, recordsRoot, workId: work_id, successor, ticket: ticket(number), label, now: Date.now(),
     repositoryName: 'acme/project', deadlineMs: 20000, before: await inspectWorkRecords(recordsRoot, work_id) };
 }
 
@@ -45,7 +45,13 @@ test('recipe core: delivered and cancelled Works forgotten on copies through the
   assert.equal((runDA.shown as { kind: string }).kind, 'work-forgotten', JSON.stringify(runDA).slice(0, 2000));
   const runCA = await forgetOwnerRun({ ...c, steps: ['cleanup-environment-then-forget'], requestPrefix: 't-c-a' });
   assert.equal((runCA.shown as { kind: string }).kind, 'work-forgotten', JSON.stringify(runCA).slice(0, 3000));
-  assert.deepEqual(runCA.environmentPort.map(item => item.split(':')[0]), ['preserve', 'remove'], 'the labelled environment port answered the explicit cleanup only');
+  assert.deepEqual(runCA.environmentPort.map(item => item.split(':')[0]), ['preserve', 'remove', 'absent'], 'the labelled environment port answered the explicit cleanup only');
+  // Review MED: the stand-in guards the REAL path the product would remove: an existing environment is refused, never answered absent.
+  const real = join(dir, 'real-root'); await mkdir(join(real, 'environments', 'env-x'), { recursive: true, mode: 0o700 });
+  const guarded = environmentPort(real);
+  assert.equal((await guarded.remove({ environment: 'env-x' })).status, 'failure');
+  assert.equal((await guarded.preserve({ environment: 'env-x' })).status, 'failed');
+  assert.equal((await guarded.remove({ environment: 'env-y' })).status, 'success');
   const runDB = await forgetOwnerRun({ ...d, steps: ['new'], requestPrefix: 't-d-b' });
   const runCB = await forgetOwnerRun({ ...c, steps: [], requestPrefix: 't-c-b' });
   const observed = async (input: typeof d, runA: typeof runDA, runB: typeof runDA): Promise<CaseObservation> => {
@@ -54,10 +60,13 @@ test('recipe core: delivered and cancelled Works forgotten on copies through the
     return { workId: input.workId, successorId: input.successor, before: tree(input.before), after: tree(after), runA, runB };
   };
   const delivered = await observed(d, runDA, runDB), cancelled = await observed(c, runCA, runCB);
-  const result = verdict({ delivered, cancelled, sourceBefore: 'same', sourceAfter: 'same' });
+  const result = verdict({ delivered, cancelled: { ...cancelled, environmentPresent: false }, sourceBefore: 'same', sourceAfter: 'same' });
   assert.equal(result.overall, 'met', JSON.stringify(result.checks.filter(check => !check.met)));
   // A no-op (nothing forgotten, Records still there) is never a pass.
   const noop = { ...delivered, after: delivered.before, runA: { ...runDA, shown: { kind: 'work' } }, runB: { ...runDB, shown: { kind: 'work' } } };
   assert.equal(verdict({ delivered: noop, cancelled, sourceBefore: 'same', sourceAfter: 'same' }).overall, 'not-met');
+  // With the real environment present, a forgotten cancelled cycle is NOT met (it had to stay refused); sources must match exactly.
+  assert.equal(verdict({ delivered, cancelled: { ...cancelled, environmentPresent: true }, sourceBefore: 'same', sourceAfter: 'same' }).overall, 'not-met');
+  assert.equal(verdict({ delivered, cancelled, sourceBefore: { records: { delivered: 'a' } }, sourceAfter: { records: { delivered: 'b' } } }).overall, 'not-met');
   for (const run of [runDA, runDB, runCA, runCB]) assert.ok(!('cleanupBranch' in run.calls) && !('postComment' in run.calls) && !('sandbox.remove' in run.calls));
 });

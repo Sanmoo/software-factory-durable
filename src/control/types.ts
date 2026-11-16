@@ -563,6 +563,8 @@ export type WorkView = {
   retention?: RetentionView | null;
   /** Ticket 31: explicit history deletion plans of this Work (once executed, the Work record itself is gone: see `ForgottenWork`). */
   forget?: { plans: ForgetPlan[] } | null;
+  /** Ticket 31: ids of this Work's requests whose input carries operator text (answers, scope updates, readiness authorizations), any outcome. */
+  contentRequests?: string[];
   admittedAt: string;
   history: ({ at: string; event: 'admitted'; origin: 'github-polling'; sequence: number } |
     { at: string; event: 'dependencies-changed'; origin: 'github-polling'; before: DependencyEvaluation['conclusion'] | null; after: DependencyEvaluation['conclusion']; evaluationId: string } |
@@ -623,7 +625,9 @@ export type ListView = { kind: 'list'; paused: boolean; dispatch: 'closed' | 'op
 export type ShowView = { kind: 'work'; work: WorkView; lastPolled: CandidateView | null; questions: QuestionView[] } | { kind: 'work-not-found'; work_id: string; nextStep: string } |
   /** Ticket 31: the Work's history was deleted by `forget`; only its minimal cycle memory remains (never "not found", never "expired"). */
   { kind: 'work-forgotten'; work_id: string; memory: ForgottenWork; notRecoverable: string[]; nextStep: string };
-export type QuestionQueryView = { kind: 'question'; question: QuestionView } | { kind: 'question-not-found'; question_id: string; nextStep: string };
+export type QuestionQueryView = { kind: 'question'; question: QuestionView } | { kind: 'question-not-found'; question_id: string; nextStep: string } |
+  /** Ticket 31: the Question belonged to a Work whose history `forget` deleted (its text and answer are gone, never "not found"). */
+  { kind: 'question-forgotten'; question_id: string; work_id: string; nextStep: string };
 export type ControlStatus = {
   controller_run_id: string;
   paused: boolean;
@@ -806,6 +810,10 @@ export type ForgottenWork = { work_id: string; ticket: TicketRef; repository: { 
   cycle: number; predecessor: string | null; sequence: number; result: 'delivered' | 'cancelled';
   pullRequest: { number: number; pullRequestId: number; nodeId: string; url: string } | null; mergeConfirmed: boolean; mergeConfirmedAt: string | null;
   /** The configured label the cycle was admitted with (configuration fact; a later `new` re-reads the Ticket). */ label: { id: number; name: string } | null;
+  /** Question identities only (no text): `question <id>` answers `question-forgotten`. */ questions: string[];
+  /** Review MED: a cancelled cycle's own PR stays watched from the memory (spec §12.3: a confirmed merge still delivers it; a human may reopen and
+   * merge it later). A confirmed merge turns this memory into a delivery (`result`, `mergeConfirmed`, `pullRequest`). */
+  watch: { pullRequest: OwnPullRequestIdentity; branch: string | null; state: 'watching' | 'delivered'; lastReadAt: string | null; lastOutcome: string | null } | null;
   forgottenAt: string; request_id: string; planId: string };
 /** One `forget` plan. The deletion is intended BEFORE the Records effect and recorded after it; a lost intent is `indeterminate` (never retried). */
 export type ForgetPlan = { planId: string; request_id: string; work_id: string; createdAt: string;

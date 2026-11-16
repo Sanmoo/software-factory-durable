@@ -249,7 +249,12 @@ export async function openControl(options: { storagePath: string;
       if (query.kind === 'question') {
         if (!workIdSchema.safeParse(query.question_id).success) throw new Error('INVALID_QUESTION_ID');
         const question = await readQuestion(state, query.question_id);
-        return question ? { kind: 'question', question } : { kind: 'question-not-found', question_id: query.question_id, nextStep: 'No Question with this identity; use `factory show <work>`.' };
+        if (question) return { kind: 'question', question };
+        // Ticket 31 (review LOW): a Question of a forgotten Work is gone with its history; it is never reported as unknown.
+        const owner = question ? undefined : (await readForgotten(state)).find(item => item.questions?.includes(query.question_id));
+        if (owner) return { kind: 'question-forgotten', question_id: query.question_id, work_id: owner.work_id,
+          nextStep: `This Question belonged to Work ${owner.work_id}, whose history \`forget\` deleted at ${owner.forgottenAt}: its text and answer are not recoverable.` };
+        return { kind: 'question-not-found', question_id: query.question_id, nextStep: 'No Question with this identity; use `factory show <work>`.' };
       }
       const current = await readInstallation(state);
       if (query.kind === 'show') {

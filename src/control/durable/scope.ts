@@ -3,7 +3,7 @@ import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { ControlInput, ControlReceipt, ScopeUpdateView } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
 import { scopeReasonDecision, scopeUpdateDecision } from '../rules/continuation.js';
-import { requests, ticketIndex, works, type WorkRecord } from './admission.js';
+import { linkRequest, requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import type { Session } from './store.js';
 
 type Receipt = Extract<ControlReceipt, { operation: 'update-scope' }>;
@@ -55,6 +55,7 @@ export async function acceptScopeUpdate(session: Session, input: Extract<Control
     }
     request.input = input;
     request.receipt = receipt;
+    if (work) await linkRequest(tx, work.work_id, input.request_id);
     return JSON.parse(JSON.stringify(receipt)) as Receipt;
   }, BACKGROUND_CONTEXT);
 }

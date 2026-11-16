@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { ControlInput, ControlReceipt, ForgetPlan, ForgetRemoval, RetentionEvent } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
+import type { MergeDecision } from '../rules/delivery.js';
 import { forgetBasis, forgetLosses, forgetPlanNextStep, forgetRefusals, minimalMemoryOf, type ForgetFacts } from '../rules/forget.js';
 import { requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import { rememberResult } from './cycles.js';
@@ -59,7 +60,8 @@ export async function acceptForgetPlan(session: Session, input: ForgetInput & { 
     const refusals = forgetRefusals(work, current);
     const at = new Date().toISOString();
     const plans = plansOf(work);
-    if (!refusals.length) for (const plan of plans) if (plan.state === 'planned') settle(plan, 'superseded');
+    // A confirmed plan the desk has not started yet is superseded too (it never runs afterwards: beginForget needs `confirmed`).
+    if (!refusals.length) for (const plan of plans) if (plan.state === 'planned' || plan.state === 'confirmed') settle(plan, 'superseded');
     const plan: ForgetPlan = { planId: randomUUID(), request_id: input.request_id, work_id: work.work_id, createdAt: at, state: refusals.length ? 'refused' : 'planned',
       basis: forgetBasis(work, current), refusals, ...forgetLosses(work, current), confirmedBy: null, confirmedAt: null, effect: null, code: null, nextStep: '' };
     plan.nextStep = forgetPlanNextStep(plan);
@@ -83,6 +85,8 @@ export async function acceptForgetConfirm(session: Session, input: ForgetInput &
     if (!plan) return receiptOf(input, 'not-applied', 'PLAN_NOT_FOUND', null);
     if (plan.state === 'superseded') return receiptOf(input, 'not-applied', 'PLAN_SUPERSEDED', plan);
     if (plan.state === 'refused') return receiptOf(input, 'not-applied', 'PLAN_REFUSED', plan);
+    // Review MED: an ended plan answers its real outcome (never `already-satisfied`); only a confirmed/executing one is already satisfied.
+    if (plan.state === 'dropped' || plan.state === 'failed' || plan.state === 'indeterminate') return receiptOf(input, 'not-applied', `PLAN_${plan.state.toUpperCase()}${plan.code ? `:${plan.code}` : ''}`, plan);
     if (plan.state !== 'planned') return receiptOf(input, 'already-satisfied', 'PLAN_ALREADY_CONFIRMED', plan);
     const current: ForgetFacts = { ...facts(work), questions: await questionsIn(tx, work) };
     const at = new Date().toISOString();
@@ -154,7 +158,6 @@ export function contentRequestIds(work: WorkRecord, questionViews: { answer: { o
   }
   for (const update of work.scopeUpdates ?? []) if (update.origin.kind === 'local-cli') ids.add(update.origin.request_id);
   if (work.readiness?.authorization) ids.add(work.readiness.authorization.request_id);
-  for (const entry of work.history) if (entry.event === 'readiness-authorized') { const id = entry.detail.split(':')[1]; if (id) ids.add(id); }
   return [...ids].filter(id => /^[a-zA-Z0-9_-]{1,128}$/.test(id));
 }
 
@@ -186,8 +189,10 @@ export async function finishForget(session: Session, work_id: string, planId: st
     index.order = index.order.filter(id => id !== work_id);
     // Sanity: the Ticket stays indexed (anti re-admission) — the index entry is never removed by forget.
     if (!index.tickets[ticketKey(work.ticket)]) throw new Error('FORGET_INDEX_INCONSISTENT');
-    for (const id of work.questions ?? []) await tx.retireDoc(questionDocs, id);
-    for (const id of existingRequests) {
+    // A Question named by the Work but never recorded is created and retired in this commit (retiring needs a live incarnation).
+    for (const id of work.questions ?? []) { await tx.doc(questionDocs, id, null); await tx.retireDoc(questionDocs, id); }
+    // Review MED: every request linked to the Work at its own commit (accepted or not), plus the ones the Work/Questions reference (older records).
+    for (const id of [...new Set([...existingRequests, ...(work.contentRequests ?? [])])]) {
       const request = await tx.doc(requests, id, null);
       if (!request.input) continue;
       const input = request.input as { request_id: string; operation: string; origin: string };
@@ -195,5 +200,29 @@ export async function finishForget(session: Session, work_id: string, planId: st
     }
     await tx.retireDoc(works, work_id);
     return 'forgotten' as const;
+  }, BACKGROUND_CONTEXT);
+}
+
+/**
+ * Review MED (spec §12.3): one read of a forgotten cancelled cycle's own PR, from its memory watch. A confirmed merge turns the memory into a
+ * delivery (result, merge fact, PR identity) and updates the Ticket's cycle memory in the same commit; anything else only records the read.
+ */
+export async function recordForgottenMerge(session: Session, work_id: string, decision: MergeDecision | { outcome: 'unavailable'; reasons: string[] }) {
+  return session.commit(async tx => {
+    const index = await tx.doc(ticketIndex);
+    const memory = index.forgotten?.[work_id];
+    if (!memory?.watch || memory.watch.state !== 'watching') return 'stale' as const;
+    const at = new Date().toISOString();
+    memory.watch.lastReadAt = at;
+    if (decision.outcome !== 'unavailable') memory.watch.lastOutcome = decision.outcome;
+    if (decision.outcome !== 'merged') return 'observed' as const;
+    const pull = memory.watch.pullRequest;
+    Object.assign(memory, { result: 'delivered', mergeConfirmed: true, mergeConfirmedAt: at,
+      pullRequest: { number: pull.number, pullRequestId: pull.pullRequestId, nodeId: pull.nodeId, url: pull.url } });
+    memory.watch.state = 'delivered';
+    const key = Object.entries(index.tickets).find(([, entry]) => entry.current === work_id || entry.previous.includes(work_id))?.[0];
+    if (key) index.memory = { ...(index.memory ?? {}), [key]: { cycles: (index.memory?.[key]?.cycles ?? []).map(item => item.work_id === work_id
+      ? { ...item, result: 'delivered' as const, mergeConfirmed: true } : item) } };
+    return 'delivered' as const;
   }, BACKGROUND_CONTEXT);
 }
