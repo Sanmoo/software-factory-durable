@@ -38,6 +38,9 @@ import { evaluateChecks } from '../rules/checks.js';
 
 export type DispatchObservation = { at: string; work_id: string | null; outcome: string; reasons: string[] };
 const maxTimer = 2147483647;
+/** Ticket 24 (review LOW): refused revalidations tolerated in ONE dispatch pass before it ends (each costs Ticket/graph reads). A refused
+ * Work keeps its position, so as long as this many Works ahead keep being refused the ones behind wait: the cap bounds reads, not order. */
+export const refusalsPerPass = 4;
 /** Publish-only Builder policies (review HIGH 1): the same pack/budget/output policy, without the edit tool (and never the handoff). */
 const publishOnly = (policies: ExecutionPorts['builder']): ExecutionPorts['builder'] => {
   const { editSourceMaxBytes: _edit, ...rest } = policies;
@@ -199,6 +202,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
   // Monotonic start of each Execution running in THIS process (memory only): live duration for inspection.
   const startedAt = new Map<string, number>();
   const running = new Map<string, Promise<void>>();
+  // Ticket 24: the dispatch pass that reserved each running Execution (memory only), handed to Sandbox.start as evidence.
+  const passes = new Map<string, string>();
   const lifecycles = new Map<string, ReturnType<typeof credentialLifecycle>>();
   // Ticket 17/25: interruption of a running activity whose Work was delivered (merge confirmed) or cancelled meanwhile.
   const interrupts = new Map<string, (reason: 'delivered' | 'cancelled') => void>();
@@ -825,7 +830,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       phase = 'start';
       checkStop();
       startRequested = true;
-      const started = await ports.sandbox.start({ environment, configuration: ports.configuration });
+      const pass = passes.get(work.work_id);
+      const started = await ports.sandbox.start({ environment, configuration: ports.configuration, ...(pass ? { pass } : {}) });
       if (started.status !== 'success') { await hold(`START_${started.code}`, 'The boot did not become operational; no automatic retry. Observe/stop the environment explicitly.', true); return; }
       boot = started.boot;
       if ((await recordPhase(session, work.work_id, executionId, 'prepared', 'booted', 'execution-booted', current => { current.dispatch.boot = started.boot; })).kind !== 'advanced') { observe(work.work_id, 'stale'); return; }
@@ -1124,7 +1130,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       request: { correctionId: correction.correctionId, reasons: structuredClone(reasons), headSha: reasons[0]!.headSha, baseTip: evaluation.pullRequest.baseTip,
         ...(humanTips(fresh.publication).length ? { humanTips: humanTips(fresh.publication) } : {}) } };
   }
-  return {
+  const reservedIn = (tried: ReadonlySet<string>) => [...tried].filter(id => running.has(id)).length;
+  const dispatcher = {
     view: () => ({ running: running.size, last }),
     /** Whether an activity of this Work runs in THIS process (ticket 15 tracking skips it). */
     active: (work_id: string) => running.has(work_id),
@@ -1160,109 +1167,134 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       await lifecycle.withdraw(reason, { notifyWorker: true });
       return 'withdrawn';
     },
+    /**
+     * One dispatch pass of the owner loop (ticket 24, spec §4.3): every free Slot is filled in THIS pass, in queue order (repairs first, FIFO in
+     * each category, no preemption, no global or per-repository mutex). Each candidate is revalidated and admitted on its own; a candidate
+     * refused by its own attempt is skipped for the rest of the pass, keeps its position and never blocks the independents behind it. Each
+     * admission re-checks the capacity in its commit (held Slots, including uncertain ones, are never free). At most `refusalsPerPass`
+     * refused attempts per pass (bounded GitHub reads); the rest waits for the next pass, in place.
+     */
     async tick() {
       if (stopping.signal.aborted) return;
       // Discovery is tracking (safe reads), not a trigger: it runs while paused too, before any selection.
       await reconcilePublications();
-      if (stopping.signal.aborted || await deps.paused()) return;
-      if (await deps.heldSlots() >= ports.capacity) { observe(null, 'no-slot-available'); return; }
-      const works = await deps.readWorks();
-      // Ticket 22 (spec §4.3): repairs before normal Works, FIFO in each category, no preemption of a running activity.
-      const candidates = queueOrder(works.filter(work => work.result === 'open' && work.queue.pending && !running.has(work.work_id)))
-        .map(work => ({ work_id: work.work_id, blockers: dispatchBlockers({ impediments: work.impediments, evaluation: work.dependencies.latest,
-          currentAttempt: deps.currentAttempt(work.repository.repository) }).concat(deps.runBlockers?.(work) ?? []) }));
-      // Ticket 22: a repair whose fresh revalidation cannot conclude (read failed, not configured, stale) or that was withdrawn is skipped for
-      // THIS pass, keeping its position; the next eligible Work is tried (one impeded repair never stalls the dispatch).
-      const skipped = new Set<string>();
-      let work!: WorkRecord;
-      let revalidated: Extract<Awaited<ReturnType<typeof revalidateRepair>>, { kind: 'repair' }> | undefined;
+      const tried = new Set<string>();
+      const pass = randomUUID();
       for (;;) {
-        const next = selectNext(candidates.filter(item => !skipped.has(item.work_id))).next;
-        if (!next) { observe(null, 'nothing-eligible', [...skipped]); return; }
-        const candidate = works.find(item => item.work_id === next)!;
-        const pending = candidate.correction;
-        if (resumeBasis(candidate)?.end?.outcome === 'question' || !pending || pending.consumed || pending.trigger !== 'effective-impediment') { work = candidate; break; }
-        // Ticket 22 (spec §10 step 2): immediately before admission, the requirements and reasons are read AGAIN (fresh complete read of the
-        // own PR); reasons that disappeared are dropped and a correction left without any is withdrawn without charge.
-        const result = await revalidateRepair(candidate);
-        if (result.kind === 'repair') { work = candidate; revalidated = result; break; }
-        observe(candidate.work_id, result.kind, result.reasons);
-        skipped.add(candidate.work_id);
+        if (stopping.signal.aborted || await deps.paused()) return;
+        if (tried.size - reservedIn(tried) >= refusalsPerPass) { observe(null, 'pass-refusal-limit', [`REFUSED_${refusalsPerPass}`]); return; }
+        // The first observation of the pass is kept when a later step merely finds nothing more to do.
+        if (await deps.heldSlots() >= ports.capacity) { if (!tried.size) observe(null, 'no-slot-available'); return; }
+        if (!await dispatchOne(tried, pass)) { if (!tried.size) observe(null, 'nothing-eligible'); return; }
       }
-      const authorization = await revalidateAuthorization(work);
-      if (!authorization.ok) {
-        // Ticket 25: an observed withdrawal suspends the Work durably (only `resume` lifts it); an unavailable read concludes nothing.
-        // Review MED: only a confirmed closure/label absence is durable; every other code is transient.
-        const withdrawal = confirmedWithdrawal(authorization.reasons);
-        if (withdrawal.kind === 'withdrawn') await deps.authorizationWithdrawn?.(work.work_id, withdrawal.codes);
-        observe(work.work_id, 'authorization-not-confirmed', authorization.reasons); return;
-      }
-      // After a Question: only its accepted answer is a recovery basis; after a COMPLETED Execution: only an authorized concrete scope
-      // change (ticket 11). Both are re-checked in the admission commit; a later Ticket/link edit is never one.
-      const previous = resumeBasis(work);
-      const scopeUpdateIds = pendingScope(work).map(update => update.scopeUpdateId);
-      let resume: NonNullable<ExecutionView['request']['resume']> | undefined;
-      let publication: NonNullable<ExecutionView['request']['publication']> | undefined;
-      let reconciliation: NonNullable<ExecutionView['request']['reconciliation']> | undefined;
-      let repair: NonNullable<ExecutionView['request']['repair']> | undefined;
-      if (revalidated) {
-        resume = { previousExecutionId: revalidated.basisExecutionId, questionId: null, answerSha256: null, scopeUpdateIds, reason: 'REPAIR_REQUESTED' };
-        repair = revalidated.request;
-      }
-      if (resume) { /* ticket 22 repair resumption decided above */ }
-      else if (previous?.end?.outcome === 'question') {
-        const answered = previous.end.questionId ? await readQuestion(session, previous.end.questionId) : null;
-        if (!answered?.answer || answered.workId !== work.work_id || answered.executionId !== previous.executionId) { observe(work.work_id, 'refused', ['QUESTION_NOT_ANSWERED']); return; }
-        resume = { previousExecutionId: previous.executionId, questionId: answered.questionId, answerSha256: answered.answer.sha256, scopeUpdateIds, reason: 'QUESTION_ANSWERED' };
-        // Ticket 21: a reconciliation Execution that asked keeps its reconciliation request (the same authorization, the same preservation check).
-        if (previous.request.reconciliation) reconciliation = structuredClone(previous.request.reconciliation);
-        // Ticket 22: a repair Execution that asked keeps its repair request (same correction, same reasons, same charge).
-        if (previous.request.repair) repair = structuredClone(previous.request.repair);
-      } else if (previous && work.publication?.state === 'reconciling' && reconciliationInterrupted(work, previous)) {
-        // Real run q21-human-v4: the reconciliation Execution was interrupted (transient worker failure): ticket 26's operational recovery
-        // continues it with the SAME reconciliation request (preserve check, later lease) and the authorization stays bound (no resume).
-        reconciliation = structuredClone(previous.request.reconciliation!);
-      } else if (previous && work.publication?.state === 'reconciling') {
-        // Ticket 21: the ONE divergence the accepted answer authorized to incorporate (re-checked in the admission commit).
-        const authorization = authorizationInForce(work.publication);
-        const divergence = work.publication.divergences?.find(item => item.divergenceId === authorization?.divergenceId);
-        if (!authorization || authorization.mode !== 'incorporate' || authorization.state !== 'authorized' || !divergence) { observe(work.work_id, 'refused', ['RECONCILIATION_NOT_AUTHORIZED']); return; }
-        resume = { previousExecutionId: previous.executionId, questionId: authorization.questionId, answerSha256: authorization.answerSha256, scopeUpdateIds: [], reason: 'RECONCILIATION_AUTHORIZED' };
-        reconciliation = { divergenceId: authorization.divergenceId, questionId: authorization.questionId, answerSha256: authorization.answerSha256,
-          expected: structuredClone(authorization.expected), authorizedRemote: authorization.authorizedRemote, localHead: divergence.local ?? previous.review?.rounds.at(-1)?.handoff.summary?.head ?? '',
-          strategy: 'rebase-unless-agents-documents-another' };
-      } else if (previous?.end?.outcome === 'completed' && scopeUpdateIds.length) {
-        resume = { previousExecutionId: previous.executionId, questionId: null, answerSha256: null, scopeUpdateIds, reason: 'SCOPE_UPDATED' };
-      } else if (previous && work.publication?.state === 'requested' && work.publication.verified && work.publication.expectedRemote &&
-          publicationResumes(previous, work.publication.basisExecutionId)) {
-        // Ticket 14: the requested publication activation, with exactly the recorded verified commit and lease expectation (re-checked in the commit).
-        resume = { previousExecutionId: previous.executionId, questionId: null, answerSha256: null, scopeUpdateIds, reason: 'PUBLICATION_REQUESTED' };
-        publication = { basisExecutionId: work.publication.basisExecutionId, head: work.publication.verified.head, branch: work.publication.branch,
-          base: work.publication.base, marker: work.publication.marker, expectedRemote: work.publication.expectedRemote, pullRequest: work.publication.update ?? null };
-      }
-      // Ticket 22: every later activation of a CHARGED correction (Question resume, ticket 26 interruption recovery or continuation) keeps its
-      // repair request — reasons, human tips, base tip — and delivers the reasons deferred since the charge (re-checked in the admission commit).
-      if (!publication && !reconciliation && work.correction?.consumed && work.correction.trigger === 'effective-impediment') {
-        const id = work.correction.correctionId;
-        const last = repair ?? [...work.previousExecutions, ...(work.execution ? [work.execution] : [])].reverse().find(item => item.request.repair?.correctionId === id)?.request.repair;
-        if (last) {
-          const known = new Set(last.reasons.map(fingerprint));
-          repair = { ...structuredClone(last), reasons: [...last.reasons, ...(work.correction.pendingReasons ?? []).filter(item => !known.has(fingerprint(item)))].slice(0, 16) };
-        }
-      }
-      // Ticket 26: after an interrupted Execution, its basis (operational recovery or clean-stop continuation), re-checked in the commit.
-      const interruption = interruptionBasis(work);
-      const { attemptId } = await freshEvaluation(work);
-      const admission = await admitExecution(session, { ...(interruption ? { interruption } : {}), now: (ports.calendar ?? Date).now(), work_id: work.work_id, attemptId, capacity: ports.capacity, authorizationObservedAt: authorization.observedAt,
-        request: { ticket: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
-          branch: `factory/${work.ticket.number}-${work.work_id.slice(0, 8)}`, policies: publication ? publishOnly(ports.builder) : { ...ports.builder }, ...(publication ? { publication } : {}),
-          ...(reconciliation ? { reconciliation } : {}), ...(repair ? { repair } : {}) }, ...(resume ? { resume } : {}),
-        limits: deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase()) ?? {} });
-      if (admission.kind === 'refused') { observe(work.work_id, 'refused', admission.reasons); return; }
-      observe(work.work_id, 'reserved');
-      const task = execute(work, admission.execution).finally(() => running.delete(work.work_id));
-      running.set(work.work_id, task);
     },
     async stop() { stopping.abort(); await Promise.allSettled(running.values()); return { uncertain: uncertainStops }; },
   };
+
+  /** One candidate of the pass: false when none is left. A refused attempt is recorded in `tried` and observed, never retried in this pass. */
+  async function dispatchOne(tried: Set<string>, pass: string): Promise<boolean> {
+    const works = await deps.readWorks();
+    // Ticket 22 (spec §4.3): repairs before normal Works, FIFO in each category, no preemption of a running activity.
+    const candidates = queueOrder(works.filter(work => work.result === 'open' && work.queue.pending && !running.has(work.work_id) && !tried.has(work.work_id)))
+      .map(work => ({ work_id: work.work_id, blockers: dispatchBlockers({ impediments: work.impediments, evaluation: work.dependencies.latest,
+        currentAttempt: deps.currentAttempt(work.repository.repository) }).concat(deps.runBlockers?.(work) ?? []) }));
+    // Ticket 22: a repair whose fresh revalidation cannot conclude (read failed, not configured, stale) or that was withdrawn is skipped for
+    // THIS pass, keeping its position; the next eligible Work is tried (one impeded repair never stalls the dispatch). Ticket 24: such a
+    // skip is a refused attempt of the pass (`tried`), counted against `refusalsPerPass`.
+    const skipped = new Set<string>();
+    let work!: WorkRecord;
+    let revalidated: Extract<Awaited<ReturnType<typeof revalidateRepair>>, { kind: 'repair' }> | undefined;
+    for (;;) {
+      if (skipped.size && tried.size - reservedIn(tried) >= refusalsPerPass) return false;
+      const next = selectNext(candidates.filter(item => !skipped.has(item.work_id))).next;
+      if (!next) { if (skipped.size) observe(null, 'nothing-eligible', [...skipped]); return false; }
+      tried.add(next);
+      const candidate = works.find(item => item.work_id === next)!;
+      const pending = candidate.correction;
+      if (resumeBasis(candidate)?.end?.outcome === 'question' || !pending || pending.consumed || pending.trigger !== 'effective-impediment') { work = candidate; break; }
+      // Ticket 22 (spec §10 step 2): immediately before admission, the requirements and reasons are read AGAIN (fresh complete read of the
+      // own PR); reasons that disappeared are dropped and a correction left without any is withdrawn without charge.
+      const result = await revalidateRepair(candidate);
+      if (result.kind === 'repair') { work = candidate; revalidated = result; break; }
+      observe(candidate.work_id, result.kind, result.reasons);
+      skipped.add(candidate.work_id);
+    }
+    const authorization = await revalidateAuthorization(work);
+    if (!authorization.ok) {
+      // Ticket 25: an observed withdrawal suspends the Work durably (only `resume` lifts it); an unavailable read concludes nothing.
+      // Review MED: only a confirmed closure/label absence is durable; every other code is transient.
+      const withdrawal = confirmedWithdrawal(authorization.reasons);
+      if (withdrawal.kind === 'withdrawn') await deps.authorizationWithdrawn?.(work.work_id, withdrawal.codes);
+      observe(work.work_id, 'authorization-not-confirmed', authorization.reasons); return true;
+    }
+    // After a Question: only its accepted answer is a recovery basis; after a COMPLETED Execution: only an authorized concrete scope
+    // change (ticket 11). Both are re-checked in the admission commit; a later Ticket/link edit is never one.
+    const previous = resumeBasis(work);
+    const scopeUpdateIds = pendingScope(work).map(update => update.scopeUpdateId);
+    let resume: NonNullable<ExecutionView['request']['resume']> | undefined;
+    let publication: NonNullable<ExecutionView['request']['publication']> | undefined;
+    let reconciliation: NonNullable<ExecutionView['request']['reconciliation']> | undefined;
+    let repair: NonNullable<ExecutionView['request']['repair']> | undefined;
+    if (revalidated) {
+      resume = { previousExecutionId: revalidated.basisExecutionId, questionId: null, answerSha256: null, scopeUpdateIds, reason: 'REPAIR_REQUESTED' };
+      repair = revalidated.request;
+    }
+    if (resume) { /* ticket 22 repair resumption decided above */ }
+    else if (previous?.end?.outcome === 'question') {
+      const answered = previous.end.questionId ? await readQuestion(session, previous.end.questionId) : null;
+      if (!answered?.answer || answered.workId !== work.work_id || answered.executionId !== previous.executionId) { observe(work.work_id, 'refused', ['QUESTION_NOT_ANSWERED']); return true; }
+      resume = { previousExecutionId: previous.executionId, questionId: answered.questionId, answerSha256: answered.answer.sha256, scopeUpdateIds, reason: 'QUESTION_ANSWERED' };
+      // Ticket 21: a reconciliation Execution that asked keeps its reconciliation request (the same authorization, the same preservation check).
+      if (previous.request.reconciliation) reconciliation = structuredClone(previous.request.reconciliation);
+      // Ticket 22: a repair Execution that asked keeps its repair request (same correction, same reasons, same charge).
+      if (previous.request.repair) repair = structuredClone(previous.request.repair);
+    } else if (previous && work.publication?.state === 'reconciling' && reconciliationInterrupted(work, previous)) {
+      // Real run q21-human-v4: the reconciliation Execution was interrupted (transient worker failure): ticket 26's operational recovery
+      // continues it with the SAME reconciliation request (preserve check, later lease) and the authorization stays bound (no resume).
+      reconciliation = structuredClone(previous.request.reconciliation!);
+    } else if (previous && work.publication?.state === 'reconciling') {
+      // Ticket 21: the ONE divergence the accepted answer authorized to incorporate (re-checked in the admission commit).
+      const authorization = authorizationInForce(work.publication);
+      const divergence = work.publication.divergences?.find(item => item.divergenceId === authorization?.divergenceId);
+      if (!authorization || authorization.mode !== 'incorporate' || authorization.state !== 'authorized' || !divergence) { observe(work.work_id, 'refused', ['RECONCILIATION_NOT_AUTHORIZED']); return true; }
+      resume = { previousExecutionId: previous.executionId, questionId: authorization.questionId, answerSha256: authorization.answerSha256, scopeUpdateIds: [], reason: 'RECONCILIATION_AUTHORIZED' };
+      reconciliation = { divergenceId: authorization.divergenceId, questionId: authorization.questionId, answerSha256: authorization.answerSha256,
+        expected: structuredClone(authorization.expected), authorizedRemote: authorization.authorizedRemote, localHead: divergence.local ?? previous.review?.rounds.at(-1)?.handoff.summary?.head ?? '',
+        strategy: 'rebase-unless-agents-documents-another' };
+    } else if (previous?.end?.outcome === 'completed' && scopeUpdateIds.length) {
+      resume = { previousExecutionId: previous.executionId, questionId: null, answerSha256: null, scopeUpdateIds, reason: 'SCOPE_UPDATED' };
+    } else if (previous && work.publication?.state === 'requested' && work.publication.verified && work.publication.expectedRemote &&
+        publicationResumes(previous, work.publication.basisExecutionId)) {
+      // Ticket 14: the requested publication activation, with exactly the recorded verified commit and lease expectation (re-checked in the commit).
+      resume = { previousExecutionId: previous.executionId, questionId: null, answerSha256: null, scopeUpdateIds, reason: 'PUBLICATION_REQUESTED' };
+      publication = { basisExecutionId: work.publication.basisExecutionId, head: work.publication.verified.head, branch: work.publication.branch,
+        base: work.publication.base, marker: work.publication.marker, expectedRemote: work.publication.expectedRemote, pullRequest: work.publication.update ?? null };
+    }
+    // Ticket 22: every later activation of a CHARGED correction (Question resume, ticket 26 interruption recovery or continuation) keeps its
+    // repair request — reasons, human tips, base tip — and delivers the reasons deferred since the charge (re-checked in the admission commit).
+    if (!publication && !reconciliation && work.correction?.consumed && work.correction.trigger === 'effective-impediment') {
+      const id = work.correction.correctionId;
+      const last = repair ?? [...work.previousExecutions, ...(work.execution ? [work.execution] : [])].reverse().find(item => item.request.repair?.correctionId === id)?.request.repair;
+      if (last) {
+        const known = new Set(last.reasons.map(fingerprint));
+        repair = { ...structuredClone(last), reasons: [...last.reasons, ...(work.correction.pendingReasons ?? []).filter(item => !known.has(fingerprint(item)))].slice(0, 16) };
+      }
+    }
+    // Ticket 26: after an interrupted Execution, its basis (operational recovery or clean-stop continuation), re-checked in the commit.
+    const interruption = interruptionBasis(work);
+    const { attemptId } = await freshEvaluation(work);
+    const admission = await admitExecution(session, { ...(interruption ? { interruption } : {}), now: (ports.calendar ?? Date).now(), work_id: work.work_id, attemptId, capacity: ports.capacity, authorizationObservedAt: authorization.observedAt,
+      request: { ticket: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
+        branch: `factory/${work.ticket.number}-${work.work_id.slice(0, 8)}`, policies: publication ? publishOnly(ports.builder) : { ...ports.builder }, ...(publication ? { publication } : {}),
+        ...(reconciliation ? { reconciliation } : {}), ...(repair ? { repair } : {}) }, ...(resume ? { resume } : {}),
+      limits: deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase()) ?? {} });
+    if (admission.kind === 'refused') { observe(work.work_id, 'refused', admission.reasons); return true; }
+    observe(work.work_id, 'reserved');
+    passes.set(work.work_id, pass);
+    const task = execute(work, admission.execution).finally(() => { running.delete(work.work_id); passes.delete(work.work_id); });
+    running.set(work.work_id, task);
+    return true;
+
+  }
+  return dispatcher;
 }

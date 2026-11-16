@@ -6,7 +6,8 @@ import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { workerRuntimeDirectory, inspectStorage } from '../platform/host/index.js';
+import { workerRuntimeDirectory, inspectStorage, inspectMemory } from '../platform/host/index.js';
+import { bootMemoryAllows } from './capacity.js';
 import { inspectGuestAssets, type GuestAssetPin } from './guest-assets.js';
 import type { SandboxConfiguration } from './configuration.js';
 import type { EnvironmentRef } from './prepare.js';
@@ -58,7 +59,9 @@ async function failedStart(status: 'failure' | 'indeterminate', code: string, bo
 
 /** A new boot requires prior cessation and a read-only full filesystem check. */
 export async function startEnvironment(root: string, pin: GuestAssetPin | undefined,
-  environment: EnvironmentRef, configuration: SandboxConfiguration): Promise<StartResult> {
+  environment: EnvironmentRef, configuration: SandboxConfiguration,
+  /** Ticket 24: free-memory admission of this boot (default: this guest alone against the current observation). */
+  admitMemory: () => Promise<boolean> = async () => bootMemoryAllows({ availableBytes: (await inspectMemory())?.availableBytes, configuration })): Promise<StartResult> {
   let boot: BootRef | undefined;
   try {
     const { directory, owner } = await ownedEnvironment(root, environment);
@@ -109,6 +112,8 @@ export async function startEnvironment(root: string, pin: GuestAssetPin | undefi
       if (!storage || storage.unsuitable || BigInt(storage.availableBytes) < size + BigInt(configuration.minFreeSpaceGiB) * 1073741824n) {
         return { status: 'failure', code: 'INSUFFICIENT_STORAGE_FOR_BOOT' };
       }
+      // Ticket 24: the host's free memory must cover this guest, the other own boots still launching and the floor NOW; refused, never retried.
+      if (!await admitMemory()) return { status: 'failure', code: 'INSUFFICIENT_MEMORY_FOR_BOOT' };
       if ((await inspectGuestAssets(pin)).some(check => check.status !== 'ok')) return { status: 'failure', code: 'GUEST_ASSETS_INVALID' };
       if (!await checkDiskFilesystem(directory, disk, size)) {
         if (previous) return await failedStart('failure', 'PRESERVED_DISK_CHECK_REQUIRED', previous.boot as BootRef, join(directory, previous.boot));

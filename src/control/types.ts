@@ -103,7 +103,8 @@ export type RecoveryRecord = { at: string; controllerRunId: string; trigger: 'bo
 export type ExecutionPorts = {
   sandbox: {
     prepare(input: { workId: string; configuration: unknown; checkout: CheckoutRequest }): Promise<PreparedWork>;
-    start(input: { environment: EnvironmentRef; configuration: unknown }): Promise<StartResult>;
+    /** `pass`: identity of the dispatch pass that reserved this Execution (ticket 24; correlation/evidence only). */
+    start(input: { environment: EnvironmentRef; configuration: unknown; pass?: string }): Promise<StartResult>;
     stop(input: { environment: EnvironmentRef; boot: BootRef; reason: string }): Promise<StopResult>;
     /** Ticket 12: Host identity of a handed-off proposal (confined reads); required when `reviews` is composed. */
     observeProposal?(input: { environment: EnvironmentRef; round: number }): Promise<ProposalIdentity>;

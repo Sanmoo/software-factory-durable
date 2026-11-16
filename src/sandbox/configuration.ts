@@ -11,9 +11,11 @@ export const configurationSchema = z.strictObject({
   minFreeSpaceGiB: z.number().int().positive().safe().default(4),
   /** Host MemAvailable floor above the guest memory at each boot (ticket 24). Read here only (backward compatibility with environments that
    * recorded it); optional WITHOUT a schema default, so the effective configuration and the identity of environments prepared without it
-   * are unchanged. This revision applies no admission with it. */
+   * are unchanged. Ticket 24 applies it as a boot precondition (`capacity.ts`), never a reservation. */
   minFreeMemoryMiB: z.number().int().positive().safe().optional(),
 });
+/** Ticket 24: the floor applied when `minFreeMemoryMiB` is absent (boot memory precondition in `capacity.ts`). */
+export const defaultMinFreeMemoryMiB = 1024;
 
 export function validateConfiguration(configuration: unknown) {
   const parsed = configurationSchema.safeParse(configuration);

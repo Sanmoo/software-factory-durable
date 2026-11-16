@@ -56,10 +56,14 @@ export function updateHost(dir: string, change: (state: HostState) => void) { co
  * reviewers preserve and notify a clean opinion. The handoff captures a content identity so a recovery capture can match it. */
 export type Review28 = 'lost' | 'retry' | 'complete';
 export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options: { capacity?: number; observe?: boolean; observeStart?: boolean; reviews?: boolean; review28?: Review28;
-  onPrepare?: () => Promise<void>; onActivate?: (invocation: Invocation) => void | Promise<void> } = {}) {
+  onPrepare?: () => Promise<void>; onActivate?: (invocation: Invocation) => void | Promise<void>;
+  /** Ticket 24: the Builder script chosen by the activation itself (e.g. per Work); `undefined` falls back to the ordered `scripts`. */
+  script?: (invocation: Invocation) => RecoveryScript | undefined } = {}) {
   const prompts: { executionId: string; phaseId: string; prompt: string }[] = [];
   const log = (kind: string, detail?: unknown) => updateHost(dir, state => { state.log.push({ kind, ...(detail === undefined ? {} : { detail }) }); });
   const finishers: (() => void)[] = [];
+  // Ticket 24: the same finishers by Execution, independent of the (concurrent) activation order.
+  const byExecution = new Map<string, () => void>();
   // The REAL Workers facade, used only for its Records receipt facet (no activation through it).
   const workers = createWorkers({ root: dir, knownSecrets: [], profile: {} as never });
   const interruptible = <T>(signal: AbortSignal, value: Promise<T>) => {
@@ -129,7 +133,7 @@ export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options:
       },
       async start(input) {
         const boot = `boot-${randomUUID()}`;
-        updateHost(dir, state => { state.boots[boot] = 'active'; state.current[input.environment] = boot; state.log.push({ kind: 'start', detail: { boot } }); });
+        updateHost(dir, state => { state.boots[boot] = 'active'; state.current[input.environment] = boot; state.log.push({ kind: 'start', detail: { boot, pass: (input as { pass?: string }).pass ?? null } }); });
         return { status: 'success', boot: boot as never };
       },
       async stop(input) {
@@ -177,7 +181,7 @@ export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options:
           return { worker: invocation.context.invocationId, started: interruptible(invocation.signal, started),
             completed: interruptible(invocation.signal, new Promise<never>(() => {})), close() { log('close-reviewer'); } };
         }
-        const script = scripts.shift() ?? { kind: 'complete' };
+        const script = options.script?.(invocation) ?? scripts.shift() ?? { kind: 'complete' };
         prompts.push({ executionId: invocation.context.executionId, phaseId: invocation.context.phaseId ?? '', prompt: invocation.prompt });
         log('activate', { executionId: invocation.context.executionId, boot: invocation.context.bootRef, phaseId: invocation.context.phaseId, script: script.kind,
           bootActive: readHost(dir).boots[invocation.context.bootRef] === 'active' });
@@ -185,6 +189,7 @@ export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options:
         let finish!: () => void;
         const finished = new Promise<void>(resolve => { finish = resolve; });
         finishers.push(finish);
+        byExecution.set(invocation.context.executionId, finish);
         const started = script.kind === 'no-receipt' ? new Promise<never>(() => {}) : (async () => {
           const reference = await writeReceipt(invocation);
           log('receipt', { executionId: invocation.context.executionId, id: reference.id });
@@ -233,7 +238,7 @@ export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options:
       ...(options.review28 ? { observeOpinion: (input: { workId: string; executionId: string; invocationId: string }) => { log('observe-opinion', input); return workers.observeOpinion(input); } } : {}),
     },
   };
-  return { ports, prompts, finish: (index = finishers.length - 1) => finishers[index]?.(), host: () => readHost(dir),
+  return { ports, prompts, finish: (index = finishers.length - 1) => finishers[index]?.(), finishExecution: (executionId: string) => byExecution.get(executionId)?.(), host: () => readHost(dir),
     calls: (kind: string) => readHost(dir).log.filter(item => item.kind === kind),
     jumpCalendar: (ms: number) => updateHost(dir, state => { state.calendarOffsetMs += ms; }) };
 }

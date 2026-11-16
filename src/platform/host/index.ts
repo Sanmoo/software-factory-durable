@@ -100,6 +100,31 @@ export function versionOf(command: string): string | undefined {
   return result.stdout.split('\n')[0]?.match(/\b\d+(?:\.\d+)*(?:[-+][\w.-]+)?\b/)?.[0];
 }
 
+/** `/proc/meminfo` (kB units) -> bytes of MemTotal and MemAvailable; anything missing or malformed is unavailable, never zero (ticket 24). */
+export function parseMeminfo(text: string): { totalBytes: string; availableBytes: string } | undefined {
+  const field = (name: string) => { const found = new RegExp(`^${name}:\\s+(\\d+) kB$`, 'm').exec(text); return found ? BigInt(found[1]!) * 1024n : undefined; };
+  const total = field('MemTotal'), available = field('MemAvailable');
+  return total === undefined || available === undefined ? undefined : { totalBytes: total.toString(), availableBytes: available.toString() };
+}
+/** Host memory observation at this instant (read-only); `undefined` when unreadable. Not a reservation. */
+export async function inspectMemory(source = '/proc/meminfo') {
+  try { return parseMeminfo(await readFile(source, 'utf8')); } catch { return undefined; }
+}
+
+/** Pure: unit names of `systemctl --user list-units --plain --no-legend` lines that are own active sandbox units (ticket 24). */
+export function parseSandboxUnits(stdout: string): string[] {
+  return stdout.split('\n').map(line => line.trim().split(/\s+/)).filter(fields => /^factory-sandbox-boot-[a-f0-9-]{36}\.service$/.test(fields[0] ?? '') &&
+    fields[2] === 'active').map(fields => fields[0]!);
+}
+/** Read-only listing of the own active sandbox units from the systemd user manager; undefined when it cannot be asked. */
+export async function listActiveSandboxUnits(): Promise<string[] | undefined> {
+  const result = spawnSync('systemctl', ['--user', 'list-units', '--type=service', '--all', '--plain', '--no-legend', '--no-pager', 'factory-sandbox-*'],
+    { encoding: 'utf8', timeout: 5000, maxBuffer: 1024 * 1024, env: { PATH: process.env.PATH ?? '', LANG: 'C', LC_ALL: 'C',
+      ...(process.env.XDG_RUNTIME_DIR ? { XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR } : {}), ...(process.env.DBUS_SESSION_BUS_ADDRESS ? { DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS } : {}) } });
+  if (result.status !== 0 || result.error) return undefined;
+  return parseSandboxUnits(result.stdout);
+}
+
 export async function inspectStorage(path: string) {
   try {
     const fs = await statfs(path, { bigint: true });

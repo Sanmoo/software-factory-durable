@@ -1,0 +1,243 @@
+{
+ "source": "y5/q24-three-v1 (read-only copy of run-result/run-cessation/run-host; derived fields only, no session text)",
+ "status": "held",
+ "outcome": {
+  "kind": "clean"
+ },
+ "passes": {
+  "env-d592962fe98e0e3533a60698409f7dc3996529243d37576cce914d40fec1779b": "97d421ec-e38f-4e89-aaf3-5f1bb76f0364",
+  "env-a108e6159eb10c2e06a4c422f4eecf28da3a4483f95968645741ad9a878c6a2d": "97d421ec-e38f-4e89-aaf3-5f1bb76f0364",
+  "env-fba77284ab7252a1a8b33395dd7c8affd8ab4ac9875eb742ac7dbcdbfc27ffdf": "97d421ec-e38f-4e89-aaf3-5f1bb76f0364"
+ },
+ "works": [
+  {
+   "ticket": {
+    "number": 23
+   },
+   "work_id": "f7a5b1a5-f478-4ca9-aa10-1d177a308b2d",
+   "impediments": [
+    "QUESTION_PENDING",
+    "GLOBAL_PAUSE"
+   ],
+   "execution": {
+    "executionId": "6e27b0dd-3576-4245-81b6-d4692819d608",
+    "state": "ended",
+    "start": {
+     "at": null
+    },
+    "slot": {
+     "held": false,
+     "capacity": 3,
+     "reservedAt": "2026-11-16T01:55:44.405Z",
+     "releasedAt": "2026-11-16T02:00:10.114Z"
+    },
+    "dispatch": {
+     "environment": "env-d592962fe98e0e3533a60698409f7dc3996529243d37576cce914d40fec1779b",
+     "boot": "boot-9bc0da69-7d5a-4d74-b20b-2f1dbf2c844f",
+     "phase": "stopped"
+    },
+    "request": {
+     "branch": "factory/23-f7a5b1a5"
+    },
+    "end": {
+     "at": "2026-11-16T02:00:06.411Z",
+     "outcome": "question",
+     "code": null,
+     "cessation": "confirmed",
+     "questionId": "9d53dab9-09cb-4cec-9757-2275c3929865"
+    }
+   }
+  },
+  {
+   "ticket": {
+    "number": 22
+   },
+   "work_id": "21d6ba6e-db6c-408d-b033-b92963c0c858",
+   "impediments": [
+    "GLOBAL_PAUSE"
+   ],
+   "execution": {
+    "executionId": "359d178c-046d-4292-bee1-2a5ba34d02bd",
+    "state": "ended",
+    "start": {
+     "at": null
+    },
+    "slot": {
+     "held": false,
+     "capacity": 3,
+     "reservedAt": "2026-11-16T01:55:46.127Z",
+     "releasedAt": "2026-11-16T02:03:00.254Z"
+    },
+    "dispatch": {
+     "environment": "env-a108e6159eb10c2e06a4c422f4eecf28da3a4483f95968645741ad9a878c6a2d",
+     "boot": "boot-3d49960d-a157-47b3-bee8-e3329d7a4302",
+     "phase": "stopped"
+    },
+    "request": {
+     "branch": "factory/22-21d6ba6e"
+    },
+    "end": {
+     "at": "2026-11-16T02:02:57.557Z",
+     "outcome": "completed",
+     "code": null,
+     "cessation": "confirmed"
+    }
+   }
+  },
+  {
+   "ticket": {
+    "number": 21
+   },
+   "work_id": "613595de-ad64-41c3-b7a6-4fac27bfd8fb",
+   "impediments": [
+    "GLOBAL_PAUSE"
+   ],
+   "execution": {
+    "executionId": "b97bab1d-f8f0-40a8-9dbc-9cf924bf5b9b",
+    "state": "ended",
+    "start": {
+     "at": null
+    },
+    "slot": {
+     "held": false,
+     "capacity": 3,
+     "reservedAt": "2026-11-16T01:55:47.963Z",
+     "releasedAt": "2026-11-16T02:03:01.671Z"
+    },
+    "dispatch": {
+     "environment": "env-fba77284ab7252a1a8b33395dd7c8affd8ab4ac9875eb742ac7dbcdbfc27ffdf",
+     "boot": "boot-80d45000-4ebb-4e11-92b2-6bb62e344100",
+     "phase": "stopped"
+    },
+    "request": {
+     "branch": "factory/21-613595de"
+    },
+    "end": {
+     "at": "2026-11-16T02:02:58.990Z",
+     "outcome": "completed",
+     "code": null,
+     "cessation": "confirmed"
+    }
+   }
+  }
+ ],
+ "registry": {
+  "summary": [
+   {
+    "boot": "boot-9bc0da69-7d5a-4d74-b20b-2f1dbf2c844f",
+    "samples": 15,
+    "windowMs": 215106,
+    "peakMemoryCurrentBytes": 1820925952,
+    "memoryPeakBytes": 1979486208,
+    "cpuSeconds": 78.459502,
+    "ioReadBytes": null,
+    "ioWriteBytes": null,
+    "peakRssBytes": {
+     "vmm": 1630932992,
+     "adapter": 196542464,
+     "worker": 218202112,
+     "other": 0
+    },
+    "maxWorkersAtOnce": 1
+   },
+   {
+    "boot": "boot-3d49960d-a157-47b3-bee8-e3329d7a4302",
+    "samples": 26,
+    "windowMs": 382371,
+    "peakMemoryCurrentBytes": 2407546880,
+    "memoryPeakBytes": 2409005056,
+    "cpuSeconds": 115.270415,
+    "ioReadBytes": null,
+    "ioWriteBytes": null,
+    "peakRssBytes": {
+     "vmm": 1654190080,
+     "adapter": 204247040,
+     "worker": 559816704,
+     "other": 0
+    },
+    "maxWorkersAtOnce": 3
+   },
+   {
+    "boot": "boot-80d45000-4ebb-4e11-92b2-6bb62e344100",
+    "samples": 26,
+    "windowMs": 382348,
+    "peakMemoryCurrentBytes": 2394562560,
+    "memoryPeakBytes": 2395402240,
+    "cpuSeconds": 120.028659,
+    "ioReadBytes": null,
+    "ioWriteBytes": null,
+    "peakRssBytes": {
+     "vmm": 1685463040,
+     "adapter": 198438912,
+     "worker": 566403072,
+     "other": 0
+    },
+    "maxWorkersAtOnce": 3
+   }
+  ],
+  "samples": 81,
+  "hosts": 30
+ },
+ "cessation": [
+  {
+   "ticket": 23,
+   "boot": "boot-9bc0da69-7d5a-4d74-b20b-2f1dbf2c844f",
+   "before": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "ticket": 22,
+   "boot": "boot-3d49960d-a157-47b3-bee8-e3329d7a4302",
+   "before": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "ticket": 21,
+   "boot": "boot-80d45000-4ebb-4e11-92b2-6bb62e344100",
+   "before": "stopped",
+   "cessationConfirmed": true
+  }
+ ],
+ "host": {
+  "memAvailableBytes": 9999323136,
+  "storageAvailableBytes": 552041267200,
+  "cpus": 8,
+  "kvm": true,
+  "systemdUser": "degraded",
+  "activeUnits": [],
+  "qemuProcesses": 0
+ },
+ "sessionObservations": {
+  "windows": {
+   "A": [
+    [
+     1794794284,
+     1794794358
+    ],
+    [
+     1794794486,
+     1794794552
+    ]
+   ],
+   "B": [
+    [
+     1794794304,
+     1794794379
+    ],
+    [
+     1794794487,
+     1794794552
+    ]
+   ],
+   "C": [
+    [
+     1794794284,
+     1794794360
+    ]
+   ]
+  },
+  "suite": "./mvnw -B verify exited 127 in all three checkouts (no ./mvnw: the repository is Gradle-based, ./gradlew present)",
+  "question23": "ask_user: the required repository test gate cannot run as written (no ./mvnw; Gradle-based, gradlew present); asked to waive it or give an exact permitted command",
+  "completed21_22": "Builders handed off and completed reporting the suite gate as not runnable (exit 127); round-1 Standards/Spec reviews ran on the same boot"
+ }
+}

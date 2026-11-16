@@ -3,7 +3,8 @@ import { realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { platform, arch } from 'node:os';
 import type { Diagnostic } from '../contracts/index.js';
-import { canAccess, inspectStorage, versionOf } from '../platform/host/index.js';
+import { canAccess, inspectMemory, inspectStorage, versionOf } from '../platform/host/index.js';
+import { createBootLedger } from './capacity.js';
 import { inspectGuestAssets, type GuestAssetPin } from './guest-assets.js';
 import { validateConfiguration } from './configuration.js';
 import { prepareEnvironment, type PrepareResult } from './prepare.js';
@@ -15,6 +16,7 @@ export type { CheckoutRequest, CheckoutView } from './checkout.js';
 export type { ArtifactSeed } from './artifact-seeds.js';
 // Host-side read-only observation of guest-writable trees (never host git/commands in them).
 export { readConfined } from './confined.js';
+export { bootMemoryAllows, capacityDiagnostic, createBootLedger, memoryFloorMiB, observeHostCapacity, type HostCapacity } from './capacity.js';
 export { environmentDependencies, type EnvironmentDependency } from './asset-dependencies.js';
 import { readConfined } from './confined.js';
 export { inspectCheckout, type CheckoutInspection } from './checkout-inspection.js';
@@ -57,6 +59,7 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
   const checkouts = repositoryFetch ? createCheckouts({ root, fetch: repositoryFetch, ...(remoteUrl ? { remoteUrl } : {}) }) : undefined;
   const projections = new Map<string, Promise<Awaited<ReturnType<typeof connectReadTools>>>>();
   const bindings = new Map<string, string>();
+  const bootLedger = createBootLedger(async () => (await inspectMemory())?.availableBytes);
   return {
     async executeTool(context: ToolContext, call: ToolCall, onData?: (data: Buffer) => void, signal?: AbortSignal): Promise<ReadResult> {
       const key = JSON.stringify(context);
@@ -119,10 +122,15 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
     async stop({ environment, boot, reason }: { environment: EnvironmentRef; boot: BootRef; reason: string }) {
       return stopEnvironment(root, environment, boot, reason);
     },
-    async start({ environment, configuration }: { environment: EnvironmentRef; configuration: unknown }): Promise<StartResult> {
+    /** `pass`: the dispatch pass that reserved this boot (ticket 24; correlation only). The memory precondition counts every other own
+     * boot still launching, whatever its pass; this boot leaves that set when its start returns. */
+    async start({ environment, configuration }: { environment: EnvironmentRef; configuration: unknown; pass?: string }): Promise<StartResult> {
       const parsed = validateConfiguration(configuration);
       if (!parsed.valid) return { status: 'failure', code: 'SANDBOX_CONFIGURATION_INVALID' };
-      return startEnvironment(root, guestAssets, environment, parsed.effective);
+      let release: (() => void) | null = null;
+      try {
+        return await startEnvironment(root, guestAssets, environment, parsed.effective, async () => (release = await bootLedger.admit(parsed.effective)) !== null);
+      } finally { (release as (() => void) | null)?.(); }
     },
     async observe({ environment, boot }: { environment: EnvironmentRef; boot?: BootRef }): Promise<Observation> {
       // Ticket 26: without an explicit boot, the environment's published current boot is the one observed (and returned for a stop); an
