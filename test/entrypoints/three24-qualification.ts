@@ -14,8 +14,9 @@ import { containerWindows, sampleBoot, sampleHost, summarize, type BootSample, t
 
 const root = '/home/sanmoo/software-factory-test/y5';
 // v2: v1 (issues #21-#23) was consumed HELD — #23 asked because `./mvnw` does not exist (the repository is Gradle-based); see the evidence.
-const observations = `${root}/q24-three-v2`;
-const revision = 'q24-three-v2';
+// v3: v2 (issues #39-#41) was consumed HELD — `./gradlew test` cannot run in the guest profile (no Java); #39/#41 asked, #40 GATE_FAILED.
+const observations = `${root}/q24-three-v3`;
+const revision = 'q24-three-v3';
 const phases = ['preflight', 'run', 'inspect', 'stop-environment'] as const;
 type Phase = typeof phases[number];
 const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 'main', installationId: 177599217, workflows: false, label: 'ready-for-agent' };
@@ -27,9 +28,9 @@ const repositoryId = 1256893534;
  * "different repositories proceed in parallel" stays covered at host-checkout level; see the evidence).
  */
 export const tickets = [
-  { key: 'A', number: 39, title: 'Factory qualification q24: three simultaneous Builders (A)' },
-  { key: 'B', number: 40, title: 'Factory qualification q24: three simultaneous Builders (B)' },
-  { key: 'C', number: 41, title: 'Factory qualification q24: three simultaneous Builders (C)' },
+  { key: 'A', number: 0, title: 'Factory qualification q24: three simultaneous Builders (A)' },
+  { key: 'B', number: 0, title: 'Factory qualification q24: three simultaneous Builders (B)' },
+  { key: 'C', number: 0, title: 'Factory qualification q24: three simultaneous Builders (C)' },
 ] as const;
 type Key = typeof tickets[number]['key'];
 const pinned = (list: readonly { number: number }[] = tickets) => list.length === 3 && list.every(item => Number.isSafeInteger(item.number) && item.number > 0) &&
@@ -85,11 +86,36 @@ export const gateCommand = (key: Key) => ['cd /workspace/checkout', `test -f doc
   `test "$(wget -qO- http://127.0.0.1:18080/)" = ${key}`, `test "$(docker run --rm -v q24-shared:/data node:22-alpine cat /data/who)" = ${key}`,
   `echo "Q24_WINDOW_END ${key} $(date +%s)"`].join(' && ') + '; status=$?; docker rm -f q24-fixed >/dev/null 2>&1; docker volume rm q24-shared >/dev/null 2>&1; exit $status';
 /**
- * The repository's REAL suite (supervisor decision 3), Testcontainers/Docker inside each guest, unchanged. v1 finding: `./mvnw -B verify`
- * does not exist there (Gradle-based, `./gradlew` present) — the three Builders got exit 127 and #23 asked. Pinned by the supervisor: the
- * repository README documents the tests as `./gradlew test` (Docker required for Testcontainers). null would refuse every phase.
+ * The repository's REAL suite (supervisor decisions 3/v3), run so the guest profile can execute it. The README documents `./gradlew test`
+ * with JDK 25 and Docker for Testcontainers; gondolin-qemu-alpine-dev-v1 has NO Java (v2: exit 1, JAVA_HOME unset), so the wrapper runs
+ * inside a pinned JDK 25 image of the guest's OWN Docker: `--network host` (the guest's mediated egress and its published container
+ * ports), the guest daemon socket (Testcontainers + Ryuk, never the host socket), the per-boot Gondolin CA added to the JDK truststore
+ * (`USE_SYSTEM_CA_CERTS`: layered TLS, never a bypass) and a named volume for the Gradle home. Image reachability and duration are proved
+ * by the run itself (not checked offline): a pull or time-out is a recorded finding, never retried.
  */
-export const suiteCommand: string | null = 'cd /workspace/checkout && ./gradlew test';
+export const suiteCommand: string | null = 'cd /workspace/checkout && docker run --rm --network host -e USE_SYSTEM_CA_CERTS=1 ' +
+  '-v /etc/gondolin/mitm/ca.crt:/certificates/gondolin-mitm.crt:ro -v /run/docker.sock:/var/run/docker.sock -v q24-gradle-home:/root/.gradle ' +
+  '-v "$PWD":/w -w /w eclipse-temurin:25-jdk ./gradlew --no-daemon test';
+const jvmTools = new Set(['./gradlew', 'gradlew', 'gradle', 'java', 'javac', 'mvn', './mvnw', 'mvnw']);
+/**
+ * Pure: a gate the guest profile can execute. JVM/build tools are never run directly in the guest (it has no Java); they may only be the
+ * command of a `docker run` whose image is pinned to an explicit version tag or digest (never untagged or `latest`).
+ */
+export function profileGateViolations(command: string): string[] {
+  const violations: string[] = [];
+  for (const segment of command.split(/&&|;|\|\|/).map(item => item.trim()).filter(Boolean)) {
+    const words = segment.split(/\s+/);
+    if (words[0] === 'docker' && words[1] === 'run') {
+      let index = 2;
+      while (index < words.length && words[index]!.startsWith('-')) index += ['-v', '-e', '-w', '--network', '--name', '-p'].includes(words[index]!) ? 2 : 1;
+      const image = words[index] ?? '';
+      if (!/(:[0-9][\w.-]*|@sha256:[0-9a-f]{64})$/.test(image) || /:latest$/.test(image)) violations.push(`IMAGE_NOT_PINNED:${image}`);
+      continue;
+    }
+    if (jvmTools.has(words[0]!)) violations.push(`JVM_TOOL_OUTSIDE_CONTAINER:${words[0]}`);
+  }
+  return violations;
+}
 /** Proposed body of each NEW issue (documentation only, plus the collision fixture and the repository's real suite). */
 export const ticketBody = (key: Key) => [
   `Add a short documentation page \`docs/FACTORY_Q24_${key}.md\`. This exact upper-case file name was decided by the operator.`,
@@ -152,6 +178,7 @@ export function phaseGuard(phase: Phase, results: Partial<Record<Phase, { status
   suite: string | null = suiteCommand): string | null {
   if (!pinned(numbers)) return 'TICKETS_NOT_PINNED';
   if (!suite) return 'SUITE_COMMAND_NOT_PINNED';
+  if (profileGateViolations(suite).length) return `SUITE_NOT_EXECUTABLE_IN_GUEST:${profileGateViolations(suite).join(',')}`;
   if (intents.has(`${phase}-intent`)) return 'PHASE_ALREADY_RAN';
   if (phase !== 'preflight' && results.preflight?.status !== 'success') return 'PREFLIGHT_SUCCESS_REQUIRED';
   if ((phase === 'inspect' || phase === 'stop-environment') && !intents.has('run-intent')) return 'RUN_REQUIRED';
@@ -464,6 +491,7 @@ export async function runPhase(phase: Phase) {
   if (!phases.includes(phase)) throw new Error('UNKNOWN_PHASE');
   if (!pinned()) throw new Error('TICKETS_NOT_PINNED');
   if (!suiteCommand) throw new Error('SUITE_COMMAND_NOT_PINNED');
+  if (profileGateViolations(suiteCommand).length) throw new Error('SUITE_NOT_EXECUTABLE_IN_GUEST');
   const { fs, save, exists, load } = await io();
   const results: Partial<Record<Phase, { status?: unknown } | null>> = {};
   for (const item of phases) results[item] = await load(`${item}-result`);

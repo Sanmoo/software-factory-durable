@@ -19,11 +19,12 @@ test('ticket 24 recipe: import and --plan are inert; own namespace and key copy,
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q24-three-v2');
-  assert.match(plan.github.accessRoot, /^\/home\/sanmoo\/software-factory-test\/y5\/q24-three-v2 \(own namespace: credentials\/ copy of \/home\/sanmoo\/software-factory-test\/y5\/credentials\/app\.pem/);
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q24-three-v3');
+  assert.match(plan.github.accessRoot, /^\/home\/sanmoo\/software-factory-test\/y5\/q24-three-v3 \(own namespace: credentials\/ copy of \/home\/sanmoo\/software-factory-test\/y5\/credentials\/app\.pem/);
   assert.deepEqual(plan.phases, ['preflight', 'run', 'inspect', 'stop-environment']);
   assert.equal(plan.pinned, false, 'the supervisor pins the three NEW issue numbers in a reviewed commit before any phase');
-  assert.deepEqual([plan.suite.command, plan.suite.pinned], ['cd /workspace/checkout && ./gradlew test', true], 'the supervisor-pinned real suite (README: ./gradlew test)');
+  assert.equal(plan.suite.pinned, true);
+  assert.match(plan.suite.command, /eclipse-temurin:25-jdk \.\/gradlew --no-daemon test$/, 'README `./gradlew test`, run in a JDK 25 container of the guest\'s own Docker');
   assert.equal(plan.tickets.length, 3);
   assert.equal(plan.capacity, 3);
   assert.deepEqual([plan.configuration.memoryMiB, plan.configuration.vcpus, plan.configuration.minFreeMemoryMiB], [2048, 2, 1024]);
@@ -35,7 +36,7 @@ test('ticket 24 recipe: import and --plan are inert; own namespace and key copy,
     assert.match(item.body, new RegExp(`Q24_WINDOW_START ${item.key} `));
     assert.doesNotMatch(item.body, /prune|--privileged|DOCKER_HOST|TESTCONTAINERS_RYUK_DISABLED/);
     assert.doesNotMatch(item.body, /mvnw/, 'v1 finding: the repository is Gradle-based; no Maven wrapper is ever assumed');
-    assert.ok(item.body.includes('`cd /workspace/checkout && ./gradlew test`') && item.body.includes('--name q24-fixed'), 'real suite AND the collision fixture');
+    assert.ok(item.body.includes(`\`${recipe.suiteCommand}\``) && item.body.includes('--name q24-fixed'), 'real suite AND the collision fixture');
   }
   assert.ok(plan.decisions.some((item: string) => /different repositories in parallel" stays proven locally only/.test(item)));
   assert.ok(plan.expected.some((item: string) => /OOM .* never retried/.test(item)));
@@ -142,7 +143,9 @@ test('never-started: a Work that left without a start receipt, or a start window
 test('v2 guards: the real suite command must be pinned; a Builder Question is a recorded finding (held), not a recipe failure to retry', () => {
   const numbers = [{ number: 7 }, { number: 8 }, { number: 9 }];
   assert.equal(recipe.phaseGuard('preflight', {}, new Set(), numbers, null), 'SUITE_COMMAND_NOT_PINNED');
-  assert.equal(recipe.phaseGuard('preflight', {}, new Set(), numbers, 'cd /workspace/checkout && ./gradlew --no-daemon check'), null);
+  assert.equal(recipe.phaseGuard('preflight', {}, new Set(), numbers, 'cd /workspace/checkout && docker run --rm -v "$PWD":/w -w /w eclipse-temurin:25-jdk ./gradlew test'), null);
+  assert.equal(recipe.phaseGuard('preflight', {}, new Set(), numbers, 'cd /workspace/checkout && ./gradlew test'), 'SUITE_NOT_EXECUTABLE_IN_GUEST:JVM_TOOL_OUTSIDE_CONTAINER:./gradlew',
+    'v2: the guest has no Java');
   const at = new Date(Date.UTC(2026, 10, 16, 2, 0, 0)).toISOString();
   const work = (n: number, outcome: string) => ({ ticket: { number: n }, execution: { state: 'ended', slot: { held: false }, end: { at, outcome, cessation: 'confirmed' } } }) as unknown as WorkView;
   assert.deepEqual(recipe.runSettled([work(7, 'completed'), work(8, 'completed'), work(9, 'question')], [7, 8, 9]),
@@ -166,4 +169,35 @@ test('v1 offline proof (y5/q24-three-v1, derived summary in docs/evidence): one 
   assert.deepEqual(recipe.runSettled(v1.works, [21, 22, 23]), { done: true, success: false, findings: ['QUESTION_ASKED:23'] }, 'the held cause: the #23 Question');
   assert.deepEqual(v1.registry.summary.map(item => item.maxWorkersAtOnce).sort(), [1, 3, 3], 'reviewers ran inside their Builder\'s own unit (3 workers), #23 never reached review');
   assert.ok(v1.registry.summary.every(item => item.ioReadBytes === null), 'io.stat was unreadable in the user units: I/O is unknown, never zero');
+});
+
+test('v3: the real-suite gate is executable by the guest profile — the JVM/Gradle only inside a pinned container image of the guest\'s own Docker, never a host/guest Java', () => {
+  // v2 finding: `./gradlew test` exits 1 in gondolin-qemu-alpine-dev-v1 (no Java, JAVA_HOME unset): #39/#41 asked, #40 recorded GATE_FAILED.
+  assert.deepEqual(recipe.profileGateViolations('cd /workspace/checkout && ./gradlew test'), ['JVM_TOOL_OUTSIDE_CONTAINER:./gradlew']);
+  assert.deepEqual(recipe.profileGateViolations('cd /workspace/checkout && ./mvnw -B verify'), ['JVM_TOOL_OUTSIDE_CONTAINER:./mvnw']);
+  assert.deepEqual(recipe.profileGateViolations('docker run --rm eclipse-temurin:latest ./gradlew test'), ['IMAGE_NOT_PINNED:eclipse-temurin:latest']);
+  assert.deepEqual(recipe.profileGateViolations('docker run --rm eclipse-temurin ./gradlew test'), ['IMAGE_NOT_PINNED:eclipse-temurin']);
+  assert.deepEqual(recipe.profileGateViolations(recipe.suiteCommand!), [], recipe.suiteCommand!);
+  // The repository README: JDK 25 + Docker for Testcontainers; the container reaches the guest's OWN daemon and network (no host socket,
+  // no TLS bypass: the per-boot Gondolin CA is added to the JDK truststore), and Ryuk stays enabled.
+  assert.match(recipe.suiteCommand!, /eclipse-temurin:25-jdk/);
+  assert.match(recipe.suiteCommand!, /-v \/run\/docker\.sock:\/var\/run\/docker\.sock/);
+  assert.match(recipe.suiteCommand!, /USE_SYSTEM_CA_CERTS=1 -v \/etc\/gondolin\/mitm\/ca\.crt:\/certificates\/gondolin-mitm\.crt:ro/);
+  assert.doesNotMatch(recipe.suiteCommand!, /RYUK_DISABLED|insecure|trustAll|-k\b|--privileged/);
+});
+
+test('v2 offline proof (y5/q24-three-v2): three VMs in ONE dispatch pass at capacity 3, independent Questions per Work, the failed suite never verified green', async () => {
+  const { containerWindows } = await import('./three24-measure.js');
+  const v2 = JSON.parse(readFileSync(new URL('../../../docs/evidence/24-real-q24-three-v2-summary.json', import.meta.url), 'utf8')) as {
+    passes: Record<string, string>; works: (WorkView & { execution: { verification: { status: string; reasons: string[] } | null } })[];
+    registry: { summary: { boot: string; samples: number }[]; maxHeldSlots: number; capacity: number } };
+  const result = recipe.verdict(v2.works, containerWindows({}), { passes: v2.passes, summary: v2.registry.summary }, [39, 40, 41]);
+  const by = Object.fromEntries(result.checks.map(item => [item.name, item.ok]));
+  assert.deepEqual([by['three-executions'], by['own-environment-boot-branch'], by['one-pass-reservation'], by['resources-measured'], by['completed-with-cessation']],
+    [true, true, true, true, false]);
+  assert.deepEqual([v2.registry.maxHeldSlots, v2.registry.capacity], [3, 3], 'three Slots held at once, never more');
+  assert.deepEqual(recipe.runSettled(v2.works, [39, 40, 41]).findings, ['QUESTION_ASKED:39', 'QUESTION_ASKED:41'], 'each Work asked on its own; the other kept running');
+  const forty = v2.works.find(work => work.ticket.number === 40)!;
+  assert.deepEqual([forty.execution.end?.outcome, forty.execution.verification?.status, forty.execution.verification?.reasons], ['completed', 'not-verified', ['GATE_FAILED:repository-tests']],
+    'a session that "completed" with a failed gate is never verified');
 });

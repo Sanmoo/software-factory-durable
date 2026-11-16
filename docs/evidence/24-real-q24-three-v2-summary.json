@@ -1,0 +1,219 @@
+{
+ "source": "y5/q24-three-v2 (read-only; derived fields only, no session text)",
+ "status": "held",
+ "findings": [
+  "QUESTION_ASKED:39",
+  "QUESTION_ASKED:41"
+ ],
+ "outcome": {
+  "kind": "clean"
+ },
+ "passes": {
+  "env-5f0e2d900c5edaa361106850e61831b2141afaaa2baf38d06a6f549b75abcb8d": "dbbc32b1-cbb2-42e1-9cfd-cba29df8ccc9",
+  "env-43c952264e41ee5419f417f1a60e042201a275483bbbc4910557d820168c29f6": "dbbc32b1-cbb2-42e1-9cfd-cba29df8ccc9",
+  "env-9a4c555177c687770b2da053eae0462c5557c03571e7d572893e0491b41736bf": "dbbc32b1-cbb2-42e1-9cfd-cba29df8ccc9"
+ },
+ "works": [
+  {
+   "ticket": {
+    "number": 41
+   },
+   "work_id": "7c6dcb5d-f404-4fc7-9162-678230ac73d9",
+   "impediments": [
+    "QUESTION_PENDING",
+    "GLOBAL_PAUSE"
+   ],
+   "execution": {
+    "executionId": "19901e86-e571-4b4e-8950-fd77b6077584",
+    "state": "ended",
+    "slot": {
+     "held": false,
+     "capacity": 3,
+     "reservedAt": "2026-11-16T08:31:57.005Z",
+     "releasedAt": "2026-11-16T08:35:04.843Z"
+    },
+    "dispatch": {
+     "environment": "env-5f0e2d900c5edaa361106850e61831b2141afaaa2baf38d06a6f549b75abcb8d",
+     "boot": "boot-37f551f5-71a4-4662-a3ab-a16bd9cf253e",
+     "phase": "stopped"
+    },
+    "request": {
+     "branch": "factory/41-7c6dcb5d"
+    },
+    "end": {
+     "at": "2026-11-16T08:35:02.933Z",
+     "outcome": "question",
+     "code": null,
+     "cessation": "confirmed",
+     "questionId": "9e48e1ba-3c09-426c-85d1-70bd83419ffa"
+    },
+    "verification": null
+   }
+  },
+  {
+   "ticket": {
+    "number": 40
+   },
+   "work_id": "b5f65364-96e0-4a8f-af97-829c76343e7d",
+   "impediments": [
+    "GLOBAL_PAUSE"
+   ],
+   "execution": {
+    "executionId": "38e2fc30-1db8-4e17-9a50-d961ee16bfea",
+    "state": "ended",
+    "slot": {
+     "held": false,
+     "capacity": 3,
+     "reservedAt": "2026-11-16T08:31:58.787Z",
+     "releasedAt": "2026-11-16T08:37:35.345Z"
+    },
+    "dispatch": {
+     "environment": "env-43c952264e41ee5419f417f1a60e042201a275483bbbc4910557d820168c29f6",
+     "boot": "boot-ac3ae0ef-8f53-4f95-80a7-d238385afed9",
+     "phase": "stopped"
+    },
+    "request": {
+     "branch": "factory/40-b5f65364"
+    },
+    "end": {
+     "at": "2026-11-16T08:37:33.461Z",
+     "outcome": "completed",
+     "code": null,
+     "cessation": "confirmed"
+    },
+    "verification": {
+     "status": "not-verified",
+     "reasons": [
+      "GATE_FAILED:repository-tests"
+     ],
+     "gates": [
+      {
+       "id": "q24-validation",
+       "outcome": "passed"
+      },
+      {
+       "id": "repository-tests",
+       "outcome": "failed"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "ticket": {
+    "number": 39
+   },
+   "work_id": "690f4e33-4c9c-4534-8c2b-4bdc138f0b23",
+   "impediments": [
+    "QUESTION_PENDING",
+    "GLOBAL_PAUSE"
+   ],
+   "execution": {
+    "executionId": "60c812e1-4c33-458f-9213-a282bc250a60",
+    "state": "ended",
+    "slot": {
+     "held": false,
+     "capacity": 3,
+     "reservedAt": "2026-11-16T08:32:00.598Z",
+     "releasedAt": "2026-11-16T08:35:41.085Z"
+    },
+    "dispatch": {
+     "environment": "env-9a4c555177c687770b2da053eae0462c5557c03571e7d572893e0491b41736bf",
+     "boot": "boot-6acbac2f-ec35-41a1-aba8-a0838a3a6ada",
+     "phase": "stopped"
+    },
+    "request": {
+     "branch": "factory/39-690f4e33"
+    },
+    "end": {
+     "at": "2026-11-16T08:35:39.176Z",
+     "outcome": "question",
+     "code": null,
+     "cessation": "confirmed",
+     "questionId": "54471a7b-0a8b-486d-9133-19ae51281655"
+    },
+    "verification": null
+   }
+  }
+ ],
+ "registry": {
+  "summary": [
+   {
+    "boot": "boot-37f551f5-71a4-4662-a3ab-a16bd9cf253e",
+    "samples": 10,
+    "windowMs": 136253,
+    "peakMemoryCurrentBytes": 2766045184,
+    "memoryPeakBytes": 2798809088,
+    "cpuSeconds": 41.292587,
+    "ioReadBytes": null,
+    "ioWriteBytes": null,
+    "peakRssBytes": {
+     "vmm": 2033270784,
+     "adapter": 204931072,
+     "worker": 219627520,
+     "other": 0
+    },
+    "maxWorkersAtOnce": 1
+   },
+   {
+    "boot": "boot-ac3ae0ef-8f53-4f95-80a7-d238385afed9",
+    "samples": 20,
+    "windowMs": 287091,
+    "peakMemoryCurrentBytes": 2859331584,
+    "memoryPeakBytes": 2860662784,
+    "cpuSeconds": 71.171424,
+    "ioReadBytes": null,
+    "ioWriteBytes": null,
+    "peakRssBytes": {
+     "vmm": 2051170304,
+     "adapter": 205172736,
+     "worker": 626577408,
+     "other": 0
+    },
+    "maxWorkersAtOnce": 3
+   },
+   {
+    "boot": "boot-6acbac2f-ec35-41a1-aba8-a0838a3a6ada",
+    "samples": 13,
+    "windowMs": 181569,
+    "peakMemoryCurrentBytes": 2430861312,
+    "memoryPeakBytes": 2432114688,
+    "cpuSeconds": 56.237922,
+    "ioReadBytes": null,
+    "ioWriteBytes": null,
+    "peakRssBytes": {
+     "vmm": 2013011968,
+     "adapter": 204857344,
+     "worker": 211234816,
+     "other": 0
+    },
+    "maxWorkersAtOnce": 1
+   }
+  ],
+  "samples": 63,
+  "hosts": 24,
+  "maxHeldSlots": 3,
+  "capacity": 3
+ },
+ "cessation": [
+  {
+   "ticket": 41,
+   "boot": "boot-37f551f5-71a4-4662-a3ab-a16bd9cf253e",
+   "before": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "ticket": 40,
+   "boot": "boot-ac3ae0ef-8f53-4f95-80a7-d238385afed9",
+   "before": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "ticket": 39,
+   "boot": "boot-6acbac2f-ec35-41a1-aba8-a0838a3a6ada",
+   "before": "stopped",
+   "cessationConfirmed": true
+  }
+ ],
+ "supervisorObservations": "#39/#41 asked: `cd /workspace/checkout && ./gradlew test` exits 1 (no Java in gondolin-qemu-alpine-dev-v1, JAVA_HOME unset); the ticket Docker gate passed in all three"
+}

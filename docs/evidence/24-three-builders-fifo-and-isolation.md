@@ -110,13 +110,35 @@ recalcula o veredito sobre esse resumo.
   recusadas (`SUITE_COMMAND_NOT_PINNED`). Uma Pergunta de Builder fica registrada como achado
   (`QUESTION_ASKED:<n>`; a fase é retida, nunca repetida).
 
+## Ensaio real v2 (`y5/q24-three-v2`, issues #39–#41): executado pelo supervisor, HELD
+
+Resumo derivado em [24-real-q24-three-v2-summary.json](24-real-q24-three-v2-summary.json); veredito recalculado no teste "v2 offline proof".
+
+- **Causa do hold (`QUESTION_ASKED:39;QUESTION_ASKED:41`): gate da receita inexecutável no perfil do guest, não defeito do produto.**
+  `cd /workspace/checkout && ./gradlew test` sai com 1 porque o `gondolin-qemu-alpine-dev-v1` não tem Java (JAVA_HOME não definido). Os
+  Builders de #39 e #41 perguntaram, o que é o comportamento correto. #40 terminou `completed` na sessão, mas a verificação do controlador
+  ficou `not-verified` [`GATE_FAILED:repository-tests`] (gate q24 `passed`, suite `failed`): nenhum sucesso falso.
+- **Provado (A):** 3 VMs preparadas e iniciadas numa única passada (`pass` `dbbc32b1…` nos três starts), capacidade 3 com no máximo 3 Slots
+  mantidos, ambiente/boot/branch próprios, Perguntas independentes por Trabalho (uma Execução terminou `question` enquanto as outras
+  seguiram), Slots liberados após cessação confirmada, unidades medidas (#40 com revisores: 3 workers na unit). O host passou na checagem
+  (MemAvailable 10,3 GB). Isso confirma, numa segunda execução, os itens de AC1/AC3/AC6/AC7 provados em v1.
+- **Ainda não provado → v3 necessário:** a suite real com Testcontainers/Ryuk simultâneos nas três VMs (AC5) e as três Execuções
+  `completed` com verificação.
+- **v3:** namespace `y5/q24-three-v3`, números das issues 0. A suite roda `./gradlew --no-daemon test` (README: JDK 25 + Docker) dentro de
+  `eclipse-temurin:25-jdk` no Docker do próprio guest, com `--network host` (egress mediado do guest e portas publicadas), o socket do
+  daemon do guest (Testcontainers + Ryuk, nunca o socket do host), a CA Gondolin do boot adicionada à truststore do JDK
+  (`USE_SYSTEM_CA_CERTS`: TLS em camadas, sem bypass) e um volume nomeado para o Gradle home. A regra pura `profileGateViolations` recusa
+  ferramenta JVM fora de container e imagem sem versão fixada (`SUITE_NOT_EXECUTABLE_IN_GUEST`).
+  **Não verificado offline:** alcance da imagem e do download do Gradle/dependências pelo egress do guest, e duração. Pull ou estouro de
+  tempo vira achado registrado, nunca repetição.
+
 ## Ensaio real (receita one-shot)
 
 Receita: `dist/test/entrypoints/three24-qualification.js` (fonte `test/entrypoints/three24-qualification.ts`; registro
 `three24-measure.ts`). `--plan` é inerte (teste `three24-qualification`). **Não executado.** Requer autorização explícita do operador para esta
 execução: GitHub real (App; grants só de leitura, sem push/PR), três VMs Gondolin/KVM reais e o modelo real (3 Builders + revisores).
 
-- Namespace próprio `y5/q24-three-v2` (v1 consumido). A `preflight` falha alto se `y5/credentials/app.pem` estiver ausente; depois faz `mkdir` exclusivo do
+- Namespace próprio `y5/q24-three-v3` (v1 e v2 consumidos). A `preflight` falha alto se `y5/credentials/app.pem` estiver ausente; depois faz `mkdir` exclusivo do
   namespace e grava o tombstone `preflight-intent`; só então cria `credentials/`/`run/` e copia a chave com `COPYFILE_EXCL`. A cópia é removida
   no `finally` do `run`, ou da `preflight` retida. Fases: `preflight`, `run`, `inspect`, `stop-environment`, cada uma uma única vez,
   sempre após uma `preflight` com sucesso.
