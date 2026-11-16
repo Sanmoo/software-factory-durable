@@ -234,8 +234,9 @@ export async function settleInterruption(session: Session, input: { work_id: str
         const decided = recoveredQuestionDecision({ workId: work.work_id, executionId: execution.executionId,
           observation: seen.kind === 'question' ? { kind: 'question', questionId: seen.request.questionId, sha256: seen.request.sha256, intact: intactRequest(seen.request, work.work_id),
             refused: execution.questionRefusals?.find(item => item.questionId === seen.request.questionId)?.code ?? null } : seen,
-          existing: known ? { workId: known.workId, executionId: known.executionId, sha256: known.content.sha256 } : null });
+          existing: known ? { workId: known.workId, executionId: known.executionId, sha256: known.content.sha256 } : null, result: work.result });
         if (decided.kind === 'block') lostQuestion = decided.code;
+        else if (decided.kind === 'skip') questionNote = `not-recorded:${decided.code}`;
         else if (decided.kind === 'honor-refusal') questionNote = `refused-live:${decided.code}`;
         else if (decided.kind === 'bind') questionId = known!.questionId;
         else if (decided.kind === 'record' && seen.kind === 'question') {

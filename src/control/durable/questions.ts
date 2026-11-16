@@ -189,6 +189,8 @@ export async function recordPublication(session: Session, questionId: string, up
     };
     if (update.kind === 'begin') {
       if (publication.state !== 'intended' && publication.state !== 'failed') return 'stale' as const;
+      // Ticket 27/25: the attempt commit re-checks the Work: after a cancellation (or any closure) nothing new is sent.
+      if ((await tx.doc(works, question.workId, null)).work?.result !== 'open') return 'stale' as const;
       publication.state = 'attempting'; attempt('attempting');
     } else if (update.kind === 'result') {
       if (publication.state !== 'attempting') return 'stale' as const;

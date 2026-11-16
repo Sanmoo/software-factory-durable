@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { untilHolds } from '../runner/budget.js';
 import { openControl } from '../../src/control/index.js';
 import type { Control, ListView, ShowView, WorkView } from '../../src/control/types.js';
 import type { QuestionObservation } from '../../src/workers/index.js';
@@ -35,14 +36,12 @@ async function harness(t: { after(fn: () => Promise<void>): void }) {
   t.after(async () => { await halt(); });
   const work = async () => ((await current!.control.inspect({ kind: 'list' })) as ListView).works.find(item => item.ticket.number === 3) as WorkView;
   const show = async (work_id: string) => await current!.control.inspect({ kind: 'show', work_id }) as Extract<ShowView, { kind: 'work' }>;
-  const until = async (predicate: () => Promise<boolean> | boolean, label: string) => {
-    for (let i = 0; i < 1500; i++) {
-      if (await predicate()) return;
-      if (current!.time.isSleeping()) current!.time.advance();
-      await new Promise(resolve => setTimeout(resolve, 5));
-    }
-    assert.fail(`${label} not reached`);
-  };
+  // Bounded by the runner budget (ticket 40), never a counted loop.
+  const until = (predicate: () => Promise<boolean> | boolean, label: string) => untilHolds(label, async () => {
+    if (await predicate()) return true;
+    if (current!.time.isSleeping()) current!.time.advance();
+    return false;
+  }, 5);
   /** The first owner runs until `ready`, then stops with the boot's cessation unconfirmed; the next owner (unit stopped meanwhile) reconciles. */
   async function interrupted(script: RecoveryScript, ready: () => boolean, observeQuestion?: Parameters<typeof start>[1]) {
     await start([script]);

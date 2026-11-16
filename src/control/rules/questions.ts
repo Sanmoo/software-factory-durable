@@ -123,10 +123,14 @@ export const questionRecordFound = (code: string) => /^QUESTION_RECORD_/.test(co
  * listing without a request leaves the ordinary path untouched.
  */
 export function recoveredQuestionDecision(input: { observation: RecoveredQuestion | null; workId: string; executionId: string;
-  existing: { workId: string; executionId: string; sha256: string } | null }):
-  { kind: 'none'; unresolved: string | null } | { kind: 'record' } | { kind: 'bind' } | { kind: 'honor-refusal'; code: string } | { kind: 'block'; code: string } {
+  existing: { workId: string; executionId: string; sha256: string } | null;
+  /** Ticket 25: the Work's result; a request found for a Work that is no longer open (cancelled) is never turned into a new open Question. */
+  result?: string }):
+  { kind: 'none'; unresolved: string | null } | { kind: 'record' } | { kind: 'bind' } | { kind: 'honor-refusal'; code: string } | { kind: 'block'; code: string } |
+  { kind: 'skip'; code: string } {
   const seen = input.observation;
   if (!seen || seen.kind === 'absent') return { kind: 'none', unresolved: null };
+  if (input.result !== undefined && input.result !== 'open') return { kind: 'skip', code: input.result === 'cancelled' ? 'WORK_CANCELLED' : 'WORK_NOT_OPEN' };
   if (seen.kind === 'uncertain') return questionRecordFound(seen.code) ? { kind: 'block', code: seen.code } : { kind: 'none', unresolved: seen.code };
   if (seen.refused) return { kind: 'honor-refusal', code: seen.refused };
   if (!seen.intact) return { kind: 'block', code: 'QUESTION_RECORD_NOT_INTACT' };

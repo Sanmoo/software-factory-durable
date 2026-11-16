@@ -164,7 +164,7 @@ export function assess(input: { work: WorkView | undefined; question: QuestionVi
   const head = input.work?.publication?.verified?.head ?? null;
   const publication = all.find(item => item.request.publication && item.recovery?.length);
   const reached = { cutA: Boolean(posted) && input.exits['a-ask'] === 'signal:SIGKILL', cutB: at('c-publish', 'push-observed').length === 1 && input.exits['c-publish'] === 'signal:SIGKILL' };
-  const headPushes = head ? input.pushes.filter(command => command.includes(head)).length : 0;
+  const headPushes = head ? input.pushes.filter(command => /\bgit\b[\s\S]*\bpush\b/.test(command) && command.includes(head)).length : 0;
   const checks = {
     questionCut: reached.cutA && posted?.kind === 'published',
     questionReconciled: asked?.recovery?.[0]?.cessation.result === 'confirmed' && asked.end?.outcome === 'question',
@@ -180,7 +180,9 @@ export function assess(input: { work: WorkView | undefined; question: QuestionVi
     publicationLinked: input.work?.publication?.state === 'published' && input.work.publication.pullRequest?.headSha === head && head !== null,
     singleOwnPullRequest: input.remote.ownPullRequests === 1,
     branchAtVerifiedHead: head !== null && input.remote.branchTip === head,
-    explicitLeases: pushViolations(input.pushes).length === 0,
+    // Ticket 21's census: every push (or ref write through gh api/curl) must be EXACTLY one the Factory requested (branch, lease, head).
+    explicitLeases: pushViolations(input.pushes, (input.work?.publication?.attempts ?? []).map(item => ({ branch: input.work!.publication!.branch,
+      expected: item.expectedRemote?.state === 'present' ? item.expectedRemote.sha : null, head: item.head }))).length === 0,
     atMostOnePushOfHead: headPushes <= 1,
     cleanStops: input.exits['b-discover-question'] === 'exit:0' && input.exits['d-discover-publication'] === 'exit:0',
   };
@@ -483,7 +485,7 @@ export async function runPhase(phase: Phase) {
           for (const file of files.slice(0, 4)) {
             const read = await readBounded(`${directory}/${file}`, 8 * 1024 * 1024);
             if (!('text' in read)) { pushCensusComplete = false; continue; }
-            pushes.push(...sessionCommands(read.text).flatMap(call => call.command && /\bgit\b[^\n]*\bpush\b/.test(call.command) ? [call.command] : []));
+            pushes.push(...sessionCommands(read.text).flatMap(call => call.command ? [call.command] : []));
           }
         }
       }

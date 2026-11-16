@@ -2,8 +2,8 @@
 
 Autoridade: [ticket 27](../../.scratch/software-factory-mvp/issues/27-external-effect-crash-reconciliation.md),
 [spec §§3.4, 5.2, 5.5, 9.1, 9.3, 10.1, 12.3](../../.scratch/software-factory/spec.md), cenários V-12/V-14 da
-[matriz de aceite](../../.scratch/software-factory/acceptance-and-incremental-plan.md). Base: branch do ticket 21
-(`implement/software-factory-mvp-21` @ `4852185`, ainda em revisão). Branch `implement/software-factory-mvp-27`.
+[matriz de aceite](../../.scratch/software-factory/acceptance-and-incremental-plan.md). Base: `integration/software-factory-mvp` @ `c645639`
+(tickets 18, 21, 25, 30, 31, 36–40 integrados; rebase dos commits do 27). Branch `implement/software-factory-mvp-27`.
 
 **Estado: incremento local verde; ensaio real NÃO executado** (receita `test/entrypoints/crashfx27-qualification.ts`, exige autorização
 do operador por execução e o número do issue fixado num commit revisado: com `number: 0` toda fase recusa `TICKET_NOT_PINNED`). Dublê não
@@ -59,6 +59,8 @@ Ajuste de teste anterior: `question-flow` "unknown outcome with a COMPLETE empty
 | LOW fase `booted` / recibo perdido | facet consultada também em `booted`; pergunta preservada sem recibo ⇒ início incerto (`QUESTION_WITHOUT_START_RECEIPT`), nunca "não iniciou" | — (regra no commit) |
 | LOW origem do histórico | `question-recorded` com `origin: records-recovery` | `effects27-flow` MED 4 |
 | LOW reposts `failed` | já exigem prova de não envio no adapter (pré-envio/4xx/rate limit = conhecido; 5xx/transporte/payload = `unknown` → descoberta → `unconfirmed`) | `github-question-comments` AC2 |
+| ticket 40 (rebase) | esperas dos testes novos pelo orçamento do runner (`untilHolds`), sem laço contado | — |
+| ticket 21 final (rebase) | censo da receita usa o `pushViolations` exato do 21 (branch/lease/head das tentativas, remoto configurado, gh api/curl) | `crashfx27-recipe-safety` |
 | LOW receita | falha de ambiente no corte A, listagem truncada (null) e censo de push limitado ⇒ `inconclusive`; `singleAnswerAccepted` conta aceitações; tracker com métodos ligados explicitamente | `crashfx27-recipe-safety` |
 
 ## Receita real (não executada)
@@ -77,6 +79,10 @@ PR-only sem push), `inspect` (comentários com marcador = 1, PRs próprios = 1, 
    o issue e responder localmente (`factory answer`). Um `authorize-question-republish` seria contrato novo.
 2. **Falhas conhecidas da Pergunta** (GitHub recusou; nada criado) continuam repostadas até 5 vezes (ticket 10). Não há risco de duplicata,
    mas é um retry implícito; manter ou exigir autorização?
-3. **Efeitos tardios durante cancelamento** (AC8): cancelamento é o ticket 25 (não implementado); a receita não cobre esse corte.
+3. **Efeitos tardios durante cancelamento** (AC8, coberto após o rebase sobre o 25): um Trabalho cancelado nunca recebe POST novo (o commit
+   `begin` re-verifica `result: open`), mas uma Pergunta possivelmente enviada continua DESCOBERTA (leitura segura) e é vinculada; uma
+   solicitação em Records de um Trabalho cancelado nunca vira Pergunta aberta nem bloqueio (`not-recorded:WORK_CANCELLED`). Testes:
+   `question-flow` "ticket 27 AC8 + ticket 25", `question-rules`. A conversão draft/ready incerta de um Trabalho cancelado não é redescoberta
+   (o alvo de checks exige `open`): lacuna residual, sem risco de repetição. A receita real não inclui um corte de cancelamento.
 4. Uma solicitação em Records ilegível/parcial após crash bloqueia o Trabalho (`RECOVERY_BLOCKED`) em vez de recovery operacional: conservador;
    a saída explícita (`resume`) segue sem ingresso (decisão 3 do ticket 26).

@@ -21,10 +21,13 @@ export function createQuestionDesk(deps: { session: Session; tracker: IssueTrack
 
   async function publishPending() {
     for (const work of await deps.readWorks()) {
-      if (work.result !== 'open') continue;
+      // Ticket 27/25: a Work that is no longer open (cancelled, delivered, closed) gets NO new POST, but a POST that may already have been
+      // sent is still DISCOVERED (safe read): late effects of a cancellation are reconciled, never repeated.
+      const open = work.result === 'open';
       for (const question of await readQuestions(session, work)) {
         if (deps.stopped()) return;
         if (question.state !== 'open' || question.destination.kind !== 'issue') continue;
+        if (!open && !questionNeedsDiscovery(question.publication.state)) continue;
         let state = question.publication.state;
         const ticket = question.destination.ticket;
         if (questionNeedsDiscovery(state)) {
@@ -37,7 +40,7 @@ export function createQuestionDesk(deps: { session: Session; tracker: IssueTrack
           state = next;
         }
         const failures = question.publication.attempts.filter(item => item.outcome === 'failed').length;
-        if (!questionPublishAllowed(state, failures, maxKnownFailures) || deps.stopped()) continue;
+        if (!open || !questionPublishAllowed(state, failures, maxKnownFailures) || deps.stopped()) continue;
         if (await recordPublication(session, question.questionId, { kind: 'begin' }) !== 'attempting') continue;
         const body = questionCommentBody({ questionId: question.questionId, workId: question.workId, executionId: question.executionId,
           question: question.content.question, context: question.content.context });

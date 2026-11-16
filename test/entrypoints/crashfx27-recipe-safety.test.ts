@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { QuestionView, WorkView } from '../../src/control/index.js';
 import { activationGuard, assess, keySource, phaseGuard, postDecision, pushObserved, requireKeySource } from './crashfx27-qualification.js';
+import { configuredRemote } from './humanchanges21-qualification.js';
 
 // Recipe safety of the ticket 27 real run, on controlled data only (never the real root, GitHub, VM or model).
 
@@ -53,19 +54,20 @@ test('cut B fires only when the own branch holds exactly the verified head', () 
 
 const qid = '0b9c6a52-3d3e-4c8f-9a51-000000000277';
 const head = 'b'.repeat(40);
+const push = `git -C /workspace/checkout push --force-with-lease=refs/heads/factory/9-abc: ${configuredRemote} ${head}:refs/heads/factory/9-abc`;
 const execution = (extra: Record<string, unknown>) => ({ executionId: 'e', request: {}, recovery: [{ cessation: { result: 'confirmed' } }], ...extra });
 function world(overrides: { posts?: number; reposts?: number; comments?: number | null; pulls?: number | null; pushes?: string[]; cutB?: boolean; postKind?: string;
   census?: boolean; answers?: number } = {}) {
   const question = { questionId: qid, state: 'answered', answer: { origin: { kind: 'github-comment' } },
     publication: { state: 'published', attempts: [{ outcome: 'attempting' }, { outcome: 'discovered' }], comment: { commentId: 77 } } } as unknown as QuestionView;
-  const work = { questions: [qid], history: Array.from({ length: overrides.answers ?? 1 }, () => ({ event: 'question-answered', questionId: qid })), publication: { state: 'published', verified: { head }, pullRequest: { headSha: head } },
+  const work = { questions: [qid], history: Array.from({ length: overrides.answers ?? 1 }, () => ({ event: 'question-answered', questionId: qid })), publication: { state: 'published', branch: 'factory/9-abc', verified: { head }, pullRequest: { headSha: head }, attempts: [{ head, expectedRemote: { state: 'absent' } }] },
     previousExecutions: [execution({ executionId: 'e1', end: { outcome: 'question', questionId: qid } }), execution({ executionId: 'e2', end: { outcome: 'completed' } })],
     execution: execution({ executionId: 'e3', request: { publication: { head } }, end: { outcome: 'failure' } }) } as unknown as WorkView;
   const events = [{ at: 't', step: 'a-ask' as const, call: 'post-returned', kind: overrides.postKind ?? 'published', commentId: 77 },
     ...(overrides.cutB === false ? [] : [{ at: 't', step: 'c-publish' as const, call: 'push-observed' }]),
     ...Array.from({ length: overrides.reposts ?? 0 }, () => ({ at: 't', step: 'b-discover-question' as const, call: 'post-refused' }))];
   return assess({ work, question, events, exits: { 'a-ask': 'signal:SIGKILL', 'b-discover-question': 'exit:0', 'c-publish': overrides.cutB === false ? 'exit:0' : 'signal:SIGKILL',
-    'd-discover-publication': 'exit:0' }, pushCensusComplete: overrides.census ?? true, pushes: overrides.pushes ?? [`git -C /workspace/checkout push --force-with-lease=refs/heads/factory/9-abc: origin ${head}:refs/heads/factory/9-abc`],
+    'd-discover-publication': 'exit:0' }, pushCensusComplete: overrides.census ?? true, pushes: overrides.pushes ?? [push],
   remote: { questionComments: overrides.comments === undefined ? 1 : overrides.comments, ownPullRequests: overrides.pulls === undefined ? 1 : overrides.pulls, branchTip: head } });
 }
 
@@ -74,7 +76,7 @@ test('AC8 verdict: passed only with every check; a duplicate/repetition is FAILE
   assert.deepEqual([world({ comments: 2 }).status, world({ comments: 2 }).failures], ['failed', ['singleQuestionComment']], 'a duplicate Question comment');
   assert.deepEqual(world({ pulls: 2 }).failures, ['singleOwnPullRequest'], 'a second PR');
   assert.deepEqual(world({ reposts: 1 }).failures, ['questionNeverReposted'], 'a repost attempt (even refused) fails the run');
-  const twice = world({ pushes: [1, 2].map(() => `git push --force-with-lease=refs/heads/factory/9-abc: origin ${head}:refs/heads/factory/9-abc`) });
+  const twice = world({ pushes: [push, push] });
   assert.deepEqual(twice.failures, ['atMostOnePushOfHead'], 'the verified head pushed twice');
   assert.deepEqual(world({ pushes: ['git push --force origin x'] }).failures, ['explicitLeases']);
   assert.deepEqual([world({ cutB: false }).status, world({ cutB: false }).inconclusive], ['inconclusive', ['CUT_B_NOT_REACHED']]);

@@ -300,6 +300,24 @@ test('AC2 + ticket 27 AC3/AC4: unknown outcome with a COMPLETE empty discovery i
   assert.equal((receipt as { outcome?: string }).outcome, 'accepted');
 });
 
+test('ticket 27 AC8 + ticket 25: a POST that may have landed before a CANCELLATION is still discovered (linked), and nothing new is ever posted for the cancelled Work', async t => {
+  const remote: Remote = { pulls: {}, issues: [remoteIssue(3)], postOutcomes: ['unknown-created'], incompleteSearches: 1000 };
+  const h = await harness(t, remote, [{ kind: 'ask', questionId: qid(29), question: 'Late?' }]);
+  await h.start();
+  await h.until(async () => (await h.byNumber())[3]?.execution?.slot.held === false);
+  const work = (await h.byNumber())[3]!;
+  await h.until(async () => (await h.show(work.work_id)).questions[0]!.publication.state === 'ambiguous');
+  const cancelled = await h.control().accept({ request_id: 'cancel-27', operation: 'cancel', work_id: work.work_id, origin: 'local-cli' }) as { outcome?: string };
+  assert.equal(cancelled.outcome, 'accepted');
+  remote.incompleteSearches = 0;
+  await h.cycle(); await h.cycle();
+  const question = (await h.show(work.work_id)).questions[0]!;
+  assert.equal(question.publication.state, 'published', 'the late effect of the cancelled Work is reconciled by discovery');
+  assert.equal(question.publication.comment!.commentId, remote.comments![3]![0]!.commentId);
+  assert.equal(h.github.calls.filter(call => call.method === 'postComment').length, 1, 'never reposted after the cancellation');
+  assert.equal(remote.comments![3]!.length, 1);
+});
+
 test('ticket 27 AC3/AC4: an unconfirmed publication whose comment appears in a later complete listing is linked (discovered), never reposted', async t => {
   const remote: Remote = { pulls: {}, issues: [remoteIssue(3)], postOutcomes: ['unknown-not-created'] };
   const h = await harness(t, remote, [{ kind: 'ask', questionId: qid(19), question: 'Late?' }]);

@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { untilHolds } from '../runner/budget.js';
 import { fileURLToPath } from 'node:url';
 import { openControl } from '../../src/control/index.js';
 import type { Control, ControlReceipt, ListView, ShowView, WorkView } from '../../src/control/types.js';
@@ -36,14 +37,12 @@ async function reopen(t: { after(fn: () => Promise<void>): void }, dir: string, 
   t.after(async () => { stop.abort(); await running; });
   const work = async () => (await control.inspect({ kind: 'list' }) as ListView).works.find(item => item.ticket.number === 3) as WorkView;
   const show = async (work_id: string) => await control.inspect({ kind: 'show', work_id }) as Extract<ShowView, { kind: 'work' }>;
-  const until = async (predicate: () => Promise<boolean>, label: string) => {
-    for (let i = 0; i < 1500; i++) {
-      if (await predicate()) return;
-      if (time.isSleeping()) time.advance();
-      await new Promise(resolve => setTimeout(resolve, 5));
-    }
-    assert.fail(`${label} not reached`);
-  };
+  // Bounded by the runner budget (ticket 40), never a counted loop.
+  const until = (predicate: () => Promise<boolean>, label: string) => untilHolds(label, async () => {
+    if (await predicate()) return true;
+    if (time.isSleeping()) time.advance();
+    return false;
+  }, 5);
   return { control, doubles, github, work, show, until };
 }
 const scratch = async (t: { after(fn: () => Promise<void>): void }) => {

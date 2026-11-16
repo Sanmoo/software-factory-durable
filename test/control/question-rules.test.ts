@@ -152,6 +152,11 @@ test('ticket 27 AC5 (rule level): only a POSITIVE finding changes the ordinary p
   for (const code of ['QUESTION_RECORD_INCOMPLETE', 'QUESTION_RECORD_MULTIPLE', 'QUESTION_RECORD_MISMATCH', 'QUESTION_RECORD_INVALID']) {
     assert.deepEqual(recoveredQuestionDecision({ ...base, observation: { kind: 'uncertain', code }, existing: null }), { kind: 'block', code }, code);
   }
+  // Ticket 25: a cancelled Work never gets a NEW open Question from Records (nor a block): the cancellation stands.
+  assert.deepEqual(recoveredQuestionDecision({ ...base, observation: intact, existing: null, result: 'cancelled' }), { kind: 'skip', code: 'WORK_CANCELLED' });
+  assert.deepEqual(recoveredQuestionDecision({ ...base, observation: { kind: 'uncertain', code: 'QUESTION_RECORD_INCOMPLETE' }, existing: null, result: 'cancelled' }),
+    { kind: 'skip', code: 'WORK_CANCELLED' });
+  assert.deepEqual(recoveredQuestionDecision({ ...base, observation: intact, existing: null, result: 'open' }), { kind: 'record' });
   for (const code of ['QUESTION_LISTING_INCOMPLETE', 'RECORDS_UNAVAILABLE', 'QUESTION_OBSERVATION_FAILED', 'WORKER_EXECUTION_NOT_ENABLED']) {
     assert.deepEqual(recoveredQuestionDecision({ ...base, observation: { kind: 'uncertain', code }, existing: null }), { kind: 'none', unresolved: code }, code);
   }
