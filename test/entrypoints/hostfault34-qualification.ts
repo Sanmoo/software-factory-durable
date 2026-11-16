@@ -17,11 +17,13 @@
 
 const user = 'sanmoo';
 const root = `/home/${user}/software-factory-test/y5`;
-const observations = `${root}/q34-hostfault-v3`;
+const observations = `${root}/q34-hostfault-v4`;
 // v1 held at `image` (real run, btrfs /home): mkfs.ext4 discarded the fallocated image (72 MB of 6 GiB still allocated). v2: NOCOW + nodiscard.
 // v2 held at preflight (real run): right after the rootless mount ~96 MiB of the image were punched away (ext4 lazy inode-table/journal
 // init zeroes through the loop device, which the loop turns into hole punches of the backing file). v3: eager init at mkfs, verified.
-const revision = 'q34-hostfault-v3';
+// v3 ran every phase: 9 of 11 checks held, NATIVE_CUT_NOT_REACHED — its native phase removed only the full-phase fillers, f-floor stayed
+// (768 MiB free, below the floor), so preparation was refused at admission and no environment ever appeared. v4 frees EVERY own filler first.
+const revision = 'q34-hostfault-v4';
 export const phases = ['image', 'preflight', 'floor', 'full', 'native', 'release', 'inspect'] as const;
 export type Phase = typeof phases[number];
 const gib = 1024 ** 3, mib = 1024 ** 2;
@@ -79,7 +81,7 @@ export function plan() {
       'preflight: read-only verification of the mount (mountinfo, loop backing file, ext4, size, devices distinct from $HOME and /, owner, empty); creates <mount>/root (Factory root) and <mount>/filler',
       `floor: filler grown until free space is ${(floorBytes - 256 * mib) / mib} MiB (below the ${configuration.minFreeSpaceGiB} GiB floor); Sandbox.validate, Sandbox.prepare(${works.floor}), host capacity observation; Control storage created on the disposable root and ONE durable pause accepted`,
       `full: filler grown to real ENOSPC (fallocate, then 1 MiB and 4 KiB writes until ENOSPC); Sandbox.prepare(${works.full}); Control storage reopened and ONE unpause attempted (no ACK expected)`,
-      `native: the recipe removes its OWN filler down to ${preparationBytes / gib} GiB + 256 MiB free (admission passes); Sandbox.prepare(${works.native}) runs and, as soon as its environment directory appears, the recipe allocates the remaining space (real ENOSPC after the native effect began)`,
+      `native: the recipe removes EVERY own filler, then fills down to ${preparationBytes / gib} GiB + 256 MiB free (admission passes); Sandbox.prepare(${works.native}) runs and, as soon as its environment directory appears, the recipe allocates the remaining space (real ENOSPC after the native effect began)`,
       `release: the recipe removes ALL its own filler; Sandbox.prepare(${works.native}) again (incomplete preparation never adopted), Sandbox.prepare(${works.fresh}) (pressure recovered, nothing deleted), Control storage reopened (state consistent)`,
       'inspect: verdict from the saved results; secret-shape scan of the namespace and the disposable root; prints the operator teardown'],
     guards: ['one-shot intent tombstones and phase order', 'every write re-verifies the disposable mount; a filler file is grown only after an fstat on the mount device',
@@ -139,6 +141,11 @@ export function confinementProblems(facts: MountFacts, { requireEmpty }: { requi
   if (facts.homeFs === btrfsMagic && facts.imageNocow !== true) problems.push('IMAGE_NOT_NOCOW_ON_BTRFS');
   if (requireEmpty && facts.entries.some(name => name !== 'lost+found')) problems.push('MOUNT_NOT_EMPTY');
   return problems;
+}
+
+/** Pure: the recipe's own filler files among the entries of <mount>/filler (all of them are removed before the native headroom). */
+export function fillersToFree(names: readonly string[]): string[] {
+  return names.filter(name => /^f-[a-z0-9-]{1,32}$/.test(name)).sort();
 }
 
 /** Pure: bytes to allocate so that `target` bytes stay free (never negative; null when already below target). */
@@ -396,13 +403,16 @@ export async function runPhase(phase: Phase) {
     }
     if (phase === 'native') {
       const before = await manifest(mount.factoryRoot);
-      // The operator's freeing of space: ONLY the recipe's own bulk filler of the full phase and its tail are removed.
-      await fs.rm(`${mount.filler}/f-tail`); await fs.rm(`${mount.filler}/f-full`, { force: true });
+      // The operator's freeing of space: EVERY own filler (floor, full, tail) is removed, then the headroom is set (v3 left f-floor: cut missed).
+      for (const name of fillersToFree(await fs.readdir(mount.filler))) await fs.rm(`${mount.filler}/${name}`);
       const headroom = fillBytes(await available(mount.mount), preparationBytes + 256 * mib);
       if (headroom !== null) await grow(mount, 'f-native-pre', headroom);
       const { watch } = await import('node:fs');
       await fs.mkdir(`${mount.factoryRoot}/environments`, { recursive: true, mode: 0o700 }).catch(() => {});
       const known = new Set(await environmentsOf(mount.factoryRoot));
+      // Admission must pass for the cut to mean anything: below it, the phase holds before any prepare (nothing proven, nothing consumed in Factory).
+      const availableBeforePrepare = await available(mount.mount);
+      if (availableBeforePrepare < preparationBytes) { await save('native-held', { availableBeforePrepare, preparationBytes }); throw new Error('NATIVE_HEADROOM_BELOW_ADMISSION'); }
       let done = false, cut: Promise<{ at: string; environment: string; code: number }> | null = null;
       const watcher = watch(`${mount.factoryRoot}/environments`, (_event, name) => {
         if (cut || done || !name || !/^env-[a-f0-9]{64}$/.test(String(name)) || known.has(String(name))) return;
@@ -416,13 +426,13 @@ export async function runPhase(phase: Phase) {
       const environment = observed?.environment ?? (await environmentsOf(mount.factoryRoot)).find(name => !known.has(name)) ?? null;
       const ownerKept = environment ? await fs.access(`${mount.factoryRoot}/environments/${environment}/owner.json`).then(() => true, () => false) : false;
       const after = await manifest(mount.factoryRoot);
-      await save('native-result', { status: 'success', cut: observed, cutReached: observed !== null && observed.code === 0 && prepared.status !== 'success', prepare: prepared, environment,
+      await save('native-result', { status: 'success', availableBeforePrepare, cut: observed, cutReached: observed !== null && observed.code === 0 && prepared.status !== 'success', prepare: prepared, environment,
         ownerKept, deleted: deletedFiles(before, after), manifest: after });
       return;
     }
     if (phase === 'release') {
       const before = await manifest(mount.factoryRoot);
-      for (const name of await fs.readdir(mount.filler)) if (/^f-[a-z0-9-]{1,32}$/.test(name)) await fs.rm(`${mount.filler}/${name}`);
+      for (const name of fillersToFree(await fs.readdir(mount.filler))) await fs.rm(`${mount.filler}/${name}`);
       const again = await sandbox.prepare({ workId: works.native, configuration });
       const fresh = await sandbox.prepare({ workId: works.fresh, configuration });
       const { openControl } = await import('../../src/control/index.js');

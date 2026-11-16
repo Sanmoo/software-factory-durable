@@ -10,8 +10,9 @@ Matriz legível por máquina: [34-qualification-matrix.json](34-qualification-ma
 GitHub, modelo, credencial ou injeção de falha no host); a única execução foi a suíte local `npm run test:ci` sobre o candidato.
 Aprovação documental não é funcionamento e build verde não é estado externo atual.
 
-**Resultado (após as decisões do operador de 2026-11-16).** 112 obrigações: 71 aprovadas, 0 reprovadas,
-29 inconclusivas e 12 dependentes do piloto (antes das decisões: 66/0/36/10). As inconclusivas bloqueiam os gates G3 (2), G4 (24) e
+**Resultado (após as decisões do operador de 2026-11-16).** 112 obrigações: 72 aprovadas, 0 reprovadas,
+28 inconclusivas e 12 dependentes do piloto (antes das decisões: 66/0/36/10; V-14.c aprovada depois por R-HOSTFAULT v3,
+[34-r-hostfault-v3.md](34-r-hostfault-v3.md)). As inconclusivas bloqueiam os gates G3 (2), G4 (23) e
 G5 (3). As dependentes do piloto (as 10 de nível P, mais V-02.h e V-06.e, levadas ao piloto por D-04/D-01) não são aceite antecipado. O
 resultado libera **no máximo a preparação da solicitação de autorização do piloto** (ticket 35). Não libera sua execução, não declara o
 MVP aceito, não seleciona nem acessa recursos reais e não certifica barreiras de merge/CI do time.
@@ -73,7 +74,6 @@ implementação.** Falta só a prova real: V-05.c continua inconclusiva e R-GH-D
 | V-12.d | G4-concorrencia-adversidades | corte de cache nao incluido na receita 26; resposta durante boot e perda de canal so em S/I-local | Incluir em R-CRASH-A |
 | V-13.e | G4-concorrencia-adversidades | nenhuma atividade real > 60 min; ajuste de hora so S (relogio monotonico) | Executar R-LONG (uma atividade real > 60 min sem timeout; ajuste de hora do host com autorizacao de injecao) |
 | V-13.g | G4-concorrencia-adversidades | merge durante cancelamento e efeitos tardios sob cancelamento so em fluxo (25, 27) | Executar R-GH-ADV (cancel com PR proprio e merge humano concorrente) |
-| V-14.c | G4-concorrencia-adversidades | ENOSPC real nao simulado (03); recusa por statfs em S | Executar R-HOSTFAULT (disco cheio/abaixo do piso em raiz descartavel) |
 | V-14.f | G5-operacao-release | so o ramo recusado (ambiente q25 ainda existe); caminho completo em fluxo | Executar R-GH-DEP (limpar o ambiente q25 e esquecer o cancelado), com autorizacao propria |
 | V-15.c | G3-jornada-completa | nos dados reais todas as atividades deram unavailable (sessoes removidas pelo cleanup do 17 antes do 30; cancelado sem sessao); medido/dedup so em S | Executar R-INSPECT (receita 29 sobre copia de um storage com sessoes retidas, ex.: q23-feedback-v3) |
 | V-16.b | G5-operacao-release | nenhuma release construida de 0d343d6; ultima: mvp-33.1 de b6cd2bb; qualification: unqualified | Executar R-REL (build/verify/install/setup/doctor da release do candidato) |
@@ -171,6 +171,7 @@ registra o commit da Factory; o commit abaixo vem do documento de evidência ou 
 | r32-v2 | 32 | 2026-11-14 | `2d5600e` | I | build/verify/install/setup/doctor da release (local) | verify 0 violacoes | aplicavel-encadeada | mecanismo de release mudou em 33 e foi reexercitado em r33-v2; nenhuma release do candidato | [32-self-contained-release.md](32-self-contained-release.md), [32-real-v2-verify-2026-11-14.json](32-real-v2-verify-2026-11-14.json) |
 | r33-v2 | 33 | 2026-11-15 | `b6cd2bb` | I | upgrade check/apply/resume/rollback, migracao 1->2 com dois SIGKILL | 54/54 | aplicavel-encadeada | formato de storage 2 e protocolo 1 inalterados no candidato | [33-compatible-upgrades-and-recoverable-migration.md](33-compatible-upgrades-and-recoverable-migration.md), [start-v2-verdict.json](33-r33-v2/start-v2-verdict.json) |
 | q39-v1 | 39 | 2026-11-15 | `nao-registrado` | I | leitura real do ruleset 26435808, update bloqueia merge | passou (GET-only) | aplicavel-encadeada | bloqueio real observado depois em 18 v4 (MERGE_BLOCKED_UPDATE_RESTRICTED) | [39-merge-blocking-base-rules.md](39-merge-blocking-base-rules.md), [39-real-mergeblock-evaluate-result-2026-11-15.json](39-real-mergeblock-evaluate-result-2026-11-15.json) |
+| q34-hostfault-v3 | 34 | 2026-11-16 | `d7903b3` | I | ext4 real descartavel (imagem NOCOW, loop sem root): piso por statfs real, ENOSPC real, SQLite em uso sob ENOSPC, sem exclusao | inconclusive (NATIVE_CUT_NOT_REACHED, defeito da receita); 9/11, 0 falhas | aplicavel | src/sandbox inalterado desde b30e2bd; mudancas de src/control depois sao D-07 e V-09.f, contidas na composicao do piloto | [34-r-hostfault-v3.md](34-r-hostfault-v3.md), [34-r-hostfault-v3-results.json](34-r-hostfault-v3-results.json) |
 
 ## 4. Obrigações V-01–V-17
 
@@ -292,7 +293,7 @@ comandos, correlações (ensaios) e evidências completas por obrigação estão
 | V-13.g | RF-11, RF-12, CA-07 | S+I+A | S | **inconclusiva** | cancelar antes/depois de requisicao enviada e durante containers; merge concorrente ao cancelamento | merge durante cancelamento e efeitos tardios sob cancelamento so em fluxo (25, 27) | — | [25-authorization-withdrawal-and-work-cycles.md](25-authorization-withdrawal-and-work-cycles.md), [27-external-effect-crash-reconciliation.md](27-external-effect-crash-reconciliation.md) |
 | V-14.a | RF-14, CA-01, CA-07 | S+I | S+I | **aprovada** | merge confirmado antes da entrega/cleanup; evidencias preservadas antes de remover; falha parcial com retry so dos pendentes; entrega nao desfeita | 17 v4: 19 arquivos preservados, ambiente removido, falha provocada da branch mantida pendente e removida no retry; 18 v4: cleanup complete | q17-v4, q18-v4 | [17-confirmed-delivery-and-owned-cleanup.md](17-confirmed-delivery-and-owned-cleanup.md), [17-real-delivery-v4-retry-2026-11-15.json](17-real-delivery-v4-retry-2026-11-15.json) |
 | V-14.b | RF-14, CA-07 | S+I | S+I | **aprovada** | recursos alheios/base protegidos; nenhuma limpeza global Docker | 17 v4 inspect: so a branch propria sumiu; 22 ambientes, cache e Work #6 inalterados | q17-v4 | [17-real-delivery-v4-inspect-2026-11-15.json](17-real-delivery-v4-inspect-2026-11-15.json) |
-| V-14.c | RF-14, CA-07 | S+I | S | **inconclusiva** | piso de espaco/disco cheio sem exclusao para abrir espaco; arquivo em uso | ENOSPC real nao simulado (03); recusa por statfs em S | — | [03-storage-admission-local.md](03-storage-admission-local.md) |
+| V-14.c | RF-14, CA-07 | S+I | S+I | **aprovada** | piso de espaco/disco cheio sem exclusao para abrir espaco; arquivo em uso | q34-hostfault-v3 (ext4 real descartavel): piso por statfs real recusado sem criar ambiente; ENOSPC real recusado sem efeito; SQLite em uso sem ACK e consistente apos liberacao; nada apagado. Limite residual: ENOSPC apos efeito nativo so I-local (03) | q34-hostfault-v3 | [03-storage-admission-local.md](03-storage-admission-local.md), [34-r-hostfault-v3.md](34-r-hostfault-v3.md) |
 | V-14.d | RF-14, CA-07, CA-10 | S+I | S+I | **aprovada** | logs/sessoes de entregues elegiveis 30 dias apos merge na varredura; nao entregues preservados; fim de pendencia nao reinicia prazo; historico ate exclusao | 30 v3 sobre copia real de q17: 40 removidos, 49 mantidos, dueAt merge+30 d (relogio controlado; armazenamento/varredura reais) | q30-v3 | [30-retention-and-explicit-cleanup.md](30-retention-and-explicit-cleanup.md), [30-real-retention-v3-verdict-2026-11-15.json](30-real-retention-v3-verdict-2026-11-15.json) |
 | V-14.e | RF-14, RF-02, CA-10 | S+I | S+I | **aprovada** | exclusao exige encerramento sem pendencias e conserva memoria minima antirredisparo | 31 v2: entregue esquecido sem chaves proibidas; polling apos restart -> existing; recusa com RESOURCES_PENDING | q31-v2 | [31-history-erasure-and-minimal-cycle-memory.md](31-history-erasure-and-minimal-cycle-memory.md), [31-real-forget-v2-verdict-2026-11-15.json](31-real-forget-v2-verdict-2026-11-15.json) |
 | V-14.f | RF-14, CA-10 | S+I | S | **inconclusiva** | forget de Trabalho cancelado em dados reais | so o ramo recusado (ambiente q25 ainda existe); caminho completo em fluxo | — | [31-history-erasure-and-minimal-cycle-memory.md](31-history-erasure-and-minimal-cycle-memory.md) |
@@ -358,7 +359,7 @@ Estado = pior das obrigações que o rastreiam (pela matriz do plano). Inconclus
 | G1-fronteiras-frageis | Fronteiras frageis | aprovada | — |
 | G2-controle-deterministico | Controle deterministico | aprovada | — |
 | G3-jornada-completa | Uma jornada completa (no candidato) | inconclusiva | V-06.h, V-15.c |
-| G4-concorrencia-adversidades | Concorrencia e adversidades | inconclusiva | V-03.c, V-04.b, V-04.d, V-04.e, V-05.c, V-05.e, V-06.g, V-07.b, V-07.f, V-08.f, V-08.g, V-09.c, V-09.e, V-09.f, V-10.b, V-10.d, V-10.f, V-10.g, V-11.c, V-12.c, V-12.d, V-13.e, V-13.g, V-14.c |
+| G4-concorrencia-adversidades | Concorrencia e adversidades | inconclusiva | V-03.c, V-04.b, V-04.d, V-04.e, V-05.c, V-05.e, V-06.g, V-07.b, V-07.f, V-08.f, V-08.g, V-09.c, V-09.e, V-09.f, V-10.b, V-10.d, V-10.f, V-10.g, V-11.c, V-12.c, V-12.d, V-13.e, V-13.g |
 | G5-operacao-release | Operacao da release | inconclusiva | V-14.f, V-16.b, V-16.d |
 | G6-preparacao-piloto | Preparacao da solicitacao de autorizacao do piloto (nao a execucao do piloto, que exige G3-G5) | aprovada | — |
 

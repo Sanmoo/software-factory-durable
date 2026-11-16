@@ -18,9 +18,9 @@ test('R-HOSTFAULT recipe: import and --plan are inert; own namespace; the dispos
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q34-hostfault-v3');
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q34-hostfault-v4');
   assert.deepEqual(plan.phases, ['image', 'preflight', 'floor', 'full', 'native', 'release', 'inspect']);
-  assert.equal(plan.image.path, '/home/sanmoo/software-factory-test/y5/q34-hostfault-v3/disk.img');
+  assert.equal(plan.image.path, '/home/sanmoo/software-factory-test/y5/q34-hostfault-v4/disk.img');
   assert.match(plan.image.preallocated, /chattr \+C .*fallocate .*mkfs\.ext4 -E nodiscard,lazy_itable_init=0,lazy_journal_init=0/);
   assert.ok(plan.maxDisposableBytes <= 8 * 1024 ** 3);
   assert.ok(plan.operator.afterImage.rootless.some((step: string) => step.startsWith('udisksctl loop-setup')), 'a rootless mount is proposed');

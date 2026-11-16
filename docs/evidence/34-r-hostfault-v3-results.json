@@ -1,0 +1,163 @@
+{
+ "run": "q34-hostfault-v3",
+ "recipe": "test/entrypoints/hostfault34-qualification.ts",
+ "namespace": "/home/sanmoo/software-factory-test/y5/q34-hostfault-v3",
+ "phases": {
+  "image": {
+   "intentAt": "2026-11-16T18:03:06.494Z",
+   "result": {
+    "status": "success",
+    "image": "/home/sanmoo/software-factory-test/y5/q34-hostfault-v3/disk.img",
+    "bytes": 6442450944,
+    "imageAllocatedBytes": 6442450944,
+    "homeFs": "0x9123683e",
+    "imageNocow": true,
+    "homeAvailableAfter": 504711254016,
+    "operatorNext": {
+     "rootless": [
+      "udisksctl loop-setup --no-user-interaction -f /home/sanmoo/software-factory-test/y5/q34-hostfault-v3/disk.img   # prints /dev/loopN",
+      "udisksctl mount --no-user-interaction -b /dev/loopN -o nosuid,nodev   # mounts on /run/media/sanmoo/qhf34v3"
+     ],
+     "sudo": [
+      "mkdir -m 700 /home/sanmoo/software-factory-test/y5/q34-hostfault-v3/mnt",
+      "sudo mount -o loop,nosuid,nodev,noexec,noinit_itable /home/sanmoo/software-factory-test/y5/q34-hostfault-v3/disk.img /home/sanmoo/software-factory-test/y5/q34-hostfault-v3/mnt"
+     ],
+     "note": "udisksctl accepts only a fixed option list (no noinit_itable); it is not needed: the image has every inode table zeroed at mkfs (checked by the image phase). Use the sudo alternative only if polkit refuses udisksctl outside an active local session. The recipe never runs sudo, mount or losetup."
+    }
+   }
+  },
+  "preflight": {
+   "intentAt": "2026-11-16T18:03:35.098Z",
+   "result": {
+    "status": "success",
+    "mountPoint": "/run/media/sanmoo/qhf34v3",
+    "mountDev": 1792,
+    "source": "/dev/loop0",
+    "backingFile": "/home/sanmoo/software-factory-test/y5/q34-hostfault-v3/disk.img",
+    "statfs": {
+     "type": "0xef53",
+     "totalBytes": 6249086976,
+     "availableBytes": 6230712320
+    },
+    "homeDev": 55,
+    "rootDev": 30
+   }
+  },
+  "floor": {
+   "intentAt": "2026-11-16T18:03:35.143Z",
+   "result": {
+    "status": "success",
+    "availableBytes": 805302272,
+    "validateStorage": "blocked",
+    "prepare": {
+     "status": "failure",
+     "code": "INSUFFICIENT_STORAGE_FOR_PREPARATION"
+    },
+    "environmentsCreated": 0,
+    "capacity": "blocked",
+    "pause": {
+     "receipt": "durable",
+     "error": null
+    }
+   }
+  },
+  "full": {
+   "intentAt": "2026-11-16T18:03:39.601Z",
+   "result": {
+    "status": "success",
+    "availableBytes": 0,
+    "enospcObserved": true,
+    "prepare": {
+     "status": "failure",
+     "code": "INSUFFICIENT_STORAGE_FOR_PREPARATION"
+    },
+    "environmentsCreated": 0,
+    "unpause": {
+     "receipt": null,
+     "error": "ERR_SQLITE_ERROR"
+    },
+    "deleted": []
+   }
+  },
+  "native": {
+   "intentAt": "2026-11-16T18:03:42.803Z",
+   "result": {
+    "status": "success",
+    "cut": null,
+    "cutReached": false,
+    "prepare": {
+     "status": "failure",
+     "code": "INSUFFICIENT_STORAGE_FOR_PREPARATION"
+    },
+    "environment": null,
+    "ownerKept": false,
+    "deleted": []
+   }
+  },
+  "release": {
+   "intentAt": "2026-11-16T18:03:45.003Z",
+   "result": {
+    "status": "success",
+    "again": {
+     "status": "success",
+     "environment": "env-dc99132f0f5aa2e5de1e867629a371b53c87ce4b4cb30542c68e2ccfe47202c2"
+    },
+    "fresh": {
+     "status": "success",
+     "environment": "env-3d6a24b07cb9d0c495a83bf7fa074cc42899c5bc8616988cc7ff5001b3e4f171"
+    },
+    "controlReadable": true,
+    "paused": true,
+    "lastAckedPaused": true,
+    "deleted": [],
+    "rewritten": [],
+    "inventory": {
+     "environments": 2,
+     "unknown": []
+    },
+    "availableBytes": 4978913280
+   }
+  },
+  "inspect": {
+   "intentAt": "2026-11-16T18:03:53.600Z",
+   "result": {
+    "status": "success",
+    "verdict": {
+     "status": "inconclusive",
+     "checks": {
+      "floorRefusedBeforeEffect": true,
+      "floorDiagnosed": true,
+      "floorStorageStillDurable": true,
+      "diskFull": true,
+      "fullRefusedBeforeEffect": true,
+      "noAckWithoutDurability": true,
+      "nativeEnospcPreserved": false,
+      "incompleteNeverAdopted": false,
+      "pressureRecovered": true,
+      "nothingDeleted": true,
+      "controlConsistent": true
+     },
+     "inconclusive": [
+      "NATIVE_CUT_NOT_REACHED"
+     ],
+     "failures": []
+    },
+    "secretShapes": {
+     "/home/sanmoo/software-factory-test/y5/q34-hostfault-v3": 0,
+     "/run/media/sanmoo/qhf34v3/root": 0
+    },
+    "operatorNext": {
+     "rootless": [
+      "udisksctl unmount -b /dev/loopN",
+      "udisksctl loop-delete -b /dev/loopN",
+      "rm /home/sanmoo/software-factory-test/y5/q34-hostfault-v3/disk.img"
+     ],
+     "sudo": [
+      "sudo umount /home/sanmoo/software-factory-test/y5/q34-hostfault-v3/mnt",
+      "rm /home/sanmoo/software-factory-test/y5/q34-hostfault-v3/disk.img"
+     ]
+    }
+   }
+  }
+ }
+}

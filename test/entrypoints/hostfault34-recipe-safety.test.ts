@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { assess, btrfsMagic, confinementProblems, deletedFiles, fillBytes, imageBytes, imageCommands, itableZeroed, label, mountCandidates, nocowAttribute, maxDisposableBytes, parseMountinfo, phaseGuard, rewrittenFiles,
+import { assess, btrfsMagic, confinementProblems, deletedFiles, fillBytes, fillersToFree, imageBytes, imageCommands, itableZeroed, label, mountCandidates, nocowAttribute, maxDisposableBytes, parseMountinfo, phaseGuard, rewrittenFiles,
   type HostFaultResults, type MountFacts } from './hostfault34-qualification.js';
 
 // Recipe safety of the R-HOSTFAULT real run, on controlled data only (never a real mount, the real home or root filesystem).
@@ -16,17 +16,17 @@ test('phase guard: each phase once, in order, only after the previous one succee
 
 test('mountinfo parsing decodes escaped mount points and keeps source/fstype', () => {
   const text = '36 25 0:32 / /home rw,relatime shared:1 - ext4 /dev/mapper/root rw\n' +
-    '98 30 7:3 / /run/media/sanmoo/qhf34v3 rw,nosuid,nodev,relatime shared:50 - ext4 /dev/loop3 rw\n' +
+    '98 30 7:3 / /run/media/sanmoo/qhf34v4 rw,nosuid,nodev,relatime shared:50 - ext4 /dev/loop3 rw\n' +
     '99 30 0:50 / /tmp/with\\040space rw - tmpfs tmpfs rw\n';
   const entries = parseMountinfo(text);
   assert.equal(entries.length, 3);
-  assert.deepEqual(entries[1], { majorMinor: '7:3', mountPoint: '/run/media/sanmoo/qhf34v3', options: 'rw,nosuid,nodev,relatime', fstype: 'ext4', source: '/dev/loop3' });
+  assert.deepEqual(entries[1], { majorMinor: '7:3', mountPoint: '/run/media/sanmoo/qhf34v4', options: 'rw,nosuid,nodev,relatime', fstype: 'ext4', source: '/dev/loop3' });
   assert.equal(entries[2]!.mountPoint, '/tmp/with space');
 });
 
-const image = '/home/sanmoo/software-factory-test/y5/q34-hostfault-v3/disk.img';
-const good: MountFacts = { candidate: '/run/media/sanmoo/qhf34v3', imagePath: image, backingFile: image, homeDev: 64768, rootDev: 64768, mountDev: 1795, uid: 1000,
-  entry: { majorMinor: '7:3', mountPoint: '/run/media/sanmoo/qhf34v3', options: 'rw', fstype: 'ext4', source: '/dev/loop3' },
+const image = '/home/sanmoo/software-factory-test/y5/q34-hostfault-v4/disk.img';
+const good: MountFacts = { candidate: '/run/media/sanmoo/qhf34v4', imagePath: image, backingFile: image, homeDev: 64768, rootDev: 64768, mountDev: 1795, uid: 1000,
+  entry: { majorMinor: '7:3', mountPoint: '/run/media/sanmoo/qhf34v4', options: 'rw', fstype: 'ext4', source: '/dev/loop3' },
   statfs: { type: '0xef53', totalBytes: 6 * 1024 ** 3, availableBytes: 6 * 1024 ** 3 }, owner: { uid: 1000, mode: 0o755 }, entries: ['lost+found'], imageAllocatedBytes: imageBytes,
   homeFs: btrfsMagic, imageNocow: true };
 
@@ -81,8 +81,14 @@ test('real run v2: ~96 MiB of the image punched away right after the mount (ext4
 });
 
 test('the label follows the revision; the rootless mount point is derived from it', () => {
-  assert.equal(label, 'qhf34v3');
-  assert.equal(mountCandidates[0], '/run/media/sanmoo/qhf34v3');
+  assert.equal(label, 'qhf34v4');
+  assert.equal(mountCandidates[0], '/run/media/sanmoo/qhf34v4');
+});
+
+test('real run v3: the native phase left f-floor in place (768 MiB free, below the floor) so admission refused it and the cut was never reached', () => {
+  // The fillers present after the full phase of v3; the native headroom is computed only after EVERY own filler is removed.
+  assert.deepEqual(fillersToFree(['f-floor', 'f-full', 'f-tail', 'lost+found', 'other']), ['f-floor', 'f-full', 'f-tail']);
+  assert.deepEqual(fillersToFree([]), []);
 });
 
 test('fill target: never negative, block aligned, null when already below the target', () => {

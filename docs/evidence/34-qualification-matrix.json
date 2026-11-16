@@ -94,9 +94,9 @@
   "realRunOnCandidate": false
  },
  "counts": {
-  "aprovada": 71,
+  "aprovada": 72,
   "reprovada": 0,
-  "inconclusiva": 29,
+  "inconclusiva": 28,
   "dependente-do-piloto": 12
  },
  "realRuns": [
@@ -746,6 +746,23 @@
    ],
    "applicability": "aplicavel",
    "reason": "executada no commit 5a026e7, descendente do candidato b30e2bd que so acrescenta o saneamento decidido em D-07; vale para a composicao do piloto, que precisa conte-lo"
+  },
+  {
+   "id": "q34-hostfault-v3",
+   "ticket": "34",
+   "date": "2026-11-16",
+   "commit": "d7903b3",
+   "levels": [
+    "I"
+   ],
+   "boundaries": "ext4 real descartavel (imagem NOCOW pre-alocada, loop sem root): piso por statfs real, ENOSPC real, SQLite da Factory em uso sob ENOSPC, sem exclusao, recuperacao apos liberacao",
+   "verdict": "inconclusive (NATIVE_CUT_NOT_REACHED, defeito da receita); 9/11 verificacoes verdadeiras, 0 falhas",
+   "evidence": [
+    "docs/evidence/34-r-hostfault-v3.md",
+    "docs/evidence/34-r-hostfault-v3-results.json"
+   ],
+   "applicability": "aplicavel",
+   "reason": "executada em d7903b3, descendente do candidato b30e2bd; src/sandbox inalterado desde b30e2bd; as mudancas de src/control depois sao D-07 (store/forget) e as regras de checks (V-09.f), que a composicao do piloto contem"
   }
  ],
  "scenarios": [
@@ -4590,19 +4607,27 @@
     "I"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "piso de espaco/disco cheio sem exclusao para abrir espaco; arquivo em uso",
-   "observed": "ENOSPC real nao simulado (03); recusa por statfs em S",
+   "observed": "q34-hostfault-v3 (ext4 real descartavel): piso por statfs real (805302272 B) recusado sem criar ambiente; ENOSPC real (0 B) recusado sem efeito; escrita duravel no SQLite em uso sem ACK (ERR_SQLITE_ERROR) e estado = ultimo ACK apos liberacao; nada apagado; recuperacao apos liberacao. Limite residual: ENOSPC apos efeito nativo nao alcancado (defeito da receita v3, corrigido em v4 nao executada); coberto so I-local (03)",
    "evidence": [
-    "docs/evidence/03-storage-admission-local.md"
+    "docs/evidence/03-storage-admission-local.md",
+    "docs/evidence/34-r-hostfault-v3.md",
+    "docs/evidence/34-r-hostfault-v3-results.json"
    ],
-   "runs": [],
-   "commands": [],
+   "runs": [
+    "q34-hostfault-v3"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/hostfault34-qualification.ts (v3)"
+   ],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Executar R-HOSTFAULT (disco cheio/abaixo do piso em raiz descartavel)",
+   "pointer": "Aprovada por q34-hostfault-v3; limite residual (ENOSPC apos efeito nativo) so I-local; v4 opcional",
    "reexecution": [
     "R-HOSTFAULT"
    ]
@@ -5248,8 +5273,7 @@
     "V-12.c",
     "V-12.d",
     "V-13.e",
-    "V-13.g",
-    "V-14.c"
+    "V-13.g"
    ]
   },
   {
