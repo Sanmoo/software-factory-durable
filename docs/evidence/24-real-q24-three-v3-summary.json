@@ -1,0 +1,276 @@
+{
+ "source": "y5/q24-three-v3 (read-only; derived fields only)",
+ "status": "held",
+ "findings": [
+  "QUESTION_ASKED:45",
+  "QUESTION_ASKED:46"
+ ],
+ "outcome": {
+  "kind": "clean"
+ },
+ "passes": {
+  "env-c423bc1e98a0a7ded9b0665e3e30ba469420d7a236e734f75498a8c26b6cb116": "3a318d26-d456-4d44-b368-5bb1b9d0c7e5",
+  "env-4fd2807a49223196959e426998d532a940e8513dc40374268ee982f4a3dc23fb": "3a318d26-d456-4d44-b368-5bb1b9d0c7e5",
+  "env-86be489d15441215a8a452957c7f76eb8ef96f82182deb517fac1f718da99561": "3a318d26-d456-4d44-b368-5bb1b9d0c7e5"
+ },
+ "works": [
+  {
+   "ticket": {
+    "number": 46
+   },
+   "work_id": "734dbbee-4743-4a45-a459-f69f3c107b3b",
+   "impediments": [
+    "QUESTION_PENDING",
+    "GLOBAL_PAUSE"
+   ],
+   "execution": {
+    "executionId": "26c9277d-54ca-4362-b7ff-d169a34b6ae9",
+    "state": "ended",
+    "slot": {
+     "held": false,
+     "capacity": 3,
+     "reservedAt": "2026-11-16T09:14:16.496Z",
+     "releasedAt": "2026-11-16T09:19:21.623Z"
+    },
+    "dispatch": {
+     "environment": "env-c423bc1e98a0a7ded9b0665e3e30ba469420d7a236e734f75498a8c26b6cb116",
+     "boot": "boot-fa08fa30-df9f-4f9f-8f52-34befe6b6df9",
+     "phase": "stopped"
+    },
+    "request": {
+     "branch": "factory/46-734dbbee"
+    },
+    "end": {
+     "at": "2026-11-16T09:19:19.696Z",
+     "outcome": "question",
+     "code": null,
+     "cessation": "confirmed",
+     "questionId": "7b82dd51-a1bf-47d9-a1ee-87af5b3e53f6"
+    },
+    "verification": null
+   }
+  },
+  {
+   "ticket": {
+    "number": 45
+   },
+   "work_id": "dd637a28-0e80-4ee4-9252-b9a934adf017",
+   "impediments": [
+    "QUESTION_PENDING",
+    "GLOBAL_PAUSE"
+   ],
+   "execution": {
+    "executionId": "7e74f396-96b6-45cc-a1eb-22d7c0186e79",
+    "state": "ended",
+    "slot": {
+     "held": false,
+     "capacity": 3,
+     "reservedAt": "2026-11-16T09:14:18.530Z",
+     "releasedAt": "2026-11-16T09:16:03.423Z"
+    },
+    "dispatch": {
+     "environment": "env-4fd2807a49223196959e426998d532a940e8513dc40374268ee982f4a3dc23fb",
+     "boot": "boot-8c371f74-4301-41b5-bbeb-82772b659f08",
+     "phase": "stopped"
+    },
+    "request": {
+     "branch": "factory/45-dd637a28"
+    },
+    "end": {
+     "at": "2026-11-16T09:16:01.349Z",
+     "outcome": "question",
+     "code": null,
+     "cessation": "confirmed",
+     "questionId": "d0b36ce9-6f00-43fa-96c5-23b3011eeb59"
+    },
+    "verification": null
+   }
+  },
+  {
+   "ticket": {
+    "number": 44
+   },
+   "work_id": "c54cc372-e3eb-4e66-9f09-030cdd032c8f",
+   "impediments": [
+    "GLOBAL_PAUSE"
+   ],
+   "execution": {
+    "executionId": "c2b96243-22ac-469e-ad59-f95c86de892c",
+    "state": "ended",
+    "slot": {
+     "held": false,
+     "capacity": 3,
+     "reservedAt": "2026-11-16T09:14:20.495Z",
+     "releasedAt": "2026-11-16T09:30:37.653Z"
+    },
+    "dispatch": {
+     "environment": "env-86be489d15441215a8a452957c7f76eb8ef96f82182deb517fac1f718da99561",
+     "boot": "boot-2da0adfa-2050-4fc0-be0f-cfff88dd4321",
+     "phase": "stopped"
+    },
+    "request": {
+     "branch": "factory/44-c54cc372"
+    },
+    "end": {
+     "at": "2026-11-16T09:30:35.731Z",
+     "outcome": "completed",
+     "code": null,
+     "cessation": "confirmed"
+    },
+    "verification": {
+     "status": "not-verified",
+     "reasons": [
+      "GATE_FAILED:repository-test-suite"
+     ],
+     "gates": [
+      {
+       "id": "docker-qualification-validation",
+       "outcome": "passed"
+      },
+      {
+       "id": "repository-test-suite",
+       "outcome": "failed"
+      }
+     ]
+    }
+   }
+  }
+ ],
+ "verdict": {
+  "passed": false,
+  "checks": [
+   {
+    "name": "three-executions",
+    "ok": true,
+    "observed": "ended,ended,ended"
+   },
+   {
+    "name": "own-environment-boot-branch",
+    "ok": true,
+    "observed": "factory/44-c54cc372@boot-2da0adfa-2050-4fc0-be0f-cfff88dd4321 factory/45-dd637a28@boot-8c371f74-4301-41b5-bbeb-82772b659f08 factory/46-734dbbee@boot-fa08fa30-df9f-4f9f-8f52-34befe6b6df9"
+   },
+   {
+    "name": "one-pass-reservation",
+    "ok": true,
+    "observed": "passes 3a318d26,3a318d26,3a318d26; spread 3999 ms"
+   },
+   {
+    "name": "resources-measured",
+    "ok": true,
+    "observed": "62,4,18"
+   },
+   {
+    "name": "completed-with-cessation",
+    "ok": false,
+    "observed": "completed:confirmed,question:confirmed,question:confirmed"
+   },
+   {
+    "name": "containers-overlapped",
+    "ok": false,
+    "observed": "{\"C\":{\"start\":1794820639,\"end\":1794820702},\"B\":{\"start\":null,\"end\":null},\"A\":{\"start\":1794820597,\"end\":1794821299}}"
+   }
+  ]
+ },
+ "windows": {
+  "windows": {
+   "C": {
+    "start": 1794820639,
+    "end": 1794820702
+   },
+   "B": {
+    "start": null,
+    "end": null
+   },
+   "A": {
+    "start": 1794820597,
+    "end": 1794821299
+   }
+  },
+  "known": false,
+  "overlapAll": false
+ },
+ "registry": {
+  "summary": [
+   {
+    "boot": "boot-fa08fa30-df9f-4f9f-8f52-34befe6b6df9",
+    "samples": 18,
+    "windowMs": 257094,
+    "peakMemoryCurrentBytes": 3825750016,
+    "memoryPeakBytes": 3828338688,
+    "cpuSeconds": 108.274675,
+    "ioReadBytes": null,
+    "ioWriteBytes": null,
+    "peakRssBytes": {
+     "vmm": 2195664896,
+     "adapter": 241897472,
+     "worker": 207810560,
+     "other": 0
+    },
+    "maxWorkersAtOnce": 1
+   },
+   {
+    "boot": "boot-8c371f74-4301-41b5-bbeb-82772b659f08",
+    "samples": 4,
+    "windowMs": 46072,
+    "peakMemoryCurrentBytes": 818462720,
+    "memoryPeakBytes": 820080640,
+    "cpuSeconds": 24.037387,
+    "ioReadBytes": null,
+    "ioWriteBytes": null,
+    "peakRssBytes": {
+     "vmm": 635473920,
+     "adapter": 195149824,
+     "worker": 219455488,
+     "other": 0
+    },
+    "maxWorkersAtOnce": 1
+   },
+   {
+    "boot": "boot-2da0adfa-2050-4fc0-be0f-cfff88dd4321",
+    "samples": 62,
+    "windowMs": 925589,
+    "peakMemoryCurrentBytes": 7163723776,
+    "memoryPeakBytes": 7258157056,
+    "cpuSeconds": 882.452138,
+    "ioReadBytes": null,
+    "ioWriteBytes": null,
+    "peakRssBytes": {
+     "vmm": 2209087488,
+     "adapter": 278343680,
+     "worker": 593432576,
+     "other": 0
+    },
+    "maxWorkersAtOnce": 3
+   }
+  ],
+  "hostMemAvailableGiB": {
+   "first": 8.46,
+   "min": 2.66
+  }
+ },
+ "cessation": [
+  {
+   "ticket": 46,
+   "boot": "boot-fa08fa30-df9f-4f9f-8f52-34befe6b6df9",
+   "before": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "ticket": 45,
+   "boot": "boot-8c371f74-4301-41b5-bbeb-82772b659f08",
+   "before": "stopped",
+   "cessationConfirmed": true
+  },
+  {
+   "ticket": 44,
+   "boot": "boot-2da0adfa-2050-4fc0-be0f-cfff88dd4321",
+   "before": "stopped",
+   "cessationConfirmed": true
+  }
+ ],
+ "sessionObservations": {
+  "44": "suite ran inside eclipse-temurin:25-jdk on the guest Docker: Gradle 9.5.1 downloaded, Testcontainers/Postgres ran, 117 tests completed; run 1: 1 failed (CreditAccountUseCaseConcurrencyIT concurrent_mixed_commands_maintain_invariants NPE, 8m17s), run 2: 2 failed (CreditAccountUseCaseConcurrencyIT concurrent_authorizations..., JdbcOutboxEventAdapterIT findPending_returnsUnprocessedEvents), 1m39s; verification not-verified GATE_FAILED:repository-test-suite",
+  "45": "`git status --short && git config user.name && git config user.email && docker info ...` produced no output and exit 1 (git config user.name unset exits 1 before docker info runs; docker info prints vfs or an error); the Builder asked attributing it to Docker; neither gate was run; the adapter had confirmed docker info = vfs at operational time",
+  "46": "Docker gate passed (window C 1794820639-1794820702); wrapper download of gradle-9.5.1-bin.zip failed: timeout (10000ms) (wrapper networkTimeout=10000, retries=0); the Builder asked"
+ }
+}

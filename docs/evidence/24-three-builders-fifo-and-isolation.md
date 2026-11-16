@@ -132,13 +132,36 @@ Resumo derivado em [24-real-q24-three-v2-summary.json](24-real-q24-three-v2-summ
   **Não verificado offline:** alcance da imagem e do download do Gradle/dependências pelo egress do guest, e duração. Pull ou estouro de
   tempo vira achado registrado, nunca repetição.
 
+## Ensaio real v3 (`y5/q24-three-v3`, issues #44–#46): executado pelo supervisor, HELD (veredito 4/6)
+
+Resumo derivado em [24-real-q24-three-v3-summary.json](24-real-q24-three-v3-summary.json); teste "v3 offline proof".
+
+| Trabalho | Observado | Classificação |
+| --- | --- | --- |
+| #44 (A) | A suite real **rodou** em `eclipse-temurin:25-jdk` no Docker do guest: download do Gradle 9.5.1 e Testcontainers/Postgres com Ryuk funcionaram e 117 testes completaram. Na 1ª execução 1 falhou (`CreditAccountUseCaseConcurrencyIT` NPE), na 2ª 2 falharam (outro teste do mesmo IT e `JdbcOutboxEventAdapterIT`). Verificação `not-verified` [`GATE_FAILED:repository-test-suite`] | **Repositório/ambiente:** ITs de concorrência instáveis num guest de 2 vCPU com `vfs` (falhas diferentes a cada execução). Não é defeito da Factory, que não deu verde |
+| #45 (B) | `git status --short && git config user.name && git config user.email && docker info …` deu **(sem saída) exit 1** e o Builder perguntou atribuindo a falha ao Docker. `docker info` imprime `vfs` ou um erro, então a cadeia parou antes, em `git config user.name` (sem valor ⇒ exit 1). O adapter tinha confirmado `docker info` = vfs ao ficar operacional, e nenhum gate foi executado | **Comportamento do modelo** (diagnóstico errado), não Docker nem pressão de memória: VMM RSS 0,6 GB e MemAvailable do host ≥ 6,4 GiB nesse momento |
+| #46 (C) | Gate Docker passou; o wrapper falhou com `Downloading …gradle-9.5.1-bin.zip failed: timeout (10000ms)` (`networkTimeout=10000`, `retries=0` do repo) pelo egress mediado sob carga de 3 VMs | **Ambiente + receita:** a receita dependia do download do wrapper com 10 s. Corrigido em v4 (abaixo) |
+
+- **Provado em v3 (A):** de novo uma passada (`pass` `3a318d26…`, spread de 4 s), três VMs, ambiente/boot/branch próprios e units medidas. Também
+  provado: **Testcontainers + Ryuk reais da suíte do repo funcionando dentro do guest** (#44), e fixtures Docker sobrepostos em duas VMs
+  (A e C). Pico de `memory.current` de #44: 7,2 GB, que inclui o page cache do I/O do `vfs`/qcow2; MemAvailable do host chegou a 2,66 GiB.
+  Isso é dado medido, não teto.
+- **v4 (receita, não executada):** o guest pré-provisiona a distribuição do wrapper uma única vez (busybox `wget -T 600`, uma tentativa,
+  conferida contra o `.sha256` publicado) no layout do Gradle (`wrapper/dists/gradle-9.5.1-bin/<base36(md5(url))>`, testado), num
+  diretório do guest montado como Gradle home. O comando do README não muda. Namespace `y5/q24-three-v4`, números 0.
+- **Recomendação:** o AC5 "containers simultâneos sem colisão" já está provado pelo fixture (v1: três VMs sobrepostas; v3: duas), e a suíte
+  real com Testcontainers/Ryuk roda no guest (v3 #44). O que falta, "três suites reais verdes ao mesmo tempo", depende dos ITs de
+  concorrência instáveis do repositório (falhas diferentes a cada execução sob 2 vCPU). Um v4 só vale se o operador aceitar esse risco ou
+  der mais vCPU/memória por guest (o host limita a ~2 GiB × 3). Caso contrário, registrar como limite do ambiente/piloto para decisão do
+  operador.
+
 ## Ensaio real (receita one-shot)
 
 Receita: `dist/test/entrypoints/three24-qualification.js` (fonte `test/entrypoints/three24-qualification.ts`; registro
 `three24-measure.ts`). `--plan` é inerte (teste `three24-qualification`). **Não executado.** Requer autorização explícita do operador para esta
 execução: GitHub real (App; grants só de leitura, sem push/PR), três VMs Gondolin/KVM reais e o modelo real (3 Builders + revisores).
 
-- Namespace próprio `y5/q24-three-v3` (v1 e v2 consumidos). A `preflight` falha alto se `y5/credentials/app.pem` estiver ausente; depois faz `mkdir` exclusivo do
+- Namespace próprio `y5/q24-three-v4` (v1, v2 e v3 consumidos). A `preflight` falha alto se `y5/credentials/app.pem` estiver ausente; depois faz `mkdir` exclusivo do
   namespace e grava o tombstone `preflight-intent`; só então cria `credentials/`/`run/` e copia a chave com `COPYFILE_EXCL`. A cópia é removida
   no `finally` do `run`, ou da `preflight` retida. Fases: `preflight`, `run`, `inspect`, `stop-environment`, cada uma uma única vez,
   sempre após uma `preflight` com sucesso.

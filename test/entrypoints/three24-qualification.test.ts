@@ -19,8 +19,8 @@ test('ticket 24 recipe: import and --plan are inert; own namespace and key copy,
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q24-three-v3');
-  assert.match(plan.github.accessRoot, /^\/home\/sanmoo\/software-factory-test\/y5\/q24-three-v3 \(own namespace: credentials\/ copy of \/home\/sanmoo\/software-factory-test\/y5\/credentials\/app\.pem/);
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q24-three-v4');
+  assert.match(plan.github.accessRoot, /^\/home\/sanmoo\/software-factory-test\/y5\/q24-three-v4 \(own namespace: credentials\/ copy of \/home\/sanmoo\/software-factory-test\/y5\/credentials\/app\.pem/);
   assert.deepEqual(plan.phases, ['preflight', 'run', 'inspect', 'stop-environment']);
   assert.equal(plan.pinned, false, 'the supervisor pins the three NEW issue numbers in a reviewed commit before any phase');
   assert.equal(plan.suite.pinned, true);
@@ -200,4 +200,37 @@ test('v2 offline proof (y5/q24-three-v2): three VMs in ONE dispatch pass at capa
   const forty = v2.works.find(work => work.ticket.number === 40)!;
   assert.deepEqual([forty.execution.end?.outcome, forty.execution.verification?.status, forty.execution.verification?.reasons], ['completed', 'not-verified', ['GATE_FAILED:repository-tests']],
     'a session that "completed" with a failed gate is never verified');
+});
+
+test('v4: the Gradle distribution is pre-provisioned by the guest (one long, checksum-verified download) so the wrapper\'s 10 s networkTimeout never decides the gate', async () => {
+  // v3 finding (#46): `Downloading .../gradle-9.5.1-bin.zip failed: timeout (10000ms)` through the guest's mediated egress under 3-VM load.
+  const { createHash } = await import('node:crypto');
+  const url = 'https://services.gradle.org/distributions/gradle-9.5.1-bin.zip';
+  // Gradle's PathAssembler: base-36 of the unsigned MD5 of the distribution URL string.
+  const hash = BigInt(`0x${createHash('md5').update(url).digest('hex')}`).toString(36);
+  assert.equal(recipe.wrapperDistDirectory(url), `wrapper/dists/gradle-9.5.1-bin/${hash}`);
+  const command = recipe.suiteCommand!;
+  assert.ok(command.includes(`/var/cache/q24-gradle/wrapper/dists/gradle-9.5.1-bin/${hash}`), command);
+  assert.match(command, /wget -T 600 -O gradle-9\.5\.1-bin\.zip\.part https:\/\/services\.gradle\.org\/distributions\/gradle-9\.5\.1-bin\.zip/);
+  assert.match(command, /sha256sum -c -/, 'the pre-provisioned distribution is verified against the published checksum');
+  assert.match(command, /-v \/var\/cache\/q24-gradle:\/root\/\.gradle/);
+  assert.match(command, /eclipse-temurin:25-jdk \.\/gradlew --no-daemon test$/, 'the README command itself is unchanged');
+  assert.deepEqual(recipe.profileGateViolations(command), []);
+});
+
+test('v3 offline proof (y5/q24-three-v3): one pass, three VMs, own units; the failed real suite is never verified; two Questions are findings', () => {
+  const v3 = JSON.parse(readFileSync(new URL('../../../docs/evidence/24-real-q24-three-v3-summary.json', import.meta.url), 'utf8')) as {
+    passes: Record<string, string>; works: (WorkView & { execution: { verification: { status: string; reasons: string[] } | null } })[];
+    windows: { windows: Record<string, { start: number | null; end: number | null }> }; registry: { summary: { boot: string; samples: number }[] } };
+  const { windows } = v3.windows;
+  const result = recipe.verdict(v3.works, { windows, known: false, overlapAll: false }, { passes: v3.passes, summary: v3.registry.summary }, [44, 45, 46]);
+  const by = Object.fromEntries(result.checks.map(item => [item.name, item.ok]));
+  assert.deepEqual([by['three-executions'], by['own-environment-boot-branch'], by['one-pass-reservation'], by['resources-measured'], by['completed-with-cessation']],
+    [true, true, true, true, false]);
+  assert.deepEqual(recipe.runSettled(v3.works, [44, 45, 46]).findings, ['QUESTION_ASKED:45', 'QUESTION_ASKED:46']);
+  const a = v3.works.find(work => work.ticket.number === 44)!;
+  assert.deepEqual([a.execution.end?.outcome, a.execution.verification?.status, a.execution.verification?.reasons], ['completed', 'not-verified', ['GATE_FAILED:repository-test-suite']]);
+  // Two Docker fixtures overlapped (A and C) in their own VMs; B never ran its gate.
+  assert.ok(windows.A!.start! < windows.C!.end! && windows.C!.start! < windows.A!.end!);
+  assert.deepEqual(windows.B, { start: null, end: null });
 });

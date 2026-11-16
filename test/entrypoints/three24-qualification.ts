@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { ExecutionPorts, ExecutionView, WorkView } from '../../src/control/index.js';
 import { readBounded, sessionCommands, snapshotStorage } from './publication14-qualification.js';
 import { keySource, requireKeySource } from './humanchanges21-qualification.js';
@@ -14,9 +15,10 @@ import { containerWindows, sampleBoot, sampleHost, summarize, type BootSample, t
 
 const root = '/home/sanmoo/software-factory-test/y5';
 // v2: v1 (issues #21-#23) was consumed HELD — #23 asked because `./mvnw` does not exist (the repository is Gradle-based); see the evidence.
-// v3: v2 (issues #39-#41) was consumed HELD — `./gradlew test` cannot run in the guest profile (no Java); #39/#41 asked, #40 GATE_FAILED.
-const observations = `${root}/q24-three-v3`;
-const revision = 'q24-three-v3';
+// v4: v3 (issues #44-#46) was consumed HELD — see the evidence: #46 the wrapper's 10 s download timeout, #45 a misattributed
+// `git config` exit, #44 two repository ITs failing. v2 (#39-#41): the guest has no Java. v1 (#21-#23): no ./mvnw.
+const observations = `${root}/q24-three-v4`;
+const revision = 'q24-three-v4';
 const phases = ['preflight', 'run', 'inspect', 'stop-environment'] as const;
 type Phase = typeof phases[number];
 const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 'main', installationId: 177599217, workflows: false, label: 'ready-for-agent' };
@@ -28,9 +30,9 @@ const repositoryId = 1256893534;
  * "different repositories proceed in parallel" stays covered at host-checkout level; see the evidence).
  */
 export const tickets = [
-  { key: 'A', number: 44, title: 'Factory qualification q24: three simultaneous Builders (A)' },
-  { key: 'B', number: 45, title: 'Factory qualification q24: three simultaneous Builders (B)' },
-  { key: 'C', number: 46, title: 'Factory qualification q24: three simultaneous Builders (C)' },
+  { key: 'A', number: 0, title: 'Factory qualification q24: three simultaneous Builders (A)' },
+  { key: 'B', number: 0, title: 'Factory qualification q24: three simultaneous Builders (B)' },
+  { key: 'C', number: 0, title: 'Factory qualification q24: three simultaneous Builders (C)' },
 ] as const;
 type Key = typeof tickets[number]['key'];
 const pinned = (list: readonly { number: number }[] = tickets) => list.length === 3 && list.every(item => Number.isSafeInteger(item.number) && item.number > 0) &&
@@ -93,9 +95,26 @@ export const gateCommand = (key: Key) => ['cd /workspace/checkout', `test -f doc
  * (`USE_SYSTEM_CA_CERTS`: layered TLS, never a bypass) and a named volume for the Gradle home. Image reachability and duration are proved
  * by the run itself (not checked offline): a pull or time-out is a recorded finding, never retried.
  */
-export const suiteCommand: string | null = 'cd /workspace/checkout && docker run --rm --network host -e USE_SYSTEM_CA_CERTS=1 ' +
-  '-v /etc/gondolin/mitm/ca.crt:/certificates/gondolin-mitm.crt:ro -v /run/docker.sock:/var/run/docker.sock -v q24-gradle-home:/root/.gradle ' +
-  '-v "$PWD":/w -w /w eclipse-temurin:25-jdk ./gradlew --no-daemon test';
+const gradleDistribution = 'https://services.gradle.org/distributions/gradle-9.5.1-bin.zip';
+/** Gradle wrapper layout (PathAssembler): `wrapper/dists/<name>/<base-36 of the unsigned MD5 of the distribution URL>`. */
+export function wrapperDistDirectory(url: string): string {
+  const name = url.slice(url.lastIndexOf('/') + 1).replace(/\.zip$/, '');
+  return `wrapper/dists/${name}/${BigInt(`0x${createHash('md5').update(url).digest('hex')}`).toString(36)}`;
+}
+/**
+ * v4: the guest pre-provisions the wrapper's distribution ONCE with a long single-attempt download (busybox wget, the guest's mediated
+ * HTTPS) and verifies it against the published SHA-256 before the README command runs; the wrapper then finds the zip and never meets its
+ * own 10 s `networkTimeout` (v3 #46). The Gradle home is a guest directory bound into the container. No retry anywhere.
+ */
+export const suiteCommand: string | null = (() => {
+  const dist = `/var/cache/q24-gradle/${wrapperDistDirectory(gradleDistribution)}`;
+  const zip = 'gradle-9.5.1-bin.zip';
+  return `mkdir -p ${dist} && cd ${dist} && { test -f ${zip} || { wget -T 600 -O ${zip}.part ${gradleDistribution} && wget -T 60 -O ${zip}.sha256 ${gradleDistribution}.sha256 && ` +
+    `echo "$(cat ${zip}.sha256)  ${zip}.part" | sha256sum -c - && mv ${zip}.part ${zip}; }; } && ` +
+    'cd /workspace/checkout && docker run --rm --network host -e USE_SYSTEM_CA_CERTS=1 ' +
+    '-v /etc/gondolin/mitm/ca.crt:/certificates/gondolin-mitm.crt:ro -v /run/docker.sock:/var/run/docker.sock -v /var/cache/q24-gradle:/root/.gradle ' +
+    '-v "$PWD":/w -w /w eclipse-temurin:25-jdk ./gradlew --no-daemon test';
+})();
 const jvmTools = new Set(['./gradlew', 'gradlew', 'gradle', 'java', 'javac', 'mvn', './mvnw', 'mvnw']);
 /**
  * Pure: a gate the guest profile can execute. JVM/build tools are never run directly in the guest (it has no Java); they may only be the
