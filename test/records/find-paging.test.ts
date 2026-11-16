@@ -24,7 +24,7 @@ test('find pages by capture id (`after`/`limit`), looks one capture up by `id` a
   assert.deepEqual([second.captures.map(item => item.reference.id), second.next], [sorted.slice(2), null]);
   const one = await records.find({ workId: 'page-work', id: ids[3]! });
   assert.deepEqual(one.captures.map(item => item.context.role), ['standards']);
-  assert.deepEqual((await records.find({ workId: 'page-work', id: '00000000-0000-4000-8000-000000000000' })), { completeness: 'complete', captures: [], next: null });
+  assert.deepEqual((await records.find({ workId: 'page-work', id: '00000000-0000-4000-8000-000000000000' })), { completeness: 'complete', captures: [], next: null, preservedEvidence: 0 });
   assert.deepEqual((await records.find({ workId: 'page-work', role: 'standards' })).captures.map(item => item.reference.id), [ids[3]]);
 });
 
@@ -55,4 +55,34 @@ test('a second Records instance on a live root reads without side effects: anoth
   assert.deepEqual(await tree(), before, 'nothing created, removed, renamed or rewritten');
   await partial.write(Buffer.from(' and finished'));
   assert.equal((await partial.finish()).bytes, 22, 'the live capture continues normally');
+});
+
+// Ticket 29 (q29-inspect-v1 finding): a delivered Work's `evidence/` holds ticket 17's preserved-evidence folder (`manifest.json` +
+// `files/`), which is not a capture. It is a known Factory-owned entry: counted, never listed as a log and never a reason for `incomplete`.
+// A truly unknown entry (and a preservation interrupted before its manifest) still makes the listing incomplete.
+test('find recognizes ticket 17 preserved-evidence folders (real preserveEvidence shape) as known non-captures; unknown entries stay incomplete', async t => {
+  const { preserveEvidence } = await import('../../src/records/index.js');
+  const { mkdir, writeFile } = await import('node:fs/promises');
+  const root = await mkdtemp(join(tmpdir(), 'records-preserved-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const records = await createRecords({ root });
+  await records.record(context(0), { kind: 'tool' });
+  const preserved = await preserveEvidence({ root, workId: 'page-work', label: 'env-' + 'a'.repeat(64), stage: async destination => {
+    for (const path of ['review/r1', 'spec/v1', 'instructions/v1']) await mkdir(join(destination, path), { recursive: true, mode: 0o700 });
+    await writeFile(join(destination, 'review/r1/index.json'), '{"round":1}', { mode: 0o600 });
+    await writeFile(join(destination, 'spec/v1/ticket.json'), '{}', { mode: 0o600 });
+  } });
+  assert.equal(preserved.status, 'preserved');
+  const found = await records.find({ workId: 'page-work' });
+  assert.deepEqual([found.completeness, found.captures.length, found.preservedEvidence], ['complete', 1, 1]);
+  assert.equal((await records.find({ workId: 'page-work', limit: 10 })).completeness, 'complete', 'paged too');
+  // A preservation interrupted before its manifest (files/ only) is not recognized: incomplete, never silently skipped.
+  await mkdir(join(root, 'page-work', 'evidence', '00000000-0000-4000-8000-0000000000c1', 'files'), { recursive: true, mode: 0o700 });
+  assert.equal((await records.find({ workId: 'page-work' })).completeness, 'incomplete');
+  await rm(join(root, 'page-work', 'evidence', '00000000-0000-4000-8000-0000000000c1'), { recursive: true });
+  // A manifest of another kind, or an extra entry beside it, is unknown.
+  const odd = join(root, 'page-work', 'evidence', '00000000-0000-4000-8000-0000000000c2');
+  await mkdir(join(odd, 'files'), { recursive: true, mode: 0o700 });
+  await writeFile(join(odd, 'manifest.json'), JSON.stringify({ version: 1, kind: 'something-else', label: 'x', files: [], totalBytes: 0 }), { mode: 0o600 });
+  assert.equal((await records.find({ workId: 'page-work' })).completeness, 'incomplete');
 });

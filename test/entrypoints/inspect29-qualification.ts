@@ -11,7 +11,9 @@ import type { ExecutionPorts, ListView } from '../../src/control/index.js';
 import { prepareAuthority } from './delivery17-qualification.js';
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const revision = 'q29-inspect-v1';
+// v1 (q29-inspect-v1) was consumed: met, with q18's logs listing `incomplete` (ticket 17's preserved-evidence folder). v2 reruns after `find`
+// recognizes that folder; it requires every logs listing complete.
+const revision = 'q29-inspect-v2';
 const namespace = `${root}/${revision}`;
 const sources = ['q18-journey-v4', 'q25-cancel-v1'] as const;
 /** Bounds of the copy (bytes of Records + session files per source) and of each CLI output kept in the observations. */
@@ -42,7 +44,7 @@ export function plan() {
     never: ['open or write a source storage/Records', 'start a controller (`run`) or any polling/GitHub read', 'boot a VM, run a model, read a credential', 'rerun after the namespace exists'],
     expected: ['q18-journey-v4: a delivered Work with Executions, two-reviewer rounds, publication/readiness/delivery/cleanup in the chain; usage measured or explained per activity',
       'q25-cancel-v1: cancelled/new-cycle Works with predecessor links in the chain; history of the cancellation; usage partial/unavailable where sessions were removed',
-      'logs: listing complete with per-capture state; raw captures never displayed; a large text capture paged as truncated with nextOffset'],
+      'logs: listing complete with per-capture state (v2: q18 too, its ticket 17 preserved-evidence folder counted in listing.preservedEvidence); raw captures never displayed; a large text capture paged as truncated with nextOffset'],
   };
 }
 
@@ -200,6 +202,8 @@ export function checks(results: Cli[]) {
     outcome('chain', shows.length > 0 && shows.every(item => (item.json as { chain?: unknown })?.chain !== undefined), `${shows.length} show views with a chain`),
     outcome('usage-never-false-zero', unavailableWithNumbers.length === 0, `${unavailableWithNumbers.length} unavailable activities with numbers`),
     outcome('history-paged', histories.every(item => item.code === 0 && (item.json as { page?: { returned: number } })?.page !== undefined), `${histories.length} history pages`),
+    outcome('logs-complete', results.filter(item => item.args[0] === 'logs' && !item.args.includes('--read')).every(item =>
+      (item.json as { listing?: { state: string } })?.listing?.state === 'complete'), 'v2: every logs listing complete (preserved evidence is a known non-capture)'),
     outcome('logs-explained', results.filter(item => item.args[0] === 'logs' && !item.args.includes('--read')).every(item => {
       const listing = (item.json as { listing?: { state: string; code: string | null } })?.listing;
       return listing !== undefined && (listing.state === 'complete' || listing.code !== null);

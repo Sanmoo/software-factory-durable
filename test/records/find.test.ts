@@ -13,14 +13,14 @@ test('find lists only captures of the selected correlation, with complete/partia
   const root = await mkdtemp(join(tmpdir(), 'records-find-'));
   try {
     const records = await createRecords({ root });
-    assert.deepEqual(await records.find({ workId: 'find-work', callId: 'worker-start' }), { completeness: 'complete', captures: [], next: null });
+    assert.deepEqual(await records.find({ workId: 'find-work', callId: 'worker-start' }), { completeness: 'complete', captures: [], next: null, preservedEvidence: 0 });
     const start = await records.record(context('worker-start'), { kind: 'worker-start' });
     await records.record(context('tool-1'), { kind: 'tool' });
     await records.record(context('worker-start', 'standards-e1'), { kind: 'worker-start' });
     const partial = await records.openOutput(context('worker-start', 'builder-e2'));
     await partial.write(Buffer.from('{"incomplete"'));
     const found = await records.find({ workId: 'find-work', executionId: 'e1', invocationId: 'builder-e1', callId: 'worker-start' });
-    assert.deepEqual(found, { completeness: 'complete', captures: [{ reference: start, context: context('worker-start'), state: 'complete', format: 'text' }], next: null });
+    assert.deepEqual(found, { completeness: 'complete', captures: [{ reference: start, context: context('worker-start'), state: 'complete', format: 'text' }], next: null, preservedEvidence: 0 });
     const open = await records.find({ workId: 'find-work', invocationId: 'builder-e2' });
     assert.deepEqual(open.captures.map(item => item.state), ['partial'], 'an unfinished capture is never complete');
     await partial.abort();
@@ -34,7 +34,7 @@ test('find never turns unreadable evidence into absence: corrupt metadata or a f
     const reference = await records.record(context('worker-start'), { kind: 'worker-start' });
     await unlink(join(root, 'find-work', 'evidence', reference.id, 'capture.json'));
     await writeFile(join(root, 'find-work', 'evidence', reference.id, 'capture.json'), '{not json', { mode: 0o600 });
-    assert.deepEqual(await records.find({ workId: 'find-work', callId: 'worker-start' }), { completeness: 'incomplete', captures: [], next: null });
+    assert.deepEqual(await records.find({ workId: 'find-work', callId: 'worker-start' }), { completeness: 'incomplete', captures: [], next: null, preservedEvidence: 0 });
     const other = await mkdtemp(join(tmpdir(), 'records-find-'));
     try {
       const fresh = await createRecords({ root: other });
@@ -55,6 +55,6 @@ test('review MED5: absence below a replaced/unsafe Records root is never complet
     assert.equal((await records.find({ workId: 'find-work' })).completeness, 'complete');
     await rename(root, `${root}.replaced`); // kept, so the new directory cannot reuse its inode
     await mkdir(root, { mode: 0o700 });
-    assert.deepEqual(await records.find({ workId: 'find-work' }), { completeness: 'incomplete', captures: [], next: null }, 'not the root this instance opened');
+    assert.deepEqual(await records.find({ workId: 'find-work' }), { completeness: 'incomplete', captures: [], next: null, preservedEvidence: 0 }, 'not the root this instance opened');
   } finally { await rm(parent, { recursive: true, force: true }); }
 });

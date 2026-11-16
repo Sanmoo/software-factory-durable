@@ -42,8 +42,9 @@ export async function inspectLogs(work: WorkRecord, query: LogsQuery, ports: Exe
   const fitted = fitPage(captures, { cursor: 0, limit, returned: captures.length, filtered: captures.length, total: captures.length, nextCursor: null, fitted: false },
     items => size(items), viewBudgetBytes - 4096);
   const next = fitted.page.fitted ? fitted.items.at(-1)?.capture ?? query.after ?? null : found.next ?? null;
-  return { kind: 'logs', work_id: work.work_id, filter, listing: found.completeness === 'complete' ? { state: 'complete', code: null, nextStep: null }
-    : { state: 'incomplete', code: 'RECORDS_LISTING_INCOMPLETE', nextStep: 'Some captures could not be listed or verified; what is shown is not everything. Inspect the Records directory as administrator.' },
+  const preservedEvidence = found.preservedEvidence ?? 0;
+  return { kind: 'logs', work_id: work.work_id, filter, listing: found.completeness === 'complete' ? { state: 'complete', code: null, nextStep: null, preservedEvidence }
+    : { state: 'incomplete', code: 'RECORDS_LISTING_INCOMPLETE', nextStep: 'Some captures could not be listed or verified; what is shown is not everything. Inspect the Records directory as administrator.', preservedEvidence },
   page: { after: query.after ?? null, limit, returned: fitted.items.length, next, fitted: fitted.page.fitted }, captures: fitted.items, limitations: logLimitations };
 }
 

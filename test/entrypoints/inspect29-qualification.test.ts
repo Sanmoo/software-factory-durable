@@ -14,7 +14,7 @@ import { symlink, writeFile } from 'node:fs/promises';
 // real storage copy, real Records and session copies, the public Control without run, the read-only socket and the REAL CLI binary.
 test('ticket 29 recipe: inert plan, own namespace q29-inspect-v1, copies only, no controller run, no GitHub', () => {
   const recipe = plan();
-  assert.equal(recipe.namespace, '/home/sanmoo/software-factory-test/y5/q29-inspect-v1');
+  assert.equal(recipe.namespace, '/home/sanmoo/software-factory-test/y5/q29-inspect-v2', 'v1 was consumed; v2 is a new namespace');
   assert.deepEqual(recipe.sources, ['q18-journey-v4', 'q25-cancel-v1']);
   assert.ok(recipe.never.some(item => /open or write a source/.test(item)));
   assert.ok(recipe.never.some(item => /start a controller/.test(item)));
@@ -23,12 +23,12 @@ test('ticket 29 recipe: inert plan, own namespace q29-inspect-v1, copies only, n
 test('recipe checks flag false zeros, unparsable output, secrets and unexplained logs', () => {
   const ok = { code: 0, bytes: 10, truncated: false, stderr: '', secrets: 0 };
   const passing = checks([{ ...ok, args: ['show', 'w'], json: { chain: {} } }, { ...ok, args: ['history', 'w'], json: { page: { returned: 1 } } },
-    { ...ok, args: ['logs', 'w'], json: { listing: { state: 'unavailable', code: 'RECORDS_NOT_COMPOSED' } } },
+    { ...ok, args: ['logs', 'w'], json: { listing: { state: 'complete', code: null } } },
     { ...ok, args: ['usage'], json: { works: [{ activities: [{ measurement: 'unavailable', tokens: null, cost: null }] }] } }]);
   assert.ok(passing.every(item => item.ok), JSON.stringify(passing));
   const failing = checks([{ ...ok, args: ['usage'], json: { works: [{ activities: [{ measurement: 'unavailable', tokens: { total: 0 }, cost: null }] }] } },
     { ...ok, args: ['logs', 'w'], json: { listing: { state: 'incomplete', code: null } } }, { ...ok, code: 1, args: ['status'], json: { note: 'ghs_' + 'a'.repeat(30) } }]);
-  assert.deepEqual(failing.filter(item => !item.ok).map(item => item.name).sort(), ['chain', 'exit-codes', 'logs-explained', 'no-secret', 'usage-never-false-zero']);
+  assert.deepEqual(failing.filter(item => !item.ok).map(item => item.name).sort(), ['chain', 'exit-codes', 'logs-complete', 'logs-explained', 'no-secret', 'usage-never-false-zero']);
 });
 
 test('recipe secrets: sk-proj-/sk-ant-/JWT/OAuth/GitHub shapes are found and redacted before anything is kept', () => {
@@ -65,6 +65,10 @@ test('recipe inspectCopy over a temporary root: source untouched; CLI chain show
   const records = await createRecords({ root });
   const output = await records.openOutput({ workId: work, executionId: 'e-1', invocationId: 'i-1', role: 'builder', environmentRef: 'env', bootRef: 'b1', callId: 'c1' });
   await output.write(Buffer.from('x'.repeat(20000))); await output.finish();
+  // As on the real q18 tree: ticket 17's preserved-evidence folder beside the captures (a known non-capture).
+  const { preserveEvidence } = await import('../../src/records/index.js');
+  assert.equal((await preserveEvidence({ root, workId: work, label: 'env-x', stage: async destination => {
+    await mkdir(join(destination, 'review', 'r1'), { recursive: true, mode: 0o700 }); await writeFile(join(destination, 'review', 'r1', 'index.json'), '{}', { mode: 0o600 }); } })).status, 'preserved');
   const sha = async (path: string) => createHash('sha256').update(await readFile(path)).digest('hex');
   const before = await sha(join(root, 'src-a', 'control.sqlite'));
   await mkdir(join(root, 'ns'), { mode: 0o700 });
@@ -74,8 +78,8 @@ test('recipe inspectCopy over a temporary root: source untouched; CLI chain show
   const by = (name: string, ...more: string[]) => observed.results.filter(item => item.args[0] === name && more.every(arg => item.args.includes(arg)));
   const usage = by('usage', work)[0]!.json as { works: { total: { tokens: { total: number } | null; measurement: string } }[] };
   assert.deepEqual([usage.works[0]!.total.tokens?.total, usage.works[0]!.total.measurement], [185, 'partial'], 'measured from the COPIED session files through the CLI');
-  const logs = by('logs', work, '--limit')[0]!.json as { listing: { state: string }; captures: unknown[] };
-  assert.deepEqual([logs.listing.state, logs.captures.length], ['complete', 1]);
+  const logs = by('logs', work, '--limit')[0]!.json as { listing: { state: string; preservedEvidence: number }; captures: unknown[] };
+  assert.deepEqual([logs.listing.state, logs.listing.preservedEvidence, logs.captures.length], ['complete', 1, 1]);
   const pages = by('logs', '--read');
   assert.deepEqual(pages.map(item => (item.json as { state: string }).state), ['truncated', 'complete']);
   assert.equal(by('history', '--execution', 'e-1')[0]!.code, 0);

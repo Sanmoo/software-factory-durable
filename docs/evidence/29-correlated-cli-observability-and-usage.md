@@ -130,3 +130,19 @@ Unavailable usage is never a zero, and no secret-shaped text appears.
   correctly refuses to claim completeness (exit 3 with its code). The likely cause is ticket 17's preserved-evidence directories, which are not
   captures (no `capture.json`); this was not confirmed entry by entry. Follow-up proposal: have `find` recognize preserved-evidence directories
   (`manifest.json`) as known non-captures, so a Work with preserved evidence can list `complete`.
+
+### Follow-up (supervisor): q18 `incomplete` logs listing fixed; recipe v2
+
+- **Root cause (confirmed read-only on the real tree `y5/2ece4778-…/evidence/`):** 125 entries. 124 are captures (`capture.json` …). Exactly one
+  is not: `28d29901-5264-45e1-b794-59cd10de1c4f/` = `manifest.json` + `files/{review/r1..r3, spec/v1..v2, instructions/v1}`, ticket 17's
+  preserved environment evidence (`kind: environment-evidence`, 23 files). Records `find` expected `capture.json` in every entry, so this
+  folder made every delivered Work's listing `incomplete`.
+- **Fix:** `find` recognizes a preserved-evidence folder only in its exact shape. It must hold exactly `manifest.json` and `files/`, both
+  private, and the manifest must be a valid `version 1 / environment-evidence` (files with path/bytes/sha256). Such a folder is a known
+  Factory-owned non-capture: counted in `preservedEvidence` and in `logs` `listing.preservedEvidence`, never listed as a log. A folder
+  interrupted before its manifest, another manifest kind or an extra entry remains unknown, so the listing stays `incomplete`.
+  - The red test (`find-paging`) uses the real `preserveEvidence` shape and failed against the previous `find`.
+  - The read-only `find` over the real q18 tree now returns `complete`, 124 captures and 1 preserved-evidence folder.
+- **Limit:** a manifest larger than the Records JSON bound (64 KiB, roughly several hundred files) is not recognized and keeps the listing
+  `incomplete`, never complete.
+- **Recipe v2** (`q29-inspect-v2`, same steps, new namespace) adds the check `logs-complete`, which requires every logs listing to be `complete`.

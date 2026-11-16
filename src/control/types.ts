@@ -928,7 +928,9 @@ export type LogCaptureView = { capture: string; executionId: string; invocationI
   format: 'text' | 'raw'; state: EvidenceState };
 export type LogsView = { kind: 'logs'; work_id: string; filter: { execution: string | null; role: InspectionRole | null };
   /** `complete`: every capture of the Work was listed; `incomplete`/`unavailable`: the listing proves nothing about what is missing. */
-  listing: { state: 'complete' | 'incomplete' | 'unavailable'; code: string | null; nextStep: string | null };
+  listing: { state: 'complete' | 'incomplete' | 'unavailable'; code: string | null; nextStep: string | null;
+    /** Ticket 17 preserved-evidence folders in this page's range: protected evidence, never logs (read them as administrator, not through `logs`). */
+    preservedEvidence?: number };
   page: { after: string | null; limit: number; returned: number; next: string | null; fitted: boolean }; captures: LogCaptureView[]; limitations: string[] };
 export type LogPageView = { kind: 'log'; work_id: string; capture: string; state: EvidenceState; code: string | null;
   /** Filtered text of this page (text captures only; a raw capture's bytes are never displayed). */
@@ -999,6 +1001,7 @@ export type ChainExecutionView = { executionId: string; mode: ExecutionView['mod
 export type RecordsInspectionPort = {
   find(selection: { workId: string; executionId?: string; role?: InspectionRole; id?: string; after?: string; limit?: number }): Promise<{ completeness: 'complete' | 'incomplete';
     /** Last capture id examined when more remain (paged calls). */ next?: string | null;
+    /** Ticket 17 preserved-evidence folders seen (known non-captures). */ preservedEvidence?: number;
     captures: { reference: { workId: string; id: string }; context: { workId: string; executionId: string; invocationId: string; role: InspectionRole; environmentRef: string;
       bootRef: string; callId: string }; state: 'complete' | 'partial'; format?: 'text' | 'raw' }[] }>;
   read(input: { reference: { workId: string; id: string }; offset: number; limit: number }): Promise<{ state: 'complete' | 'partial' | 'absent'; data: Uint8Array; nextOffset: number; bytes: number }>;

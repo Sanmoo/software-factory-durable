@@ -37,6 +37,9 @@ export type TextProjection = {
 type OutputPage = { state: 'complete' | 'partial'; data: Buffer<ArrayBuffer>; nextOffset: number; bytes: number }
   | { state: 'absent'; data: Buffer<ArrayBuffer>; nextOffset: number; bytes: number };
 type RawPage = OutputPage & { version: 2; format: 'raw' };
+/** Ticket 17 preserved-evidence manifest (records/preserve.ts), checked by shape only (its files are not re-hashed by a listing). */
+const manifestSchema = z.object({ version: z.literal(1), kind: z.literal('environment-evidence'), label: z.string().max(256),
+  files: z.array(z.object({ path: z.string(), bytes: z.number().int().nonnegative(), sha256: z.string().regex(/^[0-9a-f]{64}$/) }).passthrough()), totalBytes: z.number().int().nonnegative() });
 type FoundCapture = { reference: OutputReference; context: OutputContext; state: 'complete' | 'partial'; format: 'text' | 'raw' };
 /** Upper bound of the captures one `find` lists for a Work (bounded host read; beyond it the result is incomplete). */
 const findLimit = 20000;
@@ -500,7 +503,8 @@ export async function createRecords({ root }: { root: string }) {
    * Unreadable/corrupt capture metadata or an over-limit listing makes the result `incomplete` — never proof of absence.
    */
   async function find(selection: { workId: string; executionId?: string; invocationId?: string; callId?: string; role?: OutputContext['role']; id?: string; after?: string;
-    limit?: number }): Promise<{ completeness: 'complete' | 'incomplete'; captures: FoundCapture[]; next: string | null }> {
+    limit?: number }): Promise<{ completeness: 'complete' | 'incomplete'; captures: FoundCapture[]; next: string | null;
+      /** Ticket 17 preserved-evidence folders examined (known Factory-owned non-captures: never logs, never a reason for `incomplete`). */ preservedEvidence: number }> {
     // Ticket 29 paging: `after` (a capture id) and `limit` page the Work's captures in id order; `next` is the last id examined when more remain.
     // `id` looks one capture up directly; `role` filters by the recorded role. A paged call has no listing cap (it reads at most `limit` matches).
     const filter = z.strictObject({ workId: identifier, executionId: identifier.optional(), invocationId: identifier.optional(), callId: identifier.optional(),
@@ -514,11 +518,12 @@ export async function createRecords({ root }: { root: string }) {
       names = await readdir(evidence);
     } catch (error) {
       // No evidence of this Work proves absence ONLY under an intact Records root (ticket 26 review): otherwise nothing is proven.
-      if (error instanceof Error && 'code' in error && error.code === 'ENOENT' && await rootIntact()) return { completeness: 'complete', captures: [], next: null };
-      return { completeness: 'incomplete', captures: [], next: null };
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT' && await rootIntact()) return { completeness: 'complete', captures: [], next: null, preservedEvidence: 0 };
+      return { completeness: 'incomplete', captures: [], next: null, preservedEvidence: 0 };
     }
     const paged = only !== undefined || after !== undefined || limit !== undefined;
-    if (!paged && names.length > findLimit) return { completeness: 'incomplete', captures: [], next: null };
+    if (!paged && names.length > findLimit) return { completeness: 'incomplete', captures: [], next: null, preservedEvidence: 0 };
+    let preservedEvidence = 0;
     let candidates = names.sort();
     if (only !== undefined) candidates = candidates.filter(name => name === only);
     if (after !== undefined) candidates = candidates.filter(name => name > after);
@@ -531,6 +536,16 @@ export async function createRecords({ root }: { root: string }) {
       try {
         const directory = join(evidence, name);
         await privateDirectory(directory);
+        // Ticket 29: ticket 17's preserved-evidence folder (exactly `manifest.json` + `files/`, a valid environment-evidence manifest) is a
+        // known Factory-owned non-capture. A folder interrupted before its manifest, another kind or an extra entry stays unknown (incomplete).
+        const entries = await readdir(directory);
+        if (entries.includes('manifest.json') && !entries.includes('capture.json')) {
+          if (entries.length !== 2 || !entries.includes('files')) throw new RecordsError();
+          await privateDirectory(join(directory, 'files'));
+          manifestSchema.parse(await privateJson(join(directory, 'manifest.json')));
+          preservedEvidence++;
+          continue;
+        }
         const capture = z.union([captureSchema, rawCaptureSchema]).parse(await privateJson(join(directory, 'capture.json')));
         if (capture.reference.id !== name || capture.reference.workId !== correlation.workId || capture.context.workId !== correlation.workId) { completeness = 'incomplete'; continue; }
         const { workId: _workId, ...wanted } = correlation;
@@ -542,7 +557,7 @@ export async function createRecords({ root }: { root: string }) {
         captures.push({ reference: capture.reference, context: capture.context, state, format: capture.version === 2 ? 'raw' : 'text' });
       } catch { completeness = 'incomplete'; }
     }
-    return { completeness: completeness === 'complete' && await rootIntact() ? 'complete' : 'incomplete', captures, next };
+    return { completeness: completeness === 'complete' && await rootIntact() ? 'complete' : 'incomplete', captures, next, preservedEvidence };
   }
   const records = {
     openOutput, read, projectText, find,
