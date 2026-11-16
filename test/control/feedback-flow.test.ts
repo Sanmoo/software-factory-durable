@@ -107,6 +107,11 @@ test('AC1/AC2/AC3/AC5: an operator CHANGES_REQUESTED (not prose, bots or third p
   assert.equal(builder.phaseId, 'builder-continuation');
   assert.ok(builder.prompt.includes('Human requests from configured operators') && builder.prompt.includes('`--dry-run` in docs/a.md') && builder.prompt.includes('use ask_user'));
   assert.ok(!builder.prompt.includes('Delete the whole module') && !builder.prompt.includes('Looks fine to me'), 'only the authorized request reaches the Builder');
+  // Real run q23-feedback-v2: the reviewers of the repair judge it with the operator's request as part of the authorized request (never "out of scope").
+  const specPrompts = h.execution.calls.filter(call => call.kind === 'activate-spec').map(call => (call.detail as { prompt: string }).prompt);
+  assert.ok(specPrompts.length >= 2 && !specPrompts[0]!.includes('Operator requests authorized in this Work'), 'the first implementation has none');
+  assert.ok(specPrompts.at(-1)!.includes('Operator requests authorized in this Work') && specPrompts.at(-1)!.includes(`review-${requested.reviewId}`) &&
+    specPrompts.at(-1)!.includes('`--dry-run` in docs/a.md') && specPrompts.at(-1)!.includes('in scope'));
   // The review stays CHANGES_REQUESTED on GitHub after the push (commit `first`, head now `second`): treated, never a second charge.
   await h.cycles(5);
   work = await h.work();

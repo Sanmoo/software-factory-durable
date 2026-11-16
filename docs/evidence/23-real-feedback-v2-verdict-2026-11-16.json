@@ -1,0 +1,42 @@
+{
+ "run": "q23-feedback-v2",
+ "issue": 42,
+ "pullRequest": 43,
+ "computedFrom": "saved review/command results (offline, no GitHub, no storage write)",
+ "proven": [
+  {
+   "id": "review-one-correction",
+   "passed": true,
+   "observed": "1:published:true"
+  },
+  {
+   "id": "review-request-treated-not-recharged",
+   "passed": true,
+   "observed": "treated:consumed 1"
+  },
+  {
+   "id": "command-explicit-repair-recorded",
+   "passed": true,
+   "observed": "HUMAN_CHANGES_REQUESTED:treated,EXPLICIT_REPAIR:in-correction,HUMAN_CHANGES_REQUESTED:pending"
+  },
+  {
+   "id": "command-reply-published-on-ticket",
+   "passed": true,
+   "observed": "published:https://github.com/Sanmoo/java-springboot-event-sourcing/issues/42#issuecomment-6912152984"
+  },
+  {
+   "id": "command-correction-human-feedback-charged-once",
+   "passed": true,
+   "observed": "human-feedback:true:consumed 2"
+  },
+  {
+   "id": "command-review-during-activity-recorded-not-injected",
+   "passed": true,
+   "observed": "started 88 < recorded 93 < ended 100; builders 1"
+  }
+ ],
+ "notProven": [
+  "continuation of the SAME correction for the during-activity review (the phase ended at the Builder Question)",
+  "withdraw: steps 4/5 (pause, request, approval -> withdrawn without charge)"
+ ]
+}

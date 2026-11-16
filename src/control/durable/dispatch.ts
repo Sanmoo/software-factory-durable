@@ -274,7 +274,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     // A later round prefers each role's compatible session of the last reviewed round (the Workers decide and record continuation/replacement).
     const previous = lastReviewed(prior);
     const plans: ReviewPlan[] = event.status === 'captured' && classification.kind === 'review' ? planReviews({ executionId, round, attempt: 1, handoff: event.summary,
-      authorizedChanges: await authorizedChangesOf(work.work_id, execution),
+      authorizedChanges: await authorizedChangesOf(work.work_id, execution), operatorRequests: await operatorRequestsOf(work.work_id),
       ...(multi ? { previousSessions: { standards: previous?.reviewers.standards.opinion?.session.file ?? null, spec: previous?.reviewers.spec.opinion?.session.file ?? null } } : {}) }) : [];
     // Ticket 28: partial review recovery (opt-in composition). The first review round of a recovery Execution carries the valid opinions of
     // the interrupted round when the proposal and context are unchanged; only the missing/failed roles are reviewed again.
@@ -387,6 +387,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         return null;
       }
       const next = planReviews({ executionId, round, attempt: decision.attempt, handoff: event.summary, authorizedChanges: await authorizedChangesOf(work.work_id, execution),
+        operatorRequests: await operatorRequestsOf(work.work_id),
         ...(plan.review.continueFrom ? { previousSessions: { [plan.role]: plan.review.continueFrom } } : {}) }).find(item => item.role === plan.role)!;
       const retried = await recordReviewerRetry(session, work.work_id, executionId, round, plan.role, { plan: next, attempt: decision.attempt, waitSeconds: decision.waitSeconds });
       if (typeof retried === 'string' || retried.kind !== 'recorded') return null;
@@ -450,6 +451,11 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
 
   /** The Execution interrupted before this one when ticket 26 readmitted the Work through the queue (`interruption`), or null. */
   /** Ticket 21 (real run q21-human-v7): the preserved remote commits/files of the reconciliation this Execution carries, for its reviewers. */
+  /** Ticket 23 (real run q23-feedback-v2): the operator requests this Work accepted (treated or in its correction), for its reviewers. */
+  async function operatorRequestsOf(work_id: string) {
+    return ((await readWork(session, work_id))?.feedback?.requests ?? []).filter(item => item.state === 'treated' || item.state === 'in-correction')
+      .map(item => ({ feedbackId: item.feedbackId, code: item.code, author: item.feedback.author?.login ?? 'local administrator', content: item.feedback.content }));
+  }
   async function authorizedChangesOf(work_id: string, execution: ExecutionView) {
     const request = execution.request.reconciliation;
     if (!request) return null;

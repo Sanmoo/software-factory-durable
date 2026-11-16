@@ -84,7 +84,7 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
       async activate(invocation, delivery) {
         const role = invocation.context.role;
         if (role !== 'builder') {
-          calls.push({ kind: `activate-${role}` });
+          calls.push({ kind: `activate-${role}`, detail: { prompt: invocation.prompt, round: invocation.review?.round ?? null } });
           const review = invocation.review!;
           const opinion: ReviewOpinion = { version: 1, role: role as 'spec', round: review.round, attempt: 1, invocationId: invocation.context.invocationId,
             reference: { workId: invocation.context.workId, id: '88888888-2222-4333-8444-555555555555' }, session: { file: `/run/w-${role}/s.jsonl`, mode: 'new', from: null, code: null },

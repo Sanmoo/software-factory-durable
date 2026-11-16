@@ -1,0 +1,13 @@
+{
+ "step": 2,
+ "action": "`/factory repair` comment on the Factory PR",
+ "command": "gh pr comment 43 --repo Sanmoo/java-springboot-event-sourcing --body '/factory repair Add a line `Repaired by explicit request.` right below the title of docs/FACTORY_FEEDBACK.md.'   # with YOUR OWN gh login (operator Sanmoo); never the App",
+ "expect": "recorded EXPLICIT_REPAIR (github-comment) -> ONE correction -> repair -> leased update -> treated",
+ "pullRequest": {
+  "number": 43,
+  "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/43"
+ },
+ "at": "2026-11-16T09:05:16.567Z",
+ "waitMinutes": 60,
+ "note": "Operator: run this with YOUR OWN gh login now; the phase is waiting. Nobody merges in this step."
+}

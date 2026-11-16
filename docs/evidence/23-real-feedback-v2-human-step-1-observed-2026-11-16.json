@@ -1,0 +1,30 @@
+{
+ "step": 1,
+ "at": "2026-11-16T08:50:30.617Z",
+ "requests": [
+  {
+   "feedbackId": "review-5917227035",
+   "code": "HUMAN_CHANGES_REQUESTED",
+   "feedback": {
+    "feedbackId": "review-5917227035",
+    "origin": "github-review",
+    "author": {
+     "login": "Sanmoo",
+     "id": 1881597
+    },
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/43#pullrequestreview-5917227035",
+    "version": "cd29fbd4c97bbf1900eb41685561d8dd6f4894bb",
+    "submittedAt": "2026-11-16T08:48:32Z",
+    "sha256": "c33bb888478aa4418d5f0b0ca0826e55a1601801393ea525d8002d5089d44570",
+    "content": "Please add a `## Review notes` section at the end of docs/FACTORY_FEEDBACK.md with exactly one line: `Requested by an operator review.`",
+    "comments": []
+   },
+   "recordedAt": "2026-11-16T08:50:21.826Z",
+   "recordedHead": "cd29fbd4c97bbf1900eb41685561d8dd6f4894bb",
+   "state": "in-correction",
+   "correctionId": "075c7aff-60e1-4bd3-bc0f-712f8b517722",
+   "closedAt": null,
+   "outcome": null
+  }
+ ]
+}

@@ -14,8 +14,8 @@ import { keySource, pushViolations, requireKeySource, resolveOperator } from './
 // recipe. The Factory never merges, approves, dismisses, marks ready, bypasses or changes base protection/rules.
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const observations = `${root}/q23-feedback-v2`;
-const revision = 'q23-feedback-v2';
+const observations = `${root}/q23-feedback-v3`;
+const revision = 'q23-feedback-v3';
 const phases = ['preflight', 'run', 'review', 'command', 'withdraw', 'inspect', 'stop-environment'] as const;
 type Phase = typeof phases[number];
 type ControlPhase = 'run' | 'review' | 'command' | 'withdraw';
@@ -154,14 +154,25 @@ const implementationPhases: Record<ControlPhase, readonly string[]> = { run: ['b
 export const builderSequence: Record<ControlPhase, readonly BuilderKind[]> = { run: ['implementation', 'publication'], review: ['implementation', 'publication'],
   command: ['implementation', 'publication', 'implementation', 'publication'], withdraw: [] };
 /** Activation guard of one phase: the exact Builder sequence, then reviewers only for the implementation Execution in progress (distinct rounds). */
-export function activationGuard(phase: ControlPhase, maxRounds: number = rounds.max) {
+export function activationGuard(phase: ControlPhase, maxRounds: number = rounds.max, resumes = 1) {
   const sequence = builderSequence[phase];
   let next = 0;
+  // Real run q23-feedback-v3: a Builder that asked (human request disagreement, AC5) resumes after the operator's answer: ONE extra
+  // implementation activation (question-resumed) is allowed in place of the expected one, at most `resumes` per phase.
+  let extra = resumes;
   let implementation: { workId: string; executionId: string } | undefined;
   let seen: Record<string, Set<number>> = { standards: new Set(), spec: new Set() };
   return (context: { role: string; workId: string; executionId: string; phaseId: string }, review?: { round: number }) => {
     if (context.role === 'builder') {
       const kind = sequence[next];
+      const resumed = kind !== 'implementation' && sequence[next - 1] === 'implementation' && extra > 0 && implementationPhases[phase].includes(context.phaseId) &&
+        implementation !== undefined && context.executionId !== implementation.executionId;
+      if (resumed) {
+        extra--;
+        implementation = { workId: context.workId, executionId: context.executionId };
+        seen = { standards: new Set(), spec: new Set() };
+        return true;
+      }
       if (!kind) return false;
       if (kind === 'implementation') {
         if (!implementationPhases[phase].includes(context.phaseId)) return false;
@@ -204,13 +215,19 @@ export function humanObserved(step: keyof typeof humanSteps, work: WorkView | un
 const charged = (work: WorkView | undefined) => (work?.corrections ?? []).filter(item => item.charged);
 
 /** Whether a Control phase reached its end (or a state that ends it early); `success` says whether it is the expected end. */
-export function settled(phase: ControlPhase, work: WorkView | undefined, facts: { activations: number; stepsObserved: number; quietCyclesDone: boolean; correctionsBefore: number }):
+/** Real run q23-feedback-v3: the open Question the BUILDER asked (AC5: disagreement/inability on a human request), if any. */
+export const builderQuestion = (work: WorkView | undefined) => (work?.impediments ?? []).find(item => item.code === 'QUESTION_PENDING' && item.questionId)?.questionId ?? null;
+export function settled(phase: ControlPhase, work: WorkView | undefined, facts: { activations: number; stepsObserved: number; quietCyclesDone: boolean; correctionsBefore: number;
+  /** Builder Questions answered by the operator in this phase (each adds one question-resumed activation). */ resumes?: number }):
   { done: boolean; success: boolean } {
   const state = work?.publication?.state ?? '';
   const stuck = ['blocked', 'not-publishable', 'base-changed', 'diverged'].includes(state) || work?.execution?.state === 'held' ||
-    (work?.impediments ?? []).some(item => item.code === 'REPAIR_EVENT_ALREADY_TREATED' || item.code === 'CORRECTION_LIMIT_REACHED' || item.code === 'QUESTION_PENDING');
+    (work?.impediments ?? []).some(item => item.code === 'REPAIR_EVENT_ALREADY_TREATED' || item.code === 'CORRECTION_LIMIT_REACHED');
   if (phase === 'run') return state === 'published' ? { done: true, success: true } : { done: stuck, success: false };
   if (stuck) return { done: true, success: false };
+  // A Question the Builder asked waits for the operator's answer (surfaced, never auto-answered): not an end.
+  if (builderQuestion(work)) return { done: false, success: false };
+  const resumes = facts.resumes ?? 0;
   const corrections = (work?.corrections ?? []).slice(facts.correctionsBefore);
   const requests = work?.feedback?.requests ?? [];
   const consumed = work?.budget?.corrections.consumed ?? 0;
@@ -225,7 +242,7 @@ export function settled(phase: ControlPhase, work: WorkView | undefined, facts: 
   if (corrections.some(item => item.outcome !== 'published')) return { done: true, success: false };
   if (closed && allTreated && facts.stepsObserved >= wanted && facts.quietCyclesDone) {
     // command: a continuation of the same correction or ONE new correction — either way two repair+publication pairs.
-    const expected = phase === 'review' ? corrections.length === 1 && facts.activations === 2 : corrections.length <= 2 && facts.activations === 4;
+    const expected = phase === 'review' ? corrections.length === 1 && facts.activations === 2 + resumes : corrections.length <= 2 && facts.activations === 4 + resumes;
     return { done: true, success: expected && consumed === charged(work).length };
   }
   return { done: false, success: false };
@@ -309,7 +326,7 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
         async prepare(input) {
           log({ call: 'prepare', workId: input.workId, checkout: input.checkout });
           const work = await shown();
-          if (work?.work_id !== input.workId || work.ticket.number !== ticket.number || ++prepared > builderSequence[phase].length) return { status: 'failure', code: 'RECIPE_ONE_SHOT_GUARD' };
+          if (work?.work_id !== input.workId || work.ticket.number !== ticket.number || ++prepared > builderSequence[phase].length + 1) return { status: 'failure', code: 'RECIPE_ONE_SHOT_GUARD' };
           const result = await sandbox.prepare(input);
           log({ call: 'prepare-result', result });
           return result;
@@ -350,6 +367,7 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
   let observed = 0;
   let asked: { step: number; at: number } | null = null;
   let quietFrom: number | null = null;
+  const surfaced = new Map<string, number>();
   try {
     if (phase === 'withdraw') {
       const paused = await control.accept({ request_id: `${revision}-withdraw-pause`, operation: 'pause', origin: 'local-cli' });
@@ -358,6 +376,18 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
     while (Date.now() < deadline) {
       await new Promise(resolve => setTimeout(resolve, 15000));
       const work = await shown();
+      // Real run q23-feedback-v3: surface a Builder Question once (exact id/text and the operator's answer command) and wait, bounded.
+      const asking = builderQuestion(work);
+      if (asking && !surfaced.has(asking)) {
+        const shownQuestion = await control.inspect({ kind: 'question', question_id: asking }) as { kind: string; question?: { publication: { state: string }; content: { question: string; context: string } } };
+        if (shownQuestion.kind === 'question' && shownQuestion.question?.publication.state === 'published') {
+          surfaced.set(asking, Date.now());
+          await save(`operator-question-requested-${surfaced.size}`, { questionId: asking, question: shownQuestion.question.content.question, context: shownQuestion.question.content.context,
+            command: `gh issue comment ${ticket.number} --repo ${repository.repository} --body '/factory answer ${asking} <your answer>'   # operator account; never the App`,
+            at: new Date().toISOString(), waitMinutes: humanStepMinutes });
+        }
+      }
+      if (asking && surfaced.has(asking) && Date.now() > surfaced.get(asking)! + humanStepMinutes * 60 * 1000) throw new Error('RECIPE_OPERATOR_ANSWER_TIMEOUT');
       const step = steps[observed];
       if (step !== undefined) {
         // Step 3 is asked only once the step-2 repair Execution has STARTED (feedback DURING the activity); step 5 once step 4 opened a correction.
@@ -381,7 +411,7 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
         log({ call: 'unpause', unpaused });
       }
       if (quietFrom === null && (phase === 'withdraw' ? observed === steps.length : !work?.correction && (work?.corrections ?? []).length > correctionsBefore)) quietFrom = Date.now();
-      outcome = settled(phase, work, { activations, stepsObserved: observed, correctionsBefore,
+      outcome = settled(phase, work, { activations, stepsObserved: observed, correctionsBefore, resumes: [...surfaced.keys()].filter(id => id !== builderQuestion(work)).length,
         quietCyclesDone: quietFrom !== null && Date.now() - quietFrom >= quietCycles * pollingSeconds * 1000 });
       if (outcome.done) break;
     }
@@ -534,4 +564,42 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(message.startsWith('APP_KEY_SOURCE_MISSING') || message === 'TICKET_NOT_PINNED' ? message : `Qualification held; no retry. (${message.slice(0, 128)})`); process.exit(1);
   });
+}
+
+type SavedPhase = { status?: unknown; final?: { works?: WorkView[] }; events?: { call?: string; context?: { role?: string } }[] } | null;
+type Check = { id: string; passed: boolean; observed: string };
+/**
+ * Real run q23-feedback-v3, re-scored OFFLINE from the saved review/command results (no GitHub, no storage write): what the run proved up to
+ * the Builder's Question in the command phase. The phase ended HELD because the v2 oracle treated a Builder Question as an end (fixed: it now
+ * waits for the operator's answer); the Question itself came from a product gap (fixed: reviewers receive the accepted operator requests).
+ */
+export function verdictV2(saved: { review: SavedPhase; command: SavedPhase; issue: number }): { proven: Check[]; notProven: string[] } {
+  const review = saved.review?.final?.works?.[0];
+  const command = saved.command?.final?.works?.[0];
+  const check = (id: string, passed: boolean, observed: string): Check => ({ id, passed, observed: observed.slice(0, 300) });
+  const first = (review?.corrections ?? [])[0];
+  const requests = command?.feedback?.requests ?? [];
+  const started = (command?.history ?? []).map(item => item.event).lastIndexOf('execution-started');
+  const recorded = (command?.history ?? []).map(item => item.event).lastIndexOf('feedback-recorded');
+  const ended = (command?.history ?? []).map(item => item.event).lastIndexOf('execution-ended');
+  const builders = (saved.command?.events ?? []).filter(item => item.call === 'activate' && item.context?.role === 'builder').length;
+  const second = command?.correction ?? null;
+  const reply = command?.feedback?.replies?.[0];
+  return {
+    proven: [
+      check('review-one-correction', saved.review?.status === 'success' && (review?.corrections ?? []).length === 1 && first?.outcome === 'published' && first.charged === true &&
+        first.reasons.every(item => item.code === 'HUMAN_CHANGES_REQUESTED'), `${review?.corrections?.length ?? 0}:${first?.outcome}:${first?.charged}`),
+      check('review-request-treated-not-recharged', (review?.feedback?.requests ?? []).length === 1 && review?.feedback?.requests[0]?.state === 'treated' &&
+        review?.budget?.corrections.consumed === 1, `${review?.feedback?.requests.map(item => item.state).join(',')}:consumed ${review?.budget?.corrections.consumed}`),
+      check('command-explicit-repair-recorded', requests.some(item => item.code === 'EXPLICIT_REPAIR' && item.feedback.origin === 'github-comment' && item.feedback.author?.login === operatorLogin),
+        requests.map(item => `${item.code}:${item.state}`).join(',')),
+      check('command-reply-published-on-ticket', reply?.publication.state === 'published' && Boolean(reply.publication.comment?.url.includes(`/issues/${saved.issue}#issuecomment-`)),
+        `${reply?.publication.state}:${reply?.publication.comment?.url ?? ''}`),
+      check('command-correction-human-feedback-charged-once', second?.trigger === 'human-feedback' && second.consumed === true && command?.budget?.corrections.consumed === 2,
+        `${second?.trigger}:${second?.consumed}:consumed ${command?.budget?.corrections.consumed}`),
+      check('command-review-during-activity-recorded-not-injected', started >= 0 && started < recorded && recorded < ended && builders === 1 &&
+        requests.some(item => item.code === 'HUMAN_CHANGES_REQUESTED' && item.state === 'pending'), `started ${started} < recorded ${recorded} < ended ${ended}; builders ${builders}`),
+    ],
+    notProven: ['continuation of the SAME correction for the during-activity review (the phase ended at the Builder Question)', 'withdraw: steps 4/5 (pause, request, approval -> withdrawn without charge)'],
+  };
 }

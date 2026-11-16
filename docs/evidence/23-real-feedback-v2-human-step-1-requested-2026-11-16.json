@@ -1,0 +1,13 @@
+{
+ "step": 1,
+ "action": "REQUEST_CHANGES review on the Factory draft PR",
+ "command": "gh pr review 43 --repo Sanmoo/java-springboot-event-sourcing --request-changes --body 'Please add a `## Review notes` section at the end of docs/FACTORY_FEEDBACK.md with exactly one line: `Requested by an operator review.`'   # with YOUR OWN gh login (operator Sanmoo); never the App",
+ "expect": "recorded HUMAN_CHANGES_REQUESTED -> ONE correction -> repair (continue) -> leased update of the SAME PR -> treated; the review stays CHANGES_REQUESTED on GitHub (older commit) and is NOT re-triggered",
+ "pullRequest": {
+  "number": 43,
+  "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/43"
+ },
+ "at": "2026-11-16T08:48:30.590Z",
+ "waitMinutes": 60,
+ "note": "Operator: run this with YOUR OWN gh login now; the phase is waiting. Nobody merges in this step."
+}

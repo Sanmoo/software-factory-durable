@@ -1,0 +1,6 @@
+{
+ "phase": "command",
+ "status": "held",
+ "code": "PHASE_NOT_AS_EXPECTED",
+ "note": "Consumed; no retry."
+}

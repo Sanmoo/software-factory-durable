@@ -154,3 +154,42 @@ evidence are the reviewers', whose read covers `/artifacts`). The gap was the ba
 for a Builder, `READ_PATH_DENIED` now says to use bash for `/workspace/checkout` and `/artifacts` files and that it is not a missing source nor
 a blocker (`builderPathDeniedMessage`, same code prefix, policy unchanged); red test with the exact path in `builder-pack-read`. The recipe
 namespace moves to `q23-feedback-v2`, issue 0 (re-pin before running).
+
+## Real run q23-feedback-v2 (issue #42, PR #43) — `command` held; analysis, product fix, offline score
+
+Phases `preflight`, `run`, `review` exit 0. Human steps 1–3 were executed once each from the operator account (05:48 REQUEST_CHANGES; 06:05
+`/factory repair` comment; 06:09 second REQUEST_CHANGES during the repair). `command` ended HELD (`PHASE_NOT_AS_EXPECTED`) — `withdraw` was not
+run; `inspect` ran. Saved results are copied as `23-real-feedback-v2-*-2026-11-16.json`.
+
+**What happened in `command`.** The explicit repair opened correction 2 (`human-feedback`, charged once, `corrections` consumed 2 in total). The
+step-3 review was recorded at 09:11:12, DURING that repair (started 09:09:41, ended 09:11:58), and was not delivered to it. The reviewers of round
+r7 then ran. Spec reported a finding: the earlier operator-requested `## Review notes` section "exceeds the Ticket", because the preserved request
+`spec/v3` held the Ticket and only the LATEST repair. The Builder followed the human-request rule (AC5): it did not decline either request and
+asked Question d9224307 (`QUESTION_PENDING`). The v2 oracle treated any `QUESTION_PENDING` as an end, so the phase stopped there.
+
+**Verdict.** Two causes:
+1. **Product gap (fixed with a red test).** The reviewers never received the operator requests this Work had accepted, so an earlier human request
+   looked out of scope to a later Spec round. `planReviews` now takes `operatorRequests`: every `treated`/`in-correction` request, with its id,
+   author and fenced content as data. The note says they are part of the authorized request, a change that implements one is in scope (never a
+   finding for exceeding the Ticket), each must be addressed, and a real contradiction is still a finding. Red test: `feedback-flow` AC1 asserts
+   the repair round's Spec prompt carries the request and the first implementation's does not.
+2. **Recipe oracle (fixed).** A Builder Question is legitimate (AC5). The recipe now surfaces it once in `operator-question-requested-<n>.json`,
+   with the exact `/factory answer` command, and waits ≥ 60 min. It allows ONE question-resumed implementation per phase and counts it in the
+   expected activations.
+
+**Offline score** (`verdictV2`, `23-real-feedback-v2-verdict-2026-11-16.json`, from the saved results only): 6/6 proven, namely:
+- `review`: ONE `HUMAN_CHANGES_REQUESTED` correction, published and charged; the request is treated and not re-charged after the push.
+- `command`: the `/factory repair` comment was recorded (operator, `github-comment`), and the controller's reply was published on issue #42.
+- `command`: correction 2 is `human-feedback` and was charged once.
+- `command`: the step-3 review was recorded during the activity and not injected (one Builder activation in the phase).
+
+**Not proven by v2:**
+- the continuation of the SAME correction for the during-activity review (the phase stopped at the Question);
+- `withdraw` (steps 4/5).
+
+The withdraw path is proven at flow level only (S, real Control/SQLite, doubled GitHub). Its real boundary differs from what v2 exercised: an
+APPROVE review submitted from the operator account, its observation by `feedback-read` as a later APPROVED review of the same reviewer id, and a
+correction withdrawn without charge while paused. None of that is in the v2 evidence (v2 shows only CHANGES_REQUESTED reads). **A real v3 is
+needed** for the withdrawal and the continuation. The recipe namespace is now `q23-feedback-v3`, issue 0; re-pin before running. PR #43/issue #42
+are left to the supervisor.
+- Gate after the v2 fixes: `npm run test:ci` **PASS** — 1524 tests, 1514 pass, 0 fail, 10 skipped; 277.3 s.

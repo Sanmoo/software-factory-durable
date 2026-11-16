@@ -1,0 +1,41 @@
+{
+ "boots": [
+  {
+   "environment": "env-bb5d2816e5f1ab027938efad2f9b4dddb9bddbd2a9f59e883d16ff4f51043a24",
+   "boot": "boot-6410268c-3116-477e-8f68-38fadbd6fa32",
+   "start": "confirmed",
+   "observedBoot": "boot-6410268c-3116-477e-8f68-38fadbd6fa32",
+   "observed": {
+    "condition": "stopped",
+    "cessationConfirmed": true,
+    "consumption": "unavailable",
+    "storage": {
+     "configuredVirtualBytes": "42949672960",
+     "minFreeBytes": "4294967296",
+     "disk": {
+      "status": "observed",
+      "virtualBytes": "42949672960",
+      "allocatedBytes": "631115776"
+     },
+     "workspace": {
+      "status": "observed",
+      "logicalBytes": "4781875",
+      "allocatedBytes": "5668864"
+     },
+     "artifacts": {
+      "status": "observed",
+      "logicalBytes": "113879",
+      "allocatedBytes": "294912"
+     },
+     "filesystem": {
+      "status": "observed",
+      "availableBytes": "537621401600"
+     }
+    }
+   },
+   "stopped": null,
+   "unresolved": false
+  }
+ ],
+ "at": "2026-11-16T09:12:02.554Z"
+}

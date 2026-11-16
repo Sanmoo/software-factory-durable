@@ -18,8 +18,8 @@ test('ticket 23 recipe: import and --plan are inert; own namespace, per-phase ke
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q23-feedback-v2');
-  assert.match(plan.github.accessRoot, /^\/home\/sanmoo\/software-factory-test\/y5\/q23-feedback-v2 \(own namespace: credentials\/ per-phase copy of \/home\/sanmoo\/software-factory-test\/y5\/credentials\/app\.pem/);
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q23-feedback-v3');
+  assert.match(plan.github.accessRoot, /^\/home\/sanmoo\/software-factory-test\/y5\/q23-feedback-v3 \(own namespace: credentials\/ per-phase copy of \/home\/sanmoo\/software-factory-test\/y5\/credentials\/app\.pem/);
   assert.deepEqual(plan.phases, ['preflight', 'run', 'review', 'command', 'withdraw', 'inspect', 'stop-environment']);
   assert.equal(plan.ticket.pinned, false, 'the supervisor pins the NEW issue number in a reviewed commit before any phase');
   assert.ok(plan.humanStepMinutes >= 60, 'each human step waits at least 60 minutes');
@@ -75,7 +75,10 @@ test('settled/humanObserved: review = ONE charged published correction with its 
   assert.deepEqual(recipe.settled('review', work({ corrections: [closed], requests: [request('HUMAN_CHANGES_REQUESTED', 'treated')] }), { ...facts, quietCyclesDone: false }), { done: false, success: false });
   assert.deepEqual(recipe.settled('review', work({ corrections: [closed, closed], budget: { corrections: { consumed: 2 } } as never, requests: [request('HUMAN_CHANGES_REQUESTED', 'treated')] }),
     facts), { done: true, success: false }, 'a second correction for the same review is a failure');
-  assert.deepEqual(recipe.settled('review', work({ impediments: [{ code: 'QUESTION_PENDING' }] as never }), facts), { done: true, success: false }, 'a Question ends the phase (operator)');
+  // Real run q23-feedback-v3: a Builder Question waits for the operator's answer (surfaced), it never ends the phase; the resumed activation counts.
+  assert.deepEqual(recipe.settled('review', work({ impediments: [{ code: 'QUESTION_PENDING', questionId: 'q1' }] as never }), facts), { done: false, success: false });
+  assert.deepEqual(recipe.settled('review', work({ corrections: [closed], budget: { corrections: { consumed: 1 } } as never, requests: [request('HUMAN_CHANGES_REQUESTED', 'treated')] }),
+    { ...facts, activations: 3, resumes: 1 }), { done: true, success: true }, 'one question-resumed activation');
   const twice = { activations: 4, stepsObserved: 2, quietCyclesDone: true, correctionsBefore: 1 };
   const commandWork = work({ corrections: [closed, closed], budget: { corrections: { consumed: 2 } } as never,
     requests: [request('HUMAN_CHANGES_REQUESTED', 'treated'), request('EXPLICIT_REPAIR', 'treated', 'github-comment')] });
@@ -87,4 +90,14 @@ test('settled/humanObserved: review = ONE charged published correction with its 
   assert.equal(recipe.humanObserved(2, work({ requests: [request('EXPLICIT_REPAIR', 'pending', 'github-comment')] }), { reviews: 0, repairs: 0 }), true);
   assert.equal(recipe.humanObserved(2, work({ requests: [request('EXPLICIT_REPAIR', 'pending', 'local-cli')] }), { reviews: 0, repairs: 0 }), false, 'only the operator comment counts');
   assert.equal(recipe.humanObserved(5, work({ requests: [request('HUMAN_CHANGES_REQUESTED', 'withdrawn', 'github-review', 'APPROVED_LATER')] }), { reviews: 0, repairs: 0 }), true);
+});
+
+test('real run q23-feedback-v3: one question-resumed implementation is allowed per phase in place of the expected publication, never two', () => {
+  const c = (role: string, phaseId: string, executionId: string) => ({ role, workId: 'w', executionId, phaseId });
+  const guard = recipe.activationGuard('review', 2);
+  assert.equal(guard(c('builder', 'builder-continuation', 'e1')), true);
+  assert.equal(guard(c('builder', 'builder-continuation', 'e2')), true, 'resumed after the answer');
+  assert.equal(guard(c('spec', 'p', 'e2'), { round: 5 }), true, 'its reviewers');
+  assert.equal(guard(c('builder', 'builder-recovery', 'e3')), false, 'a second resume is refused');
+  assert.equal(guard(c('builder', 'builder-publication', 'e4')), true);
 });
