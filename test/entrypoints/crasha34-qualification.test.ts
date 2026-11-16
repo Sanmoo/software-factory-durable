@@ -18,7 +18,7 @@ test('R-CRASH-A recipe: import and --plan are inert; own namespace; two lines, t
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q34-crash-a-v1');
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q34-crash-a-v2');
   assert.deepEqual(plan.phases, ['preflight', 'cache', 'sources', 'tool', 'inspect', 'stop-environment']);
   assert.deepEqual(plan.steps, ['c1-cache-cut', 'c2-cache-reconcile', 's1-sources-cut', 's2-sources-recovery', 't1-tool-cut', 'h1-handoff-cut', 'f1-final']);
   assert.equal(plan.tickets.pinned, false);

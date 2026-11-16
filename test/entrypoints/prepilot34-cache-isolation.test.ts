@@ -13,8 +13,8 @@ const source = (name: string) => readFileSync(join(process.cwd(), 'test', 'entry
 const longestSocket = (root: string) => Buffer.byteLength(`${root}/r/${'x'.repeat(22)}/s/00000000-0000-4000-8000-000000000000.sock`);
 
 test('R-CRASH-A and R-LONG: own Factory roots, distinct, outside y5, within the worker socket limit; their caches are never the shared one', () => {
-  const roots = [crash.factoryRoot, long.factoryRoot];
-  assert.equal(new Set(roots).size, 2, 'one root per recipe');
+  const roots = [crash.factoryRoots.main, crash.factoryRoots.cache, long.factoryRoot];
+  assert.equal(new Set(roots).size, 3, 'one root per recipe line');
   for (const root of roots) {
     assert.ok(root !== shared && !root.startsWith(`${shared}/`), root);
     assert.ok(longestSocket(root) <= 107, `${root}: worker sockets must fit`);

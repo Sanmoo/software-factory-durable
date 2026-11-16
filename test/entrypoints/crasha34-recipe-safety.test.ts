@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import type { QuestionView } from '../../src/control/index.js';
-import { activationGuard, assess, gateCutProof, gateMarkers, lineOf, mainBody, phaseGuard, pinned, postDecision, sourcesCutProof, steps,
+import { activationGuard, assess, factoryRoots, rootOf, gateCutProof, gateMarkers, lineOf, mainBody, phaseGuard, pinned, postDecision, sourcesCutProof, steps,
   type CrashInput, type Step } from './crasha34-qualification.js';
 
 // Recipe safety of the R-CRASH-A real run, on controlled data only (never the real root, GitHub, VM or model).
@@ -116,4 +118,18 @@ test('V-07.b/V-12.c/V-12.d verdict: passed only with every check; duplicates, ov
   const twoWriters = world((_, events) => { const index = events.findIndex(item => item.step === 'h1-handoff-cut' && item.call === 'stop'); events.splice(index, 1); events.push(stop('h1-handoff-cut', 'b3')); });
   assert.deepEqual([twoWriters.status, twoWriters.checks.channelLossReconciled], ['failed', false], 'an activation before the survivor stop is never passed');
   assert.deepEqual(world(input => { input.remote.pullRequests = null; }).inconclusive, ['REMOTE_READ_INCOMPLETE']);
+});
+
+test('real run v1 (one root, two storages: the main owner saw the cache line\'s environment as UNKNOWN): each line has its OWN Factory root, and the owner gets its inventory unfiltered', () => {
+  assert.notEqual(factoryRoots.main, factoryRoots.cache);
+  assert.equal(rootOf('c1-cache-cut'), factoryRoots.cache);
+  assert.equal(rootOf('c2-cache-reconcile'), factoryRoots.cache);
+  for (const step of ['s1-sources-cut', 's2-sources-recovery', 't1-tool-cut', 'h1-handoff-cut', 'f1-final'] as const) assert.equal(rootOf(step), factoryRoots.main, step);
+  assert.ok(!factoryRoots.main.startsWith(`${factoryRoots.cache}/`) && !factoryRoots.cache.startsWith(`${factoryRoots.main}/`), 'never nested');
+  for (const root of [factoryRoots.main, factoryRoots.cache]) {
+    assert.ok(Buffer.byteLength(`${root}/r/${'x'.repeat(22)}/s/00000000-0000-4000-8000-000000000000.sock`) <= 107, `${root}: worker socket budget`);
+  }
+  const text = readFileSync(join(process.cwd(), 'test', 'entrypoints', 'crasha34-qualification.ts'), 'utf8');
+  assert.doesNotMatch(text, /environments\.filter\(|lineInventory|otherLine|cacheLineEnvironments|preexisting\.includes/, 'no inventory filter / excluded environments reach an owner');
+  assert.match(text, /runtimeInventory: \{ kind: 'listed', observedAt: [^,]+, \.\.\.listed \}/, 'the owner receives the listing of its own root as is');
 });
