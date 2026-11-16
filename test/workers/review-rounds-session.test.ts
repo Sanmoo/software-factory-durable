@@ -8,6 +8,7 @@ import { createWorkerSession } from '../../src/workers/worker-session.js';
 import { sdkProfile } from '../../src/workers/sdk-profile.js';
 import type { ProposalHandoff } from '../../src/contracts/index.js';
 import type { BuilderDirective, HandoffEvent } from '../../src/workers/index.js';
+import { remainingMs } from '../runner/budget.js';
 
 // I-local: native Pi SDK loop (session JSONL), real Records and owner tool transport; doubled ONLY the provider HTTP boundary (scripted
 // offline responses) and the VM exec (command -> exit code/output). Ticket 13: repeated handoffs with treatments/gates whose evidence the
@@ -45,7 +46,7 @@ const gate = (id: string, command: string, extra: object = {}) => ({ id, source:
 const isProbe = (command: string) => command.includes(' /artifacts probe <<');
 const isCapture = (command: string) => /^exec \/usr\/bin\/python3 -I -S - \/workspace\/checkout \/artifacts ([0-9]+) [0-9a-f]{40} \/workspace\/checkout \/artifacts <<'FACTORY_HANDOFF_EOF'\n/.test(command);
 
-test('AC1-AC3: repeated handoffs carry treatments and Host gate evidence from the real Bash results and their content snapshots; the round limit and the closing capture are enforced', { timeout: 20000 }, async t => {
+test('AC1-AC3: repeated handoffs carry treatments and Host gate evidence from the real Bash results and their content snapshots; the round limit and the closing capture are enforced', { timeout: remainingMs() }, async t => {
   const commands: string[] = [];
   let content = '1';
   const exits: Record<string, number[]> = { 'npm test': [1, 0], 'npm run lint': [0], 'echo fix >> docs/a.md': [0], 'npm run build': [0] };
@@ -121,7 +122,7 @@ test('AC1-AC3: repeated handoffs carry treatments and Host gate evidence from th
   assert.doesNotMatch(transcript, /Closing capture recorded/, 'the ending directive is not sent to the model');
 });
 
-test('ticket 12 compatibility: without a rounds policy there is one round, no declarations and no closing capture', { timeout: 15000 }, async t => {
+test('ticket 12 compatibility: without a rounds policy there is one round, no declarations and no closing capture', { timeout: remainingMs() }, async t => {
   const commands: string[] = [];
   const f = await nativeOwner(builder, { exec(argv) {
     const command = argv[argv.length - 1]!;

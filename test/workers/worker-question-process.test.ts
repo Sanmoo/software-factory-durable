@@ -10,10 +10,11 @@ import { SessionManager } from '#factory-pi';
 import { nativeOwner } from '../sandbox/native-owner.fixture.js';
 import { sdkProfile } from '../../src/workers/sdk-profile.js';
 import type { ToolContext } from '../../src/sandbox/index.js';
+import { remainingMs } from '../runner/budget.js';
 
 // I-local: new Node24 worker entrypoint + real Pi SDK session + real Records/Protocol owner transport; the provider HTTP boundary
 // (offline fixture), the VM (double) and the Control (this test answering the IPC notification) are substituted.
-for (const mode of ['recorded', 'refused', 'ask-then-write', 'ask-secret'] as const) test(`AC1/AC3: Builder ask_user preserves, notifies and ENDS the activation: ${mode}`, { timeout: 20000 }, async t => {
+for (const mode of ['recorded', 'refused', 'ask-then-write', 'ask-secret'] as const) test(`AC1/AC3: Builder ask_user preserves, notifies and ENDS the activation: ${mode}`, { timeout: remainingMs() }, async t => {
   const context: ToolContext = { workId: 'ask-work', executionId: 'ask-exec', invocationId: 'ask-invocation', role: 'builder', environmentRef: 'ask-env', bootRef: 'ask-boot', phaseId: 'ask-phase' };
   let guestCalls = 0;
   const f = await nativeOwner(context, { exec() { guestCalls++; return { async *output() {}, result: Promise.resolve({ exitCode: 0 }) }; } });

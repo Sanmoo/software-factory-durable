@@ -5,6 +5,7 @@ import { appendFile, mkdtemp, mkdir, open, readFile, readdir, readlink, rm, writ
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createSandbox, type BootRef, type EnvironmentRef } from '../../src/sandbox/index.js';
+import { remainingMs } from '../runner/budget.js';
 
 const workId = 'stop-work';
 const environment = `env-${createHash('sha256').update(workId).digest('hex')}` as EnvironmentRef;
@@ -98,7 +99,7 @@ for (const evidence of ['valid', 'missing', 'foreign-boot', 'raw-fields'] as con
 }
 
 for (const failedSync of ['file', 'directory'] as const) {
-  test(`Sandbox.stop retry re-establishes file and directory durability after ${failedSync} sync failure (manager double)`, { timeout: 5000 }, async t => {
+  test(`Sandbox.stop retry re-establishes file and directory durability after ${failedSync} sync failure (manager double)`, { timeout: remainingMs() }, async t => {
     const fixture = await managerDouble();
     try {
       let fail = true;
@@ -116,7 +117,7 @@ for (const failedSync of ['file', 'directory'] as const) {
 }
 
 for (const failedSync of ['file', 'directory'] as const) {
-  test(`Sandbox.stop does not act when an existing request cannot complete ${failedSync} sync (manager double)`, { timeout: 5000 }, async t => {
+  test(`Sandbox.stop does not act when an existing request cannot complete ${failedSync} sync (manager double)`, { timeout: remainingMs() }, async t => {
     const fixture = await managerDouble();
     try {
       await writeFile(join(fixture.path, 'stop-request.json'), JSON.stringify({ version: 1, boot, reason: 'pause' }), { mode: 0o600 });
@@ -129,7 +130,7 @@ for (const failedSync of ['file', 'directory'] as const) {
   });
 }
 
-test('Sandbox.stop concurrent retry independently syncs a still-publishing request before effect (manager double)', { timeout: 5000 }, async t => {
+test('Sandbox.stop concurrent retry independently syncs a still-publishing request before effect (manager double)', { timeout: remainingMs() }, async t => {
   const fixture = await managerDouble();
   let release!: () => void;
   let entered!: () => void;

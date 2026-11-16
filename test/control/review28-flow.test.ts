@@ -9,6 +9,7 @@ import type { ProposalHandoff, ProposalIdentity, ReviewOpinion } from '../../src
 import type { BuilderDirective, HandoffEvent, Invocation, OpinionObservation } from '../../src/workers/index.js';
 import { foreignPull, githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
 import { recipeWork, verdict } from '../entrypoints/review28-qualification.js';
+import { until } from '../runner/budget.js';
 
 // Flow level (S): real Control + Pi Durable + temporary SQLite. Doubled: GitHub, clocks, Sandbox lifecycle/identity, Workers (a scripted
 // suspended Builder, scripted reviewers per attempt, a scripted Records opinion facet) and credentials. Ticket 28: partial review recovery
@@ -159,15 +160,12 @@ async function harness(t: { after(fn: () => Promise<void>): void }, script: Para
   t.after(async () => { stop.abort(); await running; });
   const list = async () => (await control.inspect({ kind: 'list' })) as ListView;
   const work = async () => (await list()).works.find(item => item.ticket.number === (world.ticket ?? 3)) as WorkView | undefined;
-  for (let i = 0; i < 800; i++) {
-    const current = await work();
-    if (current?.execution?.slot.held === false || current?.execution?.state === 'held') {
-      const shown = await control.inspect({ kind: 'show', work_id: current.work_id });
-      return { execution, work: current, shown: 'work' in shown ? shown.work : undefined, list: await list() };
-    }
-    await new Promise(resolve => setTimeout(resolve, 5));
-  }
-  assert.fail('condition not reached');
+  const current = await until('Execution ended or held', async () => {
+    const value = await work();
+    return value?.execution?.slot.held === false || value?.execution?.state === 'held' ? value : undefined;
+  }, 5);
+  const shown = await control.inspect({ kind: 'show', work_id: current.work_id });
+  return { execution, work: current, shown: 'work' in shown ? shown.work : undefined, list: await list() };
 }
 const activations = (kinds: string[]) => kinds.filter(kind => kind.startsWith('activate-'));
 

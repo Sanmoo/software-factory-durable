@@ -5,10 +5,11 @@ import { mkdtemp, mkdir, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { sdkProfile } from '../../src/workers/sdk-profile.js';
+import { remainingMs } from '../runner/budget.js';
 
 // Actual production fixed entrypoint phase-only proof. No SDK preload/hooks or
 // provider evaluation: an owned nonexistent endpoint stops before SDK import.
-test('production entrypoint emits protected started receipt before unavailable tool endpoint; failed start never emits receipt', { timeout: 10000 }, async () => {
+test('production entrypoint emits protected started receipt before unavailable tool endpoint; failed start never emits receipt', { timeout: remainingMs() }, async () => {
   const root = await mkdtemp('/tmp/s168p-');
   for (const path of ['profile', 'profile/sessions', 't', 'c', 'records']) await mkdir(join(root, path), { mode: 0o700 });
   const context = { workId: 'work', executionId: 'execution', invocationId: 'invocation', role: 'spec',

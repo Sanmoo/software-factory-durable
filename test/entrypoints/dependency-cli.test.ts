@@ -3,9 +3,9 @@ import { test } from 'node:test';
 import { spawn } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import { prepareController } from './controller-configuration.js';
 import { githubWorld, issue } from './github-world-fixture.js';
+import { remainingMs, untilHolds } from '../runner/budget.js';
 
 // Composition: real CLI, controller owner under flock, protocol socket, Pi Durable/SQLite, IssueTracker/CodeRepository adapters, issuer and gh
 // transport. Only gh/GitHub (and the App HTTPS endpoints) are substituted by the local world fixture: NOT evidence of the real GitHub boundary.
@@ -23,7 +23,7 @@ type Json = Record<string, any>;
 const remote = (repository: string, id: number, number: number, overrides: Parameters<typeof issue>[1] = {}) =>
   issue(number, { repository, id, node_id: `I_${id}`, labels: [], ...overrides });
 
-test('CLI list/show/status expose native dependency gating across executable, dependency-only and unconfigured repositories', { timeout: 45000 }, async t => {
+test('CLI list/show/status expose native dependency gating across executable, dependency-only and unconfigured repositories', { timeout: remainingMs() }, async t => {
   const world = await githubWorld(t, { pageSize: 1, pulls: [],
     repositories: [{ name: 'acme/project', id: 3, installation: 2 }, { name: 'acme/deps', id: 4, installation: 2 }, { name: 'other/lib', id: 5, installation: 6 }],
     issues: [
@@ -45,11 +45,11 @@ test('CLI list/show/status expose native dependency gating across executable, de
   let stopped = false;
   t.after(async () => { if (!stopped) { owner.child.kill('SIGTERM'); await owner.result; } });
   let status: Json | undefined;
-  for (let attempt = 0; attempt < 400 && !(status && status.polling.cycles >= 1); attempt++) {
+  await untilHolds('controller completed a polling round', async () => {
     const reply = await cli('status');
     if (reply.code === 0) status = reply.json;
-    await delay(50);
-  }
+    return Boolean(status && status.polling.cycles >= 1);
+  }, 50);
   assert.ok(status && status.polling.cycles >= 1, 'controller completed a polling round (the next one is 30 s later)');
   const view = (await cli('list')).json!;
   const works = Object.fromEntries(view.works.map((work: Json) => [work.ticket.number, work])) as Record<number, Json>;

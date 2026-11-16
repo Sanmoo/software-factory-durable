@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { openControl } from '../../src/control/index.js';
 import type { Control, ControlStatus, ExecutionPorts, ListView } from '../../src/control/types.js';
 import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
+import { untilHolds } from '../runner/budget.js';
 
 // Ticket 25 flow level: real Control (poller, cycle desk, dispatcher, Pi Durable + SQLite). Doubled: GitHub, clock, Sandbox lifecycle, Workers
 // and credentials. Each activation hangs until the test completes it, or until its activity signal aborts. Not evidence of real GitHub/VM.
@@ -71,7 +72,7 @@ async function harness(t: { after(fn: () => Promise<void> | void): void }, remot
   t.after(async () => { if (current && !current.stop.signal.aborted) await stop(); });
   const work = async () => ((await current!.control.inspect({ kind: 'list' })) as ListView).works[0]!;
   const until = async (predicate: () => Promise<boolean>, what = 'condition') => {
-    for (let i = 0; i < 400; i++) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 5)); } assert.fail(`${what} not reached`); };
+    await untilHolds(what, predicate, 5); };
   const cycle = async () => { current!.time.advance(); await current!.time.sleeping(); };
   const accept = async (input: Parameters<Control['accept']>[0]) => (await current!.control.accept(input)) as { outcome: string; reason: string | null };
   return { github, calls, start, stop, work, until, cycle, accept, complete, control: () => current!.control };

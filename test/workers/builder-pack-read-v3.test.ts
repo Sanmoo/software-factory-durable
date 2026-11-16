@@ -11,6 +11,7 @@ import { listen, protocolVersion, type Envelope } from '../../src/protocol/index
 import { workerRuntimeDirectory } from '../../src/platform/host/index.js';
 import { loadSkillPack } from '../../src/workers/skill-pack.js';
 import { sdkProfile } from '../../src/workers/sdk-profile.js';
+import { remainingMs } from '../runner/budget.js';
 
 // Ticket 12 (v3 pack) counterpart of builder-pack-read (ticket 10); real-run q12-review-v3 regression: the Builder could not read its own seeded skill pack (READ_PATH_DENIED) and stopped.
 // I-local: native SDK loop, real owner transport/Records/confined guest read program; doubled the VM exec and the provider HTTP.
@@ -18,7 +19,7 @@ const context: ToolContext = { workId: 'work-12', executionId: 'execution-12', i
 const v3 = '/artifacts/factory/skill-pack/factory-skills-v3/skills/implement/SKILL.md';
 const v1 = '/artifacts/factory/skill-pack/factory-skills-v1/skills/implement/SKILL.md';
 
-test('real-run v3 fix: the Builder reads exactly the seeded files of ITS pack version (read-only, confined); another version or path stays denied', { timeout: 15000 }, async t => {
+test('real-run v3 fix: the Builder reads exactly the seeded files of ITS pack version (read-only, confined); another version or path stays denied', { timeout: remainingMs() }, async t => {
   const pack = await loadSkillPack(builderSkillPacks['factory-skills-v3'].directory, 'factory-skills-v3');
   const files = [`${pack.manifest.guestDirectory}/manifest.json`, ...pack.manifest.files.map(file => `${pack.manifest.guestDirectory}/${file.path}`)];
   const reads: string[] = [];

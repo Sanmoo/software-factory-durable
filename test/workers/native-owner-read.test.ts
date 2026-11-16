@@ -8,6 +8,7 @@ import { sdkProfile } from '../../src/workers/sdk-profile.js';
 import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { SessionManager } from '#factory-pi';
+import { remainingMs } from '../runner/budget.js';
 
 const context: ToolContext = { workId: 'work-05', executionId: 'execution-05', invocationId: 'standards-05',
   role: 'standards', environmentRef: 'environment-05', bootRef: 'boot-05', phaseId: 'review-1' };
@@ -30,7 +31,7 @@ test('Q5 owner capture reaches native SDK pagination, beyond the old 16K wrapper
   await assert.rejects(native.execute('read-2', { path: 'source.txt' }), /STALE_TOOL_CONTEXT|TOOL_CHANNEL_CLOSED/);
 });
 
-test('Workers-private SDK component uses real provider loop and native JSONL with preserved file BOM and only filtered guest tool content', { timeout: 10000 }, async t => {
+test('Workers-private SDK component uses real provider loop and native JSONL with preserved file BOM and only filtered guest tool content', { timeout: remainingMs() }, async t => {
   const f = await nativeOwner(context, { exec() { return {
     async *output() { yield { stream: 'stdout' as const, data: Buffer.from('\uFEFFfirst\nsynthetic-') };
       yield { stream: 'stdout' as const, data: Buffer.from('secret\nthird\n') }; }, result: Promise.resolve({ exitCode: 0 }),
@@ -84,7 +85,7 @@ test('Workers-private SDK component uses real provider loop and native JSONL wit
   assert.equal(requests, 2);
 });
 
-test('a critical owner capture failure aborts the real SDK instead of requesting another provider turn', { timeout: 10000 }, async t => {
+test('a critical owner capture failure aborts the real SDK instead of requesting another provider turn', { timeout: remainingMs() }, async t => {
   const f = await nativeOwner(context, { exec() { assert.fail('critical capture must fail before guest activity'); } });
   t.after(() => f.close());
   const directory = join(f.root, 'profile'); await mkdir(directory, { mode: 0o700 });

@@ -10,6 +10,7 @@ import { openStore } from '../../src/control/durable/store.js';
 import { readWork, works } from '../../src/control/durable/admission.js';
 import { grantBudget, openCorrection, requestOperationalRecovery } from '../../src/control/durable/budget.js';
 import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
+import { untilHolds } from '../runner/budget.js';
 
 // Ticket 19 regression (real Pi Durable + SQLite): a Work admitted BEFORE budgets existed has no budget record; the first budget commit
 // creates it. What that commit writes into the new record (a grant, the exhaustion check of a charge) must be persisted in the document.
@@ -25,10 +26,11 @@ async function legacyWork(t: { after(fn: () => Promise<void>): void }) {
   const stop = new AbortController();
   const running = control.run(stop.signal);
   let work_id: string | undefined;
-  for (let i = 0; i < 400 && !work_id; i++) {
+  await untilHolds('Work admitted', async () => {
     work_id = ((await control.inspect({ kind: 'list' })) as ListView).works[0]?.work_id;
-    if (!work_id) { if (time.isSleeping()) time.advance(); await new Promise(resolve => setTimeout(resolve, 5)); }
-  }
+    if (!work_id && time.isSleeping()) time.advance();
+    return work_id !== undefined;
+  }, 5);
   stop.abort();
   await running;
   assert.ok(work_id, 'admitted');

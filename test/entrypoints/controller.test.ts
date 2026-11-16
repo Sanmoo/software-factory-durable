@@ -3,9 +3,9 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import { test } from 'node:test';
 import { prepareController } from './controller-configuration.js';
+import { remainingMs, until } from '../runner/budget.js';
 
 const cli = resolve('dist/src/entrypoints/cli.js');
 function invoke(args: string[]) {
@@ -24,16 +24,14 @@ async function command(root: string, ...args: string[]) {
   return JSON.parse(result.stdout) as Record<string, unknown>;
 }
 async function ready(root: string, owner: ChildProcess) {
-  for (let attempt = 0; attempt < 60; attempt++) {
+  return await until('controller available', async () => {
     if (owner.exitCode !== null) assert.fail(`controller exited ${owner.exitCode} before serving`);
     const result = await invoke(['status', '--root', root, '--json']).result;
-    if (result.code === 0) return JSON.parse(result.stdout) as Record<string, unknown>;
-    await delay(20);
-  }
-  assert.fail('controller did not become available');
+    return result.code === 0 ? JSON.parse(result.stdout) as Record<string, unknown> : undefined;
+  }, 20);
 }
 
-test('CLI pause is durable across controller restart and a repeated request does not reapply it', { timeout: 20000 }, async t => {
+test('CLI pause is durable across controller restart and a repeated request does not reapply it', { timeout: remainingMs() }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'factory-control-'));
   await prepareController(root);
   let owner = invoke(['run', '--root', root]);

@@ -9,7 +9,7 @@ import { readJournal, upgrade, upgradeBlocksStart, type UpgradeReport } from '..
 import { verifyReleaseTree } from '../../src/entrypoints/release.js';
 import { crashAfterStart, reconcilingRun, storageWithPendingQuestion, writeFormatOne } from '../control/upgrade-fixture.js';
 import { installation } from './upgrade-fixture.js';
-import { remainingMs } from '../runner/budget.js';
+import { remainingMs, untilHolds } from '../runner/budget.js';
 
 // I-local (ticket 33): the real upgrade logic against an installation root with real manifests/launchers of synthetic release trees and a
 // real Control storage (pending Question produced by the public Control with doubled execution/GitHub). Crash cuts are REAL SIGKILLs of a
@@ -74,7 +74,7 @@ test('incompatibility is refused before any change: not paused, unclean stop, un
   const control = await openControl({ storagePath: fresh.context.storagePath, runtimeInventory: 'unknown' });
   const stop = new AbortController();
   const running = control.run(stop.signal);
-  for (let i = 0; i < 200 && !storageOf(await inspectStorage(fresh.context.storagePath)).installation?.lifecycle?.current; i++) await new Promise(resolve => setTimeout(resolve, 5));
+  await untilHolds('run start recorded', async () => Boolean(storageOf(await inspectStorage(fresh.context.storagePath)).installation?.lifecycle?.current), 5);
   // Inspect while the run is alive: its start is recorded without an end (a crash would leave exactly this).
   const alive = await upgrade(fresh.context, 'check');
   assert.deepEqual(blocked(alive), ['upgrade:pause', 'upgrade:stop']);
@@ -138,7 +138,7 @@ test('interruption after each durable step (a real SIGKILL at the migration comm
     else {
       // From the journal on, <root>/factory is the guard launcher: NO release (not the pre-33 v1) can start until resume or rollback.
       assert.notEqual(selected, previous.manifest.launcher.sha256);
-      const v1 = spawnSync(join(root, 'factory'), ['run'], { encoding: 'utf8', timeout: 30000 });
+      const v1 = spawnSync(join(root, 'factory'), ['run'], { encoding: 'utf8', timeout: remainingMs() });
       assert.equal(v1.status, 2, `${cut}: the launcher starts nothing during the upgrade`);
       assert.equal(JSON.parse(v1.stderr.trim()).code, 'UPGRADE_INCOMPLETE');
     }
@@ -153,7 +153,7 @@ test('interruption after each durable step (a real SIGKILL at the migration comm
       assert.deepEqual(storageOf(await inspectStorage(context.storagePath)), before);
       assert.equal(await upgradeBlocksStart(root), null);
       // A new upgrade can then start again and a SIGKILLed resume is itself resumable.
-      const again = spawnSync(node, [child, root, 'migrated', 'apply', 'factory-storage-1-to-2'], { encoding: 'utf8', timeout: 30000 });
+      const again = spawnSync(node, [child, root, 'migrated', 'apply', 'factory-storage-1-to-2'], { encoding: 'utf8', timeout: remainingMs() });
       assert.equal(again.signal, 'SIGKILL');
     } else {
       const rolled = await upgrade(context, 'rollback');
@@ -174,11 +174,11 @@ test('interruption after each durable step (a real SIGKILL at the migration comm
 test('the controller owner refuses an incomplete upgrade and an unmigrated storage before opening it; the upgrade shares the controller lock', async t => {
   const { root, context } = await rootWithFormatOne(t);
   const controller = 'dist/src/entrypoints/controller.js';
-  const ownerRun = () => spawnSync(node, [controller, root], { encoding: 'utf8', timeout: 30000 });
+  const ownerRun = () => spawnSync(node, [controller, root], { encoding: 'utf8', timeout: remainingMs() });
   const migrationRequired = ownerRun();
   assert.equal(migrationRequired.status, 2, migrationRequired.stderr);
   assert.equal(JSON.parse(migrationRequired.stderr.trim().split('\n').at(-1)!).code, 'STORAGE_MIGRATION_REQUIRED');
-  const killed = spawnSync(node, [child, root, 'journal', 'apply', 'factory-storage-1-to-2'], { encoding: 'utf8', timeout: 30000 });
+  const killed = spawnSync(node, [child, root, 'journal', 'apply', 'factory-storage-1-to-2'], { encoding: 'utf8', timeout: remainingMs() });
   assert.equal(killed.signal, 'SIGKILL');
   const before = await inspectStorage(context.storagePath);
   const incomplete = ownerRun();
@@ -186,17 +186,17 @@ test('the controller owner refuses an incomplete upgrade and an unmigrated stora
   assert.equal(JSON.parse(incomplete.stderr.trim().split('\n').at(-1)!).code, 'UPGRADE_INCOMPLETE');
   assert.deepEqual(await inspectStorage(context.storagePath), before, 'storage not opened');
   // The upgrade owner of a development checkout refuses: it is not a release (nothing changed).
-  const development = spawnSync(node, [controller, root, 'upgrade', 'status'], { encoding: 'utf8', timeout: 30000 });
+  const development = spawnSync(node, [controller, root, 'upgrade', 'status'], { encoding: 'utf8', timeout: remainingMs() });
   assert.equal(development.status, 2);
   assert.equal(JSON.parse(development.stderr.trim().split('\n').at(-1)!).code, 'UPGRADE_TARGET_INVALID');
   // While another owner holds the canonical lock, the upgrade cannot run (no takeover).
-  const holder = spawnSync('flock', ['--exclusive', '--nonblock', join(root, 'data', 'control.lock'), node, controller, root, 'upgrade', 'status'], { encoding: 'utf8', timeout: 30000 });
+  const holder = spawnSync('flock', ['--exclusive', '--nonblock', join(root, 'data', 'control.lock'), node, controller, root, 'upgrade', 'status'], { encoding: 'utf8', timeout: remainingMs() });
   assert.equal(holder.status, 73, holder.stderr);
 });
 
 test('resume re-verifies the migrated storage against the journal: a changed state blocks the selection with an explicit exit', async t => {
   const { root, context, target } = await rootWithFormatOne(t);
-  const killed = spawnSync(node, [child, root, 'migrated', 'apply', 'factory-storage-1-to-2'], { encoding: 'utf8', timeout: 30000 });
+  const killed = spawnSync(node, [child, root, 'migrated', 'apply', 'factory-storage-1-to-2'], { encoding: 'utf8', timeout: remainingMs() });
   assert.equal(killed.signal, 'SIGKILL');
   // The storage changes after the migration commit (here through the public Control; a stale or foreign writer in reality).
   const control = await openControl({ storagePath: context.storagePath, runtimeInventory: 'unknown' });
@@ -261,9 +261,8 @@ test('after an interruption, only a run that performed ticket 26\'s boot reconci
     const control = await openControl({ storagePath: fixture.context.storagePath, runtimeInventory: 'unknown' });
     const stop = new AbortController();
     const running = control.run(stop.signal);
-    for (let j = 0; j < 200 && !(storageOf(await inspectStorage(fixture.context.storagePath)).installation?.lifecycle as { current?: unknown } | null)?.current; j++) {
-      await new Promise(resolve => setTimeout(resolve, 5));
-    }
+    await untilHolds('run start recorded', async () =>
+      Boolean((storageOf(await inspectStorage(fixture.context.storagePath)).installation?.lifecycle as { current?: unknown } | null)?.current), 5);
     stop.abort();
     assert.deepEqual(await running, { kind: 'clean' });
     const stopped = await stopOf();

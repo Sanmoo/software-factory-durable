@@ -10,6 +10,7 @@ import { recordRunStart } from '../../src/control/durable/migration.js';
 import type { Control, ControlReceipt, ExecutionPorts, ListView, ShowView } from '../../src/control/types.js';
 import type { WorkerQuestion } from '../../src/workers/index.js';
 import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
+import { untilHolds } from '../runner/budget.js';
 
 // Flow-level fixture (ticket 33): a REAL Control + Pi Durable + SQLite storage holding a Work whose Builder asked a Question (open, published),
 // produced through the public Control boundaries with doubled GitHub/Sandbox/Workers/credentials, paused and stopped cleanly. `writeFormatOne`
@@ -75,13 +76,13 @@ export async function storageWithPendingQuestion(storagePath: string, options: {
   const stop = new AbortController();
   const running = control.run(stop.signal);
   const show = async () => (await control.inspect({ kind: 'list' }) as ListView).works.find(work => work.ticket.number === 3);
-  for (let i = 0; i < 800; i++) {
+  await untilHolds('Question published (and the second Work admitted)', async () => {
     const work = await show();
     const question = work ? (await control.inspect({ kind: 'show', work_id: work.work_id }) as Extract<ShowView, { kind: 'work' }>).questions[0] : undefined;
-    if (question?.publication.state === 'published' && (!cessation || (await control.inspect({ kind: 'list' }) as ListView).works.length === 2)) break;
+    if (question?.publication.state === 'published' && (!cessation || (await control.inspect({ kind: 'list' }) as ListView).works.length === 2)) return true;
     if (time.isSleeping()) time.advance();
-    await new Promise(resolve => setTimeout(resolve, 5));
-  }
+    return false;
+  }, 5);
   const pause = await control.accept({ request_id: 'pause-before-upgrade', operation: 'pause', origin: 'local-cli' }) as ControlReceipt;
   assert.equal(pause.kind, 'durable');
   const list = await control.inspect({ kind: 'list' }) as ListView;
@@ -143,12 +144,12 @@ export async function storageStoppedWithLiveActivity(storagePath: string) {
     access: { tracker: github.tracker, repository: github.repository, repositories: [scope], operators: ['operator-one'] }, polling: { intervalSeconds: 60, clock: time.clock } });
   const stop = new AbortController();
   const running = control.run(stop.signal);
-  for (let i = 0; i < 800; i++) {
+  await untilHolds('Builder Execution started', async () => {
     const work = (await control.inspect({ kind: 'list' }) as ListView).works[0];
-    if (work?.execution?.state === 'started') break;
+    if (work?.execution?.state === 'started') return true;
     if (time.isSleeping()) time.advance();
-    await new Promise(resolve => setTimeout(resolve, 5));
-  }
+    return false;
+  }, 5);
   stop.abort();
   return running;
 }

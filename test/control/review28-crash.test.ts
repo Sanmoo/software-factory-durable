@@ -9,6 +9,7 @@ import { openControl } from '../../src/control/index.js';
 import type { Control, ListView, WorkView } from '../../src/control/types.js';
 import { githubDoubles, manualClock, remoteIssue, scope } from './doubles.js';
 import { readHost, recoveryDoubles, type RecoveryScript, type Review28 } from './recovery-doubles.js';
+import { until as untilValue } from '../runner/budget.js';
 
 // Ticket 28 crash cuts at the review handoff, composed with ticket 26: a REAL controller child (Control + Pi Durable/SQLite + Records) is
 // SIGKILLed mid round with its doubled boot left active; a NEW Control reconciles on the same storage/Records (real Records discovery of the
@@ -36,15 +37,14 @@ async function reopen(t: { after(fn: () => Promise<void>): void }, dir: string, 
   const work = async () => (await control.inspect({ kind: 'list' }) as ListView).works.find(item => item.ticket.number === 3) as WorkView;
   let jumped = false;
   const until = async (predicate: (value: WorkView) => boolean, label: string) => {
-    for (let i = 0; i < 2000; i++) {
+    return await untilValue(label, async () => {
       const value = await work();
       if (value && predicate(value)) return value;
       // The persisted 5 s recovery wait of ticket 26 is passed on the doubled calendar, once.
       if (!jumped && value?.pendingRecovery) { jumped = true; doubles.jumpCalendar(60000); }
       if (time.isSleeping()) time.advance();
-      await new Promise(resolve => setTimeout(resolve, 5));
-    }
-    assert.fail(`${label} not reached`);
+      return undefined;
+    }, 5);
   };
   return { control, doubles, work, until };
 }

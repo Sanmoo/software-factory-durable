@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import { nativeOwner } from '../sandbox/native-owner.fixture.js';
 import { sdkProfile } from '../../src/workers/sdk-profile.js';
 import type { ToolContext } from '../../src/sandbox/index.js';
+import { remainingMs } from '../runner/budget.js';
 
 // I-local: fixed worker entrypoint in a NEW Node24 process, native SDK, real owner transport/Records; doubled the VM exec and provider HTTP.
 const context: ToolContext = { workId: 'work-12', executionId: 'execution-12', invocationId: 'builder-12', role: 'builder',
@@ -17,7 +18,7 @@ const summary = { version: 1, round: 1, index: '/artifacts/review/r1/index.json'
   patches: Object.fromEntries(['committed', 'staged', 'unstaged'].map(name => [name, { path: `/artifacts/review/r1/${name}.patch`, bytes: 0, sha256: 'd'.repeat(64) }])),
   spec: null, instructions: null, changed: [], changedTruncated: false };
 
-test('AC3: the Builder child notifies its suspended handoff over the fixed IPC and continues only after the Host directive', { timeout: 30000 }, async t => {
+test('AC3: the Builder child notifies its suspended handoff over the fixed IPC and continues only after the Host directive', { timeout: remainingMs() }, async t => {
   const commands: string[] = [];
   const f = await nativeOwner(context, { exec(argv) {
     commands.push(argv[argv.length - 1]!);

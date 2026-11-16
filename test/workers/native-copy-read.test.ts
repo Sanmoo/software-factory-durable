@@ -6,6 +6,7 @@ import type { ToolContext } from '../../src/sandbox/index.js';
 import { nativeOwner } from '../sandbox/native-owner.fixture.js';
 import { reviewerRead } from '../../src/workers/read.js';
 import { connect, protocolVersion } from '../../src/protocol/index.js';
+import { remainingMs } from '../runner/budget.js';
 
 const context: ToolContext = { workId: 'work', executionId: 'exec', invocationId: 'builder', role: 'builder', environmentRef: 'env', bootRef: 'boot', phaseId: 'phase' };
 const qualified = { copyOutput: true, profileOrigin: 'factory-development-gondolin-0.14.0-stdin-capacity-v1' as const };
@@ -151,7 +152,7 @@ for (const selected of [undefined, [], [path]] as const) test(`reviewer selectio
       // Guest helper remains SOURCE ONLY on host. Test actual-target authorization
       // ordering, not a fabricated executed guest/symlink confinement proof.
       const program = g.programs[0]!;
-      const ast = spawnSync('/usr/bin/python3', ['-I', '-S', '-c', 'import ast,sys; t=ast.parse(sys.stdin.read()); print(type(t).__name__)'], { input: program, encoding: 'utf8', timeout: 5000 });
+      const ast = spawnSync('/usr/bin/python3', ['-I', '-S', '-c', 'import ast,sys; t=ast.parse(sys.stdin.read()); print(type(t).__name__)'], { input: program, encoding: 'utf8', timeout: remainingMs() });
       assert.equal(ast.status, 0, ast.stderr); assert.equal(ast.stdout, 'Module\n');
       const opened = program.indexOf('fd = os.open(path,'); const target = program.indexOf('target = os.readlink("/proc/self/fd/" + str(fd))');
       const beforeBytes = program.indexOf('data = os.read(fd, 65536)');

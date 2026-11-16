@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRecords } from '../../src/records/index.js';
+import { remainingMs } from '../runner/budget.js';
 
 const context = { workId: 'work-05', executionId: 'execution-05', invocationId: 'builder-05',
   role: 'builder' as const, environmentRef: 'environment-05', bootRef: 'boot-05', callId: 'review-fixes' };
@@ -144,7 +145,7 @@ for (const metadata of ['capture.json', 'complete.json']) {
           await rm(path);
           await execute('mkfifo', ['-m', '600', path]);
           // Own child only: a regression cannot hang this test process on FIFO open.
-          await execute(process.execPath, [join(import.meta.dirname, 'read-metadata.fixture.js'), root, output.reference.id], { timeout: 1500 });
+          await execute(process.execPath, [join(import.meta.dirname, 'read-metadata.fixture.js'), root, output.reference.id], { timeout: remainingMs() });
         } else await assert.rejects(records.read({ reference: output.reference, offset: 0, limit: 1 }), unavailable);
       } finally { await rm(root, { recursive: true, force: true }); }
     });

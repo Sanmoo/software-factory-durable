@@ -7,6 +7,7 @@ import { nativeOwner } from './native-owner.fixture.js';
 import { createSandbox, type ToolContext } from '../../src/sandbox/index.js';
 
 import { parser } from './write-source-guard.fixture.js';
+import { remainingMs } from '../runner/budget.js';
 const context: ToolContext = { workId: 'guard-work', executionId: 'guard-exec', invocationId: 'guard-invocation',
   role: 'builder', environmentRef: 'guard-env', bootRef: 'guard-boot', phaseId: 'guard-phase' };
 
@@ -47,7 +48,7 @@ test('guest write SOURCE guards existing FD authority before truncation and ENOE
   } }); t.after(() => f.close());
   const sandbox = createSandbox({ root: f.root, toolEndpoint: f.owner.endpoint });
   assert.equal((await sandbox.executeTool(context, { name: 'write', operation: 'create', path: '/workspace/new', content: '', callId: 'source' })).status, 'success');
-  const check = (candidate: string) => spawnSync('/usr/bin/python3', ['-I', '-S', '-c', parser], { input: candidate, encoding: 'utf8', timeout: 5000 });
+  const check = (candidate: string) => spawnSync('/usr/bin/python3', ['-I', '-S', '-c', parser], { input: candidate, encoding: 'utf8', timeout: remainingMs() });
   const valid = check(source);
   assert.equal(valid.status, 0, valid.stderr); assert.match(valid.stdout, /guest BODY NOT executed/);
   for (const adversarial of [source.replace('os.O_EXCL', 'os.O_TRUNC'), source.replace('parts[1], flags', 'parts[1], os.O_RDONLY'),

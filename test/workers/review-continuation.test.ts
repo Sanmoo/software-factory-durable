@@ -8,6 +8,7 @@ import { nativeOwner } from '../sandbox/native-owner.fixture.js';
 import { createWorkerSession } from '../../src/workers/worker-session.js';
 import { sdkProfile } from '../../src/workers/sdk-profile.js';
 import { prepareReviewerContinuation, workerLaunchSchema } from '../../src/platform/host/index.js';
+import { remainingMs } from '../runner/budget.js';
 
 // I-local: native Pi SDK sessions (JSONL v3) and the owner launcher's continuation copy; doubled ONLY the provider HTTP boundary and the
 // VM exec. Ticket 13 AC4: a later round prefers the compatible session of the same reviewer role; otherwise a replacement is recorded.
@@ -46,7 +47,7 @@ async function runtime(t: { after(fn: () => Promise<void>): void }) {
   return { root, worker };
 }
 
-test('AC4: round 2 of the same reviewer continues its round 1 session (owner copy in the same boot); the opinion records the continuation', { timeout: 20000 }, async t => {
+test('AC4: round 2 of the same reviewer continues its round 1 session (owner copy in the same boot); the opinion records the continuation', { timeout: remainingMs() }, async t => {
   const bodies = provider(t, [{ tools: [read('/artifacts/review/r1/index.json')] }, { text: verdict }, { tools: [read('/artifacts/review/r2/index.json')] }, { text: verdict }]);
   const f = await nativeOwner(reviewer(1), { exec(argv) {
     const content = files[argv[5]!];
@@ -79,7 +80,7 @@ test('AC4: round 2 of the same reviewer continues its round 1 session (owner cop
   assert.equal(await readFile(one.sessionFile!, 'utf8'), before, 'the earlier session file is never written again');
 });
 
-test('AC4: a session outside this boot, linked, missing or incompatible is replaced with a recorded reason, never reused silently', { timeout: 20000 }, async t => {
+test('AC4: a session outside this boot, linked, missing or incompatible is replaced with a recorded reason, never reused silently', { timeout: remainingMs() }, async t => {
   const r = await runtime(t);
   const target = await r.worker('cccccc');
   const old = await r.worker('dddddd');

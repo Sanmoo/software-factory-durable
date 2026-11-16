@@ -64,6 +64,12 @@ Lista **apenas exceções**. Arquivo sem entrada é `fast` e paralelo.
 - Relógio falso (`mock.timers`, tempo/prazo injetado) em vez de `sleep`; temporizador interno fixo
   (por exemplo `timeout: 15000` num teste) é proibido em `fast`/`ci`. Coordene processos por eventos
   (linha no stdout, fim do stdin), não por espera.
+- Limites e esperas vêm do orçamento do runner (`FACTORY_TEST_DEADLINE`), via `test/runner/budget.ts`:
+  `ended()` para o fim de um filho (`detached: true`; ao estourar mata a árvore e nomeia a etapa),
+  `until()`/`untilHolds()` para condições sem evento, `remainingMs()` como `timeout` de `test()`,
+  `spawnSync` ou `execFile`. Nunca `timeout:` numérico nem laço de espera com contagem fixa
+  (`for (let i = 0; i < 400; i++) … setTimeout`): `test/runner/fixed-timers.test.ts` falha neles
+  (ticket 40; exceções listadas ali: receitas `*-qualification` e argumentos de ferramenta sob teste).
 - Sem caminho ou porta fixos: `mkdtemp` para tudo, porta 0 quando houver servidor; nunca escrever no
   estado compartilhado do checkout (`.scratch/factory-development-*`, `dist/`). Quem precisa mutar uma
   preparação usa uma cópia privada do projeto (padrão de `test/workers/sdk-profile.test.ts` e

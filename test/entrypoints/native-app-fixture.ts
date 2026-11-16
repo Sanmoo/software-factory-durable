@@ -2,6 +2,7 @@ import https from 'node:https';
 import { EventEmitter } from 'node:events';
 import { spawnSync } from 'node:child_process';
 import type { ClientRequest, IncomingMessage } from 'node:http';
+import { remainingMs } from '../runner/budget.js';
 
 /** Synthetic external boundary only; never used with real credentials or as GitHub proof. */
 export function installNativeAppFixture(executable: string, scenario: string) {
@@ -19,7 +20,7 @@ export function installNativeAppFixture(executable: string, scenario: string) {
     request.end = ((input?: string) => {
       queueMicrotask(() => {
         if (scenario === 'uncertain-post' && options.method === 'POST') { request.emit('error', new Error('synthetic-secret')); return; }
-        const output = spawnSync(executable, ['api', '--hostname', 'github.com', '--method', options.method!, '--include', '-H', 'X-GitHub-Api-Version: 2026-03-10', '--', options.path!], { env: { GH_TOKEN: headers.Authorization!.slice(7), NATIVE_FIXTURE: '1' }, input, encoding: 'utf8', timeout: 5000 });
+        const output = spawnSync(executable, ['api', '--hostname', 'github.com', '--method', options.method!, '--include', '-H', 'X-GitHub-Api-Version: 2026-03-10', '--', options.path!], { env: { GH_TOKEN: headers.Authorization!.slice(7), NATIVE_FIXTURE: '1' }, input, encoding: 'utf8', timeout: remainingMs() });
         if (!output.stdout) { request.emit('error', new Error('INVALID_NATIVE_FIXTURE')); return; }
         const [head, body] = output.stdout.split('\r\n\r\n');
         const lines = head!.split('\r\n');

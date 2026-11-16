@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
+import { remainingMs, untilHolds } from '../runner/budget.js';
 import { prepareController } from './controller-configuration.js';
 import { githubWorld } from './github-world-fixture.js';
 
@@ -19,7 +19,7 @@ function invoke(root: string, args: string[]) {
 }
 const work = '6f0c7a52-3d3e-4c8f-9a51-000000000042';
 
-test('AC3/AC7: `factory grant` is an identified local ingress (exactly one counter, bounded amount), idempotent by identity and indeterminate when the controller is down', { timeout: 45000 }, async t => {
+test('AC3/AC7: `factory grant` is an identified local ingress (exactly one counter, bounded amount), idempotent by identity and indeterminate when the controller is down', { timeout: remainingMs() }, async t => {
   const world = await githubWorld(t, { issues: [], pulls: [] });
   const root = world.root;
   await prepareController(root);
@@ -35,7 +35,7 @@ test('AC3/AC7: `factory grant` is an identified local ingress (exactly one count
   assert.match(offline.stderr, /REQUEST_INDETERMINATE/);
   const owner = invoke(root, ['run']);
   t.after(async () => { owner.child.kill('SIGTERM'); await owner.result; });
-  for (let i = 0; i < 200 && (await cli('status')).code !== 0; i++) await delay(50);
+  await untilHolds('controller available', async () => (await cli('status')).code === 0, 50);
   const first = await cli('grant', work, '--recoveries', '2', '--request-id', 'grant-1');
   assert.equal(first.code, 2, first.stderr);
   assert.deepEqual(first.json, { kind: 'durable', request_id: 'grant-1', operation: 'grant', work_id: work, counter: 'recoveries', amount: 2,

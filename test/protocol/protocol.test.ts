@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { setImmediate, setTimeout as delay } from 'node:timers/promises';
 import { test } from 'node:test';
 import { connect, listen, maxFrameBytes, ProtocolError, protocolVersion, type Envelope } from '../../src/protocol/index.js';
+import { remainingMs, untilHolds } from '../runner/budget.js';
 
 function deferred() {
   let resolve!: () => void;
@@ -21,11 +22,11 @@ async function raw(endpoint: string): Promise<Socket> {
   return socket;
 }
 async function waitFor(check: () => boolean) {
-  for (let i = 0; i < 80 && !check(); i++) await delay(5);
+  await untilHolds('protocol observation', check, 5);
   assert.ok(check(), 'bounded wait for protocol observation');
 }
 
-test('Protocol delivers only complete JSON lines, including fragmented UTF-8 and coalesced frames', { timeout: 5000 }, async t => {
+test('Protocol delivers only complete JSON lines, including fragmented UTF-8 and coalesced frames', { timeout: remainingMs() }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'factory-protocol-'));
   const endpoint = join(root, 'control.sock');
   const received: Envelope[] = [];
@@ -42,7 +43,7 @@ test('Protocol delivers only complete JSON lines, including fragmented UTF-8 and
   assert.deepEqual(received, [envelope, { ...envelope, message_id: 'second' }]);
 });
 
-test('Protocol reports invalid version/fields, invalid UTF-8, truncated EOF and oversized frames without delivering them', { timeout: 5000 }, async t => {
+test('Protocol reports invalid version/fields, invalid UTF-8, truncated EOF and oversized frames without delivering them', { timeout: remainingMs() }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'factory-protocol-'));
   const endpoint = join(root, 'control.sock');
   const received: Envelope[] = [];
@@ -68,7 +69,7 @@ test('Protocol reports invalid version/fields, invalid UTF-8, truncated EOF and 
   assert.equal(errors.filter(error => (error as ProtocolError).code === 'FRAME_TOO_LARGE').length, 1);
 });
 
-test('Protocol waits for a deferred consumer across a valid stream larger than the pending budget', { timeout: 5000 }, async t => {
+test('Protocol waits for a deferred consumer across a valid stream larger than the pending budget', { timeout: remainingMs() }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'pf-'));
   const endpoint = join(root, 's');
   const gate = deferred();
@@ -100,7 +101,7 @@ test('Protocol waits for a deferred consumer across a valid stream larger than t
   assert.deepEqual(errors, []);
 });
 
-test('Protocol rejects a dequeue when its refill discovers an invalid frame behind the full pending budget', { timeout: 5000 }, async () => {
+test('Protocol rejects a dequeue when its refill discovers an invalid frame behind the full pending budget', { timeout: remainingMs() }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'pf-'));
   const accepted = deferred();
   const fullBudgetRead = deferred();
@@ -160,7 +161,7 @@ test('Protocol rejects a dequeue when its refill discovers an invalid frame behi
   }
 });
 
-test('Protocol preserves the exact maximum frame boundary', { timeout: 5000 }, async t => {
+test('Protocol preserves the exact maximum frame boundary', { timeout: remainingMs() }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'pf-'));
   const done = deferred();
   let received: Envelope | undefined;
@@ -176,7 +177,7 @@ test('Protocol preserves the exact maximum frame boundary', { timeout: 5000 }, a
   await assert.rejects(client.send({ ...empty, payload: { text: text + 'x' } }), { code: 'FRAME_TOO_LARGE' });
 });
 
-for (const truncated of [false, true]) test(`Protocol notifies ${truncated ? 'truncated' : 'clean'} EOF while the owner handler still awaits guest I/O`, { timeout: 5000 }, async t => {
+for (const truncated of [false, true]) test(`Protocol notifies ${truncated ? 'truncated' : 'clean'} EOF while the owner handler still awaits guest I/O`, { timeout: remainingMs() }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'pf-'));
   const entered = deferred();
   const gate = deferred();
@@ -198,7 +199,7 @@ for (const truncated of [false, true]) test(`Protocol notifies ${truncated ? 'tr
   gate.resolve();
 });
 
-test('local close wakes a sender while the reader is backpressured', { timeout: 5000 }, async t => {
+test('local close wakes a sender while the reader is backpressured', { timeout: remainingMs() }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'pf-'));
   const offered = deferred();
   const closed = deferred();
@@ -224,7 +225,7 @@ test('local close wakes a sender while the reader is backpressured', { timeout: 
   await iterator.return?.();
 });
 
-test('Channel send means transport write only, never a fabricated durable ACK', { timeout: 5000 }, async t => {
+test('Channel send means transport write only, never a fabricated durable ACK', { timeout: remainingMs() }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'factory-protocol-'));
   const endpoint = join(root, 'control.sock');
   let received = false;

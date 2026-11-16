@@ -8,6 +8,7 @@ import type { Control, ControlStatus, ListView, RuntimeInventory, WorkView } fro
 import { requestRecovery } from '../../src/control/durable/control.js';
 import { githubDoubles, manualClock, remoteIssue, scope } from './doubles.js';
 import { readHost, recoveryDoubles, updateHost, type RecoveryScript } from './recovery-doubles.js';
+import { untilHolds } from '../runner/budget.js';
 
 // Flow level (Q11), ticket 26: real Control + Pi Durable/SQLite + Records + the Workers receipt facet; doubled Sandbox host, Builder, credentials
 // and GitHub. In-process owners (no crash): live recoverable failures, administrative stop and the boot inventory gate.
@@ -32,12 +33,11 @@ async function harness(t: { after(fn: () => Promise<void>): void }, options: { i
   t.after(async () => { await halt(); });
   const work = async (number = 3) => ((await current!.control.inspect({ kind: 'list' })) as ListView).works.find(item => item.ticket.number === number) as WorkView;
   const until = async (predicate: () => Promise<boolean> | boolean, label: string) => {
-    for (let i = 0; i < 1500; i++) {
-      if (await predicate()) return;
+    await untilHolds(label, async () => {
+      if (await predicate()) return true;
       if (current!.time.isSleeping()) current!.time.advance();
-      await new Promise(resolve => setTimeout(resolve, 5));
-    }
-    assert.fail(`${label} not reached`);
+      return false;
+    }, 5);
   };
   const rounds = async (n: number) => { for (let i = 0; i < n; i++) { current!.time.advance(); await current!.time.sleeping(); } };
   return { dir, start, halt, work, until, rounds, current: () => current! };

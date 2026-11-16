@@ -9,6 +9,7 @@ import { requestCorrection } from '../../src/control/durable/control.js';
 import type { Control, ControlReceipt, ExecutionPorts, ListView, ShowView, WorkView } from '../../src/control/types.js';
 import type { SessionObservation, WorkerQuestion, WorkerSessionRef } from '../../src/workers/index.js';
 import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
+import { untilHolds } from '../runner/budget.js';
 
 // Flow level (S): real Control + Pi Durable + temporary SQLite. Doubled: GitHub, clock and the execution boundaries (Sandbox lifecycle,
 // Workers activate/observe/deliver, credentials). NOT evidence of a real session reopened by the SDK (see the I-local worker tests).
@@ -103,12 +104,11 @@ async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remo
   const byNumber = async () => Object.fromEntries(((await current!.control.inspect({ kind: 'list' })) as ListView).works.map(work => [work.ticket.number, work])) as Record<number, WorkView>;
   const show = async (work_id: string) => await current!.control.inspect({ kind: 'show', work_id }) as Extract<ShowView, { kind: 'work' }>;
   const settle = async (predicate: () => Promise<boolean>, label = 'condition') => {
-    for (let i = 0; i < 600; i++) {
-      if (await predicate()) return;
+    await untilHolds(label, async () => {
+      if (await predicate()) return true;
       if (current!.time.isSleeping()) current!.time.advance();
-      await new Promise(resolve => setTimeout(resolve, 5));
-    }
-    assert.fail(`${label} not reached`);
+      return false;
+    }, 5);
   };
   const cycles = async (n: number) => { for (let i = 0; i < n; i++) { current!.time.advance(); await current!.time.sleeping(); await new Promise(resolve => setTimeout(resolve, 5)); } };
   const activations = () => execution.calls.filter(call => call.kind === 'activate').map(call => call.detail as { prompt: string; context: { phaseId: string; executionId: string };

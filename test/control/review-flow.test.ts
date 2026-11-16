@@ -8,6 +8,7 @@ import type { Control, ExecutionPorts, ListView, WorkView } from '../../src/cont
 import type { ProposalHandoff, ProposalIdentity, ReviewOpinion } from '../../src/contracts/index.js';
 import type { HandoffEvent, Invocation } from '../../src/workers/index.js';
 import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
+import { untilHolds } from '../runner/budget.js';
 
 // Flow level (S): real Control + Pi Durable + temporary SQLite. Doubled: GitHub, clock, Sandbox lifecycle/identity, Workers (Builder and
 // reviewers) and credentials. Not evidence of a real VM, worker, model or reviewer.
@@ -115,8 +116,8 @@ async function harness(t: { after(fn: () => Promise<void>): void }, options: Opt
   t.after(async () => { stop.abort(); await running; });
   const work = async () => ((await control!.inspect({ kind: 'list' })) as ListView).works.find(item => item.ticket.number === 3) as WorkView | undefined;
   const until = async (predicate: (work: WorkView | undefined) => boolean) => {
-    for (let i = 0; i < 600; i++) { if (predicate(await work())) return (await work())!; await new Promise(resolve => setTimeout(resolve, 5)); }
-    assert.fail('condition not reached');
+    await untilHolds('condition', async () => predicate(await work()), 5);
+    return (await work())!;
   };
   return { execution, work, until, time };
 }

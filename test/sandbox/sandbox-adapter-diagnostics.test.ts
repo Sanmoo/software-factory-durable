@@ -6,6 +6,7 @@ import { mkdir, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { remainingMs } from '../runner/budget.js';
 
 const workId = 'producer-ordering-work';
 const environment = `env-${createHash('sha256').update(workId).digest('hex')}`;
@@ -29,7 +30,7 @@ test('Sandbox adapter configures native public HTTP mediation and private boot C
     const child = spawnSync(process.execPath, ['--experimental-test-module-mocks', '--import',
       fileURLToPath(new URL('./adapter-diagnostics-fixture.js', import.meta.url)),
       fileURLToPath(new URL('../../src/entrypoints/adapter.js', import.meta.url)), root, environment, boot],
-    { timeout: 5000, maxBuffer: 16384, encoding: 'utf8', env: {
+    { timeout: remainingMs(), maxBuffer: 16384, encoding: 'utf8', env: {
       PATH: '', NODE_DISABLE_COMPILE_CACHE: '1', ADAPTER_DIAGNOSTIC_FIXTURE_MODE: 'http-policy',
     } });
     assert.equal(child.error, undefined, child.error?.message);
@@ -47,7 +48,7 @@ test('Sandbox adapter confines actual SDK filesystem RPC and ancestor symlinks (
     const child = spawnSync(process.execPath, ['--experimental-test-module-mocks', '--import',
       fileURLToPath(new URL('./adapter-diagnostics-fixture.js', import.meta.url)),
       fileURLToPath(new URL('../../src/entrypoints/adapter.js', import.meta.url)), root, environment, boot],
-    { timeout: 5000, maxBuffer: 16384, encoding: 'utf8', env: {
+    { timeout: remainingMs(), maxBuffer: 16384, encoding: 'utf8', env: {
       PATH: '', NODE_DISABLE_COMPILE_CACHE: '1', ADAPTER_DIAGNOSTIC_FIXTURE_MODE: 'vfs-confinement',
     } });
     assert.equal(child.error, undefined, child.error?.message);
@@ -78,7 +79,7 @@ test(`Sandbox operational adapter finalizes the direct Alpine daemon before clos
     const child = spawnSync(process.execPath, ['--experimental-test-module-mocks', '--import',
       fileURLToPath(new URL('./adapter-diagnostics-fixture.js', import.meta.url)),
       fileURLToPath(new URL('../../src/entrypoints/adapter.js', import.meta.url)), root, environment, boot],
-    { timeout: 5000, maxBuffer: 16384, encoding: 'utf8', env: {
+    { timeout: remainingMs(), maxBuffer: 16384, encoding: 'utf8', env: {
       PATH: '', NODE_DISABLE_COMPILE_CACHE: '1', ADAPTER_DIAGNOSTIC_FIXTURE_MODE: mode,
     } });
     assert.equal(child.error, undefined, child.error?.message);
@@ -114,7 +115,7 @@ for (const mode of ['slow-write', 'write-fails', 'unknown-error', 'without-stop'
       const child = spawnSync(process.execPath, ['--experimental-test-module-mocks', '--import',
         fileURLToPath(new URL('./adapter-diagnostics-fixture.js', import.meta.url)),
         fileURLToPath(new URL('../../src/entrypoints/adapter.js', import.meta.url)), root, environment, boot],
-      { timeout: 5000, maxBuffer: 16384, encoding: 'utf8', env: {
+      { timeout: remainingMs(), maxBuffer: 16384, encoding: 'utf8', env: {
         PATH: '', NODE_DISABLE_COMPILE_CACHE: '1', ADAPTER_DIAGNOSTIC_FIXTURE_MODE: mode,
       } });
       assert.equal(child.error, undefined, child.error?.message);
@@ -144,7 +145,7 @@ for (const mode of ['markers-slow-write', 'markers-write-fails', 'markers-succes
       const child = spawnSync(process.execPath, ['--experimental-test-module-mocks', '--import',
         fileURLToPath(new URL('./adapter-diagnostics-fixture.js', import.meta.url)),
         fileURLToPath(new URL('../../src/entrypoints/adapter.js', import.meta.url)), root, environment, boot],
-      { timeout: 5000, maxBuffer: 16384, encoding: 'utf8', env: {
+      { timeout: remainingMs(), maxBuffer: 16384, encoding: 'utf8', env: {
         PATH: '', NODE_DISABLE_COMPILE_CACHE: '1', ADAPTER_DIAGNOSTIC_FIXTURE_MODE: mode,
       } });
       assert.equal(child.error, undefined, child.error?.message);

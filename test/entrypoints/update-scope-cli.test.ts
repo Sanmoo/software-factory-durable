@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
+import { remainingMs, untilHolds } from '../runner/budget.js';
 import { prepareController } from './controller-configuration.js';
 import { githubWorld } from './github-world-fixture.js';
 
@@ -19,7 +19,7 @@ function invoke(root: string, args: string[]) {
 }
 const work = '0b9c6a52-3d3e-4c8f-9a51-000000000011';
 
-test('AC3: `factory update-scope <work> --reason` identifies the request first, is idempotent, durable when not applied and indeterminate offline', { timeout: 45000 }, async t => {
+test('AC3: `factory update-scope <work> --reason` identifies the request first, is idempotent, durable when not applied and indeterminate offline', { timeout: remainingMs() }, async t => {
   const world = await githubWorld(t, { issues: [], pulls: [] });
   const root = world.root;
   await prepareController(root);
@@ -34,7 +34,7 @@ test('AC3: `factory update-scope <work> --reason` identifies the request first, 
   assert.match(offline.stderr, /REQUEST_INDETERMINATE/);
   const owner = invoke(root, ['run']);
   t.after(async () => { owner.child.kill('SIGTERM'); await owner.result; });
-  for (let i = 0; i < 200 && (await cli('status')).code !== 0; i++) await delay(50);
+  await untilHolds('controller available', async () => (await cli('status')).code === 0, 50);
   const first = await cli('update-scope', work, '--reason', 'Only touch docs/ please.', '--request-id', 'scope-1');
   assert.equal(first.code, 2, first.stderr);
   assert.deepEqual(first.json, { kind: 'durable', request_id: 'scope-1', operation: 'update-scope', work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND',

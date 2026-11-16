@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { createRecords } from '../../src/records/index.js';
 import { createSecretPublisher, createOwnerSecretReceiver } from '../../src/platform/host/index.js';
+import { remainingMs } from '../runner/budget.js';
 
 const context = { workId: 'work', executionId: 'exec', invocationId: 'invocation', role: 'spec' as const,
   environmentRef: 'environment', bootRef: 'boot', phaseId: 'phase' };
@@ -243,7 +244,7 @@ test('owner pending ACK callback deadline, concurrent request, and post-abort la
   }
 });
 
-test('actual fixed standalone child denies dependent use on real IPC EOF, forged ACK and owner registry exhaustion', { timeout: 10000 }, async () => {
+test('actual fixed standalone child denies dependent use on real IPC EOF, forged ACK and owner registry exhaustion', { timeout: remainingMs() }, async () => {
   for (const mode of ['eof', 'forged', 'capacity']) {
     const root = await mkdtemp('/tmp/s168n-'), workerRoot = join(root, 'w');
     await mkdir(workerRoot, { mode: 0o700 });
@@ -279,7 +280,7 @@ test('actual fixed standalone child denies dependent use on real IPC EOF, forged
   }
 });
 
-test('actual fixed Node24 IPC, actual helper/receiver and TWO Records: registry fence precedes held ACK', { timeout: 10000 }, async () => {
+test('actual fixed Node24 IPC, actual helper/receiver and TWO Records: registry fence precedes held ACK', { timeout: remainingMs() }, async () => {
   const root = await mkdtemp('/tmp/s168-'); // mkdtemp is 0700; never touch pre-existing fixtures
   const workerRoot = join(root, 'w'); await mkdir(workerRoot, { mode: 0o700 });
   const owner = await createRecords({ root });

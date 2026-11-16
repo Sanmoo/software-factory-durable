@@ -15,6 +15,7 @@ import { builderToolNames } from '../../src/workers/session-ref.js';
 import { copyPreservedSession, launchToolNames, observePreservedSession, readSessionFile } from '../../src/platform/host/index.js';
 import { skillPackContinues } from '../../src/workers/skill-pack.js';
 import type { ToolContext } from '../../src/sandbox/index.js';
+import { remainingMs } from '../runner/budget.js';
 
 // I-local: new Node24 worker entrypoint + REAL Pi SDK SessionManager/AgentSession + real Records/Protocol owner transport + real Host
 // confined session reads/copies and the real Workers facade `observe`. Substituted: the provider HTTP boundary (offline fixtures), the
@@ -61,7 +62,7 @@ async function runWorker(t: { after(fn: () => Promise<void>): void }, paths: { d
 }
 const context = (n: number): ToolContext => ({ workId: 'continue-work', executionId: `exec-${n}`, invocationId: `builder-${n}`, role: 'builder', environmentRef: 'env-c', bootRef: `boot-${n}`, phaseId: 'p' });
 
-test('AC1: a preserved Builder session is observed by its owner, found compatible, copied and CONTINUED by a new worker with `continue` (no restart)', { timeout: 30000 }, async t => {
+test('AC1: a preserved Builder session is observed by its owner, found compatible, copied and CONTINUED by a new worker with `continue` (no restart)', { timeout: remainingMs() }, async t => {
   const { root, worker } = await installation(t);
   const first = await worker('bootA', 'aaaa');
   const asked = await runWorker(t, first, context(1), 'ask-provider-preload.js', 'Implement the Ticket.');
@@ -124,7 +125,7 @@ test('AC1: a preserved Builder session is observed by its owner, found compatibl
   assert.deepEqual(fresh.session, { format: 'pi-session-jsonl-v3', mode: 'new' });
 });
 
-test('AC2: altered, lost, unsafe or foreign sessions are never continued; a tampered copy stops the worker before any model request', { timeout: 30000 }, async t => {
+test('AC2: altered, lost, unsafe or foreign sessions are never continued; a tampered copy stops the worker before any model request', { timeout: remainingMs() }, async t => {
   const { root, worker } = await installation(t);
   const first = await worker('bootA', 'aaaa');
   const asked = await runWorker(t, first, context(1), 'ask-provider-preload.js', 'Implement the Ticket.');

@@ -12,6 +12,7 @@ import { builderEdit } from '../../src/workers/edit.js';
 import { builderWrite } from '../../src/workers/write.js';
 import { builderBash } from '../../src/workers/bash.js';
 import { reviewerRead } from '../../src/workers/read.js';
+import { remainingMs } from '../runner/budget.js';
 
 const context: ToolContext = { workId: 'schedule-work', executionId: 'schedule-exec', invocationId: 'schedule-invocation',
   role: 'builder', environmentRef: 'schedule-env', bootRef: 'schedule-boot', phaseId: 'schedule-phase' };
@@ -20,7 +21,7 @@ const context: ToolContext = { workId: 'schedule-work', executionId: 'schedule-e
 // Real pinned SDK/provider loop, wrappers, Protocol, Records and owner; VM and
 // external HTTP are doubles. No guest helper body is executed on the host.
 for (const scenario of ['unmarked-control', 'edit-write', 'write-bash', 'write-write', 'edit-edit', 'read-read', 'critical-edit-write'] as const) {
-  test(`native SDK scheduling: ${scenario}`, { timeout: 10000 }, async t => {
+  test(`native SDK scheduling: ${scenario}`, { timeout: remainingMs() }, async t => {
     const legacy = scenario === 'unmarked-control';
     const criticalCase = scenario === 'critical-edit-write';
     const first = scenario.startsWith('write') ? 'write' : scenario === 'read-read' ? 'read' : 'edit';

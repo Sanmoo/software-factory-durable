@@ -5,6 +5,7 @@ import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createSandbox } from '../../src/sandbox/index.js';
+import { remainingMs } from '../runner/budget.js';
 
 const root = process.env.FACTORY_SANDBOX_TEST_ROOT;
 const assets = process.env.FACTORY_SANDBOX_REAL_ASSETS;
@@ -14,7 +15,7 @@ const manifestSha256 = process.env.FACTORY_SANDBOX_MANIFEST_SHA256;
 // VM qualification stays quarantined during the local-tooling restart. Environment
 // variables alone must not enable it; the local timeout policy does not cover VMs.
 test('pinned Gondolin KVM preserves disk and RealFS workspace across two distinct boots', {
-  skip: true, timeout: 150_000,
+  skip: true, timeout: remainingMs(),
 }, async () => {
   for (const name of ['TMPDIR', 'XDG_CACHE_HOME', 'GONDOLIN_SESSIONS_DIR']) {
     assert.ok(process.env[name]?.startsWith(`${root}/`), `${name} must be confined to the explicit test root`);

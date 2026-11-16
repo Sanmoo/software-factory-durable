@@ -8,6 +8,7 @@ import type { Control, ExecutionPorts, ListView, WorkView } from '../../src/cont
 import type { GateEvidence, HandoffDeclarations, ProposalHandoff, ProposalIdentity, ReviewOpinion } from '../../src/contracts/index.js';
 import type { BuilderDirective, HandoffEvent, Invocation } from '../../src/workers/index.js';
 import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
+import { until } from '../runner/budget.js';
 
 // Flow level (S): real Control + Pi Durable + temporary SQLite. Doubled: GitHub, clock, Sandbox lifecycle/identity, Workers (a scripted
 // Builder emitting captures, scripted reviewers) and credentials. Ticket 13: repeated rounds, exemptions, session preference, verification.
@@ -125,12 +126,11 @@ async function harness(t: { after(fn: () => Promise<void>): void }, script: Para
   const running = control.run(stop.signal);
   t.after(async () => { stop.abort(); await running; });
   const work = async () => ((await control!.inspect({ kind: 'list' })) as ListView).works.find(item => item.ticket.number === 3) as WorkView | undefined;
-  for (let i = 0; i < 800; i++) {
-    const current = await work();
-    if (current?.execution?.slot.held === false || current?.execution?.state === 'held') return { execution, work: current };
-    await new Promise(resolve => setTimeout(resolve, 5));
-  }
-  assert.fail('condition not reached');
+  const current = await until('Execution ended or held', async () => {
+    const value = await work();
+    return value?.execution?.slot.held === false || value?.execution?.state === 'held' ? value : undefined;
+  }, 5);
+  return { execution, work: current };
 }
 const fixed = (findingId: string, role: 'spec' | 'standards' = 'spec') => ({ round: 1, role, findingId, outcome: 'fixed' as const, justification: 'Fixed in docs/a.md.', evidence: null, authorization: null });
 

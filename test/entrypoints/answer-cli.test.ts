@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
+import { remainingMs, untilHolds } from '../runner/budget.js';
 import { prepareController } from './controller-configuration.js';
 import { githubWorld } from './github-world-fixture.js';
 
@@ -20,7 +20,7 @@ function invoke(root: string, args: string[]) {
 }
 const qid = '0b9c6a52-3d3e-4c8f-9a51-000000000042';
 
-test('AC4/AC5: `factory answer` identifies the request before sending, is idempotent by identity, and is indeterminate (never assumed) when the controller is down', { timeout: 45000 }, async t => {
+test('AC4/AC5: `factory answer` identifies the request before sending, is idempotent by identity, and is indeterminate (never assumed) when the controller is down', { timeout: remainingMs() }, async t => {
   const world = await githubWorld(t, { issues: [], pulls: [] });
   const root = world.root;
   await prepareController(root);
@@ -34,7 +34,7 @@ test('AC4/AC5: `factory answer` identifies the request before sending, is idempo
   assert.match(offline.stderr, /REQUEST_INDETERMINATE/);
   const owner = invoke(root, ['run']);
   t.after(async () => { owner.child.kill('SIGTERM'); await owner.result; });
-  for (let i = 0; i < 200 && (await cli('status')).code !== 0; i++) await delay(50);
+  await untilHolds('controller available', async () => (await cli('status')).code === 0, 50);
   const first = await cli('answer', qid, 'Use docs/a.md', '--request-id', 'answer-1');
   assert.equal(first.code, 2, first.stderr);
   assert.deepEqual(first.json, { kind: 'durable', request_id: 'answer-1', operation: 'answer', question_id: qid, outcome: 'not-applied', reason: 'QUESTION_NOT_FOUND', work_id: null });

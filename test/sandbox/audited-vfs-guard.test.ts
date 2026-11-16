@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { auditedVfsManifest } from './fixtures/audited-vfs-manifest.js';
 import { createAuditedVfsGuard, verifyAuditedVfsSources } from './audited-vfs-guard.js';
+import { remainingMs } from '../runner/budget.js';
 
 const root = auditedVfsManifest.root;
 const url = (path: string) => pathToFileURL(root + '/' + path).href;
@@ -104,7 +105,7 @@ test('audited actual VFS import graph loads exactly19 modules without SDK global
   try {
     const environment = 'env-' + createHash('sha256').update('producer-ordering-work').digest('hex');
     const child = spawnSync(process.execPath, ['--experimental-test-module-mocks', fileURLToPath(new URL('./adapter-diagnostics-fixture.js', import.meta.url)), owned, environment, 'boot-66666666-2222-4333-8444-555555555555'], {
-      timeout: 5000, encoding: 'utf8', maxBuffer: 16384,
+      timeout: remainingMs(), encoding: 'utf8', maxBuffer: 16384,
       env: { PATH: '', NODE_DISABLE_COMPILE_CACHE: '1', ADAPTER_DIAGNOSTIC_FIXTURE_MODE: 'vfs-confinement' },
     });
     assert.equal(child.error, undefined); assert.equal(child.status, 0, child.stderr);

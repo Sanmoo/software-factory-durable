@@ -4,6 +4,7 @@ import type { ListView } from '../../src/control/index.js';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { lateErrorDecision, newPhaseState, phaseExitCode, precondition, sessionSummary, withTeardown } from './context11-qualification.js';
+import { remainingMs } from '../runner/budget.js';
 
 // Local, effect-free checks of the ticket 11 recipe's fail-closed phase preconditions and its session evidence (delivery vs later turns).
 const result = (execution: Record<string, unknown> | null) => ({ final: { works: [{ ticket: { number: 3 }, execution }] } as unknown as ListView });
@@ -54,7 +55,7 @@ test('harness fix: once the phase result is durably saved, a failing teardown is
 
 test('harness fix (process): inspect exits 0 after a complete save despite a failing teardown or a late rejection; 1 before it', () => {
   const fixture = fileURLToPath(new URL('./context11-exit-fixture.js', import.meta.url));
-  const run = (mode: string) => spawnSync(process.execPath, [fixture, 'inspect'], { encoding: 'utf8', timeout: 20000,
+  const run = (mode: string) => spawnSync(process.execPath, [fixture, 'inspect'], { encoding: 'utf8', timeout: remainingMs(),
     env: { PATH: '', LANG: 'C', NODE_DISABLE_COMPILE_CACHE: '1', CONTEXT11_EXIT_MODE: mode } });
   const teardown = run('saved-then-failing-teardown');
   assert.equal(teardown.status, 0, teardown.stderr);

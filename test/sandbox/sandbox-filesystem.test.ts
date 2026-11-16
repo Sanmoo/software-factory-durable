@@ -7,12 +7,13 @@ import { dirname, join } from 'node:path';
 import fs from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import { createSandbox, type BootRef } from '../../src/sandbox/index.js';
+import { remainingMs } from '../runner/budget.js';
 
 const testRoot = process.env.FACTORY_SANDBOX_TEST_ROOT;
 const configuration = { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1', diskGiB: 1 };
 const oldBoot = 'boot-cccccccc-2222-4333-8444-555555555555' as BootRef;
 const hash = (b: Buffer | string) => createHash('sha256').update(b).digest('hex');
-const native = { stdio: 'pipe' as const, timeout: 10000 };
+const native = () => ({ stdio: 'pipe' as const, timeout: remainingMs() });
 
 async function shortRoot() {
   for (let attempt = 0; attempt < 10; attempt++) {
@@ -32,8 +33,8 @@ for (const variant of ['valid', 'corrupt', 'allocation-bitmap', 'short-filesyste
       const assets = join(root, 'assets');
       await mkdir(assets, { mode: 0o700 });
       const raw = join(assets, 'rootfs.ext4');
-      execFileSync('/usr/bin/qemu-img', ['create', '-f', 'raw', raw, '32M'], native);
-      execFileSync('/usr/bin/mke2fs', ['-q', '-t', 'ext4', '-O', '^has_journal', '-F', raw], native);
+      execFileSync('/usr/bin/qemu-img', ['create', '-f', 'raw', raw, '32M'], native());
+      execFileSync('/usr/bin/mke2fs', ['-q', '-t', 'ext4', '-O', '^has_journal', '-F', raw], native());
       for (const name of ['kernel', 'initramfs']) await writeFile(join(assets, name), name);
       const manifest = JSON.stringify({ version: 1, config: { arch: 'x86_64', distro: 'alpine' },
         assets: { kernel: 'kernel', initramfs: 'initramfs', rootfs: 'rootfs.ext4' },
@@ -47,31 +48,31 @@ for (const variant of ['valid', 'corrupt', 'allocation-bitmap', 'short-filesyste
       const directory = join(root, 'environments', environment);
       const disk = join(directory, 'root.qcow2');
       if (variant === 'short-filesystem') {
-        execFileSync('/usr/bin/qemu-img', ['convert', '-f', 'raw', '-O', 'qcow2', raw, disk], native);
-        execFileSync('/usr/bin/qemu-img', ['resize', '-f', 'qcow2', disk, '1G'], native);
+        execFileSync('/usr/bin/qemu-img', ['convert', '-f', 'raw', '-O', 'qcow2', raw, disk], native());
+        execFileSync('/usr/bin/qemu-img', ['resize', '-f', 'qcow2', disk, '1G'], native());
       } else if (variant === 'corrupt') {
         const damaged = join(root, 'damaged.ext4');
-        execFileSync('/usr/bin/qemu-img', ['convert', '-f', 'qcow2', '-O', 'raw', disk, damaged], native);
+        execFileSync('/usr/bin/qemu-img', ['convert', '-f', 'qcow2', '-O', 'raw', disk, damaged], native());
         const file = await open(damaged, 'r+');
         try { await file.write(Buffer.alloc(2), 0, 2, 1024 + 0x38); } finally { await file.close(); }
-        execFileSync('/usr/bin/qemu-img', ['convert', '-f', 'raw', '-O', 'qcow2', damaged, disk], native);
+        execFileSync('/usr/bin/qemu-img', ['convert', '-f', 'raw', '-O', 'qcow2', damaged, disk], native());
       } else if (variant === 'allocation-bitmap') {
         // New fixture ONLY: model an allocated metadata block missing from its
         // allocation bitmap. Never modify/recover a retained qualification disk.
         const damaged = join(root, 'bitmap-fixture.ext4');
-        execFileSync('/usr/bin/qemu-img', ['convert', '-f', 'qcow2', '-O', 'raw', disk, damaged], native);
-        const allocation = execFileSync('/usr/bin/debugfs', ['-R', 'testb 100', damaged], { ...native, encoding: 'utf8' });
+        execFileSync('/usr/bin/qemu-img', ['convert', '-f', 'qcow2', '-O', 'raw', disk, damaged], native());
+        const allocation = execFileSync('/usr/bin/debugfs', ['-R', 'testb 100', damaged], { ...native(), encoding: 'utf8' });
         assert.match(allocation, /marked in use/);
-        execFileSync('/usr/bin/debugfs', ['-w', '-R', 'freeb 100', damaged], native);
-        assert.throws(() => execFileSync('/usr/bin/e2fsck', ['-f', '-n', damaged], native), e => {
+        execFileSync('/usr/bin/debugfs', ['-w', '-R', 'freeb 100', damaged], native());
+        assert.throws(() => execFileSync('/usr/bin/e2fsck', ['-f', '-n', damaged], native()), e => {
           assert.ok(e instanceof Error && 'status' in e && e.status === 4);
           assert.ok('stdout' in e && String(e.stdout).includes('Block bitmap differences'));
           return true;
         });
-        execFileSync('/usr/bin/qemu-img', ['convert', '-f', 'raw', '-O', 'qcow2', damaged, disk], native);
+        execFileSync('/usr/bin/qemu-img', ['convert', '-f', 'raw', '-O', 'qcow2', damaged, disk], native());
       } else if (variant === 'backing-file') {
         await rm(disk);
-        execFileSync('/usr/bin/qemu-img', ['create', '-f', 'qcow2', '-F', 'raw', '-b', raw, disk, '1G'], native);
+        execFileSync('/usr/bin/qemu-img', ['create', '-f', 'qcow2', '-F', 'raw', '-b', raw, disk, '1G'], native());
       }
       const file = await open(disk, 'r+');
       try { await file.chmod(0o600); } finally { await file.close(); }

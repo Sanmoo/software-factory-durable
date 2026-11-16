@@ -7,6 +7,7 @@ import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createSandbox, type EnvironmentRef } from '../../src/sandbox/index.js';
+import { remainingMs } from '../runner/budget.js';
 
 const unknown = { condition: 'indeterminate', cessationConfirmed: false, consumption: 'unavailable' };
 const workId = 'observation-work';
@@ -77,7 +78,7 @@ test('Sandbox.observe rejects a FIFO metadata file without waiting for a writer'
     // The timeout affects only this newly-created local regression child, never a VM.
     const child = spawnSync(process.execPath,
       [fileURLToPath(new URL('./observation-fifo-child.js', import.meta.url)), root, environment],
-      { encoding: 'utf8', timeout: 1500, maxBuffer: 4096 });
+      { encoding: 'utf8', timeout: remainingMs(), maxBuffer: 4096 });
     assert.equal(child.status, 0, child.error?.message ?? child.stderr);
     assert.deepEqual(JSON.parse(child.stdout), unknown);
   } finally { await rm(root, { recursive: true, force: true }); }

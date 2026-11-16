@@ -7,6 +7,7 @@ import { openControl } from '../../src/control/index.js';
 import type { ListView } from '../../src/control/index.js';
 import { githubDoubles, manualClock, remoteIssue, scope } from '../control/doubles.js';
 import { readStoredControl } from './review28-qualification.js';
+import { untilHolds } from '../runner/budget.js';
 
 // Ticket 28 recipe `inspect` held with "Session is closed" on the real q28-partial-v2 storage: it read `show` AFTER `run(aborted)`, which
 // closes the storage session. Real Control + Pi Durable/SQLite on a temporary storage with an admitted Work; GitHub doubled.
@@ -20,7 +21,7 @@ async function storage(t: { after(fn: () => Promise<void>): void }) {
     polling: { intervalSeconds: 60, clock: time.clock } });
   const stop = new AbortController();
   const running = control.run(stop.signal);
-  for (let i = 0; i < 400 && !((await control.inspect({ kind: 'list' })) as ListView).works.length; i++) await new Promise(resolve => setTimeout(resolve, 5));
+  await untilHolds('Work admitted', async () => ((await control.inspect({ kind: 'list' })) as ListView).works.length > 0, 5);
   stop.abort(); await running;
   return path;
 }

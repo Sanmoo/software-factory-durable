@@ -8,6 +8,7 @@ import { nativeOwner } from '../sandbox/native-owner.fixture.js';
 import { createWorkerSession } from '../../src/workers/worker-session.js';
 import { sdkProfile } from '../../src/workers/sdk-profile.js';
 import type { ProposalHandoff } from '../../src/contracts/index.js';
+import { remainingMs } from '../runner/budget.js';
 
 // I-local: native Pi SDK loop, real Records, real owner tool transport/confined read programs; doubled ONLY the provider HTTP boundary
 // (scripted offline responses) and the VM exec. Not evidence of a real model, guest or VM.
@@ -68,7 +69,7 @@ async function reviewerSession(t: Parameters<typeof provider>[0] & { after(fn: (
   return { f, session: createWorkerSession({ profile: profile(directory), records: f.records, sandbox: createSandbox({ root: f.root, toolEndpoint: f.owner.endpoint }) }) };
 }
 
-test('AC4/AC5: Spec reviewer gets ONLY native read (confined guest backend), reads beyond the hunks and preserves a complete durable opinion before returning', { timeout: 15000 }, async t => {
+test('AC4/AC5: Spec reviewer gets ONLY native read (confined guest backend), reads beyond the hunks and preserves a complete durable opinion before returning', { timeout: remainingMs() }, async t => {
   const bodies = provider(t, [{ tools: [{ name: 'read', arguments: { path: index } }, { name: 'read', arguments: { path: '/artifacts/spec/v1/sources.json' } }] },
     { tools: [{ name: 'read', arguments: { path: 'checkout/src/a.ts' } }] }, { text: verdict(clean('spec')) }]);
   const { f, session } = await reviewerSession(t, 'spec');
@@ -95,7 +96,7 @@ test('AC4/AC5: Spec reviewer gets ONLY native read (confined guest backend), rea
   assert.deepEqual([stored.event.kind, stored.event.conclusion, stored.context.callId, stored.context.role], ['review-opinion', 'clean', 'review-opinion', 'spec']);
 });
 
-test('AC6: unreadable source, unread required input and missing context prevent a clean conclusion; Standards keeps heuristic distinct from rule', { timeout: 15000 }, async t => {
+test('AC6: unreadable source, unread required input and missing context prevent a clean conclusion; Standards keeps heuristic distinct from rule', { timeout: remainingMs() }, async t => {
   provider(t, [{ tools: [{ name: 'read', arguments: { path: '/workspace/checkout/missing.ts' } }] },
     { text: verdict({ ...clean('standards'), conclusion: 'findings', findings: [
       { id: 'S1', basis: 'rule', reference: '/artifacts/instructions/v1/AGENTS.md#naming', location: { path: '/workspace/checkout/src/a.ts', line: 1 }, summary: 'Documented naming rule violated.' },
@@ -111,7 +112,7 @@ test('AC6: unreadable source, unread required input and missing context prevent 
   assert.deepEqual(result.opinion.findings.map(item => [item.id, item.basis]), [['S1', 'rule'], ['S2', 'heuristic']], 'findings kept by rule/location even when incomplete');
 });
 
-test('AC5/AC6: a missing or invalid verdict is a durable failure, never zero findings; Spec cannot use rule/heuristic basis', { timeout: 15000 }, async t => {
+test('AC5/AC6: a missing or invalid verdict is a durable failure, never zero findings; Spec cannot use rule/heuristic basis', { timeout: remainingMs() }, async t => {
   const steps: Step[] = [{ text: 'I looked around and everything seems fine.' },
     { text: verdict({ ...clean('spec'), conclusion: 'findings', findings: [{ id: 'X', basis: 'heuristic', reference: 'x', location: { path: '/workspace/checkout/src/a.ts' }, summary: 's' }] }) }];
   provider(t, steps);
@@ -124,7 +125,7 @@ test('AC5/AC6: a missing or invalid verdict is a durable failure, never zero fin
   }
 });
 
-test('AC3: the Builder handoff suspends every Builder tool and turn until the Host delivers the results to the SAME session', { timeout: 15000 }, async t => {
+test('AC3: the Builder handoff suspends every Builder tool and turn until the Host delivers the results to the SAME session', { timeout: remainingMs() }, async t => {
   const commands: string[] = [];
   const summary: ProposalHandoff = { version: 1, round: 1, index, indexSha256: 'e'.repeat(64), head: 'b'.repeat(40), branch: 'factory/3-abcdef12', base: 'a'.repeat(40), mergeBase: 'a'.repeat(40),
     counts: { entries: 1, committed: 1, staged: 0, unstaged: 0, untracked: 0, removed: 0 },
@@ -162,7 +163,7 @@ test('AC3: the Builder handoff suspends every Builder tool and turn until the Ho
   assert.match(transcript, /Handoff accepted for review round 1/);
 });
 
-test('ticket 13 real-run regression: reading a DIRECTORY is a distinct READ_IS_DIRECTORY result, not a failed source read; the opinion stays clean', { timeout: 15000 }, async t => {
+test('ticket 13 real-run regression: reading a DIRECTORY is a distinct READ_IS_DIRECTORY result, not a failed source read; the opinion stays clean', { timeout: remainingMs() }, async t => {
   const bodies = provider(t, [{ tools: [{ name: 'read', arguments: { path: '/artifacts/spec/v1' } }] },
     { tools: [{ name: 'read', arguments: { path: index } }, { name: 'read', arguments: { path: '/artifacts/spec/v1/sources.json' } }] }, { text: verdict(clean('standards')) }]);
   const { f, session } = await reviewerSession(t, 'standards');
@@ -174,7 +175,7 @@ test('ticket 13 real-run regression: reading a DIRECTORY is a distinct READ_IS_D
   assert.deepEqual(result.opinion.hostChecks, { reads: 3, failedReads: [], requiredNotFullyRead: [], downgraded: [] });
 });
 
-test('ticket 14 real-run regression: a NONEXISTENT path the instructions name (GLOSSARY.md) is READ_NOT_FOUND, not a failed read; the opinion stays clean', { timeout: 15000 }, async t => {
+test('ticket 14 real-run regression: a NONEXISTENT path the instructions name (GLOSSARY.md) is READ_NOT_FOUND, not a failed read; the opinion stays clean', { timeout: remainingMs() }, async t => {
   const bodies = provider(t, [{ tools: [{ name: 'read', arguments: { path: '/workspace/checkout/GLOSSARY.md' } }, { name: 'read', arguments: { path: '/workspace/checkout/docs/adr' } }] },
     { tools: [{ name: 'read', arguments: { path: index } }, { name: 'read', arguments: { path: '/artifacts/spec/v1/sources.json' } }] }, { text: verdict(clean('standards')) }]);
   const { f, session } = await reviewerSession(t, 'standards');
@@ -202,7 +203,7 @@ test('review fix 10: a read surfaced as an isError result is a failed read, neve
   assert.deepEqual(observer.summary([index]), { reads: 1, failedReads: [{ path: index, code: 'READ_FAILED' }], requiredNotFullyRead: [index] });
 });
 
-test('review fix 8: the returned opinion is the REDACTED protected record, never the raw composed text', { timeout: 15000 }, async t => {
+test('review fix 8: the returned opinion is the REDACTED protected record, never the raw composed text', { timeout: remainingMs() }, async t => {
   provider(t, [{ tools: [{ name: 'read', arguments: { path: index } }] },
     { text: verdict({ ...clean('spec'), conclusion: 'findings', findings: [{ id: 'X', basis: 'requirement', reference: 'r', location: { path: '/workspace/checkout/src/a.ts' }, summary: 'leaks synthetic-secret here' }] }) }]);
   const { f, session } = await reviewerSession(t, 'spec');

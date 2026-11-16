@@ -10,6 +10,7 @@ import { openStore } from '../../src/control/durable/store.js';
 import { works } from '../../src/control/durable/admission.js';
 import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
 import { deliveryRepository, headSha, merged, ownFacts, ownPublication } from './delivery-fixture.js';
+import { untilHolds } from '../runner/budget.js';
 
 // Flow level: real Control (dispatcher, delivery desk, Pi Durable + SQLite). Doubled: GitHub, clock, Sandbox lifecycle/cleanup, Workers and
 // credentials. The own PR link is seeded in ticket 14's typed PublicationView shape (its discovery is exercised by ticket 14's own tests). Not evidence of real GitHub/VM.
@@ -80,7 +81,7 @@ test('AC1/AC7 (control flow): merge observed during an activity delivers, interr
   const stop = async () => { current!.stop.abort(); assert.deepEqual(await current!.running, { kind: 'clean' }); };
   t.after(async () => { if (current && !current.stop.signal.aborted) await stop(); });
   const work = async () => ((await current!.control.inspect({ kind: 'list' })) as ListView).works[0]!;
-  const until = async (predicate: () => Promise<boolean>) => { for (let i = 0; i < 400; i++) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 5)); } assert.fail('condition not reached'); };
+  const until = async (predicate: () => Promise<boolean>) => { await untilHolds('condition', predicate, 5); };
   const cycle = async () => { current!.time.advance(); await current!.time.sleeping(); };
 
   // 1. Implementation Execution completes (no PR link yet: nothing to observe).

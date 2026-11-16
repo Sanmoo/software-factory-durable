@@ -6,8 +6,9 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
+import { remainingMs } from '../runner/budget.js';
 
-test('public normal Builder Bash -> SAME owner VM -> new Node24 -> filtered native host spill/JSONL/reopen', { timeout: 15000 }, async t => {
+test('public normal Builder Bash -> SAME owner VM -> new Node24 -> filtered native host spill/JSONL/reopen', { timeout: remainingMs() }, async t => {
   const root = await mkdtemp('/tmp/nb-');
   t.after(() => rm(root, { recursive: true, force: true }));
   const environment = `env-${createHash('sha256').update('producer-ordering-work').digest('hex')}`;

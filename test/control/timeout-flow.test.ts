@@ -9,6 +9,7 @@ import { openControl } from '../../src/control/index.js';
 import type { Control, ControlReceipt, ListView, ShowView, WorkView } from '../../src/control/types.js';
 import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
 import { budgetDoubles, executionClock, type Script } from './budget-doubles.js';
+import { untilHolds } from '../runner/budget.js';
 
 // Flow level (Q11): real Control + Pi Durable + temporary SQLite. Doubled: GitHub tracker, the polling clock, the LOCAL MONOTONIC clock of
 // the Execution (controlled: no 61 real minutes) and the execution boundaries. The calendar is moved independently with mocked Date.
@@ -40,15 +41,14 @@ async function harness(t: { after(fn: () => Promise<void>): void }, scripts: Scr
   const work = async () => ((await current!.control.inspect({ kind: 'list' })) as ListView).works[0]!;
   const show = async () => await current!.control.inspect({ kind: 'show', work_id: (await work()).work_id }) as Extract<ShowView, { kind: 'work' }>;
   const settle = async (predicate: () => Promise<boolean>, label = 'condition') => {
-    for (let i = 0; i < 600; i++) {
-      if (await predicate()) return;
+    await untilHolds(label, async () => {
+      if (await predicate()) return true;
       if (current!.time.isSleeping()) current!.time.advance();
-      await new Promise(resolve => setTimeout(resolve, 5));
-    }
-    assert.fail(`${label} not reached`);
+      return false;
+    }, 5);
   };
   const until = async (predicate: () => Promise<boolean>, label = 'condition') => {
-    for (let i = 0; i < 400; i++) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 5)); } assert.fail(`${label} not reached`);
+    await untilHolds(label, predicate, 5);
   };
   const cycles = async (n: number) => { for (let i = 0; i < n; i++) { current!.time.advance(); await current!.time.sleeping(); } };
   const running = async () => { await settle(async () => (await work())?.execution?.state === 'started', 'Builder started'); };

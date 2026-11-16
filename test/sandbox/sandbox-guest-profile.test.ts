@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { remainingMs } from '../runner/budget.js';
 
 const directory = join(process.cwd(), 'src/sandbox/guest-profile');
 const recipe = JSON.parse(readFileSync(join(directory, 'alpine-docker-vfs.json'), 'utf8'));
@@ -74,5 +75,5 @@ test('guest-only hook has bounded readiness and is syntax-checked, never execute
   assert.match(hook, /timeout 10 \/bin\/sh -c/);
   assert.match(hook, /docker info --format "{{.Driver}}"/);
   assert.match(hook, / = vfs/);
-  execFileSync('/bin/sh', ['-n', join(directory, 'alpine-docker-vfs.sh')], { timeout: 2000 });
+  execFileSync('/bin/sh', ['-n', join(directory, 'alpine-docker-vfs.sh')], { timeout: remainingMs() });
 });

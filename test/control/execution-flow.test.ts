@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { openControl } from '../../src/control/index.js';
 import type { Control, ControlStatus, ExecutionPorts, ListView, ShowView, WorkView } from '../../src/control/types.js';
 import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
+import { untilHolds } from '../runner/budget.js';
 
 // Flow level (Q11): real Control + Pi Durable + temporary SQLite. Doubled: GitHub tracker/repository, clock, and the execution boundaries
 // (Sandbox lifecycle, Workers activation, Builder credentials). Not evidence of the real VM/worker/model/GitHub.
@@ -83,7 +84,7 @@ async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remo
   t.after(async () => { if (current && !current.stop.signal.aborted) await stop(); });
   const list = async () => await current!.control.inspect({ kind: 'list' }) as ListView;
   const byNumber = async () => Object.fromEntries((await list()).works.map(work => [work.ticket.number, work])) as Record<number, WorkView>;
-  const until = async (predicate: () => Promise<boolean>) => { for (let i = 0; i < 400; i++) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 5)); } assert.fail('condition not reached'); };
+  const until = async (predicate: () => Promise<boolean>) => { await untilHolds('condition', predicate, 5); };
   const cycle = async () => { current!.time.advance(); await current!.time.sleeping(); };
   return { github, execution, start, stop, list, byNumber, until, cycle, storagePath, control: () => current!.control };
 }

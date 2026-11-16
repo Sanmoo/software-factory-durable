@@ -10,8 +10,9 @@ import { SessionManager } from '#factory-pi';
 import { nativeOwner } from '../sandbox/native-owner.fixture.js';
 import { sdkProfile } from '../../src/workers/sdk-profile.js';
 import type { ToolContext } from '../../src/sandbox/index.js';
+import { remainingMs } from '../runner/budget.js';
 
-for (const mode of ['complete', 'overwrite', 'overwrite-empty', 'guest-failure', 'persist-failure'] as const) test(`new Node24 native Builder write/session: ${mode}`, { timeout: 15000 }, async t => {
+for (const mode of ['complete', 'overwrite', 'overwrite-empty', 'guest-failure', 'persist-failure'] as const) test(`new Node24 native Builder write/session: ${mode}`, { timeout: remainingMs() }, async t => {
   const blocked = mode === 'guest-failure' || mode === 'persist-failure';
   const content = mode === 'overwrite-empty' ? '' : 'hello π\n';
   const context: ToolContext = { workId: 'write-work', executionId: 'write-exec', invocationId: 'write-invocation',

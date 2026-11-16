@@ -8,6 +8,7 @@ import { createRecords } from '../../src/records/index.js';
 import { connect, protocolVersion } from '../../src/protocol/index.js';
 import { createSandbox, type ToolContext } from '../../src/sandbox/index.js';
 import { connectReadTools, serveReadTools, type GuestOwner } from '../../src/sandbox/read-tools.js';
+import { remainingMs } from '../runner/budget.js';
 
 const context: ToolContext = { workId: 'work-05', executionId: 'execution-05', invocationId: 'standards-05',
   role: 'standards', environmentRef: 'environment-05', bootRef: 'boot-05', phaseId: 'review-1' };
@@ -162,7 +163,7 @@ test('guest helper is constant argv data and parses with same-FD authorization b
   const program = first[4]!;
   const parsed = execFileSync('/usr/bin/python3', ['-I', '-S', '-c',
     'import ast,sys; tree=ast.parse(sys.stdin.read()); print(ast.dump(tree))'],
-  { input: program, encoding: 'utf8', timeout: 5000 });
+  { input: program, encoding: 'utf8', timeout: remainingMs() });
   assert.match(parsed, /Module\(body=/);
   assert.equal((program.match(/os\.open\(/g) ?? []).length, 1);
   assert.match(program, /os\.open\(path, os\.O_RDONLY \| os\.O_NONBLOCK \| os\.O_CLOEXEC\)/);

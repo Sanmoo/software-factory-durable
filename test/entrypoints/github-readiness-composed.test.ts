@@ -11,6 +11,7 @@ import { openControl, type ListView, type WorkView } from '../../src/control/ind
 import { manualClock } from '../control/doubles.js';
 import { executionDoubles, type Activation } from '../control/publication-doubles.js';
 import { checkRun, commitStatus, githubWorld, issue, worldScope } from './github-world-fixture.js';
+import { untilHolds } from '../runner/budget.js';
 
 // Ticket 16 composed level (I with a substituted boundary): public Control (owner loop, polling, dispatch, ticket 13 rounds, ticket 14's REAL
 // publication flow, ticket 15's checks step, the readiness step, Pi Durable/SQLite) + the real IssueTracker/CodeRepository adapters, GitHub
@@ -56,11 +57,12 @@ test('AC1-AC7 composed: the controller converts its own linked draft PR to ready
   t.after(async () => { if (!stop.signal.aborted) { stop.abort(); await running; } });
   await time.sleeping();
   const work = async () => ((await control.inspect({ kind: 'list' })) as ListView).works[0] as WorkView | undefined;
-  // Bounded by iterations, exits as soon as the conversion settled (the extra dependency read makes it slower under load).
-  for (let i = 0; i < 6000 && !(await work())?.readiness?.effects.length; i++) {
+  // Bounded by the runner budget (not an iteration count): exits as soon as the conversion settled.
+  await untilHolds('readiness conversion settled', async () => {
+    if ((await work())?.readiness?.effects.length) return true;
     if (time.isSleeping()) time.advance();
-    await new Promise(resolve => setTimeout(resolve, 10));
-  }
+    return false;
+  }, 10);
   const view = (await work())!;
   assert.equal(view.publication?.state, 'published', JSON.stringify(view.publication?.reasons));
   const readiness = view.readiness!;

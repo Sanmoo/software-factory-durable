@@ -2,27 +2,26 @@ import assert from 'node:assert/strict';
 import { readFile, readdir, lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createConnection } from 'node:net';
-import { setTimeout } from 'node:timers/promises';
 import { createSandbox } from '../../src/sandbox/index.js';
 import { createWorkers } from '../../src/workers/index.js';
 import { SessionManager } from '#factory-pi';
+import { untilHolds } from '../runner/budget.js';
 
 async function listenerClosed(endpoint: string) {
-  for (let attempt = 0; attempt < 100; attempt++) {
+  // Bounded by the runner budget, not by 100 probes (ticket 40).
+  await untilHolds(`invocation listener closed: ${endpoint}`, async () => {
     // Do not create a probe peer whose EOF could itself trigger binding closure.
-    try { await lstat(endpoint); }
+    try { await lstat(endpoint); return false; }
     catch (error) {
       if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
-      await assert.rejects(new Promise<void>((resolve, reject) => {
-        const socket = createConnection(endpoint);
-        socket.once('error', reject);
-        socket.once('connect', () => { socket.destroy(); resolve(); });
-      }), { code: 'ENOENT' });
-      return;
     }
-    await setTimeout(10);
-  }
-  assert.fail(`invocation listener was not closed: ${endpoint}`);
+    await assert.rejects(new Promise<void>((resolve, reject) => {
+      const socket = createConnection(endpoint);
+      socket.once('error', reject);
+      socket.once('connect', () => { socket.destroy(); resolve(); });
+    }), { code: 'ENOENT' });
+    return true;
+  }, 10);
 }
 
 /** Trusted Host composition: Q6 admission/reservation is a caller precondition.

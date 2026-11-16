@@ -13,6 +13,7 @@ import { createSandbox, type ToolContext } from '../../src/sandbox/index.js';
 const context: ToolContext = { workId: 'image-work', executionId: 'image-exec', invocationId: 'image-invocation',
   role: 'standards', environmentRef: 'image-env', bootRef: 'image-boot', phaseId: 'image-phase' };
 import { png, jpeg, gif, webp, withMetadata, widePng } from './fixtures/images.js';
+import { remainingMs } from '../runner/budget.js';
 
 test('explicit host image budget delivers real native PNG image block from completed protected capture', async t => {
   const f = await nativeOwner(context, { exec() { return { async *output() {
@@ -145,7 +146,7 @@ async function controlledFiles(directory: string): Promise<{ path: string; data:
 }
 
 for (const [name, source, mime] of [['PNG', png, 'image/png'], ['JPEG', jpeg, 'image/jpeg'], ['GIF', gif, 'image/gif'], ['WebP', webp, 'image/webp']] as const) {
-  for (const contaminated of [false, true]) test(`${name} real native vision session ${contaminated ? 'aborts on literal metadata secret' : 'persists image and reopens it'}`, { timeout: 10000 }, async t => {
+  for (const contaminated of [false, true]) test(`${name} real native vision session ${contaminated ? 'aborts on literal metadata secret' : 'persists image and reopens it'}`, { timeout: remainingMs() }, async t => {
     const secret = 'segredo-🔒-ação';
     const image = withMetadata(source, Buffer.from(contaminated ? 'prefix-' + secret + '-suffix' : 'clean-local-metadata-'.repeat(2600)));
     const cut = contaminated ? image.indexOf(Buffer.from(secret)) + 10 : 24576;

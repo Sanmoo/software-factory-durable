@@ -12,6 +12,7 @@ import { confirmStart } from '../../src/control/durable/execution.js';
 import { openStore } from '../../src/control/durable/store.js';
 import { githubDoubles, manualClock, remoteIssue, scope } from './doubles.js';
 import { readHost, recoveryDoubles, updateHost, type RecoveryScript } from './recovery-doubles.js';
+import { untilHolds } from '../runner/budget.js';
 
 // Ticket 26, real crash cuts: a REAL controller child process (Control + Pi Durable/SQLite + Records) is SIGKILLed at a defined point with its
 // doubled boot left active; a NEW Control boots on the same storage/Records and reconciles. Doubled: Sandbox host (file-backed), Builder,
@@ -42,12 +43,11 @@ async function reopen(t: { after(fn: () => Promise<void>): void }, dir: string, 
   const works = async () => (await control.inspect({ kind: 'list' }) as ListView).works;
   const work = async (number = 3) => (await works()).find(item => item.ticket.number === number) as WorkView;
   const until = async (predicate: () => Promise<boolean> | boolean, label: string) => {
-    for (let i = 0; i < 1500; i++) {
-      if (await predicate()) return;
+    await untilHolds(label, async () => {
+      if (await predicate()) return true;
       if (time.isSleeping()) time.advance();
-      await new Promise(resolve => setTimeout(resolve, 5));
-    }
-    assert.fail(`${label} not reached`);
+      return false;
+    }, 5);
   };
   return { control, doubles, before, works, work, until, halt, time };
 }

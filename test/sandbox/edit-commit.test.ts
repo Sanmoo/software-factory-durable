@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto';
 import { connect, protocolVersion } from '../../src/protocol/index.js';
 import { createRecords } from '../../src/records/index.js';
 import { connectReadTools, serveReadTools, type GuestOwner, type ToolCall, type ToolContext } from '../../src/sandbox/read-tools.js';
+import { remainingMs } from '../runner/budget.js';
 
 const context: ToolContext = { workId: 'work', executionId: 'execution', invocationId: 'invocation', role: 'builder', environmentRef: 'env', bootRef: 'boot', phaseId: 'phase' };
 async function fixture(t: { after(fn: () => Promise<void>): void }, original = 'original') {
@@ -284,7 +285,7 @@ test('conditional helper SOURCE AST guards existing-only same-FD bounded compare
   const argv = f.calls[1]!.argv; const source = argv[4]!;
   assert.equal(argv[5], 'commit'); assert.equal(argv[7], '8');
   assert.equal(argv[8], createHash('sha256').update('original').digest('hex'));
-  const inspect = (data: string) => spawnSync('/usr/bin/python3', ['-I', '-S', '-c', conditionalParser], { input: data, encoding: 'utf8', timeout: 5000 });
+  const inspect = (data: string) => spawnSync('/usr/bin/python3', ['-I', '-S', '-c', conditionalParser], { input: data, encoding: 'utf8', timeout: remainingMs() });
   const valid = inspect(source); assert.equal(valid.status, 0, valid.stderr); assert.match(valid.stdout, /guest BODY NOT executed/);
   for (const altered of [source.replace('os.O_RDWR', 'os.O_WRONLY'), source.replace('os.O_NONBLOCK | ', ''),
     source.replace('expected_count + 1 - observed_count', '65536'), source.replace('os.lseek(fd, 0, os.SEEK_SET)', 'pass'),

@@ -9,9 +9,10 @@ import { SessionManager } from '#factory-pi';
 import { nativeOwner } from '../sandbox/native-owner.fixture.js';
 import { sdkProfile } from '../../src/workers/sdk-profile.js';
 import type { ToolContext } from '../../src/sandbox/index.js';
+import { remainingMs } from '../runner/budget.js';
 
 for (const mode of ['complete', 'binary', 'capture-failure', 'transport-loss', 'temp-failure', 'session-failure'] as const) {
-  test(`new Node24 native Bash/session/host spill: ${mode}`, { timeout: 15000 }, async t => {
+  test(`new Node24 native Bash/session/host spill: ${mode}`, { timeout: remainingMs() }, async t => {
     const blocked = mode !== 'complete';
     const context: ToolContext = { workId: 'bash-work', executionId: 'bash-exec', invocationId: 'bash-invocation',
       role: 'builder', environmentRef: 'bash-env', bootRef: 'bash-boot', phaseId: 'bash-phase' };

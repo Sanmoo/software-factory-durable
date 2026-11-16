@@ -10,9 +10,10 @@ import { nativeOwner } from '../sandbox/native-owner.fixture.js';
 import { sdkProfile } from '../../src/workers/sdk-profile.js';
 import type { ToolContext } from '../../src/sandbox/index.js';
 import { png, jpeg, gif, webp, withMetadata } from './fixtures/images.js';
+import { remainingMs } from '../runner/budget.js';
 
 for (const [name, source, mime, role] of [['PNG', png, 'image/png', 'standards'], ['JPEG', jpeg, 'image/jpeg', 'spec'], ['GIF', gif, 'image/gif', 'standards'], ['WebP', webp, 'image/webp', 'spec']] as const) {
-  for (const blocked of [false, true]) test(`new Node24 fixed worker ${name}: ${blocked ? 'secret image aborts without next model turn' : 'actual native image/session/reopen'}`, { timeout: 15000 }, async t => {
+  for (const blocked of [false, true]) test(`new Node24 fixed worker ${name}: ${blocked ? 'secret image aborts without next model turn' : 'actual native image/session/reopen'}`, { timeout: remainingMs() }, async t => {
     const context: ToolContext = { workId: 'image-work', executionId: 'image-exec', invocationId: 'image-invocation',
       role, environmentRef: 'image-env', bootRef: 'image-boot', phaseId: 'image-phase' };
     const secret = 'segredo-🔒-ação';

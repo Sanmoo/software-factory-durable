@@ -3,6 +3,7 @@ import { mock, test } from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { untilHolds } from '../runner/budget.js';
 
 // Flow level with ONE module-internal fault: the durable hold commit fails (e.g. storage unavailable). Real Control/Pi Durable/SQLite otherwise.
 const actual = await import('../../src/control/durable/execution.js');
@@ -24,7 +25,7 @@ test('review 3: even when the hold commit fails, the held Execution still withdr
   const stop = new AbortController();
   const running = control.run(stop.signal);
   await time.sleeping();
-  for (let i = 0; i < 400 && !doubles.calls.some(call => call.kind === 'revoke'); i++) await new Promise(resolve => setTimeout(resolve, 5));
+  await untilHolds('grant revoked', () => doubles.calls.some(call => call.kind === 'revoke'), 5);
   assert.ok(holdAttempts >= 1, 'the receipt conflict tried to hold');
   assert.deepEqual(doubles.calls.filter(call => call.kind === 'revoke').map(call => call.token), [tokenOf(1)]);
   assert.ok(doubles.calls.some(call => call.directive === 'withdraw-credential'), 'the live worker loses the credential for new commands');

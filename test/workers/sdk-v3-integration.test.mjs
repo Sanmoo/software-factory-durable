@@ -15,12 +15,13 @@ import { builderBash } from '../../dist/src/workers/bash.js';
 import { asyncBashFiles, imageMimeFacade, lexicalQueueFiles, prepareDevelopmentSdk, sdkProfile, sdkStagingDirectory } from '../../dist/src/workers/sdk-profile.js';
 import { connectReadTools } from '../../dist/src/sandbox/read-tools.js';
 import { nativeOwner } from '../../dist/test/sandbox/native-owner.fixture.js';
+import { remainingMs } from '../../dist/test/runner/budget.js';
 
 const context = { workId: 'v3-work', executionId: 'v3-exec', invocationId: 'v3-invocation',
   role: 'builder', environmentRef: 'v3-env', bootRef: 'v3-boot', phaseId: 'v3-phase' };
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 
-test('new private development profile v3 preserves prior read correction and MIME facade', { timeout: 15000 }, async () => {
+test('new private development profile v3 preserves prior read correction and MIME facade', { timeout: remainingMs() }, async () => {
   assert.equal(sdkProfile.id, 'factory-development-pi-1.5.2-read-async-bash-lexical-v3');
   const evidence = await prepareDevelopmentSdk();
   assert.deepEqual(await prepareDevelopmentSdk(), evidence);
@@ -29,7 +30,7 @@ test('new private development profile v3 preserves prior read correction and MIM
   assert.equal(evidence.resultSHA256, '06867a067ebbadca2e06f75ccb4e682cd7e37b9683d41a71562f770b3105a209');
 });
 
-test('v3 preparation refuses unexpected bytes, unsafe links and missing metadata without repair', { timeout: 15000 }, async () => {
+test('v3 preparation refuses unexpected bytes, unsafe links and missing metadata without repair', { timeout: remainingMs() }, async () => {
   const root = '.scratch/factory-development-sdk-v3';
   const extra = root + '/sdk/task105-unexpected';
   try {
@@ -59,7 +60,7 @@ test('v3 preparation refuses unexpected bytes, unsafe links and missing metadata
   assert.deepEqual(await prepareDevelopmentSdk(), await prepareDevelopmentSdk());
 });
 
-test('Factory rejects actual unpatched native SDK before any tool RPC or guest effect', { timeout: 10000 }, async () => {
+test('Factory rejects actual unpatched native SDK before any tool RPC or guest effect', { timeout: remainingMs() }, async () => {
   const script = `
     import assert from 'node:assert/strict';
     import { registerHooks } from 'node:module';
@@ -75,13 +76,13 @@ test('Factory rejects actual unpatched native SDK before any tool RPC or guest e
     await assert.rejects(tool.execute('later', { command: 'FIXED_DATA_ONLY' }), /BASH_INVOCATION_REVOKED/);
     console.log('PASS missing onDataAsync: zero tool RPCs, no guest effect, later invocation revoked');
   `;
-  const result = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], { timeout: 8000 });
+  const result = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], { timeout: remainingMs() });
   assert.match(result.stdout, /zero tool RPCs/);
   assert.equal(result.stderr, '');
 });
 
 for (const mode of ['release', 'abort', 'stream-error', 'bounded-resume']) {
-  test(`Factory native async Bash + real Protocol/Records: held private stream ${mode}`, { timeout: 12000 }, async t => {
+  test(`Factory native async Bash + real Protocol/Records: held private stream ${mode}`, { timeout: remainingMs() }, async t => {
     const source = Buffer.from('head synthetic-secret π\n' + 'fixed-data\n'.repeat(mode === 'bounded-resume' ? 80000 : 8000) + 'tail π');
     const produced = deferred();
     const offered = deferred();
@@ -180,7 +181,7 @@ for (const mode of ['release', 'abort', 'stream-error', 'bounded-resume']) {
 }
 
 for (const mode of ['release', 'abort', 'stream-error']) {
-  test(`new Node24 v3 worker projection/session JSONL: held native stream ${mode}`, { timeout: 12000 }, async t => {
+  test(`new Node24 v3 worker projection/session JSONL: held native stream ${mode}`, { timeout: remainingMs() }, async t => {
     const source = Buffer.from('head synthetic-secret π\n' + 'fixed-data\n'.repeat(8000) + 'tail π');
     const produced = deferred();
     const owner = await nativeOwner(context, { exec() {

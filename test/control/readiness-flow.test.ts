@@ -12,6 +12,7 @@ import { acceptReadinessAuthorization, createReadinessDesk } from '../../src/con
 import type { PullRequestObservation } from '../../src/code-repository/index.js';
 import { githubDoubles, remoteIssue, scope, ticket, type Remote } from './doubles.js';
 import { observedPull, seedReady } from './readiness-seed.js';
+import { untilHolds } from '../runner/budget.js';
 
 // Ticket 16 flow level (S): real Pi Durable/SQLite commits, the real checks tracker (ticket 15) and readiness desk; GitHub is doubled at the
 // CodeRepository contract. Not evidence of the real GitHub boundary (test/entrypoints/github-readiness*.test.ts and the real-run recipe).
@@ -101,7 +102,7 @@ test('V-12: an intent committed before a crash is discovered from the flag after
   // The first owner reaches its mutation and dies there (the call never returns, nothing reached GitHub).
   h.github.repository.setDraft = async () => { await hung; throw new Error('owner died'); };
   const dying = h.cycle();
-  for (let i = 0; i < 500 && (await h.work()).readiness?.effect?.state !== 'intended'; i++) await new Promise(resolve => setImmediate(resolve));
+  await untilHolds('readiness effect intended', async () => (await h.work()).readiness?.effect?.state === 'intended', 1);
   assert.equal((await h.work()).readiness!.effect!.state, 'intended');
   const sent: unknown[] = [];
   const restarted = createReadinessDesk({ session: h.session, readWorks: () => readWorks(h.session), installation: () => 'settled', clock: { monotonic: () => 1e9 }, dependencies: dependencies(h.session),

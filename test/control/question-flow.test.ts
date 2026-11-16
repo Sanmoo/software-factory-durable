@@ -8,6 +8,7 @@ import { openControl } from '../../src/control/index.js';
 import type { Control, ControlReceipt, ControlStatus, ExecutionPorts, ListView, QuestionView, ShowView, WorkView } from '../../src/control/types.js';
 import type { QuestionAck, WorkerQuestion } from '../../src/workers/index.js';
 import { comment, githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
+import { untilHolds } from '../runner/budget.js';
 
 // Flow level (Q11): real Control + Pi Durable + temporary SQLite. Doubled: GitHub tracker/repository, clock and the execution boundaries
 // (Sandbox lifecycle, Workers activation with its question event, Builder credentials). NOT evidence of the real VM/worker/model/GitHub.
@@ -94,17 +95,16 @@ async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remo
   const byNumber = async () => Object.fromEntries((await list()).works.map(work => [work.ticket.number, work])) as Record<number, WorkView>;
   const show = async (work_id: string) => await current!.control.inspect({ kind: 'show', work_id }) as Extract<ShowView, { kind: 'work' }>;
   const until = async (predicate: () => Promise<boolean>, label = 'condition') => {
-    for (let i = 0; i < 400; i++) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 5)); } assert.fail(`${label} not reached`);
+    await untilHolds(label, predicate, 5);
   };
   const cycle = async () => { current!.time.advance(); await current!.time.sleeping(); };
   /** Like until, but lets the owner loop run further polling iterations (dispatch only happens after a polling iteration). */
   const settle = async (predicate: () => Promise<boolean>, label = 'condition') => {
-    for (let i = 0; i < 600; i++) {
-      if (await predicate()) return;
+    await untilHolds(label, async () => {
+      if (await predicate()) return true;
       if (current!.time.isSleeping()) current!.time.advance();
-      await new Promise(resolve => setTimeout(resolve, 5));
-    }
-    assert.fail(`${label} not reached`);
+      return false;
+    }, 5);
   };
   const activations = () => execution.calls.filter(call => call.kind === 'activate');
   return { github, execution, start, stop, list, byNumber, show, until, settle, cycle, activations, storagePath, control: () => current!.control };

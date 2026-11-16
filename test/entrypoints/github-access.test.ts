@@ -5,7 +5,6 @@ import { pathToFileURL } from 'node:url';
 import { generateKeyPairSync, sign } from 'node:crypto';
 import { mkdtemp, mkdir, writeFile, readFile, rm, chmod, symlink } from 'node:fs/promises';
 import { spawn, spawnSync } from 'node:child_process';
-import { setTimeout as delay } from 'node:timers/promises';
 import { resolve } from 'node:path';
 import { prepareController } from './controller-configuration.js';
 import { tmpdir } from 'node:os';
@@ -13,6 +12,7 @@ import { join } from 'node:path';
 import { createGitHubAccess } from '../../src/platform/github/index.js';
 import { createIssueTracker } from '../../src/issue-tracker/index.js';
 import { createCodeRepository } from '../../src/code-repository/index.js';
+import { remainingMs, untilHolds } from '../runner/budget.js';
 
 // A local executable stands in for gh/GitHub, not for the adapters or issuer.
 async function fixture(t: { after(fn: () => Promise<void>): void }, scenario = 'ok') {
@@ -116,7 +116,7 @@ test('local GitHub fixture requires explicit REST selectors and grants only sele
   const jwt = `${unsigned}.${sign('RSA-SHA256', Buffer.from(unsigned), await readFile(join(root, 'credentials/app.pem'))).toString('base64url')}`;
   const request = (selector: object) => spawnSync(executable, ['api', '--hostname', 'github.com', '--method', 'POST', '--include', '-H', 'X-GitHub-Api-Version: 2026-03-10', '--input', '-', '--', '/app/installations/2/access_tokens'], {
     input: JSON.stringify({ ...selector, permissions: { metadata: 'read', issues: 'write' } }),
-    encoding: 'utf8', env: { GH_TOKEN: jwt, NATIVE_FIXTURE: '1' }, timeout: 5000,
+    encoding: 'utf8', env: { GH_TOKEN: jwt, NATIVE_FIXTURE: '1' }, timeout: remainingMs(),
   });
   for (const selector of [{}, { repository_names: ['project'] }, { repositories: [] }]) {
     const rejected = request(selector);
@@ -181,7 +181,7 @@ function invoke(root: string, args: string[], fixturePath: string) {
   }) };
 }
 
-test('authenticated doctor is owned by the controller and never persists grants or uses the CLI personal identity', { timeout: 20000 }, async t => {
+test('authenticated doctor is owned by the controller and never persists grants or uses the CLI personal identity', { timeout: remainingMs() }, async t => {
   const options = await fixture(t, 'controller');
   await prepareController(options.root);
   const config = (await readFile(join(options.root, 'config.yaml'), 'utf8'))
@@ -192,10 +192,7 @@ test('authenticated doctor is owned by the controller and never persists grants 
   assert.match(unavailable.stderr, /CONTROLLER_UNAVAILABLE/);
   const owner = invoke(options.root, ['run'], options.root);
   t.after(async () => { owner.child.kill('SIGTERM'); await owner.result; });
-  for (let attempt = 0; attempt < 80; attempt++) {
-    if ((await invoke(options.root, ['status'], options.root).result).code === 0) break;
-    await delay(20);
-  }
+  await untilHolds('controller available', async () => (await invoke(options.root, ['status'], options.root).result).code === 0, 20);
   const result = await invoke(options.root, ['doctor', '--authenticated'], options.root).result;
   assert.equal(result.code, 0, result.stdout + result.stderr);
   const report = JSON.parse(result.stdout);

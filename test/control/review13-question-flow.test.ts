@@ -9,6 +9,7 @@ import type { Control, ControlReceipt, ExecutionPorts, ListView, WorkView } from
 import type { ProposalHandoff, ReviewOpinion } from '../../src/contracts/index.js';
 import type { BuilderDirective, HandoffEvent, Invocation, WorkerQuestion } from '../../src/workers/index.js';
 import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
+import { until } from '../runner/budget.js';
 
 // Flow level (S): real Control + Pi Durable + temporary SQLite; doubled GitHub, clock, Sandbox, Workers and credentials. Ticket 13 AC1:
 // a requirement doubt about a finding goes through ask_user; the recovery Execution continues the round numbering of the Work and the
@@ -113,13 +114,12 @@ async function scenario(t: { after(fn: () => Promise<void>): void }, partialReco
   t.after(async () => { stop.abort(); await running; });
   const work = async () => ((await control!.inspect({ kind: 'list' })) as ListView).works.find(item => item.ticket.number === 3) as WorkView | undefined;
   const settle = async (predicate: (value: WorkView | undefined) => boolean) => {
-    for (let i = 0; i < 800; i++) {
+    return await until('condition', async () => {
       const value = await work();
       if (predicate(value)) return value!;
       if (time.isSleeping()) time.advance();
-      await new Promise(resolve => setTimeout(resolve, 5));
-    }
-    assert.fail('condition not reached');
+      return undefined;
+    }, 5);
   };
   const waiting = await settle(value => value?.execution?.end?.outcome === 'question' && value.execution.slot.held === false);
   assert.equal(waiting.execution!.review!.verification ?? null, null, 'an Execution waiting for an answer is not verified');

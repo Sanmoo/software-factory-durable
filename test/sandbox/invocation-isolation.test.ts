@@ -7,9 +7,10 @@ import { test } from 'node:test';
 import { createRecords } from '../../src/records/index.js';
 import { createSandbox, type ToolContext } from '../../src/sandbox/index.js';
 import { connectReadTools, serveReadTools, serveReadToolBindings, type GuestOwner } from '../../src/sandbox/read-tools.js';
+import { remainingMs } from '../runner/budget.js';
 
 // Existing Q5 projection and external GuestOwner boundary; no VM/model execution.
-test('one boot owns independent reviewer bindings: abort/EOF isolate pending reads and deny forged contexts', { timeout: 5000 }, async t => {
+test('one boot owns independent reviewer bindings: abort/EOF isolate pending reads and deny forged contexts', { timeout: remainingMs() }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'bindings-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const recordsRoot = join(root, 'records'); await mkdir(recordsRoot, { mode: 0o700 });
@@ -73,7 +74,7 @@ test('one boot owns independent reviewer bindings: abort/EOF isolate pending rea
   }
 });
 
-test('binding closes an already-aborted or setup-aborted listener', { timeout: 5000 }, async t => {
+test('binding closes an already-aborted or setup-aborted listener', { timeout: remainingMs() }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'binding-race-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const records = await createRecords({ root });
@@ -102,7 +103,7 @@ test('binding closes an already-aborted or setup-aborted listener', { timeout: 5
   }
 });
 
-test('binding close drains its actual pending callback after abort without closing a guest', { timeout: 5000 }, async t => {
+test('binding close drains its actual pending callback after abort without closing a guest', { timeout: remainingMs() }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'binding-drain-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const records = await createRecords({ root });

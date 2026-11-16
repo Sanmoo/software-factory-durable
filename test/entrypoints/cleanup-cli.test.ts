@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
+import { untilHolds } from '../runner/budget.js';
 import { prepareController } from './controller-configuration.js';
 import { githubWorld } from './github-world-fixture.js';
 
@@ -26,7 +26,7 @@ test('ticket 30: `factory cleanup` / `cleanup-confirm` identify the request firs
   const cli = async (...args: string[]) => { const result = await invoke(root, args).result; return { ...result, json: result.stdout ? JSON.parse(result.stdout) : undefined }; };
   const owner = invoke(root, ['run']);
   t.after(async () => { owner.child.kill('SIGTERM'); await owner.result; });
-  for (let i = 0; i < 200 && (await cli('status')).code !== 0; i++) await delay(50);
+  await untilHolds('controller available', async () => (await cli('status')).code === 0, 50);
   // Ticket 30: explicit cleanup through the real CLI/socket/owner: plan (identified request, nothing removed) and confirmation; no Work → not-applied.
   const plan = '0b9c6a52-3d3e-4c8f-9a51-000000000099';
   for (const bad of [['cleanup', work, '--select', 'logs,evidence'], ['cleanup', 'not-a-uuid', '--select', 'logs'], ['cleanup-confirm', work, 'not-a-plan'],

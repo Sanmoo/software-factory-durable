@@ -11,6 +11,7 @@ import { listen, protocolVersion, type Envelope } from '../../src/protocol/index
 import { createWorkers } from '../../src/workers/index.js';
 import { githubDoubles, manualClock, remoteIssue, scope } from '../control/doubles.js';
 import { githubWorld } from './github-world-fixture.js';
+import { remainingMs } from '../runner/budget.js';
 
 // I-local composition (ticket 20): real Control + Pi Durable/SQLite, real GitHub App issuer and gh self-revocation against the synthetic
 // GitHub world (gh + App HTTPS substituted, synthetic secrets), real Workers facade and Protocol to a scripted owner endpoint. The owner
@@ -20,7 +21,7 @@ const environmentRef = `env-${'b'.repeat(64)}`;
 const profile = { id: 'factory-development-pi-1.5.2-read-async-bash-lexical-v3' as const, systemPrompt: 'p', auth: 'factory-oauth' as const, providerId: 'openai' as const,
   modelId: 'gpt-6-luna' as const, api: 'openai-responses' as const };
 
-test('ticket 20 AC1/AC2/AC4/AC7: a long Builder activity is renewed by real reduced issuances delivered over the host channel, and every known grant is self-revoked at the end', { timeout: 45000 }, async t => {
+test('ticket 20 AC1/AC2/AC4/AC7: a long Builder activity is renewed by real reduced issuances delivered over the host channel, and every known grant is self-revoked at the end', { timeout: remainingMs() }, async t => {
   const world = await githubWorld(t, { repositories: [{ name: 'acme/project', id: 3, installation: 2 }], issues: [], pulls: [], tokenLifetimeSeconds: 32 });
   const github = createGitHubAccess({ root: world.root, executable: world.executable, appId: 1, privateKeyFile: 'credentials/app.pem' });
   const real = createBuilderCredentials({ github, repositories: [{ repository: 'acme/project', installationId: 2, workflows: false }] });

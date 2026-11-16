@@ -7,6 +7,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { test } from 'node:test';
 import { createRecords } from '../../src/records/index.js';
 import { serveReadTools, connectReadTools, type GuestOwner, type ToolContext } from '../../src/sandbox/read-tools.js';
+import { remainingMs } from '../runner/budget.js';
 
 const context: ToolContext = { workId: 'work', executionId: 'execution', invocationId: 'invocation', role: 'builder',
   environmentRef: 'environment', bootRef: 'boot', phaseId: 'phase' };
@@ -198,7 +199,7 @@ test('shared exclusive stream helper SOURCE AST checks before create/data, with 
     assert.equal(bash.status, 'success'); if (bash.status !== 'success') return;
     assert.equal((await tools.executeTool({ name: 'bash', operation: 'copy-output', reference: bash.reference, callId: 'copy' })).status, 'success');
     const source = helperSource();
-    const check = (candidate: string) => spawnSync('/usr/bin/python3', ['-I', '-S', '-c', parser, 'stream'], { input: candidate, encoding: 'utf8', timeout: 5000 });
+    const check = (candidate: string) => spawnSync('/usr/bin/python3', ['-I', '-S', '-c', parser, 'stream'], { input: candidate, encoding: 'utf8', timeout: remainingMs() });
     const valid = check(source); assert.equal(valid.status, 0, valid.stderr); assert.match(valid.stdout, /guest BODY NOT executed/);
     for (const unsafe of [source.replace('os.O_EXCL', 'os.O_TRUNC'), source.replace('parts[1], flags', 'parts[1], os.O_RDONLY'),
       source.replace('authorize(parent)\n        leaf', 'leaf'), source.replace('authorize(fd, regular=True)', 'authorize(fd)'),

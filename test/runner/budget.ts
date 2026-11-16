@@ -54,3 +54,8 @@ export async function until<T>(stage: string | (() => string), probe: () => Prom
     await pause(everyMs);
   }
 }
+
+/** until() for a boolean condition (ticket 40): resolves once `predicate` holds, bounded by the budget, never by a count. */
+export async function untilHolds(stage: string | (() => string), predicate: () => Promise<boolean> | boolean, everyMs = 25): Promise<void> {
+  await until(stage, async () => ((await predicate()) ? true : undefined), everyMs);
+}

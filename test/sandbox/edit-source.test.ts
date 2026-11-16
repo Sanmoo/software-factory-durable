@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { connect, protocolVersion } from '../../src/protocol/index.js';
 import { createRecords } from '../../src/records/index.js';
 import { connectReadTools, serveReadTools, type GuestOwner, type ToolCall, type ToolContext } from '../../src/sandbox/read-tools.js';
+import { remainingMs } from '../runner/budget.js';
 
 const context: ToolContext = { workId: 'work', executionId: 'execution', invocationId: 'invocation', role: 'builder',
   environmentRef: 'environment', bootRef: 'boot', phaseId: 'phase' };
@@ -230,7 +231,7 @@ assert any(isinstance(n, ast.If) and "target.startswith" in ast.unparse(n.test) 
 assert "os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC" in source
 assert "os.O_CREAT" not in source and "os.O_TRUNC" not in source
 print("AST guard passed: authorized parents/regular resolved FD before shared read; stdout-only writes")`],
-  { input: program, encoding: 'utf8', timeout: 5000 });
+  { input: program, encoding: 'utf8', timeout: remainingMs() });
   assert.match(output, /AST guard passed/);
 });
 

@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { once } from 'node:events';
 import { test } from 'node:test';
 import { prepareController } from './controller-configuration.js';
+import { remainingMs } from '../runner/budget.js';
 
 async function message(child: ChildProcess): Promise<Record<string, unknown>> {
   return (await once(child, 'message'))[0] as Record<string, unknown>;
@@ -15,7 +16,7 @@ function fixture(root: string, mode = 'control') {
     process.execPath, resolve('dist/test/entrypoints/control-fixture.js'), root, mode], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
 }
 
-test('Control.accept/inspect/run never expose dispatch or a raw Session, before or after unpause', { timeout: 5000 }, async t => {
+test('Control.accept/inspect/run never expose dispatch or a raw Session, before or after unpause', { timeout: remainingMs() }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'factory-control-seam-'));
   await prepareController(root);
   await writeFile(join(root, 'data/control.lock'), '', { mode: 0o600 });
@@ -39,7 +40,7 @@ test('Control.accept/inspect/run never expose dispatch or a raw Session, before 
   assert.equal((await ended)[0], 0);
 });
 
-test('a surviving real Node subprocess does not inherit the no-fork owner lock descriptor', { timeout: 5000 }, async t => {
+test('a surviving real Node subprocess does not inherit the no-fork owner lock descriptor', { timeout: remainingMs() }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'factory-lock-fd-'));
   await prepareController(root);
   await writeFile(join(root, 'data/control.lock'), '', { mode: 0o600 });
@@ -58,6 +59,6 @@ test('a surviving real Node subprocess does not inherit the no-fork owner lock d
   owner.kill('SIGKILL');
   await ended;
   process.kill(survivor, 0); // The subprocess really outlived its owning process.
-  const replacement = spawnSync('flock', ['--exclusive', '--nonblock', '--no-fork', join(root, 'data/control.lock'), process.execPath, '-e', ''], { timeout: 2000 });
+  const replacement = spawnSync('flock', ['--exclusive', '--nonblock', '--no-fork', join(root, 'data/control.lock'), process.execPath, '-e', ''], { timeout: remainingMs() });
   assert.equal(replacement.status, 0, replacement.stderr?.toString());
 });
