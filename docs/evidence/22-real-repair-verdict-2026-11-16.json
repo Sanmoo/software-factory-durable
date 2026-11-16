@@ -1,0 +1,59 @@
+{
+ "passed": true,
+ "checks": [
+  {
+   "id": "advance.no-correction",
+   "expected": "no correction, no Builder activation, corrections consumed 0, loose lag only noted",
+   "observed": "{\"correction\":null,\"corrections\":0,\"activations\":0,\"consumed\":0,\"notes\":[\"REQUIRED_SET_EMPTY_FROM_COMPLETE_AUTHORIZED_READS\",\"LOOSE_BRANCH_BEHIND_BASE\"]}",
+   "met": true
+  },
+  {
+   "id": "conflict.one-correction",
+   "expected": "exactly one correction, published, charged, reasons [MERGE_CONFLICT main @H1 ^85822b6c772f37bc16ade6287fec22fa58efc4cf]",
+   "observed": "[{\"outcome\":\"published\",\"charged\":true,\"reasons\":[\"MERGE_CONFLICT:main@afc13e92c9e85ef64e9c3e22b2ed34ad5a480357^85822b6c772f37bc16ade6287fec22fa58efc4cf\"]}]",
+   "met": true
+  },
+  {
+   "id": "conflict.repair-execution",
+   "expected": "REPAIR_REQUESTED of that correction, charge consumed once, continue/replacement session with the repair section, reviewed against the base tip",
+   "observed": "{\"charge\":{\"kind\":\"correction\",\"correctionId\":\"4f96812f-a469-4d7c-ba42-ed7a712edd2f\",\"counter\":\"corrections\",\"state\":\"consumed\",\"settledAt\":\"2026-11-16T06:21:19.222Z\"},\"phaseId\":\"builder-continuation\",\"section\":true,\"handoff\":\"85822b6c772f37bc16ade6287fec22fa58efc4cf\"}",
+   "met": true
+  },
+  {
+   "id": "conflict.strategy",
+   "expected": "own commits only: rebase onto 85822b6c772f37bc16ade6287fec22fa58efc4cf (head contains 85822b6c772f37bc16ade6287fec22fa58efc4cf; the old own head H1 is rewritten, by design)",
+   "observed": "{\"humanTips\":[],\"compare\":\"ahead\",\"behindBy\":0,\"commits\":[{\"sha\":\"2644c67\",\"parents\":1}]}",
+   "met": true
+  },
+  {
+   "id": "conflict.same-pr-leased",
+   "expected": "SAME PR updated: lease on H1, head 2644c6784a3011068c0dc6ebe094082c5ad5ad62, no other push",
+   "observed": "{\"pr\":32,\"expected\":{\"state\":\"present\",\"sha\":\"afc13e92c9e85ef64e9c3e22b2ed34ad5a480357\"},\"update\":32,\"pushViolations\":[]}",
+   "met": true
+  },
+  {
+   "id": "budget-and-history",
+   "expected": "corrections consumed 1 (reserved null); correction-opened 1, repair-revalidated 1, correction-closed 1",
+   "observed": "{\"budget\":{\"limit\":1,\"granted\":0,\"consumed\":1,\"reserved\":null},\"opened\":1,\"revalidated\":1,\"closed\":1}",
+   "met": true
+  },
+  {
+   "id": "no-retrigger",
+   "expected": "no activation after the closure (quiet window)",
+   "observed": "0",
+   "met": true
+  },
+  {
+   "id": "file-at-head",
+   "expected": "operator line kept and ## Steps present",
+   "observed": "# Factory repair (base) |  | Added on main by the operator (ticket 22 qualification, step 2): conflicts with the Factory branch. |  | # Factory repair |  | This file exists only to exercise how the Software Factory repairs its own pull request. |  | ## Steps |  | 1. publish | 2. conflict",
+   "met": true
+  },
+  {
+   "id": "no-token",
+   "expected": "no token/private key in any session",
+   "observed": "0",
+   "met": true
+  }
+ ]
+}

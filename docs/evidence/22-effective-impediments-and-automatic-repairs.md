@@ -7,8 +7,8 @@ verification), 14 (publication/discovery, update of the linked own PR), 15 (chec
 budget, `openCorrection` seam, reservation/consumption), 21 (explicit lease, divergences), 26 (admission re-checks), 39 (merge-blocking rules are
 the operator's). No new queue, document family, scheduler, per-event state machine or consumption ACK.
 
-**State: implementation and local suite green (levels R/S/I-local); real run NOT executed** (no GitHub/VM/model/credentials). No checkbox
-marked; ticket not resolved. A double does not prove the replaced boundary.
+**State: resolved (2026-11-16).** Local suite green (R/S/I-local) and the authorized real run `q22-repair-v1` passed (verdict 9/9, below).
+A double does not prove the replaced boundary; the real run proves the conflict path only (see gaps).
 
 ## Design
 
@@ -56,13 +56,13 @@ R = pure rules; S = real Control + Pi Durable/SQLite with real 13/14/15/16 flows
 | 4 revalidation before start; withdraw without charge | `repair-flow` AC4 (paused tracking-pass withdrawal; then withdrawal by the dispatcher's fresh complete read on unpause; consumed 0, nothing launched); `repair-rules` withdraw | R + S |
 | 5 reasons to the Builder, validation/reviews, leased publication, no parallel writer | `repair-flow` AC1… (continue prompt with the repair section and `FETCH_HEAD` tip, handoff base = tip, read-only grant, reviews, lease on the published head, same PR #4); `repair-rules` AC5 | R + S |
 | 6 closes without CI; new failure may open another; repeated event blocks | `repair-flow` AC1… (closed `published` before any CI result; new failure of the NEW head ⇒ correction 2 blocked by `CORRECTION_LIMIT_REACHED`, no activation); `repair-flow` AC6 (same head ⇒ `REPAIR_EVENT_ALREADY_TREATED`, no second activation, lifted when green); `repair-rules` AC6 closure | R + S |
-| 7 real integrations | recipe ready (`repair22-qualification`), **not run** | — |
+| 7 real integrations | real run `q22-repair-v1` (below): one repair consolidated and charged once, base advance not a trigger, same PR | A (real) |
 
 Mutations (restored; detected): `repeated` branch disabled ⇒ 2 failures (rules + flow AC6); dispatcher revalidation bypassed ⇒ 2 flow failures
 (AC1, AC4). TDD honesty: tests were written right after each rule/flow slice, not strictly red-first; the flow test's first run failed for real
 (the continuation prompt named no branch; the repair section now states `base=/branch=/checkout=`).
 
-## One-shot real-run recipe (`test/entrypoints/repair22-qualification.ts`) — not run
+## One-shot real-run recipe (`test/entrypoints/repair22-qualification.ts`)
 
 Namespace `/home/sanmoo/software-factory-test/y5/q22-repair-v1` (own GitHub access root; `O_EXCL` copy of `y5/credentials/app.pem`, missing =
 `APP_KEY_SOURCE_MISSING` before any effect); `ticket.number` is 0 until the supervisor pins the NEW issue (refuses every phase). `correctionLimit: 1`;
@@ -116,6 +116,34 @@ lease names the configured remote URL and the Builder Host's push policy (`push-
 none); `humanTips` is now exactly the tip set ticket 21's Control-side ancestry/content check requires at linking (`preservationTips(knownRemote)`,
 waived tips excluded), so the merge strategy and that check agree; flow tests model ancestry with `remote.graph`; waits use
 `test/runner/budget.ts` `untilHolds` (ticket 40), no iteration-count waits.
+
+## Real run `q22-repair-v1` (2026-11-16, operator-authorized, run by the supervisor; consumed) — PASSED
+
+Branch `run/q22-repair` = `172b027` + pin of issue **#31**; namespace `y5/q22-repair-v1`; real GitHub App, Gondolin/KVM VM and model. Human
+steps by the supervisor from the operator account: PR #33 (base note, base `9cf5bb5` → `8f28ce8`) and PR #34 (conflicting
+`docs/FACTORY_REPAIR.md`, base → `85822b6`), both squash-merged into main; ruleset 26435808 relaxed (no `update`, 0 approvals) only during the
+run and restored afterwards (`pull_request:1`, `non_fast_forward`, `deletion`, `update`). `inspect` saved no verdict (recipe gap, fixed: inspect
+now saves `verdictOf(...)`); the verdict below was computed OFFLINE from the saved results, no rerun, no GitHub read
+(`test/entrypoints/repair22-verdict.test.ts` recomputes it from the copies and checks its sensitivity). Records (secret scan: 0 token/key
+shapes; sessions `tokenPattern: false`): [preflight](22-real-repair-preflight-result-2026-11-16.json), [run](22-real-repair-run-result-2026-11-16.json),
+[advance](22-real-repair-advance-result-2026-11-16.json), [conflict](22-real-repair-conflict-result-2026-11-16.json),
+[inspect](22-real-repair-inspect-result-2026-11-16.json), human steps 1/2 requested/observed, [verdict](22-real-repair-verdict-2026-11-16.json).
+
+| Expectation (plan) | Observed | Met |
+| --- | --- | --- |
+| run: own draft PR at H1 | PR #32 linked at H1 `afc13e9` (attempt expected absent), budget corrections 1/0 | yes |
+| advance: base advance ⇒ nothing | base `8f28ce8` observed; checks of H1 `satisfied`, conflict `none`, note `LOOSE_BRANCH_BEHIND_BASE`; no correction, 0 activations, 0 grants, consumed 0 | yes |
+| conflict: ONE correction `MERGE_CONFLICT main @H1 ^85822b6` | one correction (sequence 1), reasons exactly that, `mergeable:false` evidence; `repair-revalidated` once (fresh read) | yes |
+| repair Execution | `REPAIR_REQUESTED`, `builder-continuation` (same session) with the repair section, `builder-start` grant only, handoff base `85822b6`, reviews r4 (standards+spec), charge `consumed` | yes |
+| strategy (decision 3) | no non-own commit on the Factory branch (no divergence) ⇒ rebase expected: session ran `git fetch origin main`, checked FETCH_HEAD = `85822b6`, `git rebase 85822b6…`, resolved keeping the operator line; H2 `2644c67` has the single parent `85822b6` (compare `85822b6...2644c67` ahead 1 / behind 0). H1 is NOT an ancestor of H2 — by design (own commit rewritten; human commits would have required a merge) | yes |
+| same PR, exact lease | publication activation `--force-with-lease=refs/heads/factory/31-36b542ff:afc13e9… <configured URL> 2644c67…:refs/heads/factory/31-36b542ff`; PR #32 head `2644c67`, mergeable `true`; `pushViolations: []` | yes |
+| closes without CI, charged once | correction closed `published` (head `2644c67`) at the linking; corrections {limit 1, consumed 1, reserved null}; publication charge `preserved` | yes |
+| no re-trigger | quiet window 06:27→06:33 (≥ 3 cycles): 0 activations after closure; checks of H2 `satisfied`, conflict `none` | yes |
+| file at head | `docs/FACTORY_REPAIR.md` keeps the operator's lines and has `## Steps` | yes |
+
+Gaps (accepted): `REQUIRED_CHECK_FAILED`, `STRICT_UPDATE_REQUIRED` and the merge strategy over human commits are proven at rule/flow level
+only (the test repository has no required check; no human commit was on the Factory branch). Readiness was evaluated `ready` internally but
+no draft/ready conversion was sent (recipe stub).
 
 ## Open questions
 

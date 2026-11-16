@@ -1,0 +1,18 @@
+{
+ "step": 2,
+ "expectedMain": "8f28ce83342f6ef15d9b74452ccfc613e329e173",
+ "file": "docs/FACTORY_REPAIR.md",
+ "commands": [
+  "git clone --quiet https://github.com/Sanmoo/java-springboot-event-sourcing.git /tmp/q22-human-2 && cd /tmp/q22-human-2",
+  "test \"$(git rev-parse origin/main)\" = \"8f28ce83342f6ef15d9b74452ccfc613e329e173\"   # the base tip the phase expects; stop if it differs",
+  "git switch --quiet -c q22-human-2 origin/main",
+  "printf '%s\\n' '# Factory repair (base)' '' 'Added on main by the operator (ticket 22 qualification, step 2): conflicts with the Factory branch.' > docs/FACTORY_REPAIR.md",
+  "git add docs/FACTORY_REPAIR.md && git commit --quiet -m 'docs: ticket 22 qualification human step 2'",
+  "git push --quiet origin q22-human-2   # the operator's OWN branch with the operator's credentials; never a Factory branch, never --force",
+  "gh pr create --repo Sanmoo/java-springboot-event-sourcing --base main --head q22-human-2 --title 'q22 human step 2' --body 'Operator step of the ticket 22 qualification.'",
+  "gh pr merge q22-human-2 --repo Sanmoo/java-springboot-event-sourcing --squash --delete-branch   # the OPERATOR merges the operator's own PR (see repositorySetup: own bypass or the temporary relaxation; never the App)"
+ ],
+ "expect": "GitHub reports the Factory PR as not mergeable (conflict) -> ONE correction -> repair -> leased update of the SAME PR",
+ "at": "2026-11-16T05:58:52.552Z",
+ "note": "Operator: run these with YOUR OWN credentials now; the phase is waiting. The Factory PR is never merged by anyone in this step."
+}

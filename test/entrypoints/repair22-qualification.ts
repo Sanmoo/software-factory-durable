@@ -22,8 +22,9 @@ const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 
 /**
  * The NEW synthetic issue the supervisor creates after the operator's authorization (title/body below, label `ready-for-agent`, no other
  * open issue with that label). `number` MUST be pinned in a reviewed commit before preflight: 0 refuses every phase (TICKET_NOT_PINNED).
+ * q22-repair-v1 ran on #31 (run/q22-repair = 172b027 + pin; consumed): a new run needs a new issue AND a new namespace.
  */
-export const ticket = { number: 31, repositoryId: 1256893534, title: 'Factory qualification: repair a merge conflict of the Factory pull request' } as const;
+export const ticket = { number: 0, repositoryId: 1256893534, title: 'Factory qualification: repair a merge conflict of the Factory pull request' } as const;
 const githubApp = { appId: 5569788, privateKeyFile: 'credentials/app.pem' };
 const operatorLogin = 'Sanmoo';
 const configuration = { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1', memoryMiB: 4096, vcpus: 2, diskGiB: 40, shutdownGraceSeconds: 30, minFreeSpaceGiB: 4 } as const;
@@ -211,6 +212,75 @@ export function settled(phase: ControlPhase, work: WorkView | undefined, facts: 
   if (stuck || corrections.length > 1 || (corrections.length === 1 && corrections[0]!.outcome !== 'published')) return { done: true, success: false };
   if (closed && facts.quietCyclesDone) return { done: true, success: (work?.budget?.corrections.consumed ?? 0) === 1 && facts.activations === 2 };
   return { done: false, success: false };
+}
+
+type Saved = Record<string, unknown> | null;
+type Check = { id: string; expected: string; observed: string; met: boolean };
+const pick = (value: unknown, ...path: (string | number)[]): unknown => path.reduce<unknown>((at, key) => at && typeof at === 'object' ? (at as Record<string, unknown>)[key as string] : undefined, value);
+const list = (value: unknown) => Array.isArray(value) ? value as Record<string, unknown>[] : [];
+/**
+ * The verdict of a completed qualification, from the SAVED phase results only (no GitHub, no storage write): every expectation of the plan
+ * with expected vs observed. Strategy (supervisor decision 3): with no non-own commit on the Factory branch the repair rebases (the old own
+ * head is then NOT an ancestor, by design); with human commits it merges and every human tip must stay an ancestor.
+ */
+export function verdictOf(saved: { advance: Saved; conflict: Saved; inspect: Saved; human2: Saved }): { passed: boolean; checks: Check[] } {
+  const checks: Check[] = [];
+  const check = (id: string, expected: string, observed: unknown, met: boolean) => checks.push({ id, expected, observed: typeof observed === 'string' ? observed : JSON.stringify(observed) ?? 'undefined', met });
+  const activations = (phase: Saved) => list(pick(phase, 'events')).filter(item => item.call === 'activate');
+  const advanceWork = list(pick(saved.advance, 'final', 'works'))[0];
+  check('advance.no-correction', 'no correction, no Builder activation, corrections consumed 0, loose lag only noted',
+    { correction: pick(advanceWork, 'correction'), corrections: list(pick(advanceWork, 'corrections')).length, activations: activations(saved.advance).length,
+      consumed: pick(advanceWork, 'budget', 'corrections', 'consumed'), notes: pick(advanceWork, 'checks', 'latest', 'notes') },
+    saved.advance?.status === 'success' && !pick(advanceWork, 'correction') && list(pick(advanceWork, 'corrections')).length === 0 && activations(saved.advance).length === 0 &&
+      pick(advanceWork, 'budget', 'corrections', 'consumed') === 0);
+  const work = pick(saved.inspect, 'work');
+  const base = pick(saved.human2, 'sha') as string | undefined;
+  const corrections = list(pick(work, 'corrections'));
+  const closed = corrections[0];
+  const reasons = list(pick(closed, 'reasons'));
+  const executions = list(pick(saved.inspect, 'executions'));
+  const linked = list(pick(work, 'publication', 'linkedHeads')) as unknown as string[];
+  const h1 = linked[0];
+  check('conflict.one-correction', `exactly one correction, published, charged, reasons [MERGE_CONFLICT main @H1 ^${base}]`,
+    corrections.map(item => ({ outcome: item.outcome, charged: item.charged, reasons: list(item.reasons).map(r => `${r.code}:${r.subject}@${r.headSha}^${r.baseTip}`) })),
+    corrections.length === 1 && closed?.outcome === 'published' && closed.charged === true && reasons.length === 1 && reasons[0]!.code === 'MERGE_CONFLICT' &&
+      reasons[0]!.headSha === h1 && reasons[0]!.baseTip === base && !pick(work, 'correction'));
+  const repair = executions.find(item => pick(item, 'request', 'resume', 'reason') === 'REPAIR_REQUESTED');
+  const repairActivation = activations(saved.conflict).find(item => pick(item, 'context', 'role') === 'builder' && pick(item, 'context', 'executionId') === pick(repair, 'executionId'));
+  check('conflict.repair-execution', 'REPAIR_REQUESTED of that correction, charge consumed once, continue/replacement session with the repair section, reviewed against the base tip',
+    { charge: pick(repair, 'charge'), phaseId: pick(repairActivation, 'context', 'phaseId'), section: pick(repairActivation, 'repairSection'), handoff: pick(repairActivation, 'handoff', 'baseCommit') },
+    Boolean(repair) && pick(repair, 'request', 'repair', 'correctionId') === closed?.correctionId && pick(repair, 'charge', 'state') === 'consumed' &&
+      ['builder-continuation', 'builder-recovery'].includes(String(pick(repairActivation, 'context', 'phaseId'))) && pick(repairActivation, 'repairSection') === true &&
+      pick(repairActivation, 'handoff', 'baseCommit') === base);
+  const head = pick(work, 'publication', 'pullRequest', 'headSha') as string | undefined;
+  const humanTips = list(pick(work, 'publication', 'divergences')).map(item => item.current as string);
+  const compare = pick(saved.inspect, 'compareConflictBaseToHead', 'value');
+  const commits = list(pick(compare, 'commits'));
+  const rebased = commits.length > 0 && commits.every(item => list(item.parents).length === 1);
+  check('conflict.strategy', humanTips.length ? 'human commits on the branch: the base MERGED in, every human tip an ancestor of the head'
+    : `own commits only: rebase onto ${base} (head contains ${base}; the old own head H1 is rewritten, by design)`,
+  { humanTips, compare: pick(compare, 'status'), behindBy: pick(compare, 'behind_by'), commits: commits.map(item => ({ sha: String(item.sha).slice(0, 7), parents: list(item.parents).length })) },
+  pick(compare, 'behind_by') === 0 && (humanTips.length ? commits.some(item => list(item.parents).length === 2) : rebased));
+  const publication = executions.filter(item => pick(item, 'request', 'publication')).at(-1);
+  check('conflict.same-pr-leased', `SAME PR updated: lease on H1, head ${head}, no other push`,
+    { pr: pick(work, 'publication', 'pullRequest', 'number'), expected: pick(publication, 'request', 'publication', 'expectedRemote'), update: pick(publication, 'request', 'publication', 'pullRequest'),
+      pushViolations: pick(saved.inspect, 'pushViolations') },
+    pick(publication, 'request', 'publication', 'expectedRemote', 'sha') === h1 && pick(publication, 'request', 'publication', 'pullRequest') === pick(work, 'publication', 'pullRequest', 'number') &&
+      pick(publication, 'request', 'publication', 'head') === head && list(pick(saved.inspect, 'pushViolations')).length === 0 && pick(closed, 'head') === head);
+  const history = list(pick(work, 'history')).map(item => item.event);
+  const count = (event: string) => history.filter(item => item === event).length;
+  check('budget-and-history', 'corrections consumed 1 (reserved null); correction-opened 1, repair-revalidated 1, correction-closed 1',
+    { budget: pick(work, 'budget', 'corrections'), opened: count('correction-opened'), revalidated: count('repair-revalidated'), closed: count('correction-closed') },
+    pick(work, 'budget', 'corrections', 'consumed') === 1 && pick(work, 'budget', 'corrections', 'reserved') === null && count('correction-opened') === 1 &&
+      count('repair-revalidated') === 1 && count('correction-closed') === 1);
+  const after = activations(saved.conflict).filter(item => String(item.at) > String(pick(closed, 'closedAt')));
+  check('no-retrigger', 'no activation after the closure (quiet window)', after.length, saved.conflict?.status === 'success' && after.length === 0 && activations(saved.conflict).length === 4);
+  const content = pick(saved.inspect, 'fileAtHead', 'value', 'content');
+  const text = typeof content === 'string' ? Buffer.from(content, 'base64').toString('utf8') : '';
+  check('file-at-head', 'operator line kept and ## Steps present', text.split('\n').slice(0, 12).join(' | '), text.includes('Added on main by the operator') && /^## Steps/m.test(text));
+  const sessions = list(pick(saved.inspect, 'sessions'));
+  check('no-token', 'no token/private key in any session', sessions.filter(item => item.tokenPattern).length, sessions.length > 0 && sessions.every(item => item.tokenPattern === false));
+  return { passed: checks.every(item => item.met), checks };
 }
 
 async function io() {
@@ -437,7 +507,7 @@ export async function runPhase(phase: Phase) {
       const contents = head ? await github.read(repository, 'publication-read', session => session.get(`/repos/${repository.repository}/contents/docs/FACTORY_REPAIR.md?ref=${head}`)) : null;
       const pull = work.publication?.pullRequest ? await codeRepository.readPullRequest({ repo: repository, number: work.publication.pullRequest.number }) : null;
       const issue = await tracker.readTicket(work.ticket);
-      await save('inspect-result', { work: { work_id: work.work_id, branch: work.branch, pullRequest: work.pullRequest, publication: work.publication, impediments: work.impediments,
+      const result = { work: { work_id: work.work_id, branch: work.branch, pullRequest: work.pullRequest, publication: work.publication, impediments: work.impediments,
         budget: work.budget, correction: work.correction, corrections: work.corrections ?? [], queue: work.queue, checks: work.checks ?? null,
         history: work.history.filter(item => item.event.startsWith('publication') || item.event.startsWith('repair') || item.event.startsWith('correction') || item.event.startsWith('budget')) },
       executions: [...work.previousExecutions, work.execution].map((item: ExecutionView) => ({ executionId: item.executionId, phase: item.dispatch.phase, request: item.request,
@@ -445,7 +515,11 @@ export async function runPhase(phase: Phase) {
         verification: item.review?.verification ?? null })),
       compareConflictBaseToHead: compare, fileAtHead: contents, pull, pushViolations: pushViolations(pushes, [...work.previousExecutions, work.execution].flatMap((item: ExecutionView) => item.request.publication ? [{
         branch: item.request.publication.branch, head: item.request.publication.head,
-        expected: item.request.publication.expectedRemote.state === 'present' ? item.request.publication.expectedRemote.sha : null }] : [])), sessions, issue, preflight });
+        expected: item.request.publication.expectedRemote.state === 'present' ? item.request.publication.expectedRemote.sha : null }] : [])), sessions, issue, preflight };
+      // The verdict against every expectation of the plan, from the saved phase results (no further GitHub read).
+      const verdict = verdictOf({ advance: await load('advance-result'), conflict: await load('conflict-result'), inspect: JSON.parse(JSON.stringify(result)) as Saved,
+        human2: await load('human-step-2-observed') });
+      await save('inspect-result', { verdict, ...result });
       return;
     }
     if (!needsStop(work.execution as ExecutionView)) throw new Error('NOTHING_TO_STOP');

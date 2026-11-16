@@ -1,0 +1,18 @@
+{
+ "step": 1,
+ "expectedMain": "9cf5bb51d785c57dbf98b74a1f0f9b30613249f2",
+ "file": "docs/FACTORY_REPAIR_BASE_NOTE.md",
+ "commands": [
+  "git clone --quiet https://github.com/Sanmoo/java-springboot-event-sourcing.git /tmp/q22-human-1 && cd /tmp/q22-human-1",
+  "test \"$(git rev-parse origin/main)\" = \"9cf5bb51d785c57dbf98b74a1f0f9b30613249f2\"   # the base tip the phase expects; stop if it differs",
+  "git switch --quiet -c q22-human-1 origin/main",
+  "printf '%s\\n' '# Base note' '' 'Added on main by the operator (ticket 22 qualification, step 1): the base merely advances.' > docs/FACTORY_REPAIR_BASE_NOTE.md",
+  "git add docs/FACTORY_REPAIR_BASE_NOTE.md && git commit --quiet -m 'docs: ticket 22 qualification human step 1'",
+  "git push --quiet origin q22-human-1   # the operator's OWN branch with the operator's credentials; never a Factory branch, never --force",
+  "gh pr create --repo Sanmoo/java-springboot-event-sourcing --base main --head q22-human-1 --title 'q22 human step 1' --body 'Operator step of the ticket 22 qualification.'",
+  "gh pr merge q22-human-1 --repo Sanmoo/java-springboot-event-sourcing --squash --delete-branch   # the OPERATOR merges the operator's own PR (see repositorySetup: own bypass or the temporary relaxation; never the App)"
+ ],
+ "expect": "no correction, no Builder activation, no budget consumed",
+ "at": "2026-11-16T05:51:47.381Z",
+ "note": "Operator: run these with YOUR OWN credentials now; the phase is waiting. The Factory PR is never merged by anyone in this step."
+}
