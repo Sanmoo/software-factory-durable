@@ -5,7 +5,7 @@ import { createCodeRepository } from '../../code-repository/index.js';
 import { createSandbox, type GuestAssetPin } from '../../sandbox/index.js';
 import { lstat, readdir, realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
-import { forgetWorkRecords, inspectWorkRecords, listDetails, preserveEvidence, preserveSessionCopy, removeRecordsDetail } from '../../records/index.js';
+import { forgetWorkRecords, inspectWorkRecords, listDetails, createRecords, preserveEvidence, preserveSessionCopy, removeRecordsDetail } from '../../records/index.js';
 import { readConfinedFile, readSessionFile, workerRuntimeDirectory } from '../../platform/host/index.js';
 import { createWorkers, skillPackContinues, skillPacks, type SkillPackId } from '../../workers/index.js';
 import { createBuilderCredentials, createRepositoryFetchCredentials, type GitHubAccess } from '../../platform/github/index.js';
@@ -13,6 +13,19 @@ import { factorySkillPackIds, type GitHubScope } from '../../contracts/index.js'
 import { latestContinuationPack, productionBuilderPrompt, productionProfile } from '../release.js';
 
 export { latestContinuationPack };
+
+/** Ticket 29: the read-only Records facets inspection uses, over the installation's protected Records root (no secret is registered: read only). */
+export function inspectionRecords(root: string): NonNullable<ExecutionPorts['records']> {
+  let opened: ReturnType<typeof createRecords> | undefined;
+  const records = async () => {
+    opened ??= createRecords({ root });
+    try { return await opened; } catch (error) { opened = undefined; throw error; }
+  };
+  return {
+    async find(selection) { return (await records()).find(selection); },
+    async read(input) { return (await records()).read(input); },
+  };
+}
 
 type Role = 'builder' | 'standards' | 'spec';
 export type ProductionInput = {
@@ -125,7 +138,12 @@ export async function composeProductionExecution(input: ProductionInput): Promis
       observeStart: input => workers.observeStart(input),
       // Ticket 28: a reviewer's complete opinion record located without its notification (partial review recovery).
       observeOpinion: input => workers.observeOpinion(input),
-      observeQuestion: input => workers.observeQuestion(input) },
+      observeQuestion: input => workers.observeQuestion(input),
+
+      // Ticket 29: model usage of preserved sessions, for `factory usage` (read-only).
+      observeUsage: input => workers.observeUsage(input) },
+    // Ticket 29: read-only `Records.read(selection)` of the protected Records for `factory logs` (opened lazily; a failed open is retried).
+    records: inspectionRecords(input.root),
     // Ticket 13: multi-round reviews (treatments, Host-evidenced gates, end-of-Execution verification) with the release's bound.
     // Ticket 28: partial review recovery (only the failed reviewer re-obtained on the unchanged proposal; lost notifications from Records).
     reviews: { reviewer: { ...productionProfile.reviewer }, rounds: { ...productionProfile.reviewRounds }, partialRecovery: true },

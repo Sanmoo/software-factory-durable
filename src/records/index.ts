@@ -37,6 +37,7 @@ export type TextProjection = {
 type OutputPage = { state: 'complete' | 'partial'; data: Buffer<ArrayBuffer>; nextOffset: number; bytes: number }
   | { state: 'absent'; data: Buffer<ArrayBuffer>; nextOffset: number; bytes: number };
 type RawPage = OutputPage & { version: 2; format: 'raw' };
+type FoundCapture = { reference: OutputReference; context: OutputContext; state: 'complete' | 'partial'; format: 'text' | 'raw' };
 /** Upper bound of the captures one `find` lists for a Work (bounded host read; beyond it the result is incomplete). */
 const findLimit = 20000;
 export { preserveEvidence, type PreservedEvidence, type Preservation } from './preserve.js';
@@ -498,39 +499,50 @@ export async function createRecords({ root }: { root: string }) {
    * Ticket 26 (`read(selection)` with filters): the captures of ONE Work whose recorded correlation matches the selection, with their state.
    * Unreadable/corrupt capture metadata or an over-limit listing makes the result `incomplete` — never proof of absence.
    */
-  async function find(selection: { workId: string; executionId?: string; invocationId?: string; callId?: string }):
-    Promise<{ completeness: 'complete' | 'incomplete'; captures: { reference: OutputReference; context: OutputContext; state: 'complete' | 'partial' }[] }> {
-    const filter = z.strictObject({ workId: identifier, executionId: identifier.optional(), invocationId: identifier.optional(), callId: identifier.optional() }).safeParse(selection);
+  async function find(selection: { workId: string; executionId?: string; invocationId?: string; callId?: string; role?: OutputContext['role']; id?: string; after?: string;
+    limit?: number }): Promise<{ completeness: 'complete' | 'incomplete'; captures: FoundCapture[]; next: string | null }> {
+    // Ticket 29 paging: `after` (a capture id) and `limit` page the Work's captures in id order; `next` is the last id examined when more remain.
+    // `id` looks one capture up directly; `role` filters by the recorded role. A paged call has no listing cap (it reads at most `limit` matches).
+    const filter = z.strictObject({ workId: identifier, executionId: identifier.optional(), invocationId: identifier.optional(), callId: identifier.optional(),
+      role: contextSchema.shape.role.optional(), id: z.uuid().optional(), after: z.uuid().optional(), limit: z.number().int().min(1).max(findLimit).optional() }).safeParse(selection);
     if (!filter.success) throw new RecordsError();
-    const evidence = join(root, filter.data.workId, 'evidence');
+    const { id: only, after, limit, ...correlation } = filter.data;
+    const evidence = join(root, correlation.workId, 'evidence');
     let names: string[];
     try {
-      for (const path of [join(root, filter.data.workId), evidence]) await privateDirectory(path);
+      for (const path of [join(root, correlation.workId), evidence]) await privateDirectory(path);
       names = await readdir(evidence);
     } catch (error) {
       // No evidence of this Work proves absence ONLY under an intact Records root (ticket 26 review): otherwise nothing is proven.
-      if (error instanceof Error && 'code' in error && error.code === 'ENOENT' && await rootIntact()) return { completeness: 'complete', captures: [] };
-      return { completeness: 'incomplete', captures: [] };
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT' && await rootIntact()) return { completeness: 'complete', captures: [], next: null };
+      return { completeness: 'incomplete', captures: [], next: null };
     }
-    if (names.length > findLimit) return { completeness: 'incomplete', captures: [] };
+    const paged = only !== undefined || after !== undefined || limit !== undefined;
+    if (!paged && names.length > findLimit) return { completeness: 'incomplete', captures: [], next: null };
+    let candidates = names.sort();
+    if (only !== undefined) candidates = candidates.filter(name => name === only);
+    if (after !== undefined) candidates = candidates.filter(name => name > after);
     let completeness: 'complete' | 'incomplete' = 'complete';
-    const captures: { reference: OutputReference; context: OutputContext; state: 'complete' | 'partial' }[] = [];
-    for (const name of names.sort()) {
+    const captures: FoundCapture[] = [];
+    let next: string | null = null;
+    for (const [index, name] of candidates.entries()) {
+      if (limit !== undefined && captures.length >= limit) { next = candidates[index - 1] ?? null; break; }
       if (!z.uuid().safeParse(name).success) { completeness = 'incomplete'; continue; }
       try {
         const directory = join(evidence, name);
         await privateDirectory(directory);
         const capture = z.union([captureSchema, rawCaptureSchema]).parse(await privateJson(join(directory, 'capture.json')));
-        if (capture.reference.id !== name || capture.reference.workId !== filter.data.workId || capture.context.workId !== filter.data.workId) { completeness = 'incomplete'; continue; }
-        const { workId: _workId, ...wanted } = filter.data;
+        if (capture.reference.id !== name || capture.reference.workId !== correlation.workId || capture.context.workId !== correlation.workId) { completeness = 'incomplete'; continue; }
+        const { workId: _workId, ...wanted } = correlation;
         if (Object.entries(wanted).some(([key, value]) => value !== undefined && capture.context[key as keyof OutputContext] !== value)) continue;
         let state: 'complete' | 'partial' = 'partial';
         try { await privateJson(join(directory, 'complete.json')); state = 'complete'; }
         catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) { completeness = 'incomplete'; continue; } }
-        captures.push({ reference: capture.reference, context: capture.context, state });
+        // Ticket 29: the capture format, so inspection never displays a raw capture as text.
+        captures.push({ reference: capture.reference, context: capture.context, state, format: capture.version === 2 ? 'raw' : 'text' });
       } catch { completeness = 'incomplete'; }
     }
-    return { completeness: completeness === 'complete' && await rootIntact() ? 'complete' : 'incomplete', captures };
+    return { completeness: completeness === 'complete' && await rootIntact() ? 'complete' : 'incomplete', captures, next };
   }
   const records = {
     openOutput, read, projectText, find,

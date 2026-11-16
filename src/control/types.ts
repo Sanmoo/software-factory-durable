@@ -86,8 +86,14 @@ export type ControlReceipt = { kind: 'durable'; request_id: string; operation: '
     reason: string | null; feedbackId: string | null; appliesAt: 'next-activation' | null;
     /** What the operator can do next (refusals name the command that applies, e.g. `update-scope` without an own PR). */
     nextStep: string | null };
-export type ControlQuery = { kind: 'status' } | { kind: 'request'; request_id: string } | { kind: 'access' } | { kind: 'list' } | { kind: 'show'; work_id: string } |
-  { kind: 'question'; question_id: string };
+export type ControlQuery = { kind: 'status' } | { kind: 'request'; request_id: string } | { kind: 'access' } |
+  /** Ticket 29: `cursor`/`limit` page the Works (admission order) and the page is fitted to one frame; neither = the full list. */
+  { kind: 'list'; cursor?: number | undefined; limit?: number | undefined } |
+  { kind: 'question'; question_id: string } |
+  /** Ticket 29: `cursor`/`limit` page `chain.executions` of a big Work (the full view is returned when it fits one frame). */
+  { kind: 'show'; work_id: string; cursor?: number | undefined; limit?: number | undefined } |
+  /** Ticket 29: paginated/filtered history, logs listing, one log page and consumption (read-only). */
+  HistoryQuery | LogsQuery | LogReadQuery | UsageQuery;
 export type DispatchReason = 'RECONCILIATION_REQUIRED' | 'EXECUTION_NOT_ENABLED';
 /**
  * Ticket 26: host listing of the installation's own runtime resources taken by the composition after the exclusive lock and BEFORE the
@@ -143,7 +149,16 @@ export type ExecutionPorts = {
     observeOpinion?(input: { workId: string; executionId: string; invocationId: string }): Promise<OpinionObservation>;
     /** Ticket 27 — Q6 `observe`, question facet: the complete `ask_user` request a Builder invocation preserved before its notification/ACK.
      * Absent = a Question whose notification and completion were both lost stays only in Records (the Execution then recovers as a failure). */
-    observeQuestion?(input: { workId: string; executionId: string; invocationId: string }): Promise<QuestionObservation> };
+    observeQuestion?(input: { workId: string; executionId: string; invocationId: string }): Promise<QuestionObservation>;
+
+    /** Ticket 29 — Q6 `observe`, usage facet: model usage entries of ONE preserved session (Builder `ref`+`sha256`, or a reviewer's recorded
+     * session `file`), read-only and confined; absent = usage is `unavailable` (never zero). Not an invoice. */
+    observeUsage?(input: { workId: string; /** The boot of the Execution the session belongs to (the session must lie in its runtime tree). */ boot: string | null;
+      /** Ticket 30: `copy` = the Work's Records session copy `sessions/<name>.jsonl`, verified against `sha256`. */
+      session: { ref: string; sha256: string } | { file: string } | { copy: { workId: string; name: string; sha256: string } } }): Promise<UsageObservation> };
+  /** Ticket 29 — `Records.read(selection)` for inspection: listing of a Work's protected captures and one bounded page of one of them.
+   * Absent = logs are `unavailable` (never an empty list). Read-only. */
+  records?: RecordsInspectionPort;
   /** Ticket 12: when composed, the Builder hands off for parallel Standards/Spec reviews inside the SAME Execution/Slot/boot.
    * Ticket 13 `rounds.max`: repeated captures per Builder activation (handoffs with treatments/gates plus the Host's closing capture),
    * exemptions (unchanged content, identical commit) and the end-of-Execution verification. Absent = the single ticket 12 round.
@@ -684,6 +699,8 @@ export type WorkView = {
     notBefore?: string; waitSeconds?: number; attempt?: number; executionId?: string | null } | null;
   /** Presentation only (never persisted): limits/reservations/consumption, timeout, duration/last activity and the action required. */
   limits: LimitsView;
+  /** Ticket 29, presentation only: this view is a compacted form of the Work (to fit one frame); the counts left out and where to read them. */
+  compacted?: { history: number; previousExecutions: number; nextStep: string };
   /** Concrete scope updates authorized by the operator (ticket 11), in acceptance order. Later Ticket/link edits are never one. */
   scopeUpdates?: ScopeUpdateView[];
   /** Ticket 17 (absent on earlier records): observation of the own pull request and the confirmed merge that delivers the Work. */
@@ -760,8 +777,14 @@ export type ScopeUpdateView = { scopeUpdateId: string; reason: string; sha256: s
   consumedAt: string | null; consumption: 'execution-completed' | null; reoffers: number };
 export type ListView = { kind: 'list'; paused: boolean; dispatch: 'closed' | 'open'; dispatchReason: DispatchReason | null; slots: { capacity: number; held: number };
   queues: { normal: string[]; repair: string[] }; works: WorkView[]; selection: Selection; polling: PollingView; limitations: string[];
-  /** Ticket 31: Works whose history was deleted, as their minimal memory only. */ forgotten?: ForgottenWork[] };
-export type ShowView = { kind: 'work'; work: WorkView; lastPolled: CandidateView | null; questions: QuestionView[] } | { kind: 'work-not-found'; work_id: string; nextStep: string } |
+  /** Ticket 31: Works whose history was deleted, as their minimal memory only. */ forgotten?: ForgottenWork[];
+  /** Ticket 29: the page of `works` (queues/selection stay installation-wide). */
+  page: PageView };
+export type ShowView = { kind: 'work'; work: WorkView; lastPolled: CandidateView | null; questions: QuestionView[];
+  /** Ticket 29: the correlated chain and the observations behind it (presentation; the dimensions above stay the authority). */
+  chain: ChainView;
+  /** Ticket 29: what was left out so the view fits one frame, and the paged commands that show it (null = nothing omitted). */
+  omitted: { history: number; previousExecutions: number; questions: number; executions: PageView; nextSteps: string[] } | null } | { kind: 'work-not-found'; work_id: string; nextStep: string } |
   /** Ticket 31: the Work's history was deleted by `forget`; only its minimal cycle memory remains (never "not found", never "expired"). */
   { kind: 'work-forgotten'; work_id: string; memory: ForgottenWork; notRecoverable: string[]; nextStep: string };
 export type QuestionQueryView = { kind: 'question'; question: QuestionView } | { kind: 'question-not-found'; question_id: string; nextStep: string } |
@@ -793,6 +816,10 @@ export type ControlStatus = {
   recovery: RecoveryView | null;
   /** Ticket 33: storage format and how the previous controller run of this storage ended (`crash`: it never recorded an end). */
   storage: { format: number; previousRun: { runId: string; startedAt: string; endedAt?: string; end: 'clean' | 'uncertain' | 'failed' | 'crash' } | null };
+  /** Ticket 29 (spec §12.1): impediments of open Works by code, and non-token consumption (tokens/cost: `factory usage`). */
+  impediments: { works: number; codes: Record<string, number> };
+  consumption: { executions: { total: number; active: number }; corrections: { consumed: number; reserved: number }; recoveries: { consumed: number; reserved: number };
+    time: { measuredMs: number; lowerBoundMs: number; unknown: number; measurement: UsageMeasurement }; usage: { query: 'usage' } };
 };
 export type RecoveryView = { at: string; inventory: 'empty' | 'unknown' | 'listed'; reconciled: number; ceased: number; unconfirmed: number;
   global: string[]; cachePreparing: (number | null)[];
@@ -800,7 +827,9 @@ export type RecoveryView = { at: string; inventory: 'empty' | 'unknown' | 'liste
   cache: { repositoryId: number | null; state: string; nextStep: string | null }[] };
 export interface Control {
   accept(input: ControlInput): Promise<ControlReceipt | { kind: 'refused'; code: 'REQUEST_ID_CONFLICT' | 'INVALID_COMMAND' }>;
-  inspect(query: ControlQuery): Promise<ControlStatus | { kind: 'request'; receipt: ControlReceipt | null } | AccessView | ListView | ShowView | QuestionQueryView>;
+  inspect(query: ControlQuery): Promise<ControlStatus | { kind: 'request'; receipt: ControlReceipt | null } | AccessView | ListView | ShowView | QuestionQueryView |
+    HistoryView | LogsView | LogPageView | UsageView | { kind: 'work-not-found'; work_id: string; nextStep: string } |
+    { kind: 'work-forgotten'; work_id: string; memory: ForgottenWork; notRecoverable: string[]; nextStep: string }>;
   /** `uncertain`: stopped, but some own activity is not confirmed ceased or not durably settled (cessation unconfirmed, Slot held); the next boot reconciles it (ticket 26) and it is never a clean stop (ticket 33). */
   run(signal: AbortSignal): Promise<{ kind: 'clean' | 'failed' | 'uncertain' }>;
 }
@@ -867,6 +896,112 @@ export type CleanupPorts = {
   retentionDays?: number;
   /** Ticket 30: seconds between retention sweeps (default 86400: daily), besides the sweep at each controller boot after reconciliation. */
   sweepSeconds?: number;
+};
+
+// ---- Ticket 29: correlated inspection and consumption (spec §2.3 `inspect`, §11.3 history/logs, §12.1-12.2) ----
+export type InspectionRole = 'builder' | 'standards' | 'spec';
+/** Page/filter of a history or logs query. `cursor` is the index of the first item in the FILTERED sequence (stable: history is append-only). */
+export type InspectionFilter = { execution?: string | undefined; role?: InspectionRole | undefined; cursor?: number | undefined; limit?: number | undefined };
+export type HistoryQuery = { kind: 'history'; work_id: string } & InspectionFilter;
+/** Logs page by capture id (`after`, Records-level paging), so a Work with more captures than one listing allows stays listable. */
+export type LogsQuery = { kind: 'logs'; work_id: string; execution?: string | undefined; role?: InspectionRole | undefined; after?: string | undefined; limit?: number | undefined };
+/** One page of one protected capture (`offset` in bytes). */
+export type LogReadQuery = { kind: 'log'; work_id: string; capture: string; offset?: number | undefined; limit?: number | undefined };
+/** Installation scope pages the Works by `cursor`/`limit` (bounded); one Work ignores them. */
+export type UsageQuery = { kind: 'usage'; work_id?: string | undefined; cursor?: number | undefined; limit?: number | undefined };
+/** Presentation of one history entry: its position, what it links to and the role it belongs to (null = Work-level). */
+export type HistoryEntryView = { sequence: number; role: InspectionRole | null; executionId: string | null; links: Record<string, string>;
+  entry: WorkView['history'][number] };
+export type PageView = { cursor: number; limit: number; returned: number; filtered: number; total: number; nextCursor: number | null;
+  /** The page was cut to fit one protocol frame: fewer entries than `limit` although more exist (follow `nextCursor`). */
+  fitted: boolean };
+export type HistoryView = { kind: 'history'; work_id: string; filter: { execution: string | null; role: InspectionRole | null }; page: PageView;
+  entries: HistoryEntryView[]; limitations: string[] };
+/**
+ * State of one piece of evidence as the inspection can establish it (spec §12.1/§12.2): `complete` (intact, fully readable), `truncated`
+ * (this page/display is a part, the full content stays available by reference), `partial` (the capture itself is incomplete), `absent`
+ * (provably not there under an intact store), `removed` (an own cleanup removed it), `expired` (a retention sweep removed it), `unknown`
+ * (it cannot be established: never absence, never zero).
+ */
+export type EvidenceState = 'complete' | 'truncated' | 'partial' | 'absent' | 'removed' | 'expired' | 'unknown';
+export type LogCaptureView = { capture: string; executionId: string; invocationId: string; role: InspectionRole; callId: string; environment: string; boot: string;
+  format: 'text' | 'raw'; state: EvidenceState };
+export type LogsView = { kind: 'logs'; work_id: string; filter: { execution: string | null; role: InspectionRole | null };
+  /** `complete`: every capture of the Work was listed; `incomplete`/`unavailable`: the listing proves nothing about what is missing. */
+  listing: { state: 'complete' | 'incomplete' | 'unavailable'; code: string | null; nextStep: string | null };
+  page: { after: string | null; limit: number; returned: number; next: string | null; fitted: boolean }; captures: LogCaptureView[]; limitations: string[] };
+export type LogPageView = { kind: 'log'; work_id: string; capture: string; state: EvidenceState; code: string | null;
+  /** Filtered text of this page (text captures only; a raw capture's bytes are never displayed). */
+  text: string | null; offset: number; nextOffset: number | null; bytes: number | null; nextStep: string | null;
+  /** The text is captured tool/command output: untrusted data, never instructions or authority. */
+  trust: 'untrusted-captured-output' };
+/** Token/cost observation of one role activity. `measurement`: complete (every entry of a readable session), partial (some known gap),
+ * unavailable (nothing measurable: never a zero). Numbers are present only when observed. */
+export type UsageMeasurement = 'complete' | 'partial' | 'unavailable';
+export type TokenUsage = { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
+/** SDK estimate (spec §12.1): catalog price of the model as the SDK computed it; NOT an invoice; currency only when the SDK reports one. */
+export type CostEstimate = { total: number; unit: 'sdk-catalog-estimate'; currency: string | null };
+export type UsageObservation = { state: 'read'; sessionId: string; entries: UsageEntryObservation[]; malformed: number; integrity?: 'verified' | 'unverified' } |
+  { state: 'lost' | 'unavailable' | 'altered'; code: string };
+export type UsageEntryObservation = { id: string; provider: string | null; model: string | null; outcome: 'ok' | 'error' | 'aborted' | 'other';
+  tokens: TokenUsage; cost: number | null };
+export type UsageActivityView = { executionId: string; role: InspectionRole; round: number | null; attempt: number | null; invocationId: string | null;
+  outcome: string | null; session: { sessionId: string | null; mode: string | null; state: EvidenceState };
+  models: { provider: string | null; model: string | null }[]; measurement: UsageMeasurement; code: string | null;
+  /** Entries of a continued session already counted for an earlier activity (never summed again). */
+  carriedEntries: number; entries: number; failedOrAborted: number;
+  tokens: TokenUsage | null; cost: CostEstimate | null };
+export type UsageAggregate = { measurement: UsageMeasurement; activities: number; measured: number; unavailable: number;
+  tokens: TokenUsage | null; cost: CostEstimate | null };
+export type WorkUsageView = { work_id: string; ticket: string; activities: UsageActivityView[]; byRole: Record<InspectionRole, UsageAggregate>; total: UsageAggregate;
+  /** Non-token consumption (spec §4.4/§5.7): budgets, Executions and their measured durations. */
+  budget: { corrections: CounterView | null; recoveries: CounterView | null; grants: number };
+  time: { executions: number; measuredMs: number; lowerBoundMs: number; unknown: number; measurement: UsageMeasurement } };
+export type UsageView = { kind: 'usage'; scope: 'installation' | 'work'; at: string; works: WorkUsageView[];
+  /** Total of THIS page's Works (the installation total only when the page holds every Work). */ total: UsageAggregate; page: PageView;
+  slots: { capacity: number; held: number };
+  /** Adapter RAM/CPU/I/O/disk are distinct from tokens/cost and from virtual/free capacity; not observed by this release. */
+  resources: { state: 'unavailable'; code: 'ADAPTER_RESOURCE_METRICS_NOT_OBSERVED'; note: string };
+  limitations: string[] };
+/** One external/derived observation behind the view, with its instant, freshness and completeness (spec §12.1). */
+export type ObservationView = { source: 'polling' | 'dependencies' | 'checks' | 'readiness' | 'delivery' | 'feedback' | 'publication';
+  observedAt: string | null; ageSeconds: number | null; completeness: string };
+/** Ticket 29: the correlated chain of one Work (Ticket → Work → cycle → Executions → reviews → publication/readiness/delivery/cleanup → references). */
+export type ChainView = {
+  ticket: { repository: string; number: number; url: string };
+  work: { work_id: string; cycle: number; predecessor: string | null; result: WorkView['result']; admittedAt: string; branch: string | null };
+  /** Phase/wait derived from the dimensions (presentation only; never authority): what the Work is doing or waiting for, and the next step. */
+  phase: { code: string; waitingFor: string | null; nextStep: string | null };
+  lastActivity: { at: string; event: string } | null;
+  executions: ChainExecutionView[];
+  questions: { questionId: string; executionId: string; state: QuestionView['state']; publication: string; url: string | null }[];
+  corrections: { current: { correctionId: string; trigger: string | null; consumed: boolean } | null; closed: number; feedback: { pending: number; total: number } };
+  publication: { state: string; pullRequest: { number: number; url: string; draft: boolean; state: string } | null; verifiedHead: string | null; nextStep: string | null } | null;
+  checks: { outcome: string; headSha: string | null; at: string } | null;
+  readiness: { internal: string; flag: string; nextStep: string } | null;
+  delivery: { state: string; mergedAt: string | null; mergeCommitSha: string | null } | null;
+  cleanup: { state: string; resources: { kind: string; state: string }[]; nextStep: string } | null;
+  /** Protected references the history and decisions rest on (never their content). */
+  references: { kind: 'question-content' | 'opinion' | 'start-receipt' | 'preserved-evidence' | 'builder-session' | 'reviewer-session'; executionId: string | null;
+    reference: string }[];
+  /** Models and configuration actually recorded for each role (session profiles, opinions, Builder policies). */
+  models: { role: InspectionRole; provider: string; model: string; source: 'builder-session' | 'opinion' }[];
+  configuration: { builder: ExecutionView['request']['policies'] | null; timeoutSeconds: number | null };
+  observations: ObservationView[];
+};
+export type ChainExecutionView = { executionId: string; mode: ExecutionView['mode']; state: ExecutionView['state']; phase: ExecutionView['dispatch']['phase'];
+  purpose: 'implementation' | 'publication' | 'repair' | 'reconciliation' | 'resumption' | 'recovery';
+  outcome: string | null; code: string | null; environment: string | null; boot: string | null; startedAt: string | null; endedAt: string | null;
+  charge: string | null; duration: DurationView['state']; verification: string | null; recoveries: number;
+  reviews: { round: number; attempt: number; kind: string; conclusion: string | null;
+    reviewers: { role: 'standards' | 'spec'; state: string; attempt: number; conclusion: string | null; source: string | null; opinion: string | null }[] }[] };
+/** Ticket 29: the read-only Records facets inspection uses (spec §2.3 `Records.read`). */
+export type RecordsInspectionPort = {
+  find(selection: { workId: string; executionId?: string; role?: InspectionRole; id?: string; after?: string; limit?: number }): Promise<{ completeness: 'complete' | 'incomplete';
+    /** Last capture id examined when more remain (paged calls). */ next?: string | null;
+    captures: { reference: { workId: string; id: string }; context: { workId: string; executionId: string; invocationId: string; role: InspectionRole; environmentRef: string;
+      bootRef: string; callId: string }; state: 'complete' | 'partial'; format?: 'text' | 'raw' }[] }>;
+  read(input: { reference: { workId: string; id: string }; offset: number; limit: number }): Promise<{ state: 'complete' | 'partial' | 'absent'; data: Uint8Array; nextOffset: number; bytes: number }>;
 };
 
 // ---- Ticket 30: retention and explicit cleanup (spec §12.1/§12.3/§12.4) ----

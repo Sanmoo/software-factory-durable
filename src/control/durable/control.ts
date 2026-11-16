@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { z } from 'zod';
-import type { AccessDependencies, Control, ControlStatus, DetailInventory, DispatchReason, ExecutionPorts, Impediment, LimitsView, ListView, PollingOptions, PollingView, RecoveryView, RuntimeInventory,
+import type { AccessDependencies, Control, ControlStatus, DetailInventory, ShowView, DispatchReason, ExecutionPorts, Impediment, LimitsView, ListView, PollingOptions, PollingView, RecoveryView, RuntimeInventory,
   WorkView } from '../types.js';
 import { heldSlots, initializeSlots, reconcileDurations, reconcileLostCredentials } from './execution.js';
 import { createDispatcher, isLiveCredentialExecution, isLiveExecution } from './dispatch.js';
@@ -33,6 +33,8 @@ import { retentionProtections, type PlanFacts } from '../rules/retention.js';
 import { createRepairDesk } from './repair.js';
 import { acceptRepairRequest, createFeedbackDesk } from './feedback.js';
 import { queueOrder } from '../rules/repair.js';
+import { chainOf, compactWork, executionsOf, fitPage, inspectionLimits, page } from '../rules/inspection.js';
+import { inspectHistory, inspectLog, inspectLogs, inspectUsage, viewBudgetBytes } from './inspection.js';
 
 const requestId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
 const inputSchema = z.union([z.strictObject({ request_id: requestId, operation: z.enum(['pause', 'unpause']), origin: z.literal('local-cli') }),
@@ -216,6 +218,42 @@ export async function openControl(options: { storagePath: string;
   const selection = (works: WorkRecord[]) => selectNext(queueOrder(works.filter(work => work.result === 'open' && work.queue.pending))
     .map(work => ({ work_id: work.work_id, blockers: blockers(work) })));
   const queued = (works: WorkRecord[], category: 'normal' | 'repair') => queueOrder(works.filter(work => work.queue.pending && work.queue.category === category)).map(work => work.work_id);
+  // Ticket 29 (spec §12.1): global impediments by code and non-token consumption, from the authority (tokens/cost: `usage`).
+  const consumptionOf = (works: WorkRecord[]): Pick<ControlStatus, 'impediments' | 'consumption'> => {
+    const open = works.filter(work => work.result === 'open');
+    const codes: Record<string, number> = {};
+    for (const work of open) for (const item of work.impediments) codes[item.code] = (codes[item.code] ?? 0) + 1;
+    const executions = works.flatMap(work => executionsOf(work));
+    let measuredMs = 0, lowerBoundMs = 0, unknown = 0;
+    for (const execution of executions) {
+      const duration = execution.timing?.duration;
+      if (duration?.kind === 'measured') measuredMs += duration.elapsedMs; else if (duration?.kind === 'lower-bound') lowerBoundMs += duration.provenMs; else if (execution.start) unknown++;
+    }
+    const sum = (key: 'corrections' | 'recoveries') => ({ consumed: works.reduce((total, work) => total + (work.budget?.[key].consumed ?? 0), 0),
+      reserved: works.filter(work => work.budget?.[key].reserved).length });
+    return { impediments: { works: open.filter(work => work.impediments.length > 0).length, codes },
+      consumption: { executions: { total: executions.length, active: executions.filter(item => item.slot.held).length }, corrections: sum('corrections'), recoveries: sum('recoveries'),
+        time: { measuredMs, lowerBoundMs, unknown, measurement: executions.length === 0 ? 'unavailable' : unknown === 0 && lowerBoundMs === 0 ? 'complete' : 'partial' },
+        usage: { query: 'usage' } } };
+  };
+  // Ticket 29: a big Work stays inspectable — the full view when it fits one frame, else compacted (history/earlier Executions/questions
+  // left out with the paged commands that show them) and `chain.executions` paged by cursor/limit.
+  const fitShow = (view: Extract<ShowView, { kind: 'work' }>, query: { cursor?: number | undefined; limit?: number | undefined }): Extract<ShowView, { kind: 'work' }> => {
+    const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
+    // In-process callers (no page argument) get the full view; the socket always pages (`answerInspection`), compacting only what does not fit.
+    const paging = query.cursor !== undefined || query.limit !== undefined;
+    if (!paging || (query.cursor === undefined && bytes(view) <= viewBudgetBytes)) return view;
+    const id = view.work.work_id;
+    const nextSteps = [`factory history ${id} --limit 50`, `factory show ${id} --cursor <n> --limit <n>`, ...view.questions.map(item => `factory question ${item.questionId}`)];
+    const compact = { ...view, work: compactWork(view.work) };
+    const questions = bytes(compact) > viewBudgetBytes / 2 ? [] : view.questions;
+    const base = { ...compact, questions, chain: { ...view.chain, executions: [] } };
+    const paged = page(view.chain.executions, view.chain.executions.length, { cursor: query.cursor, limit: query.limit ?? inspectionLimits.maxPage });
+    const fitted = fitPage(paged.items, paged.page, items => bytes(items), viewBudgetBytes - bytes(base) - 1024, item => ({ ...item, reviews: [] }));
+    return { ...base, chain: { ...view.chain, executions: fitted.items },
+      omitted: { history: view.work.history.length, previousExecutions: view.work.previousExecutions.length, questions: view.questions.length - questions.length,
+        executions: fitted.page, nextSteps } };
+  };
   let running = false;
   // Ticket 33: how the previous run of this storage ended, read when THIS run records its start (null before that or when never recorded).
   let previousRun: ControlStatus['storage']['previousRun'] = null;
@@ -277,6 +315,27 @@ export async function openControl(options: { storagePath: string;
           nextStep: `This Question belonged to Work ${owner.work_id}, whose history \`forget\` deleted at ${owner.forgottenAt}: its text and answer are not recoverable.` };
         return { kind: 'question-not-found', question_id: query.question_id, nextStep: 'No Question with this identity; use `factory show <work>`.' };
       }
+      // Ticket 29: history, logs, one log page and consumption (read-only; logs/usage through the injected Records/Workers observation ports).
+      if (query.kind === 'history' || query.kind === 'logs' || query.kind === 'log' || (query.kind === 'usage' && query.work_id !== undefined)) {
+        const id = query.work_id!;
+        if (!workIdSchema.safeParse(id).success) throw new Error('INVALID_WORK_ID');
+        const work = await readWork(state, id);
+        // Ticket 31: a forgotten Work answers with its minimal memory (its history, logs and sessions were deleted), never "not found".
+        const forgotten = work ? undefined : await readForgottenWork(state, id);
+        if (forgotten) return { kind: 'work-forgotten', work_id: id, memory: forgotten, notRecoverable: [...forgottenNotRecoverable], nextStep: forgottenNextStep(forgotten) };
+        if (!work) return { kind: 'work-not-found', work_id: id, nextStep: 'No Work with this identity in the controller authority; use `factory list`.' };
+        if (query.kind === 'history') return inspectHistory(work, query);
+        if (query.kind === 'logs') return inspectLogs(work, query, options.execution);
+        if (query.kind === 'log') return inspectLog(work, query, options.execution);
+        return inspectUsage([work], 'work', options.execution, { capacity: options.execution?.capacity ?? 0, held: await heldSlots(state) }, calendar.now());
+      }
+      if (query.kind === 'usage') {
+        const usage = await inspectUsage(await readWorks(state), 'installation', options.execution, { capacity: options.execution?.capacity ?? 0, held: await heldSlots(state) }, calendar.now(),
+          { cursor: query.cursor, limit: query.limit });
+        // Ticket 31: forgotten Works keep no usage; the installation total covers only the Works still remembered.
+        const forgotten = (await readForgotten(state)).length;
+        return forgotten ? { ...usage, limitations: [...usage.limitations, `${forgotten} Work(s) forgotten: their usage is not recoverable and not in this total.`] } : usage;
+      }
       const current = await readInstallation(state);
       if (query.kind === 'show') {
         if (!workIdSchema.safeParse(query.work_id).success) throw new Error('INVALID_WORK_ID');
@@ -286,14 +345,25 @@ export async function openControl(options: { storagePath: string;
         if (!work) return { kind: 'work-not-found', work_id: query.work_id, nextStep: 'No Work with this identity in the controller authority; use `factory list`.' };
         const lastPolled = pollingView().repositories.flatMap(repo => repo.candidates ?? [])
           .find(candidate => candidate.ticket.issueId === work.ticket.issueId && candidate.ticket.repositoryId === work.ticket.repositoryId) ?? null;
-        return { kind: 'work', work: present(work, current.paused), lastPolled, questions: await readQuestions(state, work) };
+        const questions = await readQuestions(state, work);
+        const polled = pollingView().repositories.find(repo => repo.repository.toLowerCase() === work.repository.repository.toLowerCase());
+        const chain = chainOf(work, questions, { ageSeconds: at => { const time = at ? Date.parse(at) : Number.NaN; return Number.isFinite(time) ? Math.max(0, Math.round((calendar.now() - time) / 1000)) : null; },
+          timeoutSeconds: configuredRepository(work.repository.repository)?.timeoutSeconds ?? null,
+          lastPolledAt: lastPolled?.observedAt ?? null, lastPolledCompleteness: lastPolled ? polled?.completeness ?? null : null });
+        return fitShow({ kind: 'work', work: present(work, current.paused), lastPolled, questions, chain, omitted: null }, query);
       }
       const works = await readWorks(state);
       if (query.kind === 'list') {
-        return { kind: 'list', paused: current.paused, dispatch: dispatchReason ? 'closed' : 'open', dispatchReason,
-          slots: { capacity: options.execution?.capacity ?? 0, held: await heldSlots(state) }, works: works.map(work => present(work, current.paused)),
+        const view: ListView = { kind: 'list', paused: current.paused, dispatch: dispatchReason ? 'closed' : 'open', dispatchReason,
+          slots: { capacity: options.execution?.capacity ?? 0, held: await heldSlots(state) }, works: [],
           queues: { normal: queued(works, 'normal'), repair: queued(works, 'repair') },
-          selection: selection(works), polling: pollingView(), limitations, forgotten: await readForgotten(state) } satisfies ListView;
+          selection: selection(works), polling: pollingView(), limitations, forgotten: await readForgotten(state), page: { cursor: 0, limit: works.length, returned: works.length, filtered: works.length, total: works.length, nextCursor: null, fitted: false } };
+        // Ticket 29: without page arguments the full list (in-process callers); with them, one page fitted to one frame (the socket always pages).
+        if (query.cursor === undefined && query.limit === undefined) return { ...view, works: works.map(work => present(work, current.paused)) };
+        const paged = page(works, works.length, { cursor: query.cursor, limit: query.limit });
+        const presented = paged.items.map(work => present(work, current.paused));
+        const fitted = fitPage(presented, paged.page, items => Buffer.byteLength(JSON.stringify(items)), viewBudgetBytes - Buffer.byteLength(JSON.stringify(view)), compactWork);
+        return { ...view, works: fitted.items, page: fitted.page };
       }
       const polling = pollingView();
       const allQuestions = (await Promise.all(works.map(work => readQuestions(state, work)))).flat();
@@ -324,7 +394,7 @@ export async function openControl(options: { storagePath: string;
           unpublished: allQuestions.filter(item => item.state === 'open' && item.publication.state !== 'published').length },
         selection: { next: selection(works).next },
         polling: { ...polling, repositories: polling.repositories.map(({ candidates: _candidates, ...repo }) => repo) },
-        persistence: store.persistence, recovery, storage: { format: currentFormat, previousRun } } satisfies ControlStatus;
+        persistence: store.persistence, recovery, storage: { format: currentFormat, previousRun }, ...consumptionOf(works) } satisfies ControlStatus;
     },
     async run(signal) {
       if (running) throw new Error('CONTROL_ALREADY_RUNNING');

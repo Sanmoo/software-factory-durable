@@ -26,3 +26,12 @@
 ## Autorização e limites
 
 Publicação é planejamento aprovado, não autorização de construção, uso de host/credenciais/GitHub/modelos reais, injeção de falhas ou piloto. Obter autorização pertinente antes da execução. Não alterar decisões aprovadas silenciosamente; lacuna de desenho volta ao operador. Merge e avaliação humana não são delegados aos agentes.
+
+## Comments
+
+- 2026-11-15 (implement/software-factory-mvp-29, on top of the ticket 23 branch): `history`/`logs`/`log`/`usage` inspect kinds and CLI commands,
+  `show.chain`, and status impediments/consumption. Usage comes from preserved Pi sessions (deduplicated; complete/partial/unavailable, never a
+  false zero); evidence states are distinct; views fit one frame; stable error codes. Evidence and AC→test map:
+  [docs/evidence/29-correlated-cli-observability-and-usage.md](../../../docs/evidence/29-correlated-cli-observability-and-usage.md).
+  Local recipe `inspect29-qualification` is written, not run (after rebase). Proposal for the `RECOVERY_BLOCKED` unblock (via `resume`, tickets
+  26/27) is recorded in the evidence. Not resolved until the review.

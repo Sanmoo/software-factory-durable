@@ -13,6 +13,8 @@ import { observeOpinionRecord, type OpinionObservation } from './opinion-observa
 export type { OpinionObservation } from './opinion-observation.js';
 import { observeQuestionRecord, type QuestionObservation } from './question-observation.js';
 export type { QuestionObservation } from './question-observation.js';
+import { observeSessionCopyUsage, observeSessionUsage, type SessionUsage, type SessionUsageCache } from './session-usage.js';
+export { sessionUsage, type SessionUsage, type SessionUsageEntry } from './session-usage.js';
 import type { ReviewOpinion } from '../contracts/index.js';
 import type { BuilderDirective, HandoffEvent } from './builder-handoff.js';
 export type { ReviewerProfile, Invocation } from './worker-start.js';
@@ -132,6 +134,8 @@ export function createWorkers(configuration?: Configuration) {
   // The observe facets (start receipt, ticket 26; opinion, ticket 28) share ONE Records handle, opened lazily (its private-root check runs
   // once); each call is then only a bounded listing and bounded reads. A failed open is retried by the next call.
   let observedRecords: ReturnType<typeof createRecords> | undefined;
+  // Ticket 29: hash-verified session usage, read once per unchanged file (bounded).
+  const usageCache: SessionUsageCache = new Map();
   const protectedRecords = async (root: string) => {
     observedRecords ??= createRecords({ root });
     try { return await observedRecords; } catch { observedRecords = undefined; return null; }
@@ -181,6 +185,14 @@ export function createWorkers(configuration?: Configuration) {
       const records = await protectedRecords(configuration.root);
       if (!records) return { kind: 'uncertain', code: 'RECORDS_UNAVAILABLE' };
       return observeQuestionRecord(records, input);
+    },
+    /** Ticket 29 — Q6 `observe`, usage facet: model usage of one preserved session, read-only and confined (never an invoice). */
+    async observeUsage(input: { workId: string; boot: string | null; session: { ref: string; sha256: string } | { file: string } | { copy: { workId: string; name: string; sha256: string } } }): Promise<SessionUsage> {
+      if (!configuration) return { state: 'unavailable', code: 'WORKER_EXECUTION_NOT_ENABLED' };
+      // Ticket 30: a Records session copy of THIS Work only.
+      if ('copy' in input.session) return input.session.copy.workId === input.workId ? observeSessionCopyUsage(configuration.root, input.session.copy).catch(() => ({ state: 'unavailable' as const, code: 'SESSION_USAGE_UNREADABLE' }))
+        : { state: 'unavailable', code: 'SESSION_COPY_NOT_OF_WORK' };
+      try { return await observeSessionUsage(configuration.root, input.session, input.boot, usageCache); } catch { return { state: 'unavailable', code: 'SESSION_USAGE_UNREADABLE' }; }
     },
     /**
      * Q6 `observe` (ticket 11): whether the preserved session of an ended Builder invocation can be CONTINUED by the planned next Builder

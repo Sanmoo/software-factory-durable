@@ -9,7 +9,7 @@ import { setup, setupService, firstHumanLogin } from './setup.js';
 import { doctor } from './doctor.js';
 import { releaseInstallationRoot } from './release.js';
 
-const usage = 'factory <setup|doctor|run|status|list|show <work>|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>)|update-scope <work> --reason <text>|authorize-readiness <work> --reason <text>|repair <work> --reason <text>|cancel <work>|resume <work>|reopen <work>|new <owner/repo#number> [--keep-predecessor-pr]|cleanup <work> --select <logs,sessions,environment,remote-branch> [--yes]|cleanup-confirm <work> <plan>|forget <work> [--yes]|forget-confirm <work> <plan>|request <id>|upgrade <check|apply|status|resume|rollback> [--migrate <id>]> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service [--service-directory <absolute dir>]]; factory login --root <canonical-absolute-installation>';
+const usage = 'factory <setup|doctor|run|status|list [--cursor <n> --limit <n>]|show <work> [--cursor <n> --limit <n>]|history <work>|logs <work> [--after <capture>] [--read <capture> [--offset <n>]]|usage [<work>]|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>)|update-scope <work> --reason <text>|authorize-readiness <work> --reason <text>|repair <work> --reason <text>|cancel <work>|resume <work>|reopen <work>|new <owner/repo#number> [--keep-predecessor-pr]|cleanup <work> --select <logs,sessions,environment,remote-branch> [--yes]|cleanup-confirm <work> <plan>|forget <work> [--yes]|forget-confirm <work> <plan>|request <id>|upgrade <check|apply|status|resume|rollback> [--migrate <id>]> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service [--service-directory <absolute dir>]] [history|logs: --execution <id> --role <builder|standards|spec> --limit <n>; history: --cursor <n>]; factory login --root <canonical-absolute-installation>';
 const upgradeUsage = 'factory upgrade <check|apply|status|resume|rollback> [--root <installation>] [--migrate <migration id>] — run with the NEW release: ' +
   '<root>/releases/<id>/node/bin/node <root>/releases/<id>/dist/src/entrypoints/cli.js upgrade ...';
 // Ticket 25 (spec §11.3): cycle commands; `new` names the Ticket as owner/repo#number.
@@ -35,11 +35,48 @@ async function exchange(root: string, kind: 'inspect' | 'accept', payload: Envel
   } finally { clearTimeout(timeout); channel.close(); }
 }
 
+/** Ticket 29: filters/pages of `history`/`logs`/`list`/`show`/`usage`, and a `logs --read` page (read-only queries). */
+type Inspection = { execution?: string; role?: string; cursor?: number; after?: string; limit?: number; read?: string; offset?: number };
+const identifier = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
+const count = (value: string | undefined, max: number) => value?.match(/^(0|[1-9][0-9]{0,15})$/) && Number(value) <= max ? Number(value) : undefined;
+/** Parses inspection options from `args` (after the Work); returns the options and the remaining arguments, or null when invalid. */
+function inspectionOptions(command: string, args: string[], hasWork: boolean): { options: Inspection; rest: string[] } | null {
+  const options: Inspection = {};
+  const rest: string[] = [];
+  for (let index = 0; index < args.length; index++) {
+    const flag = args[index]!, value = args[index + 1];
+    const reading = options.read !== undefined;
+    const filters = command === 'history' || (command === 'logs' && !reading);
+    // `--cursor` pages history, list, show (its Executions) and installation usage; logs page by capture id (`--after`).
+    const cursors = command === 'history' || command === 'list' || command === 'show' || (command === 'usage' && !hasWork);
+    if (flag === '--execution' && filters && options.execution === undefined && value?.match(identifier)) { options.execution = value; index++; }
+    else if (flag === '--role' && filters && options.role === undefined && ['builder', 'standards', 'spec'].includes(value ?? '')) { options.role = value!; index++; }
+    else if (flag === '--cursor' && cursors && options.cursor === undefined && count(value, Number.MAX_SAFE_INTEGER) !== undefined) { options.cursor = count(value, Number.MAX_SAFE_INTEGER)!; index++; }
+    else if (flag === '--after' && command === 'logs' && !reading && options.after === undefined && value?.match(uuid)) { options.after = value; index++; }
+    else if (flag === '--limit' && (filters || cursors) && options.limit === undefined && count(value, 200) !== undefined && Number(value) >= 1) { options.limit = Number(value); index++; }
+    else if (flag === '--read' && command === 'logs' && !reading && options.execution === undefined && options.role === undefined && options.after === undefined &&
+      options.limit === undefined && value?.match(uuid)) { options.read = value; index++; }
+    else if (flag === '--offset' && command === 'logs' && reading && options.offset === undefined && count(value, Number.MAX_SAFE_INTEGER) !== undefined) { options.offset = count(value, Number.MAX_SAFE_INTEGER)!; index++; }
+    else rest.push(flag);
+  }
+  return options.offset !== undefined && options.read === undefined ? null : { options, rest };
+}
+function inspectionQuery(command: string, work: string | undefined, options: Inspection): Envelope['payload'] {
+  const page = { ...(options.cursor !== undefined ? { cursor: options.cursor } : {}), ...(options.limit !== undefined ? { limit: options.limit } : {}) };
+  const filters = { ...(options.execution ? { execution: options.execution } : {}), ...(options.role ? { role: options.role } : {}) };
+  if (command === 'list') return { kind: 'list', ...page };
+  if (command === 'show') return { kind: 'show', work_id: work!, ...page };
+  if (command === 'usage') return work ? { kind: 'usage', work_id: work } : { kind: 'usage', ...page };
+  if (command === 'logs' && options.read) return { kind: 'log', work_id: work!, capture: options.read, ...(options.offset !== undefined ? { offset: options.offset } : {}) };
+  if (command === 'logs') return { kind: 'logs', work_id: work!, ...filters, ...(options.after ? { after: options.after } : {}), ...(options.limit !== undefined ? { limit: options.limit } : {}) };
+  return { kind: command, work_id: work!, ...filters, ...page };
+}
+
 async function operational(root: string, command: string, requestId: string | undefined, requested: string | undefined, json: boolean, text?: string,
   grant?: { counter: 'corrections' | 'recoveries'; amount: number }, cycle?: { repository: string; number: number; keep: boolean },
-  cleanup?: { select?: string[]; yes?: boolean; plan?: string }) {
-  const query = (): Envelope['payload'] => command === 'doctor' ? { kind: 'access' } : command === 'list' ? { kind: 'list' }
-    : command === 'show' ? { kind: 'show', work_id: requested! } : command === 'question' ? { kind: 'question', question_id: requested! } : { kind: 'request', request_id: requested! };
+  cleanup?: { select?: string[]; yes?: boolean; plan?: string }, inspection: Inspection = {}) {
+  const query = (): Envelope['payload'] => ['history', 'logs', 'usage', 'list', 'show'].includes(command) ? inspectionQuery(command, requested, inspection)
+    : command === 'doctor' ? { kind: 'access' } : command === 'question' ? { kind: 'question', question_id: requested! } : { kind: 'request', request_id: requested! };
   const mutable = command === 'pause' || command === 'unpause' || command === 'answer' || command === 'grant' || command === 'update-scope' || command === 'authorize-readiness' || command === 'repair' ||
     cycleCommands.includes(command) || cleanupCommands.includes(command);
   const id = requestId ?? randomUUID();
@@ -74,7 +111,13 @@ async function operational(root: string, command: string, requestId: string | un
       return confirmation.payload.outcome === 'not-applied' || confirmation.payload.kind === 'refused' ? 2 : 0;
     }
     console.log(json ? JSON.stringify(response.payload) : JSON.stringify(response.payload, null, 2));
-    if (response.kind === 'error') return response.payload.outcome === 'indeterminate' ? 4 : 2;
+    if (response.kind === 'error') return response.payload.outcome === 'indeterminate' ? 4 : response.payload.outcome === 'unavailable' ? 3 : 2;
+    // Ticket 29: an inspection whose evidence source is unavailable/indeterminate is not a success (and never an empty listing).
+    const listing = response.payload.listing;
+    // Exit table (ticket 29): 0 view; 2 invalid/refused/not found/absent (incl. OFFSET_OUT_OF_RANGE); 3 unavailable/incomplete/unknown; 4 indeterminate.
+    if (response.payload.kind === 'logs' && listing && typeof listing === 'object' && !Array.isArray(listing) && listing.state !== 'complete') return 3;
+    if (response.payload.kind === 'log' && response.payload.state === 'unknown') return 3;
+    if (response.payload.kind === 'log' && (response.payload.state === 'absent' || response.payload.state === 'expired' || response.payload.state === 'removed')) return 2;
     if (response.payload.kind === 'access' && Array.isArray(response.payload.results) &&
       response.payload.results.some(result => !result || typeof result !== 'object' || Array.isArray(result) ||
         !result.tracker || typeof result.tracker !== 'object' || Array.isArray(result.tracker) || result.tracker.status !== 'ok' ||
@@ -86,7 +129,9 @@ async function operational(root: string, command: string, requestId: string | un
       response.payload.outcome === 'not-applied' ? 2 : 0;
   } catch {
     console.error(JSON.stringify({ code: mutable ? 'REQUEST_INDETERMINATE' : 'CONTROLLER_UNAVAILABLE',
-      ...(mutable ? { request_id: id } : {}), message: mutable ? 'Query or repeat this same request identity and content; do not invent a replacement ID.' : 'Start the controller; operational inspection never opens SQLite offline.' }));
+      ...(mutable ? { request_id: id } : {}), scope: mutable ? 'request' : 'installation', outcome: mutable ? 'indeterminate' : 'unavailable',
+      message: mutable ? 'Query or repeat this same request identity and content; do not invent a replacement ID.' : 'Start the controller; operational inspection never opens SQLite offline.',
+      nextStep: mutable ? `factory request ${id}` : 'Start the controller (`factory run` or its service) and repeat the query; unavailability is not an empty result.' }));
     return mutable ? 4 : 3;
   }
 }
@@ -101,7 +146,8 @@ async function launch(root: string, upgrade?: string[]): Promise<number> {
   }); } finally { process.off('SIGTERM', terminate); process.off('SIGINT', interrupt); }
 }
 
-export async function main(args: string[]): Promise<number> {
+export async function main(input: string[]): Promise<number> {
+  let args = input;
   if (args.length === 1 && args[0] === '--help') { console.log(usage); return 0; }
   const command = args[0];
   const installation = releaseInstallationRoot();
@@ -146,12 +192,21 @@ export async function main(args: string[]): Promise<number> {
       return 2;
     }
   }
-  let valid = ['setup', 'doctor', 'run', 'status', 'list', 'show', 'question', 'pause', 'unpause', 'answer', 'grant', 'update-scope', 'authorize-readiness', 'repair', 'request', ...cycleCommands,
+  let valid = ['setup', 'doctor', 'run', 'status', 'list', 'show', 'history', 'logs', 'usage', 'question', 'pause', 'unpause', 'answer', 'grant', 'update-scope', 'authorize-readiness', 'repair', 'request', ...cycleCommands,
     ...cleanupCommands].includes(command ?? '');
+  // Ticket 29: `history <work>`, `logs <work>` (filters/page or `--read <capture> [--offset <n>]`) and `usage [<work>]`.
+  let inspection: Inspection = {};
+  if (command === 'history' || command === 'logs' || command === 'usage' || command === 'list' || command === 'show') {
+    const hasWork = command !== 'usage' && command !== 'list' || (command === 'usage' && args[1] !== undefined && !args[1].startsWith('--'));
+    const parsed = inspectionOptions(command, args.slice(hasWork ? 2 : 1), hasWork);
+    if (!parsed || (hasWork && !args[1]?.match(uuid))) valid = false;
+    else { inspection = parsed.options; args = [...args.slice(0, hasWork ? 2 : 1), ...parsed.rest]; }
+  }
   let requestId: string | undefined;
   const withReason = command === 'update-scope' || command === 'authorize-readiness' || command === 'repair';
   const requested = command === 'request' || command === 'show' || command === 'question' || command === 'answer' || command === 'grant' || withReason ||
-    cycleCommands.includes(command ?? '') || cleanupCommands.includes(command ?? '') ? args[1] : undefined;
+    cycleCommands.includes(command ?? '') || cleanupCommands.includes(command ?? '') ||
+    command === 'history' || command === 'logs' || (command === 'usage' && args[1] !== undefined && !args[1].startsWith('--')) ? args[1] : undefined;
   if (command === 'request' && !requested?.match(/^[a-zA-Z0-9_-]{1,128}$/)) valid = false;
   if ((command === 'show' || command === 'question' || command === 'answer' || command === 'grant' || withReason ||
     command === 'cancel' || command === 'resume' || command === 'reopen' || cleanupCommands.includes(command ?? '')) && !requested?.match(uuid)) valid = false;
@@ -178,7 +233,8 @@ export async function main(args: string[]): Promise<number> {
   const text = command === 'answer' ? args[2] : withReason && args[2] === '--reason' ? args[3] : undefined;
   if ((command === 'answer' || withReason) && (!text || text !== text.trim() || text.length > 2000 || text.startsWith('--'))) valid = false;
   for (let index = command === 'answer' || command === 'cleanup-confirm' || command === 'forget-confirm' ? 3 : command === 'grant' || withReason || command === 'cleanup' ? 4
-    : command === 'request' || command === 'show' || command === 'question' || command === 'forget' || cycleCommands.includes(command ?? '') ? 2 : 1; index < args.length; index++) {
+    : command === 'request' || command === 'show' || command === 'question' || command === 'forget' || cycleCommands.includes(command ?? '') ||
+    command === 'history' || command === 'logs' || (command === 'usage' && requested !== undefined) ? 2 : 1; index < args.length; index++) {
     if (args[index] === '--authenticated' && command === 'doctor' && !authenticated) authenticated = true;
     else if (args[index] === '--keep-predecessor-pr' && command === 'new' && !keep) keep = true;
     else if (args[index] === '--yes' && (command === 'cleanup' || command === 'forget') && cleanup && !cleanup.yes) cleanup.yes = true;
@@ -211,8 +267,8 @@ export async function main(args: string[]): Promise<number> {
     if (command === 'run') return await launch(root);
     if (command === 'status' || command === 'list' || command === 'show' || command === 'question' || command === 'pause' || command === 'unpause' ||
         command === 'answer' || command === 'grant' || withReason || command === 'request' || cycleCommands.includes(command ?? '') ||
-        cleanupCommands.includes(command ?? '')) {
-      return await operational(root, command!, requestId, requested, json, text, grant, reference ? { repository: reference[1]!, number: Number(reference[2]), keep } : undefined, cleanup);
+        cleanupCommands.includes(command ?? '') || command === 'history' || command === 'logs' || command === 'usage') {
+      return await operational(root, command!, requestId, requested, json, text, grant, reference ? { repository: reference[1]!, number: Number(reference[2]), keep } : undefined, cleanup, inspection);
     }
     if (command === 'doctor' && authenticated) return await operational(root, command, undefined, undefined, json);
     if (command === 'doctor') {

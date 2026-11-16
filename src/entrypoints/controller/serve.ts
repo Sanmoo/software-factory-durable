@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Control, ControlInput } from '../../control/index.js';
 import { listen, protocolVersion, type Envelope } from '../../protocol/index.js';
+import { answerInspection } from './inspection.js';
 
 // The owner's local operator socket (spec §11.3): the SAME schema validation and Control accept/inspect path for every caller of the CLI.
 // Shared by the controller owner and (ticket 25) the qualification recipes that must receive real CLI commands.
@@ -24,10 +25,6 @@ const command = z.union([z.strictObject({ request_id: requestId, operation: z.en
   // Ticket 31: explicit history deletion plan and confirmation (Control revalidates eligibility and the plan).
   z.strictObject({ request_id: requestId, operation: z.literal('forget-plan'), work_id: z.uuid(), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('forget-confirm'), work_id: z.uuid(), plan_id: z.uuid(), origin: z.literal('local-cli') })]);
-const query = z.discriminatedUnion('kind', [z.strictObject({ kind: z.literal('status') }), z.strictObject({ kind: z.literal('access') }),
-  z.strictObject({ kind: z.literal('list') }), z.strictObject({ kind: z.literal('show'), work_id: z.uuid() }),
-  z.strictObject({ kind: z.literal('request'), request_id: requestId }), z.strictObject({ kind: z.literal('question'), question_id: z.uuid() })]);
-
 /** Serves `control` on the private local socket `endpoint` for the `local-operator` CLI peer; a failed commit calls `onPersistenceFailure`. */
 export async function serveControl(endpoint: string, control: Control, runId: string, onPersistenceFailure: () => void) {
   return listen(endpoint, { message: async (envelope, channel) => {
@@ -50,10 +47,10 @@ export async function serveControl(endpoint: string, control: Control, runId: st
         }
         responseKind = 'receipt';
       } else if (envelope.kind === 'inspect') {
-        const parsed = query.safeParse(envelope.payload);
-        if (!parsed.success) { await reply('error', { code: 'INVALID_QUERY' }); return; }
-        try { result = await control.inspect(parsed.data); }
-        catch { await reply('error', { code: 'DIAGNOSTIC_UNAVAILABLE' }); return; }
+        // Ticket 29: validated query → view, or a stable error (invalid, unavailable, too large for one frame naming a paged command).
+        const answer = await answerInspection(control, envelope.payload);
+        if (answer.kind === 'error') { await reply('error', answer.payload); return; }
+        result = answer.payload;
         responseKind = 'view';
       } else { await reply('error', { code: 'INVALID_COMMAND' }); return; }
       // Transport loss after a successful commit does NOT fail the authority or undo that commit.
