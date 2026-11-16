@@ -154,7 +154,9 @@ type Event = { at: string; step: Step; call: string } & Record<string, unknown>;
 export type Assessment = { status: 'passed' | 'failed' | 'inconclusive'; checks: Record<string, boolean>; inconclusive: string[]; failures: string[] };
 /** The verdict of the run from the stored Work/Question, the child events/exits and the read-only GitHub observations (no secret involved). */
 export function assess(input: { work: WorkView | undefined; question: QuestionView | undefined; events: Event[]; exits: Partial<Record<Step, string>>;
-  remote: { questionComments: number | null; ownPullRequests: number | null; branchTip: string | null }; pushes: string[] }): Assessment {
+  remote: { questionComments: number | null; ownPullRequests: number | null; branchTip: string | null }; pushes: string[];
+  /** False when the session census was capped or a session file skipped (oversized/unreadable): the push count may undercount. */
+  pushCensusComplete: boolean }): Assessment {
   const at = (step: Step, call: string) => input.events.filter(item => item.step === step && item.call === call);
   const posted = at('a-ask', 'post-returned')[0] as (Event & { commentId?: number | null; kind?: string }) | undefined;
   const all = input.work ? [...input.work.previousExecutions, ...(input.work.execution ? [input.work.execution] : [])] : [];
@@ -170,7 +172,9 @@ export function assess(input: { work: WorkView | undefined; question: QuestionVi
       input.question.publication.comment?.commentId === posted?.commentId,
     questionNeverReposted: at('b-discover-question', 'post-refused').length + at('c-publish', 'post-refused').length + at('d-discover-publication', 'post-refused').length === 0,
     singleQuestionComment: input.remote.questionComments === 1,
-    answerAcceptedOnce: input.question?.state === 'answered' && input.question.answer?.origin.kind === 'github-comment',
+    // Exactly ONE accepted answer (from a GitHub comment); any later/duplicate answer was refused (never a second acceptance).
+    singleAnswerAccepted: input.question?.state === 'answered' && input.question.answer?.origin.kind === 'github-comment' &&
+      (input.work?.history ?? []).filter(item => item.event === 'question-answered' && 'questionId' in item && item.questionId === input.question!.questionId).length === 1,
     pushCut: reached.cutB,
     publicationReconciled: publication?.recovery?.[0]?.cessation.result === 'confirmed',
     publicationLinked: input.work?.publication?.state === 'published' && input.work.publication.pullRequest?.headSha === head && head !== null,
@@ -182,8 +186,12 @@ export function assess(input: { work: WorkView | undefined; question: QuestionVi
   };
   const failures = (['questionNeverReposted', 'singleQuestionComment', 'singleOwnPullRequest', 'explicitLeases', 'atMostOnePushOfHead'] as const)
     .filter(key => !checks[key] && !(key.startsWith('single') && input.remote[key === 'singleQuestionComment' ? 'questionComments' : 'ownPullRequests'] === null));
-  const inconclusive = [...(!reached.cutA ? ['CUT_A_NOT_REACHED'] : []), ...(!reached.cutB ? ['CUT_B_NOT_REACHED'] : []),
-    ...(input.remote.questionComments === null || input.remote.ownPullRequests === null ? ['REMOTE_READ_INCOMPLETE'] : [])];
+  // Environment faults prove nothing either way: the POST at cut A did not come back as created (GitHub error/unknown), a cut missed, a
+  // truncated/failed remote listing, or a session census that may undercount the pushes.
+  const inconclusive = [...(!reached.cutA ? ['CUT_A_NOT_REACHED'] : []), ...(reached.cutA && posted?.kind !== 'published' ? ['CUT_A_ENVIRONMENT_FAULT'] : []),
+    ...(!reached.cutB ? ['CUT_B_NOT_REACHED'] : []),
+    ...(input.remote.questionComments === null || input.remote.ownPullRequests === null ? ['REMOTE_READ_INCOMPLETE'] : []),
+    ...(!input.pushCensusComplete ? ['PUSH_CENSUS_INCOMPLETE'] : [])];
   const status = failures.length ? 'failed' : inconclusive.length ? 'inconclusive' : Object.values(checks).every(Boolean) ? 'passed' : 'failed';
   return { status, checks, inconclusive, failures };
 }
@@ -264,7 +272,9 @@ async function child(step: Step) {
   let posted = 0, prepared = 0, publishGrants = 0;
   let control!: Awaited<ReturnType<typeof openControl>>;
   const shown = async () => workOf(await control.inspect({ kind: 'list' }));
-  const guardedTracker: IssueTracker = { ...tracker, readInputs: (t, cursor) => tracker.readInputs(t, cursor), findQuestion: async (t, id) => {
+  // Every method bound explicitly to the real tracker (never an object spread that could drop prototype methods or `this`).
+  const guardedTracker: IssueTracker = { checkAccess: scope => tracker.checkAccess(scope), listCandidates: scope => tracker.listCandidates(scope),
+    readTicket: t => tracker.readTicket(t), readDependencyGraph: t => tracker.readDependencyGraph(t), readInputs: (t, cursor) => tracker.readInputs(t, cursor), findQuestion: async (t, id) => {
     const result = await tracker.findQuestion(t, id);
     log({ call: 'find-question', questionId: id, kind: result.kind, candidates: result.kind === 'observed' ? result.candidates.map(item => item.commentId) : null });
     return result;
@@ -459,18 +469,26 @@ export async function runPhase(phase: Phase) {
     if (phase === 'inspect') {
       const { workerRuntimeDirectory } = await import('../../src/platform/host/index.js');
       const pushes: string[] = [];
+      // The census never undercounts silently: a capped listing or a skipped (oversized/unreadable) session makes it incomplete.
+      let pushCensusComplete = true;
       for (const execution of [...work.previousExecutions, work.execution]) {
         if (!execution.dispatch.boot) continue;
         const runtime = workerRuntimeDirectory(root, execution.dispatch.boot);
-        for (const launch of (await fs.readdir(runtime).catch(() => [])).filter(name => name.startsWith('w-')).sort().slice(0, 12)) {
+        const launches = (await fs.readdir(runtime).catch(() => { pushCensusComplete = false; return []; })).filter(name => name.startsWith('w-')).sort();
+        if (launches.length > 12) pushCensusComplete = false;
+        for (const launch of launches.slice(0, 12)) {
           const directory = `${runtime}/${launch}/profile/sessions`;
-          for (const file of (await fs.readdir(directory, { recursive: true }).catch(() => [])).filter(name => String(name).endsWith('.jsonl')).slice(0, 4)) {
+          const files = (await fs.readdir(directory, { recursive: true }).catch(() => [])).filter(name => String(name).endsWith('.jsonl'));
+          if (files.length > 4) pushCensusComplete = false;
+          for (const file of files.slice(0, 4)) {
             const read = await readBounded(`${directory}/${file}`, 8 * 1024 * 1024);
-            if ('text' in read) pushes.push(...sessionCommands(read.text).flatMap(call => call.command && /\bgit\b[^\n]*\bpush\b/.test(call.command) ? [call.command] : []));
+            if (!('text' in read)) { pushCensusComplete = false; continue; }
+            pushes.push(...sessionCommands(read.text).flatMap(call => call.command && /\bgit\b[^\n]*\bpush\b/.test(call.command) ? [call.command] : []));
           }
         }
       }
       const { github, codeRepository } = await compose();
+      // A listing beyond 10 pages throws INCOMPLETE_GITHUB_QUERY (never a truncated count): the count is then null → inconclusive.
       const comments = await github.read(repository, 'tracker-read', session => session.list(`/repos/${repository.repository}/issues/${ticket.number}/comments`, { maxPages: 10 }));
       const marker = question ? `<!-- software-factory:question:${question.questionId} -->` : null;
       const questionComments = comments.ok && Array.isArray(comments.value) && marker
@@ -481,7 +499,7 @@ export async function runPhase(phase: Phase) {
       const tip = remote?.kind === 'observed' && work.branch ? remote.branches[work.branch] : undefined;
       const exits: Partial<Record<Step, string>> = {};
       for (const name of ['ask', 'publish'] as const) Object.assign(exits, ((await load(`${name}-result`)) as { exits?: Partial<Record<Step, string>> } | null)?.exits ?? {});
-      const verdict = assess({ work, question, events: await events(), exits, pushes,
+      const verdict = assess({ work, question, events: await events(), exits, pushes, pushCensusComplete,
         remote: { questionComments, ownPullRequests: own, branchTip: tip?.state === 'present' ? tip.sha : null } });
       const { secretScan } = await import('./credential20-qualification.js');
       await save('inspect-result', { verdict, questionComments, ownPullRequests: own, branchTip: tip ?? null, pushes, question, work: { work_id: work.work_id, publication: work.publication,

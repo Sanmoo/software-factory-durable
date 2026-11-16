@@ -95,7 +95,9 @@ export type RecoveryRecord = { at: string; controllerRunId: string; trigger: 'bo
   found: { state: ExecutionView['state']; phase: ExecutionView['dispatch']['phase']; held: string | null; end: string | null; origin: string | null };
   cessation: { result: 'confirmed' | 'unconfirmed'; basis: string; environment: string | null; boot: string | null };
   start: { kind: 'confirmed' | 'not-started' | 'uncertain'; detail: string };
-  decision: 'operational-recovery' | 'requeued' | 'administrative-continuation' | 'blocked' | 'kept' | 'settled'; code: string | null };
+  decision: 'operational-recovery' | 'requeued' | 'administrative-continuation' | 'blocked' | 'kept' | 'settled'; code: string | null;
+  /** Ticket 27: what the Records question facet established (`absent`, `recorded:<id>`, `unresolved:<code>` after bounded retries...). */
+  question?: string };
 
 /** Injected execution boundaries (spec §2.4/Q11): public Sandbox lifecycle, Workers activation and the Builder credential projection. */
 export type ExecutionPorts = {
@@ -247,6 +249,8 @@ export type ExecutionView = {
   timing?: ExecutionTiming;
   /** Ticket 26: reconciliations of this Execution after an interruption (boot or administrative stop), oldest first. */
   recovery?: RecoveryRecord[];
+  /** Ticket 27: ask_user requests the Control REFUSED live (validation, Work not current, stale Execution, conflict): honored at boot (never re-recorded from Records). */
+  questionRefusals?: { questionId: string; code: string; at: string }[];
   /** Ticket 26: basis of an Execution that follows an interrupted one (operational recovery or continuation after a clean stop). */
   interruption?: { previousExecutionId: string; reason: 'OPERATIONAL_RECOVERY' | 'ADMINISTRATIVE_STOP'; code: string } | null;
 };
@@ -653,7 +657,8 @@ export type WorkView = {
       'review-handoff' | 'reviewer-started' | 'reviewer-ended' | 'review-concluded' | 'review-delivered' | 'review-exempted' | 'review-verified' |
       /* ticket 28 */ 'reviewer-retried' | 'reviewer-not-retried' | 'opinion-discovered' | 'opinion-carried';
       origin: 'controller-dispatch'; executionId: string; detail?: string } |
-    { at: string; event: 'question-recorded' | 'question-published' | 'question-answered'; origin: 'controller-dispatch' | 'controller-publication' | 'github-comment' | 'local-cli';
+    { at: string; event: 'question-recorded' | 'question-published' | 'question-answered' | 'question-refused';
+      origin: 'controller-dispatch' | 'controller-publication' | 'github-comment' | 'local-cli' | 'records-recovery';
       questionId: string; detail?: string } |
     { at: string; event: 'budget-reserved' | 'budget-consumed' | 'budget-released' | 'budget-exhausted' | 'budget-granted' | 'correction-opened' | 'correction-reason-added' | 'recovery-requested';
       origin: 'controller-budget' | 'local-cli'; executionId: string | null; detail: string } |

@@ -48,6 +48,19 @@ primeira: documentam comportamento já correto (sem lacuna), não uma correção
 Ajuste de teste anterior: `question-flow` "unknown outcome with a COMPLETE empty discovery reposts once" (ticket 10) passou a esperar
 `unconfirmed` sem repost — mudança deliberada do comportamento aprovado no 10, pela decisão do operador e pelo AC4 deste ticket.
 
+## Correções da revisão independente (e2af72b)
+
+| Achado | Correção | Teste |
+| --- | --- | --- |
+| MED leitura transitória de Records virava bloqueio | só achado POSITIVO muda o caminho (`questionRecordFound`); indisponível/listagem incompleta → até 3 leituras e recovery operacional comum, anotado `recovery[].question = unresolved:<code>` | `effects27-flow` MED 1, `question-rules` |
+| MED AC5 ponta a ponta | registro parcial → fim `failure` `QUESTION_RECORD_INCOMPLETE`, `RECOVERY_BLOCKED`, sem Pergunta/recovery | `effects27-flow` MED 2 |
+| MED recusa ao vivo | `registerQuestion` grava `execution.questionRefusals` + histórico `question-refused`; o boot honra (`refused-live:<code>`) | `effects27-flow` MED 3 |
+| MED parada administrativa | `interruptedEnd`: Pergunta recuperada é registrada, fim `stopped`/`ADMINISTRATIVE_STOP` com `questionId` | `effects27-flow` MED 4, `question-rules` |
+| LOW fase `booted` / recibo perdido | facet consultada também em `booted`; pergunta preservada sem recibo ⇒ início incerto (`QUESTION_WITHOUT_START_RECEIPT`), nunca "não iniciou" | — (regra no commit) |
+| LOW origem do histórico | `question-recorded` com `origin: records-recovery` | `effects27-flow` MED 4 |
+| LOW reposts `failed` | já exigem prova de não envio no adapter (pré-envio/4xx/rate limit = conhecido; 5xx/transporte/payload = `unknown` → descoberta → `unconfirmed`) | `github-question-comments` AC2 |
+| LOW receita | falha de ambiente no corte A, listagem truncada (null) e censo de push limitado ⇒ `inconclusive`; `singleAnswerAccepted` conta aceitações; tracker com métodos ligados explicitamente | `crashfx27-recipe-safety` |
+
 ## Receita real (não executada)
 
 `test/entrypoints/crashfx27-qualification.ts`, namespace próprio `y5/q27-crashfx-v1` (raiz de acesso GitHub = o namespace; cópia da chave

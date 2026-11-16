@@ -33,6 +33,26 @@ export function intactRequest(request: WorkerQuestion, workId: string): boolean 
  */
 export async function registerQuestion(session: Session, input: { work_id: string; executionId: string; invocationId: string; request: WorkerQuestion;
   from: QuestionView['recordedFrom'] }): Promise<RegisterOutcome> {
+  const outcome = await registerOnce(session, input);
+  // Ticket 27: a live refusal is durable, so the boot never re-records the same request from Records against it.
+  if (outcome.kind === 'refused' && typeof input.request?.questionId === 'string') await recordQuestionRefusal(session, input.work_id, input.executionId, input.request.questionId, outcome.code);
+  return outcome;
+}
+
+/** Ticket 27: the refusal of one ask_user request on the Execution that sent it (bounded); history says it, nothing else changes. */
+export async function recordQuestionRefusal(session: Session, work_id: string, executionId: string, questionId: string, code: string) {
+  return session.commit(async tx => {
+    const work = (await tx.doc(works, work_id, null)).work;
+    const execution = work ? [work.execution, ...(work.previousExecutions ?? [])].find(item => item?.executionId === executionId) ?? null : null;
+    if (!work || !execution || execution.questionRefusals?.some(item => item.questionId === questionId)) return 'stale' as const;
+    const at = new Date().toISOString();
+    execution.questionRefusals = [...(execution.questionRefusals ?? []), { questionId: questionId.slice(0, 64), code, at }].slice(-10);
+    work.history.push({ at, event: 'question-refused', origin: 'controller-dispatch', questionId: questionId.slice(0, 64), detail: `${executionId}:${code}` });
+    return 'recorded' as const;
+  }, BACKGROUND_CONTEXT);
+}
+
+async function registerOnce(session: Session, input: Parameters<typeof registerQuestion>[1]): Promise<RegisterOutcome> {
   if (!intactRequest(input.request, input.work_id)) return { kind: 'refused', code: 'QUESTION_REQUEST_INVALID' };
   const { request } = input;
   return session.commit(async tx => {
@@ -70,8 +90,8 @@ export function recordQuestionDocument(document: { question: QuestionView | null
     publication: { effectId: randomUUID(), state: 'intended', updatedAt: now, attempts: [], comment: null, nextStep: null }, answer: null, ignored: [] };
   work.impediments.push({ code: 'QUESTION_PENDING', scope: 'work', since: now, questionId: request.questionId, nextStep: pendingStep(request.questionId) });
   work.questions = [...(work.questions ?? []), request.questionId];
-  work.history.push({ at: now, event: 'question-recorded', origin: 'controller-dispatch', questionId: request.questionId,
-    detail: input.from === 'records-recovery' ? `${input.executionId}:records-recovery` : input.executionId });
+  work.history.push({ at: now, event: 'question-recorded', origin: input.from === 'records-recovery' ? 'records-recovery' : 'controller-dispatch', questionId: request.questionId,
+    detail: input.executionId });
   return { kind: 'recorded' };
 }
 

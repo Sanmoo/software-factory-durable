@@ -110,22 +110,43 @@ export function questionPublishAllowed(state: QuestionPublicationState, knownFai
   return state === 'intended' || (state === 'failed' && knownFailures < maxKnownFailures);
 }
 
-export type RecoveredQuestion = { kind: 'question'; questionId: string; sha256: string; intact: boolean } | { kind: 'absent' } | { kind: 'uncertain'; code: string };
+export type RecoveredQuestion = { kind: 'question'; questionId: string; sha256: string; intact: boolean; refused: string | null } | { kind: 'absent' } |
+  { kind: 'uncertain'; code: string };
+/** Uncertain codes that are a POSITIVE finding of a preserved ask_user record (partial, several, mismatched, unreadable content). Any other
+ * uncertainty (Records unavailable, listing incomplete, facet failure) says nothing about whether a question was asked. */
+export const questionRecordFound = (code: string) => /^QUESTION_RECORD_/.test(code);
 /**
  * Ticket 27 (spec §5.5): what boot reconciliation does with the `ask_user` request a Builder invocation preserved in Records, when the Control
- * has no Question of that Execution (its notification/ACK was lost). An intact request is RECORDED with its own identity (or bound when that
- * same Question already exists); a not intact, conflicting or unreadable one BLOCKS (content is never invented, the Work never resumes as if
- * nothing had been asked); a complete listing without one changes nothing.
+ * has no Question of that Execution (its notification/ACK was lost). Only a POSITIVE finding changes the ordinary recovery: an intact request
+ * is RECORDED with its own identity (or bound when that same Question already exists); one the Control refused live keeps that refusal; a
+ * found record that is not intact, conflicting or unreadable BLOCKS (never invented). A transient read failure (`unresolved`) or a complete
+ * listing without a request leaves the ordinary path untouched.
  */
 export function recoveredQuestionDecision(input: { observation: RecoveredQuestion | null; workId: string; executionId: string;
-  existing: { workId: string; executionId: string; sha256: string } | null }): { kind: 'none' } | { kind: 'record' } | { kind: 'bind' } | { kind: 'block'; code: string } {
+  existing: { workId: string; executionId: string; sha256: string } | null }):
+  { kind: 'none'; unresolved: string | null } | { kind: 'record' } | { kind: 'bind' } | { kind: 'honor-refusal'; code: string } | { kind: 'block'; code: string } {
   const seen = input.observation;
-  if (!seen || seen.kind === 'absent') return { kind: 'none' };
-  if (seen.kind === 'uncertain') return { kind: 'block', code: seen.code };
+  if (!seen || seen.kind === 'absent') return { kind: 'none', unresolved: null };
+  if (seen.kind === 'uncertain') return questionRecordFound(seen.code) ? { kind: 'block', code: seen.code } : { kind: 'none', unresolved: seen.code };
+  if (seen.refused) return { kind: 'honor-refusal', code: seen.refused };
   if (!seen.intact) return { kind: 'block', code: 'QUESTION_RECORD_NOT_INTACT' };
   if (!input.existing) return { kind: 'record' };
   return input.existing.workId === input.workId && input.existing.executionId === input.executionId && input.existing.sha256 === seen.sha256
     ? { kind: 'bind' } : { kind: 'block', code: 'QUESTION_ID_CONFLICT' };
+}
+
+/**
+ * Ticket 27: the end of an interrupted Execution reconciled at boot. A Question recorded live binds the end (`question`). A Question recovered
+ * from Records is recorded, but an ADMINISTRATIVE stop keeps its intent (`stopped`, the Question attached): never silently turned into a
+ * question wait. A blocking finding is a failure with its code; otherwise stop or the ordinary crash.
+ */
+export function interruptedEnd(input: { questionId: string | null; recovered: boolean; trigger: string; blocked: string | null; heldCode: string | null }):
+  { outcome: 'question' | 'stopped' | 'failure'; code: string | null; questionId: string | null } {
+  const stop = input.trigger === 'administrative-stop';
+  if (input.blocked) return { outcome: 'failure', code: input.blocked, questionId: null };
+  if (input.questionId && !(input.recovered && stop)) return { outcome: 'question', code: null, questionId: input.questionId };
+  if (stop) return { outcome: 'stopped', code: 'ADMINISTRATIVE_STOP', questionId: input.questionId };
+  return { outcome: 'failure', code: input.heldCode ?? 'CONTROLLER_CRASH', questionId: null };
 }
 
 export type QuestionDestination<T> = { kind: 'issue'; ticket: T } | { kind: 'pull-request'; pullRequest: { number: number; url: string } };

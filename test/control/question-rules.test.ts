@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { answerDecision, authorizeCommentAuthor, commentEligibility, parseFactoryCommand, questionCommentBody, questionDestination, questionDiscoveryNext, questionNeedsDiscovery,
-  questionPublishAllowed, recoveredQuestionDecision, recoveryPrompt, validateQuestionRequest, type QuestionPublicationState } from '../../src/control/rules/questions.js';
+  interruptedEnd, questionPublishAllowed, recoveredQuestionDecision, recoveryPrompt, validateQuestionRequest, type QuestionPublicationState } from '../../src/control/rules/questions.js';
 
 // Rules level (Q11): deterministic functions over canonical inputs; no SQLite, GitHub or clock.
 const qid = '0b9c6a52-3d3e-4c8f-9a51-2f7d1e0c4a11';
@@ -136,17 +136,36 @@ test('ticket 27 AC3/AC4 (cut battery, rule level): after a possibly sent POST on
     [true, false, false, false]);
 });
 
-test('ticket 27 AC5 (rule level): a preserved request whose ACK was lost is recorded with its identity, or bound to the same Question; lost or conflicting content blocks', () => {
+test('ticket 27 AC5 (rule level): only a POSITIVE finding changes the ordinary path; intact = recorded/bound; live refusal honored; found-but-lost content blocks', () => {
   const base = { workId: 'w1', executionId: 'e1' };
-  const intact = { kind: 'question' as const, questionId: qid, sha256: 'a'.repeat(64), intact: true };
-  assert.deepEqual(recoveredQuestionDecision({ ...base, observation: null, existing: null }), { kind: 'none' }, 'facet not composed: as before');
-  assert.deepEqual(recoveredQuestionDecision({ ...base, observation: { kind: 'absent' }, existing: null }), { kind: 'none' }, 'complete listing without a request: nothing was asked');
+  const intact = { kind: 'question' as const, questionId: qid, sha256: 'a'.repeat(64), intact: true, refused: null };
+  assert.deepEqual(recoveredQuestionDecision({ ...base, observation: null, existing: null }), { kind: 'none', unresolved: null }, 'facet not composed: as before');
+  assert.deepEqual(recoveredQuestionDecision({ ...base, observation: { kind: 'absent' }, existing: null }), { kind: 'none', unresolved: null }, 'complete listing without a request');
   assert.deepEqual(recoveredQuestionDecision({ ...base, observation: intact, existing: null }), { kind: 'record' });
   assert.deepEqual(recoveredQuestionDecision({ ...base, observation: intact, existing: { ...base, sha256: 'a'.repeat(64) } }), { kind: 'bind' }, 'same identity and content: the same record');
   assert.deepEqual(recoveredQuestionDecision({ ...base, observation: intact, existing: { ...base, sha256: 'b'.repeat(64) } }), { kind: 'block', code: 'QUESTION_ID_CONFLICT' });
   assert.deepEqual(recoveredQuestionDecision({ ...base, observation: intact, existing: { workId: 'w2', executionId: 'e1', sha256: 'a'.repeat(64) } }), { kind: 'block', code: 'QUESTION_ID_CONFLICT' });
   assert.deepEqual(recoveredQuestionDecision({ ...base, observation: { ...intact, intact: false }, existing: null }), { kind: 'block', code: 'QUESTION_RECORD_NOT_INTACT' }, 'never invented or repaired');
-  for (const code of ['QUESTION_RECORD_INCOMPLETE', 'QUESTION_LISTING_INCOMPLETE', 'QUESTION_RECORD_MULTIPLE', 'RECORDS_UNAVAILABLE']) {
+  assert.deepEqual(recoveredQuestionDecision({ ...base, observation: { ...intact, refused: 'WORK_NOT_CURRENT' }, existing: null }), { kind: 'honor-refusal', code: 'WORK_NOT_CURRENT' },
+    'refused live: never re-recorded at boot');
+  // A found record (partial, several, mismatched, unreadable) blocks; a transient read failure says nothing: ordinary recovery, noted.
+  for (const code of ['QUESTION_RECORD_INCOMPLETE', 'QUESTION_RECORD_MULTIPLE', 'QUESTION_RECORD_MISMATCH', 'QUESTION_RECORD_INVALID']) {
     assert.deepEqual(recoveredQuestionDecision({ ...base, observation: { kind: 'uncertain', code }, existing: null }), { kind: 'block', code }, code);
   }
+  for (const code of ['QUESTION_LISTING_INCOMPLETE', 'RECORDS_UNAVAILABLE', 'QUESTION_OBSERVATION_FAILED', 'WORKER_EXECUTION_NOT_ENABLED']) {
+    assert.deepEqual(recoveredQuestionDecision({ ...base, observation: { kind: 'uncertain', code }, existing: null }), { kind: 'none', unresolved: code }, code);
+  }
+});
+
+test('ticket 27 (rule level): the reconciled end keeps an administrative stop even with a recovered Question; a live Question binds; a block is a failure', () => {
+  const end = (input: Partial<Parameters<typeof interruptedEnd>[0]>) => interruptedEnd({ questionId: null, recovered: false, trigger: 'boot', blocked: null, heldCode: null, ...input });
+  assert.deepEqual(end({ questionId: qid }), { outcome: 'question', code: null, questionId: qid });
+  assert.deepEqual(end({ questionId: qid, recovered: true }), { outcome: 'question', code: null, questionId: qid });
+  assert.deepEqual(end({ questionId: qid, recovered: true, trigger: 'administrative-stop' }), { outcome: 'stopped', code: 'ADMINISTRATIVE_STOP', questionId: qid },
+    'the stop intent stays; the recovered Question is attached, never a silent question wait');
+  assert.deepEqual(end({ questionId: qid, trigger: 'administrative-stop' }), { outcome: 'question', code: null, questionId: qid }, 'a Question recorded live before the stop (ticket 26)');
+  assert.deepEqual(end({ trigger: 'administrative-stop' }), { outcome: 'stopped', code: 'ADMINISTRATIVE_STOP', questionId: null });
+  assert.deepEqual(end({ blocked: 'QUESTION_RECORD_INCOMPLETE', trigger: 'administrative-stop' }), { outcome: 'failure', code: 'QUESTION_RECORD_INCOMPLETE', questionId: null });
+  assert.deepEqual(end({ heldCode: 'WORKER_CHANNEL_LOST' }), { outcome: 'failure', code: 'WORKER_CHANNEL_LOST', questionId: null });
+  assert.deepEqual(end({}), { outcome: 'failure', code: 'CONTROLLER_CRASH', questionId: null });
 });

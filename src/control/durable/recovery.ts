@@ -4,7 +4,7 @@ import type { ExecutionPorts, ExecutionView, RecoveryRecord, RecoveryView, Runti
 import type { QuestionObservation } from '../../workers/index.js';
 import { classifyOverrun, overrunNotExcludedImpediment, timeoutImpediment } from '../rules/budget.js';
 import { classifyInterruption, recoveryImpediment, startDecision } from '../rules/recovery.js';
-import { recoveredQuestionDecision } from '../rules/questions.js';
+import { interruptedEnd, questionRecordFound, recoveredQuestionDecision } from '../rules/questions.js';
 import { readWork, ticketIndex, works, type WorkRecord } from './admission.js';
 import { applyConfirmedCessation, consumeReservation, reofferUnlessCompleted, releaseReservation, settleCancelled, slots } from './execution.js';
 import { intactRequest, questions, recordQuestionDocument } from './questions.js';
@@ -15,6 +15,8 @@ import type { Session } from './store.js';
 // established from durable evidence (receipt) only after the host confirmed cessation; capacity and budget follow the proven facts.
 
 type Inventory = 'empty' | 'unknown' | RuntimeInventory;
+/** Ticket 27: reads of the Records question facet per reconciliation while it is transiently unavailable. */
+const questionObservationAttempts = 3;
 type Cessation = RecoveryRecord['cessation'];
 export type RecoveryDeps = { session: Session; ports: ExecutionPorts; controllerRunId: string; inventory: Inventory; live(executionId: string): boolean };
 
@@ -116,11 +118,14 @@ export async function settleInterruption(session: Session, input: { work_id: str
     const execution = work?.execution ?? null;
     if (!work || !execution || execution.executionId !== input.executionId || !unsettled(execution)) return 'stale' as const;
     const now = new Date().toISOString();
+    let questionNote: string | null = input.question ? input.question.kind === 'question' ? `found:${input.question.request.questionId}` : input.question.kind === 'absent' ? 'absent'
+      : `${questionRecordFound(input.question.code) ? 'found' : 'unresolved'}:${input.question.code}` : null;
     const found: RecoveryRecord['found'] = { state: execution.state, phase: execution.dispatch.phase, held: execution.held?.code ?? null,
       end: execution.end ? `${execution.end.outcome}:${execution.end.code ?? ''}` : null, origin: execution.timing?.origin ?? null };
     const record = (start: RecoveryRecord['start'], decision: RecoveryRecord['decision'], code: string | null) => {
       // Assigned as a new array: a doc value assigned then mutated in place is not what the commit persists.
-      execution.recovery = [...(execution.recovery ?? []), { at: now, controllerRunId: input.controllerRunId, trigger: input.trigger, found, cessation: input.cessation, start, decision, code }];
+      execution.recovery = [...(execution.recovery ?? []), { at: now, controllerRunId: input.controllerRunId, trigger: input.trigger, found, cessation: input.cessation, start, decision, code,
+        ...(questionNote ? { question: questionNote } : {}) }];
       work.history.push({ at: now, event: 'execution-reconciled', origin: 'controller-recovery', executionId: execution.executionId,
         detail: `${decision}${code ? `:${code}` : ''}; cessation ${input.cessation.result} (${input.cessation.basis}); start ${start.kind}` });
       // Ticket 25: a cancelled Work is never requeued by its reconciliation; its cancellation ceases once nothing of it can act.
@@ -155,9 +160,12 @@ export async function settleInterruption(session: Session, input: { work_id: str
     // A discovered receipt must be THIS Execution's (identity of the invocation the Control reserved), never another one's.
     const matching = observed?.kind === 'receipt' && observed.receipt.workId === input.work_id && observed.receipt.executionId === execution.executionId &&
       observed.receipt.invocationId === execution.invocationId;
-    const start = startDecision({ confirmed: execution.start, phase: execution.dispatch.phase, cessation: 'confirmed',
+    let start = startDecision({ confirmed: execution.start, phase: execution.dispatch.phase, cessation: 'confirmed',
       observation: observed === null ? null : observed.kind === 'receipt' ? (matching ? { kind: 'receipt', receiptId: observed.receipt.id } : { kind: 'uncertain', code: 'START_RECEIPT_MISMATCH' })
         : observed.kind === 'absent' ? { kind: 'absent' } : { kind: 'uncertain', code: observed.code } });
+    // Ticket 27: a preserved ask_user request (or a found record) proves a worker ran: never "not started" by the missing receipt alone.
+    const askedEvidence = input.question?.kind === 'question' || (input.question?.kind === 'uncertain' && questionRecordFound(input.question.code));
+    if (start.kind === 'not-started' && askedEvidence) start = { kind: 'uncertain', code: 'QUESTION_WITHOUT_START_RECEIPT' };
     const occupancy = await tx.doc(slots);
     if (start.kind === 'not-started') {
       // Cessation confirmed and nothing started: Slot and reservation free, the Work keeps its queue position.
@@ -213,29 +221,34 @@ export async function settleInterruption(session: Session, input: { work_id: str
         const question = (await tx.doc(questions, id, null)).question;
         if (question?.executionId === execution.executionId && question.workId === work.work_id) { questionId = id; break; }
       }
-      // Ticket 27 (spec §5.5 "ACK perdido recupera ... solicitação íntegra com mesma identidade; conteúdo perdido bloqueia"): a request the
-      // worker preserved but the Control never recorded (crash before the commit, or before/after a lost notification) is recorded NOW with
-      // its own identity and content, in this commit; a request that is not intact, or Records that cannot say, blocks (nothing invented).
+      // Ticket 27 (spec §5.5 "ACK perdido recupera ... solicitação íntegra com mesma identidade; conteúdo perdido bloqueia"): ONLY a positive
+      // finding of the request the worker preserved changes the ordinary path. An intact one the Control never recorded is recorded NOW with
+      // its own identity and content (unless it was refused live: that refusal stands); a found record that is not intact blocks (nothing
+      // invented); a transient read failure keeps the ordinary recovery (noted in recovery[]).
       let lostQuestion: string | null = null;
+      let recovered = false;
       if (!questionId && input.question) {
         const seen = input.question;
         const document = seen.kind === 'question' ? await tx.doc(questions, seen.request.questionId, null) : null;
         const known = document?.question ?? null;
         const decided = recoveredQuestionDecision({ workId: work.work_id, executionId: execution.executionId,
-          observation: seen.kind === 'question' ? { kind: 'question', questionId: seen.request.questionId, sha256: seen.request.sha256, intact: intactRequest(seen.request, work.work_id) } : seen,
+          observation: seen.kind === 'question' ? { kind: 'question', questionId: seen.request.questionId, sha256: seen.request.sha256, intact: intactRequest(seen.request, work.work_id),
+            refused: execution.questionRefusals?.find(item => item.questionId === seen.request.questionId)?.code ?? null } : seen,
           existing: known ? { workId: known.workId, executionId: known.executionId, sha256: known.content.sha256 } : null });
         if (decided.kind === 'block') lostQuestion = decided.code;
+        else if (decided.kind === 'honor-refusal') questionNote = `refused-live:${decided.code}`;
         else if (decided.kind === 'bind') questionId = known!.questionId;
         else if (decided.kind === 'record' && seen.kind === 'question') {
           const recorded = recordQuestionDocument(document!, work, { executionId: execution.executionId, invocationId: execution.invocationId, request: seen.request,
             from: 'records-recovery', now });
-          if (recorded.kind !== 'refused') questionId = seen.request.questionId; else lostQuestion = recorded.code;
+          if (recorded.kind !== 'refused') { questionId = seen.request.questionId; recovered = true; questionNote = `recorded:${questionId}`; } else lostQuestion = recorded.code;
         }
       }
-      const outcome = questionId ? 'question' as const : input.trigger === 'administrative-stop' && !lostQuestion ? 'stopped' as const : 'failure' as const;
-      code = outcome === 'question' ? 'question' : outcome === 'stopped' ? 'ADMINISTRATIVE_STOP' : lostQuestion ?? execution.held?.code ?? 'CONTROLLER_CRASH';
+      const ended = interruptedEnd({ questionId, recovered, trigger: input.trigger, blocked: lostQuestion, heldCode: execution.held?.code ?? null });
+      const outcome = ended.outcome;
+      code = outcome === 'question' ? 'question' : ended.code ?? 'CONTROLLER_CRASH';
       execution.state = 'ended';
-      execution.end = { at: now, outcome, code: outcome === 'question' ? null : code, cessation: 'confirmed', ...(questionId ? { questionId } : {}) };
+      execution.end = { at: now, outcome, code: outcome === 'question' ? null : code, cessation: 'confirmed', ...(ended.questionId ? { questionId: ended.questionId } : {}) };
       reofferUnlessCompleted(work, execution.executionId, outcome, now);
       decision = outcome === 'stopped' ? 'administrative-continuation' : outcome === 'failure' ? 'operational-recovery' : 'settled';
     }
@@ -284,10 +297,15 @@ export async function reconcileExecution(deps: Omit<RecoveryDeps, 'live'>, work:
     }
   }
   // Ticket 27: the Builder's preserved ask_user request (only after confirmed cessation, when no end was recorded: a lost notification/ACK).
-  const asked = ceased.result === 'confirmed' && !execution.end && deps.ports.workers.observeQuestion &&
-    !['reserved', 'prepared', 'booted'].includes(execution.dispatch.phase)
-    ? await deps.ports.workers.observeQuestion({ workId: work.work_id, executionId: execution.executionId, invocationId: execution.invocationId })
-      .catch(() => ({ kind: 'uncertain' as const, code: 'QUESTION_OBSERVATION_FAILED' })) : null;
+  // A 'booted' phase is observed too: a lost start receipt never hides a preserved question. Transient read failures are retried (bounded).
+  let asked: QuestionObservation | null = null;
+  if (ceased.result === 'confirmed' && !execution.end && deps.ports.workers.observeQuestion && !['reserved', 'prepared'].includes(execution.dispatch.phase)) {
+    for (let attempt = 0; attempt < questionObservationAttempts; attempt++) {
+      asked = await deps.ports.workers.observeQuestion({ workId: work.work_id, executionId: execution.executionId, invocationId: execution.invocationId })
+        .catch(() => ({ kind: 'uncertain' as const, code: 'QUESTION_OBSERVATION_FAILED' }));
+      if (asked.kind !== 'uncertain' || questionRecordFound(asked.code)) break;
+    }
+  }
   return { cessation: ceased, decision: await settleInterruption(deps.session, { work_id: work.work_id, executionId: execution.executionId, cessation: ceased, observation,
     trigger, controllerRunId: deps.controllerRunId, reviewerReceipts, question: asked }) };
 }

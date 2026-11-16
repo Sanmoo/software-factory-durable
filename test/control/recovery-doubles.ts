@@ -23,7 +23,11 @@ export type RecoveryScript = { kind: 'complete' } | { kind: 'hang' } | { kind: '
   { kind: 'ask'; questionId: string; question: string; hangAfterAck?: boolean } |
   /** Ticket 27: the worker PRESERVES its complete ask_user request in Records (same record as worker-session) and then never notifies the
    * Control (it dies with the controller): the notification and its ACK are lost. `partial` leaves the record unfinished (content lost). */
-  { kind: 'ask-preserved'; questionId: string; question: string; context?: string; partial?: boolean } |
+  { kind: 'ask-preserved'; questionId: string; question: string; context?: string; partial?: boolean;
+    /** The start notification is lost too (receipt written): an administrative stop then reconciles it before any start is confirmed. */
+    loseNotification?: boolean;
+    /** The worker DOES notify, with a request the Control refuses (hash mismatch): the live refusal must stand at boot. */
+    notifyInvalid?: boolean } |
   /** Hands off ONE captured round to the Factory reviewers (who then run until their boot stops), then waits. */
   { kind: 'handoff' };
 
@@ -185,12 +189,21 @@ export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options:
           const reference = await writeReceipt(invocation);
           log('receipt', { executionId: invocation.context.executionId, id: reference.id });
           if (script.kind === 'lose-notification') await new Promise<never>(() => {});
+          if (script.kind === 'ask-preserved' && script.loseNotification) { await preserveQuestion(invocation, script); await new Promise<never>(() => {}); }
           return { receipt: reference, invocation: { executionId: invocation.context.executionId, invocationId: invocation.context.invocationId } };
         })();
         const completed = interruptible(invocation.signal, started.then(async start => {
           if (script.kind === 'complete') return { status: 'success' as const, receipt: start.receipt };
           if (script.kind === 'fail') return { status: 'failure' as const, code: script.code };
-          if (script.kind === 'ask-preserved') { await preserveQuestion(invocation, script); await new Promise<never>(() => {}); }
+          if (script.kind === 'ask-preserved') {
+            await preserveQuestion(invocation, script);
+            if (script.notifyInvalid) {
+              const ack = await events!.question!({ questionId: script.questionId, question: script.question, context: script.context ?? '', sha256: 'f'.repeat(64),
+                reference: { workId: invocation.context.workId, id: '77777777-2222-4333-8444-555555555555' } });
+              log('question-ack', ack);
+            }
+            await new Promise<never>(() => {});
+          }
           if (script.kind === 'ask') {
             const question: WorkerQuestion = { questionId: script.questionId, question: script.question, context: '', sha256: sha(script.question, ''),
               reference: { workId: invocation.context.workId, id: '77777777-2222-4333-8444-555555555555' } };
