@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { openControl } from '../../src/control/index.js';
 import type { Control, ControlReceipt, ExecutionView, ListView, QuestionView, WorkView } from '../../src/control/types.js';
 import { comment, githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
+import { untilHolds } from '../runner/budget.js';
 import { app, executionDoubles, facts, humanPush, leasedPublish, ownPull, pushAs, type Activation, type Script } from './publication-doubles.js';
 
 // Flow level (S) of ticket 21: real Control + Pi Durable + temporary SQLite with ticket 13's REAL review rounds/verification and ticket 14's
@@ -36,13 +37,13 @@ async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remo
   await time.sleeping();
   t.after(async () => { if (!current!.stop.signal.aborted) { current!.stop.abort(); await current!.running; } });
   const work = async () => ((await current!.control.inspect({ kind: 'list' })) as ListView).works[0] as WorkView;
+  // Ticket 40: bounded by the runner budget, never an iteration count.
   const settle = async (predicate: () => Promise<boolean>, label: string) => {
-    for (let i = 0; i < 600; i++) {
-      if (await predicate()) return;
+    await untilHolds(label, async () => {
+      if (await predicate()) return true;
       if (current!.time.isSleeping()) current!.time.advance();
-      await new Promise(resolve => setTimeout(resolve, 5));
-    }
-    assert.fail(`${label} not reached`);
+      return false;
+    }, 5);
   };
   const cycles = async (n: number) => { for (let i = 0; i < n; i++) { current!.time.advance(); await current!.time.sleeping(); await new Promise(resolve => setTimeout(resolve, 10)); } };
   const activations = () => execution.calls.filter(call => call.kind === 'activate').map(call => call.detail as Activation);
