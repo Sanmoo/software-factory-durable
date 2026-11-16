@@ -81,6 +81,9 @@ function chainExecution(execution: ExecutionView): ChainExecutionView {
     charge: execution.charge ? `${execution.charge.kind}:${execution.charge.state}` : null,
     duration: execution.timing?.duration?.kind ?? (execution.start ? 'unknown' : 'not-started'),
     verification: execution.review?.verification?.status ?? null, recoveries: execution.recovery?.length ?? 0,
+    blockedRequest: execution.blockedRequest ? { reference: execution.blockedRequest.reference, code: execution.blockedRequest.code,
+      state: execution.blockedRequest.override ? 'overridden' : 'blocking', override: execution.blockedRequest.override
+        ? { request_id: execution.blockedRequest.override.request_id, at: execution.blockedRequest.override.at, operator: execution.blockedRequest.override.operator } : null } : null,
     reviews: (execution.review?.rounds ?? []).map(round => ({ round: round.round, attempt: round.attempt, kind: round.kind ?? 'review', conclusion: round.conclusion,
       reviewers: (['standards', 'spec'] as const).filter(role => round.reviewers?.[role]).map(role => {
         const reviewer = round.reviewers[role];

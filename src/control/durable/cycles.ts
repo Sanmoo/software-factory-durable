@@ -122,7 +122,8 @@ async function acceptBlockedRecoveryOverride(session: Session, input: Extract<Cy
     if (decision.kind === 'already') return receiptOf(input, input.work_id, 'already-satisfied', decision.code);
     const at = new Date().toISOString();
     removeImpediments(work!, ['RECOVERY_BLOCKED']);
-    history(work!, 'blocked-recovery-overridden', 'local-cli', `${input.request_id}:${input.override_blocked_recovery}`, at);
+    work!.history.push({ at, event: 'blocked-recovery-overridden', origin: 'local-cli', executionId: execution!.executionId,
+      detail: `${input.request_id}:${input.override_blocked_recovery}`.slice(0, 512) });
     // No recovery was pending (revalidated above), so this opens exactly one new request.
     applyRecoveryRequest(work!, { executionId: execution!.executionId, code: decision.code, at, reason: `operator-override:${input.override_blocked_recovery}` });
     // Assigned as a new object: a doc value assigned then mutated in place is not what the commit persists.

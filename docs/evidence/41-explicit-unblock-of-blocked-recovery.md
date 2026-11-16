@@ -1,8 +1,7 @@
 # 41 — Desbloquear explicitamente uma recuperação bloqueada: incremento local
 
 Autoridade: [ticket 41](../../.scratch/software-factory-mvp/issues/41-explicit-unblock-of-blocked-recovery.md), spec §5.5 (conteúdo perdido
-bloqueia), §4.4 (recuperação operacional), §11.3 (comandos). Base: branch do ticket 27 (`9f94307`, sobre a integração `c645639`); 29 ainda
-não integrado. Branch `implement/software-factory-mvp-41`. **Somente local**: sem GitHub, VM, modelo ou credenciais; nenhuma receita real.
+bloqueia), §4.4 (recuperação operacional), §11.3 (comandos). Base: integração `0d343d6` (27 e 29 integrados). Branch `implement/software-factory-mvp-41`. **Somente local**: sem GitHub, VM, modelo ou credenciais; nenhuma receita real.
 
 ## Desenho
 
@@ -34,7 +33,7 @@ socket reais.
 | --- | --- | --- |
 | 1 comando só para `RECOVERY_BLOCKED` com a referência exata; outros recusados com motivo | `override41-rules` (todas as recusas), `override41-flow` AC1-AC4 (referência errada, Work desconhecido, `resume` simples), `update-scope-cli` (forma, `--request-id` obrigatório, recibo via socket) | R, S, C |
 | 2 revalida cessação, atividade/Slot, resolução posterior; não inventa | `override41-rules` (cessação, Slot, atividade, Pergunta ligada, reconciliação posterior, fim mudado); `override41-flow` (nenhuma Pergunta criada; prompt sem o conteúdo perdido) | R, S |
-| 3 decisão durável/auditável, visível em `show`/histórico | `override41-flow` (`show` traz `blockedRequest` + comando; `override` com operador/horário/referência/request id; um evento de histórico) | S |
+| 3 decisão durável/auditável, visível em `show`/histórico | `override41-flow` (`show` traz `blockedRequest` + comando; `override` com operador/horário/referência/request id; um evento de histórico; "AC3 (ticket 29 inspection)": cadeia do `show` e `history --execution`) | S |
 | 4 volta à fila pela recuperação do 26, uma unidade; esgotado → impedimento usual + grant | `override41-flow` AC1-AC4 (espera 5 s, `interruption` OPERATIONAL_RECOVERY, `charge: recovery`, consumo 1) e AC4 (`recoveryLimit: 0` → `RECOVERY_LIMIT_REACHED`, nada inicia; `grant` → recovery) | S |
 | 5 sem retries implícitos; queda → estado recuperável sem dupla aceitação | `override41-flow` AC5 (owner parado após o commit, novo owner, replay = mesmo recibo, 1 evento, 1 pedido); `override41-rules` (`already`) | S, R |
 
@@ -49,8 +48,9 @@ e verdes depois. Corte SIGKILL real não acrescentado: o aceite é um único com
 | MED reassentar Execução já sobrescrita re-bloqueava (genérico) | `settleInterruption` idempotente: bloqueio sobrescrito → `operational-recovery`, recovery pendente mantida | `override41-flow` "review MED 2" (vermelho por mutação) |
 | LOW resolução por qualquer Pergunta da Execução; cancelamento; `blockedRequest` gravado sem ser o fim; `already-open` ambíguo; regex duplicada; token ausente | ligada a `questionId`/invocação; `WORK_CANCELLING`; grava só quando o fim é o bloqueio; `RECOVERY_ALREADY_PENDING`; `blockedReferencePattern` em `contracts` (Control, socket, CLI); `blockedRequestToken` com fallback | `override41-rules`, `update-scope-cli` |
 
-## Pendente no rebase sobre o 29
+## Rebase sobre a integração `0d343d6` (27 e 29 integrados)
 
-A visão de inspeção do 29 (`show`/`history` correlacionados) existe só no branch dele. Aqui a decisão aparece no `show` atual
-(`execution.blockedRequest`, `limits.actions`, `history`). No rebase: expor `blockedRequest` (referência, achado, decisão) na visão de
-Execução do 29 e o evento `blocked-recovery-overridden` no `history` correlacionado (request id → Execução seguinte), com teste de inspeção.
+Os commits antigos do 27 foram descartados (a integração já os contém reescritos); só os dois commits do 41 foram reaplicados. Ligação com
+a inspeção do 29 (AC3): `show` → `chain.executions[].blockedRequest` (`reference`, `code`, `state: blocking|overridden`, `override` com
+request id, horário e operador); o evento `blocked-recovery-overridden` agora carrega `executionId`, então aparece em `factory history
+<work> --execution <id>` com `links.executionId`. Teste: `override41-flow` "AC3 (ticket 29 inspection)".

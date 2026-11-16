@@ -9,7 +9,7 @@ import { openStore } from '../../src/control/durable/store.js';
 import { works } from '../../src/control/durable/admission.js';
 import type { ExecutionView } from '../../src/control/types.js';
 import { openControl } from '../../src/control/index.js';
-import type { Control, ControlInput, ListView, ShowView, WorkView } from '../../src/control/types.js';
+import type { Control, ControlInput, HistoryView, ListView, ShowView, WorkView } from '../../src/control/types.js';
 import { githubDoubles, manualClock, remoteIssue, scope } from './doubles.js';
 import { recoveryDoubles, updateHost, type RecoveryScript } from './recovery-doubles.js';
 
@@ -193,4 +193,21 @@ test('review MED 2: settling an overridden Execution again never re-blocks it; i
   await h.until(async () => h.current().doubles.calls('activate').length === 2 && (await h.work()).execution?.end?.outcome === 'completed', 'recovery ran');
   after = await h.work();
   assert.deepEqual([after.budget!.recoveries.consumed, after.execution!.interruption!.reason], [1, 'OPERATIONAL_RECOVERY']);
+});
+
+test('AC3 (ticket 29 inspection): `show` chain and `history --execution` show the blocked reference and the audited decision', async t => {
+  const h = await harness(t);
+  const work = await h.blocked();
+  const executionId = work.execution!.executionId;
+  const reference = work.execution!.blockedRequest!.reference;
+  const chained = async () => (await h.show(work.work_id)).chain.executions.find(item => item.executionId === executionId)!;
+  assert.deepEqual((await chained()).blockedRequest, { reference, code: 'QUESTION_RECORD_INCOMPLETE', state: 'blocking', override: null });
+  await h.override(work.work_id, reference, 'o41-inspect');
+  const after = (await chained()).blockedRequest!;
+  assert.deepEqual([after.state, after.override!.request_id, after.override!.operator], ['overridden', 'o41-inspect', { kind: 'local-administrator' }]);
+  assert.ok(Number.isFinite(Date.parse(after.override!.at)));
+  const history = await h.current().control.inspect({ kind: 'history', work_id: work.work_id, execution: executionId, limit: 200 }) as HistoryView;
+  const decided = history.entries.filter(item => item.entry.event === 'blocked-recovery-overridden');
+  assert.equal(decided.length, 1, 'the decision is in the Execution\'s correlated history');
+  assert.deepEqual([decided[0]!.executionId, decided[0]!.links.executionId, decided[0]!.entry.origin], [executionId, executionId, 'local-cli']);
 });

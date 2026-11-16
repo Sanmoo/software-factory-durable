@@ -752,6 +752,8 @@ export type WorkView = {
     { at: string; event: 'delivery-observed' | 'delivery-confirmed' | 'cleanup-evaluated' | 'evidence-preserved' | 'cleanup-intended' | 'cleanup-result';
       origin: 'controller-delivery'; detail: string } |
     { at: string; event: CycleEvent; origin: 'controller-cycles' | 'local-cli'; detail: string } |
+    /** Ticket 41: correlated with the blocked Execution (ticket 29 `history --execution`). */
+    { at: string; event: 'blocked-recovery-overridden'; origin: 'local-cli'; executionId: string; detail: string } |
     { at: string; event: RetentionEvent; origin: 'controller-retention' | 'local-cli'; detail: string })[];
 };
 /** Ticket 41: a lost Builder request that blocks recovery, and the operator's explicit decision to continue without it. */
@@ -760,7 +762,7 @@ export type BlockedRequestView = { reference: string; code: string; questionId: 
 /** Ticket 25 history events (cycle, authorization, cancellation, closure/reopen). */
 export type CycleEvent = 'authorization-withdrawn' | 'authorization-restored-observed' | 'authorization-confirmed' | 'cancel-requested' | 'cancellation-ceased' |
   'resume-accepted' | 'resume-confirmed' | 'resume-not-confirmed' | 'pull-request-closed-unmerged' | 'reopen-intended' | 'reopen-attempted' | 'reopen-confirmed' |
-  'reopen-not-applied' | 'cycle-created' | 'successor-created' | 'blocked-recovery-overridden';
+  'reopen-not-applied' | 'cycle-created' | 'successor-created';
 /** Ticket 25: cancellation of a Work (spec §3.4 "Interromper/cancelar": request, prohibitions and stop intent; physical confirmation later). */
 export type CancellationView = { request_id: string; requestedAt: string; state: 'stopping' | 'ceased'; ceasedAt: string | null;
   /** The Execution active (or holding a Slot) when the cancellation was accepted, if any. */
@@ -1005,6 +1007,9 @@ export type ChainExecutionView = { executionId: string; mode: ExecutionView['mod
   purpose: 'implementation' | 'publication' | 'repair' | 'reconciliation' | 'resumption' | 'recovery';
   outcome: string | null; code: string | null; environment: string | null; boot: string | null; startedAt: string | null; endedAt: string | null;
   charge: string | null; duration: DurationView['state']; verification: string | null; recoveries: number;
+  /** Ticket 41: the lost Builder request that blocked this Execution's recovery and the operator's explicit decision, if any. */
+  blockedRequest?: { reference: string; code: string; state: 'blocking' | 'overridden';
+    override: { request_id: string; at: string; operator: { kind: 'local-administrator' } } | null } | null;
   reviews: { round: number; attempt: number; kind: string; conclusion: string | null;
     reviewers: { role: 'standards' | 'spec'; state: string; attempt: number; conclusion: string | null; source: string | null; opinion: string | null }[] }[] };
 /** Ticket 29: the read-only Records facets inspection uses (spec §2.3 `Records.read`). */
