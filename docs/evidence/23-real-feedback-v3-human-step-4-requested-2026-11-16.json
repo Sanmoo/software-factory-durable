@@ -1,0 +1,13 @@
+{
+ "step": 4,
+ "action": "REQUEST_CHANGES review while the Factory is PAUSED",
+ "command": "gh pr review 48 --repo Sanmoo/java-springboot-event-sourcing --request-changes --body 'Please rename the title to `# Factory feedback (withdrawn)`.'   # with YOUR OWN gh login (operator Sanmoo); never the App",
+ "expect": "recorded -> ONE pending correction (paused: not started)",
+ "pullRequest": {
+  "number": 48,
+  "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/48"
+ },
+ "at": "2026-11-16T10:30:49.430Z",
+ "waitMinutes": 60,
+ "note": "Operator: run this with YOUR OWN gh login now; the phase is waiting. Nobody merges in this step."
+}

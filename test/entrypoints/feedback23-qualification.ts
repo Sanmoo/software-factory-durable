@@ -26,7 +26,7 @@ const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 
  * The NEW synthetic issue the supervisor creates after the operator's authorization (title/body below, label `ready-for-agent`, no other
  * open issue with that label). `number` MUST be pinned in a reviewed commit before preflight: 0 refuses every phase (TICKET_NOT_PINNED).
  */
-export const ticket = { number: 47, repositoryId: 1256893534, title: 'Factory qualification: treat human review feedback on the Factory pull request' } as const;
+export const ticket = { number: 0, repositoryId: 1256893534, title: 'Factory qualification: treat human review feedback on the Factory pull request' } as const;
 const githubApp = { appId: 5569788, privateKeyFile: 'credentials/app.pem' };
 const operatorLogin = 'Sanmoo';
 const configuration = { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1', memoryMiB: 4096, vcpus: 2, diskGiB: 40, shutdownGraceSeconds: 30, minFreeSpaceGiB: 4 } as const;
@@ -602,4 +602,53 @@ export function verdictV2(saved: { review: SavedPhase; command: SavedPhase; issu
     ],
     notProven: ['continuation of the SAME correction for the during-activity review (the phase ended at the Builder Question)', 'withdraw: steps 4/5 (pause, request, approval -> withdrawn without charge)'],
   };
+}
+
+type SavedInspect = { executions?: ExecutionView[]; fileAtHead?: { ok?: boolean; value?: { content?: string } } | null; pushViolations?: string[];
+  sessions?: { tokenPattern?: boolean }[]; feedback?: { kind?: string; reviews?: { reviewId: number; state: string }[] } | null; work?: { readiness?: { stages?: { humanReview?: string } } | null } } | null;
+/**
+ * Real run q23-feedback-v3, scored OFFLINE from the saved phase results only (no GitHub, no storage write), against every acceptance criterion
+ * the real boundary can show. Each check names what it saw.
+ */
+export function verdictV3(saved: { review: SavedPhase; command: SavedPhase; withdraw: SavedPhase; inspect: SavedInspect; issue: number;
+  bodies: Record<1 | 2 | 3 | 4, string> }): { passed: boolean; checks: Check[] } {
+  const check = (id: string, passed: boolean, observed: string): Check => ({ id, passed, observed: observed.slice(0, 300) });
+  const final = (phase: SavedPhase) => phase?.final?.works?.[0];
+  const review = final(saved.review), command = final(saved.command), withdraw = final(saved.withdraw);
+  const builders = (phase: SavedPhase) => (phase?.events ?? []).filter(item => item.call === 'activate' && item.context?.role === 'builder').length;
+  const requests = withdraw?.feedback?.requests ?? [];
+  const byBody = (body: string) => requests.find(item => body.includes(item.feedback.content.replace(/^\/factory repair\s+/, '')) || item.feedback.content === body.replace(/^\/factory repair\s+/, ''));
+  const [r1, r2, r3, r4] = ([1, 2, 3, 4] as const).map(step => byBody(saved.bodies[step]));
+  const corrections = withdraw?.corrections ?? [];
+  const history = command?.history ?? [];
+  const index = (event: string, detail?: string) => history.findIndex(item => item.event === event && (!detail || ('detail' in item && String(item.detail).includes(detail))));
+  const executions = saved.inspect?.executions ?? [];
+  const continuation = executions.find(item => item.request.resume?.reason === 'REPAIR_REQUESTED' && item.charge?.state === 'preserved');
+  const file = saved.inspect?.fileAtHead?.value?.content ? Buffer.from(saved.inspect.fileAtHead.value.content, 'base64').toString('utf8') : '';
+  const all = [saved.review, saved.command, saved.withdraw];
+  const checks = [
+    check('phases-success', all.every(item => item?.status === 'success'), all.map(item => String(item?.status)).join(',')),
+    check('AC1-only-operator-requests', requests.length === 4 && requests.every(item => item.feedback.author?.login === operatorLogin && item.feedback.author.id !== null) &&
+      r2?.feedback.origin === 'github-comment', requests.map(item => `${item.feedbackId}:${item.feedback.origin}:${item.feedback.author?.login}`).join(',')),
+    check('AC2-identity-origin-version-content', [r1, r2, r3, r4].every(item => item && item.feedback.url && /^[0-9a-f]{40}$/.test(item.feedback.version ?? '') && item.feedback.content.length > 0 &&
+      item.feedback.sha256.length === 64), [r1, r2, r3, r4].map(item => `${item?.feedbackId}@${item?.feedback.version?.slice(0, 8)}`).join(',')),
+    check('AC3-review-survives-push-treated-once', (review?.corrections ?? []).length === 1 && r1?.state === 'treated' &&
+      corrections.filter(item => item.reasons.some(reason => reason.subject === r1.feedbackId)).length === 1, `r1 ${r1?.state}; corrections with r1: ${corrections.filter(item => item.reasons.some(reason => reason.subject === r1?.feedbackId)).length}`),
+    check('AC3-approval-withdraws-only-its-trigger', r4?.state === 'withdrawn' && r4.outcome === 'APPROVED_LATER' && [r1, r2, r3].every(item => item?.state === 'treated') &&
+      saved.inspect?.work?.readiness?.stages?.humanReview === 'human-stage', `r4 ${r4?.state}:${r4?.outcome}; others ${[r1, r2, r3].map(item => item?.state).join(',')}`),
+    check('AC4-during-activity-same-correction-preserved-charge', Boolean(r3 && r2 && r3.correctionId === r2.correctionId) && index('repair-continued') > index('feedback-recorded', 'review:') &&
+      continuation?.charge?.correctionId === r2?.correctionId && (continuation?.request.repair?.reasons ?? []).some(item => item.subject === r3?.feedbackId),
+      `r2/r3 correction ${r2?.correctionId?.slice(0, 8)}/${r3?.correctionId?.slice(0, 8)}; continuation ${continuation?.executionId.slice(0, 8)} ${continuation?.charge?.state}`),
+    check('AC4-no-injection-one-builder-at-a-time', builders(saved.command) === 4 && builders(saved.withdraw) === 0, `command ${builders(saved.command)}, withdraw ${builders(saved.withdraw)}`),
+    check('AC5-requests-addressed-no-question', file.includes('Requested by an operator review.') && file.includes('Repaired by explicit request.') &&
+      file.includes('See also: docs/FACTORY_FEEDBACK.md#steps') && !file.includes('(withdrawn)') && !(withdraw?.impediments ?? []).some(item => item.code === 'QUESTION_PENDING'),
+      file.split('\n').filter(line => /Requested|Repaired|See also|withdrawn/.test(line)).join(' | ')),
+    check('AC6-comment-command-answered-on-ticket', (withdraw?.feedback?.replies ?? []).some(item => item.publication.state === 'published' &&
+      Boolean(item.publication.comment?.url.includes(`/issues/${saved.issue}#issuecomment-`)) && item.body.includes('accepted')), (withdraw?.feedback?.replies ?? []).map(item => item.publication.comment?.url ?? '').join(',')),
+    check('AC7-consolidation-charged-without-duplicate', withdraw?.budget?.corrections.consumed === 2 && corrections.length === 3 && corrections.filter(item => item.charged).length === 2 &&
+      corrections[2]?.outcome === 'withdrawn' && corrections[2].charged === false, `consumed ${withdraw?.budget?.corrections.consumed}; ${corrections.map(item => `${item.outcome}:${item.charged}`).join(',')}`),
+    check('leased-pushes-no-token', (saved.inspect?.pushViolations ?? []).length === 0 && (saved.inspect?.sessions ?? []).every(item => item.tokenPattern === false),
+      `violations ${(saved.inspect?.pushViolations ?? []).length}`),
+  ];
+  return { passed: checks.every(item => item.passed), checks };
 }

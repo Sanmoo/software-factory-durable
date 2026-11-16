@@ -1,0 +1,13 @@
+{
+ "step": 5,
+ "action": "APPROVE review of the Factory PR (same operator), after step 4 was recorded",
+ "command": "gh pr review 48 --repo Sanmoo/java-springboot-event-sourcing --approve --body 'Approving: the previous request is no longer needed.'   # with YOUR OWN gh login (operator Sanmoo); never the App",
+ "expect": "the step-4 request is withdrawn -> the correction is withdrawn without charge; nothing is launched; no merge readiness is claimed",
+ "pullRequest": {
+  "number": 48,
+  "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/48"
+ },
+ "at": "2026-11-16T10:33:04.459Z",
+ "waitMinutes": 60,
+ "note": "Operator: run this with YOUR OWN gh login now; the phase is waiting. Nobody merges in this step."
+}

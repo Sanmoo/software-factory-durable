@@ -65,6 +65,8 @@ export async function recordReviewFeedback(session: Session, work_id: string, ob
         state: 'pending', correctionId: null, closedAt: null, outcome: null });
       work.history.push({ at: now, event: 'feedback-recorded', origin: 'controller-feedback', feedbackId: request.feedbackId, detail: `review:${request.author?.login ?? '?'}@${request.version ?? '?'}` });
     }
+    const executionsBefore = [...work.previousExecutions, ...(work.execution ? [work.execution] : [])];
+    const undeliveredBefore = work.correction?.consumed ? undeliveredHuman(work.correction, executionsBefore).length : 0;
     for (const request of feedback.requests) {
       const removed = outcome.inactive[request.feedbackId];
       if (!removed || request.code !== 'HUMAN_CHANGES_REQUESTED' || (request.state !== 'pending' && request.state !== 'in-correction')) continue;
@@ -76,9 +78,10 @@ export async function recordReviewFeedback(session: Session, work_id: string, ob
       if (work.correction?.consumed) work.correction.reasons = (work.correction.reasons ?? []).filter(item => item.subject !== request.feedbackId);
       work.history.push({ at: now, event: 'feedback-withdrawn', origin: 'controller-feedback', feedbackId: request.feedbackId, detail: removed });
     }
-    // A continuation (ticket 23) whose requests were all withdrawn before it started has nothing left to deliver: no activation for it.
-    const executions = [...work.previousExecutions, ...(work.execution ? [work.execution] : [])];
-    if (work.correction?.consumed && work.correction.continuing && !activeExecution(work.execution ?? null) && !undeliveredHuman(work.correction, executions).length) {
+    // A continuation (ticket 23) whose requests were all withdrawn BY THIS observation before it started has nothing left to deliver: no
+    // activation for it. Real run q23-feedback-v3: never after the continuation delivered them (that would clear a pending publication).
+    if (work.correction?.consumed && work.correction.continuing && undeliveredBefore > 0 && !activeExecution(work.execution ?? null) &&
+        !undeliveredHuman(work.correction, executionsBefore).length) {
       work.correction.continuing = false;
       work.queue = { ...work.queue, pending: Boolean(work.pendingRecovery) || (work.scopeUpdates ?? []).some(update => update.state === 'pending') };
       work.history.push({ at: now, event: 'feedback-withdrawn', origin: 'controller-feedback', feedbackId: null, detail: 'continuation: nothing left to deliver' });

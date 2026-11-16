@@ -1,0 +1,64 @@
+{
+ "run": "q23-feedback-v3",
+ "issue": 47,
+ "pullRequest": 48,
+ "computedFrom": "saved phase results (offline, no GitHub, no storage write)",
+ "passed": true,
+ "checks": [
+  {
+   "id": "phases-success",
+   "passed": true,
+   "observed": "success,success,success"
+  },
+  {
+   "id": "AC1-only-operator-requests",
+   "passed": true,
+   "observed": "review-5917882626:github-review:Sanmoo,repair-github-comment-6913295861:github-comment:Sanmoo,review-5918202273:github-review:Sanmoo,review-5918510436:github-review:Sanmoo"
+  },
+  {
+   "id": "AC2-identity-origin-version-content",
+   "passed": true,
+   "observed": "review-5917882626@32266511,repair-github-comment-6913295861@83ed4825,review-5918202273@83ed4825,review-5918510436@a1af90f9"
+  },
+  {
+   "id": "AC3-review-survives-push-treated-once",
+   "passed": true,
+   "observed": "r1 treated; corrections with r1: 1"
+  },
+  {
+   "id": "AC3-approval-withdraws-only-its-trigger",
+   "passed": true,
+   "observed": "r4 withdrawn:APPROVED_LATER; others treated,treated,treated"
+  },
+  {
+   "id": "AC4-during-activity-same-correction-preserved-charge",
+   "passed": true,
+   "observed": "r2/r3 correction 5d4594fc/5d4594fc; continuation 9b423c98 preserved"
+  },
+  {
+   "id": "AC4-no-injection-one-builder-at-a-time",
+   "passed": true,
+   "observed": "command 4, withdraw 0"
+  },
+  {
+   "id": "AC5-requests-addressed-no-question",
+   "passed": true,
+   "observed": "Repaired by explicit request. | See also: docs/FACTORY_FEEDBACK.md#steps | Requested by an operator review."
+  },
+  {
+   "id": "AC6-comment-command-answered-on-ticket",
+   "passed": true,
+   "observed": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/47#issuecomment-6913380052"
+  },
+  {
+   "id": "AC7-consolidation-charged-without-duplicate",
+   "passed": true,
+   "observed": "consumed 2; published:true,published:true,withdrawn:false"
+  },
+  {
+   "id": "leased-pushes-no-token",
+   "passed": true,
+   "observed": "violations 0"
+  }
+ ]
+}

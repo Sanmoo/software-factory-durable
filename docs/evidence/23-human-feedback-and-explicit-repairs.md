@@ -7,8 +7,7 @@ answers, continue/replace session), 13 (review rounds), 14 (publication, update 
 19 (corrections budget, charge once at confirmed start, `preserve` for a charged correction), 21 (lease, human commits), 22 (correction,
 repair desk, revalidation before admission, repair section, repair queue). No new queue, scheduler, per-event state machine or consumption ACK.
 
-**State: implementation and local suite green (levels R/S/I-local); real run NOT executed** (no GitHub/VM/model/credentials). No checkbox
-marked; ticket not resolved. A double does not prove the replaced boundary.
+**State: resolved.** Local suite green (R/S/I-local) and real run `q23-feedback-v3` passed (verdict 11/11, below).
 
 ## Design
 
@@ -193,3 +192,31 @@ correction withdrawn without charge while paused. None of that is in the v2 evid
 needed** for the withdrawal and the continuation. The recipe namespace is now `q23-feedback-v3`, issue 0; re-pin before running. PR #43/issue #42
 are left to the supervisor.
 - Gate after the v2 fixes: `npm run test:ci` **PASS** — 1524 tests, 1514 pass, 0 fail, 10 skipped; 277.3 s.
+
+## Real run q23-feedback-v3 (issue #47, PR #48) — passed; verdict 11/11
+
+Branch `run/q23-feedback-v3` = `d49f43d` + pin #47. All phases (preflight, run, review, command, withdraw, inspect) exit 0. Human steps 1–5
+were executed once each from the operator account (step 5 = APPROVE, no merge). No Builder Question was asked. Saved results are copied as
+`23-real-feedback-v3-*-2026-11-16.json` (secret scan clean). `verdictV3` was computed OFFLINE from them (`23-real-feedback-v3-verdict-2026-11-16.json`):
+
+| Check | Observed |
+| --- | --- |
+| phases success | review, command, withdraw `success` |
+| AC1 only operator requests | 4 requests, all `Sanmoo` (pinned id); the repair came from a PR comment (`github-comment`) |
+| AC2 identity/origin/version/content | each request has its URL, the commit it was on, its content and a hash |
+| AC3 survives the push, treated once | step-1 review in exactly one correction (published, charged), `treated`, never re-triggered while still CHANGES_REQUESTED on GitHub |
+| AC3 approval withdraws only its trigger | step-4 request `withdrawn` (`APPROVED_LATER`); the 3 other requests stay `treated`; readiness `humanReview: human-stage` |
+| AC4 during activity → same correction | step-3 review recorded at 10:07:59 DURING the explicit-repair Execution, consolidated "for its next safe activation", `repair-continued`, continuation Execution `9b423c98` with charge `preserved` on the same correction |
+| AC4 no injection | command phase: 4 Builder activations in sequence (repair, publication, continuation, publication); withdraw: 0 |
+| AC5 addressed | the final head has `Repaired by explicit request.`, `See also: docs/FACTORY_FEEDBACK.md#steps`, `Requested by an operator review.`; the withdrawn rename is not applied |
+| AC6 command answered | controller reply published on issue #47 ("accepted") |
+| AC7 consolidation and charge without duplicate | `corrections` consumed 2; corrections published:charged, published:charged, withdrawn:uncharged |
+| leases/tokens | no push violation, no token pattern in sessions |
+
+Finding fixed after v3 (red test, `feedback-flow` AC4): when a continuation had ALREADY been delivered, a later feedback read still applied the
+"withdrawn before start" reset. In v3 this logged `feedback-withdrawn: continuation: nothing left to deliver` 6 ms before
+`publication-evaluated`, so it was harmless there. In the other order it would have cleared the pending publication. The reset now applies only
+when this read itself withdrew the last undelivered request.
+
+Covered at R/S level only (not exercised by the real run): `deferred` for a CLI `repair` during activity, `already-covered`, third-party/bot
+reviews and comments, refusal without an own PR, the reply discovery after an unknown outcome, and ticket 25's `resume` of an active Work.

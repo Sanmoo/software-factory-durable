@@ -1,0 +1,54 @@
+{
+ "step": 2,
+ "at": "2026-11-16T10:04:02.888Z",
+ "requests": [
+  {
+   "feedbackId": "review-5917882626",
+   "code": "HUMAN_CHANGES_REQUESTED",
+   "feedback": {
+    "feedbackId": "review-5917882626",
+    "origin": "github-review",
+    "author": {
+     "login": "Sanmoo",
+     "id": 1881597
+    },
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/48#pullrequestreview-5917882626",
+    "version": "322665111309544b54f8491bfdb16b2bb13d438f",
+    "submittedAt": "2026-11-16T09:43:33Z",
+    "sha256": "c33bb888478aa4418d5f0b0ca0826e55a1601801393ea525d8002d5089d44570",
+    "content": "Please add a `## Review notes` section at the end of docs/FACTORY_FEEDBACK.md with exactly one line: `Requested by an operator review.`",
+    "comments": []
+   },
+   "recordedAt": "2026-11-16T09:45:23.556Z",
+   "recordedHead": "322665111309544b54f8491bfdb16b2bb13d438f",
+   "state": "treated",
+   "correctionId": "2330475c-51d9-4615-adbb-663ba5a6a42a",
+   "closedAt": "2026-11-16T09:55:47.124Z",
+   "outcome": "published"
+  },
+  {
+   "feedbackId": "repair-github-comment-6913295861",
+   "code": "EXPLICIT_REPAIR",
+   "feedback": {
+    "feedbackId": "repair-github-comment-6913295861",
+    "origin": "github-comment",
+    "author": {
+     "login": "Sanmoo",
+     "id": 1881597
+    },
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/48#issuecomment-6913295861",
+    "version": "83ed482554344b15389f308cb2b2d771a059ef58",
+    "submittedAt": "2026-11-16T10:02:04Z",
+    "sha256": "b3841335951c5d05d5a6bfc525831dc293f09e7cf852ddc65f866dfb5b1deb64",
+    "content": "Add a line `Repaired by explicit request.` right below the title of docs/FACTORY_FEEDBACK.md.",
+    "comments": []
+   },
+   "recordedAt": "2026-11-16T10:03:54.601Z",
+   "recordedHead": "83ed482554344b15389f308cb2b2d771a059ef58",
+   "state": "in-correction",
+   "correctionId": "5d4594fc-bc86-4c84-85a8-1d38d3f34646",
+   "closedAt": null,
+   "outcome": null
+  }
+ ]
+}

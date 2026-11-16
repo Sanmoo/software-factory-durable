@@ -1,0 +1,61 @@
+{
+ "status": "success",
+ "operators": [
+  {
+   "login": "Sanmoo",
+   "id": 1881597
+  }
+ ],
+ "issue": {
+  "kind": "observed",
+  "source": "github-rest",
+  "observedAt": "2026-11-16T09:34:29.318Z",
+  "completeness": "complete",
+  "ticket": {
+   "tracker": "github",
+   "repository": "Sanmoo/java-springboot-event-sourcing",
+   "repositoryId": 1256893534,
+   "issueId": 6418316631,
+   "nodeId": "I_kwDOSuqsXs8AAAABfo-9Vw",
+   "number": 47,
+   "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/47"
+  },
+  "state": "open",
+  "stateReason": null,
+  "labels": [
+   {
+    "id": 12918930265,
+    "name": "ready-for-agent"
+   }
+  ],
+  "pullRequest": false
+ },
+ "base": {
+  "state": "present",
+  "sha": "85822b6c772f37bc16ade6287fec22fa58efc4cf"
+ },
+ "refs": {
+  "refs/heads/factory/11-bf8df237": "188d81625f44b7343d7221c01b79f2191918dd96",
+  "refs/heads/factory/16-3fb011e7": "e99099a2d0db0df13283b5956abbc89754a400c3",
+  "refs/heads/factory/19-f8fb4de4": "21a9343fc4b999f46f45885753e186a3f34c54b4",
+  "refs/heads/factory/25-dacfb638": "dbfc9688d3e70bfa2856697695e9d4b17bbcb99f",
+  "refs/heads/factory/27-c832adb2": "097ce0a3761035de3b2f311632a898189b385348",
+  "refs/heads/factory/29-b167feaa": "140a1baf19d109079688cdd0ba6f2dd071692d5f",
+  "refs/heads/factory/31-36b542ff": "2644c6784a3011068c0dc6ebe094082c5ad5ad62",
+  "refs/heads/factory/36-24c13883": "5b88249969dfd378435ce99d8fe7c2102add457c",
+  "refs/heads/factory/42-16f745ce": "b12b78f86a589be68ef7c34622577516604760eb",
+  "refs/heads/factory/8-4535224b": "19983968187d7e5cff8ae6a68a998ae70e547727",
+  "refs/heads/main": "85822b6c772f37bc16ade6287fec22fa58efc4cf"
+ },
+ "baseProtection": {
+  "state": "pull-request-required",
+  "sources": [
+   "ruleset:26435808"
+  ]
+ },
+ "app": {
+  "login": "sanmoo-factory[bot]",
+  "id": 351187749
+ },
+ "associatedPullRequests": 0
+}

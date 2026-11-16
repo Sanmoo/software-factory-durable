@@ -209,6 +209,8 @@ test('AC4/AC5/AC6/AC7: feedback during the repair accumulates for its next safe 
   const prompt = h.activations()[4]!.prompt;
   assert.ok(prompt.includes('Also add an example to docs/b.md.') && prompt.includes('Keep the old flag as a deprecated alias.'));
   assert.deepEqual([events(work, 'repair-continued'), events(work, 'correction-opened')], [1, 1]);
+  // Real run q23-feedback-v3: a DELIVERED continuation is never "cancelled" afterwards (that reset would clear the pending publication).
+  assert.equal(work.history.filter(item => item.event === 'feedback-withdrawn' && item.detail.startsWith('continuation')).length, 0);
   assert.deepEqual(work.feedback!.requests.map(item => item.state), ['treated', 'treated', 'treated']);
   // Idle again: resume has nothing suspended; a new explicit repair would open a NEW correction (FIFO, charged on its own).
   const idle = (await control.accept({ request_id: 'resume-idle', operation: 'resume', work_id: workId, origin: 'local-cli' })) as { outcome: string; reason: string };

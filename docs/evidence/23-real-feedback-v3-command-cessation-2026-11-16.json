@@ -1,0 +1,149 @@
+{
+ "boots": [
+  {
+   "environment": "env-98d69da1c5b6d9816d68af9b324fd575c34c67066d3b7cdef79e04463faa6e17",
+   "boot": "boot-6527473d-5c3b-4008-bf8e-57d17e211e97",
+   "start": "confirmed",
+   "observedBoot": "boot-6527473d-5c3b-4008-bf8e-57d17e211e97",
+   "observed": {
+    "condition": "stopped",
+    "cessationConfirmed": true,
+    "consumption": "unavailable",
+    "storage": {
+     "configuredVirtualBytes": "42949672960",
+     "minFreeBytes": "4294967296",
+     "disk": {
+      "status": "observed",
+      "virtualBytes": "42949672960",
+      "allocatedBytes": "631115776"
+     },
+     "workspace": {
+      "status": "observed",
+      "logicalBytes": "4783515",
+      "allocatedBytes": "5689344"
+     },
+     "artifacts": {
+      "status": "observed",
+      "logicalBytes": "111433",
+      "allocatedBytes": "331776"
+     },
+     "filesystem": {
+      "status": "observed",
+      "availableBytes": "517007028224"
+     }
+    }
+   },
+   "stopped": null,
+   "unresolved": false
+  },
+  {
+   "environment": "env-98d69da1c5b6d9816d68af9b324fd575c34c67066d3b7cdef79e04463faa6e17",
+   "boot": "boot-7c48e0df-0f9f-494e-8326-0c2109f3b45f",
+   "start": "confirmed",
+   "observedBoot": "boot-7c48e0df-0f9f-494e-8326-0c2109f3b45f",
+   "observed": {
+    "condition": "stopped",
+    "cessationConfirmed": true,
+    "consumption": "unavailable",
+    "storage": {
+     "configuredVirtualBytes": "42949672960",
+     "minFreeBytes": "4294967296",
+     "disk": {
+      "status": "observed",
+      "virtualBytes": "42949672960",
+      "allocatedBytes": "631115776"
+     },
+     "workspace": {
+      "status": "observed",
+      "logicalBytes": "4783515",
+      "allocatedBytes": "5689344"
+     },
+     "artifacts": {
+      "status": "observed",
+      "logicalBytes": "111433",
+      "allocatedBytes": "331776"
+     },
+     "filesystem": {
+      "status": "observed",
+      "availableBytes": "517007028224"
+     }
+    }
+   },
+   "stopped": null,
+   "unresolved": false
+  },
+  {
+   "environment": "env-98d69da1c5b6d9816d68af9b324fd575c34c67066d3b7cdef79e04463faa6e17",
+   "boot": "boot-be34fd51-33fe-41fb-8331-d660024ff2a0",
+   "start": "confirmed",
+   "observedBoot": "boot-be34fd51-33fe-41fb-8331-d660024ff2a0",
+   "observed": {
+    "condition": "stopped",
+    "cessationConfirmed": true,
+    "consumption": "unavailable",
+    "storage": {
+     "configuredVirtualBytes": "42949672960",
+     "minFreeBytes": "4294967296",
+     "disk": {
+      "status": "observed",
+      "virtualBytes": "42949672960",
+      "allocatedBytes": "631115776"
+     },
+     "workspace": {
+      "status": "observed",
+      "logicalBytes": "4783515",
+      "allocatedBytes": "5689344"
+     },
+     "artifacts": {
+      "status": "observed",
+      "logicalBytes": "111433",
+      "allocatedBytes": "331776"
+     },
+     "filesystem": {
+      "status": "observed",
+      "availableBytes": "517007028224"
+     }
+    }
+   },
+   "stopped": null,
+   "unresolved": false
+  },
+  {
+   "environment": "env-98d69da1c5b6d9816d68af9b324fd575c34c67066d3b7cdef79e04463faa6e17",
+   "boot": "boot-dd2efdf1-a678-4a07-a4d7-09287c06ad86",
+   "start": "confirmed",
+   "observedBoot": "boot-dd2efdf1-a678-4a07-a4d7-09287c06ad86",
+   "observed": {
+    "condition": "stopped",
+    "cessationConfirmed": true,
+    "consumption": "unavailable",
+    "storage": {
+     "configuredVirtualBytes": "42949672960",
+     "minFreeBytes": "4294967296",
+     "disk": {
+      "status": "observed",
+      "virtualBytes": "42949672960",
+      "allocatedBytes": "631115776"
+     },
+     "workspace": {
+      "status": "observed",
+      "logicalBytes": "4783515",
+      "allocatedBytes": "5689344"
+     },
+     "artifacts": {
+      "status": "observed",
+      "logicalBytes": "111433",
+      "allocatedBytes": "331776"
+     },
+     "filesystem": {
+      "status": "observed",
+      "availableBytes": "517007028224"
+     }
+    }
+   },
+   "stopped": null,
+   "unresolved": false
+  }
+ ],
+ "at": "2026-11-16T10:30:34.096Z"
+}

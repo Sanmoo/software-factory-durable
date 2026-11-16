@@ -1,0 +1,13 @@
+{
+ "step": 3,
+ "action": "a SECOND REQUEST_CHANGES review WHILE the step-2 repair runs (asked when its Execution started)",
+ "command": "gh pr review 48 --repo Sanmoo/java-springboot-event-sourcing --request-changes --body 'Please also add `See also: docs/FACTORY_FEEDBACK.md#steps` as the last line of the `## Steps` section.'   # with YOUR OWN gh login (operator Sanmoo); never the App",
+ "expect": "recorded during the activity; nothing reaches the running Builder; folded into the SAME correction (continuation, charge preserved) when committed before its closure, otherwise ONE new correction",
+ "pullRequest": {
+  "number": 48,
+  "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/48"
+ },
+ "at": "2026-11-16T10:06:32.939Z",
+ "waitMinutes": 60,
+ "note": "Operator: run this with YOUR OWN gh login now; the phase is waiting. Nobody merges in this step."
+}
