@@ -32,6 +32,15 @@ import { snapshotStorage } from './publication14-qualification.js';
 
 const root = '/home/sanmoo/software-factory-test/y5';
 const observations = `${root}/q34-crash-a-v1`;
+/**
+ * The recipe's OWN Factory root (environments, host Git cache, Records, worker runtime, model OAuth store): never the shared y5 root, so a cache
+ * cut or a failed reconciliation can only affect this recipe. It cannot live inside the namespace: worker sockets under <root>/r/<boot>/s/ must
+ * stay within 107 bytes, which leaves at most 38 bytes for the root (y5 itself is 37). The operator creates it (setup + login) before preflight.
+ */
+export const factoryRoot = '/home/sanmoo/software-factory-test/c34';
+/** The shared host Git cache other recipes use; this recipe never reads or writes it. */
+export const sharedCache = `${root}/cache`;
+const setupEntries = ['releases', 'assets', 'credentials', 'data', 'environments', 'run', 'config.yaml'];
 const revision = 'q34-crash-a-v1';
 export const phases = ['preflight', 'cache', 'sources', 'tool', 'inspect', 'stop-environment'] as const;
 export type Phase = typeof phases[number];
@@ -95,9 +104,12 @@ export const preservedFiles = ['spec/v1/ticket.json', 'spec/v1/sources.json', 'i
 
 export function plan() {
   return { revision, root, observations, phases, steps, repository, tickets: { main: { ...tickets.main, body: mainBody }, cache: { ...tickets.cache, body: cacheBody }, label: repository.label, pinned: pinned() },
-    operators: [operatorLogin], configuration, guestAssets, skillPack, pollingSeconds, gateMarkers, storages: { cache: `${observations}/cache-line/control.sqlite`, main: `${observations}/control.sqlite` },
+    operators: [operatorLogin], factoryRoot, cacheRoot: `${factoryRoot}/cache/git`, sharedCache,
+    operator: { beforePreflight: [`node dist/src/entrypoints/cli.js setup --root ${factoryRoot}`, `node dist/src/entrypoints/cli.js login --root ${factoryRoot}   # model OAuth store of THIS root`],
+      afterInspect: `remove ${factoryRoot} once the evidence is kept (its cache and environments belong to this recipe only)` },
+    configuration, guestAssets, skillPack, pollingSeconds, gateMarkers, storages: { cache: `${observations}/cache-line/control.sqlite`, main: `${observations}/control.sqlite` },
     requires: [`${root}/${githubApp.privateKeyFile} present`, 'the supervisor created the TWO new issues (titles/bodies above, label ready-for-agent) and pinned both numbers in a reviewed commit',
-      'no other open issue carries the label', 'main protected with NO bypass for the App', 'operator first-login store under root/credentials (model OAuth)', 'the host Git cache of the repository idle',
+      'no other open issue carries the label', 'main protected with NO bypass for the App', `a NEW Factory root ${factoryRoot} (operator: setup + login, nothing else in it; its own host Git cache, never ${sharedCache})`,
       'systemd user manager with the cgroup v2 freezer (systemctl --user freeze)', 'explicit operator authorization for THIS run, including host fault injection (SIGKILL, unit freeze); one-shot'],
     model: { provider: 'openai', model: 'gpt-6-luna', auth: 'factory-oauth', providerRetries: 0, sdkRetries: 0, cacheLine: 'none (no Builder is ever activated for Ticket C)',
       builderActivations: { 's1-sources-cut': ['initial'], 's2-sources-recovery': ['operational recovery (asks)'], 't1-tool-cut': ['answered resume'], 'h1-handoff-cut': ['operational recovery'], 'f1-final': ['operational recovery'] },
@@ -108,7 +120,7 @@ export function plan() {
       human: ['between the sources and tool phases (controller stopped): on Ticket M, from the operator account, ONE comment `/factory answer <question-id> docs/FACTORY_CRASH_A.md` (question id in sources-result.json)'],
       never: ['push', 'pull request', 'merge', 'approval', 'ready-for-review conversion', 'labels/assignees', 'closing an issue', 'branch deletion/cleanup', 'any write by this recipe itself'] },
     hostEffects: ['SIGKILL of the recipe\'s own controller children (5 cuts)', 'ONE `systemctl --user freeze factory-sandbox-<boot>.service` of the s1 survivor (its own unit; the next owner stops it)',
-      'the host Git cache of the repository left `mutating` by c1 and reconciled by c2 (if c2 keeps it, the operator action it prints is required before any other recipe)'],
+      `the recipe's OWN host Git cache (${factoryRoot}/cache/git) left \`mutating\` by c1 and reconciled by c2; the shared ${sharedCache} is never touched`],
     effects: [
       'preflight: key source check BEFORE any effect; exclusive namespace; read-only: operator id, the label lists exactly the two pinned issues, no associated PR, no factory/<n>- branch, base protection, App bot identity, cache idle, environments ceased',
       'cache: c1 (SIGKILL after the fetch credential revocation returned, cache `mutating`) then c2 (boot reconciliation of the cache; preparation held, never adopted; clean stop)',
@@ -301,14 +313,14 @@ const sha256 = async (data: Buffer | null) => data === null ? null : (await impo
 /** Confined, no-follow, bounded reads of the preserved files of an environment's /artifacts (never host git, never a guest command). */
 async function preserved(environment: string) {
   const { readConfined } = await import('../../src/sandbox/index.js');
-  const artifacts = `${root}/environments/${environment}/artifacts`;
+  const artifacts = `${factoryRoot}/environments/${environment}/artifacts`;
   const hashes: Record<string, string | null> = {};
   for (const file of preservedFiles) hashes[file] = await sha256(await readConfined(artifacts, file, 4 * 1024 * 1024).catch(() => null));
   return hashes;
 }
 async function gateMarkersOf(environment: string) {
   const { readConfined } = await import('../../src/sandbox/index.js');
-  const workspace = `${root}/environments/${environment}/workspace`;
+  const workspace = `${factoryRoot}/environments/${environment}/workspace`;
   return { started: await readConfined(workspace, gateMarkers.started, 64).catch(() => null), ended: await readConfined(workspace, gateMarkers.ended, 64).catch(() => null) };
 }
 const environmentPattern = /^env-[a-f0-9]{64}$/;
@@ -335,8 +347,8 @@ async function child(step: Step) {
   await verifyControllerLock(`${directory}/control.lock`);
   const preflight = JSON.parse(await fs.readFile(`${observations}/preflight-result.json`, 'utf8')) as { operators: { login: string; id: number }[]; preexisting: string[] };
   const { createSandbox, inventoryRuntime, reconcileInterruptedCaches } = await import('../../src/sandbox/index.js');
-  const caches = await reconcileInterruptedCaches(root);
-  const listed = await inventoryRuntime(root);
+  const caches = await reconcileInterruptedCaches(factoryRoot);
+  const listed = await inventoryRuntime(factoryRoot);
   const inventory = { kind: 'listed' as const, observedAt: new Date().toISOString(), environments: listed.environments.filter(item => !preflight.preexisting.includes(item.environment)),
     cache: listed.cache.filter(item => item.repositoryId === ticket.repositoryId), unknown: listed.unknown };
   log({ call: 'inventory', caches, inventory });
@@ -346,7 +358,7 @@ async function child(step: Step) {
   const pack = builderSkillPacks[skillPack];
   const kill = (cut: string, detail: Record<string, unknown> = {}) => { log({ call: 'cut', cut, ...detail }); process.kill(process.pid, 'SIGKILL'); };
   const fetchCredentials = createRepositoryFetchCredentials({ github, repositories: [repository] });
-  const cacheState = async () => JSON.parse(await fs.readFile(`${root}/cache/git/${ticket.repositoryId}.state.json`, 'utf8').catch(() => '{}')) as { state?: string };
+  const cacheState = async () => JSON.parse(await fs.readFile(`${factoryRoot}/cache/git/${ticket.repositoryId}.state.json`, 'utf8').catch(() => '{}')) as { state?: string };
   // Cut c1: the fetch credential is self-revoked FIRST (no live token is left behind), then the controller dies with the cache `mutating`.
   const repositoryFetch: typeof fetchCredentials = { fetch: scope => fetchCredentials.fetch(scope), async revoke(grant) {
     const result = await fetchCredentials.revoke(grant);
@@ -358,8 +370,8 @@ async function child(step: Step) {
     }
     return result;
   } };
-  const sandbox = createSandbox({ root, guestAssets, repositoryFetch, artifactSeeds: [{ name: pack.seedName, directory: pack.directory }] });
-  const workers = createWorkers({ root, knownSecrets: [], profile: { id: sdkProfileId, systemPrompt: prompts.builder, ...model },
+  const sandbox = createSandbox({ root: factoryRoot, guestAssets, repositoryFetch, artifactSeeds: [{ name: pack.seedName, directory: pack.directory }] });
+  const workers = createWorkers({ root: factoryRoot, knownSecrets: [], profile: { id: sdkProfileId, systemPrompt: prompts.builder, ...model },
     profiles: { builder: { id: sdkProfileId, systemPrompt: prompts.builder, ...model }, standards: { id: sdkProfileId, systemPrompt: prompts.standards, ...model },
       spec: { id: sdkProfileId, systemPrompt: prompts.spec, ...model } } });
   const builderCredentials = createBuilderCredentials({ github, repositories: [repository] });
@@ -577,6 +589,11 @@ export async function runPhase(phase: Phase) {
   if (phase === 'preflight') {
     const { requireKeySource } = await import('./crashfx27-qualification.js');
     await requireKeySource(path => fs.access(path)); // before ANY effect
+    // The own Factory root: exactly the setup layout, nothing prepared or cached yet, its model OAuth store present (existence only, never read).
+    const entries = await fs.readdir(factoryRoot).catch(() => null);
+    const fresh = entries !== null && await fs.realpath(factoryRoot) === factoryRoot && entries.every(name => setupEntries.includes(name)) &&
+      (await fs.readdir(`${factoryRoot}/environments`).catch(() => ['?'])).length === 0 && await fs.access(`${factoryRoot}/credentials/chatgpt.json`).then(() => true, () => false);
+    if (!fresh) throw new Error(`FACTORY_ROOT_NOT_FRESH: ${factoryRoot} must hold only the setup layout and its login store (nothing was created).`);
     await fs.mkdir(observations, { mode: 0o700 }); // EXCLUSIVE: never adopt an existing qualification
     const { constants } = await import('node:fs');
     for (const name of ['credentials', 'run', 'cache-line']) await fs.mkdir(`${observations}/${name}`, { mode: 0o700 });
@@ -606,8 +623,8 @@ export async function runPhase(phase: Phase) {
       const factoryBranches = refs ? Object.keys(refs).filter(ref => numbers.some(number => ref.startsWith(`refs/heads/factory/${number}-`))) : null;
       const app = await github.appIdentity(repository);
       const { createSandbox, inventoryRuntime } = await import('../../src/sandbox/index.js');
-      const listed = await inventoryRuntime(root);
-      const sandbox = createSandbox({ root, guestAssets });
+      const listed = await inventoryRuntime(factoryRoot);
+      const sandbox = createSandbox({ root: factoryRoot, guestAssets });
       const observed = [];
       for (const item of listed.environments) {
         const { storage: _storage, ...lifecycle } = await sandbox.observe({ environment: item.environment as never });
@@ -664,7 +681,7 @@ export async function runPhase(phase: Phase) {
       const environment = work.execution.dispatch.environment;
       const cut = await load('s1-cut') as { hashes?: Record<string, string | null> } | null;
       const { readConfined } = await import('../../src/sandbox/index.js');
-      const artifacts = `${root}/environments/${environment}/artifacts`;
+      const artifacts = `${factoryRoot}/environments/${environment}/artifacts`;
       let preservationComplete = false;
       const versions: Record<string, unknown> = {};
       for (const kind of ['spec', 'instructions']) {
@@ -690,7 +707,7 @@ export async function runPhase(phase: Phase) {
         main: { executions: executionsOf(work), question: main.question, budget: main.budget,
           answers: work.history.filter(item => item.event === 'question-answered' && 'questionId' in item && item.questionId === main.question?.questionId).length },
         preservedAtCut: cut?.hashes ?? {}, preservedNow: await preserved(environment), preservationComplete, remote: { questionComments, pullRequests: pulls } });
-      const cacheState = await fs.readFile(`${root}/cache/git/${tickets.main.repositoryId}.state.json`, 'utf8').then(text => JSON.parse(text) as unknown, () => null);
+      const cacheState = await fs.readFile(`${factoryRoot}/cache/git/${tickets.main.repositoryId}.state.json`, 'utf8').then(text => JSON.parse(text) as unknown, () => null);
       await fs.rm(`${observations}/${githubApp.privateKeyFile}`, { force: true }); // before the scan: any hit is then a real leak
       const { secretScan } = await import('./credential20-qualification.js');
       await save('inspect-result', { verdict, versions, cacheState, questionComments, pullRequests: pulls,
@@ -698,13 +715,13 @@ export async function runPhase(phase: Phase) {
           reviewers: { standards: round.reviewers.standards.source ?? null, spec: round.reviewers.spec.source ?? null } }))),
         executions: { main: executionsOf(work).map(item => ({ executionId: item.executionId, state: item.state, end: item.end, held: item.held, recovery: item.recovery ?? [], charge: item.charge })),
           cache: executionsOf(cacheLine.work).map(item => ({ executionId: item.executionId, state: item.state, end: item.end, held: item.held, recovery: item.recovery ?? [] })) },
-        secretShapes: await secretScan([observations, `${root}/${work.work_id}`]) });
+        secretShapes: await secretScan([observations, `${factoryRoot}/${work.work_id}`]) });
       return;
     }
     const { needsStop } = await import('./builder09-qualification.js');
     if (!needsStop(work.execution as ExecutionView)) throw new Error('NOTHING_TO_STOP');
     const { createSandbox } = await import('../../src/sandbox/index.js');
-    const sandbox = createSandbox({ root, guestAssets });
+    const sandbox = createSandbox({ root: factoryRoot, guestAssets });
     const environment = work.execution.dispatch.environment as never;
     const before = await sandbox.observe({ environment });
     const result = before.condition === 'active' && before.boot ? await sandbox.stop({ environment, boot: before.boot, reason: 'q34-crash-a explicit stop of own boot' }) : null;
@@ -726,6 +743,6 @@ export async function main(args: string[]) {
 if (process.argv[1] === new URL(import.meta.url).pathname) {
   main(process.argv.slice(2)).then(() => { if (process.argv[2] !== 'child') process.exit(0); }, (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
-    console.error(message.startsWith('APP_KEY_SOURCE_MISSING') || message === 'TICKET_NOT_PINNED' ? message : `Qualification held; no retry. (${message.slice(0, 128)})`); process.exit(1);
+    console.error(message.startsWith('APP_KEY_SOURCE_MISSING') || message.startsWith('FACTORY_ROOT_NOT_FRESH') || message === 'TICKET_NOT_PINNED' ? message : `Qualification held; no retry. (${message.slice(0, 128)})`); process.exit(1);
   });
 }

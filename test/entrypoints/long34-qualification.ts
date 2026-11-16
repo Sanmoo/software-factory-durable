@@ -13,6 +13,12 @@ import type { ExecutionView, ListView, WorkView } from '../../src/control/index.
 
 const root = '/home/sanmoo/software-factory-test/y5';
 const observations = `${root}/q34-long-v1`;
+/**
+ * The recipe's OWN Factory root (environments, host Git cache, Records, worker runtime), created by preflight: never the shared y5 root. Outside
+ * the namespace because worker sockets under <root>/r/<boot>/s/ must stay within 107 bytes (at most 38 bytes of root). No model store needed.
+ */
+export const factoryRoot = '/home/sanmoo/software-factory-test/l34';
+export const sharedCache = `${root}/cache`;
 const revision = 'q34-long-v1';
 export const phases = ['preflight', 'run', 'inspect', 'stop-environment'] as const;
 export type Phase = typeof phases[number];
@@ -37,7 +43,7 @@ const clockSampleMs = 60_000;
 const hour = 3_600_000;
 
 export function plan() {
-  return { revision, root, observations, phases, repository, ticket: { ...ticket, body: ticketBody, label: repository.label, pinned: ticket.number > 0 }, configuration, guestAssets,
+  return { revision, root, observations, factoryRoot, cacheRoot: `${factoryRoot}/cache/git`, sharedCache, phases, repository, ticket: { ...ticket, body: ticketBody, label: repository.label, pinned: ticket.number > 0 }, configuration, guestAssets,
     renewal: { policy: 'production default: renew 600 s before expiresAt (no override)', tokenLifetimeSeconds: 3600, maxIssuances },
     timeout: 'none configured (repository.timeoutSeconds absent)',
     model: 'none: scripted local provider on 127.0.0.1:18734 (openai-completions SSE): c0 fingerprint+read; c1 fingerprint+read, the suite census (>= 75 min of real suite runs, no sleep), fingerprint+read; c2 fingerprint+read; then "Complete."; no OAuth/model request',
@@ -49,7 +55,7 @@ export function plan() {
       builderPurpose: 'builder-start {metadata:read, contents:read, issues:read} for Sanmoo/java-springboot-event-sourcing only (initial + each renewal)',
       writes: 'POST access_tokens (issuance) and DELETE /installation/token (self-revocation; one post-check DELETE per Builder grant expecting 401); nothing else' },
     effects: [
-      'preflight: key source check BEFORE any effect; exclusive namespace; read-only GitHub: the label lists exactly the pinned issue, no associated PR; host inventory of root recorded as pre-existing (every environment ceased)',
+      `preflight: key source check BEFORE any effect; exclusive namespace; read-only GitHub: the label lists exactly the pinned issue, no associated PR; creates the NEW own Factory root ${factoryRoot} (exclusive, setup layout); the shared ${sharedCache} is never touched`,
       `run: new Control storage; ONE Execution: host fetch, clone, Sandbox.prepare/start (1 new VM), Builder grant, Workers.activate (scripted provider), renewals delivered over the host channel, end, withdrawal + self-revocation, Sandbox.stop, Slot release; post-check revocation; clock samples; ${runDeadlineMs / 60000} min deadline`,
       'inspect: read-only on a private storage COPY; verdict; secret-shape scan (counts only) of storage/observations/records/session; the namespace key copy removed first',
       'stop-environment: own boot of the recorded Execution if it may still run and is observed active: public Sandbox.stop of that exact boot'],
@@ -169,6 +175,9 @@ export async function runPhase(phase: Phase) {
     const { requireKeySource } = await import('./crashfx27-qualification.js');
     await requireKeySource(path => fs.access(path)); // before ANY effect
     await fs.mkdir(observations, { mode: 0o700 }); // EXCLUSIVE: never adopt an existing qualification
+    await fs.mkdir(factoryRoot, { mode: 0o700 }); // EXCLUSIVE: the own Factory root is new (never y5, never an earlier one)
+    const { setup } = await import('../../src/entrypoints/setup.js');
+    await setup(factoryRoot);
     const { constants } = await import('node:fs');
     await fs.mkdir(`${observations}/credentials`, { mode: 0o700 }); await fs.mkdir(`${observations}/run`, { mode: 0o700 });
     await fs.copyFile(keySource, `${observations}/${githubApp.privateKeyFile}`, constants.COPYFILE_EXCL);
@@ -190,8 +199,8 @@ export async function runPhase(phase: Phase) {
       const publication = await codeRepository.findPublication({ repo: repository, issueNumbers: [ticket.number], knownBranches: [] });
       const associated = publication.kind === 'observed' ? publication.issues[String(ticket.number)] : undefined;
       const { createSandbox, inventoryRuntime } = await import('../../src/sandbox/index.js');
-      const listed = await inventoryRuntime(root);
-      const sandbox = createSandbox({ root, guestAssets });
+      const listed = await inventoryRuntime(factoryRoot);
+      const sandbox = createSandbox({ root: factoryRoot, guestAssets });
       const observed = [];
       for (const item of listed.environments) {
         const { storage: _storage, ...lifecycle } = await sandbox.observe({ environment: item.environment as never });
@@ -212,8 +221,8 @@ export async function runPhase(phase: Phase) {
       const { ownInventory } = await import('./recovery26-qualification.js');
       const provider = await import('./long34-provider.js');
       const preexisting = (results.preflight as { preexisting?: string[] }).preexisting ?? [];
-      const sandbox = createSandbox({ root, guestAssets, repositoryFetch: createRepositoryFetchCredentials({ github, repositories: [repository] }) });
-      const workers = createWorkers({ root, knownSecrets: [], profile: { id: 'factory-development-pi-1.5.2-read-async-bash-lexical-v3',
+      const sandbox = createSandbox({ root: factoryRoot, guestAssets, repositoryFetch: createRepositoryFetchCredentials({ github, repositories: [repository] }) });
+      const workers = createWorkers({ root: factoryRoot, knownSecrets: [], profile: { id: 'factory-development-pi-1.5.2-read-async-bash-lexical-v3',
         systemPrompt: 'Ticket 34 R-LONG qualification. Follow the scripted tool schedule.', providerId: 'q34l-qualification-fixture', modelId: 'q34l-model', apiKey: provider.apiKey,
         provider: { api: 'openai-completions', baseUrl: `http://127.0.0.1:${provider.port}/q34l-v1`, models: [{ id: 'q34l-model', name: 'Q34L', reasoning: false, input: ['text'],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000 }] } } });
@@ -245,7 +254,7 @@ export async function runPhase(phase: Phase) {
       const model = await provider.startProvider();
       let startedMono: number | null = null, endedMono: number | null = null;
       try {
-        control = await openControl({ storagePath: `${observations}/control.sqlite`, runtimeInventory: ownInventory(await inventoryRuntime(root), preexisting, new Date().toISOString()),
+        control = await openControl({ storagePath: `${observations}/control.sqlite`, runtimeInventory: ownInventory(await inventoryRuntime(factoryRoot), preexisting, new Date().toISOString()),
           access: { tracker, repository: codeRepository, repositories: [repository], dependencyRepositories: [] }, polling: { intervalSeconds: 60 },
           // credentialRenewal ABSENT: the production policy (600 s before expiry). No timeout: the repository has none.
           execution: { configuration, capacity: 1, credentials, builder: {},
@@ -319,7 +328,7 @@ export async function runPhase(phase: Phase) {
       await fs.rm(`${observations}/${githubApp.privateKeyFile}`, { force: true }); // before the scan: any hit is then a real leak
       const { workerRuntimeDirectory } = await import('../../src/platform/host/index.js');
       const { secretScan } = await import('./credential20-qualification.js');
-      const scanned = [observations, `${root}/${work.work_id}`, ...(work.execution.dispatch.boot ? [workerRuntimeDirectory(root, work.execution.dispatch.boot)] : [])];
+      const scanned = [observations, `${factoryRoot}/${work.work_id}`, ...(work.execution.dispatch.boot ? [workerRuntimeDirectory(factoryRoot, work.execution.dispatch.boot)] : [])];
       await save('inspect-result', { verdict, census, hostClock: { injected: false, ...clockDrift(ran.clock.samples), ntpAtStart: ran.clock.ntpAtStart, ntpAtEnd: ran.clock.ntpAtEnd,
         recordedElapsedMs: work.execution.timing?.duration?.kind === 'measured' ? work.execution.timing.duration.elapsedMs : null, observedMonotonicMs: ran.observedMonotonicMs },
       execution: { executionId: work.execution.executionId, end: work.execution.end, timing: work.execution.timing, credentialIssuance: work.execution.credentialIssuance,
@@ -329,7 +338,7 @@ export async function runPhase(phase: Phase) {
     const { needsStop } = await import('./builder09-qualification.js');
     if (!needsStop(work.execution as ExecutionView)) throw new Error('NOTHING_TO_STOP');
     const { createSandbox } = await import('../../src/sandbox/index.js');
-    const sandbox = createSandbox({ root, guestAssets });
+    const sandbox = createSandbox({ root: factoryRoot, guestAssets });
     const environment = work.execution.dispatch.environment as never;
     const before = await sandbox.observe({ environment });
     const result = before.condition === 'active' && before.boot ? await sandbox.stop({ environment, boot: before.boot, reason: 'q34-long explicit stop of own boot' }) : null;
