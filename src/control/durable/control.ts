@@ -170,7 +170,7 @@ export async function openControl(options: { storagePath: string;
     interrupt: async work_id => dispatcher?.interruptDelivered(work_id), readWorks: () => readWorks(state), stopped: () => stopped,
     protections: async work => retentionProtections(work, { running: dispatcher?.running(work.work_id) ?? false, questions: await readQuestions(state, work) }) }) : undefined;
   // Ticket 30: detail retention (boot sweep after the reconciliation, then daily) and explicit cleanup plans, after the resource cleanup.
-  const retention = options.access && options.polling ? createRetentionDesk({ session: state, details: options.execution?.cleanup?.details, repositories: options.access.repositories,
+  const retention = options.access && options.polling ? createRetentionDesk({ session: state, storage: store, details: options.execution?.cleanup?.details, repositories: options.access.repositories,
     days: options.execution?.cleanup?.retentionDays, sweepSeconds: options.execution?.cleanup?.sweepSeconds, readWorks: () => readWorks(state),
     readQuestions: work => readQuestions(state, work), running: work_id => dispatcher?.running(work_id) ?? false, settled: () => dispatchReason !== 'RECONCILIATION_REQUIRED',
     stopped: () => stopped, ...(options.execution?.calendar ? { now: () => options.execution!.calendar!.now() } : {}) }) : undefined;
@@ -385,7 +385,7 @@ export async function openControl(options: { storagePath: string;
           removed: { logs: sum(works, work => work.retention?.removed.logs), sessions: sum(works, work => work.retention?.removed.sessions), bytes: sum(works, work => work.retention?.removed.bytes) },
           unsettled: sum(works, work => work.retention?.removals.filter(item => item.outcome === 'indeterminate' || item.outcome === 'intended' || item.outcome === 'failed').length) },
         forgotten: await readForgotten(state).then(items => ({ works: items.length, delivered: items.filter(item => item.result === 'delivered').length,
-          cancelled: items.filter(item => item.result === 'cancelled').length,
+          cancelled: items.filter(item => item.result === 'cancelled').length, scrubPending: items.filter(item => item.scrub?.state !== 'scrubbed').length,
           note: items.length ? `${items.length} Work(s) forgotten: every other total and aggregate here covers only the Works still remembered, never the whole life of the installation.`
             : 'No Work forgotten: totals cover every admitted Work.' })),
         queues: { normal: queued(works, 'normal').length, repair: queued(works, 'repair').length },

@@ -29,10 +29,11 @@ type Phase = typeof phases[number];
 const day = 86_400_000;
 const phaseDeadlineMs = 2 * 60 * 1000;
 /** The only keys a minimal memory may carry (spec §12.4), per nested object: identities, order/link, result, PR identity/merge fact, label, Question
- * ids, the cancelled PR watch, and the forget origin. Any other key at any depth fails the verdict. */
+ * ids, the cancelled PR watch, the forget origin and (D-07) the storage scrub status. Any other key at any depth fails the verdict. */
 export const memoryShape: Record<string, string[]> = {
   '': ['cycle', 'forgottenAt', 'label', 'mergeConfirmed', 'mergeConfirmedAt', 'planId', 'predecessor', 'pullRequest', 'questions', 'repository', 'request_id', 'result',
-    'sequence', 'ticket', 'watch', 'work_id'],
+    'scrub', 'sequence', 'ticket', 'watch', 'work_id'],
+  /** D-07: the storage scrub status (no content). */ scrub: ['attempts', 'code', 'lastAttemptAt', 'scrubbedAt', 'state'],
   ticket: ['issueId', 'nodeId', 'number', 'repository', 'repositoryId', 'tracker', 'url'], repository: ['base', 'repository', 'repositoryId'],
   pullRequest: ['nodeId', 'number', 'pullRequestId', 'url'], label: ['id', 'name'], watch: ['branch', 'lastOutcome', 'lastReadAt', 'pullRequest', 'state'],
   'watch.pullRequest': ['base', 'headRef', 'heads', 'nodeId', 'number', 'pullRequestId', 'url'],

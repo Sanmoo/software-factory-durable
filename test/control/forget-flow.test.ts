@@ -39,7 +39,8 @@ const admission = (number = 3) => ({ ticket: ticket(number), repository: { repos
 
 async function harness(t: { after(fn: () => Promise<void> | void): void }) {
   const root = await realpath(await sandboxRoot(t));
-  const { session } = await store(t, root);
+  const opened = await store(t, root);
+  const { session } = opened;
   const work_id = await seedPublishedWork(session);
   const own = await environment(root, work_id);
   const records = await createRecords({ root });
@@ -71,7 +72,7 @@ async function harness(t: { after(fn: () => Promise<void> | void): void }) {
   const delivery = createDeliveryDesk({ session, repository: repository.repository, repositories: [scope], cleanup, running: id => running.has(id), interrupt: async () => {},
     readWorks: () => readWorks(session), stopped: () => false,
     protections: async work => retentionProtections(work, { running: running.has(work.work_id), questions: await readQuestions(session, work) }) });
-  const desk = () => createRetentionDesk({ session, details, repositories: [scope], days: 30, sweepSeconds: 86400, readWorks: () => readWorks(session),
+  const desk = () => createRetentionDesk({ session, storage: opened, details, repositories: [scope], days: 30, sweepSeconds: 86400, readWorks: () => readWorks(session),
     readQuestions: work => readQuestions(session, work), running: id => running.has(id), settled: () => true, stopped: () => false });
   /** The facts Control reads for a forget plan/confirmation (Control's `forgetFacts`). */
   const facts = async (id = work_id) => { const tree = await details.inspectTree!({ workId: id }); const busy = running.has(id);
@@ -161,8 +162,10 @@ test('AC1/AC3/AC4/AC5/AC7: a delivered Work is forgotten after plan + confirmati
   assert.deepEqual({ ...memory, forgottenAt: 'x' }, { work_id: h.work_id, ticket: ticket(3), repository: { repository: 'acme/project', repositoryId: 3, base: 'main' }, cycle: 1,
     predecessor: null, sequence: 1, result: 'delivered', pullRequest: { number: 42, pullRequestId: 9042, nodeId: 'PR_own42', url: 'https://github.com/acme/project/pull/42' },
     mergeConfirmed: true, mergeConfirmedAt: memory.mergeConfirmedAt, label: { id: 55, name: 'ready-for-agent' }, questions: [questionId], watch: null, forgottenAt: 'x', request_id: 'f-1-confirm',
-    planId: plan.planId });
+    planId: plan.planId, scrub: memory.scrub });
   assert.ok(memory.mergeConfirmedAt);
+  // D-07: the composed storage port scrubbed the controller storage after the forget (raw-byte proof in forget-scrub.test.ts).
+  assert.deepEqual([memory.scrub?.state, memory.scrub?.attempts, memory.scrub?.code], ['scrubbed', 1, null]);
   const stored = JSON.stringify(index);
   for (const content of ['QUESTION CONTENT', 'ANSWER CONTENT', 'SCOPE REASON CONTENT', 'REVIEW OPINION CONTENT', 'The Builder said', 'tool output', 'REFUSED']) assert.ok(!stored.includes(content), content);
   assert.deepEqual(index!.memory!['github:repository:3:issue:7003']!.cycles, [{ work_id: h.work_id, cycle: 1, result: 'delivered', mergeConfirmed: true }]);

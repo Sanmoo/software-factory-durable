@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
-import type { ControlInput, ControlReceipt, ForgetPlan, ForgetRemoval, RetentionEvent } from '../types.js';
+import type { ControlInput, ControlReceipt, ForgetPlan, ForgetRemoval, RetentionEvent, ScrubResult } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
 import type { MergeDecision } from '../rules/delivery.js';
 import { forgetBasis, forgetLosses, forgetPlanNextStep, forgetRefusals, minimalMemoryOf, type ForgetFacts } from '../rules/forget.js';
@@ -185,6 +185,8 @@ export async function finishForget(session: Session, work_id: string, planId: st
     }
     rememberResult(index, work);
     const memory = minimalMemoryOf(work, { at, request_id: plan.confirmedBy ?? plan.request_id, planId });
+    // D-07: committed WITH the forget, so a scrub cut by a crash (or failed) is still pending at the next owner run, never silently skipped.
+    memory.scrub = { state: 'pending', attempts: 0, lastAttemptAt: null, code: null, scrubbedAt: null };
     index.forgotten = { ...(index.forgotten ?? {}), [work_id]: memory };
     index.order = index.order.filter(id => id !== work_id);
     // Sanity: the Ticket stays indexed (anti re-admission) — the index entry is never removed by forget.
@@ -224,5 +226,25 @@ export async function recordForgottenMerge(session: Session, work_id: string, de
     if (key) index.memory = { ...(index.memory ?? {}), [key]: { cycles: (index.memory?.[key]?.cycles ?? []).map(item => item.work_id === work_id
       ? { ...item, result: 'delivered' as const, mergeConfirmed: true } : item) } };
     return 'delivered' as const;
+  }, BACKGROUND_CONTEXT);
+}
+
+/**
+ * D-07: the result of one storage scrub attempt for the forgotten Works that were pending when it started. `scrubbed` only after VACUUM and a
+ * complete WAL truncation; a failure keeps them `pending` with its code (re-attempted by the retention desk).
+ */
+export async function recordScrub(session: Session, work_ids: string[], result: ScrubResult, at: string) {
+  return session.commit(async tx => {
+    const index = await tx.doc(ticketIndex);
+    let recorded = 0;
+    for (const id of work_ids) {
+      const memory = index.forgotten?.[id];
+      if (!memory || memory.scrub?.state === 'scrubbed') continue;
+      const attempts = (memory.scrub?.attempts ?? 0) + 1;
+      memory.scrub = result.outcome === 'scrubbed' ? { state: 'scrubbed', attempts, lastAttemptAt: at, code: null, scrubbedAt: at }
+        : { state: 'pending', attempts, lastAttemptAt: at, code: result.code, scrubbedAt: null };
+      recorded++;
+    }
+    return recorded;
   }, BACKGROUND_CONTEXT);
 }

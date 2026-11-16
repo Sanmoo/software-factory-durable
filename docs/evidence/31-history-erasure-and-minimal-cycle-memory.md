@@ -61,7 +61,7 @@ warning, and `limitations` says so too.
 - M3: a lost intent is re-executed instead of settled `indeterminate` → 1 test red.
 - M4: pending resources not checked → 2 tests red.
 
-## Decisions taken here (supervisor: 1, 2 accepted; 3 recorded as a gap; 4 known limitation; 5 = ticket 29)
+## Decisions taken here (supervisor: 1, 2 accepted; 3 recorded as a gap; 4 known limitation, closed by operator decision D-07; 5 = ticket 29)
 
 1. **A cancelled cycle whose own PR is not observed closed is refused (`PULL_REQUEST_NOT_CLOSED`).** Spec §12.3 says a confirmed merge still
    delivers a cancelled cycle. Without its record, a later human merge would never be seen, and the memory would keep saying "cancelled".
@@ -152,7 +152,7 @@ no VM or model. The cancelled environment cleanup is a labelled stand-in (superv
 | Finding | Fix | Tests |
 | --- | --- | --- |
 | MED: refused/not-applied `answer`/`update-scope` texts were not linked, so they survived forget | Every answer, update-scope and authorize-readiness request is linked to its Work in the SAME commit, whatever its outcome (`work.contentRequests`, an optional field of `factory.work` v1: no new document kind, storage format unchanged). Forget erases all linked inputs plus the ones the Work/Questions reference. | `forget-flow` AC1 (three refused requests erased; mutation red) |
-| MED: rewritten request docs might keep prior revisions | Checked against the REAL store: session documents are current-only, so Pi Durable deletes the earlier revisions of a document rewritten as a base (every Factory doc checkpoints) and of a retired one. The test reads `document_revisions` of the real SQLite file: none of the 7 seeded texts remains. Free pages/WAL stay the documented limitation. | `forget-flow` AC1 (`storedRevisions`) |
+| MED: rewritten request docs might keep prior revisions | Checked against the REAL store: session documents are current-only, so Pi Durable deletes the earlier revisions of a document rewritten as a base (every Factory doc checkpoints) and of a retired one. The test reads `document_revisions` of the real SQLite file: none of the 7 seeded texts remains. Free pages/WAL: closed later by D-07 (storage scrub, below). | `forget-flow` AC1 (`storedRevisions`) |
 | MED: a cancelled cycle's PR closed without merge can be reopened and merged later, and nothing would observe it | The memory keeps the PR identity in `watch`. The delivery desk keeps reading it (bounded, least recently read first, also after closed-unmerged). A confirmed merge turns the memory into a delivery (result, merge fact, PR, Ticket cycle memory), and the own blocker becomes satisfied. | `forget-flow` AC2 (watched, then merged → delivered + dependency satisfied; no read after delivery; mutation red) |
 | MED: re-confirming a dropped/failed/indeterminate plan answered `already-satisfied` | It now answers `not-applied` with `PLAN_DROPPED:…`, `PLAN_FAILED:…` or `PLAN_INDETERMINATE:…`. | `forget-flow` revalidation test |
 | MED (recipe): the environment stand-in checked a path that never exists | It checks the REAL path the product would remove (`<y5>/environments/<env>`). If that exists it refuses and never answers absent; the cancelled forget then stays refused and nothing is deleted. Preflight records the presence; the verdict expects the matching branch. | `forget31-recipe-storage` (guard + both verdict branches) |
@@ -194,6 +194,59 @@ Observations copied here and scanned for secrets (no token, key or credential va
 The v1 cancelled forget relied on the earlier, vacuous stand-in guard. It is superseded by v2 and is not evidence of a cancelled forget on
 real data.
 
+## Storage scrub after forget (operator decision D-07, 2026-11-16)
+
+Branch `implement/software-factory-mvp-d07`, on integration `01a2dcb`. Decision: after `forget`, deleted controller records must not stay
+recoverable in SQLite free pages or the WAL.
+
+**Which store.** The controller authority is one SQLite file, `<installation>/data/control.sqlite`, and its `-wal`. The Factory owns it, and it
+is the Pi Durable `SqliteStorage` (a session store whose documents are the Factory's records). The "Pi Durable session store" is therefore the
+same file and is covered by the same scrub. Worker sessions are not in SQLite: they are Pi coding-agent JSONL files (`release-build`:
+`workerSessions`), and their copies live in the Work's Records area, which `forget` deletes whole. No other SQLite file holds Work data.
+
+**Design.** After the forget's result commit, the retention desk (in the owner loop) runs `VACUUM`, then `PRAGMA wal_checkpoint(TRUNCATE)`. It
+then records the result in the minimal memory and truncates the WAL again (`src/control/durable/retention-desk.ts` `scrubForgotten`,
+`src/control/durable/store.ts` `vacuum`/`checkpoint`, `src/control/durable/forget.ts` `recordScrub`).
+- **Why VACUUM and not only `PRAGMA secure_delete`.** `secure_delete` zeroes content only when it is deleted while the pragma is on. A Work's
+  records are rewritten many times during its life. Each rewrite frees the old revision's cells, so an installation that ran without
+  `secure_delete` already holds those old revisions in free pages. Turning `secure_delete` on also leaves the old page images in the WAL until
+  the WAL is reset. `VACUUM` rebuilds the file from the live rows only, whatever happened before, and the checkpoint with `TRUNCATE` copies
+  every WAL frame back and cuts the WAL to zero bytes. The step checks that the checkpoint was complete (`busy = 0`, every frame checkpointed)
+  and that the `-wal` file has 0 bytes. Otherwise the attempt fails with `SCRUB_CHECKPOINT_INCOMPLETE` or `SCRUB_WAL_NOT_TRUNCATED`. VACUUM
+  keeps every `INTEGER PRIMARY KEY` rowid. `document_revisions` has a composite key. Pi Durable does not depend on implicit rowids.
+- **Lock and concurrency.** The scrub runs only inside the owner process, which holds the canonical-storage `flock` (`data/control.lock`) for
+  its whole life, so no other process has the file open. It uses the owner's single connection, the same one Pi Durable uses, through chord's
+  serial operation queue. Each `transaction` (`BEGIN IMMEDIATE … COMMIT`) holds that queue until it settles, so `VACUUM` starts only when no
+  transaction is open, and every Control command or desk commit waits behind it. Nothing runs beside it. The cost is that commands wait for the
+  duration of one VACUUM, once per forget.
+- **Crash safety and re-attempt.** The forget's result commit itself sets `memory.scrub = { state: 'pending', attempts: 0 }`, so the forget
+  never depends on the scrub. `VACUUM` is a transaction: a crash during it leaves the previous valid database (SQLite rolls it back from the
+  WAL), with the scrub still `pending`. The first desk cycle of every owner run attempts any pending scrub, and so does a new forget. A failed
+  attempt (for example `SQLITE_FULL`) is recorded (`attempts`, `lastAttemptAt`, `code`) and attempted again once per sweep period. A crash
+  between the VACUUM and its result commit only causes one more, idempotent, attempt. A memory forgotten before D-07 has no `scrub` and counts
+  as pending, so existing installations are scrubbed once on their first owner run.
+- **Reporting.** `show <work>` (`work-forgotten`) carries `memory.scrub`. Its `nextStep` says "Controller storage scrubbed at …" or "scrub
+  PENDING (last attempt …: CODE)", and in the pending case it says that the records may remain in free pages/WAL until the scrub completes.
+  `status.forgotten.scrubPending` counts the pending ones, and failures also appear in the retention desk's `failures` (`storage-scrub`). The
+  plan's warning describes the scrub instead of the old limitation. A desk composed without the storage port (no production composition
+  does this) leaves the scrub `pending`, which is visible and never reported as scrubbed.
+
+**Proof (TDD, level I: local, real SQLite file).** `test/control/forget-scrub.test.ts`:
+1. A unique marker `D07-MARKER-<uuid>` is written three times in the Work's Question record, so earlier revisions sit in freed pages, and it is
+   asserted present in the raw bytes of `control.sqlite` + `control.sqlite-wal`. Then plan → confirm → desk cycle runs. The raw bytes of both
+   files no longer contain the marker, and `memory.scrub.state` is `scrubbed`. **Red first:** before the change the same test failed on
+   `the forgotten marker is still recoverable from the SQLite file or its WAL` (`actual: true`).
+2. A failing storage port (`SQLITE_FULL`) leaves the Work forgotten and the scrub `pending` (`attempts 1`, code kept). A desk without the port
+   leaves it `pending`. The store is then closed and reopened (the durable state a crash mid-VACUUM leaves), and the first cycle of the new
+   desk scrubs it (`attempts 2`, marker absent from the raw bytes).
+
+`forget-flow` AC1 now composes the real storage port and checks `scrub: scrubbed, attempts 1`. `forget-rules` AC6 checks the warning and the
+three `nextStep` variants. The ticket 31 recipe's `memoryShape` allows the content-free `scrub` keys.
+
+Not proven: a real SIGKILL during a VACUUM (SQLite's own atomicity covers it; the Factory's part, the durable `pending` state, is proven by
+the reopen), and file-system level remanence (sectors freed by the truncation, SSD wear levelling, backups). Those are outside a SQLite scrub,
+as are external copies already named in the warning.
+
 ## Gaps
 
 - **Cancelled forget on real data:** q25's environment still exists, so v2 proves only the refused branch on real data (refused before and after the
@@ -203,9 +256,9 @@ real data.
 - **Recorded gap (supervisor decision 3):** the forgotten Ticket's evaluation as a native blocker is proven only at flow level (`forget-flow`,
   REAL dependency evaluation and own-cycle lookup over real storage). It is not in the real-data recipe, because nothing in the copies
   depends on it.
-- **Known limitation (supervisor decision 4):** the deleted controller records may remain in SQLite free pages/WAL until reused. The plan
-  warning says so; there is no VACUUM or secure delete. Follow-up proposal, not implemented: an explicit, operator-run `VACUUM` (plus WAL
-  checkpoint) after forgets, under the canonical-storage lock with the controller stopped.
+- **Closed by operator decision D-07 (2026-11-16):** supervisor decision 4 (deleted controller records may remain in SQLite free
+  pages/WAL) is no longer a limitation. The controller storage is now scrubbed after every forget. See
+  [Storage scrub after forget (D-07)](#storage-scrub-after-forget-operator-decision-d-07-2026-11-16).
 - Usage aggregates are ticket 29's (supervisor decision 5); `status.forgotten.note` already says totals cover only remembered Works.
 
 - A request receipt with operator text is found only through the Work's own references, listed in decision 5.

@@ -1,12 +1,12 @@
-import type { ConfiguredRepository, DetailInventory, DetailPorts, DetailRemoval, QuestionView, RetentionStatus } from '../types.js';
+import type { ConfiguredRepository, DetailInventory, DetailPorts, DetailRemoval, QuestionView, RetentionStatus, StorageScrub } from '../types.js';
 import { planCleanup } from '../rules/delivery.js';
 import { classifyDetails, defaultRetentionDays, retentionProtections, revalidateItem, type PlanFacts } from '../rules/retention.js';
 import type { WorkRecord } from './admission.js';
 import { dueAtMsOf, plannedResourcesOf, recordDetailIntent, recordDetailResults, recordRetentionSweep, settlePlanItems } from './retention.js';
 import type { Session } from './store.js';
 import { questions as questionDocs } from './questions.js';
-import { beginForget, contentRequestIds, finishForget, settleLostForget } from './forget.js';
-import { requests } from './admission.js';
+import { beginForget, contentRequestIds, finishForget, recordScrub, settleLostForget } from './forget.js';
+import { readForgotten, requests } from './admission.js';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 
 type Tx = Parameters<Parameters<Session['commit']>[0]>[0];
@@ -20,7 +20,9 @@ const batch = 50;
  * the eligible details of delivered Works (past the deadline fixed by the confirmed merge, unprotected, not in use), intent before effect and
  * result after it; nothing is retried implicitly. Confirmed explicit plans are executed item by item after a fresh revalidation.
  */
-export function createRetentionDesk(deps: { session: Session; details?: DetailPorts | undefined; repositories: ConfiguredRepository[]; days?: number | undefined;
+export function createRetentionDesk(deps: { session: Session; details?: DetailPorts | undefined;
+  /** D-07: the controller storage's scrub (absent: forgotten Works stay `pending`, shown by status). */ storage?: StorageScrub | undefined;
+  repositories: ConfiguredRepository[]; days?: number | undefined;
   sweepSeconds?: number | undefined; readWorks(): Promise<WorkRecord[]>; readQuestions(work: WorkRecord): Promise<QuestionView[]>; running(work_id: string): boolean;
   /** False while the boot reconciliation has not settled the installation: nothing is swept before it. */
   settled(): boolean; stopped(): boolean; now?: () => number }) {
@@ -116,6 +118,30 @@ export function createRetentionDesk(deps: { session: Session; details?: DetailPo
     }
   }
 
+  /**
+   * D-07: after a committed forget, the controller storage is scrubbed so the deleted records do not stay in SQLite free pages or the WAL:
+   * VACUUM (rebuilds every page from the live rows only), then `wal_checkpoint(TRUNCATE)` (old page images in the WAL are cut), then the result
+   * is recorded and the WAL truncated again. It runs in the owner, which holds the canonical-storage flock, on its single connection's serial
+   * queue: no transaction runs beside it. A new forget (or the first cycle of an owner run, e.g. after a crash mid-VACUUM) is attempted at once; a
+   * failed attempt is re-attempted once per sweep period. Until then the memory says `pending`.
+   */
+  let scrubTried = false;
+  async function scrubForgotten() {
+    if (!deps.storage) return;
+    const pending = (await readForgotten(deps.session)).filter(memory => memory.scrub?.state !== 'scrubbed');
+    if (!pending.length) return;
+    const fresh = pending.some(memory => !memory.scrub || memory.scrub.attempts === 0);
+    const last = Math.max(0, ...pending.map(memory => memory.scrub?.lastAttemptAt ? Date.parse(memory.scrub.lastAttemptAt) : 0));
+    if (scrubTried && !fresh && now() - last < sweepMs) return;
+    scrubTried = true;
+    const result = await deps.storage.vacuum();
+    await recordScrub(deps.session, pending.map(memory => memory.work_id), result, new Date(now()).toISOString());
+    if (result.outcome !== 'scrubbed') { failed(null, 'storage-scrub', new Error(result.code)); return; }
+    // The result commit itself only rewrote the minimal memory; its WAL frames are cut too.
+    const tail = await deps.storage.checkpoint();
+    if (tail.outcome !== 'scrubbed') failed(null, 'storage-scrub-checkpoint', new Error(tail.code));
+  }
+
   async function executePlans(works: WorkRecord[]) {
     for (const work of works) {
       for (const plan of work.retention?.plans ?? []) {
@@ -155,6 +181,7 @@ export function createRetentionDesk(deps: { session: Session; details?: DetailPo
       let works: WorkRecord[];
       try { works = await deps.readWorks(); } catch (error) { failed(null, 'read-works', error); return; }
       try { await executeForgets(works); } catch (error) { failed(null, 'forget', error); }
+      try { await scrubForgotten(); } catch (error) { failed(null, 'storage-scrub', error); }
       try { works = await deps.readWorks(); } catch (error) { failed(null, 'read-works', error); return; }
       try { await executePlans(works); } catch (error) { failed(null, 'explicit-cleanup', error); }
       if (lastSweep !== null && now() - lastSweep < sweepMs) return;

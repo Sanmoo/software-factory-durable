@@ -99,7 +99,7 @@ export function forgetLosses(work: Work, facts: ForgetFacts): Pick<ForgetPlan, '
       : 'As a native blocker it stays an OWN Ticket NOT satisfied by this cancelled cycle; never re-evaluated as external.',
     ...(memory.watch ? [`The own pull request #${memory.watch.pullRequest.number} of this cancelled cycle stays watched from the memory: a later confirmed human merge still delivers it (spec §12.3).`] : []),
   ];
-  const warnings = ['Not erased: GitHub (issue, comments, pull request, branch), copies outside the Records area (backups, exports, earlier copies of the storage, terminal output). Known limitation: the deleted controller records may remain in SQLite free pages/WAL until reused (no VACUUM or secure delete is run). An external copy can bring deleted data back.'];
+  const warnings = ['Not erased: GitHub (issue, comments, pull request, branch), copies outside the Records area (backups, exports, earlier copies of the storage, terminal output). After the forget the controller storage is scrubbed (VACUUM, then the WAL is truncated) so the deleted controller records do not stay in SQLite free pages or the WAL; `show <work>` says whether that scrub completed (`memory.scrub`). An external copy can bring deleted data back.'];
   return { losses, keeps, warnings, records: tree ? { files: tree.files, bytes: tree.bytes, present: tree.present, leftover: tree.leftover } : null };
 }
 
@@ -120,4 +120,6 @@ export const forgetPlanNextStep = (plan: Pick<ForgetPlan, 'state' | 'planId' | '
 export const forgottenNotRecoverable = ['history', 'logs', 'sessions', 'reviews and opinions', 'decisions and gates', 'Questions and answers', 'request content', 'preserved evidence', 'budget/usage of this Work'];
 export const forgottenNextStep = (memory: ForgottenWork) => `History deleted by \`forget\` at ${memory.forgottenAt} (request ${memory.request_id}). This is not an expired or missing ` +
   'record: only the minimal cycle memory remains, and nothing else of this Work can be shown or recovered. ' +
-  `The Ticket stays known (never re-admitted automatically); \`factory new ${memory.ticket.repository}#${memory.ticket.number}\` starts another cycle when wanted.`;
+  `The Ticket stays known (never re-admitted automatically); \`factory new ${memory.ticket.repository}#${memory.ticket.number}\` starts another cycle when wanted.` +
+  (memory.scrub?.state === 'scrubbed' ? ` Controller storage scrubbed at ${memory.scrub.scrubbedAt}.`
+    : ` Controller storage scrub PENDING${memory.scrub?.code ? ` (last attempt ${memory.scrub.lastAttemptAt}: ${memory.scrub.code})` : ''}: until it completes, the deleted controller records may remain in SQLite free pages/WAL; the running owner re-attempts it.`);

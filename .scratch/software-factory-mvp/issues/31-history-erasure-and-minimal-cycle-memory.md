@@ -33,4 +33,8 @@ Implemented on `implement/software-factory-mvp-31`: `factory forget`/`forget-con
 - Local runs: `q31-forget-v1` met 21/21; `q31-forget-v2` met 20/20, after the independent review.
 - Gaps: the cancelled forget on real data (the q25 environment still exists, so only the refused branch was shown); the forgotten Ticket as a
   blocker (flow level only).
-- Limitation: SQLite free pages/WAL are not scrubbed (a `VACUUM` follow-up is proposed).
+- Operator decision D-07 (2026-11-16), implemented on `implement/software-factory-mvp-d07`: after each forget the owner scrubs the controller
+  SQLite (`VACUUM` + `wal_checkpoint(TRUNCATE)`, on its own serialized connection under the control lock). The scrub stays `pending` in the
+  memory until it completes, and a failure or crash is re-attempted. `show`/`status` report it. Proof at level I (local, real SQLite file): a
+  seeded marker is absent from the raw `control.sqlite` and `-wal` bytes after the forget, and the test was red before the change. This
+  replaces the former free pages/WAL limitation.

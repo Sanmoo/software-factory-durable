@@ -817,7 +817,8 @@ export type ControlStatus = {
   /** Ticket 30 (absent before it): detail retention. Undelivered Works keep everything until explicit cleanup (their growth is visible here). */
   retention?: RetentionStatus;
   /** Ticket 31: Works forgotten so far; every other total/aggregate here covers only the Works still remembered (never the whole installation life). */
-  forgotten?: { works: number; delivered: number; cancelled: number; note: string };
+  forgotten?: { works: number; delivered: number; cancelled: number; note: string;
+    /** D-07: forgotten Works whose storage scrub has not completed yet (re-attempted by the owner). */ scrubPending?: number };
   queues: { normal: number; repair: number };
   dependencies: { satisfied: number; pending: number; inconclusive: number; notEvaluated: number };
   questions: { open: number; answered: number; unpublished: number };
@@ -1106,7 +1107,14 @@ export type ForgottenWork = { work_id: string; ticket: TicketRef; repository: { 
   /** Review MED: a cancelled cycle's own PR stays watched from the memory (spec §12.3: a confirmed merge still delivers it; a human may reopen and
    * merge it later). A confirmed merge turns this memory into a delivery (`result`, `mergeConfirmed`, `pullRequest`). */
   watch: { pullRequest: OwnPullRequestIdentity; branch: string | null; state: 'watching' | 'delivered'; lastReadAt: string | null; lastOutcome: string | null } | null;
-  forgottenAt: string; request_id: string; planId: string };
+  forgottenAt: string; request_id: string; planId: string;
+  /** Operator decision D-07: the scrub of the controller storage after this forget (VACUUM + WAL truncation, so the deleted records do not stay in
+   * SQLite free pages/WAL). `pending` until a scrub completed after the forget commit; a record forgotten before D-07 has none and counts as pending. */
+  scrub?: ForgetScrub };
+export type ForgetScrub = { state: 'pending' | 'scrubbed'; attempts: number; lastAttemptAt: string | null; code: string | null; scrubbedAt: string | null };
+/** D-07: the controller storage's scrub port (the owner's own SQLite connection, serialized with every other operation on it). */
+export type ScrubResult = { outcome: 'scrubbed' } | { outcome: 'failed'; code: string };
+export type StorageScrub = { vacuum(): Promise<ScrubResult>; checkpoint(): Promise<ScrubResult> };
 /** One `forget` plan. The deletion is intended BEFORE the Records effect and recorded after it; a lost intent is `indeterminate` (never retried). */
 export type ForgetPlan = { planId: string; request_id: string; work_id: string; createdAt: string;
   state: 'planned' | 'refused' | 'superseded' | 'confirmed' | 'dropped' | 'removing' | 'failed' | 'indeterminate' | 'forgotten';

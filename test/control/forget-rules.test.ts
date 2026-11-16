@@ -84,10 +84,15 @@ test('AC6: the plan names what becomes unrecoverable, what stays and what forget
   assert.match(plan.losses[3]!, /stops counting in installation totals/);
   assert.match(plan.keeps[0]!, /Ticket acme\/project#3 \(issue 7003\), Work w-1, cycle 2 after w-0, result delivered, pull request #42/);
   assert.match(plan.keeps[1]!, /never admit it again.*factory new/);
-  assert.match(plan.warnings[0]!, /Not erased: GitHub.*Known limitation: .*SQLite free pages\/WAL.*no VACUUM/);
+  assert.match(plan.warnings[0]!, /Not erased: GitHub.*controller storage is scrubbed \(VACUUM, then the WAL is truncated\).*SQLite free pages or the WAL.*memory\.scrub/);
   assert.deepEqual(plan.records, { files: 12, bytes: 900, present: true, leftover: false });
   assert.match(forgetLosses(work(), facts({ tree: tree({ present: false, files: 0 }) })).losses[0]!, /no Records area left/);
   assert.match(forgottenNextStep(minimalMemoryOf(work(), { at: 'T', request_id: 'r', planId: 'p' })), /not an expired or missing record.*factory new acme\/project#3/);
+  // D-07: the forgotten view says whether the storage scrub completed; a record without one (forgotten before D-07) counts as pending.
+  const memory = minimalMemoryOf(work(), { at: 'T', request_id: 'r', planId: 'p' });
+  assert.match(forgottenNextStep(memory), /scrub PENDING: until it completes, the deleted controller records may remain in SQLite free pages\/WAL/);
+  assert.match(forgottenNextStep({ ...memory, scrub: { state: 'pending', attempts: 1, lastAttemptAt: 'A', code: 'SQLITE_FULL', scrubbedAt: null } }), /last attempt A: SQLITE_FULL/);
+  assert.match(forgottenNextStep({ ...memory, scrub: { state: 'scrubbed', attempts: 1, lastAttemptAt: 'S', code: null, scrubbedAt: 'S' } }), /Controller storage scrubbed at S\./);
   for (const state of ['planned', 'refused', 'superseded', 'confirmed', 'dropped', 'removing', 'failed', 'indeterminate', 'forgotten'] as const) {
     assert.ok(forgetPlanNextStep({ state, planId: 'p', refusals: [], code: 'X' }).length > 10, state);
   }
