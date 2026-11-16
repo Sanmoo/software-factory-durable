@@ -163,12 +163,42 @@ no VM or model. The cancelled environment cleanup is a labelled stand-in (superv
 | LOW: `question <id>` of a forgotten Work | The memory keeps Question ids only; the query answers `question-forgotten`. | `forget-flow` AC4 (public Control) |
 | LOW: unsettled ticket-30 removals; a confirmed plan stuck without the Records port | Removals `intended`/`indeterminate` refuse with `DETAIL_REMOVAL_UNSETTLED` (next step: sweep or `factory cleanup`). Only a `removing` plan blocks (`FORGET_IN_PROGRESS`); a confirmed plan not started is superseded by a newer eligible plan, and its next step says so. | `forget-rules`, `forget-flow` revalidation test |
 
-**Recipe v2 note for the supervisor:** at the time of writing, the real q25 environment `y5/environments/env-41d60b6e…` EXISTS. With the
-corrected guard, v2's cancelled case is therefore expected to take the "kept" branch: refused before and after the stand-in, nothing
-deleted. The forget of a cancelled cycle after a real environment cleanup stays proven at I level (`forget-flow` AC2, REAL Sandbox
-removal).
+### Run `q31-forget-v2` (run by the supervisor 2026-11-15, after the review): verdict **MET**, 20/20
+
+The sources are the same as v1 (copies; format 2, no migration). At preflight the real q25 environment `y5/environments/env-41d60b6e…` EXISTED,
+so the cancelled case took the refused branch, as designed.
+
+| Check | Expected | Observed |
+| --- | --- | --- |
+| delivered plan | accepted, planned, 284 files | same |
+| delivered forgotten (A / restart B) | work-forgotten ×2 | same |
+| delivered Records copy deleted, Records `forget` called once | absent, no tombstone | same |
+| delivered memory | delivered, merge confirmed, PR kept, no disallowed key at any depth | same (`[]`) |
+| delivered polling after forget / explicit `new` / polling after restart | existing:`99fe871b`; cycle 2 with predecessor `99fe871b`; existing: the new cycle | existing:`99fe871b`; cycle 2 `8242ef7d`; existing:`8242ef7d` |
+| cancelled before its environment cleanup | not-applied, RESOURCES_PENDING | same |
+| cancelled stand-in (real environment present) | cleanup accepted, port refused-present | same |
+| cancelled after it | still not-applied, RESOURCES_PENDING; shown `work` ×2; Records copy kept (39 files) | same |
+| cancelled successor | existing:`1299ce8d` (A and B), open | same |
+| list/status | delivered forgotten (1), cancelled not (0); note | same |
+| owner stops | clean ×4 | same |
+| source storages AND real Records sources unchanged | same digests | same |
+| remote/Sandbox/Workers/credential writes | 0 | 0 |
+
+Observations copied here and scanned for secrets (no token, key or credential value matched):
+- [verdict](31-real-forget-v2-verdict-2026-11-15.json)
+- [preflight](31-real-forget-v2-preflight-2026-11-15.json)
+- run A: [delivered](31-real-forget-v2-forget-a-delivered-2026-11-15.json), [cancelled](31-real-forget-v2-forget-a-cancelled-2026-11-15.json)
+- run B: [delivered](31-real-forget-v2-forget-b-delivered-2026-11-15.json), [cancelled](31-real-forget-v2-forget-b-cancelled-2026-11-15.json)
+- [inspect](31-real-forget-v2-inspect-2026-11-15.json)
+
+The v1 cancelled forget relied on the earlier, vacuous stand-in guard. It is superseded by v2 and is not evidence of a cancelled forget on
+real data.
 
 ## Gaps
+
+- **Cancelled forget on real data:** q25's environment still exists, so v2 proves only the refused branch on real data (refused before and after the
+  environment stand-in, nothing deleted). The forget of a cancelled cycle after its environment's REAL removal is proven at flow level
+  (`forget-flow` AC2: REAL Sandbox removal of a synthetic environment, then forget, watch and later merge).
 
 - **Recorded gap (supervisor decision 3):** the forgotten Ticket's evaluation as a native blocker is proven only at flow level (`forget-flow`,
   REAL dependency evaluation and own-cycle lookup over real storage). It is not in the real-data recipe, because nothing in the copies

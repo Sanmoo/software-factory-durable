@@ -1,0 +1,851 @@
+{
+ "before": "work",
+ "candidate": {
+  "ticket": {
+   "tracker": "github",
+   "repository": "Sanmoo/java-springboot-event-sourcing",
+   "repositoryId": 1256893534,
+   "issueId": 6409482140,
+   "nodeId": "I_kwDOSuqsXs8AAAABfgjvnA",
+   "number": 18,
+   "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/18"
+  },
+  "observedAt": "2026-11-16T01:03:24.343Z",
+  "outcome": "existing",
+  "work_id": "1299ce8d-99ee-4022-881c-7b93b1e330d2"
+ },
+ "shown": {
+  "kind": "work",
+  "work": {
+   "work_id": "e8801f16-09c1-4002-961b-a298515f1974",
+   "cycle": 1,
+   "predecessor": null,
+   "ticket": {
+    "tracker": "github",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "issueId": 6409482140,
+    "nodeId": "I_kwDOSuqsXs8AAAABfgjvnA",
+    "number": 18,
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/18"
+   },
+   "repository": {
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "base": "main"
+   },
+   "result": "cancelled",
+   "authorization": {
+    "state": "withdrawn",
+    "source": "github-rest",
+    "observedAt": "2026-11-15T21:04:35.880Z",
+    "basis": {
+     "repositoryConfigured": true,
+     "issueState": "open",
+     "label": {
+      "id": 12918930265,
+      "name": "ready-for-agent"
+     }
+    },
+    "publication": {
+     "observedAt": "2026-11-15T21:04:36.728Z",
+     "completeness": "complete",
+     "associatedPullRequests": 0,
+     "limitations": [
+      "Association = GitHub closing keywords in pull request title/body, native issue-timeline cross-references and Development links (connected/disconnected) for pull requests of this repository, and known own branches.",
+      "Pull requests in other repositories that reference the Ticket are not treated as associated (they cannot be own publications of this repository).",
+      "A Development link whose pull request is not identified in the timeline makes the Ticket incomplete, never clear.",
+      "Listing and timeline are separate reads, not an atomic remote snapshot."
+     ]
+    },
+    "tracking": "Authorization recorded at admission. Later label removal/closure tracking is not part of this increment; absence from a listing is never treated as withdrawal.",
+    "lastObservedAt": "2026-11-15T21:07:25.026Z",
+    "withdrawal": {
+     "observedAt": "2026-11-15T21:06:54.072Z",
+     "codes": [
+      "LABEL_NOT_PRESENT"
+     ],
+     "restoredObservedAt": "2026-11-15T21:07:25.026Z"
+    }
+   },
+   "queue": {
+    "category": "normal",
+    "sequence": 1,
+    "pending": false
+   },
+   "impediments": [
+    {
+     "code": "AUTHORIZATION_WITHDRAWN",
+     "scope": "work",
+     "since": "2026-11-15T21:06:54.072Z",
+     "nextStep": "The Ticket no longer authorizes work (LABEL_NOT_PRESENT). No new activation starts; an activity already running may conclude/publish. Restoring the label or reopening the issue is NOT enough: `factory resume <work>` is required, and the current authorization is re-read before anything starts."
+    },
+    {
+     "code": "WORK_CANCELLED",
+     "scope": "work",
+     "since": "2026-11-15T21:07:29.469Z",
+     "nextStep": "Cancelled by the operator: no new action, publication or renewal. `factory new <owner/repo#number>` starts another cycle once cessation is confirmed."
+    },
+    {
+     "code": "GLOBAL_PAUSE",
+     "scope": "installation",
+     "nextStep": "Unpause to allow new triggers; unpausing removes no individual impediment."
+    }
+   ],
+   "dependencies": {
+    "latest": {
+     "evaluationId": "dc1d058b-9c8d-4a3f-9c9c-39f68c191c69",
+     "attemptId": "a1faedca-0f63-4252-bc5a-70ef79ab5f22",
+     "source": "github-rest",
+     "observedAt": "2026-11-15T21:06:12.977Z",
+     "evaluatedAt": "2026-11-15T21:06:15.618Z",
+     "principals": [
+      {
+       "installationId": 177599217,
+       "repository": "Sanmoo/java-springboot-event-sourcing",
+       "repositoryId": 1256893534,
+       "role": "executable",
+       "purpose": "dependency-read",
+       "permissions": {
+        "metadata": "read",
+        "issues": "read"
+       }
+      }
+     ],
+     "completeness": "complete",
+     "conclusion": "satisfied",
+     "blockers": [],
+     "cycles": [],
+     "shared": [],
+     "reasons": [],
+     "limitations": [
+      "Only native blocked_by relations are read; prose, \"Depends on\", labels, duplicates and the inverse blocking relation are never substitutes.",
+      "Reads of issues and pages are not an atomic remote snapshot; later changes are seen by the next evaluation.",
+      "Equal counts (issue_dependencies_summary) do not certify the absence of relations GitHub does not show to this installation."
+     ]
+    },
+    "lastComplete": {
+     "evaluationId": "dc1d058b-9c8d-4a3f-9c9c-39f68c191c69",
+     "observedAt": "2026-11-15T21:06:12.977Z",
+     "conclusion": "satisfied"
+    }
+   },
+   "execution": {
+    "executionId": "f0b1e187-5c53-44ea-83db-f97116ea162d",
+    "invocationId": "builder-f0b1e187-5c53-44ea-83db-f97116ea162d",
+    "mode": "initial",
+    "state": "ended",
+    "slot": {
+     "held": false,
+     "capacity": 1,
+     "reservedAt": "2026-11-15T21:04:51.428Z",
+     "releasedAt": "2026-11-15T21:07:32.783Z"
+    },
+    "admission": {
+     "attemptId": "76b0ce3b-94e8-44ae-b1b6-2960950c382b",
+     "evaluationId": "7b3e612e-fe1e-4c63-99a3-68432120357c",
+     "authorizationObservedAt": "2026-11-15T21:04:48.618Z",
+     "activationAttemptId": "a1faedca-0f63-4252-bc5a-70ef79ab5f22",
+     "activationEvaluationId": "dc1d058b-9c8d-4a3f-9c9c-39f68c191c69"
+    },
+    "dispatch": {
+     "intent": "prepare-start-activate",
+     "phase": "stopped",
+     "environment": "env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9",
+     "boot": "boot-c02bcf9b-384e-48f9-8054-591c08752893",
+     "updatedAt": "2026-11-15T21:07:30.668Z"
+    },
+    "request": {
+     "ticket": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/18",
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "base": "main",
+     "branch": "factory/18-e8801f16",
+     "policies": {
+      "skillPack": "factory-skills-v2",
+      "modelBudget": "builder-v1",
+      "copyOutput": true,
+      "editSourceMaxBytes": 8192
+     },
+     "baseCommit": "9cf5bb51d785c57dbf98b74a1f0f9b30613249f2",
+     "checkout": "/workspace/checkout",
+     "promptSha256": "194d7621b1563d6bae61691336294388c038ff381f237860615d553de5fbf354",
+     "skillPack": {
+      "name": "factory/skill-pack/factory-skills-v2",
+      "manifestSha256": "c3cade32dfeb7da475abac99cee1bc95ab526e4dc71ee83159d75993f9026afe"
+     },
+     "resume": null,
+     "scopeUpdateIds": [],
+     "session": null
+    },
+    "credential": {
+     "role": "builder",
+     "purpose": "builder-start",
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "repositoryId": 1256893534,
+     "installationId": 177599217,
+     "permissions": {
+      "metadata": "read",
+      "contents": "read",
+      "issues": "read"
+     },
+     "issuedAt": "2026-11-15T21:06:15.658Z",
+     "expiresAt": "2026-11-15T22:06:16Z"
+    },
+    "credentialIssuance": {
+     "requestedAt": "2026-11-15T21:06:15.641Z",
+     "outcome": "issued",
+     "code": null,
+     "metadata": {
+      "role": "builder",
+      "purpose": "builder-start",
+      "repository": "Sanmoo/java-springboot-event-sourcing",
+      "repositoryId": 1256893534,
+      "installationId": 177599217,
+      "permissions": {
+       "metadata": "read",
+       "contents": "read",
+       "issues": "read"
+      },
+      "issuedAt": "2026-11-15T21:06:15.658Z",
+      "expiresAt": "2026-11-15T22:06:16Z"
+     },
+     "revocation": "revoked",
+     "revocationCode": "GITHUB_TOKEN_REVOKED",
+     "risk": null,
+     "revocationAttemptedAt": "2026-11-15T21:07:29.499Z"
+    },
+    "credentialRenewals": [],
+    "credentialLifecycle": {
+     "state": "withdrawn",
+     "withdrawnAt": "2026-11-15T21:07:29.482Z",
+     "reason": "cancelled",
+     "renewal": "enabled",
+     "renewalStop": null,
+     "workerNotice": "withdrawn"
+    },
+    "start": {
+     "receiptId": "f79daa8f-12f6-49d7-837b-5d6c3344d5c9",
+     "confirmedAt": "2026-11-15T21:06:18.458Z"
+    },
+    "end": {
+     "at": "2026-11-15T21:07:30.668Z",
+     "outcome": "stopped",
+     "code": "WORK_CANCELLED",
+     "cessation": "confirmed",
+     "session": null
+    },
+    "held": null,
+    "completion": {
+     "automatic": false,
+     "reason": "An ended Builder Execution never completes the Work automatically: publication requires the end-of-Execution verification and a discovery; readiness is not enabled in this Factory version."
+    },
+    "charge": {
+     "kind": "none",
+     "correctionId": null,
+     "counter": null,
+     "state": "none",
+     "settledAt": null
+    },
+    "timing": {
+     "timeoutSeconds": null,
+     "clock": "controller-monotonic",
+     "origin": "bcb0a8a4-6717-4d43-9b8a-0e390641792d",
+     "startedAt": "2026-11-15T21:06:18.458Z",
+     "lastActivity": {
+      "at": "2026-11-15T21:07:30.668Z",
+      "elapsedMs": 72213.270614,
+      "event": "ended-stopped"
+     },
+     "duration": {
+      "kind": "measured",
+      "elapsedMs": 72213.270614,
+      "endedAt": "2026-11-15T21:07:30.668Z"
+     },
+     "timeout": null,
+     "overrun": "not-applicable"
+    },
+    "interruption": null
+   },
+   "branch": "factory/18-e8801f16",
+   "pullRequest": null,
+   "previousExecutions": [],
+   "questions": [],
+   "inputs": {
+    "cursor": null
+   },
+   "admittedAt": "2026-11-15T21:04:43.044Z",
+   "budget": {
+    "corrections": {
+     "limit": 3,
+     "granted": 0,
+     "consumed": 0,
+     "reserved": null
+    },
+    "recoveries": {
+     "limit": 3,
+     "granted": 0,
+     "consumed": 0,
+     "reserved": null
+    },
+    "source": {
+     "kind": "repository-configuration",
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "recordedAt": "2026-11-15T21:04:43.044Z"
+    },
+    "grants": []
+   },
+   "correction": null,
+   "pendingRecovery": null,
+   "history": [
+    {
+     "at": "2026-11-15T21:04:43.044Z",
+     "event": "admitted",
+     "origin": "github-polling",
+     "sequence": 1
+    },
+    {
+     "at": "2026-11-15T21:04:47.648Z",
+     "event": "dependencies-changed",
+     "origin": "github-polling",
+     "before": null,
+     "after": "satisfied",
+     "evaluationId": "fdfb73ea-a385-4b32-a0c3-451b54c8172b"
+    },
+    {
+     "at": "2026-11-15T21:04:51.429Z",
+     "event": "execution-reserved",
+     "origin": "controller-dispatch",
+     "executionId": "f0b1e187-5c53-44ea-83db-f97116ea162d"
+    },
+    {
+     "at": "2026-11-15T21:05:15.024Z",
+     "event": "execution-prepared",
+     "origin": "controller-dispatch",
+     "executionId": "f0b1e187-5c53-44ea-83db-f97116ea162d"
+    },
+    {
+     "at": "2026-11-15T21:06:11.330Z",
+     "event": "execution-booted",
+     "origin": "controller-dispatch",
+     "executionId": "f0b1e187-5c53-44ea-83db-f97116ea162d"
+    },
+    {
+     "at": "2026-11-15T21:06:17.030Z",
+     "event": "activation-requested",
+     "origin": "controller-dispatch",
+     "executionId": "f0b1e187-5c53-44ea-83db-f97116ea162d"
+    },
+    {
+     "at": "2026-11-15T21:06:18.458Z",
+     "event": "execution-started",
+     "origin": "controller-dispatch",
+     "executionId": "f0b1e187-5c53-44ea-83db-f97116ea162d",
+     "detail": "f79daa8f-12f6-49d7-837b-5d6c3344d5c9"
+    },
+    {
+     "at": "2026-11-15T21:06:54.072Z",
+     "event": "authorization-withdrawn",
+     "origin": "controller-cycles",
+     "detail": "LABEL_NOT_PRESENT"
+    },
+    {
+     "at": "2026-11-15T21:07:25.026Z",
+     "event": "authorization-restored-observed",
+     "origin": "controller-cycles",
+     "detail": "label present and issue open; suspension kept until `factory resume`"
+    },
+    {
+     "at": "2026-11-15T21:07:29.469Z",
+     "event": "cancel-requested",
+     "origin": "local-cli",
+     "detail": "q25-cancel-1:active:f0b1e187-5c53-44ea-83db-f97116ea162d"
+    },
+    {
+     "at": "2026-11-15T21:07:30.668Z",
+     "event": "execution-ended",
+     "origin": "controller-dispatch",
+     "executionId": "f0b1e187-5c53-44ea-83db-f97116ea162d",
+     "detail": "WORK_CANCELLED"
+    },
+    {
+     "at": "2026-11-15T21:07:32.783Z",
+     "event": "slot-released",
+     "origin": "controller-dispatch",
+     "executionId": "f0b1e187-5c53-44ea-83db-f97116ea162d"
+    },
+    {
+     "at": "2026-11-15T21:07:32.783Z",
+     "event": "cancellation-ceased",
+     "origin": "controller-cycles",
+     "detail": "own activity ceased; Slot released"
+    },
+    {
+     "at": "2026-11-15T21:08:31.587Z",
+     "event": "successor-created",
+     "origin": "local-cli",
+     "detail": "q25-new-1:1299ce8d-99ee-4022-881c-7b93b1e330d2"
+    },
+    {
+     "at": "2026-11-16T01:03:09.358Z",
+     "event": "retention-evaluated",
+     "origin": "controller-retention",
+     "detail": "retained:undelivered:0 eligible"
+    },
+    {
+     "at": "2026-11-16T01:03:17.272Z",
+     "event": "forget-planned",
+     "origin": "local-cli",
+     "detail": "q31-forget-v2-c-a-plan-1:7edd7fc8-4b80-43f6-87d2-a43a07b6be93:refused:RESOURCES_PENDING"
+    },
+    {
+     "at": "2026-11-16T01:03:17.280Z",
+     "event": "cleanup-planned",
+     "origin": "local-cli",
+     "detail": "q31-forget-v2-c-a-cleanup:e55d8feb-6414-4d97-a85a-46921a528e67:4 item(s):0 refused"
+    },
+    {
+     "at": "2026-11-16T01:03:17.288Z",
+     "event": "cleanup-explicit-resources",
+     "origin": "controller-retention",
+     "detail": "e55d8feb-6414-4d97-a85a-46921a528e67:environment:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9,checkout:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9,local-branch:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9,temporaries:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9"
+    },
+    {
+     "at": "2026-11-16T01:03:17.288Z",
+     "event": "cleanup-confirmed",
+     "origin": "local-cli",
+     "detail": "q31-forget-v2-c-a-cleanup-confirm:e55d8feb-6414-4d97-a85a-46921a528e67"
+    },
+    {
+     "at": "2026-11-16T01:03:18.022Z",
+     "event": "cleanup-evaluated",
+     "origin": "controller-delivery",
+     "detail": "eligible:4 pending"
+    },
+    {
+     "at": "2026-11-16T01:03:18.025Z",
+     "event": "evidence-preserved",
+     "origin": "controller-delivery",
+     "detail": "env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9:failed:RECIPE_ENVIRONMENT_PRESENT"
+    },
+    {
+     "at": "2026-11-16T01:03:18.028Z",
+     "event": "cleanup-explicit-resources",
+     "origin": "controller-retention",
+     "detail": "e55d8feb-6414-4d97-a85a-46921a528e67:swept"
+    },
+    {
+     "at": "2026-11-16T01:03:18.046Z",
+     "event": "forget-planned",
+     "origin": "local-cli",
+     "detail": "q31-forget-v2-c-a-plan-2:3e9e36e5-189a-4c9e-8bc0-c69f55159ae1:refused:PROTECTED,RESOURCES_PENDING"
+    },
+    {
+     "at": "2026-11-16T01:03:09.358Z",
+     "event": "retention-evaluated",
+     "origin": "controller-retention",
+     "detail": "retained:undelivered:0 eligible:protected:CLEANUP_PENDING"
+    }
+   ],
+   "cancellation": {
+    "request_id": "q25-cancel-1",
+    "requestedAt": "2026-11-15T21:07:29.469Z",
+    "state": "ceased",
+    "ceasedAt": "2026-11-15T21:07:32.783Z",
+    "executionId": "f0b1e187-5c53-44ea-83db-f97116ea162d",
+    "nextStep": "Cancelled and every own activity ceased (artifacts, branch and pull request preserved). `factory new <owner/repo#number>` may start another cycle; a confirmed merge of the own PR would still be recorded as delivery."
+   },
+   "retention": {
+    "class": "undelivered",
+    "days": 30,
+    "dueAt": null,
+    "protections": [
+     "CLEANUP_PENDING"
+    ],
+    "state": "retained",
+    "inventory": {
+     "completeness": "complete",
+     "observedAt": "2026-11-16T01:03:21.338Z",
+     "evidence": 0,
+     "unknown": 0,
+     "logs": 8,
+     "sessions": 0,
+     "bytes": 16830,
+     "kept": 5
+    },
+    "sessions": [],
+    "removals": [],
+    "removed": {
+     "logs": 0,
+     "sessions": 0,
+     "bytes": 0
+    },
+    "plans": [
+     {
+      "planId": "e55d8feb-6414-4d97-a85a-46921a528e67",
+      "request_id": "q31-forget-v2-c-a-cleanup",
+      "work_id": "e8801f16-09c1-4002-961b-a298515f1974",
+      "createdAt": "2026-11-16T01:03:17.280Z",
+      "select": [
+       "environment"
+      ],
+      "state": "executed",
+      "confirmedBy": "q31-forget-v2-c-a-cleanup-confirm",
+      "confirmedAt": "2026-11-16T01:03:17.288Z",
+      "basis": "{\"result\":\"cancelled\",\"cancellation\":\"ceased\",\"running\":false,\"executions\":[[\"f0b1e187-5c53-44ea-83db-f97116ea162d\",\"ended\",false,\"confirmed\"]],\"cleanup\":null,\"delivery\":null}",
+      "items": [
+       {
+        "id": "environment:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9",
+        "kind": "environment",
+        "target": "env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9/root.qcow2",
+        "bytes": null,
+        "state": "handed-to-cleanup",
+        "code": null,
+        "loss": "environment env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9/root.qcow2 is removed after its evidence and recorded sessions are preserved."
+       },
+       {
+        "id": "checkout:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9",
+        "kind": "environment",
+        "target": "env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9/workspace/checkout",
+        "bytes": null,
+        "state": "handed-to-cleanup",
+        "code": null,
+        "loss": "checkout env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9/workspace/checkout is removed after its evidence and recorded sessions are preserved."
+       },
+       {
+        "id": "local-branch:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9",
+        "kind": "environment",
+        "target": "env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9/workspace/checkout:refs/heads/factory/18-e8801f16",
+        "bytes": null,
+        "state": "handed-to-cleanup",
+        "code": null,
+        "loss": "local-branch env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9/workspace/checkout:refs/heads/factory/18-e8801f16 is removed after its evidence and recorded sessions are preserved."
+       },
+       {
+        "id": "temporaries:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9",
+        "kind": "environment",
+        "target": "env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9/artifacts + boot runtime directories",
+        "bytes": null,
+        "state": "handed-to-cleanup",
+        "code": null,
+        "loss": "temporaries env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9/artifacts + boot runtime directories is removed after its evidence and recorded sessions are preserved."
+       }
+      ],
+      "refusals": [],
+      "losses": [
+       "environment env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9/root.qcow2 is removed after its evidence and recorded sessions are preserved.",
+       "checkout env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9/workspace/checkout is removed after its evidence and recorded sessions are preserved.",
+       "local-branch env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9/workspace/checkout:refs/heads/factory/18-e8801f16 is removed after its evidence and recorded sessions are preserved.",
+       "temporaries env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9/artifacts + boot runtime directories is removed after its evidence and recorded sessions are preserved."
+      ],
+      "warnings": [
+       "The environment of a cancelled cycle is destroyed (evidence and recorded sessions are preserved first); `factory new` never reuses it."
+      ],
+      "nextStep": "Executed: see each item's result. Failed/indeterminate items are not retried implicitly; plan again to decide."
+     }
+    ],
+    "sweeps": 2,
+    "lastSweepAt": "2026-11-16T01:03:09.358Z",
+    "nextStep": "Not delivered: logs and sessions are kept in full until an explicit `factory cleanup`; no deadline, never removed to free space.",
+    "unsettledIds": []
+   },
+   "forget": {
+    "plans": [
+     {
+      "planId": "7edd7fc8-4b80-43f6-87d2-a43a07b6be93",
+      "request_id": "q31-forget-v2-c-a-plan-1",
+      "work_id": "e8801f16-09c1-4002-961b-a298515f1974",
+      "createdAt": "2026-11-16T01:03:17.272Z",
+      "state": "refused",
+      "basis": "{\"result\":\"cancelled\",\"cancellation\":\"ceased\",\"delivery\":null,\"running\":false,\"executions\":[[\"f0b1e187-5c53-44ea-83db-f97116ea162d\",\"ended\",\"confirmed\"]],\"questions\":[],\"cleanup\":null,\"tree\":[\"complete\",true,false,39,24842]}",
+      "refusals": [
+       {
+        "code": "RESOURCES_PENDING",
+        "detail": "Own resources are not removed or proven absent: environment:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9, checkout:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9, local-branch:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9, temporaries:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9. Clean them first (`factory cleanup <work> --select environment`); forget never removes a resource."
+       }
+      ],
+      "losses": [
+       "The Work's whole Records area (39 file(s), 24842 bytes): logs, start receipts, review opinions and their forwards, mutation intents/results, Question records, Host evidence, session copies and preserved evidence. None of it can be read, paged or recovered afterwards.",
+       "The Work record: history (15 event(s)), 1 Execution(s) with their summaries, reviews, gates, decisions, scope updates, budget counters, delivery/cleanup/retention records and references.",
+       "0 Question(s) with their texts and answers; the text or reason of this Work's answer/update-scope/authorize-readiness requests is erased from their receipts (a replay of those request ids is then refused, never re-applied).",
+       "This Work stops counting in installation totals and aggregates (status says how many Works are forgotten)."
+      ],
+      "keeps": [
+       "Minimal memory: Ticket Sanmoo/java-springboot-event-sourcing#18 (issue 6409482140), Work e8801f16-09c1-4002-961b-a298515f1974, cycle 1, result cancelled.",
+       "The Ticket stays indexed: label, polling and restarts never admit it again; only an explicit `factory new <owner/repo#number>` starts another cycle, which becomes the evaluated one.",
+       "As a native blocker it stays an OWN Ticket NOT satisfied by this cancelled cycle; never re-evaluated as external."
+      ],
+      "warnings": [
+       "Not erased: GitHub (issue, comments, pull request, branch), copies outside the Records area (backups, exports, earlier copies of the storage, terminal output). Known limitation: the deleted controller records may remain in SQLite free pages/WAL until reused (no VACUUM or secure delete is run). An external copy can bring deleted data back."
+      ],
+      "records": {
+       "files": 39,
+       "bytes": 24842,
+       "present": true,
+       "leftover": false
+      },
+      "confirmedBy": null,
+      "confirmedAt": null,
+      "effect": null,
+      "code": null,
+      "nextStep": "Not eligible (RESOURCES_PENDING); nothing was deleted and nothing was changed to make it eligible."
+     },
+     {
+      "planId": "3e9e36e5-189a-4c9e-8bc0-c69f55159ae1",
+      "request_id": "q31-forget-v2-c-a-plan-2",
+      "work_id": "e8801f16-09c1-4002-961b-a298515f1974",
+      "createdAt": "2026-11-16T01:03:18.046Z",
+      "state": "refused",
+      "basis": "{\"result\":\"cancelled\",\"cancellation\":\"ceased\",\"delivery\":null,\"running\":false,\"executions\":[[\"f0b1e187-5c53-44ea-83db-f97116ea162d\",\"ended\",\"confirmed\"]],\"questions\":[],\"cleanup\":[[\"environment:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9\",\"pending\"],[\"checkout:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9\",\"pending\"],[\"local-branch:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9\",\"pending\"],[\"temporaries:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9\",\"pending\"]],\"tree\":[\"complete\",true,false,39,24842]}",
+      "refusals": [
+       {
+        "code": "PROTECTED",
+        "detail": "Still needed: CLEANUP_PENDING."
+       },
+       {
+        "code": "RESOURCES_PENDING",
+        "detail": "Own resources are not removed or proven absent: environment:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9, checkout:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9, local-branch:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9, temporaries:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9. Clean them first (`factory cleanup <work> --select environment`); forget never removes a resource."
+       }
+      ],
+      "losses": [
+       "The Work's whole Records area (39 file(s), 24842 bytes): logs, start receipts, review opinions and their forwards, mutation intents/results, Question records, Host evidence, session copies and preserved evidence. None of it can be read, paged or recovered afterwards.",
+       "The Work record: history (22 event(s)), 1 Execution(s) with their summaries, reviews, gates, decisions, scope updates, budget counters, delivery/cleanup/retention records and references.",
+       "0 Question(s) with their texts and answers; the text or reason of this Work's answer/update-scope/authorize-readiness requests is erased from their receipts (a replay of those request ids is then refused, never re-applied).",
+       "This Work stops counting in installation totals and aggregates (status says how many Works are forgotten)."
+      ],
+      "keeps": [
+       "Minimal memory: Ticket Sanmoo/java-springboot-event-sourcing#18 (issue 6409482140), Work e8801f16-09c1-4002-961b-a298515f1974, cycle 1, result cancelled.",
+       "The Ticket stays indexed: label, polling and restarts never admit it again; only an explicit `factory new <owner/repo#number>` starts another cycle, which becomes the evaluated one.",
+       "As a native blocker it stays an OWN Ticket NOT satisfied by this cancelled cycle; never re-evaluated as external."
+      ],
+      "warnings": [
+       "Not erased: GitHub (issue, comments, pull request, branch), copies outside the Records area (backups, exports, earlier copies of the storage, terminal output). Known limitation: the deleted controller records may remain in SQLite free pages/WAL until reused (no VACUUM or secure delete is run). An external copy can bring deleted data back."
+      ],
+      "records": {
+       "files": 39,
+       "bytes": 24842,
+       "present": true,
+       "leftover": false
+      },
+      "confirmedBy": null,
+      "confirmedAt": null,
+      "effect": null,
+      "code": null,
+      "nextStep": "Not eligible (PROTECTED, RESOURCES_PENDING); nothing was deleted and nothing was changed to make it eligible."
+     }
+    ]
+   },
+   "cleanup": {
+    "state": "pending",
+    "eligibility": {
+     "eligible": true,
+     "reasons": [],
+     "checkedAt": "2026-11-16T01:03:18.021Z"
+    },
+    "evidence": [
+     {
+      "environment": "env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9",
+      "state": "failed",
+      "at": "2026-11-16T01:03:18.025Z",
+      "code": "RECIPE_ENVIRONMENT_PRESENT",
+      "reference": null
+     }
+    ],
+    "resources": [
+     {
+      "id": "environment:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9",
+      "kind": "environment",
+      "target": "env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9/root.qcow2",
+      "environment": "env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9",
+      "ownership": "Sandbox owner record of env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9 names this Work (re-verified before removal)",
+      "state": "pending",
+      "attempts": []
+     },
+     {
+      "id": "checkout:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9",
+      "kind": "checkout",
+      "target": "env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9/workspace/checkout",
+      "environment": "env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9",
+      "ownership": "Sandbox owner record of env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9 names this Work (re-verified before removal)",
+      "state": "pending",
+      "attempts": []
+     },
+     {
+      "id": "local-branch:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9",
+      "kind": "local-branch",
+      "target": "env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9/workspace/checkout:refs/heads/factory/18-e8801f16",
+      "environment": "env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9",
+      "ownership": "Sandbox owner record of env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9 names this Work (re-verified before removal)",
+      "state": "pending",
+      "attempts": []
+     },
+     {
+      "id": "temporaries:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9",
+      "kind": "temporaries",
+      "target": "env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9/artifacts + boot runtime directories",
+      "environment": "env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9",
+      "ownership": "Sandbox owner record of env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9 names this Work (re-verified before removal)",
+      "state": "pending",
+      "attempts": []
+     }
+    ],
+    "protected": [
+     {
+      "target": "Sanmoo/java-springboot-event-sourcing:refs/heads/main",
+      "reason": "BASE_BRANCH"
+     },
+     {
+      "target": "cache/git/1256893534.git",
+      "reason": "SHARED_FACTORY_CACHE"
+     },
+     {
+      "target": "environments, branches and pull requests of other Works or unknown origin",
+      "reason": "NOT_OWNED"
+     },
+     {
+      "target": "Docker images/containers/volumes (host and guest daemons)",
+      "reason": "NO_GLOBAL_DOCKER_CLEANUP"
+     },
+     {
+      "target": "controller history, records (sessions/logs/evidence), reviews and decisions",
+      "reason": "RETAINED_HISTORY"
+     }
+    ],
+    "sweeps": 1,
+    "lastSweepAt": "2026-11-16T01:03:18.021Z",
+    "nextStep": "Cleanup pending for 4 own resource(s) (environment:pending, checkout:pending, local-branch:pending, temporaries:pending). Delivery stands. 4 retried automatically after revalidation (next controller boot or daily sweep).",
+    "explicit": {
+     "request_id": "q31-forget-v2-c-a-cleanup-confirm",
+     "planId": "e55d8feb-6414-4d97-a85a-46921a528e67",
+     "at": "2026-11-16T01:03:17.288Z",
+     "consumed": true,
+     "resources": [
+      "environment:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9",
+      "checkout:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9",
+      "local-branch:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9",
+      "temporaries:env-41d60b6ef380638cf56ce8cd6d8530188d61b613b492b752f8bc422764672fe9"
+     ]
+    }
+   },
+   "dispatch": {
+    "state": "executing",
+    "reasons": [
+     "GLOBAL_PAUSE"
+    ]
+   },
+   "limits": {
+    "corrections": {
+     "limit": 3,
+     "granted": 0,
+     "effectiveLimit": 3,
+     "consumed": 0,
+     "reserved": 0,
+     "reservedBy": null,
+     "available": 3,
+     "exhausted": false
+    },
+    "recoveries": {
+     "limit": 3,
+     "granted": 0,
+     "effectiveLimit": 3,
+     "consumed": 0,
+     "reserved": 0,
+     "reservedBy": null,
+     "available": 3,
+     "exhausted": false
+    },
+    "grants": 0,
+    "timeout": {
+     "seconds": null,
+     "scope": "per-execution",
+     "reached": null,
+     "overrun": "not-applicable"
+    },
+    "duration": {
+     "clock": "controller-monotonic",
+     "startedAt": "2026-11-15T21:06:18.458Z",
+     "lastActivity": {
+      "at": "2026-11-15T21:07:30.668Z",
+      "elapsedMs": 72213.270614,
+      "event": "ended-stopped"
+     },
+     "lowerBoundMs": null,
+     "calendarEstimateMs": null,
+     "state": "measured",
+     "elapsedMs": 72213.270614,
+     "note": "Measured by the controller monotonic clock from the confirmed start to the observed end."
+    },
+    "actions": [
+     {
+      "code": "AUTHORIZATION_WITHDRAWN",
+      "nextStep": "The Ticket no longer authorizes work (LABEL_NOT_PRESENT). No new activation starts; an activity already running may conclude/publish. Restoring the label or reopening the issue is NOT enough: `factory resume <work>` is required, and the current authorization is re-read before anything starts."
+     },
+     {
+      "code": "WORK_CANCELLED",
+      "nextStep": "Cancelled by the operator: no new action, publication or renewal. `factory new <owner/repo#number>` starts another cycle once cessation is confirmed."
+     },
+     {
+      "code": "GLOBAL_PAUSE",
+      "nextStep": "Unpause to allow new triggers; unpausing removes no individual impediment."
+     }
+    ]
+   }
+  },
+  "lastPolled": {
+   "ticket": {
+    "tracker": "github",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "issueId": 6409482140,
+    "nodeId": "I_kwDOSuqsXs8AAAABfgjvnA",
+    "number": 18,
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/18"
+   },
+   "observedAt": "2026-11-16T01:03:24.343Z",
+   "outcome": "existing",
+   "work_id": "1299ce8d-99ee-4022-881c-7b93b1e330d2"
+  },
+  "questions": []
+ },
+ "list": {
+  "works": [
+   {
+    "work_id": "e8801f16-09c1-4002-961b-a298515f1974",
+    "cycle": 1,
+    "predecessor": null,
+    "result": "cancelled"
+   },
+   {
+    "work_id": "1299ce8d-99ee-4022-881c-7b93b1e330d2",
+    "cycle": 2,
+    "predecessor": "e8801f16-09c1-4002-961b-a298515f1974",
+    "result": "open"
+   }
+  ],
+  "forgotten": []
+ },
+ "status": {
+  "forgotten": {
+   "works": 0,
+   "delivered": 0,
+   "cancelled": 0,
+   "note": "No Work forgotten: totals cover every admitted Work."
+  },
+  "works": {
+   "total": 2,
+   "open": 1,
+   "cancelled": 1,
+   "closedUnmerged": 0
+  }
+ },
+ "outcome": {
+  "kind": "clean"
+ },
+ "calls": {
+  "listCandidates": 3,
+  "readDependencyGraph": 3,
+  "readTicket": 4
+ },
+ "recordsForget": [],
+ "environmentPort": [],
+ "deadlineReached": false
+}

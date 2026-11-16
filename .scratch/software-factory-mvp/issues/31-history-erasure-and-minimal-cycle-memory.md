@@ -4,17 +4,17 @@
 
 **Blocked by:** [08: Liberar execução somente com dependências nativas satisfeitas](08-native-dependency-gating.md); [30: Aplicar retenção e cleanup explícito sem perder contexto necessário](30-retention-and-explicit-cleanup.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
-- [ ] Forget é operação local separada de cleanup, com seleção/plano/confirmação e revalidação; exige Trabalho encerrado sem recursos ou efeitos pendentes.
-- [ ] PR fechado sem merge requer cancelamento prévio para excluir histórico; aberto/ativo/pendente é recusado sem alterar dados para forçar elegibilidade.
-- [ ] Memória mínima conserva Ticket/repo/Trabalho, ordem e vínculo dos ciclos, resultado e, para entregue, identidade do PR/fato de merge confirmado; não conserva conteúdo do pedido, logs ou pareceres.
-- [ ] Label/polling/restart depois da exclusão não cria outro Trabalho; novo ciclo depende de new explícito e passa a ser o ciclo avaliado.
-- [ ] Dependência própria entregue continua satisfeita pelo ciclo aplicável, cancelada não satisfaz e novo ciclo não herda merge antigo; ausência de histórico não a transforma em externa.
-- [ ] CLI diferencia histórico excluído, evidência ausente/expirada e resumo mínimo remanescente; agregados de consumo restantes não se apresentam como toda a vida da instalação.
-- [ ] Testes com storage real e fluxo de dependências/admissão após exclusão demonstram antirredisparo e classificação correta; operação não promete apagar referências GitHub, cópias externas ou backup.
+- [x] Forget é operação local separada de cleanup, com seleção/plano/confirmação e revalidação; exige Trabalho encerrado sem recursos ou efeitos pendentes.
+- [x] PR fechado sem merge requer cancelamento prévio para excluir histórico; aberto/ativo/pendente é recusado sem alterar dados para forçar elegibilidade.
+- [x] Memória mínima conserva Ticket/repo/Trabalho, ordem e vínculo dos ciclos, resultado e, para entregue, identidade do PR/fato de merge confirmado; não conserva conteúdo do pedido, logs ou pareceres.
+- [x] Label/polling/restart depois da exclusão não cria outro Trabalho; novo ciclo depende de new explícito e passa a ser o ciclo avaliado.
+- [x] Dependência própria entregue continua satisfeita pelo ciclo aplicável, cancelada não satisfaz e novo ciclo não herda merge antigo; ausência de histórico não a transforma em externa.
+- [x] CLI diferencia histórico excluído, evidência ausente/expirada e resumo mínimo remanescente; agregados de consumo restantes não se apresentam como toda a vida da instalação.
+- [x] Testes com storage real e fluxo de dependências/admissão após exclusão demonstram antirredisparo e classificação correta; operação não promete apagar referências GitHub, cópias externas ou backup.
 
 ## Referências e validação
 
@@ -25,3 +25,12 @@
 ## Autorização e limites
 
 Publicação é planejamento aprovado, não autorização de construção, uso de host/credenciais/GitHub/modelos reais, injeção de falhas ou piloto. Obter autorização pertinente antes da execução. Não alterar decisões aprovadas silenciosamente; lacuna de desenho volta ao operador. Merge e avaliação humana não são delegados aos agentes.
+
+## Answer
+
+Implemented on `implement/software-factory-mvp-31`: `factory forget`/`forget-confirm`, keeping the minimal cycle memory. Evidence:
+[ticket 31](../../../docs/evidence/31-history-erasure-and-minimal-cycle-memory.md).
+- Local runs: `q31-forget-v1` met 21/21; `q31-forget-v2` met 20/20, after the independent review.
+- Gaps: the cancelled forget on real data (the q25 environment still exists, so only the refused branch was shown); the forgotten Ticket as a
+  blocker (flow level only).
+- Limitation: SQLite free pages/WAL are not scrubbed (a `VACUUM` follow-up is proposed).
