@@ -42,7 +42,11 @@ export type ControlInput = { request_id: string; operation: 'pause' | 'unpause';
   /** Ticket 30 (spec §12.4): explicit cleanup. `cleanup-plan` records a plan of losses for the selected details/resources of ONE Work (no effect);
    * `cleanup-confirm` confirms that plan, which is revalidated now and again per item at execution (an old plan never removes what became needed). */
   { request_id: string; operation: 'cleanup-plan'; work_id: string; select: ExplicitCleanupSelection[]; origin: 'local-cli' } |
-  { request_id: string; operation: 'cleanup-confirm'; work_id: string; plan_id: string; origin: 'local-cli' };
+  { request_id: string; operation: 'cleanup-confirm'; work_id: string; plan_id: string; origin: 'local-cli' } |
+  /** Ticket 31 (spec §12.4 `forget`): explicit deletion of the history of ONE ended Work. `forget-plan` records the plan of losses (no effect);
+   * `forget-confirm` confirms it; it is revalidated now and again just before the deletion, which keeps only the minimal cycle memory. */
+  { request_id: string; operation: 'forget-plan'; work_id: string; origin: 'local-cli' } |
+  { request_id: string; operation: 'forget-confirm'; work_id: string; plan_id: string; origin: 'local-cli' };
 /** `answer`: `accepted` removed only that Question's impediment; `not-applied` (already answered, unknown, closed Work...) changed nothing. */
 export type ControlReceipt = { kind: 'durable'; request_id: string; operation: 'pause' | 'unpause'; paused: boolean; historySequence: number } |
   { kind: 'durable'; request_id: string; operation: 'answer'; question_id: string; outcome: 'accepted' | 'not-applied'; reason: string | null; work_id: string | null } |
@@ -65,7 +69,12 @@ export type ControlReceipt = { kind: 'durable'; request_id: string; operation: '
    * `cleanup-confirm`: `accepted` = confirmed after revalidation, the items still allowed are executed after the ACK (per-item results in
    * `factory show`); `already-satisfied` = this plan was already confirmed; `not-applied` = refused (`reason`), nothing changed. */
   { kind: 'durable'; request_id: string; operation: 'cleanup-plan' | 'cleanup-confirm'; work_id: string; outcome: 'accepted' | 'already-satisfied' | 'not-applied';
-    reason: string | null; plan: ExplicitCleanupPlan | null };
+    reason: string | null; plan: ExplicitCleanupPlan | null } |
+  /** Ticket 31. `forget-plan`: `accepted` = plan of losses recorded (nothing deleted), `not-applied` = refused with `reason` (the plan names every refusal);
+   * `forget-confirm`: `accepted` = confirmed after revalidation, executed after the ACK (result in `factory show`: the Work, or its minimal memory once
+   * forgotten); `already-satisfied` = already confirmed/forgotten; `not-applied` = refused, nothing changed. */
+  { kind: 'durable'; request_id: string; operation: 'forget-plan' | 'forget-confirm'; work_id: string; outcome: 'accepted' | 'already-satisfied' | 'not-applied';
+    reason: string | null; plan: ForgetPlan | null };
 export type ControlQuery = { kind: 'status' } | { kind: 'request'; request_id: string } | { kind: 'access' } | { kind: 'list' } | { kind: 'show'; work_id: string } |
   { kind: 'question'; question_id: string };
 export type DispatchReason = 'RECONCILIATION_REQUIRED' | 'EXECUTION_NOT_ENABLED';
@@ -552,6 +561,8 @@ export type WorkView = {
   cleanup?: CleanupView | null;
   /** Ticket 30 (absent on earlier records): retention of the Work's details (logs, sessions) and the explicit cleanup plans. */
   retention?: RetentionView | null;
+  /** Ticket 31: explicit history deletion plans of this Work (once executed, the Work record itself is gone: see `ForgottenWork`). */
+  forget?: { plans: ForgetPlan[] } | null;
   admittedAt: string;
   history: ({ at: string; event: 'admitted'; origin: 'github-polling'; sequence: number } |
     { at: string; event: 'dependencies-changed'; origin: 'github-polling'; before: DependencyEvaluation['conclusion'] | null; after: DependencyEvaluation['conclusion']; evaluationId: string } |
@@ -607,8 +618,11 @@ export type ScopeUpdateView = { scopeUpdateId: string; reason: string; sha256: s
   acceptedDuring: 'idle' | 'question-wait' | 'activity'; state: 'pending' | 'delivered' | 'consumed'; executionId: string | null; deliveredAt: string | null;
   consumedAt: string | null; consumption: 'execution-completed' | null; reoffers: number };
 export type ListView = { kind: 'list'; paused: boolean; dispatch: 'closed' | 'open'; dispatchReason: DispatchReason | null; slots: { capacity: number; held: number };
-  queues: { normal: string[]; repair: string[] }; works: WorkView[]; selection: Selection; polling: PollingView; limitations: string[] };
-export type ShowView = { kind: 'work'; work: WorkView; lastPolled: CandidateView | null; questions: QuestionView[] } | { kind: 'work-not-found'; work_id: string; nextStep: string };
+  queues: { normal: string[]; repair: string[] }; works: WorkView[]; selection: Selection; polling: PollingView; limitations: string[];
+  /** Ticket 31: Works whose history was deleted, as their minimal memory only. */ forgotten?: ForgottenWork[] };
+export type ShowView = { kind: 'work'; work: WorkView; lastPolled: CandidateView | null; questions: QuestionView[] } | { kind: 'work-not-found'; work_id: string; nextStep: string } |
+  /** Ticket 31: the Work's history was deleted by `forget`; only its minimal cycle memory remains (never "not found", never "expired"). */
+  { kind: 'work-forgotten'; work_id: string; memory: ForgottenWork; notRecoverable: string[]; nextStep: string };
 export type QuestionQueryView = { kind: 'question'; question: QuestionView } | { kind: 'question-not-found'; question_id: string; nextStep: string };
 export type ControlStatus = {
   controller_run_id: string;
@@ -624,6 +638,8 @@ export type ControlStatus = {
   delivery: { delivered: number; cleanup: { waiting: number; pending: number; complete: number } };
   /** Ticket 30 (absent before it): detail retention. Undelivered Works keep everything until explicit cleanup (their growth is visible here). */
   retention?: RetentionStatus;
+  /** Ticket 31: Works forgotten so far; every other total/aggregate here covers only the Works still remembered (never the whole installation life). */
+  forgotten?: { works: number; delivered: number; cancelled: number; note: string };
   queues: { normal: number; repair: number };
   dependencies: { satisfied: number; pending: number; inconclusive: number; notEvaluated: number };
   questions: { open: number; answered: number; unpublished: number };
@@ -712,7 +728,8 @@ export type CleanupPorts = {
 
 // ---- Ticket 30: retention and explicit cleanup (spec §12.1/§12.3/§12.4) ----
 export type RetentionEvent = 'retention-evaluated' | 'details-preserved' | 'detail-removal-intended' | 'detail-removal-result' | 'cleanup-planned' | 'cleanup-confirmed' |
-  'cleanup-item-dropped' | 'cleanup-explicit-resources';
+  'cleanup-item-dropped' | 'cleanup-explicit-resources' |
+  /* ticket 31 */ 'forget-planned' | 'forget-confirmed' | 'forget-dropped' | 'forget-intended' | 'forget-result';
 /** What explicit cleanup may select (spec §12.4): details (logs, sessions) and own resources (environment, remote branch). */
 export type ExplicitCleanupSelection = 'logs' | 'sessions' | 'environment' | 'remote-branch';
 /** One detail of a Work found by the Records inventory: a log is a Records capture, a session the preserved copy of a recorded Builder session. */
@@ -736,7 +753,13 @@ export type DetailPorts = {
     { status: 'lost' | 'failed'; code: string }>;
   /** Confined removal of ONE detail of this Work; a session is removed only while its content still has `expectedSha256`. */
   remove(input: { workId: string; item: Pick<DetailItem, 'id' | 'kind' | 'executionId'>; expectedSha256: string | null }): Promise<DetailRemoval>;
+  /** Ticket 31: read-only inspection of the Work's WHOLE Records area (what `forget` deletes); `incomplete` (unsafe entry, unreadable) refuses it. */
+  inspectTree?(input: { workId: string }): Promise<ForgetTree>;
+  /** Ticket 31: deletion of the Work's whole Records area (fail-closed: an unsafe entry refuses it before anything is touched). */
+  forget?(input: { workId: string }): Promise<ForgetRemoval>;
 };
+export type ForgetTree = { completeness: 'complete' | 'incomplete'; observedAt: string; present: boolean; leftover: boolean; files: number; directories: number; bytes: number; unsafe: string[] };
+export type ForgetRemoval = { outcome: 'removed' | 'absent' | 'refused' | 'failed' | 'indeterminate'; code: string | null; files: number; bytes: number };
 /** `builder`: the Execution's recorded Builder session; `reviewer`: another agent session found in the same boot runtime (not recorded by Control). */
 export type PreservedSessionView = { id: string; role: 'builder' | 'reviewer'; executionId: string; sourceRef: string; sha256: string; bytes: number; at: string;
   state: 'preserved' | 'lost' | 'failed'; code: string | null };
@@ -773,6 +796,25 @@ export type RetentionView = {
   sweeps: number; lastSweepAt: string | null;
   nextStep: string;
 };
+// ---- Ticket 31: explicit history deletion (`forget`, spec §12.4) ----
+/**
+ * Minimal memory of a forgotten Work (spec §12.4): Ticket/repository/Work identity, cycle order and link, result and, when delivered, its pull
+ * request identity and the fact of the confirmed merge. No request content, log, review, decision, Question or answer. It keeps the Ticket out
+ * of automatic re-admission (the index still names the cycle) and keeps own-dependency evaluation (never external).
+ */
+export type ForgottenWork = { work_id: string; ticket: TicketRef; repository: { repository: string; repositoryId: number; base: string };
+  cycle: number; predecessor: string | null; sequence: number; result: 'delivered' | 'cancelled';
+  pullRequest: { number: number; pullRequestId: number; nodeId: string; url: string } | null; mergeConfirmed: boolean; mergeConfirmedAt: string | null;
+  /** The configured label the cycle was admitted with (configuration fact; a later `new` re-reads the Ticket). */ label: { id: number; name: string } | null;
+  forgottenAt: string; request_id: string; planId: string };
+/** One `forget` plan. The deletion is intended BEFORE the Records effect and recorded after it; a lost intent is `indeterminate` (never retried). */
+export type ForgetPlan = { planId: string; request_id: string; work_id: string; createdAt: string;
+  state: 'planned' | 'refused' | 'superseded' | 'confirmed' | 'dropped' | 'removing' | 'failed' | 'indeterminate' | 'forgotten';
+  basis: string; refusals: { code: string; detail: string }[]; losses: string[]; keeps: string[]; warnings: string[];
+  records: { files: number; bytes: number; present: boolean; leftover: boolean } | null;
+  confirmedBy: string | null; confirmedAt: string | null;
+  effect: { effectId: string; intentAt: string; resultAt: string | null; outcome: ForgetRemoval['outcome'] | 'intended'; code: string | null } | null;
+  code: string | null; nextStep: string };
 export type RetentionStatus = { sweeps: number; lastSweepAt: string | null; days: number | null;
   works: { undelivered: number; retained: number; protected: number; eligible: number; expired: number };
   details: { logs: number; sessions: number; bytes: number }; removed: { logs: number; sessions: number; bytes: number }; unsettled: number };

@@ -43,6 +43,20 @@ test('ticket 30: `factory cleanup` / `cleanup-confirm` identify the request firs
   const confirmed = await cli('cleanup-confirm', work, plan, '--request-id', 'confirm-1');
   assert.equal(confirmed.code, 2, confirmed.stderr);
   assert.deepEqual(confirmed.json, { kind: 'durable', request_id: 'confirm-1', operation: 'cleanup-confirm', work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', plan: null });
+  // Ticket 31: `forget` / `forget-confirm` through the same CLI/socket/owner path: identified first, invalid forms refused locally, no Work → not-applied.
+  for (const bad of [['forget', 'not-a-uuid'], ['forget', work, '--select', 'logs'], ['forget-confirm', work], ['forget-confirm', work, 'not-a-plan'],
+    ['forget', work, '--yes', '--yes'], ['forget', work, '--yes', '--request-id', 'x'.repeat(121)]]) {
+    assert.equal((await cli(...bad)).code, 2, bad.join(' '));
+  }
+  const forget = await cli('forget', work, '--request-id', 'forget-1');
+  assert.equal(forget.code, 2, forget.stderr);
+  assert.match(forget.stderr, /REQUEST_IDENTIFIED.*forget-1/);
+  assert.deepEqual(forget.json, { kind: 'durable', request_id: 'forget-1', operation: 'forget-plan', work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', plan: null });
+  const forgetYes = await cli('forget', work, '--yes', '--request-id', 'forget-2');
+  assert.equal(forgetYes.code, 2);
+  assert.doesNotMatch(forgetYes.stderr, /forget-2-confirm/, 'no plan accepted: nothing is confirmed');
+  const forgetConfirm = await cli('forget-confirm', work, plan, '--request-id', 'forget-3');
+  assert.deepEqual([forgetConfirm.code, forgetConfirm.json?.operation, forgetConfirm.json?.reason], [2, 'forget-confirm', 'WORK_NOT_FOUND']);
   owner.child.kill('SIGTERM');
   assert.equal((await owner.result).code, 0);
 });

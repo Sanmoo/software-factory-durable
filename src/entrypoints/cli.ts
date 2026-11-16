@@ -9,13 +9,14 @@ import { setup, setupService, firstHumanLogin } from './setup.js';
 import { doctor } from './doctor.js';
 import { releaseInstallationRoot } from './release.js';
 
-const usage = 'factory <setup|doctor|run|status|list|show <work>|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>)|update-scope <work> --reason <text>|authorize-readiness <work> --reason <text>|cancel <work>|resume <work>|reopen <work>|new <owner/repo#number> [--keep-predecessor-pr]|cleanup <work> --select <logs,sessions,environment,remote-branch> [--yes]|cleanup-confirm <work> <plan>|request <id>|upgrade <check|apply|status|resume|rollback> [--migrate <id>]> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service [--service-directory <absolute dir>]]; factory login --root <canonical-absolute-installation>';
+const usage = 'factory <setup|doctor|run|status|list|show <work>|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>)|update-scope <work> --reason <text>|authorize-readiness <work> --reason <text>|cancel <work>|resume <work>|reopen <work>|new <owner/repo#number> [--keep-predecessor-pr]|cleanup <work> --select <logs,sessions,environment,remote-branch> [--yes]|cleanup-confirm <work> <plan>|forget <work> [--yes]|forget-confirm <work> <plan>|request <id>|upgrade <check|apply|status|resume|rollback> [--migrate <id>]> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service [--service-directory <absolute dir>]]; factory login --root <canonical-absolute-installation>';
 const upgradeUsage = 'factory upgrade <check|apply|status|resume|rollback> [--root <installation>] [--migrate <migration id>] — run with the NEW release: ' +
   '<root>/releases/<id>/node/bin/node <root>/releases/<id>/dist/src/entrypoints/cli.js upgrade ...';
 // Ticket 25 (spec §11.3): cycle commands; `new` names the Ticket as owner/repo#number.
 const cycleCommands = ['cancel', 'resume', 'reopen', 'new'];
 // Ticket 30 (spec §12.4): explicit cleanup — a plan of losses, then its confirmation (`--yes` sends both, with the same verifications).
-const cleanupCommands = ['cleanup', 'cleanup-confirm'];
+// Ticket 31 (spec §12.4): `forget` — explicit history deletion, a plan of losses then its confirmation (`--yes`: same verifications).
+const cleanupCommands = ['cleanup', 'cleanup-confirm', 'forget', 'forget-confirm'];
 const cleanupSelection = /^(logs|sessions|environment|remote-branch)(,(logs|sessions|environment|remote-branch)){0,3}$/;
 const ticketReference = /^([A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100})#([1-9][0-9]{0,9})$/;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -55,15 +56,18 @@ async function operational(root: string, command: string, requestId: string | un
           : command === 'new' ? { request_id: id, operation: 'new', ticket: { repository: cycle!.repository, number: cycle!.number }, keepPredecessorPullRequest: cycle!.keep, origin: 'local-cli' }
           : command === 'cleanup' ? { request_id: id, operation: 'cleanup-plan', work_id: requested!, select: cleanup!.select!, origin: 'local-cli' }
           : command === 'cleanup-confirm' ? { request_id: id, operation: 'cleanup-confirm', work_id: requested!, plan_id: cleanup!.plan!, origin: 'local-cli' }
+          : command === 'forget' ? { request_id: id, operation: 'forget-plan', work_id: requested!, origin: 'local-cli' }
+          : command === 'forget-confirm' ? { request_id: id, operation: 'forget-confirm', work_id: requested!, plan_id: cleanup!.plan!, origin: 'local-cli' }
             : { request_id: id, operation: command, origin: 'local-cli' }) : query(),
       mutable ? id : randomUUID(), status.controller_run_id);
     // `--yes` (automation): the plan is shown and then confirmed by a second request with its own identity; the controller performs exactly the
     // same revalidation as for a separate `cleanup-confirm` (nothing is skipped).
-    const plan = response.payload.plan as { planId?: unknown; items?: unknown[] } | null | undefined;
-    if (command === 'cleanup' && cleanup?.yes && response.kind === 'receipt' && response.payload.outcome === 'accepted' && typeof plan?.planId === 'string' && plan.items?.length) {
+    const plan = response.payload.plan as { planId?: unknown; items?: unknown[]; state?: unknown } | null | undefined;
+    if ((command === 'cleanup' || command === 'forget') && cleanup?.yes && response.kind === 'receipt' && response.payload.outcome === 'accepted' && typeof plan?.planId === 'string' &&
+      (command === 'forget' ? plan.state === 'planned' : plan.items?.length)) {
       const confirmId = `${id}-confirm`;
       console.error(JSON.stringify({ code: 'REQUEST_IDENTIFIED', request_id: confirmId }));
-      const confirmation = await exchange(root, 'accept', { request_id: confirmId, operation: 'cleanup-confirm', work_id: requested!, plan_id: plan.planId, origin: 'local-cli' },
+      const confirmation = await exchange(root, 'accept', { request_id: confirmId, operation: command === 'forget' ? 'forget-confirm' : 'cleanup-confirm', work_id: requested!, plan_id: plan.planId, origin: 'local-cli' },
         confirmId, status.controller_run_id);
       console.log(JSON.stringify({ plan: response.payload, confirmation: confirmation.payload }, null, json ? undefined : 2));
       if (confirmation.kind === 'error') return confirmation.payload.outcome === 'indeterminate' ? 4 : 2;
@@ -154,7 +158,8 @@ export async function main(args: string[]): Promise<number> {
   if (command === 'cleanup') {
     if (args[2] === '--select' && cleanupSelection.test(args[3] ?? '')) cleanup = { select: [...new Set(args[3]!.split(','))], yes: false }; else valid = false;
   }
-  if (command === 'cleanup-confirm') { if (args[2]?.match(uuid)) cleanup = { plan: args[2] }; else valid = false; }
+  if (command === 'cleanup-confirm' || command === 'forget-confirm') { if (args[2]?.match(uuid)) cleanup = { plan: args[2] }; else valid = false; }
+  if (command === 'forget') cleanup = { yes: false };
   const reference = command === 'new' ? ticketReference.exec(requested ?? '') : null;
   if (command === 'new' && (!reference || Number(reference[2]) > 2 ** 31)) valid = false;
   let keep = false;
@@ -170,11 +175,11 @@ export async function main(args: string[]): Promise<number> {
   // `update-scope <work> --reason <text>`: the concrete change, one quoted argument (the controller decides whether it is concrete).
   const text = command === 'answer' ? args[2] : (command === 'update-scope' || command === 'authorize-readiness') && args[2] === '--reason' ? args[3] : undefined;
   if ((command === 'answer' || command === 'update-scope' || command === 'authorize-readiness') && (!text || text !== text.trim() || text.length > 2000 || text.startsWith('--'))) valid = false;
-  for (let index = command === 'answer' || command === 'cleanup-confirm' ? 3 : command === 'grant' || command === 'update-scope' || command === 'authorize-readiness' || command === 'cleanup' ? 4
-    : command === 'request' || command === 'show' || command === 'question' || cycleCommands.includes(command ?? '') ? 2 : 1; index < args.length; index++) {
+  for (let index = command === 'answer' || command === 'cleanup-confirm' || command === 'forget-confirm' ? 3 : command === 'grant' || command === 'update-scope' || command === 'authorize-readiness' || command === 'cleanup' ? 4
+    : command === 'request' || command === 'show' || command === 'question' || command === 'forget' || cycleCommands.includes(command ?? '') ? 2 : 1; index < args.length; index++) {
     if (args[index] === '--authenticated' && command === 'doctor' && !authenticated) authenticated = true;
     else if (args[index] === '--keep-predecessor-pr' && command === 'new' && !keep) keep = true;
-    else if (args[index] === '--yes' && command === 'cleanup' && cleanup && !cleanup.yes) cleanup.yes = true;
+    else if (args[index] === '--yes' && (command === 'cleanup' || command === 'forget') && cleanup && !cleanup.yes) cleanup.yes = true;
     else if (args[index] === '--service' && command === 'setup' && !service && installation !== undefined) service = true;
     else if (args[index] === '--service-directory' && command === 'setup' && serviceDirectory === undefined &&
       args[index + 1] !== undefined && isAbsolute(args[index + 1]!) && resolve(args[index + 1]!) === args[index + 1]) {

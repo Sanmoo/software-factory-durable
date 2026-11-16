@@ -10,8 +10,10 @@ import { acceptReadinessAuthorization, createReadinessDesk } from './readiness.j
 import { openStore } from './store.js';
 import { recordRunEnd, recordRunStart } from './migration.js';
 import { currentFormat } from './format.js';
-import { acceptPauseCommand, admitTicket, indexedWork, initialize, ownCycles, pendingWorks, readInstallation, readRequest, readWork, readWorks, recordDependencies,
-  type WorkRecord } from './admission.js';
+import { acceptPauseCommand, admitTicket, indexedWork, initialize, ownCycles, pendingWorks, readForgotten, readForgottenWork, readInstallation, readRequest, readWork, readWorks,
+  recordDependencies, type WorkRecord } from './admission.js';
+import { acceptForgetConfirm, acceptForgetPlan } from './forget.js';
+import { forgottenNextStep, forgottenNotRecoverable } from '../rules/forget.js';
 import { createPoller, systemClock } from './polling.js';
 import { createQuestionDesk } from './question-desk.js';
 import { acceptAnswer, readQuestion, readQuestions } from './questions.js';
@@ -47,7 +49,10 @@ const inputSchema = z.union([z.strictObject({ request_id: requestId, operation: 
   // Ticket 30 (spec §12.4): explicit cleanup plan and its confirmation.
   z.strictObject({ request_id: requestId, operation: z.literal('cleanup-plan'), work_id: z.uuid(),
     select: z.array(z.enum(['logs', 'sessions', 'environment', 'remote-branch'])).min(1).max(4), origin: z.literal('local-cli') }),
-  z.strictObject({ request_id: requestId, operation: z.literal('cleanup-confirm'), work_id: z.uuid(), plan_id: z.uuid(), origin: z.literal('local-cli') })]);
+  z.strictObject({ request_id: requestId, operation: z.literal('cleanup-confirm'), work_id: z.uuid(), plan_id: z.uuid(), origin: z.literal('local-cli') }),
+  // Ticket 31 (spec §12.4): explicit history deletion plan and its confirmation.
+  z.strictObject({ request_id: requestId, operation: z.literal('forget-plan'), work_id: z.uuid(), origin: z.literal('local-cli') }),
+  z.strictObject({ request_id: requestId, operation: z.literal('forget-confirm'), work_id: z.uuid(), plan_id: z.uuid(), origin: z.literal('local-cli') })]);
 const workIdSchema = z.uuid();
 const sum = (works: WorkRecord[], value: (work: WorkRecord) => number | undefined) => works.reduce((total, work) => total + (value(work) ?? 0), 0);
 const limitations = [
@@ -65,6 +70,7 @@ const limitations = [
   'Ticket 25: an observed label removal or issue closure suspends next activations (an active Execution may conclude/publish); restoring them never lifts the suspension: `resume` does, confirmed by the next complete Ticket read. `cancel` records the prohibition first, withdraws the activity credentials, then requests the stop; the Slot is released only after confirmed cessation and nothing on GitHub (branch, PR) is undone. A confirmed merge still delivers a cancelled cycle. An own PR closed without merge keeps the cycle current and undelivered (no automatic reopen/replacement/resume); `reopen` reopens only it and grants nothing. `new` is the only way to another cycle, after delivery or a ceased cancellation.',
   'Cleanup after delivery removes only own resources (own environments with their checkout/local branch/temporaries, the own remote branch under its own cleanup grant), after confirmed cessation and preserved evidence; base, shared cache, other Works and Docker are never touched. A failed or pending cleanup is shown separately and never undoes delivery.',
   'Ticket 30: logs and sessions of a delivered Work become eligible `retentionDays` (default 30) after the confirmed merge and are removed by the sweep at each controller boot (after reconciliation) and daily, unless still needed (pending Question/effect/cleanup/recovery, activity, unconfirmed cessation); the end of a protection never starts another period. Undelivered Works (open, blocked, cancelled, closed without merge) keep everything until an explicit `factory cleanup`, which plans the losses, needs confirmation, is revalidated at execution and requires `cancel` first for a cycle that can still continue. Summary, history, references, reviews, decisions and preserved evidence stay until explicit history deletion.',
+  'Ticket 31: `factory forget <work>` (plan of losses, then `forget-confirm`) deletes the history of ONE ended Work (delivered, or cancelled with confirmed cessation; an own PR closed without merge needs `cancel` first) once nothing is pending: its Records area, Work record, Questions and request texts. Only the minimal cycle memory stays (Ticket/repository/Work, cycle order and link, result, PR and confirmed merge of a delivery): the Ticket is never re-admitted automatically and stays an own blocker (delivered satisfies, cancelled does not). It never touches GitHub, backups or external copies. Totals and aggregates then cover only remembered Works.',
 ];
 
 // Module-internal seam for the external-wait/cancellation flows of this module (not part of the public Control contract).
@@ -156,6 +162,13 @@ export async function openControl(options: { storagePath: string;
     return current => { const configured = configuredRepository(current.repository.repository) !== undefined;
       return { running, questions, inventory, repositoryConfigured: configured, plannedResources: plannedResourcesOf(current, planCleanup(current, { repositoryConfigured: configured }).resources) }; };
   };
+  /** Ticket 31: facts of a forget plan/confirmation (the Records tree inspected just before its commit; Questions are read inside it). */
+  const forgetFacts = async (work_id: string) => {
+    const details = options.execution?.cleanup?.details;
+    const tree = details?.inspectTree ? await details.inspectTree({ workId: work_id }).catch(() => null) : null;
+    const running = dispatcher?.running(work_id) ?? false;
+    return (current: WorkRecord) => ({ running, tree, repositoryConfigured: configuredRepository(current.repository.repository) !== undefined });
+  };
   const pollingView = (): PollingView => poller?.view() ?? { state: 'disabled', intervalSeconds: null, cycles: 0, lastCycleAt: null, source: 'in-memory-observation', repositories: [] };
   // Work-level reasons preventing a start now; the dependency evaluation must belong to the repository's current polling round.
   const blockers = (work: WorkRecord) => [...dispatchBlockers({ impediments: work.impediments, evaluation: work.dependencies.latest,
@@ -207,6 +220,9 @@ export async function openControl(options: { storagePath: string;
       // Ticket 30: the plan never removes anything; the confirmation is executed by the desks after the ACK (revalidated per item).
       if (parsed.data.operation === 'cleanup-plan') return acceptCleanupPlan(state, parsed.data, await cleanupFacts(parsed.data.work_id));
       if (parsed.data.operation === 'cleanup-confirm') return acceptCleanupConfirm(state, parsed.data, await cleanupFacts(parsed.data.work_id));
+      // Ticket 31: the plan deletes nothing; a confirmed plan is executed by the retention desk after the ACK (revalidated again in its intent).
+      if (parsed.data.operation === 'forget-plan') return acceptForgetPlan(state, parsed.data, await forgetFacts(parsed.data.work_id));
+      if (parsed.data.operation === 'forget-confirm') return acceptForgetConfirm(state, parsed.data, await forgetFacts(parsed.data.work_id));
       if (parsed.data.operation === 'reopen') return acceptReopen(state, parsed.data);
       // Without GitHub access no fresh Ticket read is possible: the request is recorded as not applied (AUTHORIZATION_READ_UNAVAILABLE).
       if (parsed.data.operation === 'new') return acceptNewCycle(state, parsed.data, { configured: configuredRepository,
@@ -239,6 +255,8 @@ export async function openControl(options: { storagePath: string;
       if (query.kind === 'show') {
         if (!workIdSchema.safeParse(query.work_id).success) throw new Error('INVALID_WORK_ID');
         const work = await readWork(state, query.work_id);
+        const forgotten = work ? undefined : await readForgottenWork(state, query.work_id);
+        if (forgotten) return { kind: 'work-forgotten', work_id: query.work_id, memory: forgotten, notRecoverable: [...forgottenNotRecoverable], nextStep: forgottenNextStep(forgotten) };
         if (!work) return { kind: 'work-not-found', work_id: query.work_id, nextStep: 'No Work with this identity in the controller authority; use `factory list`.' };
         const lastPolled = pollingView().repositories.flatMap(repo => repo.candidates ?? [])
           .find(candidate => candidate.ticket.issueId === work.ticket.issueId && candidate.ticket.repositoryId === work.ticket.repositoryId) ?? null;
@@ -249,7 +267,7 @@ export async function openControl(options: { storagePath: string;
         return { kind: 'list', paused: current.paused, dispatch: dispatchReason ? 'closed' : 'open', dispatchReason,
           slots: { capacity: options.execution?.capacity ?? 0, held: await heldSlots(state) }, works: works.map(work => present(work, current.paused)),
           queues: { normal: works.filter(work => work.queue.pending && work.queue.category === 'normal').map(work => work.work_id), repair: [] },
-          selection: selection(works), polling: pollingView(), limitations } satisfies ListView;
+          selection: selection(works), polling: pollingView(), limitations, forgotten: await readForgotten(state) } satisfies ListView;
       }
       const polling = pollingView();
       const allQuestions = (await Promise.all(works.map(work => readQuestions(state, work)))).flat();
@@ -267,6 +285,10 @@ export async function openControl(options: { storagePath: string;
           details: { logs: sum(works, work => work.retention?.inventory?.logs), sessions: sum(works, work => work.retention?.inventory?.sessions), bytes: sum(works, work => work.retention?.inventory?.bytes) },
           removed: { logs: sum(works, work => work.retention?.removed.logs), sessions: sum(works, work => work.retention?.removed.sessions), bytes: sum(works, work => work.retention?.removed.bytes) },
           unsettled: sum(works, work => work.retention?.removals.filter(item => item.outcome === 'indeterminate' || item.outcome === 'intended' || item.outcome === 'failed').length) },
+        forgotten: await readForgotten(state).then(items => ({ works: items.length, delivered: items.filter(item => item.result === 'delivered').length,
+          cancelled: items.filter(item => item.result === 'cancelled').length,
+          note: items.length ? `${items.length} Work(s) forgotten: every other total and aggregate here covers only the Works still remembered, never the whole life of the installation.`
+            : 'No Work forgotten: totals cover every admitted Work.' })),
         queues: { normal: works.filter(work => work.queue.pending && work.queue.category === 'normal').length, repair: 0 },
         dependencies: { satisfied: works.filter(work => work.dependencies.latest?.conclusion === 'satisfied').length,
           pending: works.filter(work => work.dependencies.latest?.conclusion === 'pending').length,

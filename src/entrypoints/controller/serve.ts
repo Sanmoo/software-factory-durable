@@ -18,7 +18,10 @@ const command = z.union([z.strictObject({ request_id: requestId, operation: z.en
   // Ticket 30: explicit cleanup plan and confirmation (Control revalidates the selection and the plan).
   z.strictObject({ request_id: requestId, operation: z.literal('cleanup-plan'), work_id: z.uuid(), select: z.array(z.enum(['logs', 'sessions', 'environment', 'remote-branch'])).min(1).max(4),
     origin: z.literal('local-cli') }),
-  z.strictObject({ request_id: requestId, operation: z.literal('cleanup-confirm'), work_id: z.uuid(), plan_id: z.uuid(), origin: z.literal('local-cli') })]);
+  z.strictObject({ request_id: requestId, operation: z.literal('cleanup-confirm'), work_id: z.uuid(), plan_id: z.uuid(), origin: z.literal('local-cli') }),
+  // Ticket 31: explicit history deletion plan and confirmation (Control revalidates eligibility and the plan).
+  z.strictObject({ request_id: requestId, operation: z.literal('forget-plan'), work_id: z.uuid(), origin: z.literal('local-cli') }),
+  z.strictObject({ request_id: requestId, operation: z.literal('forget-confirm'), work_id: z.uuid(), plan_id: z.uuid(), origin: z.literal('local-cli') })]);
 const query = z.discriminatedUnion('kind', [z.strictObject({ kind: z.literal('status') }), z.strictObject({ kind: z.literal('access') }),
   z.strictObject({ kind: z.literal('list') }), z.strictObject({ kind: z.literal('show'), work_id: z.uuid() }),
   z.strictObject({ kind: z.literal('request'), request_id: requestId }), z.strictObject({ kind: z.literal('question'), question_id: z.uuid() })]);

@@ -5,7 +5,7 @@ import { createCodeRepository } from '../../code-repository/index.js';
 import { createSandbox, type GuestAssetPin } from '../../sandbox/index.js';
 import { lstat, readdir, realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
-import { listDetails, preserveEvidence, preserveSessionCopy, removeRecordsDetail } from '../../records/index.js';
+import { forgetWorkRecords, inspectWorkRecords, listDetails, preserveEvidence, preserveSessionCopy, removeRecordsDetail } from '../../records/index.js';
 import { readConfinedFile, readSessionFile, workerRuntimeDirectory } from '../../platform/host/index.js';
 import { createWorkers, skillPackContinues, skillPacks, type SkillPackId } from '../../workers/index.js';
 import { createBuilderCredentials, createRepositoryFetchCredentials, type GitHubAccess } from '../../platform/github/index.js';
@@ -76,6 +76,9 @@ export function detailPorts(root: string): DetailPorts {
       return preserveSessionCopy(root, workId, name ?? executionId, read.data, read.sha256);
     },
     remove: ({ workId, item, expectedSha256 }) => removeRecordsDetail(root, workId, item, expectedSha256),
+    // Ticket 31: the Work's whole Records area for `forget` (inspection, then fail-closed deletion).
+    inspectTree: ({ workId }) => inspectWorkRecords(root, workId),
+    forget: ({ workId }) => forgetWorkRecords(root, workId),
   };
 }
 

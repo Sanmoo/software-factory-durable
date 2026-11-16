@@ -581,3 +581,4 @@ export async function createRecords({ root }: { root: string }) {
   return records;
 }
 export { listDetails, preserveSessionCopy, removeRecordsDetail, type RecordsDetail, type RecordsInventory, type RecordsRemoval } from './retention.js';
+export { forgetWorkRecords, inspectWorkRecords, type RecordsForget, type RecordsTree } from './forget.js';

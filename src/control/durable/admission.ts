@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { defineDoc, defineDocFamily } from '@earendil-works/pi-durable';
 import type { TicketRef } from '../../issue-tracker/index.js';
-import type { ControlInput, ControlReceipt, DependencyEvaluation, Impediment, WorkView } from '../types.js';
+import type { ControlInput, ControlReceipt, DependencyEvaluation, ForgottenWork, Impediment, WorkView } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
 import { initialBudget } from '../rules/budget.js';
 import { dependencyImpedimentCodes, dependencyImpediments, ownCycleFor, type OwnCycle, type OwnCycleFacts } from '../rules/dependencies.js';
@@ -42,8 +42,10 @@ export const requests = defineDocFamily<{ input: ControlInput | { request_id: st
 });
 /** Installation-level Ticket → cycle index and FIFO admission sequence (spec §3.2), committed with each Work. */
 /** `memory`: explicit minimal memory per Ticket key (spec §12.4) — cycle identity/order, result and confirmed merge; absent in pre-08 storage. */
+/** `forgotten` (ticket 31): minimal memory of each Work whose history `forget` deleted, by Work id. Such a Work leaves `order` (no Work record
+ * remains) but stays named by `tickets` (never re-admitted) and by `memory` (own-dependency evaluation). */
 type TicketIndex = { admissionSequence: number; tickets: Record<string, { current: string; previous: string[] }>; order: string[];
-  memory?: Record<string, { cycles: OwnCycle[] }> };
+  memory?: Record<string, { cycles: OwnCycle[] }>; forgotten?: Record<string, ForgottenWork> };
 export const ticketIndex = defineDoc<TicketIndex>({ kind: 'factory.ticket-index', version: 1, scope: 'session',
   initial: () => ({ admissionSequence: 0, tickets: {}, order: [] }), checkpointWhen: () => true });
 export type WorkRecord = Omit<WorkView, 'dispatch' | 'limits'>;
@@ -195,6 +197,14 @@ export async function readWorks(session: Session): Promise<WorkRecord[]> {
 export async function readWork(session: Session, work_id: string): Promise<WorkRecord | undefined> {
   const work = (await session.snapshot(works, work_id, BACKGROUND_CONTEXT))?.work;
   return work ? normalize(work) : undefined;
+}
+/** Ticket 31: the minimal memory of every forgotten Work (admission order), or of one. */
+export async function readForgotten(session: Session): Promise<ForgottenWork[]> {
+  const index = await session.snapshot(ticketIndex, BACKGROUND_CONTEXT);
+  return Object.values(index?.forgotten ?? {}).sort((a, b) => a.sequence - b.sequence);
+}
+export async function readForgottenWork(session: Session, work_id: string): Promise<ForgottenWork | undefined> {
+  return (await session.snapshot(ticketIndex, BACKGROUND_CONTEXT))?.forgotten?.[work_id];
 }
 export async function readInstallation(session: Session): Promise<Installation> {
   const current = await session.snapshot(installation, BACKGROUND_CONTEXT);

@@ -10,6 +10,8 @@ import { preserveEvidence } from '../../src/records/index.js';
 import type { BranchCleanupResult, BranchCleanupSelection, CodeRepository, OwnPullRequestFacts, OwnPullRequestObservation } from '../../src/code-repository/index.js';
 import type { CleanupPorts, ExecutionView, PublicationView } from '../../src/control/types.js';
 import { admitTicket, initialize, works } from '../../src/control/durable/admission.js';
+import { acceptCancel, acceptNewCycle } from '../../src/control/durable/cycles.js';
+import { planCleanup } from '../../src/control/rules/delivery.js';
 import { openStore, type Session } from '../../src/control/durable/store.js';
 import { ticket } from './doubles.js';
 
@@ -200,4 +202,25 @@ export async function markDelivered(session: Session, work_id: string, confirmed
     work.cleanup = { state: 'complete', eligibility: { eligible: true, reasons: [], checkedAt: confirmedAt }, evidence: [], resources: [], protected: [], sweeps: 1,
       lastSweepAt: confirmedAt, nextStep: '' };
   }, BACKGROUND_CONTEXT);
+}
+
+/** Ticket 31 recipe tests: every own resource ticket 17 would plan for the Work recorded as removed (a delivered Work after a complete cleanup). */
+export async function markCleaned(session: Session, work_id: string) {
+  await session.commit(async tx => {
+    const work = (await tx.doc(works, work_id, null)).work!;
+    work.cleanup!.resources = planCleanup(work, { repositoryConfigured: true }).resources.map(item => ({ ...item, state: 'removed' as const, attempts: [] }));
+  }, BACKGROUND_CONTEXT);
+}
+
+/** Ticket 31 recipe tests: the seeded Work cancelled (no own PR, ceased at once) and an explicit `new` cycle 2 open after it, like q25-cancel-v1. */
+export async function cancelWithSuccessor(session: Session, work_id: string, number: number) {
+  await session.commit(async tx => { const work = (await tx.doc(works, work_id, null)).work!; work.publication = null; work.pullRequest = null; }, BACKGROUND_CONTEXT);
+  const cancelled = await acceptCancel(session, { request_id: `fixture-cancel-${number}`, operation: 'cancel', work_id, origin: 'local-cli' });
+  if (cancelled.kind !== 'durable' || cancelled.outcome !== 'accepted') throw new Error('NOT_CANCELLED');
+  const tracker = { readTicket: async () => ({ kind: 'observed' as const, source: 'github-rest' as const, observedAt: new Date().toISOString(), completeness: 'complete' as const,
+    ticket: ticket(number), state: 'open' as const, stateReason: null, labels: [{ id: 55, name: 'ready-for-agent' }], pullRequest: false }) };
+  const created = await acceptNewCycle(session, { request_id: `fixture-new-${number}`, operation: 'new', ticket: { repository: 'acme/project', number }, keepPredecessorPullRequest: false,
+    origin: 'local-cli' }, { configured: () => ({ repository: 'acme/project', installationId: 2, workflows: false, label: 'ready-for-agent', base: 'main' }), tracker: tracker as never });
+  if (created.kind !== 'durable' || !created.created) throw new Error(`NO_SUCCESSOR:${JSON.stringify(created)}`);
+  return created.created;
 }

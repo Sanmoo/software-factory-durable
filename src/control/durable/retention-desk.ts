@@ -5,6 +5,9 @@ import type { WorkRecord } from './admission.js';
 import { dueAtMsOf, plannedResourcesOf, recordDetailIntent, recordDetailResults, recordRetentionSweep, settlePlanItems } from './retention.js';
 import type { Session } from './store.js';
 import { questions as questionDocs } from './questions.js';
+import { beginForget, contentRequestIds, finishForget, settleLostForget } from './forget.js';
+import { requests } from './admission.js';
+import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 
 type Tx = Parameters<Parameters<Session['commit']>[0]>[0];
 type Removable = { id: string; kind: 'log' | 'session'; executionId: string | null; bytes: number; sha256?: string | null };
@@ -81,6 +84,38 @@ export function createRetentionDesk(deps: { session: Session; details?: DetailPo
     });
   }
 
+  /**
+   * Ticket 31: confirmed `forget` plans, FIRST in the cycle (no retention removal changes the Records tree between a confirmation and its
+   * deletion). Each is revalidated in its intent commit against a fresh Records inspection; then the whole Records area is deleted and the
+   * result commit keeps only the minimal memory. A `removing` plan this process does not hold was cut by a crash: indeterminate, never retried.
+   */
+  const inFlight = new Set<string>();
+  async function executeForgets(works: WorkRecord[]) {
+    for (const work of works) {
+      if (deps.stopped()) return;
+      const plans = work.forget?.plans ?? [];
+      if (plans.some(plan => plan.state === 'removing' && plan.effect?.outcome === 'intended' && !inFlight.has(plan.effect.effectId))) await settleLostForget(deps.session, work.work_id, inFlight);
+      const plan = plans.find(item => item.state === 'confirmed');
+      if (!plan || !deps.details) continue;
+      const details = deps.details;
+      const tree = details.inspectTree ? await details.inspectTree({ workId: work.work_id }).catch(() => null) : null;
+      const facts = (current: WorkRecord) => ({ running: deps.running(current.work_id), tree, repositoryConfigured: configured(current.repository.repository) });
+      const intent = await beginForget(deps.session, work.work_id, plan.planId, facts);
+      if (intent === 'stale' || intent.kind !== 'removing') continue;
+      inFlight.add(intent.effectId);
+      try {
+        const result = details.forget ? await details.forget({ workId: work.work_id }).catch(() => ({ outcome: 'indeterminate' as const, code: 'RECORDS_FORGET_UNAVAILABLE', files: 0, bytes: 0 }))
+          : { outcome: 'refused' as const, code: 'RECORDS_FORGET_NOT_COMPOSED', files: 0, bytes: 0 };
+        // Content-bearing request receipts that exist (read before the commit, so none is created by looking).
+        const current = await deps.readQuestions(work);
+        const candidates = contentRequestIds(work, current);
+        const existing: string[] = [];
+        for (const id of candidates) if ((await deps.session.snapshot(requests, id, BACKGROUND_CONTEXT))?.input) existing.push(id);
+        await finishForget(deps.session, work.work_id, plan.planId, intent.effectId, result, existing);
+      } finally { inFlight.delete(intent.effectId); }
+    }
+  }
+
   async function executePlans(works: WorkRecord[]) {
     for (const work of works) {
       for (const plan of work.retention?.plans ?? []) {
@@ -118,6 +153,8 @@ export function createRetentionDesk(deps: { session: Session; details?: DetailPo
       // No detail ports composed (e.g. a development controller without execution): no retention at all, nothing written to any Work.
       if (deps.stopped() || !deps.settled() || !deps.details) return;
       let works: WorkRecord[];
+      try { works = await deps.readWorks(); } catch (error) { failed(null, 'read-works', error); return; }
+      try { await executeForgets(works); } catch (error) { failed(null, 'forget', error); }
       try { works = await deps.readWorks(); } catch (error) { failed(null, 'read-works', error); return; }
       try { await executePlans(works); } catch (error) { failed(null, 'explicit-cleanup', error); }
       if (lastSweep !== null && now() - lastSweep < sweepMs) return;
