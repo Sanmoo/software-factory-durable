@@ -12,6 +12,11 @@ export const directoryMessage = 'READ_IS_DIRECTORY: this path is a directory, no
 /** Ticket 14: what the model sees for a path that does not exist (file or directory); the code prefix lets the Host observer tell it apart. */
 export const notFoundMessage = 'READ_NOT_FOUND: this path does not exist. Context that instructions name but that does not exist is not a ' +
   'limitation and not a failed source read; only required inputs or existing files that cannot be read are.';
+/** Real run q23-feedback-v1: what a BUILDER sees when its confined read is denied. Its `read` serves only its own skill pack files and the
+ * copies of its own Bash output; a bare code was taken for an inaccessible source (a blocker). Same code prefix; the policy is unchanged. */
+export const builderPathDeniedMessage = 'READ_PATH_DENIED: the Builder read tool reads only your skill pack files and copies of your own Bash output. ' +
+  'To read a file in /workspace/checkout or /artifacts (for example the instructions or the request you preserved), use bash (cat, sed -n, head). ' +
+  'This is not a missing source and not a blocker.';
 export function reviewerRead(context: ToolContext, sandbox: ToolProjection, criticalFailure = () => {}) {
   const definition = createReadTool('/workspace');
   // Fixed host composition: the shared channel admits one tool at a time.
@@ -23,6 +28,7 @@ export function reviewerRead(context: ToolContext, sandbox: ToolProjection, crit
         // Ticket 13: a directory is a clear answer to the model, not a failed source read (the observer does not count it).
         if (code === 'READ_IS_DIRECTORY') throw new Error(directoryMessage);
         if (code === 'READ_NOT_FOUND') throw new Error(notFoundMessage);
+        if (code === 'READ_PATH_DENIED' && context.role === 'builder') throw new Error(builderPathDeniedMessage);
         if (!['GUEST_READ_FAILED', 'READ_PATH_DENIED', 'READ_BINARY_UNSUPPORTED'].includes(code)) criticalFailure();
         throw new Error(code);
       }

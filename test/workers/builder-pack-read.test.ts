@@ -73,3 +73,15 @@ test('real-run fix: a v1 Execution keeps reading its v1 pack (and only it)', asy
   assert.match(bodies[1]!, /BLOCKED:/, 'the v1 SKILL.md reached the model');
   assert.match(bodies[2]!, /READ_PATH_DENIED/);
 });
+
+test('real-run q23-feedback-v1: a Builder read of its preserved instructions is denied WITH the way forward (bash), never a bare code it can take for a blocker', async t => {
+  const path = '/artifacts/instructions/v1/AGENTS.md';
+  const { result, bodies, guestCalls } = await run(t, 'factory-skills-v2', [path, '/workspace/checkout/AGENTS.md']);
+  assert.equal(result.status, 'completed');
+  for (const body of [bodies[1]!, bodies[2]!]) {
+    assert.match(body, /READ_PATH_DENIED/, 'the confined Builder read is unchanged: still denied');
+    assert.match(body, /use bash/, 'the model is told how to read the file');
+    assert.match(body, /not a missing source/, 'and that the denial is not a blocker');
+  }
+  assert.deepEqual(guestCalls, [], 'denied paths never reach the guest');
+});
