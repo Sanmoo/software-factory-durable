@@ -197,3 +197,25 @@ limited read is full when the file ended inside the window (the SDK returns it w
 Intended handling of an incomplete opinion (tickets 12/13/28): it is a review result, not a reviewer failure — no retry; the Builder may hand
 off again and the end-of-Execution verification is `not-verified` (`REVIEW_INCOMPLETE`), so nothing is published; asking the operator is
 allowed but not required. Namespace `q21-human-v9`, issue unpinned.
+
+## Real run q21-human-v9 (issue #29, consumed) — PASSED
+
+All phases ran (preflight, run, race, reconcile, finish, inspect). Copied results (secret scan: 0 token/key patterns; sessions
+`tokenPattern: false`): `21-real-human-v9-*-2026-11-16.json`; verdict recomputed OFFLINE from the saved inspect result (no rerun):
+`21-real-human-v9-verdict-2026-11-16.json` → `success`. The inspect phase itself reported 3 `UNEXPECTED_PUSH` entries: a RECIPE false positive
+(its check still expected the `origin` token while Control, since ticket 18, emits the configured URL); fixed (`configuredRemote`) and the
+inspect now saves its `verdict`. Test with the three exact v9 strings.
+
+| Expected (plan) | Observed |
+| --- | --- |
+| run: published H1 = verified head, attempt lease absent | push `--force-with-lease=…: <url> 54f4cf4` → draft PR #30 — met |
+| race: lease expectation H1 recorded; human C1 lands; leased push REJECTED; divergence lease-failed; Question 1 | push lease `54f4cf4` → `d345e3e` rejected (d345e3e never on the branch); C1 `52b99d6`; divergence `lease-failed`; Q1 `8f0be847` published, answered `incorporate` — met |
+| reconcile: reconciliation preserve C1; human C2 after the answer → new divergence against C1; Question 2; no push | C2 `1cd38d7`; divergence 1 `superseded`, divergence 2 `update` (expected C1); Q2 `00ff1235`; no push in the phase — met |
+| finish: reconciliation preserve C2; publication lease exactly C2; linked; authorization consumed | push lease `1cd38d7` → `140a1ba`; PR #30 draft head `140a1ba`; reconciliation `consumed`, divergence 2 `resolved` — met |
+| both human commits ancestors, files intact | compare `52b99d6...140a1ba` ahead 2/behind 0, `1cd38d7...140a1ba` ahead 1/behind 0; neither compare lists its human file; `FACTORY_HUMAN_NOTE.md` / `_2.md` at the head hold exactly the operator's lines — met |
+| every push names its exact recorded lease; no bare force; no token | 3 pushes = the 3 recorded attempts (lease absent, H1, C2) on the configured URL; 0 violations; no token pattern — met |
+
+Findings across v1–v9 (each fixed with a test, see sections above): v1 recipe stopped on a still-published Work; v2 human step missed (boots
+left running → recipe now ceases started boots); v3 chained push refused locally without guidance; v4 interrupted reconciliation never
+recovered; v5 reconciliation lacked gate/finding duties and Builder Questions had no destination after the PR; v6 gate run only embedded; v7
+reviewers flagged the authorized human file; v8 limited reads not credited as full; v9 recipe push check expected `origin`.

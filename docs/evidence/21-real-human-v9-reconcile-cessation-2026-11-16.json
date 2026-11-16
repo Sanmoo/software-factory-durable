@@ -1,0 +1,17 @@
+{
+ "started": [
+  {
+   "environment": "env-78a8e1364d0b71a001146cbb40985dcddf6923a05e85f1f5cf279b7f02d83678",
+   "boot": "boot-785f5ada-a53c-4784-a441-84c274c54622"
+  }
+ ],
+ "cessation": [
+  {
+   "boot": "boot-785f5ada-a53c-4784-a441-84c274c54622",
+   "before": "stopped",
+   "stopped": false,
+   "confirmed": true
+  }
+ ],
+ "at": "2026-11-16T01:40:15.035Z"
+}

@@ -20,7 +20,7 @@ const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 
  * The NEW synthetic issue the supervisor creates after the operator's authorization (title/body below, label `ready-for-agent`, no other
  * open issue with that label). `number` MUST be pinned in a reviewed commit before preflight: 0 refuses every phase (TICKET_NOT_PINNED).
  */
-export const ticket = { number: 29, repositoryId: 1256893534, title: 'Factory qualification: preserve human commits on the Factory branch' } as const;
+export const ticket = { number: 0, repositoryId: 1256893534, title: 'Factory qualification: preserve human commits on the Factory branch' } as const;
 const githubApp = { appId: 5569788, privateKeyFile: 'credentials/app.pem' };
 /** The only operator: preflight pins the immutable user id GitHub reports for this login (repository owner, type User). */
 const operatorLogin = 'Sanmoo';
@@ -214,10 +214,39 @@ export function humanPushObserved(expected: string, tip: { state: string; sha?: 
  * its recorded publication attempts (branch, expected oid as recorded, verified head) — never another oid, a bare/`-f`/`+`/`-u` push or an
  * API ref write.
  */
-export function pushViolations(commands: string[], expectations: { branch: string; expected: string | null; head: string }[]): string[] {
-  const allowed = new Set(expectations.map(item => `git -C /workspace/checkout push --force-with-lease=refs/heads/${item.branch}:${item.expected ?? ''} origin ${item.head}:refs/heads/${item.branch}`));
+/** The remote token Control emits (ticket 18): the configured repository URL, never `origin`. */
+export const configuredRemote = `https://github.com/${repository.repository}.git`;
+export function pushViolations(commands: string[], expectations: { branch: string; expected: string | null; head: string }[], remote: string = configuredRemote): string[] {
+  const allowed = new Set(expectations.map(item => `git -C /workspace/checkout push --force-with-lease=refs/heads/${item.branch}:${item.expected ?? ''} ${remote} ${item.head}:refs/heads/${item.branch}`));
   return commands.filter(command => /\bgit\b[\s\S]*\bpush\b|\bsend-pack\b/.test(command) || /\b(gh\b[\s\S]*\bapi|curl|wget)\b[\s\S]*(git\/refs|\/git\/ref\b|graphql)/i.test(command))
     .filter(command => !allowed.has(command.trim())).map(command => `UNEXPECTED_PUSH:${command.slice(0, 200)}`);
+}
+type Compared = { ok?: boolean; value?: { status?: string; files?: { filename: string }[] } } | null;
+/**
+ * The verdict of the run from the saved inspect result (real run q21-human-v9 had none): every push is an exact recorded lease; both human
+ * commits are ancestors of the final head with their own files untouched since; the own draft PR is published at that head; the authorization
+ * was consumed after a lease-failed divergence and a new divergence after the answer; no token pattern in any session.
+ */
+export function verdictOf(result: { pushViolations: string[]; human: { step: number; sha: string | null; compareToHead: Compared; file: { ok?: boolean } | null }[];
+  work: { publication: { state: string; pullRequest: { headSha: string; draft: boolean } | null; reconciliation: { state: string } | null; divergences?: { trigger: string; state: string }[] } | null };
+  sessions: { tokenPattern?: boolean }[] }): { status: 'success' | 'held'; reasons: string[] } {
+  const reasons: string[] = [...result.pushViolations.map(item => item.slice(0, 120))];
+  const humanFiles = [humanSteps[1].file, humanSteps[2].file];
+  for (const item of result.human) {
+    const compared = item.compareToHead?.ok ? item.compareToHead.value : undefined;
+    if (!item.sha || !compared) { reasons.push(`HUMAN_${item.step}_NOT_COMPARED`); continue; }
+    if (compared.status !== 'ahead' && compared.status !== 'identical') reasons.push(`HUMAN_${item.step}_NOT_ANCESTOR:${compared.status}`);
+    if ((compared.files ?? []).some(file => file.filename === humanSteps[item.step as 1 | 2].file)) reasons.push(`HUMAN_${item.step}_FILE_CHANGED`);
+    if (!item.file?.ok) reasons.push(`HUMAN_${item.step}_FILE_ABSENT_AT_HEAD`);
+  }
+  void humanFiles;
+  const publication = result.work.publication;
+  if (publication?.state !== 'published' || !publication.pullRequest?.draft) reasons.push(`NOT_PUBLISHED_DRAFT:${publication?.state ?? 'none'}`);
+  if (publication?.reconciliation?.state !== 'consumed') reasons.push(`RECONCILIATION_NOT_CONSUMED:${publication?.reconciliation?.state ?? 'none'}`);
+  const triggers = (publication?.divergences ?? []).map(item => item.trigger);
+  if (JSON.stringify(triggers) !== JSON.stringify(['lease-failed', 'update'])) reasons.push(`DIVERGENCES:${triggers.join(',')}`);
+  if (result.sessions.some(item => item.tokenPattern)) reasons.push('TOKEN_PATTERN_IN_SESSION');
+  return { status: reasons.length ? 'held' : 'success', reasons };
 }
 /** Review: the controller's only GitHub write is a Question comment on the pinned issue; anything else is refused (nothing sent). */
 export function guardTracker(tracker: IssueTracker, log: (entry: Record<string, unknown>) => void): IssueTracker {
@@ -573,13 +602,15 @@ export async function runPhase(phase: Phase) {
       }
       const remote = await codeRepository.findPublication({ repo: repository, issueNumbers: [ticket.number], knownBranches: work.branch ? [work.branch] : [], refs: true, base: repository.base });
       const issue = await tracker.readTicket(work.ticket);
-      await save('inspect-result', { work: { work_id: work.work_id, branch: work.branch, pullRequest: work.pullRequest, publication: work.publication, impediments: work.impediments,
+      const violations = pushViolations(pushes, [...work.previousExecutions, work.execution].flatMap(item => item.request.publication ? [{ branch: item.request.publication.branch,
+        head: item.request.publication.head, expected: item.request.publication.expectedRemote.state === 'present' ? item.request.publication.expectedRemote.sha : null }] : []));
+      const verdict = verdictOf({ pushViolations: violations, human: human as never, work: { publication: work.publication as never }, sessions: sessions as never });
+      await save('inspect-result', { verdict, work: { work_id: work.work_id, branch: work.branch, pullRequest: work.pullRequest, publication: work.publication, impediments: work.impediments,
         budget: work.budget, history: work.history.filter(item => item.event.startsWith('publication') || item.event.startsWith('reconciliation') || item.event.startsWith('question')) },
       executions: [...work.previousExecutions, work.execution].map(item => ({ executionId: item.executionId, phase: item.dispatch.phase, request: item.request, credential: item.credential,
         end: item.end, held: item.held, finalCapture: item.review?.rounds.at(-1)?.handoff.summary ?? null, verification: item.review?.verification ?? null })),
-      human, pushViolations: pushViolations(pushes, [...work.previousExecutions, work.execution].flatMap(item => item.request.publication ? [{ branch: item.request.publication.branch,
-        head: item.request.publication.head, expected: item.request.publication.expectedRemote.state === 'present' ? item.request.publication.expectedRemote.sha : null }] : [])),
-      sessions, remote, issue, preflight: await load('preflight-result') });
+      human, pushViolations: violations, sessions, remote, issue, preflight: await load('preflight-result') });
+      return;
       return;
     }
     if (!needsStop(work.execution as ExecutionView)) throw new Error('NOTHING_TO_STOP');

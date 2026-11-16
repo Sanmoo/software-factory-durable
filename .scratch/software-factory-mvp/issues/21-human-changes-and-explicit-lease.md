@@ -4,17 +4,17 @@
 
 **Blocked by:** [10: Perguntar ao operador, cessar e retomar pela fila](10-durable-questions-and-queued-resumption.md); [14: Publicar e reconhecer o PR draft próprio](14-direct-draft-publication-and-discovery.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
-- [ ] Rebase é padrão salvo estratégia documentada no AGENTS; ref/OID remoto esperado é capturado e preservado antes da preparação nos registros normais efetivamente usados.
-- [ ] Escrita reescrita usa somente branch própria com force-with-lease de ref/OID explícitos; nunca force, tracking ref como expectativa perdida ou reescrita da base.
-- [ ] Mudança não atribuível à Factory bloqueia próxima escrita e preserva local/expectativa; lease falho não recaptura a ponta e insiste automaticamente.
-- [ ] Pergunta apresenta Trabalho/repo/branch/PR, refs conhecidas/atuais, resultado local, diferenças/autoria comprovável/incertezas e proposta; padrão incorpora/preserva mudanças humanas, descarte exige autorização específica.
-- [ ] Resposta autoriza só a divergência concreta, sem renovar orçamento/escopo; nova mudança exige nova avaliação, e mudança de pedido segue autorização/versionamento de escopo.
-- [ ] Troca de branch-alvo bloqueia continuação até restauração ou autorização de base compatível e reavaliação de comparação/instruções/reviews/checks; mero avanço da mesma base apta não dispara trabalho.
-- [ ] Provas com Git/GitHub e agente reais incluem push humano concorrente, lease falho, recuperação de expectativa e nova divergência após resposta, sem sobrescrever conteúdo humano.
+- [x] Rebase é padrão salvo estratégia documentada no AGENTS; ref/OID remoto esperado é capturado e preservado antes da preparação nos registros normais efetivamente usados.
+- [x] Escrita reescrita usa somente branch própria com force-with-lease de ref/OID explícitos; nunca force, tracking ref como expectativa perdida ou reescrita da base.
+- [x] Mudança não atribuível à Factory bloqueia próxima escrita e preserva local/expectativa; lease falho não recaptura a ponta e insiste automaticamente.
+- [x] Pergunta apresenta Trabalho/repo/branch/PR, refs conhecidas/atuais, resultado local, diferenças/autoria comprovável/incertezas e proposta; padrão incorpora/preserva mudanças humanas, descarte exige autorização específica.
+- [x] Resposta autoriza só a divergência concreta, sem renovar orçamento/escopo; nova mudança exige nova avaliação, e mudança de pedido segue autorização/versionamento de escopo.
+- [x] Troca de branch-alvo bloqueia continuação até restauração ou autorização de base compatível e reavaliação de comparação/instruções/reviews/checks; mero avanço da mesma base apta não dispara trabalho.
+- [x] Provas com Git/GitHub e agente reais incluem push humano concorrente, lease falho, recuperação de expectativa e nova divergência após resposta, sem sobrescrever conteúdo humano.
 
 ## Referências e validação
 
@@ -26,6 +26,21 @@
 
 Publicação é planejamento aprovado, não autorização de construção, uso de host/credenciais/GitHub/modelos reais, injeção de falhas ou piloto. Obter autorização pertinente antes da execução. Não alterar decisões aprovadas silenciosamente; lacuna de desenho volta ao operador. Merge e avaliação humana não são delegados aos agentes.
 
+## Answer
+
+Resolvido em 2026-11-16. Mudança remota não atribuível à Factory (head que ela não vinculou nem empurrou) ou lease falho bloqueia a próxima
+escrita e gera uma Pergunta de divergência no Ticket (refs conhecida/atual/local, commits com autoria comprovável, arquivos, incertezas,
+proposta "incorporar"); resposta exata `incorporate` abre uma Execução de reconciliação (rebase sobre a ponta autorizada salvo estratégia do
+AGENTS; captura prova a ancestralidade), `discard <tip>` autoriza descartar exatamente aquela ponta; qualquer outra resposta pergunta de novo.
+A publicação usa `--force-with-lease=refs/heads/<própria>:<ponta autorizada>` no remoto configurado; antes de vincular qualquer head próprio o
+Controle exige que todo commit de terceiros observado (divergências, descobertas, atividade de push) seja ancestral com seus arquivos intactos
+(`LOST_HUMAN_CHANGE` caso contrário). Guarda única de push no host do Builder (`src/workers/push-policy.ts`, exceção sancionada à regra do
+ticket 14). Troca de base bloqueia até restaurar; avanço da base não dispara nada. Ensaio real `q21-human-v9` (issue #29, PR #30 draft em
+`140a1ba`): push humano concorrente, lease falho, Pergunta 1 respondida, reconciliação, nova mudança humana após a resposta (Pergunta 2),
+reconciliação e publicação com lease na segunda ponta humana; ambos os commits humanos preservados (compare ahead, arquivos intactos);
+veredito `success`. v1–v8 encontraram e corrigiram defeitos de receita e produto (evidência 21). Limites do MVP aceitos pelo operador
+registrados. Gate `test:ci` verde. Evidência: `docs/evidence/21-human-changes-and-explicit-lease.md` e `docs/evidence/21-real-human-v9-*.json`.
+
 ## Comments
 
 - 2026-11-15 (implementation, branch `implement/software-factory-mvp-21`): local increment and one-shot recipe
@@ -36,3 +51,4 @@ Publicação é planejamento aprovado, não autorização de construção, uso d
   detected only when a write is pending; reconciliation interrupted before start is fail-closed; no rebase onto a newer base with human
   commits; Questions on the issue). Static-review fixes in a follow-up commit (Control-side preservation check before linking, Builder push
   policy, failed reconciliation, restore re-evaluation, precedence, exact answers, recipe guards).
+- 2026-11-16: real run q21-human-v9 passed (supervisor, operator-authorized); ticket resolved.

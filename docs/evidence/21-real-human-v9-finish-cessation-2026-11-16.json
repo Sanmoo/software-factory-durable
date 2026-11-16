@@ -1,0 +1,27 @@
+{
+ "started": [
+  {
+   "environment": "env-78a8e1364d0b71a001146cbb40985dcddf6923a05e85f1f5cf279b7f02d83678",
+   "boot": "boot-4e54e901-7c7f-436b-a47b-8f88665abf05"
+  },
+  {
+   "environment": "env-78a8e1364d0b71a001146cbb40985dcddf6923a05e85f1f5cf279b7f02d83678",
+   "boot": "boot-6bf02606-4471-4592-9a5b-e28b48b459dd"
+  }
+ ],
+ "cessation": [
+  {
+   "boot": "boot-4e54e901-7c7f-436b-a47b-8f88665abf05",
+   "before": "stopped",
+   "stopped": false,
+   "confirmed": true
+  },
+  {
+   "boot": "boot-6bf02606-4471-4592-9a5b-e28b48b459dd",
+   "before": "stopped",
+   "stopped": false,
+   "confirmed": true
+  }
+ ],
+ "at": "2026-11-16T01:48:44.343Z"
+}

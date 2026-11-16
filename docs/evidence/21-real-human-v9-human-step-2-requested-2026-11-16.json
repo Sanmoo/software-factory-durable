@@ -1,0 +1,9 @@
+{
+ "step": 2,
+ "branch": "factory/29-b167feaa",
+ "expectedTip": "52b99d68db8bd9a945c8d03e41af99e582e77e90",
+ "file": "docs/FACTORY_HUMAN_NOTE_2.md",
+ "script": "set -euo pipefail\nwork=$(mktemp -d /tmp/q21-human-2-XXXXXX)\ngit clone --quiet --branch factory/29-b167feaa https://github.com/Sanmoo/java-springboot-event-sourcing.git \"$work\"\ncd \"$work\"\nif [ \"$(git rev-parse HEAD)\" != \"52b99d68db8bd9a945c8d03e41af99e582e77e90\" ]; then echo \"tip differs from 52b99d68db8bd9a945c8d03e41af99e582e77e90: nothing pushed\" >&2; exit 1; fi\nprintf '%s\\n' '# Human note 2' '' 'Added by the operator on the Factory branch after authorizing the first reconciliation (step 2).' > docs/FACTORY_HUMAN_NOTE_2.md\ngit add docs/FACTORY_HUMAN_NOTE_2.md\ngit commit --quiet -m 'docs: human note 2 on the Factory branch (q21)'\ngit push origin HEAD:refs/heads/factory/29-b167feaa",
+ "at": "2026-11-16T01:38:09.972Z",
+ "note": "Operator: run these with YOUR OWN credentials now; the phase is waiting. Never the App, never --force."
+}

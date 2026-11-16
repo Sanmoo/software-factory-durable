@@ -89,9 +89,9 @@ test('human step detection: only ONE fast-forward commit on top of the expected 
   assert.deepEqual(recipe.humanPushObserved(expected, { state: 'present', sha: '1'.repeat(40) }, { state: 'unknown' }), { kind: 'unexpected', reason: 'COMPARISON_UNKNOWN' });
   const branch = 'factory/9-0b9c6a52';
   const h2 = 'e'.repeat(40);
-  const leased = (oid: string) => `git -C /workspace/checkout push --force-with-lease=refs/heads/${branch}:${oid} origin ${h2}:refs/heads/${branch}`;
+  const leased = (oid: string) => `git -C /workspace/checkout push --force-with-lease=refs/heads/${branch}:${oid} ${recipe.configuredRemote} ${h2}:refs/heads/${branch}`;
   const recorded = [{ branch, expected: expected, head: h2 }, { branch, expected: null, head: h2 }];
-  assert.deepEqual(recipe.pushViolations([leased(expected), `git -C /workspace/checkout push --force-with-lease=refs/heads/${branch}: origin ${h2}:refs/heads/${branch}`,
+  assert.deepEqual(recipe.pushViolations([leased(expected), `git -C /workspace/checkout push --force-with-lease=refs/heads/${branch}: ${recipe.configuredRemote} ${h2}:refs/heads/${branch}`,
     'git ls-remote origin', 'git fetch origin', 'gh pr edit 4 --body-file x'], recorded), []);
   assert.equal(recipe.pushViolations([leased('1'.repeat(40))], recorded).length, 1, 'a recaptured oid is a violation even with an explicit lease');
   for (const command of [`git push --force origin HEAD:refs/heads/${branch}`, `git push origin +HEAD:refs/heads/${branch}`, `git push -u origin ${branch}`, `git push -f origin ${branch}`,
@@ -163,4 +163,18 @@ test('real run q21-human-v7: a Builder Question keeps the phase waiting (surface
   assert.equal(guard(c('r1', 'builder-reconciliation')), true);
   assert.equal(guard(c('r2', 'builder-continuation')), true, 'resumed after the Builder Question was answered');
   assert.equal(guard(c('r3', 'builder-recovery')), false, 'only one extra activation');
+});
+
+test('real run q21-human-v9: the three exact leased pushes to the configured URL match the Control-recorded attempts (not violations); the verdict is computed', () => {
+  const url = 'https://github.com/Sanmoo/java-springboot-event-sourcing.git';
+  const branch = 'factory/29-b167feaa';
+  const [h1, h2, c2, h4] = ['54f4cf4f5981d5be5bdfaf6371203264084bb2b1', 'd345e3e1a6c931853606b565b3a14bce675c9e2d', '1cd38d7797ad2504e0161332f13082cce0d61ab5',
+    '140a1baf19d109079688cdd0ba6f2dd071692d5f'];
+  const pushed = [`git -C /workspace/checkout push --force-with-lease=refs/heads/${branch}: ${url} ${h1}:refs/heads/${branch}`,
+    `git -C /workspace/checkout push --force-with-lease=refs/heads/${branch}:${h1} ${url} ${h2}:refs/heads/${branch}`,
+    `git -C /workspace/checkout push --force-with-lease=refs/heads/${branch}:${c2} ${url} ${h4}:refs/heads/${branch}`];
+  const recorded = [{ branch, expected: null, head: h1 }, { branch, expected: h1, head: h2 }, { branch, expected: c2, head: h4 }];
+  assert.deepEqual(recipe.pushViolations(pushed, recorded, url), []);
+  assert.equal(recipe.pushViolations([pushed[1]!.replace(`:${h1} `, `:${c2} `)], recorded, url).length, 1, 'a recaptured oid stays a violation');
+  assert.equal(recipe.pushViolations([pushed[0]!.replace(url, 'origin')], recorded, url).length, 1, 'another remote token than Control emitted');
 });

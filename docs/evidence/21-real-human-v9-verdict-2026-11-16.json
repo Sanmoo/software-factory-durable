@@ -1,0 +1,13 @@
+{
+ "recomputedFrom": "inspect-result.json (saved by the v9 inspect phase; no rerun)",
+ "pushes": [
+  "git -C /workspace/checkout push --force-with-lease=refs/heads/factory/29-b167feaa: https://github.com/Sanmoo/java-springboot-event-sourcing.git 54f4cf4f5981d5be5bdfaf6371203264084bb2b1:refs/heads/factory/29-b167feaa",
+  "git -C /workspace/checkout push --force-with-lease=refs/heads/factory/29-b167feaa:54f4cf4f5981d5be5bdfaf6371203264084bb2b1 https://github.com/Sanmoo/java-springboot-event-sourcing.git d345e3e1a6c931853606b565b3a14bce675c9e2d:refs/heads/factory/29-b167feaa",
+  "git -C /workspace/checkout push --force-with-lease=refs/heads/factory/29-b167feaa:1cd38d7797ad2504e0161332f13082cce0d61ab5 https://github.com/Sanmoo/java-springboot-event-sourcing.git 140a1baf19d109079688cdd0ba6f2dd071692d5f:refs/heads/factory/29-b167feaa"
+ ],
+ "violations": [],
+ "verdict": {
+  "status": "success",
+  "reasons": []
+ }
+}
