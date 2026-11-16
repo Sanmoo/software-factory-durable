@@ -24,8 +24,8 @@ async function planOf(main: (args: string[]) => Promise<void>) {
 test('R-REL plan: inert; fresh namespace under y5, 38-byte root, the exact unit and its host effects, removal of only what it installed', async () => {
   const plan = await planOf(rel.main);
   assert.equal(forbidden, 0);
-  assert.equal(plan.base, '/home/sanmoo/software-factory-test/y5/prel34-v1');
-  assert.equal(plan.root, '/home/sanmoo/software-factory-test/pr1');
+  assert.equal(plan.base, '/home/sanmoo/software-factory-test/y5/prel34-v2');
+  assert.equal(plan.root, '/home/sanmoo/software-factory-test/pr2');
   assert.ok(Buffer.byteLength(plan.root) <= 38, 'guest session socket <root>/r/<22>/s/<41> must fit 107 bytes');
   assert.deepEqual(plan.phases, ['build', 'verify', 'install', 'setup', 'doctor', 'service', 'uninstall-service', 'remove-root']);
   assert.ok(plan.hostEffects.paths.some((item: string) => item.startsWith('/home/sanmoo/.config/systemd/user/software-factory-') && item.includes('.service')));
@@ -41,9 +41,9 @@ test('R-REL plan: inert; fresh namespace under y5, 38-byte root, the exact unit 
 test('R-CAND plan: inert; runs the INSTALLED release; issue 0 refuses every phase; human steps by the operator with exact commands; GET-only recipe reads', async () => {
   const plan = await planOf(cand.main);
   assert.equal(forbidden, 0);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/qcand34-v1');
-  assert.equal(plan.root, '/home/sanmoo/software-factory-test/pr1');
-  assert.equal(plan.identityFile, '/home/sanmoo/software-factory-test/y5/prel34-v1/observations/release-identity.json');
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/qcand34-v2');
+  assert.equal(plan.root, '/home/sanmoo/software-factory-test/pr2');
+  assert.equal(plan.identityFile, '/home/sanmoo/software-factory-test/y5/prel34-v2/observations/release-identity.json');
   assert.match(plan.release, /RE-VERIFIED at each phase/);
   assert.equal(plan.ticket.pinned, false);
   assert.equal(plan.ticket.number, 0);

@@ -20,7 +20,7 @@ test('shared: the unit name is the product\'s own; the root fits the guest socke
   assert.ok(longest(installationRoot) <= 107, String(longest(installationRoot)));
   assert.ok(longest(`${installationRoot}x`) > 107, 'one byte more no longer fits');
   const mountinfo = ['22 1 0:21 / / rw - ext4 /dev/x rw', `90 22 0:50 / ${installationRoot}/environments/e1/mnt rw - fuse x rw`,
-    '91 22 0:51 / /home/sanmoo/software-factory-test/pr10 rw - tmpfs t rw', '92 22 0:52 / /home/sanmoo/software-factory-test/pr1\\040x rw - tmpfs t rw'].join('\n');
+    '91 22 0:51 / /home/sanmoo/software-factory-test/pr20 rw - tmpfs t rw', '92 22 0:52 / /home/sanmoo/software-factory-test/pr2\\040x rw - tmpfs t rw'].join('\n');
   assert.deepEqual(mountsBelow(mountinfo, installationRoot), [`${installationRoot}/environments/e1/mnt`]);
   assert.deepEqual(parseShow('ActiveState=failed\nExecMainStatus=2\n'), { ActiveState: 'failed', ExecMainStatus: '2' });
   assert.equal(redact(`x ghs_${'a'.repeat(30)} y`).found, 1);
@@ -156,12 +156,12 @@ test('R-CAND bounds, answers and the deliver precondition', () => {
   assert.equal(cand.mergedByOperator(pull, 'h2', 7), 'MERGED_HEAD_IS_NOT_THE_LINKED_HEAD');
 });
 
-const identity: ReleaseIdentity = { release: 'mvp-34.1', commit: 'c'.repeat(40), commitTime: 't', branch: 'b', dirty: false, archive: 'a.tar', archiveSha256: 'a'.repeat(64),
+const identity: ReleaseIdentity = { release: 'mvp-34.2', commit: 'c'.repeat(40), commitTime: 't', branch: 'b', dirty: false, archive: 'a.tar', archiveSha256: 'a'.repeat(64),
   manifestSha256: 'm'.repeat(64), guestAssets: { manifestSha256: 'g' }, lockfileSha256: 'l', node: '24.21.0', root: installationRoot, unit: 'u', builtAt: 't',
-  markers: { 'ticket-23-feedback': true, 'ticket-24-single-pass-dispatch': true, 'ticket-29-inspection': true, 'ticket-34-candidate': true, 'd-07-sqlite-scrub': true } };
+  markers: { 'ticket-23-feedback': true, 'ticket-24-single-pass-dispatch': true, 'ticket-29-inspection': true, 'ticket-34-candidate': true, 'd-07-sqlite-scrub': true, 'owner-user-bus': true } };
 function savedJourney() {
   const factory = { release: identity.release, commit: identity.commit, manifestSha256: identity.manifestSha256, archiveSha256: identity.archiveSha256, root: identity.root, verifiedBy: 'x' };
-  const exe = `${installationRoot}/releases/mvp-34.1/node/bin/node`;
+  const exe = `${installationRoot}/releases/mvp-34.2/node/bin/node`;
   const gate = (id: string, declared: string, outcome: string, authorization: unknown = null) => ({ id, declared, outcome, authorization });
   const round = { versions: { instructions: { sha256: 'i'.repeat(64) } }, declarations: { gates: [gate('content', 'run', 'passed'), gate('docs-check', 'waived', 'waived', { kind: 'question', questionId: 'q1' })] } };
   const finalWork = work({ result: 'delivered', cleanup: { state: 'complete' }, ...published,

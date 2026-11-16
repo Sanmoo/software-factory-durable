@@ -14,7 +14,7 @@ import { candidateNamespace, command, hostEnvironment, identityFile, installatio
 // writes to GitHub. Bounds are the PRODUCTION ones (configuration limits, one eligible issue, capacity 1); the recipe observes every poll and
 // stops the controller (held) the moment a bound is exceeded: running the release unmodified is the point, so no port is wrapped.
 
-const revision = 'qcand34-v1';
+const revision = 'qcand34-v2';
 const observations = candidateNamespace;
 const root = installationRoot;
 const unit = serviceUnit(root);

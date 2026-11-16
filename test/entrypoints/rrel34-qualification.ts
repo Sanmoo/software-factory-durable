@@ -11,7 +11,7 @@ import { listingViolations } from './release32-qualification.js';
 // Bounds: no network, GitHub, credential, model or VM; no sudo, `enable`, linger or package installation. One-shot: an exclusive intent
 // tombstone precedes each effect; a consumed phase never reruns; nothing is retried or repaired automatically.
 
-const revision = 'prel34-v1';
+const revision = 'prel34-v2';
 const base = releaseNamespace;
 const observations = `${base}/observations`;
 const output = `${base}/build`;

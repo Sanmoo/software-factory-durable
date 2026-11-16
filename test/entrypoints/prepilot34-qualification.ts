@@ -11,10 +11,11 @@ export const y5 = `${testRoot}/y5`;
  * sun_path holds 107 bytes, so the canonical root may have at most 38 bytes (y5 itself has 37; `y5/<anything>` has at least 39). This path
  * has 38. The recipe namespaces (observations) stay fresh directories under y5/.
  */
-export const installationRoot = `${testRoot}/pr1`;
-export const release = 'mvp-34.1';
-export const releaseNamespace = `${y5}/prel34-v1`;
-export const candidateNamespace = `${y5}/qcand34-v1`;
+// v1 (pr1, mvp-34.1, prel34-v1/qcand34-v1) was consumed: its owner had no user bus (fixed in 5ab72fa); pr1 is cleaned up with the v1 code.
+export const installationRoot = `${testRoot}/pr2`;
+export const release = 'mvp-34.2';
+export const releaseNamespace = `${y5}/prel34-v2`;
+export const candidateNamespace = `${y5}/qcand34-v2`;
 export const inspectNamespace = `${y5}/qinspect34-v1`;
 /** Written by R-REL `install` (after `verify`), read by every R-CAND phase: what R-CAND must prove it ran on. */
 export const identityFile = `${releaseNamespace}/observations/release-identity.json`;
@@ -32,6 +33,7 @@ export const compositionMarkers = {
   'ticket-29-inspection': '0d343d6c33c25470c6ca6bb608705140f01333d4',
   'ticket-34-candidate': 'b30e2bddea160e0f577ac08a943fb91a08438132',
   'd-07-sqlite-scrub': '5a026e7a619006706e73d5a6831f870b447ada77',
+  'owner-user-bus': '5ab72fab9a3f52abf3d72557b4ce912f62b246f2',
 } as const;
 
 export type ReleaseIdentity = {
