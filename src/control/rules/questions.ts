@@ -10,14 +10,22 @@ const control = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 export const questionLimits = Object.freeze({ question: 2000, context: 4000, answer: 2000 });
 const promptBudgetBytes = 15000;
 
-export type FactoryCommand = { kind: 'answer'; questionId: string; text: string } | { kind: 'prose' } | { kind: 'invalid'; code: string };
+export type FactoryCommand = { kind: 'answer'; questionId: string; text: string } | { kind: 'repair'; reason: string } | { kind: 'prose' } | { kind: 'invalid'; code: string };
 /**
  * Strict prefix: the comment body must START with `/factory ` (no leading space, quote or prose). Anything else is prose and grants nothing.
  * `/factory answer <question-id> <text>`: the text is the rest of the body (multi-line allowed), trailing whitespace trimmed.
+ * Ticket 23: `/factory repair <reason>`: the reason is the rest of the body (its concreteness is decided by the repair commit).
  */
 export function parseFactoryCommand(body: string): FactoryCommand {
   const normalized = body.replace(/\r\n?/g, '\n');
   if (!normalized.startsWith('/factory ')) return { kind: 'prose' };
+  const repair = /^\/factory repair(?:[ \t\n]+([\s\S]*))?$/.exec(normalized.trimEnd());
+  if (repair) {
+    const reason = (repair[1] ?? '').trim();
+    if (!reason) return { kind: 'invalid', code: 'REPAIR_REASON_MISSING' };
+    if (reason.length > questionLimits.answer || control.test(reason)) return { kind: 'invalid', code: 'REPAIR_REASON_INVALID' };
+    return { kind: 'repair', reason };
+  }
   const match = /^\/factory answer(?:[ \t]+(\S+))?(?:[ \t]+([\s\S]*))?$/.exec(normalized.trimEnd());
   if (!match) return { kind: 'invalid', code: 'COMMAND_NOT_SUPPORTED' };
   if (!match[1] || !uuid.test(match[1])) return { kind: 'invalid', code: 'QUESTION_ID_INVALID' };

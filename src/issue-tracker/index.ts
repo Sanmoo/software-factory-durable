@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { questionMarkerPrefix, type AccessDiagnostic, type GitHubScope } from '../contracts/index.js';
+import { questionMarkerPrefix, replyMarkerPrefix, type AccessDiagnostic, type GitHubScope } from '../contracts/index.js';
 import { InvalidGitHubObservation, UnverifiedGitHubAccess, readPermissions, type GitHubAccess, type GitHubRead, type TokenRevocation } from '../platform/github/index.js';
 
 /** Origin of Tickets: one configured repository plus its effective entry label. */
@@ -48,9 +48,11 @@ export type InputsObservation = { kind: 'observed'; source: 'github-rest'; obser
 export type QuestionSearch = { kind: 'observed'; source: 'github-rest'; observedAt: string; completeness: 'complete';
   candidates: { commentId: number; url: string; createdAt: string }[]; limitations: string[] } | TrackerUnavailable;
 /** Concrete authorized Question text; the adapter prepends the stable marker for `questionId`. No arbitrary endpoint or label/state change. */
-export type QuestionComment = { kind: 'question'; questionId: string; body: string };
+export type QuestionComment = { kind: 'question'; questionId: string; body: string } |
+  /** Ticket 23: the controller's reply to a `/factory` command (marker `software-factory:reply:<id>`), on the Work's Ticket. */
+  { kind: 'reply'; replyId: string; body: string };
 /** Identity of the publication effect already persisted by the Control (correlation, not external idempotency). */
-export type CommentEffect = { effectId: string; questionId: string };
+export type CommentEffect = { effectId: string; questionId: string } | { effectId: string; replyId: string };
 /** Known success, known failure (nothing was created) or unknown outcome (the comment may exist: discover before republishing). */
 /** `revocation`: what happened to the single-use write credential after the attempt (never claimed when not observed). */
 export type CommentResult = ({ kind: 'published'; observedAt: string; commentId: number; url: string; createdAt: string } |
@@ -65,6 +67,8 @@ export interface IssueTracker {
   readInputs(ticket: TicketRef, cursor: number | null): Promise<InputsObservation>;
   findQuestion(ticket: TicketRef, questionId: string): Promise<QuestionSearch>;
   postComment(ticket: TicketRef, comment: QuestionComment, effect: CommentEffect): Promise<CommentResult>;
+  /** Ticket 23: comments of THIS installation's App carrying the reply marker; several candidates are reported, never chosen. */
+  findReply?(ticket: TicketRef, replyId: string): Promise<QuestionSearch>;
 }
 
 const issueSchema = z.object({
@@ -90,6 +94,7 @@ const commentSchema = z.object({
 });
 const maxCommentPages = 10;
 const questionMarker = (questionId: string) => `<!-- ${questionMarkerPrefix}${questionId} -->`;
+const replyMarker = (replyId: string) => `<!-- ${replyMarkerPrefix}${replyId} -->`;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const repositoryName = /^https:\/\/api\.github\.com\/repos\/([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)$/;
 /** Canonical repository of an issue payload; html_url must name the same repository and number (no pull request, no foreign URL). */
@@ -246,8 +251,9 @@ export function createIssueTracker(options: { github: GitHubAccess; scopes?: Tra
     }
     return result.sort((a, b) => a.commentId - b.commentId);
   });
-  const ownQuestions = (list: TrackerComment[], questionId: string) => list.filter(comment => comment.viaApp === options.github.appId && comment.author.type === 'Bot' &&
-    comment.body.startsWith(`${questionMarker(questionId)}\n`));
+  const ownMarked = (list: TrackerComment[], marker: string) => list.filter(comment => comment.viaApp === options.github.appId && comment.author.type === 'Bot' &&
+    comment.body.startsWith(`${marker}\n`));
+  const ownQuestions = (list: TrackerComment[], questionId: string) => ownMarked(list, questionMarker(questionId));
 
   return {
     async readInputs(ticket, cursor) {
@@ -270,14 +276,26 @@ export function createIssueTracker(options: { github: GitHubAccess; scopes?: Tra
         candidates: ownQuestions(read.value, questionId).map(comment => ({ commentId: comment.commentId, url: comment.url, createdAt: comment.createdAt })),
         limitations: ['Only comments performed by this installation\'s App with the exact marker line count; a listing is not an atomic snapshot.'] };
     },
+    async findReply(ticket, replyId) {
+      const scope = executableScope(ticket);
+      if (!scope) return notConfigured(ticket);
+      if (!uuid.test(replyId)) throw new Error('INVALID_REPLY_ID');
+      const read = await comments(scope, ticket);
+      if (!read.ok) return unavailable(scope.repository, read);
+      return { kind: 'observed', source: 'github-rest', observedAt: read.observedAt, completeness: 'complete',
+        candidates: ownMarked(read.value, replyMarker(replyId)).map(comment => ({ commentId: comment.commentId, url: comment.url, createdAt: comment.createdAt })),
+        limitations: ['Only comments performed by this installation\'s App with the exact reply marker count; a listing is not an atomic snapshot.'] };
+    },
     async postComment(ticket, comment, effect) {
       const scope = executableScope(ticket);
       const observedAt = new Date().toISOString();
       if (!scope) return { kind: 'failed', observedAt, code: 'REPOSITORY_NOT_CONFIGURED', nextStep: 'Only configured repositories receive Questions.' };
-      if (comment.kind !== 'question' || !uuid.test(comment.questionId) || effect.questionId !== comment.questionId || comment.body.includes(questionMarkerPrefix)) {
+      const id = comment.kind === 'question' ? comment.questionId : comment.kind === 'reply' ? comment.replyId : '';
+      const correlated = comment.kind === 'question' ? 'questionId' in effect && effect.questionId === id : 'replyId' in effect && effect.replyId === id;
+      if ((comment.kind !== 'question' && comment.kind !== 'reply') || !uuid.test(id) || !correlated || comment.body.includes(questionMarkerPrefix) || comment.body.includes(replyMarkerPrefix)) {
         return { kind: 'failed', observedAt, code: 'INVALID_QUESTION_COMMENT', nextStep: 'Rejected locally; nothing was sent.' };
       }
-      const marker = questionMarker(comment.questionId);
+      const marker = comment.kind === 'question' ? questionMarker(id) : replyMarker(id);
       const written = await options.github.comment(scope, ticket.number, `${marker}\n${comment.body}`);
       const revocation = written.revocation;
       if (!written.ok) return written.outcome === 'unknown' ? { kind: 'unknown', observedAt: written.observedAt, code: written.code, nextStep: written.nextStep, revocation }

@@ -285,17 +285,19 @@ async function child(step: Step) {
     log({ call: 'find-question', questionId: id, kind: result.kind, candidates: result.kind === 'observed' ? result.candidates.map(item => item.commentId) : null });
     return result;
   }, async postComment(t, comment, effect) {
+    // Ticket 23: a reply comment carries no Question id (this recipe posts Questions only).
+    const questionId = comment.kind === 'question' ? comment.questionId : null;
     const decision = t.number === ticket.number && t.repositoryId === ticket.repositoryId ? postDecision(step, posted) : 'refuse';
     if (decision === 'refuse') {
-      log({ call: 'post-refused', questionId: comment.questionId, effectId: effect.effectId });
+      log({ call: 'post-refused', questionId, effectId: effect.effectId });
       return { kind: 'failed', observedAt: new Date().toISOString(), code: 'RECIPE_REPOST_GUARD', nextStep: 'The recipe allows ONE Question POST (a-ask); nothing was sent.' };
     }
     posted++;
-    log({ call: 'post-intent', questionId: comment.questionId, effectId: effect.effectId });
+    log({ call: 'post-intent', questionId, effectId: effect.effectId });
     const result = await tracker.postComment(t, comment, effect);
-    log({ call: 'post-returned', questionId: comment.questionId, kind: result.kind, commentId: result.kind === 'published' ? result.commentId : null });
+    log({ call: 'post-returned', questionId, kind: result.kind, commentId: result.kind === 'published' ? result.commentId : null });
     // Cut A: the comment exists on GitHub; the result is NEVER returned to the desk (no result commit).
-    kill('after-question-post', { questionId: comment.questionId });
+    kill('after-question-post', { questionId });
     return new Promise<never>(() => {});
   } };
   const plannedBuilders = builderSequence[step].length;

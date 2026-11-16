@@ -4,6 +4,8 @@ import { defineDoc } from '@earendil-works/pi-durable';
 import type { BuilderGrantMetadata, RevocationResult } from '../../contracts/index.js';
 import type { CredentialGrantRecord, CredentialWithdrawal, ExecutionCharge, ExecutionView } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
+import { observationDriven } from '../rules/repair.js';
+import { undeliveredHuman } from '../rules/feedback.js';
 import { chargeDecision, classifyOverrun, exhaustionImpediment, initialBudget, overrunNotExcludedImpediment, timeoutImpediment, timeoutReached, type Motive } from '../rules/budget.js';
 import { dispatchBlockers } from '../rules/dependencies.js';
 import { installation, legacyCredentialLifecycle, ticketIndex, works, type WorkRecord } from './admission.js';
@@ -126,7 +128,10 @@ export async function admitExecution(session: Session, input: { work_id: string;
       const correction = work.correction;
       const asked = input.request.repair;
       const publication = work.publication;
-      if (!correction || correction.consumed || correction.trigger !== 'effective-impediment' || !asked || asked.correctionId !== correction.correctionId ||
+      // Ticket 23: or a CHARGED correction continued for human requests none of its Executions received (its charge is then preserved).
+      const continues = correction?.consumed === true && correction.continuing === true &&
+        undeliveredHuman(correction, [...work.previousExecutions, ...(work.execution ? [work.execution] : [])]).length > 0;
+      if (!correction || (correction.consumed && !continues) || !observationDriven(correction) || !asked || asked.correctionId !== correction.correctionId ||
           JSON.stringify(asked.reasons) !== JSON.stringify(correction.reasons ?? []) || publication?.state !== 'published' ||
           input.resume.previousExecutionId !== publication.basisExecutionId || input.resume.questionId !== null || !sameScope) reasons.push('RESUME_BASIS_CHANGED');
     } else if (previous?.end?.outcome === 'completed' && scopeUpdateIds.length) {

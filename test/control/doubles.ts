@@ -1,7 +1,8 @@
 // Test doubles for the IssueTracker/CodeRepository contracts and the polling clock.
 // They replace GitHub only; Control, Pi Durable and SQLite stay real in every flow test.
 import type { IssueTracker, TicketRef, CandidateObservation, TicketObservation, TrackerScope, DependencyNode, DependencyProblem, TrackerComment } from '../../src/issue-tracker/index.js';
-import type { BranchComparison, CodeRepository, PublicationObservation, PullRequestCandidate, PullRequestObservation } from '../../src/code-repository/index.js';
+import type { BranchComparison, CodeRepository, ConversationCommentFact, FeedbackObservation, PublicationObservation, PullRequestCandidate, PullRequestObservation, ReviewCommentFact,
+  ReviewFact } from '../../src/code-repository/index.js';
 import type { PollingClock } from '../../src/control/types.js';
 
 export type RemoteIssue = { ref: TicketRef; state: 'open' | 'closed'; labels: { id: number; name: string }[]; pullRequest?: boolean; reread?: Partial<TicketRef>;
@@ -47,6 +48,8 @@ export type Remote = {
   activity?: Record<string, { before: string; after: string; type: string; actor: { login: string; id: number } | null; at: string }[]>; activityUnknown?: boolean;
   /** Review HIGH: commit graph (sha -> parents) for ancestry comparisons, and the files changed between two commits (`from...to`). */
   graph?: Record<string, string[]>; changes?: Record<string, string[]>;
+  /** Ticket 23: human feedback of own PRs by number (absent = empty complete listings); `unavailable` = the read fails. */
+  feedback?: Record<number, { reviews?: ReviewFact[]; reviewComments?: ReviewCommentFact[]; comments?: ConversationCommentFact[] } | 'unavailable'>;
   /** Ticket 21: tip of the base `main` in the refs listing (default 'b'*40); changing it models the base merely advancing. */
   main?: string;
 };
@@ -135,9 +138,16 @@ export function githubDoubles(remote: Remote) {
         .map(item => ({ commentId: item.commentId, url: item.url, createdAt: item.createdAt }));
       return { kind: 'observed' as const, source: 'github-rest' as const, observedAt: observedAt(), completeness: 'complete' as const, candidates, limitations: ['synthetic'] };
     }, { number: ref.number, questionId }),
+    // Ticket 23: the controller's replies to `/factory` commands carry their own marker.
+    findReply: (ref, replyId) => track('findReply', () => {
+      const candidates = (remote.comments?.[ref.number] ?? []).filter(item => item.viaApp === factoryAppId && item.body.startsWith(`<!-- software-factory:reply:${replyId} -->\n`))
+        .map(item => ({ commentId: item.commentId, url: item.url, createdAt: item.createdAt }));
+      return { kind: 'observed' as const, source: 'github-rest' as const, observedAt: observedAt(), completeness: 'complete' as const, candidates, limitations: ['synthetic'] };
+    }, { number: ref.number, replyId }),
     postComment: (ref, posted, effect) => track('postComment', () => {
       const outcome = remote.postOutcomes?.shift();
-      const created = comment(`<!-- software-factory:question:${posted.questionId} -->\n${posted.body}`, { id: 41898282, login: 'factory-app[bot]', type: 'Bot' }, ref.number, factoryAppId);
+      const marker = posted.kind === 'question' ? `software-factory:question:${posted.questionId}` : `software-factory:reply:${posted.replyId}`;
+      const created = comment(`<!-- ${marker} -->\n${posted.body}`, { id: 41898282, login: 'factory-app[bot]', type: 'Bot' }, ref.number, factoryAppId);
       if (outcome !== 'unknown-not-created' && outcome !== 'failed') (remote.comments ??= {})[ref.number] = [...(remote.comments?.[ref.number] ?? []), created];
       if (outcome === 'failed') return { kind: 'failed' as const, observedAt: observedAt(), code: 'GITHUB_ACCESS_DENIED', nextStep: 'synthetic' };
       if (outcome) return { kind: 'unknown' as const, observedAt: observedAt(), code: 'GITHUB_TRANSPORT_UNAVAILABLE', nextStep: 'synthetic' };
@@ -167,6 +177,12 @@ export function githubDoubles(remote: Remote) {
         headSha: found.pullRequest.headSha, baseRef: found.pullRequest.baseRef };
       return found ? structuredClone(found) :
       { kind: 'unavailable', source: 'github-rest', observedAt: observedAt(), repository: query.repo.repository, code: 'GITHUB_NOT_FOUND_OR_HIDDEN', nextStep: 'synthetic' };
+    }, query),
+    readFeedback: query => track('readFeedback', (): FeedbackObservation => {
+      const found = remote.feedback?.[query.number];
+      if (found === 'unavailable') return { kind: 'unavailable', source: 'github-rest', observedAt: observedAt(), repository: query.repo.repository, code: 'GITHUB_QUERY_FAILED', nextStep: 'synthetic' };
+      return { kind: 'observed', source: 'github-rest', observedAt: observedAt(), repository: query.repo.repository, number: query.number,
+        reviews: structuredClone(found?.reviews ?? []), reviewComments: structuredClone(found?.reviewComments ?? []), comments: structuredClone(found?.comments ?? []), limitations: ['synthetic'] };
     }, query),
     setDraft: (pr, draft, effect) => track('setDraft', () => {
       const outcome = remote.drafts?.shift() ?? 'applied';

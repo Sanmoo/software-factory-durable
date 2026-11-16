@@ -43,6 +43,8 @@ const permissions = {
   'pull-request-reopen': { metadata: 'read', pull_requests: 'write' },
   // Ticket 17: observation of the Work's own pull request (merge confirmation) and of its own branch tip. Read-only.
   'delivery-read': { metadata: 'read', contents: 'read', pull_requests: 'read' },
+  // Ticket 23: human feedback of the own pull request (reviews, inline review comments and the PR conversation), GET only.
+  'feedback-read': { metadata: 'read', pull_requests: 'read', issues: 'read' },
   // Ticket 17 (spec §8: "cleanup de branch remota própria recebe token próprio com Contents W"): ONE single-use grant per cleanup attempt,
   // never reused for tracking; the session can send only the closed DELETE of the selected own branch ref.
   'branch-cleanup': { metadata: 'read', contents: 'write', pull_requests: 'read' },
@@ -57,11 +59,12 @@ export const draftMutations = {
 } as const;
 type Purpose = keyof typeof permissions;
 type DiagnosticPurpose = 'tracker' | 'repository' | 'dependency';
-export type ReadPurpose = 'tracker-read' | 'repository-read' | 'association-read' | 'dependency-read' | 'publication-read' | 'checks-read' | 'delivery-read';
+export type ReadPurpose = 'tracker-read' | 'repository-read' | 'association-read' | 'dependency-read' | 'publication-read' | 'checks-read' | 'delivery-read' | 'feedback-read';
 /** Token-free metadata of each reduced read grant (principal/scope evidence; never the token). */
 export const readPermissions: Readonly<Record<ReadPurpose, Readonly<Record<string, 'read'>>>> = {
   'tracker-read': permissions['tracker-read'], 'repository-read': permissions['repository-read'],
-  'association-read': permissions['association-read'], 'dependency-read': permissions['dependency-read'], 'publication-read': permissions['publication-read'], 'checks-read': permissions['checks-read'], 'delivery-read': permissions['delivery-read'] };
+  'association-read': permissions['association-read'], 'dependency-read': permissions['dependency-read'], 'publication-read': permissions['publication-read'], 'checks-read': permissions['checks-read'], 'delivery-read': permissions['delivery-read'],
+  'feedback-read': permissions['feedback-read'] };
 const repositorySchema = z.object({ id: z.number().int().positive().safe(), full_name: z.string(), owner: z.object({ login: z.string() }) });
 const permissionSchema = z.record(z.string(), z.enum(['read', 'write']));
 class AccessFailure extends Error {

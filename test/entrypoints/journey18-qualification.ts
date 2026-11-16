@@ -346,7 +346,7 @@ export function guardAccess(access: AccessDependencies, phase: OwnerPhase, issue
   const guardedTracker: IssueTracker = { checkAccess: scope => tracker.checkAccess(scope), listCandidates: scope => tracker.listCandidates(scope), readTicket: ref => tracker.readTicket(ref),
     readDependencyGraph: ref => tracker.readDependencyGraph(ref), readInputs: (ref, cursor) => tracker.readInputs(ref, cursor), findQuestion: (ref, id) => tracker.findQuestion(ref, id),
     async postComment(ref, comment, effect) {
-      log({ call: 'post-comment', issue: ref.number, questionId: comment.questionId, effectId: effect.effectId });
+      log({ call: 'post-comment', issue: ref.number, questionId: comment.kind === 'question' ? comment.questionId : null, effectId: effect.effectId });
       if ((phase !== 'run' && phase !== 'resume') || ref.number !== issue || ref.repositoryId !== repositoryId || ++comments > bounds.comments) {
         return { kind: 'failed', observedAt: new Date().toISOString(), code: 'RECIPE_COMMENT_GUARD', nextStep: 'Refused locally; nothing was sent.' };
       }

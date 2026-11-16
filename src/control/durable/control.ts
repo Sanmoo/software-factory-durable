@@ -31,6 +31,7 @@ import { acceptCleanupConfirm, acceptCleanupPlan, plannedResourcesOf } from './r
 import { planCleanup } from '../rules/delivery.js';
 import { retentionProtections, type PlanFacts } from '../rules/retention.js';
 import { createRepairDesk } from './repair.js';
+import { acceptRepairRequest, createFeedbackDesk } from './feedback.js';
 import { queueOrder } from '../rules/repair.js';
 
 const requestId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
@@ -42,6 +43,8 @@ const inputSchema = z.union([z.strictObject({ request_id: requestId, operation: 
   // Ticket 11: concreteness is a durable decision of the commit (queryable `not-applied`), only the shape is checked here.
   z.strictObject({ request_id: requestId, operation: z.literal('update-scope'), work_id: z.uuid(), reason: z.string().min(1).max(2000), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('authorize-readiness'), work_id: z.uuid(), reason: z.string().min(1).max(2000), origin: z.literal('local-cli') }),
+  // Ticket 23: concreteness and the phase answer are durable decisions of the commit; only the shape is checked here.
+  z.strictObject({ request_id: requestId, operation: z.literal('repair'), work_id: z.uuid(), reason: z.string().min(1).max(2000), origin: z.literal('local-cli') }),
   // Ticket 25 (spec §11.3).
   z.strictObject({ request_id: requestId, operation: z.literal('cancel'), work_id: z.uuid(), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('resume'), work_id: z.uuid(), origin: z.literal('local-cli') }),
@@ -71,6 +74,7 @@ const limitations = [
   'Delivery (ticket 17) is only a human merge of the Work\'s own pull request, confirmed by its identity; closing the Ticket or the pull request, or any agent message, is not delivery. The Factory never merges.',
   'Ticket 25: an observed label removal or issue closure suspends next activations (an active Execution may conclude/publish); restoring them never lifts the suspension: `resume` does, confirmed by the next complete Ticket read. `cancel` records the prohibition first, withdraws the activity credentials, then requests the stop; the Slot is released only after confirmed cessation and nothing on GitHub (branch, PR) is undone. A confirmed merge still delivers a cancelled cycle. An own PR closed without merge keeps the cycle current and undelivered (no automatic reopen/replacement/resume); `reopen` reopens only it and grants nothing. `new` is the only way to another cycle, after delivery or a ceased cancellation.',
   'Repairs (ticket 22) follow the SAME own pull request: only an effective impediment of its current Factory head (confirmed conflict, a current required check that failed, a strict rule that requires updating the branch) opens or extends the Work\'s correction, charged once at its confirmed start; pending CI/review, unknown mergeability, optional/old results, a base merely advancing, operational causes, base rules that block the merge and human flags never do. Reasons are read again right before admission (gone = withdrawn without charge); a repeated event on the same head blocks instead of spending again. The Factory never bypasses, approves or merges.',
+  'Human feedback (ticket 23) is evidence only from configured operators: a CHANGES_REQUESTED review of the own PR (whatever commit it was on; a push never removes it) and an explicit `repair` (local CLI or a strict `/factory repair` comment on the Ticket or the own PR) are recorded with identity/origin/version/content, folded into the Work\'s correction at its next safe activation (commit order) and charged once to `corrections`; prose, bots and third parties grant nothing. A later approval or a dismissal removes only that review\'s trigger and never means the human merge approval is satisfied. Nothing is delivered to a running activity, nothing is launched by a command, and nothing approves, merges or bypasses.',
   'Cleanup after delivery removes only own resources (own environments with their checkout/local branch/temporaries, the own remote branch under its own cleanup grant), after confirmed cessation and preserved evidence; base, shared cache, other Works and Docker are never touched. A failed or pending cleanup is shown separately and never undoes delivery.',
   'Ticket 30: logs and sessions of a delivered Work become eligible `retentionDays` (default 30) after the confirmed merge and are removed by the sweep at each controller boot (after reconciliation) and daily, unless still needed (pending Question/effect/cleanup/recovery, activity, unconfirmed cessation); the end of a protection never starts another period. Undelivered Works (open, blocked, cancelled, closed without merge) keep everything until an explicit `factory cleanup`, which plans the losses, needs confirmation, is revalidated at execution and requires `cancel` first for a cycle that can still continue. Summary, history, references, reviews, decisions and preserved evidence stay until explicit history deletion.',
   'Ticket 31: `factory forget <work>` (plan of losses, then `forget-confirm`) deletes the history of ONE ended Work (delivered, or cancelled with confirmed cessation; an own PR closed without merge needs `cancel` first) once nothing is pending: its Records area, Work record, Questions and request texts. Only the minimal cycle memory stays (Ticket/repository/Work, cycle order and link, result, PR and confirmed merge of a delivery): the Ticket is never re-admitted automatically and stays an own blocker (delivered satisfies, cancelled does not). It never touches GitHub, backups or external copies. Totals and aggregates then cover only remembered Works.',
@@ -127,7 +131,10 @@ export async function openControl(options: { storagePath: string;
     record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation),
     // Ticket 15: required-checks tracking after the dispatch tick (off its critical path), whatever the dispatch barrier or pause.
     // Ticket 16: readiness after the checks explanation (its evidence), whatever the pause (tracking, not a new trigger).
-    afterCycle: async () => { await delivery?.cycle().catch(() => {}); await retention?.cycle().catch(() => {}); await cycles?.cycle().catch(() => {}); await desk?.cycle(); if (dispatchReason === null) await dispatcher?.tick(); await checks?.pass(tracking.signal).catch(() => {});
+    afterCycle: async () => { await delivery?.cycle().catch(() => {}); await retention?.cycle().catch(() => {}); await cycles?.cycle().catch(() => {}); await desk?.cycle();
+      // Ticket 23: human feedback of the own PRs is recorded before the tick (whatever the Work is doing; recording is never delivery).
+      await feedback?.pass().catch(() => {});
+      if (dispatchReason === null) await dispatcher?.tick(); await checks?.pass(tracking.signal).catch(() => {});
       await readiness?.pass(tracking.signal).catch(() => {});
       // Ticket 22: effective impediments of the latest explanation become the Work's correction (selected by the NEXT tick, revalidated first).
       await repair?.pass(tracking.signal).catch(() => {}); },
@@ -139,6 +146,8 @@ export async function openControl(options: { storagePath: string;
     installation: () => dispatchReason === 'RECONCILIATION_REQUIRED' ? 'reconciliation-required' : 'settled',
     dependencies: { ownCycles: issueIds => ownCycles(state, issueIds), record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation, { published: true }) }, clock: options.polling.clock ?? systemClock,
     minIntervalMs: options.polling.intervalSeconds * 1000 }) : undefined;
+  const feedback = options.access && options.polling && options.access.repository.readFeedback ? createFeedbackDesk({ session: state, repository: options.access.repository,
+    operators: options.access.operators ?? [], repo: configuredRepository, readWorks: () => readWorks(state), stopped: () => stopped }) : undefined;
   // Ticket 22: repairs need the execution boundaries (a correction is only useful if a Builder can run it).
   const repair = options.access && options.polling && options.execution ? createRepairDesk({ session: state, readWorks: () => readWorks(state),
     busy: work_id => dispatcher?.active(work_id) ?? false, limits: configuredRepository }) : undefined;
@@ -218,6 +227,8 @@ export async function openControl(options: { storagePath: string;
       // Ticket 11: recorded for the next safe activation; never delivered to a running Builder, never a launch.
       if (parsed.data.operation === 'update-scope') return acceptScopeUpdate(state, parsed.data);
       if (parsed.data.operation === 'authorize-readiness') return acceptReadinessAuthorization(state, parsed.data);
+      // Ticket 23: recorded for the next safe activation (accepted / deferred / already covered / refused); never a launch.
+      if (parsed.data.operation === 'repair') return acceptRepairRequest(state, { request_id: parsed.data.request_id, work_id: parsed.data.work_id, reason: parsed.data.reason, origin: { kind: 'local-cli' } });
       if (parsed.data.operation === 'answer') return acceptAnswer(state, { request_id: parsed.data.request_id, question_id: parsed.data.question_id, text: parsed.data.text, origin: { kind: 'local-cli' } });
       if (parsed.data.operation === 'grant') return grantBudget(state, parsed.data, configuredRepository);
       if (parsed.data.operation === 'cancel') {

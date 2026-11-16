@@ -4,6 +4,7 @@ import { InvalidGitHubObservation, type GitHubAccess } from '../platform/github/
 import { createPullRequestReader, type PullRequestObservation, type PullRequestQuery } from './pull-request.js';
 
 export type { BranchRule, CheckRunFact, ClassicChecks, Known, PullRequestFacts, PullRequestObservation, PullRequestQuery, RequiredCheck, RuleParameters, StatusFact } from './pull-request.js';
+import { feedbackOperations, type FeedbackObservation, type FeedbackQuery } from './feedback.js';
 import { deliveryOperations, type BranchCleanupResult, type BranchCleanupSelection, type CleanupEffect, type OwnPullRequestObservation, type PullRequestRef } from './delivery.js';
 
 /** Known repository/branch identities and the Ticket numbers they serve; the caller decides ownership, never this adapter.
@@ -74,7 +75,10 @@ export interface CodeRepository {
   cleanupBranch?(selection: BranchCleanupSelection, effect: CleanupEffect): Promise<BranchCleanupResult>;
   /** Ticket 25 (`factory reopen`): reopen ONE known own pull request closed without merge, correlated by the effect identity. Never merge. */
   reopenPullRequest?(pr: { repo: GitHubScope; number: number; nodeId: string }, effect: { effectId: string }): Promise<PullRequestReopen>;
+  /** Ticket 23: human feedback facts (reviews, inline review comments, PR conversation) of a KNOWN own pull request; GET only, never a decision. */
+  readFeedback?(query: FeedbackQuery): Promise<FeedbackObservation>;
 }
+export type { ConversationCommentFact, FeedbackAuthor, FeedbackObservation, FeedbackQuery, ReviewCommentFact, ReviewFact } from './feedback.js';
 export type { PullRequestRef, OwnPullRequestFacts, OwnPullRequestObservation, BranchCleanupSelection, CleanupEffect, BranchCleanupResult } from './delivery.js';
 
 const pullSchema = z.object({
@@ -238,6 +242,7 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
         nextStep: written.nextStep, revocation: written.revocation };
     },
     ...deliveryOperations(options),
+    ...feedbackOperations(options),
     checkAccess(repo, base) {
       return options.github.diagnose(repo, 'repository', async session => {
         if (!base || /[\x00-\x20\x7f]/.test(base)) throw new InvalidGitHubObservation();

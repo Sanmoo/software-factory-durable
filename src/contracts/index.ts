@@ -63,6 +63,8 @@ export interface RepositoryFetchCredentials {
 
 /** Stable correlation marker of a published Question (spec §5.5): first line `<!-- software-factory:question:<question-id> -->`. */
 export const questionMarkerPrefix = 'software-factory:question:';
+/** Ticket 23: stable correlation marker of the controller's reply to a `/factory` command: `<!-- software-factory:reply:<reply-id> -->`. */
+export const replyMarkerPrefix = 'software-factory:reply:';
 /** Stable correlation marker of a Work's own pull request (spec §9.1, ticket 14): first line of its body `<!-- software-factory:work:<work-id> -->`. */
 export const publicationMarkerPrefix = 'software-factory:work:';
 /** Reviewer roles bound by the Host (spec §5.6/§6.4); never chosen by a model. */

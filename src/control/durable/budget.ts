@@ -7,6 +7,8 @@ import { requests, ticketIndex, works, type TicketIndex, type WorkRecord } from 
 import { activeExecution } from './execution.js';
 import { applyRecoveryRequest } from './recovery-request.js';
 import type { Session } from './store.js';
+import { settleFeedback } from './feedback.js';
+import { undeliveredHuman } from '../rules/feedback.js';
 
 type Limits = Pick<ConfiguredRepository, 'correctionLimit' | 'recoveryLimit'>;
 type GrantInput = { request_id: string; operation: 'grant'; work_id: string; counter: BudgetCounterName; amount: number; origin: 'local-cli' };
@@ -85,6 +87,10 @@ export function closeCorrection(work: WorkRecord, at: string, outcome: ClosedCor
   if (!correction) return;
   work.corrections = [...(work.corrections ?? []), { correctionId: correction.correctionId, sequence: correction.sequence ?? null, openedAt: correction.openedAt, closedAt: at,
     charged: correction.consumed, outcome, reasons: correction.reasons ?? [], head: facts.head, basisExecutionId: facts.basisExecutionId }].slice(-10);
+  // Ticket 23: only the human requests DELIVERED to a started Execution of a charged correction are treated; every other one (never
+  // delivered: superseded/internal/unpublishable closure, or a correction that never started) waits again — never silently lost.
+  const undelivered = new Set(undeliveredHuman(correction, [...work.previousExecutions, ...(work.execution ? [work.execution] : [])]).map(item => item.subject ?? ''));
+  settleFeedback(work, correction.correctionId, correction.consumed, at, outcome, undelivered);
   work.correction = null;
   const { repairSequence: _sequence, ...queue } = work.queue;
   work.queue = { ...queue, category: 'normal' };
@@ -97,7 +103,7 @@ export function closeCorrection(work: WorkRecord, at: string, outcome: ClosedCor
  * the new reason (same identity/charge); an already charged one is closed (`superseded`) and a NEW correction opens.
  */
 export function openCorrectionIn(work: WorkRecord, index: TicketIndex, at: string, reason: string,
-  repair?: { reasons: RepairReason[]; headSha: string | null; basisExecutionId: string | null }): Opened {
+  repair?: { reasons: RepairReason[]; headSha: string | null; basisExecutionId: string | null; trigger?: 'effective-impediment' | 'human-feedback' }): Opened {
   if (work.correction && !work.correction.consumed) {
     // Same identity and charge, but the reason that motivated it is never silently lost.
     if (work.correction.reason !== reason) work.history.push({ at, event: 'correction-reason-added', origin: 'controller-budget', executionId: null, detail: reason.slice(0, 200) });
@@ -107,7 +113,7 @@ export function openCorrectionIn(work: WorkRecord, index: TicketIndex, at: strin
   const sequence = (index.repairSequence ?? 0) + 1;
   index.repairSequence = sequence;
   work.correction = { correctionId: randomUUID(), reason, openedAt: at, consumed: false, sequence,
-    ...(repair ? { trigger: 'effective-impediment' as const, reasons: repair.reasons, headSha: repair.headSha, basisExecutionId: repair.basisExecutionId } : { trigger: 'internal' as const }) };
+    ...(repair ? { trigger: repair.trigger ?? 'effective-impediment' as const, reasons: repair.reasons, headSha: repair.headSha, basisExecutionId: repair.basisExecutionId } : { trigger: 'internal' as const }) };
   work.queue = { ...work.queue, category: 'repair', repairSequence: sequence };
   work.history.push({ at, event: 'correction-opened', origin: 'controller-budget', executionId: null, detail: work.correction.correctionId });
   return 'opened';

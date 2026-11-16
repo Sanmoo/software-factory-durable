@@ -25,3 +25,10 @@
 ## Autorização e limites
 
 Publicação é planejamento aprovado, não autorização de construção, uso de host/credenciais/GitHub/modelos reais, injeção de falhas ou piloto. Obter autorização pertinente antes da execução. Não alterar decisões aprovadas silenciosamente; lacuna de desenho volta ao operador. Merge e avaliação humana não são delegados aos agentes.
+
+## Comments
+
+- 2026-11-15 (implementation, branch `implement/software-factory-mvp-23`, on ticket 22's `84ef010`): local increment and one-shot recipe
+  `test/entrypoints/feedback23-qualification.ts` (namespace `y5/q23-feedback-v1`) ready. Real run NOT executed: needs operator authorization,
+  the NEW synthetic issue pinned in the recipe and the operator's human reviews/comment/approval. See
+  [evidence 23](../../../docs/evidence/23-human-feedback-and-explicit-repairs.md).

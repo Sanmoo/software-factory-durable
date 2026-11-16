@@ -195,7 +195,7 @@ function guardTracker(tracker: IssueTracker, events: unknown[]): IssueTracker {
     checkAccess: scope => tracker.checkAccess(scope), listCandidates: scope => tracker.listCandidates(scope), readTicket: ticket => tracker.readTicket(ticket),
     readDependencyGraph: ticket => tracker.readDependencyGraph(ticket),
     async postComment(ticket, comment) {
-      events.push({ at: new Date().toISOString(), call: 'postComment-refused', ticket: ticket.number, questionId: comment.questionId });
+      events.push({ at: new Date().toISOString(), call: 'postComment-refused', ticket: ticket.number, questionId: comment.kind === 'question' ? comment.questionId : null });
       return { kind: 'failed', observedAt: new Date().toISOString(), code: 'RECIPE_NO_GITHUB_WRITE', nextStep: 'The q25 recipe publishes nothing.' };
     } };
 }

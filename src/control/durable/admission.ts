@@ -37,7 +37,8 @@ export const installation = defineDoc<Installation>({ kind: 'factory.installatio
     return { ...value, storage: { format: 2, migrations: [] }, lifecycle: { current: null, last: null } } as unknown as Installation;
   } });
 /** Identified ingresses (CLI request ids, `github-comment-<id>` for comments) with their single durable result. */
-export const requests = defineDocFamily<{ input: ControlInput | { request_id: string; operation: 'answer'; origin: 'github-comment' } | null; receipt: ControlReceipt | null }, null>({
+export const requests = defineDocFamily<{ input: ControlInput | { request_id: string; operation: 'answer'; origin: 'github-comment' } |
+  { request_id: string; operation: 'repair'; work_id: string; reason: string; origin: 'github-comment' } | null; receipt: ControlReceipt | null }, null>({
   kind: 'factory.request', version: 1, scope: 'session', family: true, initial: () => ({ input: null, receipt: null }), checkpointWhen: () => true,
 });
 /** Installation-level Ticket → cycle index and FIFO admission sequence (spec §3.2), committed with each Work. */

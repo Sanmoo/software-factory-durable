@@ -1,8 +1,9 @@
 import type { IssueTracker } from '../../issue-tracker/index.js';
-import { authorizeCommentAuthor, commentEligibility, parseFactoryCommand, questionCommentBody, questionNeedsDiscovery, questionPublishAllowed,
+import { questionCommentBody, questionNeedsDiscovery, questionPublishAllowed,
   type OperatorRef } from '../rules/questions.js';
 import type { WorkRecord } from './admission.js';
-import { acceptAnswer, readQuestion, readQuestions, recordIgnored, recordInputsCursor, recordPublication } from './questions.js';
+import { readQuestions, recordInputsCursor, recordPublication } from './questions.js';
+import { ingestComment, recordReplyPublication } from './feedback.js';
 import type { Session } from './store.js';
 
 const maxKnownFailures = 5;
@@ -54,29 +55,43 @@ export function createQuestionDesk(deps: { session: Session; tracker: IssueTrack
     }
   }
 
+  /** Ticket 23: the replies to `/factory` commands, on the Work's Ticket, with the same effect discipline as Questions. */
+  async function publishReplies() {
+    for (const work of await deps.readWorks()) {
+      for (const reply of work.feedback?.replies ?? []) {
+        if (deps.stopped()) return;
+        let state: string = reply.publication.state;
+        if (state === 'attempting' || state === 'ambiguous') {
+          if (!tracker.findReply) continue; // no discovery composed: never republish blindly
+          const search = await tracker.findReply(work.ticket, reply.replyId).catch(unexpected);
+          state = await recordReplyPublication(session, work.work_id, reply.replyId, !search || search.kind !== 'observed' ? { kind: 'undetermined', code: search?.code ?? 'TRACKER_UNEXPECTED_FAILURE' }
+            : search.candidates.length === 1 ? { kind: 'discovered', comment: { commentId: search.candidates[0]!.commentId, url: search.candidates[0]!.url } }
+            : search.candidates.length === 0 ? { kind: 'absent' } : { kind: 'undetermined', code: 'REPLY_MULTIPLE_CANDIDATES' });
+        }
+        if (!(state === 'intended' || (state === 'failed' && reply.publication.failures < maxKnownFailures)) || deps.stopped()) continue;
+        if (await recordReplyPublication(session, work.work_id, reply.replyId, { kind: 'begin' }) !== 'attempting') continue;
+        const result = await tracker.postComment(work.ticket, { kind: 'reply', replyId: reply.replyId, body: reply.body }, { effectId: reply.publication.effectId, replyId: reply.replyId })
+          .catch(unexpected);
+        await recordReplyPublication(session, work.work_id, reply.replyId, !result ? { kind: 'unknown', code: 'TRACKER_UNEXPECTED_FAILURE' }
+          : result.kind === 'published' ? { kind: 'published', comment: { commentId: result.commentId, url: result.url } } : { kind: result.kind, code: result.code });
+      }
+    }
+  }
+
   async function ingestAnswers() {
     for (const work of await deps.readWorks()) {
       if (deps.stopped()) return;
       if (work.result !== 'open') continue;
+      // Ticket 23: the Ticket also carries `/factory repair` once the Work has run at least once (answered, refused with its next step when
+      // there is no own PR yet). A Work only admitted reads no comments (admission stays read-minimal); its later command is still eligible.
       const open = (await readQuestions(session, work)).some(question => question.state === 'open');
-      if (!open) continue;
+      if (!open && !work.pullRequest && !work.correction && !work.execution) continue;
+
       const inputs = await tracker.readInputs(work.ticket, work.inputs?.cursor ?? null).catch(unexpected);
       // Unavailable/partial listing: no conclusion and the cursor does not move.
       if (!inputs || inputs.kind !== 'observed') continue;
-      for (const comment of inputs.comments) {
-        const command = parseFactoryCommand(comment.body);
-        if (command.kind !== 'answer') continue;
-        const origin = `github-comment:${comment.commentId}`;
-        const author = authorizeCommentAuthor(comment.author, deps.operators, comment.viaApp);
-        // Unauthorized: a bounded summary on the Question only, never a durable request document per comment.
-        if (!author.authorized) { await recordIgnored(session, command.questionId, origin, author.code); continue; }
-        const question = await readQuestion(session, command.questionId);
-        const eligibility = question ? commentEligibility({ commentId: comment.commentId, createdAt: Date.parse(comment.createdAt), updatedAt: Date.parse(comment.updatedAt) },
-          { recordedAt: Date.parse(question.recordedAt), publishedCommentId: question.publication.comment?.commentId ?? null }) : { eligible: true as const };
-        if (!eligibility.eligible) { await recordIgnored(session, command.questionId, origin, eligibility.code); continue; }
-        await acceptAnswer(session, { request_id: `github-comment-${comment.commentId}`, question_id: command.questionId, text: command.text,
-          origin: { kind: 'github-comment', workId: work.work_id, comment: { commentId: comment.commentId, url: comment.url, author: comment.author } } });
-      }
+      // The single ingestion of `/factory` comments (answers and repairs; ticket 23); unauthorized ones leave a bounded summary only.
+      for (const comment of inputs.comments) await ingestComment(session, work, comment, deps.operators);
       await recordInputsCursor(session, work.work_id, inputs.cursor);
     }
   }
@@ -89,7 +104,7 @@ export function createQuestionDesk(deps: { session: Session; tracker: IssueTrack
   }
   return {
     /** Publication then ingestion; persistence failures propagate (the owner fails), adapter failures stay observations. */
-    cycle: () => serial(async () => { await publishPending(); await ingestAnswers(); }),
+    cycle: () => serial(async () => { await publishPending(); await ingestAnswers(); await publishReplies(); }),
     /** Publication right after a Question commit, independent of cessation (not awaited by the worker ACK). */
     kick() { void serial(publishPending).catch(() => {}); },
     idle: () => chain,

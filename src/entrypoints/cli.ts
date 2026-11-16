@@ -9,7 +9,7 @@ import { setup, setupService, firstHumanLogin } from './setup.js';
 import { doctor } from './doctor.js';
 import { releaseInstallationRoot } from './release.js';
 
-const usage = 'factory <setup|doctor|run|status|list|show <work>|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>)|update-scope <work> --reason <text>|authorize-readiness <work> --reason <text>|cancel <work>|resume <work>|reopen <work>|new <owner/repo#number> [--keep-predecessor-pr]|cleanup <work> --select <logs,sessions,environment,remote-branch> [--yes]|cleanup-confirm <work> <plan>|forget <work> [--yes]|forget-confirm <work> <plan>|request <id>|upgrade <check|apply|status|resume|rollback> [--migrate <id>]> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service [--service-directory <absolute dir>]]; factory login --root <canonical-absolute-installation>';
+const usage = 'factory <setup|doctor|run|status|list|show <work>|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>)|update-scope <work> --reason <text>|authorize-readiness <work> --reason <text>|repair <work> --reason <text>|cancel <work>|resume <work>|reopen <work>|new <owner/repo#number> [--keep-predecessor-pr]|cleanup <work> --select <logs,sessions,environment,remote-branch> [--yes]|cleanup-confirm <work> <plan>|forget <work> [--yes]|forget-confirm <work> <plan>|request <id>|upgrade <check|apply|status|resume|rollback> [--migrate <id>]> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service [--service-directory <absolute dir>]]; factory login --root <canonical-absolute-installation>';
 const upgradeUsage = 'factory upgrade <check|apply|status|resume|rollback> [--root <installation>] [--migrate <migration id>] — run with the NEW release: ' +
   '<root>/releases/<id>/node/bin/node <root>/releases/<id>/dist/src/entrypoints/cli.js upgrade ...';
 // Ticket 25 (spec §11.3): cycle commands; `new` names the Ticket as owner/repo#number.
@@ -40,7 +40,7 @@ async function operational(root: string, command: string, requestId: string | un
   cleanup?: { select?: string[]; yes?: boolean; plan?: string }) {
   const query = (): Envelope['payload'] => command === 'doctor' ? { kind: 'access' } : command === 'list' ? { kind: 'list' }
     : command === 'show' ? { kind: 'show', work_id: requested! } : command === 'question' ? { kind: 'question', question_id: requested! } : { kind: 'request', request_id: requested! };
-  const mutable = command === 'pause' || command === 'unpause' || command === 'answer' || command === 'grant' || command === 'update-scope' || command === 'authorize-readiness' ||
+  const mutable = command === 'pause' || command === 'unpause' || command === 'answer' || command === 'grant' || command === 'update-scope' || command === 'authorize-readiness' || command === 'repair' ||
     cycleCommands.includes(command) || cleanupCommands.includes(command);
   const id = requestId ?? randomUUID();
   // Present identity BEFORE sending; stdout remains a single machine-readable result.
@@ -51,7 +51,7 @@ async function operational(root: string, command: string, requestId: string | un
     const response = command === 'status' ? status : await exchange(root, mutable ? 'accept' : 'inspect',
       mutable ? (command === 'answer' ? { request_id: id, operation: 'answer', question_id: requested!, text: text!, origin: 'local-cli' }
         : command === 'grant' ? { request_id: id, operation: 'grant', work_id: requested!, counter: grant!.counter, amount: grant!.amount, origin: 'local-cli' }
-          : command === 'update-scope' || command === 'authorize-readiness' ? { request_id: id, operation: command, work_id: requested!, reason: text!, origin: 'local-cli' }
+          : command === 'update-scope' || command === 'authorize-readiness' || command === 'repair' ? { request_id: id, operation: command, work_id: requested!, reason: text!, origin: 'local-cli' }
           : command === 'cancel' || command === 'resume' || command === 'reopen' ? { request_id: id, operation: command, work_id: requested!, origin: 'local-cli' }
           : command === 'new' ? { request_id: id, operation: 'new', ticket: { repository: cycle!.repository, number: cycle!.number }, keepPredecessorPullRequest: cycle!.keep, origin: 'local-cli' }
           : command === 'cleanup' ? { request_id: id, operation: 'cleanup-plan', work_id: requested!, select: cleanup!.select!, origin: 'local-cli' }
@@ -146,13 +146,14 @@ export async function main(args: string[]): Promise<number> {
       return 2;
     }
   }
-  let valid = ['setup', 'doctor', 'run', 'status', 'list', 'show', 'question', 'pause', 'unpause', 'answer', 'grant', 'update-scope', 'authorize-readiness', 'request', ...cycleCommands,
+  let valid = ['setup', 'doctor', 'run', 'status', 'list', 'show', 'question', 'pause', 'unpause', 'answer', 'grant', 'update-scope', 'authorize-readiness', 'repair', 'request', ...cycleCommands,
     ...cleanupCommands].includes(command ?? '');
   let requestId: string | undefined;
-  const requested = command === 'request' || command === 'show' || command === 'question' || command === 'answer' || command === 'grant' || command === 'update-scope' || command === 'authorize-readiness' ||
+  const withReason = command === 'update-scope' || command === 'authorize-readiness' || command === 'repair';
+  const requested = command === 'request' || command === 'show' || command === 'question' || command === 'answer' || command === 'grant' || withReason ||
     cycleCommands.includes(command ?? '') || cleanupCommands.includes(command ?? '') ? args[1] : undefined;
   if (command === 'request' && !requested?.match(/^[a-zA-Z0-9_-]{1,128}$/)) valid = false;
-  if ((command === 'show' || command === 'question' || command === 'answer' || command === 'grant' || command === 'update-scope' || command === 'authorize-readiness' ||
+  if ((command === 'show' || command === 'question' || command === 'answer' || command === 'grant' || withReason ||
     command === 'cancel' || command === 'resume' || command === 'reopen' || cleanupCommands.includes(command ?? '')) && !requested?.match(uuid)) valid = false;
   let cleanup: { select?: string[]; yes?: boolean; plan?: string } | undefined;
   if (command === 'cleanup') {
@@ -173,9 +174,10 @@ export async function main(args: string[]): Promise<number> {
   }
   // `answer <question> <text>`: exactly one text argument (quote it), trimmed by the operator, at most 2000 characters.
   // `update-scope <work> --reason <text>`: the concrete change, one quoted argument (the controller decides whether it is concrete).
-  const text = command === 'answer' ? args[2] : (command === 'update-scope' || command === 'authorize-readiness') && args[2] === '--reason' ? args[3] : undefined;
-  if ((command === 'answer' || command === 'update-scope' || command === 'authorize-readiness') && (!text || text !== text.trim() || text.length > 2000 || text.startsWith('--'))) valid = false;
-  for (let index = command === 'answer' || command === 'cleanup-confirm' || command === 'forget-confirm' ? 3 : command === 'grant' || command === 'update-scope' || command === 'authorize-readiness' || command === 'cleanup' ? 4
+  // Ticket 23: `repair <work> --reason <text>` has the same shape (the controller decides concreteness and the phase answer).
+  const text = command === 'answer' ? args[2] : withReason && args[2] === '--reason' ? args[3] : undefined;
+  if ((command === 'answer' || withReason) && (!text || text !== text.trim() || text.length > 2000 || text.startsWith('--'))) valid = false;
+  for (let index = command === 'answer' || command === 'cleanup-confirm' || command === 'forget-confirm' ? 3 : command === 'grant' || withReason || command === 'cleanup' ? 4
     : command === 'request' || command === 'show' || command === 'question' || command === 'forget' || cycleCommands.includes(command ?? '') ? 2 : 1; index < args.length; index++) {
     if (args[index] === '--authenticated' && command === 'doctor' && !authenticated) authenticated = true;
     else if (args[index] === '--keep-predecessor-pr' && command === 'new' && !keep) keep = true;
@@ -189,7 +191,7 @@ export async function main(args: string[]): Promise<number> {
     else if (args[index] === '--root' && !rootSeen && args[index + 1] && !args[index + 1]?.startsWith('-')) {
       root = resolve(args[++index]!);
       rootSeen = true;
-    } else if (args[index] === '--request-id' && !requestId && (command === 'pause' || command === 'unpause' || command === 'answer' || command === 'grant' || command === 'update-scope' || command === 'authorize-readiness' ||
+    } else if (args[index] === '--request-id' && !requestId && (command === 'pause' || command === 'unpause' || command === 'answer' || command === 'grant' || withReason ||
       cycleCommands.includes(command ?? '') || cleanupCommands.includes(command ?? '')) &&
       args[index + 1]?.match(/^[a-zA-Z0-9_-]{1,128}$/)) requestId = args[++index];
     else { valid = false; break; }
@@ -208,7 +210,7 @@ export async function main(args: string[]): Promise<number> {
   try {
     if (command === 'run') return await launch(root);
     if (command === 'status' || command === 'list' || command === 'show' || command === 'question' || command === 'pause' || command === 'unpause' ||
-        command === 'answer' || command === 'grant' || command === 'update-scope' || command === 'authorize-readiness' || command === 'request' || cycleCommands.includes(command ?? '') ||
+        command === 'answer' || command === 'grant' || withReason || command === 'request' || cycleCommands.includes(command ?? '') ||
         cleanupCommands.includes(command ?? '')) {
       return await operational(root, command!, requestId, requested, json, text, grant, reference ? { repository: reference[1]!, number: Number(reference[2]), keep } : undefined, cleanup);
     }

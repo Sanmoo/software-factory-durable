@@ -70,7 +70,7 @@ export function guardTracker(tracker: IssueTracker, events: unknown[]): IssueTra
     checkAccess: scope => tracker.checkAccess(scope), listCandidates: scope => tracker.listCandidates(scope), readTicket: ticket => tracker.readTicket(ticket),
     readDependencyGraph: ticket => tracker.readDependencyGraph(ticket),
     async postComment(ticket, comment, effect) {
-      events.push({ at: new Date().toISOString(), call: 'postComment', ticket: ticket.number, questionId: comment.questionId, effectId: effect.effectId });
+      events.push({ at: new Date().toISOString(), call: 'postComment', ticket: ticket.number, questionId: comment.kind === 'question' ? comment.questionId : null, effectId: effect.effectId });
       if (++posted !== 1 || ticket.number !== expectedTicket.number || ticket.repositoryId !== expectedTicket.repositoryId) {
         return { kind: 'failed', observedAt: new Date().toISOString(), code: 'RECIPE_ONE_SHOT_GUARD', nextStep: 'Recipe allows one Question comment per phase on #3.' };
       }

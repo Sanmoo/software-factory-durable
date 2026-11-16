@@ -62,6 +62,16 @@ test('AC3: `factory update-scope <work> --reason` identifies the request first, 
   assert.equal(created.code, 2, created.stderr);
   assert.deepEqual(created.json, { kind: 'durable', request_id: 'new-1', operation: 'new', work_id: null, outcome: 'not-applied', reason: 'TICKET_NOT_KNOWN', created: null });
   assert.deepEqual((await cli('new', 'acme/project#3', '--request-id', 'new-1')).json, { kind: 'refused', code: 'REQUEST_ID_CONFLICT' }, 'same identity, other decision');
+  // Ticket 23: `repair <work> --reason` follows the same ingress (identified first, durable, idempotent); no Work here.
+  for (const bad of [['repair', work], ['repair', work, 'Rename the flag.'], ['repair', 'not-a-uuid', '--reason', 'Rename the flag.']]) {
+    assert.equal((await cli(...bad)).code, 2, bad.join(' '));
+  }
+  const repair = await cli('repair', work, '--reason', 'Rename the flag to --dry-run in docs/a.md.', '--request-id', 'repair-1');
+  assert.equal(repair.code, 2, repair.stderr);
+  assert.match(repair.stderr, /REQUEST_IDENTIFIED.*repair-1/);
+  assert.deepEqual(repair.json, { kind: 'durable', request_id: 'repair-1', operation: 'repair', work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', feedbackId: null, appliesAt: null,
+    nextStep: 'No Work with this identity; use `factory list`.' });
+  assert.deepEqual((await cli('repair', work, '--reason', 'Another repair reason here.', '--request-id', 'repair-1')).json, { kind: 'refused', code: 'REQUEST_ID_CONFLICT' });
   owner.child.kill('SIGTERM');
   assert.equal((await owner.result).code, 0);
 });

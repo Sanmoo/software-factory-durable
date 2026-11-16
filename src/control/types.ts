@@ -5,6 +5,7 @@ export type { SessionObservation, WorkerSessionRef as SessionRef } from '../work
 import type { IssueTracker, TicketRef } from '../issue-tracker/index.js';
 import type { BranchCleanupResult, CodeRepository, OwnPullRequestFacts } from '../code-repository/index.js';
 export type { BranchCleanupResult, OwnPullRequestFacts } from '../code-repository/index.js';
+export type { ConversationCommentFact, FeedbackObservation, ReviewCommentFact, ReviewFact } from '../code-repository/index.js';
 import type { Hold } from './rules/admission.js';
 import type { BlockerView, DependencyReason } from './rules/dependencies.js';
 
@@ -46,7 +47,10 @@ export type ControlInput = { request_id: string; operation: 'pause' | 'unpause';
   /** Ticket 31 (spec §12.4 `forget`): explicit deletion of the history of ONE ended Work. `forget-plan` records the plan of losses (no effect);
    * `forget-confirm` confirms it; it is revalidated now and again just before the deletion, which keeps only the minimal cycle memory. */
   { request_id: string; operation: 'forget-plan'; work_id: string; origin: 'local-cli' } |
-  { request_id: string; operation: 'forget-confirm'; work_id: string; plan_id: string; origin: 'local-cli' };
+  { request_id: string; operation: 'forget-confirm'; work_id: string; plan_id: string; origin: 'local-cli' } |
+  /** Ticket 23 (spec §11.3 `repair <work> --reason`): an explicit repair inside the current scope, charged to `corrections`; recorded for the
+   * next safe activation, never delivered to a running activity, never a launch. */
+  { request_id: string; operation: 'repair'; work_id: string; reason: string; origin: 'local-cli' };
 /** `answer`: `accepted` removed only that Question's impediment; `not-applied` (already answered, unknown, closed Work...) changed nothing. */
 export type ControlReceipt = { kind: 'durable'; request_id: string; operation: 'pause' | 'unpause'; paused: boolean; historySequence: number } |
   { kind: 'durable'; request_id: string; operation: 'answer'; question_id: string; outcome: 'accepted' | 'not-applied'; reason: string | null; work_id: string | null } |
@@ -74,7 +78,14 @@ export type ControlReceipt = { kind: 'durable'; request_id: string; operation: '
    * `forget-confirm`: `accepted` = confirmed after revalidation, executed after the ACK (result in `factory show`: the Work, or its minimal memory once
    * forgotten); `already-satisfied` = already confirmed/forgotten; `not-applied` = refused, nothing changed. */
   { kind: 'durable'; request_id: string; operation: 'forget-plan' | 'forget-confirm'; work_id: string; outcome: 'accepted' | 'already-satisfied' | 'not-applied';
-    reason: string | null; plan: ForgetPlan | null };
+    reason: string | null; plan: ForgetPlan | null } |
+  /** Ticket 23 `repair`: `accepted` (idle Work with its own PR: enters the Work's correction at the next repair pass), `deferred` (an
+   * activity, review, Question or publication is under way: recorded for the next safe activation), `already-covered` (the same request
+   * is already pending in this Work: nothing duplicated), `not-applied` (refused: nothing changed). */
+  { kind: 'durable'; request_id: string; operation: 'repair'; work_id: string; outcome: 'accepted' | 'deferred' | 'already-covered' | 'not-applied';
+    reason: string | null; feedbackId: string | null; appliesAt: 'next-activation' | null;
+    /** What the operator can do next (refusals name the command that applies, e.g. `update-scope` without an own PR). */
+    nextStep: string | null };
 export type ControlQuery = { kind: 'status' } | { kind: 'request'; request_id: string } | { kind: 'access' } | { kind: 'list' } | { kind: 'show'; work_id: string } |
   { kind: 'question'; question_id: string };
 export type DispatchReason = 'RECONCILIATION_REQUIRED' | 'EXECUTION_NOT_ENABLED';
@@ -461,19 +472,52 @@ export type Selection = { next: string | null; skipped: { work_id: string; reaso
  * Ticket 22: one EFFECTIVE impediment of the own PR the Builder can repair, with the head/base it was observed on and its evidence. Never a
  * pending/unknown/optional/old result, a base advancing, an operational cause or a base rule that needs the operator.
  */
-export type RepairReason = { code: 'MERGE_CONFLICT' | 'REQUIRED_CHECK_FAILED' | 'STRICT_UPDATE_REQUIRED'; subject: string | null; headSha: string; baseTip: string | null;
-  observedAt: string; evidence: string[] };
+export type RepairReason = { code: 'MERGE_CONFLICT' | 'REQUIRED_CHECK_FAILED' | 'STRICT_UPDATE_REQUIRED' | HumanFeedbackCode; subject: string | null; headSha: string; baseTip: string | null;
+  observedAt: string; evidence: string[];
+  /** Ticket 23: the human request this reason carries (identity, origin, version and content), for human codes only. */
+  feedback?: HumanFeedback };
+/** Ticket 23 (spec §10): human triggers — an authorized operator's `CHANGES_REQUESTED` review and an explicit authorized repair request. */
+export type HumanFeedbackCode = 'HUMAN_CHANGES_REQUESTED' | 'EXPLICIT_REPAIR';
+/** Identity/origin/version and relevant content of ONE human request, preserved as recorded (never rebuilt from a cursor or a transcript). */
+export type HumanFeedback = { feedbackId: string; origin: 'github-review' | 'github-comment' | 'local-cli';
+  author: { login: string; id: number | null } | null; url: string | null;
+  /** The commit the review was submitted on, or the Factory head the request was recorded at (data; a push never removes the request). */
+  version: string | null; submittedAt: string; sha256: string; content: string;
+  /** Inline review comments of the review (bounded), as GitHub reported them. */
+  comments: { path: string; line: number | null; body: string; url: string | null }[] };
+/** Ticket 23: one human request recorded on the Work (single durable entry for reviews, comments and CLI repairs). `pending`: not yet in a
+ * correction; `in-correction`: part of `correctionId`; `treated`: its charged correction closed (`outcome`); `withdrawn`: a later approval or
+ * a dismissal removed the review's trigger before it was treated (independent requests are kept). */
+export type FeedbackRequest = { feedbackId: string; code: HumanFeedbackCode; feedback: HumanFeedback; recordedAt: string; recordedHead: string | null;
+  state: 'pending' | 'in-correction' | 'treated' | 'withdrawn'; correctionId: string | null; closedAt: string | null; outcome: string | null };
+/** Ticket 23: the Work's human feedback (bounded): requests, the PR conversation cursor and a summary of what was ignored (never authority). */
+export type FeedbackView = { requests: FeedbackRequest[]; pullRequestCursor: number | null; observedAt: string | null;
+  ignored: { at: string; origin: string; code: string }[];
+  /** Identities ever settled (treated/withdrawn), bounded: a still-live review whose record was evicted is never recorded (and charged) again. */
+  settled?: string[];
+  /** Non-blocking note: pending requests wait for a published own PR (they fold into a correction on the next published basis). */
+  waiting?: { since: string; nextStep: string } | null;
+  /** Ticket 23: replies to `/factory` commands, published on the Ticket by the controller (intent → attempt → observation; discovery after doubt). */
+  replies?: FeedbackReply[] };
+export type FeedbackReply = { replyId: string; request_id: string; source: { commentId: number; url: string }; body: string; recordedAt: string;
+  publication: { effectId: string; state: 'intended' | 'attempting' | 'published' | 'ambiguous' | 'failed'; failures: number; comment: { commentId: number; url: string } | null;
+    code: string | null; updatedAt: string } };
 /** The correction under way (identity kept across its activations, charged once at its confirmed start). Ticket 22 fields are absent on
  * corrections opened before it (seams of ticket 19). */
 export type WorkCorrection = { correctionId: string; reason: string; openedAt: string; consumed: boolean;
-  trigger?: 'effective-impediment' | 'internal'; sequence?: number; reasons?: RepairReason[]; headSha?: string | null; basisExecutionId?: string | null;
+  trigger?: 'effective-impediment' | 'human-feedback' | 'internal'; sequence?: number; reasons?: RepairReason[]; headSha?: string | null; basisExecutionId?: string | null;
   /** Reasons observed AFTER the charge: not yet delivered to a Builder, never counted as treated; the next activation of this correction
    * (Question resume, recovery) delivers them, otherwise they are evaluated again after closure. */
   pendingReasons?: RepairReason[];
   /** Whether the Work was already pending for another cause when the correction opened (a withdrawal restores it). */
   queueWasPending?: boolean;
   /** What happens next for this correction (strict: every base advance costs a correction from the budget). */
-  nextStep?: string };
+  nextStep?: string;
+  /** Ticket 23: the CHARGED correction is activated again (same identity/charge) for human requests that entered it during its activity and
+   * that none of its Executions received yet. */
+  continuing?: boolean;
+  /** Ticket 23: the published basis a continuation was already requested for (one continuation per new basis, never per polling cycle). */
+  continuedBasis?: string | null };
 export type ClosedCorrection = { correctionId: string; sequence: number | null; openedAt: string; closedAt: string; charged: boolean;
   outcome: 'published' | 'not-publishable' | 'publication-blocked' | 'publication-diverged' | 'publication-base-changed' | 'withdrawn' | 'superseded';
   reasons: RepairReason[]; head: string | null; basisExecutionId: string | null };
@@ -632,6 +676,8 @@ export type WorkView = {
   correction: WorkCorrection | null;
   /** Ticket 22: closed corrections of this Work, oldest first (bounded): what each treated, how it closed. A repeated event is never charged again. */
   corrections?: ClosedCorrection[];
+  /** Ticket 23 (absent on earlier records): human feedback of the own PR/Ticket recorded for the next safe activation of a correction. */
+  feedback?: FeedbackView | null;
   /** A pending operational recovery (ticket 26 decides it); consumed by the start of the recovery Execution. */
   pendingRecovery: { reason: string; requestedAt: string;
     /** Ticket 26: persisted wait (calendar) before the recovery may start, its length and the attempt index it was derived from. */
@@ -664,8 +710,10 @@ export type WorkView = {
     { at: string; event: 'budget-reserved' | 'budget-consumed' | 'budget-released' | 'budget-exhausted' | 'budget-granted' | 'correction-opened' | 'correction-reason-added' | 'recovery-requested';
       origin: 'controller-budget' | 'local-cli'; executionId: string | null; detail: string } |
     { at: string; event: 'timeout-reached' | 'duration-reconciled'; origin: 'controller-clock'; executionId: string; detail: string } |
-    { at: string; event: 'repair-consolidated' | 'repair-withdrawn' | 'repair-revalidated' | 'repair-repeated' | 'correction-closed'; origin: 'controller-repair';
+    { at: string; event: 'repair-consolidated' | 'repair-withdrawn' | 'repair-revalidated' | 'repair-repeated' | 'correction-closed' | 'repair-continued'; origin: 'controller-repair';
       correctionId: string | null; detail: string } |
+    { at: string; event: 'feedback-recorded' | 'feedback-withdrawn' | 'feedback-treated' | 'repair-requested' | 'resume-requested';
+      origin: 'controller-feedback' | 'github-comment' | 'local-cli'; feedbackId: string | null; detail: string } |
     { at: string; event: 'scope-update-accepted' | 'scope-update-delivered' | 'scope-update-reoffered' | 'scope-update-consumed'; origin: 'local-cli' | 'controller-dispatch';
       scopeUpdateId: string; detail?: string } |
     { at: string; event: 'execution-reconciled' | 'recovery-wait-kept'; origin: 'controller-recovery'; executionId: string | null; detail: string } |

@@ -31,8 +31,10 @@ import { interruptionRecoveryPrompt } from '../rules/recovery.js';
 import { reconcileExecution } from './recovery.js';
 import type { WorkerQuestion } from '../../workers/index.js';
 import type { Session } from './store.js';
-import { fingerprint, queueOrder, repairPreserve, repairSection, repairTriggers, updateTarget } from '../rules/repair.js';
+import { fingerprint, queueOrder, repairPreserve, repairSection, repairTriggers, observationDriven, updateTarget } from '../rules/repair.js';
 import { observeRepair, recordRepairRevalidation } from './repair.js';
+import { observeFeedback } from './feedback.js';
+import { isHumanReason, undeliveredHuman } from '../rules/feedback.js';
 import { checksTarget, recordChecks } from './checks.js';
 import { evaluateChecks } from '../rules/checks.js';
 
@@ -489,7 +491,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const repairRequest = execution.request.repair ?? null;
     const repair = repairRequest ? repairSection({ correctionId: repairRequest.correctionId, base: work.repository.base, branch: execution.request.branch,
       checkout: prepared.checkout.path, reasons: repairRequest.reasons, humanTips: repairRequest.humanTips ?? [] }) : undefined;
-    if (resume?.reason === 'REPAIR_REQUESTED' && (!repairRequest || current?.correction?.correctionId !== repairRequest.correctionId || current.correction.consumed)) {
+    // Ticket 23: a continuation of a CHARGED correction (human requests that entered during its activity) runs under its preserved charge.
+    if (resume?.reason === 'REPAIR_REQUESTED' && (!repairRequest || current?.correction?.correctionId !== repairRequest.correctionId ||
+        (current.correction.consumed && execution.charge?.state !== 'preserved'))) {
       return { kind: 'refused', reasons: ['REPAIR_BASIS_CHANGED'] };
     }
     if (!resume && basis) {
@@ -1103,11 +1107,17 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
    * Ticket 22: fresh complete read of the own PR (ticket 15 explanation, recorded), then the repair observation decides again in its own
    * commit. Only a correction still open, not charged, with its reasons current proceeds to admission; a failed read decides nothing.
    */
-  async function revalidateRepair(work: WorkRecord): Promise<{ kind: 'repair'; basisExecutionId: string; request: NonNullable<ExecutionView['request']['repair']> } |
+  async function revalidateRepair(work: WorkRecord, continuation = false): Promise<{ kind: 'repair'; basisExecutionId: string; request: NonNullable<ExecutionView['request']['repair']> } |
     { kind: 'repair-withdrawn' | 'repair-not-revalidated'; reasons: string[] }> {
     const target = checksTarget(work);
     const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase());
     if (!target || !configured) return { kind: 'repair-not-revalidated', reasons: [target ? 'REPOSITORY_NOT_CONFIGURED' : 'OWN_PULL_REQUEST_NOT_PUBLISHED'] };
+    // Ticket 23: the human feedback is read again too — a review approved/dismissed just before the start withdraws ITS reason (no charge
+    // when nothing remains); an unreadable feedback never confirms a review request that is still relevant.
+    const feedback = await observeFeedback({ session, repository: deps.access.repository, operators: deps.access.operators ?? [], repo: () => configured }, work);
+    if (feedback !== 'observed' && (work.correction?.reasons ?? []).some(item => item.code === 'HUMAN_CHANGES_REQUESTED')) {
+      return { kind: 'repair-not-revalidated', reasons: ['PULL_REQUEST_FEEDBACK_NOT_READ'] };
+    }
     let observation;
     try { observation = await deps.access.repository.readPullRequest({ repo: configured, number: target.number }); }
     catch { return { kind: 'repair-not-revalidated', reasons: ['PULL_REQUEST_QUERY_FAILED'] }; }
@@ -1116,11 +1126,14 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     if (await recordChecks(session, work.work_id, target, evaluation) === 'stale') return { kind: 'repair-not-revalidated', reasons: ['STALE'] };
     // An uncertain/ineligible fresh read decides nothing (never admits on stale reasons, never withdraws).
     const fresh0 = repairTriggers({ checks: evaluation, publication: work.publication, readiness: work.readiness ?? null });
-    if (fresh0.kind === 'none' && !fresh0.certain) return { kind: 'repair-not-revalidated', reasons: fresh0.why };
+    // (Ticket 23: a correction of human requests only does not depend on the checks being conclusive.)
+    if (fresh0.kind === 'none' && !fresh0.certain && (work.correction?.reasons ?? []).some(item => !isHumanReason(item))) return { kind: 'repair-not-revalidated', reasons: fresh0.why };
     const observed = await observeRepair(session, work.work_id, () => deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase()));
     const fresh = await readWork(session, work.work_id);
     const correction = fresh?.correction ?? null;
-    if (!fresh || !correction || correction.correctionId !== work.correction?.correctionId || correction.consumed || fresh.publication?.state !== 'published') {
+    const continues = continuation && correction?.consumed === true && correction.continuing === true && fresh !== undefined &&
+      undeliveredHuman(correction, [...fresh.previousExecutions, ...(fresh.execution ? [fresh.execution] : [])]).length > 0;
+    if (!fresh || !correction || correction.correctionId !== work.correction?.correctionId || (correction.consumed && !continues) || fresh.publication?.state !== 'published') {
       return { kind: 'repair-withdrawn', reasons: [observed.outcome, ...observed.reasons] };
     }
     const reasons = correction.reasons ?? [];
@@ -1211,10 +1224,13 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       tried.add(next);
       const candidate = works.find(item => item.work_id === next)!;
       const pending = candidate.correction;
-      if (resumeBasis(candidate)?.end?.outcome === 'question' || !pending || pending.consumed || pending.trigger !== 'effective-impediment') { work = candidate; break; }
+      // Ticket 23: or the continuation of a CHARGED correction that received human requests during its activity (same charge, preserved).
+      const continuation = Boolean(pending?.consumed && pending.continuing && candidate.publication?.state === 'published' &&
+        undeliveredHuman(pending, [...candidate.previousExecutions, ...(candidate.execution ? [candidate.execution] : [])]).length);
+      if (resumeBasis(candidate)?.end?.outcome === 'question' || !pending || (pending.consumed && !continuation) || !observationDriven(pending)) { work = candidate; break; }
       // Ticket 22 (spec §10 step 2): immediately before admission, the requirements and reasons are read AGAIN (fresh complete read of the
       // own PR); reasons that disappeared are dropped and a correction left without any is withdrawn without charge.
-      const result = await revalidateRepair(candidate);
+      const result = await revalidateRepair(candidate, continuation);
       if (result.kind === 'repair') { work = candidate; revalidated = result; break; }
       observe(candidate.work_id, result.kind, result.reasons);
       skipped.add(candidate.work_id);
