@@ -18,13 +18,14 @@ test('R-HOSTFAULT recipe: import and --plan are inert; own namespace; the dispos
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q34-hostfault-v2');
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q34-hostfault-v3');
   assert.deepEqual(plan.phases, ['image', 'preflight', 'floor', 'full', 'native', 'release', 'inspect']);
-  assert.equal(plan.image.path, '/home/sanmoo/software-factory-test/y5/q34-hostfault-v2/disk.img');
-  assert.match(plan.image.preallocated, /chattr \+C .*fallocate .*mkfs\.ext4 -E nodiscard/);
+  assert.equal(plan.image.path, '/home/sanmoo/software-factory-test/y5/q34-hostfault-v3/disk.img');
+  assert.match(plan.image.preallocated, /chattr \+C .*fallocate .*mkfs\.ext4 -E nodiscard,lazy_itable_init=0,lazy_journal_init=0/);
   assert.ok(plan.maxDisposableBytes <= 8 * 1024 ** 3);
   assert.ok(plan.operator.afterImage.rootless.some((step: string) => step.startsWith('udisksctl loop-setup')), 'a rootless mount is proposed');
   assert.ok(plan.operator.afterImage.sudo.some((step: string) => step.startsWith('sudo mount -o loop,nosuid,nodev,noexec')), 'the sudo alternative is explicit');
+  assert.ok(plan.operator.afterImage.sudo.some((step: string) => /noinit_itable/.test(step)), 'no inode-table zeroing at mount on the sudo route');
   assert.match(plan.operator.afterImage.note, /never runs sudo, mount or losetup/);
   assert.ok(plan.requires.some((item: string) => /explicit operator authorization for THIS run/.test(item)));
   assert.ok(plan.requires.some((item: string) => /no VM, GitHub, model or credential/.test(item)));

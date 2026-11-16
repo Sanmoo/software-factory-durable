@@ -17,13 +17,16 @@
 
 const user = 'sanmoo';
 const root = `/home/${user}/software-factory-test/y5`;
-const observations = `${root}/q34-hostfault-v2`;
+const observations = `${root}/q34-hostfault-v3`;
 // v1 held at `image` (real run, btrfs /home): mkfs.ext4 discarded the fallocated image (72 MB of 6 GiB still allocated). v2: NOCOW + nodiscard.
-const revision = 'q34-hostfault-v2';
+// v2 held at preflight (real run): right after the rootless mount ~96 MiB of the image were punched away (ext4 lazy inode-table/journal
+// init zeroes through the loop device, which the loop turns into hole punches of the backing file). v3: eager init at mkfs, verified.
+const revision = 'q34-hostfault-v3';
 export const phases = ['image', 'preflight', 'floor', 'full', 'native', 'release', 'inspect'] as const;
 export type Phase = typeof phases[number];
 const gib = 1024 ** 3, mib = 1024 ** 2;
-const label = 'qhf34v1';
+/** The ext4 label follows the revision (udisksctl mounts on /run/media/<user>/<label>). */
+export const label = `qhf34${revision.slice(-2)}`;
 export const imageBytes = 6 * gib;
 export const maxDisposableBytes = 8 * gib;
 const image = `${observations}/disk.img`;
@@ -43,7 +46,12 @@ export const btrfsMagic = '0x9123683e';
 /** Pure: the image creation commands, in order (the empty file is created by the recipe itself with O_EXCL). */
 export function imageCommands(path: string, uid: number | undefined, gid: number | undefined): string[][] {
   return [['/usr/bin/chattr', '+C', path], ['/usr/bin/fallocate', '-l', String(imageBytes), path],
-    ['/usr/bin/mkfs.ext4', '-q', '-F', '-m', '0', '-L', label, '-E', `nodiscard,root_owner=${uid}:${gid}`, path]];
+    ['/usr/bin/mkfs.ext4', '-q', '-F', '-m', '0', '-L', label, '-E', `nodiscard,lazy_itable_init=0,lazy_journal_init=0,root_owner=${uid}:${gid}`, path]];
+}
+/** Pure: every block group of `dumpe2fs` output has its inode table zeroed (nothing for ext4lazyinit to zero through the loop). */
+export function itableZeroed(dumpe2fs: string): boolean {
+  const groups = dumpe2fs.split('\n').filter(line => /^Group [0-9]+:/.test(line));
+  return groups.length > 0 && groups.every(line => /\bITABLE_ZEROED\b/.test(line));
 }
 /** Pure: the NOCOW flag from `lsattr <file>` output (null when unreadable). */
 export function nocowAttribute(output: string): boolean | null {
@@ -52,7 +60,7 @@ export function nocowAttribute(output: string): boolean | null {
 }
 
 export function plan() {
-  return { revision, root, observations, phases, image: { path: image, bytes: imageBytes, label, filesystem: 'ext4 -m 0 (no reserved blocks), root owned by the operator account', preallocated: 'chattr +C (empty file, NOCOW), fallocate -l (never sparse), mkfs.ext4 -E nodiscard; verified every phase: allocated >= size, NOCOW on a btrfs home' },
+  return { revision, root, observations, phases, image: { path: image, bytes: imageBytes, label, filesystem: 'ext4 -m 0 (no reserved blocks), root owned by the operator account', preallocated: 'chattr +C (empty file, NOCOW), fallocate -l (never sparse), mkfs.ext4 -E nodiscard,lazy_itable_init=0,lazy_journal_init=0 (every inode table zeroed at mkfs: nothing left for ext4lazyinit after the mount); verified every phase: allocated >= size, NOCOW on a btrfs home' },
     mountCandidates, maxDisposableBytes, configuration, guestAssets, floorBytes, preparationBytes, works,
     requires: ['explicit operator authorization for THIS run (host fault injection: disk space), one-shot; a consumed namespace is never reused',
       `home filesystem with at least ${(imageBytes + homeReserveBytes) / gib} GiB free before image`, 'the operator mounts the image (step below) between image and preflight',
@@ -61,8 +69,8 @@ export function plan() {
       afterImage: {
         rootless: [`udisksctl loop-setup --no-user-interaction -f ${image}   # prints /dev/loopN`,
           'udisksctl mount --no-user-interaction -b /dev/loopN -o nosuid,nodev   # mounts on ' + mountCandidates[0]],
-        sudo: [`mkdir -m 700 ${mountCandidates[1]}`, `sudo mount -o loop,nosuid,nodev,noexec ${image} ${mountCandidates[1]}`],
-        note: 'Use the sudo alternative only if polkit refuses udisksctl outside an active local session. The recipe never runs sudo, mount or losetup.' },
+        sudo: [`mkdir -m 700 ${mountCandidates[1]}`, `sudo mount -o loop,nosuid,nodev,noexec,noinit_itable ${image} ${mountCandidates[1]}`],
+        note: 'udisksctl accepts only a fixed option list (no noinit_itable); it is not needed: the image has every inode table zeroed at mkfs (checked by the image phase). Use the sudo alternative only if polkit refuses udisksctl outside an active local session. The recipe never runs sudo, mount or losetup.' },
       afterInspect: {
         rootless: ['udisksctl unmount -b /dev/loopN', 'udisksctl loop-delete -b /dev/loopN', `rm ${image}`],
         sudo: [`sudo umount ${mountCandidates[1]}`, `rm ${image}`] } },
@@ -336,7 +344,9 @@ export async function runPhase(phase: Phase) {
         if (result.code !== 0) break; // never continue past a failed step
       }
       const facts = await imageFacts();
-      const problems = [...(facts.imageAllocatedBytes < imageBytes ? ['IMAGE_NOT_PREALLOCATED'] : []), ...(facts.homeFs === btrfsMagic && facts.imageNocow !== true ? ['IMAGE_NOT_NOCOW_ON_BTRFS'] : [])];
+      const dumped = codes.length === 3 && codes.every(code => code === 0) ? await run('/usr/bin/dumpe2fs', [image]) : null;
+      const zeroed = dumped?.code === 0 && itableZeroed(dumped.stdout);
+      const problems = [...(facts.imageAllocatedBytes < imageBytes ? ['IMAGE_NOT_PREALLOCATED'] : []), ...(!zeroed ? ['IMAGE_ITABLE_NOT_ZEROED'] : []), ...(facts.homeFs === btrfsMagic && facts.imageNocow !== true ? ['IMAGE_NOT_NOCOW_ON_BTRFS'] : [])];
       if (codes.length !== 3 || codes.some(code => code !== 0) || problems.length) { await save('image-held', { codes, ...facts, problems }); throw new Error('IMAGE_NOT_CREATED'); }
       await save('image-result', { status: 'success', image, bytes: imageBytes, ...facts, homeAvailableAfter: await available(`/home/${user}`),
         operatorNext: plan().operator.afterImage });

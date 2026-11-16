@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { assess, btrfsMagic, confinementProblems, deletedFiles, fillBytes, imageBytes, imageCommands, nocowAttribute, maxDisposableBytes, parseMountinfo, phaseGuard, rewrittenFiles,
+import { assess, btrfsMagic, confinementProblems, deletedFiles, fillBytes, imageBytes, imageCommands, itableZeroed, label, mountCandidates, nocowAttribute, maxDisposableBytes, parseMountinfo, phaseGuard, rewrittenFiles,
   type HostFaultResults, type MountFacts } from './hostfault34-qualification.js';
 
 // Recipe safety of the R-HOSTFAULT real run, on controlled data only (never a real mount, the real home or root filesystem).
@@ -16,17 +16,17 @@ test('phase guard: each phase once, in order, only after the previous one succee
 
 test('mountinfo parsing decodes escaped mount points and keeps source/fstype', () => {
   const text = '36 25 0:32 / /home rw,relatime shared:1 - ext4 /dev/mapper/root rw\n' +
-    '98 30 7:3 / /run/media/sanmoo/qhf34v1 rw,nosuid,nodev,relatime shared:50 - ext4 /dev/loop3 rw\n' +
+    '98 30 7:3 / /run/media/sanmoo/qhf34v3 rw,nosuid,nodev,relatime shared:50 - ext4 /dev/loop3 rw\n' +
     '99 30 0:50 / /tmp/with\\040space rw - tmpfs tmpfs rw\n';
   const entries = parseMountinfo(text);
   assert.equal(entries.length, 3);
-  assert.deepEqual(entries[1], { majorMinor: '7:3', mountPoint: '/run/media/sanmoo/qhf34v1', options: 'rw,nosuid,nodev,relatime', fstype: 'ext4', source: '/dev/loop3' });
+  assert.deepEqual(entries[1], { majorMinor: '7:3', mountPoint: '/run/media/sanmoo/qhf34v3', options: 'rw,nosuid,nodev,relatime', fstype: 'ext4', source: '/dev/loop3' });
   assert.equal(entries[2]!.mountPoint, '/tmp/with space');
 });
 
-const image = '/home/sanmoo/software-factory-test/y5/q34-hostfault-v2/disk.img';
-const good: MountFacts = { candidate: '/run/media/sanmoo/qhf34v1', imagePath: image, backingFile: image, homeDev: 64768, rootDev: 64768, mountDev: 1795, uid: 1000,
-  entry: { majorMinor: '7:3', mountPoint: '/run/media/sanmoo/qhf34v1', options: 'rw', fstype: 'ext4', source: '/dev/loop3' },
+const image = '/home/sanmoo/software-factory-test/y5/q34-hostfault-v3/disk.img';
+const good: MountFacts = { candidate: '/run/media/sanmoo/qhf34v3', imagePath: image, backingFile: image, homeDev: 64768, rootDev: 64768, mountDev: 1795, uid: 1000,
+  entry: { majorMinor: '7:3', mountPoint: '/run/media/sanmoo/qhf34v3', options: 'rw', fstype: 'ext4', source: '/dev/loop3' },
   statfs: { type: '0xef53', totalBytes: 6 * 1024 ** 3, availableBytes: 6 * 1024 ** 3 }, owner: { uid: 1000, mode: 0o755 }, entries: ['lost+found'], imageAllocatedBytes: imageBytes,
   homeFs: btrfsMagic, imageNocow: true };
 
@@ -66,6 +66,23 @@ test('real run v1 (btrfs /home): mkfs discarded the fallocated image (72 MB of 6
   // The observed v1 image: allocated far below its size -> refused; on a non-btrfs home NOCOW is not required.
   assert.ok(confinementProblems({ ...good, imageAllocatedBytes: 140696 * 512, imageNocow: false }, { requireEmpty: true }).includes('IMAGE_NOT_PREALLOCATED'));
   assert.deepEqual(confinementProblems({ ...good, homeFs: '0xef53', imageNocow: null }, { requireEmpty: true }), []);
+});
+
+test('real run v2: ~96 MiB of the image punched away right after the mount (ext4 lazy init zeroout through the loop) -> eager init at mkfs, verified', () => {
+  const extended = imageCommands(image, 1000, 1000)[2]!;
+  const options = extended[extended.indexOf('-E') + 1]!.split(',');
+  for (const option of ['nodiscard', 'lazy_itable_init=0', 'lazy_journal_init=0']) assert.ok(options.includes(option), option);
+  // The v2 observation after the mount is refused (the allocation check stays exact).
+  assert.ok(confinementProblems({ ...good, imageAllocatedBytes: 6341791744 }, { requireEmpty: true }).includes('IMAGE_NOT_PREALLOCATED'));
+  const group = (n: number, flags: string) => `Group ${n}: (Blocks ${n * 32768}-${n * 32768 + 32767}) csum 0x1234 [${flags}]`;
+  assert.equal(itableZeroed([group(0, 'ITABLE_ZEROED'), group(1, 'INODE_UNINIT, ITABLE_ZEROED')].join('\n')), true);
+  assert.equal(itableZeroed([group(0, 'ITABLE_ZEROED'), group(1, 'INODE_UNINIT, BLOCK_UNINIT')].join('\n')), false, 'one lazy group left for ext4lazyinit');
+  assert.equal(itableZeroed(''), false, 'unreadable proves nothing');
+});
+
+test('the label follows the revision; the rootless mount point is derived from it', () => {
+  assert.equal(label, 'qhf34v3');
+  assert.equal(mountCandidates[0], '/run/media/sanmoo/qhf34v3');
 });
 
 test('fill target: never negative, block aligned, null when already below the target', () => {
