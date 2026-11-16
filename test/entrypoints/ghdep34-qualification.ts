@@ -58,22 +58,25 @@ const create = (key: keyof typeof issues) => {
   return `${key.toUpperCase()}=$(gh issue create --repo ${item.repository} --title ${JSON.stringify(item.title)} --body ${JSON.stringify(item.body)}${item.label ? ` --label ${repositoryA.label}` : ''} | sed 's#.*/##')`;
 };
 const relate = (from: string, to: string) => `gh api --method POST repos/${repositoryA.repository}/issues/$${from}/dependencies/blocked_by -F issue_id=$${to} --silent`;
+/** Where the operator adds a repository to the App's (user) installation: the `/user/installations` API needs a GitHub App user access token,
+ * which the operator's classic OAuth gh token is not (observed 2026-11-16: HTTP 403 "must authenticate with an access token authorized to a GitHub App"). */
+export const installationUrl = `https://github.com/settings/installations/${installationId}`;
+const probeCommand = `node dist/test/entrypoints/ghdep34-qualification.js --probe-installation   # from the recipe worktree (built); App key only, prints memberships, never a key or token`;
 /** The exact HUMAN steps (operator's account; never the App, never this recipe). `setup` precedes the pin; the others are requested by phases. */
-export function humanSteps(input: { b1?: number; c1?: number; a?: number[] } = {}): Record<'repositories' | 'issues' | 'close-blockers' | 'teardown', HumanStep> {
-  const listInstalled = `gh api /user/installations/${installationId}/repositories --paginate --jq '.repositories[].full_name'`;
+export function humanSteps(input: { b1?: number; c1?: number; a?: number[] } = {}): Record<'repositories' | 'installation' | 'issues' | 'close-blockers' | 'teardown', HumanStep> {
   return {
-    repositories: { name: 'repositories', expect: `${repositoryB.repository} public with installation ${installationId}; ${repositoryC.repository} private without it`,
+    repositories: { name: 'repositories', expect: `${repositoryB.repository} public and ${repositoryC.repository} private exist (no installation change yet)`,
       apply: [`gh auth status 2>&1 | grep -i 'token scopes' | grep -q delete_repo || { echo 'the gh token lacks the delete_repo scope (teardown deletes B and C): ` +
         `run gh auth refresh -s delete_repo first'; exit 1; }   # scopes only; the token itself is never printed`,
-        `test "$(gh api /user/installations --jq '.installations[] | select(.id==${installationId}) | .repository_selection')" = selected   # selected repositories: otherwise C cannot be hidden; stop`,
         `gh repo create ${repositoryB.repository} --public --add-readme --description 'Software Factory qualification fixture: cross-repository blocker (R-GH-DEP)'`,
-        `gh repo create ${repositoryC.repository} --private --add-readme --description 'Software Factory qualification fixture: blocker hidden from the App (R-GH-DEP)'`,
-        `B_REPO_ID=$(gh api repos/${repositoryB.repository} --jq .id)`,
-        `gh api --method PUT /user/installations/${installationId}/repositories/$B_REPO_ID --silent   # adds B to the App installation (user installation, selected repositories)`,
-        `${listInstalled} | grep -qx ${repositoryB.repository}`, `! ${listInstalled} | grep -qx ${repositoryC.repository}`],
-      restore: [`gh api --method DELETE /user/installations/${installationId}/repositories/$(gh api repos/${repositoryB.repository} --jq .id) --silent`,
-        `gh repo delete ${repositoryB.repository} --yes   # needs the delete_repo scope`, `gh repo delete ${repositoryC.repository} --yes`],
+        `gh repo create ${repositoryC.repository} --private --add-readme --description 'Software Factory qualification fixture: blocker hidden from the App (R-GH-DEP)'`],
+      restore: [`gh repo delete ${repositoryB.repository} --yes   # needs the delete_repo scope; also removes B from the installation`, `gh repo delete ${repositoryC.repository} --yes`],
       note: `restore only at teardown. Factory configuration entry for B (config.yaml; executable repositories stay [A]):\n${configurationEntry}` },
+    installation: { name: 'installation', expect: `${repositoryB.repository} in installation ${installationId}; ${repositoryC.repository} not (verified with the App key)`,
+      apply: [`echo 'OPERATOR (browser, your account): open ${installationUrl} ; under "Repository access" keep "Only select repositories", add ${repositoryB.repository} ` +
+        `(do NOT add ${repositoryC.repository}) and press Save. If the page offers only "All repositories", stop: C could not be hidden.'`,
+        'read -r -p "Press Enter after saving the installation page... " _', probeCommand],
+      restore: [], note: `nothing to undo before teardown: deleting ${repositoryB.repository} removes it from the installation` },
     issues: { name: 'issues', expect: 'A1..A3 open and labelled with one native blocked_by each (B1, C1, A#18); B1 and C1 open',
       apply: [create('b1'), create('c1'), create('a1'), create('a2'), create('a3'),
         `B1_ID=$(gh api repos/${repositoryB.repository}/issues/$B1 --jq .id)`, `C1_ID=$(gh api repos/${repositoryC.repository}/issues/$C1 --jq .id)`,
@@ -86,8 +89,7 @@ export function humanSteps(input: { b1?: number; c1?: number; a?: number[] } = {
     teardown: { name: 'teardown', expect: 'A1..A3 unlabelled and closed; fixtures removed', note: 'B/C deletion needs the delete_repo scope; keep them if the pilot reuses B',
       apply: [...(input.a ?? []).map(number => `gh issue edit ${number} --repo ${repositoryA.repository} --remove-label ${repositoryA.label} && gh issue close ${number} --repo ${repositoryA.repository} --reason 'not planned'`),
         ...(input.c1 ? [`gh issue close ${input.c1} --repo ${repositoryC.repository} --reason 'not planned'`] : []),
-        `gh api --method DELETE /user/installations/${installationId}/repositories/$(gh api repos/${repositoryB.repository} --jq .id) --silent`,
-        `gh repo delete ${repositoryB.repository} --yes`, `gh repo delete ${repositoryC.repository} --yes`], restore: [] },
+        `gh repo delete ${repositoryB.repository} --yes   # also removes B from the installation`, `gh repo delete ${repositoryC.repository} --yes`], restore: [] },
   };
 }
 
@@ -108,7 +110,8 @@ export function plan() {
     github: { app: githubApp, purposes: ['dependency-read {metadata:read, issues:read} per repository with ITS installation', 'tracker/association/checks reads of A (GET)'],
       guard: 'gh behind the GET-only guard (cancel25): GET without input and DELETE /installation/token only; everything else exit 97, traced in gh-trace.jsonl',
       writes: ['App: access_tokens issuance POSTs and token self-revocation only', 'none by the controller (no comment, label or mutation)'],
-      human: ['setup: repositories (create B public + C private, add B to the installation) and issues (B1, C1, A1..A3 labelled, three native relations)',
+      human: ['setup: repositories (create B public + C private), installation (browser: add B on the installation page; verified by --probe-installation with the App key) and ' +
+        'issues (B1, C1, A1..A3 labelled, three native relations)',
         `configured: close-blockers (close B1 and A#${q25.number} as completed; restore reopens #${q25.number})`, 'teardown (written by inspect)'] },
     effects: [
       'preflight (GET-only): exclusive namespace; COPY of q25-cancel-v1 into authority/ (migrated copy only) and of its Records into records/; source digests; environment present; ' +
@@ -561,12 +564,51 @@ async function humanStepWait(save: (name: string, data: unknown) => Promise<void
   throw new Error('RECIPE_HUMAN_STEP_TIMEOUT');
 }
 
+/** Membership of one repository in the installation, from the Factory's OWN token issuance for it: issued = installed; GitHub's 422 for a
+ * repository outside the installation (GITHUB_QUERY_FAILED) = not installed; anything else (transport, unknown issuance) decides nothing. */
+export type Membership = 'installed' | 'not-installed' | `unknown:${string}`;
+export function membership(read: { ok: boolean; code?: string }): Membership {
+  if (read.ok) return 'installed';
+  return read.code === 'GITHUB_QUERY_FAILED' ? 'not-installed' : `unknown:${read.code ?? 'UNKNOWN'}`;
+}
+export function probeVerdict(b: Membership, c: Membership): { ok: boolean; reasons: string[] } {
+  const reasons = [...(b === 'installed' ? [] : [`${repositoryB.repository}: ${b === 'not-installed' ? `not in installation ${installationId} (do the browser step)` : b}`]),
+    ...(c === 'not-installed' ? [] : [`${repositoryC.repository}: ${c === 'installed' ? `in installation ${installationId} (remove it there; it must stay hidden)` : c}`])];
+  return { ok: reasons.length === 0, reasons };
+}
+/**
+ * Read-only installation probe (setup step `installation`): a PRIVATE temporary access root gets an O_EXCL copy of the App key, the Factory's own
+ * GitHub access issues a short-lived dependency-read token per repository (App JWT inside the access layer) and one GET of each repository; the
+ * root (key copy, gh dirs) is removed in `finally`. Prints repository memberships and codes only, never a key, JWT or token.
+ */
+export async function probeInstallation() {
+  const fs = await import('node:fs/promises');
+  const { constants } = await import('node:fs');
+  const { requireKeySource } = await import('./humanchanges21-qualification.js');
+  await requireKeySource(path => fs.access(path));
+  const directory = await fs.mkdtemp(`${root}/q34-ghdep-probe-`);
+  try {
+    for (const name of ['credentials', 'run']) await fs.mkdir(`${directory}/${name}`, { mode: 0o700 });
+    await fs.copyFile(keySource, `${directory}/${githubApp.privateKeyFile}`, constants.COPYFILE_EXCL);
+    await fs.chmod(`${directory}/${githubApp.privateKeyFile}`, 0o600);
+    const { createGitHubAccess } = await import('../../src/platform/github/index.js');
+    const github = createGitHubAccess({ root: directory, ...githubApp });
+    const probe = async (repository: string) => {
+      const read = await github.read({ repository, installationId, workflows: false }, 'dependency-read', session => session.get(`/repos/${repository}`));
+      return membership(read.ok ? { ok: true } : { ok: false, code: read.code });
+    };
+    const b = await probe(repositoryB.repository), c = await probe(repositoryC.repository);
+    return { installationId, memberships: { [repositoryB.repository]: b, [repositoryC.repository]: c }, ...probeVerdict(b, c) };
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+}
+
 /** Writes the setup human steps (repositories, issues) into a NEW local directory; no GitHub, no namespace, no pin needed. */
 export async function writeSetupSteps(directory = setupDirectory) {
   const { fs, save } = await io();
   await fs.mkdir(directory, { mode: 0o700 });
   const steps = humanSteps();
   await save('human-step-repositories-requested', { ...steps.repositories, at: new Date().toISOString() }, directory);
+  await save('human-step-installation-requested', { ...steps.installation, at: new Date().toISOString() }, directory);
   await save('human-step-issues-requested', { ...steps.issues, at: new Date().toISOString() }, directory);
   await fs.writeFile(`${directory}/configuration-entry.yaml`, configurationEntry, { mode: 0o600, flag: 'wx' });
   return directory;
@@ -575,12 +617,18 @@ export async function writeSetupSteps(directory = setupDirectory) {
 export async function main(args: string[]) {
   if (args.length === 1 && args[0] === '--plan') { console.log(JSON.stringify(plan(), null, 2)); return; }
   if (args.length === 1 && args[0] === '--setup-steps') { console.log(await writeSetupSteps()); return; }
+  if (args.length === 1 && args[0] === '--probe-installation') {
+    const result = await probeInstallation();
+    console.log(JSON.stringify(result, null, 1));
+    if (!result.ok) throw new Error('INSTALLATION_NOT_AS_EXPECTED');
+    return;
+  }
   if (args.length !== 1 || !phases.includes(args[0] as Phase)) throw new Error('EXACT_PHASE_REQUIRED');
   await runPhase(args[0] as Phase);
 }
 if (process.argv[1] === new URL(import.meta.url).pathname) {
   main(process.argv.slice(2)).then(() => process.exit(0), (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
-    console.error(message.startsWith('APP_KEY_SOURCE_MISSING') || message === 'TICKET_NOT_PINNED' ? message : `Qualification held; no retry. (${message.slice(0, 128)})`); process.exit(1);
+    console.error(message.startsWith('APP_KEY_SOURCE_MISSING') || message === 'TICKET_NOT_PINNED' || message === 'INSTALLATION_NOT_AS_EXPECTED' ? message : `Qualification held; no retry. (${message.slice(0, 128)})`); process.exit(1);
   });
 }

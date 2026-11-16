@@ -3,7 +3,8 @@ import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { configurationEntry, dependencyChecks, effectCalls, forgetChecks, humanSteps, phaseGuard, pinned, q25, repositoryB, writeSetupSteps } from './ghdep34-qualification.js';
+import { configurationEntry, dependencyChecks, effectCalls, forgetChecks, humanSteps, installationUrl, membership, phaseGuard, pinned, probeVerdict, q25, repositoryB, repositoryC,
+  writeSetupSteps } from './ghdep34-qualification.js';
 
 // R-GH-DEP recipe safety on controlled data only (never the real root, a real gh, GitHub, the q25 storage or its environment).
 test('phase guard: pinned issues, one shot, each phase after the previous one succeeded', () => {
@@ -72,7 +73,8 @@ test('setup steps are written into a NEW local directory only (no GitHub): repos
   const parent = await mkdtemp(join(tmpdir(), 'q34-dep-'));
   t.after(() => rm(parent, { recursive: true, force: true }));
   const directory = await writeSetupSteps(join(parent, 'setup'));
-  assert.deepEqual((await readdir(directory)).sort(), ['configuration-entry.yaml', 'human-step-issues-requested.json', 'human-step-repositories-requested.json']);
+  assert.deepEqual((await readdir(directory)).sort(), ['configuration-entry.yaml', 'human-step-installation-requested.json', 'human-step-issues-requested.json',
+    'human-step-repositories-requested.json']);
   assert.equal(await readFile(join(directory, 'configuration-entry.yaml'), 'utf8'), configurationEntry);
   const issues = JSON.parse(await readFile(join(directory, 'human-step-issues-requested.json'), 'utf8')) as { apply: string[] };
   assert.ok(issues.apply.at(-1)!.includes('pin in ghdep34-qualification.ts'));
@@ -81,4 +83,30 @@ test('setup steps are written into a NEW local directory only (no GitHub): repos
   assert.ok(steps['close-blockers'].apply[0]!.startsWith(`gh issue close 4 --repo ${B} --reason completed`));
   assert.ok(steps.teardown.apply.filter(line => line.includes('--remove-label ready-for-agent')).length === 3);
   assert.deepEqual(Object.values(pinned), [0, 0, 0, 0, 0], 'pinned only in a reviewed commit after the setup');
+});
+
+test('setup with the tokens we have: no /user/installations call (needs a GitHub App user token); B joins in the browser; the App key verifies B in and C out', () => {
+  const steps = humanSteps();
+  const all = Object.values(steps).flatMap(step => [...step.apply, ...step.restore]);
+  assert.ok(!all.some(line => line.includes('/user/installations')), 'the operator\'s classic OAuth gh token gets 403 on the /user/installations family');
+  assert.equal(installationUrl, 'https://github.com/settings/installations/177599217');
+  const installation = steps.installation;
+  assert.ok(installation.apply.some(line => line.includes(installationUrl) && line.includes(repositoryB.repository) && line.includes('Only select repositories')),
+    'the exact browser action is written for the operator');
+  assert.ok(installation.apply.at(-1)!.includes('ghdep34-qualification.js --probe-installation'), 'verified afterwards with the App key');
+  assert.ok(steps.repositories.apply.some(line => line.startsWith(`gh repo create ${repositoryB.repository} --public`)));
+  assert.ok(steps.repositories.apply.some(line => line.startsWith(`gh repo create ${repositoryC.repository} --private`)));
+  assert.ok(!steps.repositories.apply.some(line => /installation/.test(line.split('#')[0]!)), 'creating the repositories touches no installation');
+  assert.ok(steps.teardown.apply.some(line => line.startsWith(`gh repo delete ${repositoryB.repository}`)), 'deleting B also removes it from the installation');
+});
+
+test('installation probe: membership only from the App\'s own issuance (a 422 for a repository outside the installation); anything else is unknown, never a pass', () => {
+  assert.equal(membership({ ok: true }), 'installed');
+  assert.equal(membership({ ok: false, code: 'GITHUB_QUERY_FAILED' }), 'not-installed');
+  assert.equal(membership({ ok: false, code: 'GITHUB_TRANSPORT_UNAVAILABLE' }), 'unknown:GITHUB_TRANSPORT_UNAVAILABLE');
+  assert.equal(membership({ ok: false, code: 'GITHUB_TOKEN_ISSUANCE_UNKNOWN' }), 'unknown:GITHUB_TOKEN_ISSUANCE_UNKNOWN');
+  assert.deepEqual(probeVerdict('installed', 'not-installed'), { ok: true, reasons: [] });
+  assert.deepEqual(probeVerdict('not-installed', 'not-installed').reasons, [`${repositoryB.repository}: not in installation 177599217 (do the browser step)`]);
+  assert.deepEqual(probeVerdict('installed', 'installed').reasons, [`${repositoryC.repository}: in installation 177599217 (remove it there; it must stay hidden)`]);
+  assert.equal(probeVerdict('installed', 'unknown:GITHUB_TRANSPORT_UNAVAILABLE').ok, false);
 });
