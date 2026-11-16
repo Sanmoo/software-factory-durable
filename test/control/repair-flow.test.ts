@@ -66,7 +66,7 @@ const executionsOf = (work: WorkView): ExecutionView[] => [...work.previousExecu
 const events = (work: WorkView, name: string) => work.history.filter(item => item.event === name).length;
 const complete = <T>(value: T) => ({ state: 'complete' as const, value });
 const failingCi = (observed: ReturnType<typeof observedPull>, sha: string, conclusion: string | null = 'failure', status = 'completed') => {
-  observed.classic = complete({ kind: 'required' as const, strict: false, enforcement: 'everyone', checks: [{ context: 'ci', integrationId: null }] });
+  observed.classic = complete({ kind: 'required' as const, strict: false, enforcement: 'everyone', checks: [{ context: 'ci', integrationId: null }], settings: null });
   observed.checkRuns = complete([{ id: 31, name: 'ci', headSha: sha, status: 'completed', conclusion: 'failure', appId: 15368, appSlug: 'github-actions', checkSuiteId: 701,
     startedAt: '2026-11-15T10:00:00Z', completedAt: null, url: 'https://github.com/acme/project/runs/31' }].map(item => ({ ...item, conclusion, status })));
 };
@@ -266,7 +266,7 @@ test('supervisor decision 1: under strict the Work shows that every base advance
   await h.settle(work => work.publication?.state === 'published', 'publication');
   await h.pause('pause', 1);
   observe(remote, first, { baseTip: advanced }, observed => {
-    observed.classic = complete({ kind: 'required' as const, strict: true, enforcement: 'everyone', checks: [{ context: 'ci', integrationId: null }] });
+    observed.classic = complete({ kind: 'required' as const, strict: true, enforcement: 'everyone', checks: [{ context: 'ci', integrationId: null }], settings: null });
     observed.checkRuns = complete([{ id: 31, name: 'ci', headSha: first, status: 'completed', conclusion: 'success', appId: 15368, appSlug: 'github-actions', checkSuiteId: 701,
       startedAt: '2026-11-15T10:00:00Z', completedAt: null, url: null }]);
     observed.comparison = complete({ status: 'diverged', aheadBy: 1, behindBy: 2 });

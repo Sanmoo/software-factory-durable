@@ -18,7 +18,7 @@ const fixture = async (name: string) => JSON.parse(await readFile(`test/entrypoi
 function stub(input: { pull: unknown; rules: unknown[] }): GitHubAccess {
   const get = async (path: string) => {
     if (path.endsWith('/pulls/5')) return structuredClone(input.pull);
-    if (path.endsWith('/branches/main')) return { commit: { sha: tip }, protected: true, protection: { enabled: true, required_status_checks: { enforcement_level: 'off', contexts: [] } } };
+    if (path.endsWith('/branches/main')) return { commit: { sha: tip }, protected: true, protection: { enabled: false, required_status_checks: { enforcement_level: 'off', contexts: [] } } };
     if (path.includes('/compare/')) return { status: 'ahead', ahead_by: 1, behind_by: 0 };
     throw new Error(`UNEXPECTED_GET:${path}`);
   };

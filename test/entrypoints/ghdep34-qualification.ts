@@ -63,7 +63,9 @@ export function humanSteps(input: { b1?: number; c1?: number; a?: number[] } = {
   const listInstalled = `gh api /user/installations/${installationId}/repositories --paginate --jq '.repositories[].full_name'`;
   return {
     repositories: { name: 'repositories', expect: `${repositoryB.repository} public with installation ${installationId}; ${repositoryC.repository} private without it`,
-      apply: [`test "$(gh api /user/installations --jq '.installations[] | select(.id==${installationId}) | .repository_selection')" = selected   # selected repositories: otherwise C cannot be hidden; stop`,
+      apply: [`gh auth status 2>&1 | grep -i 'token scopes' | grep -q delete_repo || { echo 'the gh token lacks the delete_repo scope (teardown deletes B and C): ` +
+        `run gh auth refresh -s delete_repo first'; exit 1; }   # scopes only; the token itself is never printed`,
+        `test "$(gh api /user/installations --jq '.installations[] | select(.id==${installationId}) | .repository_selection')" = selected   # selected repositories: otherwise C cannot be hidden; stop`,
         `gh repo create ${repositoryB.repository} --public --add-readme --description 'Software Factory qualification fixture: cross-repository blocker (R-GH-DEP)'`,
         `gh repo create ${repositoryC.repository} --private --add-readme --description 'Software Factory qualification fixture: blocker hidden from the App (R-GH-DEP)'`,
         `B_REPO_ID=$(gh api repos/${repositoryB.repository} --jq .id)`,

@@ -177,7 +177,7 @@ test('production Builder prompt is per session mode and names ONLY the tools tha
 test('ticket 18 AC2-AC5/AC7 composed: one owner run of the production composition carries ONE Ticket from admission to delivery and owned cleanup', async t => {
   const world = await githubWorld(t, { issues: [issue(3, { title: 'Factory smoke', body: 'Add docs/FACTORY_SMOKE.md. Validation: test -f docs/FACTORY_SMOKE.md' })], pulls: [], refs: {},
     rulesets: { 1: { enforcement: 'active', current_user_can_bypass: 'never' } }, comments: [], checks: {
-      branches: { main: { sha: tip, protected: true, protection: { enabled: true, required_status_checks: { enforcement_level: 'off', contexts: [] } } } },
+      branches: { main: { sha: tip, protected: true, protection: { enabled: false, required_status_checks: { enforcement_level: 'off', contexts: [] } } } },
       // As on the real test repository today: `update` (Restrict updates) is active on main, so a merge needs a bypass (ticket 39).
       rules: { main: [pullRequestRule, updateRule] },
       checkRuns: { [head]: [] }, statuses: { [head]: [] }, compare: { [`${tip}...${head}`]: { status: 'ahead', ahead_by: 1, behind_by: 0 } } } });

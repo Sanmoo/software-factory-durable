@@ -28,7 +28,9 @@ test('R-GH-DEP recipe: import and --plan are inert; cross-repository setup by th
   assert.ok(repositories.some(line => line.startsWith('gh repo create Sanmoo/factory-dependency-fixture --public')));
   assert.ok(repositories.some(line => line.startsWith('gh repo create Sanmoo/factory-dependency-hidden --private')));
   assert.ok(repositories.some(line => line.includes('--method PUT /user/installations/177599217/repositories/$B_REPO_ID')), 'B joins the installation (selected repositories)');
-  assert.ok(repositories[0]!.includes('repository_selection') && repositories[0]!.includes('= selected'), 'stops when the installation covers all repositories');
+  assert.ok(repositories[0]!.startsWith('gh auth status 2>&1 | grep -i \'token scopes\' | grep -q delete_repo'), 'teardown needs delete_repo: checked first, scopes only');
+  assert.ok(!repositories[0]!.includes('--show-token') && !repositories[0]!.includes('auth token'), 'never prints the token');
+  assert.ok(repositories[1]!.includes('repository_selection') && repositories[1]!.includes('= selected'), 'stops when the installation covers all repositories');
   assert.ok(plan.humanSteps.repositories.restore.some((line: string) => line.includes('--method DELETE /user/installations/177599217/repositories/')));
   const relations = (plan.humanSteps.issues.apply as string[]).filter(line => line.includes('/dependencies/blocked_by'));
   assert.equal(relations.length, 3);

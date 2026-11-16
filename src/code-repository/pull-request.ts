@@ -9,9 +9,12 @@ import { InvalidGitHubObservation, type GitHubAccess, type GitHubRead, type GitH
 export type Known<T> = { state: 'complete'; value: T } | { state: 'unknown'; code: string; waitSeconds?: number; nextStep: string };
 /** A required check as GitHub declares it: context plus the integration (GitHub App id) it must come from; null = any source. */
 export type RequiredCheck = { context: string; integrationId: number | null };
-/** Classic branch protection's required status checks. `none` only from an authorized complete branch read. */
-export type ClassicChecks = { kind: 'none'; evidence: 'BRANCH_NOT_PROTECTED' | 'STATUS_CHECKS_NOT_ENFORCED' } |
-  { kind: 'required'; strict: boolean; enforcement: string; checks: RequiredCheck[] };
+/** V-09.f: classic protection settings that can block a human PR merge, read from the full protection (facts; Control interprets them). */
+export type ClassicSettings = { lockBranch: boolean; requiredSignatures: boolean; requiredLinearHistory: boolean; pushRestrictions: boolean };
+/** Classic branch protection's required status checks. `none` only from an authorized complete branch read. `settings`: null only when the
+ * branch read proves there is no classic protection (not protected, or `protection.enabled: false` — a ruleset-only base); otherwise read. */
+export type ClassicChecks = ({ kind: 'none'; evidence: 'BRANCH_NOT_PROTECTED' | 'STATUS_CHECKS_NOT_ENFORCED' } |
+  { kind: 'required'; strict: boolean; enforcement: string; checks: RequiredCheck[] }) & { settings: ClassicSettings | null };
 /** Ticket 39: the parameters of the rules that can affect a human PR merge (GitHub REST ruleset rule parameters), as facts. */
 export type RuleParameters = { kind: 'update'; updateAllowsFetchAndMerge: boolean } |
   { kind: 'pull_request'; allowedMergeMethods: string[] | null; requiredApprovingReviewCount: number | null; requireCodeOwnerReview: boolean | null;
@@ -61,6 +64,9 @@ const context = z.string().min(1).max(255);
 const integration = z.number().int().safe().nullable().optional().transform(value => value !== null && value !== undefined && value > 0 ? value : null);
 const branchSchema = z.object({ commit: z.object({ sha }), protected: z.boolean(), protection: z.object({ enabled: z.boolean().optional(),
   required_status_checks: z.object({ enforcement_level: z.string().max(32).optional(), contexts: z.array(context).optional() }).optional() }).optional() });
+const enabled = z.object({ enabled: z.boolean() });
+// Every setting must be present: a missing one is unknown, never `false` (no green from an absent field).
+const protectionSchema = z.object({ lock_branch: enabled, required_signatures: enabled, required_linear_history: enabled, restrictions: z.unknown().optional() });
 const classicSchema = z.object({ strict: z.boolean(), contexts: z.array(context).max(500), checks: z.array(z.object({ context, app_id: integration })).max(500).optional() });
 const ruleSchema = z.object({ type: z.string().min(1).max(64), ruleset_id: id.optional(), ruleset_source_type: z.string().max(64).optional(),
   ruleset_source: z.string().max(256).optional(), parameters: z.unknown().optional() });
@@ -149,22 +155,35 @@ export function createPullRequestReader(options: { github: GitHubAccess }) {
     const branch = await read(repo, async session => parse(branchSchema, await session.get(`/repos/${repo.repository}/branches/${path(base)}`)));
     const baseTip: Known<string> = branch.ok ? { state: 'complete', value: branch.value.commit.sha } : known(branch);
     let classic: Known<ClassicChecks>;
-    if (!branch.ok) classic = known(branch);
-    else if (!branch.value.protected) classic = { state: 'complete', value: { kind: 'none', evidence: 'BRANCH_NOT_PROTECTED' } };
-    else if (!branch.value.protection?.required_status_checks?.enforcement_level) classic = { state: 'unknown', code: 'CLASSIC_PROTECTION_SUMMARY_ABSENT',
+    const protection = branch.ok ? branch.value.protection : undefined;
+    // V-09.f: classic protection exists unless the branch read proves otherwise; then its merge-blocking settings are read in full.
+    const settings = async (): Promise<Known<ClassicSettings | null>> => {
+      if (!branch.ok || !branch.value.protected || protection?.enabled === false) return { state: 'complete', value: null };
+      return known(await read(repo, async session => {
+        const full = parse(protectionSchema, await session.get(`/repos/${repo.repository}/branches/${path(base)}/protection`));
+        return { lockBranch: full.lock_branch.enabled, requiredSignatures: full.required_signatures.enabled, requiredLinearHistory: full.required_linear_history.enabled,
+          pushRestrictions: full.restrictions !== undefined && full.restrictions !== null };
+      }));
+    };
+    let checks: Known<Omit<Extract<ClassicChecks, { kind: 'required' }>, 'settings'> | { kind: 'none'; evidence: 'BRANCH_NOT_PROTECTED' | 'STATUS_CHECKS_NOT_ENFORCED' }>;
+    if (!branch.ok) checks = known(branch);
+    else if (!branch.value.protected) checks = { state: 'complete', value: { kind: 'none', evidence: 'BRANCH_NOT_PROTECTED' } };
+    else if (!protection?.required_status_checks?.enforcement_level) checks = { state: 'unknown', code: 'CLASSIC_PROTECTION_SUMMARY_ABSENT',
       nextStep: 'The base is protected but its required status checks summary was not returned; classic requirements are unknown.' };
-    else if (branch.value.protection.enabled === false || branch.value.protection.required_status_checks.enforcement_level === 'off') {
-      classic = { state: 'complete', value: { kind: 'none', evidence: 'STATUS_CHECKS_NOT_ENFORCED' } };
+    else if (protection.enabled === false || protection.required_status_checks.enforcement_level === 'off') {
+      checks = { state: 'complete', value: { kind: 'none', evidence: 'STATUS_CHECKS_NOT_ENFORCED' } };
     } else {
-      const enforcement = branch.value.protection.required_status_checks.enforcement_level;
-      classic = known(await read(repo, async session => {
+      const enforcement = protection.required_status_checks.enforcement_level;
+      checks = known(await read(repo, async session => {
         const detail = parse(classicSchema, await session.get(`/repos/${repo.repository}/branches/${path(base)}/protection/required_status_checks`));
-        const checks: RequiredCheck[] = (detail.checks ?? []).map(item => ({ context: item.context, integrationId: item.app_id }));
+        const found: RequiredCheck[] = (detail.checks ?? []).map(item => ({ context: item.context, integrationId: item.app_id }));
         // Legacy `contexts` without a `checks` entry: any source.
-        for (const name of detail.contexts) if (!checks.some(item => item.context === name)) checks.push({ context: name, integrationId: null });
-        return { kind: 'required' as const, strict: detail.strict, enforcement, checks };
+        for (const name of detail.contexts) if (!found.some(item => item.context === name)) found.push({ context: name, integrationId: null });
+        return { kind: 'required' as const, strict: detail.strict, enforcement, checks: found };
       }));
     }
+    const merge = checks.state === 'complete' ? await settings() : null;
+    classic = checks.state !== 'complete' ? checks : merge!.state !== 'complete' ? merge! : { state: 'complete', value: { ...checks.value, settings: merge!.value } };
     // Active rules of the base, including those inherited from organization/enterprise rulesets (GitHub lists only active rules).
     const rules = known(await read(repo, async session => (await session.list(`/repos/${repo.repository}/rules/branches/${path(base)}`, { maxPages: 10 })).map(rule)));
     return { baseTip, classic, rules };

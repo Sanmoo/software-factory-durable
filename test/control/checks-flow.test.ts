@@ -20,11 +20,11 @@ function observed(runs: { id: number; name: string; status?: string; conclusion?
     pullRequest: { pullRequestId: 9007, nodeId: 'PR_node7', number: 7, url: 'https://github.com/acme/project/pull/7', state: 'open', merged: false, draft: true,
       headRef: 'factory/3-abcdef12', headSha: ownHead, headRepositoryId: 3, baseRef: 'main', baseSha: 'a'.repeat(40), mergeCommitSha: null, mergeable: true, mergeableState: 'clean',
       author: { id: 41898282, login: 'factory-app[bot]', type: 'Bot' } },
-    baseTip: complete('b'.repeat(40)), classic: complete({ kind: 'required', strict: false, enforcement: 'everyone', checks: [{ context: 'build', integrationId: 15368 }] }),
+    baseTip: complete('b'.repeat(40)), classic: complete({ kind: 'required', strict: false, enforcement: 'everyone', checks: [{ context: 'build', integrationId: 15368 }], settings: null }),
     rules: complete([]), checkRuns: complete(runs.map(run => ({ headSha: ownHead, status: 'completed', conclusion: 'success', appId: 15368, appSlug: 'github-actions', checkSuiteId: 500,
       startedAt: null, completedAt: null, url: null, ...run }))), statuses: complete([]), comparison: complete({ status: 'ahead', aheadBy: 1, behindBy: 0 }),
     recheck: complete({ headSha: ownHead, baseRef: 'main', state: 'open', merged: false }), limitations: [],
-    final: { baseTip: complete('b'.repeat(40)), classic: complete({ kind: 'required', strict: false, enforcement: 'everyone', checks: [{ context: 'build', integrationId: 15368 }] }),
+    final: { baseTip: complete('b'.repeat(40)), classic: complete({ kind: 'required', strict: false, enforcement: 'everyone', checks: [{ context: 'build', integrationId: 15368 }], settings: null }),
       rules: complete([]) }, ...extra };
 }
 

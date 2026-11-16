@@ -25,13 +25,13 @@ function observationAt(overrides: Partial<Observed>, pull: Partial<Observed['pul
     pullRequest: { pullRequestId: 9007, nodeId: 'PR_node7', number: 7, url: 'https://github.com/acme/project/pull/7', state: 'open', merged: false, draft: true,
       headRef: 'factory/3-abcdef12', headSha: head, headRepositoryId: 3, baseRef: 'main', baseSha: 'a'.repeat(40), mergeCommitSha: 'e'.repeat(40), mergeable: true,
       mergeableState: 'clean', author: { id: 41898282, login: 'factory-app[bot]', type: 'Bot' }, ...pull },
-    baseTip: complete(tip), classic: complete({ kind: 'none' as const, evidence: 'BRANCH_NOT_PROTECTED' as const }), rules: complete([]),
+    baseTip: complete(tip), classic: complete({ kind: 'none' as const, evidence: 'BRANCH_NOT_PROTECTED' as const, settings: null }), rules: complete([]),
     checkRuns: complete([]), statuses: complete([]), comparison: complete({ status: 'ahead', aheadBy: 1, behindBy: 0 }),
     recheck: complete({ headSha: head, baseRef: 'main', state: 'open' as const, merged: false }), limitations: ['synthetic'], ...overrides };
 }
 const evaluate = (observed: ChecksObservation, extra: Partial<ChecksExpectation> = {}) => evaluateChecks({ at: '2026-11-14T12:00:05.000Z', expect: { ...expect, ...extra }, observation: observed });
 const codes = (evaluation: ReturnType<typeof evaluate>) => evaluation.reasons.map(reason => `${reason.category}:${reason.code}${reason.subject ? `:${reason.subject}` : ''}`);
-const classic = (strict: boolean, checks: { context: string; integrationId: number | null }[]) => complete({ kind: 'required' as const, strict, enforcement: 'everyone', checks });
+const classic = (strict: boolean, checks: { context: string; integrationId: number | null }[]) => complete({ kind: 'required' as const, strict, enforcement: 'everyone', checks, settings: null });
 const ruleset = (id: number, strict: boolean, checks: { context: string; integrationId: number | null }[], sourceType = 'Organization') =>
   ({ type: 'required_status_checks', ruleset: { id, sourceType, source: 'acme' }, statusChecks: { strict, checks } });
 

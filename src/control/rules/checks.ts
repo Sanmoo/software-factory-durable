@@ -16,7 +16,18 @@ type Parameters = { kind: 'update'; updateAllowsFetchAndMerge: boolean } |
   { kind: 'required_deployments'; environments: string[] };
 type Rule = { type: string; ruleset: { id: number | null; sourceType: string | null; source: string | null }; statusChecks?: { strict: boolean; checks: Check[] };
   parameters?: Parameters; unparsed?: true };
-type Classic = { kind: 'none'; evidence: string } | { kind: 'required'; strict: boolean; enforcement: string; checks: Check[] };
+/** V-09.f: classic protection settings that can block the human merge; null = no classic protection on the base (read fact). */
+type ClassicSettings = { lockBranch: boolean; requiredSignatures: boolean; requiredLinearHistory: boolean; pushRestrictions: boolean };
+type Classic = ({ kind: 'none'; evidence: string } | { kind: 'required'; strict: boolean; enforcement: string; checks: Check[] }) & { settings: ClassicSettings | null };
+/** The source every classic-protection modality carries. */
+const classicSource = { id: null, sourceType: 'ClassicProtection', source: null };
+/** V-09.f (spec §9.2 traditional protection, ticket 39 principle): each enabled classic setting that can block the merge, as a base rule. */
+export function classicRules(classic: Classic): Rule[] {
+  const settings = classic.settings;
+  if (!settings) return [];
+  return [...(settings.lockBranch ? ['lock_branch'] : []), ...(settings.requiredSignatures ? ['required_signatures'] : []),
+    ...(settings.requiredLinearHistory ? ['required_linear_history'] : []), ...(settings.pushRestrictions ? ['restrictions'] : [])].map(type => ({ type, ruleset: classicSource }));
+}
 /** Structural copy of the CodeRepository `readPullRequest` observation (Control consumes facts; it never imports the adapter). */
 export type ChecksObservation = { kind: 'unavailable'; source: 'github-rest'; observedAt: string; repository: string; code: string; waitSeconds?: number; nextStep: string } |
   { kind: 'observed'; source: 'github-rest'; observedAt: string; completedAt: string; repository: string; repositoryId: number;
@@ -91,6 +102,9 @@ export function interpretBaseRules(rules: Rule[]): (ModalityView & Required<Pick
       return parameters.environments.length ? view('merge-blocking', 'blocking', 'DEPLOYMENTS_REQUIRED', parameters.environments.slice(0, 10).map(name => `ENVIRONMENT:${name}`))
         : view('not-check-related', 'not-blocking', 'NO_DEPLOYMENT_ENVIRONMENT');
     }
+    // V-09.f classic protection: a locked branch is read-only and push restrictions limit who may update it (a merge included), as `update`.
+    if (rule.type === 'lock_branch' && rule.ruleset.sourceType === classicSource.sourceType) return view('merge-blocking', 'blocking', 'BRANCH_LOCKED');
+    if (rule.type === 'restrictions' && rule.ruleset.sourceType === classicSource.sourceType) return view('merge-blocking', 'blocking', 'PUSH_RESTRICTED');
     // The Factory neither signs nor verifies the signatures of the commits a merge would bring.
     if (rule.type === 'required_signatures') return view('merge-blocking', 'blocking', 'SIGNED_COMMITS_REQUIRED');
     if (rule.type === 'required_linear_history') {
@@ -120,7 +134,7 @@ export function classifyRun(run: Pick<Run, 'status' | 'conclusion'>): CheckClass
 export function classifyStatus(status: Pick<Status, 'state'>): CheckClassification {
   return status.state === 'success' ? 'satisfied' : status.state === 'pending' ? 'waiting' : status.state === 'failure' ? 'failed' : 'uncertain';
 }
-const sourceOf = (rule: Rule) => `ruleset:${rule.ruleset.id ?? 'unknown'}:${rule.ruleset.sourceType ?? 'unknown'}:${rule.ruleset.source ?? 'unknown'}`;
+const sourceOf = (rule: Rule) => rule.ruleset.sourceType === classicSource.sourceType ? 'classic' : `ruleset:${rule.ruleset.id ?? 'unknown'}:${rule.ruleset.sourceType ?? 'unknown'}:${rule.ruleset.source ?? 'unknown'}`;
 const runView = (run: Run, superseded: number | null): CheckResultView => ({ kind: 'check-run', id: run.id, name: run.name, sha: run.headSha,
   origin: run.appId === null ? 'app:unknown' : `app:${run.appId}${run.appSlug ? `(${run.appSlug})` : ''}`, status: run.status, conclusion: run.conclusion,
   classification: classifyRun(run), attempt: superseded === null ? null : { suite: run.checkSuiteId, superseded }, url: run.url });
@@ -199,20 +213,21 @@ export function evaluateChecks(input: { at: string; expect: ChecksExpectation; o
   if (observation.classic.state === 'unknown') reason('indeterminate', 'REQUIREMENTS_UNKNOWN', 'classic');
   else if (observation.classic.value.kind === 'required') accumulate('classic', observation.classic.value.strict, observation.classic.value.checks);
   const modalities: ChecksEvaluation['modalities'] = [];
+  // V-09.f: classic settings join the active rules (the allowed merge methods still come from the rulesets that state them).
+  const classicSettings = observation.classic.state === 'complete' ? classicRules(observation.classic.value) : [];
   if (observation.rules.state === 'unknown') reason('indeterminate', 'REQUIREMENTS_UNKNOWN', 'rules');
-  else {
-    const interpreted = interpretBaseRules(observation.rules.value);
-    observation.rules.value.forEach((rule, index) => {
-      const item = interpreted[index]!;
-      modalities.push(item);
-      const subject = `${rule.type}@${item.source}`;
-      if (item.interpretation === 'required-checks' && rule.statusChecks) accumulate(item.source, rule.statusChecks.strict, rule.statusChecks.checks);
-      // Only this rule did not match its expected shape (it may carry requirements), or its kind is unknown: never a waiver.
-      else if (item.interpretation === 'unsupported') reason('indeterminate', 'RULE_NOT_INTERPRETABLE', subject);
-      else if (item.merge === 'blocking') reason('merge', item.reason, subject);
-      else if (item.merge === 'unknown') reason('indeterminate', item.reason, subject);
-    });
-  }
+  const baseRules = [...(observation.rules.state === 'complete' ? observation.rules.value : []), ...classicSettings];
+  const interpreted = interpretBaseRules(baseRules);
+  baseRules.forEach((rule, index) => {
+    const item = interpreted[index]!;
+    modalities.push(item);
+    const subject = `${rule.type}@${item.source}`;
+    if (item.interpretation === 'required-checks' && rule.statusChecks) accumulate(item.source, rule.statusChecks.strict, rule.statusChecks.checks);
+    // Only this rule did not match its expected shape (it may carry requirements), or its kind is unknown: never a waiver.
+    else if (item.interpretation === 'unsupported') reason('indeterminate', 'RULE_NOT_INTERPRETABLE', subject);
+    else if (item.merge === 'blocking') reason('merge', item.reason, subject);
+    else if (item.merge === 'unknown') reason('indeterminate', item.reason, subject);
+  });
   const unsupported = modalities.some(item => item.interpretation === 'unsupported');
   const requiredSet: ChecksEvaluation['requiredSet'] = observation.classic.state !== 'complete' || observation.rules.state !== 'complete' || unsupported ? 'unknown'
     : requirements.size ? 'non-empty' : 'empty-complete';

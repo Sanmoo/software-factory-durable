@@ -3,7 +3,7 @@ import type { AccessDiagnostic, GitHubScope } from '../contracts/index.js';
 import { InvalidGitHubObservation, type GitHubAccess } from '../platform/github/index.js';
 import { createPullRequestReader, type PullRequestObservation, type PullRequestQuery } from './pull-request.js';
 
-export type { BranchRule, CheckRunFact, ClassicChecks, Known, PullRequestFacts, PullRequestObservation, PullRequestQuery, RequiredCheck, RuleParameters, StatusFact } from './pull-request.js';
+export type { BranchRule, CheckRunFact, ClassicChecks, ClassicSettings, Known, PullRequestFacts, PullRequestObservation, PullRequestQuery, RequiredCheck, RuleParameters, StatusFact } from './pull-request.js';
 import { feedbackOperations, type FeedbackObservation, type FeedbackQuery } from './feedback.js';
 import { deliveryOperations, type BranchCleanupResult, type BranchCleanupSelection, type CleanupEffect, type OwnPullRequestObservation, type PullRequestRef } from './delivery.js';
 

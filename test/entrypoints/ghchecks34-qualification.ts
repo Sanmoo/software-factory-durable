@@ -232,8 +232,8 @@ export function plan() {
       'stop-environment: own boot of the last recorded Execution when it may still run'],
     notCovered: ['a neutral conclusion (needs a check-run-writing App; stays S)', 'a change of head/rule/base exactly between the readiness read and its mutation (race; stays S)',
       'pagination beyond one page of rules/check runs (stays I(sub))'],
-    predictedFinding: 'classic protection is read only for required status checks (code-repository requirements()): lock_branch, required_signatures and classic linear history are ' +
-      'not read, so the classic read may come out satisfied; the verdict check classic.unread-not-green then FAILS and V-09.f stays open with that gap',
+    classicSettings: 'V-09.f: the composition reads the FULL classic protection (lock_branch, required_signatures, required_linear_history, restrictions) and interprets them as ' +
+      'base rules with source `classic` (lock/signatures/restrictions merge-blocking; linear history against the rulesets\' allowed methods); a missing setting or a failed read is unknown',
   };
 }
 
@@ -436,8 +436,11 @@ export function verdictOf(saved: Partial<Record<'waiver' | 'run' | 'failing' | '
     { sources: pick(requirement(classic, checkName), 'sources'), completeness: pick(classic, 'completeness', 'classic') },
     saved.classic?.status === 'success' && (pick(requirement(classic, checkName), 'sources') as string[] | undefined ?? []).some(source => source === 'classic') &&
       (pick(requirement(classic, checkName), 'sources') as string[] | undefined ?? []).some(source => source.startsWith(`ruleset:${rulesetId}`)));
-  check('classic.unread-not-green', 'V-09.f', 'classic lock_branch/signatures/linear history are not read: the outcome is never satisfied (indeterminate or blocked)',
-    { outcome: pick(classic, 'outcome'), reasons: reasonCodes(classic) }, saved.classic?.status === 'success' && pick(classic, 'outcome') !== 'satisfied');
+  const classicModalities = list(pick(classic, 'modalities')).filter(item => item.source === 'classic').map(item => `${item.type}:${item.merge}:${item.reason}`);
+  check('classic.settings-merge-blocking', 'V-09.f', 'classic lock_branch and required signatures read and merge-blocking (source classic), linear history interpreted; outcome blocked, never satisfied',
+    { outcome: pick(classic, 'outcome'), modalities: classicModalities, reasons: reasonCodes(classic) },
+    saved.classic?.status === 'success' && pick(classic, 'outcome') === 'blocked' && classicModalities.includes('lock_branch:blocking:BRANCH_LOCKED') &&
+      classicModalities.includes('required_signatures:blocking:SIGNED_COMMITS_REQUIRED') && classicModalities.some(item => item.startsWith('required_linear_history:')));
   const homonym = pick(saved.homonym, 'evaluation');
   check('homonym.other-origin', 'V-09.c', `the operator's ${checkName} failure status is another origin than the bound App (${actionsAppId}): visible as otherOrigin, ` +
     'never the required result (the requirement stays satisfied by the Actions check run)',

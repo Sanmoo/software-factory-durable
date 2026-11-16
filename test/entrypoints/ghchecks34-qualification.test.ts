@@ -41,6 +41,7 @@ test('R-GH-CHECKS recipe: import and --plan are inert; own namespace, two pinned
   for (const never of ['merge of the Factory PR', 'approval', 'bypass', 'change of base protection, rulesets, workflows or required checks by the Factory or by this recipe']) {
     assert.ok(plan.github.never.includes(never), never);
   }
+  assert.match(plan.classicSettings, /lock_branch, required_signatures, required_linear_history, restrictions/);
   await assert.rejects(recipe.main(['retry']), /EXACT_PHASE_REQUIRED/);
   await assert.rejects(recipe.main(['preflight']), /TICKET_NOT_PINNED/, 'refused before any effect while the issues are not pinned');
   assert.equal(forbidden, 0);

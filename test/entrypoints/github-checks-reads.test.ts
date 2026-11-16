@@ -23,7 +23,8 @@ const checksWorld = (overrides: Partial<ChecksWorld> = {}): ChecksWorld => ({
   ...overrides });
 
 async function compose(t: Parameters<typeof githubWorld>[0], world: Partial<World>) {
-  const fixture = await githubWorld(t, { issues: [], pulls: [own], ...world });
+  // Classic protection exists in the default world (enabled: true): its full payload is served unless a test overrides it.
+  const fixture = await githubWorld(t, { issues: [], pulls: [own], classicProtection: { main: classicPayload({}) }, ...world });
   const github = createGitHubAccess({ root: fixture.root, executable: fixture.executable, appId: 1, privateKeyFile: 'credentials/app.pem' });
   return { ...fixture, repository: createCodeRepository({ github }) };
 }
@@ -38,7 +39,8 @@ test('AC1: one read of the own PR covers identity/head/base/test merge/tri-state
     mergeable: null, mergeableState: 'unknown', author: { id: 41898282, login: 'factory-app[bot]', type: 'Bot' } });
   assert.deepEqual(observed.baseTip, { state: 'complete', value: tip });
   assert.deepEqual(observed.classic, { state: 'complete', value: { kind: 'required', strict: true, enforcement: 'everyone',
-    checks: [{ context: 'build', integrationId: 15368 }, { context: 'legacy', integrationId: null }] } });
+    checks: [{ context: 'build', integrationId: 15368 }, { context: 'legacy', integrationId: null }],
+    settings: { lockBranch: false, requiredSignatures: false, requiredLinearHistory: false, pushRestrictions: false } } });
   assert.equal(observed.rules.state, 'complete');
   assert.deepEqual(observed.rules.state === 'complete' && observed.rules.value.map(rule => [rule.type, rule.ruleset.id, rule.ruleset.sourceType, rule.statusChecks ?? null]), [
     ['required_status_checks', 11, 'Organization', { strict: false, checks: [{ context: 'lint', integrationId: 15368 }, { context: 'ci/external', integrationId: null }] }],
@@ -76,12 +78,13 @@ test('AC2: classic absence is concluded only from an authorized complete branch 
   const unprotected = await compose(t, { checks: checksWorld({ branches: { main: { sha: tip, protected: false } }, requiredStatusChecks: {} }) });
   const a = await unprotected.repository.readPullRequest({ repo: worldScope, number: 7 });
   assert.ok(a.kind === 'observed');
-  assert.deepEqual(a.classic, { state: 'complete', value: { kind: 'none', evidence: 'BRANCH_NOT_PROTECTED' } });
+  assert.deepEqual(a.classic, { state: 'complete', value: { kind: 'none', evidence: 'BRANCH_NOT_PROTECTED', settings: null } });
   const off = await compose(t, { checks: checksWorld({ branches: { main: { sha: tip, protected: true, protection: { enabled: true,
     required_status_checks: { enforcement_level: 'off', contexts: [], checks: [] } } } }, requiredStatusChecks: {} }) });
   const b = await off.repository.readPullRequest({ repo: worldScope, number: 7 });
   assert.ok(b.kind === 'observed');
-  assert.deepEqual(b.classic, { state: 'complete', value: { kind: 'none', evidence: 'STATUS_CHECKS_NOT_ENFORCED' } });
+  assert.deepEqual(b.classic, { state: 'complete', value: { kind: 'none', evidence: 'STATUS_CHECKS_NOT_ENFORCED',
+    settings: { lockBranch: false, requiredSignatures: false, requiredLinearHistory: false, pushRestrictions: false } } }, 'classic protection without status checks: its settings are still read');
   const summaryless = await compose(t, { checks: checksWorld({ branches: { main: { sha: tip, protected: true } } }) });
   const c = await summaryless.repository.readPullRequest({ repo: worldScope, number: 7 });
   assert.ok(c.kind === 'observed');
@@ -90,6 +93,41 @@ test('AC2: classic absence is concluded only from an authorized complete branch 
   const d = await denied.repository.readPullRequest({ repo: worldScope, number: 7 });
   assert.ok(d.kind === 'observed');
   assert.deepEqual([d.baseTip.state, d.classic.state, d.comparison], ['unknown', 'unknown', null], 'denied access never proves an unprotected base');
+});
+
+/** Classic protection exactly as `GET /repos/{o}/{r}/branches/{b}/protection` returns it (what the R-GH-CHECKS `classic` step creates). */
+const classicPayload = (enabled: { lock?: boolean; signatures?: boolean; linear?: boolean }, extra: object = {}) => ({
+  url: 'https://api.github.com/repos/acme/project/branches/main/protection',
+  required_status_checks: { url: 'https://api.github.com/repos/acme/project/branches/main/protection/required_status_checks', strict: true, contexts: ['build'],
+    contexts_url: 'https://api.github.com/repos/acme/project/branches/main/protection/required_status_checks/contexts', checks: [{ context: 'build', app_id: 15368 }] },
+  required_signatures: { url: 'https://api.github.com/repos/acme/project/branches/main/protection/required_signatures', enabled: enabled.signatures ?? false },
+  enforce_admins: { url: 'https://api.github.com/repos/acme/project/branches/main/protection/enforce_admins', enabled: false },
+  required_linear_history: { enabled: enabled.linear ?? false }, allow_force_pushes: { enabled: false }, allow_deletions: { enabled: false }, block_creations: { enabled: false },
+  required_conversation_resolution: { enabled: false }, lock_branch: { enabled: enabled.lock ?? false }, allow_fork_syncing: { enabled: false }, ...extra });
+test('V-09.f: classic lock_branch, signatures, linear history and push restrictions are read from the full protection; never absent from a failed read', async t => {
+  const strict = await compose(t, { checks: checksWorld(), classicProtection: { main: classicPayload({ lock: true, signatures: true, linear: true }) } });
+  const a = await strict.repository.readPullRequest({ repo: worldScope, number: 7 });
+  assert.ok(a.kind === 'observed' && a.classic.state === 'complete');
+  assert.deepEqual(a.classic.value.settings, { lockBranch: true, requiredSignatures: true, requiredLinearHistory: true, pushRestrictions: false });
+  assert.ok((await strict.trace()).some(entry => entry.endpoint.endsWith('/branches/main/protection') && entry.method === 'GET'));
+  const restricted = await compose(t, { checks: checksWorld(), classicProtection: { main: classicPayload({}, { restrictions: { users: [], teams: [], apps: [] } }) } });
+  const b = await restricted.repository.readPullRequest({ repo: worldScope, number: 7 });
+  assert.ok(b.kind === 'observed' && b.classic.state === 'complete');
+  assert.deepEqual(b.classic.value.settings, { lockBranch: false, requiredSignatures: false, requiredLinearHistory: false, pushRestrictions: true });
+  const hidden = await compose(t, { checks: checksWorld(), classicProtection: {} });
+  const c = await hidden.repository.readPullRequest({ repo: worldScope, number: 7 });
+  assert.ok(c.kind === 'observed');
+  assert.equal(c.classic.state, 'unknown', 'a 404/denied full protection read never proves the settings absent');
+  const partial = await compose(t, { checks: checksWorld(), classicProtection: { main: (({ lock_branch: _lock, ...rest }) => rest)(classicPayload({})) } });
+  const d = await partial.repository.readPullRequest({ repo: worldScope, number: 7 });
+  assert.ok(d.kind === 'observed');
+  assert.equal(d.classic.state, 'unknown', 'a payload without one of the settings is unknown, never false');
+  const rulesetOnly = await compose(t, { checks: checksWorld({ branches: { main: { sha: tip, protected: true, protection: { enabled: false,
+    required_status_checks: { enforcement_level: 'off', contexts: [] } } } }, requiredStatusChecks: {} }) });
+  const e = await rulesetOnly.repository.readPullRequest({ repo: worldScope, number: 7 });
+  assert.ok(e.kind === 'observed');
+  assert.deepEqual(e.classic, { state: 'complete', value: { kind: 'none', evidence: 'STATUS_CHECKS_NOT_ENFORCED', settings: null } }, 'ruleset-only base (real q39 shape: enabled false)');
+  assert.ok(!(await rulesetOnly.trace()).some(entry => entry.endpoint.endsWith('/protection')), 'no classic protection: nothing more is read');
 });
 
 test('AC7: the re-read after the collection exposes a push during it; an unreadable pull request is unavailable', async t => {

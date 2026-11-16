@@ -127,3 +127,43 @@ test('AC4: the aggregated mergeable_state blocked is neither a conflict nor a fa
   const blocked = readiness(checksOf(ruleset26435808, { mergeableState: 'blocked', mergeable: true }));
   assert.deepEqual(reasonsOf(blocked), [`merge:confirmed:MERGE_BLOCKED_UPDATE_RESTRICTED:update@${src}`], 'only the rule, never MERGE_CONFLICT or a checks failure');
 });
+
+// V-09.f (spec §9.2 "proteção tradicional", ticket 39 principle): classic branch protection settings that block the human merge are base
+// rules like their ruleset counterparts; read facts only (never assumed absent), with the source `classic`.
+const complete = <T>(value: T) => ({ state: 'complete' as const, value });
+const settings = (extra: Partial<{ lockBranch: boolean; requiredSignatures: boolean; requiredLinearHistory: boolean; pushRestrictions: boolean }>) =>
+  ({ lockBranch: false, requiredSignatures: false, requiredLinearHistory: false, pushRestrictions: false, ...extra });
+const withClassic = (classicSettings: ReturnType<typeof settings> | null, rules: BranchRule[] = [pullRequest(['merge', 'squash', 'rebase'])]) => {
+  const base = observedPull({ rules });
+  const classic = complete({ kind: 'none' as const, evidence: 'STATUS_CHECKS_NOT_ENFORCED' as const, settings: classicSettings });
+  return evaluateChecks({ at, expect, observation: { ...base, classic, final: { ...base.final, classic } } });
+};
+test('V-09.f: classic lock_branch, required signatures and push restrictions block the merge (source classic); readiness never ready', () => {
+  const locked = withClassic(settings({ lockBranch: true, requiredSignatures: true, pushRestrictions: true }));
+  assert.deepEqual(codes(locked).filter(code => code.startsWith('merge:')), ['merge:BRANCH_LOCKED:lock_branch@classic',
+    'merge:SIGNED_COMMITS_REQUIRED:required_signatures@classic', 'merge:PUSH_RESTRICTED:restrictions@classic']);
+  assert.equal(locked.outcome, 'blocked');
+  assert.deepEqual(locked.modalities.filter(item => item.source === 'classic').map(item => [item.type, item.merge, item.reason]),
+    [['lock_branch', 'blocking', 'BRANCH_LOCKED'], ['required_signatures', 'blocking', 'SIGNED_COMMITS_REQUIRED'], ['restrictions', 'blocking', 'PUSH_RESTRICTED']]);
+  const verdict = readiness(locked);
+  assert.equal(verdict.decision, 'not-ready');
+  assert.ok(reasonsOf(verdict).includes('merge:confirmed:MERGE_BLOCKED_BRANCH_LOCKED:lock_branch@classic'));
+});
+test('V-09.f: classic linear history follows the allowed merge methods (rulesets); unknown methods are indeterminate, never green', () => {
+  const allowed = withClassic(settings({ requiredLinearHistory: true }), [pullRequest(['merge', 'squash'])]);
+  assert.deepEqual(allowed.modalities.filter(item => item.source === 'classic').map(item => [item.type, item.merge, item.reason]),
+    [['required_linear_history', 'not-blocking', 'LINEAR_HISTORY_METHOD_ALLOWED']]);
+  assert.equal(allowed.outcome, 'satisfied');
+  const mergeOnly = withClassic(settings({ requiredLinearHistory: true }), [pullRequest(['merge'])]);
+  assert.ok(codes(mergeOnly).includes('merge:LINEAR_HISTORY_NO_ALLOWED_METHOD:required_linear_history@classic'));
+  const unknownMethods = withClassic(settings({ requiredLinearHistory: true }), [rule('pull_request')]);
+  assert.ok(codes(unknownMethods).includes('indeterminate:MERGE_METHODS_UNKNOWN:required_linear_history@classic'));
+  assert.equal(unknownMethods.outcome, 'indeterminate');
+});
+test('V-09.f: without classic protection (null settings) nothing classic is added; a classic read that failed stays indeterminate', () => {
+  const none = withClassic(null);
+  assert.deepEqual(none.modalities.filter(item => item.source === 'classic'), []);
+  assert.equal(none.outcome, 'satisfied');
+  const quiet = withClassic(settings({}));
+  assert.deepEqual(quiet.modalities.filter(item => item.source === 'classic'), [], 'classic protection with no merge-blocking setting adds nothing');
+});

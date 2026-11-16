@@ -68,7 +68,7 @@ export function observedPull(extra: { headSha?: string; draft?: boolean; mergeab
     pullRequest: { pullRequestId: 9007, nodeId: extra.nodeId ?? 'PR_node7', number: 7, url: 'https://github.com/acme/project/pull/7', state: extra.state ?? 'open', merged: extra.merged ?? false,
       draft: extra.draft ?? true, headRef: branch, headSha: sha, headRepositoryId: 3, baseRef: 'main', baseSha: 'a'.repeat(40), mergeCommitSha: null,
       mergeable: extra.mergeable === undefined ? true : extra.mergeable, mergeableState: extra.mergeableState ?? 'blocked', author: { id: 41898282, login: 'factory-app[bot]', type: 'Bot' } },
-    baseTip: complete(tip), classic: complete({ kind: 'none', evidence: 'STATUS_CHECKS_NOT_ENFORCED' }), rules: complete(rules), checkRuns: complete([]), statuses: complete([]),
+    baseTip: complete(tip), classic: complete({ kind: 'none', evidence: 'STATUS_CHECKS_NOT_ENFORCED', settings: null }), rules: complete(rules), checkRuns: complete([]), statuses: complete([]),
     comparison: complete({ status: 'ahead', aheadBy: 1, behindBy: 0 }), recheck: complete({ headSha: extra.recheckHead ?? sha, baseRef: 'main', state: extra.state ?? 'open', merged: extra.merged ?? false }),
-    final: { baseTip: complete(tip), classic: complete({ kind: 'none', evidence: 'STATUS_CHECKS_NOT_ENFORCED' }), rules: complete(rules) }, limitations: [] };
+    final: { baseTip: complete(tip), classic: complete({ kind: 'none', evidence: 'STATUS_CHECKS_NOT_ENFORCED', settings: null }), rules: complete(rules) }, limitations: [] };
 }

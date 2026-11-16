@@ -28,7 +28,11 @@ function builderGh(executable: string, token: string, endpoint: string, body: ob
 }
 
 test('AC1-AC7 composed: after ticket 14 links the own draft PR, the owner loop explains its required checks from real GitHub reads, durably', async t => {
-  const world = await githubWorld(t, { issues: [issue(3)], pulls: [], refs: {}, rulesets: { 1: { enforcement: 'active', current_user_can_bypass: 'never' } }, checks: {
+  const world = await githubWorld(t, { issues: [issue(3)], pulls: [], refs: {}, rulesets: { 1: { enforcement: 'active', current_user_can_bypass: 'never' } },
+    // Classic protection as GET /branches/main/protection returns it (V-09.f: its merge-blocking settings are read; none enabled here).
+    classicProtection: { main: { required_status_checks: { strict: false, contexts: ['build'], checks: [{ context: 'build', app_id: 15368 }] }, required_signatures: { enabled: false },
+      enforce_admins: { enabled: false }, required_linear_history: { enabled: false }, allow_force_pushes: { enabled: false }, allow_deletions: { enabled: false },
+      lock_branch: { enabled: false } } }, checks: {
     branches: { main: { sha: tip, protected: true, protection: { enabled: true, required_status_checks: { enforcement_level: 'everyone', contexts: ['build'] } } } },
     requiredStatusChecks: { main: { strict: false, contexts: ['build'], checks: [{ context: 'build', app_id: 15368 }] } },
     rules: { main: [{ type: 'pull_request', ruleset_id: 1, ruleset_source_type: 'Repository', ruleset_source: 'acme/project' },

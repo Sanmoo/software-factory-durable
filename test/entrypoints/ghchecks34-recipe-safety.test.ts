@@ -125,7 +125,9 @@ function passing() {
     rerun: { status: 'success', reads: [{ evaluation: { outcome: 'waiting', requirements: [req('factory-gate', { state: 'waiting', results: [{ classification: 'waiting' }] })] } }] },
     contexts: { status: 'success', evaluation: { strict: { required: true }, reasons: [{ category: 'wait', code: 'REQUIRED_CHECK_ABSENT', subject: 'factory-absent' }],
       requirements: [req('factory-optional', { state: 'satisfied', results: [{ conclusion: 'skipped' }] })], modalities: [{ type: 'required_linear_history', reason: 'LINEAR_HISTORY_METHOD_ALLOWED' }] } },
-    classic: { status: 'success', evaluation: { outcome: 'indeterminate', reasons: [], requirements: [req('factory-gate', { sources: ['classic', 'ruleset:26435808:Repository:x'] })] } },
+    classic: { status: 'success', evaluation: { outcome: 'blocked', reasons: [], requirements: [req('factory-gate', { sources: ['classic', 'ruleset:26435808:Repository:x'] })],
+      modalities: [{ type: 'lock_branch', source: 'classic', merge: 'blocking', reason: 'BRANCH_LOCKED' }, { type: 'required_signatures', source: 'classic', merge: 'blocking', reason: 'SIGNED_COMMITS_REQUIRED' },
+        { type: 'required_linear_history', source: 'classic', merge: 'not-blocking', reason: 'LINEAR_HISTORY_METHOD_ALLOWED' }] } },
     homonym: { status: 'success', evaluation: { requirements: [req('factory-gate', { state: 'satisfied', results: [{ kind: 'check-run', origin: 'app:15368', classification: 'satisfied' }],
       otherOrigin: [{ kind: 'status', origin: 'creator:Sanmoo(User)', status: 'failure' }] })] } },
     inspect: { work: { publication: { linkedHeads: [h1, h2, h3] },
@@ -146,7 +148,10 @@ test('verdict: met on a complete passing set; each obligation fails when its obs
   assert.ok(failingIds(saved).includes('no-bypass'), 'a change of the CI script fails the run');
   saved = passing();
   (saved.classic!.evaluation as Record<string, unknown>).outcome = 'satisfied';
-  assert.deepEqual(failingIds(saved), ['classic.unread-not-green']);
+  assert.deepEqual(failingIds(saved), ['classic.settings-merge-blocking'], 'a classic lock read as green is a failure');
+  saved = passing();
+  (saved.classic!.evaluation as Record<string, unknown>).modalities = [];
+  assert.deepEqual(failingIds(saved), ['classic.settings-merge-blocking'], 'unread classic settings are a failure');
   saved = passing();
   ((saved.inspect!.work as Record<string, unknown>).readiness as Record<string, unknown>).effects = [{ action: 'mark-ready', state: 'confirmed' }];
   assert.ok(failingIds(saved).includes('strict.loss-back-to-draft'));

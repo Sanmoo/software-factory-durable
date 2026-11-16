@@ -34,8 +34,8 @@ test('AC1/AC6: ready only with every condition current; a pending human review (
 
 test('AC1: every unmet condition is an independent reason; resolving one never hides the others', () => {
   const waiting = evaluateChecks({ at, expect, observation: { ...observedPull({ mergeable: false }), classic: { state: 'complete', value: { kind: 'required', strict: false, enforcement: 'everyone',
-    checks: [{ context: 'build', integrationId: null }] } }, final: { ...observedPull().final, classic: { state: 'complete', value: { kind: 'required', strict: false, enforcement: 'everyone',
-    checks: [{ context: 'build', integrationId: null }] } } } } });
+    checks: [{ context: 'build', integrationId: null }], settings: null } }, final: { ...observedPull().final, classic: { state: 'complete', value: { kind: 'required', strict: false, enforcement: 'everyone',
+    checks: [{ context: 'build', integrationId: null }], settings: null } } } } });
   const blocked = evaluate({ checks: waiting, facts: { impediments: [{ code: 'QUESTION_PENDING', scope: 'work', nextStep: 'x', questionId: 'q1' }], queue: { pending: true },
     correction: { consumed: false }, dependencies: { latest: { ...facts().dependencies.latest!, conclusion: 'pending' }, lastComplete: null }, scopeUpdates: [{ state: 'pending' }] } });
   assert.equal(blocked.decision, 'not-ready');

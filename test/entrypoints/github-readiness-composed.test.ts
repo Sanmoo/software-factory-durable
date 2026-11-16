@@ -29,7 +29,7 @@ function builderGh(executable: string, token: string, endpoint: string, body: ob
 
 test('AC1-AC7 composed: the controller converts its own linked draft PR to ready from current evidence, with ONE mutation under its own fresh grant', async t => {
   const world = await githubWorld(t, { issues: [issue(3)], pulls: [], refs: {}, rulesets: { 1: { enforcement: 'active', current_user_can_bypass: 'never' } }, checks: {
-    branches: { main: { sha: tip, protected: true, protection: { enabled: true, required_status_checks: { enforcement_level: 'off', contexts: [] } } } },
+    branches: { main: { sha: tip, protected: true, protection: { enabled: false, required_status_checks: { enforcement_level: 'off', contexts: [] } } } },
     rules: { main: [{ type: 'pull_request', ruleset_id: 1, ruleset_source_type: 'Repository', ruleset_source: 'acme/project' }] },
     checkRuns: { [head]: [checkRun(3, 'docs', { conclusion: 'failure' })] }, statuses: { [head]: [] },
     compare: { [`${tip}...${head}`]: { status: 'ahead', ahead_by: 1, behind_by: 0 } } } });

@@ -18,7 +18,7 @@ type Observed = ReturnType<typeof observedPull>;
 type RunFact = Extract<Observed['checkRuns'], { state: 'complete' }>['value'][number];
 const run = (id: number, name: string, conclusion: string | null, status = 'completed', sha = head): RunFact => ({ id, name, headSha: sha, status, conclusion, appId: 15368,
   appSlug: 'github-actions', checkSuiteId: 500 + id, startedAt: '2026-11-15T10:00:00Z', completedAt: null, url: `https://github.com/acme/project/runs/${id}` });
-const required = (strict: boolean, contexts: string[]) => complete({ kind: 'required' as const, strict, enforcement: 'everyone', checks: contexts.map(context => ({ context, integrationId: null })) });
+const required = (strict: boolean, contexts: string[]) => complete({ kind: 'required' as const, strict, enforcement: 'everyone', checks: contexts.map(context => ({ context, integrationId: null })), settings: null });
 function evaluation(change: (observed: Observed) => void = () => {}, extra: Parameters<typeof observedPull>[0] = {}) {
   const observed = observedPull(extra);
   change(observed);
