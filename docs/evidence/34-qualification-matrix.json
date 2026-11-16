@@ -1,0 +1,5438 @@
+{
+ "schemaVersion": 1,
+ "ticket": "34",
+ "generatedAt": "2026-11-16",
+ "authority": [
+  ".scratch/software-factory/spec.md#13",
+  ".scratch/software-factory/spec.md#14",
+  ".scratch/software-factory/acceptance-and-incremental-plan.md",
+  ".scratch/software-factory/prd.md"
+ ],
+ "statusesAllowed": [
+  "aprovada",
+  "reprovada",
+  "inconclusiva",
+  "dependente-do-piloto"
+ ],
+ "levels": {
+  "S": "simulacao automatizada",
+  "I": "integracao real (I-local = processos/SQLite/sockets reais sem VM/GitHub)",
+  "A": "agentes reais",
+  "P": "piloto real"
+ },
+ "applicabilityPolicy": "aplicavel: executada no candidato. aplicavel-encadeada: anterior ao candidato; mudancas posteriores na mesma fronteira tiveram prova real propria em ensaio posterior (citado) e a suite local passa no candidato; combinacoes nunca executadas juntas ficam como obrigacao inconclusiva propria (V-06.h). inconclusiva: mudanca posterior sem prova real.",
+ "candidate": {
+  "integrationBranch": "integration/software-factory-mvp",
+  "commit": "b30e2bddea160e0f577ac08a943fb91a08438132",
+  "tree": "74508e972ea18df3417faaa28924c99649fcf387",
+  "srcTree": "212c4952296a6a77690b29dcf5e3838b13d5f6d8",
+  "includesTickets": "01-33, 36-40 (29 integrado em 0d343d6); 41 integrado em b30e2bd como capacidade extra fora da spec (override explicito de RECOVERY_BLOCKED, local), sem obrigacao na matriz",
+  "excludedTickets": [
+   "35 (piloto, depende deste)"
+  ],
+  "packageLockSha256": "de1b76b7c26de69d087075260c2f409edd3544f2d113ad8faa5a593ae2ae4587",
+  "node": "24.21.0",
+  "npm": "11.19.0",
+  "runtimeDependencies": {
+   "@earendil-works/pi-durable": "1.5.0",
+   "@earendil-works/chord": "1.5.0",
+   "@earendil-works/gondolin": "0.14.0",
+   "yaml": "2.9.1",
+   "zod": "4.6.7"
+  },
+  "sdk": {
+   "piCodingAgent": "1.5.2",
+   "profileId": "factory-development-pi-1.5.2-read-async-bash-lexical-v3"
+  },
+  "sqlite": {
+   "version": "3.53.4",
+   "journal": "WAL",
+   "synchronous": "FULL",
+   "source": "docs/controller-evidence.md (ticket 02), manifesto r32-v2"
+  },
+  "storageFormat": 2,
+  "protocolVersion": 1,
+  "skillPack": {
+   "id": "factory-skills-v6",
+   "version": "6.0.0",
+   "gitTree": "80330ee89749b7a441d4a00abe9a381f8e0a03c8"
+  },
+  "guestAssets": {
+   "name": "assets34",
+   "manifestSha256": "8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807",
+   "buildId": "541fc455-59d8-5358-8d26-5cc416a53a92",
+   "guestProfile": "gondolin-qemu-alpine-dev-v1",
+   "alpine": "3.23.7",
+   "guestKernel": "6.18.58-0-virt",
+   "docker": "29.5.2 (vfs)",
+   "qualified": false
+  },
+  "models": {
+   "builder": "openai/gpt-6-luna (factory-oauth)",
+   "standards": "openai/gpt-6-luna (factory-oauth)",
+   "spec": "openai/gpt-6-luna (factory-oauth)",
+   "providerRetries": 0,
+   "sdkRetries": 0,
+   "note": "mesmo modelo nos tres papeis em todos os ensaios A; modelos distintos por papel nao foram exercitados"
+  },
+  "host": {
+   "os": "Arch Linux x86_64",
+   "kernel": "7.1.9-arch1-2",
+   "qemu": "11.1.2",
+   "systemd": "262",
+   "cpus": 8,
+   "memoryGiB": 15.7,
+   "kvm": true,
+   "source": "evidencias 03/32/24; kernel, CPUs e memoria reconferidos read-only em 2026-11-16 (uname/nproc/free); nenhum boot ou VM"
+  },
+  "effectiveConfiguration": "Nao existe configuracao operacional do candidato: cada ensaio usou a configuracao da sua receita (ex.: q24 capacity 3, guest 2048 MiB/2 vCPU/40 GiB, minFreeSpaceGiB 4, minFreeMemoryMiB 1024; q18 guest 4096 MiB/2 vCPU). A configuracao efetiva do piloto e escolha do ticket 35.",
+  "release": {
+   "builtFromCandidate": false,
+   "latestBuilt": "mvp-33.1 de b6cd2bb (r33-v2), manifestSha256 4696d55b0091ba47955ba68de96e8e9989ddfc37f2fa58cee8a4343de344073c",
+   "manifestQualification": "unqualified"
+  },
+  "realRunOnCandidate": false
+ },
+ "counts": {
+  "aprovada": 66,
+  "reprovada": 0,
+  "inconclusiva": 36,
+  "dependente-do-piloto": 10
+ },
+ "realRuns": [
+  {
+   "id": "ci-candidato",
+   "ticket": "34",
+   "date": "2026-11-16",
+   "commit": "b30e2bd",
+   "levels": [
+    "S",
+    "I"
+   ],
+   "boundaries": "suite local completa (regras, fluxos com Pi Durable/SQLite reais, protocolo/sockets/processos/SIGKILL locais, release-local) sobre o proprio candidato",
+   "verdict": "ver secao \"Gate local\" do relatorio",
+   "evidence": [
+    "docs/evidence/34-candidate-qualification.md"
+   ],
+   "applicability": "aplicavel",
+   "reason": "executada sobre o commit do candidato; cobre somente S e I-local (sem VM, GitHub, modelo)"
+  },
+  {
+   "id": "q02-local",
+   "ticket": "02",
+   "date": "2026-11-05",
+   "commit": "nao-registrado",
+   "levels": [
+    "S",
+    "I"
+   ],
+   "boundaries": "SQLite/WAL/FULL, flock, sockets, falha de escrita por prlimit (I-local)",
+   "verdict": "45/45",
+   "evidence": [
+    "docs/controller-evidence.md"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "os mesmos testes (controller, controller-ownership, controller-ingress, protocol) reexecutam no ci-candidato"
+  },
+  {
+   "id": "x3",
+   "ticket": "03",
+   "date": "2026-11-12",
+   "commit": "1c99baf",
+   "levels": [
+    "I"
+   ],
+   "boundaries": "KVM/QEMU/Gondolin, disco persistente, FUSE, dois boots",
+   "verdict": "subconjunto aceito (acceptedSubset true)",
+   "evidence": [
+    "docs/evidence/03-x3-persistence-and-storage-qualified.md",
+    "docs/evidence/03-acceptance-reconciliation.md"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "assets mudaram de assets32 para assets34 (06, so rootfs); boots posteriores em assets34 (09-28) repetiram ambiente/boot/checkout; persistencia entre boots reexercitada por 06 v3 (reboot) e 26 v2 (novo boot com checkout reutilizado)"
+  },
+  {
+   "id": "w3",
+   "ticket": "03",
+   "date": "2026-11-12",
+   "commit": "719176a",
+   "levels": [
+    "I"
+   ],
+   "boundaries": "perda de proprietario com dois ambientes",
+   "verdict": "nao aceito (fsck 4 em A; reparo MANUAL); B continuou",
+   "evidence": [
+    "docs/evidence/03-w3-owner-loss-gated.md",
+    "docs/evidence/03-w3-recovered-boots-and-cleanup.md"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "registro historico do limite; recuperacao posterior por 26 (Sandbox.stop/observe) nao reavaliou integridade do disco apos morte do proprietario"
+  },
+  {
+   "id": "q04-v2026-11-14",
+   "ticket": "04",
+   "date": "2026-11-14",
+   "commit": "3faefcc",
+   "levels": [
+    "I"
+   ],
+   "boundaries": "GitHub App, escopos por proposito, doctor autenticado",
+   "verdict": "ok/complete",
+   "evidence": [
+    "docs/evidence/04-github-app-access-diagnostics.md",
+    "docs/evidence/04-administration-read-real-github-access-2026-11-14.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "escopos/propositos foram reemitidos e usados em todos os ensaios GitHub posteriores (07-28, 39) e em q23-v3 em d49f43d"
+  },
+  {
+   "id": "q05-v4",
+   "ticket": "05",
+   "date": "2026-11-14",
+   "commit": "21701f1",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "worker SDK confinado, Write/Edit/Read/Bash, copia/selecao, filtragem, modelo real",
+   "verdict": "todas as fases ok",
+   "evidence": [
+    "docs/evidence/05-physical-qualification-and-acceptance.md"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "mesmo perfil SDK v3 no candidato; ferramentas confinadas reexercitadas por todos os ensaios A posteriores (09-28)"
+  },
+  {
+   "id": "q06-v3",
+   "ticket": "06",
+   "date": "2026-11-14",
+   "commit": "dfcfba7",
+   "levels": [
+    "I"
+   ],
+   "boundaries": "Docker vfs no guest, Testcontainers/Ryuk, TLS por camada, rede negada, reboot",
+   "verdict": "tudo verde (fixture representativa)",
+   "evidence": [
+    "docs/evidence/06-physical-docker-qualification.md"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "assets34 sao os assets do candidato; perfil do guest nao mudou depois; containers reais reexercitados por q24 v1/v3"
+  },
+  {
+   "id": "q07-rerun",
+   "ticket": "07",
+   "date": "2026-11-14",
+   "commit": "fd054fb",
+   "levels": [
+    "I"
+   ],
+   "boundaries": "admissao por polling GitHub, restart",
+   "verdict": "OBSERVED, 0 mutacoes",
+   "evidence": [
+    "docs/evidence/07-unique-ticket-admission.md",
+    "docs/evidence/07-real-github-admission-rerun-2026-11-14.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "admissao reexercitada por todos os ensaios posteriores com issue nova (18, 21-27)"
+  },
+  {
+   "id": "q08",
+   "ticket": "08",
+   "date": "2026-11-14",
+   "commit": "nao-registrado",
+   "levels": [
+    "I"
+   ],
+   "boundaries": "dependencias nativas blocked_by no mesmo repo",
+   "verdict": "OBSERVED (E0-E9)",
+   "evidence": [
+    "docs/evidence/08-native-dependency-gating.md",
+    "docs/evidence/08-real-github-dependencies-2026-11-14.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "commit nao registrado e anterior as correcoes da revisao; leitura de dependencias reexercitada (sem relacoes) em 18 v4 e 21-27; casos de relacao real nao foram repetidos"
+  },
+  {
+   "id": "q09-v2",
+   "ticket": "09",
+   "date": "2026-11-14",
+   "commit": "3a390b4",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "despacho, cache bare, checkout proprio, pedido preservado",
+   "verdict": "clean",
+   "evidence": [
+    "docs/evidence/09-builder-start-and-preserved-request.md",
+    "docs/evidence/09-real-builder-run-2026-11-14.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "caminho de ativacao reexercitado por todos os ensaios A posteriores; pacote v1 do ensaio substituido por v6 (exercitado em 14-27)"
+  },
+  {
+   "id": "q10-v2",
+   "ticket": "10",
+   "date": "2026-11-14",
+   "commit": "2f65d12",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "pergunta duravel, cessacao, resposta GitHub, retomada",
+   "verdict": "clean",
+   "evidence": [
+    "docs/evidence/10-durable-questions-and-queued-resumption.md",
+    "docs/evidence/10-real-question-ask-2026-11-14.json",
+    "docs/evidence/10-real-question-resume-2026-11-14.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "pergunta/resposta reexercitadas em 18 v4, 21 v9, 24, 27 v2 (corte) e 23 v3"
+  },
+  {
+   "id": "q11",
+   "ticket": "11",
+   "date": "2026-11-14",
+   "commit": "7532220",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "continue, substituicao de sessao, update-scope, fonte privada inacessivel",
+   "verdict": "clean",
+   "evidence": [
+    "docs/evidence/11-context-continuation-and-authorized-scope.md",
+    "docs/evidence/11-real-context-continue-2026-11-14.json",
+    "docs/evidence/11-real-context-scope-2026-11-14.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "commit pre-rebase; continuacao reexercitada em 22 (builder-continuation) e 23 v3; update-scope e fonte privada nao foram repetidos depois"
+  },
+  {
+   "id": "q12-v4",
+   "ticket": "12",
+   "date": "2026-11-14",
+   "commit": "25d1d88",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "handoff, Standards+Spec paralelos somente leitura",
+   "verdict": "clean/delivered",
+   "evidence": [
+    "docs/evidence/12-parallel-standards-and-spec-reviews.md",
+    "docs/evidence/12-real-review-run-2026-11-14.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "revisoes reexercitadas em 13 v5, 18 v4, 21-23, 28 v2"
+  },
+  {
+   "id": "q13-v5",
+   "ticket": "13",
+   "date": "2026-11-14",
+   "commit": "8dd090d",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "rodadas, achado real, gate real falho, verificacao",
+   "verdict": "verified",
+   "evidence": [
+    "docs/evidence/13-findings-treatment-and-current-content-gates.md",
+    "docs/evidence/13-real-rounds-run-2026-11-14.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "rodadas/gates reexercitados em 18 v4, 21 v9, 22, 23 v3"
+  },
+  {
+   "id": "q14-v8",
+   "ticket": "14",
+   "date": "2026-11-15",
+   "commit": "nao-registrado",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "publicacao direta pelo Builder, descoberta apos reinicio",
+   "verdict": "PR draft #5 publicado e descoberto",
+   "evidence": [
+    "docs/evidence/14-direct-draft-publication-and-discovery.md",
+    "docs/evidence/14-real-publication-v8-run-2026-11-15.json",
+    "docs/evidence/14-real-publication-v8-discover-2026-11-15.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "gate em 60ccdd7; publicacao reexercitada em 18 v4, 21 v9 (lease), 22, 23 v3, 27 v2 (corte)"
+  },
+  {
+   "id": "q15-v2",
+   "ticket": "15",
+   "date": "2026-11-15",
+   "commit": "4c2a62e",
+   "levels": [
+    "I"
+   ],
+   "boundaries": "leitura de checks/regras/rulesets, GET-only",
+   "verdict": "satisfied, empty-complete",
+   "evidence": [
+    "docs/evidence/15-required-checks-evaluation.md",
+    "docs/evidence/15-real-checks-evaluate-2026-11-15.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "avaliacao de checks reexercitada em 18 v4 e 22; nenhum check obrigatorio real em nenhum ensaio"
+  },
+  {
+   "id": "q16-v1",
+   "ticket": "16",
+   "date": "2026-11-15",
+   "commit": "c28ad28",
+   "levels": [
+    "I"
+   ],
+   "boundaries": "conversao draft->ready com uma mutacao",
+   "verdict": "convertido",
+   "evidence": [
+    "docs/evidence/16-evidence-based-readiness.md",
+    "docs/evidence/16-real-readiness-convert-2026-11-15.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "conversao reexercitada em 18 v4 apos 39"
+  },
+  {
+   "id": "q17-v4",
+   "ticket": "17",
+   "date": "2026-11-15",
+   "commit": "nao-registrado",
+   "levels": [
+    "I"
+   ],
+   "boundaries": "entrega por merge humano, cleanup proprio com falha provocada e retry",
+   "verdict": "delivered; retry removed",
+   "evidence": [
+    "docs/evidence/17-confirmed-delivery-and-owned-cleanup.md",
+    "docs/evidence/17-real-delivery-v4-deliver-2026-11-15.json",
+    "docs/evidence/17-real-delivery-v4-retry-2026-11-15.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "base b2da9ae/aff8050; entrega/cleanup reexercitados em 18 v4"
+  },
+  {
+   "id": "q18-v4",
+   "ticket": "18",
+   "date": "2026-11-15",
+   "commit": "nao-registrado",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "jornada integrada completa na composicao de producao",
+   "verdict": "passou (delivered, cleanup complete)",
+   "evidence": [
+    "docs/evidence/18-first-integrated-delivery-journey.md",
+    "docs/evidence/18-real-journey-v4-inspect-result-2026-11-15.json",
+    "docs/evidence/18-real-journey-v4-gh-trace-2026-11-15.jsonl"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "ramo final sobre c344433; depois vieram 19-fix, 21-31, 39, 40 e 29 (inspecao); partes reexercitadas por 21 v9, 22, 23 v3, 27 v2; nenhuma jornada completa (ate merge/cleanup) depois de 22/23/24/29"
+  },
+  {
+   "id": "q19-v2",
+   "ticket": "19",
+   "date": "2026-11-14",
+   "commit": "nao-registrado",
+   "levels": [
+    "I"
+   ],
+   "boundaries": "timeout por Execucao com relogio monotonico, interrupcao real, revogacao",
+   "verdict": "9/9",
+   "evidence": [
+    "docs/evidence/19-budgets-optional-timeout-and-grants.md",
+    "docs/evidence/19-real-limits-run-2026-11-14.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "provedor roteirizado (sem modelo); cobranca/limites reexercitados em 22 e 23 v3"
+  },
+  {
+   "id": "q20-v1",
+   "ticket": "20",
+   "date": "2026-11-14",
+   "commit": "0a346aa",
+   "levels": [
+    "I"
+   ],
+   "boundaries": "renovacao e auto-revogacao de credenciais durante atividade",
+   "verdict": "9/9",
+   "evidence": [
+    "docs/evidence/20-active-credential-lifecycle.md",
+    "docs/evidence/20-real-credential-run-2026-11-14.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "provedor roteirizado; ciclo de credencial reexercitado por todos os ensaios posteriores (retirada em pergunta/cancel)"
+  },
+  {
+   "id": "q21-v9",
+   "ticket": "21",
+   "date": "2026-11-16",
+   "commit": "nao-registrado",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "push humano concorrente, lease falho, Pergunta de divergencia, reconciliacao",
+   "verdict": "success",
+   "evidence": [
+    "docs/evidence/21-human-changes-and-explicit-lease.md",
+    "docs/evidence/21-real-human-v9-verdict-2026-11-16.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "base cc7b411; lease reexercitado em 22 e 23 v3"
+  },
+  {
+   "id": "q22-v1",
+   "ticket": "22",
+   "date": "2026-11-16",
+   "commit": "172b027",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "reparo por conflito, avanco da base sem disparo, push com lease no mesmo PR",
+   "verdict": "9/9",
+   "evidence": [
+    "docs/evidence/22-effective-impediments-and-automatic-repairs.md",
+    "docs/evidence/22-real-repair-verdict-2026-11-16.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "reparo reexercitado em 23 v3 (d49f43d)"
+  },
+  {
+   "id": "q23-v3",
+   "ticket": "23",
+   "date": "2026-11-16",
+   "commit": "d49f43d",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "feedback humano, /factory repair, cobranca unica",
+   "verdict": "11/11 (offline)",
+   "evidence": [
+    "docs/evidence/23-human-feedback-and-explicit-repairs.md",
+    "docs/evidence/23-real-feedback-v3-verdict-2026-11-16.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "ensaio mais recente; nao contem a passada unica de despacho do 24 (dispatch.ts +234/-?), capacity.ts e a inspecao do 29; a combinacao so tem S no candidato"
+  },
+  {
+   "id": "q24-v1",
+   "ticket": "24",
+   "date": "2026-11-15",
+   "commit": "nao-registrado",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "tres VMs numa passada, containers simultaneos, medicao por unit",
+   "verdict": "retido (gate inexistente)",
+   "evidence": [
+    "docs/evidence/24-three-builders-fifo-and-isolation.md",
+    "docs/evidence/24-real-q24-three-v1-summary.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "despacho mudou depois (v2/v3 reexercitaram a mesma passada)"
+  },
+  {
+   "id": "q24-v3",
+   "ticket": "24",
+   "date": "2026-11-16",
+   "commit": "1f033f8",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "tres VMs numa passada, suite real com Testcontainers, medicao",
+   "verdict": "retido 4/6 (suites falharam)",
+   "evidence": [
+    "docs/evidence/24-three-builders-fifo-and-isolation.md",
+    "docs/evidence/24-real-q24-three-v3-summary.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "nao contem o feedback do 23 nem a inspecao do 29"
+  },
+  {
+   "id": "q25-v1",
+   "ticket": "25",
+   "date": "2026-11-15",
+   "commit": "4a3f2fb",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "retirada/reposicao de label, cancel pela CLI real, novo ciclo",
+   "verdict": "success",
+   "evidence": [
+    "docs/evidence/25-authorization-withdrawal-and-work-cycles.md",
+    "docs/evidence/25-real-cancel-run-2026-11-15.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "commit pre-rebase; ciclos nao mudaram de fronteira depois (27 acrescentou efeitos tardios sob cancelamento, S)"
+  },
+  {
+   "id": "q26-v2",
+   "ticket": "26",
+   "date": "2026-11-15",
+   "commit": "3d5a279",
+   "levels": [
+    "I"
+   ],
+   "boundaries": "SIGKILL real em ferramenta/reserva/spawn/recibo, parada limpa, novo boot",
+   "verdict": "10/10",
+   "evidence": [
+    "docs/evidence/26-execution-recovery-without-survivor-adoption.md",
+    "docs/evidence/26-real-recovery-inspect-2026-11-15.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "provedor roteirizado (sem modelo); recuperacao reexercitada com efeitos externos em 27 v2"
+  },
+  {
+   "id": "q27-v2",
+   "ticket": "27",
+   "date": "2026-11-16",
+   "commit": "7581f07",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "SIGKILL apos POST de Pergunta e apos push; reconciliacao no boot",
+   "verdict": "14/14 (reavaliado offline)",
+   "evidence": [
+    "docs/evidence/27-external-effect-crash-reconciliation.md",
+    "docs/evidence/27-real-crashfx-v2-reassess-2026-11-16.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "base ec5ff1d; nao contem 23 nem a passada unica do 24"
+  },
+  {
+   "id": "q28-v2",
+   "ticket": "28",
+   "date": "2026-11-15",
+   "commit": "nao-registrado",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "notificacao de parecer perdida, revisor interrompido, retry so do falho",
+   "verdict": "7/7",
+   "evidence": [
+    "docs/evidence/28-partial-review-recovery.md",
+    "docs/evidence/28-real-partial-inspect2-2026-11-15.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "base 4f56f25; pacote v5; corte no handoff so I-local"
+  },
+  {
+   "id": "q29-v2",
+   "ticket": "29",
+   "date": "2026-11-16",
+   "commit": "0d343d6",
+   "levels": [
+    "I"
+   ],
+   "boundaries": "CLI real sobre copias de q18-journey-v4 e q25-cancel-v1 (local, sem GitHub/VM)",
+   "verdict": "10/10 (informado pelo supervisor; v1 registrado no documento)",
+   "evidence": [
+    "docs/evidence/29-correlated-cli-observability-and-usage.md"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "executada no codigo integrado do 29 (0d343d6); depois so o 41 (+173 linhas em recovery/cycles/inspection, local, coberto por S no ci-candidato); nenhuma sessao legivel nos dados reais, logo consumo medido so em S"
+  },
+  {
+   "id": "q30-v3",
+   "ticket": "30",
+   "date": "2026-11-15",
+   "commit": "nao-registrado",
+   "levels": [
+    "I"
+   ],
+   "boundaries": "varredura de retencao local sobre copia de q17-delivery-v4",
+   "verdict": "12/12",
+   "evidence": [
+    "docs/evidence/30-retention-and-explicit-cleanup.md",
+    "docs/evidence/30-real-retention-v3-verdict-2026-11-15.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "base 8a91799 + 25; regras de retencao inalteradas depois (31/29 so leem)"
+  },
+  {
+   "id": "q31-v2",
+   "ticket": "31",
+   "date": "2026-11-15",
+   "commit": "nao-registrado",
+   "levels": [
+    "I"
+   ],
+   "boundaries": "forget local sobre copias de q17 e q25",
+   "verdict": "20/20",
+   "evidence": [
+    "docs/evidence/31-history-erasure-and-minimal-cycle-memory.md",
+    "docs/evidence/31-real-forget-v2-verdict-2026-11-15.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "base 7cf1adc; forget inalterado depois"
+  },
+  {
+   "id": "r32-v2",
+   "ticket": "32",
+   "date": "2026-11-14",
+   "commit": "2d5600e",
+   "levels": [
+    "I"
+   ],
+   "boundaries": "build/verify/install/setup/doctor da release (local)",
+   "verdict": "verify 0 violacoes",
+   "evidence": [
+    "docs/evidence/32-self-contained-release.md",
+    "docs/evidence/32-real-v2-verify-2026-11-14.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "mecanismo de release mudou em 33 e foi reexercitado em r33-v2; nenhuma release do candidato"
+  },
+  {
+   "id": "r33-v2",
+   "ticket": "33",
+   "date": "2026-11-15",
+   "commit": "b6cd2bb",
+   "levels": [
+    "I"
+   ],
+   "boundaries": "upgrade check/apply/resume/rollback, migracao 1->2 com dois SIGKILL",
+   "verdict": "54/54",
+   "evidence": [
+    "docs/evidence/33-compatible-upgrades-and-recoverable-migration.md",
+    "docs/evidence/33-r33-v2/start-v2-verdict.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "formato de storage 2 e protocolo 1 inalterados no candidato"
+  },
+  {
+   "id": "q39-v1",
+   "ticket": "39",
+   "date": "2026-11-15",
+   "commit": "nao-registrado",
+   "levels": [
+    "I"
+   ],
+   "boundaries": "leitura real do ruleset 26435808, update bloqueia merge",
+   "verdict": "passou (GET-only)",
+   "evidence": [
+    "docs/evidence/39-merge-blocking-base-rules.md",
+    "docs/evidence/39-real-mergeblock-evaluate-result-2026-11-15.json"
+   ],
+   "applicability": "aplicavel-encadeada",
+   "reason": "bloqueio real observado depois em 18 v4 (MERGE_BLOCKED_UPDATE_RESTRICTED)"
+  }
+ ],
+ "scenarios": [
+  {
+   "id": "V-01",
+   "title": "Persistencia e autoridade unica",
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "obligations": [
+    "V-01.a",
+    "V-01.b",
+    "V-01.c"
+   ]
+  },
+  {
+   "id": "V-02",
+   "title": "Perfil Gondolin, filesystem e Docker",
+   "requiredLevels": [
+    "I",
+    "A"
+   ],
+   "status": "inconclusiva",
+   "obligations": [
+    "V-02.a",
+    "V-02.b",
+    "V-02.c",
+    "V-02.d",
+    "V-02.e",
+    "V-02.f",
+    "V-02.g",
+    "V-02.h",
+    "V-02.i"
+   ]
+  },
+  {
+   "id": "V-03",
+   "title": "Credenciais e filtragem",
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "inconclusiva",
+   "obligations": [
+    "V-03.a",
+    "V-03.b",
+    "V-03.c",
+    "V-03.d",
+    "V-03.e"
+   ]
+  },
+  {
+   "id": "V-04",
+   "title": "Admissao, identidade, autorizacao e encerramentos",
+   "requiredLevels": [
+    "S",
+    "I",
+    "P"
+   ],
+   "status": "inconclusiva",
+   "obligations": [
+    "V-04.a",
+    "V-04.b",
+    "V-04.c",
+    "V-04.d",
+    "V-04.e",
+    "V-04.f",
+    "V-04.g",
+    "V-04.h",
+    "V-04.P"
+   ]
+  },
+  {
+   "id": "V-05",
+   "title": "Dependencias nativas e visibilidade",
+   "requiredLevels": [
+    "S",
+    "I",
+    "P"
+   ],
+   "status": "inconclusiva",
+   "obligations": [
+    "V-05.a",
+    "V-05.b",
+    "V-05.c",
+    "V-05.d",
+    "V-05.e",
+    "V-05.P"
+   ]
+  },
+  {
+   "id": "V-06",
+   "title": "Filas, Slots e tres Builders",
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "inconclusiva",
+   "obligations": [
+    "V-06.a",
+    "V-06.b",
+    "V-06.c",
+    "V-06.d",
+    "V-06.e",
+    "V-06.f",
+    "V-06.g",
+    "V-06.h"
+   ]
+  },
+  {
+   "id": "V-07",
+   "title": "Pedido preservado e retomada de contexto",
+   "requiredLevels": [
+    "S",
+    "I",
+    "A",
+    "P"
+   ],
+   "status": "inconclusiva",
+   "obligations": [
+    "V-07.a",
+    "V-07.b",
+    "V-07.c",
+    "V-07.d",
+    "V-07.e",
+    "V-07.f",
+    "V-07.P"
+   ]
+  },
+  {
+   "id": "V-08",
+   "title": "Skills, pareceres e validacoes",
+   "requiredLevels": [
+    "S",
+    "I",
+    "A",
+    "P"
+   ],
+   "status": "inconclusiva",
+   "obligations": [
+    "V-08.a",
+    "V-08.b",
+    "V-08.c",
+    "V-08.d",
+    "V-08.e",
+    "V-08.f",
+    "V-08.g",
+    "V-08.P"
+   ]
+  },
+  {
+   "id": "V-09",
+   "title": "Publicacao, checks e prontidao",
+   "requiredLevels": [
+    "S",
+    "I",
+    "A",
+    "P"
+   ],
+   "status": "inconclusiva",
+   "obligations": [
+    "V-09.a",
+    "V-09.b",
+    "V-09.c",
+    "V-09.d",
+    "V-09.e",
+    "V-09.f",
+    "V-09.P"
+   ]
+  },
+  {
+   "id": "V-10",
+   "title": "Manutencao e concorrencia Git",
+   "requiredLevels": [
+    "S",
+    "I",
+    "A",
+    "P"
+   ],
+   "status": "inconclusiva",
+   "obligations": [
+    "V-10.a",
+    "V-10.b",
+    "V-10.c",
+    "V-10.d",
+    "V-10.e",
+    "V-10.f",
+    "V-10.g",
+    "V-10.P"
+   ]
+  },
+  {
+   "id": "V-11",
+   "title": "Perguntas, comandos e CLI",
+   "requiredLevels": [
+    "S",
+    "I",
+    "A",
+    "P"
+   ],
+   "status": "inconclusiva",
+   "obligations": [
+    "V-11.a",
+    "V-11.b",
+    "V-11.c",
+    "V-11.d",
+    "V-11.e",
+    "V-11.f",
+    "V-11.P"
+   ]
+  },
+  {
+   "id": "V-12",
+   "title": "Crash e efeitos parciais",
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "inconclusiva",
+   "obligations": [
+    "V-12.a",
+    "V-12.b",
+    "V-12.c",
+    "V-12.d",
+    "V-12.e",
+    "V-12.f"
+   ]
+  },
+  {
+   "id": "V-13",
+   "title": "Limites, tempo e interrupcao",
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "inconclusiva",
+   "obligations": [
+    "V-13.a",
+    "V-13.b",
+    "V-13.c",
+    "V-13.d",
+    "V-13.e",
+    "V-13.f",
+    "V-13.g"
+   ]
+  },
+  {
+   "id": "V-14",
+   "title": "Cleanup, retencao e memoria minima",
+   "requiredLevels": [
+    "S",
+    "I",
+    "P"
+   ],
+   "status": "inconclusiva",
+   "obligations": [
+    "V-14.a",
+    "V-14.b",
+    "V-14.c",
+    "V-14.d",
+    "V-14.e",
+    "V-14.f",
+    "V-14.g",
+    "V-14.P"
+   ]
+  },
+  {
+   "id": "V-15",
+   "title": "Observabilidade, saidas e consumo",
+   "requiredLevels": [
+    "S",
+    "I",
+    "A",
+    "P"
+   ],
+   "status": "inconclusiva",
+   "obligations": [
+    "V-15.a",
+    "V-15.b",
+    "V-15.c",
+    "V-15.d",
+    "V-15.e",
+    "V-15.f",
+    "V-15.P"
+   ]
+  },
+  {
+   "id": "V-16",
+   "title": "Instalacao e atualizacao controlada",
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "status": "inconclusiva",
+   "obligations": [
+    "V-16.a",
+    "V-16.b",
+    "V-16.c",
+    "V-16.d",
+    "V-16.e"
+   ]
+  },
+  {
+   "id": "V-17",
+   "title": "Jornada e utilidade no piloto",
+   "requiredLevels": [
+    "I",
+    "A",
+    "P"
+   ],
+   "status": "dependente-do-piloto",
+   "obligations": [
+    "V-17.a",
+    "V-17.P"
+   ]
+  }
+ ],
+ "requirements": [
+  {
+   "id": "RF-01",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-04.a",
+    "V-04.b",
+    "V-04.c",
+    "V-04.f",
+    "V-04.g",
+    "V-04.h",
+    "V-04.P",
+    "V-16.a",
+    "V-16.b",
+    "V-16.c",
+    "V-16.d",
+    "V-16.e"
+   ]
+  },
+  {
+   "id": "RF-02",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-05.a",
+    "V-05.b",
+    "V-05.c",
+    "V-05.d",
+    "V-05.e",
+    "V-05.P",
+    "V-14.e"
+   ]
+  },
+  {
+   "id": "RF-03",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-06.a",
+    "V-06.b",
+    "V-06.c",
+    "V-06.d",
+    "V-06.h"
+   ]
+  },
+  {
+   "id": "RF-04",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-02.a",
+    "V-02.b",
+    "V-02.c",
+    "V-02.d",
+    "V-02.e",
+    "V-02.i",
+    "V-06.b",
+    "V-06.h",
+    "V-10.e",
+    "V-10.f",
+    "V-12.c"
+   ]
+  },
+  {
+   "id": "RF-05",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-07.a",
+    "V-07.b",
+    "V-07.c",
+    "V-07.d",
+    "V-07.e",
+    "V-07.f",
+    "V-07.P"
+   ]
+  },
+  {
+   "id": "RF-06",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-08.a",
+    "V-08.b",
+    "V-08.c",
+    "V-08.d",
+    "V-08.g",
+    "V-08.P",
+    "V-09.a"
+   ]
+  },
+  {
+   "id": "RF-07",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-02.f",
+    "V-02.g",
+    "V-02.h",
+    "V-08.c",
+    "V-08.e",
+    "V-08.f",
+    "V-15.b"
+   ]
+  },
+  {
+   "id": "RF-08",
+   "status": "dependente-do-piloto",
+   "obligations": [
+    "V-09.a",
+    "V-09.b",
+    "V-09.d",
+    "V-09.P",
+    "V-12.b",
+    "V-17.a",
+    "V-17.P"
+   ]
+  },
+  {
+   "id": "RF-09",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-09.c",
+    "V-09.e",
+    "V-09.f",
+    "V-10.a",
+    "V-10.b",
+    "V-10.c",
+    "V-10.d",
+    "V-10.e",
+    "V-10.g",
+    "V-10.P",
+    "V-15.d"
+   ]
+  },
+  {
+   "id": "RF-10",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-11.a",
+    "V-11.b",
+    "V-11.c",
+    "V-11.d",
+    "V-11.P",
+    "V-12.b",
+    "V-17.a",
+    "V-17.P"
+   ]
+  },
+  {
+   "id": "RF-11",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-04.c",
+    "V-04.d",
+    "V-04.e",
+    "V-04.f",
+    "V-04.g",
+    "V-13.f",
+    "V-13.g"
+   ]
+  },
+  {
+   "id": "RF-12",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-11.b",
+    "V-11.e",
+    "V-11.f",
+    "V-13.c",
+    "V-13.f",
+    "V-13.g",
+    "V-15.a"
+   ]
+  },
+  {
+   "id": "RF-13",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-01.a",
+    "V-01.c",
+    "V-12.a",
+    "V-12.d",
+    "V-12.e",
+    "V-13.a",
+    "V-13.b",
+    "V-13.c",
+    "V-13.d",
+    "V-13.e"
+   ]
+  },
+  {
+   "id": "RF-14",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-03.a",
+    "V-03.b",
+    "V-03.c",
+    "V-03.d",
+    "V-03.e",
+    "V-14.a",
+    "V-14.b",
+    "V-14.c",
+    "V-14.d",
+    "V-14.e",
+    "V-14.f",
+    "V-14.g",
+    "V-14.P",
+    "V-15.f"
+   ]
+  },
+  {
+   "id": "RNF-01",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-01.a",
+    "V-01.b",
+    "V-01.c",
+    "V-07.a",
+    "V-07.b",
+    "V-07.d",
+    "V-07.e",
+    "V-12.a",
+    "V-12.b",
+    "V-12.c",
+    "V-12.d",
+    "V-12.e",
+    "V-12.f",
+    "V-16.a",
+    "V-16.b",
+    "V-16.e"
+   ]
+  },
+  {
+   "id": "RNF-02",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-02.a",
+    "V-02.b",
+    "V-02.c",
+    "V-02.d",
+    "V-02.e",
+    "V-02.f",
+    "V-02.g",
+    "V-02.i",
+    "V-03.a",
+    "V-03.b",
+    "V-03.c",
+    "V-03.d",
+    "V-03.e",
+    "V-06.b",
+    "V-06.f",
+    "V-06.g"
+   ]
+  },
+  {
+   "id": "RNF-03",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-11.e",
+    "V-15.a",
+    "V-15.b",
+    "V-15.c",
+    "V-15.f",
+    "V-15.P"
+   ]
+  },
+  {
+   "id": "RNF-04",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-05.a",
+    "V-05.b",
+    "V-09.c",
+    "V-09.d",
+    "V-09.e",
+    "V-09.f",
+    "V-15.d",
+    "V-15.e"
+   ]
+  },
+  {
+   "id": "RNF-05",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-01.b",
+    "V-01.c",
+    "V-07.c",
+    "V-07.f",
+    "V-08.a",
+    "V-08.g",
+    "V-11.c",
+    "V-11.d",
+    "V-11.f",
+    "V-13.b"
+   ]
+  },
+  {
+   "id": "CA-01",
+   "status": "dependente-do-piloto",
+   "obligations": [
+    "V-07.a",
+    "V-07.P",
+    "V-08.b",
+    "V-08.P",
+    "V-09.a",
+    "V-09.b",
+    "V-09.P",
+    "V-14.a",
+    "V-14.P",
+    "V-17.a",
+    "V-17.P"
+   ]
+  },
+  {
+   "id": "CA-02",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-05.a",
+    "V-05.b",
+    "V-05.c",
+    "V-05.d",
+    "V-05.e",
+    "V-05.P"
+   ]
+  },
+  {
+   "id": "CA-03",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-02.a",
+    "V-02.i",
+    "V-06.b",
+    "V-06.c",
+    "V-06.e",
+    "V-06.f",
+    "V-06.g",
+    "V-06.h",
+    "V-12.f"
+   ]
+  },
+  {
+   "id": "CA-04",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-06.a",
+    "V-09.c",
+    "V-10.a",
+    "V-10.b",
+    "V-10.c",
+    "V-10.d",
+    "V-10.g",
+    "V-10.P"
+   ]
+  },
+  {
+   "id": "CA-05",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-06.d",
+    "V-06.h",
+    "V-11.a",
+    "V-11.c",
+    "V-11.P",
+    "V-17.a",
+    "V-17.P"
+   ]
+  },
+  {
+   "id": "CA-06",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-01.a",
+    "V-01.b",
+    "V-01.c",
+    "V-07.b",
+    "V-07.e",
+    "V-12.a",
+    "V-12.b",
+    "V-12.c",
+    "V-12.d"
+   ]
+  },
+  {
+   "id": "CA-07",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-13.c",
+    "V-13.f",
+    "V-13.g",
+    "V-14.a",
+    "V-14.b",
+    "V-14.c",
+    "V-14.d",
+    "V-15.P"
+   ]
+  },
+  {
+   "id": "CA-08",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-02.f",
+    "V-02.h",
+    "V-06.e",
+    "V-17.P"
+   ]
+  },
+  {
+   "id": "CA-09",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-10.e",
+    "V-10.f"
+   ]
+  },
+  {
+   "id": "CA-10",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-04.a",
+    "V-04.b",
+    "V-04.c",
+    "V-04.d",
+    "V-04.e",
+    "V-04.f",
+    "V-04.g",
+    "V-14.d",
+    "V-14.e",
+    "V-14.f"
+   ]
+  },
+  {
+   "id": "CA-11",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-06.a",
+    "V-06.d",
+    "V-13.a",
+    "V-13.d",
+    "V-13.e"
+   ]
+  },
+  {
+   "id": "CA-12",
+   "status": "inconclusiva",
+   "obligations": [
+    "V-07.c",
+    "V-07.f",
+    "V-08.c",
+    "V-08.d",
+    "V-08.e",
+    "V-08.f",
+    "V-09.b",
+    "V-09.c",
+    "V-09.d",
+    "V-09.e",
+    "V-15.a",
+    "V-15.c"
+   ]
+  }
+ ],
+ "obligations": [
+  {
+   "id": "V-01.a",
+   "scenario": "V-01",
+   "requirements": [
+    "RNF-01",
+    "RF-13",
+    "CA-06"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "SQLite embarcado >= 3.51.3 com WAL/FULL verificado pelo dono; falha de persistencia sem ACK",
+   "observed": "SQLite 3.53.4, WAL e synchronous=FULL lidos pelo dono; falha real de escrita (prlimit) sem ACK nem estado parcial apos reabertura",
+   "evidence": [
+    "docs/controller-evidence.md"
+   ],
+   "runs": [
+    "q02-local",
+    "ci-candidato"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [
+    "02"
+   ]
+  },
+  {
+   "id": "V-01.b",
+   "scenario": "V-01",
+   "requirements": [
+    "RNF-01",
+    "RNF-05",
+    "CA-06"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "uma autoridade: segunda abertura, aliases do storage e lock nao herdado recusados",
+   "observed": "flock exclusivo por raiz canonica; aliases symlink/hardlink recusados; subprocesso sobrevivente nao conserva o lock apos SIGKILL",
+   "evidence": [
+    "docs/controller-evidence.md"
+   ],
+   "runs": [
+    "q02-local",
+    "ci-candidato"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [
+    "02"
+   ]
+  },
+  {
+   "id": "V-01.c",
+   "scenario": "V-01",
+   "requirements": [
+    "RF-13",
+    "RNF-01",
+    "RNF-05",
+    "CA-06"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "barreira fechada ate reconciliar; reserva/inicio/cobranca/liberacao distintos; recibo perdido nao concede capacidade",
+   "observed": "q26-v2: SIGKILL real em reserva/spawn/recibo; reserva liberada, spawn sem recibo = nao iniciado so apos cessacao, consumo unico; incerteza global fecha despacho (S)",
+   "evidence": [
+    "docs/evidence/26-execution-recovery-without-survivor-adoption.md",
+    "docs/evidence/26-real-recovery-inspect-2026-11-15.json"
+   ],
+   "runs": [
+    "q26-v2",
+    "ci-candidato"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/recovery26-qualification.ts"
+   ],
+   "tickets": [
+    "26"
+   ]
+  },
+  {
+   "id": "V-02.a",
+   "scenario": "V-02",
+   "requirements": [
+    "RNF-02",
+    "RF-04",
+    "CA-03"
+   ],
+   "requiredLevels": [
+    "I"
+   ],
+   "observedLevels": [
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "perfil Arch x86_64, QEMU/KVM, guest Alpine, Docker vfs, assets integros, sem fallback",
+   "observed": "boots reais com assets34 pinados por sha256 (8efa506a...) em 06-28; Docker 29.5.2 vfs no guest; doctor recusa sem assets integros",
+   "evidence": [
+    "docs/evidence/03-x3-persistence-and-storage-qualified.md",
+    "docs/evidence/06-physical-docker-qualification.md",
+    "docs/evidence/32-self-contained-release.md"
+   ],
+   "runs": [
+    "x3",
+    "q06-v3"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/docker06-qualification.ts"
+   ],
+   "tickets": [
+    "03",
+    "06",
+    "32"
+   ]
+  },
+  {
+   "id": "V-02.b",
+   "scenario": "V-02",
+   "requirements": [
+    "RNF-02",
+    "RF-04"
+   ],
+   "requiredLevels": [
+    "I"
+   ],
+   "observedLevels": [
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "desligar/religar preserva workspace, pacotes/cache, Docker data e contexto sem reclone",
+   "observed": "X3: mesmo disco, 8 marcas preservadas, 5 hashes identicos; 06 v3: reboot preservou rootfs, apk, Git, caches npm, imagens e volume; 26 v2: novo boot reutiliza checkout",
+   "evidence": [
+    "docs/evidence/03-x3-persistence-and-storage-qualified.md",
+    "docs/evidence/06-physical-docker-qualification.md"
+   ],
+   "runs": [
+    "x3",
+    "q06-v3",
+    "q26-v2"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/docker06-qualification.ts"
+   ],
+   "tickets": [
+    "03",
+    "06"
+   ]
+  },
+  {
+   "id": "V-02.c",
+   "scenario": "V-02",
+   "requirements": [
+    "RF-04",
+    "RNF-02"
+   ],
+   "requiredLevels": [
+    "I"
+   ],
+   "observedLevels": [
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "Git/locks/renames/metadados por FUSE",
+   "observed": "06 v3 AC4: index.lock, rename, mode, fsck do Git pelo FUSE; safe.directory adequado (aprovado pelo operador)",
+   "evidence": [
+    "docs/evidence/06-physical-docker-qualification.md"
+   ],
+   "runs": [
+    "q06-v3"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/docker06-qualification.ts"
+   ],
+   "tickets": [
+    "06"
+   ]
+  },
+  {
+   "id": "V-02.d",
+   "scenario": "V-02",
+   "requirements": [
+    "RNF-02",
+    "RF-04"
+   ],
+   "requiredLevels": [
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "ferramentas confinadas negam host/controlador/outros Trabalhos; paths/symlinks/aliases",
+   "observed": "negativos de escape em S/I-local (03); 05 v4: Read negado pelo modelo real; 06 v3 AC5: gateway, redes privadas, metadata e LAN do host negados; 24: tres VMs com discos/branches proprios",
+   "evidence": [
+    "docs/evidence/03-workspace-confinement-local.md",
+    "docs/evidence/05-physical-qualification-and-acceptance.md",
+    "docs/evidence/06-physical-docker-qualification.md",
+    "docs/evidence/24-three-builders-fifo-and-isolation.md"
+   ],
+   "runs": [
+    "q05-v4",
+    "q06-v3",
+    "q24-v1",
+    "ci-candidato"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [
+    "03",
+    "05",
+    "06",
+    "24"
+   ]
+  },
+  {
+   "id": "V-02.e",
+   "scenario": "V-02",
+   "requirements": [
+    "RF-04",
+    "RNF-02"
+   ],
+   "requiredLevels": [
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "revisores somente read, sem escrita nem credencial; Builder nao escreve durante o handoff",
+   "observed": "12 v4: Standards/Spec reais so leitura, sem credencial, identidade da proposta antes = depois; reexercitado em 13 v5, 18 v4, 23 v3",
+   "evidence": [
+    "docs/evidence/12-parallel-standards-and-spec-reviews.md"
+   ],
+   "runs": [
+    "q12-v4",
+    "q13-v5",
+    "q18-v4"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/review12-qualification.ts"
+   ],
+   "tickets": [
+    "12"
+   ]
+  },
+  {
+   "id": "V-02.f",
+   "scenario": "V-02",
+   "requirements": [
+    "RF-07",
+    "RNF-02",
+    "CA-08"
+   ],
+   "requiredLevels": [
+    "I"
+   ],
+   "observedLevels": [
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "suites com Testcontainers/Ryuk: socket do guest, binds, DNS/portas/volumes, cleanup proprio, sem bypass",
+   "observed": "06 v3: Testcontainers+Ryuk com rede de usuario, alias DNS, bind ro do FUSE, porta publicada e cleanup; 24 v3: suite real (117 testes, Postgres+Ryuk) rodou no Docker do guest; sem bypass de Ryuk",
+   "evidence": [
+    "docs/evidence/06-physical-docker-qualification.md",
+    "docs/evidence/24-three-builders-fifo-and-isolation.md"
+   ],
+   "runs": [
+    "q06-v3",
+    "q24-v3"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/docker06-qualification.ts",
+    "receita test/entrypoints/three24-qualification.ts"
+   ],
+   "tickets": [
+    "06",
+    "24"
+   ]
+  },
+  {
+   "id": "V-02.g",
+   "scenario": "V-02",
+   "requirements": [
+    "RF-07",
+    "RNF-02"
+   ],
+   "requiredLevels": [
+    "I"
+   ],
+   "observedLevels": [
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "CA/TLS por camada, inclusive containers criados por API",
+   "observed": "06 v3 AC3: apk/npm do guest pela CA mediada, pull do daemon por digest, TLS da app no container com NODE_EXTRA_CA_CERTS; containers sem egress publico (sem NAT, adequacao aprovada)",
+   "evidence": [
+    "docs/evidence/06-physical-docker-qualification.md"
+   ],
+   "runs": [
+    "q06-v3"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/docker06-qualification.ts"
+   ],
+   "tickets": [
+    "06"
+   ]
+  },
+  {
+   "id": "V-02.h",
+   "scenario": "V-02",
+   "requirements": [
+    "RF-07",
+    "CA-08"
+   ],
+   "requiredLevels": [
+    "I"
+   ],
+   "observedLevels": [],
+   "status": "inconclusiva",
+   "expectation": "API/Compose/build conforme os pilotos",
+   "observed": "Compose e docker build nao exercitados; dependem de os repos do piloto os usarem",
+   "evidence": [
+    "docs/evidence/06-physical-docker-qualification.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Decisao do operador D-04 na selecao do piloto (35): se algum repo selecionado usa Compose/build, executar R-DOCKER-EXT antes do piloto; senao, declarar fora do escopo suportado",
+   "reexecution": [
+    "R-DOCKER-EXT"
+   ]
+  },
+  {
+   "id": "V-02.i",
+   "scenario": "V-02",
+   "requirements": [
+    "RNF-02",
+    "RF-04",
+    "CA-03"
+   ],
+   "requiredLevels": [
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "falha de um proprietario nao encerra os demais; cessacao observavel fora do proprietario morto",
+   "observed": "W3: B continuou ativo apos SIGKILL do dono de A; 26 v2: sobrevivente parado pelo host (Sandbox.stop/observe) antes de substituto; falha isolada de worker (24, S)",
+   "evidence": [
+    "docs/evidence/03-w3-recovered-boots-and-cleanup.md",
+    "docs/evidence/26-execution-recovery-without-survivor-adoption.md"
+   ],
+   "runs": [
+    "w3",
+    "q26-v2"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/recovery26-qualification.ts"
+   ],
+   "tickets": [
+    "03",
+    "26"
+   ]
+  },
+  {
+   "id": "V-03.a",
+   "scenario": "V-03",
+   "requirements": [
+    "RNF-02",
+    "RF-14"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "escopo por repo/papel; chave emissora ausente dos agentes; revisor sem token de escrita; Git/gh com ambiente explicito",
+   "observed": "04: escopos por proposito confirmados; 09: grant so leitura transitorio; 12: revisores sem credencial; 14: builder-publish so no proprio repo; grants de uso unico revogados (16/17)",
+   "evidence": [
+    "docs/evidence/04-github-app-access-diagnostics.md",
+    "docs/evidence/09-builder-start-and-preserved-request.md",
+    "docs/evidence/14-direct-draft-publication-and-discovery.md"
+   ],
+   "runs": [
+    "q04-v2026-11-14",
+    "q09-v2",
+    "q12-v4",
+    "q14-v8"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [
+    "04",
+    "09",
+    "12",
+    "14"
+   ]
+  },
+  {
+   "id": "V-03.b",
+   "scenario": "V-03",
+   "requirements": [
+    "RNF-02",
+    "RF-14"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "renovacao durante a atividade, retirada/revogacao conhecida, sem cofre nem replay",
+   "observed": "20: 2 renovacoes entregues, comando em curso manteve valor antigo, 3 auto-revogacoes confirmadas pelo GitHub; retirada em pergunta (10) e cancel (25)",
+   "evidence": [
+    "docs/evidence/20-active-credential-lifecycle.md",
+    "docs/evidence/20-real-credential-run-2026-11-14.json"
+   ],
+   "runs": [
+    "q20-v1",
+    "q10-v2",
+    "q25-v1"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/credential20-qualification.ts"
+   ],
+   "tickets": [
+    "20"
+   ]
+  },
+  {
+   "id": "V-03.c",
+   "scenario": "V-03",
+   "requirements": [
+    "RNF-02",
+    "RF-14"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "renovacao alem de uma hora e expiracao real durante comando",
+   "observed": "expiracao real de 1 h durante comando so em S; o ensaio 20 durou minutos",
+   "evidence": [
+    "docs/evidence/20-active-credential-lifecycle.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Executar R-LONG (atividade real > 60 min com renovacao e comando atravessando a expiracao)",
+   "reexecution": [
+    "R-LONG"
+   ]
+  },
+  {
+   "id": "V-03.d",
+   "scenario": "V-03",
+   "requirements": [
+    "RNF-02",
+    "RF-14"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "token perdido no crash reconciliado sem replay cego nem falsa revogacao",
+   "observed": "reconciliacao de credencial apos SIGKILL (S/I-local no 20); 26 v2 com cortes reais sem replay; risco aceito: token copiado/perdido vale ate expirar (spec 14)",
+   "evidence": [
+    "docs/evidence/20-active-credential-lifecycle.md",
+    "docs/evidence/26-execution-recovery-without-survivor-adoption.md"
+   ],
+   "runs": [
+    "q26-v2",
+    "ci-candidato"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [
+    "20",
+    "26"
+   ]
+  },
+  {
+   "id": "V-03.e",
+   "scenario": "V-03",
+   "requirements": [
+    "RNF-02",
+    "RF-14"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "segredos sinteticos ausentes de saida/erro/streaming (valor dividido) antes de arquivos, exibicao, publicacao e persistencia nativa do SDK; falha de filtragem nao libera bruto",
+   "observed": "05 v4 (modelo real): segredo dividido em dois printf filtrado; divisao entre chunks, EOF e falha de filtragem em S/I-local (records, native-owner-read); varreduras de segredo limpas em 09-28",
+   "evidence": [
+    "docs/evidence/05-physical-qualification-and-acceptance.md",
+    "docs/evidence/05-protected-raw-records.md"
+   ],
+   "runs": [
+    "q05-v4",
+    "ci-candidato"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [
+    "05"
+   ]
+  },
+  {
+   "id": "V-04.a",
+   "scenario": "V-04",
+   "requirements": [
+    "RF-01",
+    "CA-10"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "polling/reinicio sem segundo Trabalho por Ticket",
+   "observed": "07: mesmo work_id/sequencia entre ciclos e restart; 25 v1: restart sem preparar/ativar",
+   "evidence": [
+    "docs/evidence/07-unique-ticket-admission.md",
+    "docs/evidence/07-real-github-admission-rerun-2026-11-14.json"
+   ],
+   "runs": [
+    "q07-rerun",
+    "q25-v1"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [
+    "07",
+    "25"
+   ]
+  },
+  {
+   "id": "V-04.b",
+   "scenario": "V-04",
+   "requirements": [
+    "RF-01",
+    "CA-10"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "PR nao reconhecido reportado, nao adotado",
+   "observed": "so fixture: nenhum PR alheio com palavra de fechamento no repo de teste (07, 14)",
+   "evidence": [
+    "docs/evidence/07-unique-ticket-admission.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Executar R-GH-ADV (PR alheio com closing keyword no repo de teste)",
+   "reexecution": [
+    "R-GH-ADV"
+   ]
+  },
+  {
+   "id": "V-04.c",
+   "scenario": "V-04",
+   "requirements": [
+    "RF-11",
+    "RF-01",
+    "CA-10"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "retirar/repor label durante atividade: suspende proximas ativacoes sem matar a ativa; reposicao so observada",
+   "observed": "25 v1: retirada observada com Execucao started; reposicao so observada; cancel real pela CLI",
+   "evidence": [
+    "docs/evidence/25-authorization-withdrawal-and-work-cycles.md",
+    "docs/evidence/25-real-cancel-run-2026-11-15.json"
+   ],
+   "runs": [
+    "q25-v1"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/cancel25-qualification.ts"
+   ],
+   "tickets": [
+    "25"
+   ]
+  },
+  {
+   "id": "V-04.d",
+   "scenario": "V-04",
+   "requirements": [
+    "RF-11",
+    "CA-10"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "fechar/reabrir issue sem redisparo",
+   "observed": "reopen so em fluxo (lacuna aceita pelo supervisor no 25)",
+   "evidence": [
+    "docs/evidence/25-authorization-withdrawal-and-work-cycles.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Executar R-GH-ADV (fechar/reabrir issue com Trabalho vigente)",
+   "reexecution": [
+    "R-GH-ADV"
+   ]
+  },
+  {
+   "id": "V-04.e",
+   "scenario": "V-04",
+   "requirements": [
+    "RF-11",
+    "CA-10"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "fechar PR sem merge nao comprova cessacao, entrega ou cancelamento",
+   "observed": "so em fluxo (lacuna aceita no 25)",
+   "evidence": [
+    "docs/evidence/25-authorization-withdrawal-and-work-cycles.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Executar R-GH-ADV (fechar o PR proprio sem merge)",
+   "reexecution": [
+    "R-GH-ADV"
+   ]
+  },
+  {
+   "id": "V-04.f",
+   "scenario": "V-04",
+   "requirements": [
+    "RF-01",
+    "RF-11",
+    "CA-10"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "concluir por merge sem redisparo pela label persistente; readmissao devolve existing",
+   "observed": "17 v4 e 18 v4: entrega por merge humano; memoria minima; readmissao existing",
+   "evidence": [
+    "docs/evidence/17-confirmed-delivery-and-owned-cleanup.md",
+    "docs/evidence/18-first-integrated-delivery-journey.md"
+   ],
+   "runs": [
+    "q17-v4",
+    "q18-v4"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/delivery17-qualification.ts",
+    "receita test/entrypoints/journey18-qualification.ts"
+   ],
+   "tickets": [
+    "17",
+    "18"
+   ]
+  },
+  {
+   "id": "V-04.g",
+   "scenario": "V-04",
+   "requirements": [
+    "RF-01",
+    "RF-11",
+    "CA-10"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "resposta apos retirada, retomada explicita e novo ciclo somente explicito apos entrega/cancelamento",
+   "observed": "25 v1: cancel, restart sem redisparo, new -> ciclo 2 com predecessor; 31 v2: new apos forget",
+   "evidence": [
+    "docs/evidence/25-authorization-withdrawal-and-work-cycles.md",
+    "docs/evidence/31-history-erasure-and-minimal-cycle-memory.md"
+   ],
+   "runs": [
+    "q25-v1",
+    "q31-v2"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/cancel25-qualification.ts"
+   ],
+   "tickets": [
+    "25",
+    "31"
+   ]
+  },
+  {
+   "id": "V-04.h",
+   "scenario": "V-04",
+   "requirements": [
+    "RF-01"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "fluxo padrao nao altera metadados de triagem do ticket",
+   "observed": "traces gh de 18 v4 e 25: nenhuma mutacao de label/triagem pela Factory",
+   "evidence": [
+    "docs/evidence/18-real-journey-v4-gh-trace-2026-11-15.jsonl",
+    "docs/evidence/25-real-cancel-gh-trace-2026-11-15.jsonl"
+   ],
+   "runs": [
+    "q18-v4",
+    "q25-v1"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [
+    "18",
+    "25"
+   ]
+  },
+  {
+   "id": "V-04.P",
+   "scenario": "V-04",
+   "requirements": [
+    "RF-01"
+   ],
+   "requiredLevels": [
+    "P"
+   ],
+   "observedLevels": [],
+   "status": "dependente-do-piloto",
+   "expectation": "entrada real no piloto",
+   "observed": "pendente do piloto (35)",
+   "evidence": [],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G6-preparacao-piloto",
+   "pointer": "Coberto pela autorizacao e execucao do piloto (ticket 35)"
+  },
+  {
+   "id": "V-05.a",
+   "scenario": "V-05",
+   "requirements": [
+    "RF-02",
+    "RNF-04",
+    "CA-02"
+   ],
+   "requiredLevels": [
+    "S"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "aprovada",
+   "expectation": "paginacao, erro apos pagina, JSON invalido, numeros iguais em repos distintos, ciclos, relacoes invalidas, fechamento nao conclusivo",
+   "observed": "regras e leituras com fixture (dependency-rules, github-dependency-reads, dependency-flow)",
+   "evidence": [
+    "docs/evidence/08-native-dependency-gating.md"
+   ],
+   "runs": [
+    "ci-candidato"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [
+    "08"
+   ]
+  },
+  {
+   "id": "V-05.b",
+   "scenario": "V-05",
+   "requirements": [
+    "RF-02",
+    "RNF-04",
+    "CA-02"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "relacoes nativas reais no mesmo repo: pendencia bloqueia, satisfacao valida libera, reavaliacao antes de inicio/retomada",
+   "observed": "08: proprio nao entregue bloqueia; externo open/not_planned/reopened/completed; ciclo recusado pelo GitHub; restart -> DEPENDENCIES_NOT_CURRENT e reavaliacao; 09/18 reavaliam por tentativa",
+   "evidence": [
+    "docs/evidence/08-native-dependency-gating.md",
+    "docs/evidence/08-real-github-dependencies-2026-11-14.json"
+   ],
+   "runs": [
+    "q08",
+    "q18-v4"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [
+    "08"
+   ]
+  },
+  {
+   "id": "V-05.c",
+   "scenario": "V-05",
+   "requirements": [
+    "RF-02",
+    "CA-02"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "cenarios entre repos/owners/visibilidades e acesso reduzido que se pretenda declarar suportados",
+   "observed": "nao exercitavel com um repo; o 08 nao os declara suportados",
+   "evidence": [
+    "docs/evidence/08-native-dependency-gating.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Decisao do operador D-02: declarar escopo suportado = mesmo repo (sem prova adicional) ou executar R-GH-DEP para cada combinacao declarada",
+   "reexecution": [
+    "R-GH-DEP"
+   ]
+  },
+  {
+   "id": "V-05.d",
+   "scenario": "V-05",
+   "requirements": [
+    "RF-02",
+    "CA-02"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "apos exclusao de historico proprio: ultimo ciclo entregue continua satisfeito, cancelado nao, novo ciclo avaliado pela memoria minima",
+   "observed": "forget-flow com avaliacao real de dependencias e reabertura do storage; q31-v2 local real (entregue)",
+   "evidence": [
+    "docs/evidence/31-history-erasure-and-minimal-cycle-memory.md",
+    "docs/evidence/31-real-forget-v2-verdict-2026-11-15.json"
+   ],
+   "runs": [
+    "q31-v2",
+    "ci-candidato"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/forget31-qualification.ts"
+   ],
+   "tickets": [
+    "31"
+   ]
+  },
+  {
+   "id": "V-05.e",
+   "scenario": "V-05",
+   "requirements": [
+    "RF-02",
+    "CA-02"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "Ticket esquecido como bloqueador nativo real",
+   "observed": "so em fluxo (decisao 3 do supervisor no 31)",
+   "evidence": [
+    "docs/evidence/31-history-erasure-and-minimal-cycle-memory.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Executar R-GH-DEP (bloqueador proprio esquecido lido do GitHub real)",
+   "reexecution": [
+    "R-GH-DEP"
+   ]
+  },
+  {
+   "id": "V-05.P",
+   "scenario": "V-05",
+   "requirements": [
+    "RF-02",
+    "CA-02"
+   ],
+   "requiredLevels": [
+    "P"
+   ],
+   "observedLevels": [],
+   "status": "dependente-do-piloto",
+   "expectation": "dependencia real no piloto",
+   "observed": "pendente do piloto (35)",
+   "evidence": [],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G6-preparacao-piloto",
+   "pointer": "Coberto pelo piloto (35)"
+  },
+  {
+   "id": "V-06.a",
+   "scenario": "V-06",
+   "requirements": [
+    "RF-03",
+    "CA-04",
+    "CA-11"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "FIFO estavel, reparos antes sem preempcao, inelegiveis pulados sem perder posicao, eventos consolidados",
+   "observed": "three-builders-flow/repair-flow (S); 22: categoria de reparo e uma correcao; 24: uma passada preenche os Slots livres em ordem",
+   "evidence": [
+    "docs/evidence/24-three-builders-fifo-and-isolation.md",
+    "docs/evidence/22-effective-impediments-and-automatic-repairs.md"
+   ],
+   "runs": [
+    "q24-v3",
+    "q22-v1",
+    "ci-candidato"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/three24-qualification.ts"
+   ],
+   "tickets": [
+    "22",
+    "24"
+   ]
+  },
+  {
+   "id": "V-06.b",
+   "scenario": "V-06",
+   "requirements": [
+    "RF-03",
+    "RF-04",
+    "RNF-02",
+    "CA-03"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "tres Builders reais simultaneos, dois no mesmo repo, com branches/worktrees/discos/VMMs proprios, sem mutex nem escritor duplicado",
+   "observed": "24 v1/v2/v3: tres VMs reservadas numa passada (capacidade 3), ambientes/boots/branches proprios no mesmo repo, Perguntas independentes",
+   "evidence": [
+    "docs/evidence/24-three-builders-fifo-and-isolation.md",
+    "docs/evidence/24-real-q24-three-v1-summary.json",
+    "docs/evidence/24-real-q24-three-v3-summary.json"
+   ],
+   "runs": [
+    "q24-v1",
+    "q24-v3"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/three24-qualification.ts"
+   ],
+   "tickets": [
+    "24"
+   ]
+  },
+  {
+   "id": "V-06.c",
+   "scenario": "V-06",
+   "requirements": [
+    "RF-03",
+    "CA-03"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "Builders de repos diferentes em paralelo",
+   "observed": "so local (decisao 2 do 24: lacuna)",
+   "evidence": [
+    "docs/evidence/24-three-builders-fifo-and-isolation.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Decisao do operador D-03: aceitar a prova local para repos diferentes ou incluir um segundo repo em R-THREE",
+   "reexecution": [
+    "R-THREE"
+   ]
+  },
+  {
+   "id": "V-06.d",
+   "scenario": "V-06",
+   "requirements": [
+    "RF-03",
+    "CA-05",
+    "CA-11"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "revisores nao consomem Slot adicional; pergunta/CI/merge nao ocupam Slot; cessacao precede liberacao",
+   "observed": "12/18: revisores no Slot e boot do Builder; 10/18/24: pergunta libera Slot apos cessacao confirmada",
+   "evidence": [
+    "docs/evidence/10-durable-questions-and-queued-resumption.md",
+    "docs/evidence/24-three-builders-fifo-and-isolation.md"
+   ],
+   "runs": [
+    "q10-v2",
+    "q18-v4",
+    "q24-v1"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/three24-qualification.ts"
+   ],
+   "tickets": [
+    "10",
+    "12",
+    "24"
+   ]
+  },
+  {
+   "id": "V-06.e",
+   "scenario": "V-06",
+   "requirements": [
+    "CA-08",
+    "CA-03"
+   ],
+   "requiredLevels": [
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "I",
+    "A"
+   ],
+   "status": "inconclusiva",
+   "expectation": "containers simultaneos das suites reais sem colisao, com as tres suites concluindo",
+   "observed": "containers simultaneos sem colisao (v1: 3 VMs; v3: 2); AC5 nao alcancado: CreditAccountUseCaseConcurrencyIT e JdbcOutboxEventAdapterIT falharam no guest; causa NAO confirmada; ticket 24 fechado por decisao do operador como limite de ambiente/piloto",
+   "evidence": [
+    "docs/evidence/24-three-builders-fifo-and-isolation.md",
+    "docs/evidence/24-real-q24-three-v3-summary.json"
+   ],
+   "runs": [
+    "q24-v3"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/three24-qualification.ts"
+   ],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Executar R-24DIAG (suite falha no host e numa VM isolada) para separar limite do perfil de bug do repo; ou decisao do operador D-01 de levar a lacuna ao piloto com dependencia explicita (nao vira aprovacao)",
+   "reexecution": [
+    "R-24DIAG"
+   ]
+  },
+  {
+   "id": "V-06.f",
+   "scenario": "V-06",
+   "requirements": [
+    "RNF-02",
+    "CA-03"
+   ],
+   "requiredLevels": [
+    "I"
+   ],
+   "observedLevels": [
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "RAM/CPU medidos incluindo overhead, workers e revisores, com host/configuracao registrados",
+   "observed": "cgroup por unit em 24 v1-v3 (picos 0,8-7,2 GB incluindo page cache; CPU 24-882 s); host 8 CPUs/15,7 GiB; guest 2048 MiB/2 vCPU",
+   "evidence": [
+    "docs/evidence/24-three-builders-fifo-and-isolation.md",
+    "docs/evidence/24-real-q24-three-v1-summary.json",
+    "docs/evidence/24-real-q24-three-v3-summary.json"
+   ],
+   "runs": [
+    "q24-v1",
+    "q24-v3"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/three24-qualification.ts"
+   ],
+   "tickets": [
+    "24"
+   ]
+  },
+  {
+   "id": "V-06.g",
+   "scenario": "V-06",
+   "requirements": [
+    "RNF-02",
+    "CA-03"
+   ],
+   "requiredLevels": [
+    "I"
+   ],
+   "observedLevels": [],
+   "status": "inconclusiva",
+   "expectation": "I/O e disco medidos",
+   "observed": "io.stat ilegivel (ioRead/ioWrite null em todas as unidades); uso do disco do guest fora dos resumos",
+   "evidence": [
+    "docs/evidence/24-real-q24-three-v1-summary.json"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Implementacao: ler I/O (habilitar/declarar o controlador io na delegacao systemd do usuario ou fonte alternativa) e registrar disco do guest no resumo; revalidar em R-THREE",
+   "reexecution": [
+    "R-THREE"
+   ]
+  },
+  {
+   "id": "V-06.h",
+   "scenario": "V-06",
+   "requirements": [
+    "RF-03",
+    "RF-04",
+    "CA-03",
+    "CA-05"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "composicao do candidato: passada unica do 24 + feedback do 23 + inspecao do 29 numa execucao real",
+   "observed": "nenhum ensaio real sobre o candidato b30e2bd (nem 580b4d1/0d343d6); q23-v3 (d49f43d) nao tem dispatch.ts/capacity.ts do 24; q24-v3 (1f033f8) nao tem o feedback do 23; combinacao so em S (test:ci)",
+   "evidence": [
+    "docs/evidence/23-human-feedback-and-explicit-repairs.md",
+    "docs/evidence/24-three-builders-fifo-and-isolation.md"
+   ],
+   "runs": [
+    "ci-candidato"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [],
+   "gate": "G3-jornada-completa",
+   "pointer": "Executar R-CAND (uma jornada real completa sobre a release do candidato)",
+   "reexecution": [
+    "R-CAND"
+   ]
+  },
+  {
+   "id": "V-07.a",
+   "scenario": "V-07",
+   "requirements": [
+    "RF-05",
+    "RNF-01",
+    "CA-01"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "captura pelo Builder via implement; referencia de Ticket/repo/base e versao de fontes/instrucoes por Execucao; Spec le o pedido completo",
+   "observed": "09 v2: spec/instructions v1 complete; 18 v4: pedido preservado e Spec real",
+   "evidence": [
+    "docs/evidence/09-builder-start-and-preserved-request.md",
+    "docs/evidence/18-first-integrated-delivery-journey.md"
+   ],
+   "runs": [
+    "q09-v2",
+    "q18-v4"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/builder09-qualification.ts"
+   ],
+   "tickets": [
+    "09",
+    "18"
+   ]
+  },
+  {
+   "id": "V-07.b",
+   "scenario": "V-07",
+   "requirements": [
+    "RF-05",
+    "RNF-01",
+    "CA-06"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "interrupcao antes de sources completo",
+   "observed": "nenhum ensaio real localizado com corte antes da captura completa",
+   "evidence": [
+    "docs/evidence/09-builder-start-and-preserved-request.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Incluir corte antes de sources completo em R-CRASH-A",
+   "reexecution": [
+    "R-CRASH-A"
+   ]
+  },
+  {
+   "id": "V-07.c",
+   "scenario": "V-07",
+   "requirements": [
+    "RF-05",
+    "RNF-05",
+    "CA-12"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "mudanca posterior do ticket/link nao altera escopo; so parte autorizada do novo escopo; fonte privada inacessivel gera pergunta",
+   "observed": "11: edicao posterior B1/B2 nao adotada; update-scope aplicado so na proxima ativacao; fonte privada 404 -> ask_user",
+   "evidence": [
+    "docs/evidence/11-context-continuation-and-authorized-scope.md",
+    "docs/evidence/11-real-context-scope-2026-11-14.json"
+   ],
+   "runs": [
+    "q11"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/context11-qualification.ts"
+   ],
+   "tickets": [
+    "11"
+   ]
+  },
+  {
+   "id": "V-07.d",
+   "scenario": "V-07",
+   "requirements": [
+    "RF-05",
+    "RNF-01"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "sessao compatível continua com continue; incompativel substituida explicitamente; rebase",
+   "observed": "11: SESSION_COMPATIBLE e substituicao por mudanca de perfil; 22: builder-continuation com rebase; 23 v3: continuacao da mesma correcao",
+   "evidence": [
+    "docs/evidence/11-context-continuation-and-authorized-scope.md",
+    "docs/evidence/22-effective-impediments-and-automatic-repairs.md"
+   ],
+   "runs": [
+    "q11",
+    "q22-v1",
+    "q23-v3"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/context11-qualification.ts"
+   ],
+   "tickets": [
+    "11",
+    "22",
+    "23"
+   ]
+  },
+  {
+   "id": "V-07.e",
+   "scenario": "V-07",
+   "requirements": [
+    "RF-05",
+    "RNF-01",
+    "CA-06"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "inconclusiva",
+   "expectation": "sessao perdida/alterada substituida sem recaptura silenciosa",
+   "observed": "substituicao provada por mudanca de politica, nao por perda real (SESSION_LOST/ALTERED so S); decisao 3 do 11 segue \"confirmar\"",
+   "evidence": [
+    "docs/evidence/11-context-continuation-and-authorized-scope.md"
+   ],
+   "runs": [
+    "q11"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/context11-qualification.ts"
+   ],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Decisao do operador D-05 (aceitar a prova por mudanca de perfil) ou incluir perda real de sessao em R-CRASH-A",
+   "reexecution": [
+    "R-CRASH-A"
+   ]
+  },
+  {
+   "id": "V-07.f",
+   "scenario": "V-07",
+   "requirements": [
+    "RF-05",
+    "RNF-05",
+    "CA-12"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "inconclusiva",
+   "expectation": "instrucao modificada pelo Builder para dispensar gates/ampliar poderes nao prevalece",
+   "observed": "instrucoes versionadas pelo controle e gates verificados pelo host (13, 18 HANDOFF_GATE_NOT_DOCUMENTED); nenhum ensaio A com o Builder alterando AGENTS/instrucoes",
+   "evidence": [
+    "docs/evidence/13-findings-treatment-and-current-content-gates.md",
+    "docs/evidence/18-first-integrated-delivery-journey.md"
+   ],
+   "runs": [
+    "q13-v5",
+    "q18-v4"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Incluir em R-CAND um Ticket cujo pedido leva o Builder a editar instrucoes/gates; verificar que a versao preservada prevalece",
+   "reexecution": [
+    "R-CAND"
+   ]
+  },
+  {
+   "id": "V-07.P",
+   "scenario": "V-07",
+   "requirements": [
+    "RF-05",
+    "CA-01"
+   ],
+   "requiredLevels": [
+    "P"
+   ],
+   "observedLevels": [],
+   "status": "dependente-do-piloto",
+   "expectation": "pedido real no piloto",
+   "observed": "pendente do piloto (35)",
+   "evidence": [],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G6-preparacao-piloto",
+   "pointer": "Coberto pelo piloto (35)"
+  },
+  {
+   "id": "V-08.a",
+   "scenario": "V-08",
+   "requirements": [
+    "RF-06",
+    "RNF-05"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "pacote proprio, sem perfil pessoal, modelos por papel registrados, sem fallback silencioso",
+   "observed": "factory-skills-v6 pinado; modelos por papel registrados (29 mostra openai/gpt-6-luna por papel); retries 0; fallback de perfil recusado (S). Modelos distintos por papel nao exercitados",
+   "evidence": [
+    "docs/evidence/12-parallel-standards-and-spec-reviews.md",
+    "docs/evidence/29-correlated-cli-observability-and-usage.md"
+   ],
+   "runs": [
+    "q12-v4",
+    "q18-v4",
+    "q29-v2"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [
+    "05",
+    "12",
+    "29"
+   ]
+  },
+  {
+   "id": "V-08.b",
+   "scenario": "V-08",
+   "requirements": [
+    "RF-06",
+    "CA-01"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "Standards/Spec paralelos sobre a proposta completa (staged/nao staged/novos/removidos, contexto alem dos hunks)",
+   "observed": "12 v4/18 v4: pareceres reais completos; variacoes de captura em I-local (handoff-capture com git real)",
+   "evidence": [
+    "docs/evidence/12-parallel-standards-and-spec-reviews.md",
+    "docs/evidence/18-first-integrated-delivery-journey.md"
+   ],
+   "runs": [
+    "q12-v4",
+    "q18-v4"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/review12-qualification.ts"
+   ],
+   "tickets": [
+    "12"
+   ]
+  },
+  {
+   "id": "V-08.c",
+   "scenario": "V-08",
+   "requirements": [
+    "RF-06",
+    "RF-07",
+    "CA-12"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "achado corrigido, novos pareceres apos mudanca relevante, commit identico sem rodada redundante, gate real falho",
+   "observed": "13 v5: gate falhou de verdade, achado requirement corrigido, dois revisores novos, identical-commit, verified",
+   "evidence": [
+    "docs/evidence/13-findings-treatment-and-current-content-gates.md",
+    "docs/evidence/13-real-rounds-run-2026-11-14.json"
+   ],
+   "runs": [
+    "q13-v5"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/review13-qualification.ts"
+   ],
+   "tickets": [
+    "13"
+   ]
+  },
+  {
+   "id": "V-08.d",
+   "scenario": "V-08",
+   "requirements": [
+    "RF-06",
+    "CA-12"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "parecer parcial perdido, um revisor falho com outro valido, retry so do falho sem orcamento extra",
+   "observed": "28 v2: notificacao perdida recuperada de Records; Spec interrompido re-obtido sozinho; max 2 retries por papel",
+   "evidence": [
+    "docs/evidence/28-partial-review-recovery.md",
+    "docs/evidence/28-real-partial-inspect2-2026-11-15.json"
+   ],
+   "runs": [
+    "q28-v2"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/review28-qualification.ts"
+   ],
+   "tickets": [
+    "28"
+   ]
+  },
+  {
+   "id": "V-08.e",
+   "scenario": "V-08",
+   "requirements": [
+    "RF-07",
+    "CA-12"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "falta de instrucao, falha ou gate nao executado exige orientacao, nao sucesso",
+   "observed": "18 v2: gate inventado -> HANDOFF_GATE_NOT_DOCUMENTED; 21 v6: gate so embutido -> HANDOFF_GATE_NOT_RUN; 24: GATE_FAILED nunca verificado",
+   "evidence": [
+    "docs/evidence/18-first-integrated-delivery-journey.md",
+    "docs/evidence/21-human-changes-and-explicit-lease.md"
+   ],
+   "runs": [
+    "q18-v4",
+    "q21-v9",
+    "q24-v3"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [
+    "13",
+    "18",
+    "21"
+   ]
+  },
+  {
+   "id": "V-08.f",
+   "scenario": "V-08",
+   "requirements": [
+    "RF-07",
+    "CA-12"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "dispensa humana nao contorna check GitHub obrigatorio",
+   "observed": "WAIVER_CANNOT_BYPASS_REQUIRED_CHECK so em S: repo de teste sem check obrigatorio",
+   "evidence": [
+    "docs/evidence/13-findings-treatment-and-current-content-gates.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Executar R-GH-CHECKS",
+   "reexecution": [
+    "R-GH-CHECKS"
+   ]
+  },
+  {
+   "id": "V-08.g",
+   "scenario": "V-08",
+   "requirements": [
+    "RF-06",
+    "RNF-05"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "aprovacao exigida pela skill passa por ask user sem autorizacao previa",
+   "observed": "regra e skill (review13-question-flow, skill-pack) em S; nenhum ensaio A localizado",
+   "evidence": [
+    "docs/evidence/13-findings-treatment-and-current-content-gates.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Incluir em R-CAND um pedido cuja skill exige aprovacao",
+   "reexecution": [
+    "R-CAND"
+   ]
+  },
+  {
+   "id": "V-08.P",
+   "scenario": "V-08",
+   "requirements": [
+    "RF-06",
+    "CA-01"
+   ],
+   "requiredLevels": [
+    "P"
+   ],
+   "observedLevels": [],
+   "status": "dependente-do-piloto",
+   "expectation": "qualidade dos pareceres/validacoes em tickets reais",
+   "observed": "pendente do piloto (35)",
+   "evidence": [],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G6-preparacao-piloto",
+   "pointer": "Coberto pelo piloto (35)"
+  },
+  {
+   "id": "V-09.a",
+   "scenario": "V-09",
+   "requirements": [
+    "RF-08",
+    "RF-06",
+    "CA-01"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "publicacao direta pelo Builder via App, /pr, associacao Trabalho/Ticket/branch/base/PR, draft apos reviews",
+   "observed": "14 v8: PR draft #5 publicado e descoberto apos reinicio; 18 v4: draft #15; 22/23: atualizacao do mesmo PR",
+   "evidence": [
+    "docs/evidence/14-direct-draft-publication-and-discovery.md",
+    "docs/evidence/18-first-integrated-delivery-journey.md"
+   ],
+   "runs": [
+    "q14-v8",
+    "q18-v4",
+    "q22-v1"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/publication14-qualification.ts"
+   ],
+   "tickets": [
+    "14",
+    "18"
+   ]
+  },
+  {
+   "id": "V-09.b",
+   "scenario": "V-09",
+   "requirements": [
+    "RF-08",
+    "CA-01",
+    "CA-12"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "conversao controlada a pronto com evidencias atuais; aberto/pronto/entregue distintos; sem merge pela Factory",
+   "observed": "16 v1: uma mutacao, grant revogado, observacao independente; 18 v4: ready apos remocao autorizada de update; merge so humano",
+   "evidence": [
+    "docs/evidence/16-evidence-based-readiness.md",
+    "docs/evidence/18-first-integrated-delivery-journey.md"
+   ],
+   "runs": [
+    "q16-v1",
+    "q18-v4"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/readiness16-qualification.ts"
+   ],
+   "tickets": [
+    "16",
+    "18"
+   ]
+  },
+  {
+   "id": "V-09.c",
+   "scenario": "V-09",
+   "requirements": [
+    "RF-09",
+    "RNF-04",
+    "CA-04",
+    "CA-12"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "checks: head atual x antigo, App emissora, homonimos, neutral/skipped, rerun pendente, contexto ausente, strict/loose",
+   "observed": "so fixture: o repo de teste nao tem check obrigatorio (15: empty-complete)",
+   "evidence": [
+    "docs/evidence/15-required-checks-evaluation.md"
+   ],
+   "runs": [
+    "q15-v2"
+   ],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Executar R-GH-CHECKS (workflow + ruleset com check obrigatorio configurados pelo operador)",
+   "reexecution": [
+    "R-GH-CHECKS"
+   ]
+  },
+  {
+   "id": "V-09.d",
+   "scenario": "V-09",
+   "requirements": [
+    "RF-08",
+    "RNF-04",
+    "CA-12"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "rulesets herdados lidos e interpretados; regra que bloqueia merge impede prontidao",
+   "observed": "15: ruleset 26435808 interpretado; 39: update -> UPDATE_RESTRICTED; 18 v4: MERGE_BLOCKED_UPDATE_RESTRICTED real",
+   "evidence": [
+    "docs/evidence/39-merge-blocking-base-rules.md",
+    "docs/evidence/18-first-integrated-delivery-journey.md"
+   ],
+   "runs": [
+    "q15-v2",
+    "q39-v1",
+    "q18-v4"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/mergeblock39-qualification.ts"
+   ],
+   "tickets": [
+    "15",
+    "39"
+   ]
+  },
+  {
+   "id": "V-09.e",
+   "scenario": "V-09",
+   "requirements": [
+    "RF-09",
+    "RNF-04",
+    "CA-12"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "mudanca de head/regra/base entre leituras e conversao; perda de condicao volta a draft; draft humano respeitado",
+   "observed": "so em S/I(sub) (readiness-flow, github-readiness-composed)",
+   "evidence": [
+    "docs/evidence/16-evidence-based-readiness.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Executar R-GH-CHECKS (inclui perda de condicao apos ready e draft humano)",
+   "reexecution": [
+    "R-GH-CHECKS"
+   ]
+  },
+  {
+   "id": "V-09.f",
+   "scenario": "V-09",
+   "requirements": [
+    "RF-09",
+    "RNF-04"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "inconclusiva",
+   "expectation": "protecao tradicional + rulesets e paginacao incompleta",
+   "observed": "protecao classica, lock_branch, assinaturas, historico linear e metodos de merge nao lidos (39, MERGE_METHODS_UNKNOWN -> indeterminado)",
+   "evidence": [
+    "docs/evidence/39-merge-blocking-base-rules.md"
+   ],
+   "runs": [
+    "q39-v1"
+   ],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Executar R-GH-CHECKS com protecao classica no repo de teste (o resultado esperado inclui indeterminado onde nao ha leitura)",
+   "reexecution": [
+    "R-GH-CHECKS"
+   ]
+  },
+  {
+   "id": "V-09.P",
+   "scenario": "V-09",
+   "requirements": [
+    "RF-08",
+    "CA-01"
+   ],
+   "requiredLevels": [
+    "P"
+   ],
+   "observedLevels": [],
+   "status": "dependente-do-piloto",
+   "expectation": "publicacao/prontidao em tickets reais",
+   "observed": "pendente do piloto (35)",
+   "evidence": [],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G6-preparacao-piloto",
+   "pointer": "Coberto pelo piloto (35)"
+  },
+  {
+   "id": "V-10.a",
+   "scenario": "V-10",
+   "requirements": [
+    "RF-09",
+    "CA-04"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "conflito confirmado -> um reparo; base apenas avancando -> zero Execucoes",
+   "observed": "22: avanco da base sem disparo; conflito add/add -> uma correcao cobrada, rebase e push com lease no mesmo PR",
+   "evidence": [
+    "docs/evidence/22-effective-impediments-and-automatic-repairs.md",
+    "docs/evidence/22-real-repair-verdict-2026-11-16.json"
+   ],
+   "runs": [
+    "q22-v1"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/repair22-qualification.ts"
+   ],
+   "tickets": [
+    "22"
+   ]
+  },
+  {
+   "id": "V-10.b",
+   "scenario": "V-10",
+   "requirements": [
+    "RF-09",
+    "CA-04"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "check obrigatorio atual falho e impedimento strict geram reparo",
+   "observed": "REQUIRED_CHECK_FAILED e STRICT_UPDATE_REQUIRED so em S (repo sem check obrigatorio)",
+   "evidence": [
+    "docs/evidence/22-effective-impediments-and-automatic-repairs.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Executar R-GH-CHECKS",
+   "reexecution": [
+    "R-GH-CHECKS"
+   ]
+  },
+  {
+   "id": "V-10.c",
+   "scenario": "V-10",
+   "requirements": [
+    "RF-09",
+    "CA-04"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "CHANGES_REQUESTED autorizado e comando explicito; comentario comum nao dispara; feedback durante reparo consolidado",
+   "observed": "23 v3: review do operador -> uma correcao; /factory repair + segunda review continuam a mesma correcao; APPROVE retira sem cobranca",
+   "evidence": [
+    "docs/evidence/23-human-feedback-and-explicit-repairs.md",
+    "docs/evidence/23-real-feedback-v3-verdict-2026-11-16.json"
+   ],
+   "runs": [
+    "q23-v3"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/feedback23-qualification.ts"
+   ],
+   "tickets": [
+    "23"
+   ]
+  },
+  {
+   "id": "V-10.d",
+   "scenario": "V-10",
+   "requirements": [
+    "RF-09",
+    "CA-04"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "discordancia do Builder, correcao sem mudanca e problema declarado sem solucao bloqueiam/perguntam",
+   "observed": "so S; \"discordancia -> ask_user\" garantido apenas pelo prompt (limite registrado no 23)",
+   "evidence": [
+    "docs/evidence/23-human-feedback-and-explicit-repairs.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Incluir em R-CAND um pedido de reparo inaplicavel",
+   "reexecution": [
+    "R-CAND"
+   ]
+  },
+  {
+   "id": "V-10.e",
+   "scenario": "V-10",
+   "requirements": [
+    "RF-04",
+    "RF-09",
+    "CA-09"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "push humano concorrente, lease com OID anterior, divergencia nova apos autorizacao, sem --force nem sobrescrita",
+   "observed": "21 v9: lease falho preservou C1; Pergunta 1 incorporate; C2 apos a resposta -> Pergunta 2; publicacao com lease na segunda ponta; ambos os commits humanos preservados",
+   "evidence": [
+    "docs/evidence/21-human-changes-and-explicit-lease.md",
+    "docs/evidence/21-real-human-v9-verdict-2026-11-16.json"
+   ],
+   "runs": [
+    "q21-v9"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/humanchanges21-qualification.ts"
+   ],
+   "tickets": [
+    "21"
+   ]
+  },
+  {
+   "id": "V-10.f",
+   "scenario": "V-10",
+   "requirements": [
+    "RF-04",
+    "CA-09"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "politica alternativa do repo: merge da base quando ha commits de terceiros",
+   "observed": "so S (no 22 nao havia commit humano na branch)",
+   "evidence": [
+    "docs/evidence/22-effective-impediments-and-automatic-repairs.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Executar R-GH-ADV (conflito com commit humano na branch)",
+   "reexecution": [
+    "R-GH-ADV"
+   ]
+  },
+  {
+   "id": "V-10.g",
+   "scenario": "V-10",
+   "requirements": [
+    "RF-09",
+    "CA-04"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "encerrar PR/realizar merge durante reparo",
+   "observed": "merge durante atividade so em S (17)",
+   "evidence": [
+    "docs/evidence/17-confirmed-delivery-and-owned-cleanup.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Executar R-GH-ADV (merge humano durante uma correcao ativa)",
+   "reexecution": [
+    "R-GH-ADV"
+   ]
+  },
+  {
+   "id": "V-10.P",
+   "scenario": "V-10",
+   "requirements": [
+    "RF-09",
+    "CA-04"
+   ],
+   "requiredLevels": [
+    "P"
+   ],
+   "observedLevels": [],
+   "status": "dependente-do-piloto",
+   "expectation": "manutencao de PR em tickets reais",
+   "observed": "pendente do piloto (35)",
+   "evidence": [],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G6-preparacao-piloto",
+   "pointer": "Coberto pelo piloto (35)"
+  },
+  {
+   "id": "V-11.a",
+   "scenario": "V-11",
+   "requirements": [
+    "RF-10",
+    "CA-05"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "ask user, pergunta duravel identificavel, suspensao com cessacao, resposta por comentario correlacionado, retomada pela fila",
+   "observed": "10 v2 e 18 v4: Pergunta publicada, Slot liberado apos cessacao, /factory answer do operador, retomada QUESTION_ANSWERED",
+   "evidence": [
+    "docs/evidence/10-durable-questions-and-queued-resumption.md",
+    "docs/evidence/18-first-integrated-delivery-journey.md"
+   ],
+   "runs": [
+    "q10-v2",
+    "q18-v4"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/question10-qualification.ts"
+   ],
+   "tickets": [
+    "10",
+    "18"
+   ]
+  },
+  {
+   "id": "V-11.b",
+   "scenario": "V-11",
+   "requirements": [
+    "RF-10",
+    "RF-12"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "resposta pela CLI",
+   "observed": "answer-cli com CLI real sobre socket (I-local); r33-v2: Pergunta pendente respondida pela CLI apos a troca de release",
+   "evidence": [
+    "docs/evidence/33-compatible-upgrades-and-recoverable-migration.md"
+   ],
+   "runs": [
+    "r33-v2",
+    "ci-candidato"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/release33-qualification.ts"
+   ],
+   "tickets": [
+    "10",
+    "33"
+   ]
+  },
+  {
+   "id": "V-11.c",
+   "scenario": "V-11",
+   "requirements": [
+    "RF-10",
+    "RNF-05",
+    "CA-05"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "bot/terceiro/prosa maliciosa, resposta insuficiente e comando repetido nao desbloqueiam nem autorizam",
+   "observed": "so S (question-rules, feedback-rules); nenhuma resposta real de terceiro",
+   "evidence": [
+    "docs/evidence/10-durable-questions-and-queued-resumption.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Executar R-GH-ADV (resposta de conta terceira e de bot)",
+   "reexecution": [
+    "R-GH-ADV"
+   ]
+  },
+  {
+   "id": "V-11.d",
+   "scenario": "V-11",
+   "requirements": [
+    "RF-10",
+    "RNF-05"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "mensagem invalida/fragmentada/duplicada, identidade reutilizada, abertura/Execucao/boot antigo, frames excedidos",
+   "observed": "protocolo com sockets reais (02, 05): frames limitados, fragmentacao UTF-8, duplicatas, fase/boot antigo recusados",
+   "evidence": [
+    "docs/controller-evidence.md",
+    "docs/evidence/05-physical-qualification-and-acceptance.md"
+   ],
+   "runs": [
+    "q02-local",
+    "ci-candidato"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [
+    "02",
+    "05"
+   ]
+  },
+  {
+   "id": "V-11.e",
+   "scenario": "V-11",
+   "requirements": [
+    "RF-12",
+    "RNF-03"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "CLI lista/inspeciona/pausa/retoma/cancela/responde/solicita tentativa/limpa sem editar storage; controlador indisponivel e resultado indeterminado consultaveis",
+   "observed": "CLI real sobre socket (02, 25 cancel, 30 cleanup, 31 forget); 29: show/history/logs/usage com codigos estaveis sobre storages reais",
+   "evidence": [
+    "docs/evidence/29-correlated-cli-observability-and-usage.md",
+    "docs/evidence/25-authorization-withdrawal-and-work-cycles.md"
+   ],
+   "runs": [
+    "q29-v2",
+    "q25-v1",
+    "ci-candidato"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [
+    "02",
+    "25",
+    "29"
+   ]
+  },
+  {
+   "id": "V-11.f",
+   "scenario": "V-11",
+   "requirements": [
+    "RF-12",
+    "RNF-05"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "pausa nao mata ativos; doctor nao modifica estado/host/GitHub",
+   "observed": "24: pause sem nova ativacao com atividades continuando; doctor read-only (01, 32)",
+   "evidence": [
+    "docs/evidence/24-three-builders-fifo-and-isolation.md",
+    "docs/evidence/32-self-contained-release.md"
+   ],
+   "runs": [
+    "q24-v3",
+    "r32-v2"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [
+    "01",
+    "24",
+    "32"
+   ]
+  },
+  {
+   "id": "V-11.P",
+   "scenario": "V-11",
+   "requirements": [
+    "RF-10",
+    "CA-05"
+   ],
+   "requiredLevels": [
+    "P"
+   ],
+   "observedLevels": [],
+   "status": "dependente-do-piloto",
+   "expectation": "interacao real com operador no piloto",
+   "observed": "pendente do piloto (35)",
+   "evidence": [],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G6-preparacao-piloto",
+   "pointer": "Coberto pelo piloto (35)"
+  },
+  {
+   "id": "V-12.a",
+   "scenario": "V-12",
+   "requirements": [
+    "RF-13",
+    "RNF-01",
+    "CA-06"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "cortes antes/depois de commit/reserva, spawn/recibo/inicio e ferramenta; cessacao dos sobreviventes antes de substituto",
+   "observed": "26 v2: SIGKILL real em ferramenta/reserva/spawn/recibo, noTwoWriters, singleConsumption",
+   "evidence": [
+    "docs/evidence/26-execution-recovery-without-survivor-adoption.md"
+   ],
+   "runs": [
+    "q26-v2"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/recovery26-qualification.ts"
+   ],
+   "tickets": [
+    "26"
+   ]
+  },
+  {
+   "id": "V-12.b",
+   "scenario": "V-12",
+   "requirements": [
+    "RF-08",
+    "RF-10",
+    "RNF-01",
+    "CA-06"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "cortes reais apos POST de Pergunta e apos push; sem Pergunta/PR duplicados; ausencia de ACK nao prova ausencia de efeito",
+   "observed": "27 v2: corte A redescobriu a Pergunta sem republicar; corte B vinculou um PR proprio no head verificado; 14 v8: resultado perdido descoberto",
+   "evidence": [
+    "docs/evidence/27-external-effect-crash-reconciliation.md",
+    "docs/evidence/27-real-crashfx-v2-reassess-2026-11-16.json"
+   ],
+   "runs": [
+    "q27-v2",
+    "q14-v8"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/crashfx27-qualification.ts"
+   ],
+   "tickets": [
+    "14",
+    "27"
+   ]
+  },
+  {
+   "id": "V-12.c",
+   "scenario": "V-12",
+   "requirements": [
+    "RF-04",
+    "RNF-01",
+    "CA-06"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "inconclusiva",
+   "expectation": "cortes de Builder/ferramenta e de revisao com agentes reais",
+   "observed": "corte de ferramenta so com provedor roteirizado (26, I sem A); corte no handoff de revisao so I-local (28; q28-partial-v3 nao executado)",
+   "evidence": [
+    "docs/evidence/26-execution-recovery-without-survivor-adoption.md",
+    "docs/evidence/28-partial-review-recovery.md"
+   ],
+   "runs": [
+    "q26-v2",
+    "q28-v2"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/recovery26-qualification.ts"
+   ],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Executar R-CRASH-A",
+   "reexecution": [
+    "R-CRASH-A"
+   ]
+  },
+  {
+   "id": "V-12.d",
+   "scenario": "V-12",
+   "requirements": [
+    "RF-13",
+    "RNF-01",
+    "CA-06"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "resposta durante boot, cache em preparo, perda de canal",
+   "observed": "corte de cache nao incluido na receita 26; resposta durante boot e perda de canal so em S/I-local",
+   "evidence": [
+    "docs/evidence/26-execution-recovery-without-survivor-adoption.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Incluir em R-CRASH-A",
+   "reexecution": [
+    "R-CRASH-A"
+   ]
+  },
+  {
+   "id": "V-12.e",
+   "scenario": "V-12",
+   "requirements": [
+    "RF-13",
+    "RNF-01"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "identidade, contexto e limites mantidos apos crash/reboot",
+   "observed": "19: EXECUTION_TIMEOUT mantido apos restart; 26 v2: recoveries contados; 33: IDs/filas/Perguntas preservados",
+   "evidence": [
+    "docs/evidence/19-budgets-optional-timeout-and-grants.md",
+    "docs/evidence/26-execution-recovery-without-survivor-adoption.md"
+   ],
+   "runs": [
+    "q19-v2",
+    "q26-v2",
+    "r33-v2"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [
+    "19",
+    "26",
+    "33"
+   ]
+  },
+  {
+   "id": "V-12.f",
+   "scenario": "V-12",
+   "requirements": [
+    "RNF-01",
+    "CA-03"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "I"
+   ],
+   "status": "inconclusiva",
+   "expectation": "disco do guest apos morte do proprietario",
+   "observed": "W3: fsck 4 (accepted false) no FS de A apos SIGKILL do dono, recuperacao MANUAL em inode novo; registrado como limite no 03, sem decisao explicita de produto",
+   "evidence": [
+    "docs/evidence/03-w3-owner-loss-gated.md",
+    "docs/evidence/03-w3-copy-repair.md"
+   ],
+   "runs": [
+    "w3"
+   ],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Decisao do operador D-06: aceitar como limite do MVP (hardware/storage) ou exigir deteccao/reparo e revalidar em R-HOSTFAULT",
+   "reexecution": [
+    "R-HOSTFAULT"
+   ]
+  },
+  {
+   "id": "V-13.a",
+   "scenario": "V-13",
+   "requirements": [
+    "RF-13",
+    "CA-11"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "reserva sem inicio x inicio confirmado; contagens separadas/configuraveis; concessao; eventos/push/restart nao zeram contadores",
+   "observed": "19: grant aceito; 22: uma correcao cobrada no inicio confirmado; 23 v3: cobranca preservada na continuacao, consumo total 2",
+   "evidence": [
+    "docs/evidence/19-budgets-optional-timeout-and-grants.md",
+    "docs/evidence/22-real-repair-verdict-2026-11-16.json",
+    "docs/evidence/23-real-feedback-v3-verdict-2026-11-16.json"
+   ],
+   "runs": [
+    "q19-v2",
+    "q22-v1",
+    "q23-v3"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [
+    "19",
+    "22",
+    "23"
+   ]
+  },
+  {
+   "id": "V-13.b",
+   "scenario": "V-13",
+   "requirements": [
+    "RF-13",
+    "RNF-05"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "retomadas operacionais com backoff; tentativas internas do SDK desabilitadas",
+   "observed": "26: esperas 5/15/45 s persistidas; 05/28: providerRetries/sdkRetries 0",
+   "evidence": [
+    "docs/evidence/26-execution-recovery-without-survivor-adoption.md",
+    "docs/evidence/05-physical-qualification-and-acceptance.md"
+   ],
+   "runs": [
+    "q26-v2",
+    "q28-v2"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [
+    "05",
+    "26",
+    "28"
+   ]
+  },
+  {
+   "id": "V-13.c",
+   "scenario": "V-13",
+   "requirements": [
+    "RF-13",
+    "RF-12",
+    "CA-07"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "parada administrativa limpa x forcada/crash",
+   "observed": "26 v2: parada limpa final sem cobranca; 33: parada limpa exigida antes do upgrade",
+   "evidence": [
+    "docs/evidence/26-execution-recovery-without-survivor-adoption.md",
+    "docs/evidence/33-compatible-upgrades-and-recoverable-migration.md"
+   ],
+   "runs": [
+    "q26-v2",
+    "r33-v2"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [
+    "26",
+    "33"
+   ]
+  },
+  {
+   "id": "V-13.d",
+   "scenario": "V-13",
+   "requirements": [
+    "RF-13",
+    "CA-11"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "timeout configurado interrompe/bloqueia sem loop; espera nao consome tempo ativo nem Slot",
+   "observed": "(timeout com modelo real nao exercitado; o A do cenario vem de V-13.a/V-13.f) 19: timeout 90 s real interrompeu sleep 600, revogou, bloqueou sem relancar; espera de pergunta sem Slot (10/18)",
+   "evidence": [
+    "docs/evidence/19-budgets-optional-timeout-and-grants.md",
+    "docs/evidence/19-real-limits-run-2026-11-14.json"
+   ],
+   "runs": [
+    "q19-v2",
+    "q10-v2"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/limits19-qualification.ts"
+   ],
+   "tickets": [
+    "19"
+   ]
+  },
+  {
+   "id": "V-13.e",
+   "scenario": "V-13",
+   "requirements": [
+    "RF-13",
+    "CA-11"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "ausencia de timeout sem corte de 60 min; ajuste de hora; duracao perdida apos crash",
+   "observed": "nenhuma atividade real > 60 min; ajuste de hora so S (relogio monotonico)",
+   "evidence": [
+    "docs/evidence/19-budgets-optional-timeout-and-grants.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Executar R-LONG (uma atividade real > 60 min sem timeout; ajuste de hora do host com autorizacao de injecao)",
+   "reexecution": [
+    "R-LONG"
+   ]
+  },
+  {
+   "id": "V-13.f",
+   "scenario": "V-13",
+   "requirements": [
+    "RF-11",
+    "RF-12",
+    "CA-07"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "cancelar durante comando confirma cessacao, preserva artefatos, nada no GitHub e desfeito",
+   "observed": "25 v1: cancel pela CLI real com Execucao ativa: credencial retirada, abort, stop, Slot liberado so com cessacao",
+   "evidence": [
+    "docs/evidence/25-authorization-withdrawal-and-work-cycles.md",
+    "docs/evidence/25-real-cancel-run-2026-11-15.json"
+   ],
+   "runs": [
+    "q25-v1"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/cancel25-qualification.ts"
+   ],
+   "tickets": [
+    "25"
+   ]
+  },
+  {
+   "id": "V-13.g",
+   "scenario": "V-13",
+   "requirements": [
+    "RF-11",
+    "RF-12",
+    "CA-07"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "cancelar antes/depois de requisicao enviada e durante containers; merge concorrente ao cancelamento",
+   "observed": "merge durante cancelamento e efeitos tardios sob cancelamento so em fluxo (25, 27)",
+   "evidence": [
+    "docs/evidence/25-authorization-withdrawal-and-work-cycles.md",
+    "docs/evidence/27-external-effect-crash-reconciliation.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Executar R-GH-ADV (cancel com PR proprio e merge humano concorrente)",
+   "reexecution": [
+    "R-GH-ADV"
+   ]
+  },
+  {
+   "id": "V-14.a",
+   "scenario": "V-14",
+   "requirements": [
+    "RF-14",
+    "CA-01",
+    "CA-07"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "merge confirmado antes da entrega/cleanup; evidencias preservadas antes de remover; falha parcial com retry so dos pendentes; entrega nao desfeita",
+   "observed": "17 v4: 19 arquivos preservados, ambiente removido, falha provocada da branch mantida pendente e removida no retry; 18 v4: cleanup complete",
+   "evidence": [
+    "docs/evidence/17-confirmed-delivery-and-owned-cleanup.md",
+    "docs/evidence/17-real-delivery-v4-retry-2026-11-15.json"
+   ],
+   "runs": [
+    "q17-v4",
+    "q18-v4"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/delivery17-qualification.ts"
+   ],
+   "tickets": [
+    "17",
+    "18"
+   ]
+  },
+  {
+   "id": "V-14.b",
+   "scenario": "V-14",
+   "requirements": [
+    "RF-14",
+    "CA-07"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "recursos alheios/base protegidos; nenhuma limpeza global Docker",
+   "observed": "17 v4 inspect: so a branch propria sumiu; 22 ambientes, cache e Work #6 inalterados",
+   "evidence": [
+    "docs/evidence/17-real-delivery-v4-inspect-2026-11-15.json"
+   ],
+   "runs": [
+    "q17-v4"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [
+    "17"
+   ]
+  },
+  {
+   "id": "V-14.c",
+   "scenario": "V-14",
+   "requirements": [
+    "RF-14",
+    "CA-07"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "piso de espaco/disco cheio sem exclusao para abrir espaco; arquivo em uso",
+   "observed": "ENOSPC real nao simulado (03); recusa por statfs em S",
+   "evidence": [
+    "docs/evidence/03-storage-admission-local.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Executar R-HOSTFAULT (disco cheio/abaixo do piso em raiz descartavel)",
+   "reexecution": [
+    "R-HOSTFAULT"
+   ]
+  },
+  {
+   "id": "V-14.d",
+   "scenario": "V-14",
+   "requirements": [
+    "RF-14",
+    "CA-07",
+    "CA-10"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "logs/sessoes de entregues elegiveis 30 dias apos merge na varredura; nao entregues preservados; fim de pendencia nao reinicia prazo; historico ate exclusao",
+   "observed": "30 v3 sobre copia real de q17: 40 removidos, 49 mantidos, dueAt merge+30 d (relogio controlado; armazenamento/varredura reais)",
+   "evidence": [
+    "docs/evidence/30-retention-and-explicit-cleanup.md",
+    "docs/evidence/30-real-retention-v3-verdict-2026-11-15.json"
+   ],
+   "runs": [
+    "q30-v3"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/retention30-qualification.ts"
+   ],
+   "tickets": [
+    "30"
+   ]
+  },
+  {
+   "id": "V-14.e",
+   "scenario": "V-14",
+   "requirements": [
+    "RF-14",
+    "RF-02",
+    "CA-10"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "exclusao exige encerramento sem pendencias e conserva memoria minima antirredisparo",
+   "observed": "31 v2: entregue esquecido sem chaves proibidas; polling apos restart -> existing; recusa com RESOURCES_PENDING",
+   "evidence": [
+    "docs/evidence/31-history-erasure-and-minimal-cycle-memory.md",
+    "docs/evidence/31-real-forget-v2-verdict-2026-11-15.json"
+   ],
+   "runs": [
+    "q31-v2"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/forget31-qualification.ts"
+   ],
+   "tickets": [
+    "31"
+   ]
+  },
+  {
+   "id": "V-14.f",
+   "scenario": "V-14",
+   "requirements": [
+    "RF-14",
+    "CA-10"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "forget de Trabalho cancelado em dados reais",
+   "observed": "so o ramo recusado (ambiente q25 ainda existe); caminho completo em fluxo",
+   "evidence": [
+    "docs/evidence/31-history-erasure-and-minimal-cycle-memory.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G5-operacao-release",
+   "pointer": "Executar R-GH-DEP (limpar o ambiente q25 e esquecer o cancelado), com autorizacao propria",
+   "reexecution": [
+    "R-GH-DEP"
+   ]
+  },
+  {
+   "id": "V-14.g",
+   "scenario": "V-14",
+   "requirements": [
+    "RF-14"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "inconclusiva",
+   "expectation": "exclusao de historico remove os dados",
+   "observed": "paginas livres/WAL do SQLite nao sao saneadas (VACUUM proposto, nao implementado)",
+   "evidence": [
+    "docs/evidence/31-history-erasure-and-minimal-cycle-memory.md"
+   ],
+   "runs": [
+    "q31-v2"
+   ],
+   "commands": [],
+   "tickets": [],
+   "gate": "G5-operacao-release",
+   "pointer": "Decisao do operador D-07: aceitar como limite documentado ou implementar VACUUM/checkpoint apos forget e revalidar localmente"
+  },
+  {
+   "id": "V-14.P",
+   "scenario": "V-14",
+   "requirements": [
+    "RF-14",
+    "CA-01"
+   ],
+   "requiredLevels": [
+    "P"
+   ],
+   "observedLevels": [],
+   "status": "dependente-do-piloto",
+   "expectation": "cleanup de entrega real no piloto",
+   "observed": "pendente do piloto (35)",
+   "evidence": [],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G6-preparacao-piloto",
+   "pointer": "Coberto pelo piloto (35)"
+  },
+  {
+   "id": "V-15.a",
+   "scenario": "V-15",
+   "requirements": [
+    "RNF-03",
+    "RF-12",
+    "CA-12"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "navegacao CLI humana/JSON por toda a cadeia; causa, historico e proximo passo; leituras externas com instante/completude",
+   "observed": "29: show/history/logs/usage sobre q18-journey-v4 e q25-cancel-v1 reais; paginacao, filtros, frame unico, nada escrito",
+   "evidence": [
+    "docs/evidence/29-correlated-cli-observability-and-usage.md"
+   ],
+   "runs": [
+    "q29-v2"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/inspect29-qualification.ts"
+   ],
+   "tickets": [
+    "29"
+   ]
+  },
+  {
+   "id": "V-15.b",
+   "scenario": "V-15",
+   "requirements": [
+    "RNF-03",
+    "RF-07"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "saida volumosa/truncada aponta a saida filtrada legivel na area do Trabalho; leitura paginada pelos agentes com ferramentas confinadas",
+   "observed": "05 v4: Bash grande com copia automatica e 3 Reads paginados pelo Builder; selecao Host para outro papel",
+   "evidence": [
+    "docs/evidence/05-physical-qualification-and-acceptance.md"
+   ],
+   "runs": [
+    "q05-v4"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [
+    "05",
+    "29"
+   ]
+  },
+  {
+   "id": "V-15.c",
+   "scenario": "V-15",
+   "requirements": [
+    "RNF-03",
+    "CA-12"
+   ],
+   "requiredLevels": [
+    "S",
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "consumo medido dos tres papeis, sessao retomada sem duplicar, parcial/ausente distinto de zero, em dados reais",
+   "observed": "nos dados reais todas as atividades deram unavailable (sessoes removidas pelo cleanup do 17 antes do 30; cancelado sem sessao); medido/dedup so em S",
+   "evidence": [
+    "docs/evidence/29-correlated-cli-observability-and-usage.md"
+   ],
+   "runs": [
+    "q29-v2"
+   ],
+   "commands": [],
+   "tickets": [],
+   "gate": "G3-jornada-completa",
+   "pointer": "Executar R-INSPECT (receita 29 sobre copia de um storage com sessoes retidas, ex.: q23-feedback-v3)",
+   "reexecution": [
+    "R-INSPECT"
+   ]
+  },
+  {
+   "id": "V-15.d",
+   "scenario": "V-15",
+   "requirements": [
+    "RNF-04",
+    "RF-09"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "polling padrao 60 s configuravel; falha/antiga de consulta nao vira ausencia/sucesso",
+   "observed": "polling real em todos os ensaios GitHub; leituras incompletas recusadas (15, 29 freshness)",
+   "evidence": [
+    "docs/evidence/15-required-checks-evaluation.md",
+    "docs/evidence/29-correlated-cli-observability-and-usage.md"
+   ],
+   "runs": [
+    "q15-v2",
+    "q29-v2"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [
+    "07",
+    "15",
+    "29"
+   ]
+  },
+  {
+   "id": "V-15.e",
+   "scenario": "V-15",
+   "requirements": [
+    "RNF-04"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "rate limit/backoff real",
+   "observed": "rate limit nao induzido (07); backoff so S",
+   "evidence": [
+    "docs/evidence/07-unique-ticket-admission.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G4-concorrencia-adversidades",
+   "pointer": "Decisao do operador D-08: aceitar S para rate limit (induzir real e arriscado) ou autorizar consumo deliberado em R-GH-ADV",
+   "reexecution": [
+    "R-GH-ADV"
+   ]
+  },
+  {
+   "id": "V-15.f",
+   "scenario": "V-15",
+   "requirements": [
+    "RF-14",
+    "RNF-03"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "falha de gravacao, captura parcial x resultado desconhecido; logs/sessoes nao publicados no GitHub",
+   "observed": "records (S/I-local); traces gh de 18/25 sem publicacao de logs; 29 nao escreve",
+   "evidence": [
+    "docs/evidence/05-protected-raw-records.md",
+    "docs/evidence/18-real-journey-v4-gh-trace-2026-11-15.jsonl"
+   ],
+   "runs": [
+    "q18-v4",
+    "ci-candidato"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
+   "tickets": [
+    "05",
+    "29"
+   ]
+  },
+  {
+   "id": "V-15.P",
+   "scenario": "V-15",
+   "requirements": [
+    "RNF-03",
+    "CA-07"
+   ],
+   "requiredLevels": [
+    "P"
+   ],
+   "observedLevels": [],
+   "status": "dependente-do-piloto",
+   "expectation": "metricas do PRD no piloto",
+   "observed": "pendente do piloto (35)",
+   "evidence": [],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G6-preparacao-piloto",
+   "pointer": "Coberto pelo piloto (35)"
+  },
+  {
+   "id": "V-16.a",
+   "scenario": "V-16",
+   "requirements": [
+    "RF-01",
+    "RNF-01"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "mecanismo de release autocontida: manifesto de todos os bytes, assets integros, falha fechada sem manifesto",
+   "observed": "r32-v2 (2d5600e) verify 0 violacoes; r33-v2 construiu e verificou mvp-33.1 (b6cd2bb)",
+   "evidence": [
+    "docs/evidence/32-self-contained-release.md",
+    "docs/evidence/32-real-v2-verify-2026-11-14.json",
+    "docs/evidence/33-r33-v2/build-verdict.json"
+   ],
+   "runs": [
+    "r32-v2",
+    "r33-v2"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/release32-qualification.ts"
+   ],
+   "tickets": [
+    "32",
+    "33"
+   ]
+  },
+  {
+   "id": "V-16.b",
+   "scenario": "V-16",
+   "requirements": [
+    "RF-01",
+    "RNF-01"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "release do proprio candidato construida, verificada e identificada",
+   "observed": "nenhuma release construida de 0d343d6; ultima: mvp-33.1 de b6cd2bb; qualification: unqualified",
+   "evidence": [
+    "docs/evidence/33-compatible-upgrades-and-recoverable-migration.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G5-operacao-release",
+   "pointer": "Executar R-REL (build/verify/install/setup/doctor da release do candidato)",
+   "reexecution": [
+    "R-REL"
+   ]
+  },
+  {
+   "id": "V-16.c",
+   "scenario": "V-16",
+   "requirements": [
+    "RF-01"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "setup repetido, paths privados explicitos, configuracao invalida/alterada recusada, sem heranca pessoal nem sudo",
+   "observed": "01: setup idempotente, 0700/0600, symlink recusado; 32 v2: segundo setup cria nada; doctor INVALID_CONFIGURATION; recusa antes do storage",
+   "evidence": [
+    "docs/evidence/01-local-setup-and-development-gate.md",
+    "docs/evidence/32-real-v2-setup-2026-11-14.json"
+   ],
+   "runs": [
+    "r32-v2",
+    "ci-candidato"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/release32-qualification.ts"
+   ],
+   "tickets": [
+    "01",
+    "32"
+   ]
+  },
+  {
+   "id": "V-16.d",
+   "scenario": "V-16",
+   "requirements": [
+    "RF-01"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S"
+   ],
+   "status": "inconclusiva",
+   "expectation": "primeiro plano e servico opcional; systemd obrigatorio dos ambientes em ambos os modos",
+   "observed": "modo servico (--service) nunca instalado nem executado; ambientes systemd so em primeiro plano",
+   "evidence": [
+    "docs/evidence/32-self-contained-release.md"
+   ],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G5-operacao-release",
+   "pointer": "Executar R-REL incluindo install com --service (unit systemd do usuario)",
+   "reexecution": [
+    "R-REL"
+   ]
+  },
+  {
+   "id": "V-16.e",
+   "scenario": "V-16",
+   "requirements": [
+    "RF-01",
+    "RNF-01"
+   ],
+   "requiredLevels": [
+    "S",
+    "I"
+   ],
+   "observedLevels": [
+    "S",
+    "I"
+   ],
+   "status": "aprovada",
+   "expectation": "pausa/parada limpa, release nova com Pergunta pendente, incompativel recusado, migracao solicitada, interrupcao durante migracao",
+   "observed": "r33-v2 54/54: recusas reais, dois SIGKILL na migracao, resume, rollback recusado por formato, v2 iniciou pausada e a Pergunta foi respondida",
+   "evidence": [
+    "docs/evidence/33-compatible-upgrades-and-recoverable-migration.md",
+    "docs/evidence/33-r33-v2/interrupted-migration-verdict.json"
+   ],
+   "runs": [
+    "r33-v2"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/release33-qualification.ts"
+   ],
+   "tickets": [
+    "33"
+   ]
+  },
+  {
+   "id": "V-17.a",
+   "scenario": "V-17",
+   "requirements": [
+    "RF-08",
+    "RF-10",
+    "CA-01",
+    "CA-05"
+   ],
+   "requiredLevels": [
+    "I",
+    "A"
+   ],
+   "observedLevels": [
+    "I",
+    "A"
+   ],
+   "status": "aprovada",
+   "expectation": "cadeia real correlacionada de um Ticket ate merge humano e cleanup",
+   "observed": "18 v4: admissao -> pergunta/resposta -> dois reviews -> draft -> ready -> merge humano -> entrega -> cleanup",
+   "evidence": [
+    "docs/evidence/18-first-integrated-delivery-journey.md",
+    "docs/evidence/18-real-journey-v4-inspect-result-2026-11-15.json"
+   ],
+   "runs": [
+    "q18-v4"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/journey18-qualification.ts"
+   ],
+   "tickets": [
+    "18"
+   ]
+  },
+  {
+   "id": "V-17.P",
+   "scenario": "V-17",
+   "requirements": [
+    "RF-08",
+    "RF-10",
+    "CA-01",
+    "CA-05",
+    "CA-08"
+   ],
+   "requiredLevels": [
+    "P"
+   ],
+   "observedLevels": [],
+   "status": "dependente-do-piloto",
+   "expectation": "utilidade/qualidade em tickets reais com avaliacao humana; CA-08 com suites reais dos pilotos",
+   "observed": "pendente do piloto (35)",
+   "evidence": [],
+   "runs": [],
+   "commands": [],
+   "tickets": [],
+   "gate": "G6-preparacao-piloto",
+   "pointer": "Coberto pelo piloto (35)"
+  }
+ ],
+ "gates": [
+  {
+   "id": "G1-fronteiras-frageis",
+   "name": "Fronteiras frageis",
+   "status": "aprovada",
+   "blockers": []
+  },
+  {
+   "id": "G2-controle-deterministico",
+   "name": "Controle deterministico",
+   "status": "aprovada",
+   "blockers": []
+  },
+  {
+   "id": "G3-jornada-completa",
+   "name": "Uma jornada completa (no candidato)",
+   "status": "inconclusiva",
+   "blockers": [
+    "V-06.h",
+    "V-15.c"
+   ]
+  },
+  {
+   "id": "G4-concorrencia-adversidades",
+   "name": "Concorrencia e adversidades",
+   "status": "inconclusiva",
+   "blockers": [
+    "V-02.h",
+    "V-03.c",
+    "V-04.b",
+    "V-04.d",
+    "V-04.e",
+    "V-05.c",
+    "V-05.e",
+    "V-06.c",
+    "V-06.e",
+    "V-06.g",
+    "V-07.b",
+    "V-07.e",
+    "V-07.f",
+    "V-08.f",
+    "V-08.g",
+    "V-09.c",
+    "V-09.e",
+    "V-09.f",
+    "V-10.b",
+    "V-10.d",
+    "V-10.f",
+    "V-10.g",
+    "V-11.c",
+    "V-12.c",
+    "V-12.d",
+    "V-12.f",
+    "V-13.e",
+    "V-13.g",
+    "V-14.c",
+    "V-15.e"
+   ]
+  },
+  {
+   "id": "G5-operacao-release",
+   "name": "Operacao da release",
+   "status": "inconclusiva",
+   "blockers": [
+    "V-14.f",
+    "V-14.g",
+    "V-16.b",
+    "V-16.d"
+   ]
+  },
+  {
+   "id": "G6-preparacao-piloto",
+   "name": "Preparacao da solicitacao de autorizacao do piloto (nao a execucao do piloto, que exige G3-G5)",
+   "status": "aprovada",
+   "blockers": []
+  }
+ ],
+ "reexecutionGroups": [
+  {
+   "id": "R-CAND",
+   "scope": "Jornada real completa sobre a release do candidato (composicao 23+24+29): um Ticket com pergunta, dois reviews, draft, ready, feedback CHANGES_REQUESTED, merge humano, cleanup; incluir pedido que tente editar instrucoes/gates, pedido cuja skill exige aprovacao e reparo inaplicavel",
+   "needs": "GitHub App + repo/issue de teste novos, VM Gondolin/KVM, modelo openai/gpt-6-luna (custo), passos humanos (resposta, review, merge)",
+   "authorizationRequired": true,
+   "covers": [
+    "V-06.h",
+    "V-07.f",
+    "V-08.g",
+    "V-10.d"
+   ]
+  },
+  {
+   "id": "R-REL",
+   "scope": "Build/verify/install/setup/doctor da release construida de 0d343d6, inclusive install --service (unit systemd do usuario)",
+   "needs": "host local (sem GitHub/modelo); instalacao de unit systemd do usuario",
+   "authorizationRequired": true,
+   "covers": [
+    "V-16.b",
+    "V-16.d"
+   ]
+  },
+  {
+   "id": "R-GH-CHECKS",
+   "scope": "Workflow Actions + ruleset com check obrigatorio (strict e loose) e protecao classica no repo de teste: pendente/falho/rerun/homonimos/neutral/skipped, check falho -> reparo, strict -> reparo, dispensa x check obrigatorio, perda de condicao apos ready e draft humano",
+   "needs": "configuracao do repo pelo operador, GitHub App, VM e modelo para o reparo",
+   "authorizationRequired": true,
+   "covers": [
+    "V-08.f",
+    "V-09.c",
+    "V-09.e",
+    "V-09.f",
+    "V-10.b"
+   ]
+  },
+  {
+   "id": "R-GH-ADV",
+   "scope": "Bateria adversa GitHub: PR alheio com closing keyword, fechar/reabrir issue, fechar PR proprio sem merge, merge humano durante reparo e durante cancelamento, conflito com commit humano (merge da base), resposta de conta terceira e de bot",
+   "needs": "repo/issues/PRs descartaveis, segunda conta GitHub, VM e modelo, passos humanos",
+   "authorizationRequired": true,
+   "covers": [
+    "V-04.b",
+    "V-04.d",
+    "V-04.e",
+    "V-10.f",
+    "V-10.g",
+    "V-11.c",
+    "V-13.g",
+    "V-15.e"
+   ]
+  },
+  {
+   "id": "R-GH-DEP",
+   "scope": "Dependencias entre repos/owners/visibilidades declaradas (se D-02 as declarar), bloqueador proprio esquecido lido do GitHub real, forget de cancelado em dados reais (apos limpar o ambiente q25)",
+   "needs": "segundo repo/owner, relacoes nativas de teste, limpeza do ambiente q25",
+   "authorizationRequired": true,
+   "covers": [
+    "V-05.c",
+    "V-05.e",
+    "V-14.f"
+   ]
+  },
+  {
+   "id": "R-LONG",
+   "scope": "Uma atividade real > 60 min sem timeout configurado, com renovacao de credencial e comando atravessando a expiracao; ajuste de hora do host",
+   "needs": "VM + modelo/provedor roteirizado por > 1 h; injecao de falha no host (relogio)",
+   "authorizationRequired": true,
+   "covers": [
+    "V-03.c",
+    "V-13.e"
+   ]
+  },
+  {
+   "id": "R-CRASH-A",
+   "scope": "Cortes com agentes reais: ferramenta do Builder com modelo real, handoff de revisao (q28-partial-v3), antes de sources completo, cache em preparo, resposta durante boot, perda real de sessao",
+   "needs": "VM, modelo, SIGKILL de processos da Factory no host",
+   "authorizationRequired": true,
+   "covers": [
+    "V-07.b",
+    "V-07.e",
+    "V-12.c",
+    "V-12.d"
+   ]
+  },
+  {
+   "id": "R-HOSTFAULT",
+   "scope": "Disco cheio/abaixo do piso em raiz descartavel; integridade do disco do guest apos morte do proprietario (se D-06 exigir)",
+   "needs": "injecao de falha no host (espaco, SIGKILL do dono)",
+   "authorizationRequired": true,
+   "covers": [
+    "V-12.f",
+    "V-14.c"
+   ]
+  },
+  {
+   "id": "R-24DIAG",
+   "scope": "Diagnostico das ITs que falharam no 24: rodar CreditAccountUseCaseConcurrencyIT e JdbcOutboxEventAdapterIT no host e numa VM isolada",
+   "needs": "repo de teste, VM, Docker do guest; sem modelo",
+   "authorizationRequired": true,
+   "covers": [
+    "V-06.e"
+   ]
+  },
+  {
+   "id": "R-THREE",
+   "scope": "Nova passada de tres Builders com leitura de I/O e disco do guest (apos a implementacao de V-06.g) e, se D-03 exigir, um Builder num segundo repo",
+   "needs": "tres VMs, modelo, issues novas",
+   "authorizationRequired": true,
+   "covers": [
+    "V-06.c",
+    "V-06.g"
+   ]
+  },
+  {
+   "id": "R-INSPECT",
+   "scope": "Receita inspect29 sobre copia de um storage com sessoes retidas (ex.: q23-feedback-v3) para consumo medido em dados reais",
+   "needs": "local, copias de storage real; sem GitHub/VM/modelo",
+   "authorizationRequired": true,
+   "covers": [
+    "V-15.c"
+   ]
+  },
+  {
+   "id": "R-DOCKER-EXT",
+   "scope": "Compose e docker build no guest, se algum repo do piloto os usar (D-04)",
+   "needs": "VM, repo do piloto",
+   "authorizationRequired": true,
+   "covers": [
+    "V-02.h"
+   ]
+  }
+ ],
+ "operatorDecisions": [
+  {
+   "id": "D-01",
+   "obligations": [
+    "V-06.e"
+   ],
+   "question": "Ticket 24 AC5 (tres suites verdes) fechado como limite de ambiente/piloto com causa nao confirmada: autorizar R-24DIAG antes do piloto ou levar a lacuna ao piloto com dependencia explicita (CA-08 continua sem aprovacao ate la)",
+   "dependency": "CA-08; gate G4; ticket 35"
+  },
+  {
+   "id": "D-02",
+   "obligations": [
+    "V-05.c"
+   ],
+   "question": "Escopo declarado de dependencias: so mesmo repo (sem prova adicional) ou cross-repo/owner/visibilidade (exige R-GH-DEP)",
+   "dependency": "RF-02/CA-02; spec 4; ticket 08"
+  },
+  {
+   "id": "D-03",
+   "obligations": [
+    "V-06.c"
+   ],
+   "question": "CA-03 exige um Builder de outro repo em paralelo em I/A ou a prova local basta",
+   "dependency": "CA-03; ticket 24 decisao 2"
+  },
+  {
+   "id": "D-04",
+   "obligations": [
+    "V-02.h"
+   ],
+   "question": "Compose/docker build entram no escopo suportado do perfil para o piloto?",
+   "dependency": "selecao do piloto (35)"
+  },
+  {
+   "id": "D-05",
+   "obligations": [
+    "V-07.e"
+   ],
+   "question": "Ticket 11 decisao 3 (\"confirmar\"): substituicao provada por mudanca de perfil basta, ou exigir perda real de sessao",
+   "dependency": "ticket 11"
+  },
+  {
+   "id": "D-06",
+   "obligations": [
+    "V-12.f"
+   ],
+   "question": "Disco do guest com erros de fsck apos morte do proprietario (W3): limite aceito do MVP ou requisito de deteccao/reparo",
+   "dependency": "ticket 03; RNF-01"
+  },
+  {
+   "id": "D-07",
+   "obligations": [
+    "V-14.g"
+   ],
+   "question": "Paginas livres/WAL do SQLite apos forget: limite documentado ou implementar VACUUM",
+   "dependency": "ticket 31 decisao 4; RF-14"
+  },
+  {
+   "id": "D-08",
+   "obligations": [
+    "V-15.e"
+   ],
+   "question": "Rate limit real: aceitar prova S ou autorizar consumo deliberado",
+   "dependency": "RNF-04; ticket 07"
+  }
+ ],
+ "result": "Nao libera o piloto nem aceite do MVP. Libera no maximo a preparacao da solicitacao de autorizacao do piloto (35), condicionada as decisoes D-01..D-08 e as reexecucoes que o operador escolher autorizar."
+}
