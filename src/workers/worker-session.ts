@@ -152,7 +152,7 @@ export async function executeSession(options: Options, invocation: Invocation, r
       if (invocation.context.role !== 'builder' && invocation.review) {
         const reviewer = customTools[0]!;
         customTools[0] = { ...reviewer, async execute(...args: Parameters<ToolDefinition['execute']>) {
-          try { const result = await reviewer.execute(...args); observer.observe(args[1], { details: result.details, ...(result.isError === undefined ? {} : { isError: result.isError }) }); return result; }
+          try { const result = await reviewer.execute(...args); observer.observe(args[1], { details: result.details, content: result.content as { type: string; text?: string }[], ...(result.isError === undefined ? {} : { isError: result.isError }) }); return result; }
           catch (error) { observer.observe(args[1], { error }); throw error; }
         } };
       }

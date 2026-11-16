@@ -40,7 +40,7 @@ export function createReadObserver() {
   let count = 0;
   const normalize = (path: unknown) => typeof path === 'string' ? posix.normalize(path.startsWith('/') ? path : `/workspace/${path}`) : '';
   return {
-    observe(args: unknown, outcome: { details?: unknown; isError?: boolean } | { error: unknown }) {
+    observe(args: unknown, outcome: { details?: unknown; isError?: boolean; content?: readonly { type: string; text?: string }[] } | { error: unknown }) {
       count++;
       const input = (args ?? {}) as { path?: unknown; offset?: unknown; limit?: unknown };
       const path = normalize(input.path);
@@ -57,9 +57,17 @@ export function createReadObserver() {
       const state = reads.get(path) ?? { covered: 1, full: false };
       const offset = typeof input.offset === 'number' && input.offset > 0 ? input.offset : 1;
       const truncation = (outcome.details as { truncation?: { truncated?: boolean; outputLines?: number } } | undefined)?.truncation;
-      if (input.limit === undefined && offset <= state.covered) {
+      if (offset <= state.covered) {
         if (truncation?.truncated === true) state.covered = Math.max(state.covered, offset + (truncation.outputLines ?? 0));
-        else state.full = true;
+        else if (input.limit === undefined) state.full = true;
+        else {
+          // Real run q21-human-v8: a limited read is full when the file ENDED inside the window — the SDK then returns it without
+          // truncation and without its "[N more lines in file. Use offset=X to continue.]" notice; with the notice, coverage moves to X.
+          const text = ('content' in outcome ? outcome.content ?? [] : []).map(block => block.text ?? '').join('');
+          const more = /\n\[\d+ more lines in file\. Use offset=(\d+) to continue\.\]$/.exec(text);
+          if (more) state.covered = Math.max(state.covered, Number(more[1]));
+          else state.full = true;
+        }
       }
       reads.set(path, state);
     },

@@ -186,3 +186,14 @@ operator-authorized preserved commits/files with the authorizing Question id (no
 those files still reviewed); the Builder duty says a finding about them is not-adopted under that authorization, never a new Question. Recipe:
 a Builder Question keeps the phase waiting and is saved to `operator-question-requested-<n>.json` (id/text, never auto-answered; wait ≥60 min);
 one question-resumed or recovery activation is allowed in reconcile/finish. Namespace `q21-human-v8`, issue unpinned.
+
+## Real run q21-human-v8 (issue #27, consumed) — Spec review incomplete; fixed
+
+Not the v7 change (it adds prompt text, no required input). The Spec reviewer read EVERY required input in full with `offset: 1, limit: 2000`
+and concluded clean, but the Host read observer only credited unlimited reads, so all five required inputs were "not fully read" and the
+opinion was downgraded to incomplete (`REQUIRED_INPUT_NOT_FULLY_READ`) in rounds 7–9; the Builder then asked the operator. Fix (workers): a
+limited read is full when the file ended inside the window (the SDK returns it without truncation and without its
+`[N more lines in file. Use offset=X to continue.]` notice); with the notice, coverage advances to X. Red/green test with the exact shapes.
+Intended handling of an incomplete opinion (tickets 12/13/28): it is a review result, not a reviewer failure — no retry; the Builder may hand
+off again and the end-of-Execution verification is `not-verified` (`REVIEW_INCOMPLETE`), so nothing is published; asking the operator is
+allowed but not required. Namespace `q21-human-v9`, issue unpinned.
