@@ -44,6 +44,11 @@ export function knownRemote(publication: PublicationView, attempted: boolean, ve
       preserved: authorization.mode === 'discard' || verifiedBasisReconciles } : null,
     required, waived: [...(publication.waived ?? [])] };
 }
+/**
+ * Ticket 22 (supervisor decision): the non-own tips a repair must keep — exactly the set ticket 21's Control-side check requires at linking
+ * (every observed tip someone else pushed, unless an explicit answer waived it). Any ⇒ the base is merged, never rebased.
+ */
+export const humanTips = (publication: PublicationView | null | undefined) => publication ? preservationTips(knownRemote(publication, false, false)) : [];
 /** Tips the discovery asks GitHub to compare with the current tip (bounded; the activity adds the tips it reports). */
 export const preservationTips = (known: KnownRemote) => [...new Set((known.required ?? []).map(item => item.tip).filter(tip => !(known.waived ?? []).includes(tip)))].slice(0, 12);
 /** The tip the discovery compares the current remote tip against (the expectation, when it is a commit). */

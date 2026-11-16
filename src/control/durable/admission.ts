@@ -45,7 +45,10 @@ export const requests = defineDocFamily<{ input: ControlInput | { request_id: st
 /** `forgotten` (ticket 31): minimal memory of each Work whose history `forget` deleted, by Work id. Such a Work leaves `order` (no Work record
  * remains) but stays named by `tickets` (never re-admitted) and by `memory` (own-dependency evaluation). */
 type TicketIndex = { admissionSequence: number; tickets: Record<string, { current: string; previous: string[] }>; order: string[];
+  /** Ticket 22: last repair sequence given to a new correction (installation-wide FIFO of the repair category). */
+  repairSequence?: number;
   memory?: Record<string, { cycles: OwnCycle[] }>; forgotten?: Record<string, ForgottenWork> };
+export type { TicketIndex };
 export const ticketIndex = defineDoc<TicketIndex>({ kind: 'factory.ticket-index', version: 1, scope: 'session',
   initial: () => ({ admissionSequence: 0, tickets: {}, order: [] }), checkpointWhen: () => true });
 /**

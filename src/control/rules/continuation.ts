@@ -63,13 +63,14 @@ type Git = { baseCommit: string | null; branch: string | null; checkout: string 
  * carry what authorizes it (an accepted answer or a concrete scope update). Otherwise the context is insufficient: block, never an empty
  * continue/recovery that claims preservation it cannot prove.
  */
-export function recoveryContext(input: { previous: Git; prepared: Git & { reused: boolean }; trigger: { answer: boolean; scopeUpdates: number; publication?: boolean } }):
+export function recoveryContext(input: { previous: Git; prepared: Git & { reused: boolean }; trigger: { answer: boolean; scopeUpdates: number; publication?: boolean;
+  /** Ticket 22: an open correction with effective impediments of the own PR. */ repair?: boolean } }):
   { sufficient: true } | { sufficient: false; reasons: string[] } {
   const reasons: string[] = [];
   if (!input.previous.baseCommit || !input.previous.branch || !input.previous.checkout) reasons.push('PREVIOUS_GIT_CONTEXT_MISSING');
   else if (input.previous.baseCommit !== input.prepared.baseCommit || input.previous.branch !== input.prepared.branch || input.previous.checkout !== input.prepared.checkout) reasons.push('GIT_CONTEXT_CHANGED');
   else if (!input.prepared.reused) reasons.push('PREVIOUS_ENVIRONMENT_NOT_REUSED');
-  if (!input.trigger.answer && input.trigger.scopeUpdates === 0 && !input.trigger.publication) reasons.push('RESUME_TRIGGER_MISSING');
+  if (!input.trigger.answer && input.trigger.scopeUpdates === 0 && !input.trigger.publication && !input.trigger.repair) reasons.push('RESUME_TRIGGER_MISSING');
   return reasons.length ? { sufficient: false, reasons } : { sufficient: true };
 }
 
@@ -94,9 +95,11 @@ const bytes = (text: string) => new TextEncoder().encode(text).length;
 export function continuationPrompt(input: { executionId: string; previousExecutionId: string; skillDirectory: string;
   answer: { questionId: string; text: string; author: string; origin: string } | null; scopeUpdates: readonly ScopeText[];
   /** Ticket 13: the continued Builder keeps the multi-round review handoff (its rounds continue the Work's numbering). */
-  reviewRounds?: boolean }):
+  reviewRounds?: boolean;
+  /** Ticket 22: the repair section (effective impediments of the own PR); a trigger by itself. */
+  repair?: readonly string[] }):
   { kind: 'prompt'; prompt: string } | { kind: 'insufficient'; reasons: ['RESUME_TRIGGER_MISSING' | 'CONTINUATION_TOO_LARGE'] } {
-  if (!input.answer && input.scopeUpdates.length === 0) return { kind: 'insufficient', reasons: ['RESUME_TRIGGER_MISSING'] };
+  if (!input.answer && input.scopeUpdates.length === 0 && !input.repair?.length) return { kind: 'insufficient', reasons: ['RESUME_TRIGGER_MISSING'] };
   const prompt = ['continue',
     `Factory continuation of the SAME session: Execution ${input.executionId} continues after Execution ${input.previousExecutionId} ended. ` +
       'Your workspace, branch, commits and /artifacts were preserved; check the effect of your last tool call before repeating anything.',
@@ -104,7 +107,7 @@ export function continuationPrompt(input: { executionId: string; previousExecuti
     ...(input.reviewRounds ? ['Execution context: reviews=factory-handoff review-rounds=multi'] : []),
     ...(input.answer ? ['', `Accepted answer to your question ${input.answer.questionId} (by ${input.answer.author}, via ${input.answer.origin}):`, fenced(input.answer.text)] : []),
     ...(input.scopeUpdates.length ? ['', ...scopeSection(input.scopeUpdates),
-      'Before implementing a scope change, preserve a NEW request version that records it (never edit an earlier version).'] : [])].join('\n');
+      'Before implementing a scope change, preserve a NEW request version that records it (never edit an earlier version).'] : []), ...(input.repair ?? [])].join('\n');
   if (bytes(prompt) > promptBudgetBytes) return { kind: 'insufficient', reasons: ['CONTINUATION_TOO_LARGE'] };
   return { kind: 'prompt', prompt };
 }

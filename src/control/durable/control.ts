@@ -30,6 +30,8 @@ import { createRetentionDesk } from './retention-desk.js';
 import { acceptCleanupConfirm, acceptCleanupPlan, plannedResourcesOf } from './retention.js';
 import { planCleanup } from '../rules/delivery.js';
 import { retentionProtections, type PlanFacts } from '../rules/retention.js';
+import { createRepairDesk } from './repair.js';
+import { queueOrder } from '../rules/repair.js';
 
 const requestId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
 const inputSchema = z.union([z.strictObject({ request_id: requestId, operation: z.enum(['pause', 'unpause']), origin: z.literal('local-cli') }),
@@ -68,6 +70,7 @@ const limitations = [
   'Only `update-scope` (or an accepted answer) authorizes a concrete change of the request, for the next safe activation; a later Ticket or link edit is never a trigger or an authorization.',
   'Delivery (ticket 17) is only a human merge of the Work\'s own pull request, confirmed by its identity; closing the Ticket or the pull request, or any agent message, is not delivery. The Factory never merges.',
   'Ticket 25: an observed label removal or issue closure suspends next activations (an active Execution may conclude/publish); restoring them never lifts the suspension: `resume` does, confirmed by the next complete Ticket read. `cancel` records the prohibition first, withdraws the activity credentials, then requests the stop; the Slot is released only after confirmed cessation and nothing on GitHub (branch, PR) is undone. A confirmed merge still delivers a cancelled cycle. An own PR closed without merge keeps the cycle current and undelivered (no automatic reopen/replacement/resume); `reopen` reopens only it and grants nothing. `new` is the only way to another cycle, after delivery or a ceased cancellation.',
+  'Repairs (ticket 22) follow the SAME own pull request: only an effective impediment of its current Factory head (confirmed conflict, a current required check that failed, a strict rule that requires updating the branch) opens or extends the Work\'s correction, charged once at its confirmed start; pending CI/review, unknown mergeability, optional/old results, a base merely advancing, operational causes, base rules that block the merge and human flags never do. Reasons are read again right before admission (gone = withdrawn without charge); a repeated event on the same head blocks instead of spending again. The Factory never bypasses, approves or merges.',
   'Cleanup after delivery removes only own resources (own environments with their checkout/local branch/temporaries, the own remote branch under its own cleanup grant), after confirmed cessation and preserved evidence; base, shared cache, other Works and Docker are never touched. A failed or pending cleanup is shown separately and never undoes delivery.',
   'Ticket 30: logs and sessions of a delivered Work become eligible `retentionDays` (default 30) after the confirmed merge and are removed by the sweep at each controller boot (after reconciliation) and daily, unless still needed (pending Question/effect/cleanup/recovery, activity, unconfirmed cessation); the end of a protection never starts another period. Undelivered Works (open, blocked, cancelled, closed without merge) keep everything until an explicit `factory cleanup`, which plans the losses, needs confirmation, is revalidated at execution and requires `cancel` first for a cycle that can still continue. Summary, history, references, reviews, decisions and preserved evidence stay until explicit history deletion.',
   'Ticket 31: `factory forget <work>` (plan of losses, then `forget-confirm`) deletes the history of ONE ended Work (delivered, or cancelled with confirmed cessation; an own PR closed without merge needs `cancel` first) once nothing is pending: its Records area, Work record, Questions and request texts. Only the minimal cycle memory stays (Ticket/repository/Work, cycle order and link, result, PR and confirmed merge of a delivery): the Ticket is never re-admitted automatically and stays an own blocker (delivered satisfies, cancelled does not). It never touches GitHub, backups or external copies. Totals and aggregates then cover only remembered Works.',
@@ -125,7 +128,9 @@ export async function openControl(options: { storagePath: string;
     // Ticket 15: required-checks tracking after the dispatch tick (off its critical path), whatever the dispatch barrier or pause.
     // Ticket 16: readiness after the checks explanation (its evidence), whatever the pause (tracking, not a new trigger).
     afterCycle: async () => { await delivery?.cycle().catch(() => {}); await retention?.cycle().catch(() => {}); await cycles?.cycle().catch(() => {}); await desk?.cycle(); if (dispatchReason === null) await dispatcher?.tick(); await checks?.pass(tracking.signal).catch(() => {});
-      await readiness?.pass(tracking.signal).catch(() => {}); },
+      await readiness?.pass(tracking.signal).catch(() => {});
+      // Ticket 22: effective impediments of the latest explanation become the Work's correction (selected by the NEXT tick, revalidated first).
+      await repair?.pass(tracking.signal).catch(() => {}); },
   }) : undefined;
   const tracking = new AbortController();
   const checks = options.access && options.polling ? createChecksTracker({ session: state, access: options.access, readWorks: () => readWorks(state),
@@ -134,6 +139,9 @@ export async function openControl(options: { storagePath: string;
     installation: () => dispatchReason === 'RECONCILIATION_REQUIRED' ? 'reconciliation-required' : 'settled',
     dependencies: { ownCycles: issueIds => ownCycles(state, issueIds), record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation, { published: true }) }, clock: options.polling.clock ?? systemClock,
     minIntervalMs: options.polling.intervalSeconds * 1000 }) : undefined;
+  // Ticket 22: repairs need the execution boundaries (a correction is only useful if a Builder can run it).
+  const repair = options.access && options.polling && options.execution ? createRepairDesk({ session: state, readWorks: () => readWorks(state),
+    busy: work_id => dispatcher?.active(work_id) ?? false, limits: configuredRepository }) : undefined;
   if (options.execution && options.access && poller) dispatcher = createDispatcher({ session: state, access: options.access, ports: options.execution,
     currentAttempt: repository => poller.currentAttempt(repository), readWorks: () => readWorks(state), ownCycles: issueIds => ownCycles(state, issueIds),
     record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation), paused: async () => (await readInstallation(state)).paused,
@@ -195,8 +203,10 @@ export async function openControl(options: { storagePath: string;
       duration: durationView(timing, live === null ? null : { elapsedMs: live }),
       actions: impediments.map(item => ({ code: item.code, nextStep: item.nextStep })) };
   };
-  const selection = (works: WorkRecord[]) => selectNext(works.filter(work => work.result === 'open' && work.queue.pending && work.queue.category === 'normal')
+  // Ticket 22 (spec §4.3): repairs first, FIFO in each category; impeded Works are skipped without losing their position.
+  const selection = (works: WorkRecord[]) => selectNext(queueOrder(works.filter(work => work.result === 'open' && work.queue.pending))
     .map(work => ({ work_id: work.work_id, blockers: blockers(work) })));
+  const queued = (works: WorkRecord[], category: 'normal' | 'repair') => queueOrder(works.filter(work => work.queue.pending && work.queue.category === category)).map(work => work.work_id);
   let running = false;
   // Ticket 33: how the previous run of this storage ended, read when THIS run records its start (null before that or when never recorded).
   let previousRun: ControlStatus['storage']['previousRun'] = null;
@@ -271,7 +281,7 @@ export async function openControl(options: { storagePath: string;
       if (query.kind === 'list') {
         return { kind: 'list', paused: current.paused, dispatch: dispatchReason ? 'closed' : 'open', dispatchReason,
           slots: { capacity: options.execution?.capacity ?? 0, held: await heldSlots(state) }, works: works.map(work => present(work, current.paused)),
-          queues: { normal: works.filter(work => work.queue.pending && work.queue.category === 'normal').map(work => work.work_id), repair: [] },
+          queues: { normal: queued(works, 'normal'), repair: queued(works, 'repair') },
           selection: selection(works), polling: pollingView(), limitations, forgotten: await readForgotten(state) } satisfies ListView;
       }
       const polling = pollingView();
@@ -294,7 +304,7 @@ export async function openControl(options: { storagePath: string;
           cancelled: items.filter(item => item.result === 'cancelled').length,
           note: items.length ? `${items.length} Work(s) forgotten: every other total and aggregate here covers only the Works still remembered, never the whole life of the installation.`
             : 'No Work forgotten: totals cover every admitted Work.' })),
-        queues: { normal: works.filter(work => work.queue.pending && work.queue.category === 'normal').length, repair: 0 },
+        queues: { normal: queued(works, 'normal').length, repair: queued(works, 'repair').length },
         dependencies: { satisfied: works.filter(work => work.dependencies.latest?.conclusion === 'satisfied').length,
           pending: works.filter(work => work.dependencies.latest?.conclusion === 'pending').length,
           inconclusive: works.filter(work => work.dependencies.latest?.conclusion === 'inconclusive').length,

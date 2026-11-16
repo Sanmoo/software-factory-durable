@@ -204,7 +204,10 @@ export type ExecutionView = {
     /** Resumption basis (re-checked in the admission commit): the previous Execution and what authorizes the new activation — its answered
      * Question and/or concrete scope updates. `NEW_BOOT_REPLACEMENT_SESSION` is the ticket-10 record of an answered Question. */
     resume?: { previousExecutionId: string; questionId: string | null; answerSha256: string | null; scopeUpdateIds?: string[];
-      reason: 'QUESTION_ANSWERED' | 'SCOPE_UPDATED' | 'NEW_BOOT_REPLACEMENT_SESSION' | 'PUBLICATION_REQUESTED' | 'RECONCILIATION_AUTHORIZED' } | null;
+      reason: 'QUESTION_ANSWERED' | 'SCOPE_UPDATED' | 'NEW_BOOT_REPLACEMENT_SESSION' | 'PUBLICATION_REQUESTED' | 'RECONCILIATION_AUTHORIZED' | 'REPAIR_REQUESTED' } | null;
+    /** Ticket 22: the repair of a correction opened by effective impediments of the own PR (its reasons and evidence, revalidated before
+     * admission); the Builder's push still happens only in a later publication activation with an explicit lease. */
+    repair?: RepairRequest | null;
     /** Ticket 21: a reconciliation Execution incorporating ONE concrete remote divergence the operator authorized (its Question/answer),
      * with the expectation and the authorized remote tip captured BEFORE preparation; never a renewal of scope or budget. */
     reconciliation?: ReconciliationRequest | null;
@@ -444,6 +447,30 @@ export type DependencyEvaluation = {
 export type DependencyState = { latest: DependencyEvaluation | null;
   lastComplete: { evaluationId: string; observedAt: string; conclusion: DependencyEvaluation['conclusion'] } | null };
 export type Selection = { next: string | null; skipped: { work_id: string; reasons: string[] }[] };
+/**
+ * Ticket 22: one EFFECTIVE impediment of the own PR the Builder can repair, with the head/base it was observed on and its evidence. Never a
+ * pending/unknown/optional/old result, a base advancing, an operational cause or a base rule that needs the operator.
+ */
+export type RepairReason = { code: 'MERGE_CONFLICT' | 'REQUIRED_CHECK_FAILED' | 'STRICT_UPDATE_REQUIRED'; subject: string | null; headSha: string; baseTip: string | null;
+  observedAt: string; evidence: string[] };
+/** The correction under way (identity kept across its activations, charged once at its confirmed start). Ticket 22 fields are absent on
+ * corrections opened before it (seams of ticket 19). */
+export type WorkCorrection = { correctionId: string; reason: string; openedAt: string; consumed: boolean;
+  trigger?: 'effective-impediment' | 'internal'; sequence?: number; reasons?: RepairReason[]; headSha?: string | null; basisExecutionId?: string | null;
+  /** Reasons observed AFTER the charge: not yet delivered to a Builder, never counted as treated; the next activation of this correction
+   * (Question resume, recovery) delivers them, otherwise they are evaluated again after closure. */
+  pendingReasons?: RepairReason[];
+  /** Whether the Work was already pending for another cause when the correction opened (a withdrawal restores it). */
+  queueWasPending?: boolean;
+  /** What happens next for this correction (strict: every base advance costs a correction from the budget). */
+  nextStep?: string };
+export type ClosedCorrection = { correctionId: string; sequence: number | null; openedAt: string; closedAt: string; charged: boolean;
+  outcome: 'published' | 'not-publishable' | 'publication-blocked' | 'publication-diverged' | 'publication-base-changed' | 'withdrawn' | 'superseded';
+  reasons: RepairReason[]; head: string | null; basisExecutionId: string | null };
+export type RepairRequest = { correctionId: string; reasons: RepairReason[]; headSha: string; baseTip: string | null;
+  /** Supervisor decision (ticket 22): non-own tips incorporated on the branch (ticket 21). Present = the base is MERGED into the branch (never a
+   * rebase that rewrites them) and the Host capture must prove the latest one is an ancestor of the new head. */
+  humanTips?: string[] };
 /** Orthogonal dimensions of one Work (spec §3.3): result, authorization, queue, impediments, execution, publication. */
 /** Semantic state of one current result (spec §9.2 table): check-run and commit-status semantics are distinct. */
 export type CheckClassification = 'satisfied' | 'waiting' | 'failed' | 'operational' | 'uncertain';
@@ -569,7 +596,8 @@ export type WorkView = {
   cancellation?: CancellationView | null;
   /** Ticket 25: own PR closed without merge and the `reopen` effect (intent → attempt → observation → confirmation; never repeated implicitly). */
   closure?: ClosureView | null;
-  queue: { category: 'normal'; sequence: number; pending: boolean };
+  /** `repair` (ticket 22): an open correction; repairs are selected before normal Works, FIFO by `repairSequence`, without preemption. */
+  queue: { category: 'normal' | 'repair'; sequence: number; pending: boolean; repairSequence?: number };
   impediments: Impediment[];
   dependencies: DependencyState;
   dispatch: { state: 'held' | 'eligible' | 'executing'; reasons: string[] };
@@ -591,7 +619,9 @@ export type WorkView = {
   /** Ticket 19: budget snapshot (null on Works admitted before it, until their next budget commit). */
   budget: WorkBudget | null;
   /** The correction under way (identity kept across its activations); opened by the repair flows (tickets 22/23). */
-  correction: { correctionId: string; reason: string; openedAt: string; consumed: boolean } | null;
+  correction: WorkCorrection | null;
+  /** Ticket 22: closed corrections of this Work, oldest first (bounded): what each treated, how it closed. A repeated event is never charged again. */
+  corrections?: ClosedCorrection[];
   /** A pending operational recovery (ticket 26 decides it); consumed by the start of the recovery Execution. */
   pendingRecovery: { reason: string; requestedAt: string;
     /** Ticket 26: persisted wait (calendar) before the recovery may start, its length and the attempt index it was derived from. */
@@ -623,6 +653,8 @@ export type WorkView = {
     { at: string; event: 'budget-reserved' | 'budget-consumed' | 'budget-released' | 'budget-exhausted' | 'budget-granted' | 'correction-opened' | 'correction-reason-added' | 'recovery-requested';
       origin: 'controller-budget' | 'local-cli'; executionId: string | null; detail: string } |
     { at: string; event: 'timeout-reached' | 'duration-reconciled'; origin: 'controller-clock'; executionId: string; detail: string } |
+    { at: string; event: 'repair-consolidated' | 'repair-withdrawn' | 'repair-revalidated' | 'repair-repeated' | 'correction-closed'; origin: 'controller-repair';
+      correctionId: string | null; detail: string } |
     { at: string; event: 'scope-update-accepted' | 'scope-update-delivered' | 'scope-update-reoffered' | 'scope-update-consumed'; origin: 'local-cli' | 'controller-dispatch';
       scopeUpdateId: string; detail?: string } |
     { at: string; event: 'execution-reconciled' | 'recovery-wait-kept'; origin: 'controller-recovery'; executionId: string | null; detail: string } |

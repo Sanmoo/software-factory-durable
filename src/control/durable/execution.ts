@@ -8,6 +8,7 @@ import { chargeDecision, classifyOverrun, exhaustionImpediment, initialBudget, o
 import { dispatchBlockers } from '../rules/dependencies.js';
 import { installation, legacyCredentialLifecycle, ticketIndex, works, type WorkRecord } from './admission.js';
 import { questions } from './questions.js';
+import { fingerprint } from '../rules/repair.js';
 import { pendingScope } from './scope.js';
 import { markPublicationAttempt, markReconciliationExecution } from './publication.js';
 import { attemptsOf, publicationResumes } from '../rules/publication.js';
@@ -62,7 +63,9 @@ export const activeExecution = (execution: ExecutionView | null) => execution !=
  * Writes the Execution identity, its Slot, the dispatch intent and the Work's own branch. Nothing external happens before this commit.
  */
 export async function admitExecution(session: Session, input: { work_id: string; attemptId: string; capacity: number; authorizationObservedAt: string;
-  request: Omit<ExecutionView['request'], 'baseCommit' | 'checkout' | 'promptSha256' | 'skillPack' | 'resume' | 'scopeUpdateIds' | 'session' | 'publication' | 'reconciliation'> & {
+  request: Omit<ExecutionView['request'], 'baseCommit' | 'checkout' | 'promptSha256' | 'skillPack' | 'resume' | 'scopeUpdateIds' | 'session' | 'publication' | 'reconciliation' | 'repair'> & {
+    /** Ticket 22: present only for a repair of the open correction (or the continuation of one after its Question); re-checked here. */
+    repair?: ExecutionView['request']['repair'];
     /** Ticket 14: present only for a publication activation; re-checked against the Work's requested publication in this commit. */
     publication?: ExecutionView['request']['publication'];
     /** Ticket 21: present only for a reconciliation Execution; re-checked against the authorization in force in this commit. */
@@ -117,6 +120,15 @@ export async function admitExecution(session: Session, input: { work_id: string;
           JSON.stringify(asked.expected) !== JSON.stringify(authorization.expected) || input.resume.questionId !== authorization.questionId ||
           input.resume.answerSha256 !== authorization.answerSha256 || question?.state !== 'answered' || question.answer?.sha256 !== authorization.answerSha256 ||
           question.workId !== input.work_id || (input.resume.scopeUpdateIds ?? []).length) reasons.push('RESUME_BASIS_CHANGED');
+    } else if (input.resume?.reason === 'REPAIR_REQUESTED') {
+      // Ticket 22: exactly the open, not yet charged correction of effective impediments, with the reasons revalidated before admission, on
+      // the session of the published verified basis (the own PR stays the same).
+      const correction = work.correction;
+      const asked = input.request.repair;
+      const publication = work.publication;
+      if (!correction || correction.consumed || correction.trigger !== 'effective-impediment' || !asked || asked.correctionId !== correction.correctionId ||
+          JSON.stringify(asked.reasons) !== JSON.stringify(correction.reasons ?? []) || publication?.state !== 'published' ||
+          input.resume.previousExecutionId !== publication.basisExecutionId || input.resume.questionId !== null || !sameScope) reasons.push('RESUME_BASIS_CHANGED');
     } else if (previous?.end?.outcome === 'completed' && scopeUpdateIds.length) {
       // After a COMPLETED Execution only an authorized concrete scope change resumes the Work (never a later Ticket/link edit).
       if (!input.resume || input.resume.reason !== 'SCOPE_UPDATED' || input.resume.previousExecutionId !== previous.executionId || input.resume.questionId !== null || !sameScope) reasons.push('RESUME_BASIS_CHANGED');
@@ -133,6 +145,15 @@ export async function admitExecution(session: Session, input: { work_id: string;
     // A reconciliation request travels only with its authorization, or with the answer to a Question its own Execution asked (same request).
     if (input.request.reconciliation && input.resume?.reason !== 'RECONCILIATION_AUTHORIZED' && !((input.resume?.reason === 'QUESTION_ANSWERED' || (!input.resume && input.interruption)) &&
         JSON.stringify(previous?.request.reconciliation ?? null) === JSON.stringify(input.request.reconciliation))) reasons.push('RESUME_BASIS_CHANGED');
+    // A repair request travels only with its own resumption, or with a later activation of the SAME charged correction (Question resume,
+    // recovery, continuation): its reasons are exactly the correction's charged reasons plus those deferred since the charge.
+    if (input.request.repair && input.resume?.reason !== 'REPAIR_REQUESTED') {
+      const correction = work.correction;
+      const offered = new Set(input.request.repair.reasons.map(fingerprint));
+      const allowed = new Set([...(correction?.reasons ?? []), ...(correction?.pendingReasons ?? [])].map(fingerprint));
+      if (!correction?.consumed || correction.correctionId !== input.request.repair.correctionId || [...offered].some(item => !allowed.has(item)) ||
+          (correction.reasons ?? []).some(item => !offered.has(fingerprint(item)))) reasons.push('RESUME_BASIS_CHANGED');
+    }
     // A publication activation started earlier and its effects are not discovered yet: nothing else runs before the discovery (spec §9.1).
     if (work.publication?.state === 'awaiting-discovery') reasons.push('PUBLICATION_DISCOVERY_PENDING');
     if (input.request.publication && input.resume?.reason !== 'PUBLICATION_REQUESTED') reasons.push('RESUME_BASIS_CHANGED');
@@ -167,7 +188,8 @@ export async function admitExecution(session: Session, input: { work_id: string;
         // Review MED: a reconciliation Execution takes no scope update (they stay pending for the next activation).
         scopeUpdateIds: input.resume?.reason === 'RECONCILIATION_AUTHORIZED' || (input.request.reconciliation && !input.resume) ? [] : scopeUpdateIds, session: null,
         ...(input.request.publication ? { publication: structuredClone(input.request.publication) } : {}),
-        ...(input.request.reconciliation ? { reconciliation: structuredClone(input.request.reconciliation) } : {}) },
+        ...(input.request.reconciliation ? { reconciliation: structuredClone(input.request.reconciliation) } : {}),
+        ...(input.request.repair ? { repair: structuredClone(input.request.repair) } : {}) },
       credential: null, credentialIssuance: null, credentialRenewals: [],
       credentialLifecycle: { state: 'none', withdrawnAt: null, reason: null, renewal: 'enabled', renewalStop: null, workerNotice: null },
       start: null, end: null, held: null,
@@ -184,6 +206,11 @@ export async function admitExecution(session: Session, input: { work_id: string;
     work.branch = input.request.branch;
     work.queue = { ...work.queue, pending: false };
     markReconciliationExecution(work, execution);
+    // Ticket 22: the reasons deferred since the charge are delivered by THIS activation of the same correction (same charge).
+    if (input.request.repair && work.correction?.correctionId === input.request.repair.correctionId && work.correction.consumed) {
+      work.correction.reasons = structuredClone(input.request.repair.reasons);
+      work.correction.pendingReasons = [];
+    }
     history(work, 'execution-reserved', executionId);
     return { kind: 'reserved' as const, execution: structuredClone(execution) };
   }, BACKGROUND_CONTEXT);
@@ -201,8 +228,8 @@ const publicationAttemptedHead = (publication: NonNullable<WorkRecord['publicati
     (asked.pullRequest ?? null) === null;
   return !prOnly;
 };
-const requestOf = <T extends { publication?: unknown; reconciliation?: unknown }>(request: T): Omit<T, 'publication' | 'reconciliation'> => {
-  const { publication: _publication, reconciliation: _reconciliation, ...rest } = request;
+const requestOf = <T extends { publication?: unknown; reconciliation?: unknown; repair?: unknown }>(request: T): Omit<T, 'publication' | 'reconciliation' | 'repair'> => {
+  const { publication: _publication, reconciliation: _reconciliation, repair: _repair, ...rest } = request;
   return rest;
 };
 /** Motive of the next activation: a pending operational recovery, else the open correction (charged once), else nothing to charge. */

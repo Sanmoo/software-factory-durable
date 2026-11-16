@@ -1,6 +1,7 @@
 import { publicationMarkerPrefix } from '../../contracts/index.js';
 import type { BranchObservation, DivergenceComparison, ExecutionView, FactoryAppIdentity, PublicationDiscovery, PublicationView } from '../types.js';
 import { fenced } from './continuation.js';
+import { repairPreserve } from './repair.js';
 
 // Pure rules of ticket 14 (spec §2.1/§9.1): what may be published, which pull request is the Work's own, the discovery decision, the
 // shape of the description, the publication request and the next step of a Work. No I/O, clock or randomness.
@@ -36,8 +37,10 @@ export function publishableContent(execution: ExecutionView): { ok: true; verifi
     // Ticket 21: a reconciliation Execution publishes only a head that still contains the authorized remote tip (human commits preserved),
     // as the Host capture established it (never the model's word).
     const reconciliation = execution.request.reconciliation;
-    if (reconciliation && summary) {
-      if (summary.preserved?.commit !== reconciliation.authorizedRemote) reasons.push('HUMAN_CHANGE_PRESERVATION_UNKNOWN');
+    // Ticket 22 (supervisor decision): a repair over human commits likewise publishes only a head that keeps the latest incorporated tip.
+    const preserve = reconciliation?.authorizedRemote ?? repairPreserve(execution.request.repair);
+    if (preserve && summary) {
+      if (summary.preserved?.commit !== preserve) reasons.push('HUMAN_CHANGE_PRESERVATION_UNKNOWN');
       else if (!summary.preserved.ancestor) reasons.push('HUMAN_CHANGE_NOT_PRESERVED');
     }
   }
