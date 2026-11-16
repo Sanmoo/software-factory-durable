@@ -11,6 +11,7 @@ const exempt: Record<string, string> = {
   'test/entrypoints/credential20-provider.ts': 'scripted model provider of the credential20 qualification recipe: Bash tool arguments (seconds)',
   'test/entrypoints/recovery26-provider.ts': 'scripted model provider of the recovery26 qualification recipe: Bash tool arguments (seconds)',
   'test/entrypoints/limits19-provider.ts': 'scripted model provider of the limits19 qualification recipe: Bash tool arguments (seconds)',
+  'test/entrypoints/long34-provider.ts': 'scripted model provider of the long34 (R-LONG) qualification recipe: Bash tool arguments (seconds)',
   'test/entrypoints/finite-qualification-provider.ts': 'scripted model provider of the finite qualification recipe: Bash tool arguments (seconds)',
   'test/workers/native-builder-bash.test.ts': 'the Bash tool `timeout` argument is the input under test (its expiry path), not a test timer',
 };
