@@ -101,3 +101,32 @@ tested over a temporary root in `inspect29-qualification.test.ts`. Run it only a
 | LOW: freshness and untrusted text | An observation is `complete` only with a completeness proof: polling uses the repository read's completeness, discovery and delivery report incomplete reads as `incomplete`, feedback is `unproven`, readiness is `derived-*`. Log pages carry `trust: untrusted-captured-output`. | `inspection-rules`, `inspection-flow` |
 
 The CI flakes (fixed-timeout fork chains under load: `normal-edit`, `worker-process`, `public-bash-copy`) belong to ticket 40. They are not classified as slow here.
+
+## Local run `y5/q29-inspect-v1` (operator-run on 6715178, consumed): MET
+
+`inspect29-qualification run` copied each source storage (`current` format, no migration), its Works' Records and the session files they name,
+opened the public Control without `run`, served it read-only and ran the real CLI. `run-result.json`: `met: true`. Every check passed for both
+sources: exit-codes, stable-json, frame-fit, no-secret (0 matches), chain, usage-never-false-zero, history-paged, logs-explained and
+copy-unchanged (state digest equal before/after). Below is the scan of the stored results (`<source>-result.json`).
+
+| | q18-journey-v4 | q25-cancel-v1 |
+| --- | --- | --- |
+| Works | 1: #14, delivered, cycle 1, 3 Executions | 2: #18 cycle 1 cancelled (1 Execution) → #18 cycle 2 open (predecessor = cycle 1) |
+| `show` chain | phase `delivered`; 3 Executions. Models per role recorded (builder from its session, standards/spec from opinions: openai/gpt-6-luna). Observations: polling `not-observed-this-run` (no run), dependencies/publication/checks/delivery `complete`, readiness `derived-recheck`. Compacted with paged next steps (`history --limit 50`, `show --cursor/--limit`, `question <id>`). | cycle 1: `blocked` on `AUTHORIZATION_WITHDRAWN` with its `resume` next step; cycle 2: `blocked` on `DEPENDENCIES_NOT_EVALUATED` (not polled: no run) |
+| `history` | 59 entries: page 50 + `--cursor 50` 9; `--execution` 7; `--role standards` 2 | 14 / 1 entries; `--execution` 7; `--role standards` 0 |
+| `logs` | 124 captures listed; listing `incomplete` (`RECORDS_LISTING_INCOMPLETE`, exit 3, explained); `--limit 20` → `next` cursor; one text capture read `complete` (571 bytes) | 13 captures, listing `complete`; one text capture read `complete` (622 bytes); cycle 2: 0 captures, `complete` |
+| `usage` | every activity (3 Builder, 1 standards, 1 spec) `unavailable` `SESSION_REMOVED_BY_CLEANUP`/`removed`: ticket 17's cleanup removed the runtime trees before ticket 30 kept copies, so no number is shown. Time: 3 Executions measured, 258.7 s, `complete` | cycle 1: Builder `unavailable` `SESSION_NOT_RECORDED` (cancelled), time 72.2 s measured; cycle 2: no activity (`unavailable`) |
+| Copy | 5 recorded session paths refused (already gone: no real path under the root, so nothing was copied); Records tree copied | Records trees of both Works copied |
+
+**What the real run proves:** the full CLI chain on real delivered/cancelled/new-cycle storages, through one frame per view, with stable exit
+codes. It shows paging (history cursor, logs `next`), Execution/role filters, the chain with models and freshness, and that inspection writes nothing.
+Unavailable usage is never a zero, and no secret-shaped text appears.
+
+**Gaps (recorded, not hidden):**
+- **Measured token usage was not exercised on real data:** neither storage has a readable session (q18's were removed before ticket 30; q25's
+  Execution recorded none). The measured path, continued-session deduplication and the Records-copy path are proven on real session files in the
+  synthetic-root tests (`inspection-flow`, `inspection-retention`, `inspect29-qualification.test`).
+- **q18 logs listing is `incomplete`:** in a real Records area, `find` cannot verify some entries under `<work>/evidence/`, so the listing
+  correctly refuses to claim completeness (exit 3 with its code). The likely cause is ticket 17's preserved-evidence directories, which are not
+  captures (no `capture.json`); this was not confirmed entry by entry. Follow-up proposal: have `find` recognize preserved-evidence directories
+  (`manifest.json`) as known non-captures, so a Work with preserved evidence can list `complete`.

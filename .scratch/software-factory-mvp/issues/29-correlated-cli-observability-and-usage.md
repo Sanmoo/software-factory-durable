@@ -4,18 +4,18 @@
 
 **Blocked by:** [17: Confirmar entrega e limpar somente recursos próprios](17-confirmed-delivery-and-owned-cleanup.md); [23: Tratar feedback humano e reparos explícitos no mesmo ciclo](23-human-feedback-and-explicit-repairs.md); [25: Operar retirada de autorização, cancelamento e novos ciclos](25-authorization-withdrawal-and-work-cycles.md); [28: Recuperar revisão parcial sem perder parecer válido](28-partial-review-recovery.md)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
-- [ ] Status/list/show mostram pausa, Slots/filas e, por Trabalho, identidades, branch/PR, resultado/autorização/impedimentos, fase/espera, duração/última atividade, modelos/configuração e cleanup.
-- [ ] History/logs/read de evidências são paginados e filtráveis por Execução/papel, com links/referências de perguntas, tentativas/correções/recoveries, gates, pareceres, efeitos, ambientes/boots e recursos.
-- [ ] Consulta operacional passa por Control/Records com contratos públicos e sem banco paralelo/leitura offline de autoridade; indisponibilidade, recusa e resultado indeterminado têm códigos JSON estáveis, alcance e próximo passo sem segredo.
-- [ ] Observações externas exibem instante/frescura/completude; íntegro, trecho truncado com íntegra disponível, captura incompleta, ausente, removido, expirado e desconhecido são distintos.
-- [ ] Saída volumosa pode ser lida pelo agente em cópia seletiva filtrada no ambiente próprio, sem montar registros host ou criar ferramenta de logs; cópia editável não certifica gate.
-- [ ] Uso/custo por papel/Execução/Trabalho/instalação inclui revisores/falhas/abortos quando mensuráveis e não duplica sessão retomada/notificação; completo/parcial/indisponível são distintos de zero observado.
-- [ ] Estimativa SDK informa modelo/provider/unidade/moeda disponível e não é fatura; RAM/CPU/I/O/disco do adapter são separados de tokens/custo e configuração virtual, sem consultar billing ou inventar preços.
-- [ ] Perda auxiliar de uso/progresso registra lacuna; falha de contexto/resultado crítico barra passos dependentes e solicita parada pertinente, sem alegar erro persistido se storage falhou nem publicar logs/sessões no GitHub.
+- [x] Status/list/show mostram pausa, Slots/filas e, por Trabalho, identidades, branch/PR, resultado/autorização/impedimentos, fase/espera, duração/última atividade, modelos/configuração e cleanup.
+- [x] History/logs/read de evidências são paginados e filtráveis por Execução/papel, com links/referências de perguntas, tentativas/correções/recoveries, gates, pareceres, efeitos, ambientes/boots e recursos.
+- [x] Consulta operacional passa por Control/Records com contratos públicos e sem banco paralelo/leitura offline de autoridade; indisponibilidade, recusa e resultado indeterminado têm códigos JSON estáveis, alcance e próximo passo sem segredo.
+- [x] Observações externas exibem instante/frescura/completude; íntegro, trecho truncado com íntegra disponível, captura incompleta, ausente, removido, expirado e desconhecido são distintos.
+- [x] Saída volumosa pode ser lida pelo agente em cópia seletiva filtrada no ambiente próprio, sem montar registros host ou criar ferramenta de logs; cópia editável não certifica gate.
+- [x] Uso/custo por papel/Execução/Trabalho/instalação inclui revisores/falhas/abortos quando mensuráveis e não duplica sessão retomada/notificação; completo/parcial/indisponível são distintos de zero observado.
+- [x] Estimativa SDK informa modelo/provider/unidade/moeda disponível e não é fatura; RAM/CPU/I/O/disco do adapter são separados de tokens/custo e configuração virtual, sem consultar billing ou inventar preços.
+- [x] Perda auxiliar de uso/progresso registra lacuna; falha de contexto/resultado crítico barra passos dependentes e solicita parada pertinente, sem alegar erro persistido se storage falhou nem publicar logs/sessões no GitHub.
 
 ## Referências e validação
 
@@ -35,3 +35,22 @@ Publicação é planejamento aprovado, não autorização de construção, uso d
   [docs/evidence/29-correlated-cli-observability-and-usage.md](../../../docs/evidence/29-correlated-cli-observability-and-usage.md).
   Local recipe `inspect29-qualification` is written, not run (after rebase). Proposal for the `RECOVERY_BLOCKED` unblock (via `resume`, tickets
   26/27) is recorded in the evidence. Not resolved until the review.
+- 2026-11-16 (rebase onto 19c2327, review fixes): list/show/usage paging, Records-level logs paging, sessions bound to their boot, ticket 30
+  session copies and `expired` details, ticket 31 forgotten Works, recipe hardening; `test:ci` green on 6715178. The `RECOVERY_BLOCKED`
+  override is ticket 41 (ticket 29 stays observation-only).
+- 2026-11-16 (supervisor): local run `y5/q29-inspect-v1` on 6715178 MET (both sources, every check). Gaps recorded: measured token usage
+  was not exercised on real data (no readable session in either storage), and q18's logs listing is `incomplete` (non-capture entries in the
+  evidence area).
+
+## Answer
+
+Correlated inspection and consumption delivered through Control and the CLI:
+- `show` carries the chain, with phase/next step, models and freshness; `status` shows impediments and consumption.
+- `history`/`logs`/`log` are paginated and filtered by Execution/role.
+- `usage` per role/Execution/Work/installation is complete/partial/unavailable, never a false zero, with continued sessions deduplicated and
+  ticket 30 copies read.
+- Evidence states are distinct, views fit one frame, error codes are stable, and everything is read-only.
+
+Tests are storage-real with real Records and sessions and the real CLI over the socket. The local run `q29-inspect-v1` over copies of
+q18-journey-v4 and q25-cancel-v1 was met. Evidence:
+[docs/evidence/29-correlated-cli-observability-and-usage.md](../../../docs/evidence/29-correlated-cli-observability-and-usage.md).
