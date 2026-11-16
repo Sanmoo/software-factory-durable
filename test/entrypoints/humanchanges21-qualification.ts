@@ -20,7 +20,7 @@ const repository = { repository: 'Sanmoo/java-springboot-event-sourcing', base: 
  * The NEW synthetic issue the supervisor creates after the operator's authorization (title/body below, label `ready-for-agent`, no other
  * open issue with that label). `number` MUST be pinned in a reviewed commit before preflight: 0 refuses every phase (TICKET_NOT_PINNED).
  */
-export const ticket = { number: 0, repositoryId: 1256893534, title: 'Factory qualification: preserve human commits on the Factory branch' } as const;
+export const ticket = { number: 29, repositoryId: 1256893534, title: 'Factory qualification: preserve human commits on the Factory branch' } as const;
 const githubApp = { appId: 5569788, privateKeyFile: 'credentials/app.pem' };
 /** The only operator: preflight pins the immutable user id GitHub reports for this login (repository owner, type User). */
 const operatorLogin = 'Sanmoo';
