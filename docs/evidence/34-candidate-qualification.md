@@ -10,40 +10,54 @@ Matriz legível por máquina: [34-qualification-matrix.json](34-qualification-ma
 GitHub, modelo, credencial ou injeção de falha no host); a única execução foi a suíte local `npm run test:ci` sobre o candidato.
 Aprovação documental não é funcionamento e build verde não é estado externo atual.
 
-**Resultado.** 112 obrigações: 66 aprovadas, 0 reprovadas, 36 inconclusivas, 10 dependentes do piloto. As inconclusivas bloqueiam os gates G3, G4 e G5; as dependentes do piloto P não são aceite
-antecipado. O resultado libera **no máximo a preparação da solicitação de autorização do piloto** (ticket 35): não libera sua execução,
-não declara o MVP aceito, não seleciona/acessa recursos reais e não certifica barreiras de merge/CI do time.
+**Resultado (após as decisões do operador de 2026-11-16).** 112 obrigações: 71 aprovadas, 0 reprovadas,
+29 inconclusivas e 12 dependentes do piloto (antes das decisões: 66/0/36/10). As inconclusivas bloqueiam os gates G3 (2), G4 (24) e
+G5 (3). As dependentes do piloto (as 10 de nível P, mais V-02.h e V-06.e, levadas ao piloto por D-04/D-01) não são aceite antecipado. O
+resultado libera **no máximo a preparação da solicitação de autorização do piloto** (ticket 35). Não libera sua execução, não declara o
+MVP aceito, não seleciona nem acessa recursos reais e não certifica barreiras de merge/CI do time.
 
-## 1. Lacunas que bloqueiam e decisões pendentes do operador
+## 1. Lacunas que bloqueiam e decisões do operador
 
-### Decisões de desenho/escopo que voltam ao operador
+### Decisões do operador (2026-11-16)
 
-- **D-01** (V-06.e): Ticket 24 AC5 (tres suites verdes) fechado como limite de ambiente/piloto com causa nao confirmada: autorizar R-24DIAG antes do piloto ou levar a lacuna ao piloto com dependencia explicita (CA-08 continua sem aprovacao ate la). Dependência: CA-08; gate G4; ticket 35.
-- **D-02** (V-05.c): Escopo declarado de dependencias: so mesmo repo (sem prova adicional) ou cross-repo/owner/visibilidade (exige R-GH-DEP). Dependência: RF-02/CA-02; spec 4; ticket 08.
-- **D-03** (V-06.c): CA-03 exige um Builder de outro repo em paralelo em I/A ou a prova local basta. Dependência: CA-03; ticket 24 decisao 2.
-- **D-04** (V-02.h): Compose/docker build entram no escopo suportado do perfil para o piloto?. Dependência: selecao do piloto (35).
-- **D-05** (V-07.e): Ticket 11 decisao 3 ("confirmar"): substituicao provada por mudanca de perfil basta, ou exigir perda real de sessao. Dependência: ticket 11.
-- **D-06** (V-12.f): Disco do guest com erros de fsck apos morte do proprietario (W3): limite aceito do MVP ou requisito de deteccao/reparo. Dependência: ticket 03; RNF-01.
-- **D-07** (V-14.g): Paginas livres/WAL do SQLite apos forget: limite documentado ou implementar VACUUM. Dependência: ticket 31 decisao 4; RF-14.
-- **D-08** (V-15.e): Rate limit real: aceitar prova S ou autorizar consumo deliberado. Dependência: RNF-04; ticket 07.
+Todas as oito decisões D-01–D-08 foram tomadas pelo operador em 2026-11-16 e estão registradas no JSON (`operatorDecisions[].decision`,
+`resolution`, e `decision` em cada obrigação afetada). O teste da matriz exige que um nível só seja dispensado por uma decisão
+`level-waived` que nomeie a obrigação (nunca P), e que uma obrigação pré-piloto só fique `dependente-do-piloto` quando uma decisão a levou
+ao piloto (ticket 35).
+
+- **D-01** (V-06.e), carried-to-pilot: Ticket 24 AC5 / CA-08 segue para o piloto (ticket 35) como dependencia explicita; R-24DIAG nao e executado agora. CA-08 continua sem aprovacao ate o piloto. Dependência: CA-08; ticket 35 (dependencia explicita); R-24DIAG nao executado.
+- **D-02** (V-05.c), scope-required: Escopo de dependencias = entre repositorios: dependencias cross-repo precisam ser suportadas e R-GH-DEP continua grupo obrigatorio antes do piloto. A implementacao ja le bloqueadores de outros repositorios (dependencyRepositories so-leitura com instalacao propria, repos executaveis configurados, repo nao configurado recusado com DEPENDENCY_REPOSITORY_NOT_CONFIGURED, omissao detectada por DEPENDENCY_COUNT_MISMATCH); falta so a prova real. Dependência: RF-02/CA-02; spec 4; ticket 08; R-GH-DEP antes do piloto.
+- **D-03** (V-06.c), level-waived: CA-03 NAO exige Builders reais de repositorios diferentes em paralelo: a prova local (S + I-local) basta; o nivel A desta obrigacao e dispensado. Dependência: CA-03; ticket 24 decisao 2.
+- **D-04** (V-02.h), out-of-scope-unless-pilot-needs: Compose e docker build ficam nao testados e fora do escopo suportado, declarados como tal. R-DOCKER-EXT so e necessario se um repo do piloto precisar. Dependência: selecao do piloto (ticket 35); R-DOCKER-EXT condicional.
+- **D-05** (V-07.e), proof-accepted: Ticket 11 decisao 3 aceita: a substituicao provada por mudanca de perfil (ensaio real) mais a prova local de SESSION_LOST/SESSION_ALTERED bastam para o AC7. Dependência: ticket 11 (decisao 3 fechada).
+- **D-06** (V-12.f), limit-accepted: Os erros de fsck do disco do guest no W3 apos SIGKILL deliberado do proprietario (injecao de falha autorizada, nao operacao organica) sao limite ACEITO do MVP: o check forcado da Factory bloqueia o reuso (PRESERVED_DISK_CHECK_REQUIRED), entao nao ha corrupcao silenciosa; a recuperacao e manual. R-HOSTFAULT so e necessario para disco cheio. Dependência: ticket 03; RNF-01; R-HOSTFAULT so para disco cheio (V-14.c).
+- **D-07** (V-14.g), implemented: Implementado em 5a026e7 (implement/software-factory-mvp-d07): apos cada forget o owner roda VACUUM + wal_checkpoint(TRUNCATE) no controle SQLite, sob o lock de controle e na fila serial da sua conexao; estado pending/scrubbed no memory, re-tentado apos falha/crash. Prova I-local em arquivo SQLite real: marcador ausente dos bytes de control.sqlite e -wal (vermelho antes). Dependência: ticket 31 decisao 4 (fechada); RF-14; o piloto precisa de uma composicao que contenha 5a026e7.
+- **D-08** (V-15.e), level-waived: A prova simulada (S) de rate limit/backoff e aceita; nao se induz rate limit real. O nivel I desta obrigacao e dispensado. Dependência: RNF-04; ticket 07.
+
+**D-02: suporte atual a dependências entre repositórios (verificado no código).** Já existe. `readDependencyGraph`
+(`src/issue-tracker/index.ts`) percorre as arestas nativas `blocked_by` para qualquer repositório. Cada nó é lido com a instalação da App
+do próprio repositório, que pode ser executável (`repositories`) ou só de dependência (`dependencyRepositories`, só leitura). Um repositório
+não configurado nunca é lido com outra identidade e torna o grafo `incomplete` (`DEPENDENCY_REPOSITORY_NOT_CONFIGURED`). Uma aresta que a
+instalação não vê aparece como `DEPENDENCY_COUNT_MISMATCH`/`DEPENDENCY_SUMMARY_UNAVAILABLE`. A classificação própria/externa usa o
+`issueId` global, então serve entre repositórios. A prova é S + I-local (`github-dependency-reads`, `configuration`). **Não há lacuna de
+implementação.** Falta só a prova real: V-05.c continua inconclusiva e R-GH-DEP continua obrigatório antes do piloto.
+
+**D-07 muda código.** O saneamento do SQLite após `forget` foi implementado em `5a026e7` (descendente do candidato `b30e2bd`; ensaio
+`ci-d07`). Por isso V-14.g está aprovada para a composição que contém `5a026e7`, e o piloto (35) precisa de uma release que a contenha.
 
 ### Obrigações pré-piloto inconclusivas (bloqueiam o gate indicado)
 
 | Obrigação | Gate | Lacuna observada | Encaminhamento |
 | --- | --- | --- | --- |
-| V-02.h | G4-concorrencia-adversidades | Compose e docker build nao exercitados; dependem de os repos do piloto os usarem | Decisao do operador D-04 na selecao do piloto (35): se algum repo selecionado usa Compose/build, executar R-DOCKER-EXT antes do piloto; senao, declarar fora do escopo suportado |
 | V-03.c | G4-concorrencia-adversidades | expiracao real de 1 h durante comando so em S; o ensaio 20 durou minutos | Executar R-LONG (atividade real > 60 min com renovacao e comando atravessando a expiracao) |
 | V-04.b | G4-concorrencia-adversidades | so fixture: nenhum PR alheio com palavra de fechamento no repo de teste (07, 14) | Executar R-GH-ADV (PR alheio com closing keyword no repo de teste) |
 | V-04.d | G4-concorrencia-adversidades | reopen so em fluxo (lacuna aceita pelo supervisor no 25) | Executar R-GH-ADV (fechar/reabrir issue com Trabalho vigente) |
 | V-04.e | G4-concorrencia-adversidades | so em fluxo (lacuna aceita no 25) | Executar R-GH-ADV (fechar o PR proprio sem merge) |
-| V-05.c | G4-concorrencia-adversidades | nao exercitavel com um repo; o 08 nao os declara suportados | Decisao do operador D-02: declarar escopo suportado = mesmo repo (sem prova adicional) ou executar R-GH-DEP para cada combinacao declarada |
+| V-05.c | G4-concorrencia-adversidades | implementacao suporta (issue-tracker readDependencyGraph segue arestas para outros repos; dependencyRepositories so-leitura; DEPENDENCY_REPOSITORY_NOT_CONFIGURED; DEPENDENCY_COUNT_MISMATCH): S/I-local (github-dependency-reads, configuration; I-local nao substitui a leitura real do GitHub); sem lacuna de implementacao; nenhuma prova real cross-repo (um so repo nos ensaios) | D-02: escopo cross-repo exigido; executar R-GH-DEP (segundo repo com bloqueador nativo real, configurado e nao configurado) antes do piloto |
 | V-05.e | G4-concorrencia-adversidades | so em fluxo (decisao 3 do supervisor no 31) | Executar R-GH-DEP (bloqueador proprio esquecido lido do GitHub real) |
-| V-06.c | G4-concorrencia-adversidades | so local (decisao 2 do 24: lacuna) | Decisao do operador D-03: aceitar a prova local para repos diferentes ou incluir um segundo repo em R-THREE |
-| V-06.e | G4-concorrencia-adversidades | containers simultaneos sem colisao (v1: 3 VMs; v3: 2); AC5 nao alcancado: CreditAccountUseCaseConcurrencyIT e JdbcOutboxEventAdapterIT falharam no guest; causa NAO confirmada; ticket 24 fechado por decisao do operador como limite de ambiente/piloto | Executar R-24DIAG (suite falha no host e numa VM isolada) para separar limite do perfil de bug do repo; ou decisao do operador D-01 de levar a lacuna ao piloto com dependencia explicita (nao vira aprovacao) |
 | V-06.g | G4-concorrencia-adversidades | io.stat ilegivel (ioRead/ioWrite null em todas as unidades); uso do disco do guest fora dos resumos | Implementacao: ler I/O (habilitar/declarar o controlador io na delegacao systemd do usuario ou fonte alternativa) e registrar disco do guest no resumo; revalidar em R-THREE |
 | V-06.h | G3-jornada-completa | nenhum ensaio real sobre o candidato b30e2bd (nem 580b4d1/0d343d6); q23-v3 (d49f43d) nao tem dispatch.ts/capacity.ts do 24; q24-v3 (1f033f8) nao tem o feedback do 23; combinacao so em S (test:ci) | Executar R-CAND (uma jornada real completa sobre a release do candidato) |
 | V-07.b | G4-concorrencia-adversidades | nenhum ensaio real localizado com corte antes da captura completa | Incluir corte antes de sources completo em R-CRASH-A |
-| V-07.e | G4-concorrencia-adversidades | substituicao provada por mudanca de politica, nao por perda real (SESSION_LOST/ALTERED so S); decisao 3 do 11 segue "confirmar" | Decisao do operador D-05 (aceitar a prova por mudanca de perfil) ou incluir perda real de sessao em R-CRASH-A |
 | V-07.f | G4-concorrencia-adversidades | instrucoes versionadas pelo controle e gates verificados pelo host (13, 18 HANDOFF_GATE_NOT_DOCUMENTED); nenhum ensaio A com o Builder alterando AGENTS/instrucoes | Incluir em R-CAND um Ticket cujo pedido leva o Builder a editar instrucoes/gates; verificar que a versao preservada prevalece |
 | V-08.f | G4-concorrencia-adversidades | WAIVER_CANNOT_BYPASS_REQUIRED_CHECK so em S: repo de teste sem check obrigatorio | Executar R-GH-CHECKS |
 | V-08.g | G4-concorrencia-adversidades | regra e skill (review13-question-flow, skill-pack) em S; nenhum ensaio A localizado | Incluir em R-CAND um pedido cuja skill exige aprovacao |
@@ -57,37 +71,42 @@ não declara o MVP aceito, não seleciona/acessa recursos reais e não certifica
 | V-11.c | G4-concorrencia-adversidades | so S (question-rules, feedback-rules); nenhuma resposta real de terceiro | Executar R-GH-ADV (resposta de conta terceira e de bot) |
 | V-12.c | G4-concorrencia-adversidades | corte de ferramenta so com provedor roteirizado (26, I sem A); corte no handoff de revisao so I-local (28; q28-partial-v3 nao executado) | Executar R-CRASH-A |
 | V-12.d | G4-concorrencia-adversidades | corte de cache nao incluido na receita 26; resposta durante boot e perda de canal so em S/I-local | Incluir em R-CRASH-A |
-| V-12.f | G4-concorrencia-adversidades | W3: fsck 4 (accepted false) no FS de A apos SIGKILL do dono, recuperacao MANUAL em inode novo; registrado como limite no 03, sem decisao explicita de produto | Decisao do operador D-06: aceitar como limite do MVP (hardware/storage) ou exigir deteccao/reparo e revalidar em R-HOSTFAULT |
 | V-13.e | G4-concorrencia-adversidades | nenhuma atividade real > 60 min; ajuste de hora so S (relogio monotonico) | Executar R-LONG (uma atividade real > 60 min sem timeout; ajuste de hora do host com autorizacao de injecao) |
 | V-13.g | G4-concorrencia-adversidades | merge durante cancelamento e efeitos tardios sob cancelamento so em fluxo (25, 27) | Executar R-GH-ADV (cancel com PR proprio e merge humano concorrente) |
 | V-14.c | G4-concorrencia-adversidades | ENOSPC real nao simulado (03); recusa por statfs em S | Executar R-HOSTFAULT (disco cheio/abaixo do piso em raiz descartavel) |
 | V-14.f | G5-operacao-release | so o ramo recusado (ambiente q25 ainda existe); caminho completo em fluxo | Executar R-GH-DEP (limpar o ambiente q25 e esquecer o cancelado), com autorizacao propria |
-| V-14.g | G5-operacao-release | paginas livres/WAL do SQLite nao sao saneadas (VACUUM proposto, nao implementado) | Decisao do operador D-07: aceitar como limite documentado ou implementar VACUUM/checkpoint apos forget e revalidar localmente |
 | V-15.c | G3-jornada-completa | nos dados reais todas as atividades deram unavailable (sessoes removidas pelo cleanup do 17 antes do 30; cancelado sem sessao); medido/dedup so em S | Executar R-INSPECT (receita 29 sobre copia de um storage com sessoes retidas, ex.: q23-feedback-v3) |
-| V-15.e | G4-concorrencia-adversidades | rate limit nao induzido (07); backoff so S | Decisao do operador D-08: aceitar S para rate limit (induzir real e arriscado) ou autorizar consumo deliberado em R-GH-ADV |
 | V-16.b | G5-operacao-release | nenhuma release construida de 0d343d6; ultima: mvp-33.1 de b6cd2bb; qualification: unqualified | Executar R-REL (build/verify/install/setup/doctor da release do candidato) |
 | V-16.d | G5-operacao-release | modo servico (--service) nunca instalado nem executado; ambientes systemd so em primeiro plano | Executar R-REL incluindo install com --service (unit systemd do usuario) |
+
+### Obrigações pré-piloto levadas ao piloto por decisão (não são aprovação)
+
+| Obrigação | Decisão | Observado | Encaminhamento |
+| --- | --- | --- | --- |
+| V-02.h | D-04 | Compose e docker build nao exercitados; dependem de os repos do piloto os usarem | D-04: Compose e docker build nao testados e fora do escopo suportado (declarado na secao 7); a selecao do piloto (35) executa R-DOCKER-EXT so se um repo selecionado precisar |
+| V-06.e | D-01 | containers simultaneos sem colisao (v1: 3 VMs; v3: 2); AC5 nao alcancado: CreditAccountUseCaseConcurrencyIT e JdbcOutboxEventAdapterIT falharam no guest; causa NAO confirmada; ticket 24 fechado por decisao do operador como limite de ambiente/piloto | D-01: levada ao piloto (35) como dependencia explicita; R-24DIAG nao executado agora. CA-08 nao vira aprovacao antes do piloto |
 
 ### Reexecuções necessárias, cada grupo com autorização própria
 
 Nenhum grupo foi executado. Cada um precisa de autorização específica (máquina/conta/storage, repos/issues/PRs, App, modelos/custos,
-injeção de falha, operadores e merge humano). Não é bateria monolítica: cada grupo cobre só as obrigações listadas, e a ordem pode
-seguir as decisões acima.
+injeção de falha, operadores e merge humano). Não é uma bateria monolítica: cada grupo cobre só as obrigações listadas. Depois das decisões,
+R-24DIAG não é executado agora (D-01) e R-DOCKER-EXT só é executado se um repositório do piloto precisar (D-04). R-THREE, R-CRASH-A,
+R-HOSTFAULT e R-GH-ADV ficaram menores (D-03, D-05, D-06, D-08).
 
 | Grupo | Escopo | Recursos/autorizações | Obrigações |
 | --- | --- | --- | --- |
 | R-CAND | Jornada real completa sobre a release do candidato (composicao 23+24+29): um Ticket com pergunta, dois reviews, draft, ready, feedback CHANGES_REQUESTED, merge humano, cleanup; incluir pedido que tente editar instrucoes/gates, pedido cuja skill exige aprovacao e reparo inaplicavel | GitHub App + repo/issue de teste novos, VM Gondolin/KVM, modelo openai/gpt-6-luna (custo), passos humanos (resposta, review, merge) | V-06.h, V-07.f, V-08.g, V-10.d |
 | R-REL | Build/verify/install/setup/doctor da release construida de 0d343d6, inclusive install --service (unit systemd do usuario) | host local (sem GitHub/modelo); instalacao de unit systemd do usuario | V-16.b, V-16.d |
 | R-GH-CHECKS | Workflow Actions + ruleset com check obrigatorio (strict e loose) e protecao classica no repo de teste: pendente/falho/rerun/homonimos/neutral/skipped, check falho -> reparo, strict -> reparo, dispensa x check obrigatorio, perda de condicao apos ready e draft humano | configuracao do repo pelo operador, GitHub App, VM e modelo para o reparo | V-08.f, V-09.c, V-09.e, V-09.f, V-10.b |
-| R-GH-ADV | Bateria adversa GitHub: PR alheio com closing keyword, fechar/reabrir issue, fechar PR proprio sem merge, merge humano durante reparo e durante cancelamento, conflito com commit humano (merge da base), resposta de conta terceira e de bot | repo/issues/PRs descartaveis, segunda conta GitHub, VM e modelo, passos humanos | V-04.b, V-04.d, V-04.e, V-10.f, V-10.g, V-11.c, V-13.g, V-15.e |
-| R-GH-DEP | Dependencias entre repos/owners/visibilidades declaradas (se D-02 as declarar), bloqueador proprio esquecido lido do GitHub real, forget de cancelado em dados reais (apos limpar o ambiente q25) | segundo repo/owner, relacoes nativas de teste, limpeza do ambiente q25 | V-05.c, V-05.e, V-14.f |
+| R-GH-ADV | Bateria adversa GitHub: PR alheio com closing keyword, fechar/reabrir issue, fechar PR proprio sem merge, merge humano durante reparo e durante cancelamento, conflito com commit humano (merge da base), resposta de conta terceira e de bot | repo/issues/PRs descartaveis, segunda conta GitHub, VM e modelo, passos humanos | V-04.b, V-04.d, V-04.e, V-10.f, V-10.g, V-11.c, V-13.g |
+| R-GH-DEP | Dependencias entre repositorios (exigidas por D-02): bloqueador nativo real em segundo repo configurado (dependencyRepositories) e em repo nao configurado; bloqueador proprio esquecido lido do GitHub real; forget de cancelado em dados reais (apos limpar o ambiente q25) | segundo repo/owner, relacoes nativas de teste, limpeza do ambiente q25 | V-05.c, V-05.e, V-14.f |
 | R-LONG | Uma atividade real > 60 min sem timeout configurado, com renovacao de credencial e comando atravessando a expiracao; ajuste de hora do host | VM + modelo/provedor roteirizado por > 1 h; injecao de falha no host (relogio) | V-03.c, V-13.e |
-| R-CRASH-A | Cortes com agentes reais: ferramenta do Builder com modelo real, handoff de revisao (q28-partial-v3), antes de sources completo, cache em preparo, resposta durante boot, perda real de sessao | VM, modelo, SIGKILL de processos da Factory no host | V-07.b, V-07.e, V-12.c, V-12.d |
-| R-HOSTFAULT | Disco cheio/abaixo do piso em raiz descartavel; integridade do disco do guest apos morte do proprietario (se D-06 exigir) | injecao de falha no host (espaco, SIGKILL do dono) | V-12.f, V-14.c |
-| R-24DIAG | Diagnostico das ITs que falharam no 24: rodar CreditAccountUseCaseConcurrencyIT e JdbcOutboxEventAdapterIT no host e numa VM isolada | repo de teste, VM, Docker do guest; sem modelo | V-06.e |
-| R-THREE | Nova passada de tres Builders com leitura de I/O e disco do guest (apos a implementacao de V-06.g) e, se D-03 exigir, um Builder num segundo repo | tres VMs, modelo, issues novas | V-06.c, V-06.g |
+| R-CRASH-A | Cortes com agentes reais: ferramenta do Builder com modelo real, handoff de revisao (q28-partial-v3), antes de sources completo, cache em preparo, resposta durante boot (perda real de sessao nao exigida: D-05) | VM, modelo, SIGKILL de processos da Factory no host | V-07.b, V-12.c, V-12.d |
+| R-HOSTFAULT | Disco cheio/abaixo do piso em raiz descartavel (a integridade do disco do guest apos morte do proprietario e limite aceito: D-06) | injecao de falha no host (espaco) | V-14.c |
+| R-24DIAG | Diagnostico das ITs que falharam no 24: rodar CreditAccountUseCaseConcurrencyIT e JdbcOutboxEventAdapterIT no host e numa VM isolada — D-01: nao executado agora; a lacuna segue ao piloto (35) como dependencia explicita | repo de teste, VM, Docker do guest; sem modelo | — (nenhuma agora) |
+| R-THREE | Nova passada de tres Builders com leitura de I/O e disco do guest (apos a implementacao de V-06.g); um segundo repo nao e exigido (D-03) | tres VMs, modelo, issues novas | V-06.g |
 | R-INSPECT | Receita inspect29 sobre copia de um storage com sessoes retidas (ex.: q23-feedback-v3) para consumo medido em dados reais | local, copias de storage real; sem GitHub/VM/modelo | V-15.c |
-| R-DOCKER-EXT | Compose e docker build no guest, se algum repo do piloto os usar (D-04) | VM, repo do piloto | V-02.h |
+| R-DOCKER-EXT | Compose e docker build no guest, se algum repo do piloto os usar (D-04) — D-04: so se um repo selecionado para o piloto usar Compose/docker build; senao fora do escopo suportado | VM, repo do piloto | V-02.h |
 
 ## 2. Identidade do candidato
 
@@ -162,7 +181,7 @@ comandos, correlações (ensaios) e evidências completas por obrigação estão
 | Cenário | Níveis do plano | Estado | Obrigações |
 | --- | --- | --- | --- |
 | V-01 — Persistencia e autoridade unica | S + I | aprovada | 3 |
-| V-02 — Perfil Gondolin, filesystem e Docker | I + A | inconclusiva | 9 |
+| V-02 — Perfil Gondolin, filesystem e Docker | I + A | dependente-do-piloto | 9 |
 | V-03 — Credenciais e filtragem | S + I + A | inconclusiva | 5 |
 | V-04 — Admissao, identidade, autorizacao e encerramentos | S + I + P | inconclusiva | 9 |
 | V-05 — Dependencias nativas e visibilidade | S + I + P | inconclusiva | 6 |
@@ -191,7 +210,7 @@ comandos, correlações (ensaios) e evidências completas por obrigação estão
 | V-02.e | RF-04, RNF-02 | I+A | I+A | **aprovada** | revisores somente read, sem escrita nem credencial; Builder nao escreve durante o handoff | 12 v4: Standards/Spec reais so leitura, sem credencial, identidade da proposta antes = depois; reexercitado em 13 v5, 18 v4, 23 v3 | q12-v4, q13-v5, q18-v4 | [12-parallel-standards-and-spec-reviews.md](12-parallel-standards-and-spec-reviews.md) |
 | V-02.f | RF-07, RNF-02, CA-08 | I | I | **aprovada** | suites com Testcontainers/Ryuk: socket do guest, binds, DNS/portas/volumes, cleanup proprio, sem bypass | 06 v3: Testcontainers+Ryuk com rede de usuario, alias DNS, bind ro do FUSE, porta publicada e cleanup; 24 v3: suite real (117 testes, Postgres+Ryuk) rodou no Docker do guest; sem bypass de Ryuk | q06-v3, q24-v3 | [06-physical-docker-qualification.md](06-physical-docker-qualification.md), [24-three-builders-fifo-and-isolation.md](24-three-builders-fifo-and-isolation.md) |
 | V-02.g | RF-07, RNF-02 | I | I | **aprovada** | CA/TLS por camada, inclusive containers criados por API | 06 v3 AC3: apk/npm do guest pela CA mediada, pull do daemon por digest, TLS da app no container com NODE_EXTRA_CA_CERTS; containers sem egress publico (sem NAT, adequacao aprovada) | q06-v3 | [06-physical-docker-qualification.md](06-physical-docker-qualification.md) |
-| V-02.h | RF-07, CA-08 | I | — | **inconclusiva** | API/Compose/build conforme os pilotos | Compose e docker build nao exercitados; dependem de os repos do piloto os usarem | — | [06-physical-docker-qualification.md](06-physical-docker-qualification.md) |
+| V-02.h | RF-07, CA-08 | I | — | **dependente-do-piloto** | API/Compose/build conforme os pilotos | Compose e docker build nao exercitados; dependem de os repos do piloto os usarem (decisao D-04) | — | [06-physical-docker-qualification.md](06-physical-docker-qualification.md) |
 | V-02.i | RNF-02, RF-04, CA-03 | I | S+I | **aprovada** | falha de um proprietario nao encerra os demais; cessacao observavel fora do proprietario morto | W3: B continuou ativo apos SIGKILL do dono de A; 26 v2: sobrevivente parado pelo host (Sandbox.stop/observe) antes de substituto; falha isolada de worker (24, S) | w3, q26-v2 | [03-w3-recovered-boots-and-cleanup.md](03-w3-recovered-boots-and-cleanup.md), [26-execution-recovery-without-survivor-adoption.md](26-execution-recovery-without-survivor-adoption.md) |
 | V-03.a | RNF-02, RF-14 | S+I | S+I+A | **aprovada** | escopo por repo/papel; chave emissora ausente dos agentes; revisor sem token de escrita; Git/gh com ambiente explicito | 04: escopos por proposito confirmados; 09: grant so leitura transitorio; 12: revisores sem credencial; 14: builder-publish so no proprio repo; grants de uso unico revogados (16/17) | q04-v2026-11-14, q09-v2, q12-v4, q14-v8 | [04-github-app-access-diagnostics.md](04-github-app-access-diagnostics.md), [09-builder-start-and-preserved-request.md](09-builder-start-and-preserved-request.md), [14-direct-draft-publication-and-discovery.md](14-direct-draft-publication-and-discovery.md) |
 | V-03.b | RNF-02, RF-14 | S+I | S+I | **aprovada** | renovacao durante a atividade, retirada/revogacao conhecida, sem cofre nem replay | 20: 2 renovacoes entregues, comando em curso manteve valor antigo, 3 auto-revogacoes confirmadas pelo GitHub; retirada em pergunta (10) e cancel (25) | q20-v1, q10-v2, q25-v1 | [20-active-credential-lifecycle.md](20-active-credential-lifecycle.md), [20-real-credential-run-2026-11-14.json](20-real-credential-run-2026-11-14.json) |
@@ -209,15 +228,15 @@ comandos, correlações (ensaios) e evidências completas por obrigação estão
 | V-04.P | RF-01 | P | — | **dependente-do-piloto** | entrada real no piloto | pendente do piloto (35) | — | — |
 | V-05.a | RF-02, RNF-04, CA-02 | S | S | **aprovada** | paginacao, erro apos pagina, JSON invalido, numeros iguais em repos distintos, ciclos, relacoes invalidas, fechamento nao conclusivo | regras e leituras com fixture (dependency-rules, github-dependency-reads, dependency-flow) | ci-candidato | [08-native-dependency-gating.md](08-native-dependency-gating.md) |
 | V-05.b | RF-02, RNF-04, CA-02 | S+I | S+I | **aprovada** | relacoes nativas reais no mesmo repo: pendencia bloqueia, satisfacao valida libera, reavaliacao antes de inicio/retomada | 08: proprio nao entregue bloqueia; externo open/not_planned/reopened/completed; ciclo recusado pelo GitHub; restart -> DEPENDENCIES_NOT_CURRENT e reavaliacao; 09/18 reavaliam por tentativa | q08, q18-v4 | [08-native-dependency-gating.md](08-native-dependency-gating.md), [08-real-github-dependencies-2026-11-14.json](08-real-github-dependencies-2026-11-14.json) |
-| V-05.c | RF-02, CA-02 | S+I | S | **inconclusiva** | cenarios entre repos/owners/visibilidades e acesso reduzido que se pretenda declarar suportados | nao exercitavel com um repo; o 08 nao os declara suportados | — | [08-native-dependency-gating.md](08-native-dependency-gating.md) |
+| V-05.c | RF-02, CA-02 | S+I | S | **inconclusiva** | dependencias entre repositorios (cross-repo, D-02) suportadas: bloqueador em outro repo lido com a instalacao propria, repo nao configurado recusado, omissao detectada | implementacao suporta (issue-tracker readDependencyGraph segue arestas para outros repos; dependencyRepositories so-leitura; DEPENDENCY_REPOSITORY_NOT_CONFIGURED; DEPENDENCY_COUNT_MISMATCH): S/I-local (github-dependency-reads, configuration; I-local nao substitui a leitura real do GitHub); sem lacuna de implementacao; nenhuma prova real cross-repo (um so repo nos ensaios) (decisao D-02) | — | [08-native-dependency-gating.md](08-native-dependency-gating.md) |
 | V-05.d | RF-02, CA-02 | S+I | S+I | **aprovada** | apos exclusao de historico proprio: ultimo ciclo entregue continua satisfeito, cancelado nao, novo ciclo avaliado pela memoria minima | forget-flow com avaliacao real de dependencias e reabertura do storage; q31-v2 local real (entregue) | q31-v2, ci-candidato | [31-history-erasure-and-minimal-cycle-memory.md](31-history-erasure-and-minimal-cycle-memory.md), [31-real-forget-v2-verdict-2026-11-15.json](31-real-forget-v2-verdict-2026-11-15.json) |
 | V-05.e | RF-02, CA-02 | S+I | S | **inconclusiva** | Ticket esquecido como bloqueador nativo real | so em fluxo (decisao 3 do supervisor no 31) | — | [31-history-erasure-and-minimal-cycle-memory.md](31-history-erasure-and-minimal-cycle-memory.md) |
 | V-05.P | RF-02, CA-02 | P | — | **dependente-do-piloto** | dependencia real no piloto | pendente do piloto (35) | — | — |
 | V-06.a | RF-03, CA-04, CA-11 | S+I | S+I+A | **aprovada** | FIFO estavel, reparos antes sem preempcao, inelegiveis pulados sem perder posicao, eventos consolidados | three-builders-flow/repair-flow (S); 22: categoria de reparo e uma correcao; 24: uma passada preenche os Slots livres em ordem | q24-v3, q22-v1, ci-candidato | [24-three-builders-fifo-and-isolation.md](24-three-builders-fifo-and-isolation.md), [22-effective-impediments-and-automatic-repairs.md](22-effective-impediments-and-automatic-repairs.md) |
 | V-06.b | RF-03, RF-04, RNF-02, CA-03 | S+I+A | S+I+A | **aprovada** | tres Builders reais simultaneos, dois no mesmo repo, com branches/worktrees/discos/VMMs proprios, sem mutex nem escritor duplicado | 24 v1/v2/v3: tres VMs reservadas numa passada (capacidade 3), ambientes/boots/branches proprios no mesmo repo, Perguntas independentes | q24-v1, q24-v3 | [24-three-builders-fifo-and-isolation.md](24-three-builders-fifo-and-isolation.md), [24-real-q24-three-v1-summary.json](24-real-q24-three-v1-summary.json), [24-real-q24-three-v3-summary.json](24-real-q24-three-v3-summary.json) |
-| V-06.c | RF-03, CA-03 | S+I+A | S | **inconclusiva** | Builders de repos diferentes em paralelo | so local (decisao 2 do 24: lacuna) | — | [24-three-builders-fifo-and-isolation.md](24-three-builders-fifo-and-isolation.md) |
+| V-06.c | RF-03, CA-03 | S+I | S+I | **aprovada** | Builders de repos diferentes em paralelo (D-03: prova local basta, sem Builders reais de repos diferentes) | I-local: sandbox-checkout "distinct repositories proceed in parallel" (cache por repo, sem metadados gravaveis compartilhados) no ci-candidato; despacho por Slots independente do repo (S); A dispensado por D-03 (decisao D-03, nivel A dispensado) | ci-candidato | [24-three-builders-fifo-and-isolation.md](24-three-builders-fifo-and-isolation.md) |
 | V-06.d | RF-03, CA-05, CA-11 | S+I+A | S+I+A | **aprovada** | revisores nao consomem Slot adicional; pergunta/CI/merge nao ocupam Slot; cessacao precede liberacao | 12/18: revisores no Slot e boot do Builder; 10/18/24: pergunta libera Slot apos cessacao confirmada | q10-v2, q18-v4, q24-v1 | [10-durable-questions-and-queued-resumption.md](10-durable-questions-and-queued-resumption.md), [24-three-builders-fifo-and-isolation.md](24-three-builders-fifo-and-isolation.md) |
-| V-06.e | CA-08, CA-03 | I+A | I+A | **inconclusiva** | containers simultaneos das suites reais sem colisao, com as tres suites concluindo | containers simultaneos sem colisao (v1: 3 VMs; v3: 2); AC5 nao alcancado: CreditAccountUseCaseConcurrencyIT e JdbcOutboxEventAdapterIT falharam no guest; causa NAO confirmada; ticket 24 fechado por decisao do operador como limite de ambiente/piloto | q24-v3 | [24-three-builders-fifo-and-isolation.md](24-three-builders-fifo-and-isolation.md), [24-real-q24-three-v3-summary.json](24-real-q24-three-v3-summary.json) |
+| V-06.e | CA-08, CA-03 | I+A | I+A | **dependente-do-piloto** | containers simultaneos das suites reais sem colisao, com as tres suites concluindo | containers simultaneos sem colisao (v1: 3 VMs; v3: 2); AC5 nao alcancado: CreditAccountUseCaseConcurrencyIT e JdbcOutboxEventAdapterIT falharam no guest; causa NAO confirmada; ticket 24 fechado por decisao do operador como limite de ambiente/piloto (decisao D-01) | q24-v3 | [24-three-builders-fifo-and-isolation.md](24-three-builders-fifo-and-isolation.md), [24-real-q24-three-v3-summary.json](24-real-q24-three-v3-summary.json) |
 | V-06.f | RNF-02, CA-03 | I | I | **aprovada** | RAM/CPU medidos incluindo overhead, workers e revisores, com host/configuracao registrados | cgroup por unit em 24 v1-v3 (picos 0,8-7,2 GB incluindo page cache; CPU 24-882 s); host 8 CPUs/15,7 GiB; guest 2048 MiB/2 vCPU | q24-v1, q24-v3 | [24-three-builders-fifo-and-isolation.md](24-three-builders-fifo-and-isolation.md), [24-real-q24-three-v1-summary.json](24-real-q24-three-v1-summary.json), [24-real-q24-three-v3-summary.json](24-real-q24-three-v3-summary.json) |
 | V-06.g | RNF-02, CA-03 | I | — | **inconclusiva** | I/O e disco medidos | io.stat ilegivel (ioRead/ioWrite null em todas as unidades); uso do disco do guest fora dos resumos | — | [24-real-q24-three-v1-summary.json](24-real-q24-three-v1-summary.json) |
 | V-06.h | RF-03, RF-04, CA-03, CA-05 | S+I+A | S | **inconclusiva** | composicao do candidato: passada unica do 24 + feedback do 23 + inspecao do 29 numa execucao real | nenhum ensaio real sobre o candidato b30e2bd (nem 580b4d1/0d343d6); q23-v3 (d49f43d) nao tem dispatch.ts/capacity.ts do 24; q24-v3 (1f033f8) nao tem o feedback do 23; combinacao so em S (test:ci) | ci-candidato | [23-human-feedback-and-explicit-repairs.md](23-human-feedback-and-explicit-repairs.md), [24-three-builders-fifo-and-isolation.md](24-three-builders-fifo-and-isolation.md) |
@@ -225,7 +244,7 @@ comandos, correlações (ensaios) e evidências completas por obrigação estão
 | V-07.b | RF-05, RNF-01, CA-06 | S+I+A | S | **inconclusiva** | interrupcao antes de sources completo | nenhum ensaio real localizado com corte antes da captura completa | — | [09-builder-start-and-preserved-request.md](09-builder-start-and-preserved-request.md) |
 | V-07.c | RF-05, RNF-05, CA-12 | S+I+A | S+I+A | **aprovada** | mudanca posterior do ticket/link nao altera escopo; so parte autorizada do novo escopo; fonte privada inacessivel gera pergunta | 11: edicao posterior B1/B2 nao adotada; update-scope aplicado so na proxima ativacao; fonte privada 404 -> ask_user | q11 | [11-context-continuation-and-authorized-scope.md](11-context-continuation-and-authorized-scope.md), [11-real-context-scope-2026-11-14.json](11-real-context-scope-2026-11-14.json) |
 | V-07.d | RF-05, RNF-01 | S+I+A | S+I+A | **aprovada** | sessao compatível continua com continue; incompativel substituida explicitamente; rebase | 11: SESSION_COMPATIBLE e substituicao por mudanca de perfil; 22: builder-continuation com rebase; 23 v3: continuacao da mesma correcao | q11, q22-v1, q23-v3 | [11-context-continuation-and-authorized-scope.md](11-context-continuation-and-authorized-scope.md), [22-effective-impediments-and-automatic-repairs.md](22-effective-impediments-and-automatic-repairs.md) |
-| V-07.e | RF-05, RNF-01, CA-06 | S+I+A | S+I+A | **inconclusiva** | sessao perdida/alterada substituida sem recaptura silenciosa | substituicao provada por mudanca de politica, nao por perda real (SESSION_LOST/ALTERED so S); decisao 3 do 11 segue "confirmar" | q11 | [11-context-continuation-and-authorized-scope.md](11-context-continuation-and-authorized-scope.md) |
+| V-07.e | RF-05, RNF-01, CA-06 | S+I+A | S+I+A | **aprovada** | sessao perdida/alterada substituida sem recaptura silenciosa | substituicao provada no ensaio real por mudanca de perfil (SESSION_INCOMPATIBLE, q11); SESSION_LOST/ALTERED provados I-local e por mutacao; D-05: aceito como cobertura do AC7 (decisao 3 do 11 fechada) (decisao D-05) | q11 | [11-context-continuation-and-authorized-scope.md](11-context-continuation-and-authorized-scope.md) |
 | V-07.f | RF-05, RNF-05, CA-12 | S+I+A | S+I | **inconclusiva** | instrucao modificada pelo Builder para dispensar gates/ampliar poderes nao prevalece | instrucoes versionadas pelo controle e gates verificados pelo host (13, 18 HANDOFF_GATE_NOT_DOCUMENTED); nenhum ensaio A com o Builder alterando AGENTS/instrucoes | q13-v5, q18-v4 | [13-findings-treatment-and-current-content-gates.md](13-findings-treatment-and-current-content-gates.md), [18-first-integrated-delivery-journey.md](18-first-integrated-delivery-journey.md) |
 | V-07.P | RF-05, CA-01 | P | — | **dependente-do-piloto** | pedido real no piloto | pendente do piloto (35) | — | — |
 | V-08.a | RF-06, RNF-05 | S+I+A | S+I+A | **aprovada** | pacote proprio, sem perfil pessoal, modelos por papel registrados, sem fallback silencioso | factory-skills-v6 pinado; modelos por papel registrados (29 mostra openai/gpt-6-luna por papel); retries 0; fallback de perfil recusado (S). Modelos distintos por papel nao exercitados | q12-v4, q18-v4, q29-v2 | [12-parallel-standards-and-spec-reviews.md](12-parallel-standards-and-spec-reviews.md), [29-correlated-cli-observability-and-usage.md](29-correlated-cli-observability-and-usage.md) |
@@ -263,7 +282,7 @@ comandos, correlações (ensaios) e evidências completas por obrigação estão
 | V-12.c | RF-04, RNF-01, CA-06 | S+I+A | S+I | **inconclusiva** | cortes de Builder/ferramenta e de revisao com agentes reais | corte de ferramenta so com provedor roteirizado (26, I sem A); corte no handoff de revisao so I-local (28; q28-partial-v3 nao executado) | q26-v2, q28-v2 | [26-execution-recovery-without-survivor-adoption.md](26-execution-recovery-without-survivor-adoption.md), [28-partial-review-recovery.md](28-partial-review-recovery.md) |
 | V-12.d | RF-13, RNF-01, CA-06 | S+I | S | **inconclusiva** | resposta durante boot, cache em preparo, perda de canal | corte de cache nao incluido na receita 26; resposta durante boot e perda de canal so em S/I-local | — | [26-execution-recovery-without-survivor-adoption.md](26-execution-recovery-without-survivor-adoption.md) |
 | V-12.e | RF-13, RNF-01 | S+I | S+I | **aprovada** | identidade, contexto e limites mantidos apos crash/reboot | 19: EXECUTION_TIMEOUT mantido apos restart; 26 v2: recoveries contados; 33: IDs/filas/Perguntas preservados | q19-v2, q26-v2, r33-v2 | [19-budgets-optional-timeout-and-grants.md](19-budgets-optional-timeout-and-grants.md), [26-execution-recovery-without-survivor-adoption.md](26-execution-recovery-without-survivor-adoption.md) |
-| V-12.f | RNF-01, CA-03 | S+I | I | **inconclusiva** | disco do guest apos morte do proprietario | W3: fsck 4 (accepted false) no FS de A apos SIGKILL do dono, recuperacao MANUAL em inode novo; registrado como limite no 03, sem decisao explicita de produto | w3 | [03-w3-owner-loss-gated.md](03-w3-owner-loss-gated.md), [03-w3-copy-repair.md](03-w3-copy-repair.md) |
+| V-12.f | RNF-01, CA-03 | S+I | S+I | **aprovada** | disco do guest apos morte do proprietario: dano detectado pelo check forcado e reuso recusado; recuperacao manual (limite aceito, D-06) | W3 (I real): fsck 4 apos SIGKILL deliberado do dono, reuso bloqueado, recuperacao MANUAL; check forcado: sandbox-start-diagnostics (S, ci) e sandbox-filesystem (ext4 real, full) recusam PRESERVED_DISK_CHECK_REQUIRED sem mudar o disco; D-06: limite aceito do MVP, sem corrupcao silenciosa (decisao D-06) | w3 | [03-w3-owner-loss-gated.md](03-w3-owner-loss-gated.md), [03-w3-copy-repair.md](03-w3-copy-repair.md) |
 | V-13.a | RF-13, CA-11 | S+I+A | S+I+A | **aprovada** | reserva sem inicio x inicio confirmado; contagens separadas/configuraveis; concessao; eventos/push/restart nao zeram contadores | 19: grant aceito; 22: uma correcao cobrada no inicio confirmado; 23 v3: cobranca preservada na continuacao, consumo total 2 | q19-v2, q22-v1, q23-v3 | [19-budgets-optional-timeout-and-grants.md](19-budgets-optional-timeout-and-grants.md), [22-real-repair-verdict-2026-11-16.json](22-real-repair-verdict-2026-11-16.json), [23-real-feedback-v3-verdict-2026-11-16.json](23-real-feedback-v3-verdict-2026-11-16.json) |
 | V-13.b | RF-13, RNF-05 | S+I | S+I | **aprovada** | retomadas operacionais com backoff; tentativas internas do SDK desabilitadas | 26: esperas 5/15/45 s persistidas; 05/28: providerRetries/sdkRetries 0 | q26-v2, q28-v2 | [26-execution-recovery-without-survivor-adoption.md](26-execution-recovery-without-survivor-adoption.md), [05-physical-qualification-and-acceptance.md](05-physical-qualification-and-acceptance.md) |
 | V-13.c | RF-13, RF-12, CA-07 | S+I | S+I | **aprovada** | parada administrativa limpa x forcada/crash | 26 v2: parada limpa final sem cobranca; 33: parada limpa exigida antes do upgrade | q26-v2, r33-v2 | [26-execution-recovery-without-survivor-adoption.md](26-execution-recovery-without-survivor-adoption.md), [33-compatible-upgrades-and-recoverable-migration.md](33-compatible-upgrades-and-recoverable-migration.md) |
@@ -277,13 +296,13 @@ comandos, correlações (ensaios) e evidências completas por obrigação estão
 | V-14.d | RF-14, CA-07, CA-10 | S+I | S+I | **aprovada** | logs/sessoes de entregues elegiveis 30 dias apos merge na varredura; nao entregues preservados; fim de pendencia nao reinicia prazo; historico ate exclusao | 30 v3 sobre copia real de q17: 40 removidos, 49 mantidos, dueAt merge+30 d (relogio controlado; armazenamento/varredura reais) | q30-v3 | [30-retention-and-explicit-cleanup.md](30-retention-and-explicit-cleanup.md), [30-real-retention-v3-verdict-2026-11-15.json](30-real-retention-v3-verdict-2026-11-15.json) |
 | V-14.e | RF-14, RF-02, CA-10 | S+I | S+I | **aprovada** | exclusao exige encerramento sem pendencias e conserva memoria minima antirredisparo | 31 v2: entregue esquecido sem chaves proibidas; polling apos restart -> existing; recusa com RESOURCES_PENDING | q31-v2 | [31-history-erasure-and-minimal-cycle-memory.md](31-history-erasure-and-minimal-cycle-memory.md), [31-real-forget-v2-verdict-2026-11-15.json](31-real-forget-v2-verdict-2026-11-15.json) |
 | V-14.f | RF-14, CA-10 | S+I | S | **inconclusiva** | forget de Trabalho cancelado em dados reais | so o ramo recusado (ambiente q25 ainda existe); caminho completo em fluxo | — | [31-history-erasure-and-minimal-cycle-memory.md](31-history-erasure-and-minimal-cycle-memory.md) |
-| V-14.g | RF-14 | S+I | S+I | **inconclusiva** | exclusao de historico remove os dados | paginas livres/WAL do SQLite nao sao saneadas (VACUUM proposto, nao implementado) | q31-v2 | [31-history-erasure-and-minimal-cycle-memory.md](31-history-erasure-and-minimal-cycle-memory.md) |
+| V-14.g | RF-14 | S+I | S+I | **aprovada** | exclusao de historico remove os dados | D-07 implementado em 5a026e7: VACUUM + wal_checkpoint(TRUNCATE) apos forget, estado de saneamento no memory (pending/scrubbed) re-tentado; I-local em arquivo SQLite real: marcador semeado ausente dos bytes de control.sqlite e control.sqlite-wal (teste vermelho antes da mudanca); revisoes de documento ja apagadas (q31-v2) (decisao D-07) | ci-d07 | [31-history-erasure-and-minimal-cycle-memory.md](31-history-erasure-and-minimal-cycle-memory.md) |
 | V-14.P | RF-14, CA-01 | P | — | **dependente-do-piloto** | cleanup de entrega real no piloto | pendente do piloto (35) | — | — |
 | V-15.a | RNF-03, RF-12, CA-12 | S+I | S+I | **aprovada** | navegacao CLI humana/JSON por toda a cadeia; causa, historico e proximo passo; leituras externas com instante/completude | 29: show/history/logs/usage sobre q18-journey-v4 e q25-cancel-v1 reais; paginacao, filtros, frame unico, nada escrito | q29-v2 | [29-correlated-cli-observability-and-usage.md](29-correlated-cli-observability-and-usage.md) |
 | V-15.b | RNF-03, RF-07 | S+I+A | S+I+A | **aprovada** | saida volumosa/truncada aponta a saida filtrada legivel na area do Trabalho; leitura paginada pelos agentes com ferramentas confinadas | 05 v4: Bash grande com copia automatica e 3 Reads paginados pelo Builder; selecao Host para outro papel | q05-v4 | [05-physical-qualification-and-acceptance.md](05-physical-qualification-and-acceptance.md) |
 | V-15.c | RNF-03, CA-12 | S+I+A | S | **inconclusiva** | consumo medido dos tres papeis, sessao retomada sem duplicar, parcial/ausente distinto de zero, em dados reais | nos dados reais todas as atividades deram unavailable (sessoes removidas pelo cleanup do 17 antes do 30; cancelado sem sessao); medido/dedup so em S | q29-v2 | [29-correlated-cli-observability-and-usage.md](29-correlated-cli-observability-and-usage.md) |
 | V-15.d | RNF-04, RF-09 | S+I | S+I | **aprovada** | polling padrao 60 s configuravel; falha/antiga de consulta nao vira ausencia/sucesso | polling real em todos os ensaios GitHub; leituras incompletas recusadas (15, 29 freshness) | q15-v2, q29-v2 | [15-required-checks-evaluation.md](15-required-checks-evaluation.md), [29-correlated-cli-observability-and-usage.md](29-correlated-cli-observability-and-usage.md) |
-| V-15.e | RNF-04 | S+I | S | **inconclusiva** | rate limit/backoff real | rate limit nao induzido (07); backoff so S | — | [07-unique-ticket-admission.md](07-unique-ticket-admission.md) |
+| V-15.e | RNF-04 | S | S | **aprovada** | rate limit/backoff real | rate limit nao induzido (07); backoff/waitSeconds provados em S; D-08: prova simulada aceita, nivel I dispensado (decisao D-08, nivel I dispensado) | ci-candidato | [07-unique-ticket-admission.md](07-unique-ticket-admission.md) |
 | V-15.f | RF-14, RNF-03 | S+I | S+I | **aprovada** | falha de gravacao, captura parcial x resultado desconhecido; logs/sessoes nao publicados no GitHub | records (S/I-local); traces gh de 18/25 sem publicacao de logs; 29 nao escreve | q18-v4, ci-candidato | [05-protected-raw-records.md](05-protected-raw-records.md), [18-real-journey-v4-gh-trace-2026-11-15.jsonl](18-real-journey-v4-gh-trace-2026-11-15.jsonl) |
 | V-15.P | RNF-03, CA-07 | P | — | **dependente-do-piloto** | metricas do PRD no piloto | pendente do piloto (35) | — | — |
 | V-16.a | RF-01, RNF-01 | S+I | S+I | **aprovada** | mecanismo de release autocontida: manifesto de todos os bytes, assets integros, falha fechada sem manifesto | r32-v2 (2d5600e) verify 0 violacoes; r33-v2 construiu e verificou mvp-33.1 (b6cd2bb) | r32-v2, r33-v2 | [32-self-contained-release.md](32-self-contained-release.md), [32-real-v2-verify-2026-11-14.json](32-real-v2-verify-2026-11-14.json), [build-verdict.json](33-r33-v2/build-verdict.json) |
@@ -326,7 +345,7 @@ Estado = pior das obrigações que o rastreiam (pela matriz do plano). Inconclus
 | CA-05 | inconclusiva | V-06.d, V-06.h, V-11.a, V-11.c, V-11.P, V-17.a, V-17.P |
 | CA-06 | inconclusiva | V-01.a, V-01.b, V-01.c, V-07.b, V-07.e, V-12.a, V-12.b, V-12.c, V-12.d |
 | CA-07 | inconclusiva | V-13.c, V-13.f, V-13.g, V-14.a, V-14.b, V-14.c, V-14.d, V-15.P |
-| CA-08 | inconclusiva | V-02.f, V-02.h, V-06.e, V-17.P |
+| CA-08 | dependente-do-piloto | V-02.f, V-02.h, V-06.e, V-17.P |
 | CA-09 | inconclusiva | V-10.e, V-10.f |
 | CA-10 | inconclusiva | V-04.a, V-04.b, V-04.c, V-04.d, V-04.e, V-04.f, V-04.g, V-14.d, V-14.e, V-14.f |
 | CA-11 | inconclusiva | V-06.a, V-06.d, V-13.a, V-13.d, V-13.e |
@@ -339,8 +358,8 @@ Estado = pior das obrigações que o rastreiam (pela matriz do plano). Inconclus
 | G1-fronteiras-frageis | Fronteiras frageis | aprovada | — |
 | G2-controle-deterministico | Controle deterministico | aprovada | — |
 | G3-jornada-completa | Uma jornada completa (no candidato) | inconclusiva | V-06.h, V-15.c |
-| G4-concorrencia-adversidades | Concorrencia e adversidades | inconclusiva | V-02.h, V-03.c, V-04.b, V-04.d, V-04.e, V-05.c, V-05.e, V-06.c, V-06.e, V-06.g, V-07.b, V-07.e, V-07.f, V-08.f, V-08.g, V-09.c, V-09.e, V-09.f, V-10.b, V-10.d, V-10.f, V-10.g, V-11.c, V-12.c, V-12.d, V-12.f, V-13.e, V-13.g, V-14.c, V-15.e |
-| G5-operacao-release | Operacao da release | inconclusiva | V-14.f, V-14.g, V-16.b, V-16.d |
+| G4-concorrencia-adversidades | Concorrencia e adversidades | inconclusiva | V-03.c, V-04.b, V-04.d, V-04.e, V-05.c, V-05.e, V-06.g, V-07.b, V-07.f, V-08.f, V-08.g, V-09.c, V-09.e, V-09.f, V-10.b, V-10.d, V-10.f, V-10.g, V-11.c, V-12.c, V-12.d, V-13.e, V-13.g, V-14.c |
+| G5-operacao-release | Operacao da release | inconclusiva | V-14.f, V-16.b, V-16.d |
 | G6-preparacao-piloto | Preparacao da solicitacao de autorizacao do piloto (nao a execucao do piloto, que exige G3-G5) | aprovada | — |
 
 ## 7. Escopo suportado, capacidade, limitações e métricas
@@ -348,13 +367,16 @@ Estado = pior das obrigações que o rastreiam (pela matriz do plano). Inconclus
 **Escopo GitHub provado.** Um owner pessoal (`Sanmoo`), um repositório (`Sanmoo/java-springboot-event-sourcing`), uma GitHub App
 (id 5569788, instalação 177599217), REST `2026-03-10`, ruleset `26435808` na `main` sem check obrigatório. Dependências nativas
 `blocked_by` só no mesmo repo, satisfação direta (decisão do operador no 08). Perguntas/respostas no Ticket (issue), não no PR (limite
-aceito no 21). Barreiras de base/merge são do time: a Factory lê/explica, não certifica. Não exercitados: cross-repo/owner, visibilidade
-reduzida, check obrigatório real, proteção clássica, merge queue, assinaturas (D-02, R-GH-CHECKS).
+aceito no 21). Barreiras de base/merge são do time: a Factory lê/explica, não certifica. **Escopo declarado de dependências (D-02):
+entre repositórios.** A implementação já lê bloqueadores de outros repositórios (S + I-local), mas ainda não há prova real: R-GH-DEP é
+obrigatório antes do piloto (V-05.c). Também não foram exercitados: cross-owner e visibilidade reduzida reais, check obrigatório real,
+proteção clássica, merge queue e assinaturas (R-GH-DEP, R-GH-CHECKS).
 
 **Perfil.** Host Arch Linux x86_64 com KVM, QEMU 11.1.2, systemd 262 (usuário); guest Gondolin `gondolin-qemu-alpine-dev-v1`
 (Alpine 3.23.7, kernel 6.18.58-0-virt), assets34 de desenvolvimento (`8efa506a…`, buildId `541fc455…`), não qualificados como release;
 Docker 29.5.2 vfs no guest, socket só no guest, Testcontainers/Ryuk, sem NAT para containers; adequações aprovadas no 06
-(`userland-proxy`, sem `bridge: none`, `safe.directory`). Compose/`docker build` não exercitados (D-04). Um perfil de worker (SDK Pi
+(`userland-proxy`, sem `bridge: none`, `safe.directory`). **Compose e `docker build` estão fora do escopo suportado e não foram testados
+(D-04).** R-DOCKER-EXT só é executado se um repositório selecionado para o piloto precisar deles. Um perfil de worker (SDK Pi
 1.5.2 com patch v3), `factory-skills-v6`, `openai/gpt-6-luna` via OAuth da Factory nos três papéis (modelos distintos por papel são
 configuráveis, não exercitados).
 
@@ -367,7 +389,13 @@ vfs/qcow2). RSS: VMM 1,63–2,21 GB, adapter 0,20–0,28 GB, workers 0,21–0,63
 **Limitações aceitas (registradas pelos tickets; não dispensam obrigação da matriz).**
 
 - 24 AC5: três suítes reais verdes simultâneas não alcançadas (`CreditAccountUseCaseConcurrencyIT`, `JdbcOutboxEventAdapterIT`), causa
-  não confirmada; fechado pelo operador como limite de ambiente/piloto. Aqui permanece obrigação inconclusiva V-06.e com D-01.
+  não confirmada; fechado pelo operador como limite de ambiente/piloto. Por D-01, V-06.e segue para o piloto (35) como dependência
+  explícita (R-24DIAG não é executado agora) e CA-08 fica sem aprovação até o piloto.
+- 03 W3 (D-06, limite aceito do MVP): os erros de fsck do disco do guest após SIGKILL deliberado do proprietário vieram de uma injeção de
+  falha autorizada, não de operação orgânica. O check forçado da Factory recusa o reuso (`PRESERVED_DISK_CHECK_REQUIRED`), então não há
+  corrupção silenciosa. A recuperação é manual.
+- 11 decisão 3 (D-05): a substituição de sessão está provada por mudança de perfil (real) e por `SESSION_LOST`/`SESSION_ALTERED` (local),
+  sem perda real de sessão. 07 (D-08): rate limit/backoff só com prova simulada.
 - 21: cinco limites do MVP (base compatível diferente não autorizável; divergência só com escrita pendente; reconciliação interrompida antes
   do início falha fechada; sem rebase sobre base nova com commits humanos; Perguntas na issue).
 - 22: sob strict cada avanço da base custa uma correção. 23: discordância → `ask_user` só pelo prompt; reviews editadas ignoradas.
@@ -375,7 +403,8 @@ vfs/qcow2). RSS: VMM 1,63–2,21 GB, adapter 0,20–0,28 GB, workers 0,21–0,63
   incerto de Trabalho cancelado não redescoberto.
 - 28: notificação perdida com canal fechado mantém `REVIEWER_CESSATION_UNCONFIRMED`. 26: preparo em voo nunca presumido cessado;
   ambiente indeterminado fecha o despacho global.
-- 31: páginas livres/WAL do SQLite não saneadas (D-07). 30: contadores de varredura só em memória do processo.
+- 31: as páginas livres/WAL do SQLite deixaram de ser um limite: o saneamento após o forget foi implementado por D-07 (`5a026e7`). A
+  composição do piloto precisa contê-lo. 30: contadores de varredura só em memória do processo.
 - 32: release só com integridade, sem assinatura; Node copiado sem reverificação upstream; assets de desenvolvimento. 33: sem rollback
   universal nem backup integrado. 01: 5 avisos moderados de auditoria de desenvolvimento (minimatch, sem patch compatível).
 - Limites residuais da spec §14 (Pi Durable experimental, visibilidade GitHub não atômica, filtragem conhecida não cobre transformações,
@@ -394,12 +423,16 @@ em dados reais (V-15.c), I/O/disco e tempos do PRD em tickets reais (piloto).
 (N=8), 191,7 s de 600 s, carga 0,71 → 10,87; `test/runner/fresh-tree.test.ts` fica para o noturno (`full`). Isso é S + I-local no
 candidato (ensaio `ci-candidato`), sem VM/GitHub/modelo: não substitui nenhuma prova de fronteira real.
 
-## 9. Contradições e registros a corrigir (não alterados aqui)
+Ensaio `ci-d07`: o `npm run test:ci` do branch `implement/software-factory-mvp-d07` (código `5a026e7`, mais o registro destas decisões)
+inclui `test/control/forget-scrub.test.ts`, que lê os bytes reais de `control.sqlite`/`-wal` após o forget. É I-local e aprova V-14.g só
+para a composição que contém `5a026e7`.
+
+## 9. Contradições e registros a corrigir
 
 - Ticket 27 está `resolved` com os 8 checkboxes de aceite desmarcados; Answer e evidência registram a aprovação 14/14.
 - Ticket 24 está `resolved` com AC5 desmarcado por decisão do operador; coerente com o ticket, mas pela matriz CA-08 segue sem aprovação
   (V-06.e).
-- Ticket 11 mantém a decisão 3 em aberto ("confirmar") embora resolvido (D-05).
+- Ticket 11: a decisão 3 ("confirmar") foi fechada por D-05 em 2026-11-16, na evidência 11 e no ticket.
 - Ticket 08: commit do ensaio real não registrado e ensaio anterior às correções da revisão. Ticket 02: evidência em
   `docs/controller-evidence.md`, fora de `docs/evidence/`.
 - Os JSONs de ensaio não registram o commit da Factory e vários documentos não registram fatos do host; para as provas futuras (35),
@@ -407,6 +440,8 @@ candidato (ensaio `ci-candidato`), sem VM/GitHub/modelo: não substitui nenhuma 
 
 ## 10. O que este resultado libera
 
-Somente a preparação da solicitação de autorização do piloto (ticket 35), levando as decisões D-01–D-08 e a escolha de quais grupos
-R-* autorizar antes. A execução do piloto exige G3–G5 sem bloqueio; as obrigações P continuam obrigações; o aceite do MVP exige todos
-os RF/RNF/CA no nível fiel mais a avaliação humana da utilidade/qualidade.
+Somente a preparação da solicitação de autorização do piloto (ticket 35). Ela leva as decisões D-01–D-08 (tomadas em 2026-11-16) e as
+dependências explícitas V-06.e (D-01) e V-02.h (D-04), e cabe ao operador escolher quais grupos R-* autorizar antes. A execução do piloto
+exige G3–G5 sem bloqueio. Restam G3 com 2 bloqueios, G4 com 24 e G5 com 3; entre eles, R-GH-DEP para dependências entre repositórios
+(D-02). A execução também exige uma composição que contenha D-07 (`5a026e7`). As obrigações P continuam obrigações. O aceite do MVP exige
+todos os RF/RNF/CA no nível fiel e a avaliação humana da utilidade e da qualidade.

@@ -29,3 +29,8 @@ Publicação é planejamento aprovado, não autorização de construção, uso d
 ## Answer
 
 Resolvido em 2026-11-14: continuação de sessão compatível com `continue`, substituição explícita quando incompatível ou perdida, mudança de escopo autorizada aplicada só na próxima ativação segura e edição posterior do Ticket sem efeito de autorização. Gate local 934/0; ensaio real com pergunta, resposta, continue e substituição. Evidência: `docs/evidence/11-context-continuation-and-authorized-scope.md`.
+
+Decisão do operador (2026-11-16, D-05 da qualificação 34): o ponto aberto "confirmar" da decisão 3 da evidência fica fechado. A substituição
+provada no ensaio real por mudança de perfil (`SESSION_INCOMPATIBLE`), junto com a prova local de `SESSION_LOST`/`SESSION_ALTERED`, basta
+para o AC7, sem exigir perda real de sessão. V-07.e passa a aprovada em
+[34-candidate-qualification.md](../../../docs/evidence/34-candidate-qualification.md).

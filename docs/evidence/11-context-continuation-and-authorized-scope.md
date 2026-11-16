@@ -163,8 +163,10 @@ Todas com teste vermelho antes (ou mutação que comprova a detecção) e verde 
    Host nunca é mascarado pelo Controle.
 3. **Substituição no ensaio real por política Host.** Para provar a substituição sem destruir evidência, a fase `scope` da receita roda com um
    perfil Builder sem a ferramenta `edit`: a sessão está íntegra e o resultado é `SESSION_INCOMPATIBLE` (`differences: ['tools']`). Perda real
-   (`SESSION_LOST`) e adulteração (`SESSION_ALTERED`) são provadas I-local e por mutação, não por dano deliberado em produção. Confirmar se é
-   aceitável como cobertura do AC7.
+   (`SESSION_LOST`) e adulteração (`SESSION_ALTERED`) são provadas I-local e por mutação, não por dano deliberado em produção.
+   **Decidido pelo operador em 2026-11-16 (D-05 da qualificação 34):** aceita. A substituição provada no ensaio real por mudança de perfil, junto
+   com a prova local de `SESSION_LOST`/`SESSION_ALTERED`, basta para o AC7. Não se exige perda real de sessão, que sai do R-CRASH-A
+   ([evidência 34](34-candidate-qualification.md), V-07.e).
 4. **`update-scope` autoriza texto, não critérios estruturados.** O recibo guarda o motivo literal e um id (`scope-<request_id>`); o
    versionamento e a interpretação ficam com o Builder (pack v4 §6). Se o operador quiser aceitar critérios/arquivos por comando, é mudança
    de contrato.

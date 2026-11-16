@@ -37,14 +37,40 @@ Resolvido em 2026-11-16 como qualificação documental do candidato `integration
 estados permitidos, evidência existente e nível real exigido para aprovar, agregados pelo pior estado, gate e encaminhamento para cada
 obrigação aberta).
 
-- 112 obrigações: 66 aprovadas, 0 reprovadas, 36 inconclusivas, 10 dependentes do piloto. Todos os RF/RNF/CA ficam inconclusivos,
+- Na qualificação original (antes das decisões abaixo): 112 obrigações, 66 aprovadas, 0 reprovadas, 36 inconclusivas, 10 dependentes do piloto. Todos os RF/RNF/CA ficam inconclusivos,
   exceto RF-08 e CA-01, que dependem do piloto. Gates: G1/G2 sem bloqueio; G3 (V-06.h, V-15.c), G4 (30 obrigações) e G5 (4)
   bloqueados.
 - Nenhum ensaio real rodou sobre o candidato, e a combinação 23+24+29(+41) só tem prova S (V-06.h → R-CAND). Cada prova histórica tem
   registrados o commit e a razão de reaproveitamento (encadeada).
-- Decisões do operador pendentes: D-01–D-08 (24 AC5/CA-08, escopo de dependências, repos diferentes em paralelo, Compose/build, 11
+- Decisões do operador D-01–D-08, pendentes na qualificação original e tomadas em 2026-11-16 (ver abaixo) (24 AC5/CA-08, escopo de dependências, repos diferentes em paralelo, Compose/build, 11
   decisão 3, disco após morte do proprietário, VACUUM, rate limit real).
 - Reexecuções, cada uma com autorização própria e nenhuma executada: R-CAND, R-REL, R-GH-CHECKS, R-GH-ADV, R-GH-DEP, R-LONG, R-CRASH-A,
   R-HOSTFAULT, R-24DIAG, R-THREE, R-INSPECT, R-DOCKER-EXT.
 - O resultado libera no máximo a preparação da solicitação de autorização do piloto (35). Não aprova o MVP, não seleciona recursos e não
   certifica as barreiras do time.
+
+### Decisões do operador (2026-11-16)
+
+As decisões D-01–D-08 foram tomadas pelo operador e registradas no relatório (seção 1) e na matriz (`operatorDecisions[].decision`/
+`resolution` e `decision` por obrigação). O teste da matriz foi estendido: um nível só é dispensado por uma decisão `level-waived` (nunca
+P), uma obrigação pré-piloto só fica dependente do piloto quando uma decisão a leva ao ticket 35, e as contagens são conferidas.
+
+- D-01: 24 AC5/CA-08 vai ao piloto (35) como dependência explícita; R-24DIAG não é executado agora. V-06.e passa a dependente do piloto.
+- D-02: o escopo de dependências é entre repositórios, e R-GH-DEP continua obrigatório antes do piloto. A implementação já suporta
+  bloqueadores de outros repositórios (S + I-local: `readDependencyGraph`, `dependencyRepositories`, `DEPENDENCY_REPOSITORY_NOT_CONFIGURED`,
+  `DEPENDENCY_COUNT_MISMATCH`) e não há lacuna de implementação. V-05.c segue inconclusiva até a prova real.
+- D-03: CA-03 não exige Builders reais de repositórios diferentes em paralelo. V-06.c passa a aprovada (S + I-local, nível A dispensado).
+- D-04: Compose e `docker build` ficam fora do escopo suportado, sem teste; R-DOCKER-EXT só se um repositório do piloto precisar. V-02.h
+  passa a dependente do piloto.
+- D-05: a decisão 3 do ticket 11 é aceita (mudança de perfil + `SESSION_LOST`/`ALTERED` local bastam para o AC7). V-07.e passa a
+  aprovada, e o ticket 11 e sua evidência foram fechados nesse ponto.
+- D-06: o fsck do W3 após SIGKILL deliberado do proprietário é limite aceito do MVP, porque o check forçado bloqueia o reuso e a
+  recuperação é manual. V-12.f passa a aprovada, e R-HOSTFAULT fica só para disco cheio (V-14.c).
+- D-07: foi implementado (`5a026e7`, saneamento do SQLite com VACUUM + checkpoint TRUNCATE após o forget, prova I-local nos bytes reais).
+  V-14.g passa a aprovada para a composição que contém `5a026e7`.
+- D-08: a prova simulada de rate limit é aceita. V-15.e passa a aprovada (S, nível I dispensado).
+
+Contagens novas: 112 obrigações, das quais 71 aprovadas, 0 reprovadas, 29 inconclusivas e 12 dependentes do piloto (antes: 66/0/36/10).
+Os bloqueios dos gates são G3 com 2 (V-06.h, V-15.c), G4 com 24 e G5 com 3 (V-14.f, V-16.b, V-16.d); G1, G2 e G6 continuam sem bloqueio.
+CA-08 e o cenário V-02 passam a dependentes do piloto, e os demais RF/RNF/CA seguem inconclusivos, exceto RF-08 e CA-01 (dependentes
+do piloto).

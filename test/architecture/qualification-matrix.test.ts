@@ -3,7 +3,9 @@
 // scenario V-01..V-17 and every RF/RNF/CA of the plan is present, statuses come from the allowed set, an approved obligation cites
 // existing evidence and the real levels the plan requires (a historical real run counts only when its applicability to the
 // candidate is recorded), the aggregates never turn a pilot dependency or an inconclusive obligation into an approval, and every
-// open obligation has a gate and a pointer. It does not run anything real and does not judge the evidence itself.
+// open obligation has a gate and a pointer. Operator decisions (D-01..D-08, 2026-11-16) are recorded with their resolution: a level is
+// waived only by a `level-waived` decision naming the obligation (never P), and a pre-pilot obligation is a pilot dependency only when a
+// decision carried it to the pilot (ticket 35). It does not run anything real and does not judge the evidence itself.
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -17,7 +19,7 @@ const applicabilities = ['aplicavel', 'aplicavel-encadeada', 'inconclusiva'] as 
 interface Obligation {
   id: string; scenario: string; requirements: string[]; requiredLevels: string[]; observedLevels: string[]; status: string;
   expectation: string; observed: string; evidence: string[]; runs: string[]; commands: string[]; gate?: string; pointer?: string;
-  reexecution?: string[];
+  reexecution?: string[]; decision?: { id: string; waivedLevels?: string[] };
 }
 interface Matrix {
   schemaVersion: number;
@@ -28,8 +30,11 @@ interface Matrix {
   obligations: Obligation[];
   gates: { id: string; status: string; blockers: string[] }[];
   reexecutionGroups: { id: string; covers: string[]; authorizationRequired: boolean }[];
-  operatorDecisions: { id: string; obligations: string[]; dependency: string }[];
+  operatorDecisions: { id: string; obligations: string[]; dependency: string; decidedAt?: string; decidedBy?: string; decision?: string; resolution?: string }[];
+  counts: Record<string, number>;
 }
+const resolutions = ['carried-to-pilot', 'out-of-scope-unless-pilot-needs', 'scope-required', 'level-waived', 'proof-accepted', 'limit-accepted', 'implemented'] as const;
+const pilotResolutions = new Set<string>(['carried-to-pilot', 'out-of-scope-unless-pilot-needs']);
 
 interface Plan { scenarios: Map<string, string[]>; requirements: string[]; requirementScenarios: Map<string, string[]> }
 
@@ -84,6 +89,7 @@ export function problems(matrix: Matrix, plan: Plan, exists: (path: string) => b
   for (const id of requirementIds) if (!plan.requirements.includes(id)) add(`requirement ${id} not in the plan`);
   const groups = new Set(matrix.reexecutionGroups.map(group => group.id));
   const obligationIds = new Set<string>();
+  const decisions = new Map(matrix.operatorDecisions.map(decision => [decision.id, decision]));
   for (const obligation of matrix.obligations) {
     const name = `obligation ${obligation.id}`;
     if (obligationIds.has(obligation.id)) add(`${name} duplicated`);
@@ -106,7 +112,16 @@ export function problems(matrix: Matrix, plan: Plan, exists: (path: string) => b
     for (const id of obligation.reexecution ?? []) if (!groups.has(id)) add(`${name}: unknown re-execution group ${id}`);
     const pilot = obligation.requiredLevels.includes('P');
     if (pilot && obligation.status !== 'dependente-do-piloto') add(`${name}: a P obligation is ${obligation.status} before the pilot`);
-    if (!pilot && obligation.status === 'dependente-do-piloto') add(`${name}: pre-pilot obligation marked as pilot dependency`);
+    const decided = obligation.decision ? decisions.get(obligation.decision.id) : undefined;
+    if (obligation.decision && (!decided || !decided.obligations.includes(obligation.id))) add(`${name}: decision ${obligation.decision.id} does not name it`);
+    const carried = decided !== undefined && pilotResolutions.has(decided.resolution ?? '') && /ticket 35/.test(decided.dependency);
+    if (!pilot && obligation.status === 'dependente-do-piloto' && !carried) add(`${name}: pre-pilot obligation marked as pilot dependency`);
+    for (const level of obligation.decision?.waivedLevels ?? []) {
+      if (decided?.resolution !== 'level-waived') add(`${name}: level ${level} waived without a level-waived decision`);
+      if (level === 'P') add(`${name}: the pilot level is never waived`);
+      if (obligation.requiredLevels.includes(level)) add(`${name}: level ${level} both waived and required`);
+      if (!(plan.scenarios.get(obligation.scenario) ?? []).includes(level)) add(`${name}: waived level ${level} is not a level of ${obligation.scenario}`);
+    }
     if (obligation.status === 'aprovada') {
       if (obligation.evidence.length === 0) add(`${name}: approved without evidence`);
       for (const level of obligation.requiredLevels) if (!obligation.observedLevels.includes(level)) add(`${name}: approved without level ${level}`);
@@ -143,6 +158,15 @@ export function problems(matrix: Matrix, plan: Plan, exists: (path: string) => b
   for (const decision of matrix.operatorDecisions) {
     if (decision.dependency.trim() === '') add(`decision ${decision.id}: no explicit dependency`);
     for (const id of decision.obligations) if (!obligationIds.has(id)) add(`decision ${decision.id}: unknown obligation ${id}`);
+    // A recorded decision names its date, author, text and resolution, and every obligation it names points back to it.
+    if (decision.resolution === undefined) continue;
+    if (!(resolutions as readonly string[]).includes(decision.resolution)) add(`decision ${decision.id}: resolution ${decision.resolution}`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(decision.decidedAt ?? '') || !decision.decidedBy || !decision.decision?.trim()) add(`decision ${decision.id}: incomplete record`);
+    for (const id of decision.obligations) if (matrix.obligations.find(obligation => obligation.id === id)?.decision?.id !== decision.id) add(`decision ${decision.id}: ${id} does not cite it`);
+  }
+  const counted = Object.fromEntries(statuses.map(status => [status, matrix.obligations.filter(obligation => obligation.status === status).length]));
+  if (JSON.stringify(counted) !== JSON.stringify(Object.fromEntries(statuses.map(status => [status, matrix.counts[status] ?? 0])))) {
+    add(`counts ${JSON.stringify(matrix.counts)} differ from the obligations ${JSON.stringify(counted)}`);
   }
   return found;
 }
@@ -183,6 +207,12 @@ test('the checker detects the dishonest shapes it exists for', () => {
     ['open without pointer', copy => { const o = copy.obligations.find(x => x.status === 'inconclusiva')!; delete o.pointer; }, /without gate and pointer/],
     ['untraced requirement', copy => { copy.obligations.find(o => o.id === 'V-01.a')!.requirements.push('CA-08'); }, /does not trace CA-08 to V-01/],
     ['re-execution without authorization', copy => { copy.reexecutionGroups[0]!.authorizationRequired = false; }, /without its own authorization/],
+    ['pilot dependency without a decision', copy => { delete copy.obligations.find(o => o.id === 'V-06.e')!.decision; }, /V-06.e: pre-pilot obligation marked as pilot dependency/],
+    ['carried without naming the pilot', copy => { copy.operatorDecisions.find(d => d.id === 'D-01')!.dependency = 'CA-08'; }, /V-06.e: pre-pilot obligation marked as pilot dependency/],
+    ['waiver without a level-waived decision', copy => { copy.obligations.find(o => o.id === 'V-07.e')!.decision!.waivedLevels = ['A']; }, /waived without a level-waived decision/],
+    ['pilot level waived', copy => { const o = copy.obligations.find(x => x.id === 'V-15.e')!; o.decision!.waivedLevels = ['I', 'P']; }, /the pilot level is never waived/],
+    ['decision not cited', copy => { delete copy.obligations.find(o => o.id === 'V-14.g')!.decision; }, /decision D-07: V-14.g does not cite it/],
+    ['counts drift', copy => { copy.counts['aprovada'] = 66; }, /counts .* differ from the obligations/],
   ];
   for (const [name, mutate, expected] of cases) {
     const copy = structuredClone(base);
@@ -194,6 +224,17 @@ test('the checker detects the dishonest shapes it exists for', () => {
 
 test('docs/evidence/34-qualification-matrix.json is consistent with the plan and the checkout', () => {
   assert.deepEqual(problems(matrix, plan, path => existsSync(join(root, path))), []);
+});
+
+test('the operator decisions D-01..D-08 of 2026-11-16 are all recorded with a resolution', () => {
+  assert.deepEqual(matrix.operatorDecisions.map(decision => [decision.id, decision.decidedAt, decision.resolution]), [
+    ['D-01', '2026-11-16', 'carried-to-pilot'], ['D-02', '2026-11-16', 'scope-required'], ['D-03', '2026-11-16', 'level-waived'],
+    ['D-04', '2026-11-16', 'out-of-scope-unless-pilot-needs'], ['D-05', '2026-11-16', 'proof-accepted'], ['D-06', '2026-11-16', 'limit-accepted'],
+    ['D-07', '2026-11-16', 'implemented'], ['D-08', '2026-11-16', 'level-waived']]);
+  // D-02 keeps cross-repository dependencies as a required pre-pilot proof: it never reads as approved before R-GH-DEP.
+  const crossRepository = matrix.obligations.find(obligation => obligation.id === 'V-05.c')!;
+  assert.equal(crossRepository.status, 'inconclusiva');
+  assert.ok(crossRepository.reexecution?.includes('R-GH-DEP') && matrix.gates.some(gate => gate.blockers.includes('V-05.c')));
 });
 
 test('the report names the candidate commit and every open obligation of the matrix', () => {

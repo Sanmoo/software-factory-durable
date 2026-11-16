@@ -20,7 +20,7 @@
   "A": "agentes reais",
   "P": "piloto real"
  },
- "applicabilityPolicy": "aplicavel: executada no candidato. aplicavel-encadeada: anterior ao candidato; mudancas posteriores na mesma fronteira tiveram prova real propria em ensaio posterior (citado) e a suite local passa no candidato; combinacoes nunca executadas juntas ficam como obrigacao inconclusiva propria (V-06.h). inconclusiva: mudanca posterior sem prova real.",
+ "applicabilityPolicy": "aplicavel: executada no candidato. aplicavel-encadeada: anterior ao candidato; mudancas posteriores na mesma fronteira tiveram prova real propria em ensaio posterior (citado) e a suite local passa no candidato; combinacoes nunca executadas juntas ficam como obrigacao inconclusiva propria (V-06.h). inconclusiva: mudanca posterior sem prova real. Excecao registrada: ci-d07 conta como aplicavel para V-14.g porque roda no commit da mudanca decidida pelo operador (D-07, 5a026e7), descendente do candidato; o piloto exige uma composicao que a contenha.",
  "candidate": {
   "integrationBranch": "integration/software-factory-mvp",
   "commit": "b30e2bddea160e0f577ac08a943fb91a08438132",
@@ -94,10 +94,10 @@
   "realRunOnCandidate": false
  },
  "counts": {
-  "aprovada": 66,
+  "aprovada": 71,
   "reprovada": 0,
-  "inconclusiva": 36,
-  "dependente-do-piloto": 10
+  "inconclusiva": 29,
+  "dependente-do-piloto": 12
  },
  "realRuns": [
   {
@@ -677,7 +677,7 @@
     "docs/evidence/31-real-forget-v2-verdict-2026-11-15.json"
    ],
    "applicability": "aplicavel-encadeada",
-   "reason": "base 7cf1adc; forget inalterado depois"
+   "reason": "base 7cf1adc; forget inalterado depois; D-07 (5a026e7, posterior ao candidato) acrescenta o saneamento do storage apos forget, provado em ci-d07"
   },
   {
    "id": "r32-v2",
@@ -729,6 +729,23 @@
    ],
    "applicability": "aplicavel-encadeada",
    "reason": "bloqueio real observado depois em 18 v4 (MERGE_BLOCKED_UPDATE_RESTRICTED)"
+  },
+  {
+   "id": "ci-d07",
+   "ticket": "31",
+   "date": "2026-11-16",
+   "commit": "5a026e7",
+   "levels": [
+    "S",
+    "I"
+   ],
+   "boundaries": "suite local completa (npm run test:ci) com forget-scrub: arquivo SQLite real (bytes de control.sqlite e -wal) apos forget",
+   "verdict": "verde; marcador ausente apos o saneamento (vermelho antes)",
+   "evidence": [
+    "docs/evidence/31-history-erasure-and-minimal-cycle-memory.md"
+   ],
+   "applicability": "aplicavel",
+   "reason": "executada no commit 5a026e7, descendente do candidato b30e2bd que so acrescenta o saneamento decidido em D-07; vale para a composicao do piloto, que precisa conte-lo"
   }
  ],
  "scenarios": [
@@ -753,7 +770,7 @@
     "I",
     "A"
    ],
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-02.a",
     "V-02.b",
@@ -1445,7 +1462,7 @@
   },
   {
    "id": "CA-08",
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-02.f",
     "V-02.h",
@@ -1861,7 +1878,7 @@
     "I"
    ],
    "observedLevels": [],
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "expectation": "API/Compose/build conforme os pilotos",
    "observed": "Compose e docker build nao exercitados; dependem de os repos do piloto os usarem",
    "evidence": [
@@ -1870,11 +1887,14 @@
    "runs": [],
    "commands": [],
    "tickets": [],
-   "gate": "G4-concorrencia-adversidades",
-   "pointer": "Decisao do operador D-04 na selecao do piloto (35): se algum repo selecionado usa Compose/build, executar R-DOCKER-EXT antes do piloto; senao, declarar fora do escopo suportado",
+   "gate": "G6-preparacao-piloto",
+   "pointer": "D-04: Compose e docker build nao testados e fora do escopo suportado (declarado na secao 7); a selecao do piloto (35) executa R-DOCKER-EXT so se um repo selecionado precisar",
    "reexecution": [
     "R-DOCKER-EXT"
-   ]
+   ],
+   "decision": {
+    "id": "D-04"
+   }
   },
   {
    "id": "V-02.i",
@@ -2445,8 +2465,8 @@
     "S"
    ],
    "status": "inconclusiva",
-   "expectation": "cenarios entre repos/owners/visibilidades e acesso reduzido que se pretenda declarar suportados",
-   "observed": "nao exercitavel com um repo; o 08 nao os declara suportados",
+   "expectation": "dependencias entre repositorios (cross-repo, D-02) suportadas: bloqueador em outro repo lido com a instalacao propria, repo nao configurado recusado, omissao detectada",
+   "observed": "implementacao suporta (issue-tracker readDependencyGraph segue arestas para outros repos; dependencyRepositories so-leitura; DEPENDENCY_REPOSITORY_NOT_CONFIGURED; DEPENDENCY_COUNT_MISMATCH): S/I-local (github-dependency-reads, configuration; I-local nao substitui a leitura real do GitHub); sem lacuna de implementacao; nenhuma prova real cross-repo (um so repo nos ensaios)",
    "evidence": [
     "docs/evidence/08-native-dependency-gating.md"
    ],
@@ -2454,10 +2474,13 @@
    "commands": [],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Decisao do operador D-02: declarar escopo suportado = mesmo repo (sem prova adicional) ou executar R-GH-DEP para cada combinacao declarada",
+   "pointer": "D-02: escopo cross-repo exigido; executar R-GH-DEP (segundo repo com bloqueador nativo real, configurado e nao configurado) antes do piloto",
    "reexecution": [
     "R-GH-DEP"
-   ]
+   ],
+   "decision": {
+    "id": "D-02"
+   }
   },
   {
    "id": "V-05.d",
@@ -2629,26 +2652,32 @@
    ],
    "requiredLevels": [
     "S",
-    "I",
-    "A"
+    "I"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I"
    ],
-   "status": "inconclusiva",
-   "expectation": "Builders de repos diferentes em paralelo",
-   "observed": "so local (decisao 2 do 24: lacuna)",
+   "status": "aprovada",
+   "expectation": "Builders de repos diferentes em paralelo (D-03: prova local basta, sem Builders reais de repos diferentes)",
+   "observed": "I-local: sandbox-checkout \"distinct repositories proceed in parallel\" (cache por repo, sem metadados gravaveis compartilhados) no ci-candidato; despacho por Slots independente do repo (S); A dispensado por D-03",
    "evidence": [
     "docs/evidence/24-three-builders-fifo-and-isolation.md"
    ],
-   "runs": [],
-   "commands": [],
+   "runs": [
+    "ci-candidato"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
    "tickets": [],
-   "gate": "G4-concorrencia-adversidades",
-   "pointer": "Decisao do operador D-03: aceitar a prova local para repos diferentes ou incluir um segundo repo em R-THREE",
-   "reexecution": [
-    "R-THREE"
-   ]
+   "reexecution": [],
+   "decision": {
+    "id": "D-03",
+    "waivedLevels": [
+     "A"
+    ]
+   }
   },
   {
    "id": "V-06.d",
@@ -2705,7 +2734,7 @@
     "I",
     "A"
    ],
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "expectation": "containers simultaneos das suites reais sem colisao, com as tres suites concluindo",
    "observed": "containers simultaneos sem colisao (v1: 3 VMs; v3: 2); AC5 nao alcancado: CreditAccountUseCaseConcurrencyIT e JdbcOutboxEventAdapterIT falharam no guest; causa NAO confirmada; ticket 24 fechado por decisao do operador como limite de ambiente/piloto",
    "evidence": [
@@ -2720,11 +2749,12 @@
     "receita test/entrypoints/three24-qualification.ts"
    ],
    "tickets": [],
-   "gate": "G4-concorrencia-adversidades",
-   "pointer": "Executar R-24DIAG (suite falha no host e numa VM isolada) para separar limite do perfil de bug do repo; ou decisao do operador D-01 de levar a lacuna ao piloto com dependencia explicita (nao vira aprovacao)",
-   "reexecution": [
-    "R-24DIAG"
-   ]
+   "pointer": "D-01: levada ao piloto (35) como dependencia explicita; R-24DIAG nao executado agora. CA-08 nao vira aprovacao antes do piloto",
+   "reexecution": [],
+   "decision": {
+    "id": "D-01"
+   },
+   "gate": "G6-preparacao-piloto"
   },
   {
    "id": "V-06.f",
@@ -2984,9 +3014,9 @@
     "I",
     "A"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "sessao perdida/alterada substituida sem recaptura silenciosa",
-   "observed": "substituicao provada por mudanca de politica, nao por perda real (SESSION_LOST/ALTERED so S); decisao 3 do 11 segue \"confirmar\"",
+   "observed": "substituicao provada no ensaio real por mudanca de perfil (SESSION_INCOMPATIBLE, q11); SESSION_LOST/ALTERED provados I-local e por mutacao; D-05: aceito como cobertura do AC7 (decisao 3 do 11 fechada)",
    "evidence": [
     "docs/evidence/11-context-continuation-and-authorized-scope.md"
    ],
@@ -2998,11 +3028,10 @@
     "receita test/entrypoints/context11-qualification.ts"
    ],
    "tickets": [],
-   "gate": "G4-concorrencia-adversidades",
-   "pointer": "Decisao do operador D-05 (aceitar a prova por mudanca de perfil) ou incluir perda real de sessao em R-CRASH-A",
-   "reexecution": [
-    "R-CRASH-A"
-   ]
+   "reexecution": [],
+   "decision": {
+    "id": "D-05"
+   }
   },
   {
    "id": "V-07.f",
@@ -4219,11 +4248,12 @@
     "I"
    ],
    "observedLevels": [
+    "S",
     "I"
    ],
-   "status": "inconclusiva",
-   "expectation": "disco do guest apos morte do proprietario",
-   "observed": "W3: fsck 4 (accepted false) no FS de A apos SIGKILL do dono, recuperacao MANUAL em inode novo; registrado como limite no 03, sem decisao explicita de produto",
+   "status": "aprovada",
+   "expectation": "disco do guest apos morte do proprietario: dano detectado pelo check forcado e reuso recusado; recuperacao manual (limite aceito, D-06)",
+   "observed": "W3 (I real): fsck 4 apos SIGKILL deliberado do dono, reuso bloqueado, recuperacao MANUAL; check forcado: sandbox-start-diagnostics (S, ci) e sandbox-filesystem (ext4 real, full) recusam PRESERVED_DISK_CHECK_REQUIRED sem mudar o disco; D-06: limite aceito do MVP, sem corrupcao silenciosa",
    "evidence": [
     "docs/evidence/03-w3-owner-loss-gated.md",
     "docs/evidence/03-w3-copy-repair.md"
@@ -4231,13 +4261,15 @@
    "runs": [
     "w3"
    ],
-   "commands": [],
+   "commands": [
+    "npm run test:ci",
+    "npm run test:full (sandbox-filesystem: ext4 real com fsck 4 -> PRESERVED_DISK_CHECK_REQUIRED)"
+   ],
    "tickets": [],
-   "gate": "G4-concorrencia-adversidades",
-   "pointer": "Decisao do operador D-06: aceitar como limite do MVP (hardware/storage) ou exigir deteccao/reparo e revalidar em R-HOSTFAULT",
-   "reexecution": [
-    "R-HOSTFAULT"
-   ]
+   "reexecution": [],
+   "decision": {
+    "id": "D-06"
+   }
   },
   {
    "id": "V-13.a",
@@ -4686,19 +4718,23 @@
     "S",
     "I"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "exclusao de historico remove os dados",
-   "observed": "paginas livres/WAL do SQLite nao sao saneadas (VACUUM proposto, nao implementado)",
+   "observed": "D-07 implementado em 5a026e7: VACUUM + wal_checkpoint(TRUNCATE) apos forget, estado de saneamento no memory (pending/scrubbed) re-tentado; I-local em arquivo SQLite real: marcador semeado ausente dos bytes de control.sqlite e control.sqlite-wal (teste vermelho antes da mudanca); revisoes de documento ja apagadas (q31-v2)",
    "evidence": [
     "docs/evidence/31-history-erasure-and-minimal-cycle-memory.md"
    ],
    "runs": [
-    "q31-v2"
+    "ci-d07"
    ],
-   "commands": [],
+   "commands": [
+    "npm run test:ci",
+    "test/control/forget-scrub.test.ts"
+   ],
    "tickets": [],
-   "gate": "G5-operacao-release",
-   "pointer": "Decisao do operador D-07: aceitar como limite documentado ou implementar VACUUM/checkpoint apos forget e revalidar localmente"
+   "decision": {
+    "id": "D-07"
+   }
   },
   {
    "id": "V-14.P",
@@ -4862,26 +4898,31 @@
     "RNF-04"
    ],
    "requiredLevels": [
-    "S",
-    "I"
+    "S"
    ],
    "observedLevels": [
     "S"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "rate limit/backoff real",
-   "observed": "rate limit nao induzido (07); backoff so S",
+   "observed": "rate limit nao induzido (07); backoff/waitSeconds provados em S; D-08: prova simulada aceita, nivel I dispensado",
    "evidence": [
     "docs/evidence/07-unique-ticket-admission.md"
    ],
-   "runs": [],
-   "commands": [],
+   "runs": [
+    "ci-candidato"
+   ],
+   "commands": [
+    "npm run test:ci"
+   ],
    "tickets": [],
-   "gate": "G4-concorrencia-adversidades",
-   "pointer": "Decisao do operador D-08: aceitar S para rate limit (induzir real e arriscado) ou autorizar consumo deliberado em R-GH-ADV",
-   "reexecution": [
-    "R-GH-ADV"
-   ]
+   "reexecution": [],
+   "decision": {
+    "id": "D-08",
+    "waivedLevels": [
+     "I"
+    ]
+   }
   },
   {
    "id": "V-15.f",
@@ -5185,18 +5226,14 @@
    "name": "Concorrencia e adversidades",
    "status": "inconclusiva",
    "blockers": [
-    "V-02.h",
     "V-03.c",
     "V-04.b",
     "V-04.d",
     "V-04.e",
     "V-05.c",
     "V-05.e",
-    "V-06.c",
-    "V-06.e",
     "V-06.g",
     "V-07.b",
-    "V-07.e",
     "V-07.f",
     "V-08.f",
     "V-08.g",
@@ -5210,11 +5247,9 @@
     "V-11.c",
     "V-12.c",
     "V-12.d",
-    "V-12.f",
     "V-13.e",
     "V-13.g",
-    "V-14.c",
-    "V-15.e"
+    "V-14.c"
    ]
   },
   {
@@ -5223,7 +5258,6 @@
    "status": "inconclusiva",
    "blockers": [
     "V-14.f",
-    "V-14.g",
     "V-16.b",
     "V-16.d"
    ]
@@ -5283,13 +5317,12 @@
     "V-10.f",
     "V-10.g",
     "V-11.c",
-    "V-13.g",
-    "V-15.e"
+    "V-13.g"
    ]
   },
   {
    "id": "R-GH-DEP",
-   "scope": "Dependencias entre repos/owners/visibilidades declaradas (se D-02 as declarar), bloqueador proprio esquecido lido do GitHub real, forget de cancelado em dados reais (apos limpar o ambiente q25)",
+   "scope": "Dependencias entre repositorios (exigidas por D-02): bloqueador nativo real em segundo repo configurado (dependencyRepositories) e em repo nao configurado; bloqueador proprio esquecido lido do GitHub real; forget de cancelado em dados reais (apos limpar o ambiente q25)",
    "needs": "segundo repo/owner, relacoes nativas de teste, limpeza do ambiente q25",
    "authorizationRequired": true,
    "covers": [
@@ -5310,23 +5343,21 @@
   },
   {
    "id": "R-CRASH-A",
-   "scope": "Cortes com agentes reais: ferramenta do Builder com modelo real, handoff de revisao (q28-partial-v3), antes de sources completo, cache em preparo, resposta durante boot, perda real de sessao",
+   "scope": "Cortes com agentes reais: ferramenta do Builder com modelo real, handoff de revisao (q28-partial-v3), antes de sources completo, cache em preparo, resposta durante boot (perda real de sessao nao exigida: D-05)",
    "needs": "VM, modelo, SIGKILL de processos da Factory no host",
    "authorizationRequired": true,
    "covers": [
     "V-07.b",
-    "V-07.e",
     "V-12.c",
     "V-12.d"
    ]
   },
   {
    "id": "R-HOSTFAULT",
-   "scope": "Disco cheio/abaixo do piso em raiz descartavel; integridade do disco do guest apos morte do proprietario (se D-06 exigir)",
-   "needs": "injecao de falha no host (espaco, SIGKILL do dono)",
+   "scope": "Disco cheio/abaixo do piso em raiz descartavel (a integridade do disco do guest apos morte do proprietario e limite aceito: D-06)",
+   "needs": "injecao de falha no host (espaco)",
    "authorizationRequired": true,
    "covers": [
-    "V-12.f",
     "V-14.c"
    ]
   },
@@ -5335,17 +5366,15 @@
    "scope": "Diagnostico das ITs que falharam no 24: rodar CreditAccountUseCaseConcurrencyIT e JdbcOutboxEventAdapterIT no host e numa VM isolada",
    "needs": "repo de teste, VM, Docker do guest; sem modelo",
    "authorizationRequired": true,
-   "covers": [
-    "V-06.e"
-   ]
+   "covers": [],
+   "decision": "D-01: nao executado agora; a lacuna segue ao piloto (35) como dependencia explicita"
   },
   {
    "id": "R-THREE",
-   "scope": "Nova passada de tres Builders com leitura de I/O e disco do guest (apos a implementacao de V-06.g) e, se D-03 exigir, um Builder num segundo repo",
+   "scope": "Nova passada de tres Builders com leitura de I/O e disco do guest (apos a implementacao de V-06.g); um segundo repo nao e exigido (D-03)",
    "needs": "tres VMs, modelo, issues novas",
    "authorizationRequired": true,
    "covers": [
-    "V-06.c",
     "V-06.g"
    ]
   },
@@ -5365,7 +5394,8 @@
    "authorizationRequired": true,
    "covers": [
     "V-02.h"
-   ]
+   ],
+   "decision": "D-04: so se um repo selecionado para o piloto usar Compose/docker build; senao fora do escopo suportado"
   }
  ],
  "operatorDecisions": [
@@ -5375,7 +5405,11 @@
     "V-06.e"
    ],
    "question": "Ticket 24 AC5 (tres suites verdes) fechado como limite de ambiente/piloto com causa nao confirmada: autorizar R-24DIAG antes do piloto ou levar a lacuna ao piloto com dependencia explicita (CA-08 continua sem aprovacao ate la)",
-   "dependency": "CA-08; gate G4; ticket 35"
+   "dependency": "CA-08; ticket 35 (dependencia explicita); R-24DIAG nao executado",
+   "decidedAt": "2026-11-16",
+   "decidedBy": "operador",
+   "resolution": "carried-to-pilot",
+   "decision": "Ticket 24 AC5 / CA-08 segue para o piloto (ticket 35) como dependencia explicita; R-24DIAG nao e executado agora. CA-08 continua sem aprovacao ate o piloto."
   },
   {
    "id": "D-02",
@@ -5383,7 +5417,11 @@
     "V-05.c"
    ],
    "question": "Escopo declarado de dependencias: so mesmo repo (sem prova adicional) ou cross-repo/owner/visibilidade (exige R-GH-DEP)",
-   "dependency": "RF-02/CA-02; spec 4; ticket 08"
+   "dependency": "RF-02/CA-02; spec 4; ticket 08; R-GH-DEP antes do piloto",
+   "decidedAt": "2026-11-16",
+   "decidedBy": "operador",
+   "resolution": "scope-required",
+   "decision": "Escopo de dependencias = entre repositorios: dependencias cross-repo precisam ser suportadas e R-GH-DEP continua grupo obrigatorio antes do piloto. A implementacao ja le bloqueadores de outros repositorios (dependencyRepositories so-leitura com instalacao propria, repos executaveis configurados, repo nao configurado recusado com DEPENDENCY_REPOSITORY_NOT_CONFIGURED, omissao detectada por DEPENDENCY_COUNT_MISMATCH); falta so a prova real."
   },
   {
    "id": "D-03",
@@ -5391,7 +5429,11 @@
     "V-06.c"
    ],
    "question": "CA-03 exige um Builder de outro repo em paralelo em I/A ou a prova local basta",
-   "dependency": "CA-03; ticket 24 decisao 2"
+   "dependency": "CA-03; ticket 24 decisao 2",
+   "decidedAt": "2026-11-16",
+   "decidedBy": "operador",
+   "resolution": "level-waived",
+   "decision": "CA-03 NAO exige Builders reais de repositorios diferentes em paralelo: a prova local (S + I-local) basta; o nivel A desta obrigacao e dispensado."
   },
   {
    "id": "D-04",
@@ -5399,7 +5441,11 @@
     "V-02.h"
    ],
    "question": "Compose/docker build entram no escopo suportado do perfil para o piloto?",
-   "dependency": "selecao do piloto (35)"
+   "dependency": "selecao do piloto (ticket 35); R-DOCKER-EXT condicional",
+   "decidedAt": "2026-11-16",
+   "decidedBy": "operador",
+   "resolution": "out-of-scope-unless-pilot-needs",
+   "decision": "Compose e docker build ficam nao testados e fora do escopo suportado, declarados como tal. R-DOCKER-EXT so e necessario se um repo do piloto precisar."
   },
   {
    "id": "D-05",
@@ -5407,7 +5453,11 @@
     "V-07.e"
    ],
    "question": "Ticket 11 decisao 3 (\"confirmar\"): substituicao provada por mudanca de perfil basta, ou exigir perda real de sessao",
-   "dependency": "ticket 11"
+   "dependency": "ticket 11 (decisao 3 fechada)",
+   "decidedAt": "2026-11-16",
+   "decidedBy": "operador",
+   "resolution": "proof-accepted",
+   "decision": "Ticket 11 decisao 3 aceita: a substituicao provada por mudanca de perfil (ensaio real) mais a prova local de SESSION_LOST/SESSION_ALTERED bastam para o AC7."
   },
   {
    "id": "D-06",
@@ -5415,7 +5465,11 @@
     "V-12.f"
    ],
    "question": "Disco do guest com erros de fsck apos morte do proprietario (W3): limite aceito do MVP ou requisito de deteccao/reparo",
-   "dependency": "ticket 03; RNF-01"
+   "dependency": "ticket 03; RNF-01; R-HOSTFAULT so para disco cheio (V-14.c)",
+   "decidedAt": "2026-11-16",
+   "decidedBy": "operador",
+   "resolution": "limit-accepted",
+   "decision": "Os erros de fsck do disco do guest no W3 apos SIGKILL deliberado do proprietario (injecao de falha autorizada, nao operacao organica) sao limite ACEITO do MVP: o check forcado da Factory bloqueia o reuso (PRESERVED_DISK_CHECK_REQUIRED), entao nao ha corrupcao silenciosa; a recuperacao e manual. R-HOSTFAULT so e necessario para disco cheio."
   },
   {
    "id": "D-07",
@@ -5423,7 +5477,11 @@
     "V-14.g"
    ],
    "question": "Paginas livres/WAL do SQLite apos forget: limite documentado ou implementar VACUUM",
-   "dependency": "ticket 31 decisao 4; RF-14"
+   "dependency": "ticket 31 decisao 4 (fechada); RF-14; o piloto precisa de uma composicao que contenha 5a026e7",
+   "decidedAt": "2026-11-16",
+   "decidedBy": "operador",
+   "resolution": "implemented",
+   "decision": "Implementado em 5a026e7 (implement/software-factory-mvp-d07): apos cada forget o owner roda VACUUM + wal_checkpoint(TRUNCATE) no controle SQLite, sob o lock de controle e na fila serial da sua conexao; estado pending/scrubbed no memory, re-tentado apos falha/crash. Prova I-local em arquivo SQLite real: marcador ausente dos bytes de control.sqlite e -wal (vermelho antes)."
   },
   {
    "id": "D-08",
@@ -5431,8 +5489,13 @@
     "V-15.e"
    ],
    "question": "Rate limit real: aceitar prova S ou autorizar consumo deliberado",
-   "dependency": "RNF-04; ticket 07"
+   "dependency": "RNF-04; ticket 07",
+   "decidedAt": "2026-11-16",
+   "decidedBy": "operador",
+   "resolution": "level-waived",
+   "decision": "A prova simulada (S) de rate limit/backoff e aceita; nao se induz rate limit real. O nivel I desta obrigacao e dispensado."
   }
  ],
- "result": "Nao libera o piloto nem aceite do MVP. Libera no maximo a preparacao da solicitacao de autorizacao do piloto (35), condicionada as decisoes D-01..D-08 e as reexecucoes que o operador escolher autorizar."
+ "result": "Nao libera o piloto nem aceite do MVP. Libera no maximo a preparacao da solicitacao de autorizacao do piloto (35). Decisoes D-01..D-08 tomadas pelo operador em 2026-11-16; seguem as reexecucoes que o operador autorizar (G3-G5) e as dependencias levadas ao piloto (V-02.h, V-06.e).",
+ "decisionsRecordedAt": "2026-11-16"
 }
