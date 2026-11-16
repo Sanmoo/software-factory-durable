@@ -4,8 +4,10 @@
 // credential. The integrity of a guest disk after a deliberate owner death is an ACCEPTED limit (D-06) and is out of scope.
 //
 // Confinement (never the real home or root filesystem):
-//   image   the recipe creates ONE preallocated (fallocate, not sparse) ext4 image file of `imageBytes` in its own namespace: its blocks are
-//           taken from the home filesystem ONCE, up front, so filling the disposable filesystem can never grow home usage.
+//   image   the recipe creates ONE preallocated ext4 image file of `imageBytes` in its own namespace: NOCOW (`chattr +C` on the EMPTY file,
+//           so btrfs writes it in place, uncompressed), then `fallocate`, then `mkfs.ext4 -E nodiscard` (mkfs would otherwise punch the
+//           allocation away again). Its blocks are taken from the home filesystem ONCE, up front, so filling the disposable filesystem can
+//           never grow home usage. Proven, not assumed: allocated bytes >= size and (btrfs home) the C attribute, re-checked in every phase.
 //   mount   an OPERATOR step (rootless udisksctl, or sudo as the alternative) mounts that image; the recipe never mounts/unmounts.
 //   guard   every later phase re-verifies, before any write, that the Factory root and the filler directory are on a mount whose source is a
 //           loop device backed by EXACTLY that image, of ext4 type, at most `maxDisposableBytes`, on a device different from $HOME's and '/'.
@@ -15,8 +17,9 @@
 
 const user = 'sanmoo';
 const root = `/home/${user}/software-factory-test/y5`;
-const observations = `${root}/q34-hostfault-v1`;
-const revision = 'q34-hostfault-v1';
+const observations = `${root}/q34-hostfault-v2`;
+// v1 held at `image` (real run, btrfs /home): mkfs.ext4 discarded the fallocated image (72 MB of 6 GiB still allocated). v2: NOCOW + nodiscard.
+const revision = 'q34-hostfault-v2';
 export const phases = ['image', 'preflight', 'floor', 'full', 'native', 'release', 'inspect'] as const;
 export type Phase = typeof phases[number];
 const gib = 1024 ** 3, mib = 1024 ** 2;
@@ -35,13 +38,25 @@ const preparationBytes = (2 * configuration.diskGiB + configuration.minFreeSpace
 const guestAssets = { directory: `/home/${user}/software-factory-test/assets34/assets`, manifestSha256: '8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807' } as const;
 const works = { floor: 'q34hf-floor', full: 'q34hf-full', native: 'q34hf-native', fresh: 'q34hf-fresh' } as const;
 const ext4Magic = '0xef53';
+export const btrfsMagic = '0x9123683e';
+
+/** Pure: the image creation commands, in order (the empty file is created by the recipe itself with O_EXCL). */
+export function imageCommands(path: string, uid: number | undefined, gid: number | undefined): string[][] {
+  return [['/usr/bin/chattr', '+C', path], ['/usr/bin/fallocate', '-l', String(imageBytes), path],
+    ['/usr/bin/mkfs.ext4', '-q', '-F', '-m', '0', '-L', label, '-E', `nodiscard,root_owner=${uid}:${gid}`, path]];
+}
+/** Pure: the NOCOW flag from `lsattr <file>` output (null when unreadable). */
+export function nocowAttribute(output: string): boolean | null {
+  const flags = output.trim().split(/\s+/)[0];
+  return flags && /^[-a-zA-Z]+$/.test(flags) ? flags.includes('C') : null;
+}
 
 export function plan() {
-  return { revision, root, observations, phases, image: { path: image, bytes: imageBytes, label, filesystem: 'ext4 -m 0 (no reserved blocks), root owned by the operator account', preallocated: 'fallocate (never sparse)' },
+  return { revision, root, observations, phases, image: { path: image, bytes: imageBytes, label, filesystem: 'ext4 -m 0 (no reserved blocks), root owned by the operator account', preallocated: 'chattr +C (empty file, NOCOW), fallocate -l (never sparse), mkfs.ext4 -E nodiscard; verified every phase: allocated >= size, NOCOW on a btrfs home' },
     mountCandidates, maxDisposableBytes, configuration, guestAssets, floorBytes, preparationBytes, works,
     requires: ['explicit operator authorization for THIS run (host fault injection: disk space), one-shot; a consumed namespace is never reused',
       `home filesystem with at least ${(imageBytes + homeReserveBytes) / gib} GiB free before image`, 'the operator mounts the image (step below) between image and preflight',
-      'nothing else of the Factory runs on the disposable filesystem', 'no VM, GitHub, model or credential is used'],
+      'nothing else of the Factory runs on the disposable filesystem', 'no btrfs snapshot of /home taken during the run and no fstrim of the loop mount (either would break the NOCOW/preallocation proof; the next phase then holds IMAGE_NOT_PREALLOCATED)', 'no VM, GitHub, model or credential is used'],
     operator: {
       afterImage: {
         rootless: [`udisksctl loop-setup --no-user-interaction -f ${image}   # prints /dev/loopN`,
@@ -94,7 +109,9 @@ export function parseMountinfo(text: string): MountEntry[] {
 
 export type MountFacts = { candidate: string; entry: MountEntry | undefined; backingFile: string | null; imagePath: string;
   statfs: { type: string; totalBytes: number; availableBytes: number } | null; mountDev: number | null; homeDev: number; rootDev: number;
-  owner: { uid: number; mode: number } | null; uid: number; entries: string[]; imageAllocatedBytes: number };
+  owner: { uid: number; mode: number } | null; uid: number; entries: string[]; imageAllocatedBytes: number;
+  /** statfs type of the filesystem holding the image (the home), and the image's NOCOW flag (lsattr). */
+  homeFs: string | null; imageNocow: boolean | null };
 /** Pure: the disposable-filesystem guard. Every problem is named; an empty list is the only way to write. */
 export function confinementProblems(facts: MountFacts, { requireEmpty }: { requireEmpty: boolean }): string[] {
   const problems: string[] = [];
@@ -110,6 +127,8 @@ export function confinementProblems(facts: MountFacts, { requireEmpty }: { requi
   if (facts.mountDev === null || facts.mountDev === facts.homeDev || facts.mountDev === facts.rootDev) problems.push('MOUNT_DEVICE_NOT_DISTINCT');
   if (!facts.owner || facts.owner.uid !== facts.uid) problems.push('MOUNT_ROOT_NOT_OWNED_BY_OPERATOR');
   if (facts.imageAllocatedBytes < imageBytes) problems.push('IMAGE_NOT_PREALLOCATED');
+  // btrfs is copy-on-write: without NOCOW a write into the image may allocate NEW home blocks despite the preallocation.
+  if (facts.homeFs === btrfsMagic && facts.imageNocow !== true) problems.push('IMAGE_NOT_NOCOW_ON_BTRFS');
   if (requireEmpty && facts.entries.some(name => name !== 'lost+found')) problems.push('MOUNT_NOT_EMPTY');
   return problems;
 }
@@ -183,6 +202,15 @@ async function run(command: string, args: string[]) {
     (error, stdout) => resolve({ code: error ? (typeof error.code === 'number' ? error.code : 1) : 0, stdout })));
 }
 
+/** Read-only facts of the image file: allocated bytes, the home filesystem type and the NOCOW flag. */
+async function imageFacts() {
+  const fs = await import('node:fs/promises');
+  const info = await fs.stat(image).catch(() => null);
+  const homeFs = await fs.statfs(observations, { bigint: true }).then(value => `0x${value.type.toString(16)}`, () => null);
+  const listed = info ? await run('/usr/bin/lsattr', [image]) : null;
+  return { imageAllocatedBytes: info ? info.blocks * 512 : 0, homeFs, imageNocow: listed?.code === 0 ? nocowAttribute(listed.stdout) : null };
+}
+
 /** Live facts of one mount candidate (read-only). */
 async function mountFacts(candidate: string): Promise<MountFacts> {
   const fs = await import('node:fs/promises');
@@ -195,7 +223,7 @@ async function mountFacts(candidate: string): Promise<MountFacts> {
   const imageInfo = await fs.stat(image).catch(() => null);
   return { candidate: real, entry, backingFile, imagePath: await fs.realpath(image).catch(() => image), statfs, mountDev: info?.dev ?? null,
     homeDev: (await fs.stat(`/home/${user}`)).dev, rootDev: (await fs.stat('/')).dev, owner: info ? { uid: info.uid, mode: info.mode & 0o777 } : null, uid: process.getuid?.() ?? -1,
-    entries: await fs.readdir(real).catch(() => []), imageAllocatedBytes: imageInfo ? imageInfo.blocks * 512 : 0 };
+    entries: await fs.readdir(real).catch(() => []), ...await imageFacts() };
 }
 
 /** The verified disposable mount recorded by preflight, re-verified now (never writes without it). */
@@ -301,12 +329,16 @@ export async function runPhase(phase: Phase) {
   try {
     if (phase === 'image') {
       const file = await fs.open(image, 'wx', 0o600); await file.close();
-      const allocated = await run('/usr/bin/fallocate', ['-l', String(imageBytes), image]);
-      const { getuid, getgid } = process;
-      const formatted = allocated.code === 0 ? await run('/usr/bin/mkfs.ext4', ['-q', '-F', '-m', '0', '-L', label, '-E', `root_owner=${getuid?.()}:${getgid?.()}`, image]) : null;
-      const info = await fs.stat(image);
-      if (allocated.code !== 0 || formatted?.code !== 0 || info.blocks * 512 < imageBytes) { await save('image-held', { allocated: allocated.code, formatted: formatted?.code ?? null, allocatedBytes: info.blocks * 512 }); throw new Error('IMAGE_NOT_CREATED'); }
-      await save('image-result', { status: 'success', image, bytes: imageBytes, allocatedBytes: info.blocks * 512, homeAvailableAfter: await available(`/home/${user}`),
+      const codes: number[] = [];
+      for (const [command, ...args] of imageCommands(image, process.getuid?.(), process.getgid?.())) {
+        const result = await run(command!, args);
+        codes.push(result.code);
+        if (result.code !== 0) break; // never continue past a failed step
+      }
+      const facts = await imageFacts();
+      const problems = [...(facts.imageAllocatedBytes < imageBytes ? ['IMAGE_NOT_PREALLOCATED'] : []), ...(facts.homeFs === btrfsMagic && facts.imageNocow !== true ? ['IMAGE_NOT_NOCOW_ON_BTRFS'] : [])];
+      if (codes.length !== 3 || codes.some(code => code !== 0) || problems.length) { await save('image-held', { codes, ...facts, problems }); throw new Error('IMAGE_NOT_CREATED'); }
+      await save('image-result', { status: 'success', image, bytes: imageBytes, ...facts, homeAvailableAfter: await available(`/home/${user}`),
         operatorNext: plan().operator.afterImage });
       return;
     }

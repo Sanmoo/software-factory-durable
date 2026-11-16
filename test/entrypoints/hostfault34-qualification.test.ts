@@ -18,10 +18,10 @@ test('R-HOSTFAULT recipe: import and --plan are inert; own namespace; the dispos
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q34-hostfault-v1');
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q34-hostfault-v2');
   assert.deepEqual(plan.phases, ['image', 'preflight', 'floor', 'full', 'native', 'release', 'inspect']);
-  assert.equal(plan.image.path, '/home/sanmoo/software-factory-test/y5/q34-hostfault-v1/disk.img');
-  assert.match(plan.image.preallocated, /fallocate \(never sparse\)/);
+  assert.equal(plan.image.path, '/home/sanmoo/software-factory-test/y5/q34-hostfault-v2/disk.img');
+  assert.match(plan.image.preallocated, /chattr \+C .*fallocate .*mkfs\.ext4 -E nodiscard/);
   assert.ok(plan.maxDisposableBytes <= 8 * 1024 ** 3);
   assert.ok(plan.operator.afterImage.rootless.some((step: string) => step.startsWith('udisksctl loop-setup')), 'a rootless mount is proposed');
   assert.ok(plan.operator.afterImage.sudo.some((step: string) => step.startsWith('sudo mount -o loop,nosuid,nodev,noexec')), 'the sudo alternative is explicit');
