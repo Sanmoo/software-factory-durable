@@ -8,6 +8,7 @@ import type { Control, ControlStatus, ListView } from '../../src/control/types.j
 import type { Invocation } from '../../src/workers/index.js';
 import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
 import { recoveryDoubles, updateHost, type RecoveryScript } from './recovery-doubles.js';
+import { untilHolds } from '../runner/budget.js';
 
 // Flow level (Q11), ticket 24: real Control + Pi Durable/SQLite + Records + the Workers receipt facet; doubled Sandbox host (file-backed boots),
 // Builder, credentials and GitHub. Proves the Control side of three simultaneous Builders: every free Slot is filled in one dispatch pass, no
@@ -38,15 +39,12 @@ async function harness(t: { after(fn: () => Promise<void>): void }, options: { i
   const work = async (number: number) => (await list()).works.find(item => item.ticket.number === number)!;
   const status = async () => await current!.control.inspect({ kind: 'status' }) as ControlStatus;
   // Polls without advancing the polling clock: the dispatch pass under test is exactly the one of the cycle that just ran.
-  const until = async (predicate: () => Promise<boolean> | boolean, label: string, advance = false) => {
-    for (let i = 0; i < 1500; i++) {
-      if (await predicate()) return;
-      if (advance && current!.time.isSleeping()) current!.time.advance();
-      await new Promise(resolve => setTimeout(resolve, 5));
-    }
-    assert.fail(`${label} not reached: ${JSON.stringify((await list()).works.map(item => [item.ticket.number, item.execution?.state, item.execution?.held?.code ?? null,
-      item.execution?.slot.held, item.execution?.end?.outcome ?? null, item.impediments.map(impediment => impediment.code)]))}`);
-  };
+  const state = async () => JSON.stringify((await list()).works.map(item => [item.ticket.number, item.execution?.state, item.execution?.held?.code ?? null,
+    item.execution?.slot.held, item.execution?.end?.outcome ?? null, item.impediments.map(impediment => impediment.code)]));
+  let last = '';
+  // Polls without advancing the polling clock (the dispatch pass under test is the one of the cycle that just ran); bounded by the runner budget.
+  const until = (predicate: () => Promise<boolean> | boolean, label: string) =>
+    untilHolds(() => `${label} not reached: ${last}`, async () => { const ok = await predicate(); if (!ok) last = await state(); return ok; }, 5);
   const admitted = async () => { await current!.time.sleeping(); };
   const cycle = async () => { current!.time.advance(); await current!.time.sleeping(); };
   return { dir, github, doubles, list, work, status, until, admitted, cycle, stop: async () => { current!.stop.abort(); return current!.running; } };
