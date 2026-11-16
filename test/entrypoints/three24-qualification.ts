@@ -27,9 +27,9 @@ const repositoryId = 1256893534;
  * "different repositories proceed in parallel" stays covered at host-checkout level; see the evidence).
  */
 export const tickets = [
-  { key: 'A', number: 0, title: 'Factory qualification q24: three simultaneous Builders (A)' },
-  { key: 'B', number: 0, title: 'Factory qualification q24: three simultaneous Builders (B)' },
-  { key: 'C', number: 0, title: 'Factory qualification q24: three simultaneous Builders (C)' },
+  { key: 'A', number: 39, title: 'Factory qualification q24: three simultaneous Builders (A)' },
+  { key: 'B', number: 40, title: 'Factory qualification q24: three simultaneous Builders (B)' },
+  { key: 'C', number: 41, title: 'Factory qualification q24: three simultaneous Builders (C)' },
 ] as const;
 type Key = typeof tickets[number]['key'];
 const pinned = (list: readonly { number: number }[] = tickets) => list.length === 3 && list.every(item => Number.isSafeInteger(item.number) && item.number > 0) &&
