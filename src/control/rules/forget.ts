@@ -89,7 +89,7 @@ export function forgetLosses(work: Work, facts: ForgetFacts): Pick<ForgetPlan, '
     memory.result === 'delivered' ? 'As a native blocker it stays an OWN Ticket satisfied by this delivered cycle (until a new cycle exists); never re-evaluated as external.'
       : 'As a native blocker it stays an OWN Ticket NOT satisfied by this cancelled cycle; never re-evaluated as external.',
   ];
-  const warnings = ['Not erased: GitHub (issue, comments, pull request, branch), copies outside the Records area (backups, exports, earlier copies of the storage, terminal output) and SQLite free pages until reused. An external copy can bring deleted data back.'];
+  const warnings = ['Not erased: GitHub (issue, comments, pull request, branch), copies outside the Records area (backups, exports, earlier copies of the storage, terminal output). Known limitation: the deleted controller records may remain in SQLite free pages/WAL until reused (no VACUUM or secure delete is run). An external copy can bring deleted data back.'];
   return { losses, keeps, warnings, records: tree ? { files: tree.files, bytes: tree.bytes, present: tree.present, leftover: tree.leftover } : null };
 }
 

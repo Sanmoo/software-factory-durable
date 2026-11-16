@@ -1,0 +1,296 @@
+{
+ "revision": "q31-forget-v1",
+ "overall": "met",
+ "checks": [
+  {
+   "id": "delivered-plan-accepted",
+   "expected": {
+    "outcome": "accepted",
+    "state": "planned",
+    "files": 284
+   },
+   "observed": {
+    "outcome": "accepted",
+    "state": "planned",
+    "files": 284
+   },
+   "met": true
+  },
+  {
+   "id": "delivered-records-present-before",
+   "expected": true,
+   "observed": true,
+   "met": true
+  },
+  {
+   "id": "delivered-forgotten",
+   "expected": [
+    "work-forgotten",
+    "work-forgotten"
+   ],
+   "observed": [
+    "work-forgotten",
+    "work-forgotten"
+   ],
+   "met": true
+  },
+  {
+   "id": "delivered-records-deleted",
+   "expected": {
+    "present": false,
+    "leftover": false,
+    "files": 0
+   },
+   "observed": {
+    "present": false,
+    "leftover": false,
+    "files": 0
+   },
+   "met": true
+  },
+  {
+   "id": "delivered-records-forget-once",
+   "expected": [
+    "99fe871b-b872-4522-912c-fefd9700edda"
+   ],
+   "observed": [
+    "99fe871b-b872-4522-912c-fefd9700edda"
+   ],
+   "met": true
+  },
+  {
+   "id": "delivered-memory",
+   "expected": {
+    "result": "delivered",
+    "mergeConfirmed": true,
+    "pullRequest": true,
+    "keys": [
+     "cycle",
+     "forgottenAt",
+     "label",
+     "mergeConfirmed",
+     "mergeConfirmedAt",
+     "planId",
+     "predecessor",
+     "pullRequest",
+     "repository",
+     "request_id",
+     "result",
+     "sequence",
+     "ticket",
+     "work_id"
+    ]
+   },
+   "observed": {
+    "result": "delivered",
+    "mergeConfirmed": true,
+    "pullRequest": true,
+    "keys": [
+     "cycle",
+     "forgottenAt",
+     "label",
+     "mergeConfirmed",
+     "mergeConfirmedAt",
+     "planId",
+     "predecessor",
+     "pullRequest",
+     "repository",
+     "request_id",
+     "result",
+     "sequence",
+     "ticket",
+     "work_id"
+    ]
+   },
+   "met": true
+  },
+  {
+   "id": "delivered-existing-after-forget",
+   "expected": "existing:99fe871b-b872-4522-912c-fefd9700edda",
+   "observed": "existing:99fe871b-b872-4522-912c-fefd9700edda",
+   "met": true
+  },
+  {
+   "id": "delivered-new-explicit",
+   "expected": {
+    "outcome": "accepted",
+    "cycle": 2,
+    "predecessor": "99fe871b-b872-4522-912c-fefd9700edda"
+   },
+   "observed": {
+    "outcome": "accepted",
+    "cycle": 2,
+    "predecessor": "99fe871b-b872-4522-912c-fefd9700edda"
+   },
+   "met": true
+  },
+  {
+   "id": "delivered-existing-after-restart",
+   "expected": "existing:0578d93e-18b5-49eb-b2a3-7d9731869f80",
+   "observed": "existing:0578d93e-18b5-49eb-b2a3-7d9731869f80",
+   "met": true
+  },
+  {
+   "id": "cancelled-refused-before-cleanup",
+   "expected": {
+    "outcome": "not-applied",
+    "resources": true
+   },
+   "observed": {
+    "outcome": "not-applied",
+    "resources": true
+   },
+   "met": true
+  },
+  {
+   "id": "cancelled-environment-cleanup",
+   "expected": "accepted",
+   "observed": "accepted",
+   "met": true
+  },
+  {
+   "id": "cancelled-plan-accepted",
+   "expected": "planned",
+   "observed": "planned",
+   "met": true
+  },
+  {
+   "id": "cancelled-forgotten",
+   "expected": [
+    "work-forgotten",
+    "work-forgotten"
+   ],
+   "observed": [
+    "work-forgotten",
+    "work-forgotten"
+   ],
+   "met": true
+  },
+  {
+   "id": "cancelled-records-deleted",
+   "expected": {
+    "present": false,
+    "leftover": false
+   },
+   "observed": {
+    "present": false,
+    "leftover": false
+   },
+   "met": true
+  },
+  {
+   "id": "cancelled-memory",
+   "expected": {
+    "result": "cancelled",
+    "mergeConfirmed": false,
+    "pullRequest": false,
+    "keys": [
+     "cycle",
+     "forgottenAt",
+     "label",
+     "mergeConfirmed",
+     "mergeConfirmedAt",
+     "planId",
+     "predecessor",
+     "pullRequest",
+     "repository",
+     "request_id",
+     "result",
+     "sequence",
+     "ticket",
+     "work_id"
+    ]
+   },
+   "observed": {
+    "result": "cancelled",
+    "mergeConfirmed": false,
+    "pullRequest": false,
+    "keys": [
+     "cycle",
+     "forgottenAt",
+     "label",
+     "mergeConfirmed",
+     "mergeConfirmedAt",
+     "planId",
+     "predecessor",
+     "pullRequest",
+     "repository",
+     "request_id",
+     "result",
+     "sequence",
+     "ticket",
+     "work_id"
+    ]
+   },
+   "met": true
+  },
+  {
+   "id": "cancelled-successor-current",
+   "expected": [
+    "existing:1299ce8d-99ee-4022-881c-7b93b1e330d2",
+    "existing:1299ce8d-99ee-4022-881c-7b93b1e330d2",
+    "open"
+   ],
+   "observed": [
+    "existing:1299ce8d-99ee-4022-881c-7b93b1e330d2",
+    "existing:1299ce8d-99ee-4022-881c-7b93b1e330d2",
+    "open"
+   ],
+   "met": true
+  },
+  {
+   "id": "list-and-status",
+   "expected": {
+    "delivered": true,
+    "cancelled": true,
+    "works": [
+     1,
+     1
+    ]
+   },
+   "observed": {
+    "delivered": true,
+    "cancelled": true,
+    "works": [
+     1,
+     1
+    ]
+   },
+   "met": true
+  },
+  {
+   "id": "status-note",
+   "expected": true,
+   "observed": true,
+   "met": true
+  },
+  {
+   "id": "clean-stops",
+   "expected": [
+    "clean",
+    "clean",
+    "clean",
+    "clean"
+   ],
+   "observed": [
+    "clean",
+    "clean",
+    "clean",
+    "clean"
+   ],
+   "met": true
+  },
+  {
+   "id": "sources-unchanged",
+   "expected": "9b9765a99dfb43a17a29c190155a50dd393afc74f8953e474d0b7dd507e17d42",
+   "observed": "9b9765a99dfb43a17a29c190155a50dd393afc74f8953e474d0b7dd507e17d42",
+   "met": true
+  },
+  {
+   "id": "no-remote-effect",
+   "expected": 0,
+   "observed": 0,
+   "met": true
+  }
+ ]
+}

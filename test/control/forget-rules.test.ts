@@ -81,7 +81,7 @@ test('AC6: the plan names what becomes unrecoverable, what stays and what forget
   assert.match(plan.losses[3]!, /stops counting in installation totals/);
   assert.match(plan.keeps[0]!, /Ticket acme\/project#3 \(issue 7003\), Work w-1, cycle 2 after w-0, result delivered, pull request #42/);
   assert.match(plan.keeps[1]!, /never admit it again.*factory new/);
-  assert.match(plan.warnings[0]!, /Not erased: GitHub/);
+  assert.match(plan.warnings[0]!, /Not erased: GitHub.*Known limitation: .*SQLite free pages\/WAL.*no VACUUM/);
   assert.deepEqual(plan.records, { files: 12, bytes: 900, present: true, leftover: false });
   assert.match(forgetLosses(work(), facts({ tree: tree({ present: false, files: 0 }) })).losses[0]!, /no Records area left/);
   assert.match(forgottenNextStep(minimalMemoryOf(work(), { at: 'T', request_id: 'r', planId: 'p' })), /not an expired or missing record.*factory new acme\/project#3/);

@@ -1,0 +1,113 @@
+{
+ "views": {
+  "delivered": {
+   "works": [
+    {
+     "work_id": "805cd92d-5535-4cea-b837-f70907f0db42",
+     "cycle": 1,
+     "predecessor": null,
+     "result": "open"
+    },
+    {
+     "work_id": "0578d93e-18b5-49eb-b2a3-7d9731869f80",
+     "cycle": 2,
+     "predecessor": "99fe871b-b872-4522-912c-fefd9700edda",
+     "result": "open"
+    }
+   ],
+   "forgotten": [
+    {
+     "work_id": "99fe871b-b872-4522-912c-fefd9700edda",
+     "ticket": {
+      "tracker": "github",
+      "repository": "Sanmoo/java-springboot-event-sourcing",
+      "repositoryId": 1256893534,
+      "issueId": 6391129588,
+      "nodeId": "I_kwDOSuqsXs8AAAABfPDl9A",
+      "number": 3,
+      "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3"
+     },
+     "repository": {
+      "repository": "Sanmoo/java-springboot-event-sourcing",
+      "repositoryId": 1256893534,
+      "base": "main"
+     },
+     "cycle": 1,
+     "predecessor": null,
+     "sequence": 1,
+     "result": "delivered",
+     "pullRequest": {
+      "number": 5,
+      "pullRequestId": 5321820867,
+      "nodeId": "PR_kwDOSuqsXs8AAAABPTSKww",
+      "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5"
+     },
+     "mergeConfirmed": true,
+     "mergeConfirmedAt": "2026-11-15T15:08:56.564Z",
+     "label": {
+      "id": 12918930265,
+      "name": "ready-for-agent"
+     },
+     "forgottenAt": "2026-11-16T00:19:21.628Z",
+     "request_id": "q31-forget-v1-d-a-confirm",
+     "planId": "df5f8609-5ca7-4cc7-b113-bfdab5dab02b"
+    }
+   ]
+  },
+  "cancelled": {
+   "works": [
+    {
+     "work_id": "1299ce8d-99ee-4022-881c-7b93b1e330d2",
+     "cycle": 2,
+     "predecessor": "e8801f16-09c1-4002-961b-a298515f1974",
+     "result": "open"
+    }
+   ],
+   "forgotten": [
+    {
+     "work_id": "e8801f16-09c1-4002-961b-a298515f1974",
+     "ticket": {
+      "tracker": "github",
+      "repository": "Sanmoo/java-springboot-event-sourcing",
+      "repositoryId": 1256893534,
+      "issueId": 6409482140,
+      "nodeId": "I_kwDOSuqsXs8AAAABfgjvnA",
+      "number": 18,
+      "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/18"
+     },
+     "repository": {
+      "repository": "Sanmoo/java-springboot-event-sourcing",
+      "repositoryId": 1256893534,
+      "base": "main"
+     },
+     "cycle": 1,
+     "predecessor": null,
+     "sequence": 1,
+     "result": "cancelled",
+     "pullRequest": null,
+     "mergeConfirmed": false,
+     "mergeConfirmedAt": null,
+     "label": {
+      "id": 12918930265,
+      "name": "ready-for-agent"
+     },
+     "forgottenAt": "2026-11-16T00:19:26.940Z",
+     "request_id": "q31-forget-v1-c-a-confirm",
+     "planId": "eb3e863b-dfc6-464f-89f7-fd3faab3b4af"
+    }
+   ]
+  }
+ },
+ "delivered": {
+  "present": false,
+  "leftover": false,
+  "files": 0,
+  "completeness": "complete"
+ },
+ "cancelled": {
+  "present": false,
+  "leftover": false,
+  "files": 0,
+  "completeness": "complete"
+ }
+}

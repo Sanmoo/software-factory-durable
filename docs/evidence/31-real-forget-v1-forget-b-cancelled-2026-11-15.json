@@ -1,0 +1,132 @@
+{
+ "before": "work-forgotten",
+ "candidate": {
+  "ticket": {
+   "tracker": "github",
+   "repository": "Sanmoo/java-springboot-event-sourcing",
+   "repositoryId": 1256893534,
+   "issueId": 6409482140,
+   "nodeId": "I_kwDOSuqsXs8AAAABfgjvnA",
+   "number": 18,
+   "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/18"
+  },
+  "observedAt": "2026-11-16T00:19:33.259Z",
+  "outcome": "existing",
+  "work_id": "1299ce8d-99ee-4022-881c-7b93b1e330d2"
+ },
+ "shown": {
+  "kind": "work-forgotten",
+  "work_id": "e8801f16-09c1-4002-961b-a298515f1974",
+  "memory": {
+   "work_id": "e8801f16-09c1-4002-961b-a298515f1974",
+   "ticket": {
+    "tracker": "github",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "issueId": 6409482140,
+    "nodeId": "I_kwDOSuqsXs8AAAABfgjvnA",
+    "number": 18,
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/18"
+   },
+   "repository": {
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "base": "main"
+   },
+   "cycle": 1,
+   "predecessor": null,
+   "sequence": 1,
+   "result": "cancelled",
+   "pullRequest": null,
+   "mergeConfirmed": false,
+   "mergeConfirmedAt": null,
+   "label": {
+    "id": 12918930265,
+    "name": "ready-for-agent"
+   },
+   "forgottenAt": "2026-11-16T00:19:26.940Z",
+   "request_id": "q31-forget-v1-c-a-confirm",
+   "planId": "eb3e863b-dfc6-464f-89f7-fd3faab3b4af"
+  },
+  "notRecoverable": [
+   "history",
+   "logs",
+   "sessions",
+   "reviews and opinions",
+   "decisions and gates",
+   "Questions and answers",
+   "request content",
+   "preserved evidence",
+   "budget/usage of this Work"
+  ],
+  "nextStep": "History deleted by `forget` at 2026-11-16T00:19:26.940Z (request q31-forget-v1-c-a-confirm). This is not an expired or missing record: only the minimal cycle memory remains, and nothing else of this Work can be shown or recovered. The Ticket stays known (never re-admitted automatically); `factory new Sanmoo/java-springboot-event-sourcing#18` starts another cycle when wanted."
+ },
+ "list": {
+  "works": [
+   {
+    "work_id": "1299ce8d-99ee-4022-881c-7b93b1e330d2",
+    "cycle": 2,
+    "predecessor": "e8801f16-09c1-4002-961b-a298515f1974",
+    "result": "open"
+   }
+  ],
+  "forgotten": [
+   {
+    "work_id": "e8801f16-09c1-4002-961b-a298515f1974",
+    "ticket": {
+     "tracker": "github",
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "repositoryId": 1256893534,
+     "issueId": 6409482140,
+     "nodeId": "I_kwDOSuqsXs8AAAABfgjvnA",
+     "number": 18,
+     "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/18"
+    },
+    "repository": {
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "repositoryId": 1256893534,
+     "base": "main"
+    },
+    "cycle": 1,
+    "predecessor": null,
+    "sequence": 1,
+    "result": "cancelled",
+    "pullRequest": null,
+    "mergeConfirmed": false,
+    "mergeConfirmedAt": null,
+    "label": {
+     "id": 12918930265,
+     "name": "ready-for-agent"
+    },
+    "forgottenAt": "2026-11-16T00:19:26.940Z",
+    "request_id": "q31-forget-v1-c-a-confirm",
+    "planId": "eb3e863b-dfc6-464f-89f7-fd3faab3b4af"
+   }
+  ]
+ },
+ "status": {
+  "forgotten": {
+   "works": 1,
+   "delivered": 0,
+   "cancelled": 1,
+   "note": "1 Work(s) forgotten: every other total and aggregate here covers only the Works still remembered, never the whole life of the installation."
+  },
+  "works": {
+   "total": 1,
+   "open": 1,
+   "cancelled": 0,
+   "closedUnmerged": 0
+  }
+ },
+ "outcome": {
+  "kind": "clean"
+ },
+ "calls": {
+  "listCandidates": 2,
+  "readDependencyGraph": 2,
+  "readTicket": 3
+ },
+ "recordsForget": [],
+ "environmentPort": [],
+ "deadlineReached": false
+}

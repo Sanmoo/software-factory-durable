@@ -61,7 +61,7 @@ warning, and `limitations` says so too.
 - M3: a lost intent is re-executed instead of settled `indeterminate` → 1 test red.
 - M4: pending resources not checked → 2 tests red.
 
-## Decisions taken here (for the supervisor)
+## Decisions taken here (supervisor: 1, 2 accepted; 3 recorded as a gap; 4 known limitation; 5 = ticket 29)
 
 1. **A cancelled cycle whose own PR is not observed closed is refused (`PULL_REQUEST_NOT_CLOSED`).** Spec §12.3 says a confirmed merge still
    delivers a cancelled cycle. Without its record, a later human merge would never be seen, and the memory would keep saying "cancelled".
@@ -79,7 +79,7 @@ warning, and `limitations` says so too.
    (answers, ignored answers, scope updates, readiness authorizations).
 6. **Usage aggregates (ticket 29) do not exist yet.** `status.forgotten` and its note state the rule for every current total.
 
-## Real-run recipe (LOCAL only; prepared, NOT run)
+## Real-run recipe (LOCAL only)
 
 `test/entrypoints/forget31-qualification.ts`, namespace `/home/sanmoo/software-factory-test/y5/q31-forget-v1`. Import and `--plan` are inert
 (`forget31-qualification.test.ts`). Phases are one-shot with exclusive intent tombstones and no retry:
@@ -104,9 +104,58 @@ gives `not-met`.
 Not covered by the recipe: own-dependency evaluation of the forgotten Ticket as a blocker. No pending Work in the copies is blocked by it, and
 the public Control has no other entry. It is proven at I level in `forget-flow`.
 
+### Run `q31-forget-v1` (run by the supervisor 2026-11-15): verdict **MET**, 21/21
+
+The sources were copies, both already format 2 (`current`), so no migration ran.
+
+| Case | Work | Private Records copy |
+| --- | --- | --- |
+| Delivered: q17-delivery-v4, #3 | `99fe871b` | 284 files, 155103 bytes |
+| Cancelled: q25-cancel-v1, #18 cycle 1 | `e8801f16` | 39 files, 24842 bytes |
+
+The cancelled Work's successor is cycle 2, `1299ce8d` (open).
+
+| Check | Expected | Observed |
+| --- | --- | --- |
+| delivered plan | accepted, planned, 284 files | same |
+| delivered forgotten (run A / restart B) | work-forgotten ×2 | same |
+| delivered Records copy deleted | present false, no tombstone, 0 files | same; Records `forget` called once |
+| delivered memory | delivered, merge confirmed, PR kept, allowed keys only | same |
+| delivered polling after forget | existing:`99fe871b` | same |
+| delivered explicit `new` (run B) | accepted, cycle 2, predecessor `99fe871b` | cycle 2 `0578d93e` |
+| delivered polling after restart | existing: the new current cycle | existing:`0578d93e` |
+| cancelled before its environment cleanup | not-applied, RESOURCES_PENDING | same |
+| cancelled environment cleanup (labelled recipe port: preserve + remove answered absent) | accepted | same |
+| cancelled plan → forgotten (A / B) | planned; work-forgotten ×2 | same |
+| cancelled Records copy deleted | present false, no tombstone | same |
+| cancelled memory | cancelled, no merge, no PR, allowed keys only | same |
+| cancelled successor | existing:`1299ce8d` (A and B), still open | same |
+| list/status | both in `forgotten`, absent from works; `status.forgotten.works` 1 each; note "covers only the Works still remembered" | same |
+| owner stops | clean ×4 | same |
+| sources unchanged | sha256 `9b9765a9…` | same |
+| remote/Sandbox/Workers/credential writes | 0 | 0 |
+
+Tracker reads were answered by refusing doubles (counted): `listCandidates`, `readTicket`, `readDependencyGraph`.
+
+Observations copied here and scanned for secrets (no token, key or credential value matched):
+- [verdict](31-real-forget-v1-verdict-2026-11-15.json)
+- [preflight](31-real-forget-v1-preflight-2026-11-15.json)
+- run A: [delivered](31-real-forget-v1-forget-a-delivered-2026-11-15.json), [cancelled](31-real-forget-v1-forget-a-cancelled-2026-11-15.json)
+- run B: [delivered](31-real-forget-v1-forget-b-delivered-2026-11-15.json), [cancelled](31-real-forget-v1-forget-b-cancelled-2026-11-15.json)
+- [inspect](31-real-forget-v1-inspect-2026-11-15.json)
+
+Level: real local installation data (P on the Records/SQLite/Control boundaries this ticket changes). GitHub stays local by design. There was
+no VM or model. The cancelled environment cleanup is a labelled stand-in (supervisor decision 2).
+
 ## Gaps
 
-- SQLite free pages/WAL may still hold deleted bytes until reused or checkpointed. The spec does not promise sanitation, and the plan warning
-  says so.
+- **Recorded gap (supervisor decision 3):** the forgotten Ticket's evaluation as a native blocker is proven only at flow level (`forget-flow`,
+  REAL dependency evaluation and own-cycle lookup over real storage). It is not in the real-data recipe, because nothing in the copies
+  depends on it.
+- **Known limitation (supervisor decision 4):** the deleted controller records may remain in SQLite free pages/WAL until reused. The plan
+  warning says so; there is no VACUUM or secure delete. Follow-up proposal, not implemented: an explicit, operator-run `VACUUM` (plus WAL
+  checkpoint) after forgets, under the canonical-storage lock with the controller stopped.
+- Usage aggregates are ticket 29's (supervisor decision 5); `status.forgotten.note` already says totals cover only remembered Works.
+
 - A request receipt with operator text is found only through the Work's own references, listed in decision 5.
 - Ticket 30's per-owner `status.retention` counters cover remembered Works only. The `forgotten` note says so.

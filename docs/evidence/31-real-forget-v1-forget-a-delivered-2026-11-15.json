@@ -1,0 +1,228 @@
+{
+ "before": "work",
+ "firstPlan": {
+  "kind": "durable",
+  "request_id": "q31-forget-v1-d-a-plan-1",
+  "operation": "forget-plan",
+  "work_id": "99fe871b-b872-4522-912c-fefd9700edda",
+  "outcome": "accepted",
+  "reason": null,
+  "plan": {
+   "planId": "df5f8609-5ca7-4cc7-b113-bfdab5dab02b",
+   "request_id": "q31-forget-v1-d-a-plan-1",
+   "work_id": "99fe871b-b872-4522-912c-fefd9700edda",
+   "createdAt": "2026-11-16T00:19:20.741Z",
+   "state": "planned",
+   "basis": "{\"result\":\"delivered\",\"cancellation\":null,\"delivery\":\"delivered\",\"running\":false,\"executions\":[[\"589ddac5-6dc2-4511-9cd2-9392fe055947\",\"ended\",\"confirmed\"],[\"0cd35c93-4ac9-436a-a4d6-9dbb648480dd\",\"ended\",\"confirmed\"]],\"questions\":[],\"cleanup\":[[\"environment:env-9724f855fd065bd79d40b9277c791cc4f82b775834d9d70ee14fe930544b0929\",\"removed\"],[\"checkout:env-9724f855fd065bd79d40b9277c791cc4f82b775834d9d70ee14fe930544b0929\",\"removed\"],[\"local-branch:env-9724f855fd065bd79d40b9277c791cc4f82b775834d9d70ee14fe930544b0929\",\"removed\"],[\"temporaries:env-9724f855fd065bd79d40b9277c791cc4f82b775834d9d70ee14fe930544b0929\",\"removed\"],[\"remote-branch:factory/3-99fe871b\",\"removed\"]],\"tree\":[\"complete\",true,false,284,155103]}",
+   "refusals": [],
+   "losses": [
+    "The Work's whole Records area (284 file(s), 155103 bytes): logs, start receipts, review opinions and their forwards, mutation intents/results, Question records, Host evidence, session copies and preserved evidence. None of it can be read, paged or recovered afterwards.",
+    "The Work record: history (45 event(s)), 2 Execution(s) with their summaries, reviews, gates, decisions, scope updates, budget counters, delivery/cleanup/retention records and references.",
+    "0 Question(s) with their texts and answers; the text or reason of this Work's answer/update-scope/authorize-readiness requests is erased from their receipts (a replay of those request ids is then refused, never re-applied).",
+    "This Work stops counting in installation totals and aggregates (status says how many Works are forgotten)."
+   ],
+   "keeps": [
+    "Minimal memory: Ticket Sanmoo/java-springboot-event-sourcing#3 (issue 6391129588), Work 99fe871b-b872-4522-912c-fefd9700edda, cycle 1, result delivered, pull request #5 with its merge confirmed at 2026-11-15T15:08:56.564Z.",
+    "The Ticket stays indexed: label, polling and restarts never admit it again; only an explicit `factory new <owner/repo#number>` starts another cycle, which becomes the evaluated one.",
+    "As a native blocker it stays an OWN Ticket satisfied by this delivered cycle (until a new cycle exists); never re-evaluated as external."
+   ],
+   "warnings": [
+    "Not erased: GitHub (issue, comments, pull request, branch), copies outside the Records area (backups, exports, earlier copies of the storage, terminal output) and SQLite free pages until reused. An external copy can bring deleted data back."
+   ],
+   "records": {
+    "files": 284,
+    "bytes": 155103,
+    "present": true,
+    "leftover": false
+   },
+   "confirmedBy": null,
+   "confirmedAt": null,
+   "effect": null,
+   "code": null,
+   "nextStep": "Review the losses, then `factory forget-confirm <work> df5f8609-5ca7-4cc7-b113-bfdab5dab02b`. Nothing was deleted; the plan is revalidated when confirmed and again just before the deletion."
+  }
+ },
+ "confirm": {
+  "kind": "durable",
+  "request_id": "q31-forget-v1-d-a-confirm",
+  "operation": "forget-confirm",
+  "work_id": "99fe871b-b872-4522-912c-fefd9700edda",
+  "outcome": "accepted",
+  "reason": null,
+  "plan": {
+   "planId": "df5f8609-5ca7-4cc7-b113-bfdab5dab02b",
+   "request_id": "q31-forget-v1-d-a-plan-1",
+   "work_id": "99fe871b-b872-4522-912c-fefd9700edda",
+   "createdAt": "2026-11-16T00:19:20.741Z",
+   "state": "confirmed",
+   "basis": "{\"result\":\"delivered\",\"cancellation\":null,\"delivery\":\"delivered\",\"running\":false,\"executions\":[[\"589ddac5-6dc2-4511-9cd2-9392fe055947\",\"ended\",\"confirmed\"],[\"0cd35c93-4ac9-436a-a4d6-9dbb648480dd\",\"ended\",\"confirmed\"]],\"questions\":[],\"cleanup\":[[\"environment:env-9724f855fd065bd79d40b9277c791cc4f82b775834d9d70ee14fe930544b0929\",\"removed\"],[\"checkout:env-9724f855fd065bd79d40b9277c791cc4f82b775834d9d70ee14fe930544b0929\",\"removed\"],[\"local-branch:env-9724f855fd065bd79d40b9277c791cc4f82b775834d9d70ee14fe930544b0929\",\"removed\"],[\"temporaries:env-9724f855fd065bd79d40b9277c791cc4f82b775834d9d70ee14fe930544b0929\",\"removed\"],[\"remote-branch:factory/3-99fe871b\",\"removed\"]],\"tree\":[\"complete\",true,false,284,155103]}",
+   "refusals": [],
+   "losses": [
+    "The Work's whole Records area (284 file(s), 155103 bytes): logs, start receipts, review opinions and their forwards, mutation intents/results, Question records, Host evidence, session copies and preserved evidence. None of it can be read, paged or recovered afterwards.",
+    "The Work record: history (45 event(s)), 2 Execution(s) with their summaries, reviews, gates, decisions, scope updates, budget counters, delivery/cleanup/retention records and references.",
+    "0 Question(s) with their texts and answers; the text or reason of this Work's answer/update-scope/authorize-readiness requests is erased from their receipts (a replay of those request ids is then refused, never re-applied).",
+    "This Work stops counting in installation totals and aggregates (status says how many Works are forgotten)."
+   ],
+   "keeps": [
+    "Minimal memory: Ticket Sanmoo/java-springboot-event-sourcing#3 (issue 6391129588), Work 99fe871b-b872-4522-912c-fefd9700edda, cycle 1, result delivered, pull request #5 with its merge confirmed at 2026-11-15T15:08:56.564Z.",
+    "The Ticket stays indexed: label, polling and restarts never admit it again; only an explicit `factory new <owner/repo#number>` starts another cycle, which becomes the evaluated one.",
+    "As a native blocker it stays an OWN Ticket satisfied by this delivered cycle (until a new cycle exists); never re-evaluated as external."
+   ],
+   "warnings": [
+    "Not erased: GitHub (issue, comments, pull request, branch), copies outside the Records area (backups, exports, earlier copies of the storage, terminal output) and SQLite free pages until reused. An external copy can bring deleted data back."
+   ],
+   "records": {
+    "files": 284,
+    "bytes": 155103,
+    "present": true,
+    "leftover": false
+   },
+   "confirmedBy": "q31-forget-v1-d-a-confirm",
+   "confirmedAt": "2026-11-16T00:19:20.777Z",
+   "effect": null,
+   "code": null,
+   "nextStep": "Confirmed: revalidated again just before the deletion (intent recorded before it); then only the minimal memory remains."
+  }
+ },
+ "candidate": {
+  "ticket": {
+   "tracker": "github",
+   "repository": "Sanmoo/java-springboot-event-sourcing",
+   "repositoryId": 1256893534,
+   "issueId": 6391129588,
+   "nodeId": "I_kwDOSuqsXs8AAAABfPDl9A",
+   "number": 3,
+   "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3"
+  },
+  "observedAt": "2026-11-16T00:19:23.639Z",
+  "outcome": "existing",
+  "work_id": "99fe871b-b872-4522-912c-fefd9700edda"
+ },
+ "shown": {
+  "kind": "work-forgotten",
+  "work_id": "99fe871b-b872-4522-912c-fefd9700edda",
+  "memory": {
+   "work_id": "99fe871b-b872-4522-912c-fefd9700edda",
+   "ticket": {
+    "tracker": "github",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "issueId": 6391129588,
+    "nodeId": "I_kwDOSuqsXs8AAAABfPDl9A",
+    "number": 3,
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3"
+   },
+   "repository": {
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "base": "main"
+   },
+   "cycle": 1,
+   "predecessor": null,
+   "sequence": 1,
+   "result": "delivered",
+   "pullRequest": {
+    "number": 5,
+    "pullRequestId": 5321820867,
+    "nodeId": "PR_kwDOSuqsXs8AAAABPTSKww",
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5"
+   },
+   "mergeConfirmed": true,
+   "mergeConfirmedAt": "2026-11-15T15:08:56.564Z",
+   "label": {
+    "id": 12918930265,
+    "name": "ready-for-agent"
+   },
+   "forgottenAt": "2026-11-16T00:19:21.628Z",
+   "request_id": "q31-forget-v1-d-a-confirm",
+   "planId": "df5f8609-5ca7-4cc7-b113-bfdab5dab02b"
+  },
+  "notRecoverable": [
+   "history",
+   "logs",
+   "sessions",
+   "reviews and opinions",
+   "decisions and gates",
+   "Questions and answers",
+   "request content",
+   "preserved evidence",
+   "budget/usage of this Work"
+  ],
+  "nextStep": "History deleted by `forget` at 2026-11-16T00:19:21.628Z (request q31-forget-v1-d-a-confirm). This is not an expired or missing record: only the minimal cycle memory remains, and nothing else of this Work can be shown or recovered. The Ticket stays known (never re-admitted automatically); `factory new Sanmoo/java-springboot-event-sourcing#3` starts another cycle when wanted."
+ },
+ "list": {
+  "works": [
+   {
+    "work_id": "805cd92d-5535-4cea-b837-f70907f0db42",
+    "cycle": 1,
+    "predecessor": null,
+    "result": "open"
+   }
+  ],
+  "forgotten": [
+   {
+    "work_id": "99fe871b-b872-4522-912c-fefd9700edda",
+    "ticket": {
+     "tracker": "github",
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "repositoryId": 1256893534,
+     "issueId": 6391129588,
+     "nodeId": "I_kwDOSuqsXs8AAAABfPDl9A",
+     "number": 3,
+     "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3"
+    },
+    "repository": {
+     "repository": "Sanmoo/java-springboot-event-sourcing",
+     "repositoryId": 1256893534,
+     "base": "main"
+    },
+    "cycle": 1,
+    "predecessor": null,
+    "sequence": 1,
+    "result": "delivered",
+    "pullRequest": {
+     "number": 5,
+     "pullRequestId": 5321820867,
+     "nodeId": "PR_kwDOSuqsXs8AAAABPTSKww",
+     "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/pull/5"
+    },
+    "mergeConfirmed": true,
+    "mergeConfirmedAt": "2026-11-15T15:08:56.564Z",
+    "label": {
+     "id": 12918930265,
+     "name": "ready-for-agent"
+    },
+    "forgottenAt": "2026-11-16T00:19:21.628Z",
+    "request_id": "q31-forget-v1-d-a-confirm",
+    "planId": "df5f8609-5ca7-4cc7-b113-bfdab5dab02b"
+   }
+  ]
+ },
+ "status": {
+  "forgotten": {
+   "works": 1,
+   "delivered": 1,
+   "cancelled": 0,
+   "note": "1 Work(s) forgotten: every other total and aggregate here covers only the Works still remembered, never the whole life of the installation."
+  },
+  "works": {
+   "total": 1,
+   "open": 1,
+   "cancelled": 0,
+   "closedUnmerged": 0
+  }
+ },
+ "outcome": {
+  "kind": "clean"
+ },
+ "calls": {
+  "listCandidates": 3,
+  "readDependencyGraph": 3,
+  "readTicket": 5
+ },
+ "recordsForget": [
+  "99fe871b-b872-4522-912c-fefd9700edda"
+ ],
+ "environmentPort": [],
+ "deadlineReached": false
+}

@@ -1,0 +1,80 @@
+{
+ "status": "success",
+ "cases": {
+  "delivered": {
+   "authority": {
+    "kind": "current",
+    "storagePath": "/home/sanmoo/software-factory-test/y5/q31-forget-v1/delivered/authority/control.sqlite",
+    "before": {
+     "format": 2,
+     "operational": "ready",
+     "digest": "f56ec7e382bce8c7847aaa5d03ec139ee1b16a9ac7860b14f24047e4700f6028"
+    }
+   },
+   "workId": "99fe871b-b872-4522-912c-fefd9700edda",
+   "successorId": null,
+   "ticket": {
+    "tracker": "github",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "issueId": 6391129588,
+    "nodeId": "I_kwDOSuqsXs8AAAABfPDl9A",
+    "number": 3,
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/3"
+   },
+   "label": {
+    "id": 12918930265,
+    "name": "ready-for-agent"
+   },
+   "confirmedAt": "2026-11-15T15:08:56.564Z",
+   "copied": {
+    "files": 284,
+    "bytes": 155103
+   },
+   "before": {
+    "present": true,
+    "leftover": false,
+    "files": 284,
+    "completeness": "complete"
+   }
+  },
+  "cancelled": {
+   "authority": {
+    "kind": "current",
+    "storagePath": "/home/sanmoo/software-factory-test/y5/q31-forget-v1/cancelled/authority/control.sqlite",
+    "before": {
+     "format": 2,
+     "operational": "ready",
+     "digest": "1a430caf95d181909d42feebe4fcc0cb16425250296011c44b3904b942b2a7a4"
+    }
+   },
+   "workId": "e8801f16-09c1-4002-961b-a298515f1974",
+   "successorId": "1299ce8d-99ee-4022-881c-7b93b1e330d2",
+   "ticket": {
+    "tracker": "github",
+    "repository": "Sanmoo/java-springboot-event-sourcing",
+    "repositoryId": 1256893534,
+    "issueId": 6409482140,
+    "nodeId": "I_kwDOSuqsXs8AAAABfgjvnA",
+    "number": 18,
+    "url": "https://github.com/Sanmoo/java-springboot-event-sourcing/issues/18"
+   },
+   "label": {
+    "id": 12918930265,
+    "name": "ready-for-agent"
+   },
+   "confirmedAt": null,
+   "copied": {
+    "files": 39,
+    "bytes": 24842
+   },
+   "before": {
+    "present": true,
+    "leftover": false,
+    "files": 39,
+    "completeness": "complete"
+   }
+  }
+ },
+ "sourceBefore": "9b9765a99dfb43a17a29c190155a50dd393afc74f8953e474d0b7dd507e17d42"
+}
