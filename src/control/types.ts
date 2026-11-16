@@ -37,6 +37,10 @@ export type ControlInput = { request_id: string; operation: 'pause' | 'unpause';
    * lifts ONLY the suspension of a withdrawn authorization or a reopened PR, revalidated on the next read; `reopen` reopens the Work's OWN pull
    * request closed without merge (never budget/scope/resume). */
   { request_id: string; operation: 'cancel' | 'resume' | 'reopen'; work_id: string; origin: 'local-cli' } |
+  /** Ticket 41: `resume <work> --override-blocked-recovery <reference>` — the operator's explicit decision to continue a Work blocked
+   * (`RECOVERY_BLOCKED`) by a lost Builder request whose blocked reference is EXACTLY `override_blocked_recovery`. Revalidated in the commit;
+   * the lost request is never invented; the Work returns through ONE operational recovery (ticket 26). */
+  { request_id: string; operation: 'resume'; work_id: string; override_blocked_recovery: string; origin: 'local-cli' } |
   /** Ticket 25: an explicit new cycle of a Ticket after delivery/cancellation (predecessor + own resources). `keepPredecessorPullRequest`: the
    * operator's explicit decision that a cancelled cycle's own PR that may still be open stays as it is (never adopted, closed or replaced). */
   { request_id: string; operation: 'new'; ticket: { repository: string; number: number }; keepPredecessorPullRequest: boolean; origin: 'local-cli' } |
@@ -278,6 +282,9 @@ export type ExecutionView = {
   recovery?: RecoveryRecord[];
   /** Ticket 27: ask_user requests the Control REFUSED live (validation, Work not current, stale Execution, conflict): honored at boot (never re-recorded from Records). */
   questionRefusals?: { questionId: string; code: string; at: string }[];
+  /** Ticket 41: the Builder request preserved in Records that boot reconciliation found but could not read intact (ticket 27: partial,
+   * multiple, unreadable, conflicting) and that blocked this Execution's recovery; `override` is the operator's explicit, audited decision. */
+  blockedRequest?: BlockedRequestView;
   /** Ticket 26: basis of an Execution that follows an interrupted one (operational recovery or continuation after a clean stop). */
   interruption?: { previousExecutionId: string; reason: 'OPERATIONAL_RECOVERY' | 'ADMINISTRATIVE_STOP'; code: string } | null;
 };
@@ -747,10 +754,13 @@ export type WorkView = {
     { at: string; event: CycleEvent; origin: 'controller-cycles' | 'local-cli'; detail: string } |
     { at: string; event: RetentionEvent; origin: 'controller-retention' | 'local-cli'; detail: string })[];
 };
+/** Ticket 41: a lost Builder request that blocks recovery, and the operator's explicit decision to continue without it. */
+export type BlockedRequestView = { reference: string; code: string; questionId: string | null; records: string[]; at: string;
+  override: { request_id: string; operator: { kind: 'local-administrator' }; at: string; reference: string; recoveryRequest: 'requested' | 'already-open' } | null };
 /** Ticket 25 history events (cycle, authorization, cancellation, closure/reopen). */
 export type CycleEvent = 'authorization-withdrawn' | 'authorization-restored-observed' | 'authorization-confirmed' | 'cancel-requested' | 'cancellation-ceased' |
   'resume-accepted' | 'resume-confirmed' | 'resume-not-confirmed' | 'pull-request-closed-unmerged' | 'reopen-intended' | 'reopen-attempted' | 'reopen-confirmed' |
-  'reopen-not-applied' | 'cycle-created' | 'successor-created';
+  'reopen-not-applied' | 'cycle-created' | 'successor-created' | 'blocked-recovery-overridden';
 /** Ticket 25: cancellation of a Work (spec §3.4 "Interromper/cancelar": request, prohibitions and stop intent; physical confirmation later). */
 export type CancellationView = { request_id: string; requestedAt: string; state: 'stopping' | 'ceased'; ceasedAt: string | null;
   /** The Execution active (or holding a Slot) when the cancellation was accepted, if any. */

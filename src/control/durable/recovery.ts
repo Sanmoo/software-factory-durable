@@ -3,7 +3,7 @@ import type { BootRef, EnvironmentRef } from '../../sandbox/index.js';
 import type { ExecutionPorts, ExecutionView, RecoveryRecord, RecoveryView, RuntimeInventory, StartObservation } from '../types.js';
 import type { QuestionObservation } from '../../workers/index.js';
 import { classifyOverrun, overrunNotExcludedImpediment, timeoutImpediment } from '../rules/budget.js';
-import { classifyInterruption, recoveryImpediment, startDecision } from '../rules/recovery.js';
+import { blockedRequestImpediment, blockedRequestReference, classifyInterruption, recoveryImpediment, startDecision } from '../rules/recovery.js';
 import { interruptedEnd, questionRecordFound, recoveredQuestionDecision } from '../rules/questions.js';
 import { readWork, ticketIndex, works, type WorkRecord } from './admission.js';
 import { applyConfirmedCessation, consumeReservation, reofferUnlessCompleted, releaseReservation, settleCancelled, slots } from './execution.js';
@@ -226,6 +226,7 @@ export async function settleInterruption(session: Session, input: { work_id: str
       // its own identity and content (unless it was refused live: that refusal stands); a found record that is not intact blocks (nothing
       // invented); a transient read failure keeps the ordinary recovery (noted in recovery[]).
       let lostQuestion: string | null = null;
+      let lostRecords: { questionId: string | null; records: string[] } = { questionId: null, records: [] };
       let recovered = false;
       if (!questionId && input.question) {
         const seen = input.question;
@@ -235,6 +236,7 @@ export async function settleInterruption(session: Session, input: { work_id: str
           observation: seen.kind === 'question' ? { kind: 'question', questionId: seen.request.questionId, sha256: seen.request.sha256, intact: intactRequest(seen.request, work.work_id),
             refused: execution.questionRefusals?.find(item => item.questionId === seen.request.questionId)?.code ?? null } : seen,
           existing: known ? { workId: known.workId, executionId: known.executionId, sha256: known.content.sha256 } : null, result: work.result });
+        if (seen.kind === 'question') lostRecords = { questionId: seen.request.questionId, records: [seen.request.reference.id] };
         if (decided.kind === 'block') lostQuestion = decided.code;
         else if (decided.kind === 'skip') questionNote = `not-recorded:${decided.code}`;
         else if (decided.kind === 'honor-refusal') questionNote = `refused-live:${decided.code}`;
@@ -245,6 +247,8 @@ export async function settleInterruption(session: Session, input: { work_id: str
           if (recorded.kind !== 'refused') { questionId = seen.request.questionId; recovered = true; questionNote = `recorded:${questionId}`; } else lostQuestion = recorded.code;
         }
       }
+      // Ticket 41: the lost request keeps a stable reference, the one an explicit operator override must name (nothing of it is reconstructed).
+      if (lostQuestion) execution.blockedRequest = { reference: blockedRequestReference(execution.invocationId, lostQuestion), code: lostQuestion, ...lostRecords, at: now, override: null };
       const ended = interruptedEnd({ questionId, recovered, trigger: input.trigger, blocked: lostQuestion, heldCode: execution.held?.code ?? null });
       const outcome = ended.outcome;
       code = outcome === 'question' ? 'question' : ended.code ?? 'CONTROLLER_CRASH';
@@ -258,7 +262,8 @@ export async function settleInterruption(session: Session, input: { work_id: str
     if (execution.end.outcome === 'failure') {
       const classified = classifyInterruption(execution.end.code);
       if (classified.kind === 'blocking') {
-        addImpediment(work, recoveryImpediment('RECOVERY_BLOCKED', classified.code, now));
+        const lost = execution.blockedRequest && !execution.blockedRequest.override && execution.blockedRequest.code === classified.code ? execution.blockedRequest : null;
+        addImpediment(work, lost ? blockedRequestImpediment(work.work_id, lost.reference, lost.code, now) : recoveryImpediment('RECOVERY_BLOCKED', classified.code, now));
         return record(startRecord, 'blocked', classified.code);
       }
     }

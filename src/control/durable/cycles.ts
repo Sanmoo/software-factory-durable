@@ -7,7 +7,10 @@ import { initialBudget } from '../rules/budget.js';
 import { authorizationChange, authorizationFacts, cancelDecision, cycleImpediments, hasImpediment, newCycleDecision, occupying, reopenDecision, resumeDecision,
   settleCancellation } from '../rules/cycles.js';
 import { decideMerge, ownPullRequestOf } from '../rules/delivery.js';
+import { overrideBlockedRecoveryDecision } from '../rules/recovery.js';
 import { readForgotten, readWork, readWorks, requests, ticketIndex, works, type WorkRecord } from './admission.js';
+import { questions } from './questions.js';
+import { applyRecoveryRequest } from './recovery-request.js';
 import type { Session } from './store.js';
 
 // Ticket 25 durable commits and the cycle desk (spec §3.4 "Aceitar comando", "Interromper/cancelar", "Confirmar efeito"; §4.1; §11.3; §12.3).
@@ -74,7 +77,8 @@ export async function acceptCancel(session: Session, input: CycleInput & { opera
 }
 
 /** `resume <work>`: removes ONLY the suspension codes it answers and leaves a pending-read impediment; never touches any other impediment. */
-export async function acceptResume(session: Session, input: CycleInput & { operation: 'resume' }) {
+export async function acceptResume(session: Session, input: CycleInput & { operation: 'resume' }, facts: { running(work_id: string): boolean } = { running: () => false }) {
+  if ('override_blocked_recovery' in input) return acceptBlockedRecoveryOverride(session, input, facts);
   return command(session, input, async tx => {
     const index = await tx.doc(ticketIndex);
     const work = (await tx.doc(works, input.work_id, null)).work;
@@ -86,6 +90,41 @@ export async function acceptResume(session: Session, input: CycleInput & { opera
     addImpediment(work!, { code: cycleImpediments.resumePending, scope: 'work', since: at, nextStep: 'Resume accepted: the next complete read of the Ticket must ' +
       'show it open with the configured label; then the Work re-enters its queue position. Other impediments still apply.' });
     history(work!, 'resume-accepted', 'local-cli', `${input.request_id}:${decision.remove.join(',')}`, at);
+    return receiptOf(input, work!.work_id, 'accepted', null);
+  });
+}
+
+/**
+ * Ticket 41: `resume <work> --override-blocked-recovery <reference>` — ONE commit (deduplicated by request identity) revalidates the block
+ * against the durable facts (exact reference, confirmed cessation, no activity/Slot, no Question bound by a later complete read), records the
+ * operator's decision on the blocked request with history, lifts ONLY that `RECOVERY_BLOCKED` and opens ONE operational recovery through
+ * ticket 26's ordinary path (persisted wait; one `recoveries` unit at the confirmed start; exhaustion is the usual impediment). Nothing of the
+ * lost request is reconstructed and nothing is launched here: the Work re-enters its queue position and the dispatcher revalidates everything.
+ */
+async function acceptBlockedRecoveryOverride(session: Session, input: Extract<CycleInput, { override_blocked_recovery: string }>, facts: { running(work_id: string): boolean }) {
+  return command(session, input, async tx => {
+    const index = await tx.doc(ticketIndex);
+    const work = (await tx.doc(works, input.work_id, null)).work;
+    const execution = work?.execution ?? null;
+    let questionBound = false;
+    if (work && execution) for (const id of work.questions ?? []) {
+      const question = (await tx.doc(questions, id, null)).question;
+      if (question?.executionId === execution.executionId) { questionBound = true; break; }
+    }
+    const decision = overrideBlockedRecoveryDecision({
+      work: work ? { result: work.result, current: index.tickets[ticketKey(work.ticket)]?.current === work.work_id, impediments: work.impediments } : null,
+      execution: execution ? { state: execution.state, slotHeld: execution.slot.held, end: execution.end ?? null, blockedRequest: execution.blockedRequest,
+        lastRecoveryDecision: execution.recovery?.at(-1)?.decision ?? null } : null,
+      reference: input.override_blocked_recovery, running: facts.running(input.work_id), questionBound });
+    if (decision.kind === 'refuse') return receiptOf(input, input.work_id, 'not-applied', decision.code);
+    if (decision.kind === 'already') return receiptOf(input, input.work_id, 'already-satisfied', decision.code);
+    const at = new Date().toISOString();
+    removeImpediments(work!, ['RECOVERY_BLOCKED']);
+    history(work!, 'blocked-recovery-overridden', 'local-cli', `${input.request_id}:${input.override_blocked_recovery}`, at);
+    const opened = applyRecoveryRequest(work!, { executionId: execution!.executionId, code: decision.code, at, reason: `operator-override:${input.override_blocked_recovery}` });
+    // Assigned as a new object: a doc value assigned then mutated in place is not what the commit persists.
+    execution!.blockedRequest = { ...execution!.blockedRequest!, override: { request_id: input.request_id, operator: { kind: 'local-administrator' }, at,
+      reference: input.override_blocked_recovery, recoveryRequest: opened } };
     return receiptOf(input, work!.work_id, 'accepted', null);
   });
 }

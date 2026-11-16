@@ -22,7 +22,7 @@ import { dispatchBlockers, selectNext } from '../rules/dependencies.js';
 import { counterView, durationView, maxGrantAmount } from '../rules/budget.js';
 import { grantBudget, openCorrection, requestOperationalRecovery } from './budget.js';
 import { reconcileBoot } from './recovery.js';
-import { dispatchGate } from '../rules/recovery.js';
+import { blockedReferencePattern, dispatchGate } from '../rules/recovery.js';
 import { backoffRunning } from './recovery-request.js';
 import { createDeliveryDesk } from './delivery-desk.js';
 import { acceptCancel, acceptNewCycle, acceptReopen, acceptResume, createCycleDesk, recordAuthorization } from './cycles.js';
@@ -50,6 +50,8 @@ const inputSchema = z.union([z.strictObject({ request_id: requestId, operation: 
   // Ticket 25 (spec §11.3).
   z.strictObject({ request_id: requestId, operation: z.literal('cancel'), work_id: z.uuid(), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('resume'), work_id: z.uuid(), origin: z.literal('local-cli') }),
+  // Ticket 41: explicit exit of a recovery blocked by a lost Builder request (the exact blocked reference).
+  z.strictObject({ request_id: requestId, operation: z.literal('resume'), work_id: z.uuid(), override_blocked_recovery: z.string().regex(blockedReferencePattern), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('reopen'), work_id: z.uuid(), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('new'), ticket: z.strictObject({ repository: z.string().regex(/^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/),
     number: z.number().int().positive().max(2 ** 31) }), keepPredecessorPullRequest: z.boolean(), origin: z.literal('local-cli') }),
@@ -275,7 +277,7 @@ export async function openControl(options: { storagePath: string;
         if (receipt.kind === 'durable' && receipt.outcome === 'accepted') void dispatcher?.cancel(parsed.data.work_id).catch(() => {});
         return receipt;
       }
-      if (parsed.data.operation === 'resume') return acceptResume(state, parsed.data);
+      if (parsed.data.operation === 'resume') return acceptResume(state, parsed.data, { running: work_id => dispatcher?.running(work_id) ?? false });
       // Ticket 30: the plan never removes anything; the confirmation is executed by the desks after the ACK (revalidated per item).
       if (parsed.data.operation === 'cleanup-plan') return acceptCleanupPlan(state, parsed.data, await cleanupFacts(parsed.data.work_id));
       if (parsed.data.operation === 'cleanup-confirm') return acceptCleanupConfirm(state, parsed.data, await cleanupFacts(parsed.data.work_id));

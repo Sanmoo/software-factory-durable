@@ -9,7 +9,7 @@ import { setup, setupService, firstHumanLogin } from './setup.js';
 import { doctor } from './doctor.js';
 import { releaseInstallationRoot } from './release.js';
 
-const usage = 'factory <setup|doctor|run|status|list [--cursor <n> --limit <n>]|show <work> [--cursor <n> --limit <n>]|history <work>|logs <work> [--after <capture>] [--read <capture> [--offset <n>]]|usage [<work>]|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>)|update-scope <work> --reason <text>|authorize-readiness <work> --reason <text>|repair <work> --reason <text>|cancel <work>|resume <work>|reopen <work>|new <owner/repo#number> [--keep-predecessor-pr]|cleanup <work> --select <logs,sessions,environment,remote-branch> [--yes]|cleanup-confirm <work> <plan>|forget <work> [--yes]|forget-confirm <work> <plan>|request <id>|upgrade <check|apply|status|resume|rollback> [--migrate <id>]> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service [--service-directory <absolute dir>]] [history|logs: --execution <id> --role <builder|standards|spec> --limit <n>; history: --cursor <n>]; factory login --root <canonical-absolute-installation>';
+const usage = 'factory <setup|doctor|run|status|list [--cursor <n> --limit <n>]|show <work> [--cursor <n> --limit <n>]|history <work>|logs <work> [--after <capture>] [--read <capture> [--offset <n>]]|usage [<work>]|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>)|update-scope <work> --reason <text>|authorize-readiness <work> --reason <text>|repair <work> --reason <text>|cancel <work>|resume <work> [--override-blocked-recovery <reference> --request-id <id>]|reopen <work>|new <owner/repo#number> [--keep-predecessor-pr]|cleanup <work> --select <logs,sessions,environment,remote-branch> [--yes]|cleanup-confirm <work> <plan>|forget <work> [--yes]|forget-confirm <work> <plan>|request <id>|upgrade <check|apply|status|resume|rollback> [--migrate <id>]> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service [--service-directory <absolute dir>]] [history|logs: --execution <id> --role <builder|standards|spec> --limit <n>; history: --cursor <n>]; factory login --root <canonical-absolute-installation>';
 const upgradeUsage = 'factory upgrade <check|apply|status|resume|rollback> [--root <installation>] [--migrate <migration id>] — run with the NEW release: ' +
   '<root>/releases/<id>/node/bin/node <root>/releases/<id>/dist/src/entrypoints/cli.js upgrade ...';
 // Ticket 25 (spec §11.3): cycle commands; `new` names the Ticket as owner/repo#number.
@@ -20,6 +20,8 @@ const cleanupCommands = ['cleanup', 'cleanup-confirm', 'forget', 'forget-confirm
 const cleanupSelection = /^(logs|sessions|environment|remote-branch)(,(logs|sessions|environment|remote-branch)){0,3}$/;
 const ticketReference = /^([A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100})#([1-9][0-9]{0,9})$/;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+// Ticket 41: the blocked reference shown by `factory show` (`request:<invocation>:<finding>`); Control checks it is exactly the blocked one.
+const blockedReference = /^request:(?:[a-z]{1,16}-)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[A-Z][A-Z0-9_]{0,63}$/;
 
 async function exchange(root: string, kind: 'inspect' | 'accept', payload: Envelope['payload'], id: string, runId: string | null) {
   const endpoint = resolve(await realpath(root), 'run', 'control.sock');
@@ -74,7 +76,7 @@ function inspectionQuery(command: string, work: string | undefined, options: Ins
 
 async function operational(root: string, command: string, requestId: string | undefined, requested: string | undefined, json: boolean, text?: string,
   grant?: { counter: 'corrections' | 'recoveries'; amount: number }, cycle?: { repository: string; number: number; keep: boolean },
-  cleanup?: { select?: string[]; yes?: boolean; plan?: string }, inspection: Inspection = {}) {
+  cleanup?: { select?: string[]; yes?: boolean; plan?: string }, inspection: Inspection = {}, override?: string) {
   const query = (): Envelope['payload'] => ['history', 'logs', 'usage', 'list', 'show'].includes(command) ? inspectionQuery(command, requested, inspection)
     : command === 'doctor' ? { kind: 'access' } : command === 'question' ? { kind: 'question', question_id: requested! } : { kind: 'request', request_id: requested! };
   const mutable = command === 'pause' || command === 'unpause' || command === 'answer' || command === 'grant' || command === 'update-scope' || command === 'authorize-readiness' || command === 'repair' ||
@@ -89,6 +91,7 @@ async function operational(root: string, command: string, requestId: string | un
       mutable ? (command === 'answer' ? { request_id: id, operation: 'answer', question_id: requested!, text: text!, origin: 'local-cli' }
         : command === 'grant' ? { request_id: id, operation: 'grant', work_id: requested!, counter: grant!.counter, amount: grant!.amount, origin: 'local-cli' }
           : command === 'update-scope' || command === 'authorize-readiness' || command === 'repair' ? { request_id: id, operation: command, work_id: requested!, reason: text!, origin: 'local-cli' }
+          : command === 'resume' && override ? { request_id: id, operation: 'resume', work_id: requested!, override_blocked_recovery: override, origin: 'local-cli' }
           : command === 'cancel' || command === 'resume' || command === 'reopen' ? { request_id: id, operation: command, work_id: requested!, origin: 'local-cli' }
           : command === 'new' ? { request_id: id, operation: 'new', ticket: { repository: cycle!.repository, number: cycle!.number }, keepPredecessorPullRequest: cycle!.keep, origin: 'local-cli' }
           : command === 'cleanup' ? { request_id: id, operation: 'cleanup-plan', work_id: requested!, select: cleanup!.select!, origin: 'local-cli' }
@@ -219,6 +222,7 @@ export async function main(input: string[]): Promise<number> {
   const reference = command === 'new' ? ticketReference.exec(requested ?? '') : null;
   if (command === 'new' && (!reference || Number(reference[2]) > 2 ** 31)) valid = false;
   let keep = false;
+  let override: string | undefined;
   // `grant <work> --corrections <n>` or `--recoveries <n>`: exactly one counter, a plain positive integer up to 100 (spec §11.3).
   let grant: { counter: 'corrections' | 'recoveries'; amount: number } | undefined;
   if (command === 'grant') {
@@ -237,6 +241,7 @@ export async function main(input: string[]): Promise<number> {
     command === 'history' || command === 'logs' || (command === 'usage' && requested !== undefined) ? 2 : 1; index < args.length; index++) {
     if (args[index] === '--authenticated' && command === 'doctor' && !authenticated) authenticated = true;
     else if (args[index] === '--keep-predecessor-pr' && command === 'new' && !keep) keep = true;
+    else if (args[index] === '--override-blocked-recovery' && command === 'resume' && override === undefined && blockedReference.test(args[index + 1] ?? '')) override = args[++index];
     else if (args[index] === '--yes' && (command === 'cleanup' || command === 'forget') && cleanup && !cleanup.yes) cleanup.yes = true;
     else if (args[index] === '--service' && command === 'setup' && !service && installation !== undefined) service = true;
     else if (args[index] === '--service-directory' && command === 'setup' && serviceDirectory === undefined &&
@@ -253,6 +258,8 @@ export async function main(input: string[]): Promise<number> {
     else { valid = false; break; }
   }
   if (serviceDirectory !== undefined && !service) valid = false;
+  // Ticket 41: an override is an explicit decision with its own identity (deduplicated across crashes): `--request-id` is required.
+  if (override !== undefined && requestId === undefined) valid = false;
   // `--yes` derives the confirmation identity `<id>-confirm`, which must still be a valid request identity.
   if (cleanup?.yes && requestId !== undefined && requestId.length > 120) valid = false;
   if (!valid) {
@@ -268,7 +275,7 @@ export async function main(input: string[]): Promise<number> {
     if (command === 'status' || command === 'list' || command === 'show' || command === 'question' || command === 'pause' || command === 'unpause' ||
         command === 'answer' || command === 'grant' || withReason || command === 'request' || cycleCommands.includes(command ?? '') ||
         cleanupCommands.includes(command ?? '') || command === 'history' || command === 'logs' || command === 'usage') {
-      return await operational(root, command!, requestId, requested, json, text, grant, reference ? { repository: reference[1]!, number: Number(reference[2]), keep } : undefined, cleanup, inspection);
+      return await operational(root, command!, requestId, requested, json, text, grant, reference ? { repository: reference[1]!, number: Number(reference[2]), keep } : undefined, cleanup, inspection, override);
     }
     if (command === 'doctor' && authenticated) return await operational(root, command, undefined, undefined, json);
     if (command === 'doctor') {

@@ -99,6 +99,55 @@ export function recoveryImpediment(code: 'RECOVERY_CESSATION_UNCONFIRMED' | 'REC
   return { code, scope: 'work', since, nextStep };
 }
 
+/**
+ * Ticket 41: the stable reference of a Builder request found in Records but not readable intact (ticket 27 block): the invocation that
+ * preserved it and the finding. The operator's override must name it exactly (a later, different block is never overridden by an old decision).
+ */
+export const blockedRequestReference = (invocationId: string, code: string) => `request:${invocationId}:${code}`;
+export const blockedReferencePattern = /^request:(?:[a-z]{1,16}-)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[A-Z][A-Z0-9_]{0,63}$/;
+
+/** `RECOVERY_BLOCKED` by a lost Builder request (ticket 27), with the explicit exit of ticket 41. */
+export function blockedRequestImpediment(workId: string, reference: string, code: string, since: string): Impediment {
+  return { code: 'RECOVERY_BLOCKED', scope: 'work', since, nextStep: `The interrupted Builder preserved a request in Records that could not be read intact (${code}); ` +
+    'nothing is retried automatically and the lost request is never reconstructed. Inspect the Execution evidence; to continue WITHOUT it, ' +
+    `\`factory resume ${workId} --override-blocked-recovery ${reference} --request-id <id>\` (one operational recovery unit), or \`factory cancel ${workId}\`.` };
+}
+
+export type OverrideFacts = {
+  work: { result: string; current: boolean; impediments: readonly { code: string }[] } | null;
+  execution: { state: string; slotHeld: boolean; end: { outcome: string; code: string | null; cessation: string } | null;
+    blockedRequest?: { reference: string; code: string; override: { reference: string } | null } | undefined; lastRecoveryDecision: string | null } | null;
+  /** The reference the operator named. */
+  reference: string;
+  /** Live own activity of the Work in this controller process. */
+  running: boolean;
+  /** A Question of the Work is bound to that Execution (a complete Records read recorded the request). */
+  questionBound: boolean };
+
+/**
+ * Ticket 41 (spec §5.5 "conteúdo perdido bloqueia" + explicit operator decision): whether the operator may continue a Work whose recovery is
+ * blocked by a lost Builder request. Only for EXACTLY the blocked reference, after confirmed cessation, with no activity or Slot, and only
+ * while no later complete read resolved the request. Accepting never reconstructs the request; it lifts only that block.
+ */
+export function overrideBlockedRecoveryDecision(input: OverrideFacts): { kind: 'accept'; code: string } | { kind: 'already'; code: string } | { kind: 'refuse'; code: string } {
+  const { work, execution } = input;
+  if (!work) return { kind: 'refuse', code: 'WORK_NOT_FOUND' };
+  if (!work.current) return { kind: 'refuse', code: 'WORK_NOT_CURRENT' };
+  if (work.result !== 'open') return { kind: 'refuse', code: work.result === 'cancelled' ? 'WORK_CANCELLED' : work.result === 'delivered' ? 'WORK_DELIVERED' : 'WORK_NOT_OPEN' };
+  const blocked = work.impediments.some(item => item.code === 'RECOVERY_BLOCKED');
+  const request = execution?.blockedRequest;
+  if (!blocked && request?.override?.reference === input.reference) return { kind: 'already', code: 'BLOCKED_RECOVERY_ALREADY_OVERRIDDEN' };
+  if (!blocked) return { kind: 'refuse', code: 'RECOVERY_NOT_BLOCKED' };
+  if (!execution || !request || request.override) return { kind: 'refuse', code: 'BLOCK_NOT_A_LOST_REQUEST' };
+  if (request.reference !== input.reference) return { kind: 'refuse', code: 'BLOCKED_REFERENCE_MISMATCH' };
+  if (input.running || execution.state !== 'ended') return { kind: 'refuse', code: 'EXECUTION_ACTIVE' };
+  if (!execution.end || execution.end.cessation !== 'confirmed') return { kind: 'refuse', code: 'CESSATION_NOT_CONFIRMED' };
+  if (execution.slotHeld) return { kind: 'refuse', code: 'SLOT_HELD' };
+  if (input.questionBound || execution.lastRecoveryDecision !== 'blocked') return { kind: 'refuse', code: 'REQUEST_RESOLVED_BY_RECORDS' };
+  if (execution.end.outcome !== 'failure' || execution.end.code !== request.code) return { kind: 'refuse', code: 'BLOCK_CHANGED' };
+  return { kind: 'accept', code: request.code };
+}
+
 const fenced = (text: string) => {
   const longest = Math.max(0, ...[...text.matchAll(/`+/g)].map(run => run[0].length));
   const fence = '`'.repeat(Math.max(3, longest + 1));

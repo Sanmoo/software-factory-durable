@@ -86,7 +86,7 @@ PR-only sem push), `inspect` (comentários com marcador = 1, PRs próprios = 1, 
    `question-flow` "ticket 27 AC8 + ticket 25", `question-rules`. A conversão draft/ready incerta de um Trabalho cancelado não é redescoberta
    (o alvo de checks exige `open`): lacuna residual, sem risco de repetição. A receita real não inclui um corte de cancelamento.
 4. Uma solicitação em Records ilegível/parcial após crash bloqueia o Trabalho (`RECOVERY_BLOCKED`) em vez de recovery operacional: conservador;
-   a saída explícita (`resume`) segue sem ingresso (decisão 3 do ticket 26).
+   a saída explícita é `resume <work> --override-blocked-recovery <referência>` ([ticket 41](41-explicit-unblock-of-blocked-recovery.md)).
 
 ## Ensaio real v2 — `q27-crashfx-v2` (2026-11-16)
 

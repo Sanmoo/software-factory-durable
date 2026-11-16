@@ -16,6 +16,8 @@ const command = z.union([z.strictObject({ request_id: requestId, operation: z.en
   z.strictObject({ request_id: requestId, operation: z.literal('repair'), work_id: z.uuid(), reason: z.string().min(1).max(2000), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('authorize-readiness'), work_id: z.uuid(), reason: z.string().min(1).max(2000), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.enum(['cancel', 'resume', 'reopen']), work_id: z.uuid(), origin: z.literal('local-cli') }),
+  // Ticket 41: Control checks the exact blocked reference; only its shape is bounded here.
+  z.strictObject({ request_id: requestId, operation: z.literal('resume'), work_id: z.uuid(), override_blocked_recovery: z.string().min(1).max(160), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('new'), ticket: z.strictObject({ repository: z.string().min(3).max(201), number: z.number().int().positive() }),
     keepPredecessorPullRequest: z.boolean(), origin: z.literal('local-cli') }),
   // Ticket 30: explicit cleanup plan and confirmation (Control revalidates the selection and the plan).

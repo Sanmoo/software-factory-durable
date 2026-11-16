@@ -58,6 +58,21 @@ test('AC3: `factory update-scope <work> --reason` identifies the request first, 
     assert.match(result.stderr, new RegExp(`REQUEST_IDENTIFIED.*${operation}-1`));
     assert.deepEqual(result.json, { kind: 'durable', request_id: `${operation}-1`, operation, work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', created: null });
   }
+  // Ticket 41: `resume <work> --override-blocked-recovery <reference> --request-id <id>` (identity required; reference shape checked locally,
+  // its exactness by Control). With no Work: a durable not-applied receipt through the real socket/owner; the replay is the same receipt.
+  const blocked = 'request:builder-0b9c6a52-3d3e-4c8f-9a51-000000000041:QUESTION_RECORD_INCOMPLETE';
+  for (const bad of [['resume', work, '--override-blocked-recovery', blocked], ['resume', work, '--override-blocked-recovery', 'request:x:Y', '--request-id', 'o-bad'],
+    ['resume', work, '--override-blocked-recovery', '--request-id', 'o-bad'], ['cancel', work, '--override-blocked-recovery', blocked, '--request-id', 'o-bad']]) {
+    const result = await cli(...bad);
+    assert.equal(result.code, 2, bad.join(' '));
+    assert.match(result.stderr, /INVALID_ARGUMENTS/, bad.join(' '));
+  }
+  const overridden = await cli('resume', work, '--override-blocked-recovery', blocked, '--request-id', 'override-1');
+  assert.equal(overridden.code, 2, overridden.stderr);
+  assert.match(overridden.stderr, /REQUEST_IDENTIFIED.*override-1/);
+  assert.deepEqual(overridden.json, { kind: 'durable', request_id: 'override-1', operation: 'resume', work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', created: null });
+  assert.deepEqual((await cli('resume', work, '--override-blocked-recovery', blocked, '--request-id', 'override-1')).json, overridden.json);
+  assert.deepEqual((await cli('resume', work, '--request-id', 'override-1')).json, { kind: 'refused', code: 'REQUEST_ID_CONFLICT' }, 'plain resume under the same identity');
   const created = await cli('new', 'acme/project#3', '--keep-predecessor-pr', '--request-id', 'new-1');
   assert.equal(created.code, 2, created.stderr);
   assert.deepEqual(created.json, { kind: 'durable', request_id: 'new-1', operation: 'new', work_id: null, outcome: 'not-applied', reason: 'TICKET_NOT_KNOWN', created: null });
