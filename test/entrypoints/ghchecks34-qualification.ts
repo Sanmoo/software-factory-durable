@@ -57,7 +57,8 @@ const prompts = {
     'message is ONLY the JSON verdict object you are asked for, with no prose before or after.',
 };
 const reviewer = { modelBudget: 'reviewer-v1' as const, imageSourceMaxBytes: 5 * 1024 * 1024 };
-const skillPack = 'factory-skills-v6' as const;
+/** Operator decision (2026-11-17): the mvp-34.4 Builder pack (v7: an already-satisfied finding is not-adopted); the SDK profile is unchanged. */
+const skillPack = 'factory-skills-v7' as const;
 
 /**
  * The two NEW synthetic issues the supervisor creates after the authorization (exact titles/bodies below). T0 carries the label from the start;
@@ -192,15 +193,16 @@ export function humanSteps(input: { mainTip: string; pullRequest?: number | unde
 export function plan() {
   const steps = humanSteps({ mainTip: '<main tip read at the phase>' });
   return { revision, root, observations, phases, repository: { ...repository, repositoryId }, rulesetId, actionsAppId, checkName,
-    tickets: { waiver: { ...tickets.waiver, body: waiverBody, labelAtCreation: true, pinned: tickets.waiver.number > 0 },
-      checks: { ...tickets.checks, body: checksBody, labelAtCreation: false, pinned: tickets.checks.number > 0 } },
+    tickets: { waiver: { ...tickets.waiver, body: waiverBody, labelAtCreation: false, labelledBy: 'the driver, right before preflight (preflight waits until the label lists exactly T0)', pinned: tickets.waiver.number > 0 },
+      checks: { ...tickets.checks, body: checksBody, labelAtCreation: false, labelledBy: 'the run phase\'s label step (it waits until the label lists exactly T0 and T1)', pinned: tickets.checks.number > 0 } },
     requiredCheck: { workflow: { path: workflowPath, content: gateWorkflow }, script: { path: scriptPath, content: gateScript },
       why: 'real GitHub Actions run on every pull request to main; the script comes from the base, needs a line the Ticket does not ask for (so the first Factory head fails) ' +
         'and refuses to run outside Actions (so the waived gate cannot pass locally); factory-optional is a skipped job; factory-absent is never reported' },
     humanSteps: Object.fromEntries(Object.entries(steps).map(([key, step]) => [key, { phase: step.phase, expect: step.expect, apply: step.apply, restore: step.restore, note: step.note }])),
     configuration, guestAssets, skillPack, pollingSeconds, deadlinesMinutes: deadlines, humanStepMinutes,
     keyLifecycle: `each GitHub phase copies ${keySource} O_EXCL into the namespace only AFTER its phase guard and intent tombstone, and removes the copy in its finally`,
-    requires: ['the supervisor created the two NEW issues (titles/bodies above; only T0 labelled) and pinned both numbers in a reviewed commit', 'no other open issue carries the label',
+    requires: ['the supervisor created the two NEW issues (titles/bodies above), BOTH unlabelled, and pinned both numbers in a reviewed commit; the driver labels T0 right before preflight',
+      'no other open issue carries the label (preflight waits until the listing is exactly T0)',
       `ruleset ${rulesetId} in its ticket 39 state (${expectedBeforeRules.join(', ')}) and NO classic protection on main`, 'the operator runs every human step (apply AND restore) with the operator\'s own account',
       'the operator\'s gh token can push workflow files (workflow scope)', 'operator first-login store under root/credentials (model OAuth)'],
     model: { provider: 'openai', model: 'gpt-6-luna', auth: 'factory-oauth', providerRetries: 0, sdkRetries: 0,
@@ -232,6 +234,7 @@ export function plan() {
       'homonym: GET-only reads with a failure status named factory-gate posted by the operator: another origin than Actions, visible only, the requirement stays satisfied (V-09.c)',
       'inspect: storage copy; GET-only PR/compare/file reads; session push commands; token scan of sessions and of the namespace; verdict; human-step-teardown-requested.json',
       'stop-environment: own boot of the last recorded Execution when it may still run'],
+    questions: 'no Question is scripted: any Question of any Work (read by id) holds the phase, recorded as holdReason UNSCRIPTED_QUESTION with its id, state and text',
     notCovered: ['a neutral conclusion (needs a check-run-writing App; stays S)', 'a change of head/rule/base exactly between the readiness read and its mutation (race; stays S)',
       'pagination beyond one page of rules/check runs (stays I(sub))'],
     classicSettings: 'V-09.f: the composition reads the FULL classic protection (lock_branch, required_signatures, required_linear_history, restrictions) and interprets them as ' +
@@ -501,6 +504,37 @@ async function compose(getOnly: boolean) {
 }
 type Composed = Awaited<ReturnType<typeof compose>>;
 const workOf = (view: unknown, number: number): WorkView | undefined => (view as ListView).kind === 'list' ? (view as ListView).works.find(item => item.ticket.number === number) : undefined;
+/**
+ * Every Work of the storage: `list` pages (ticket 29) and may fit a page short of its limit, so `page.nextCursor` is followed until null (the
+ * R-CAND lesson). A failed or non-advancing page ends the walk as incomplete: never a partial list read as complete.
+ */
+export async function listAll(read: (cursor: number) => Promise<unknown>, maxPages = 100): Promise<{ kind: 'list'; works: WorkView[]; pages: number; complete: boolean }> {
+  const works: WorkView[] = [];
+  let cursor = 0;
+  for (let pages = 1; pages <= maxPages; pages++) {
+    const view = await read(cursor) as Partial<ListView> | null;
+    if (view?.kind !== 'list' || !Array.isArray(view.works)) return { kind: 'list', works, pages, complete: false };
+    works.push(...view.works);
+    const next = view.page?.nextCursor ?? null;
+    if (next === null) return { kind: 'list', works, pages, complete: true };
+    if (typeof next !== 'number' || next <= cursor) return { kind: 'list', works, pages, complete: false };
+    cursor = next;
+  }
+  return { kind: 'list', works, pages: maxPages, complete: false };
+}
+/** The label listing is EXACTLY the expected issues (GitHub's label index can lag behind an edit: poll it, never read once). */
+export const labelExact = (listed: readonly number[] | null, expected: readonly number[]) =>
+  listed !== null && JSON.stringify([...listed].sort((a, b) => a - b)) === JSON.stringify([...expected].sort((a, b) => a - b));
+/** Questions of the Works, each read by id (a view may omit them: the R-CAND lesson). None is scripted here, so every one holds the phase. */
+export async function questionsOf(works: readonly Pick<WorkView, 'work_id' | 'questions'>[], read: (questionId: string) => Promise<unknown>) {
+  const found: { workId: string; questionId: string; state: unknown; question: string | null; read: string }[] = [];
+  for (const work of works) for (const questionId of work.questions ?? []) {
+    const view = await read(questionId) as { kind?: string; question?: { state?: unknown; content?: { question?: unknown } } } | null;
+    const text = view?.question?.content?.question;
+    found.push({ workId: work.work_id, questionId, state: view?.question?.state ?? null, question: typeof text === 'string' ? text.slice(0, 500) : null, read: view?.kind ?? 'unreadable' });
+  }
+  return found;
+}
 async function readRuleset(github: Composed['github']) {
   const read = await github.read(repository, 'checks-read', session => session.get(`/repos/${repository.repository}/rulesets/${rulesetId}`));
   return read.ok ? read.value as Ruleset : null;
@@ -546,8 +580,9 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
   const conversions = conversionGuard(phase);
   const counts = { activations: 0, prepared: 0, conversions: 0, refusedConversions: 0 };
   let control!: Awaited<ReturnType<typeof openControl>>;
-  const shown = async () => workOf(await control.inspect({ kind: 'list' }), number);
-  const numberOf = async (workId: string) => ((await control.inspect({ kind: 'list' })) as ListView).works.find(item => item.work_id === workId)?.ticket.number ?? 0;
+  const all = () => listAll(cursor => control.inspect({ kind: 'list', cursor, limit: 50 }));
+  const shown = async () => workOf(await all(), number);
+  const numberOf = async (workId: string) => (await all()).works.find(item => item.work_id === workId)?.ticket.number ?? 0;
   control = await openControl({ storagePath: `${observations}/control.sqlite`, runtimeInventory: 'empty',
     access: { tracker, repositories: [repository], dependencyRepositories: [], operators, factoryApp: () => github.appIdentity(repository),
       repository: { checkAccess: (repo, base) => codeRepository.checkAccess(repo, base),
@@ -612,13 +647,15 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
   let human: unknown = null;
   let quietFrom: number | null = null;
   let lastChecks = '';
+  let questions: Awaited<ReturnType<typeof questionsOf>> = [];
   try {
     while (Date.now() < deadline) {
       await sleep(15000);
       if (!human && phase === 'run') {
         human = await humanStep(save, humanSteps({ mainTip: '' }).label!, async () => {
           const listing = await tracker.listCandidates(repository);
-          return listing.kind === 'observed' && listing.candidates.some(item => item.number === tickets.checks.number) ? { listed: listing.candidates.map(item => item.number) } : null;
+          const listed = listing.kind === 'observed' ? listing.candidates.map(item => item.number) : null;
+          return labelExact(listed, [tickets.waiver.number, tickets.checks.number]) ? { listed } : null;
         });
       }
       if (!human && phase === 'strict') {
@@ -641,7 +678,10 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
         });
         quietFrom = Date.now();
       }
-      const work = await shown();
+      const listed = await all();
+      questions = await questionsOf(listed.works, questionId => control.inspect({ kind: 'question', question_id: questionId }));
+      if (questions.length) { log({ call: 'unscripted-question', questions }); outcome = { done: true, success: false }; break; }
+      const work = workOf(listed, number);
       const checks = work?.checks?.latest;
       const key = checks ? `${checks.pullRequest.headSha}:${checks.outcome}` : '';
       if (checks && key !== lastChecks) { lastChecks = key; log({ call: 'checks', head: checks.pullRequest.headSha, outcome: checks.outcome, reasons: reasonCodes(checks) }); }
@@ -651,10 +691,11 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
       if (outcome.done) break;
     }
   } finally {
-    const final = await control.inspect({ kind: 'list' });
+    const final = await all();
     stop.abort();
     const result = await running;
-    await save(`${phase}-result`, { status: outcome.success ? 'success' : 'held', outcome: result, final, human, counts, events, deadlineReached: Date.now() >= deadline });
+    await save(`${phase}-result`, { status: outcome.success ? 'success' : 'held', ...(questions.length ? { holdReason: 'UNSCRIPTED_QUESTION', questions } : {}),
+      outcome: result, final, human, counts, events, deadlineReached: Date.now() >= deadline });
   }
   if (!outcome.success) throw new Error('PHASE_NOT_AS_EXPECTED');
 }
@@ -673,7 +714,7 @@ async function runRead(phase: ReadPhase, save: (name: string, data: unknown) => 
   const { openControl, evaluateChecks } = await import('../../src/control/index.js');
   const copy = await snapshotStorage(observations, `${observations}/${phase}-storage-copy`);
   const stored = await openControl({ storagePath: copy, runtimeInventory: 'unknown' });
-  const view = await stored.inspect({ kind: 'list' });
+  const view = await listAll(cursor => stored.inspect({ kind: 'list', cursor, limit: 50 }));
   const stopped = new AbortController(); stopped.abort();
   await stored.run(stopped.signal);
   const work = workOf(view, tickets.checks.number);
@@ -761,7 +802,12 @@ export async function runPhase(phase: Phase) {
         const text = read.ok ? pick(read.value, 'content') : undefined; return typeof text === 'string' ? Buffer.from(text, 'base64').toString('utf8') : null; };
       const setup = await humanStep(save, humanSteps({ mainTip: before }).setup!, async () =>
         rulesetMatches(await readRuleset(github), rulesetBody(ruleset, 'loose')) && await content(workflowPath) === gateWorkflow && await content(scriptPath) === gateScript ? { ruleset: 'loose', files: true } : null);
-      const listing = await tracker.listCandidates(repository);
+      // The driver labels T0 right before preflight: poll (bounded) until the listing is exactly T0.
+      let listing = await tracker.listCandidates(repository);
+      for (const until = Date.now() + 10 * 60 * 1000; Date.now() < until; listing = await tracker.listCandidates(repository)) {
+        if (listing.kind === 'observed' && labelExact(listing.candidates.map(item => item.number), [tickets.waiver.number])) break;
+        await sleep(15000);
+      }
       const issues: Record<string, unknown> = {};
       const reasons: string[] = [];
       for (const [key, ticket] of Object.entries(tickets) as [keyof typeof tickets, typeof tickets[keyof typeof tickets]][]) {
@@ -791,7 +837,7 @@ export async function runPhase(phase: Phase) {
     const { openControl } = await import('../../src/control/index.js');
     const copy = await snapshotStorage(observations, `${observations}/${phase}-storage-copy`);
     const stored = await openControl({ storagePath: copy, runtimeInventory: 'unknown' });
-    const view = await stored.inspect({ kind: 'list' });
+    const view = await listAll(cursor => stored.inspect({ kind: 'list', cursor, limit: 50 }));
     const stopped = new AbortController(); stopped.abort();
     await stored.run(stopped.signal);
     const work = workOf(view, tickets.checks.number);

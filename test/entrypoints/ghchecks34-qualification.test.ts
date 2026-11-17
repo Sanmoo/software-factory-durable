@@ -28,6 +28,9 @@ test('R-GH-CHECKS recipe: import and --plan are inert; own namespace, two pinned
   assert.match(plan.requiredCheck.script.content, /Checked-by: factory-gate/);
   assert.match(plan.requiredCheck.workflow.content, /path: base[\s\S]*sh \.\.\/base\/ci\/factory-gate\.sh/, 'the script always comes from the base');
   assert.equal(plan.repository.correctionLimit, 2);
+  assert.equal(plan.skillPack, 'factory-skills-v7', 'operator decision 2026-11-17');
+  assert.deepEqual([plan.tickets.waiver.labelAtCreation, plan.tickets.checks.labelAtCreation], [false, false], 'nothing labelled while another controller runs');
+  assert.match(plan.questions, /UNSCRIPTED_QUESTION/);
   assert.deepEqual([plan.model.providerRetries, plan.model.sdkRetries], [0, 0]);
   assert.deepEqual(plan.model.builderActivations['human-draft'], []);
   for (const [name, step] of Object.entries(plan.humanSteps) as [string, { apply: string[]; restore: string[]; note: string }][]) {

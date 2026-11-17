@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { WorkView } from '../../src/control/index.js';
-import { activationGuard, actionsAppId, conversionGuard, grantGuard, humanSteps, operatorPr, phaseGuard, rulesetBody, rulesetMatches, runIdOf, secretScan, settled,
+import { activationGuard, actionsAppId, conversionGuard, grantGuard, humanSteps, labelExact, listAll, operatorPr, phaseGuard, questionsOf, rulesetBody, rulesetMatches, runIdOf, secretScan, settled,
   tickets, verdictOf, type Ruleset } from './ghchecks34-qualification.js';
 
 // R-GH-CHECKS recipe safety on controlled data only (never the real root, a real gh, GitHub, a VM or a model).
@@ -189,4 +189,22 @@ test('every operator merge happens under the RELAXED ruleset (no required check)
   assert.ok(steps.setup!.apply.at(-1)!.endsWith('rulesets/loose.json --silent'), 'setup puts the required check only after the merge');
   assert.ok(steps.strict!.apply.at(-1)!.endsWith('rulesets/strict.json --silent'), 'strict is put only after the advance merge');
   assert.ok(steps.teardown!.apply.at(-1)!.endsWith('rulesets/before.json --silent'));
+});
+
+test('lessons of the other recipes: every list page walked, Questions read by id, the label listing exact', async () => {
+  const work = (id: string, questions: string[] = []) => ({ work_id: id, questions }) as unknown as WorkView;
+  const pages: Record<number, unknown> = { 0: { kind: 'list', works: [work('a')], page: { nextCursor: 1 } }, 1: { kind: 'list', works: [work('b')], page: { nextCursor: null } } };
+  const walked = await listAll(async cursor => pages[cursor]);
+  assert.deepEqual([walked.works.map(item => item.work_id), walked.pages, walked.complete], [['a', 'b'], 2, true], 'a Work on page 2 is seen');
+  assert.equal((await listAll(async () => ({ kind: 'list', works: [], page: { nextCursor: 0 } }))).complete, false, 'a non-advancing cursor is incomplete');
+  assert.equal((await listAll(async () => ({ kind: 'refused' }))).complete, false);
+  const read: string[] = [];
+  const found = await questionsOf([work('a', ['q1']), work('b')], async id => { read.push(id); return { kind: 'question', question: { state: 'open', content: { question: 'Which title?' } } }; });
+  assert.deepEqual(read, ['q1']);
+  assert.deepEqual(found, [{ workId: 'a', questionId: 'q1', state: 'open', question: 'Which title?', read: 'question' }]);
+  assert.deepEqual(await questionsOf([work('a')], async () => { throw new Error('never'); }), []);
+  assert.equal(labelExact([53, 52], [52, 53]), true);
+  assert.equal(labelExact([52], [52, 53]), false, 'a label not yet indexed is not exact');
+  assert.equal(labelExact([52, 53, 9], [52, 53]), false, 'a foreign labelled issue is not exact');
+  assert.equal(labelExact(null, [52]), false);
 });
