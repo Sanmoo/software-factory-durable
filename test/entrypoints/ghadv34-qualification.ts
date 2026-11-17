@@ -1,4 +1,4 @@
-import type { ExecutionView, ListView, QuestionView, ShowView, WorkView } from '../../src/control/index.js';
+import type { ExecutionView, ListView, QuestionView, WorkView } from '../../src/control/index.js';
 import { readBounded, sessionCommands, snapshotStorage } from './publication14-qualification.js';
 import { humanPushObserved, keySource, pushViolations, requireKeySource, resolveOperator } from './humanchanges21-qualification.js';
 import { baseMoved } from './repair22-qualification.js';
@@ -37,11 +37,14 @@ const configuration = { schemaVersion: 1, profile: 'gondolin-qemu-alpine-dev-v1'
 const guestAssets = { directory: '/home/sanmoo/software-factory-test/assets34/assets', manifestSha256: '8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807' } as const;
 export const humanStepMinutes = 60;
 const quietCycles = 3;
+/** Supervisor lesson (R-CAND/R-CRASH-A): 20 min without ANY observed change ends the phase held (STALLED) with an interim record, never a long deadline wait. */
+export const stallMinutes = 20;
 const rounds = { max: 4 } as const;
 const pollingSeconds = 120;
 const sdkProfileId = 'factory-development-pi-1.5.2-read-async-bash-lexical-v3' as const;
 const model = { auth: 'factory-oauth' as const, providerId: 'openai' as const, modelId: 'gpt-6-luna' as const, api: 'openai-responses' as const };
-const skillPack = 'factory-skills-v6' as const;
+/** v7 (82d6faf): an already-satisfied finding is `not-adopted`, never `fixed` (the pack the release mvp-34.4 composes). */
+const skillPack = 'factory-skills-v7' as const;
 const reviewer = { modelBudget: 'reviewer-v1' as const, imageSourceMaxBytes: 5 * 1024 * 1024 };
 const prompts = {
   builder: 'You are the Software Factory Builder. Follow the Factory skill pack exactly. Work only in /workspace/checkout and /artifacts. Never request broader ' +
@@ -185,6 +188,9 @@ export type Facts = { work: WorkView | undefined; questions: QuestionView[]; lis
 const active = (execution: ExecutionView | null | undefined) => Boolean(execution && (execution.slot.held || execution.state === 'reserved' || execution.state === 'started'));
 const occupying = (work: WorkView | undefined) => Boolean(work && [...work.previousExecutions, ...(work.execution ? [work.execution] : [])].some(active));
 const has = (work: WorkView | undefined, code: string) => (work?.impediments ?? []).some(item => item.code === code);
+/** The ONE scripted Builder Question of B (its text names both words); any other Builder Question is unscripted and holds. */
+export const scriptedQuestion = (question: QuestionView | null) => Boolean(question && /\balpha\b/.test(question.content?.question ?? '') && /\bbeta\b/.test(question.content?.question ?? '') &&
+  /## Choice|Choice/.test(question.content?.question ?? ''));
 /** The Builder's own Question (not a divergence Question): an OPEN one first (a later, unexpected one is never hidden), else the latest. */
 export const builderQuestion = (facts: Pick<Facts, 'work' | 'questions'>) => {
   const own = facts.questions.filter(item => item.recordedFrom !== 'controller-divergence' && item.workId === facts.work?.work_id);
@@ -266,10 +272,12 @@ export function settled(phase: ControlPhase, facts: Facts, quiet: boolean): { do
   switch (phase) {
     case 'ask':
       if (work?.publication || facts.activations > 1) return fail;
+      // Only the scripted question may be answered by the scripted steps; a different or second Builder Question holds.
+      if (question && (!scriptedQuestion(question) || facts.questions.filter(item => item.recordedFrom !== 'controller-divergence').length > 1)) return fail;
       return question?.state === 'open' && question.publication.state === 'published' && has(work, 'QUESTION_PENDING') && !occupying(work) && work?.execution?.end?.outcome === 'question'
         ? { done: true, success: true } : wait;
     case 'strangers': case 'withdraw':
-      if (facts.activations > 0 || facts.prepares > 0) return fail;
+      if (facts.activations > 0 || facts.prepares > 0 || !scriptedQuestion(question)) return fail;
       if (!steps || !quiet) return wait;
       return { done: true, success: phase === 'strangers' ? question?.state === 'open' : question?.state === 'answered' && has(work, 'AUTHORIZATION_WITHDRAWN') };
     case 'resume': case 'publish-c':
@@ -573,6 +581,22 @@ async function compose() {
   const tracker = createIssueTracker({ github, scopes: [repository], dependencyScopes: [] });
   return { github, tracker, codeRepository: createCodeRepository({ github }), createBuilderCredentials, createRepositoryFetchCredentials };
 }
+/** Every Question of a Work read BY ID (`show` fits its view to one frame and may omit questions: ed4d592). */
+async function questionsOf(control: { inspect(query: never): Promise<unknown> }, work: WorkView | undefined): Promise<QuestionView[]> {
+  const found: QuestionView[] = [];
+  for (const id of (work?.questions ?? []).slice(0, 16)) {
+    const view = await control.inspect({ kind: 'question', question_id: id } as never) as { kind?: string; question?: QuestionView };
+    if (view.kind === 'question' && view.question) found.push(view.question);
+  }
+  return found;
+}
+/** What the stall watch compares between polls: any change of the Work, its Questions, the recipe log or the observed steps. */
+export function progressFingerprint(work: WorkView | undefined, questions: readonly QuestionView[], events: number, steps: number): string {
+  const execution = work?.execution;
+  return JSON.stringify([work?.result, (work?.impediments ?? []).map(item => item.code), execution?.executionId, execution?.state, execution?.dispatch.phase,
+    execution?.timing?.lastActivity ?? null, execution?.review?.rounds.length ?? 0, work?.publication?.state, work?.corrections?.length ?? 0, work?.correction?.correctionId ?? null,
+    work?.delivery?.state ?? null, work?.history?.length ?? 0, questions.map(item => [item.questionId, item.state, item.publication?.state, item.ignored?.length ?? 0]), events, steps]);
+}
 const lineNumbers = () => Object.values(tickets).map(item => item.number);
 
 async function runControl(phase: ControlPhase, save: Save, load: Load, operator: { login: string; id: number }) {
@@ -678,6 +702,7 @@ async function runControl(phase: ControlPhase, save: Save, load: Load, operator:
   let outcome = { done: false, success: false };
   const extra: Record<string, unknown> = {};
   const preflight = await load('preflight-result');
+  let lastPrint = '', lastChangeAt = Date.now();
   try {
     if (phase === 'resume' || phase === 'cancel-merge') {
       const work = workIn(await listView());
@@ -695,8 +720,14 @@ async function runControl(phase: ControlPhase, save: Save, load: Load, operator:
       const view = await listView();
       const work = workIn(view);
       currentWork = work?.work_id ?? null;
-      const shown = work ? await control.inspect({ kind: 'show', work_id: work.work_id }) as ShowView : null;
-      const facts: Facts = { work, questions: shown?.kind === 'work' ? shown.questions : [], list: view, activations, prepares, seen, observed: observedSteps };
+      const questions = await questionsOf(control as never, work);
+      const facts: Facts = { work, questions, list: view, activations, prepares, seen, observed: observedSteps };
+      const print = progressFingerprint(work, questions, eventsLog.length, observedSteps.size);
+      if (print !== lastPrint) { lastPrint = print; lastChangeAt = Date.now(); }
+      else if (Date.now() - lastChangeAt > stallMinutes * 60 * 1000) {
+        await save(`${phase}-stalled`, { phase, at: new Date().toISOString(), minutes: stallMinutes, asked, work: work ?? null, questions });
+        throw new Error('RECIPE_STALLED');
+      }
       // cancel-merge: the Factory's reopen confirmed -> the local resume (once).
       if (phase === 'cancel-merge' && !extra.resumeReceipt && work?.closure?.reopen?.state === 'confirmed') {
         extra.resumeReceipt = await control.accept({ request_id: `${revision}-resume-c`, operation: 'resume', work_id: work.work_id, origin: 'local-cli' });
@@ -750,7 +781,7 @@ async function runControl(phase: ControlPhase, save: Save, load: Load, operator:
   } finally {
     const final = await listView().catch(() => null);
     const work = workIn(final);
-    const shown = work ? await control.inspect({ kind: 'show', work_id: work.work_id }).catch(() => null) as ShowView | null : null;
+    const finalQuestions = await questionsOf(control as never, work).catch(() => [] as QuestionView[]);
     const cancelReceipt = phase === 'cancel-merge' ? await control.inspect({ kind: 'request', request_id: cancelRequestId }).catch(() => null) : null;
     stop.abort();
     const result = await running.catch(() => ({ kind: 'failed' as const }));
@@ -765,7 +796,7 @@ async function runControl(phase: ControlPhase, save: Save, load: Load, operator:
       cessation.push({ ...item, observedBoot: boot, observed, stopped });
     }
     await save(`${phase}-cessation`, { boots: cessation, at: new Date().toISOString() }).catch(() => {});
-    await save(`${phase}-result`, { status: outcome.success ? 'success' : 'held', outcome: result, work: work ?? null, questions: shown?.kind === 'work' ? shown.questions : [],
+    await save(`${phase}-result`, { status: outcome.success ? 'success' : 'held', outcome: result, work: work ?? null, questions: finalQuestions,
       hold: phase === 'foreign' ? foreignHold(final) : undefined, holdA: final ? holdOf(final, tickets.A.number) ?? null : null, polling: final?.polling ?? null,
       cancelReceipt, ...extra, stepsObserved: [...observedSteps], seen, counts: { prepares, activations }, events: eventsLog, deadlineReached: Date.now() >= deadline,
       operators: spec.operators, preflightBase: pick(preflight, 'base') }).catch(() => {});
@@ -812,7 +843,7 @@ async function inspectPhase(save: Save, load: Load) {
   const stored = await openControl({ storagePath: copy, runtimeInventory: 'unknown' });
   const view = await stored.inspect({ kind: 'list' }) as ListView;
   const showB = view.works.find(item => item.ticket.number === tickets.B.number);
-  const shownB = showB ? await stored.inspect({ kind: 'show', work_id: showB.work_id }) as ShowView : null;
+  const questionsB = await questionsOf(stored as never, showB);
   const stopped = new AbortController(); stopped.abort();
   await stored.run(stopped.signal);
   const { workerRuntimeDirectory } = await import('../../src/platform/host/index.js');
@@ -849,7 +880,7 @@ async function inspectPhase(save: Save, load: Load) {
   const storage = Buffer.concat(await Promise.all(['control.sqlite', 'control.sqlite-wal'].map(name => fs.readFile(`${observations}/${name}`).catch(() => Buffer.alloc(0)))));
   const lastHold = await (async () => { for (const phase of [...controlPhases].reverse()) { const saved = await load(`${phase}-result`); if (saved) return pick(saved, 'holdA', 'outcome') === 'held'
     ? list(pick(saved, 'holdA', 'holds')).find(item => item.code === 'FOREIGN_PULL_REQUEST') ?? null : null; } return null; })();
-  const result = { works: view.works, questionsB: shownB?.kind === 'work' ? shownB.questions : [], lastHoldA: lastHold,
+  const result = { works: view.works, questionsB, lastHoldA: lastHold,
     compare: { baseToConflictHead: await compare(conflictBase, conflictHead), humanToConflictHead: await compare(humanTip, conflictHead) }, pulls,
     pushViolations: pushViolations(pushes, expectations), sessions,
     secretScan: secretScan({ storage, sessions: Buffer.concat(sessionBytes), observations: observationBytes }) };

@@ -53,7 +53,8 @@ test('activation and grant guards: per-phase Builder budget for the phase Work o
 });
 
 const question = (extra: Partial<QuestionView> = {}) => ({ questionId: '11111111-1111-4111-8111-111111111111', workId: 'w', recordedFrom: 'worker-notification', state: 'open',
-  publication: { state: 'published' }, ignored: [], answer: null, ...extra }) as unknown as QuestionView;
+  publication: { state: 'published' }, ignored: [], answer: null,
+  content: { question: 'Which word must the `## Choice` section of docs/FACTORY_ADVERSE.md contain: alpha or beta?', context: '' }, ...extra }) as unknown as QuestionView;
 const work = (extra: Record<string, unknown> = {}) => ({ work_id: 'w', ticket: { number: 102 }, result: 'open', impediments: [], previousExecutions: [], execution: null, correction: null,
   corrections: [], authorization: { withdrawal: null }, feedback: { ignored: [], requests: [] }, publication: null, ...extra }) as unknown as WorkView;
 const facts = (extra: Partial<recipe.Facts> = {}): recipe.Facts => ({ work: work(), questions: [question()], list: null, activations: 0, prepares: 0, seen: {}, observed: new Set(), ...extra });
@@ -91,6 +92,10 @@ test('settled: nothing adopted/dispatched where nothing may be; ends only at the
   assert.deepEqual(recipe.settled('foreign', { ...noA, prepares: 1 }, true), { done: true, success: false });
   const asked = work({ impediments: [{ code: 'QUESTION_PENDING' }], execution: { state: 'ended', end: { outcome: 'question' }, slot: { held: false } } });
   assert.deepEqual(recipe.settled('ask', facts({ work: asked }), false), { done: true, success: true });
+  const other = question({ content: { question: 'May I also edit README.md?', context: '' } } as never);
+  assert.deepEqual(recipe.settled('ask', facts({ work: asked, questions: [other] }), false), { done: true, success: false }, 'an unscripted Builder Question holds');
+  assert.deepEqual(recipe.settled('ask', facts({ work: asked, questions: [question(), question({ questionId: '44444444-4444-4444-8444-444444444444' })] }), false),
+    { done: true, success: false }, 'a second Builder Question holds');
   const withdrawn = work({ impediments: [{ code: 'AUTHORIZATION_WITHDRAWN' }] });
   const all = new Set([5, 6, 7, 8, 9]);
   assert.deepEqual(recipe.settled('withdraw', facts({ work: withdrawn, questions: [question({ state: 'answered' })], observed: all }), true), { done: true, success: true });
@@ -221,6 +226,15 @@ test('verdict sensitivity: each obligation fails when its observation is altered
     alter(saved);
     assert.ok(failing(saved).includes(id), `${id} must fail`);
   }
+});
+
+test('progress fingerprint: any change of the Work, its Questions, the recipe log or the steps resets the stall watch', () => {
+  const base = recipe.progressFingerprint(work(), [question()], 3, 1);
+  assert.equal(recipe.progressFingerprint(work(), [question()], 3, 1), base);
+  assert.notEqual(recipe.progressFingerprint(work(), [question()], 4, 1), base);
+  assert.notEqual(recipe.progressFingerprint(work(), [question({ state: 'answered' })], 3, 1), base);
+  assert.notEqual(recipe.progressFingerprint(work({ impediments: [{ code: 'AUTHORIZATION_WITHDRAWN' }] }), [question()], 3, 1), base);
+  assert.equal(recipe.stallMinutes, 20);
 });
 
 test('secret scan: installation/user tokens, fine-grained PATs and private keys; plain text passes', () => {
