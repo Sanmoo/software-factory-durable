@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "synthetic-structural-rehearsal",
+  "version": 1,
+  "scope": "Only the offline runner mechanics; not evidence about a real harness, service or model.",
+  "criteria": [
+    {
+      "id": "counter",
+      "kind": "contract",
+      "requirement": "The simulated attempt count does not increase during active continuation.",
+      "witness": "Literal before/after counters and an observed simulated activation.",
+      "fixtures": ["In-process fake harness"],
+      "excludes": ["Native no-replay", "General idempotency", "Completion of the auxiliary edit"]
+    },
+    {
+      "id": "wait",
+      "kind": "contract",
+      "requirement": "The synthetic activation ceases before evidence is assessed or diagnostic sources are removed.",
+      "witness": "A stop receipt and ordered structural events.",
+      "fixtures": ["In-process stop callback"],
+      "excludes": ["Physical cessation of a real process or guest"]
+    },
+    {
+      "id": "edit",
+      "kind": "auxiliary",
+      "requirement": "The synthetic output contains its required completion marker.",
+      "witness": "The collected artifact contains a complete RESUMED line.",
+      "fixtures": ["Local temporary text file"],
+      "excludes": ["The separate non-replay criterion"]
+    }
+  ]
+}
