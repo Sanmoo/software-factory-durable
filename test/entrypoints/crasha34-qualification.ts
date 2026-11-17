@@ -33,7 +33,7 @@ import { snapshotStorage } from './publication14-qualification.js';
 // Phases and child steps are one-shot: an exclusive intent tombstone precedes effects; a consumed phase never reruns; nothing is retried.
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const observations = `${root}/q34-crash-a-v3`;
+const observations = `${root}/q34-crash-a-v4`;
 /**
  * The recipe's OWN Factory root (environments, host Git cache, Records, worker runtime, model OAuth store): never the shared y5 root, so a cache
  * cut or a failed reconciliation can only affect this recipe. It cannot live inside the namespace: worker sockets under <root>/r/<boot>/s/ must
@@ -56,7 +56,9 @@ const setupEntries = ['releases', 'assets', 'credentials', 'data', 'environments
 // per line, nothing filtered. v2 held at `sources`: the cut WAS reached (s1-cut proven), but the recipe had frozen the survivor unit and
 // systemd 262 refused the next owner's stop job ("Cannot stop frozen unit"); the product rightly held RECOVERY_CESSATION_UNCONFIRMED (a frozen
 // unit is not a stopped one), so s2 never reached its Question. v3: SIGSTOP of the unit's processes instead of the freeze.
-const revision = 'q34-crash-a-v3';
+// v3 held at preflight (2026-11-17): the supervisor's driver labelled both issues and preflight read the listing ~1 s later; GitHub listed only
+// one (eventual consistency). The recipe itself never labels: the driver now waits (GET only, bounded) for the exact listing first.
+const revision = 'q34-crash-a-v4';
 export const phases = ['preflight', 'cache', 'sources', 'tool', 'inspect', 'stop-environment'] as const;
 export type Phase = typeof phases[number];
 export const steps = ['c1-cache-cut', 'c2-cache-reconcile', 's1-sources-cut', 's2-sources-recovery', 't1-tool-cut', 'h1-handoff-cut', 'f1-final'] as const;
