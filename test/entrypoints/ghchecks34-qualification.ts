@@ -14,7 +14,9 @@ import { ghGuardScript } from './cancel25-qualification.js';
 // operator's account and ALWAYS runs the restore (a trap, as the q22 driver). The Factory never merges, approves, bypasses or changes rules.
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const revision = 'q34-ghchecks-v1';
+// v1 (run/ghchecks, issues #52/#53) held in preflight: the setup PR could not merge under a ruleset already requiring its own check. v2 merges every
+// operator PR under `relaxed` (no required check) and puts the required check only afterwards.
+const revision = 'q34-ghchecks-v2';
 const observations = `${root}/${revision}`;
 export const phases = ['preflight', 'waiver', 'run', 'failing', 'strict', 'human-draft', 'rerun', 'contexts', 'classic', 'homonym', 'inspect', 'stop-environment'] as const;
 export type Phase = typeof phases[number];
@@ -139,7 +141,8 @@ export type HumanStep = { name: string; phase: Phase; apply: string[]; restore: 
 const api = (method: string, path: string, input?: string) => `gh api --method ${method} ${path}${input ? ` --input ${input}` : ''} --silent`;
 const putRuleset = (variant: Variant) => api('PUT', `repos/${repository.repository}/rulesets/${rulesetId}`, `${observations}/rulesets/${variant}.json`);
 const heredoc = (path: string, content: string) => `mkdir -p "$(dirname ${path})" && cat > ${path} <<'Q34_EOF'\n${content}Q34_EOF`;
-/** The operator's OWN PR merged into main with the operator's account (never the App): the base tip it starts from is checked first. */
+/** The operator's OWN PR merged into main with the operator's account (never the App): the base tip it starts from is checked first. It is merged
+ * ONLY under the `relaxed` ruleset (no required check): a PR adding the check's own workflow can never wait for it (q34 v1). */
 export function operatorPr(name: string, expectedMain: string, edits: string[], message: string): string[] {
   const dir = `/tmp/q34-${name}`;
   return [`rm -rf ${dir} && git clone --quiet https://github.com/${repository.repository}.git ${dir} && cd ${dir}`,
@@ -147,21 +150,21 @@ export function operatorPr(name: string, expectedMain: string, edits: string[], 
     `git switch --quiet -c q34-${name} origin/${repository.base}`, ...edits, `git add -A && git commit --quiet -m '${message}'`,
     `git push --quiet origin q34-${name}   # the operator's OWN branch (a workflow file needs the gh token's workflow scope); never --force`,
     `gh pr create --repo ${repository.repository} --base ${repository.base} --head q34-${name} --title 'q34 ${name}' --body 'Operator step of the R-GH-CHECKS qualification.'`,
-    `gh pr checks q34-${name} --repo ${repository.repository} --watch --required || true   # wait for ${checkName} (it passes: the Factory file is absent)`,
     `gh pr merge q34-${name} --repo ${repository.repository} --squash --delete-branch   # the OPERATOR merges the operator's own PR (0 approvals while relaxed; never the App)`];
 }
 export function humanSteps(input: { mainTip: string; pullRequest?: number | undefined; head?: string | undefined; runId?: number | undefined }): Record<string, HumanStep> {
   const r = repository.repository;
   return {
-    setup: { name: 'setup', phase: 'preflight', expect: `ruleset ${rulesetId} = loose (required ${checkName}@${actionsAppId}, not strict; no update; 0 approvals) and ${workflowPath} + ${scriptPath} on main`,
-      apply: [putRuleset('loose'), ...operatorPr('setup', input.mainTip, [heredoc(workflowPath, gateWorkflow), heredoc(scriptPath, gateScript)], 'ci: add the factory-gate required check (q34 R-GH-CHECKS)')],
+    setup: { name: 'setup', phase: 'preflight', expect: `${workflowPath} + ${scriptPath} on main (merged under relaxed), then ruleset ${rulesetId} = loose (required ${checkName}@${actionsAppId}, not strict; no update; 0 approvals)`,
+      apply: [putRuleset('relaxed'), ...operatorPr('setup', input.mainTip, [heredoc(workflowPath, gateWorkflow), heredoc(scriptPath, gateScript)], 'ci: add the factory-gate required check (q34 R-GH-CHECKS)'),
+        putRuleset('loose')],
       restore: [putRuleset('before')], note: 'restore puts back the live ruleset read at preflight; the workflow stays on main until the teardown PR removes it' },
     label: { name: 'label', phase: 'run', expect: `#${tickets.checks.number} carries ${repository.label}`,
       apply: [`gh issue edit ${tickets.checks.number} --repo ${r} --add-label ${repository.label}`], restore: [`gh issue edit ${tickets.checks.number} --repo ${r} --remove-label ${repository.label}`],
       note: 'restore at teardown only (the label authorizes the Work for every later phase)' },
-    strict: { name: 'strict', phase: 'strict', expect: `ruleset strict, then main advanced by the operator's own PR (another file): the Factory PR is behind under strict`,
-      apply: [putRuleset('strict'), ...operatorPr('advance', input.mainTip, [heredoc('docs/FACTORY_CHECKS_BASE_NOTE.md', '# Base note\n\nAdded on main by the operator (q34 strict step): the base advances under a strict rule.\n')],
-        'docs: q34 R-GH-CHECKS strict step')], restore: [putRuleset('loose')], note: 'the advance commit stays on main (removed by the teardown PR)' },
+    strict: { name: 'strict', phase: 'strict', expect: `main advanced by the operator's own PR (another file, merged under relaxed), then the ruleset strict: the Factory PR is behind under strict`,
+      apply: [putRuleset('relaxed'), ...operatorPr('advance', input.mainTip, [heredoc('docs/FACTORY_CHECKS_BASE_NOTE.md', '# Base note\n\nAdded on main by the operator (q34 strict step): the base advances under a strict rule.\n')],
+        'docs: q34 R-GH-CHECKS strict step'), putRuleset('strict')], restore: [putRuleset('loose')], note: 'the advance commit stays on main (removed by the teardown PR)' },
     'human-draft': { name: 'human-draft', phase: 'human-draft', expect: `PR #${input.pullRequest ?? '<n>'} converted back to draft by the operator`,
       apply: [`gh pr ready ${input.pullRequest ?? '<n>'} --repo ${r} --undo   # the OPERATOR's draft over the Factory's ready`], restore: [],
       note: 'nothing to restore: the Factory PR stays draft and is closed at teardown' },
@@ -178,8 +181,7 @@ export function humanSteps(input: { mainTip: string; pullRequest?: number | unde
       apply: [`gh api --method POST repos/${r}/statuses/${input.head ?? '<head>'} -f state=failure -f context=${checkName} -f description='q34 homonym status by the operator' --silent`],
       restore: [], note: 'GitHub cannot delete a commit status: it stays on that head of the (never merged, closed at teardown) Factory PR' },
     teardown: { name: 'teardown', phase: 'inspect', expect: 'workflow/script/base note removed from main; Factory PR closed; issues unlabelled and closed; ruleset as before',
-      apply: [putRuleset('relaxed'), ...operatorPr('teardown', input.mainTip, [`git rm --quiet ${workflowPath} ${scriptPath} docs/FACTORY_CHECKS_BASE_NOTE.md`], 'ci: remove the q34 factory-gate check').map(line =>
-        line.startsWith('gh pr checks') ? '# no check to wait for: the relaxed ruleset requires none' : line),
+      apply: [putRuleset('relaxed'), ...operatorPr('teardown', input.mainTip, [`git rm --quiet ${workflowPath} ${scriptPath} docs/FACTORY_CHECKS_BASE_NOTE.md`], 'ci: remove the q34 factory-gate check'),
       ...(input.pullRequest ? [`gh pr close ${input.pullRequest} --repo ${r} --comment 'q34 R-GH-CHECKS qualification finished (closed by the operator; never merged).'`] : []),
       `gh issue edit ${tickets.waiver.number} --repo ${r} --remove-label ${repository.label} && gh issue close ${tickets.waiver.number} --repo ${r} --reason 'not planned'`,
       `gh issue edit ${tickets.checks.number} --repo ${r} --remove-label ${repository.label} && gh issue close ${tickets.checks.number} --repo ${r} --reason 'not planned'`, putRuleset('before')],

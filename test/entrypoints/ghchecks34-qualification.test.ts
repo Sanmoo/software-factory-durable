@@ -18,7 +18,7 @@ test('R-GH-CHECKS recipe: import and --plan are inert; own namespace, two pinned
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q34-ghchecks-v1');
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q34-ghchecks-v2');
   assert.deepEqual(plan.phases, ['preflight', 'waiver', 'run', 'failing', 'strict', 'human-draft', 'rerun', 'contexts', 'classic', 'homonym', 'inspect', 'stop-environment']);
   assert.deepEqual([plan.tickets.waiver.pinned, plan.tickets.checks.pinned], [false, false], 'the supervisor pins both NEW issues in a reviewed commit before any phase');
   assert.match(plan.tickets.waiver.body, /## Waiver/);

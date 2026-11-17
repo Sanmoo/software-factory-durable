@@ -79,7 +79,7 @@ test('human steps: operator PRs check the base tip, never force or bypass; every
   const steps = humanSteps({ mainTip: tip, pullRequest: 12, head: 'b'.repeat(40), runId: 345 });
   assert.equal(steps.rerun!.apply[0]!.startsWith('gh run rerun 345 --repo Sanmoo/java-springboot-event-sourcing'), true);
   assert.ok(steps['human-draft']!.apply[0]!.startsWith('gh pr ready 12 --repo Sanmoo/java-springboot-event-sourcing --undo'));
-  assert.ok(steps.strict!.apply[0]!.endsWith('rulesets/strict.json --silent') && steps.strict!.restore[0]!.endsWith('rulesets/loose.json --silent'));
+  assert.ok(steps.strict!.apply.at(-1)!.endsWith('rulesets/strict.json --silent') && steps.strict!.restore[0]!.endsWith('rulesets/loose.json --silent'));
   assert.ok(steps.contexts!.restore[0]!.endsWith('rulesets/loose.json --silent'));
   assert.ok(steps.teardown!.apply.at(-1)!.endsWith('rulesets/before.json --silent'), 'teardown ends with the live ruleset');
   assert.ok(steps.teardown!.apply.some(line => line.startsWith('gh pr close 12')));
@@ -174,4 +174,19 @@ test('secret scan: names token-bearing files, skips credentials/ and never follo
   await writeFile(join(dir, 'run', 'log.json'), `{"t":"ghs_${'a'.repeat(36)}"}`);
   await writeFile(join(dir, 'clean.json'), '{"ok":true}');
   assert.deepEqual(await secretScan(dir), { files: 2, skipped: [], matches: ['run/log.json'] });
+});
+
+test('every operator merge happens under the RELAXED ruleset (no required check), and the required check is put only after it (q34 v1 setup deadlock)', () => {
+  const steps = humanSteps({ mainTip: 'a'.repeat(40), pullRequest: 12 });
+  for (const name of ['setup', 'strict', 'teardown'] as const) {
+    const apply = steps[name]!.apply;
+    const merge = apply.findIndex(line => line.startsWith('gh pr merge'));
+    assert.ok(merge >= 0, `${name} merges an operator PR`);
+    const lastRuleset = apply.slice(0, merge).filter(line => line.includes('/rulesets/')).at(-1);
+    assert.ok(lastRuleset?.endsWith('rulesets/relaxed.json --silent'), `${name}: the merge runs under relaxed (got ${lastRuleset})`);
+    assert.ok(!apply.some(line => line.startsWith('gh pr checks')), `${name}: no wait on Actions timing`);
+  }
+  assert.ok(steps.setup!.apply.at(-1)!.endsWith('rulesets/loose.json --silent'), 'setup puts the required check only after the merge');
+  assert.ok(steps.strict!.apply.at(-1)!.endsWith('rulesets/strict.json --silent'), 'strict is put only after the advance merge');
+  assert.ok(steps.teardown!.apply.at(-1)!.endsWith('rulesets/before.json --silent'));
 });
