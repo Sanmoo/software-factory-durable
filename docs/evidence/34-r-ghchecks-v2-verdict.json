@@ -1,0 +1,107 @@
+{
+ "run": "q34-ghchecks-v2",
+ "namespace": "y5/q34-ghchecks-v2",
+ "issues": [
+  75,
+  76
+ ],
+ "recipe": "run/ghchecks-v2 8fdc303",
+ "note": "Saved verdict of the run with ONE check corrected offline (failing.repair): re-evaluated by the fixed verdictOf over the same saved inspect result; every other check is the original. Phases after strict never ran (strict held UNSCRIPTED_QUESTION).",
+ "checks": [
+  {
+   "id": "waiver.not-bypassed",
+   "obligation": "V-08.f",
+   "expected": "verification not-verified with WAIVER_CANNOT_BYPASS_REQUIRED_CHECK:factory-gate, requiredChecks ∋ factory-gate, no PR",
+   "observed": "{\"status\":\"not-verified\",\"reasons\":[\"WAIVER_CANNOT_BYPASS_REQUIRED_CHECK:factory-gate\"],\"requiredChecks\":[\"factory-gate\"],\"pr\":null}",
+   "met": true
+  },
+  {
+   "id": "failing.repair",
+   "obligation": "V-10.b",
+   "expected": "ONE correction REQUIRED_CHECK_FAILED:factory-gate@H1 with failure evidence, published and charged; H2 on the SAME PR",
+   "observed": "{\"reasons\":[\"REQUIRED_CHECK_FAILED:factory-gate@9a29d6fe90f1dea8aaf6200bdd854b3872e94249\"],\"evidence\":[\"check-run:factory-gate:failure:https://github.com/Sanmoo/java-springboot-event-sourcing/actions/runs/44080567555/job/134029757538\"],\"outcome\":\"published\",\"heads\":[\"9a29d6fe90f1dea8aaf6200bdd854b3872e94249\",\"15160421f7a9d8ec8c22a0b844d12164c719f278\"]}",
+   "met": true,
+   "correctedFrom": {
+    "met": false,
+    "cause": "the original check expected the evidence prefix check_run: but Control records check-run:<name>:failure:<url> (fixed in 494ee3a)"
+   }
+  },
+  {
+   "id": "failing.pending-then-result",
+   "obligation": "V-09.c",
+   "expected": "H1: waiting before failing; H2: waiting before satisfied (current head only; H1's failure never counts for H2)",
+   "observed": "{\"atH1\":[\"waiting\",\"waiting\",\"failing\"],\"atH2\":[\"waiting\",\"satisfied\"]}",
+   "met": true
+  },
+  {
+   "id": "strict.repair",
+   "obligation": "V-10.b",
+   "expected": "second correction STRICT_UPDATE_REQUIRED against the advanced base b3f0c6c60eb0ab118d1465cac0a6e2bce27ad903, published; H3 contains it",
+   "observed": "{\"reason\":null,\"compare\":1}",
+   "met": false
+  },
+  {
+   "id": "strict.loss-back-to-draft",
+   "obligation": "V-09.e",
+   "expected": "confirmed conversions: mark-ready (failing), convert-to-draft (condition lost under strict), mark-ready (after the repair)",
+   "observed": "[\"mark-ready\",\"convert-to-draft\"]",
+   "met": false
+  },
+  {
+   "id": "human-draft.respected",
+   "obligation": "V-09.e",
+   "expected": "human draft recorded; no conversion attempted, no correction, no activation in the quiet window",
+   "observed": "{\"humanDraft\":null,\"conversions\":0,\"activations\":0}",
+   "met": false
+  },
+  {
+   "id": "rerun.pending",
+   "obligation": "V-09.c",
+   "expected": "factory-gate waiting during the rerun of the current head, never covered by the older green",
+   "observed": "{\"reads\":[],\"outcome\":null}",
+   "met": false
+  },
+  {
+   "id": "contexts.skipped-absent-strict",
+   "obligation": "V-09.c",
+   "expected": "factory-optional satisfied by a skipped run; factory-absent REQUIRED_CHECK_ABSENT (waiting); strict required from the ruleset; linear history interpreted",
+   "observed": "{}",
+   "met": false
+  },
+  {
+   "id": "classic.accumulated",
+   "obligation": "V-09.f",
+   "expected": "requirement factory-gate@15368 accumulated from classic AND the ruleset; classic strict",
+   "observed": "{}",
+   "met": false
+  },
+  {
+   "id": "classic.settings-merge-blocking",
+   "obligation": "V-09.f",
+   "expected": "classic lock_branch and required signatures read and merge-blocking (source classic), linear history interpreted; outcome blocked, never satisfied",
+   "observed": "{\"modalities\":[],\"reasons\":[]}",
+   "met": false
+  },
+  {
+   "id": "homonym.other-origin",
+   "obligation": "V-09.c",
+   "expected": "the operator's factory-gate failure status is another origin than the bound App (15368): visible as otherOrigin, never the required result (the requirement stays satisfied by the Actions check run)",
+   "observed": "{\"otherOrigin\":[],\"results\":[]}",
+   "met": false
+  },
+  {
+   "id": "no-bypass",
+   "obligation": "V-08.f/V-09.e/V-10.b",
+   "expected": "the Factory PR never merged; every push leased; no refused conversion; only the Ticket file changed (CI script untouched)",
+   "observed": "{\"merged\":false,\"changedFiles\":[\"docs/FACTORY_CHECKS.md\"],\"pushViolations\":[],\"refused\":[0,0,0]}",
+   "met": true
+  },
+  {
+   "id": "no-token",
+   "obligation": "all",
+   "expected": "no token or private key in sessions or in the namespace",
+   "observed": "{\"sessions\":0,\"namespace\":[]}",
+   "met": true
+  }
+ ]
+}

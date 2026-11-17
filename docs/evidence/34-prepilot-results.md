@@ -131,9 +131,44 @@ resposta foi aceita uma vez e a retomada completou. Decisão do operador (D-10):
 | v3 | preflight | corrida na listagem de labels no driver do supervisor (a listagem viu só #50) | `a7e80ad`: espera limitada da listagem |
 | v4 | sources (`CUT_NOT_REACHED`) | a parada forçada do sobrevivente pausado levou ao check forçado do disco (D-06): `PRESERVED_DISK_CHECK_REQUIRED` com erros de ext4 no `root.qcow2`, sem reuso silencioso | `169176c`: SIGCONT do sobrevivente antes do próximo dono; parada forçada retida como D-06 |
 
+## R-GH-CHECKS `y5/q34-ghchecks-v2..v4` — parcial (decisão do operador 2026-11-17): V-08.f aprovada
+
+Totais: 83/0/17/12 → **84/0/16/12**. O operador decidiu registrar o grupo como **parcial** e cobrir o restante com um desenho menor,
+`R-GH-CHECKS-S` (receita `test/entrypoints/ghchecks34s-qualification.ts`, namespace `q34-ghchecks-s-v1`, não executado).
+
+**v2** (`run/ghchecks-v2` = `8fdc303`, issues #75/#76, check obrigatório real `factory-gate` do GitHub Actions no ruleset 26435808). Veredito salvo com
+uma verificação corrigida offline: [34-r-ghchecks-v2-verdict.json](34-r-ghchecks-v2-verdict.json).
+
+- **V-08.f aprovada.** O Builder declarou o gate `waived` com autorização preserved-source do Ticket e `requiredCheck: factory-gate`. A
+  verificação ficou `not-verified` com `WAIVER_CANNOT_BYPASS_REQUIRED_CHECK:factory-gate`; não houve publicação nem PR.
+- **V-10.b, metade do check falho:** o primeiro head H1 falhou `factory-gate`. O resultado foi UMA correção `REQUIRED_CHECK_FAILED:factory-gate@H1`, com
+  evidência, cobrada, e o reparo publicado como H2 no MESMO PR. O inspect original marcou `failing.repair` como não atendido por um erro da receita: esperava o
+  prefixo `check_run:`, mas o Control registra `check-run:<nome>:failure:<url>` (corrigido em `494ee3a`). A mesma verificação, refeita sobre o resultado salvo,
+  dá `met`.
+- **V-09.c, parte do head atual:** waiting → failing em H1 e waiting → satisfied em H2; o resultado do head antigo nunca foi emprestado.
+- `strict` ficou retido com `UNSCRIPTED_QUESTION`: a revisão Spec apontou a linha exigida pelo check entre o parágrafo e `## Steps`. As fases
+  seguintes não rodaram. `no-bypass` e `no-token` atendidos.
+
+**v3** (`414b704`, #86/#87): o Ticket dizia que o conteúdo exigido por um check obrigatório estava no escopo. O Builder leu `ci/factory-gate.sh`
+e o primeiro head já passou, então a falha exigida por V-10.b não ocorreu. A fase foi interrompida; o inspect ficou retido (cópia da chave
+deixada pela fase morta) e o teardown foi feito à mão. Correções em `fee973e`.
+
+**v4** (`5cce049`, #96/#97): H1 falhou e a correção abriu. A Pergunta tolerada (marcador versus achado S1 da Spec) foi respondida e a mesma Execução foi retomada,
+com conteúdo inalterado e rodada 5 limpa. O Builder declarou S1 `fixed` sem mudar o conteúdo; a verificação recusou com `FIX_NOT_REVIEWED:4/spec/S1`
+(`src/control/rules/review.ts:302-303`), exatamente como o skill v7 manda (`assets/skill-pack/factory-skills-v7/skills/implement/SKILL.md:93-97`:
+conteúdo inalterado → `not-adopted`). Não é defeito do produto: é um desvio do Builder (modelo). A receita não registrou `holdReason`
+(lacuna corrigida em `7da7c02`). Teardown e restauração ok.
+
+**Por que parcial.** As fases strict…homonym só eram alcançáveis depois de dois reparos guiados pelo modelo terminarem publicáveis. Em quatro
+execuções, isso quebrou em três pontos diferentes. O `R-GH-CHECKS-S` cobre o restante sem cadeia de reparos:
+
+- V-09.c e V-09.f: leituras GET-only de um PR de sonda do operador, sem Trabalho da Factory (a classificação dos checks não depende de propriedade).
+- V-09.e e a metade strict de V-10.b: UM Trabalho cujo head passa um check sempre verde; depois ready da Factory, strict, UM reparo com volta a
+  draft e ready, e draft humano respeitado.
+
 ## Pendências deste registro
 
 - Novo ticket para o flake `test/records/raw.test.ts` sob carga de VM:
   [42](../../.scratch/software-factory-mvp/issues/42-records-raw-test-flake-under-load.md).
-- G4 e G5 continuam bloqueados. As obrigações restantes estão em `R-GH-CHECKS`, `R-GH-ADV`, `R-LONG`, `R-THREE`, `R-REL` (V-16.b) e
+- G4 e G5 continuam bloqueados. As obrigações restantes estão em `R-GH-CHECKS-S`, `R-GH-ADV`, `R-LONG`, `R-THREE`, `R-REL` (V-16.b) e
   `R-INSTR`. Este resultado continua liberando no máximo a preparação da solicitação de autorização do piloto (35).

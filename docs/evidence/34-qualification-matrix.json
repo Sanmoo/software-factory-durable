@@ -110,9 +110,9 @@
   }
  },
  "counts": {
-  "aprovada": 83,
+  "aprovada": 84,
   "reprovada": 0,
-  "inconclusiva": 17,
+  "inconclusiva": 16,
   "dependente-do-piloto": 12
  },
  "realRuns": [
@@ -854,6 +854,58 @@
    ],
    "applicability": "aplicavel",
    "reason": "branch run/crasha-v5 = aff6197 + pin #50 #51, descendente de b30e2bd e da composicao de mvp-34.4"
+  },
+  {
+   "id": "q34-ghchecks-v2",
+   "ticket": "34",
+   "date": "2026-11-17",
+   "commit": "8fdc303",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "GitHub real com check obrigatorio real (factory-gate, GitHub Actions, ruleset 26435808 loose): dispensa humana (Ticket T0) e Trabalho T1 cujo primeiro head falha o check -> correcao -> reparo -> H2 no mesmo PR; strict retido por Pergunta",
+   "verdict": "parcial: waiver.not-bypassed, failing.repair (corrigido offline: prefixo de evidencia check-run:), failing.pending-then-result, no-bypass e no-token met; strict em diante nao executado (UNSCRIPTED_QUESTION)",
+   "evidence": [
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-ghchecks-v2-verdict.json"
+   ],
+   "applicability": "aplicavel",
+   "reason": "run/ghchecks-v2 = integracao 71c8581 + pin #75/#76, descendente de b30e2bd, com factory-skills-v7, V-09.f (f4cb958) e b4c5443"
+  },
+  {
+   "id": "q34-ghchecks-v3",
+   "ticket": "34",
+   "date": "2026-11-17",
+   "commit": "414b704",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "mesma configuracao; Ticket com dica do conteudo exigido pelo check",
+   "verdict": "retido: o primeiro head ja passou factory-gate (o Builder leu ci/factory-gate.sh), falha exigida por V-10.b nao ocorreu; fase interrompida; nenhuma obrigacao nova",
+   "evidence": [
+    "docs/evidence/34-prepilot-results.md"
+   ],
+   "applicability": "inconclusiva",
+   "reason": "a premissa do ensaio (H1 falha o check) nao se cumpriu; registro historico"
+  },
+  {
+   "id": "q34-ghchecks-v4",
+   "ticket": "34",
+   "date": "2026-11-17",
+   "commit": "5cce049",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "Ticket sem dica; H1 falhou; Pergunta tolerada respondida; Execucao retomada",
+   "verdict": "retido: o Builder declarou S1 fixed sem mudar o conteudo; a verificacao recusou (FIX_NOT_REVIEWED, src/control/rules/review.ts:302-303) conforme o skill v7 (SKILL.md:93-97); holdReason ausente (lacuna da receita, corrigida em 7da7c02)",
+   "evidence": [
+    "docs/evidence/34-prepilot-results.md"
+   ],
+   "applicability": "inconclusiva",
+   "reason": "desvio do Builder (modelo) numa cadeia de dois reparos; nenhuma obrigacao nova"
   }
  ],
  "scenarios": [
@@ -996,7 +1048,7 @@
     "A",
     "P"
    ],
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-08.a",
     "V-08.b",
@@ -1265,7 +1317,7 @@
   },
   {
    "id": "RF-07",
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-02.f",
     "V-02.g",
@@ -3433,19 +3485,28 @@
     "A"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I",
+    "A"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "dispensa humana nao contorna check GitHub obrigatorio",
-   "observed": "WAIVER_CANNOT_BYPASS_REQUIRED_CHECK so em S: repo de teste sem check obrigatorio",
+   "observed": "q34-ghchecks-v2: com o check obrigatorio real factory-gate, o Builder declarou o gate waived com autorizacao preserved-source do Ticket e requiredCheck factory-gate; a verificacao ficou not-verified com WAIVER_CANNOT_BYPASS_REQUIRED_CHECK:factory-gate; nenhuma publicacao, nenhum PR",
    "evidence": [
-    "docs/evidence/13-findings-treatment-and-current-content-gates.md"
+    "docs/evidence/13-findings-treatment-and-current-content-gates.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-ghchecks-v2-verdict.json"
    ],
-   "runs": [],
-   "commands": [],
+   "runs": [
+    "q34-ghchecks-v2"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita R-GH-CHECKS (q34-ghchecks-v2)"
+   ],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Executar R-GH-CHECKS",
+   "pointer": "Aprovada por R-GH-CHECKS q34-ghchecks-v2 (waiver.not-bypassed)",
    "reexecution": [
     "R-GH-CHECKS"
    ]
@@ -3604,23 +3665,27 @@
     "I"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I"
    ],
    "status": "inconclusiva",
    "expectation": "checks: head atual x antigo, App emissora, homonimos, neutral/skipped, rerun pendente, contexto ausente, strict/loose",
-   "observed": "so fixture: o repo de teste nao tem check obrigatorio (15: empty-complete)",
+   "observed": "q34-ghchecks-v2 (parcial): check obrigatorio real no head atual waiting -> failing em H1 e waiting -> satisfied em H2 (resultado do head antigo nao emprestado), origem App 15368; rerun pendente, skipped/ausente, strict/loose e homonimos ainda nao executados",
    "evidence": [
-    "docs/evidence/15-required-checks-evaluation.md"
+    "docs/evidence/15-required-checks-evaluation.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-ghchecks-v2-verdict.json"
    ],
    "runs": [
-    "q15-v2"
+    "q15-v2",
+    "q34-ghchecks-v2"
    ],
    "commands": [],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Executar R-GH-CHECKS (workflow + ruleset com check obrigatorio configurados pelo operador)",
+   "pointer": "Parcial (decisao do operador 2026-11-17): executar R-GH-CHECKS-S (leituras GET-only em PR de sonda do operador: rerun, contextos, homonimo)",
    "reexecution": [
-    "R-GH-CHECKS"
+    "R-GH-CHECKS-S"
    ]
   },
   {
@@ -3685,9 +3750,9 @@
    "commands": [],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Executar R-GH-CHECKS (inclui perda de condicao apos ready e draft humano)",
+   "pointer": "Executar R-GH-CHECKS-S (PR proprio: ready da Factory, perda sob strict -> draft, draft humano respeitado)",
    "reexecution": [
-    "R-GH-CHECKS"
+    "R-GH-CHECKS-S"
    ]
   },
   {
@@ -3717,9 +3782,9 @@
    "commands": [],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Executar R-GH-CHECKS com protecao classica no repo de teste (o resultado esperado inclui indeterminado onde nao ha leitura)",
+   "pointer": "Executar R-GH-CHECKS-S (protecao classica + ruleset lidas no PR de sonda; lock_branch/assinaturas lidos desde f4cb958)",
    "reexecution": [
-    "R-GH-CHECKS"
+    "R-GH-CHECKS-S"
    ]
   },
   {
@@ -3791,21 +3856,27 @@
     "A"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I",
+    "A"
    ],
    "status": "inconclusiva",
    "expectation": "check obrigatorio atual falho e impedimento strict geram reparo",
-   "observed": "REQUIRED_CHECK_FAILED e STRICT_UPDATE_REQUIRED so em S (repo sem check obrigatorio)",
+   "observed": "q34-ghchecks-v2 (parcial): check obrigatorio atual falho -> UMA correcao REQUIRED_CHECK_FAILED:factory-gate@H1 com evidencia, cobrada, reparo publicado como H2 no MESMO PR (verificacao failing.repair corrigida offline: prefixo check-run:); a metade strict nao foi alcancada (v2 Pergunta, v3 H1 ja verde, v4 tratamento fixed sem mudanca)",
    "evidence": [
-    "docs/evidence/22-effective-impediments-and-automatic-repairs.md"
+    "docs/evidence/22-effective-impediments-and-automatic-repairs.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-ghchecks-v2-verdict.json"
    ],
-   "runs": [],
+   "runs": [
+    "q34-ghchecks-v2"
+   ],
    "commands": [],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Executar R-GH-CHECKS",
+   "pointer": "Parcial (decisao do operador 2026-11-17): executar R-GH-CHECKS-S para STRICT_UPDATE_REQUIRED -> UM reparo",
    "reexecution": [
-    "R-GH-CHECKS"
+    "R-GH-CHECKS-S"
    ]
   },
   {
@@ -5449,7 +5520,6 @@
     "V-04.e",
     "V-06.g",
     "V-07.f",
-    "V-08.f",
     "V-09.c",
     "V-09.e",
     "V-09.f",
@@ -5501,7 +5571,7 @@
   },
   {
    "id": "R-GH-CHECKS",
-   "scope": "Workflow Actions + ruleset com check obrigatorio (strict e loose) e protecao classica no repo de teste: pendente/falho/rerun/homonimos/neutral/skipped, check falho -> reparo, strict -> reparo, dispensa x check obrigatorio, perda de condicao apos ready e draft humano",
+   "scope": "Workflow Actions + ruleset com check obrigatorio (strict e loose) e protecao classica no repo de teste: pendente/falho/rerun/homonimos/neutral/skipped, check falho -> reparo, strict -> reparo, dispensa x check obrigatorio, perda de condicao apos ready e draft humano — EXECUTADO PARCIALMENTE (v2-v4; parcial por decisao do operador 2026-11-17): V-08.f aprovada, metades de V-09.c/V-10.b provadas; o restante passa ao R-GH-CHECKS-S",
    "needs": "configuracao do repo pelo operador, GitHub App, VM e modelo para o reparo",
    "authorizationRequired": true,
    "covers": [
@@ -5615,6 +5685,18 @@
    "authorizationRequired": true,
    "covers": [
     "V-07.f"
+   ]
+  },
+  {
+   "id": "R-GH-CHECKS-S",
+   "scope": "Desenho menor sem cadeia de reparos: leituras GET-only de um PR de sonda do operador (rerun pendente, skipped/ausente, strict, homonimo, protecao classica + ruleset) e UM Trabalho cujo head passa o check sempre verde -> ready da Factory -> strict -> UM reparo (rebase) com volta a draft e ready -> draft humano respeitado",
+   "needs": "configuracao do repo pelo operador (rulesets, protecao classica, PRs do operador), GitHub App, VM e modelo para UMA implementacao e UM reparo",
+   "authorizationRequired": true,
+   "covers": [
+    "V-09.c",
+    "V-09.e",
+    "V-09.f",
+    "V-10.b"
    ]
   }
  ],
