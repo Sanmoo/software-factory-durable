@@ -42,7 +42,7 @@ test('R-REL plan: inert; fresh namespace under y5, 38-byte root, the exact unit 
 test('R-CAND plan: inert; runs the INSTALLED release; issue 0 refuses every phase; human steps by the operator with exact commands; GET-only recipe reads', async () => {
   const plan = await planOf(cand.main);
   assert.equal(forbidden, 0);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/qcand34-v5');
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/qcand34-v6');
   assert.equal(plan.root, '/home/sanmoo/software-factory-test/pr2');
   assert.equal(plan.identityFile, '/home/sanmoo/software-factory-test/y5/prel34-v3/observations/release-identity.json');
   assert.match(plan.release, /RE-VERIFIED at each phase/);

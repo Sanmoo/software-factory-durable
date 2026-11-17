@@ -14,7 +14,7 @@ import { candidateNamespace, command, hostEnvironment, identityFile, installatio
 // writes to GitHub. Bounds are the PRODUCTION ones (configuration limits, one eligible issue, capacity 1); the recipe observes every poll and
 // stops the controller (held) the moment a bound is exceeded: running the release unmodified is the point, so no port is wrapped.
 
-const revision = 'qcand34-v5';
+const revision = 'qcand34-v6';
 const observations = candidateNamespace;
 const root = installationRoot;
 const unit = serviceUnit(root);
@@ -71,7 +71,9 @@ export const ticketBody = [
 export const humanSteps = {
   1: { phase: 'answer', after: 'run: the Builder\'s question about the docs-check gate is published on the issue',
     action: '`/factory answer` comment on the ISSUE approving the waiver of docs-check only',
-    body: 'Approved: waive the docs-check gate for this Ticket only; the content gate stays required.',
+    // qcand34-v5: the repair Execution asked again whether the step-1 approval also covered it (safe product behaviour). The approval now says so.
+    body: 'Approved: waive the docs-check gate for this Ticket only, in this Execution and in every later Execution of this Ticket (repairs included); ' +
+      'the content gate stays required.',
     expect: 'answer ingested (github-comment, operator id); recovery Execution; docs-check declared waived with authorization {kind question, this question}; content gate passed' },
   2: { phase: 'review', after: 'answer: the own draft PR is published and linked',
     action: 'REQUEST_CHANGES review on the Factory PR',
@@ -92,17 +94,23 @@ export const humanSteps = {
     action: 'APPROVE review, then merge with a merge commit (no --admin, no --delete-branch, no squash/rebase)',
     body: 'Approved after the candidate journey.',
     expect: 'delivery confirmed (merged by the operator at the linked head); cleanup removes the own environment and the own branch' },
+  6: { phase: 'review or repair', after: 'a LATER Execution of the Ticket asked again whether the step-1 docs-check approval covers it (at most once per run)',
+    action: '`/factory answer` comment on the ISSUE confirming that the step-1 approval covers every Execution of this Ticket',
+    body: 'Yes: the approval in Question {original} covers every Execution of this Ticket, repairs included; waive docs-check again. The content gate stays required.',
+    expect: 'answer ingested; the asking Execution waives docs-check citing a question authorization; recorded as ONE tolerated extra Question' },
 } as const;
 export type HumanStep = keyof typeof humanSteps;
 
 /** The exact commands the operator runs (own gh login; never the App, never this recipe). */
-export function humanCommands(step: HumanStep, target: { issue: number; pullRequest?: number | null; questionId?: string | null }): string[] {
+export function humanCommands(step: HumanStep, target: { issue: number; pullRequest?: number | null; questionId?: string | null; originalQuestionId?: string | null }): string[] {
   const quote = (text: string) => `'${text.replace(/'/g, `'\\''`)}'`;
   const repo = `--repo ${repository.repository}`;
   const item = humanSteps[step];
-  if (step === 1 || step === 4) {
+  if (step === 1 || step === 4 || step === 6) {
     if (!target.questionId) throw new Error('QUESTION_ID_REQUIRED');
-    return [`gh issue comment ${target.issue} ${repo} --body ${quote(`/factory answer ${target.questionId} ${item.body}`)}`];
+    if (step === 6 && !target.originalQuestionId) throw new Error('ORIGINAL_QUESTION_ID_REQUIRED');
+    const body = step === 6 ? item.body.replace('{original}', target.originalQuestionId!) : item.body;
+    return [`gh issue comment ${target.issue} ${repo} --body ${quote(`/factory answer ${target.questionId} ${body}`)}`];
   }
   if (!target.pullRequest) throw new Error('PULL_REQUEST_REQUIRED');
   if (step === 2) return [`gh pr review ${target.pullRequest} ${repo} --request-changes --body ${quote(item.body)}`];
@@ -212,6 +220,15 @@ export function boundsViolation(snapshot: Snapshot): string | null {
 export function openQuestion(snapshot: Snapshot, exclude: readonly string[] = []): QuestionView | null {
   return snapshot.questions.find(item => item.state === 'open' && item.publication.state === 'published' && !exclude.includes(item.questionId)) ?? null;
 }
+/**
+ * The ONE unscripted Question the recipe tolerates (qcand34-v5): a later Execution asking again whether the step-1 docs-check approval covers
+ * it. Open, published, not an already known Question, and its text names the docs-check gate and a waiver. Anything else still holds.
+ */
+export function rewaiverQuestion(snapshot: Snapshot, exclude: readonly string[]): QuestionView | null {
+  const asked = openQuestion(snapshot, exclude);
+  const text = asked?.content?.question ?? '';
+  return asked && /docs-check/.test(text) && /waiv/i.test(text) ? asked : null;
+}
 /** Only a REAL comment of the pinned operator answers (never a local CLI answer). */
 export function answeredByOperator(snapshot: Snapshot, questionId: string, operatorId: number): 'answered' | 'waiting' | 'not-the-real-comment' {
   const question = snapshot.questions.find(item => item.questionId === questionId) as (QuestionView & { answer?: { author?: { id?: number }; origin?: { kind?: string } } | null }) | undefined;
@@ -230,7 +247,7 @@ const end = (outcome: string, success: boolean): Settle => ({ settled: true, out
  * the GitHub draft flag at the linked head for `ready`).
  */
 export function settle(phase: 'run' | 'answer' | 'review' | 'repair' | 'ready' | 'deliver', snapshot: Snapshot,
-  facts: { q1?: string | null; q2?: string | null; q2Answered?: boolean; quiet?: boolean; githubReady?: boolean; correctionsBefore?: number } = {}): Settle {
+  facts: { q1?: string | null; q2?: string | null; q2Answered?: boolean; quiet?: boolean; githubReady?: boolean; correctionsBefore?: number; tolerated?: readonly string[] } = {}): Settle {
   const work = snapshot.work;
   const stop = stopOutcome(work, phase);
   if (phase === 'repair' && stop && stop !== 'result-delivered') return end('blocked-explained', work?.result === 'open' && published(work));
@@ -247,7 +264,7 @@ export function settle(phase: 'run' | 'answer' | 'review' | 'repair' | 'ready' |
   }
   if (phase === 'review') {
     const human = requestsOf(work, 'HUMAN_CHANGES_REQUESTED');
-    if (openQuestion(snapshot, [facts.q1 ?? '']) && quiet) return end('question-published', false);
+    if (openQuestion(snapshot, [facts.q1 ?? '', ...(facts.tolerated ?? [])]) && quiet) return end('question-published', false);
     const closed = (work?.corrections ?? []).slice(facts.correctionsBefore ?? 0);
     return human.length > 0 && human.every(item => item.state === 'treated') && closed.some(item => item.outcome === 'published' && item.charged) && quiet && !work?.correction &&
       facts.quiet ? end('treated', true) : no;
@@ -256,7 +273,7 @@ export function settle(phase: 'run' | 'answer' | 'review' | 'repair' | 'ready' |
     const explicit = requestsOf(work, 'EXPLICIT_REPAIR');
     if (!explicit.length) return no;
     const closed = explicit.every(item => item.state === 'treated' || item.state === 'withdrawn');
-    const other = openQuestion(snapshot, [facts.q1 ?? '', facts.q2 ?? '']);
+    const other = openQuestion(snapshot, [facts.q1 ?? '', facts.q2 ?? '', ...(facts.tolerated ?? [])]);
     if (other && quiet) return end('question-unanswered', false);
     if (closed && quiet && !work?.correction && facts.quiet && published(work)) return end(facts.q2 ? (facts.q2Answered ? 'asked-then-closed' : 'question-unanswered') : 'closed-without-question', !!facts.q2Answered || !facts.q2);
     return no;
@@ -313,6 +330,9 @@ export function verdict(saved: Saved): { passed: boolean; obligations: Record<st
   const questions = inspect?.questions ?? [];
   const q1 = String((saved.run as { q1?: string } | undefined)?.q1 ?? '');
   const q2 = String((saved.repair as { q2?: string } | undefined)?.q2 ?? '');
+  // The ONE tolerated re-waiver Question (asked by a later Execution, answered by scripted step 6): its id is a valid waiver authorization too.
+  const rewaiver = ((saved.repair ?? saved.review) as { rewaiver?: { questionId?: string; answered?: boolean } | null } | undefined)?.rewaiver ?? null;
+  const waiverQuestions = [q1, ...(rewaiver?.answered && rewaiver.questionId ? [rewaiver.questionId] : [])];
   const verification = executions.map(item => item.review?.verification).filter(Boolean).at(-1) ?? null;
   const rounds = executions.flatMap(item => item.review?.rounds ?? []);
   const instructionShas = [...new Set(rounds.map(round => round.versions.instructions?.sha256 ?? 'none'))];
@@ -337,8 +357,9 @@ export function verdict(saved: Saved): { passed: boolean; obligations: Record<st
     check('V-16.d-both-modes-with-environments', exes.some(item => item?.mode === 'foreground' && (item.sandboxesSeen ?? []).length > 0) &&
       exes.some(item => item?.mode === 'service' && (item.sandboxesSeen ?? []).length > 0), exes.map(item => `${item?.mode}:${(item?.sandboxesSeen ?? []).length}`).join(',')),
     check('V-08.g-approval-through-ask-user', !!q1 && (saved.run?.outcome === 'question-published') && docsWaived.length > 0 &&
-      docsWaived.every(gate => (gate.authorization as { kind?: string; questionId?: string } | null)?.kind === 'question' && (gate.authorization as { questionId?: string }).questionId === q1),
-      `q1 ${q1.slice(0, 8)}; waived ${docsWaived.length}; auth ${docsWaived.map(gate => JSON.stringify(gate.authorization)).join(',')}`),
+      docsWaived.every(gate => (gate.authorization as { kind?: string; questionId?: string } | null)?.kind === 'question' &&
+        waiverQuestions.includes(String((gate.authorization as { questionId?: string }).questionId))),
+      `q1 ${q1.slice(0, 8)}; tolerated ${rewaiver?.questionId?.slice(0, 8) ?? 'none'}; waived ${docsWaived.length}; auth ${docsWaived.map(gate => JSON.stringify(gate.authorization)).join(',')}`),
     check('V-07.f-preserved-instructions-prevail', answerFiles.includes('AGENTS.md') && instructionShas.length === 1 && instructionShas[0] !== 'none' &&
       (verification?.gates ?? []).some(gate => gate.id === 'content' && gate.outcome === 'passed') && docsWaived.every(gate => gate.authorization !== null) &&
       !(inspect?.prFiles ?? []).includes('AGENTS.md') && (inspect?.agentsAtMerge ?? null) === (inspect?.agentsAtBase ?? null),
@@ -447,14 +468,33 @@ export async function listAllWorks(read: (cursor: number) => Promise<ListPage>, 
   return { works, pages, complete: false, code };
 }
 
+/**
+ * The Work's Questions. `factory show` fits its view to one frame and may OMIT the questions (qcand34-v5: `omitted.questions: 2`, an empty
+ * list, so an open Question was never seen): every id the Work lists is read with `factory question <id>` instead; a view's own copy is
+ * used only for an id that read did not return. Bounded (the recipe's question bound is 3).
+ */
+export async function workQuestions(work: Pick<WorkView, 'questions'> | null, shown: readonly QuestionView[],
+    read: (questionId: string) => Promise<unknown>, limit = 16): Promise<QuestionView[]> {
+  const ids = [...new Set([...(work?.questions ?? []), ...shown.map(item => item.questionId)])].slice(0, limit);
+  const out: QuestionView[] = [];
+  for (const id of ids) {
+    const read1 = (await read(id) as { question?: QuestionView } | null)?.question;
+    const question = read1?.questionId === id ? read1 : shown.find(item => item.questionId === id);
+    if (question) out.push(question);
+  }
+  return out;
+}
+
 async function snapshot(issue: number): Promise<Snapshot & { raw: { list: number | null; show: number | null; pages: number; complete: boolean } }> {
   const listed = await listAllWorks(cursor => cli('list', '--cursor', String(cursor), '--limit', '50'));
   const works = listed.works.filter(item => item.repository.repository === repository.repository);
   const own = works.find(item => item.ticket.number === issue) ?? null;
   const shown = own ? await cli('show', own.work_id) : null;
   const view = shown?.json as { work?: WorkView; questions?: QuestionView[] } | null;
+  const work = view?.work ?? own;
+  const questions = await workQuestions(work, view?.questions ?? [], async id => (await cli('question', id)).json);
   const status = await cli('status');
-  return { work: view?.work ?? own, questions: view?.questions ?? [], works: countedWorks(works), cycles: (status.json as { polling?: { cycles?: number } } | null)?.polling?.cycles ?? 0,
+  return { work, questions, works: countedWorks(works), cycles: (status.json as { polling?: { cycles?: number } } | null)?.polling?.cycles ?? 0,
     raw: { list: listed.code, show: shown?.code ?? null, pages: listed.pages, complete: listed.complete } };
 }
 
@@ -606,6 +646,26 @@ export async function runPhase(phase: Phase) {
     }
     const correctionsBefore = (await snapshot(issue)).work?.corrections?.length ?? 0;
     let q2: string | null = null, q2Answered = false, humanSince = Date.now(), humanSeen = false;
+    type Rewaiver = { questionId: string; original: string; phase: Phase; answered: boolean; requestedAt: number };
+    let rewaiver: Rewaiver | null = (results.review as { rewaiver?: Rewaiver | null } | null)?.rewaiver ?? null;
+    const tolerated = () => rewaiver ? [rewaiver.questionId] : [];
+    // review/repair: classify the ONE tolerated re-waiver Question first, request its scripted answer once, and wait for the operator's comment.
+    const tolerate = async (current: Snapshot): Promise<Settle | null> => {
+      if (!rewaiver && q1) {
+        const asked = rewaiverQuestion(current, [q1, q2 ?? '']);
+        if (asked && quiescent(current.work)) {
+          rewaiver = { questionId: asked.questionId, original: q1, phase, answered: false, requestedAt: Date.now() };
+          await requested(6, { issue, questionId: asked.questionId, originalQuestionId: q1 });
+        }
+      }
+      if (rewaiver && !rewaiver.answered) {
+        const answer = answeredByOperator(current, rewaiver.questionId, operatorId);
+        if (answer === 'not-the-real-comment') return end('answer-not-the-real-comment', false);
+        if (answer === 'answered') rewaiver.answered = true;
+        else if (rewaiver.phase === phase && Date.now() - rewaiver.requestedAt > humanStepMinutes * 60_000) return end('human-step-6-not-observed', false);
+      }
+      return null;
+    };
     const waitedTooLong = () => !humanSeen && Date.now() - humanSince > humanStepMinutes * 60_000;
     const observed = await observe(issue, deadline, controller, async current => {
       if (phase === 'run') return settle('run', current);
@@ -618,16 +678,20 @@ export async function runPhase(phase: Phase) {
         return settle('answer', current, { q1, quiet: quietDone(current, candidate) });
       }
       if (phase === 'review') {
+        const stop = await tolerate(current);
+        if (stop) return stop;
         if (requestsOf(current.work, 'HUMAN_CHANGES_REQUESTED').some(item => (item.feedback as { author?: { id?: number } }).author?.id === operatorId)) humanSeen = true;
         if (waitedTooLong()) return end('human-step-2-not-observed', false);
-        return settle('review', current, { q1, correctionsBefore, quiet: quietDone(current, humanSeen && quiescent(current.work) && !current.work?.correction) });
+        return settle('review', current, { q1, correctionsBefore, tolerated: tolerated(), quiet: quietDone(current, humanSeen && quiescent(current.work) && !current.work?.correction) });
       }
       if (phase === 'repair') {
+        const stop = await tolerate(current);
+        if (stop) return stop;
         if (requestsOf(current.work, 'EXPLICIT_REPAIR').some(item => item.feedback.origin === 'github-comment' && (item.feedback as { author?: { id?: number } }).author?.id === operatorId)) {
           if (!humanSeen) { humanSeen = true; }
         }
         if (waitedTooLong()) return end(q2 ? 'human-step-4-not-observed' : 'human-step-3-not-observed', false);
-        const asked = humanSeen && !q2 ? openQuestion(current, [q1 ?? '']) : null;
+        const asked = humanSeen && !q2 ? openQuestion(current, [q1 ?? '', ...tolerated()]) : null;
         if (asked && quiescent(current.work)) {
           q2 = asked.questionId; humanSeen = false; humanSince = Date.now();
           await requested(4, { issue, questionId: q2 });
@@ -637,7 +701,7 @@ export async function runPhase(phase: Phase) {
           if (answer === 'not-the-real-comment') return end('answer-not-the-real-comment', false);
           if (answer === 'answered') { q2Answered = true; humanSeen = true; }
         }
-        return settle('repair', current, { q1, q2, q2Answered, quiet: quietDone(current, (humanSeen || q2Answered) && quiescent(current.work) && !current.work?.correction) });
+        return settle('repair', current, { q1, q2, q2Answered, tolerated: tolerated(), quiet: quietDone(current, (humanSeen || q2Answered) && quiescent(current.work) && !current.work?.correction) });
       }
       if (phase === 'ready') {
         const number = current.work?.pullRequest?.number;
@@ -665,6 +729,10 @@ export async function runPhase(phase: Phase) {
       await requested(3, { issue, pullRequest });
     }
     if (phase === 'repair') { extra.q2 = q2; extra.q2Answered = q2Answered; }
+    if (phase === 'review' || phase === 'repair') {
+      extra.rewaiver = rewaiver;
+      extra.toleratedQuestions = rewaiver ? [{ questionId: rewaiver.questionId, kind: 'docs-check-rewaiver', original: rewaiver.original, askedIn: rewaiver.phase, answered: rewaiver.answered }] : [];
+    }
     if (phase === 'ready' && observed.settled.settled && observed.settled.success && pullRequest) {
       extra.pullRequest = pullRequest;
       extra.linkedHead = (work?.publication as { pullRequest?: { headSha?: string } } | null | undefined)?.pullRequest?.headSha ?? null;

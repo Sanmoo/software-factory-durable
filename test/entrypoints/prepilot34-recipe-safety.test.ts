@@ -79,8 +79,8 @@ test('R-CAND human commands: the operator\'s own gh; answers on the issue, revie
   assert.equal(cand.humanCommands(3, { issue: 50, pullRequest: 51 })[0], `gh pr comment 51 --repo Sanmoo/java-springboot-event-sourcing --body '/factory repair Delete ${cand.candidateFile} and close this pull request.'`);
   assert.deepEqual(cand.humanCommands(5, { issue: 50, pullRequest: 51 }), [`gh pr review 51 --repo Sanmoo/java-springboot-event-sourcing --approve --body 'Approved after the candidate journey.'`,
     'gh pr merge 51 --repo Sanmoo/java-springboot-event-sourcing --merge']);
-  for (const step of [1, 2, 3, 4, 5] as const) {
-    for (const line of cand.humanCommands(step, { issue: 50, pullRequest: 51, questionId: 'q' })) assert.ok(!/--admin|--squash|--rebase|--delete-branch|--force|dismiss/.test(line), line);
+  for (const step of [1, 2, 3, 4, 5, 6] as const) {
+    for (const line of cand.humanCommands(step, { issue: 50, pullRequest: 51, questionId: 'q', originalQuestionId: 'q0' })) assert.ok(!/--admin|--squash|--rebase|--delete-branch|--force|dismiss/.test(line), line);
   }
   assert.throws(() => cand.humanCommands(4, { issue: 50 }), /QUESTION_ID_REQUIRED/);
   assert.throws(() => cand.humanCommands(2, { issue: 50 }), /PULL_REQUEST_REQUIRED/);
@@ -276,4 +276,59 @@ test('R-CAND snapshot list walk: follows page.nextCursor (the own Work on page 1
   assert.deepEqual([stuck.complete, stuck.pages], [false, 1], 'a non-advancing cursor never loops');
   const bounded = await cand.listAllWorks(async cursor => ({ code: 0, json: { works: [], page: { nextCursor: cursor + 1 } } }), 3);
   assert.deepEqual([bounded.complete, bounded.pages], [false, 3]);
+});
+
+test('R-CAND v6: step 1 covers every later Execution; ONE scripted re-waiver answer cites the original Question; any other Question still holds', () => {
+  assert.match(cand.humanSteps[1].body, /every later Execution of this Ticket \(repairs included\)/);
+  assert.deepEqual(cand.humanCommands(6, { issue: 50, questionId: 'q-r', originalQuestionId: 'q-1' }),
+    ["gh issue comment 50 --repo Sanmoo/java-springboot-event-sourcing --body '/factory answer q-r Yes: the approval in Question q-1 covers every Execution of this Ticket, repairs included; waive docs-check again. The content gate stays required.'"]);
+  assert.throws(() => cand.humanCommands(6, { issue: 50, questionId: 'q-r' }), /ORIGINAL_QUESTION_ID_REQUIRED/);
+  assert.throws(() => cand.humanCommands(6, { issue: 50, originalQuestionId: 'q-1' }), /QUESTION_ID_REQUIRED/);
+  const asking = (questionId: string, text: string) => ({ ...question(questionId, 'open'), content: { question: text, context: '', sha256: 's', reference: { workId: 'w1', id: 'r' } } }) as unknown as QuestionView;
+  // The qcand34-v5 Question, verbatim in substance.
+  const rewaive = asking('q-r', 'The documented `docs-check` gate is still unavailable (exit 127). The existing approval in question q1 explicitly authorizes waiver for Ticket 60 only; may I rely on that approval for this authorized repair of the same Ticket and waive `docs-check` again?');
+  assert.equal(cand.rewaiverQuestion(snap(work(), [question('q1', 'answered'), rewaive]), ['q1'])?.questionId, 'q-r');
+  assert.equal(cand.rewaiverQuestion(snap(work(), [asking('q-x', 'Should I delete docs/FACTORY_CANDIDATE.md and close the pull request?')]), ['q1']), null, 'any other Question is not tolerated');
+  assert.equal(cand.rewaiverQuestion(snap(work(), [rewaive]), ['q1', 'q-r']), null, 'once known it is never classified again');
+  // review: the tolerated Question does not end the phase; an untolerated one still does.
+  const quietWork = work({ ...published, execution: execution({ end: { outcome: 'question', cessation: 'confirmed' } }) });
+  assert.deepEqual(cand.settle('review', snap(quietWork, [question('q1', 'answered'), rewaive]), { q1: 'q1', tolerated: ['q-r'], quiet: false }), { settled: false });
+  assert.deepEqual(cand.settle('review', snap(quietWork, [question('q1', 'answered'), rewaive]), { q1: 'q1', quiet: false }),
+    { settled: true, outcome: 'question-published', success: false });
+  const other = asking('q-x', 'Something else?');
+  assert.deepEqual(cand.settle('review', snap(quietWork, [question('q1', 'answered'), rewaive, other]), { q1: 'q1', tolerated: ['q-r'], quiet: false }),
+    { settled: true, outcome: 'question-published', success: false }, 'a second unscripted Question still holds');
+});
+
+test('R-CAND v6 verdict: a docs-check waiver citing the answered tolerated re-waiver Question proves V-08.g; an unanswered or unknown one does not', () => {
+  const withRewaiver = (answered: boolean, cited: string) => {
+    const saved = savedJourney();
+    const rounds = (saved.inspect as unknown as { work: { execution: { review: { rounds: { declarations: { gates: { id: string; authorization: unknown }[] } }[] } } } }).work.execution.review.rounds;
+    const repairRound = structuredClone(rounds[0]!);
+    repairRound.declarations.gates.find(gate => gate.id === 'docs-check')!.authorization = { kind: 'question', questionId: cited };
+    rounds.push(repairRound);
+    (saved.repair as Record<string, unknown>).rewaiver = { questionId: 'q-r', original: 'q1', phase: 'repair', answered };
+    return saved;
+  };
+  assert.equal(cand.verdict(withRewaiver(true, 'q-r') as never).obligations['V-08.g'], 'proven');
+  assert.equal(cand.verdict(withRewaiver(false, 'q-r') as never).obligations['V-08.g'], 'not-proven', 'the tolerated Question was never answered');
+  assert.equal(cand.verdict(withRewaiver(true, 'q-other') as never).obligations['V-08.g'], 'not-proven', 'an unknown Question authorizes nothing');
+  assert.equal(cand.verdict(withRewaiver(true, 'q1') as never).obligations['V-08.g'], 'proven', 'the original approval still counts');
+});
+
+test('R-CAND snapshot questions: read by id when the fitted show view omits them (qcand34-v5); bounded; a failed read falls back to the view', async () => {
+  const q = (id: string, state: 'open' | 'answered') => question(id, state);
+  const asked: string[] = [];
+  const store: Record<string, unknown> = { a: { kind: 'question', question: q('a', 'answered') }, b: { kind: 'question', question: q('b', 'open') } };
+  const read = async (id: string) => { asked.push(id); return store[id] ?? null; };
+  // show returned `questions: []` with `omitted.questions: 2`; the Work still lists both ids.
+  const got = await cand.workQuestions({ questions: ['a', 'b'] }, [], read);
+  assert.deepEqual(got.map(item => `${item.questionId}:${item.state}`), ['a:answered', 'b:open']);
+  assert.deepEqual(asked, ['a', 'b']);
+  assert.equal(cand.openQuestion(snap(work(), got), ['a'])?.questionId, 'b', 'the open Question is seen again');
+  const fallback = await cand.workQuestions({ questions: ['c'] }, [q('c', 'open')], async () => null);
+  assert.deepEqual(fallback.map(item => item.questionId), ['c']);
+  const many = await cand.workQuestions({ questions: Array.from({ length: 40 }, (_, index) => `x${index}`) }, [], async () => null, 4);
+  assert.deepEqual(many, []);
+  assert.deepEqual(await cand.workQuestions(null, [], read), []);
 });
