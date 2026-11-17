@@ -3,8 +3,6 @@ import { test } from 'node:test';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { latestContinuationPack } from '../../src/entrypoints/release.js';
-import { factorySkillPackIds } from '../../src/contracts/index.js';
 import { builderSkillPacks, loadSkillPack, skillPackContinues, skillPackGuestFiles } from '../../src/workers/skill-pack.js';
 
 // Ticket 34 (R-CAND v6, 2026-11-17): a NEW pack version v7 = v6 plus the treatment of a finding the reviewed content already satisfies.
@@ -32,9 +30,8 @@ test('factory-skills-v7: a finding the reviewed content already satisfies is not
   }
   assert.equal(await skillPackContinues('factory-skills-v7'), true);
   assert.match(await readFile(join(v7.directory, 'CREDITS.md'), 'utf8'), /`factory-skills-v7` \(7\.0\.0, ticket 34\) = `factory-skills-v6`/);
-  // v6 stays byte-identical to its own manifest and without the new rule; the release composes the latest continuation pack (v7).
+  // v6 stays byte-identical to its own manifest and without the new rule (the release picks v7: release-composition.test.ts).
   const v6 = builderSkillPacks['factory-skills-v6'];
   assert.equal((await loadSkillPack(v6.directory, 'factory-skills-v6')).id, 'factory-skills-v6');
   assert.ok(!(await readFile(join(v6.directory, 'skills/implement/SKILL.md'), 'utf8')).includes('Never declare `fixed` without a change'));
-  assert.equal(await latestContinuationPack(factorySkillPackIds, skillPackContinues), 'factory-skills-v7');
 });

@@ -158,7 +158,7 @@ test('R-CAND bounds, answers and the deliver precondition', () => {
 
 const identity: ReleaseIdentity = { release: 'mvp-34.2', commit: 'c'.repeat(40), commitTime: 't', branch: 'b', dirty: false, archive: 'a.tar', archiveSha256: 'a'.repeat(64),
   manifestSha256: 'm'.repeat(64), guestAssets: { manifestSha256: 'g' }, lockfileSha256: 'l', node: '24.21.0', root: installationRoot, unit: 'u', builtAt: 't',
-  markers: { 'ticket-23-feedback': true, 'ticket-24-single-pass-dispatch': true, 'ticket-29-inspection': true, 'ticket-34-candidate': true, 'd-07-sqlite-scrub': true, 'owner-user-bus': true, 'continuation-findings': true } };
+  markers: { 'ticket-23-feedback': true, 'ticket-24-single-pass-dispatch': true, 'ticket-29-inspection': true, 'ticket-34-candidate': true, 'd-07-sqlite-scrub': true, 'owner-user-bus': true, 'continuation-findings': true, 'skills-v7-satisfied-findings': true } };
 function savedJourney() {
   const factory = { release: identity.release, commit: identity.commit, manifestSha256: identity.manifestSha256, archiveSha256: identity.archiveSha256, root: identity.root, verifiedBy: 'x' };
   const exe = `${installationRoot}/releases/mvp-34.2/node/bin/node`;

@@ -1,25 +1,25 @@
-import { command, compositionMarkers, hostEnvironment, identityFile, installationRoot, integrationBranch, observationWriter, parseShow, releaseIdentityFile, serviceUnit,
+import { command, compositionMarkers, hostEnvironment, identityFile, installationRoot, integrationBranch, observationWriter, parseShow, releaseIdentityFile, serviceUnit, upgradeFromRelease,
   upgradeNamespace, upgradeRelease, y5, type ReleaseIdentity } from './prepilot34-qualification.js';
 import { listingViolations } from './release32-qualification.js';
 
 // TEST ONLY. Pre-pilot group R-UPG (ticket 34, before R-CAND v3), authorized by the operator on 2026-11-16. Import and `--plan` are inert.
 // R-CAND v2 held at review on mvp-34.2 (a continuation Execution refused the treatment of an earlier round's finding, fixed in b4c5443).
 // v3 must run on a release that contains the fix, IN THE SAME R-REL root (pr2 keeps the operator's model login, never copied or touched):
-// build mvp-34.3 from the CLEAN integration tip with the project's own tooling, verify it, extract it NEXT TO mvp-34.2 (launcher and existing
+// build the upgrade release (mvp-34.3 in prel34-v3, mvp-34.4 in prel34-v4) from the CLEAN integration tip with the project's own tooling, verify it, extract it NEXT TO the previous one (launcher and existing
 // files kept), let the NEW release's own `upgrade check` / `upgrade apply` select it (the controller is stopped and its storage paused, as the
 // product requires), re-verify with the installed launcher's doctor and record the identity R-CAND v3 proves it ran on; finally start the
 // service unit ONCE to unpause (the App key is copied for that phase only and removed in its finally) and stop it again.
 // Bounds: no VM, model or GitHub write; no sudo, enable or linger. One-shot: an exclusive intent tombstone precedes each effect; a consumed
 // phase never reruns; nothing is retried, repaired or rolled back automatically.
 
-const revision = 'prel34-v3';
+const revision = 'prel34-v4';
 const base = upgradeNamespace;
 const observations = `${base}/observations`;
 const output = `${base}/build`;
 const root = installationRoot;
 const unit = serviceUnit(root);
 const release = upgradeRelease;
-const previousRelease = 'mvp-34.2';
+const previousRelease = upgradeFromRelease;
 const keySource = `${y5}/credentials/app.pem`;
 const guestAssets = { directory: '/home/sanmoo/software-factory-test/assets34/assets',
   manifestSha256: '8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807' } as const;
