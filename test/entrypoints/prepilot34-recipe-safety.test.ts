@@ -79,8 +79,8 @@ test('R-CAND human commands: the operator\'s own gh; answers on the issue, revie
   assert.equal(cand.humanCommands(3, { issue: 50, pullRequest: 51 })[0], `gh pr comment 51 --repo Sanmoo/java-springboot-event-sourcing --body '/factory repair Delete ${cand.candidateFile} and close this pull request.'`);
   assert.deepEqual(cand.humanCommands(5, { issue: 50, pullRequest: 51 }), [`gh pr review 51 --repo Sanmoo/java-springboot-event-sourcing --approve --body 'Approved after the candidate journey.'`,
     'gh pr merge 51 --repo Sanmoo/java-springboot-event-sourcing --merge']);
-  for (const step of [1, 2, 3, 4, 5, 6] as const) {
-    for (const line of cand.humanCommands(step, { issue: 50, pullRequest: 51, questionId: 'q', originalQuestionId: 'q0' })) assert.ok(!/--admin|--squash|--rebase|--delete-branch|--force|dismiss/.test(line), line);
+  for (const step of [1, 2, 3, 4, 5, 6, 7] as const) {
+    for (const line of cand.humanCommands(step, { issue: 50, pullRequest: 51, questionId: 'q', originalQuestionId: 'q0', reviewRef: 'review-1' })) assert.ok(!/--admin|--squash|--rebase|--delete-branch|--force|dismiss/.test(line), line);
   }
   assert.throws(() => cand.humanCommands(4, { issue: 50 }), /QUESTION_ID_REQUIRED/);
   assert.throws(() => cand.humanCommands(2, { issue: 50 }), /PULL_REQUEST_REQUIRED/);
@@ -143,7 +143,7 @@ test('R-CAND settle: review treated once; repair asks (then closes) or blocks, n
 test('R-CAND bounds, answers and the deliver precondition', () => {
   assert.equal(cand.boundsViolation(snap(work(), [], 2)), 'BOUND_WORKS');
   assert.equal(cand.boundsViolation(snap(work({ previousExecutions: Array.from({ length: 10 }, () => execution()) }))), 'BOUND_EXECUTIONS');
-  assert.equal(cand.boundsViolation(snap(work(), ['a', 'b', 'c', 'd'].map(id => question(id, 'open')))), 'BOUND_QUESTIONS');
+  assert.equal(cand.boundsViolation(snap(work(), ['a', 'b', 'c', 'd', 'e'].map(id => question(id, 'open')))), 'BOUND_QUESTIONS');
   assert.equal(cand.boundsViolation(snap(work())), null);
   const real = question('q1', 'answered', { author: { kind: 'github', id: 7 }, origin: { kind: 'github-comment' } });
   assert.equal(cand.answeredByOperator(snap(work(), [real]), 'q1', 7), 'answered');
@@ -342,4 +342,19 @@ test('R-CAND v8: no AGENTS.md item; V-07.f deferred to a dedicated run; step 1 a
   // The qcand34-v7 first Question, verbatim in substance: a Standards dispute, not a waiver.
   assert.equal(cand.asksDocsCheckWaiver(asking('The Standards review raises finding S1 as a documented-layout rule: which requirement should govern the page location?')), false);
   assert.equal(cand.asksDocsCheckWaiver(null), false);
+});
+
+test('R-CAND v9: the Ticket puts operator wording requests in scope; ONE scripted answer keeps a human change a Spec finding contests', () => {
+  assert.match(cand.ticketBody, /Operator review requests that change the wording of this page are in scope/);
+  assert.deepEqual(cand.humanCommands(7, { issue: 66, questionId: 'q-s', reviewRef: 'review-5935474702' }),
+    ["gh issue comment 66 --repo Sanmoo/java-springboot-event-sourcing --body '/factory answer q-s Keep the human-requested change: the operator authorizes it as in scope of this Ticket (operator review review-5935474702). Do not remove it; treat that Spec finding as not adopted with this answer as its authorization.'"]);
+  assert.throws(() => cand.humanCommands(7, { issue: 66, questionId: 'q-s' }), /REVIEW_REF_REQUIRED/);
+  const asking = (text: string) => ({ ...question('q', 'open'), content: { question: text, context: '', sha256: 's', reference: { workId: 'w1', id: 'r' } } }) as unknown as QuestionView;
+  // qcand34-v8 52e1f2e9, verbatim in substance: tolerated.
+  assert.equal(cand.asksSpecVsHumanChange(asking('Spec finding S1 says the required one-paragraph explanation in Ticket #66 conflicts with the explicitly requested exact sentence because the sentence changes that paragraph. The request to add that exact sentence came from the configured human repair and was already implemented. Should I retain the exact sentence?')), true);
+  // The step-4 repair dispute (qcand34-v8 7f996850) and the docs-check re-waiver are NOT this kind.
+  assert.equal(cand.asksSpecVsHumanChange(asking('Human request repair-github-comment-6943531895 asks me to delete docs/FACTORY_CANDIDATE.md and close pull request #67. Should I delete the file only?')), false);
+  assert.equal(cand.asksSpecVsHumanChange(asking('The documented `docs-check` gate is still unavailable; may I rely on that approval and waive `docs-check` again?')), false);
+  // The qcand34-v7 round-9 Question (Spec vs an earlier Spec finding, no human request) is NOT tolerated either.
+  assert.equal(cand.asksSpecVsHumanChange(asking('Spec finding S1 says to restore the exact line to AGENTS.md, but round 5 Spec previously required removing that same extra line. Should I restore it?')), false);
 });

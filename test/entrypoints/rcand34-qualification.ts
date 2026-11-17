@@ -14,7 +14,7 @@ import { candidateNamespace, command, hostEnvironment, identityFile, installatio
 // writes to GitHub. Bounds are the PRODUCTION ones (configuration limits, one eligible issue, capacity 1); the recipe observes every poll and
 // stops the controller (held) the moment a bound is exceeded: running the release unmodified is the point, so no port is wrapped.
 
-const revision = 'qcand34-v8';
+const revision = 'qcand34-v9';
 const observations = candidateNamespace;
 const root = installationRoot;
 const unit = serviceUnit(root);
@@ -34,7 +34,7 @@ export const deadlines = { run: 60, answer: 150, review: 150, repair: 210, ready
 export const humanStepMinutes = 60;
 const quietCycles = 2;
 /** Observation bounds: beyond them the recipe stops the controller at once and holds (production cannot exceed the configured limits). */
-export const bounds = { worksForRepository: 1, executions: 10, questions: 3, corrections: repository.correctionLimit } as const;
+export const bounds = { worksForRepository: 1, executions: 10, questions: 4, corrections: repository.correctionLimit } as const;
 /** Foreground for `run` (V-16.d: the systemd environments in both modes), the R-REL service unit afterwards. */
 export const controllerMode: Record<'run' | 'answer' | 'review' | 'repair' | 'ready' | 'deliver' | 'inspect', 'foreground' | 'service'> =
   { run: 'foreground', answer: 'service', review: 'service', repair: 'service', ready: 'service', deliver: 'service', inspect: 'service' };
@@ -69,6 +69,7 @@ export const ticketBody = [
   '', 'Required content:',
   '1. A `# Factory candidate` title and one paragraph explaining that this file exists only to exercise the Software Factory candidate release.',
   '2. A `## Steps` section with a numbered list of exactly four steps: build, review, repair, merge.',
+  '', 'Operator review requests that change the wording of this page are in scope: apply them exactly as requested.',
   '', 'Documentation only: the operator explicitly approves that no tests, seams or code changes are needed. Do not create or edit other files. Commit the change on your branch.',
   '', 'Validation (documented gates; the bash tool always runs in `/workspace`, so declare cwd `/workspace` and put the directory change inside the command):',
   `- gate \`content\` (must exit 0): \`${contentGate}\``,
@@ -108,18 +109,25 @@ export const humanSteps = {
     action: '`/factory answer` comment on the ISSUE confirming that the step-1 approval covers every Execution of this Ticket',
     body: 'Yes: the approval in Question {original} covers every Execution of this Ticket, repairs included; waive docs-check again. The content gate stays required.',
     expect: 'answer ingested; the asking Execution waives docs-check citing a question authorization; recorded as ONE tolerated extra Question' },
+  7: { phase: 'review or repair', after: 'an Execution asked whether to keep a human-requested change that a Spec finding says conflicts with the Ticket (at most once per run)',
+    action: '`/factory answer` comment on the ISSUE keeping the human-requested change as authorized by the operator, citing the review',
+    body: 'Keep the human-requested change: the operator authorizes it as in scope of this Ticket (operator review {review}). Do not remove it; ' +
+      'treat that Spec finding as not adopted with this answer as its authorization.',
+    expect: 'answer ingested; the finding is not-adopted with the question authorization; the human change stays; recorded as ONE tolerated extra Question' },
 } as const;
 export type HumanStep = keyof typeof humanSteps;
 
 /** The exact commands the operator runs (own gh login; never the App, never this recipe). */
-export function humanCommands(step: HumanStep, target: { issue: number; pullRequest?: number | null; questionId?: string | null; originalQuestionId?: string | null }): string[] {
+export function humanCommands(step: HumanStep, target: { issue: number; pullRequest?: number | null; questionId?: string | null; originalQuestionId?: string | null;
+    reviewRef?: string | null }): string[] {
   const quote = (text: string) => `'${text.replace(/'/g, `'\\''`)}'`;
   const repo = `--repo ${repository.repository}`;
   const item = humanSteps[step];
-  if (step === 1 || step === 4 || step === 6) {
+  if (step === 1 || step === 4 || step === 6 || step === 7) {
     if (!target.questionId) throw new Error('QUESTION_ID_REQUIRED');
     if (step === 6 && !target.originalQuestionId) throw new Error('ORIGINAL_QUESTION_ID_REQUIRED');
-    const body = step === 6 ? item.body.replace('{original}', target.originalQuestionId!) : item.body;
+    if (step === 7 && !target.reviewRef) throw new Error('REVIEW_REF_REQUIRED');
+    const body = step === 6 ? item.body.replace('{original}', target.originalQuestionId!) : step === 7 ? item.body.replace('{review}', target.reviewRef!) : item.body;
     return [`gh issue comment ${target.issue} ${repo} --body ${quote(`/factory answer ${target.questionId} ${body}`)}`];
   }
   if (!target.pullRequest) throw new Error('PULL_REQUEST_REQUIRED');
@@ -237,6 +245,14 @@ export function openQuestion(snapshot: Snapshot, exclude: readonly string[] = []
 export function rewaiverQuestion(snapshot: Snapshot, exclude: readonly string[]): QuestionView | null {
   const asked = openQuestion(snapshot, exclude);
   return asksDocsCheckWaiver(asked) ? asked : null;
+}
+/**
+ * The second tolerated kind (qcand34-v8): an Execution asking whether to keep a HUMAN-requested change that a Spec finding says conflicts with
+ * the Ticket. Its text names a Spec finding (S<n>) and a human/operator request or review. Anything else still holds.
+ */
+export function asksSpecVsHumanChange(question: QuestionView | null | undefined): boolean {
+  const text = question?.content?.question ?? '';
+  return /Spec (?:reviewer |review )?finding/i.test(text) && /\bS\d+\b/.test(text) && /\b(?:human|operator)\b[^.]{0,40}\b(?:request|review|repair)|\breview-\d+/i.test(text);
 }
 /** A Question whose text names the docs-check gate and a waiver (the only kind steps 1 and 6 answer). */
 export function asksDocsCheckWaiver(question: QuestionView | null | undefined): boolean {
@@ -659,7 +675,9 @@ export async function runPhase(phase: Phase) {
     let q2: string | null = null, q2Answered = false, humanSince = Date.now(), humanSeen = false;
     type Rewaiver = { questionId: string; original: string; phase: Phase; answered: boolean; requestedAt: number };
     let rewaiver: Rewaiver | null = (results.review as { rewaiver?: Rewaiver | null } | null)?.rewaiver ?? null;
-    const tolerated = () => rewaiver ? [rewaiver.questionId] : [];
+    type SpecHuman = { questionId: string; review: string; phase: Phase; answered: boolean; requestedAt: number };
+    let specHuman: SpecHuman | null = (results.review as { specHuman?: SpecHuman | null } | null)?.specHuman ?? null;
+    const tolerated = () => [...(rewaiver ? [rewaiver.questionId] : []), ...(specHuman ? [specHuman.questionId] : [])];
     // review/repair: classify the ONE tolerated re-waiver Question first, request its scripted answer once, and wait for the operator's comment.
     const tolerate = async (current: Snapshot): Promise<Settle | null> => {
       if (!rewaiver && q1) {
@@ -674,6 +692,22 @@ export async function runPhase(phase: Phase) {
         if (answer === 'not-the-real-comment') return end('answer-not-the-real-comment', false);
         if (answer === 'answered') rewaiver.answered = true;
         else if (rewaiver.phase === phase && Date.now() - rewaiver.requestedAt > humanStepMinutes * 60_000) return end('human-step-6-not-observed', false);
+      }
+      // v9: ONE scripted answer for a Spec finding against the human-requested change (keep it; the operator authorizes it, citing the review).
+      if (!specHuman) {
+        const asked = openQuestion(current, [q1 ?? '', q2 ?? '', ...tolerated()]);
+        const review = requestsOf(current.work, 'HUMAN_CHANGES_REQUESTED')
+          .map(item => (item.feedback as { feedbackId?: string; author?: { id?: number } })).find(item => item.author?.id === operatorId)?.feedbackId ?? null;
+        if (asked && asksSpecVsHumanChange(asked) && review && quiescent(current.work)) {
+          specHuman = { questionId: asked.questionId, review, phase, answered: false, requestedAt: Date.now() };
+          await requested(7, { issue, questionId: asked.questionId, reviewRef: review });
+        }
+      }
+      if (specHuman && !specHuman.answered) {
+        const answer = answeredByOperator(current, specHuman.questionId, operatorId);
+        if (answer === 'not-the-real-comment') return end('answer-not-the-real-comment', false);
+        if (answer === 'answered') specHuman.answered = true;
+        else if (specHuman.phase === phase && Date.now() - specHuman.requestedAt > humanStepMinutes * 60_000) return end('human-step-7-not-observed', false);
       }
       return null;
     };
@@ -747,7 +781,10 @@ export async function runPhase(phase: Phase) {
     if (phase === 'repair') { extra.q2 = q2; extra.q2Answered = q2Answered; }
     if (phase === 'review' || phase === 'repair') {
       extra.rewaiver = rewaiver;
-      extra.toleratedQuestions = rewaiver ? [{ questionId: rewaiver.questionId, kind: 'docs-check-rewaiver', original: rewaiver.original, askedIn: rewaiver.phase, answered: rewaiver.answered }] : [];
+      extra.specHuman = specHuman;
+      extra.toleratedQuestions = [
+        ...(rewaiver ? [{ questionId: rewaiver.questionId, kind: 'docs-check-rewaiver', original: rewaiver.original, askedIn: rewaiver.phase, answered: rewaiver.answered }] : []),
+        ...(specHuman ? [{ questionId: specHuman.questionId, kind: 'spec-vs-human-change', review: specHuman.review, askedIn: specHuman.phase, answered: specHuman.answered }] : [])];
     }
     if (phase === 'ready' && observed.settled.settled && observed.settled.success && pullRequest) {
       extra.pullRequest = pullRequest;

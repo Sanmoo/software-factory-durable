@@ -23,7 +23,8 @@ export const releaseNamespace = `${y5}/prel34-v2`;
 // qcand34-v6 held at review: a false Spec finding (AGENTS.md restore already done) declared `fixed` without change (FIX_NOT_REVIEWED, correct);
 // the review now edits the candidate file only and the Builder pack v7 treats an already-satisfied finding as not-adopted.
 // qcand34-v7 held at repair: Spec judged the AGENTS.md line (Ticket item 3) both ways; the operator removed item 3 (v8; V-07.f deferred).
-export const candidateNamespace = `${y5}/qcand34-v8`;
+// qcand34-v8 held at repair: a Spec finding against the human-requested sentence (same head round 4 had accepted); v9 tolerates ONE such Question.
+export const candidateNamespace = `${y5}/qcand34-v9`;
 export const inspectNamespace = `${y5}/qinspect34-v1`;
 /** Written by R-REL `install` (after `verify`): the release first installed into the root (mvp-34.2). */
 export const releaseIdentityFile = `${releaseNamespace}/observations/release-identity.json`;
