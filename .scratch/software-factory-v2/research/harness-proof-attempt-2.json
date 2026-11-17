@@ -1,0 +1,184 @@
+{
+  "runnerCommit": "d56590c",
+  "runnerSha256": "a6356dd78ccafc5188787b27efee262f5202d5fb6cdffa0c07b5a65d16cc5b56",
+  "startedAt": "2026-11-16T00:03:33.397Z",
+  "finishedAt": "2026-11-16T00:04:37.213Z",
+  "boot": "boot-16a50c29-83e4-4b5e-8152-fda54b8984a9",
+  "activations": 1,
+  "events": [
+    {
+      "at": "2026-11-16T00:04:31.274Z",
+      "kind": "sandbox-start",
+      "result": {
+        "status": "success",
+        "boot": "boot-16a50c29-83e4-4b5e-8152-fda54b8984a9"
+      }
+    },
+    {
+      "at": "2026-11-16T00:04:31.689Z",
+      "kind": "process-spawn",
+      "invocation": "claude-builder-1",
+      "pid": 2206571
+    },
+    {
+      "at": "2026-11-16T00:04:31.714Z",
+      "kind": "activation-start",
+      "invocation": "claude-builder-1",
+      "role": "builder"
+    },
+    {
+      "at": "2026-11-16T00:04:33.714Z",
+      "kind": "effective-init",
+      "invocation": "claude-builder-1",
+      "model": "claude-haiku-5-5",
+      "tools": [
+        "mcp__factory__bash"
+      ],
+      "permissionMode": "default",
+      "mcp": [
+        {
+          "name": "factory",
+          "status": "connected",
+          "source": "sdk"
+        }
+      ],
+      "apiKeySource": "none"
+    },
+    {
+      "at": "2026-11-16T00:04:34.770Z",
+      "kind": "activation-stop",
+      "invocation": "claude-builder-1",
+      "pid": 2206571,
+      "exitCode": 1,
+      "signalCode": null
+    },
+    {
+      "at": "2026-11-16T00:04:34.772Z",
+      "kind": "campaign-stop",
+      "reason": "MODEL_DRIFT"
+    }
+  ],
+  "cleanup": {
+    "stop": {
+      "status": "success",
+      "cessationConfirmed": true,
+      "termination": "unconfirmed",
+      "guestFinalization": "observed"
+    },
+    "observation": {
+      "condition": "stopped",
+      "cessationConfirmed": true,
+      "consumption": "unavailable",
+      "storage": {
+        "configuredVirtualBytes": "4294967296",
+        "minFreeBytes": "1073741824",
+        "disk": {
+          "status": "observed",
+          "virtualBytes": "4294967296",
+          "allocatedBytes": "627511296"
+        },
+        "workspace": {
+          "status": "observed",
+          "logicalBytes": "222",
+          "allocatedBytes": "16384"
+        },
+        "artifacts": {
+          "status": "observed",
+          "logicalBytes": "110",
+          "allocatedBytes": "4096"
+        },
+        "filesystem": {
+          "status": "observed",
+          "availableBytes": "552968396800"
+        }
+      }
+    }
+  },
+  "diagnosis": {
+    "nativeAssistantModel": "<synthetic>",
+    "nativeError": "rate_limit",
+    "isApiErrorMessage": true,
+    "message": "You've hit your 5-hour limit",
+    "resetHint": "9:30pm America/Fortaleza (native display; not a promise of availability)",
+    "classification": "inconclusive: quota",
+    "syntheticUsage": {
+      "input_tokens": 0,
+      "output_tokens": 0
+    },
+    "usageCaveat": "Synthetic zero metrics do not prove full provider-side consumption or quota balance."
+  },
+  "resourceRemoval": {
+    "before": {
+      "condition": "stopped",
+      "cessationConfirmed": true,
+      "consumption": "unavailable",
+      "boot": "boot-16a50c29-83e4-4b5e-8152-fda54b8984a9",
+      "storage": {
+        "configuredVirtualBytes": "4294967296",
+        "minFreeBytes": "1073741824",
+        "disk": {
+          "status": "observed",
+          "virtualBytes": "4294967296",
+          "allocatedBytes": "627511296"
+        },
+        "workspace": {
+          "status": "observed",
+          "logicalBytes": "222",
+          "allocatedBytes": "16384"
+        },
+        "artifacts": {
+          "status": "observed",
+          "logicalBytes": "110",
+          "allocatedBytes": "4096"
+        },
+        "filesystem": {
+          "status": "observed",
+          "availableBytes": "552832241664"
+        }
+      }
+    },
+    "removed": {
+      "status": "success",
+      "resources": [
+        {
+          "resource": "disk",
+          "status": "removed"
+        },
+        {
+          "resource": "workspace",
+          "status": "removed"
+        },
+        {
+          "resource": "artifacts",
+          "status": "removed"
+        },
+        {
+          "resource": "runtime",
+          "status": "removed"
+        }
+      ]
+    },
+    "after": {
+      "condition": "removed",
+      "cessationConfirmed": true,
+      "consumption": "unavailable",
+      "storage": {
+        "configuredVirtualBytes": "4294967296",
+        "minFreeBytes": "1073741824",
+        "disk": {
+          "status": "absent"
+        },
+        "workspace": {
+          "status": "absent"
+        },
+        "artifacts": {
+          "status": "absent"
+        },
+        "filesystem": {
+          "status": "observed",
+          "availableBytes": "552832241664"
+        }
+      }
+    }
+  }
+}

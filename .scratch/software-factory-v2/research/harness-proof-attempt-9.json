@@ -1,0 +1,251 @@
+{
+  "runnerCommit": "8c766b8",
+  "state": {
+    "startedAt": "2026-11-16T01:22:38.725Z",
+    "activations": 1,
+    "events": [
+      {
+        "at": "2026-11-16T01:23:01.419Z",
+        "kind": "sandbox-start",
+        "started": {
+          "status": "success",
+          "boot": "boot-762a9744-5342-40fa-a045-83813d7e3af8"
+        }
+      },
+      {
+        "at": "2026-11-16T01:23:03.589Z",
+        "kind": "git-gate",
+        "oid": "3563635eb8d3a71b4ba84a3c0fcafa498ea98b50",
+        "cwd": "/workspace/discarded-local"
+      },
+      {
+        "at": "2026-11-16T01:23:03.589Z",
+        "kind": "clone-reconstructed",
+        "previous": "/workspace/checkout",
+        "next": "/workspace/discarded-local",
+        "originOid": "3563635eb8d3a71b4ba84a3c0fcafa498ea98b50"
+      },
+      {
+        "at": "2026-11-16T01:23:05.874Z",
+        "kind": "git-gate",
+        "oid": "3563635eb8d3a71b4ba84a3c0fcafa498ea98b50",
+        "cwd": "/workspace/clone-p3"
+      },
+      {
+        "at": "2026-11-16T01:23:05.875Z",
+        "kind": "clone-reconstructed",
+        "previous": "/workspace/discarded-local",
+        "next": "/workspace/clone-p3",
+        "originOid": "3563635eb8d3a71b4ba84a3c0fcafa498ea98b50"
+      },
+      {
+        "at": "2026-11-16T01:23:06.412Z",
+        "kind": "pi-effective-tools",
+        "id": "pi-builder-1",
+        "active": [
+          "factory_bash"
+        ]
+      },
+      {
+        "at": "2026-11-16T01:23:06.412Z",
+        "kind": "admitted",
+        "id": "pi-builder-1",
+        "engine": "pi",
+        "role": "builder",
+        "cumulative": 20
+      },
+      {
+        "at": "2026-11-16T01:23:06.427Z",
+        "kind": "pi-model-request",
+        "id": "pi-builder-1",
+        "request": 1
+      },
+      {
+        "at": "2026-11-16T01:23:11.650Z",
+        "kind": "pi-tool-start",
+        "id": "pi-builder-1",
+        "name": "factory_bash"
+      },
+      {
+        "at": "2026-11-16T01:23:13.710Z",
+        "kind": "pi-model-request",
+        "id": "pi-builder-1",
+        "request": 2
+      },
+      {
+        "at": "2026-11-16T01:23:17.837Z",
+        "kind": "stopped",
+        "id": "pi-builder-1",
+        "confirmed": true,
+        "scope": "native session idle/disposed; guest tool lifecycle separately observed"
+      },
+      {
+        "at": "2026-11-16T01:23:18.178Z",
+        "kind": "git-gate",
+        "oid": "5b2d041ce0966612bcfdb739209644e4d2750810",
+        "cwd": "/workspace/clone-p3"
+      }
+    ],
+    "results": [
+      {
+        "id": "pi-builder-1",
+        "engine": "pi",
+        "role": "builder",
+        "sessionId": "01a1e1f3-621c-75ef-9e8d-2d8804b29a4e",
+        "authType": "oauth",
+        "text": "Work `harness-proof-local-v7`: observed P1 and C2, appended one P3 line, committed and pushed to `origin/proof` (`5b2d041`). `LOST_LOCAL.txt` was lost before push. Uncertain effect e1 remains blocked; I did not repeat it.",
+        "requests": 2,
+        "usage": [
+          {
+            "model": "gpt-6-luna",
+            "stopReason": "toolUse",
+            "usage": {
+              "input": 386,
+              "output": 167,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 553,
+              "cost": {
+                "input": 0.0000386,
+                "output": 0.0000835,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.00012209999999999999,
+                "totalFromProvider": false
+              }
+            }
+          },
+          {
+            "model": "gpt-6-luna",
+            "stopReason": "stop",
+            "usage": {
+              "input": 683,
+              "output": 67,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 750,
+              "cost": {
+                "input": 0.0000683,
+                "output": 0.0000335,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.00010180000000000001,
+                "totalFromProvider": false
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "checks": {
+      "lossBeforePush": true,
+      "externalEffectFixture": {
+        "effectId": "e1",
+        "state": "uncertain",
+        "allowed": false,
+        "newEffects": 0,
+        "scope": "controller fixture only"
+      },
+      "finalRemoteOid": "5b2d041ce0966612bcfdb739209644e4d2750810",
+      "finalProgress": "WIP before question\nP1\n\nC2 (work harness-proof-local-v7): phase marker appended; P1 observed.\nP3\n",
+      "fixtureDomainRecordsUnchanged": true,
+      "continuity": {
+        "directions": [
+          "Pi->Claude",
+          "Claude->Pi"
+        ],
+        "sameWorkId": "harness-proof-local-v7",
+        "sessions": [
+          {
+            "engine": "pi",
+            "sessionId": "01a1e1ed-d7e0-70b6-b8ac-142b7dd09273"
+          },
+          {
+            "engine": "claude",
+            "sessionId": "80f7dfe5-5ea8-44b7-8525-a26270e02c46"
+          },
+          {
+            "engine": "pi",
+            "sessionId": "01a1e1f3-621c-75ef-9e8d-2d8804b29a4e"
+          }
+        ],
+        "transcriptsPassed": false,
+        "executorSummariesPassed": false,
+        "previousBoot": "boot-006e07df-1627-40b4-9b5d-715edbdf0ba9",
+        "currentBoot": "boot-762a9744-5342-40fa-a045-83813d7e3af8",
+        "scope": "real harnesses and Git clones; fresh guest with trusted relocation of bare origin; Control remains fixture"
+      },
+      "notRun": [
+        "effective mixed Pi reviewer profiles",
+        "native in-flight tool cancellation",
+        "full production Control accounting/recovery"
+      ],
+      "lateMarkerPresent": false
+    },
+    "work": {
+      "id": "harness-proof-local-v7",
+      "history": [
+        "prior executions retained",
+        "local file lost before push; bare remote survives; no transcript transferred"
+      ],
+      "limit": 20,
+      "consumptionPrior": 17,
+      "pendingEffect": {
+        "id": "e1",
+        "state": "uncertain"
+      },
+      "questions": []
+    },
+    "canarySha256": "67bd0188ef89e91ba3e04e6c76743a59da35f11f0446e7e103efd584240b6330",
+    "cleanup": {
+      "stop": {
+        "status": "success",
+        "cessationConfirmed": true,
+        "termination": "unconfirmed",
+        "guestFinalization": "observed"
+      },
+      "observation": {
+        "condition": "stopped",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "boot": "boot-762a9744-5342-40fa-a045-83813d7e3af8",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "observed",
+            "virtualBytes": "4294967296",
+            "allocatedBytes": "627511296"
+          },
+          "workspace": {
+            "status": "observed",
+            "logicalBytes": "49518",
+            "allocatedBytes": "348160"
+          },
+          "artifacts": {
+            "status": "observed",
+            "logicalBytes": "110",
+            "allocatedBytes": "8192"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "549525553152"
+          }
+        }
+      }
+    },
+    "finishedAt": "2026-11-16T01:23:19.807Z",
+    "cumulativeActivations": 20,
+    "executionMsDebited": 1301082
+  },
+  "cumulativeModelActivations": 20,
+  "classification": "Actual two-way native harness continuity and final published P3 observed. Overall integration remains inconclusive; cap reached, no more model calls.",
+  "limitations": [
+    "Control records/accounting are fixtures, not production controller integration",
+    "Bare origin relocated between fresh guest roots by trusted file copy; not Lambda transport or final sandbox composition",
+    "No effective Pi reviewer mixed-profile success",
+    "No native in-flight tool cancellation case"
+  ]
+}

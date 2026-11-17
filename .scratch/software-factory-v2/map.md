@@ -75,6 +75,10 @@ as trilhas em sequência única nem permite aprovar contratos de composição in
   [spec local aprovada](harness-proof-spec.md), focada nas diferenças de harness em três jornadas e dois
   desvios, sem regressão geral do MVP; execução depende de manifesto e autorização operacional própria.
 
+- [Validar Pi e Claude Code nos contratos de execução e continuidade](issues/07-harness-compatibility-prototype.md#answer):
+  aceite contratual local C1–C12 aprovado pelo Operador, com ressalva da edição auxiliar RESUMED
+  não concluída; evidência para composição posterior, sem homologação de produção ou Lambda.
+
 ## Not yet specified
 
 - Compatibilidade real de Docker/Compose/Testcontainers/Ryuk, DNS, binds e portas em Lambda.

@@ -1,0 +1,158 @@
+{
+  "noInference": true,
+  "noNativeProcess": true,
+  "noBoot": true,
+  "ownAuxiliaryMetadata": [
+    {
+      "path": ".claude/debug/90c946b4-d5c4-4b3e-87b2-5e033f3d9f72.txt",
+      "absent": true,
+      "observation": "metadata after cleanup, not historical content scan"
+    },
+    {
+      "path": ".claude/tasks/90c946b4-d5c4-4b3e-87b2-5e033f3d9f72",
+      "absent": true,
+      "observation": "metadata after cleanup, not historical content scan"
+    },
+    {
+      "path": ".claude/todos/90c946b4-d5c4-4b3e-87b2-5e033f3d9f72-agent-90c946b4-d5c4-4b3e-87b2-5e033f3d9f72.json",
+      "absent": true,
+      "observation": "metadata after cleanup, not historical content scan"
+    },
+    {
+      "path": ".claude/debug/25736535-4c86-4fcb-b080-8e793c6c50ba.txt",
+      "absent": true,
+      "observation": "metadata after cleanup, not historical content scan"
+    },
+    {
+      "path": ".claude/tasks/25736535-4c86-4fcb-b080-8e793c6c50ba",
+      "absent": true,
+      "observation": "metadata after cleanup, not historical content scan"
+    },
+    {
+      "path": ".claude/todos/25736535-4c86-4fcb-b080-8e793c6c50ba-agent-25736535-4c86-4fcb-b080-8e793c6c50ba.json",
+      "absent": true,
+      "observation": "metadata after cleanup, not historical content scan"
+    },
+    {
+      "path": ".claude/debug/b837cc00-7be3-4bad-a5ef-f4c7db78e6dd.txt",
+      "absent": true,
+      "observation": "metadata after cleanup, not historical content scan"
+    },
+    {
+      "path": ".claude/tasks/b837cc00-7be3-4bad-a5ef-f4c7db78e6dd",
+      "absent": true,
+      "observation": "metadata after cleanup, not historical content scan"
+    },
+    {
+      "path": ".claude/todos/b837cc00-7be3-4bad-a5ef-f4c7db78e6dd-agent-b837cc00-7be3-4bad-a5ef-f4c7db78e6dd.json",
+      "absent": true,
+      "observation": "metadata after cleanup, not historical content scan"
+    },
+    {
+      "path": ".claude/debug/c4791d4b-abe9-4255-962f-79f5224141f1.txt",
+      "absent": true,
+      "observation": "metadata after cleanup, not historical content scan"
+    },
+    {
+      "path": ".claude/tasks/c4791d4b-abe9-4255-962f-79f5224141f1",
+      "absent": true,
+      "observation": "metadata after cleanup, not historical content scan"
+    },
+    {
+      "path": ".claude/todos/c4791d4b-abe9-4255-962f-79f5224141f1-agent-c4791d4b-abe9-4255-962f-79f5224141f1.json",
+      "absent": true,
+      "observation": "metadata after cleanup, not historical content scan"
+    },
+    {
+      "path": ".claude/debug/bf3ae6ea-5f94-4d0f-81bb-c230a83e0ea7.txt",
+      "absent": true,
+      "observation": "metadata after cleanup, not historical content scan"
+    },
+    {
+      "path": ".claude/tasks/bf3ae6ea-5f94-4d0f-81bb-c230a83e0ea7",
+      "absent": true,
+      "observation": "metadata after cleanup, not historical content scan"
+    },
+    {
+      "path": ".claude/todos/bf3ae6ea-5f94-4d0f-81bb-c230a83e0ea7-agent-bf3ae6ea-5f94-4d0f-81bb-c230a83e0ea7.json",
+      "absent": true,
+      "observation": "metadata after cleanup, not historical content scan"
+    },
+    {
+      "path": ".claude/debug/ed130a7a-d226-45c9-8646-d3d67aa457c5.txt",
+      "absent": true,
+      "observation": "metadata after cleanup, not historical content scan"
+    },
+    {
+      "path": ".claude/tasks/ed130a7a-d226-45c9-8646-d3d67aa457c5",
+      "absent": true,
+      "observation": "metadata after cleanup, not historical content scan"
+    },
+    {
+      "path": ".claude/todos/ed130a7a-d226-45c9-8646-d3d67aa457c5-agent-ed130a7a-d226-45c9-8646-d3d67aa457c5.json",
+      "absent": true,
+      "observation": "metadata after cleanup, not historical content scan"
+    }
+  ],
+  "sourceEvidence": [
+    "harness-proof-complement.json",
+    "harness-proof-attempt-7.json",
+    "harness-proof-attempt-8.json",
+    "harness-proof-attempt-9.json"
+  ],
+  "observations": [
+    {
+      "criterion": "C3",
+      "builder": "complement-claude-builder-2",
+      "ceasedAt": "2026-11-16T09:32:30.867Z",
+      "barrierAt": "2026-11-16T09:32:31.127Z",
+      "reviewAdmissionTimes": [
+        "2026-11-16T09:32:31.148Z",
+        "2026-11-16T09:32:39.372Z"
+      ],
+      "resumedAt": "2026-11-16T09:32:46.586Z",
+      "activityDuringReview": [],
+      "proof": "physical cessation or Pi disposal precedes already-recorded barrier; not a retrospective relocation of barrier"
+    },
+    {
+      "criterion": "C3",
+      "builder": "complement-pi-builder-6",
+      "ceasedAt": "2026-11-16T09:32:59.377Z",
+      "barrierAt": "2026-11-16T09:32:59.527Z",
+      "reviewAdmissionTimes": [
+        "2026-11-16T09:32:59.527Z",
+        "2026-11-16T09:33:04.588Z"
+      ],
+      "resumedAt": "2026-11-16T09:33:10.738Z",
+      "activityDuringReview": [],
+      "proof": "physical cessation or Pi disposal precedes already-recorded barrier; not a retrospective relocation of barrier"
+    },
+    {
+      "criterion": "C9",
+      "workId": "harness-proof-local-v7",
+      "limit": 20,
+      "consumptionPrior": 17,
+      "cumulativeAdmissions": [
+        18,
+        19,
+        20
+      ],
+      "historyPrefixRetained": true,
+      "pendingEffectRetained": true,
+      "questionsRetained": true,
+      "threeDistinctNativeSessions": true,
+      "differentBoots": true,
+      "originOid": "5b2d041ce0966612bcfdb739209644e4d2750810",
+      "transcriptsPassed": false,
+      "scope": "local records plus real native sessions/Git; ordinal 20 failed pre-session reservation excluded per preserved attempt-8 accounting; not a durable production ledger"
+    }
+  ],
+  "classificationProposal": {
+    "C3": "approved in cessation-based local profile",
+    "C9": "approved in explicit local fixture scope",
+    "C5": "inconclusive",
+    "C6": "inconclusive",
+    "C12": "inconclusive"
+  },
+  "limits": "No new provider-request visibility, hook execution or production integration is claimed. Prior result files are unchanged."
+}

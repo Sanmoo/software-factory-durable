@@ -1,0 +1,191 @@
+{
+  "sourceCommit": "951eb09ad2906f0f077f9ef0be8502ae5b42b0e5",
+  "sourceBranch": "prototype/v2-harness-proof",
+  "integrationBase": "0a8b9c61eaf8cb9fd62c3e5a3a9ae6c8c94221be",
+  "destination": "main",
+  "integrationBranch": "docs/harness-proof-acceptance",
+  "rawEvidenceJsonCount": 16,
+  "sourceFileCount": 24,
+  "files": [
+    {
+      "path": ".scratch/software-factory-v2/issues/07-harness-compatibility-prototype.md",
+      "sourceSha256": "3b09da7e4f7c8931616587b237d4dc0f1926af94fdab5f9e965a40ea20d94381",
+      "integratedSha256": "7c1154e3742cfff604bf688bc6a63834942f5719d6dfb3a6d3a744f5d0451686",
+      "byteIdentical": false,
+      "editorialAdjustment": true
+    },
+    {
+      "path": ".scratch/software-factory-v2/map.md",
+      "sourceSha256": "b4a4fa7295883d2046c4117089ed80442865c2fe12e7c78936bbfb57ef6e1a7a",
+      "integratedSha256": "b4a4fa7295883d2046c4117089ed80442865c2fe12e7c78936bbfb57ef6e1a7a",
+      "byteIdentical": true,
+      "editorialAdjustment": false
+    },
+    {
+      "path": ".scratch/software-factory-v2/research/harness-proof-acceptance-review.json",
+      "sourceSha256": "d6e0eef5c7b64e0d6a70f499d66265b898354e26ab2a310e950c72fdfd3d4ee5",
+      "integratedSha256": "d6e0eef5c7b64e0d6a70f499d66265b898354e26ab2a310e950c72fdfd3d4ee5",
+      "byteIdentical": true,
+      "editorialAdjustment": false
+    },
+    {
+      "path": ".scratch/software-factory-v2/research/harness-proof-acceptance-review.md",
+      "sourceSha256": "451d55a577776026cfd5d5db5f5cc4dec4778f08df2c345d58b1329f889af296",
+      "integratedSha256": "451d55a577776026cfd5d5db5f5cc4dec4778f08df2c345d58b1329f889af296",
+      "byteIdentical": true,
+      "editorialAdjustment": false
+    },
+    {
+      "path": ".scratch/software-factory-v2/research/harness-proof-attempt-2.json",
+      "sourceSha256": "9fbe8dabb449cac22486f0e4d715a38b126018992536437e1030b9ef7d4614cc",
+      "integratedSha256": "9fbe8dabb449cac22486f0e4d715a38b126018992536437e1030b9ef7d4614cc",
+      "byteIdentical": true,
+      "editorialAdjustment": false
+    },
+    {
+      "path": ".scratch/software-factory-v2/research/harness-proof-attempt-3.json",
+      "sourceSha256": "822396f2e591d0a70200ea990436273afbf2df9c3208c31d860642c0d3b8dff3",
+      "integratedSha256": "822396f2e591d0a70200ea990436273afbf2df9c3208c31d860642c0d3b8dff3",
+      "byteIdentical": true,
+      "editorialAdjustment": false
+    },
+    {
+      "path": ".scratch/software-factory-v2/research/harness-proof-attempt-4.json",
+      "sourceSha256": "368cb1ca31c99e9641b4321bfb8d01a9082b0d8643189cb8acf344e1aa0138d3",
+      "integratedSha256": "368cb1ca31c99e9641b4321bfb8d01a9082b0d8643189cb8acf344e1aa0138d3",
+      "byteIdentical": true,
+      "editorialAdjustment": false
+    },
+    {
+      "path": ".scratch/software-factory-v2/research/harness-proof-attempt-5.json",
+      "sourceSha256": "6b5c714fac82624e65e78686d2eca8debd82c1270378a590fca52ba7256a01ec",
+      "integratedSha256": "6b5c714fac82624e65e78686d2eca8debd82c1270378a590fca52ba7256a01ec",
+      "byteIdentical": true,
+      "editorialAdjustment": false
+    },
+    {
+      "path": ".scratch/software-factory-v2/research/harness-proof-attempt-6.json",
+      "sourceSha256": "0014882fe6e055b0aae2957e446e58ad7da1fe232d51f33cf958d52155ee8ac6",
+      "integratedSha256": "0014882fe6e055b0aae2957e446e58ad7da1fe232d51f33cf958d52155ee8ac6",
+      "byteIdentical": true,
+      "editorialAdjustment": false
+    },
+    {
+      "path": ".scratch/software-factory-v2/research/harness-proof-attempt-7.json",
+      "sourceSha256": "d187c494b34d6a7c86acf5d5f1d2fb8680c745160f1359d182be791e71ac1a2d",
+      "integratedSha256": "d187c494b34d6a7c86acf5d5f1d2fb8680c745160f1359d182be791e71ac1a2d",
+      "byteIdentical": true,
+      "editorialAdjustment": false
+    },
+    {
+      "path": ".scratch/software-factory-v2/research/harness-proof-attempt-8.json",
+      "sourceSha256": "9ef6909216c15269b062895b6e7f23bb8c13461e0704d5eaaa859fe6679b82df",
+      "integratedSha256": "9ef6909216c15269b062895b6e7f23bb8c13461e0704d5eaaa859fe6679b82df",
+      "byteIdentical": true,
+      "editorialAdjustment": false
+    },
+    {
+      "path": ".scratch/software-factory-v2/research/harness-proof-attempt-9.json",
+      "sourceSha256": "908ee54c190dc12da962cc24f256542f4ea4a5a9de4bf3b13e4c3a4db9541bc9",
+      "integratedSha256": "908ee54c190dc12da962cc24f256542f4ea4a5a9de4bf3b13e4c3a4db9541bc9",
+      "byteIdentical": true,
+      "editorialAdjustment": false
+    },
+    {
+      "path": ".scratch/software-factory-v2/research/harness-proof-cleanup.json",
+      "sourceSha256": "78d023159a68893ab7149d18a95b48193a9f21cbcd52f6f2dcb3e6948f8ecd5a",
+      "integratedSha256": "78d023159a68893ab7149d18a95b48193a9f21cbcd52f6f2dcb3e6948f8ecd5a",
+      "byteIdentical": true,
+      "editorialAdjustment": false
+    },
+    {
+      "path": ".scratch/software-factory-v2/research/harness-proof-complement-cleanup.json",
+      "sourceSha256": "3ce47049119768d69c85bcf0d6bcd270bf562944cad1b7c238b8b80537bdc5c0",
+      "integratedSha256": "3ce47049119768d69c85bcf0d6bcd270bf562944cad1b7c238b8b80537bdc5c0",
+      "byteIdentical": true,
+      "editorialAdjustment": false
+    },
+    {
+      "path": ".scratch/software-factory-v2/research/harness-proof-complement-summary.md",
+      "sourceSha256": "63530cc48db55d3c58f0a78430a9d8bebb51638270422134b46c4d4310d68f71",
+      "integratedSha256": "63530cc48db55d3c58f0a78430a9d8bebb51638270422134b46c4d4310d68f71",
+      "byteIdentical": true,
+      "editorialAdjustment": false
+    },
+    {
+      "path": ".scratch/software-factory-v2/research/harness-proof-complement.json",
+      "sourceSha256": "4eb6435671ed375c5831cb5c2efa6b9ae60a664f6f1ea9d9eaeed888d7d0ec16",
+      "integratedSha256": "4eb6435671ed375c5831cb5c2efa6b9ae60a664f6f1ea9d9eaeed888d7d0ec16",
+      "byteIdentical": true,
+      "editorialAdjustment": false
+    },
+    {
+      "path": ".scratch/software-factory-v2/research/harness-proof-fixture-bootstrap.json",
+      "sourceSha256": "486b1b831533f1a6fab474ae3fe28d7907dd4d4365ab17cd99a17dae13045069",
+      "integratedSha256": "486b1b831533f1a6fab474ae3fe28d7907dd4d4365ab17cd99a17dae13045069",
+      "byteIdentical": true,
+      "editorialAdjustment": false
+    },
+    {
+      "path": ".scratch/software-factory-v2/research/harness-proof-preflight.md",
+      "sourceSha256": "85bb28c908e49bf3e6bb5487318c33341beaed80f77b34440e4a09def1903340",
+      "integratedSha256": "85bb28c908e49bf3e6bb5487318c33341beaed80f77b34440e4a09def1903340",
+      "byteIdentical": true,
+      "editorialAdjustment": false
+    },
+    {
+      "path": ".scratch/software-factory-v2/research/harness-proof-results.md",
+      "sourceSha256": "afac24a15a9e223742d6c6c1c04935ce912b398a644d9c1581af33bed2477c2a",
+      "integratedSha256": "001591789f8220dad2ad439e9f8b473e65054d9806014bbb1634a1a21c39e52b",
+      "byteIdentical": false,
+      "editorialAdjustment": true
+    },
+    {
+      "path": ".scratch/software-factory-v2/research/harness-proof-summary.md",
+      "sourceSha256": "483819754da13b77b1a1a2733f9ca47e2bbaa3a28cdacb3596bec048ed2a74b3",
+      "integratedSha256": "483819754da13b77b1a1a2733f9ca47e2bbaa3a28cdacb3596bec048ed2a74b3",
+      "byteIdentical": true,
+      "editorialAdjustment": false
+    },
+    {
+      "path": ".scratch/software-factory-v2/research/harness-proof-terminal-attempt-1.json",
+      "sourceSha256": "fd2af8130323682bda97581148efd5faaa2d46f2d85a74ff8dab921e54244fb9",
+      "integratedSha256": "fd2af8130323682bda97581148efd5faaa2d46f2d85a74ff8dab921e54244fb9",
+      "byteIdentical": true,
+      "editorialAdjustment": false
+    },
+    {
+      "path": ".scratch/software-factory-v2/research/harness-proof-terminal-audit.json",
+      "sourceSha256": "e0a3ceb85bffe4b799c06d06936bd6ed2648b0583e028003e5f700712979cbf9",
+      "integratedSha256": "e0a3ceb85bffe4b799c06d06936bd6ed2648b0583e028003e5f700712979cbf9",
+      "byteIdentical": true,
+      "editorialAdjustment": false
+    },
+    {
+      "path": ".scratch/software-factory-v2/research/harness-proof-terminal-summary.md",
+      "sourceSha256": "b98c22a3dd72828f55c86f3b626808ca2ef7e4bd727303a1b187be9caf5cf272",
+      "integratedSha256": "39a22b3a96fe813133033bbeff4d64396ef7cf018d384a9f460723dac295c5af",
+      "byteIdentical": false,
+      "editorialAdjustment": true
+    },
+    {
+      "path": ".scratch/software-factory-v2/research/harness-proof-terminal.json",
+      "sourceSha256": "a1371f706f788531676b6dc0153a73ae71c6d095f5150fade927da8c7f5797af",
+      "integratedSha256": "a1371f706f788531676b6dc0153a73ae71c6d095f5150fade927da8c7f5797af",
+      "byteIdentical": true,
+      "editorialAdjustment": false
+    }
+  ],
+  "excluded": [
+    ".scratch/software-factory-v2/prototype/",
+    ".runtime/",
+    "implementation changes",
+    "dependency/build configuration changes"
+  ],
+  "addedIntegrationMetadata": [
+    ".scratch/software-factory-v2/research/harness-proof-documentary-integration.md",
+    ".scratch/software-factory-v2/research/harness-proof-documentary-import.json"
+  ],
+  "inferenceActivations": 0,
+  "externalPush": false
+}

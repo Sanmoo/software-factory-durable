@@ -1,0 +1,354 @@
+{
+  "runnerCommit": "c7a5afb",
+  "runnerSha256": "2e4d75919cd5d4310d94d0026fcddcd1a37b7a4343ed660aa03040eccf8aa4cf",
+  "availabilityProbe": {
+    "startedAt": "2026-11-16T00:19:42.514Z",
+    "cumulativeActivations": 2,
+    "events": [
+      {
+        "type": "effective-init",
+        "model": "claude-haiku-5-5",
+        "tools": [],
+        "apiKeySource": "none",
+        "sessionId": "6eeb76f0-0339-45e8-970c-b5aff1d45ef2"
+      },
+      {
+        "kind": "response"
+      }
+    ],
+    "status": "availability-observed",
+    "pid": 2313129,
+    "replyOk": true,
+    "outcome": {
+      "subtype": "success",
+      "isError": false,
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 911,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 4,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 911,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "global",
+        "iterations": [],
+        "speed": "standard",
+        "fallback_credit": null
+      },
+      "estimatedCostUsd": 0.0001844
+    },
+    "processStopped": true,
+    "finishedAt": "2026-11-16T00:19:45.849Z"
+  },
+  "j1Attempt": {
+    "startedAt": "2026-11-16T00:21:00.537Z",
+    "activations": 1,
+    "events": [
+      {
+        "at": "2026-11-16T00:22:28.448Z",
+        "kind": "sandbox-start",
+        "result": {
+          "status": "success",
+          "boot": "boot-6ea2dd9e-f8ab-4fd6-bff8-aee4a2832656"
+        }
+      },
+      {
+        "at": "2026-11-16T00:22:29.007Z",
+        "kind": "process-spawn",
+        "invocation": "claude-builder-1",
+        "pid": 2339114
+      },
+      {
+        "at": "2026-11-16T00:22:29.015Z",
+        "kind": "activation-start",
+        "invocation": "claude-builder-1",
+        "role": "builder"
+      },
+      {
+        "at": "2026-11-16T00:22:32.412Z",
+        "kind": "effective-init",
+        "invocation": "claude-builder-1",
+        "model": "claude-haiku-5-5",
+        "tools": [
+          "mcp__factory__bash"
+        ],
+        "permissionMode": "default",
+        "mcp": [
+          {
+            "name": "factory",
+            "status": "connected",
+            "source": "sdk"
+          }
+        ],
+        "apiKeySource": "none"
+      },
+      {
+        "at": "2026-11-16T00:22:34.567Z",
+        "kind": "assistant-observation",
+        "invocation": "claude-builder-1",
+        "observation": {
+          "kind": "response"
+        }
+      },
+      {
+        "at": "2026-11-16T00:22:34.698Z",
+        "kind": "tool-start",
+        "invocation": "claude-builder-1",
+        "name": "bash"
+      },
+      {
+        "at": "2026-11-16T00:22:34.919Z",
+        "kind": "tool-end",
+        "invocation": "claude-builder-1",
+        "name": "bash"
+      },
+      {
+        "at": "2026-11-16T00:22:36.860Z",
+        "kind": "assistant-observation",
+        "invocation": "claude-builder-1",
+        "observation": {
+          "kind": "response"
+        }
+      },
+      {
+        "at": "2026-11-16T00:22:36.878Z",
+        "kind": "tool-start",
+        "invocation": "claude-builder-1",
+        "name": "bash"
+      },
+      {
+        "at": "2026-11-16T00:22:41.363Z",
+        "kind": "assistant-observation",
+        "invocation": "claude-builder-1",
+        "observation": {
+          "kind": "response"
+        }
+      },
+      {
+        "at": "2026-11-16T00:22:41.534Z",
+        "kind": "assistant-observation",
+        "invocation": "claude-builder-1",
+        "observation": {
+          "kind": "response"
+        }
+      },
+      {
+        "at": "2026-11-16T00:22:41.557Z",
+        "kind": "tool-start",
+        "invocation": "claude-builder-1",
+        "name": "bash"
+      },
+      {
+        "at": "2026-11-16T00:22:44.119Z",
+        "kind": "assistant-observation",
+        "invocation": "claude-builder-1",
+        "observation": {
+          "kind": "response"
+        }
+      },
+      {
+        "at": "2026-11-16T00:22:44.181Z",
+        "kind": "assistant-observation",
+        "invocation": "claude-builder-1",
+        "observation": {
+          "kind": "response"
+        }
+      },
+      {
+        "at": "2026-11-16T00:22:44.201Z",
+        "kind": "tool-start",
+        "invocation": "claude-builder-1",
+        "name": "bash"
+      },
+      {
+        "at": "2026-11-16T00:22:44.284Z",
+        "kind": "tool-end",
+        "invocation": "claude-builder-1",
+        "name": "bash"
+      },
+      {
+        "at": "2026-11-16T00:22:44.555Z",
+        "kind": "activation-stop",
+        "invocation": "claude-builder-1",
+        "pid": 2339114,
+        "exitCode": 1,
+        "signalCode": null
+      },
+      {
+        "at": "2026-11-16T00:22:44.559Z",
+        "kind": "campaign-stop",
+        "reason": "Claude Code returned an error result: Reached maximum number of turns (4)"
+      }
+    ],
+    "results": [],
+    "cleanup": {
+      "stop": {
+        "status": "success",
+        "cessationConfirmed": true,
+        "termination": "unconfirmed",
+        "guestFinalization": "observed"
+      },
+      "observation": {
+        "condition": "stopped",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "observed",
+            "virtualBytes": "4294967296",
+            "allocatedBytes": "627511296"
+          },
+          "workspace": {
+            "status": "observed",
+            "logicalBytes": "222",
+            "allocatedBytes": "20480"
+          },
+          "artifacts": {
+            "status": "observed",
+            "logicalBytes": "110",
+            "allocatedBytes": "8192"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "552091467776"
+          }
+        }
+      }
+    },
+    "boot": "boot-6ea2dd9e-f8ab-4fd6-bff8-aee4a2832656",
+    "error": "Claude Code returned an error result: Reached maximum number of turns (4)",
+    "finishedAt": "2026-11-16T00:22:47.258Z"
+  },
+  "cumulativeActivations": 3,
+  "remainingActivations": 17,
+  "fixtureAfter": "export function add(a,b){ return a+b; }\n",
+  "fixtureSha256": "0503842d9e2a803ead018a6e894550ff3ab940e492f67e27f6473408a1be7c90",
+  "protectedCaptureChecks": [
+    {
+      "capture": "96aeb509-cd6f-4089-8de6-6a74cdd93ddb",
+      "containsExpectedNumericResult": false,
+      "containsPASS": false,
+      "containsGitNotRepository": false
+    },
+    {
+      "capture": "7c6217eb-93db-4fc9-aeec-4df12ce42b6c",
+      "containsExpectedNumericResult": false,
+      "containsPASS": false,
+      "containsGitNotRepository": false
+    },
+    {
+      "capture": "0fea520f-e11e-4845-8399-04cb656e4974",
+      "containsExpectedNumericResult": true,
+      "containsPASS": true,
+      "containsGitNotRepository": false
+    },
+    {
+      "capture": "a25d022d-d345-422b-8156-2d35f24340b7",
+      "containsExpectedNumericResult": true,
+      "containsPASS": false,
+      "containsGitNotRepository": true
+    },
+    {
+      "capture": "2af0c9a1-dc4b-4fd0-a7ea-f6ebca059de6",
+      "containsExpectedNumericResult": false,
+      "containsPASS": false,
+      "containsGitNotRepository": false
+    }
+  ],
+  "usageObservedDistinctMessages": {
+    "messages": 4,
+    "totals": {
+      "input_tokens": 8,
+      "output_tokens": 481,
+      "cache_read_input_tokens": 5007,
+      "cache_creation_input_tokens": 2069
+    },
+    "caveat": "Observed per-message maxima, not a provider bill, plan balance or guarantee of complete consumption."
+  },
+  "classification": "J1 incomplete: disposable fixture lacked Git repository; maximum 4 turns reached. No automatic retry.",
+  "resourceRemoval": {
+    "before": {
+      "condition": "stopped",
+      "cessationConfirmed": true,
+      "consumption": "unavailable",
+      "boot": "boot-6ea2dd9e-f8ab-4fd6-bff8-aee4a2832656",
+      "storage": {
+        "configuredVirtualBytes": "4294967296",
+        "minFreeBytes": "1073741824",
+        "disk": {
+          "status": "observed",
+          "virtualBytes": "4294967296",
+          "allocatedBytes": "627511296"
+        },
+        "workspace": {
+          "status": "observed",
+          "logicalBytes": "222",
+          "allocatedBytes": "20480"
+        },
+        "artifacts": {
+          "status": "observed",
+          "logicalBytes": "110",
+          "allocatedBytes": "8192"
+        },
+        "filesystem": {
+          "status": "observed",
+          "availableBytes": "551458938880"
+        }
+      }
+    },
+    "removed": {
+      "status": "success",
+      "resources": [
+        {
+          "resource": "disk",
+          "status": "removed"
+        },
+        {
+          "resource": "workspace",
+          "status": "removed"
+        },
+        {
+          "resource": "artifacts",
+          "status": "removed"
+        },
+        {
+          "resource": "runtime",
+          "status": "removed"
+        }
+      ]
+    },
+    "after": {
+      "condition": "removed",
+      "cessationConfirmed": true,
+      "consumption": "unavailable",
+      "storage": {
+        "configuredVirtualBytes": "4294967296",
+        "minFreeBytes": "1073741824",
+        "disk": {
+          "status": "absent"
+        },
+        "workspace": {
+          "status": "absent"
+        },
+        "artifacts": {
+          "status": "absent"
+        },
+        "filesystem": {
+          "status": "observed",
+          "availableBytes": "551458938880"
+        }
+      }
+    }
+  }
+}

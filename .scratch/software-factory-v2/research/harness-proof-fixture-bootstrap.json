@@ -1,0 +1,63 @@
+{
+  "runnerCommit": "ec99c8f",
+  "state": {
+    "startedAt": "2026-11-16T00:30:40.494Z",
+    "activations": 0,
+    "events": [
+      {
+        "at": "2026-11-16T00:31:52.035Z",
+        "kind": "sandbox-start",
+        "result": {
+          "status": "success",
+          "boot": "boot-bfbc7e94-c1e1-4d31-8b81-ea02a8d7c1cd"
+        }
+      },
+      {
+        "at": "2026-11-16T00:31:53.968Z",
+        "kind": "campaign-stop",
+        "reason": "GUEST_TOOL_FAILED:128"
+      }
+    ],
+    "results": [],
+    "cleanup": {
+      "stop": {
+        "status": "success",
+        "cessationConfirmed": true,
+        "termination": "unconfirmed",
+        "guestFinalization": "observed"
+      },
+      "observation": {
+        "condition": "stopped",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "observed",
+            "virtualBytes": "4294967296",
+            "allocatedBytes": "627511296"
+          },
+          "workspace": {
+            "status": "observed",
+            "logicalBytes": "21750",
+            "allocatedBytes": "90112"
+          },
+          "artifacts": {
+            "status": "observed",
+            "logicalBytes": "110",
+            "allocatedBytes": "4096"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "551437156352"
+          }
+        }
+      }
+    },
+    "boot": "boot-bfbc7e94-c1e1-4d31-8b81-ea02a8d7c1cd",
+    "error": "GUEST_TOOL_FAILED:128",
+    "finishedAt": "2026-11-16T00:31:56.393Z"
+  },
+  "diagnosis": "Git guest profile trusts /workspace/*, not /workspace itself. Move fixture beneath /workspace/checkout; do not widen safe.directory. Zero model activations."
+}

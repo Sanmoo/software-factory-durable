@@ -1,0 +1,329 @@
+{
+  "observations": [
+    {
+      "root": "/home/sanmoo/sfhp-v2",
+      "environment": "env-0ab01f16f14176f2d42c1c87cad70e7d5624977c1a7e808b188e2dbb58a69f9d",
+      "condition": "removed",
+      "cessationConfirmed": true
+    },
+    {
+      "root": "/home/sanmoo/sfhp-v2",
+      "environment": "env-537541d8c1029a8b4f8663185df57318a4f81ab4a31c7aa9891f4c2a81adeff2",
+      "condition": "removed",
+      "cessationConfirmed": true
+    },
+    {
+      "root": "/home/sanmoo/sfhp-v2",
+      "environment": "env-5ba156e03d33325fe67ecbaddbe34f3a303c7ac4d55bacd619c67d63106fc005",
+      "condition": "removed",
+      "cessationConfirmed": true
+    },
+    {
+      "root": "/home/sanmoo/sfhp-v2",
+      "environment": "env-765453091f06150e871d603e4843061b76a695f82a7eda1eba1be705efd552fb",
+      "condition": "removed",
+      "cessationConfirmed": true
+    },
+    {
+      "root": "/home/sanmoo/sfhp-v2",
+      "environment": "env-a17a565a150db13789a5bdff71665f26d683d75c7a59dc49b22f17e2ef9547f1",
+      "condition": "removed",
+      "cessationConfirmed": true
+    },
+    {
+      "root": "/home/sanmoo/sfhp-v2",
+      "environment": "env-b6d62111d45f07dba7af45801876a8fe3e4c4db865eebc6f4372e311c22ca6ae",
+      "condition": "removed",
+      "cessationConfirmed": true
+    },
+    {
+      "root": "/home/sanmoo/sfhp-v2",
+      "environment": "env-c6b931c1585bae906eb49c0ea50969f70963332e9de4331ac7a8fa52d814a4ae",
+      "condition": "removed",
+      "cessationConfirmed": true
+    },
+    {
+      "root": "/home/sanmoo/sfhp-v2/b",
+      "environment": "env-765453091f06150e871d603e4843061b76a695f82a7eda1eba1be705efd552fb",
+      "condition": "removed",
+      "cessationConfirmed": true
+    },
+    {
+      "root": "/home/sanmoo/sfhp-v2/c",
+      "environment": "env-765453091f06150e871d603e4843061b76a695f82a7eda1eba1be705efd552fb",
+      "condition": "removed",
+      "cessationConfirmed": true
+    }
+  ],
+  "lastThreeRemovals": [
+    {
+      "root": "/home/sanmoo/sfhp-v2",
+      "before": {
+        "condition": "stopped",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "boot": "boot-006e07df-1627-40b4-9b5d-715edbdf0ba9",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "observed",
+            "virtualBytes": "4294967296",
+            "allocatedBytes": "627511296"
+          },
+          "workspace": {
+            "status": "observed",
+            "logicalBytes": "97626",
+            "allocatedBytes": "638976"
+          },
+          "artifacts": {
+            "status": "observed",
+            "logicalBytes": "110",
+            "allocatedBytes": "4096"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "549524328448"
+          }
+        }
+      },
+      "removal": {
+        "status": "success",
+        "resources": [
+          {
+            "resource": "disk",
+            "status": "removed"
+          },
+          {
+            "resource": "workspace",
+            "status": "removed"
+          },
+          {
+            "resource": "artifacts",
+            "status": "removed"
+          },
+          {
+            "resource": "runtime",
+            "status": "removed"
+          }
+        ]
+      },
+      "after": {
+        "condition": "removed",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "absent"
+          },
+          "workspace": {
+            "status": "absent"
+          },
+          "artifacts": {
+            "status": "absent"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "549524328448"
+          }
+        }
+      }
+    },
+    {
+      "root": "/home/sanmoo/sfhp-v2/b",
+      "before": {
+        "condition": "stopped",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "boot": "boot-ac46e65f-0690-496a-b8fe-97ddad470adb",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "observed",
+            "virtualBytes": "4294967296",
+            "allocatedBytes": "627511296"
+          },
+          "workspace": {
+            "status": "observed",
+            "logicalBytes": "47937",
+            "allocatedBytes": "307200"
+          },
+          "artifacts": {
+            "status": "observed",
+            "logicalBytes": "110",
+            "allocatedBytes": "4096"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "549524328448"
+          }
+        }
+      },
+      "removal": {
+        "status": "success",
+        "resources": [
+          {
+            "resource": "disk",
+            "status": "removed"
+          },
+          {
+            "resource": "workspace",
+            "status": "removed"
+          },
+          {
+            "resource": "artifacts",
+            "status": "removed"
+          },
+          {
+            "resource": "runtime",
+            "status": "removed"
+          }
+        ]
+      },
+      "after": {
+        "condition": "removed",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "absent"
+          },
+          "workspace": {
+            "status": "absent"
+          },
+          "artifacts": {
+            "status": "absent"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "549524328448"
+          }
+        }
+      }
+    },
+    {
+      "root": "/home/sanmoo/sfhp-v2/c",
+      "before": {
+        "condition": "stopped",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "boot": "boot-762a9744-5342-40fa-a045-83813d7e3af8",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "observed",
+            "virtualBytes": "4294967296",
+            "allocatedBytes": "627511296"
+          },
+          "workspace": {
+            "status": "observed",
+            "logicalBytes": "49518",
+            "allocatedBytes": "348160"
+          },
+          "artifacts": {
+            "status": "observed",
+            "logicalBytes": "110",
+            "allocatedBytes": "8192"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "549524328448"
+          }
+        }
+      },
+      "removal": {
+        "status": "success",
+        "resources": [
+          {
+            "resource": "disk",
+            "status": "removed"
+          },
+          {
+            "resource": "workspace",
+            "status": "removed"
+          },
+          {
+            "resource": "artifacts",
+            "status": "removed"
+          },
+          {
+            "resource": "runtime",
+            "status": "removed"
+          }
+        ]
+      },
+      "after": {
+        "condition": "removed",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "absent"
+          },
+          "workspace": {
+            "status": "absent"
+          },
+          "artifacts": {
+            "status": "absent"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "549524328448"
+          }
+        }
+      }
+    }
+  ],
+  "native": {
+    "nativeSessionsRemoved": [
+      "12d5e649-3e30-45a7-9fa5-029f839a6227",
+      "184de7e7-7483-4332-9b7d-41ed473f8c40",
+      "28e75a73-b511-43bc-b729-fda75f020d13",
+      "2cc8d880-d2e8-4201-b7ea-3ca6129e9b92",
+      "3e1d4437-3306-4f2d-89d3-59fb2aa17cfb",
+      "44e524f2-e284-465e-9f71-474e01529287",
+      "650251bd-b4cf-48a8-b58d-4b449811c1e0",
+      "6eeb76f0-0339-45e8-970c-b5aff1d45ef2",
+      "75247edc-f9c2-443b-8051-5b135715874a",
+      "7744aa11-672f-4b22-8957-472b47ebef7b",
+      "804f5294-396f-4456-a608-3871c535dc47",
+      "80f7dfe5-5ea8-44b7-8525-a26270e02c46",
+      "97a02d87-fcc7-4ff2-bf03-d378ab6f8e4d",
+      "d017288e-eab0-4b95-809e-1996ecc79141",
+      "ec76a061-8d01-4f05-aa26-f8285fcb7507",
+      "f483bf8c-a0ca-48f4-ae1b-138d5d5204d6"
+    ],
+    "refused": [],
+    "ownTemporaryProfilesRemoved": [
+      "claude-profile",
+      "pi-loadout-smoke",
+      "pi-pi-builder-1",
+      "pi-pi-builder-1-f97c6487-e99e-4186-9629-165dcfa9e760",
+      "pi-pi-builder-3",
+      "pi-pi-standards-7",
+      "proof-filter-records"
+    ]
+  },
+  "preparedOnlyOriginalRoot": "Removed after owner/work identity validation and absence of any current/boot record; no other checkout touched.",
+  "hardlinkRepair": "8 groups, every alias proven inside own stopped workspace by st_nlink count; removed internal duplicates then public cleanup succeeded.",
+  "remaining": [
+    "private dependency installation and immutable source copy in task worktree .runtime",
+    "sanitized local run records and lifecycle/cleanup metadata",
+    "task branch/worktree"
+  ],
+  "notRemaining": [
+    "live VM or model worker from proof",
+    "guest disk/workspace/artifacts/runtime",
+    "native own Claude sessions from proof cwd",
+    "temporary own Pi session profiles"
+  ],
+  "personalProfile": "No logout or deletion of personal credentials or unrelated sessions"
+}

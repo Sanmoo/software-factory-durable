@@ -1,0 +1,402 @@
+{
+  "at": "2026-11-16T09:38:46.268Z",
+  "noInference": true,
+  "environments": [
+    {
+      "workId": "harness-proof-complement-preflight-ae7ce790-9a5b-4357-9d78-5b714ec62d2e",
+      "environment": "env-bcd644c746ef0a2724af78227fc9cf3aa752c6f145d565eb69910d32fb1e2e27",
+      "observation": {
+        "condition": "removed",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "absent"
+          },
+          "workspace": {
+            "status": "absent"
+          },
+          "artifacts": {
+            "status": "absent"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "517009260544"
+          }
+        }
+      }
+    },
+    {
+      "workId": "harness-proof-complement-preflight-950e932e-b015-4ead-ad3f-0e2a98ca0c73",
+      "environment": "env-cdbc2953b53a92774e1c645892c2fed6702a61f45eab57716383cd24d5faeff9",
+      "observation": {
+        "condition": "removed",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "absent"
+          },
+          "workspace": {
+            "status": "absent"
+          },
+          "artifacts": {
+            "status": "absent"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "517009260544"
+          }
+        }
+      }
+    },
+    {
+      "workId": "harness-proof-complement-cancel-0a772db8-1ffd-4ebb-9732-ff9aeab22359",
+      "environment": "env-bc651f95e497111ffd04647438f16c0e343ec813352d1764b61f884fe2ae1b6e",
+      "observation": {
+        "condition": "removed",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "absent"
+          },
+          "workspace": {
+            "status": "absent"
+          },
+          "artifacts": {
+            "status": "absent"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "517009260544"
+          }
+        }
+      }
+    },
+    {
+      "workId": "harness-proof-complement-mixed-058fd5a9-1193-497a-a2b9-6b6925cb1ae4",
+      "environment": "env-c34e2b7c86ac7b22b64e85da92067aa0057c4ddfbc7f15fa029f5bc6f01bbc97",
+      "observation": {
+        "condition": "removed",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "absent"
+          },
+          "workspace": {
+            "status": "absent"
+          },
+          "artifacts": {
+            "status": "absent"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "517009260544"
+          }
+        }
+      }
+    },
+    {
+      "workId": "harness-proof-complement-filter-f60e0093-3c45-44b8-bd25-0fd329160728",
+      "environment": "env-30594511736f6582960fab518c6fd392402dff2ec63e0eff5825626566a13be1",
+      "observation": {
+        "condition": "removed",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "absent"
+          },
+          "workspace": {
+            "status": "absent"
+          },
+          "artifacts": {
+            "status": "absent"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "517009260544"
+          }
+        }
+      }
+    }
+  ],
+  "nativeSessions": [
+    {
+      "sessionId": "90c946b4-d5c4-4b3e-87b2-5e033f3d9f72",
+      "absent": true
+    },
+    {
+      "sessionId": "25736535-4c86-4fcb-b080-8e793c6c50ba",
+      "absent": true
+    },
+    {
+      "sessionId": "b837cc00-7be3-4bad-a5ef-f4c7db78e6dd",
+      "absent": true
+    },
+    {
+      "sessionId": "c4791d4b-abe9-4255-962f-79f5224141f1",
+      "absent": true
+    },
+    {
+      "sessionId": "bf3ae6ea-5f94-4d0f-81bb-c230a83e0ea7",
+      "absent": true
+    },
+    {
+      "sessionId": "ed130a7a-d226-45c9-8646-d3d67aa457c5",
+      "absent": true
+    }
+  ],
+  "piProfiles": [
+    {
+      "path": "$TASK_WORKTREE/.runtime/complement-pi-984f8fa7-043c-40a6-974d-2e5547b6fc05/",
+      "absent": true
+    },
+    {
+      "path": "$TASK_WORKTREE/.runtime/complement-pi-28e2d650-0177-44f4-93ba-fdbf43cafc71/",
+      "absent": true
+    },
+    {
+      "path": "$TASK_WORKTREE/.runtime/complement-pi-5477be57-ae2e-4779-a2ce-cb8bdbebeb1d/",
+      "absent": true
+    },
+    {
+      "path": "$TASK_WORKTREE/.runtime/complement-pi-b117a545-d1f1-44c3-90e6-924412aeaa08/",
+      "absent": true
+    },
+    {
+      "path": "$TASK_WORKTREE/.runtime/complement-pi-ace1da47-b6a3-4659-9078-e959b45bcf41/",
+      "absent": true
+    },
+    {
+      "path": "$TASK_WORKTREE/.runtime/complement-pi-80b71ad8-fe10-491d-96bb-c6baf141b98d/",
+      "absent": true
+    },
+    {
+      "path": "$TASK_WORKTREE/.runtime/complement-pi-1c8d5960-f818-4ba8-b086-d9507041bbfc/",
+      "absent": true
+    },
+    {
+      "path": "$TASK_WORKTREE/.runtime/complement-pi-27ef5540-dda3-4e8a-b78a-d52d9b70f5e4/",
+      "absent": true
+    }
+  ],
+  "processGroups": [
+    {
+      "group": 32736,
+      "members": [],
+      "empty": true
+    },
+    {
+      "group": 34253,
+      "members": [],
+      "empty": true
+    },
+    {
+      "group": 43120,
+      "members": [],
+      "empty": true
+    },
+    {
+      "group": 55088,
+      "members": [],
+      "empty": true
+    },
+    {
+      "group": 55756,
+      "members": [],
+      "empty": true
+    },
+    {
+      "group": 56075,
+      "members": [],
+      "empty": true
+    },
+    {
+      "group": 56210,
+      "members": [],
+      "empty": true
+    },
+    {
+      "group": 59294,
+      "members": [],
+      "empty": true
+    }
+  ],
+  "removedOwnDirectories": [
+    {
+      "path": "$TASK_WORKTREE/.runtime/complement-claude/",
+      "removedEmpty": true
+    },
+    {
+      "path": "$HOME/.claude/projects/-home-sanmoo-dev-github-com-Sanmoo-software-factory-durable--worktrees-harness-proof-run--runtime-complement-claude",
+      "removedEmpty": true
+    },
+    {
+      "path": "$TASK_WORKTREE/.runtime/complement-records-1/",
+      "ownSyntheticCapturesRemoved": true
+    },
+    {
+      "path": "$TASK_WORKTREE/.runtime/complement-records-2/",
+      "ownSyntheticCapturesRemoved": true
+    },
+    {
+      "path": "$TASK_WORKTREE/.runtime/complement-records-3/",
+      "ownSyntheticCapturesRemoved": true
+    },
+    {
+      "path": "$TASK_WORKTREE/.runtime/complement-records-4/",
+      "ownSyntheticCapturesRemoved": true
+    },
+    {
+      "path": "$TASK_WORKTREE/.runtime/complement-records-5/",
+      "ownSyntheticCapturesRemoved": true
+    }
+  ],
+  "retained": [
+    "native/sandbox lifecycle metadata",
+    "sanitized evidence",
+    "immutable MVP snapshot and local dependencies",
+    "task branch/worktree pending operator approval"
+  ],
+  "credentials": "untouched: no credential read/copy, login or logout; personal Claude profile preserved",
+  "sdkProfileVerification": {
+    "pi": {
+      "id": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+      "version": "1.5.2",
+      "integrity": "sha512-mUWI04rqF1Vd/m1q+Ps1XeWsTXEVvRUnsmRa83I3Dzua0Tx5bYS93imeqtIfrXf7PkkaR6ERz+AuQhIJlom5yA==",
+      "upstreamSHA256": "e6159de5e4d94ae22968b6524237ef3d4f0374a107e2321ed5c29e93d66c8efc",
+      "upstreamTreeSHA256": "7d0961cce25f6c802b22aaa028206cd610de386442d2e6b732d71367ef006391",
+      "patchSHA256": "5e45a7c2953db293a14db0138bb31f8ac9e95eb13512afd42f1f49b77c98e066",
+      "resultSHA256": "06867a067ebbadca2e06f75ccb4e682cd7e37b9683d41a71562f770b3105a209",
+      "asyncPatchSHA256": "1ee38f2bdb71480b5b6206e72dbed32ac9214acbe0afe9b7e5137ea8f63cdc1e",
+      "candidatePatchSHA256": "fd85bbd3c22fff3cb90dd990cb2608f18884d15dcd3820fb2f790b6e42a4dd01",
+      "candidateManifestSHA256": "b6aaa5391d251867e41e8fc80973a1da79c7df3e38cdd18d11e705d939809b69",
+      "lexicalPatchSHA256": "e3e88f8e6a53c9b58164c85c9866cfcf5a31b9fd415fdad7ce136976d8fd96d0",
+      "lexicalCandidateManifestSHA256": "923d916bae558e6d21978593b2effb716dec80398bb5b0a66271fefcfc0f42a2",
+      "asyncBashFiles": {
+        "dist/core/tools/bash.js": {
+          "before": "afc4f829b3da2e7d8cc31296ccceb26bbc8e35018eb3f352791b651866cc2040",
+          "after": "2a6f7dc6b16357e8927a8f82cd895a9f6c96d98401eddf1e925cd74a64094e9d"
+        },
+        "dist/core/tools/bash.d.ts": {
+          "before": "78d2558fa0d81296004aed0b0c939b6c44a14a60e792eb363d08a2e4a6a5726b",
+          "after": "ab7d399fecde1446eb92c231a4a83567e658b0e580caff939d259b3fa4572f24"
+        },
+        "dist/core/tools/output-accumulator.js": {
+          "before": "5416cd0ef5a8edc984093ed67053ae27ebfc7ed42699c452daddf94dd6217858",
+          "after": "6ce6e014c2fd47f094626cf9ba0860403db9b49b4333486e9394c8eaeea05ae5"
+        },
+        "dist/core/tools/output-accumulator.d.ts": {
+          "before": "363987be1771e96d16805df4e13300ced5e701375ed9e156f7562141e0c0a2e2",
+          "after": "febeb4e32a161e5af81cb5c3484861f972f58339923abe23a0959720e14f2006"
+        }
+      },
+      "lexicalQueueFiles": {
+        "dist/core/tools/edit.d.ts": {
+          "before": "8e84eb3492e5b6a683d064cabf5ed4cb121753704e2f3d4099bae13be244e8d2",
+          "after": "345512ff4023036624325aa7cd7b913062496e5b302641803f7a6624fc6b9518"
+        },
+        "dist/core/tools/edit.js": {
+          "before": "6e7fa99a8ac15e8a42d56158f52bd49c68a977a530a143f162858f755af572c5",
+          "after": "b0944caf868d6a3e8377cdcd2de1092255fc36f3990f25dcc173f6d78a5f8157"
+        },
+        "dist/core/tools/file-mutation-queue.d.ts": {
+          "before": "3e7a344dbfe8ab0c825cac1a6a420969a9a82ff85b2479a9de1d93eec12ed885",
+          "after": "ce049dee22fb3bc35c683e980f3a5e2f54312facb567b5d3d5eb3bcada4b3d14"
+        },
+        "dist/core/tools/file-mutation-queue.js": {
+          "before": "cd300f1ecae2b8d45a7c69011221f4f2e4e289865bf879df537c859889f26e5b",
+          "after": "b2a6983a73e85dca3043b95d09b507e758e115d39b356319795148404a7bb3f7"
+        },
+        "dist/core/tools/write.d.ts": {
+          "before": "039017adffeeb080af53ec53b191ca88ea109591556cbeea0da21104cd8ef087",
+          "after": "71fa3593814c75da99ba36ed0b1e615b2b5b5dc4adf644cf36b320996705077d"
+        },
+        "dist/core/tools/write.js": {
+          "before": "0e9daec15a5001cafe651db391aed63a463c346d29b60e6dc91ef09477fd22f5",
+          "after": "41730ddf128824f6c0a0950033933514c8cdfbf33d67c7ae6b834ecb376684cb"
+        }
+      },
+      "license": "MIT",
+      "standaloneLicense": false,
+      "upstreamPackage": "@earendil-works/pi-coding-agent"
+    },
+    "gondolin": {
+      "id": "factory-development-gondolin-0.14.0-stdin-capacity-v1",
+      "directory": ".scratch/factory-development-gondolin-v1",
+      "version": "0.14.0",
+      "integrity": "sha512-MSw+EGcqFJeyKHdXEfm+nMRr74ytT4x8DGIohav0oPCHeVQAB9AajquM94cv2xqvIU3VDAaZZVC07IXsOY6OVQ==",
+      "provenanceSHA256": "a2159d649ab9ee947ffb87c0f11a046df4653d4bb17b873844af476469137a3d",
+      "patchSHA256": "441621ba414e419cae9715e3ffbfa3059d4048247972515db8db4cf3cfdcca88",
+      "patchManifestSHA256": "2ec5805fbbdc9badcf6e0bd52720e3c5a47e8a927f3b41bbe1e3d7feb448d1c8",
+      "candidateHead": "1391f2e49060509096a82f2566339265a0ef4951",
+      "sdkCodeCommit": "4a7604870de4d675bcfb487d375b118cf4148836",
+      "original133SHA256": "03a1fc3d3f7a5d2f90b115f977885682727ca10337d153494cae7d28ad12b66b",
+      "originalInventoryCount": 133,
+      "originalTreeSHA256": "bf0c51fdae63d6772a320625a5554ee39c248b9d3a04a4c21a064db001da8eb8",
+      "copiedTreeSHA256": "8c99800d083835d740197a86b08ed4f9ea7e91fdc619e2a238433f41d4423430",
+      "originalFiles": 407,
+      "copiedFiles": 409,
+      "modifiedFiles": 7,
+      "addedFiles": 2,
+      "license": "Apache-2.0",
+      "licenseSHA256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+      "dependencies": [
+        {
+          "name": "cbor2",
+          "version": "2.4.1",
+          "integrity": "sha512-h4OqPnSvIEUNCxTNb9pwMZPKjhNKO9bkPwQJOR7d5oBIrZR/CO098atrLl4AkQmB1p3opCvo2UFt4fhRSWC/vQ==",
+          "packageSHA256": "a02ec2319a4dcbf5a2a9d207f0bafa28b193f2804adf67f45e2ceffbc9c0a7d7"
+        },
+        {
+          "name": "ssh2",
+          "version": "1.17.0",
+          "integrity": "sha512-wPldCk3asibAjQ/kziWQQt1Wh3PgDFpC0XpwclzKcdT1vql6KeYxf5LIt4nlFkUeR8WuphYMKqUA56X4rjbfgQ==",
+          "packageSHA256": "e6fd4e4c3e69e4ad185c87cb5ee1df631e3f4cbd43cf89470f83c1e5d1a76dfb"
+        },
+        {
+          "name": "undici",
+          "version": "6.29.1",
+          "integrity": "sha512-EvRlUt/QqAEvXdQeRMYUfwOQsfzpDztykrG2owGEE/rBOBoYv9uF39ZzsNDh4lTFHhTr2XOZjKkYgueD12ZmGA==",
+          "packageSHA256": "df5d9c505f8db601e62bf67eb835117985e549cfbbb61c4c1a84c55d57ab3532"
+        },
+        {
+          "name": "@earendil-works/gondolin-krun-runner-linux-x64",
+          "version": "0.14.0",
+          "integrity": "sha512-91iw4smoOH/yOoAuQS6N2UZOxqSFwRhtk8rTyrokXBoWiWcveAzg4kHvnLcm40ZlNrWwzIDFrere4bkZeGDQcA==",
+          "packageSHA256": "ad4fd30a60327e394d2d006e1451216fa777e003634f6c3444c0cb8841b5059c"
+        }
+      ],
+      "dependencyLink": "$TASK_WORKTREE/.runtime/mvp/node_modules",
+      "dependencyUsage": "Existing canonical node_modules linked for future read-only usage; not a filesystem write barrier or dependency execution audit.",
+      "scope": "Private preparation only; NO RUNTIME SWITCH. Future consumer must verify before effects. No guest/lifecycle qualification."
+    }
+  },
+  "finalEnvironmentAudit": {
+    "at": "2026-11-16T09:45:58.044Z",
+    "presenceOnly": {
+      "OPENAI_API_KEY": false,
+      "OPENAI_BASE_URL": false,
+      "OPENAI_API_BASE": false,
+      "ANTHROPIC_API_KEY": true,
+      "ANTHROPIC_AUTH_TOKEN": false,
+      "CLAUDE_CODE_OAUTH_TOKEN": false,
+      "ANTHROPIC_BASE_URL": false,
+      "ANTHROPIC_PROFILE": false
+    },
+    "note": "Host Anthropic key is present but excluded by the explicit Claude child env allowlist; all six real Claude init events reported apiKeySource none. Pi OpenAI env overrides absent. No values read or retained; this is a final audit, not retroactive pre-request instrumentation."
+  }
+}

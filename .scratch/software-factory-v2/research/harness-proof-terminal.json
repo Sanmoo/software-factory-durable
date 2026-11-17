@@ -1,0 +1,2303 @@
+{
+  "campaign": "terminal-1",
+  "priorCampaigns": {
+    "closed": true,
+    "activations": 30
+  },
+  "limits": {
+    "activations": 3,
+    "executionMs": 600000
+  },
+  "activations": 3,
+  "executionMs": 281044,
+  "finalConservativeExecutionMs": 300000,
+  "finalDebitNote": "281044ms runner debit plus 18956ms reserved for independent offline audit/validation/cleanup confirmation. Campaign remains closed at three activations; no quota rollback.",
+  "runs": [
+    {
+      "mode": "--check",
+      "startedAt": "2026-11-17T04:04:24.942Z",
+      "eventStart": 0,
+      "checks": {},
+      "sourceHash": "d23fb08d52764d94e25369008391a2dc97c9a0792cc1de24c068bae7070b6e91",
+      "error": "VERSION_DRIFT",
+      "nativeCleanup": [],
+      "finishedAt": "2026-11-17T04:04:25.034Z"
+    },
+    {
+      "mode": "--check",
+      "startedAt": "2026-11-17T04:05:43.979Z",
+      "eventStart": 1,
+      "checks": {
+        "auth": {
+          "loggedIn": true,
+          "method": "claude.ai",
+          "provider": "firstParty",
+          "subscription": "max"
+        },
+        "gondolin": {
+          "id": "factory-development-gondolin-0.14.0-stdin-capacity-v1",
+          "directory": ".scratch/factory-development-gondolin-v1",
+          "version": "0.14.0",
+          "integrity": "sha512-MSw+EGcqFJeyKHdXEfm+nMRr74ytT4x8DGIohav0oPCHeVQAB9AajquM94cv2xqvIU3VDAaZZVC07IXsOY6OVQ==",
+          "provenanceSHA256": "a2159d649ab9ee947ffb87c0f11a046df4653d4bb17b873844af476469137a3d",
+          "patchSHA256": "441621ba414e419cae9715e3ffbfa3059d4048247972515db8db4cf3cfdcca88",
+          "patchManifestSHA256": "2ec5805fbbdc9badcf6e0bd52720e3c5a47e8a927f3b41bbe1e3d7feb448d1c8",
+          "candidateHead": "1391f2e49060509096a82f2566339265a0ef4951",
+          "sdkCodeCommit": "4a7604870de4d675bcfb487d375b118cf4148836",
+          "original133SHA256": "03a1fc3d3f7a5d2f90b115f977885682727ca10337d153494cae7d28ad12b66b",
+          "originalInventoryCount": 133,
+          "originalTreeSHA256": "bf0c51fdae63d6772a320625a5554ee39c248b9d3a04a4c21a064db001da8eb8",
+          "copiedTreeSHA256": "8c99800d083835d740197a86b08ed4f9ea7e91fdc619e2a238433f41d4423430",
+          "originalFiles": 407,
+          "copiedFiles": 409,
+          "modifiedFiles": 7,
+          "addedFiles": 2,
+          "license": "Apache-2.0",
+          "licenseSHA256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "dependencies": [
+            {
+              "name": "cbor2",
+              "version": "2.4.1",
+              "integrity": "sha512-h4OqPnSvIEUNCxTNb9pwMZPKjhNKO9bkPwQJOR7d5oBIrZR/CO098atrLl4AkQmB1p3opCvo2UFt4fhRSWC/vQ==",
+              "packageSHA256": "a02ec2319a4dcbf5a2a9d207f0bafa28b193f2804adf67f45e2ceffbc9c0a7d7"
+            },
+            {
+              "name": "ssh2",
+              "version": "1.17.0",
+              "integrity": "sha512-wPldCk3asibAjQ/kziWQQt1Wh3PgDFpC0XpwclzKcdT1vql6KeYxf5LIt4nlFkUeR8WuphYMKqUA56X4rjbfgQ==",
+              "packageSHA256": "e6fd4e4c3e69e4ad185c87cb5ee1df631e3f4cbd43cf89470f83c1e5d1a76dfb"
+            },
+            {
+              "name": "undici",
+              "version": "6.29.1",
+              "integrity": "sha512-EvRlUt/QqAEvXdQeRMYUfwOQsfzpDztykrG2owGEE/rBOBoYv9uF39ZzsNDh4lTFHhTr2XOZjKkYgueD12ZmGA==",
+              "packageSHA256": "df5d9c505f8db601e62bf67eb835117985e549cfbbb61c4c1a84c55d57ab3532"
+            },
+            {
+              "name": "@earendil-works/gondolin-krun-runner-linux-x64",
+              "version": "0.14.0",
+              "integrity": "sha512-91iw4smoOH/yOoAuQS6N2UZOxqSFwRhtk8rTyrokXBoWiWcveAzg4kHvnLcm40ZlNrWwzIDFrere4bkZeGDQcA==",
+              "packageSHA256": "ad4fd30a60327e394d2d006e1451216fa777e003634f6c3444c0cb8841b5059c"
+            }
+          ],
+          "dependencyLink": "$TASK_WORKTREE/.runtime/mvp/node_modules",
+          "dependencyUsage": "Existing canonical node_modules linked for future read-only usage; not a filesystem write barrier or dependency execution audit.",
+          "scope": "Private preparation only; NO RUNTIME SWITCH. Future consumer must verify before effects. No guest/lifecycle qualification."
+        },
+        "effectInitial": {
+          "e1": 1,
+          "calibration": 1,
+          "rows": [
+            {
+              "id": "calibration",
+              "atNs": 1794888400424436000,
+              "attempt": true
+            },
+            {
+              "id": "e1",
+              "atNs": 1794888400575158300,
+              "attempt": true
+            }
+          ],
+          "programSha256": "c046b17ceead49a9d668225fa0ec108fe2f7cef9defad686cebf5ddb29c808b2"
+        },
+        "filterSmoke": true,
+        "handshake": {
+          "onFailureSupported": true,
+          "hooksApplied": true,
+          "version": "2.1.325",
+          "haiku": [
+            {
+              "value": "haiku",
+              "resolvedModel": "claude-haiku-5-5",
+              "displayName": "Haiku",
+              "description": "Haiku 5.5 · Fastest for quick answers",
+              "supportsEffort": true,
+              "supportedEffortLevels": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "supportsAdaptiveThinking": true,
+              "supportsAutoMode": true,
+              "supportsThinkingOff": false
+            }
+          ]
+        }
+      },
+      "sourceHash": "9dcaacfaa5b65cada989bfcd6fe78c98c55121db6d3897d291bf74cfce5ee1be",
+      "manifest": {
+        "sourceHash": "9dcaacfaa5b65cada989bfcd6fe78c98c55121db6d3897d291bf74cfce5ee1be",
+        "reference": "aabe06abfb20e83593020c0fee19b078d235466b",
+        "matchedSourceFiles": 124,
+        "node": "v24.21.0",
+        "claude": "2.1.325 (Claude Code)",
+        "claudeBinary": "$HOME/.local/share/claude/versions/2.1.325",
+        "disableChildAutoUpdater": true,
+        "sdk": "0.3.325",
+        "model": "claude-haiku-5-5",
+        "effort": "low",
+        "sdkTypesSha256": "4b7a2ee26e0f6eabf9e94f30d150f4e861c78fea0c78055f33c2b2a833f30935",
+        "systemSha256": "c9090228f3a9f577093a769ef4b9784d370997163486ec4e3b7b906bb38eb438",
+        "oracleSha256": "9efe64f995b847b38cf6050bd85c65a77268657841f803e272c7c0838d9fc167",
+        "guestAssets": {
+          "directory": "$HOME/software-factory-test/assets34/assets",
+          "manifestSha256": "8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807"
+        },
+        "configuration": {
+          "schemaVersion": 1,
+          "profile": "gondolin-qemu-alpine-dev-v1",
+          "memoryMiB": 1024,
+          "vcpus": 1,
+          "diskGiB": 4,
+          "shutdownGraceSeconds": 15,
+          "minFreeSpaceGiB": 1
+        },
+        "limits": {
+          "activations": 3,
+          "executionMs": 600000
+        },
+        "root": "$HOME/sfhp-v2/e",
+        "toolsByPhase": {
+          "question": [
+            "bash",
+            "ask_user"
+          ],
+          "resume": [
+            "bash",
+            "filter_probe"
+          ],
+          "fault": [
+            "bash"
+          ]
+        },
+        "hook": {
+          "event": "PostToolBatch",
+          "onFailure": "block",
+          "timeoutSeconds": 5
+        },
+        "control": "local fixture",
+        "effects": "independent guest service script/ledger",
+        "auth": "native personal subscription exception; explicit child env allowlist, no copied tokens"
+      },
+      "completed": true,
+      "nativeCleanup": [],
+      "finishedAt": "2026-11-17T04:06:46.094Z"
+    },
+    {
+      "mode": "--check",
+      "startedAt": "2026-11-17T04:08:07.673Z",
+      "eventStart": 6,
+      "checks": {
+        "auth": {
+          "loggedIn": true,
+          "method": "claude.ai",
+          "provider": "firstParty",
+          "subscription": "max"
+        },
+        "gondolin": {
+          "id": "factory-development-gondolin-0.14.0-stdin-capacity-v1",
+          "directory": ".scratch/factory-development-gondolin-v1",
+          "version": "0.14.0",
+          "integrity": "sha512-MSw+EGcqFJeyKHdXEfm+nMRr74ytT4x8DGIohav0oPCHeVQAB9AajquM94cv2xqvIU3VDAaZZVC07IXsOY6OVQ==",
+          "provenanceSHA256": "a2159d649ab9ee947ffb87c0f11a046df4653d4bb17b873844af476469137a3d",
+          "patchSHA256": "441621ba414e419cae9715e3ffbfa3059d4048247972515db8db4cf3cfdcca88",
+          "patchManifestSHA256": "2ec5805fbbdc9badcf6e0bd52720e3c5a47e8a927f3b41bbe1e3d7feb448d1c8",
+          "candidateHead": "1391f2e49060509096a82f2566339265a0ef4951",
+          "sdkCodeCommit": "4a7604870de4d675bcfb487d375b118cf4148836",
+          "original133SHA256": "03a1fc3d3f7a5d2f90b115f977885682727ca10337d153494cae7d28ad12b66b",
+          "originalInventoryCount": 133,
+          "originalTreeSHA256": "bf0c51fdae63d6772a320625a5554ee39c248b9d3a04a4c21a064db001da8eb8",
+          "copiedTreeSHA256": "8c99800d083835d740197a86b08ed4f9ea7e91fdc619e2a238433f41d4423430",
+          "originalFiles": 407,
+          "copiedFiles": 409,
+          "modifiedFiles": 7,
+          "addedFiles": 2,
+          "license": "Apache-2.0",
+          "licenseSHA256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "dependencies": [
+            {
+              "name": "cbor2",
+              "version": "2.4.1",
+              "integrity": "sha512-h4OqPnSvIEUNCxTNb9pwMZPKjhNKO9bkPwQJOR7d5oBIrZR/CO098atrLl4AkQmB1p3opCvo2UFt4fhRSWC/vQ==",
+              "packageSHA256": "a02ec2319a4dcbf5a2a9d207f0bafa28b193f2804adf67f45e2ceffbc9c0a7d7"
+            },
+            {
+              "name": "ssh2",
+              "version": "1.17.0",
+              "integrity": "sha512-wPldCk3asibAjQ/kziWQQt1Wh3PgDFpC0XpwclzKcdT1vql6KeYxf5LIt4nlFkUeR8WuphYMKqUA56X4rjbfgQ==",
+              "packageSHA256": "e6fd4e4c3e69e4ad185c87cb5ee1df631e3f4cbd43cf89470f83c1e5d1a76dfb"
+            },
+            {
+              "name": "undici",
+              "version": "6.29.1",
+              "integrity": "sha512-EvRlUt/QqAEvXdQeRMYUfwOQsfzpDztykrG2owGEE/rBOBoYv9uF39ZzsNDh4lTFHhTr2XOZjKkYgueD12ZmGA==",
+              "packageSHA256": "df5d9c505f8db601e62bf67eb835117985e549cfbbb61c4c1a84c55d57ab3532"
+            },
+            {
+              "name": "@earendil-works/gondolin-krun-runner-linux-x64",
+              "version": "0.14.0",
+              "integrity": "sha512-91iw4smoOH/yOoAuQS6N2UZOxqSFwRhtk8rTyrokXBoWiWcveAzg4kHvnLcm40ZlNrWwzIDFrere4bkZeGDQcA==",
+              "packageSHA256": "ad4fd30a60327e394d2d006e1451216fa777e003634f6c3444c0cb8841b5059c"
+            }
+          ],
+          "dependencyLink": "$TASK_WORKTREE/.runtime/mvp/node_modules",
+          "dependencyUsage": "Existing canonical node_modules linked for future read-only usage; not a filesystem write barrier or dependency execution audit.",
+          "scope": "Private preparation only; NO RUNTIME SWITCH. Future consumer must verify before effects. No guest/lifecycle qualification."
+        },
+        "effectInitial": {
+          "e1": 1,
+          "calibration": 1,
+          "rows": [
+            {
+              "id": "calibration",
+              "atNs": 1794888547975662600,
+              "attempt": true
+            },
+            {
+              "id": "e1",
+              "atNs": 1794888548103127000,
+              "attempt": true
+            }
+          ],
+          "programSha256": "c046b17ceead49a9d668225fa0ec108fe2f7cef9defad686cebf5ddb29c808b2"
+        },
+        "filterSmoke": true,
+        "handshake": {
+          "onFailureSupported": true,
+          "hooksApplied": true,
+          "version": "2.1.325",
+          "haiku": [
+            {
+              "value": "haiku",
+              "resolvedModel": "claude-haiku-5-5",
+              "displayName": "Haiku",
+              "description": "Haiku 5.5 · Fastest for quick answers",
+              "supportsEffort": true,
+              "supportedEffortLevels": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "supportsAdaptiveThinking": true,
+              "supportsAutoMode": true,
+              "supportsThinkingOff": false
+            }
+          ]
+        },
+        "rebootGate": "2f2e5f7bb36013ee3aeac5dc206260eaa397c87c",
+        "rebootPreservedCounter": true
+      },
+      "sourceHash": "083f39c0fd0af9bab8817f6e2cee88cc0c0ec130db61f03e2eb5d3464f82ec82",
+      "manifest": {
+        "sourceHash": "083f39c0fd0af9bab8817f6e2cee88cc0c0ec130db61f03e2eb5d3464f82ec82",
+        "reference": "aabe06abfb20e83593020c0fee19b078d235466b",
+        "matchedSourceFiles": 124,
+        "node": "v24.21.0",
+        "claude": "2.1.325 (Claude Code)",
+        "claudeBinary": "$HOME/.local/share/claude/versions/2.1.325",
+        "disableChildAutoUpdater": true,
+        "sdk": "0.3.325",
+        "model": "claude-haiku-5-5",
+        "effort": "low",
+        "sdkTypesSha256": "4b7a2ee26e0f6eabf9e94f30d150f4e861c78fea0c78055f33c2b2a833f30935",
+        "systemSha256": "c9090228f3a9f577093a769ef4b9784d370997163486ec4e3b7b906bb38eb438",
+        "oracleSha256": "9efe64f995b847b38cf6050bd85c65a77268657841f803e272c7c0838d9fc167",
+        "guestAssets": {
+          "directory": "$HOME/software-factory-test/assets34/assets",
+          "manifestSha256": "8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807"
+        },
+        "configuration": {
+          "schemaVersion": 1,
+          "profile": "gondolin-qemu-alpine-dev-v1",
+          "memoryMiB": 1024,
+          "vcpus": 1,
+          "diskGiB": 4,
+          "shutdownGraceSeconds": 15,
+          "minFreeSpaceGiB": 1
+        },
+        "limits": {
+          "activations": 3,
+          "executionMs": 600000
+        },
+        "root": "$HOME/sfhp-v2/e",
+        "toolsByPhase": {
+          "question": [
+            "bash",
+            "ask_user"
+          ],
+          "resume": [
+            "bash",
+            "filter_probe"
+          ],
+          "fault": [
+            "bash"
+          ]
+        },
+        "hook": {
+          "event": "PostToolBatch",
+          "onFailure": "block",
+          "timeoutSeconds": 5
+        },
+        "control": "local fixture",
+        "effects": "independent guest service script/ledger",
+        "auth": "native personal subscription exception; explicit child env allowlist, no copied tokens"
+      },
+      "completed": true,
+      "nativeCleanup": [],
+      "finishedAt": "2026-11-17T04:09:43.789Z"
+    },
+    {
+      "mode": "--execute",
+      "startedAt": "2026-11-17T04:10:09.232Z",
+      "eventStart": 14,
+      "checks": {
+        "auth": {
+          "loggedIn": true,
+          "method": "claude.ai",
+          "provider": "firstParty",
+          "subscription": "max"
+        },
+        "gondolin": {
+          "id": "factory-development-gondolin-0.14.0-stdin-capacity-v1",
+          "directory": ".scratch/factory-development-gondolin-v1",
+          "version": "0.14.0",
+          "integrity": "sha512-MSw+EGcqFJeyKHdXEfm+nMRr74ytT4x8DGIohav0oPCHeVQAB9AajquM94cv2xqvIU3VDAaZZVC07IXsOY6OVQ==",
+          "provenanceSHA256": "a2159d649ab9ee947ffb87c0f11a046df4653d4bb17b873844af476469137a3d",
+          "patchSHA256": "441621ba414e419cae9715e3ffbfa3059d4048247972515db8db4cf3cfdcca88",
+          "patchManifestSHA256": "2ec5805fbbdc9badcf6e0bd52720e3c5a47e8a927f3b41bbe1e3d7feb448d1c8",
+          "candidateHead": "1391f2e49060509096a82f2566339265a0ef4951",
+          "sdkCodeCommit": "4a7604870de4d675bcfb487d375b118cf4148836",
+          "original133SHA256": "03a1fc3d3f7a5d2f90b115f977885682727ca10337d153494cae7d28ad12b66b",
+          "originalInventoryCount": 133,
+          "originalTreeSHA256": "bf0c51fdae63d6772a320625a5554ee39c248b9d3a04a4c21a064db001da8eb8",
+          "copiedTreeSHA256": "8c99800d083835d740197a86b08ed4f9ea7e91fdc619e2a238433f41d4423430",
+          "originalFiles": 407,
+          "copiedFiles": 409,
+          "modifiedFiles": 7,
+          "addedFiles": 2,
+          "license": "Apache-2.0",
+          "licenseSHA256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "dependencies": [
+            {
+              "name": "cbor2",
+              "version": "2.4.1",
+              "integrity": "sha512-h4OqPnSvIEUNCxTNb9pwMZPKjhNKO9bkPwQJOR7d5oBIrZR/CO098atrLl4AkQmB1p3opCvo2UFt4fhRSWC/vQ==",
+              "packageSHA256": "a02ec2319a4dcbf5a2a9d207f0bafa28b193f2804adf67f45e2ceffbc9c0a7d7"
+            },
+            {
+              "name": "ssh2",
+              "version": "1.17.0",
+              "integrity": "sha512-wPldCk3asibAjQ/kziWQQt1Wh3PgDFpC0XpwclzKcdT1vql6KeYxf5LIt4nlFkUeR8WuphYMKqUA56X4rjbfgQ==",
+              "packageSHA256": "e6fd4e4c3e69e4ad185c87cb5ee1df631e3f4cbd43cf89470f83c1e5d1a76dfb"
+            },
+            {
+              "name": "undici",
+              "version": "6.29.1",
+              "integrity": "sha512-EvRlUt/QqAEvXdQeRMYUfwOQsfzpDztykrG2owGEE/rBOBoYv9uF39ZzsNDh4lTFHhTr2XOZjKkYgueD12ZmGA==",
+              "packageSHA256": "df5d9c505f8db601e62bf67eb835117985e549cfbbb61c4c1a84c55d57ab3532"
+            },
+            {
+              "name": "@earendil-works/gondolin-krun-runner-linux-x64",
+              "version": "0.14.0",
+              "integrity": "sha512-91iw4smoOH/yOoAuQS6N2UZOxqSFwRhtk8rTyrokXBoWiWcveAzg4kHvnLcm40ZlNrWwzIDFrere4bkZeGDQcA==",
+              "packageSHA256": "ad4fd30a60327e394d2d006e1451216fa777e003634f6c3444c0cb8841b5059c"
+            }
+          ],
+          "dependencyLink": "$TASK_WORKTREE/.runtime/mvp/node_modules",
+          "dependencyUsage": "Existing canonical node_modules linked for future read-only usage; not a filesystem write barrier or dependency execution audit.",
+          "scope": "Private preparation only; NO RUNTIME SWITCH. Future consumer must verify before effects. No guest/lifecycle qualification."
+        },
+        "effectInitial": {
+          "e1": 1,
+          "calibration": 1,
+          "rows": [
+            {
+              "id": "calibration",
+              "atNs": 1794888624897337300,
+              "attempt": true
+            },
+            {
+              "id": "e1",
+              "atNs": 1794888624976749800,
+              "attempt": true
+            }
+          ],
+          "programSha256": "c046b17ceead49a9d668225fa0ec108fe2f7cef9defad686cebf5ddb29c808b2"
+        },
+        "filterSmoke": true,
+        "wait": {
+          "durationMs": 500,
+          "newEvents": 0,
+          "physicalCapacityWithdrawn": true
+        }
+      },
+      "sourceHash": "083f39c0fd0af9bab8817f6e2cee88cc0c0ec130db61f03e2eb5d3464f82ec82",
+      "manifest": {
+        "sourceHash": "083f39c0fd0af9bab8817f6e2cee88cc0c0ec130db61f03e2eb5d3464f82ec82",
+        "reference": "aabe06abfb20e83593020c0fee19b078d235466b",
+        "matchedSourceFiles": 124,
+        "node": "v24.21.0",
+        "claude": "2.1.325 (Claude Code)",
+        "claudeBinary": "$HOME/.local/share/claude/versions/2.1.325",
+        "disableChildAutoUpdater": true,
+        "sdk": "0.3.325",
+        "model": "claude-haiku-5-5",
+        "effort": "low",
+        "sdkTypesSha256": "4b7a2ee26e0f6eabf9e94f30d150f4e861c78fea0c78055f33c2b2a833f30935",
+        "systemSha256": "c9090228f3a9f577093a769ef4b9784d370997163486ec4e3b7b906bb38eb438",
+        "oracleSha256": "9efe64f995b847b38cf6050bd85c65a77268657841f803e272c7c0838d9fc167",
+        "guestAssets": {
+          "directory": "$HOME/software-factory-test/assets34/assets",
+          "manifestSha256": "8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807"
+        },
+        "configuration": {
+          "schemaVersion": 1,
+          "profile": "gondolin-qemu-alpine-dev-v1",
+          "memoryMiB": 1024,
+          "vcpus": 1,
+          "diskGiB": 4,
+          "shutdownGraceSeconds": 15,
+          "minFreeSpaceGiB": 1
+        },
+        "limits": {
+          "activations": 3,
+          "executionMs": 600000
+        },
+        "root": "$HOME/sfhp-v2/e",
+        "toolsByPhase": {
+          "question": [
+            "bash",
+            "ask_user"
+          ],
+          "resume": [
+            "bash",
+            "filter_probe"
+          ],
+          "fault": [
+            "bash"
+          ]
+        },
+        "hook": {
+          "event": "PostToolBatch",
+          "onFailure": "block",
+          "timeoutSeconds": 5
+        },
+        "control": "local fixture",
+        "effects": "independent guest service script/ledger",
+        "auth": "native personal subscription exception; explicit child env allowlist, no copied tokens"
+      },
+      "error": "EFFECT_REPLAY_OR_COUNTER_NOT_PROVED",
+      "nativeCleanup": [
+        {
+          "id": "eba31e4e-2c58-4f07-81cd-4523469ed226",
+          "absent": true
+        },
+        {
+          "id": "0082acce-c867-4930-90e2-74b33876649f",
+          "absent": true
+        }
+      ],
+      "finishedAt": "2026-11-17T04:11:04.383Z"
+    },
+    {
+      "mode": "--finish-check",
+      "startedAt": "2026-11-17T04:14:41.153Z",
+      "eventStart": 62,
+      "checks": {
+        "auth": {
+          "loggedIn": true,
+          "method": "claude.ai",
+          "provider": "firstParty",
+          "subscription": "max"
+        },
+        "gondolin": {
+          "id": "factory-development-gondolin-0.14.0-stdin-capacity-v1",
+          "directory": ".scratch/factory-development-gondolin-v1",
+          "version": "0.14.0",
+          "integrity": "sha512-MSw+EGcqFJeyKHdXEfm+nMRr74ytT4x8DGIohav0oPCHeVQAB9AajquM94cv2xqvIU3VDAaZZVC07IXsOY6OVQ==",
+          "provenanceSHA256": "a2159d649ab9ee947ffb87c0f11a046df4653d4bb17b873844af476469137a3d",
+          "patchSHA256": "441621ba414e419cae9715e3ffbfa3059d4048247972515db8db4cf3cfdcca88",
+          "patchManifestSHA256": "2ec5805fbbdc9badcf6e0bd52720e3c5a47e8a927f3b41bbe1e3d7feb448d1c8",
+          "candidateHead": "1391f2e49060509096a82f2566339265a0ef4951",
+          "sdkCodeCommit": "4a7604870de4d675bcfb487d375b118cf4148836",
+          "original133SHA256": "03a1fc3d3f7a5d2f90b115f977885682727ca10337d153494cae7d28ad12b66b",
+          "originalInventoryCount": 133,
+          "originalTreeSHA256": "bf0c51fdae63d6772a320625a5554ee39c248b9d3a04a4c21a064db001da8eb8",
+          "copiedTreeSHA256": "8c99800d083835d740197a86b08ed4f9ea7e91fdc619e2a238433f41d4423430",
+          "originalFiles": 407,
+          "copiedFiles": 409,
+          "modifiedFiles": 7,
+          "addedFiles": 2,
+          "license": "Apache-2.0",
+          "licenseSHA256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "dependencies": [
+            {
+              "name": "cbor2",
+              "version": "2.4.1",
+              "integrity": "sha512-h4OqPnSvIEUNCxTNb9pwMZPKjhNKO9bkPwQJOR7d5oBIrZR/CO098atrLl4AkQmB1p3opCvo2UFt4fhRSWC/vQ==",
+              "packageSHA256": "a02ec2319a4dcbf5a2a9d207f0bafa28b193f2804adf67f45e2ceffbc9c0a7d7"
+            },
+            {
+              "name": "ssh2",
+              "version": "1.17.0",
+              "integrity": "sha512-wPldCk3asibAjQ/kziWQQt1Wh3PgDFpC0XpwclzKcdT1vql6KeYxf5LIt4nlFkUeR8WuphYMKqUA56X4rjbfgQ==",
+              "packageSHA256": "e6fd4e4c3e69e4ad185c87cb5ee1df631e3f4cbd43cf89470f83c1e5d1a76dfb"
+            },
+            {
+              "name": "undici",
+              "version": "6.29.1",
+              "integrity": "sha512-EvRlUt/QqAEvXdQeRMYUfwOQsfzpDztykrG2owGEE/rBOBoYv9uF39ZzsNDh4lTFHhTr2XOZjKkYgueD12ZmGA==",
+              "packageSHA256": "df5d9c505f8db601e62bf67eb835117985e549cfbbb61c4c1a84c55d57ab3532"
+            },
+            {
+              "name": "@earendil-works/gondolin-krun-runner-linux-x64",
+              "version": "0.14.0",
+              "integrity": "sha512-91iw4smoOH/yOoAuQS6N2UZOxqSFwRhtk8rTyrokXBoWiWcveAzg4kHvnLcm40ZlNrWwzIDFrere4bkZeGDQcA==",
+              "packageSHA256": "ad4fd30a60327e394d2d006e1451216fa777e003634f6c3444c0cb8841b5059c"
+            }
+          ],
+          "dependencyLink": "$TASK_WORKTREE/.runtime/mvp/node_modules",
+          "dependencyUsage": "Existing canonical node_modules linked for future read-only usage; not a filesystem write barrier or dependency execution audit.",
+          "scope": "Private preparation only; NO RUNTIME SWITCH. Future consumer must verify before effects. No guest/lifecycle qualification."
+        },
+        "effectInitial": {
+          "e1": 1,
+          "calibration": 1,
+          "rows": [
+            {
+              "id": "calibration",
+              "atNs": 1794888900096234800,
+              "attempt": true
+            },
+            {
+              "id": "e1",
+              "atNs": 1794888900190260000,
+              "attempt": true
+            }
+          ],
+          "programSha256": "c046b17ceead49a9d668225fa0ec108fe2f7cef9defad686cebf5ddb29c808b2"
+        },
+        "filterSmoke": true,
+        "handshake": {
+          "onFailureSupported": true,
+          "hooksApplied": true,
+          "version": "2.1.325",
+          "haiku": [
+            {
+              "value": "haiku",
+              "resolvedModel": "claude-haiku-5-5",
+              "displayName": "Haiku",
+              "description": "Haiku 5.5 · Fastest for quick answers",
+              "supportsEffort": true,
+              "supportedEffortLevels": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "supportsAdaptiveThinking": true,
+              "supportsAutoMode": true,
+              "supportsThinkingOff": false
+            }
+          ]
+        },
+        "rebootGate": "8f6bf2b9eca8a3063151b91688d1ba79d9006e5d",
+        "rebootPreservedCounter": true
+      },
+      "sourceHash": "1f7ea7e96b9799f288501d74d168d2a5b78a685c41034f67db4efadad7e1e52a",
+      "manifest": {
+        "sourceHash": "1f7ea7e96b9799f288501d74d168d2a5b78a685c41034f67db4efadad7e1e52a",
+        "reference": "aabe06abfb20e83593020c0fee19b078d235466b",
+        "matchedSourceFiles": 124,
+        "node": "v24.21.0",
+        "claude": "2.1.325 (Claude Code)",
+        "claudeBinary": "$HOME/.local/share/claude/versions/2.1.325",
+        "disableChildAutoUpdater": true,
+        "sdk": "0.3.325",
+        "model": "claude-haiku-5-5",
+        "effort": "low",
+        "sdkTypesSha256": "4b7a2ee26e0f6eabf9e94f30d150f4e861c78fea0c78055f33c2b2a833f30935",
+        "systemSha256": "c9090228f3a9f577093a769ef4b9784d370997163486ec4e3b7b906bb38eb438",
+        "oracleSha256": "9efe64f995b847b38cf6050bd85c65a77268657841f803e272c7c0838d9fc167",
+        "guestAssets": {
+          "directory": "$HOME/software-factory-test/assets34/assets",
+          "manifestSha256": "8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807"
+        },
+        "configuration": {
+          "schemaVersion": 1,
+          "profile": "gondolin-qemu-alpine-dev-v1",
+          "memoryMiB": 1024,
+          "vcpus": 1,
+          "diskGiB": 4,
+          "shutdownGraceSeconds": 15,
+          "minFreeSpaceGiB": 1
+        },
+        "limits": {
+          "activations": 3,
+          "executionMs": 600000
+        },
+        "root": "$HOME/sfhp-v2/e",
+        "toolsByPhase": {
+          "question": [
+            "bash",
+            "ask_user"
+          ],
+          "resume": [
+            "bash",
+            "filter_probe"
+          ],
+          "fault": [
+            "bash"
+          ]
+        },
+        "hook": {
+          "event": "PostToolBatch",
+          "onFailure": "block",
+          "timeoutSeconds": 5
+        },
+        "control": "local fixture",
+        "effects": "independent guest service script/ledger",
+        "auth": "native personal subscription exception; explicit child env allowlist, no copied tokens"
+      },
+      "completed": true,
+      "nativeCleanup": [],
+      "finishedAt": "2026-11-17T04:15:19.978Z"
+    },
+    {
+      "mode": "--finish",
+      "startedAt": "2026-11-17T04:15:31.723Z",
+      "eventStart": 70,
+      "checks": {
+        "auth": {
+          "loggedIn": true,
+          "method": "claude.ai",
+          "provider": "firstParty",
+          "subscription": "max"
+        },
+        "gondolin": {
+          "id": "factory-development-gondolin-0.14.0-stdin-capacity-v1",
+          "directory": ".scratch/factory-development-gondolin-v1",
+          "version": "0.14.0",
+          "integrity": "sha512-MSw+EGcqFJeyKHdXEfm+nMRr74ytT4x8DGIohav0oPCHeVQAB9AajquM94cv2xqvIU3VDAaZZVC07IXsOY6OVQ==",
+          "provenanceSHA256": "a2159d649ab9ee947ffb87c0f11a046df4653d4bb17b873844af476469137a3d",
+          "patchSHA256": "441621ba414e419cae9715e3ffbfa3059d4048247972515db8db4cf3cfdcca88",
+          "patchManifestSHA256": "2ec5805fbbdc9badcf6e0bd52720e3c5a47e8a927f3b41bbe1e3d7feb448d1c8",
+          "candidateHead": "1391f2e49060509096a82f2566339265a0ef4951",
+          "sdkCodeCommit": "4a7604870de4d675bcfb487d375b118cf4148836",
+          "original133SHA256": "03a1fc3d3f7a5d2f90b115f977885682727ca10337d153494cae7d28ad12b66b",
+          "originalInventoryCount": 133,
+          "originalTreeSHA256": "bf0c51fdae63d6772a320625a5554ee39c248b9d3a04a4c21a064db001da8eb8",
+          "copiedTreeSHA256": "8c99800d083835d740197a86b08ed4f9ea7e91fdc619e2a238433f41d4423430",
+          "originalFiles": 407,
+          "copiedFiles": 409,
+          "modifiedFiles": 7,
+          "addedFiles": 2,
+          "license": "Apache-2.0",
+          "licenseSHA256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "dependencies": [
+            {
+              "name": "cbor2",
+              "version": "2.4.1",
+              "integrity": "sha512-h4OqPnSvIEUNCxTNb9pwMZPKjhNKO9bkPwQJOR7d5oBIrZR/CO098atrLl4AkQmB1p3opCvo2UFt4fhRSWC/vQ==",
+              "packageSHA256": "a02ec2319a4dcbf5a2a9d207f0bafa28b193f2804adf67f45e2ceffbc9c0a7d7"
+            },
+            {
+              "name": "ssh2",
+              "version": "1.17.0",
+              "integrity": "sha512-wPldCk3asibAjQ/kziWQQt1Wh3PgDFpC0XpwclzKcdT1vql6KeYxf5LIt4nlFkUeR8WuphYMKqUA56X4rjbfgQ==",
+              "packageSHA256": "e6fd4e4c3e69e4ad185c87cb5ee1df631e3f4cbd43cf89470f83c1e5d1a76dfb"
+            },
+            {
+              "name": "undici",
+              "version": "6.29.1",
+              "integrity": "sha512-EvRlUt/QqAEvXdQeRMYUfwOQsfzpDztykrG2owGEE/rBOBoYv9uF39ZzsNDh4lTFHhTr2XOZjKkYgueD12ZmGA==",
+              "packageSHA256": "df5d9c505f8db601e62bf67eb835117985e549cfbbb61c4c1a84c55d57ab3532"
+            },
+            {
+              "name": "@earendil-works/gondolin-krun-runner-linux-x64",
+              "version": "0.14.0",
+              "integrity": "sha512-91iw4smoOH/yOoAuQS6N2UZOxqSFwRhtk8rTyrokXBoWiWcveAzg4kHvnLcm40ZlNrWwzIDFrere4bkZeGDQcA==",
+              "packageSHA256": "ad4fd30a60327e394d2d006e1451216fa777e003634f6c3444c0cb8841b5059c"
+            }
+          ],
+          "dependencyLink": "$TASK_WORKTREE/.runtime/mvp/node_modules",
+          "dependencyUsage": "Existing canonical node_modules linked for future read-only usage; not a filesystem write barrier or dependency execution audit.",
+          "scope": "Private preparation only; NO RUNTIME SWITCH. Future consumer must verify before effects. No guest/lifecycle qualification."
+        },
+        "effectInitial": {
+          "e1": 1,
+          "calibration": 1,
+          "rows": [
+            {
+              "id": "calibration",
+              "atNs": 1794888951328847400,
+              "attempt": true
+            },
+            {
+              "id": "e1",
+              "atNs": 1794888951447938000,
+              "attempt": true
+            }
+          ],
+          "programSha256": "c046b17ceead49a9d668225fa0ec108fe2f7cef9defad686cebf5ddb29c808b2"
+        },
+        "filterSmoke": true,
+        "effectBefore": {
+          "e1": 1,
+          "calibration": 1,
+          "rows": [
+            {
+              "id": "calibration",
+              "atNs": 1794888951328847400,
+              "attempt": true
+            },
+            {
+              "id": "e1",
+              "atNs": 1794888951447938000,
+              "attempt": true
+            }
+          ],
+          "programSha256": "c046b17ceead49a9d668225fa0ec108fe2f7cef9defad686cebf5ddb29c808b2"
+        },
+        "effectAfter": {
+          "e1": 1,
+          "calibration": 1,
+          "rows": [
+            {
+              "id": "calibration",
+              "atNs": 1794888951328847400,
+              "attempt": true
+            },
+            {
+              "id": "e1",
+              "atNs": 1794888951447938000,
+              "attempt": true
+            }
+          ],
+          "programSha256": "c046b17ceead49a9d668225fa0ec108fe2f7cef9defad686cebf5ddb29c808b2"
+        },
+        "progress": "WIP\n",
+        "finalOid": "0a4e8696221c5dd141d1cf166cf25e59066f12aa",
+        "nativeScan": {
+          "files": [
+            {
+              "path": "$HOME/.claude/projects/-home-sanmoo-dev-github-com-Sanmoo-software-factory-durable--worktrees-harness-proof-run--runtime-terminal-claude/c6c0562c-ea05-4a64-82b2-facb763d0235.jsonl",
+              "bytes": 32589,
+              "opaqueNativeToolErrors": 1
+            }
+          ],
+          "nativeOpaqueErrors": 1,
+          "rawCanaryFound": false,
+          "rawPartialPrefixFound": false,
+          "canarySha256": "4fd44d1383e215474295ffc58aefe7db1a48bebce5ddd39aad093b824947859a"
+        }
+      },
+      "sourceHash": "1f7ea7e96b9799f288501d74d168d2a5b78a685c41034f67db4efadad7e1e52a",
+      "manifest": {
+        "sourceHash": "1f7ea7e96b9799f288501d74d168d2a5b78a685c41034f67db4efadad7e1e52a",
+        "reference": "aabe06abfb20e83593020c0fee19b078d235466b",
+        "matchedSourceFiles": 124,
+        "node": "v24.21.0",
+        "claude": "2.1.325 (Claude Code)",
+        "claudeBinary": "$HOME/.local/share/claude/versions/2.1.325",
+        "disableChildAutoUpdater": true,
+        "sdk": "0.3.325",
+        "model": "claude-haiku-5-5",
+        "effort": "low",
+        "sdkTypesSha256": "4b7a2ee26e0f6eabf9e94f30d150f4e861c78fea0c78055f33c2b2a833f30935",
+        "systemSha256": "c9090228f3a9f577093a769ef4b9784d370997163486ec4e3b7b906bb38eb438",
+        "oracleSha256": "9efe64f995b847b38cf6050bd85c65a77268657841f803e272c7c0838d9fc167",
+        "guestAssets": {
+          "directory": "$HOME/software-factory-test/assets34/assets",
+          "manifestSha256": "8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807"
+        },
+        "configuration": {
+          "schemaVersion": 1,
+          "profile": "gondolin-qemu-alpine-dev-v1",
+          "memoryMiB": 1024,
+          "vcpus": 1,
+          "diskGiB": 4,
+          "shutdownGraceSeconds": 15,
+          "minFreeSpaceGiB": 1
+        },
+        "limits": {
+          "activations": 3,
+          "executionMs": 600000
+        },
+        "root": "$HOME/sfhp-v2/e",
+        "toolsByPhase": {
+          "question": [
+            "bash",
+            "ask_user"
+          ],
+          "resume": [
+            "bash",
+            "filter_probe"
+          ],
+          "fault": [
+            "bash"
+          ]
+        },
+        "hook": {
+          "event": "PostToolBatch",
+          "onFailure": "block",
+          "timeoutSeconds": 5
+        },
+        "control": "local fixture",
+        "effects": "independent guest service script/ledger",
+        "auth": "native personal subscription exception; explicit child env allowlist, no copied tokens"
+      },
+      "continuation": "Only the unrun third activation within original 3/10 budget; no question/resume retry, no counter reset",
+      "error": "EFFECT_REPLAY_OR_COUNTER_NOT_PROVED",
+      "nativeCleanup": [
+        {
+          "id": "c6c0562c-ea05-4a64-82b2-facb763d0235",
+          "absent": true
+        }
+      ],
+      "finishedAt": "2026-11-17T04:16:00.467Z"
+    }
+  ],
+  "events": [
+    {
+      "at": "2026-11-17T04:04:25.033Z",
+      "kind": "campaign-stopped",
+      "reason": "VERSION_DRIFT"
+    },
+    {
+      "at": "2026-11-17T04:06:36.624Z",
+      "kind": "sandbox-start",
+      "result": {
+        "status": "success",
+        "boot": "boot-b3b3e48d-4ba8-4d31-9c4b-a70fdb23176d"
+      }
+    },
+    {
+      "at": "2026-11-17T04:06:41.801Z",
+      "kind": "git-gate",
+      "oid": "2874c16830038384db055d1a73820930535d1f1d"
+    },
+    {
+      "at": "2026-11-17T04:06:41.858Z",
+      "kind": "native-spawn",
+      "id": "terminal-handshake-2",
+      "pid": 1813738
+    },
+    {
+      "at": "2026-11-17T04:06:43.679Z",
+      "kind": "activation-ceased",
+      "id": "terminal-handshake-2",
+      "hostEmpty": true,
+      "toolsSettled": true
+    },
+    {
+      "at": "2026-11-17T04:06:45.517Z",
+      "kind": "sandbox-stopped",
+      "environment": "env-5dfd92564a4f8baabc9bef4fb005b6b0b15e63a5ab4edf404474295df887d25a",
+      "cessationConfirmed": true,
+      "stop": {
+        "status": "success",
+        "cessationConfirmed": true,
+        "termination": "unconfirmed",
+        "guestFinalization": "observed"
+      },
+      "observation": {
+        "condition": "stopped",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "boot": "boot-b3b3e48d-4ba8-4d31-9c4b-a70fdb23176d",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "observed",
+            "virtualBytes": "4294967296",
+            "allocatedBytes": "627511296"
+          },
+          "workspace": {
+            "status": "observed",
+            "logicalBytes": "44659",
+            "allocatedBytes": "217088"
+          },
+          "artifacts": {
+            "status": "observed",
+            "logicalBytes": "592",
+            "allocatedBytes": "16384"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "506097520640"
+          }
+        }
+      }
+    },
+    {
+      "at": "2026-11-17T04:09:03.467Z",
+      "kind": "sandbox-start",
+      "result": {
+        "status": "success",
+        "boot": "boot-3669fd27-1538-43e7-9a40-18e2abbc661f"
+      }
+    },
+    {
+      "at": "2026-11-17T04:09:10.324Z",
+      "kind": "git-gate",
+      "oid": "2f2e5f7bb36013ee3aeac5dc206260eaa397c87c"
+    },
+    {
+      "at": "2026-11-17T04:09:10.402Z",
+      "kind": "native-spawn",
+      "id": "terminal-handshake-3",
+      "pid": 1837601
+    },
+    {
+      "at": "2026-11-17T04:09:12.318Z",
+      "kind": "activation-ceased",
+      "id": "terminal-handshake-3",
+      "hostEmpty": true,
+      "toolsSettled": true
+    },
+    {
+      "at": "2026-11-17T04:09:14.554Z",
+      "kind": "sandbox-stopped",
+      "environment": "env-ea0014b0bb83868cd2efd871255778c94c29060fb532aa45d290d042931ee326",
+      "cessationConfirmed": true,
+      "stop": {
+        "status": "success",
+        "cessationConfirmed": true,
+        "termination": "unconfirmed",
+        "guestFinalization": "observed"
+      },
+      "observation": {
+        "condition": "stopped",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "boot": "boot-3669fd27-1538-43e7-9a40-18e2abbc661f",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "observed",
+            "virtualBytes": "4294967296",
+            "allocatedBytes": "627511296"
+          },
+          "workspace": {
+            "status": "observed",
+            "logicalBytes": "44659",
+            "allocatedBytes": "217088"
+          },
+          "artifacts": {
+            "status": "observed",
+            "logicalBytes": "592",
+            "allocatedBytes": "16384"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "506096136192"
+          }
+        }
+      }
+    },
+    {
+      "at": "2026-11-17T04:09:41.686Z",
+      "kind": "sandbox-start",
+      "result": {
+        "status": "success",
+        "boot": "boot-179e86b1-2d0e-431a-be48-bfc74d603893"
+      }
+    },
+    {
+      "at": "2026-11-17T04:09:41.972Z",
+      "kind": "git-gate",
+      "oid": "2f2e5f7bb36013ee3aeac5dc206260eaa397c87c"
+    },
+    {
+      "at": "2026-11-17T04:09:43.406Z",
+      "kind": "sandbox-stopped",
+      "environment": "env-ea0014b0bb83868cd2efd871255778c94c29060fb532aa45d290d042931ee326",
+      "cessationConfirmed": true,
+      "stop": {
+        "status": "success",
+        "cessationConfirmed": true,
+        "termination": "unconfirmed",
+        "guestFinalization": "observed"
+      },
+      "observation": {
+        "condition": "stopped",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "boot": "boot-179e86b1-2d0e-431a-be48-bfc74d603893",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "observed",
+            "virtualBytes": "4294967296",
+            "allocatedBytes": "627773440"
+          },
+          "workspace": {
+            "status": "observed",
+            "logicalBytes": "44659",
+            "allocatedBytes": "217088"
+          },
+          "artifacts": {
+            "status": "observed",
+            "logicalBytes": "592",
+            "allocatedBytes": "16384"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "506094194688"
+          }
+        }
+      }
+    },
+    {
+      "at": "2026-11-17T04:10:23.545Z",
+      "kind": "sandbox-start",
+      "result": {
+        "status": "success",
+        "boot": "boot-8c371e2f-8c19-4d10-8d9b-632a7418589d"
+      }
+    },
+    {
+      "at": "2026-11-17T04:10:25.625Z",
+      "kind": "git-gate",
+      "oid": "34f05f8c2d2572c18a0f29857b0979bcb4eb04fa"
+    },
+    {
+      "at": "2026-11-17T04:10:25.641Z",
+      "kind": "admitted",
+      "id": "terminal-question-1",
+      "phase": "question",
+      "campaignActivations": 1,
+      "totalAcrossCampaigns": 31
+    },
+    {
+      "at": "2026-11-17T04:10:25.657Z",
+      "kind": "native-spawn",
+      "id": "terminal-question-1",
+      "pid": 1842242
+    },
+    {
+      "at": "2026-11-17T04:10:26.155Z",
+      "kind": "effective-init",
+      "id": "terminal-question-1",
+      "model": "claude-haiku-5-5",
+      "tools": [
+        "mcp__factory__ask_user",
+        "mcp__factory__bash"
+      ],
+      "apiKeySource": "none",
+      "capabilities": [
+        "interrupt_receipt_v1",
+        "interrupt_cancel_queued_v1",
+        "interrupt_send_now_v1",
+        "interrupt_requeue_taken_v1",
+        "msg_lifecycle_v1",
+        "request_marker_lists_v1",
+        "ask_user_question_unanswered_v1",
+        "lifecycle_wakeup_source_v1",
+        "sdk_mcp_tools_list_changed",
+        "sdk_mcp_manifests",
+        "mcp_read_resource_v1",
+        "mcp_tool_ui_meta_v1",
+        "ui_surface_v1",
+        "mcp_call_result_not_for_model_v1",
+        "mcp_call_check_permissions_v1",
+        "voice_call_talk_line_v1",
+        "withdrawn_files_note_v2",
+        "ui_pane_widget_v1",
+        "reload_plugins_refuse_if_busy_v1"
+      ]
+    },
+    {
+      "at": "2026-11-17T04:10:28.024Z",
+      "kind": "assistant",
+      "id": "terminal-question-1",
+      "afterBarrier": false
+    },
+    {
+      "at": "2026-11-17T04:10:28.036Z",
+      "kind": "tool-start",
+      "id": "terminal-question-1",
+      "name": "bash"
+    },
+    {
+      "at": "2026-11-17T04:10:28.797Z",
+      "kind": "tool-end",
+      "id": "terminal-question-1",
+      "name": "bash"
+    },
+    {
+      "at": "2026-11-17T04:10:28.819Z",
+      "kind": "native-hook",
+      "id": "terminal-question-1",
+      "phase": "question",
+      "tools": [
+        "mcp__factory__bash"
+      ]
+    },
+    {
+      "at": "2026-11-17T04:10:30.332Z",
+      "kind": "assistant",
+      "id": "terminal-question-1",
+      "afterBarrier": false
+    },
+    {
+      "at": "2026-11-17T04:10:30.414Z",
+      "kind": "assistant",
+      "id": "terminal-question-1",
+      "afterBarrier": false
+    },
+    {
+      "at": "2026-11-17T04:10:30.419Z",
+      "kind": "tool-start",
+      "id": "terminal-question-1",
+      "name": "ask_user"
+    },
+    {
+      "at": "2026-11-17T04:10:30.640Z",
+      "kind": "git-gate",
+      "oid": "d868c802e9edcd663382ef00e2d386e7de6ba2fe"
+    },
+    {
+      "at": "2026-11-17T04:10:30.645Z",
+      "kind": "question-durable",
+      "questionId": "59c5814a-6241-4834-9692-5dfc763b48ac",
+      "oid": "d868c802e9edcd663382ef00e2d386e7de6ba2fe"
+    },
+    {
+      "at": "2026-11-17T04:10:30.645Z",
+      "kind": "tool-end",
+      "id": "terminal-question-1",
+      "name": "ask_user"
+    },
+    {
+      "at": "2026-11-17T04:10:30.652Z",
+      "kind": "native-hook",
+      "id": "terminal-question-1",
+      "phase": "question",
+      "tools": [
+        "mcp__factory__ask_user"
+      ]
+    },
+    {
+      "at": "2026-11-17T04:10:30.652Z",
+      "kind": "native-barrier",
+      "id": "terminal-question-1",
+      "phase": "question",
+      "mode": "continue-false"
+    },
+    {
+      "at": "2026-11-17T04:10:30.806Z",
+      "kind": "activation-ceased",
+      "id": "terminal-question-1",
+      "hostEmpty": true,
+      "toolsSettled": true
+    },
+    {
+      "at": "2026-11-17T04:10:32.249Z",
+      "kind": "sandbox-stopped",
+      "environment": "env-789ef3aa6f2e74b0c7e43d8456de18bbeb1993385c1e6799e2b6752d912f2de9",
+      "cessationConfirmed": true,
+      "stop": {
+        "status": "success",
+        "cessationConfirmed": true,
+        "termination": "unconfirmed",
+        "guestFinalization": "observed"
+      },
+      "observation": {
+        "condition": "stopped",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "boot": "boot-8c371e2f-8c19-4d10-8d9b-632a7418589d",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "observed",
+            "virtualBytes": "4294967296",
+            "allocatedBytes": "627511296"
+          },
+          "workspace": {
+            "status": "observed",
+            "logicalBytes": "45923",
+            "allocatedBytes": "245760"
+          },
+          "artifacts": {
+            "status": "observed",
+            "logicalBytes": "592",
+            "allocatedBytes": "16384"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "505866661888"
+          }
+        }
+      }
+    },
+    {
+      "at": "2026-11-17T04:10:32.253Z",
+      "kind": "question-ack",
+      "questionId": "59c5814a-6241-4834-9692-5dfc763b48ac",
+      "originOid": "d868c802e9edcd663382ef00e2d386e7de6ba2fe",
+      "workId": "harness-proof-terminal-real-ec5bfa4d-6cad-46df-932c-7d20d748acbf",
+      "invocation": "terminal-question-1"
+    },
+    {
+      "at": "2026-11-17T04:10:32.253Z",
+      "kind": "wait-presented",
+      "questionId": "59c5814a-6241-4834-9692-5dfc763b48ac",
+      "scope": "presentation is controller fixture, after native and guest cessation"
+    },
+    {
+      "at": "2026-11-17T04:10:32.881Z",
+      "kind": "human-response",
+      "questionId": "59c5814a-6241-4834-9692-5dfc763b48ac"
+    },
+    {
+      "at": "2026-11-17T04:10:48.696Z",
+      "kind": "sandbox-start",
+      "result": {
+        "status": "success",
+        "boot": "boot-7e944b14-39ab-4cca-94b2-baca3e96bd18"
+      }
+    },
+    {
+      "at": "2026-11-17T04:10:48.698Z",
+      "kind": "resume-admission",
+      "id": "terminal-resume-2",
+      "phase": "resume",
+      "campaignActivations": 2,
+      "totalAcrossCampaigns": 32
+    },
+    {
+      "at": "2026-11-17T04:10:48.717Z",
+      "kind": "native-spawn",
+      "id": "terminal-resume-2",
+      "pid": 1842696
+    },
+    {
+      "at": "2026-11-17T04:10:49.457Z",
+      "kind": "effective-init",
+      "id": "terminal-resume-2",
+      "model": "claude-haiku-5-5",
+      "tools": [
+        "mcp__factory__bash",
+        "mcp__factory__filter_probe"
+      ],
+      "apiKeySource": "none",
+      "capabilities": [
+        "interrupt_receipt_v1",
+        "interrupt_cancel_queued_v1",
+        "interrupt_send_now_v1",
+        "interrupt_requeue_taken_v1",
+        "msg_lifecycle_v1",
+        "request_marker_lists_v1",
+        "ask_user_question_unanswered_v1",
+        "lifecycle_wakeup_source_v1",
+        "sdk_mcp_tools_list_changed",
+        "sdk_mcp_manifests",
+        "mcp_read_resource_v1",
+        "mcp_tool_ui_meta_v1",
+        "ui_surface_v1",
+        "mcp_call_result_not_for_model_v1",
+        "mcp_call_check_permissions_v1",
+        "voice_call_talk_line_v1",
+        "withdrawn_files_note_v2",
+        "ui_pane_widget_v1",
+        "reload_plugins_refuse_if_busy_v1"
+      ]
+    },
+    {
+      "at": "2026-11-17T04:10:51.346Z",
+      "kind": "assistant",
+      "id": "terminal-resume-2",
+      "afterBarrier": false
+    },
+    {
+      "at": "2026-11-17T04:10:51.349Z",
+      "kind": "assistant",
+      "id": "terminal-resume-2",
+      "afterBarrier": false
+    },
+    {
+      "at": "2026-11-17T04:10:51.368Z",
+      "kind": "tool-start",
+      "id": "terminal-resume-2",
+      "name": "filter_probe"
+    },
+    {
+      "at": "2026-11-17T04:10:51.380Z",
+      "kind": "filter-native-ingress",
+      "id": "terminal-resume-2",
+      "payload": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "OUTPUT_BLOCKED"
+          }
+        ]
+      },
+      "rawCanary": false,
+      "partialPrefix": false
+    },
+    {
+      "at": "2026-11-17T04:10:51.380Z",
+      "kind": "tool-end",
+      "id": "terminal-resume-2",
+      "name": "filter_probe"
+    },
+    {
+      "at": "2026-11-17T04:10:51.397Z",
+      "kind": "native-hook",
+      "id": "terminal-resume-2",
+      "phase": "resume",
+      "tools": [
+        "mcp__factory__filter_probe"
+      ]
+    },
+    {
+      "at": "2026-11-17T04:10:52.963Z",
+      "kind": "assistant",
+      "id": "terminal-resume-2",
+      "afterBarrier": false
+    },
+    {
+      "at": "2026-11-17T04:10:53.538Z",
+      "kind": "assistant",
+      "id": "terminal-resume-2",
+      "afterBarrier": false
+    },
+    {
+      "at": "2026-11-17T04:10:53.544Z",
+      "kind": "tool-start",
+      "id": "terminal-resume-2",
+      "name": "bash"
+    },
+    {
+      "at": "2026-11-17T04:10:53.719Z",
+      "kind": "tool-end",
+      "id": "terminal-resume-2",
+      "name": "bash"
+    },
+    {
+      "at": "2026-11-17T04:10:53.729Z",
+      "kind": "native-hook",
+      "id": "terminal-resume-2",
+      "phase": "resume",
+      "tools": [
+        "mcp__factory__bash"
+      ]
+    },
+    {
+      "at": "2026-11-17T04:10:55.130Z",
+      "kind": "assistant",
+      "id": "terminal-resume-2",
+      "afterBarrier": false
+    },
+    {
+      "at": "2026-11-17T04:10:55.356Z",
+      "kind": "assistant",
+      "id": "terminal-resume-2",
+      "afterBarrier": false
+    },
+    {
+      "at": "2026-11-17T04:10:55.762Z",
+      "kind": "assistant",
+      "id": "terminal-resume-2",
+      "afterBarrier": false
+    },
+    {
+      "at": "2026-11-17T04:10:55.786Z",
+      "kind": "tool-start",
+      "id": "terminal-resume-2",
+      "name": "bash"
+    },
+    {
+      "at": "2026-11-17T04:10:58.214Z",
+      "kind": "tool-end",
+      "id": "terminal-resume-2",
+      "name": "bash"
+    },
+    {
+      "at": "2026-11-17T04:10:58.219Z",
+      "kind": "native-hook",
+      "id": "terminal-resume-2",
+      "phase": "resume",
+      "tools": [
+        "mcp__factory__bash"
+      ]
+    },
+    {
+      "at": "2026-11-17T04:11:00.964Z",
+      "kind": "assistant",
+      "id": "terminal-resume-2",
+      "afterBarrier": false
+    },
+    {
+      "at": "2026-11-17T04:11:02.344Z",
+      "kind": "assistant",
+      "id": "terminal-resume-2",
+      "afterBarrier": false
+    },
+    {
+      "at": "2026-11-17T04:11:02.485Z",
+      "kind": "activation-ceased",
+      "id": "terminal-resume-2",
+      "hostEmpty": true,
+      "toolsSettled": true
+    },
+    {
+      "at": "2026-11-17T04:11:02.529Z",
+      "kind": "campaign-stopped",
+      "reason": "EFFECT_REPLAY_OR_COUNTER_NOT_PROVED"
+    },
+    {
+      "at": "2026-11-17T04:11:03.957Z",
+      "kind": "sandbox-stopped",
+      "environment": "env-789ef3aa6f2e74b0c7e43d8456de18bbeb1993385c1e6799e2b6752d912f2de9",
+      "cessationConfirmed": true,
+      "stop": {
+        "status": "success",
+        "cessationConfirmed": true,
+        "termination": "unconfirmed",
+        "guestFinalization": "observed"
+      },
+      "observation": {
+        "condition": "stopped",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "boot": "boot-7e944b14-39ab-4cca-94b2-baca3e96bd18",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "observed",
+            "virtualBytes": "4294967296",
+            "allocatedBytes": "627773440"
+          },
+          "workspace": {
+            "status": "observed",
+            "logicalBytes": "47245",
+            "allocatedBytes": "270336"
+          },
+          "artifacts": {
+            "status": "observed",
+            "logicalBytes": "592",
+            "allocatedBytes": "16384"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "505716498432"
+          }
+        }
+      }
+    },
+    {
+      "at": "2026-11-17T04:14:58.457Z",
+      "kind": "sandbox-start",
+      "result": {
+        "status": "success",
+        "boot": "boot-626bd27b-68da-4e2d-9bf1-7bd6c0509b2c"
+      }
+    },
+    {
+      "at": "2026-11-17T04:15:00.864Z",
+      "kind": "git-gate",
+      "oid": "8f6bf2b9eca8a3063151b91688d1ba79d9006e5d"
+    },
+    {
+      "at": "2026-11-17T04:15:00.900Z",
+      "kind": "native-spawn",
+      "id": "terminal-handshake-5",
+      "pid": 1846369
+    },
+    {
+      "at": "2026-11-17T04:15:01.525Z",
+      "kind": "activation-ceased",
+      "id": "terminal-handshake-5",
+      "hostEmpty": true,
+      "toolsSettled": true
+    },
+    {
+      "at": "2026-11-17T04:15:02.959Z",
+      "kind": "sandbox-stopped",
+      "environment": "env-3e0f7b6db12578c3b5197b49fc104a86e6c85bdcdfe82158da90be13c29507cd",
+      "cessationConfirmed": true,
+      "stop": {
+        "status": "success",
+        "cessationConfirmed": true,
+        "termination": "unconfirmed",
+        "guestFinalization": "observed"
+      },
+      "observation": {
+        "condition": "stopped",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "boot": "boot-626bd27b-68da-4e2d-9bf1-7bd6c0509b2c",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "observed",
+            "virtualBytes": "4294967296",
+            "allocatedBytes": "627511296"
+          },
+          "workspace": {
+            "status": "observed",
+            "logicalBytes": "44657",
+            "allocatedBytes": "217088"
+          },
+          "artifacts": {
+            "status": "observed",
+            "logicalBytes": "592",
+            "allocatedBytes": "16384"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "505327058944"
+          }
+        }
+      }
+    },
+    {
+      "at": "2026-11-17T04:15:17.604Z",
+      "kind": "sandbox-start",
+      "result": {
+        "status": "success",
+        "boot": "boot-a8fb3ba7-2c8a-4e49-a680-d62894ef02cd"
+      }
+    },
+    {
+      "at": "2026-11-17T04:15:17.969Z",
+      "kind": "git-gate",
+      "oid": "8f6bf2b9eca8a3063151b91688d1ba79d9006e5d"
+    },
+    {
+      "at": "2026-11-17T04:15:19.475Z",
+      "kind": "sandbox-stopped",
+      "environment": "env-3e0f7b6db12578c3b5197b49fc104a86e6c85bdcdfe82158da90be13c29507cd",
+      "cessationConfirmed": true,
+      "stop": {
+        "status": "success",
+        "cessationConfirmed": true,
+        "termination": "unconfirmed",
+        "guestFinalization": "observed"
+      },
+      "observation": {
+        "condition": "stopped",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "boot": "boot-a8fb3ba7-2c8a-4e49-a680-d62894ef02cd",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "observed",
+            "virtualBytes": "4294967296",
+            "allocatedBytes": "627773440"
+          },
+          "workspace": {
+            "status": "observed",
+            "logicalBytes": "44657",
+            "allocatedBytes": "217088"
+          },
+          "artifacts": {
+            "status": "observed",
+            "logicalBytes": "592",
+            "allocatedBytes": "16384"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "505351696384"
+          }
+        }
+      }
+    },
+    {
+      "at": "2026-11-17T04:15:49.729Z",
+      "kind": "sandbox-start",
+      "result": {
+        "status": "success",
+        "boot": "boot-7ee3b009-a120-4f00-89a9-1f7a1217af6d"
+      }
+    },
+    {
+      "at": "2026-11-17T04:15:52.132Z",
+      "kind": "git-gate",
+      "oid": "ad8b9ffc1f2499269dc7065844b7d02bdaa220c9"
+    },
+    {
+      "at": "2026-11-17T04:15:53.417Z",
+      "kind": "git-gate",
+      "oid": "0a4e8696221c5dd141d1cf166cf25e59066f12aa"
+    },
+    {
+      "at": "2026-11-17T04:15:53.420Z",
+      "kind": "admitted",
+      "id": "terminal-finish-3",
+      "phase": "finish",
+      "campaignActivations": 3,
+      "totalAcrossCampaigns": 33
+    },
+    {
+      "at": "2026-11-17T04:15:53.437Z",
+      "kind": "native-spawn",
+      "id": "terminal-finish-3",
+      "pid": 1847839
+    },
+    {
+      "at": "2026-11-17T04:15:53.984Z",
+      "kind": "effective-init",
+      "id": "terminal-finish-3",
+      "model": "claude-haiku-5-5",
+      "tools": [
+        "mcp__factory__bash",
+        "mcp__factory__filter_probe"
+      ],
+      "apiKeySource": "none",
+      "capabilities": [
+        "interrupt_receipt_v1",
+        "interrupt_cancel_queued_v1",
+        "interrupt_send_now_v1",
+        "interrupt_requeue_taken_v1",
+        "msg_lifecycle_v1",
+        "request_marker_lists_v1",
+        "ask_user_question_unanswered_v1",
+        "lifecycle_wakeup_source_v1",
+        "sdk_mcp_tools_list_changed",
+        "sdk_mcp_manifests",
+        "mcp_read_resource_v1",
+        "mcp_tool_ui_meta_v1",
+        "ui_surface_v1",
+        "mcp_call_result_not_for_model_v1",
+        "mcp_call_check_permissions_v1",
+        "voice_call_talk_line_v1",
+        "withdrawn_files_note_v2",
+        "ui_pane_widget_v1",
+        "reload_plugins_refuse_if_busy_v1"
+      ]
+    },
+    {
+      "at": "2026-11-17T04:15:55.743Z",
+      "kind": "assistant",
+      "id": "terminal-finish-3",
+      "afterBarrier": false
+    },
+    {
+      "at": "2026-11-17T04:15:55.759Z",
+      "kind": "tool-start",
+      "id": "terminal-finish-3",
+      "name": "filter_probe"
+    },
+    {
+      "at": "2026-11-17T04:15:55.773Z",
+      "kind": "filter-native-ingress",
+      "id": "terminal-finish-3",
+      "payload": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "OUTPUT_BLOCKED"
+          }
+        ]
+      },
+      "rawCanary": false,
+      "partialPrefix": false
+    },
+    {
+      "at": "2026-11-17T04:15:55.773Z",
+      "kind": "tool-end",
+      "id": "terminal-finish-3",
+      "name": "filter_probe"
+    },
+    {
+      "at": "2026-11-17T04:15:55.792Z",
+      "kind": "native-hook",
+      "id": "terminal-finish-3",
+      "phase": "finish",
+      "tools": [
+        "mcp__factory__filter_probe"
+      ]
+    },
+    {
+      "at": "2026-11-17T04:15:57.403Z",
+      "kind": "assistant",
+      "id": "terminal-finish-3",
+      "afterBarrier": false
+    },
+    {
+      "at": "2026-11-17T04:15:57.689Z",
+      "kind": "assistant",
+      "id": "terminal-finish-3",
+      "afterBarrier": false
+    },
+    {
+      "at": "2026-11-17T04:15:58.229Z",
+      "kind": "assistant",
+      "id": "terminal-finish-3",
+      "afterBarrier": false
+    },
+    {
+      "at": "2026-11-17T04:15:58.257Z",
+      "kind": "tool-start",
+      "id": "terminal-finish-3",
+      "name": "bash"
+    },
+    {
+      "at": "2026-11-17T04:15:58.402Z",
+      "kind": "tool-end",
+      "id": "terminal-finish-3",
+      "name": "bash"
+    },
+    {
+      "at": "2026-11-17T04:15:58.409Z",
+      "kind": "native-hook",
+      "id": "terminal-finish-3",
+      "phase": "finish",
+      "tools": [
+        "mcp__factory__bash"
+      ]
+    },
+    {
+      "at": "2026-11-17T04:15:58.409Z",
+      "kind": "native-barrier",
+      "id": "terminal-finish-3",
+      "phase": "finish",
+      "mode": "throw-onFailure-block"
+    },
+    {
+      "at": "2026-11-17T04:15:58.419Z",
+      "kind": "native-information",
+      "id": "terminal-finish-3",
+      "tag": "hook_callback_failed"
+    },
+    {
+      "at": "2026-11-17T04:15:58.579Z",
+      "kind": "activation-ceased",
+      "id": "terminal-finish-3",
+      "hostEmpty": true,
+      "toolsSettled": true
+    },
+    {
+      "at": "2026-11-17T04:15:58.842Z",
+      "kind": "git-gate",
+      "oid": "0a4e8696221c5dd141d1cf166cf25e59066f12aa"
+    },
+    {
+      "at": "2026-11-17T04:15:58.843Z",
+      "kind": "campaign-stopped",
+      "reason": "EFFECT_REPLAY_OR_COUNTER_NOT_PROVED"
+    },
+    {
+      "at": "2026-11-17T04:16:00.272Z",
+      "kind": "sandbox-stopped",
+      "environment": "env-bf71601041cb00cf8ca0bf2935e170a756037315dfccec97b4b5800dffa4f79f",
+      "cessationConfirmed": true,
+      "stop": {
+        "status": "success",
+        "cessationConfirmed": true,
+        "termination": "unconfirmed",
+        "guestFinalization": "observed"
+      },
+      "observation": {
+        "condition": "stopped",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "boot": "boot-7ee3b009-a120-4f00-89a9-1f7a1217af6d",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "observed",
+            "virtualBytes": "4294967296",
+            "allocatedBytes": "627511296"
+          },
+          "workspace": {
+            "status": "observed",
+            "logicalBytes": "45929",
+            "allocatedBytes": "241664"
+          },
+          "artifacts": {
+            "status": "observed",
+            "logicalBytes": "592",
+            "allocatedBytes": "12288"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "504871043072"
+          }
+        }
+      }
+    }
+  ],
+  "results": [
+    {
+      "id": "terminal-question-1",
+      "phase": "question",
+      "text": "",
+      "toolCalls": [
+        "bash",
+        "ask_user"
+      ],
+      "assistantAfterBarrier": 0,
+      "toolsAfterBarrier": 0,
+      "hookCalled": true,
+      "naturalCompletion": true,
+      "initialization": {
+        "onFailureSupported": true,
+        "hooksApplied": true,
+        "version": "2.1.325"
+      },
+      "sessionId": "eba31e4e-2c58-4f07-81cd-4523469ed226",
+      "effectiveTools": [
+        "mcp__factory__ask_user",
+        "mcp__factory__bash"
+      ],
+      "outcome": {
+        "subtype": "success",
+        "isError": false,
+        "stopReason": "tool_use",
+        "turns": 3,
+        "usage": {
+          "input_tokens": 4,
+          "cache_creation_input_tokens": 1844,
+          "cache_read_input_tokens": 1638,
+          "output_tokens": 208,
+          "output_tokens_details": {
+            "thinking_tokens": 46
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 1844,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "global",
+          "iterations": [],
+          "speed": "standard",
+          "fallback_credit": null
+        },
+        "estimatedCostUsd": 0.00048958
+      },
+      "hostCessation": {
+        "confirmed": true,
+        "group": 1842242,
+        "members": []
+      },
+      "toolsSettled": true
+    },
+    {
+      "id": "terminal-resume-2",
+      "phase": "resume",
+      "text": "The primary working directory isn't present in the guest, so I'll use the guest checkout path the tool specifies.Filter probe returned `OUTPUT_BLOCKED`, as expected. I did not retry it.\n\nPushed `b89dcf1` to `origin/proof`, with `RESUMED` appended to `progress.md`.\n\n- **Correlated response:** `harness-proof-terminal-real-ec5bfa4d-6cad-46df-932c-7d20d748acbf`, question `59c5814a-6241-4834-9692-5dfc763b48ac`. Its text says e1 remains uncertain and must not be repeated.\n- **e1 remains blocked.** I did not run `effect-service.py e1`.\n\nTwo things to check:\n- The requested working directory didn't exist in the guest, so I ran in `/workspace/checkout` instead.\n- The diff shows 1 insertion and 1 deletion, not a pure append. The file may have lacked a trailing newline, so `RESUMED` may have joined the last line. I did not inspect `progress.md` before the edit, so please review the commit.",
+      "toolCalls": [
+        "filter_probe",
+        "bash",
+        "bash"
+      ],
+      "assistantAfterBarrier": 0,
+      "toolsAfterBarrier": 0,
+      "hookCalled": false,
+      "naturalCompletion": true,
+      "initialization": {
+        "onFailureSupported": true,
+        "hooksApplied": true,
+        "version": "2.1.325"
+      },
+      "sessionId": "0082acce-c867-4930-90e2-74b33876649f",
+      "effectiveTools": [
+        "mcp__factory__bash",
+        "mcp__factory__filter_probe"
+      ],
+      "filterFailureDelivered": true,
+      "outcome": {
+        "subtype": "success",
+        "isError": false,
+        "stopReason": "end_turn",
+        "turns": 4,
+        "usage": {
+          "input_tokens": 8,
+          "cache_creation_input_tokens": 2890,
+          "cache_read_input_tokens": 6432,
+          "output_tokens": 1251,
+          "output_tokens_details": {
+            "thinking_tokens": 485
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 2890,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "global",
+          "iterations": [],
+          "speed": "standard",
+          "fallback_credit": null
+        },
+        "estimatedCostUsd": 0.00126862
+      },
+      "hostCessation": {
+        "confirmed": true,
+        "group": 1842696,
+        "members": []
+      },
+      "toolsSettled": true
+    },
+    {
+      "id": "terminal-finish-3",
+      "phase": "finish",
+      "text": "The probe returned the expected `OUTPUT_BLOCKED`, so I won't retry it. Next I'll read progress.md, append RESUMED, and commit and push to origin proof.",
+      "toolCalls": [
+        "filter_probe",
+        "bash"
+      ],
+      "assistantAfterBarrier": 0,
+      "toolsAfterBarrier": 0,
+      "hookCalled": true,
+      "naturalCompletion": true,
+      "initialization": {
+        "onFailureSupported": true,
+        "hooksApplied": true,
+        "version": "2.1.325"
+      },
+      "sessionId": "c6c0562c-ea05-4a64-82b2-facb763d0235",
+      "effectiveTools": [
+        "mcp__factory__bash",
+        "mcp__factory__filter_probe"
+      ],
+      "filterFailureDelivered": true,
+      "hookFaultInjected": true,
+      "outcome": {
+        "subtype": "success",
+        "isError": false,
+        "stopReason": "tool_use",
+        "turns": 3,
+        "usage": {
+          "input_tokens": 4,
+          "cache_creation_input_tokens": 1225,
+          "cache_read_input_tokens": 2394,
+          "output_tokens": 374,
+          "output_tokens_details": {
+            "thinking_tokens": 91
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 1225,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "global",
+          "iterations": [],
+          "speed": "standard",
+          "fallback_credit": null
+        },
+        "estimatedCostUsd": 0.00045634000000000007
+      },
+      "hostCessation": {
+        "confirmed": true,
+        "group": 1847839,
+        "members": []
+      },
+      "toolsSettled": true
+    }
+  ],
+  "sessions": [
+    "eba31e4e-2c58-4f07-81cd-4523469ed226",
+    "0082acce-c867-4930-90e2-74b33876649f",
+    "c6c0562c-ea05-4a64-82b2-facb763d0235"
+  ],
+  "environments": [
+    {
+      "root": "$HOME/sfhp-v2/e",
+      "workId": "harness-proof-terminal-check-98cc6974-3b7d-4c1d-9b59-aae43b1e8c64",
+      "environment": "env-5dfd92564a4f8baabc9bef4fb005b6b0b15e63a5ab4edf404474295df887d25a",
+      "cleanup": {
+        "removed": {
+          "status": "success",
+          "resources": [
+            {
+              "resource": "disk",
+              "status": "removed"
+            },
+            {
+              "resource": "workspace",
+              "status": "removed"
+            },
+            {
+              "resource": "artifacts",
+              "status": "removed"
+            },
+            {
+              "resource": "runtime",
+              "status": "removed"
+            }
+          ]
+        },
+        "observation": {
+          "condition": "removed",
+          "cessationConfirmed": true,
+          "consumption": "unavailable",
+          "storage": {
+            "configuredVirtualBytes": "4294967296",
+            "minFreeBytes": "1073741824",
+            "disk": {
+              "status": "absent"
+            },
+            "workspace": {
+              "status": "absent"
+            },
+            "artifacts": {
+              "status": "absent"
+            },
+            "filesystem": {
+              "status": "observed",
+              "availableBytes": "506097520640"
+            }
+          }
+        }
+      }
+    },
+    {
+      "root": "$HOME/sfhp-v2/e",
+      "workId": "harness-proof-terminal-check-64219903-bec2-4f18-b23f-5516c6c4be5a",
+      "environment": "env-ea0014b0bb83868cd2efd871255778c94c29060fb532aa45d290d042931ee326",
+      "cleanup": {
+        "removed": {
+          "status": "success",
+          "resources": [
+            {
+              "resource": "disk",
+              "status": "removed"
+            },
+            {
+              "resource": "workspace",
+              "status": "removed"
+            },
+            {
+              "resource": "artifacts",
+              "status": "removed"
+            },
+            {
+              "resource": "runtime",
+              "status": "removed"
+            }
+          ]
+        },
+        "observation": {
+          "condition": "removed",
+          "cessationConfirmed": true,
+          "consumption": "unavailable",
+          "storage": {
+            "configuredVirtualBytes": "4294967296",
+            "minFreeBytes": "1073741824",
+            "disk": {
+              "status": "absent"
+            },
+            "workspace": {
+              "status": "absent"
+            },
+            "artifacts": {
+              "status": "absent"
+            },
+            "filesystem": {
+              "status": "observed",
+              "availableBytes": "506094194688"
+            }
+          }
+        }
+      }
+    },
+    {
+      "root": "$HOME/sfhp-v2/e",
+      "workId": "harness-proof-terminal-real-ec5bfa4d-6cad-46df-932c-7d20d748acbf",
+      "environment": "env-789ef3aa6f2e74b0c7e43d8456de18bbeb1993385c1e6799e2b6752d912f2de9",
+      "cleanup": {
+        "removed": {
+          "status": "success",
+          "resources": [
+            {
+              "resource": "disk",
+              "status": "removed"
+            },
+            {
+              "resource": "workspace",
+              "status": "removed"
+            },
+            {
+              "resource": "artifacts",
+              "status": "removed"
+            },
+            {
+              "resource": "runtime",
+              "status": "removed"
+            }
+          ]
+        },
+        "observation": {
+          "condition": "removed",
+          "cessationConfirmed": true,
+          "consumption": "unavailable",
+          "storage": {
+            "configuredVirtualBytes": "4294967296",
+            "minFreeBytes": "1073741824",
+            "disk": {
+              "status": "absent"
+            },
+            "workspace": {
+              "status": "absent"
+            },
+            "artifacts": {
+              "status": "absent"
+            },
+            "filesystem": {
+              "status": "observed",
+              "availableBytes": "506271399936"
+            }
+          }
+        }
+      }
+    },
+    {
+      "root": "$HOME/sfhp-v2/e",
+      "workId": "harness-proof-terminal-check-e6268da7-b485-4dc5-afe3-b9d8a6c54f9c",
+      "environment": "env-3e0f7b6db12578c3b5197b49fc104a86e6c85bdcdfe82158da90be13c29507cd",
+      "cleanup": {
+        "removed": {
+          "status": "success",
+          "resources": [
+            {
+              "resource": "disk",
+              "status": "removed"
+            },
+            {
+              "resource": "workspace",
+              "status": "removed"
+            },
+            {
+              "resource": "artifacts",
+              "status": "removed"
+            },
+            {
+              "resource": "runtime",
+              "status": "removed"
+            }
+          ]
+        },
+        "observation": {
+          "condition": "removed",
+          "cessationConfirmed": true,
+          "consumption": "unavailable",
+          "storage": {
+            "configuredVirtualBytes": "4294967296",
+            "minFreeBytes": "1073741824",
+            "disk": {
+              "status": "absent"
+            },
+            "workspace": {
+              "status": "absent"
+            },
+            "artifacts": {
+              "status": "absent"
+            },
+            "filesystem": {
+              "status": "observed",
+              "availableBytes": "505351696384"
+            }
+          }
+        }
+      }
+    },
+    {
+      "root": "$HOME/sfhp-v2/e",
+      "workId": "harness-proof-terminal-real-b5c4f0d9-c104-4718-8ee3-5156dca3ed95",
+      "environment": "env-bf71601041cb00cf8ca0bf2935e170a756037315dfccec97b4b5800dffa4f79f",
+      "cleanup": {
+        "removed": {
+          "status": "success",
+          "resources": [
+            {
+              "resource": "disk",
+              "status": "removed"
+            },
+            {
+              "resource": "workspace",
+              "status": "removed"
+            },
+            {
+              "resource": "artifacts",
+              "status": "removed"
+            },
+            {
+              "resource": "runtime",
+              "status": "removed"
+            }
+          ]
+        },
+        "observation": {
+          "condition": "removed",
+          "cessationConfirmed": true,
+          "consumption": "unavailable",
+          "storage": {
+            "configuredVirtualBytes": "4294967296",
+            "minFreeBytes": "1073741824",
+            "disk": {
+              "status": "absent"
+            },
+            "workspace": {
+              "status": "absent"
+            },
+            "artifacts": {
+              "status": "absent"
+            },
+            "filesystem": {
+              "status": "observed",
+              "availableBytes": "504871043072"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "preflight": {
+    "sourceHash": "1f7ea7e96b9799f288501d74d168d2a5b78a685c41034f67db4efadad7e1e52a",
+    "passed": true
+  },
+  "executeAttempted": true,
+  "question": {
+    "id": "59c5814a-6241-4834-9692-5dfc763b48ac",
+    "workId": "harness-proof-terminal-real-ec5bfa4d-6cad-46df-932c-7d20d748acbf",
+    "question": "May I continue with the synthetic fixture?",
+    "originOid": "d868c802e9edcd663382ef00e2d386e7de6ba2fe",
+    "invocation": "terminal-question-1"
+  },
+  "closed": true,
+  "finishAttempted": true,
+  "provenance": {
+    "executeCommit": "fd64e8f",
+    "finishCommit": "0473508",
+    "branch": "prototype/v2-harness-proof",
+    "integrationDestination": "main at principal checkout; pending operator approval",
+    "previousEvidenceUnmodified": true
+  },
+  "interpretationNote": "Two combined runner oracles failed on the auxiliary RESUMED edit; see independent per-criterion audit. Do not infer replay from error label or task success from native result success."
+}

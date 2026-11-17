@@ -1,0 +1,327 @@
+{
+  "runnerCommit": "240e41b",
+  "state": {
+    "startedAt": "2026-11-16T01:15:57.508Z",
+    "activations": 2,
+    "events": [
+      {
+        "at": "2026-11-16T01:16:57.109Z",
+        "kind": "sandbox-start",
+        "started": {
+          "status": "success",
+          "boot": "boot-006e07df-1627-40b4-9b5d-715edbdf0ba9"
+        }
+      },
+      {
+        "at": "2026-11-16T01:17:03.311Z",
+        "kind": "git-gate",
+        "oid": "bc9957c22d49356be0741f59e2d43aa52e95ddf1",
+        "cwd": "/workspace/clone-p1"
+      },
+      {
+        "at": "2026-11-16T01:17:03.311Z",
+        "kind": "clone-reconstructed",
+        "previous": "/workspace/checkout",
+        "next": "/workspace/clone-p1",
+        "originOid": "bc9957c22d49356be0741f59e2d43aa52e95ddf1"
+      },
+      {
+        "at": "2026-11-16T01:17:03.312Z",
+        "kind": "admitted",
+        "id": "pi-builder-1",
+        "engine": "pi",
+        "role": "builder",
+        "cumulative": 18
+      },
+      {
+        "at": "2026-11-16T01:17:03.339Z",
+        "kind": "pi-effective-tools",
+        "id": "pi-builder-1",
+        "active": [
+          "factory_bash"
+        ]
+      },
+      {
+        "at": "2026-11-16T01:17:03.349Z",
+        "kind": "pi-model-request",
+        "id": "pi-builder-1",
+        "request": 1
+      },
+      {
+        "at": "2026-11-16T01:17:07.426Z",
+        "kind": "pi-tool-start",
+        "id": "pi-builder-1",
+        "name": "factory_bash"
+      },
+      {
+        "at": "2026-11-16T01:17:07.752Z",
+        "kind": "pi-model-request",
+        "id": "pi-builder-1",
+        "request": 2
+      },
+      {
+        "at": "2026-11-16T01:17:10.241Z",
+        "kind": "pi-tool-start",
+        "id": "pi-builder-1",
+        "name": "factory_bash"
+      },
+      {
+        "at": "2026-11-16T01:17:10.930Z",
+        "kind": "pi-model-request",
+        "id": "pi-builder-1",
+        "request": 3
+      },
+      {
+        "at": "2026-11-16T01:17:13.113Z",
+        "kind": "stopped",
+        "id": "pi-builder-1",
+        "confirmed": true,
+        "scope": "native session idle/disposed; guest tool lifecycle separately observed"
+      },
+      {
+        "at": "2026-11-16T01:17:13.348Z",
+        "kind": "git-gate",
+        "oid": "bfb0fe4e9247c2162f3655e35275fee224748c6b",
+        "cwd": "/workspace/clone-p1"
+      },
+      {
+        "at": "2026-11-16T01:17:14.382Z",
+        "kind": "git-gate",
+        "oid": "bfb0fe4e9247c2162f3655e35275fee224748c6b",
+        "cwd": "/workspace/clone-c2"
+      },
+      {
+        "at": "2026-11-16T01:17:14.383Z",
+        "kind": "clone-reconstructed",
+        "previous": "/workspace/clone-p1",
+        "next": "/workspace/clone-c2",
+        "originOid": "bfb0fe4e9247c2162f3655e35275fee224748c6b"
+      },
+      {
+        "at": "2026-11-16T01:17:14.383Z",
+        "kind": "admitted",
+        "id": "claude-builder-2",
+        "engine": "claude",
+        "role": "builder",
+        "cumulative": 19
+      },
+      {
+        "at": "2026-11-16T01:17:14.401Z",
+        "kind": "spawn",
+        "id": "claude-builder-2",
+        "pid": 2824622
+      },
+      {
+        "at": "2026-11-16T01:17:15.049Z",
+        "kind": "init",
+        "id": "claude-builder-2",
+        "model": "claude-haiku-5-5",
+        "tools": [
+          "mcp__factory__bash"
+        ],
+        "apiKeySource": "none"
+      },
+      {
+        "at": "2026-11-16T01:17:20.299Z",
+        "kind": "tool-start",
+        "id": "claude-builder-2",
+        "name": "bash"
+      },
+      {
+        "at": "2026-11-16T01:17:21.179Z",
+        "kind": "tool-end",
+        "id": "claude-builder-2",
+        "name": "bash",
+        "exitCode": 0
+      },
+      {
+        "at": "2026-11-16T01:17:23.026Z",
+        "kind": "stopped",
+        "id": "claude-builder-2",
+        "pid": 2824622,
+        "confirmed": true
+      },
+      {
+        "at": "2026-11-16T01:17:23.222Z",
+        "kind": "git-gate",
+        "oid": "3563635eb8d3a71b4ba84a3c0fcafa498ea98b50",
+        "cwd": "/workspace/clone-c2"
+      },
+      {
+        "at": "2026-11-16T01:17:23.244Z",
+        "kind": "campaign-stopped",
+        "reason": "C2_NOT_ACTUALLY_PUBLISHED"
+      }
+    ],
+    "results": [
+      {
+        "id": "pi-builder-1",
+        "engine": "pi",
+        "role": "builder",
+        "sessionId": "01a1e1ed-d7e0-70b6-b8ac-142b7dd09273",
+        "authType": "oauth",
+        "text": "Appended `P1` to `progress.md`, committed it as `bfb0fe4`, and pushed branch `proof` to `origin`.",
+        "requests": 3,
+        "usage": [
+          {
+            "model": "gpt-6-luna",
+            "stopReason": "toolUse",
+            "usage": {
+              "input": 342,
+              "output": 122,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 464,
+              "cost": {
+                "input": 0.000034200000000000005,
+                "output": 0.000061,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.00009520000000000001,
+                "totalFromProvider": false
+              }
+            }
+          },
+          {
+            "model": "gpt-6-luna",
+            "stopReason": "toolUse",
+            "usage": {
+              "input": 609,
+              "output": 58,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 667,
+              "cost": {
+                "input": 0.0000609,
+                "output": 0.000029,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.0000899,
+                "totalFromProvider": false
+              }
+            }
+          },
+          {
+            "model": "gpt-6-luna",
+            "stopReason": "stop",
+            "usage": {
+              "input": 732,
+              "output": 35,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 767,
+              "cost": {
+                "input": 0.0000732,
+                "output": 0.0000175,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.00009070000000000001,
+                "totalFromProvider": false
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "claude-builder-2",
+        "engine": "claude",
+        "role": "builder",
+        "text": "Work ID: **harness-proof-local-v7**. P1 was observed: `progress.md` contained \"P1\" before the append.\n\nI appended a C2 marker to `progress.md`, committed it as `3563635`, and pushed to `origin` branch `proof` (`bfb0fe4..3563635`). The working tree is clean. I did not repeat the uncertain effect e1.",
+        "sessionId": "80f7dfe5-5ea8-44b7-8525-a26270e02c46",
+        "outcome": {
+          "subtype": "success",
+          "isError": false,
+          "usage": {
+            "input_tokens": 4,
+            "cache_creation_input_tokens": 2356,
+            "cache_read_input_tokens": 1694,
+            "output_tokens": 588,
+            "output_tokens_details": {
+              "thinking_tokens": 234
+            },
+            "server_tool_use": {
+              "web_search_requests": 0,
+              "web_fetch_requests": 0
+            },
+            "service_tier": "standard",
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 2356,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "inference_geo": "global",
+            "iterations": [],
+            "speed": "standard",
+            "fallback_credit": null
+          },
+          "estimatedCostUsd": 0.0007825400000000001
+        },
+        "processStopped": true
+      }
+    ],
+    "checks": {
+      "readSmoke": true,
+      "lateMarkerPresent": false
+    },
+    "work": {
+      "id": "harness-proof-local-v7",
+      "history": [
+        "prior executions retained"
+      ],
+      "limit": 20,
+      "consumptionPrior": 17,
+      "pendingEffect": {
+        "id": "e1",
+        "state": "uncertain"
+      },
+      "questions": []
+    },
+    "canarySha256": "3073a41a98c4b555d97df3ece18a58f252110d34022ece498130c6822ff27840",
+    "error": "C2_NOT_ACTUALLY_PUBLISHED",
+    "cleanup": {
+      "stop": {
+        "status": "success",
+        "cessationConfirmed": true,
+        "termination": "unconfirmed",
+        "guestFinalization": "observed"
+      },
+      "observation": {
+        "condition": "stopped",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "boot": "boot-006e07df-1627-40b4-9b5d-715edbdf0ba9",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "observed",
+            "virtualBytes": "4294967296",
+            "allocatedBytes": "627511296"
+          },
+          "workspace": {
+            "status": "observed",
+            "logicalBytes": "97626",
+            "allocatedBytes": "638976"
+          },
+          "artifacts": {
+            "status": "observed",
+            "logicalBytes": "110",
+            "allocatedBytes": "4096"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "550788333568"
+          }
+        }
+      }
+    },
+    "finishedAt": "2026-11-16T01:17:24.816Z",
+    "cumulativeActivations": 19,
+    "executionMsDebited": 1107308
+  },
+  "cumulativeActivations": 19,
+  "remainingActivations": 1,
+  "diagnosis": "Pi P1 and Claude C2 both published real commits. Oracle incorrectly demanded exact line C2 although prompt allowed a marker with explanatory text; actual line begins C2 (work ...). No repeat of those activations required."
+}

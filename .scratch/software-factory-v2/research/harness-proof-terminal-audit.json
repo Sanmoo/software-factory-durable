@@ -1,0 +1,265 @@
+{
+  "noInference": true,
+  "campaignActivations": 3,
+  "executionMs": 281044,
+  "criteria": {
+    "C5": {
+      "proposal": "approved locally",
+      "nativeErrorObserved": true,
+      "nativeErrorPersisted": true,
+      "rawCanary": false,
+      "partialPrefix": false,
+      "scope": "enabled text/error bridge; normal-path coverage retained from complement"
+    },
+    "C6": {
+      "proposal": "approved locally",
+      "nativePositiveHook": true,
+      "durableQuestionBeforeAck": true,
+      "ackAfterCessation": true,
+      "explicitPresentationAndResponse": true,
+      "correlatedFreshNativeResume": true,
+      "control": "fixture"
+    },
+    "C12": {
+      "proposal": "approved only for observed no-replay interval",
+      "e1Before": 1,
+      "e1After": 1,
+      "calibration": 1,
+      "activeNativeToolCalls": [
+        "filter_probe",
+        "bash"
+      ],
+      "serviceIntegrityUnchanged": true,
+      "effectService": "synthetic independent guest subprocess ledger"
+    }
+  },
+  "negativeHook": {
+    "onFailureSupported": true,
+    "hooksApplied": true,
+    "injectedFaultObserved": true,
+    "naturalCompletion": true,
+    "assistantAfterBarrier": 0,
+    "toolsAfterBarrier": 0
+  },
+  "failedAuxiliarySubtest": {
+    "name": "append RESUMED and publish",
+    "result": "not completed; progress remained WIP and runner rejected it",
+    "notEquivalentTo": "effect replay or native hook failure",
+    "firstAttemptAfterCounter": "not retained; cannot reconstruct its value after cleanup",
+    "limitation": "does not claim successful resumed code edit, nor general effect idempotency"
+  },
+  "lifecycle": {
+    "environments": [
+      {
+        "environment": "env-5dfd92564a4f8baabc9bef4fb005b6b0b15e63a5ab4edf404474295df887d25a",
+        "observation": {
+          "condition": "removed",
+          "cessationConfirmed": true,
+          "consumption": "unavailable",
+          "storage": {
+            "configuredVirtualBytes": "4294967296",
+            "minFreeBytes": "1073741824",
+            "disk": {
+              "status": "absent"
+            },
+            "workspace": {
+              "status": "absent"
+            },
+            "artifacts": {
+              "status": "absent"
+            },
+            "filesystem": {
+              "status": "observed",
+              "availableBytes": "505506234368"
+            }
+          }
+        }
+      },
+      {
+        "environment": "env-ea0014b0bb83868cd2efd871255778c94c29060fb532aa45d290d042931ee326",
+        "observation": {
+          "condition": "removed",
+          "cessationConfirmed": true,
+          "consumption": "unavailable",
+          "storage": {
+            "configuredVirtualBytes": "4294967296",
+            "minFreeBytes": "1073741824",
+            "disk": {
+              "status": "absent"
+            },
+            "workspace": {
+              "status": "absent"
+            },
+            "artifacts": {
+              "status": "absent"
+            },
+            "filesystem": {
+              "status": "observed",
+              "availableBytes": "505506234368"
+            }
+          }
+        }
+      },
+      {
+        "environment": "env-789ef3aa6f2e74b0c7e43d8456de18bbeb1993385c1e6799e2b6752d912f2de9",
+        "observation": {
+          "condition": "removed",
+          "cessationConfirmed": true,
+          "consumption": "unavailable",
+          "storage": {
+            "configuredVirtualBytes": "4294967296",
+            "minFreeBytes": "1073741824",
+            "disk": {
+              "status": "absent"
+            },
+            "workspace": {
+              "status": "absent"
+            },
+            "artifacts": {
+              "status": "absent"
+            },
+            "filesystem": {
+              "status": "observed",
+              "availableBytes": "505506234368"
+            }
+          }
+        }
+      },
+      {
+        "environment": "env-3e0f7b6db12578c3b5197b49fc104a86e6c85bdcdfe82158da90be13c29507cd",
+        "observation": {
+          "condition": "removed",
+          "cessationConfirmed": true,
+          "consumption": "unavailable",
+          "storage": {
+            "configuredVirtualBytes": "4294967296",
+            "minFreeBytes": "1073741824",
+            "disk": {
+              "status": "absent"
+            },
+            "workspace": {
+              "status": "absent"
+            },
+            "artifacts": {
+              "status": "absent"
+            },
+            "filesystem": {
+              "status": "observed",
+              "availableBytes": "505506234368"
+            }
+          }
+        }
+      },
+      {
+        "environment": "env-bf71601041cb00cf8ca0bf2935e170a756037315dfccec97b4b5800dffa4f79f",
+        "observation": {
+          "condition": "removed",
+          "cessationConfirmed": true,
+          "consumption": "unavailable",
+          "storage": {
+            "configuredVirtualBytes": "4294967296",
+            "minFreeBytes": "1073741824",
+            "disk": {
+              "status": "absent"
+            },
+            "workspace": {
+              "status": "absent"
+            },
+            "artifacts": {
+              "status": "absent"
+            },
+            "filesystem": {
+              "status": "observed",
+              "availableBytes": "505506234368"
+            }
+          }
+        }
+      }
+    ],
+    "sessions": [
+      {
+        "id": "eba31e4e-2c58-4f07-81cd-4523469ed226",
+        "absent": true
+      },
+      {
+        "id": "0082acce-c867-4930-90e2-74b33876649f",
+        "absent": true
+      },
+      {
+        "id": "c6c0562c-ea05-4a64-82b2-facb763d0235",
+        "absent": true
+      }
+    ],
+    "groups": [
+      {
+        "group": 1813738,
+        "members": [],
+        "empty": true
+      },
+      {
+        "group": 1837601,
+        "members": [],
+        "empty": true
+      },
+      {
+        "group": 1842242,
+        "members": [],
+        "empty": true
+      },
+      {
+        "group": 1842696,
+        "members": [],
+        "empty": true
+      },
+      {
+        "group": 1846369,
+        "members": [],
+        "empty": true
+      },
+      {
+        "group": 1847839,
+        "members": [],
+        "empty": true
+      }
+    ],
+    "auxiliaryPaths": [
+      {
+        "path": "$HOME/.claude/debug/eba31e4e-2c58-4f07-81cd-4523469ed226.txt",
+        "absent": true
+      },
+      {
+        "path": "$HOME/.claude/tasks/eba31e4e-2c58-4f07-81cd-4523469ed226",
+        "absent": true
+      },
+      {
+        "path": "$HOME/.claude/todos/eba31e4e-2c58-4f07-81cd-4523469ed226-agent-eba31e4e-2c58-4f07-81cd-4523469ed226.json",
+        "absent": true
+      },
+      {
+        "path": "$HOME/.claude/debug/0082acce-c867-4930-90e2-74b33876649f.txt",
+        "absent": true
+      },
+      {
+        "path": "$HOME/.claude/tasks/0082acce-c867-4930-90e2-74b33876649f",
+        "absent": true
+      },
+      {
+        "path": "$HOME/.claude/todos/0082acce-c867-4930-90e2-74b33876649f-agent-0082acce-c867-4930-90e2-74b33876649f.json",
+        "absent": true
+      },
+      {
+        "path": "$HOME/.claude/debug/c6c0562c-ea05-4a64-82b2-facb763d0235.txt",
+        "absent": true
+      },
+      {
+        "path": "$HOME/.claude/tasks/c6c0562c-ea05-4a64-82b2-facb763d0235",
+        "absent": true
+      },
+      {
+        "path": "$HOME/.claude/todos/c6c0562c-ea05-4a64-82b2-facb763d0235-agent-c6c0562c-ea05-4a64-82b2-facb763d0235.json",
+        "absent": true
+      }
+    ]
+  },
+  "finalConservativeExecutionMs": 300000
+}

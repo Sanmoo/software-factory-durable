@@ -1,0 +1,130 @@
+{
+  "runnerCommit": "6302f01",
+  "state": {
+    "startedAt": "2026-11-16T01:20:13.134Z",
+    "activations": 1,
+    "events": [
+      {
+        "at": "2026-11-16T01:20:36.518Z",
+        "kind": "sandbox-start",
+        "started": {
+          "status": "success",
+          "boot": "boot-ac46e65f-0690-496a-b8fe-97ddad470adb"
+        }
+      },
+      {
+        "at": "2026-11-16T01:20:38.416Z",
+        "kind": "git-gate",
+        "oid": "3563635eb8d3a71b4ba84a3c0fcafa498ea98b50",
+        "cwd": "/workspace/discarded-local"
+      },
+      {
+        "at": "2026-11-16T01:20:38.416Z",
+        "kind": "clone-reconstructed",
+        "previous": "/workspace/checkout",
+        "next": "/workspace/discarded-local",
+        "originOid": "3563635eb8d3a71b4ba84a3c0fcafa498ea98b50"
+      },
+      {
+        "at": "2026-11-16T01:20:40.124Z",
+        "kind": "git-gate",
+        "oid": "3563635eb8d3a71b4ba84a3c0fcafa498ea98b50",
+        "cwd": "/workspace/clone-p3"
+      },
+      {
+        "at": "2026-11-16T01:20:40.124Z",
+        "kind": "clone-reconstructed",
+        "previous": "/workspace/discarded-local",
+        "next": "/workspace/clone-p3",
+        "originOid": "3563635eb8d3a71b4ba84a3c0fcafa498ea98b50"
+      },
+      {
+        "at": "2026-11-16T01:20:40.526Z",
+        "kind": "admitted",
+        "id": "pi-builder-1",
+        "engine": "pi",
+        "role": "builder",
+        "cumulative": 20
+      },
+      {
+        "at": "2026-11-16T01:20:40.526Z",
+        "kind": "campaign-stopped",
+        "reason": "EEXIST: file already exists, mkdir '/home/sanmoo/dev/github.com/Sanmoo/software-factory-durable/.worktrees/harness-proof-run/.runtime/pi-pi-builder-1/'"
+      }
+    ],
+    "results": [],
+    "checks": {
+      "lossBeforePush": true,
+      "externalEffectFixture": {
+        "effectId": "e1",
+        "state": "uncertain",
+        "allowed": false,
+        "newEffects": 0,
+        "scope": "controller fixture only"
+      },
+      "lateMarkerPresent": false
+    },
+    "work": {
+      "id": "harness-proof-local-v7",
+      "history": [
+        "prior executions retained",
+        "local file lost before push; bare remote survives; no transcript transferred"
+      ],
+      "limit": 20,
+      "consumptionPrior": 17,
+      "pendingEffect": {
+        "id": "e1",
+        "state": "uncertain"
+      },
+      "questions": []
+    },
+    "canarySha256": "6562999355c7300f594afce2a6b57dab1a7981009da5cf7a6b6f040b4e4cd7b4",
+    "error": "EEXIST: file already exists, mkdir '/home/sanmoo/dev/github.com/Sanmoo/software-factory-durable/.worktrees/harness-proof-run/.runtime/pi-pi-builder-1/'",
+    "cleanup": {
+      "stop": {
+        "status": "success",
+        "cessationConfirmed": true,
+        "termination": "unconfirmed",
+        "guestFinalization": "observed"
+      },
+      "observation": {
+        "condition": "stopped",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "boot": "boot-ac46e65f-0690-496a-b8fe-97ddad470adb",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "observed",
+            "virtualBytes": "4294967296",
+            "allocatedBytes": "627511296"
+          },
+          "workspace": {
+            "status": "observed",
+            "logicalBytes": "47937",
+            "allocatedBytes": "307200"
+          },
+          "artifacts": {
+            "status": "observed",
+            "logicalBytes": "110",
+            "allocatedBytes": "4096"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "550157938688"
+          }
+        }
+      }
+    },
+    "finishedAt": "2026-11-16T01:20:42.113Z",
+    "cumulativeActivations": 20,
+    "executionMsDebited": 1288979
+  },
+  "accounting": {
+    "reservedOrdinal": 20,
+    "reservationConsumed": false,
+    "actualCumulativeModelActivations": 19,
+    "reason": "EEXIST at mkdir before ModelRuntime/createAgentSession/prompt; events contain no pi-model-request and results are empty. This is not a refund of provider usage or a reset of Work controls."
+  }
+}

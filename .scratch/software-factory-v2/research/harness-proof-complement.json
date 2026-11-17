@@ -1,0 +1,2750 @@
+{
+  "campaign": "complement-1",
+  "previousCampaign": {
+    "closed": true,
+    "activations": 20
+  },
+  "limits": {
+    "activations": 10,
+    "executionMs": 1800000
+  },
+  "activations": 10,
+  "executionMs": 257373,
+  "closed": true,
+  "finalConservativeExecutionMs": 300000,
+  "finalDebitNote": "Measured runner debit includes the 60s initial-failure reserve. Final five-minute debit additionally reserves 42627ms for offline validation and cleanup audit; not human/planning wait.",
+  "events": [
+    {
+      "at": "2026-11-16T09:28:08.638Z",
+      "kind": "sandbox-start",
+      "environment": "env-bcd644c746ef0a2724af78227fc9cf3aa752c6f145d565eb69910d32fb1e2e27",
+      "result": {
+        "status": "success",
+        "boot": "boot-627d6f5a-5962-4d9d-a026-063975d24808"
+      }
+    },
+    {
+      "at": "2026-11-16T09:28:11.081Z",
+      "kind": "git-gate",
+      "oid": "5818f26aa2d2425f78b4cd64f3b6c56c84803e0b"
+    },
+    {
+      "at": "2026-11-16T09:28:11.102Z",
+      "kind": "pi-effective",
+      "role": "builder",
+      "tools": [
+        "factory_bash"
+      ],
+      "model": "gpt-6-luna",
+      "api": "openai-responses",
+      "authType": "oauth"
+    },
+    {
+      "at": "2026-11-16T09:28:11.103Z",
+      "kind": "activation-ceased",
+      "id": "pi-no-model-loadout",
+      "scope": "Pi session disposed; pre-request gate closed"
+    },
+    {
+      "at": "2026-11-16T09:28:11.106Z",
+      "kind": "pi-effective",
+      "role": "spec",
+      "tools": [
+        "factory_read"
+      ],
+      "model": "gpt-6-luna",
+      "api": "openai-responses",
+      "authType": "oauth"
+    },
+    {
+      "at": "2026-11-16T09:28:11.106Z",
+      "kind": "activation-ceased",
+      "id": "pi-no-model-loadout",
+      "scope": "Pi session disposed; pre-request gate closed"
+    },
+    {
+      "at": "2026-11-16T09:28:11.124Z",
+      "kind": "claude-spawn",
+      "id": "claude-no-model-handshake",
+      "pid": 32736,
+      "ownProcessGroup": true
+    },
+    {
+      "at": "2026-11-16T09:28:11.669Z",
+      "kind": "activation-ceased",
+      "id": "claude-no-model-handshake",
+      "host": {
+        "confirmed": true,
+        "members": [],
+        "pgid": 32736
+      },
+      "toolSettled": false
+    },
+    {
+      "at": "2026-11-16T09:28:11.669Z",
+      "kind": "round-stopped",
+      "reason": "CLAUDE_MODEL_NOT_AVAILABLE"
+    },
+    {
+      "at": "2026-11-16T09:28:13.102Z",
+      "kind": "sandbox-stopped",
+      "environment": "env-bcd644c746ef0a2724af78227fc9cf3aa752c6f145d565eb69910d32fb1e2e27",
+      "boot": "boot-627d6f5a-5962-4d9d-a026-063975d24808",
+      "stop": {
+        "status": "success",
+        "cessationConfirmed": true,
+        "termination": "unconfirmed",
+        "guestFinalization": "observed"
+      },
+      "observation": {
+        "condition": "stopped",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "boot": "boot-627d6f5a-5962-4d9d-a026-063975d24808",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "observed",
+            "virtualBytes": "4294967296",
+            "allocatedBytes": "627511296"
+          },
+          "workspace": {
+            "status": "observed",
+            "logicalBytes": "45190",
+            "allocatedBytes": "241664"
+          },
+          "artifacts": {
+            "status": "observed",
+            "logicalBytes": "163",
+            "allocatedBytes": "12288"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "520870694912"
+          }
+        }
+      }
+    },
+    {
+      "at": "2026-11-16T09:28:13.307Z",
+      "kind": "sandbox-removed",
+      "environment": "env-bcd644c746ef0a2724af78227fc9cf3aa752c6f145d565eb69910d32fb1e2e27",
+      "result": {
+        "status": "success",
+        "resources": [
+          {
+            "resource": "disk",
+            "status": "removed"
+          },
+          {
+            "resource": "workspace",
+            "status": "removed"
+          },
+          {
+            "resource": "artifacts",
+            "status": "removed"
+          },
+          {
+            "resource": "runtime",
+            "status": "removed"
+          }
+        ]
+      },
+      "observation": {
+        "condition": "removed",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "absent"
+          },
+          "workspace": {
+            "status": "absent"
+          },
+          "artifacts": {
+            "status": "absent"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "520870694912"
+          }
+        }
+      }
+    },
+    {
+      "at": "2026-11-16T09:29:49.774Z",
+      "kind": "sandbox-start",
+      "environment": "env-cdbc2953b53a92774e1c645892c2fed6702a61f45eab57716383cd24d5faeff9",
+      "result": {
+        "status": "success",
+        "boot": "boot-64076349-33d7-4d99-bdb4-385d6163a595"
+      }
+    },
+    {
+      "at": "2026-11-16T09:29:52.971Z",
+      "kind": "git-gate",
+      "oid": "7323d9ea02e506f700279773063285fedde060c0"
+    },
+    {
+      "at": "2026-11-16T09:29:52.998Z",
+      "kind": "pi-effective",
+      "role": "builder",
+      "tools": [
+        "factory_bash"
+      ],
+      "model": "gpt-6-luna",
+      "api": "openai-responses",
+      "authType": "oauth"
+    },
+    {
+      "at": "2026-11-16T09:29:52.999Z",
+      "kind": "activation-ceased",
+      "id": "pi-no-model-loadout",
+      "scope": "Pi session disposed; pre-request gate closed"
+    },
+    {
+      "at": "2026-11-16T09:29:53.006Z",
+      "kind": "pi-effective",
+      "role": "spec",
+      "tools": [
+        "factory_read"
+      ],
+      "model": "gpt-6-luna",
+      "api": "openai-responses",
+      "authType": "oauth"
+    },
+    {
+      "at": "2026-11-16T09:29:53.006Z",
+      "kind": "activation-ceased",
+      "id": "pi-no-model-loadout",
+      "scope": "Pi session disposed; pre-request gate closed"
+    },
+    {
+      "at": "2026-11-16T09:29:53.033Z",
+      "kind": "claude-spawn",
+      "id": "claude-no-model-handshake",
+      "pid": 34253,
+      "ownProcessGroup": true
+    },
+    {
+      "at": "2026-11-16T09:29:53.729Z",
+      "kind": "activation-ceased",
+      "id": "claude-no-model-handshake",
+      "host": {
+        "confirmed": true,
+        "members": [],
+        "pgid": 34253
+      },
+      "toolSettled": false
+    },
+    {
+      "at": "2026-11-16T09:29:55.256Z",
+      "kind": "sandbox-stopped",
+      "environment": "env-cdbc2953b53a92774e1c645892c2fed6702a61f45eab57716383cd24d5faeff9",
+      "boot": "boot-64076349-33d7-4d99-bdb4-385d6163a595",
+      "stop": {
+        "status": "success",
+        "cessationConfirmed": true,
+        "termination": "unconfirmed",
+        "guestFinalization": "observed"
+      },
+      "observation": {
+        "condition": "stopped",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "boot": "boot-64076349-33d7-4d99-bdb4-385d6163a595",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "observed",
+            "virtualBytes": "4294967296",
+            "allocatedBytes": "627511296"
+          },
+          "workspace": {
+            "status": "observed",
+            "logicalBytes": "45190",
+            "allocatedBytes": "237568"
+          },
+          "artifacts": {
+            "status": "observed",
+            "logicalBytes": "163",
+            "allocatedBytes": "8192"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "518544941056"
+          }
+        }
+      }
+    },
+    {
+      "at": "2026-11-16T09:29:55.600Z",
+      "kind": "sandbox-removed",
+      "environment": "env-cdbc2953b53a92774e1c645892c2fed6702a61f45eab57716383cd24d5faeff9",
+      "result": {
+        "status": "success",
+        "resources": [
+          {
+            "resource": "disk",
+            "status": "removed"
+          },
+          {
+            "resource": "workspace",
+            "status": "removed"
+          },
+          {
+            "resource": "artifacts",
+            "status": "removed"
+          },
+          {
+            "resource": "runtime",
+            "status": "removed"
+          }
+        ]
+      },
+      "observation": {
+        "condition": "removed",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "absent"
+          },
+          "workspace": {
+            "status": "absent"
+          },
+          "artifacts": {
+            "status": "absent"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "518544941056"
+          }
+        }
+      }
+    },
+    {
+      "at": "2026-11-16T09:31:45.339Z",
+      "kind": "sandbox-start",
+      "environment": "env-bc651f95e497111ffd04647438f16c0e343ec813352d1764b61f884fe2ae1b6e",
+      "result": {
+        "status": "success",
+        "boot": "boot-7d025084-39e2-4d8d-9ac9-3ab4110bea65"
+      }
+    },
+    {
+      "at": "2026-11-16T09:31:50.114Z",
+      "kind": "git-gate",
+      "oid": "9390612409af5fd002417752f96c54a6909db48b"
+    },
+    {
+      "at": "2026-11-16T09:31:50.116Z",
+      "kind": "admitted",
+      "id": "complement-claude-builder-1",
+      "engine": "claude",
+      "role": "builder",
+      "newCampaignActivations": 1,
+      "totalAcrossCampaigns": 21
+    },
+    {
+      "at": "2026-11-16T09:31:50.140Z",
+      "kind": "claude-spawn",
+      "id": "complement-claude-builder-1",
+      "pid": 43120,
+      "ownProcessGroup": true
+    },
+    {
+      "at": "2026-11-16T09:31:50.822Z",
+      "kind": "claude-effective",
+      "id": "complement-claude-builder-1",
+      "model": "claude-haiku-5-5",
+      "tools": [
+        "mcp__factory__bash"
+      ],
+      "apiKeySource": "none",
+      "mcp": [
+        {
+          "name": "factory",
+          "status": "connected",
+          "source": "sdk"
+        }
+      ]
+    },
+    {
+      "at": "2026-11-16T09:31:52.494Z",
+      "kind": "tool-start",
+      "id": "complement-claude-builder-1",
+      "name": "bash"
+    },
+    {
+      "at": "2026-11-16T09:31:52.525Z",
+      "kind": "guest-progress-observed",
+      "id": "complement-claude-builder-1"
+    },
+    {
+      "at": "2026-11-16T09:31:52.525Z",
+      "kind": "cancel-request",
+      "id": "complement-claude-builder-1"
+    },
+    {
+      "at": "2026-11-16T09:31:52.529Z",
+      "kind": "tool-end",
+      "id": "complement-claude-builder-1",
+      "status": "failure",
+      "code": "TOOL_CHANNEL_CLOSED"
+    },
+    {
+      "at": "2026-11-16T09:31:56.540Z",
+      "kind": "sandbox-stopped",
+      "environment": "env-bc651f95e497111ffd04647438f16c0e343ec813352d1764b61f884fe2ae1b6e",
+      "boot": "boot-7d025084-39e2-4d8d-9ac9-3ab4110bea65",
+      "stop": {
+        "status": "success",
+        "cessationConfirmed": true,
+        "termination": "unconfirmed",
+        "guestFinalization": "observed"
+      },
+      "observation": {
+        "condition": "stopped",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "boot": "boot-7d025084-39e2-4d8d-9ac9-3ab4110bea65",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "observed",
+            "virtualBytes": "4294967296",
+            "allocatedBytes": "627511296"
+          },
+          "workspace": {
+            "status": "observed",
+            "logicalBytes": "45213",
+            "allocatedBytes": "245760"
+          },
+          "artifacts": {
+            "status": "observed",
+            "logicalBytes": "163",
+            "allocatedBytes": "12288"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "517012963328"
+          }
+        }
+      }
+    },
+    {
+      "at": "2026-11-16T09:31:57.242Z",
+      "kind": "activation-ceased",
+      "id": "complement-claude-builder-1",
+      "host": {
+        "confirmed": true,
+        "members": [],
+        "pgid": 43120
+      },
+      "toolSettled": true
+    },
+    {
+      "at": "2026-11-16T09:31:57.799Z",
+      "kind": "sandbox-removed",
+      "environment": "env-bc651f95e497111ffd04647438f16c0e343ec813352d1764b61f884fe2ae1b6e",
+      "result": {
+        "status": "success",
+        "resources": [
+          {
+            "resource": "disk",
+            "status": "removed"
+          },
+          {
+            "resource": "workspace",
+            "status": "removed"
+          },
+          {
+            "resource": "artifacts",
+            "status": "removed"
+          },
+          {
+            "resource": "runtime",
+            "status": "removed"
+          }
+        ]
+      },
+      "observation": {
+        "condition": "removed",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "absent"
+          },
+          "workspace": {
+            "status": "absent"
+          },
+          "artifacts": {
+            "status": "absent"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "517012963328"
+          }
+        }
+      }
+    },
+    {
+      "at": "2026-11-16T09:31:57.799Z",
+      "kind": "substitute-admission-permitted",
+      "after": "host process group empty and guest Sandbox cessation confirmed"
+    },
+    {
+      "at": "2026-11-16T09:32:21.518Z",
+      "kind": "sandbox-start",
+      "environment": "env-c34e2b7c86ac7b22b64e85da92067aa0057c4ddfbc7f15fa029f5bc6f01bbc97",
+      "result": {
+        "status": "success",
+        "boot": "boot-db285b30-3b02-4b24-8938-1a90fafc1962"
+      }
+    },
+    {
+      "at": "2026-11-16T09:32:24.083Z",
+      "kind": "git-gate",
+      "oid": "13aea0bd49a9d87182b30f03bbfda6a4eeff6776"
+    },
+    {
+      "at": "2026-11-16T09:32:24.084Z",
+      "kind": "admitted",
+      "id": "complement-claude-builder-2",
+      "engine": "claude",
+      "role": "builder",
+      "newCampaignActivations": 2,
+      "totalAcrossCampaigns": 22
+    },
+    {
+      "at": "2026-11-16T09:32:24.099Z",
+      "kind": "claude-spawn",
+      "id": "complement-claude-builder-2",
+      "pid": 55088,
+      "ownProcessGroup": true
+    },
+    {
+      "at": "2026-11-16T09:32:24.580Z",
+      "kind": "claude-effective",
+      "id": "complement-claude-builder-2",
+      "model": "claude-haiku-5-5",
+      "tools": [
+        "mcp__factory__bash"
+      ],
+      "apiKeySource": "none",
+      "mcp": [
+        {
+          "name": "factory",
+          "status": "connected",
+          "source": "sdk"
+        }
+      ]
+    },
+    {
+      "at": "2026-11-16T09:32:28.698Z",
+      "kind": "tool-start",
+      "id": "complement-claude-builder-2",
+      "name": "bash"
+    },
+    {
+      "at": "2026-11-16T09:32:29.221Z",
+      "kind": "tool-end",
+      "id": "complement-claude-builder-2",
+      "status": "success",
+      "exitCode": 0
+    },
+    {
+      "at": "2026-11-16T09:32:30.867Z",
+      "kind": "activation-ceased",
+      "id": "complement-claude-builder-2",
+      "host": {
+        "confirmed": true,
+        "members": [],
+        "pgid": 55088
+      },
+      "toolSettled": true
+    },
+    {
+      "at": "2026-11-16T09:32:31.127Z",
+      "kind": "git-gate",
+      "oid": "13aea0bd49a9d87182b30f03bbfda6a4eeff6776"
+    },
+    {
+      "at": "2026-11-16T09:32:31.127Z",
+      "kind": "review-barrier",
+      "builderId": "complement-claude-builder-2",
+      "scope": "Builder activation ceased before reviewer admission; Claude pre-request boundary unavailable"
+    },
+    {
+      "at": "2026-11-16T09:32:31.148Z",
+      "kind": "pi-effective",
+      "role": "standards",
+      "tools": [
+        "factory_read"
+      ],
+      "model": "gpt-6-luna",
+      "api": "openai-responses",
+      "authType": "oauth"
+    },
+    {
+      "at": "2026-11-16T09:32:31.148Z",
+      "kind": "admitted",
+      "id": "complement-pi-standards-3",
+      "engine": "pi",
+      "role": "standards",
+      "newCampaignActivations": 3,
+      "totalAcrossCampaigns": 23
+    },
+    {
+      "at": "2026-11-16T09:32:31.157Z",
+      "kind": "pi-model-request",
+      "id": "complement-pi-standards-3",
+      "request": 1
+    },
+    {
+      "at": "2026-11-16T09:32:35.141Z",
+      "kind": "tool-start",
+      "id": "complement-pi-standards-3",
+      "name": "factory_read"
+    },
+    {
+      "at": "2026-11-16T09:32:35.141Z",
+      "kind": "tool-start",
+      "id": "complement-pi-standards-3",
+      "name": "factory_read"
+    },
+    {
+      "at": "2026-11-16T09:32:35.215Z",
+      "kind": "pi-model-request",
+      "id": "complement-pi-standards-3",
+      "request": 2
+    },
+    {
+      "at": "2026-11-16T09:32:37.184Z",
+      "kind": "tool-start",
+      "id": "complement-pi-standards-3",
+      "name": "factory_read"
+    },
+    {
+      "at": "2026-11-16T09:32:37.340Z",
+      "kind": "pi-model-request",
+      "id": "complement-pi-standards-3",
+      "request": 3
+    },
+    {
+      "at": "2026-11-16T09:32:39.367Z",
+      "kind": "activation-ceased",
+      "id": "complement-pi-standards-3",
+      "scope": "Pi session disposed; pre-request gate closed"
+    },
+    {
+      "at": "2026-11-16T09:32:39.372Z",
+      "kind": "pi-effective",
+      "role": "spec",
+      "tools": [
+        "factory_read"
+      ],
+      "model": "gpt-6-luna",
+      "api": "openai-responses",
+      "authType": "oauth"
+    },
+    {
+      "at": "2026-11-16T09:32:39.372Z",
+      "kind": "admitted",
+      "id": "complement-pi-spec-4",
+      "engine": "pi",
+      "role": "spec",
+      "newCampaignActivations": 4,
+      "totalAcrossCampaigns": 24
+    },
+    {
+      "at": "2026-11-16T09:32:39.373Z",
+      "kind": "pi-model-request",
+      "id": "complement-pi-spec-4",
+      "request": 1
+    },
+    {
+      "at": "2026-11-16T09:32:42.561Z",
+      "kind": "tool-start",
+      "id": "complement-pi-spec-4",
+      "name": "factory_read"
+    },
+    {
+      "at": "2026-11-16T09:32:42.561Z",
+      "kind": "tool-start",
+      "id": "complement-pi-spec-4",
+      "name": "factory_read"
+    },
+    {
+      "at": "2026-11-16T09:32:42.741Z",
+      "kind": "pi-model-request",
+      "id": "complement-pi-spec-4",
+      "request": 2
+    },
+    {
+      "at": "2026-11-16T09:32:44.537Z",
+      "kind": "tool-start",
+      "id": "complement-pi-spec-4",
+      "name": "factory_read"
+    },
+    {
+      "at": "2026-11-16T09:32:44.694Z",
+      "kind": "pi-model-request",
+      "id": "complement-pi-spec-4",
+      "request": 3
+    },
+    {
+      "at": "2026-11-16T09:32:46.585Z",
+      "kind": "activation-ceased",
+      "id": "complement-pi-spec-4",
+      "scope": "Pi session disposed; pre-request gate closed"
+    },
+    {
+      "at": "2026-11-16T09:32:46.586Z",
+      "kind": "reviews-delivered",
+      "builder": "claude",
+      "standardsId": "complement-pi-standards-3",
+      "specId": "complement-pi-spec-4"
+    },
+    {
+      "at": "2026-11-16T09:32:46.586Z",
+      "kind": "admitted",
+      "id": "complement-claude-builder-5",
+      "engine": "claude",
+      "role": "builder",
+      "newCampaignActivations": 5,
+      "totalAcrossCampaigns": 25
+    },
+    {
+      "at": "2026-11-16T09:32:46.591Z",
+      "kind": "claude-spawn",
+      "id": "complement-claude-builder-5",
+      "pid": 55756,
+      "ownProcessGroup": true
+    },
+    {
+      "at": "2026-11-16T09:32:46.943Z",
+      "kind": "claude-effective",
+      "id": "complement-claude-builder-5",
+      "model": "claude-haiku-5-5",
+      "tools": [
+        "mcp__factory__bash"
+      ],
+      "apiKeySource": "none",
+      "mcp": [
+        {
+          "name": "factory",
+          "status": "connected",
+          "source": "sdk"
+        }
+      ]
+    },
+    {
+      "at": "2026-11-16T09:32:51.044Z",
+      "kind": "tool-start",
+      "id": "complement-claude-builder-5",
+      "name": "bash"
+    },
+    {
+      "at": "2026-11-16T09:32:51.076Z",
+      "kind": "tool-end",
+      "id": "complement-claude-builder-5",
+      "status": "success",
+      "exitCode": 0
+    },
+    {
+      "at": "2026-11-16T09:32:53.970Z",
+      "kind": "activation-ceased",
+      "id": "complement-claude-builder-5",
+      "host": {
+        "confirmed": true,
+        "members": [],
+        "pgid": 55756
+      },
+      "toolSettled": true
+    },
+    {
+      "at": "2026-11-16T09:32:54.128Z",
+      "kind": "git-gate",
+      "oid": "13aea0bd49a9d87182b30f03bbfda6a4eeff6776"
+    },
+    {
+      "at": "2026-11-16T09:32:54.132Z",
+      "kind": "pi-effective",
+      "role": "builder",
+      "tools": [
+        "factory_bash"
+      ],
+      "model": "gpt-6-luna",
+      "api": "openai-responses",
+      "authType": "oauth"
+    },
+    {
+      "at": "2026-11-16T09:32:54.133Z",
+      "kind": "admitted",
+      "id": "complement-pi-builder-6",
+      "engine": "pi",
+      "role": "builder",
+      "newCampaignActivations": 6,
+      "totalAcrossCampaigns": 26
+    },
+    {
+      "at": "2026-11-16T09:32:54.134Z",
+      "kind": "pi-model-request",
+      "id": "complement-pi-builder-6",
+      "request": 1
+    },
+    {
+      "at": "2026-11-16T09:32:57.106Z",
+      "kind": "tool-start",
+      "id": "complement-pi-builder-6",
+      "name": "factory_bash"
+    },
+    {
+      "at": "2026-11-16T09:32:57.308Z",
+      "kind": "pi-model-request",
+      "id": "complement-pi-builder-6",
+      "request": 2
+    },
+    {
+      "at": "2026-11-16T09:32:59.377Z",
+      "kind": "activation-ceased",
+      "id": "complement-pi-builder-6",
+      "scope": "Pi session disposed; pre-request gate closed"
+    },
+    {
+      "at": "2026-11-16T09:32:59.527Z",
+      "kind": "git-gate",
+      "oid": "13aea0bd49a9d87182b30f03bbfda6a4eeff6776"
+    },
+    {
+      "at": "2026-11-16T09:32:59.527Z",
+      "kind": "review-barrier",
+      "builderId": "complement-pi-builder-6",
+      "scope": "Builder activation ceased before reviewer admission; Claude pre-request boundary unavailable"
+    },
+    {
+      "at": "2026-11-16T09:32:59.527Z",
+      "kind": "admitted",
+      "id": "complement-claude-standards-7",
+      "engine": "claude",
+      "role": "standards",
+      "newCampaignActivations": 7,
+      "totalAcrossCampaigns": 27
+    },
+    {
+      "at": "2026-11-16T09:32:59.532Z",
+      "kind": "claude-spawn",
+      "id": "complement-claude-standards-7",
+      "pid": 56075,
+      "ownProcessGroup": true
+    },
+    {
+      "at": "2026-11-16T09:32:59.869Z",
+      "kind": "claude-effective",
+      "id": "complement-claude-standards-7",
+      "model": "claude-haiku-5-5",
+      "tools": [
+        "mcp__factory__read"
+      ],
+      "apiKeySource": "none",
+      "mcp": [
+        {
+          "name": "factory",
+          "status": "connected",
+          "source": "sdk"
+        }
+      ]
+    },
+    {
+      "at": "2026-11-16T09:33:01.875Z",
+      "kind": "tool-start",
+      "id": "complement-claude-standards-7",
+      "name": "read"
+    },
+    {
+      "at": "2026-11-16T09:33:01.946Z",
+      "kind": "tool-start",
+      "id": "complement-claude-standards-7",
+      "name": "read"
+    },
+    {
+      "at": "2026-11-16T09:33:04.587Z",
+      "kind": "activation-ceased",
+      "id": "complement-claude-standards-7",
+      "host": {
+        "confirmed": true,
+        "members": [],
+        "pgid": 56075
+      },
+      "toolSettled": false
+    },
+    {
+      "at": "2026-11-16T09:33:04.588Z",
+      "kind": "admitted",
+      "id": "complement-claude-spec-8",
+      "engine": "claude",
+      "role": "spec",
+      "newCampaignActivations": 8,
+      "totalAcrossCampaigns": 28
+    },
+    {
+      "at": "2026-11-16T09:33:04.592Z",
+      "kind": "claude-spawn",
+      "id": "complement-claude-spec-8",
+      "pid": 56210,
+      "ownProcessGroup": true
+    },
+    {
+      "at": "2026-11-16T09:33:04.909Z",
+      "kind": "claude-effective",
+      "id": "complement-claude-spec-8",
+      "model": "claude-haiku-5-5",
+      "tools": [
+        "mcp__factory__read"
+      ],
+      "apiKeySource": "none",
+      "mcp": [
+        {
+          "name": "factory",
+          "status": "connected",
+          "source": "sdk"
+        }
+      ]
+    },
+    {
+      "at": "2026-11-16T09:33:08.541Z",
+      "kind": "tool-start",
+      "id": "complement-claude-spec-8",
+      "name": "read"
+    },
+    {
+      "at": "2026-11-16T09:33:08.615Z",
+      "kind": "tool-start",
+      "id": "complement-claude-spec-8",
+      "name": "read"
+    },
+    {
+      "at": "2026-11-16T09:33:10.735Z",
+      "kind": "activation-ceased",
+      "id": "complement-claude-spec-8",
+      "host": {
+        "confirmed": true,
+        "members": [],
+        "pgid": 56210
+      },
+      "toolSettled": false
+    },
+    {
+      "at": "2026-11-16T09:33:10.736Z",
+      "kind": "reviews-delivered",
+      "builder": "pi",
+      "standardsId": "complement-claude-standards-7",
+      "specId": "complement-claude-spec-8"
+    },
+    {
+      "at": "2026-11-16T09:33:10.738Z",
+      "kind": "pi-effective",
+      "role": "builder",
+      "tools": [
+        "factory_bash"
+      ],
+      "model": "gpt-6-luna",
+      "api": "openai-responses",
+      "authType": "oauth"
+    },
+    {
+      "at": "2026-11-16T09:33:10.738Z",
+      "kind": "admitted",
+      "id": "complement-pi-builder-9",
+      "engine": "pi",
+      "role": "builder",
+      "newCampaignActivations": 9,
+      "totalAcrossCampaigns": 29
+    },
+    {
+      "at": "2026-11-16T09:33:10.740Z",
+      "kind": "pi-model-request",
+      "id": "complement-pi-builder-9",
+      "request": 1
+    },
+    {
+      "at": "2026-11-16T09:33:12.907Z",
+      "kind": "tool-start",
+      "id": "complement-pi-builder-9",
+      "name": "factory_bash"
+    },
+    {
+      "at": "2026-11-16T09:33:12.942Z",
+      "kind": "pi-model-request",
+      "id": "complement-pi-builder-9",
+      "request": 2
+    },
+    {
+      "at": "2026-11-16T09:33:14.923Z",
+      "kind": "activation-ceased",
+      "id": "complement-pi-builder-9",
+      "scope": "Pi session disposed; pre-request gate closed"
+    },
+    {
+      "at": "2026-11-16T09:33:15.074Z",
+      "kind": "git-gate",
+      "oid": "13aea0bd49a9d87182b30f03bbfda6a4eeff6776"
+    },
+    {
+      "at": "2026-11-16T09:33:16.489Z",
+      "kind": "sandbox-stopped",
+      "environment": "env-c34e2b7c86ac7b22b64e85da92067aa0057c4ddfbc7f15fa029f5bc6f01bbc97",
+      "boot": "boot-db285b30-3b02-4b24-8938-1a90fafc1962",
+      "stop": {
+        "status": "success",
+        "cessationConfirmed": true,
+        "termination": "unconfirmed",
+        "guestFinalization": "observed"
+      },
+      "observation": {
+        "condition": "stopped",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "boot": "boot-db285b30-3b02-4b24-8938-1a90fafc1962",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "observed",
+            "virtualBytes": "4294967296",
+            "allocatedBytes": "627511296"
+          },
+          "workspace": {
+            "status": "observed",
+            "logicalBytes": "45190",
+            "allocatedBytes": "237568"
+          },
+          "artifacts": {
+            "status": "observed",
+            "logicalBytes": "163",
+            "allocatedBytes": "8192"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "517018284032"
+          }
+        }
+      }
+    },
+    {
+      "at": "2026-11-16T09:33:16.702Z",
+      "kind": "sandbox-removed",
+      "environment": "env-c34e2b7c86ac7b22b64e85da92067aa0057c4ddfbc7f15fa029f5bc6f01bbc97",
+      "result": {
+        "status": "success",
+        "resources": [
+          {
+            "resource": "disk",
+            "status": "removed"
+          },
+          {
+            "resource": "workspace",
+            "status": "removed"
+          },
+          {
+            "resource": "artifacts",
+            "status": "removed"
+          },
+          {
+            "resource": "runtime",
+            "status": "removed"
+          }
+        ]
+      },
+      "observation": {
+        "condition": "removed",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "absent"
+          },
+          "workspace": {
+            "status": "absent"
+          },
+          "artifacts": {
+            "status": "absent"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "517018284032"
+          }
+        }
+      }
+    },
+    {
+      "at": "2026-11-16T09:36:03.551Z",
+      "kind": "sandbox-start",
+      "environment": "env-30594511736f6582960fab518c6fd392402dff2ec63e0eff5825626566a13be1",
+      "result": {
+        "status": "success",
+        "boot": "boot-42deba78-81b1-49a9-8e86-d13dbdcef5a7"
+      }
+    },
+    {
+      "at": "2026-11-16T09:36:06.082Z",
+      "kind": "git-gate",
+      "oid": "044f2867eb705bd4b6713c21a6ac69cc06c80d52"
+    },
+    {
+      "at": "2026-11-16T09:36:06.085Z",
+      "kind": "admitted",
+      "id": "complement-claude-builder-10",
+      "engine": "claude",
+      "role": "builder",
+      "newCampaignActivations": 10,
+      "totalAcrossCampaigns": 30
+    },
+    {
+      "at": "2026-11-16T09:36:06.104Z",
+      "kind": "claude-spawn",
+      "id": "complement-claude-builder-10",
+      "pid": 59294,
+      "ownProcessGroup": true
+    },
+    {
+      "at": "2026-11-16T09:36:06.614Z",
+      "kind": "claude-effective",
+      "id": "complement-claude-builder-10",
+      "model": "claude-haiku-5-5",
+      "tools": [
+        "mcp__factory__bash"
+      ],
+      "apiKeySource": "none",
+      "mcp": [
+        {
+          "name": "factory",
+          "status": "connected",
+          "source": "sdk"
+        }
+      ]
+    },
+    {
+      "at": "2026-11-16T09:36:09.867Z",
+      "kind": "tool-start",
+      "id": "complement-claude-builder-10",
+      "name": "bash"
+    },
+    {
+      "at": "2026-11-16T09:36:10.095Z",
+      "kind": "tool-end",
+      "id": "complement-claude-builder-10",
+      "status": "success",
+      "exitCode": 0
+    },
+    {
+      "at": "2026-11-16T09:36:12.667Z",
+      "kind": "activation-ceased",
+      "id": "complement-claude-builder-10",
+      "host": {
+        "confirmed": true,
+        "members": [],
+        "pgid": 59294
+      },
+      "toolSettled": true
+    },
+    {
+      "at": "2026-11-16T09:36:14.158Z",
+      "kind": "sandbox-stopped",
+      "environment": "env-30594511736f6582960fab518c6fd392402dff2ec63e0eff5825626566a13be1",
+      "boot": "boot-42deba78-81b1-49a9-8e86-d13dbdcef5a7",
+      "stop": {
+        "status": "success",
+        "cessationConfirmed": true,
+        "termination": "unconfirmed",
+        "guestFinalization": "observed"
+      },
+      "observation": {
+        "condition": "stopped",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "boot": "boot-42deba78-81b1-49a9-8e86-d13dbdcef5a7",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "observed",
+            "virtualBytes": "4294967296",
+            "allocatedBytes": "627511296"
+          },
+          "workspace": {
+            "status": "observed",
+            "logicalBytes": "45192",
+            "allocatedBytes": "237568"
+          },
+          "artifacts": {
+            "status": "observed",
+            "logicalBytes": "163",
+            "allocatedBytes": "8192"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "516602859520"
+          }
+        }
+      }
+    },
+    {
+      "at": "2026-11-16T09:36:14.429Z",
+      "kind": "sandbox-removed",
+      "environment": "env-30594511736f6582960fab518c6fd392402dff2ec63e0eff5825626566a13be1",
+      "result": {
+        "status": "success",
+        "resources": [
+          {
+            "resource": "disk",
+            "status": "removed"
+          },
+          {
+            "resource": "workspace",
+            "status": "removed"
+          },
+          {
+            "resource": "artifacts",
+            "status": "removed"
+          },
+          {
+            "resource": "runtime",
+            "status": "removed"
+          }
+        ]
+      },
+      "observation": {
+        "condition": "removed",
+        "cessationConfirmed": true,
+        "consumption": "unavailable",
+        "storage": {
+          "configuredVirtualBytes": "4294967296",
+          "minFreeBytes": "1073741824",
+          "disk": {
+            "status": "absent"
+          },
+          "workspace": {
+            "status": "absent"
+          },
+          "artifacts": {
+            "status": "absent"
+          },
+          "filesystem": {
+            "status": "observed",
+            "availableBytes": "516602859520"
+          }
+        }
+      }
+    }
+  ],
+  "results": [
+    {
+      "id": "complement-claude-builder-1",
+      "engine": "claude",
+      "role": "builder",
+      "text": "",
+      "readPaths": [],
+      "toolCalls": 1,
+      "sessionId": "90c946b4-d5c4-4b3e-87b2-5e033f3d9f72",
+      "effectiveTools": [
+        "mcp__factory__bash"
+      ],
+      "hostCessation": {
+        "confirmed": true,
+        "members": [],
+        "pgid": 43120
+      },
+      "cancellation": {
+        "toolStarted": true,
+        "progressObserved": true,
+        "cancelRequested": true,
+        "toolSettled": true,
+        "hostGroupEmpty": true,
+        "sandboxCessation": true,
+        "markerStable": true,
+        "lateMarkerPresent": false
+      }
+    },
+    {
+      "id": "complement-claude-builder-2",
+      "engine": "claude",
+      "role": "builder",
+      "text": "`add.mjs` contains `export function add(a,b){ return a+b; }`. The check printed `FIXTURE_PASS` with exit code 0. No files were changed.",
+      "readPaths": [],
+      "toolCalls": 1,
+      "sessionId": "25736535-4c86-4fcb-b080-8e793c6c50ba",
+      "effectiveTools": [
+        "mcp__factory__bash"
+      ],
+      "outcome": {
+        "subtype": "success",
+        "isError": false,
+        "usage": {
+          "input_tokens": 4,
+          "cache_creation_input_tokens": 1754,
+          "cache_read_input_tokens": 1539,
+          "output_tokens": 204,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 1754,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "global",
+          "iterations": [],
+          "speed": "standard",
+          "fallback_credit": null
+        },
+        "estimatedCostUsd": 0.00046859
+      },
+      "hostCessation": {
+        "confirmed": true,
+        "members": [],
+        "pgid": 55088
+      }
+    },
+    {
+      "engine": "pi",
+      "role": "standards",
+      "text": "PASS — CLAUDE-STD — The code uses a concise ESM function.",
+      "readPaths": [
+        "/workspace/checkout/add.mjs",
+        "/workspace/checkout/standards.txt",
+        "/workspace/checkout/standards.txt"
+      ],
+      "toolCalls": 3,
+      "authType": "oauth",
+      "sessionId": "01a1e3b3-7424-76e2-9b93-5b6bfd383884",
+      "effectiveTools": [
+        "factory_read"
+      ],
+      "id": "complement-pi-standards-3",
+      "requests": 3,
+      "usage": [
+        {
+          "model": "gpt-6-luna",
+          "stopReason": "toolUse",
+          "usage": {
+            "input": 218,
+            "output": 61,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "reasoning": 0,
+            "totalTokens": 279,
+            "cost": {
+              "input": 2.18e-05,
+              "output": 3.05e-05,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 5.23e-05,
+              "totalFromProvider": false
+            }
+          }
+        },
+        {
+          "model": "gpt-6-luna",
+          "stopReason": "toolUse",
+          "usage": {
+            "input": 318,
+            "output": 25,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "reasoning": 0,
+            "totalTokens": 343,
+            "cost": {
+              "input": 3.18e-05,
+              "output": 1.2499999999999999e-05,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 4.43e-05,
+              "totalFromProvider": false
+            }
+          }
+        },
+        {
+          "model": "gpt-6-luna",
+          "stopReason": "stop",
+          "usage": {
+            "input": 360,
+            "output": 21,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "reasoning": 0,
+            "totalTokens": 381,
+            "cost": {
+              "input": 3.6e-05,
+              "output": 1.05e-05,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 4.65e-05,
+              "totalFromProvider": false
+            }
+          }
+        }
+      ],
+      "suspension": {
+        "disposed": true,
+        "noFutureAdmission": true,
+        "requestCount": 3
+      }
+    },
+    {
+      "engine": "pi",
+      "role": "spec",
+      "text": "PASS CLAUDE-SPEC — `add` returns `a+b`, as specified for integers.",
+      "readPaths": [
+        "/workspace/checkout/add.mjs",
+        "/workspace/checkout/request.txt",
+        "/workspace/checkout/request.txt"
+      ],
+      "toolCalls": 3,
+      "authType": "oauth",
+      "sessionId": "01a1e3b3-944b-76e2-9b93-5b6cbfcb5f12",
+      "effectiveTools": [
+        "factory_read"
+      ],
+      "id": "complement-pi-spec-4",
+      "requests": 3,
+      "usage": [
+        {
+          "model": "gpt-6-luna",
+          "stopReason": "toolUse",
+          "usage": {
+            "input": 216,
+            "output": 59,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "reasoning": 0,
+            "totalTokens": 275,
+            "cost": {
+              "input": 2.1600000000000003e-05,
+              "output": 2.95e-05,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 5.11e-05,
+              "totalFromProvider": false
+            }
+          }
+        },
+        {
+          "model": "gpt-6-luna",
+          "stopReason": "toolUse",
+          "usage": {
+            "input": 314,
+            "output": 23,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "reasoning": 0,
+            "totalTokens": 337,
+            "cost": {
+              "input": 3.1400000000000004e-05,
+              "output": 1.15e-05,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 4.2900000000000006e-05,
+              "totalFromProvider": false
+            }
+          }
+        },
+        {
+          "model": "gpt-6-luna",
+          "stopReason": "stop",
+          "usage": {
+            "input": 355,
+            "output": 24,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "reasoning": 0,
+            "totalTokens": 379,
+            "cost": {
+              "input": 3.55e-05,
+              "output": 1.2e-05,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 4.75e-05,
+              "totalFromProvider": false
+            }
+          }
+        }
+      ],
+      "suspension": {
+        "disposed": true,
+        "noFutureAdmission": true,
+        "requestCount": 3
+      }
+    },
+    {
+      "id": "complement-claude-builder-5",
+      "engine": "claude",
+      "role": "builder",
+      "text": "**CLAUDE-STD:** Confirmed. The report's PASS holds: `add.mjs` is a single concise ESM export. No changes needed.\n\n**CLAUDE-SPEC:** Confirmed. `add(a,b)` returns `a+b`, which matches the spec for integers. No changes needed.\n\nI did not modify any files. The file contents were just the one-line function and a trailing `exit_code=0` from the shell output, which I ignored.",
+      "readPaths": [],
+      "toolCalls": 1,
+      "sessionId": "b837cc00-7be3-4bad-a5ef-f4c7db78e6dd",
+      "effectiveTools": [
+        "mcp__factory__bash"
+      ],
+      "outcome": {
+        "subtype": "success",
+        "isError": false,
+        "usage": {
+          "input_tokens": 4,
+          "cache_creation_input_tokens": 1788,
+          "cache_read_input_tokens": 1585,
+          "output_tokens": 468,
+          "output_tokens_details": {
+            "thinking_tokens": 258
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 1788,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "global",
+          "iterations": [],
+          "speed": "standard",
+          "fallback_credit": null
+        },
+        "estimatedCostUsd": 0.0006078500000000001
+      },
+      "hostCessation": {
+        "confirmed": true,
+        "members": [],
+        "pgid": 55756
+      }
+    },
+    {
+      "engine": "pi",
+      "role": "builder",
+      "text": "`add.mjs` exports `add(a, b)`, which returns `a + b`. Both checks passed: `FIXTURE_PASS`.",
+      "readPaths": [],
+      "toolCalls": 1,
+      "authType": "oauth",
+      "sessionId": "01a1e3b3-cdf4-76e2-9b93-5b6e95fd0082",
+      "effectiveTools": [
+        "factory_bash"
+      ],
+      "id": "complement-pi-builder-6",
+      "requests": 2,
+      "usage": [
+        {
+          "model": "gpt-6-luna",
+          "stopReason": "toolUse",
+          "usage": {
+            "input": 256,
+            "output": 82,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "reasoning": 0,
+            "totalTokens": 338,
+            "cost": {
+              "input": 2.5600000000000002e-05,
+              "output": 4.1e-05,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 6.66e-05,
+              "totalFromProvider": false
+            }
+          }
+        },
+        {
+          "model": "gpt-6-luna",
+          "stopReason": "stop",
+          "usage": {
+            "input": 369,
+            "output": 33,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "reasoning": 0,
+            "totalTokens": 402,
+            "cost": {
+              "input": 3.69e-05,
+              "output": 1.6499999999999998e-05,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 5.34e-05,
+              "totalFromProvider": false
+            }
+          }
+        }
+      ],
+      "suspension": {
+        "disposed": true,
+        "noFutureAdmission": true,
+        "requestCount": 2
+      }
+    },
+    {
+      "id": "complement-claude-standards-7",
+      "engine": "claude",
+      "role": "standards",
+      "text": "PASS PI-STD\n\n`add.mjs` uses an ESM export and a concise single-expression function, which matches \"Use concise ESM functions.\"",
+      "readPaths": [
+        "/workspace/checkout/add.mjs",
+        "/workspace/checkout/standards.txt"
+      ],
+      "toolCalls": 2,
+      "sessionId": "c4791d4b-abe9-4255-962f-79f5224141f1",
+      "effectiveTools": [
+        "mcp__factory__read"
+      ],
+      "outcome": {
+        "subtype": "success",
+        "isError": false,
+        "usage": {
+          "input_tokens": 4,
+          "cache_creation_input_tokens": 1739,
+          "cache_read_input_tokens": 1495,
+          "output_tokens": 248,
+          "output_tokens_details": {
+            "thinking_tokens": 72
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 1739,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "global",
+          "iterations": [],
+          "speed": "standard",
+          "fallback_credit": null
+        },
+        "estimatedCostUsd": 0.00048715
+      },
+      "hostCessation": {
+        "confirmed": true,
+        "members": [],
+        "pgid": 56075
+      }
+    },
+    {
+      "id": "complement-claude-spec-8",
+      "engine": "claude",
+      "role": "spec",
+      "text": "PASS PI-SPEC: `add(a,b)` returns `a+b`, which matches the request spec \"add returns a+b for integers.\"",
+      "readPaths": [
+        "/workspace/checkout/add.mjs",
+        "/workspace/checkout/request.txt"
+      ],
+      "toolCalls": 2,
+      "sessionId": "bf3ae6ea-5f94-4d0f-81bb-c230a83e0ea7",
+      "effectiveTools": [
+        "mcp__factory__read"
+      ],
+      "outcome": {
+        "subtype": "success",
+        "isError": false,
+        "usage": {
+          "input_tokens": 4,
+          "cache_creation_input_tokens": 1739,
+          "cache_read_input_tokens": 1496,
+          "output_tokens": 238,
+          "output_tokens_details": {
+            "thinking_tokens": 65
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 1739,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "global",
+          "iterations": [],
+          "speed": "standard",
+          "fallback_credit": null
+        },
+        "estimatedCostUsd": 0.00048216000000000003
+      },
+      "hostCessation": {
+        "confirmed": true,
+        "members": [],
+        "pgid": 56210
+      }
+    },
+    {
+      "engine": "pi",
+      "role": "builder",
+      "text": "Both reports confirmed:\n\n- Standards: PASS — **PI-STD**\n- Spec: PASS — **PI-SPEC**\n\nNo changes are needed.",
+      "readPaths": [],
+      "toolCalls": 1,
+      "authType": "oauth",
+      "sessionId": "01a1e3b4-0ed1-76e2-9b93-5b71191ff0e5",
+      "effectiveTools": [
+        "factory_bash"
+      ],
+      "id": "complement-pi-builder-9",
+      "requests": 2,
+      "usage": [
+        {
+          "model": "gpt-6-luna",
+          "stopReason": "toolUse",
+          "usage": {
+            "input": 290,
+            "output": 22,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "reasoning": 0,
+            "totalTokens": 312,
+            "cost": {
+              "input": 2.9000000000000004e-05,
+              "output": 1.1e-05,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 4e-05,
+              "totalFromProvider": false
+            }
+          }
+        },
+        {
+          "model": "gpt-6-luna",
+          "stopReason": "stop",
+          "usage": {
+            "input": 339,
+            "output": 33,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "reasoning": 0,
+            "totalTokens": 372,
+            "cost": {
+              "input": 3.3900000000000004e-05,
+              "output": 1.6499999999999998e-05,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 5.0400000000000005e-05,
+              "totalFromProvider": false
+            }
+          }
+        }
+      ],
+      "suspension": {
+        "disposed": true,
+        "noFutureAdmission": true,
+        "requestCount": 2
+      }
+    },
+    {
+      "id": "complement-claude-builder-10",
+      "engine": "claude",
+      "role": "builder",
+      "text": "Yes, I observed redaction. The notice output came back as `███` instead of readable text, and the `FILTER_PROBE_DONE` marker printed. The stderr copy did not appear separately in the result. I did not copy the notice contents anywhere.",
+      "readPaths": [],
+      "toolCalls": 1,
+      "sessionId": "ed130a7a-d226-45c9-8646-d3d67aa457c5",
+      "effectiveTools": [
+        "mcp__factory__bash"
+      ],
+      "outcome": {
+        "subtype": "success",
+        "isError": false,
+        "usage": {
+          "input_tokens": 4,
+          "cache_creation_input_tokens": 1715,
+          "cache_read_input_tokens": 1538,
+          "output_tokens": 293,
+          "output_tokens_details": {
+            "thinking_tokens": 84
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 1715,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "global",
+          "iterations": [],
+          "speed": "standard",
+          "fallback_credit": null
+        },
+        "estimatedCostUsd": 0.0005052800000000001
+      },
+      "hostCessation": {
+        "confirmed": true,
+        "members": [],
+        "pgid": 59294
+      }
+    }
+  ],
+  "runs": [
+    {
+      "mode": "--check",
+      "startedAt": "2026-11-16T09:27:06.506Z",
+      "checks": {},
+      "finishedAt": "2026-11-16T09:28:06.506Z",
+      "error": "Records root directory absent before try; zero models or environments. Conservative debit 60 seconds; no counter reset."
+    },
+    {
+      "mode": "--check",
+      "startedAt": "2026-11-16T09:27:51.303Z",
+      "checks": {
+        "claudeAuth": {
+          "loggedIn": true,
+          "authMethod": "claude.ai",
+          "apiProvider": "firstParty",
+          "subscriptionType": "max"
+        },
+        "snapshot": {
+          "reference": "aabe06abfb20e83593020c0fee19b078d235466b",
+          "matchedSourceFiles": 124,
+          "noNewMvpAdopted": true
+        },
+        "denials": [
+          {
+            "probe": 0,
+            "status": "failure",
+            "code": "WRITE_ROLE_DENIED"
+          },
+          {
+            "probe": 1,
+            "status": "failure",
+            "code": "BASH_ROLE_DENIED"
+          },
+          {
+            "probe": 2,
+            "status": "failure",
+            "code": "READ_PATH_DENIED"
+          },
+          {
+            "probe": 3,
+            "status": "failure",
+            "code": "GUEST_READ_FAILED"
+          },
+          {
+            "probe": 4,
+            "status": "failure",
+            "code": "READ_PATH_DENIED"
+          },
+          {
+            "probe": 5,
+            "status": "failure",
+            "code": "INVALID_TOOL_CALL"
+          }
+        ],
+        "filter": {
+          "splitCanaryFiltered": true,
+          "invalidUtf8Blocked": true,
+          "rawNotReleased": true,
+          "scope": "real Records normal/error/progress-shaped bridge payload; guest progress filtered again before model; no multimodal enabled"
+        },
+        "piBuilder": {
+          "engine": "pi",
+          "role": "builder",
+          "text": "",
+          "readPaths": [],
+          "toolCalls": 0,
+          "authType": "oauth",
+          "sessionId": "01a1e3af-7c56-77a3-987c-23ac55542c90",
+          "effectiveTools": [
+            "factory_bash"
+          ],
+          "suspension": {
+            "disposed": true,
+            "noFutureAdmission": true,
+            "requestCount": 0
+          }
+        },
+        "piReviewer": {
+          "engine": "pi",
+          "role": "spec",
+          "text": "",
+          "readPaths": [],
+          "toolCalls": 0,
+          "authType": "oauth",
+          "sessionId": "01a1e3af-7c62-77a3-987c-23afdeb3f2c3",
+          "effectiveTools": [
+            "factory_read"
+          ],
+          "suspension": {
+            "disposed": true,
+            "noFutureAdmission": true,
+            "requestCount": 0
+          }
+        }
+      },
+      "manifest": {
+        "reference": "aabe06abfb20e83593020c0fee19b078d235466b",
+        "node": "v24.21.0",
+        "claude": "2.1.325 (Claude Code)",
+        "sdk": "0.3.325",
+        "model": "claude-haiku-5-5",
+        "pi": "1.5.2 Factory v3",
+        "piModel": "openai/gpt-6-luna",
+        "piAuth": "native OAuth metadata checked before every prompt",
+        "gondolin": "0.14.0 Factory v1",
+        "guestAssets": {
+          "directory": "$HOME/software-factory-test/assets34/assets",
+          "manifestSha256": "8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807"
+        },
+        "configuration": {
+          "schemaVersion": 1,
+          "profile": "gondolin-qemu-alpine-dev-v1",
+          "memoryMiB": 1024,
+          "vcpus": 1,
+          "diskGiB": 4,
+          "shutdownGraceSeconds": 15,
+          "minFreeSpaceGiB": 1
+        },
+        "root": "$HOME/sfhp-v2/d",
+        "limits": {
+          "activations": 10,
+          "executionMs": 1800000
+        },
+        "previousCampaignClosedAt": 20,
+        "sourceSha256": "c5a7557c69ee3b5c77e4b87cd84bd1329585ff7439d147ed1479b27706cb2f85",
+        "oracleSha256": "3b00b45e34c44bc217abd278f40bbe842d0487e10f11204a5053a0a3a5a318fb",
+        "instructionsSha256": "c1f88171f332ea41a13b71206419fa54d4df372862afb7d4dd22c9f2627df156",
+        "commands": [
+          "node .scratch/software-factory-v2/prototype/complement-proof.mjs --check",
+          "node .scratch/software-factory-v2/prototype/complement-proof.mjs --execute"
+        ],
+        "auth": "existing native personal subscription exception, no copied tokens/API keys",
+        "noExternalPush": true,
+        "control": "fixture"
+      },
+      "error": "CLAUDE_MODEL_NOT_AVAILABLE",
+      "nativeCleanup": [],
+      "finishedAt": "2026-11-16T09:28:13.307Z"
+    },
+    {
+      "mode": "--check",
+      "startedAt": "2026-11-16T09:29:28.843Z",
+      "checks": {
+        "claudeAuth": {
+          "loggedIn": true,
+          "authMethod": "claude.ai",
+          "apiProvider": "firstParty",
+          "subscriptionType": "max"
+        },
+        "snapshot": {
+          "reference": "aabe06abfb20e83593020c0fee19b078d235466b",
+          "matchedSourceFiles": 124,
+          "noNewMvpAdopted": true
+        },
+        "denials": [
+          {
+            "probe": 0,
+            "status": "failure",
+            "code": "WRITE_ROLE_DENIED"
+          },
+          {
+            "probe": 1,
+            "status": "failure",
+            "code": "BASH_ROLE_DENIED"
+          },
+          {
+            "probe": 2,
+            "status": "failure",
+            "code": "READ_PATH_DENIED"
+          },
+          {
+            "probe": 3,
+            "status": "failure",
+            "code": "GUEST_READ_FAILED"
+          },
+          {
+            "probe": 4,
+            "status": "failure",
+            "code": "READ_PATH_DENIED"
+          },
+          {
+            "probe": 5,
+            "status": "failure",
+            "code": "INVALID_TOOL_CALL"
+          }
+        ],
+        "filter": {
+          "splitCanaryFiltered": true,
+          "invalidUtf8Blocked": true,
+          "rawNotReleased": true,
+          "scope": "real Records normal/error/progress-shaped bridge payload; guest progress filtered again before model; no multimodal enabled"
+        },
+        "piBuilder": {
+          "engine": "pi",
+          "role": "builder",
+          "text": "",
+          "readPaths": [],
+          "toolCalls": 0,
+          "authType": "oauth",
+          "sessionId": "01a1e3b1-0a5c-733c-82d6-ea4c6e5e8e4c",
+          "effectiveTools": [
+            "factory_bash"
+          ],
+          "suspension": {
+            "disposed": true,
+            "noFutureAdmission": true,
+            "requestCount": 0
+          }
+        },
+        "piReviewer": {
+          "engine": "pi",
+          "role": "spec",
+          "text": "",
+          "readPaths": [],
+          "toolCalls": 0,
+          "authType": "oauth",
+          "sessionId": "01a1e3b1-0a6c-733c-82d6-ea4e91afa645",
+          "effectiveTools": [
+            "factory_read"
+          ],
+          "suspension": {
+            "disposed": true,
+            "noFutureAdmission": true,
+            "requestCount": 0
+          }
+        },
+        "claudeHandshake": {
+          "id": "claude-no-model-handshake",
+          "engine": "claude",
+          "role": "spec",
+          "text": "",
+          "readPaths": [],
+          "toolCalls": 0,
+          "modelAvailable": true,
+          "handshake": {
+            "modelAvailable": true,
+            "modelCandidates": [
+              {
+                "value": "haiku",
+                "resolvedModel": "claude-haiku-5-5",
+                "displayName": "Haiku",
+                "description": "Haiku 5.5 · Fastest for quick answers",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "supportsAdaptiveThinking": true,
+                "supportsAutoMode": true,
+                "supportsThinkingOff": false
+              }
+            ],
+            "claudeCodeVersion": "2.1.325",
+            "hookEvents": null
+          },
+          "hostCessation": {
+            "confirmed": true,
+            "members": [],
+            "pgid": 34253
+          }
+        },
+        "oracles": "deterministic tests must also pass before execute",
+        "nativeScan": {
+          "files": 0,
+          "rawCanaryFound": false,
+          "roots": [
+            "own Claude cwd",
+            "own Claude native project auxiliaries",
+            "own Pi profiles/sessions"
+          ],
+          "limitation": "does not audit shared personal/global logs or provider internals"
+        }
+      },
+      "manifest": {
+        "reference": "aabe06abfb20e83593020c0fee19b078d235466b",
+        "node": "v24.21.0",
+        "claude": "2.1.325 (Claude Code)",
+        "sdk": "0.3.325",
+        "model": "claude-haiku-5-5",
+        "pi": "1.5.2 Factory v3",
+        "piModel": "openai/gpt-6-luna",
+        "piAuth": "native OAuth metadata checked before every prompt",
+        "gondolin": "0.14.0 Factory v1",
+        "guestAssets": {
+          "directory": "$HOME/software-factory-test/assets34/assets",
+          "manifestSha256": "8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807"
+        },
+        "configuration": {
+          "schemaVersion": 1,
+          "profile": "gondolin-qemu-alpine-dev-v1",
+          "memoryMiB": 1024,
+          "vcpus": 1,
+          "diskGiB": 4,
+          "shutdownGraceSeconds": 15,
+          "minFreeSpaceGiB": 1
+        },
+        "root": "$HOME/sfhp-v2/d",
+        "limits": {
+          "activations": 10,
+          "executionMs": 1800000
+        },
+        "previousCampaignClosedAt": 20,
+        "sourceSha256": "bc4d2f1aa6220b62ebd36f0da1dc269ac6a7795566e774cf3e3c372ffc92651f",
+        "oracleSha256": "3b00b45e34c44bc217abd278f40bbe842d0487e10f11204a5053a0a3a5a318fb",
+        "instructionsSha256": "c1f88171f332ea41a13b71206419fa54d4df372862afb7d4dd22c9f2627df156",
+        "commands": [
+          "node .scratch/software-factory-v2/prototype/complement-proof.mjs --check",
+          "node .scratch/software-factory-v2/prototype/complement-proof.mjs --execute"
+        ],
+        "auth": "existing native personal subscription exception, no copied tokens/API keys",
+        "noExternalPush": true,
+        "control": "fixture"
+      },
+      "completed": true,
+      "nativeCleanup": [],
+      "finishedAt": "2026-11-16T09:29:55.602Z"
+    },
+    {
+      "mode": "--execute",
+      "startedAt": "2026-11-16T09:31:18.935Z",
+      "checks": {
+        "claudeAuth": {
+          "loggedIn": true,
+          "authMethod": "claude.ai",
+          "apiProvider": "firstParty",
+          "subscriptionType": "max"
+        },
+        "snapshot": {
+          "reference": "aabe06abfb20e83593020c0fee19b078d235466b",
+          "matchedSourceFiles": 124,
+          "noNewMvpAdopted": true
+        },
+        "denials": [
+          {
+            "probe": 0,
+            "status": "failure",
+            "code": "WRITE_ROLE_DENIED"
+          },
+          {
+            "probe": 1,
+            "status": "failure",
+            "code": "BASH_ROLE_DENIED"
+          },
+          {
+            "probe": 2,
+            "status": "failure",
+            "code": "READ_PATH_DENIED"
+          },
+          {
+            "probe": 3,
+            "status": "failure",
+            "code": "GUEST_READ_FAILED"
+          },
+          {
+            "probe": 4,
+            "status": "failure",
+            "code": "READ_PATH_DENIED"
+          },
+          {
+            "probe": 5,
+            "status": "failure",
+            "code": "INVALID_TOOL_CALL"
+          }
+        ],
+        "filter": {
+          "splitCanaryFiltered": true,
+          "invalidUtf8Blocked": true,
+          "rawNotReleased": true,
+          "scope": "real Records normal/error/progress-shaped bridge payload; guest progress filtered again before model; no multimodal enabled"
+        },
+        "cancellation": {
+          "toolStarted": true,
+          "progressObserved": true,
+          "cancelRequested": true,
+          "toolSettled": true,
+          "hostGroupEmpty": true,
+          "sandboxCessation": true,
+          "markerStable": true,
+          "lateMarkerPresent": false
+        },
+        "mixed-claude-pi": {
+          "passed": true,
+          "builder": "complement-claude-builder-2",
+          "reviews": [
+            "complement-pi-standards-3",
+            "complement-pi-spec-4"
+          ],
+          "returnId": "complement-claude-builder-5",
+          "oid": "13aea0bd49a9d87182b30f03bbfda6a4eeff6776",
+          "control": "sequential fixture, not production Control"
+        },
+        "mixed-pi-claude": {
+          "passed": true,
+          "builder": "complement-pi-builder-6",
+          "reviews": [
+            "complement-claude-standards-7",
+            "complement-claude-spec-8"
+          ],
+          "returnId": "complement-pi-builder-9",
+          "oid": "13aea0bd49a9d87182b30f03bbfda6a4eeff6776",
+          "control": "sequential fixture, not production Control"
+        },
+        "nativeScan": {
+          "files": 4,
+          "rawCanaryFound": false,
+          "roots": [
+            "own Claude cwd",
+            "own Claude native project auxiliaries",
+            "own Pi profiles/sessions"
+          ],
+          "limitation": "does not audit shared personal/global logs or provider internals"
+        }
+      },
+      "manifest": {
+        "reference": "aabe06abfb20e83593020c0fee19b078d235466b",
+        "node": "v24.21.0",
+        "claude": "2.1.325 (Claude Code)",
+        "sdk": "0.3.325",
+        "model": "claude-haiku-5-5",
+        "pi": "1.5.2 Factory v3",
+        "piModel": "openai/gpt-6-luna",
+        "piAuth": "native OAuth metadata checked before every prompt",
+        "gondolin": "0.14.0 Factory v1",
+        "guestAssets": {
+          "directory": "$HOME/software-factory-test/assets34/assets",
+          "manifestSha256": "8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807"
+        },
+        "configuration": {
+          "schemaVersion": 1,
+          "profile": "gondolin-qemu-alpine-dev-v1",
+          "memoryMiB": 1024,
+          "vcpus": 1,
+          "diskGiB": 4,
+          "shutdownGraceSeconds": 15,
+          "minFreeSpaceGiB": 1
+        },
+        "root": "$HOME/sfhp-v2/d",
+        "limits": {
+          "activations": 10,
+          "executionMs": 1800000
+        },
+        "previousCampaignClosedAt": 20,
+        "sourceSha256": "bc4d2f1aa6220b62ebd36f0da1dc269ac6a7795566e774cf3e3c372ffc92651f",
+        "oracleSha256": "3b00b45e34c44bc217abd278f40bbe842d0487e10f11204a5053a0a3a5a318fb",
+        "instructionsSha256": "c1f88171f332ea41a13b71206419fa54d4df372862afb7d4dd22c9f2627df156",
+        "commands": [
+          "node .scratch/software-factory-v2/prototype/complement-proof.mjs --check",
+          "node .scratch/software-factory-v2/prototype/complement-proof.mjs --execute"
+        ],
+        "auth": "existing native personal subscription exception, no copied tokens/API keys",
+        "noExternalPush": true,
+        "control": "fixture"
+      },
+      "completed": true,
+      "nativeCleanup": [
+        {
+          "sessionId": "90c946b4-d5c4-4b3e-87b2-5e033f3d9f72",
+          "removed": true
+        },
+        {
+          "sessionId": "25736535-4c86-4fcb-b080-8e793c6c50ba",
+          "removed": true
+        },
+        {
+          "sessionId": "b837cc00-7be3-4bad-a5ef-f4c7db78e6dd",
+          "removed": true
+        },
+        {
+          "sessionId": "c4791d4b-abe9-4255-962f-79f5224141f1",
+          "removed": true
+        },
+        {
+          "sessionId": "bf3ae6ea-5f94-4d0f-81bb-c230a83e0ea7",
+          "removed": true
+        }
+      ],
+      "finishedAt": "2026-11-16T09:33:16.771Z"
+    },
+    {
+      "mode": "--filter",
+      "startedAt": "2026-11-16T09:35:43.684Z",
+      "checks": {
+        "claudeAuth": {
+          "loggedIn": true,
+          "authMethod": "claude.ai",
+          "apiProvider": "firstParty",
+          "subscriptionType": "max"
+        },
+        "snapshot": {
+          "reference": "aabe06abfb20e83593020c0fee19b078d235466b",
+          "matchedSourceFiles": 124,
+          "noNewMvpAdopted": true
+        },
+        "denials": [
+          {
+            "probe": 0,
+            "status": "failure",
+            "code": "WRITE_ROLE_DENIED"
+          },
+          {
+            "probe": 1,
+            "status": "failure",
+            "code": "BASH_ROLE_DENIED"
+          },
+          {
+            "probe": 2,
+            "status": "failure",
+            "code": "READ_PATH_DENIED"
+          },
+          {
+            "probe": 3,
+            "status": "failure",
+            "code": "GUEST_READ_FAILED"
+          },
+          {
+            "probe": 4,
+            "status": "failure",
+            "code": "READ_PATH_DENIED"
+          },
+          {
+            "probe": 5,
+            "status": "failure",
+            "code": "INVALID_TOOL_CALL"
+          }
+        ],
+        "filter": {
+          "splitCanaryFiltered": true,
+          "invalidUtf8Blocked": true,
+          "rawNotReleased": true,
+          "scope": "real Records normal/error/progress-shaped bridge payload; guest progress filtered again before model; no multimodal enabled"
+        },
+        "realFilterIngress": {
+          "passed": true,
+          "id": "complement-claude-builder-10",
+          "toolCalls": 1,
+          "canarySha256": "77b7512c07e1580745e855b64280cbcfc52f738b07a9463b12437ea831ebf851",
+          "rawCanaryAtIngress": false,
+          "normalStderrAndDelayedOutput": true
+        },
+        "nativeScan": {
+          "files": 1,
+          "claudeFiles": 1,
+          "perRoot": [
+            {
+              "path": "$TASK_WORKTREE/.runtime/complement-claude/",
+              "files": 0
+            },
+            {
+              "path": "$TASK_WORKTREE/.runtime/complement-records-nonexistent",
+              "files": 0
+            },
+            {
+              "path": "$TASK_WORKTREE/.runtime/complement-pi-984f8fa7-043c-40a6-974d-2e5547b6fc05/",
+              "files": 0
+            },
+            {
+              "path": "$TASK_WORKTREE/.runtime/complement-pi-28e2d650-0177-44f4-93ba-fdbf43cafc71/",
+              "files": 0
+            },
+            {
+              "path": "$TASK_WORKTREE/.runtime/complement-pi-5477be57-ae2e-4779-a2ce-cb8bdbebeb1d/",
+              "files": 0
+            },
+            {
+              "path": "$TASK_WORKTREE/.runtime/complement-pi-b117a545-d1f1-44c3-90e6-924412aeaa08/",
+              "files": 0
+            },
+            {
+              "path": "$TASK_WORKTREE/.runtime/complement-pi-ace1da47-b6a3-4659-9078-e959b45bcf41/",
+              "files": 0
+            },
+            {
+              "path": "$TASK_WORKTREE/.runtime/complement-pi-80b71ad8-fe10-491d-96bb-c6baf141b98d/",
+              "files": 0
+            },
+            {
+              "path": "$TASK_WORKTREE/.runtime/complement-pi-1c8d5960-f818-4ba8-b086-d9507041bbfc/",
+              "files": 0
+            },
+            {
+              "path": "$TASK_WORKTREE/.runtime/complement-pi-27ef5540-dda3-4e8a-b78a-d52d9b70f5e4/",
+              "files": 0
+            },
+            {
+              "path": "$HOME/.claude/projects/-home-sanmoo-dev-github-com-Sanmoo-software-factory-durable--worktrees-harness-proof-run--runtime-complement-claude",
+              "files": 1
+            }
+          ],
+          "rawCanaryFound": false,
+          "roots": [
+            "own Claude cwd",
+            "own Claude native project auxiliaries",
+            "own Pi profiles/sessions"
+          ],
+          "limitation": "does not audit shared personal/global logs or provider internals"
+        }
+      },
+      "manifest": {
+        "reference": "aabe06abfb20e83593020c0fee19b078d235466b",
+        "node": "v24.21.0",
+        "claude": "2.1.325 (Claude Code)",
+        "sdk": "0.3.325",
+        "model": "claude-haiku-5-5",
+        "pi": "1.5.2 Factory v3",
+        "piModel": "openai/gpt-6-luna",
+        "piAuth": "native OAuth metadata checked before every prompt",
+        "gondolin": "0.14.0 Factory v1",
+        "guestAssets": {
+          "directory": "$HOME/software-factory-test/assets34/assets",
+          "manifestSha256": "8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807"
+        },
+        "configuration": {
+          "schemaVersion": 1,
+          "profile": "gondolin-qemu-alpine-dev-v1",
+          "memoryMiB": 1024,
+          "vcpus": 1,
+          "diskGiB": 4,
+          "shutdownGraceSeconds": 15,
+          "minFreeSpaceGiB": 1
+        },
+        "root": "$HOME/sfhp-v2/d",
+        "limits": {
+          "activations": 10,
+          "executionMs": 1800000
+        },
+        "previousCampaignClosedAt": 20,
+        "sourceSha256": "77a1d7c84bc21ac67cc9bf7078258af5468f244c4432a4a60a52cc0569786d61",
+        "oracleSha256": "3b00b45e34c44bc217abd278f40bbe842d0487e10f11204a5053a0a3a5a318fb",
+        "instructionsSha256": "c1f88171f332ea41a13b71206419fa54d4df372862afb7d4dd22c9f2627df156",
+        "commands": [
+          "node .scratch/software-factory-v2/prototype/complement-proof.mjs --check",
+          "node .scratch/software-factory-v2/prototype/complement-proof.mjs --execute"
+        ],
+        "auth": "existing native personal subscription exception, no copied tokens/API keys",
+        "noExternalPush": true,
+        "control": "fixture"
+      },
+      "completed": true,
+      "nativeCleanup": [
+        {
+          "sessionId": "ed130a7a-d226-45c9-8646-d3d67aa457c5",
+          "removed": true,
+          "verifiedBy": "official getSessionInfo after deleteSession"
+        }
+      ],
+      "finishedAt": "2026-11-16T09:36:14.457Z"
+    }
+  ],
+  "environments": [
+    {
+      "root": "$HOME/sfhp-v2/d",
+      "workId": "harness-proof-complement-preflight-ae7ce790-9a5b-4357-9d78-5b714ec62d2e",
+      "environment": "env-bcd644c746ef0a2724af78227fc9cf3aa752c6f145d565eb69910d32fb1e2e27",
+      "cleanup": {
+        "result": {
+          "status": "success",
+          "resources": [
+            {
+              "resource": "disk",
+              "status": "removed"
+            },
+            {
+              "resource": "workspace",
+              "status": "removed"
+            },
+            {
+              "resource": "artifacts",
+              "status": "removed"
+            },
+            {
+              "resource": "runtime",
+              "status": "removed"
+            }
+          ]
+        },
+        "observation": {
+          "condition": "removed",
+          "cessationConfirmed": true,
+          "consumption": "unavailable",
+          "storage": {
+            "configuredVirtualBytes": "4294967296",
+            "minFreeBytes": "1073741824",
+            "disk": {
+              "status": "absent"
+            },
+            "workspace": {
+              "status": "absent"
+            },
+            "artifacts": {
+              "status": "absent"
+            },
+            "filesystem": {
+              "status": "observed",
+              "availableBytes": "520870694912"
+            }
+          }
+        }
+      }
+    },
+    {
+      "root": "$HOME/sfhp-v2/d",
+      "workId": "harness-proof-complement-preflight-950e932e-b015-4ead-ad3f-0e2a98ca0c73",
+      "environment": "env-cdbc2953b53a92774e1c645892c2fed6702a61f45eab57716383cd24d5faeff9",
+      "cleanup": {
+        "result": {
+          "status": "success",
+          "resources": [
+            {
+              "resource": "disk",
+              "status": "removed"
+            },
+            {
+              "resource": "workspace",
+              "status": "removed"
+            },
+            {
+              "resource": "artifacts",
+              "status": "removed"
+            },
+            {
+              "resource": "runtime",
+              "status": "removed"
+            }
+          ]
+        },
+        "observation": {
+          "condition": "removed",
+          "cessationConfirmed": true,
+          "consumption": "unavailable",
+          "storage": {
+            "configuredVirtualBytes": "4294967296",
+            "minFreeBytes": "1073741824",
+            "disk": {
+              "status": "absent"
+            },
+            "workspace": {
+              "status": "absent"
+            },
+            "artifacts": {
+              "status": "absent"
+            },
+            "filesystem": {
+              "status": "observed",
+              "availableBytes": "518544941056"
+            }
+          }
+        }
+      }
+    },
+    {
+      "root": "$HOME/sfhp-v2/d",
+      "workId": "harness-proof-complement-cancel-0a772db8-1ffd-4ebb-9732-ff9aeab22359",
+      "environment": "env-bc651f95e497111ffd04647438f16c0e343ec813352d1764b61f884fe2ae1b6e",
+      "cleanup": {
+        "result": {
+          "status": "success",
+          "resources": [
+            {
+              "resource": "disk",
+              "status": "removed"
+            },
+            {
+              "resource": "workspace",
+              "status": "removed"
+            },
+            {
+              "resource": "artifacts",
+              "status": "removed"
+            },
+            {
+              "resource": "runtime",
+              "status": "removed"
+            }
+          ]
+        },
+        "observation": {
+          "condition": "removed",
+          "cessationConfirmed": true,
+          "consumption": "unavailable",
+          "storage": {
+            "configuredVirtualBytes": "4294967296",
+            "minFreeBytes": "1073741824",
+            "disk": {
+              "status": "absent"
+            },
+            "workspace": {
+              "status": "absent"
+            },
+            "artifacts": {
+              "status": "absent"
+            },
+            "filesystem": {
+              "status": "observed",
+              "availableBytes": "517012963328"
+            }
+          }
+        }
+      }
+    },
+    {
+      "root": "$HOME/sfhp-v2/d",
+      "workId": "harness-proof-complement-mixed-058fd5a9-1193-497a-a2b9-6b6925cb1ae4",
+      "environment": "env-c34e2b7c86ac7b22b64e85da92067aa0057c4ddfbc7f15fa029f5bc6f01bbc97",
+      "cleanup": {
+        "result": {
+          "status": "success",
+          "resources": [
+            {
+              "resource": "disk",
+              "status": "removed"
+            },
+            {
+              "resource": "workspace",
+              "status": "removed"
+            },
+            {
+              "resource": "artifacts",
+              "status": "removed"
+            },
+            {
+              "resource": "runtime",
+              "status": "removed"
+            }
+          ]
+        },
+        "observation": {
+          "condition": "removed",
+          "cessationConfirmed": true,
+          "consumption": "unavailable",
+          "storage": {
+            "configuredVirtualBytes": "4294967296",
+            "minFreeBytes": "1073741824",
+            "disk": {
+              "status": "absent"
+            },
+            "workspace": {
+              "status": "absent"
+            },
+            "artifacts": {
+              "status": "absent"
+            },
+            "filesystem": {
+              "status": "observed",
+              "availableBytes": "517018284032"
+            }
+          }
+        }
+      }
+    },
+    {
+      "root": "$HOME/sfhp-v2/d",
+      "workId": "harness-proof-complement-filter-f60e0093-3c45-44b8-bd25-0fd329160728",
+      "environment": "env-30594511736f6582960fab518c6fd392402dff2ec63e0eff5825626566a13be1",
+      "cleanup": {
+        "result": {
+          "status": "success",
+          "resources": [
+            {
+              "resource": "disk",
+              "status": "removed"
+            },
+            {
+              "resource": "workspace",
+              "status": "removed"
+            },
+            {
+              "resource": "artifacts",
+              "status": "removed"
+            },
+            {
+              "resource": "runtime",
+              "status": "removed"
+            }
+          ]
+        },
+        "observation": {
+          "condition": "removed",
+          "cessationConfirmed": true,
+          "consumption": "unavailable",
+          "storage": {
+            "configuredVirtualBytes": "4294967296",
+            "minFreeBytes": "1073741824",
+            "disk": {
+              "status": "absent"
+            },
+            "workspace": {
+              "status": "absent"
+            },
+            "artifacts": {
+              "status": "absent"
+            },
+            "filesystem": {
+              "status": "observed",
+              "availableBytes": "516602859520"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "nativeSessions": [
+    "90c946b4-d5c4-4b3e-87b2-5e033f3d9f72",
+    "25736535-4c86-4fcb-b080-8e793c6c50ba",
+    "b837cc00-7be3-4bad-a5ef-f4c7db78e6dd",
+    "c4791d4b-abe9-4255-962f-79f5224141f1",
+    "bf3ae6ea-5f94-4d0f-81bb-c230a83e0ea7",
+    "ed130a7a-d226-45c9-8646-d3d67aa457c5"
+  ],
+  "piDirs": [
+    "$TASK_WORKTREE/.runtime/complement-pi-984f8fa7-043c-40a6-974d-2e5547b6fc05/",
+    "$TASK_WORKTREE/.runtime/complement-pi-28e2d650-0177-44f4-93ba-fdbf43cafc71/",
+    "$TASK_WORKTREE/.runtime/complement-pi-5477be57-ae2e-4779-a2ce-cb8bdbebeb1d/",
+    "$TASK_WORKTREE/.runtime/complement-pi-b117a545-d1f1-44c3-90e6-924412aeaa08/",
+    "$TASK_WORKTREE/.runtime/complement-pi-ace1da47-b6a3-4659-9078-e959b45bcf41/",
+    "$TASK_WORKTREE/.runtime/complement-pi-80b71ad8-fe10-491d-96bb-c6baf141b98d/",
+    "$TASK_WORKTREE/.runtime/complement-pi-1c8d5960-f818-4ba8-b086-d9507041bbfc/",
+    "$TASK_WORKTREE/.runtime/complement-pi-27ef5540-dda3-4e8a-b78a-d52d9b70f5e4/"
+  ],
+  "preflightPassed": true,
+  "executeAttempted": true,
+  "filterAttempted": true,
+  "provenance": {
+    "reference": "aabe06abfb20e83593020c0fee19b078d235466b",
+    "executeSourceCommit": "ac58753",
+    "filterSourceCommit": "60686bb",
+    "branch": "prototype/v2-harness-proof",
+    "previousEvidenceUnmodified": true,
+    "originalIntegrationDestination": "main at principal checkout",
+    "acceptance": "INCONCLUSIVE; pending operator approval; ticket remains claimed"
+  },
+  "auditAnnotations": [
+    {
+      "runIndex": 0,
+      "note": "finishedAt was a manually entered conservative accounting timestamp, NOT observed termination time. No model or environment existed. Debit: 60000ms."
+    },
+    {
+      "runIndex": 1,
+      "note": "CLAUDE_MODEL_NOT_AVAILABLE was a runner alias/resolvedModel oracle error, not observed unavailability or incompatibility. Zero model activations."
+    },
+    {
+      "runIndex": 3,
+      "note": "nativeScan only proved four Pi files; Claude project path was wrong because cwd ended in /. Do NOT use it as Claude scan evidence. Run --filter corrected the path and scanned one actual Claude JSONL before deletion."
+    }
+  ]
+}
