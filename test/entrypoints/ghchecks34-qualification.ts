@@ -16,7 +16,9 @@ import { ghGuardScript } from './cancel25-qualification.js';
 const root = '/home/sanmoo/software-factory-test/y5';
 // v1 (run/ghchecks, issues #52/#53) held in preflight: the setup PR could not merge under a ruleset already requiring its own check. v2 merges every
 // operator PR under `relaxed` (no required check) and puts the required check only afterwards.
-const revision = 'q34-ghchecks-v2';
+// v2 (#75/#76, run/ghchecks-v2 8fdc303) held in strict on a Question: the repair placed the line factory-gate requires between the paragraph and
+// `## Steps`, a Spec finding said it broke the Ticket's order, the Builder asked. v3 states the scope in the Ticket and tolerates ONE such Question.
+const revision = 'q34-ghchecks-v3';
 const observations = `${root}/${revision}`;
 export const phases = ['preflight', 'waiver', 'run', 'failing', 'strict', 'human-draft', 'rerun', 'contexts', 'classic', 'homonym', 'inspect', 'stop-environment'] as const;
 export type Phase = typeof phases[number];
@@ -83,6 +85,9 @@ export const checksBody = [
   '', 'Required content:',
   '1. A `# Factory checks` title and one paragraph explaining that this file exists only to exercise how the Software Factory treats required checks.',
   '2. A `## Steps` section with a numbered list of exactly three steps: publish, check, repair.',
+  // Deliberately generic (the line itself is not named): naming it would make the first head pass and lose the failed required check (V-10.b).
+  '', 'If a check this repository REQUIRES for merging demands additional content in this file, adding exactly that content is in scope: put it AFTER the ' +
+    '`## Steps` list and keep the title, the paragraph and the `## Steps` order. Nothing else is in scope.',
   '', 'Documentation only: the operator explicitly approves that no tests, seams or code changes are needed. Do not create or edit other files. Commit the change on your branch.',
   '', 'Validation (documented gate; the bash tool always runs in `/workspace`, so declare cwd `/workspace` and put the directory change inside the command; it must exit 0):',
   '`cd /workspace/checkout && test -f docs/FACTORY_CHECKS.md && grep -q \'^## Steps\' docs/FACTORY_CHECKS.md`'].join('\n');
@@ -264,15 +269,23 @@ export const builderSequence: Record<ControlPhase, readonly BuilderKind[]> = { w
 const implementationPhases: Record<ControlPhase, readonly string[]> = { waiver: ['builder-initial'], run: ['builder-initial'],
   failing: ['builder-continuation', 'builder-recovery'], strict: ['builder-continuation', 'builder-recovery'], 'human-draft': [] };
 /** Activation guard: the phase's exact Builder sequence for its pinned Ticket, then reviewers only for that phase's implementation (distinct rounds). */
-export function activationGuard(phase: ControlPhase, ticketNumber: number, maxRounds: number = rounds.max) {
+/** `resumes()`: how many answered tolerated Questions this phase may resume (one more implementation activation of the SAME Work each). */
+export function activationGuard(phase: ControlPhase, ticketNumber: number, maxRounds: number = rounds.max, resumes: () => number = () => 0) {
   const sequence = builderSequence[phase];
   let next = 0;
+  let resumed = 0;
   let implementation: { workId: string; executionId: string } | undefined;
-  const seen: Record<string, Set<number>> = { standards: new Set(), spec: new Set() };
+  let seen: Record<string, Set<number>> = { standards: new Set(), spec: new Set() };
   return (context: { role: string; workId: string; executionId: string; phaseId: string }, review: { round: number } | undefined, number: number) => {
     if (number !== ticketNumber) return false;
     if (context.role === 'builder') {
       const kind = sequence[next];
+      if (kind === 'publication' && implementation && context.workId === implementation.workId && implementationPhases[phase].includes(context.phaseId) && resumed < resumes()) {
+        resumed++;
+        implementation = { workId: context.workId, executionId: context.executionId };
+        seen = { standards: new Set(), spec: new Set() };
+        return true;
+      }
       if (!kind) return false;
       if (kind === 'implementation') {
         if (!implementationPhases[phase].includes(context.phaseId)) return false;
@@ -312,7 +325,7 @@ const list = (value: unknown) => Array.isArray(value) ? value as Record<string, 
 const effectsOf = (work: unknown) => list(pick(work, 'readiness', 'effects')).concat(pick(work, 'readiness', 'effect') ? [pick(work, 'readiness', 'effect') as Record<string, unknown>] : []);
 const confirmed = (work: unknown, action: string) => effectsOf(work).filter(item => item.action === action && item.state === 'confirmed').length;
 
-type Facts = { activations: number; humanObserved: boolean; quietCyclesDone: boolean; conversions: number; refusedConversions: number };
+type Facts = { resumes?: number; activations: number; humanObserved: boolean; quietCyclesDone: boolean; conversions: number; refusedConversions: number };
 /** Whether a Control phase reached its end (or a state that ends it early); `success` says whether it is the expected end. */
 export function settled(phase: ControlPhase, work: WorkView | undefined, facts: Facts): { done: boolean; success: boolean } {
   const state = work?.publication?.state ?? '';
@@ -339,7 +352,7 @@ export function settled(phase: ControlPhase, work: WorkView | undefined, facts: 
   const ready = work?.readiness?.flag.factory === 'ready' && work.readiness.flag.observed === 'ready';
   const closed = corrections.length === expected && !work?.correction && state === 'published' && last!.reasons.some(item => item.code === code);
   const wanted = phase === 'failing' ? confirmed(work, 'mark-ready') === 1 : confirmed(work, 'mark-ready') === 2 && confirmed(work, 'convert-to-draft') === 1;
-  if (closed && ready && wanted && work?.checks?.latest.outcome === 'satisfied') return { done: true, success: facts.activations === 2 && (phase === 'failing' || facts.humanObserved) };
+  if (closed && ready && wanted && work?.checks?.latest.outcome === 'satisfied') return { done: true, success: facts.activations === 2 + (facts.resumes ?? 0) && (phase === 'failing' || facts.humanObserved) };
   return { done: false, success: false };
 }
 
@@ -402,7 +415,7 @@ export function verdictOf(saved: Partial<Record<'waiver' | 'run' | 'failing' | '
   check('failing.repair', 'V-10.b', `ONE correction REQUIRED_CHECK_FAILED:${checkName}@H1 with failure evidence, published and charged; H2 on the SAME PR`,
     { reasons: list(pick(failed, 'reasons')).map(item => `${item.code}:${item.subject}@${item.headSha}`), evidence: pick(failedReason, 'evidence'), outcome: pick(failed, 'outcome'), heads: linked },
     saved.failing?.status === 'success' && pick(failedReason, 'code') === 'REQUIRED_CHECK_FAILED' && pick(failedReason, 'subject') === checkName && pick(failedReason, 'headSha') === h1 &&
-      (pick(failedReason, 'evidence') as string[] | undefined ?? []).some(item => item.startsWith(`check_run:${checkName}:failure`)) && pick(failed, 'outcome') === 'published' && Boolean(h2));
+      (pick(failedReason, 'evidence') as string[] | undefined ?? []).some(item => item.startsWith(`check-run:${checkName}:failure`)) && pick(failed, 'outcome') === 'published' && Boolean(h2));
   // The run phase stops at publication (H1 usually still pending): its observations and the failing phase's are one sequence.
   const seen = [...list(pick(saved.run, 'events')), ...list(pick(saved.failing, 'events'))].filter(item => item.call === 'checks');
   const atH1 = seen.filter(item => item.head === h1).map(item => item.outcome);
@@ -525,6 +538,26 @@ export async function listAll(read: (cursor: number) => Promise<unknown>, maxPag
 /** The label listing is EXACTLY the expected issues (GitHub's label index can lag behind an edit: poll it, never read once). */
 export const labelExact = (listed: readonly number[] | null, expected: readonly number[]) =>
   listed !== null && JSON.stringify([...listed].sort((a, b) => a - b)) === JSON.stringify([...expected].sort((a, b) => a - b));
+/** The ONE Question this recipe tolerates (failing/strict, once per run): a Spec finding versus the content the required check demands. */
+export const toleratedQuestion = { phases: ['failing', 'strict'] as readonly string[], pattern: /factory-gate|Checked-by/i,
+  answer: 'Yes. The exact line the required check factory-gate demands is in scope: put it after the numbered `## Steps` list and keep the title, the ' +
+    'paragraph and the `## Steps` order; change nothing else.' };
+/**
+ * What the phase does with the Questions it read (by id): `hold` on any Question that is not the tolerated one; `answer` the tolerated one (it
+ * matches, the phase allows it and none was tolerated before in this run); an already tolerated Question (open or answered) neither holds nor
+ * is answered again.
+ */
+export function questionDecision(phase: string, questions: readonly { questionId: string; question: string | null; state: unknown }[], tolerated: string | null):
+  { kind: 'none' } | { kind: 'hold'; questions: typeof questions } | { kind: 'answer'; questionId: string } {
+  const others = questions.filter(item => item.questionId !== tolerated);
+  if (!others.length) return { kind: 'none' };
+  const [only] = others;
+  if (tolerated === null && others.length === 1 && only!.state === 'open' && toleratedQuestion.phases.includes(phase) && toleratedQuestion.pattern.test(only!.question ?? '')) {
+    return { kind: 'answer', questionId: only!.questionId };
+  }
+  return { kind: 'hold', questions: others };
+}
+
 /** Questions of the Works, each read by id (a view may omit them: the R-CAND lesson). None is scripted here, so every one holds the phase. */
 export async function questionsOf(works: readonly Pick<WorkView, 'work_id' | 'questions'>[], read: (questionId: string) => Promise<unknown>) {
   const found: { workId: string; questionId: string; state: unknown; question: string | null; read: string }[] = [];
@@ -575,7 +608,9 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
   const builderCredentials = createBuilderCredentials({ github, repositories: [repository] });
   const events: Record<string, unknown>[] = [];
   const log = (entry: Record<string, unknown>) => { events.push({ at: new Date().toISOString(), monotonicMs: Math.round(performance.now()), ...entry }); };
-  const guard = activationGuard(phase, number);
+  let tolerated = ((await load('tolerated-question')) as { questionId?: string } | null)?.questionId ?? null;
+  let resumes = 0;
+  const guard = activationGuard(phase, number, rounds.max, () => resumes);
   const grants = grantGuard(phase);
   const conversions = conversionGuard(phase);
   const counts = { activations: 0, prepared: 0, conversions: 0, refusedConversions: 0 };
@@ -616,7 +651,7 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
         async prepare(input) {
           log({ call: 'prepare', workId: input.workId });
           const work = await shown();
-          if (work?.work_id !== input.workId || ++counts.prepared > builderSequence[phase].length) return { status: 'failure', code: 'RECIPE_ONE_SHOT_GUARD' };
+          if (work?.work_id !== input.workId || ++counts.prepared > builderSequence[phase].length + resumes) return { status: 'failure', code: 'RECIPE_ONE_SHOT_GUARD' };
           const result = await sandbox.prepare(input);
           log({ call: 'prepare-result', result });
           return result;
@@ -680,13 +715,26 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
       }
       const listed = await all();
       questions = await questionsOf(listed.works, questionId => control.inspect({ kind: 'question', question_id: questionId }));
-      if (questions.length) { log({ call: 'unscripted-question', questions }); outcome = { done: true, success: false }; break; }
+      const decision = questionDecision(phase, questions, tolerated);
+      if (decision.kind === 'hold') { log({ call: 'unscripted-question', questions: decision.questions }); outcome = { done: true, success: false }; break; }
+      if (decision.kind === 'answer') {
+        // The ONE tolerated Question: answered by the OPERATOR through a real `/factory answer` comment (human step), then resumed once.
+        tolerated = decision.questionId; resumes = 1;
+        await save('tolerated-question', { phase, questionId: tolerated, at: new Date().toISOString(), question: questions.find(item => item.questionId === tolerated)?.question ?? null });
+        const body = `/factory answer ${tolerated} ${toleratedQuestion.answer}`;
+        await humanStep(save, { name: 'answer', phase, expect: `Question ${tolerated} answered by the operator`, restore: [],
+          note: 'the tolerated Spec-vs-required-check Question; nothing to undo',
+          apply: [`gh issue comment ${number} --repo ${repository.repository} --body ${JSON.stringify(body)}   # the OPERATOR's own account`] },
+        async () => { const view = await control.inspect({ kind: 'question', question_id: tolerated! }) as { question?: { state?: string } }; return view.question?.state === 'answered' ? { answered: true } : null; });
+        log({ call: 'tolerated-question-answered', questionId: tolerated });
+        continue;
+      }
       const work = workOf(listed, number);
       const checks = work?.checks?.latest;
       const key = checks ? `${checks.pullRequest.headSha}:${checks.outcome}` : '';
       if (checks && key !== lastChecks) { lastChecks = key; log({ call: 'checks', head: checks.pullRequest.headSha, outcome: checks.outcome, reasons: reasonCodes(checks) }); }
       if (phase === 'human-draft' && quietFrom === null && human) quietFrom = Date.now();
-      outcome = settled(phase, work, { activations: counts.activations, humanObserved: human !== null, conversions: counts.conversions, refusedConversions: counts.refusedConversions,
+      outcome = settled(phase, work, { resumes, activations: counts.activations, humanObserved: human !== null, conversions: counts.conversions, refusedConversions: counts.refusedConversions,
         quietCyclesDone: quietFrom !== null && Date.now() - quietFrom >= quietCycles * pollingSeconds * 1000 });
       if (outcome.done) break;
     }
@@ -694,7 +742,9 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
     const final = await all();
     stop.abort();
     const result = await running;
-    await save(`${phase}-result`, { status: outcome.success ? 'success' : 'held', ...(questions.length ? { holdReason: 'UNSCRIPTED_QUESTION', questions } : {}),
+    const unscripted = questions.filter(item => item.questionId !== tolerated);
+    await save(`${phase}-result`, { status: outcome.success ? 'success' : 'held', ...(unscripted.length ? { holdReason: 'UNSCRIPTED_QUESTION', questions: unscripted } : {}),
+      ...(tolerated ? { toleratedQuestion: tolerated } : {}),
       outcome: result, final, human, counts, events, deadlineReached: Date.now() >= deadline });
   }
   if (!outcome.success) throw new Error('PHASE_NOT_AS_EXPECTED');
@@ -891,7 +941,8 @@ export async function runPhase(phase: Phase) {
       return;
     }
     const target = work?.execution && needsStop(work.execution) ? work.execution : waiverWork?.execution && needsStop(waiverWork.execution) ? waiverWork.execution : null;
-    if (!target?.dispatch.environment) throw new Error('NOTHING_TO_STOP');
+    // Nothing may still run (v2 held here with NOTHING_TO_STOP although that is the expected end): recorded as success, nothing stopped.
+    if (!target?.dispatch.environment) { await save('stop-environment-result', { status: 'success', stopped: null, note: 'NOTHING_TO_STOP: no recorded Execution may still run.' }); return; }
     const { createSandbox } = await import('../../src/sandbox/index.js');
     const sandbox = createSandbox({ root, guestAssets });
     const environment = target.dispatch.environment as never, boot = target.dispatch.boot as never;

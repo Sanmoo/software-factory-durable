@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { WorkView } from '../../src/control/index.js';
-import { activationGuard, actionsAppId, conversionGuard, grantGuard, humanSteps, labelExact, listAll, operatorPr, phaseGuard, questionsOf, rulesetBody, rulesetMatches, runIdOf, secretScan, settled,
+import { activationGuard, actionsAppId, conversionGuard, grantGuard, humanSteps, labelExact, listAll, operatorPr, phaseGuard, questionDecision, questionsOf, rulesetBody, rulesetMatches, runIdOf, secretScan, settled,
   tickets, verdictOf, type Ruleset } from './ghchecks34-qualification.js';
 
 // R-GH-CHECKS recipe safety on controlled data only (never the real root, a real gh, GitHub, a VM or a model).
@@ -131,7 +131,7 @@ function passing() {
     homonym: { status: 'success', evaluation: { requirements: [req('factory-gate', { state: 'satisfied', results: [{ kind: 'check-run', origin: 'app:15368', classification: 'satisfied' }],
       otherOrigin: [{ kind: 'status', origin: 'creator:Sanmoo(User)', status: 'failure' }] })] } },
     inspect: { work: { publication: { linkedHeads: [h1, h2, h3] },
-      corrections: [{ outcome: 'published', reasons: [{ code: 'REQUIRED_CHECK_FAILED', subject: 'factory-gate', headSha: h1, evidence: ['check_run:factory-gate:failure:https://x'] }] },
+      corrections: [{ outcome: 'published', reasons: [{ code: 'REQUIRED_CHECK_FAILED', subject: 'factory-gate', headSha: h1, evidence: ['check-run:factory-gate:failure:https://x'] }] },
         { outcome: 'published', reasons: [{ code: 'STRICT_UPDATE_REQUIRED', subject: 'main', headSha: h2, baseTip: b1 }] }],
       readiness: { humanDraft: { observedAt: 't' }, effects: [{ action: 'mark-ready', state: 'confirmed' }, { action: 'convert-to-draft', state: 'confirmed' }], effect: { action: 'mark-ready', state: 'confirmed' } } },
     compare: { value: { behind_by: 0 } }, changedFiles: ['docs/FACTORY_CHECKS.md'], pull: { pullRequest: { merged: false } }, pushViolations: [],
@@ -207,4 +207,35 @@ test('lessons of the other recipes: every list page walked, Questions read by id
   assert.equal(labelExact([52], [52, 53]), false, 'a label not yet indexed is not exact');
   assert.equal(labelExact([52, 53, 9], [52, 53]), false, 'a foreign labelled issue is not exact');
   assert.equal(labelExact(null, [52]), false);
+});
+
+test('v2 verdict bug: the failure evidence as Control records it (check-run:<name>:failure:<url>, the q34-ghchecks-v2 shape) meets V-10.b', () => {
+  const saved = passing();
+  const reasons = ((saved.inspect!.work as Record<string, unknown>).corrections as Record<string, unknown>[])[0]!.reasons as Record<string, unknown>[];
+  reasons[0]!.evidence = ['check-run:factory-gate:failure:https://github.com/Sanmoo/java-springboot-event-sourcing/actions/runs/44080567555/job/134029757538'];
+  assert.ok(verdictOf(saved).checks.find(item => item.id === 'failing.repair')!.met);
+  reasons[0]!.evidence = ['check-run:other:failure:https://x'];
+  assert.equal(verdictOf(saved).checks.find(item => item.id === 'failing.repair')!.met, false);
+});
+
+test('ONE tolerated Question (failing/strict, Spec vs the required check); any other Question holds; the answered one resumes the same Work once', () => {
+  const q = (id: string, question: string, state = 'open') => ({ questionId: id, question, state });
+  const v2 = q('addc8fde', 'the required `factory-gate` check currently requires the exact line `Checked-by: factory-gate` ... May I move the exact line after the steps?');
+  assert.deepEqual(questionDecision('strict', [v2], null), { kind: 'answer', questionId: 'addc8fde' });
+  assert.deepEqual(questionDecision('strict', [{ ...v2, state: 'answered' }], 'addc8fde'), { kind: 'none' }, 'the tolerated one never holds');
+  assert.equal(questionDecision('waiver', [v2], null).kind, 'hold', 'only failing/strict');
+  assert.equal(questionDecision('strict', [v2], 'earlier').kind, 'hold', 'once per run');
+  assert.equal(questionDecision('strict', [q('x', 'Which title should the page have?')], null).kind, 'hold', 'an unrelated Question holds');
+  assert.equal(questionDecision('strict', [v2, q('y', 'factory-gate again?')], null).kind, 'hold', 'two at once hold');
+  let resumes = 0;
+  const guard = activationGuard('strict', 9, 2, () => resumes);
+  const c = (role: string, phaseId: string, executionId: string) => ({ role, workId: 'w', executionId, phaseId });
+  assert.equal(guard(c('builder', 'builder-continuation', 'e1'), undefined, 9), true);
+  assert.equal(guard(c('spec', 'p', 'e1'), { round: 1 }, 9), true);
+  assert.equal(guard(c('builder', 'builder-recovery', 'e2'), undefined, 9), false, 'no resumption before the tolerated answer');
+  resumes = 1;
+  assert.equal(guard(c('builder', 'builder-recovery', 'e2'), undefined, 9), true, 'the answered Question resumes the same Work');
+  assert.equal(guard(c('spec', 'p', 'e2'), { round: 1 }, 9), true, 'its reviews start again');
+  assert.equal(guard(c('builder', 'builder-recovery', 'e3'), undefined, 9), false, 'only once');
+  assert.equal(guard(c('builder', 'builder-publication', 'e4'), undefined, 9), true);
 });
