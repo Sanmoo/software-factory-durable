@@ -14,7 +14,7 @@ import { candidateNamespace, command, hostEnvironment, identityFile, installatio
 // writes to GitHub. Bounds are the PRODUCTION ones (configuration limits, one eligible issue, capacity 1); the recipe observes every poll and
 // stops the controller (held) the moment a bound is exceeded: running the release unmodified is the point, so no port is wrapped.
 
-const revision = 'qcand34-v4';
+const revision = 'qcand34-v5';
 const observations = candidateNamespace;
 const root = installationRoot;
 const unit = serviceUnit(root);
@@ -422,15 +422,40 @@ export function countedWorks(works: readonly Pick<WorkView, 'result'>[]): number
   return works.filter(item => item.result !== 'cancelled' && item.result !== 'delivered').length;
 }
 
-async function snapshot(issue: number): Promise<Snapshot & { raw: { list: number | null; show: number | null } }> {
-  const listed = await cli('list', '--limit', '50');
-  const works = ((listed.json as { works?: WorkView[] } | null)?.works ?? []).filter(item => item.repository.repository === repository.repository);
+/** One page of `factory list`, as the socket returns it. */
+export type ListPage = { code: number | null; json: unknown };
+/**
+ * Every Work `factory list` shows. The socket always pages and FITS each page to one frame (`page.fitted`): qcand34-v4 read one page, the
+ * cancelled v2 Work filled it and its own Work was on page 1, so the run never settled. Follows `page.nextCursor` until null; a failed,
+ * unparsable or non-advancing page ends the walk as incomplete (never a silent partial list read as complete).
+ */
+export async function listAllWorks(read: (cursor: number) => Promise<ListPage>, maxPages = 100):
+    Promise<{ works: WorkView[]; pages: number; complete: boolean; code: number | null }> {
+  const works: WorkView[] = [];
+  let cursor = 0, pages = 0, code: number | null = null;
+  while (pages < maxPages) {
+    const page = await read(cursor);
+    pages++; code = page.code;
+    const view = page.json as { works?: WorkView[]; page?: { nextCursor?: number | null } } | null;
+    if (page.code !== 0 || !view || !Array.isArray(view.works)) return { works, pages, complete: false, code };
+    works.push(...view.works);
+    const next = view.page?.nextCursor ?? null;
+    if (next === null) return { works, pages, complete: true, code };
+    if (typeof next !== 'number' || next <= cursor) return { works, pages, complete: false, code };
+    cursor = next;
+  }
+  return { works, pages, complete: false, code };
+}
+
+async function snapshot(issue: number): Promise<Snapshot & { raw: { list: number | null; show: number | null; pages: number; complete: boolean } }> {
+  const listed = await listAllWorks(cursor => cli('list', '--cursor', String(cursor), '--limit', '50'));
+  const works = listed.works.filter(item => item.repository.repository === repository.repository);
   const own = works.find(item => item.ticket.number === issue) ?? null;
   const shown = own ? await cli('show', own.work_id) : null;
   const view = shown?.json as { work?: WorkView; questions?: QuestionView[] } | null;
   const status = await cli('status');
   return { work: view?.work ?? own, questions: view?.questions ?? [], works: countedWorks(works), cycles: (status.json as { polling?: { cycles?: number } } | null)?.polling?.cycles ?? 0,
-    raw: { list: listed.code, show: shown?.code ?? null } };
+    raw: { list: listed.code, show: shown?.code ?? null, pages: listed.pages, complete: listed.complete } };
 }
 
 type Controller = { mode: 'foreground' | 'service'; exe: string | null; cmdline: string[]; before: Set<string>; sandboxesSeen: Set<string>; stop(): Promise<Record<string, unknown>> };

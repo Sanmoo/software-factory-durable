@@ -256,3 +256,24 @@ test('R-CAND preflight configuration: the setup template is replaced, the recipe
   assert.equal(cand.configurationState(expected.trimEnd(), expected), null, 'byte-identical only');
   assert.equal(cand.configurationState('', expected), null);
 });
+
+test('R-CAND snapshot list walk: follows page.nextCursor (the own Work on page 1 behind a fitted page 0); a failed or stuck page is incomplete', async () => {
+  const w = (id: string, number: number, result = 'open') => ({ work_id: id, ticket: { number }, repository: { repository: 'Sanmoo/java-springboot-event-sourcing' }, result });
+  // The qcand34-v4 shape: page 0 fitted to the cancelled predecessor only, the own Work on page 1.
+  const pages: Record<number, unknown> = {
+    0: { kind: 'list', works: [w('4b2d22b4', 49, 'cancelled')], page: { cursor: 0, limit: 50, returned: 1, filtered: 2, total: 2, nextCursor: 1, fitted: true } },
+    1: { kind: 'list', works: [w('62f37492', 59)], page: { cursor: 1, limit: 50, returned: 1, filtered: 2, total: 2, nextCursor: null, fitted: false } } };
+  const asked: number[] = [];
+  const listed = await cand.listAllWorks(async cursor => { asked.push(cursor); return { code: 0, json: pages[cursor] }; });
+  assert.deepEqual(asked, [0, 1]);
+  assert.deepEqual([listed.pages, listed.complete], [2, true]);
+  assert.deepEqual(listed.works.map(item => item.work_id), ['4b2d22b4', '62f37492']);
+  assert.equal(listed.works.find(item => item.ticket.number === 59)?.work_id, '62f37492', 'the own Work is found');
+  assert.equal(cand.countedWorks(listed.works), 1);
+  const failed = await cand.listAllWorks(async cursor => cursor === 0 ? { code: 0, json: pages[0] } : { code: 2, json: null });
+  assert.deepEqual([failed.complete, failed.works.length, failed.code], [false, 1, 2]);
+  const stuck = await cand.listAllWorks(async () => ({ code: 0, json: { works: [], page: { nextCursor: 0 } } }));
+  assert.deepEqual([stuck.complete, stuck.pages], [false, 1], 'a non-advancing cursor never loops');
+  const bounded = await cand.listAllWorks(async cursor => ({ code: 0, json: { works: [], page: { nextCursor: cursor + 1 } } }), 3);
+  assert.deepEqual([bounded.complete, bounded.pages], [false, 3]);
+});
