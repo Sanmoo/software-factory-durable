@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { classifyCapture, deliveryPrompt, exemptionPrompt, planReviews, verifyExecution } from '../../src/control/rules/review.js';
+import { classifyCapture, deliveryPrompt, exemptionPrompt, inheritedFindings, inheritedRounds, planReviews, verifyExecution } from '../../src/control/rules/review.js';
 import type { GateEvidence, HandoffDeclarations, ProposalHandoff, ProposalIdentity, ReviewOpinion } from '../../src/contracts/index.js';
-import type { ReviewRoundView } from '../../src/control/types.js';
+import type { ExecutionView, ReviewRoundView } from '../../src/control/types.js';
 import { createToolLedger, declarationsSchema } from '../../src/workers/index.js';
 
 // Rules level (R): pure functions over canonical types. Ticket 13: when a new round is needed, and Control's end-of-Execution verification.
@@ -260,4 +260,40 @@ test('ticket 11 + 13 composition: initial, continuation and recovery prompts all
     return value.kind === 'prompt' ? value.prompt : ''; };
   assert.match(recovered(true), /previous-execution=e1 reviews=factory-handoff review-rounds=multi\n/);
   assert.doesNotMatch(recovered(false), /review-rounds=multi/);
+});
+
+test('real run R-CAND v2: an Execution inherits the delivered review rounds of the predecessors it continues after a Question', () => {
+  type Earlier = Pick<ExecutionView, 'executionId' | 'request' | 'end' | 'review'>;
+  const delivered = (number: number, findings: RoundInput['findings'] = {}) => ({ ...round(number, { findings }), delivery: { requestedAt: 'now', outcome: 'delivered' as const, code: null, promptSha256: 'p' } });
+  const execution = (executionId: string, previous: string | null, outcome: string | null, rounds: ReviewRoundView[]): Earlier => ({ executionId,
+    request: { resume: previous ? { previousExecutionId: previous, questionId: null, answerSha256: null, reason: 'QUESTION_ANSWERED' } : null } as unknown as ExecutionView['request'],
+    end: outcome ? { outcome } as NonNullable<ExecutionView['end']> : null, review: { rounds } as NonNullable<ExecutionView['review']> });
+  const a = execution('a', null, 'completed', [delivered(1, { spec: ['S9'] })]);
+  const b = execution('b', 'a', 'question', [delivered(2, { spec: ['S1'] }), round(3, { findings: { spec: ['S2'] } }), { ...delivered(4), kind: 'exemption' as const }]);
+  const c = execution('c', 'b', 'question', [delivered(5, { standards: ['T1'] })]);
+  const d = execution('d', 'c', null, []);
+  const inherited = inheritedRounds(d, [a, b, c]);
+  assert.deepEqual(inherited.map(item => item.round), [2, 5], 'transitive over Questions; undelivered and exemption rounds and the completed Execution are not inherited');
+  assert.deepEqual(inheritedFindings(inherited), [{ round: 2, standards: [], spec: ['S1'] }, { round: 5, standards: ['T1'], spec: [] }]);
+  assert.deepEqual(inheritedRounds(execution('e', null, null, []), [a, b]), [], 'no resume: nothing inherited');
+  assert.deepEqual(inheritedRounds(execution('f', 'a', null, []), [a]), [], 'a completed predecessor was verified on its own');
+  assert.deepEqual(inheritedRounds(execution('g', 'g', null, []), [a]), [], 'a self reference ends the chain');
+});
+
+test('real run R-CAND v2: a declared treatment of an inherited finding is known and validated; an untreated inherited finding is not owed', () => {
+  const inherited = [round(4, { findings: { spec: ['S1'] } })];
+  const declarations = (treatments: HandoffDeclarations['treatments']) => ({ gates: [gate('docs', 'passed')], treatments });
+  const authorized = { round: 4, role: 'spec' as const, findingId: 'S1', outcome: 'not-adopted' as const, justification: 'j', evidence: null,
+    authorization: { kind: 'question' as const, questionId: '22222222-2222-4333-8444-555555555555' } };
+  const own = (treatments: HandoffDeclarations['treatments']) => [round(5, { content: '8', declarations: declarations(treatments) }), round(6, { content: '8', closing: true, kind: 'exemption',
+    exemption: { kind: 'unchanged', reviewedRound: 5, head: 'b'.repeat(40), reviewedHead: 'b'.repeat(40), contentSha256: '8'.repeat(64) } })];
+  const run = (rounds: ReviewRoundView[], with_: ReviewRoundView[] | undefined) => verifyExecution({ at: 'now', workId: 'w', rounds, ...(with_ ? { inherited: with_ } : {}),
+    question: id => questions[id] ?? null, source: reference => sources.has(reference.split('#')[0]!) });
+  const treated = run(own([authorized]), inherited);
+  assert.deepEqual([treated.status, treated.reasons], ['verified', []]);
+  assert.deepEqual(treated.treatments, [{ round: 4, role: 'spec', findingId: 'S1', outcome: 'not-adopted' }]);
+  assert.deepEqual(run(own([authorized]), undefined).reasons, ['TREATMENT_UNKNOWN_FINDING:4/spec/S1'], 'without the inherited round the treatment is unknown (the defect)');
+  assert.deepEqual([run(own([]), inherited).status, run(own([]), inherited).treatments], ['verified', []], 'not owed: round 5 reviewed the content again');
+  assert.deepEqual(run(own([{ ...authorized, authorization: null }]), inherited).reasons, ['REQUIREMENT_NON_ADOPTION_NOT_AUTHORIZED:4/spec/S1'], 'still validated');
+  assert.deepEqual(run(own([{ ...authorized, findingId: 'S2' }]), inherited).reasons, ['TREATMENT_UNKNOWN_FINDING:4/spec/S2']);
 });

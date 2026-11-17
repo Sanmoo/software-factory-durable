@@ -1,5 +1,5 @@
 import { reviewVerdictFormat, type ConcreteAuthorization, type ProposalHandoff, type ProposalIdentity, type ReviewerRole, type ReviewOpinion } from '../../contracts/index.js';
-import type { ReviewRoundView, VerificationView } from '../types.js';
+import type { ExecutionView, ReviewRoundView, VerificationView } from '../types.js';
 import { fenced } from './continuation.js';
 
 export const reviewerRoles: readonly ReviewerRole[] = ['standards', 'spec'];
@@ -206,11 +206,44 @@ const authorizationOk = (value: ConcreteAuthorization | null, facts: { workId: s
 };
 
 /**
+ * Pure (real run R-CAND v2): the review rounds an Execution inherits from the Executions it resumes after a Question. An Execution that
+ * ended with a Question never reached its end-of-Execution verification, and a continued Builder session still holds the findings delivered
+ * there; treating them (often with the answered Question as authorization) must be accepted by the handoff and by the verification. Only
+ * delivered review rounds count: the Builder never saw the findings of an undelivered one. Oldest first; the chain stops at the first
+ * predecessor that did not end with a Question.
+ */
+export function inheritedRounds(execution: Pick<ExecutionView, 'executionId' | 'request'>,
+  earlier: readonly Pick<ExecutionView, 'executionId' | 'request' | 'end' | 'review'>[]): ReviewRoundView[] {
+  const inherited: ReviewRoundView[] = [];
+  const seen = new Set([execution.executionId]);
+  let id = execution.request.resume?.previousExecutionId ?? null;
+  while (id && !seen.has(id)) {
+    seen.add(id);
+    const previous = earlier.find(item => item.executionId === id);
+    if (!previous || previous.end?.outcome !== 'question') break;
+    inherited.unshift(...(previous.review?.rounds ?? []).filter(round => (round.kind ?? 'review') === 'review' && round.delivery?.outcome === 'delivered'));
+    id = previous.request.resume?.previousExecutionId ?? null;
+  }
+  return inherited;
+}
+
+/** Pure: the finding ids each role listed in the inherited rounds, as the handoff of the continuing Builder must know them (≤ 16 rounds). */
+export function inheritedFindings(rounds: readonly ReviewRoundView[]): { round: number; standards: string[]; spec: string[] }[] {
+  return rounds.slice(-16).map(round => ({ round: round.round,
+    standards: (round.reviewers.standards.opinion?.findings ?? []).map(item => item.id).slice(0, 40),
+    spec: (round.reviewers.spec.opinion?.findings ?? []).map(item => item.id).slice(0, 40) }));
+}
+
+/**
  * Pure end-of-Execution verification (spec §6.4/§9.3): presence and correlation of the two current opinions, the treatment of every
  * finding, the gates and the waivers, over the FINAL captured content. Control never interprets the documents or certifies the sources;
  * absence of evidence is never success; a human waiver never satisfies a GitHub required check.
  */
 export function verifyExecution(input: { at: string; workId: string; rounds: readonly ReviewRoundView[];
+  /** Rounds inherited from the Executions this one continues after a Question ({@link inheritedRounds}): a treatment declared for one of
+   * their findings is known and validated (never TREATMENT_UNKNOWN_FINDING), but an untreated one is not owed here, since the continuation is
+   * reviewed again. They never count as this Execution's reviewed or final round. */
+  inherited?: readonly ReviewRoundView[];
   question(id: string): { workId: string; state: 'open' | 'answered' } | null;
   /** True only for a preserved source file the Host verified (exists, regular/no-follow, listed in that version's sources.json). */
   source(reference: string): boolean }): VerificationView {
@@ -240,16 +273,21 @@ export function verifyExecution(input: { at: string; workId: string; rounds: rea
   // Every finding of every review round is treated in a LATER capture; the latest treatment counts.
   const treatments: VerificationView['treatments'] = [];
   const facts = { workId: input.workId, question: input.question, source: input.source };
-  rounds.forEach((round, position) => {
+  const all = [...(input.inherited ?? []), ...rounds];
+  const inheritedCount = input.inherited?.length ?? 0;
+  all.forEach((round, position) => {
     if ((round.kind ?? 'review') !== 'review') return;
     const sourceContent = round.handoff.summary?.content?.sha256 ?? null;
     for (const role of reviewerRoles) for (const finding of round.reviewers[role].opinion?.findings ?? []) {
-      const later = rounds.slice(position + 1);
+      const later = all.slice(position + 1);
       // The FIRST capture that declares a treatment for this finding fixes WHEN it was treated; later restatements do not move it.
       const declaration = later.find(item => (item.declarations?.treatments ?? [])
         .some(candidate => candidate.round === round.round && candidate.role === role && candidate.findingId === finding.id));
       const treatment = declaration?.declarations?.treatments
         .find(candidate => candidate.round === round.round && candidate.role === role && candidate.findingId === finding.id);
+      // An inherited finding is not owed here: the continuation's first capture is always reviewed again (tickets 13/28), and that new
+      // round re-raises it if it still applies. A DECLARED treatment of it is still validated like any other.
+      if (position < inheritedCount && (!treatment || !declaration)) continue;
       treatments.push({ round: round.round, role, findingId: finding.id, outcome: treatment?.outcome ?? 'missing' });
       const key = `${round.round}/${role}/${finding.id}`;
       if (!treatment || !declaration) { reasons.push(`FINDING_UNTREATED:${key}`); continue; }
@@ -261,12 +299,12 @@ export function verifyExecution(input: { at: string; workId: string; rounds: rea
       } else if (treatment.authorization !== null && !valid) reasons.push(`AUTHORIZATION_NOT_CORRELATED:${key}`);
       // A fix is a content change: it must be reviewed on different content by a round AFTER the treatment was declared.
       // The declaring capture itself starts the round that reviews the changed content, so `>=` is still strictly after the declaration.
-      if (treatment.outcome === 'fixed' && !(sourceContent !== null && rounds.some(item => item.round >= declaration.round && (item.kind ?? 'review') === 'review' &&
+      if (treatment.outcome === 'fixed' && !(sourceContent !== null && all.some(item => item.round >= declaration.round && (item.kind ?? 'review') === 'review' &&
           item.handoff.summary?.content?.sha256 && item.handoff.summary.content.sha256 !== sourceContent))) reasons.push(`FIX_NOT_REVIEWED:${key}`);
     }
   });
-  for (const round of rounds) for (const item of round.declarations?.treatments ?? []) {
-    const source = rounds.find(candidate => candidate.round === item.round && (candidate.kind ?? 'review') === 'review');
+  for (const round of all) for (const item of round.declarations?.treatments ?? []) {
+    const source = all.find(candidate => candidate.round === item.round && (candidate.kind ?? 'review') === 'review');
     if (!source?.reviewers[item.role].opinion?.findings.some(finding => finding.id === item.findingId)) reasons.push(`TREATMENT_UNKNOWN_FINDING:${item.round}/${item.role}/${item.findingId}`);
   }
   // Gates: the latest declaration, bound to the content it was captured with; only a passed and current real result satisfies a gate.

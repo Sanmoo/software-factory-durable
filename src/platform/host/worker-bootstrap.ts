@@ -5,6 +5,7 @@ import { sessionRefSchema } from './worker-session-file.js';
 const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
 const text = z.string().min(1).max(4096);
 const cost = z.number().finite().nonnegative();
+const deliveredFindingId = z.string().regex(/^[A-Za-z0-9_.-]{1,32}$/);
 const publicProfile = { id: z.literal('factory-development-pi-1.5.2-read-async-bash-lexical-v3'), systemPrompt: text };
 const oauthProfile = z.strictObject({ ...publicProfile, auth: z.literal('factory-oauth'),
   providerId: z.literal('openai'), modelId: z.literal('gpt-6-luna'), api: z.literal('openai-responses') });
@@ -35,8 +36,12 @@ const bootstrap = z.strictObject({
   // Ticket 12 Host policies: the Builder handoff (base commit of the Execution) and the reviewer's round input; never model input.
   handoff: z.strictObject({ baseCommit: z.string().regex(/^[0-9a-f]{40}$/),
     // Ticket 13: repeated capture rounds of this invocation (first round number, at most `max` captures including the closing one).
-    rounds: z.strictObject({ first: z.number().int().min(1).max(98), max: z.number().int().min(2).max(8) })
-      .refine(value => value.first + value.max - 1 <= 99).optional(),
+    rounds: z.strictObject({ first: z.number().int().min(1).max(98), max: z.number().int().min(2).max(8),
+      // R-CAND v2: findings delivered in earlier rounds of the Executions this one continues after a Question (Control's record).
+      delivered: z.array(z.strictObject({ round: z.number().int().min(1).max(97), standards: z.array(deliveredFindingId).max(40).readonly(),
+        spec: z.array(deliveredFindingId).max(40).readonly() })).max(16).readonly().optional() })
+      .refine(value => value.first + value.max - 1 <= 99)
+      .refine(value => (value.delivered ?? []).every(item => item.round < value.first), 'delivered rounds precede the first round').optional(),
     // Ticket 21: the authorized remote tip the capture checks as an ancestor of HEAD (reconciliation Execution only).
     preserve: z.string().regex(/^[0-9a-f]{40}$/).optional() }).optional(),
   // Ticket 21 review: the exact push of a publication activation (Builder only).

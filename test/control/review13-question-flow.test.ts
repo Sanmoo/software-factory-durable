@@ -25,7 +25,10 @@ const passed = { id: 'docs', source: '/artifacts/spec/v1/ticket.json#validation'
   outcome: 'passed' as const, code: null, exitCode: 0, output: { workId: 'w', id: '11111111-2222-4333-8444-555555555555' }, sequence: 2, current: true, reason: null, authorization: null };
 type Activation = { captures: HandoffEvent[]; ask?: boolean };
 
-async function scenario(t: { after(fn: () => Promise<void>): void }, partialRecovery: boolean) {
+const notAdopted = (round: number) => ({ round, role: 'spec' as const, findingId: 'S1', outcome: 'not-adopted' as const,
+  justification: 'The operator answered that the Ticket does not require it.', evidence: null, authorization: { kind: 'question' as const, questionId: qid } });
+
+async function scenario(t: { after(fn: () => Promise<void>): void }, partialRecovery: boolean, treatInherited = false) {
   const dir = await mkdtemp(join(tmpdir(), 'factory-review13q-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const remote: Remote = { pulls: {}, issues: [remoteIssue(3)] };
@@ -34,9 +37,9 @@ async function scenario(t: { after(fn: () => Promise<void>): void }, partialReco
   const directives: BuilderDirective[] = [];
   const activations: Activation[] = [
     { captures: [{ round: 1, status: 'captured', summary: summary(1, '1'), declarations: { treatments: [], gates: [passed] } }], ask: true },
-    { captures: [{ round: 2, status: 'captured', summary: summary(2, '1'), declarations: { treatments: [], gates: [passed] } },
-      { round: 3, status: 'captured', summary: summary(3, '1'), declarations: { gates: [passed], treatments: [{ round: 2, role: 'spec', findingId: 'S1', outcome: 'not-adopted',
-        justification: 'The operator answered that the Ticket does not require it.', evidence: null, authorization: { kind: 'question', questionId: qid } }] } },
+    // Real run R-CAND v2: a continued session may first treat the finding its predecessor delivered (round 1) with the answered Question.
+    { captures: [{ round: 2, status: 'captured', summary: summary(2, '1'), declarations: { treatments: treatInherited ? [notAdopted(1)] : [], gates: [passed] } },
+      { round: 3, status: 'captured', summary: summary(3, '1'), declarations: { gates: [passed], treatments: [notAdopted(2)] } },
       { round: 4, status: 'captured', summary: summary(4, '1'), closing: true }] }];
   const allCaptures = activations.flatMap(item => item.captures);
   let delivered: ((directive: BuilderDirective) => void) | undefined;
@@ -126,15 +129,17 @@ async function scenario(t: { after(fn: () => Promise<void>): void }, partialReco
   const receipt = await control.accept({ request_id: 'cli-13', operation: 'answer', question_id: qid, text: 'Not required: keep the section out.', origin: 'local-cli' }) as ControlReceipt;
   assert.equal(receipt.kind === 'durable' && receipt.operation === 'answer' && receipt.outcome, 'accepted');
   const resumed = await settle(value => value?.execution?.mode === 'recovery' && value.execution.slot.held === false);
-  assert.deepEqual(builders.map(item => item.handoff), [{ baseCommit: 'a'.repeat(40), rounds: { first: 1, max: 4 } }, { baseCommit: 'a'.repeat(40), rounds: { first: 2, max: 4 } }],
-    'the recovery continues the Work round numbering (earlier /artifacts/review/r<N> are preserved)');
+  assert.deepEqual(builders.map(item => item.handoff), [{ baseCommit: 'a'.repeat(40), rounds: { first: 1, max: 4 } },
+    { baseCommit: 'a'.repeat(40), rounds: { first: 2, max: 4, delivered: [{ round: 1, standards: [], spec: ['S1'] }] } }],
+    'the recovery continues the Work round numbering (earlier /artifacts/review/r<N> are preserved) and its handoff knows the findings delivered before the Question');
   assert.match(builders[1]!.prompt, /reviews=factory-handoff review-rounds=multi/);
   const rounds = resumed.execution!.review!.rounds;
   assert.equal(resumed.execution!.review!.firstRound, 2);
   assert.deepEqual(rounds.map(item => [item.round, item.kind, item.exemption?.kind ?? null]), [[2, 'review', null], [3, 'exemption', 'unchanged'], [4, 'exemption', 'unchanged']]);
   const verification = resumed.execution!.review!.verification!;
   assert.deepEqual([verification.status, verification.reasons], ['verified', []]);
-  assert.deepEqual(verification.treatments, [{ round: 2, role: 'spec', findingId: 'S1', outcome: 'not-adopted' }]);
+  assert.deepEqual(verification.treatments, [...(treatInherited ? [{ round: 1, role: 'spec', findingId: 'S1', outcome: 'not-adopted' }] : []),
+    { round: 2, role: 'spec', findingId: 'S1', outcome: 'not-adopted' }], 'an untreated inherited finding is not owed (round 2 reviewed it again)');
   assert.deepEqual(directives.map(item => [item.round, item.end ?? false]), [[1, false], [2, false], [3, false], [4, true]]);
   return { builders };
 }
@@ -150,4 +155,8 @@ test('ticket 28 AC6: the substitute session receives the preserved review state 
   assert.match(prompt, /PRESERVED REVIEW STATE of the previous Execution — round 1 \(delivered; conclusion findings; delivery to the previous Builder session: delivered, not proof that it was consumed\)/);
   assert.match(prompt, /"role":"spec","conclusion":"findings","findings":\[\{"id":"S1"/);
   assert.match(prompt, /the Factory obtains new opinions of both reviewers; treat the findings of the results it then delivers to you \(their round\), never these/);
+});
+
+test('real run R-CAND v2: the continuation treats the finding delivered before the Question; Control knows it (no TREATMENT_UNKNOWN_FINDING)', async t => {
+  await scenario(t, false, true);
 });

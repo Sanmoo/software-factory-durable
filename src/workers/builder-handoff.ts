@@ -24,7 +24,10 @@ export type BuilderDirective = { kind: 'review-results'; round: number; prompt: 
 export type ListedFindings = { standards: string[]; spec: string[] };
 /** Ticket 13 multi-round policy: round numbers start at `first` (continuing earlier Executions of the Work) and at most `max` captures
  * (handoffs plus the closing capture) happen in this invocation; one capture is always kept for the closing. */
-export type HandoffRounds = { first: number; max: number };
+export type HandoffRounds = { first: number; max: number;
+  /** Real run R-CAND v2: the findings delivered in rounds BEFORE `first` by the Executions this one continues after a Question; the
+   * continued session may treat them, so the handoff knows them from the start (Control's durable record, never the model). */
+  delivered?: readonly { round: number; standards: readonly string[]; spec: readonly string[] }[] | undefined };
 
 const suspendedResult = (text: string) => ({ content: [{ type: 'text' as const, text }], details: { suspended: true }, isError: true, terminate: true });
 
@@ -42,6 +45,7 @@ export function builderHandoff(policy?: HandoffRounds, ledger?: ReturnType<typeo
   let declarations: Declarations | undefined;
   // Ticket 13: findings delivered per round (null = a round delivered without a Host list: only the end-of-Execution check applies).
   const listed = new Map<number, { standards: Set<string>; spec: Set<string> } | null>();
+  for (const item of policy?.delivered ?? []) if (item.round < policy!.first) listed.set(item.round, { standards: new Set(item.standards), spec: new Set(item.spec) });
   const unknownTreatments = (treatments: NonNullable<Declarations['treatments']>) => treatments.flatMap(item => {
     if (!listed.has(item.round)) return [`${item.round}/${item.role}/${item.findingId}`];
     const known = listed.get(item.round);

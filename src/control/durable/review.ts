@@ -3,7 +3,7 @@ import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { ProposalIdentity, ReviewerRole, ReviewOpinion } from '../../contracts/index.js';
 import type { HandoffEvent } from '../../workers/index.js';
 import type { ExecutionView, ReviewRoundView } from '../types.js';
-import { concludeRound, lastReviewed, reviewerRoles, verifyExecution, type CaptureClass, type ReviewPlan } from '../rules/review.js';
+import { concludeRound, inheritedRounds, lastReviewed, reviewerRoles, verifyExecution, type CaptureClass, type ReviewPlan } from '../rules/review.js';
 import { notRetriedReasons, reviewProfile, type CarryPlan } from '../rules/review-recovery.js';
 import { works, type WorkRecord } from './admission.js';
 import { budgetHistory } from './execution.js';
@@ -178,7 +178,9 @@ export async function recordVerification(session: Session, work_id: string, exec
     const work = document.work;
     const execution = work?.execution ?? null;
     if (!work || !execution || execution.executionId !== executionId || execution.state !== 'started' || !execution.review) return 'stale' as const;
-    const referenced = new Set(execution.review.rounds.flatMap(round => [...(round.declarations?.treatments ?? []), ...(round.declarations?.gates ?? [])])
+    // R-CAND v2: treatments of findings delivered by the Executions this one continues after a Question are known and validated.
+    const inherited = inheritedRounds(execution, work.previousExecutions ?? []);
+    const referenced = new Set([...inherited, ...execution.review.rounds].flatMap(round => [...(round.declarations?.treatments ?? []), ...(round.declarations?.gates ?? [])])
       .flatMap(item => item.authorization?.kind === 'question' ? [item.authorization.questionId] : []));
     const known = new Map<string, { workId: string; state: 'open' | 'answered' }>();
     for (const id of [...referenced].slice(0, 64)) {
@@ -187,7 +189,7 @@ export async function recordVerification(session: Session, work_id: string, exec
     }
     // Preserved sources were verified by the Host BEFORE this commit (confined reads); here only the verified set is used.
     const sources = new Set(input.sources.slice(0, 32));
-    const verification = verifyExecution({ at: new Date().toISOString(), workId: work_id, rounds: execution.review.rounds, question: id => known.get(id) ?? null,
+    const verification = verifyExecution({ at: new Date().toISOString(), workId: work_id, rounds: execution.review.rounds, inherited, question: id => known.get(id) ?? null,
       source: reference => sources.has(reference) });
     execution.review.verification = verification;
     history(work, 'review-verified', executionId, `${verification.status}${verification.reasons.length ? `:${verification.reasons.slice(0, 8).join(',')}` : ''}`.slice(0, 512));

@@ -29,7 +29,7 @@ export type Invocation = { context: ToolContext; prompt: string; signal: AbortSi
   /** Builder only (ticket 12): the Host handoff tool and suspension for the Factory reviews, with the Execution's base commit. */
   handoff?: { baseCommit: string;
     /** Ticket 13: repeated rounds (treatments, gates, closing capture); absent = the single ticket 12 round. */
-    rounds?: { first: number; max: number } | undefined;
+    rounds?: { first: number; max: number; delivered?: readonly { round: number; standards: readonly string[]; spec: readonly string[] }[] | undefined } | undefined;
     /** Ticket 21: the authorized remote tip every capture checks as an ancestor of HEAD (reconciliation Execution only). */
     preserve?: string | undefined };
   /** Builder only (ticket 21 review): the exact push Control allows in a publication activation; absent = no push. */

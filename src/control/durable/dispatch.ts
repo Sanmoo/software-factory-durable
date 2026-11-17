@@ -5,7 +5,7 @@ import type { BuilderGrant } from '../../contracts/index.js';
 import type { BootRef, EnvironmentRef } from '../../sandbox/index.js';
 import type { ProposalIdentity, ReviewOpinion } from '../../contracts/index.js';
 import type { HandoffEvent } from '../../workers/index.js';
-import { classifyCapture, deliveryPrompt, exemptionPrompt, lastReviewed, planReviews, type CaptureClass, type ReviewPlan } from '../rules/review.js';
+import { classifyCapture, deliveryPrompt, exemptionPrompt, inheritedFindings, inheritedRounds, lastReviewed, planReviews, type CaptureClass, type ReviewPlan } from '../rules/review.js';
 import { recordConclusion, recordDelivery, recordHandoff, recordReviewerEnd, recordReviewerStart, recordVerification } from './review.js';
 import { carryBasis, carryPlan, carrySource, identityChange, preservedReviewContext, reviewerFailure, incorporable, retryDecision, reviewProfile, undiscovered, type CarryPlan } from '../rules/review-recovery.js';
 import { recordNotRetried, recordReviewerRetry, releaseReviewerRetry } from './review-recovery.js';
@@ -907,8 +907,11 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       };
       if (lifecycle.withdrawn) { await withdrawnBeforeActivation(); return; }
       // Ticket 13: round numbers continue the earlier Executions of this Work (their /artifacts/review/r<N> directories are preserved).
-      const firstRound = 1 + Math.max(0, ...[...(work.previousExecutions ?? []), ...(work.execution && work.execution.executionId !== executionId ? [work.execution] : [])]
-        .flatMap(item => item.review?.rounds ?? []).map(item => item.round));
+      const earlier = [...(work.previousExecutions ?? []), ...(work.execution && work.execution.executionId !== executionId ? [work.execution] : [])];
+      const firstRound = 1 + Math.max(0, ...earlier.flatMap(item => item.review?.rounds ?? []).map(item => item.round));
+      // Real run R-CAND v2: a continuation after a Question may treat the findings its predecessor delivered (its session holds them); its handoff
+      // must know them (otherwise HANDOFF_TREATMENT_UNKNOWN_FINDING refuses every treatment of the earlier round).
+      const delivered = inheritedFindings(inheritedRounds(execution, earlier));
       const promptSha256 = createHash('sha256').update(prompt).digest('hex');
       const confirmed = await confirmActivation(session, work.work_id, executionId, attemptId, grant.metadata, promptSha256, plan.decision);
       if (confirmed.kind === 'refused') { await revoke(); await refuse(confirmed.reasons); return; }
@@ -939,7 +942,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           expected: execution.request.publication.expectedRemote.state === 'present' ? execution.request.publication.expectedRemote.sha : null } } : {}),
         // Publish-only (review HIGH 1): no handoff for a publication activation; its Builder can never open a review round.
         // Ticket 22: a repair that updates the branch onto the current base is reviewed against THAT base tip (never the stale prepared base).
-        ...(ports.reviews && !execution.request.publication ? { handoff: { baseCommit: (execution.request.repair && updateTarget(execution.request.repair.reasons)?.tip) || prepared.checkout.baseCommit, ...(ports.reviews.rounds ? { rounds: { first: firstRound, max: ports.reviews.rounds.max } } : {}),
+        ...(ports.reviews && !execution.request.publication ? { handoff: { baseCommit: (execution.request.repair && updateTarget(execution.request.repair.reasons)?.tip) || prepared.checkout.baseCommit, ...(ports.reviews.rounds ? { rounds: { first: firstRound, max: ports.reviews.rounds.max, ...(delivered.length ? { delivered } : {}) } } : {}),
           // Ticket 21: every capture of a reconciliation Execution checks that the authorized remote tip is still an ancestor of HEAD.
           ...(execution.request.reconciliation ? { preserve: execution.request.reconciliation.authorizedRemote }
             // Ticket 22: a repair over human commits — every capture proves the latest incorporated tip is still an ancestor of HEAD.
@@ -1004,8 +1007,10 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           // It does not gate completion (a `completed` Execution may be `not-verified`); GitHub readiness (tickets 14/15) must consume it.
           // Preserved-source authorizations are confirmed by the Host first (confined no-follow read); unverified ones never count.
           if (ports.reviews?.rounds && completed.status === 'success') {
-            const shown = (await deps.readWorks()).find(item => item.work_id === work.work_id)?.execution;
-            const references = [...new Set((shown?.review?.rounds ?? []).flatMap(item => [...(item.declarations?.treatments ?? []), ...(item.declarations?.gates ?? [])])
+            const fresh = (await deps.readWorks()).find(item => item.work_id === work.work_id);
+            const shown = fresh?.execution;
+            const inherited = shown ? inheritedRounds(shown, fresh?.previousExecutions ?? []) : [];
+            const references = [...new Set([...inherited, ...(shown?.review?.rounds ?? [])].flatMap(item => [...(item.declarations?.treatments ?? []), ...(item.declarations?.gates ?? [])])
               .flatMap(entry => entry.authorization?.kind === 'preserved-source' ? [entry.authorization.reference.split('#')[0]!] : []))].slice(0, 32);
             const sources: string[] = [];
             for (const reference of references) {

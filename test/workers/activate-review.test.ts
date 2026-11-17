@@ -85,6 +85,20 @@ test('ticket 21: the reconciliation Builder launch carries the authorized remote
     handoff: { baseCommit: 'a'.repeat(40), preserve: 'HEAD' } }), /WORKER_LAUNCH_INVALID/, 'only an exact commit id, never a ref the guest resolves');
 });
 
+test('real run R-CAND v2: a continuation Builder launch carries the findings delivered before its first round; a later or malformed one refuses the launch', async t => {
+  const o = await owner(t, () => ({ status: 'success', receipt }));
+  const facade = createWorkers({ root: o.root, profile: oauth, knownSecrets: [] });
+  const delivered = [{ round: 4, standards: [], spec: ['S1'] }];
+  const handle = await facade.activate({ context: context('builder', 'builder-c'), prompt: 'continue', signal: new AbortController().signal,
+    modelBudget: 'builder-v1', handoff: { baseCommit: 'a'.repeat(40), rounds: { first: 5, max: 4, delivered } } });
+  t.after(() => handle.close());
+  await handle.started;
+  assert.deepEqual(o.received.find(message => message.kind === 'launch-worker')!.payload.handoff, { baseCommit: 'a'.repeat(40), rounds: { first: 5, max: 4, delivered } });
+  for (const bad of [[{ round: 5, standards: [], spec: ['S1'] }], [{ round: 4, standards: [], spec: ['S 1'] }]])
+    await assert.rejects(facade.activate({ context: context('builder', 'builder-bad'), prompt: 'x', signal: new AbortController().signal,
+      handoff: { baseCommit: 'a'.repeat(40), rounds: { first: 5, max: 4, delivered: bad } } }), /WORKER_LAUNCH_INVALID/);
+});
+
 test('AC4/AC5: reviewers launch with their own configured profile, budget and review input; the opinion must be this invocation\'s', async t => {
   const o = await owner(t, launch => {
     const invocationId = (launch.payload.context as { invocationId: string }).invocationId;

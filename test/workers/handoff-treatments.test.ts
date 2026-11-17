@@ -61,3 +61,18 @@ test('AC1: a treatment of a round that was never delivered is refused; a round d
   // Round 1 was delivered without a list (no Host list to check against): accepted here, the end-of-Execution check stays as defence.
   assert.equal((await call(gate, { treatments: [treatment(1, 'S1')] })).terminate, true);
 });
+
+test('real run R-CAND v2: a continuation knows the findings its predecessor delivered before the Question; unknown ones are still refused', async () => {
+  // Work 4b2d22b4: round 4 Spec S1 delivered, the Builder asked a Question, and the continuation Execution (first round 5) treated S1.
+  const gate = builderHandoff({ first: 5, max: 4, delivered: [{ round: 4, standards: [], spec: ['S1'] }, { round: 9, standards: ['X'], spec: [] }] }, createToolLedger());
+  const treatment = (round: number, role: string, findingId: string) => ({ round, role, findingId, outcome: 'not-adopted', justification: 'Operator answered.' });
+  for (const unknown of [treatment(4, 'spec', 'S2'), treatment(4, 'standards', 'S1'), treatment(3, 'spec', 'S1'), treatment(9, 'standards', 'X')]) {
+    const refused = await call(gate, { treatments: [unknown] });
+    assert.match(text(refused), /^HANDOFF_TREATMENT_UNKNOWN_FINDING/, JSON.stringify(unknown));
+  }
+  assert.equal(gate.pending(), false, 'no round consumed; a delivered round not before `first` is ignored');
+  const accepted = await call(gate, { treatments: [treatment(4, 'spec', 'S1')] });
+  assert.equal(accepted.terminate, true);
+  assert.equal(gate.round(), 5);
+  assert.deepEqual(gate.declarations()!.treatments!.map(item => `${item.round}/${item.role}/${item.findingId}`), ['4/spec/S1']);
+});
