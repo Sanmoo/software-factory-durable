@@ -149,3 +149,37 @@ test('ticket 21: with `preserve` the capture reports whether the authorized remo
   assert.throws(() => parseHandoffSummary(summary, 1, f.base, '9'.repeat(40)), /HANDOFF_CAPTURE_INVALID/, 'an answer about another commit is refused');
   assert.deepEqual(parseHandoffSummary(summary, 1, f.base, human).preserved, { commit: human, ancestor: true });
 });
+
+test('q34-ghadv-v2/v3: a reconciliation capture writes the Builder\'s OWN patch (authorized tip..HEAD) and lists only its own changed files; the human file is context', async t => {
+  const f = await fixture(t);
+  git(f.checkout, 'stash', '-q', '-u');
+  await writeFile(join(f.checkout, 'human.md'), '# human\n');
+  git(f.checkout, 'add', '.'); git(f.checkout, 'commit', '-q', '-m', 'human commit on the Factory branch');
+  const human = git(f.checkout, 'rev-parse', 'HEAD');
+  await writeFile(join(f.checkout, 'factory.md'), 'factory result on top of the human commit\n');
+  git(f.checkout, 'add', '.'); git(f.checkout, 'commit', '-q', '-m', 'factory rebased on top');
+  await writeFile(join(f.checkout, 'notes.md'), 'untracked own work\n');
+  const capture = (round: string, preserve?: string) => JSON.parse(execFileSync('/usr/bin/python3', ['-I', '-S', '-c', handoffCaptureProgram, f.checkout, f.artifacts, round, f.base,
+    '/workspace/checkout', '/artifacts', ...(preserve ? ['capture', preserve] : [])], { encoding: 'utf8', stdio: 'pipe' }));
+  const summary = capture('1', human);
+  assert.ok(summary.changed.includes('/workspace/checkout/human.md'), 'the base-relative listing still shows the human file (context)');
+  assert.deepEqual(summary.ownChanged, ['/workspace/checkout/committed.txt', '/workspace/checkout/factory.md', '/workspace/checkout/notes.md'].filter(path =>
+    !path.endsWith('committed.txt')), 'only what changed on top of the authorized tip (and the working tree)');
+  assert.equal(summary.ownChangedTruncated, false);
+  const own = await readFile(join(f.artifacts, 'review', 'r1', 'own.patch'), 'utf8');
+  assert.equal(summary.patches.own.path, '/artifacts/review/r1/own.patch');
+  assert.equal(summary.patches.own.sha256, sha(own));
+  assert.match(own, /factory\.md/);
+  assert.doesNotMatch(own, /human\.md/, 'the human commit is never part of the own patch');
+  assert.deepEqual(parseHandoffSummary(JSON.stringify(summary), 1, f.base, human).patches.own, summary.patches.own);
+  // Not an ancestor (the human commit dropped): no own patch is offered, the verification refuses it anyway.
+  git(f.checkout, 'reset', '-q', '--hard', f.base);
+  await writeFile(join(f.checkout, 'factory.md'), 'factory only\n');
+  git(f.checkout, 'add', '.'); git(f.checkout, 'commit', '-q', '-m', 'factory without the human commit');
+  const dropped = capture('2', human);
+  assert.deepEqual([dropped.patches.own, dropped.ownChanged], [undefined, undefined]);
+  const plain = capture('3');
+  assert.deepEqual([plain.patches.own, plain.ownChanged], [undefined, undefined], 'absent outside a reconciliation');
+  const forged = JSON.stringify({ ...plain, ownChanged: [] });
+  assert.throws(() => parseHandoffSummary(forged, 3, f.base), /HANDOFF_CAPTURE_INVALID/, 'an own listing without a preserved ancestor is refused');
+});

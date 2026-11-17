@@ -166,6 +166,15 @@ diff = ["diff", "--binary", "--no-ext-diff", "--no-textconv", "--no-renames", "-
 stage = "git-diff-patches"
 patches = {"committed": write("committed.patch", git(*diff, base, "HEAD")), "staged": write("staged.patch", git(*diff, "--cached")),
            "unstaged": write("unstaged.patch", git(*diff))}
+own_changed = None
+if preserved is not None and preserved["ancestor"]:
+    # q34-ghadv-v2/v3: the review SUBJECT of a reconciliation is the Builder's own work on top of the authorized remote tip (the human commits
+    # are context): its patch and its present changed files (changed since that tip, or in the working tree).
+    stage = "git-diff-own"
+    patches["own"] = write("own.patch", git(*diff, preserve, "HEAD"))
+    since = set(text(name) for name in git("diff", "--name-only", "-z", "--no-renames", preserve, "HEAD").split(b"\0") if name)
+    own_changed = [e["guestPath"] for e in ordered if e["present"] and e.get("kind") == "file" and
+                   (e["path"] in since or e["staged"] or e["unstaged"] or e["untracked"])]
 def latest(kind):
     best = None
     try:
@@ -191,6 +200,9 @@ summary = {"version": 1, "round": int(rnd), "index": view + "/index.json", "head
            "changed": changed[:20], "changedTruncated": len(changed) > 20, "content": content}
 if preserved is not None:
     summary["preserved"] = preserved
+if own_changed is not None:
+    summary["ownChanged"] = own_changed[:20]
+    summary["ownChangedTruncated"] = len(own_changed) > 20
 index = dict(summary, checkout=checkout_view, entries=ordered,
              reviewerNote="Read each listed guestPath and patch with the read tool, with offset/limit to continue; read beyond the hunks for context.")
 index_bytes = json.dumps(index, indent=1, sort_keys=True).encode()
@@ -223,8 +235,9 @@ export const handoffSummarySchema = z.strictObject({
   version: z.literal(1), round: z.number().int().min(1).max(99), index: guestPath('/artifacts/review/r'), indexSha256: sha256,
   head: z.string().regex(hex40), branch: z.string().max(512).nullable(), base: z.string().regex(hex40), mergeBase: z.string().regex(hex40).nullable(),
   counts: z.strictObject({ entries: count, committed: count, staged: count, unstaged: count, untracked: count, removed: count }),
-  patches: z.strictObject({ committed: patch, staged: patch, unstaged: patch }), spec: version, instructions: version,
+  patches: z.strictObject({ committed: patch, staged: patch, unstaged: patch, own: patch.optional() }), spec: version, instructions: version,
   changed: z.array(guestPath('/workspace/checkout/')).max(20), changedTruncated: z.boolean(),
+  ownChanged: z.array(guestPath('/workspace/checkout/')).max(20).optional(), ownChangedTruncated: z.boolean().optional(),
   content: z.strictObject({ sha256, clean: z.boolean(), headMatches: z.boolean() }).optional(),
   preserved: z.strictObject({ commit: z.string().regex(hex40), ancestor: z.boolean() }).optional(),
 });
@@ -234,5 +247,9 @@ export function parseHandoffSummary(stdout: string, round: number, baseCommit: s
   if (parsed.round !== round || parsed.base !== baseCommit || parsed.index !== `/artifacts/review/r${round}/index.json`) throw new Error('HANDOFF_CAPTURE_INVALID');
   // Ticket 21: the ancestry answer must be about exactly the requested commit, and present only when requested.
   if ((parsed.preserved?.commit ?? null) !== (preserve ?? null)) throw new Error('HANDOFF_CAPTURE_INVALID');
+  // q34-ghadv-v2/v3: an own patch/listing exists only together, and only when the authorized tip is an ancestor of HEAD.
+  const own = parsed.patches.own !== undefined, listed = parsed.ownChanged !== undefined;
+  if (own !== listed || listed !== (parsed.ownChangedTruncated !== undefined) || (own && parsed.preserved?.ancestor !== true)) throw new Error('HANDOFF_CAPTURE_INVALID');
+  if (own && parsed.patches.own!.path !== `/artifacts/review/r${round}/own.patch`) throw new Error('HANDOFF_CAPTURE_INVALID');
   return parsed as ProposalHandoff;
 }

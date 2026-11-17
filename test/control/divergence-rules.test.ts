@@ -264,3 +264,29 @@ test('real run q21-human-v7: reviewers of a reconciliation get the operator-auth
   const duties = reconciliationDuties('q-55d485f5').join('\n');
   assert.match(duties, /never ask a new Question about them/);
 });
+
+test('q34-ghadv-v2/v3 regression: a reconciliation review judges the Builder\'s OWN patch; the authorized human file is never offered as a change to judge', () => {
+  const patch = (name: string, bytes = 1) => ({ path: `/artifacts/review/r7/${name}.patch`, bytes, sha256: 'c'.repeat(64) });
+  const handoff = { version: 1, round: 7, index: '/artifacts/review/r7/index.json', indexSha256: 'a'.repeat(64), head: local, branch, base: 'b'.repeat(40), mergeBase: 'b'.repeat(40),
+    counts: { entries: 2, committed: 2, staged: 0, unstaged: 0, untracked: 0, removed: 0 },
+    patches: { committed: patch('committed'), staged: patch('staged', 0), unstaged: patch('unstaged', 0), own: patch('own') },
+    spec: null, instructions: { version: 'v2', sources: '/artifacts/instructions/v2/sources.json', sha256: 'd'.repeat(64) },
+    changed: ['/workspace/checkout/docs/FACTORY_ADVERSE.md', '/workspace/checkout/docs/FACTORY_ADVERSE_HUMAN.md'], changedTruncated: false,
+    ownChanged: ['/workspace/checkout/docs/FACTORY_ADVERSE.md'], ownChangedTruncated: false, preserved: { commit: human, ancestor: true } } as never;
+  const authorized = { questionId: 'q-ac3ef167', commits: [human], files: ['docs/FACTORY_ADVERSE_HUMAN.md'] };
+  for (const plan of planReviews({ executionId: 'r1', round: 7, attempt: 1, handoff, authorizedChanges: authorized })) {
+    assert.ok(plan.review.required.includes('/artifacts/review/r7/own.patch'), `${plan.role}: the own patch is required`);
+    assert.ok(plan.review.required.includes('/workspace/checkout/docs/FACTORY_ADVERSE.md'), plan.role);
+    assert.ok(!plan.review.required.includes('/workspace/checkout/docs/FACTORY_ADVERSE_HUMAN.md'), `${plan.role}: the human file is never a required change`);
+    assert.ok(!plan.review.required.includes('/artifacts/review/r7/committed.patch'), `${plan.role}: the base-relative patch is context, not the subject`);
+    const required = plan.prompt.split('\n').find(line => line.startsWith('Required inputs'))!;
+    assert.doesNotMatch(required, /FACTORY_ADVERSE_HUMAN/);
+    assert.match(plan.prompt, new RegExp(`Review subject: /artifacts/review/r7/own\\.patch \\(the Builder's own changes from the authorized remote tip ${human} to HEAD`));
+    assert.match(plan.prompt, /committed\.patch .*CONTEXT ONLY/);
+  }
+  // Without an own patch (an older capture, or no reconciliation) the plan is unchanged.
+  const plain = { ...(handoff as object), patches: { committed: patch('committed'), staged: patch('staged', 0), unstaged: patch('unstaged', 0) }, ownChanged: undefined,
+    ownChangedTruncated: undefined, preserved: undefined } as never;
+  const [first] = planReviews({ executionId: 'r1', round: 7, attempt: 1, handoff: plain });
+  assert.ok(first!.review.required.includes('/artifacts/review/r7/committed.patch') && !/Review subject/.test(first!.prompt));
+});

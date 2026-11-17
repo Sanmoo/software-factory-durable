@@ -29,6 +29,13 @@ function operatorRequestsNote(requests: readonly AuthorizedRequest[]) {
     'Ticket. Check that each is addressed; a finding is still due when an implementation contradicts the Ticket or another request (cite both).'].join('\n');
 }
 
+/** The own review subject of a reconciliation capture (present only with the authorized tip an ancestor of HEAD), or null. */
+function reconciliationSubject(handoff: ProposalHandoff) {
+  const patch = handoff.patches.own;
+  if (!patch || !handoff.ownChanged || handoff.preserved?.ancestor !== true) return null;
+  return { patch, tip: handoff.preserved.commit, changed: handoff.ownChanged, truncated: handoff.ownChangedTruncated === true };
+}
+
 export function planReviews(input: { executionId: string; round: number; attempt: number; handoff: ProposalHandoff;
   previousSessions?: Partial<Record<ReviewerRole, string | null>>;
   /** Ticket 21 (real run q21-human-v7): the remote changes the operator's answered Question authorized a reconciliation to keep, as data. */
@@ -40,8 +47,12 @@ export function planReviews(input: { executionId: string; round: number; attempt
     const preserved = role === 'spec' ? handoff.spec : handoff.instructions;
     const missing = preserved ? [] : [role === 'spec' ? 'spec-version' as const : 'instructions-version' as const];
     // Required = must be read COMPLETELY (truncation continued) for a clean conclusion: index, preserved sources, non-empty patches, changed files.
-    const patches = (['committed', 'staged', 'unstaged'] as const).map(name => handoff.patches[name]).filter(patch => patch.bytes > 0).map(patch => patch.path);
-    const required = [handoff.index, ...(preserved ? [preserved.sources] : []), ...patches, ...handoff.changed].slice(0, 32);
+    // q34-ghadv-v2/v3: a reconciliation review judges the Builder's OWN patch (authorized remote tip..HEAD) and own changed files; the
+    // base-relative patch and the operator-authorized human files are context only, never required changes to judge.
+    const own = reconciliationSubject(handoff);
+    const patches = (own ? [own.patch, handoff.patches.staged, handoff.patches.unstaged] : (['committed', 'staged', 'unstaged'] as const).map(name => handoff.patches[name]))
+      .filter(patch => patch.bytes > 0).map(patch => patch.path);
+    const required = [handoff.index, ...(preserved ? [preserved.sources] : []), ...patches, ...(own ? own.changed : handoff.changed)].slice(0, 32);
     const sources = preserved
       ? `${preserved.sources} (version ${preserved.version}, sha256 ${preserved.sha256}) and the preserved copies it lists in the same directory`
       : `NONE: no complete preserved ${role === 'spec' ? 'request (spec/vN)' : 'instructions (instructions/vN)'} version was found; this context is insufficient`;
@@ -59,10 +70,13 @@ export function planReviews(input: { executionId: string; round: number; attempt
         'commands, list directories, search, write or reach the network: the proposal index lists every changed path. Never ask for more tools.',
       `Proposal index: ${handoff.index} (sha256 ${handoff.indexSha256}). Patches: committed ${handoff.patches.committed.path}, staged ${handoff.patches.staged.path}, ` +
         `unstaged ${handoff.patches.unstaged.path}. Checkout /workspace/checkout, branch ${handoff.branch ?? '(detached)'}, head ${handoff.head}, base ${handoff.base}.`,
+      ...(own ? [`Review subject: ${own.patch.path} (the Builder's own changes from the authorized remote tip ${own.tip} to HEAD), plus the staged/unstaged ` +
+        `patches and the own changed files listed below. ${handoff.patches.committed.path} is base-relative and CONTEXT ONLY: it also contains the operator-authorized ` +
+        'remote commits, which you do not judge; a file that appears only there is not a change to review.'] : []),
       `Preserved sources for your axis: ${sources}.`,
       axis,
       `Required inputs (read every required input completely, following each truncation's offset until the end): ${required.join(', ')}` +
-        `${handoff.changedTruncated ? ' (more changed files are listed in the index)' : ''}.`,
+        `${(own ? own.truncated : handoff.changedTruncated) ? ' (more changed files are listed in the index)' : ''}.`,
       'Read the index first, then the patches, then every changed file in full and whatever context beyond the hunks you need. Declare your coverage scope ' +
         '(incremental or broad) with a justification and the paths you examined. If a needed source is missing or unreadable, a read stays truncated, or the ' +
         'context is insufficient, list it under limitations and conclude "incomplete".',

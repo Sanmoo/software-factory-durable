@@ -101,10 +101,14 @@ export type ReviewOpinion = {
 export type ProposalHandoff = {
   version: 1; round: number; index: string; indexSha256: string; head: string; branch: string | null; base: string; mergeBase: string | null;
   counts: { entries: number; committed: number; staged: number; unstaged: number; untracked: number; removed: number };
-  patches: Record<'committed' | 'staged' | 'unstaged', { path: string; bytes: number; sha256: string }>;
+  /** `own` (reconciliation captures only, the authorized remote tip an ancestor of HEAD): the Builder's own changes, authorized tip..HEAD. */
+  patches: Record<'committed' | 'staged' | 'unstaged', { path: string; bytes: number; sha256: string }> & { own?: { path: string; bytes: number; sha256: string } };
   spec: { version: string; sources: string; sha256: string } | null; instructions: { version: string; sources: string; sha256: string } | null;
   /** Guest paths of the present changed files (sorted, at most 20) the reviewers must read in full; the index lists all of them. */
   changed: string[]; changedTruncated: boolean;
+  /** Reconciliation captures only (with `patches.own`): the present changed files of the Builder's OWN work — changed since the authorized
+   * remote tip, or in the working tree — never the operator-authorized human commits, which stay context (q34-ghadv-v2/v3). */
+  ownChanged?: string[]; ownChangedTruncated?: boolean;
   /**
    * Ticket 13: content identity of the proposal independent of Git metadata (sha256 over path/presence/kind/mode/content of every indexed
    * path), whether the tree is clean (nothing staged/unstaged/untracked) and whether the HEAD commit holds exactly that content (blobs of
