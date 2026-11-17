@@ -14,7 +14,7 @@ import { candidateNamespace, command, hostEnvironment, identityFile, installatio
 // writes to GitHub. Bounds are the PRODUCTION ones (configuration limits, one eligible issue, capacity 1); the recipe observes every poll and
 // stops the controller (held) the moment a bound is exceeded: running the release unmodified is the point, so no port is wrapped.
 
-const revision = 'qcand34-v3';
+const revision = 'qcand34-v4';
 const observations = candidateNamespace;
 const root = installationRoot;
 const unit = serviceUnit(root);
@@ -123,7 +123,7 @@ export function plan() {
       'main protected (pull requests required, no App bypass) and NO merge-blocking rule such as `update` (preflight holds otherwise)',
       `the operator is available for ${Object.keys(humanSteps).length} human steps (each phase waits at most ${humanStepMinutes} min per step)`,
       `host: >= ${sandbox.memoryMiB + 3072} MiB MemAvailable and >= ${sandbox.diskGiB + sandbox.minFreeSpaceGiB} GiB free under ${root} (capacity 1)`],
-    configuration: `preflight replaces ${root}/config.yaml (only if it is still byte-identical to the setup template): operators [${operatorLogin} pinned by id], models openai/gpt-6-luna x3 ` +
+    configuration: `preflight replaces ${root}/config.yaml only if it is still the setup template, keeps it if byte-identical to the text it writes, refuses otherwise: operators [${operatorLogin} pinned by id], models openai/gpt-6-luna x3 ` +
       `(the release profile), githubApp ${githubApp.appId} credentials/app.pem, sandbox ${JSON.stringify(sandbox)}, repositories [${repository.repository} correctionLimit 3 recoveryLimit 3], ` +
       `concurrency 1, pollingSeconds ${pollingSeconds}; validated by the release's doctor`,
     github: { app: githubApp, recipeReads: 'GET-only `gh api` with the supervisor\'s own gh login: repository, issue, labels, pulls/<n> (+files, reviews), refs, rules of main, AGENTS.md contents',
@@ -401,6 +401,21 @@ async function ghGet<T = unknown>(path: string): Promise<{ ok: true; value: T } 
   try { return { ok: true, value: JSON.parse(ran.stdout) as T }; } catch { return { ok: false, code: 'GH_UNPARSABLE' }; }
 }
 
+/** The exact config.yaml text this recipe writes (one JSON document, 1-space indent, trailing newline). */
+export function configurationText(configuration: unknown): string {
+  return `${JSON.stringify(configuration, null, 1)}\n`;
+}
+/**
+ * Preflight's configuration rule (pure): the untouched setup template is replaced; a file byte-identical to what this recipe writes (an
+ * earlier revision of this recipe on the same root, e.g. qcand34-v2) is kept as is; anything else (an operator's edit) refuses.
+ */
+export function configurationState(previous: string, expected: string): 'template' | 'recipe' | null {
+  if (previous === expected) return 'recipe';
+  const template = previous.startsWith('# Complete explicit operators, models and GitHub App references before operation.') && previous.includes('operators: []') &&
+    previous.includes('repositories: []');
+  return template ? 'template' : null;
+}
+
 /** Works that count against `bounds.worksForRepository`: every cycle of the repository except the ended ones (cancelled, delivered), so the
  * cancelled v2 Work on #49 holds no capacity. */
 export function countedWorks(works: readonly Pick<WorkView, 'result'>[]): number {
@@ -674,33 +689,36 @@ async function preflight(issue: number, save: (name: string, data: unknown) => P
   const availableMiB = Math.floor(Number(/MemAvailable:\s+(\d+)/.exec(meminfo)?.[1] ?? 0) / 1024);
   const space = await fs.statfs(root);
   const freeGiB = Math.floor(Number(space.bavail) * Number(space.bsize) / 1024 ** 3);
-  // Configuration: replaced only if still the setup template (never another operator's edit).
+  // Configuration: replaced only if still the setup template, or kept if byte-identical to what this recipe writes (never another edit).
   const configPath = `${root}/config.yaml`;
   const previous = await fs.readFile(configPath, 'utf8');
-  const template = previous.startsWith('# Complete explicit operators, models and GitHub App references before operation.') && previous.includes('operators: []') && previous.includes('repositories: []');
   const model = { provider: 'openai', model: 'gpt-6-luna' };
   const configuration = owner ? { schemaVersion: 1, operators: [owner], models: { builder: model, standards: model, spec: model }, githubApp, sandbox,
     repositories: [{ repository: repository.repository, base: repository.base, installationId: repository.installationId, workflows: repository.workflows, label: repository.label,
       correctionLimit: repository.correctionLimit, recoveryLimit: repository.recoveryLimit }], dependencyRepositories: [], concurrency: 1, pollingSeconds } : null;
+  const configText = configuration ? configurationText(configuration) : null;
+  const configState = configText ? configurationState(previous, configText) : null;
   const reasons = [...(owner ? [] : ['OPERATOR_UNRESOLVED']), ...(issueRead.ok && issueRead.value.state === 'open' && !issueRead.value.pull_request ? [] : ['ISSUE_NOT_OPEN']),
     ...(text?.titleMatches && text.bodyMatches ? [] : ['TICKET_TEXT_NOT_PINNED_TEXT']), ...(onlyIssues && onlyIssues.length === 1 && onlyIssues[0] === issue ? [] : ['LABEL_DOES_NOT_LIST_EXACTLY_THE_PINNED_ISSUE']),
     ...(linkedPulls && !linkedPulls.length ? [] : ['ASSOCIATED_PULL_REQUEST_OR_UNREADABLE']), ...(branches.ok && !branches.value.length ? [] : ['FACTORY_BRANCH_EXISTS_OR_UNREADABLE']),
     ...(protection.ok || (ruleTypes ?? []).includes('pull_request') ? [] : ['BASE_NOT_PULL_REQUEST_PROTECTED']), ...(ruleTypes && !ruleTypes.includes('update') ? [] : ['MERGE_BLOCKING_RULE_OR_UNREADABLE']),
-    ...(template ? [] : ['CONFIG_NOT_THE_SETUP_TEMPLATE']), ...(unsafeNames.length ? ['SERVICE_ENVIRONMENT_UNSAFE'] : []), ...(availableMiB >= sandbox.memoryMiB + 3072 ? [] : ['HOST_MEMORY_LOW']),
+    ...(configState || !configText ? [] : ['CONFIG_NOT_THE_SETUP_TEMPLATE_NOR_THE_RECIPE_CONFIG']), ...(unsafeNames.length ? ['SERVICE_ENVIRONMENT_UNSAFE'] : []), ...(availableMiB >= sandbox.memoryMiB + 3072 ? [] : ['HOST_MEMORY_LOW']),
     ...(freeGiB >= sandbox.diskGiB + sandbox.minFreeSpaceGiB ? [] : ['HOST_DISK_LOW'])];
   const facts = { operator: owner, repositoryNodeId: repo.ok ? repo.value.node_id ?? null : null, text, onlyIssues, linkedPulls, branches: branches.ok ? branches.value.map(item => item.ref) : branches.code,
     protection: protection.ok ? 'present' : protection.code, ruleTypes, serviceEnvironment: { names: managerNames.length, unsafe: unsafeNames }, mainSha, agentsAtBase: agents ? (agents.ok ? agents.value.sha ?? null : null) : null, host: { availableMiB, freeGiB } };
-  if (reasons.length || !configuration) { await save('preflight-held', { status: 'held', reasons, ...facts }); throw new Error(reasons.join(',').slice(0, 160)); }
-  const temporary = `${root}/config.yaml.qcand34`;
-  await fs.writeFile(temporary, `${JSON.stringify(configuration, null, 1)}\n`, { flag: 'wx', mode: 0o600 });
-  await fs.rename(temporary, configPath);
+  if (reasons.length || !configuration || !configText) { await save('preflight-held', { status: 'held', reasons, ...facts }); throw new Error(reasons.join(',').slice(0, 160)); }
+  if (configState === 'template') {
+    const temporary = `${root}/config.yaml.qcand34`;
+    await fs.writeFile(temporary, configText, { flag: 'wx', mode: 0o600 });
+    await fs.rename(temporary, configPath);
+  }
   const doctor = await command(`${root}/factory`, ['doctor', '--json'], { cwd: root });
   let report: { configuration?: { valid?: boolean; errors?: unknown[] }; checks?: { id: string; status: string }[] } | null = null;
   try { report = JSON.parse(doctor.stdout); } catch { report = null; }
   const credentialChecks = (report?.checks ?? []).filter(item => item.id.startsWith('credential-file:') || item.id === 'socket-path' || item.id.startsWith('permissions:'));
   const ok = report?.configuration?.valid === true && credentialChecks.length > 0 && credentialChecks.every(item => item.status === 'ok') &&
     credentialChecks.some(item => item.id === 'credential-file:factory-oauth');
-  await save(ok ? 'preflight-result' : 'preflight-held', { status: ok ? 'success' : 'held', ...facts, previousConfigSha256: sha(previous), configuration,
+  await save(ok ? 'preflight-result' : 'preflight-held', { status: ok ? 'success' : 'held', ...facts, previousConfigSha256: sha(previous), configState, configuration,
     doctor: { code: doctor.status, checks: report?.checks ?? null, configuration: report?.configuration ?? null } });
   if (!ok) throw new Error('DOCTOR_NOT_READY');
 }

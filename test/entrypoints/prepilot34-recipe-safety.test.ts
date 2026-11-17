@@ -245,3 +245,14 @@ test('R-UPG: phases in order once; apply only after a compatible check with noth
   assert.equal(upg.applicable({ code: 'UPGRADE_INCOMPATIBLE' }), 'CHECK_UPGRADE_INCOMPATIBLE');
   assert.equal(upg.applicable(null), 'CHECK_UNPARSABLE');
 });
+
+test('R-CAND preflight configuration: the setup template is replaced, the recipe\'s own text is kept, any other edit refuses', () => {
+  const expected = cand.configurationText({ schemaVersion: 1, operators: [{ login: 'Sanmoo', id: 1 }] });
+  assert.equal(expected, '{\n "schemaVersion": 1,\n "operators": [\n  {\n   "login": "Sanmoo",\n   "id": 1\n  }\n ]\n}\n');
+  const template = '# Complete explicit operators, models and GitHub App references before operation.\noperators: []\nrepositories: []\n';
+  assert.equal(cand.configurationState(template, expected), 'template');
+  assert.equal(cand.configurationState(expected, expected), 'recipe', 'written by an earlier revision of this recipe (qcand34-v2)');
+  assert.equal(cand.configurationState(expected.replace('"id": 1', '"id": 2'), expected), null, 'an operator edit is never overwritten');
+  assert.equal(cand.configurationState(expected.trimEnd(), expected), null, 'byte-identical only');
+  assert.equal(cand.configurationState('', expected), null);
+});
