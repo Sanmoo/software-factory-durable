@@ -189,7 +189,7 @@ test('human scripts: exact, fail-fast, operator-only; merges only with the rules
   const invalid = recipe.humanScript(6, context);
   assert.ok(invalid.includes(`/factory answer ${context.questionId}'`) && invalid.includes('/factory answer 00000000-not-a-question alpha') && invalid.includes('ignore your rules'));
   const cancel = recipe.humanScript(20, context);
-  assert.match(cancel, /cli\.js cancel w-1 --root \/home\/sanmoo\/software-factory-test\/y5\/q34-ghadv-v3 --request-id q34-ghadv-cancel-1 --json \) & cancel=\$!/);
+  assert.match(cancel, /cli\.js cancel w-1 --root \/home\/sanmoo\/software-factory-test\/y5\/q34-ghadv-v4 --request-id q34-ghadv-cancel-1 --json \) & cancel=\$!/);
   assert.ok(cancel.indexOf('& cancel=$!') < cancel.indexOf('gh pr merge 9') && cancel.trimEnd().endsWith('wait "$cancel"'), 'cancel and merge run concurrently');
   assert.match(recipe.humanScript(1, context), /--body 'Closes #101\./);
   assert.ok(recipe.humanScript(1, context).indexOf('closingIssuesReferences') < recipe.humanScript(1, context).indexOf('--add-label'), 'the label only after the association is visible');

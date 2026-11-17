@@ -18,9 +18,11 @@ import { baseMoved } from './repair22-qualification.js';
 const root = '/home/sanmoo/software-factory-test/y5';
 /** v2: q34-ghadv-v1 held at human-commit (the phase settled on "request recorded" before the Factory opened the correction). v3: q34-ghadv-v2
  * held there too, on an unscripted Builder Question after three Standards rounds exhausted the reviewer budget (WORKER_INTERRUPTED) during the
- * reconciliation the divergence answer authorized; that path (diverged -> incorporate -> reconciliation) is now an accepted end. */
-const observations = `${root}/q34-ghadv-v3`;
-const revision = 'q34-ghadv-v3';
+ * reconciliation the divergence answer authorized; that path (diverged -> incorporate -> reconciliation) is now an accepted end. v4: q34-ghadv-v3
+ * held when that reconciliation FAILED for the same reviewer cause (RECONCILIATION_FAILED, REVIEW_NOT_VERIFIED); ticket 43 fixed the product
+ * (the reconciliation review judges own.patch, authorized tip..HEAD). The recipe is otherwise unchanged. */
+const observations = `${root}/q34-ghadv-v4`;
+const revision = 'q34-ghadv-v4';
 export const phases = ['preflight', 'foreign', 'ask', 'strangers', 'withdraw', 'resume', 'human-commit', 'conflict', 'merge-repair', 'publish-c', 'close',
   'cancel-merge', 'inspect', 'stop-environment'] as const;
 export type Phase = typeof phases[number];

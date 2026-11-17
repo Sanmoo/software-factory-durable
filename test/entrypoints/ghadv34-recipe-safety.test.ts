@@ -11,15 +11,15 @@ for (const name of ['node:net', 'node:tls', 'node:dns', 'node:child_process', 'n
 }
 const recipe = await import('./ghadv34-qualification.js');
 
-test('R-GH-ADV recipe: import and --plan are inert; fresh namespace q34-ghadv-v3; unpinned issues refuse every phase before any effect', async () => {
+test('R-GH-ADV recipe: import and --plan are inert; fresh namespace q34-ghadv-v4; unpinned issues refuse every phase before any effect', async () => {
   const logged: string[] = [];
   const log = mock.method(console, 'log', (text: string) => { logged.push(text); });
   await recipe.main(['--plan']);
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q34-ghadv-v3');
-  assert.match(plan.github.accessRoot, /^\/home\/sanmoo\/software-factory-test\/y5\/q34-ghadv-v3 \(own namespace/);
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q34-ghadv-v4');
+  assert.match(plan.github.accessRoot, /^\/home\/sanmoo\/software-factory-test\/y5\/q34-ghadv-v4 \(own namespace/);
   assert.deepEqual([plan.tickets.A.number, plan.tickets.B.number, plan.tickets.C.number, plan.pinned], [0, 0, 0, false], 'the supervisor pins the three NEW issues in a reviewed commit');
   assert.deepEqual(Object.keys(plan.obligations).sort(), ['V-04.b', 'V-04.d', 'V-04.e', 'V-10.f', 'V-10.g', 'V-11.c', 'V-13.g']);
   for (const phases of Object.values(plan.obligations) as string[][]) for (const phase of phases) assert.ok(plan.phases.includes(phase), phase);
