@@ -18,7 +18,7 @@ test('R-CRASH-A recipe: import and --plan are inert; own namespace; two lines, t
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q34-crash-a-v4');
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q34-crash-a-v5');
   assert.deepEqual(plan.phases, ['preflight', 'cache', 'sources', 'tool', 'inspect', 'stop-environment']);
   assert.deepEqual(plan.steps, ['c1-cache-cut', 'c2-cache-reconcile', 's1-sources-cut', 's2-sources-recovery', 't1-tool-cut', 'h1-handoff-cut', 'f1-final']);
   assert.equal(plan.tickets.pinned, false);
@@ -31,4 +31,17 @@ test('R-CRASH-A recipe: import and --plan are inert; own namespace; two lines, t
   await assert.rejects(recipe.main(['child', 'c1-cache-cut']), /TICKET_NOT_PINNED/, 'a child step refuses too');
   await assert.rejects(recipe.main(['retry']), /EXACT_PHASE_REQUIRED/);
   assert.equal(forbidden, 0, 'the refusals happen before any effect');
+});
+
+test('R-CRASH-A v5: the s1 pause covers only the owner kill (SIGCONT before s2); a forced survivor stop is D-06, never a Question', async () => {
+  const recipe = await import('./crasha34-qualification.js');
+  const boot = 'boot-84228f35-3821-4089-94a4-40e80f5d4e4e';
+  assert.deepEqual(recipe.resumeSurvivorCommand(boot), ['kill', '--kill-whom=all', '--signal=SIGCONT', `factory-sandbox-${boot}.service`]);
+  assert.throws(() => recipe.resumeSurvivorCommand('boot-x; rm -rf /'), /BOOT_REF_INVALID/);
+  // The v4 stop, verbatim: forced, no guest finalization -> D-06.
+  assert.equal(recipe.survivorStop([{ call: 'stop', result: { status: 'success', cessationConfirmed: true, termination: 'forced', guestFinalization: 'unavailable' } }]), 'forced');
+  assert.equal(recipe.survivorStop([{ call: 'stop', result: { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'unavailable' } }]), 'forced');
+  assert.equal(recipe.survivorStop([{ call: 'stop', result: { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'observed' } }]), 'graceful');
+  assert.equal(recipe.survivorStop([{ call: 'stop', result: { status: 'indeterminate' } }]), 'unobserved');
+  assert.equal(recipe.survivorStop([]), 'unobserved');
 });

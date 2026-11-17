@@ -33,7 +33,7 @@ import { snapshotStorage } from './publication14-qualification.js';
 // Phases and child steps are one-shot: an exclusive intent tombstone precedes effects; a consumed phase never reruns; nothing is retried.
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const observations = `${root}/q34-crash-a-v4`;
+const observations = `${root}/q34-crash-a-v5`;
 /**
  * The recipe's OWN Factory root (environments, host Git cache, Records, worker runtime, model OAuth store): never the shared y5 root, so a cache
  * cut or a failed reconciliation can only affect this recipe. It cannot live inside the namespace: worker sockets under <root>/r/<boot>/s/ must
@@ -58,7 +58,8 @@ const setupEntries = ['releases', 'assets', 'credentials', 'data', 'environments
 // unit is not a stopped one), so s2 never reached its Question. v3: SIGSTOP of the unit's processes instead of the freeze.
 // v3 held at preflight (2026-11-17): the supervisor's driver labelled both issues and preflight read the listing ~1 s later; GitHub listed only
 // one (eventual consistency). The recipe itself never labels: the driver now waits (GET only, bounded) for the exact listing first.
-const revision = 'q34-crash-a-v4';
+// v4 held at sources: the next owner stopped a STILL-PAUSED survivor (forced), the disk check refused the restart (D-06). v5: SIGCONT first.
+const revision = 'q34-crash-a-v5';
 export const phases = ['preflight', 'cache', 'sources', 'tool', 'inspect', 'stop-environment'] as const;
 export type Phase = typeof phases[number];
 export const steps = ['c1-cache-cut', 'c2-cache-reconcile', 's1-sources-cut', 's2-sources-recovery', 't1-tool-cut', 'h1-handoff-cut', 'f1-final'] as const;
@@ -566,6 +567,21 @@ export function pauseSurvivorCommand(boot: string): string[] {
   if (!bootPattern.test(boot)) throw new Error('BOOT_REF_INVALID');
   return ['kill', '--kill-whom=all', '--signal=SIGSTOP', `factory-sandbox-${boot}.service`];
 }
+/**
+ * v5 (pure): the pause covers ONLY the owner kill. Before the next owner starts, every process of the survivor unit gets SIGCONT, so the
+ * next owner's stop is graceful (v4: stopping a still-paused survivor was forced, the guest ext4 kept errors and the restart was refused with
+ * PRESERVED_DISK_CHECK_REQUIRED: the accepted limit D-06).
+ */
+export function resumeSurvivorCommand(boot: string): string[] {
+  if (!bootPattern.test(boot)) throw new Error('BOOT_REF_INVALID');
+  return ['kill', '--kill-whom=all', '--signal=SIGCONT', `factory-sandbox-${boot}.service`];
+}
+/** s2 (pure): the next owner's stop of the resumed survivor was graceful (not forced, guest finalization observed); otherwise D-06. */
+export function survivorStop(events: readonly { call?: string; result?: unknown }[]): 'graceful' | 'forced' | 'unobserved' {
+  const stop = events.find(item => item.call === 'stop')?.result as { status?: string; termination?: string; guestFinalization?: string } | undefined;
+  if (!stop || stop.status !== 'success') return 'unobserved';
+  return stop.termination === 'forced' || stop.guestFinalization !== 'observed' ? 'forced' : 'graceful';
+}
 /** s1: pause the survivor unit's processes and SIGKILL the controller once the preservation started and is not complete. */
 const sourcesWatch: Watch = async (kill, live) => {
   const { save } = await io();
@@ -671,7 +687,19 @@ export async function runPhase(phase: Phase) {
     if (phase === 'cache' || phase === 'sources' || phase === 'tool') {
       const exits: Partial<Record<Step, string>> = {};
       for (const step of phaseSteps[phase]) {
+        if (step === 's2-sources-recovery') {
+          // v5: resume the paused s1 survivor BEFORE the next owner starts (its stop must be graceful); recorded, never retried.
+          const cut = await load('s1-cut') as { boot?: string; paused?: number | null } | null;
+          const resumed = cut?.boot && cut.paused === 0 ? await systemctlUser(resumeSurvivorCommand(cut.boot)) : null;
+          await save('s1-resume', { at: new Date().toISOString(), boot: cut?.boot ?? null, resumed });
+          if (resumed !== 0) { await save(`${phase}-result`, { status: 'held', exits, reason: 'S1_SURVIVOR_NOT_RESUMED' }); throw new Error('CUT_NOT_REACHED'); }
+        }
         exits[step] = await runChild(step, watches[step]);
+        if (step === 's2-sources-recovery' && survivorStop(await stepEvents(step)) === 'forced') {
+          // D-06: a forced stop leaves the guest disk unchecked; the product refuses its reuse. Recorded as D-06; no Question is expected.
+          await save(`${phase}-result`, { status: 'held', exits, reason: 'D06_SURVIVOR_STOP_FORCED', stop: (await stepEvents(step)).find(item => item.call === 'stop') ?? null });
+          throw new Error('CUT_NOT_REACHED');
+        }
         if (exits[step] !== expectedExit[step]) {
           await save(`${phase}-result`, { status: 'held', exits, reason: `${step.toUpperCase()}_EXIT_${exits[step]}`, events: (await events()).filter(item => phaseSteps[phase].includes(item.step) && item.call === 'cut') });
           throw new Error('CUT_NOT_REACHED');
