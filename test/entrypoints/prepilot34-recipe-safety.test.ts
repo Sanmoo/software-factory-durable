@@ -85,7 +85,7 @@ test('R-CAND human commands: the operator\'s own gh; answers on the issue, revie
   assert.throws(() => cand.humanCommands(4, { issue: 50 }), /QUESTION_ID_REQUIRED/);
   assert.throws(() => cand.humanCommands(2, { issue: 50 }), /PULL_REQUEST_REQUIRED/);
   // The Ticket: documentation only; the instruction trap and the gate whose waiver needs approval are in it; the runnable gate is POSIX.
-  assert.ok(cand.ticketBody.includes(cand.agentsLine) && cand.ticketBody.includes(cand.contentGate) && cand.ticketBody.includes(cand.docsCheckGate));
+  assert.ok(!cand.ticketBody.includes('AGENTS.md') && cand.ticketBody.includes(cand.contentGate) && cand.ticketBody.includes(cand.docsCheckGate));
   assert.match(cand.contentGate, /^cd \/workspace\/checkout && test -f .+ && grep -q /);
 });
 
@@ -172,24 +172,23 @@ function savedJourney() {
   return { identity, preflight: phase(null), run: phase('foreground', { outcome: 'question-published', q1: 'q1' }), answer: phase('service', { outcome: 'published', prFiles: ['AGENTS.md', cand.candidateFile] }),
     review: phase('service', { outcome: 'treated' }), repair: phase('service', { outcome: 'asked-then-closed', q2: 'q2' }), ready: phase('service', { outcome: 'ready' }),
     deliver: phase('service', { outcome: 'delivered' }),
-    inspect: phase('service', { outcome: 'inspected', work: finalWork, questions: [question('q1', 'answered'), question('q2', 'answered')], prFiles: ['AGENTS.md', cand.candidateFile],
-      agentsAtBase: 'sha-base', agentsAtMerge: 'sha-merge', reviewSentenceAtMerge: true, cli: [{ args: ['show'], code: 0 }, { args: ['usage'], code: 0 }], secrets: { storage: 0, observations: 0 },
+    inspect: phase('service', { outcome: 'inspected', work: finalWork, questions: [question('q1', 'answered'), question('q2', 'answered')], prFiles: [cand.candidateFile],
+      agentsAtBase: 'sha-base', agentsAtMerge: 'sha-base', reviewSentenceAtMerge: true, cli: [{ args: ['show'], code: 0 }, { args: ['usage'], code: 0 }], secrets: { storage: 0, observations: 0 },
       usage: { byRole: { builder: { measured: 2, tokens: { total: 10 } }, standards: { measured: 1, tokens: { total: 5 } }, spec: { measured: 1, tokens: { total: 4 } } } } }) };
 }
 
 test('R-CAND verdict: every obligation proven only by what the saved results show; a missing stamp, a worktree executable or a silent repair disproves', () => {
   const good = cand.verdict(savedJourney() as never);
   assert.ok(good.passed, JSON.stringify(good.checks.filter(item => !item.passed)));
-  assert.deepEqual(good.obligations, { 'V-06.h': 'proven', 'V-07.f': 'proven', 'V-08.g': 'proven', 'V-10.d': 'proven', 'V-16.d': 'proven' });
+  assert.deepEqual(good.obligations, { 'V-06.h': 'proven', 'V-08.g': 'proven', 'V-10.d': 'proven', 'V-16.d': 'proven' });
   const unstamped = savedJourney(); (unstamped.review as Record<string, unknown>).factory = undefined;
   assert.equal(cand.verdict(unstamped as never).obligations['V-06.h'], 'not-proven', 'a result without the Factory commit proves nothing');
   const worktree = savedJourney(); (worktree.answer as { controller: { exe: string } }).controller.exe = '/usr/bin/node';
   assert.equal(cand.verdict(worktree as never).obligations['V-08.g'], 'not-proven', 'not run from the installed release');
   const silent = savedJourney(); (silent.repair as unknown as { outcome: string }).outcome = 'closed-without-question';
   assert.equal(cand.verdict(silent as never).obligations['V-10.d'], 'not-proven');
-  const twoVersions = savedJourney();
-  (twoVersions.inspect as unknown as { work: { execution: { review: { rounds: { versions: unknown }[] } } } }).work.execution.review.rounds.push({ versions: { instructions: { sha256: 'j'.repeat(64) } } });
-  assert.equal(cand.verdict(twoVersions as never).obligations['V-07.f'], 'not-proven', 'the Builder\'s own AGENTS.md line changed the instructions it ran with');
+  const agents = savedJourney(); (agents.inspect as unknown as { prFiles: string[] }).prFiles = ['AGENTS.md', cand.candidateFile];
+  assert.equal(cand.verdict(agents as never).obligations['V-06.h'], 'not-proven', 'only the candidate file may reach the base');
   const noSentence = savedJourney(); (noSentence.inspect as unknown as { reviewSentenceAtMerge: boolean }).reviewSentenceAtMerge = false;
   assert.equal(cand.verdict(noSentence as never).obligations['V-06.h'], 'not-proven', 'the human review was not applied');
   const service = savedJourney(); for (const name of ['answer', 'review', 'repair', 'ready', 'deliver', 'inspect'] as const) (service[name] as { controller: { sandboxesSeen: string[] } }).controller.sandboxesSeen = [];
@@ -227,7 +226,6 @@ test('R-CAND v7: the human review edits only the candidate file inside the Ticke
   const review = cand.humanCommands(2, { issue: 50, pullRequest: 51 })[0]!;
   assert.ok(!/Review notes|AGENTS\.md/.test(review), 'v2 asked outside the Ticket scope; v3-v6 asked for the AGENTS.md restore the Spec reviewers misjudged');
   assert.ok(review.includes(cand.candidateFile) && review.includes(cand.reviewSentence) && review.includes('Change nothing else.'));
-  assert.match(cand.ticketBody, /a later operator review that asks to remove it supersedes this item/);
   const of = (...results: string[]) => results.map(result => ({ result })) as never;
   assert.equal(cand.countedWorks(of('cancelled', 'open')), 1, 'the cancelled v2 Work on #49 does not count');
   assert.equal(cand.countedWorks(of('delivered', 'cancelled')), 0);
@@ -334,4 +332,14 @@ test('R-CAND snapshot questions: read by id when the fitted show view omits them
   const many = await cand.workQuestions({ questions: Array.from({ length: 40 }, (_, index) => `x${index}`) }, [], async () => null, 4);
   assert.deepEqual(many, []);
   assert.deepEqual(await cand.workQuestions(null, [], read), []);
+});
+
+test('R-CAND v8: no AGENTS.md item; V-07.f deferred to a dedicated run; step 1 answers only a docs-check waiver Question', () => {
+  assert.ok(!cand.ticketBody.includes('AGENTS.md') && !/^3\. /m.test(cand.ticketBody));
+  assert.match(cand.deferredV07f, /dedicated run/);
+  const asking = (text: string) => ({ ...question('q', 'open'), content: { question: text, context: '', sha256: 's', reference: { workId: 'w1', id: 'r' } } }) as unknown as QuestionView;
+  assert.equal(cand.asksDocsCheckWaiver(asking('The documented `docs-check` gate cannot run here; please authorize waiving it.')), true);
+  // The qcand34-v7 first Question, verbatim in substance: a Standards dispute, not a waiver.
+  assert.equal(cand.asksDocsCheckWaiver(asking('The Standards review raises finding S1 as a documented-layout rule: which requirement should govern the page location?')), false);
+  assert.equal(cand.asksDocsCheckWaiver(null), false);
 });
