@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { QuestionView } from '../../src/control/index.js';
-import { activationGuard, assess, factoryRoots, rootOf, gateCutProof, gateMarkers, lineOf, mainBody, phaseGuard, pinned, postDecision, sourcesCutProof, steps,
+import { activationGuard, assess, factoryRoots, pauseSurvivorCommand, rootOf, gateCutProof, gateMarkers, lineOf, mainBody, phaseGuard, pinned, postDecision, sourcesCutProof, steps,
   type CrashInput, type Step } from './crasha34-qualification.js';
 
 // Recipe safety of the R-CRASH-A real run, on controlled data only (never the real root, GitHub, VM or model).
@@ -132,4 +132,13 @@ test('real run v1 (one root, two storages: the main owner saw the cache line\'s 
   const text = readFileSync(join(process.cwd(), 'test', 'entrypoints', 'crasha34-qualification.ts'), 'utf8');
   assert.doesNotMatch(text, /environments\.filter\(|lineInventory|otherLine|cacheLineEnvironments|preexisting\.includes/, 'no inventory filter / excluded environments reach an owner');
   assert.match(text, /runtimeInventory: \{ kind: 'listed', observedAt: [^,]+, \.\.\.listed \}/, 'the owner receives the listing of its own root as is');
+});
+
+test('real run v2: systemd 262 refused to stop the FROZEN survivor ("Cannot stop frozen unit"), the product rightly held it unconfirmed; v3 pauses its processes with SIGSTOP, leaving the unit stoppable', () => {
+  const boot = 'boot-5413d17f-bbd8-4139-bc51-ff9587923674';
+  assert.deepEqual(pauseSurvivorCommand(boot), ['kill', '--kill-whom=all', '--signal=SIGSTOP', `factory-sandbox-${boot}.service`]);
+  assert.ok(!pauseSurvivorCommand(boot).includes('freeze'), 'never a cgroup freeze: a frozen unit refuses the stop job');
+  assert.throws(() => pauseSurvivorCommand('boot-x; rm -rf /'), /BOOT_REF_INVALID/);
+  const text = readFileSync(join(process.cwd(), 'test', 'entrypoints', 'crasha34-qualification.ts'), 'utf8');
+  assert.doesNotMatch(text, /\['freeze',|systemctl --user freeze/, 'no freeze anywhere in the recipe');
 });

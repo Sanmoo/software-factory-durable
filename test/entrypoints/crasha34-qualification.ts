@@ -7,7 +7,7 @@ import { snapshotStorage } from './publication14-qualification.js';
 // AGENTS and the next owner reconciles instead of repeating. Same mechanism as crashfx27: each step is ONE controller child launched like the
 // production owner (`flock --exclusive --nonblock --no-fork <lock> node …`) on the SAME storage of its line; events are appended durably.
 // Import and `--plan` are inert. Every other phase is a REAL effect needing an explicit operator grant: real GitHub (App), real Gondolin/KVM
-// VMs, the real model, SIGKILL of Factory processes and ONE cgroup freeze of the Factory's own sandbox unit on the host.
+// VMs, the real model, SIGKILL of Factory processes and ONE SIGSTOP of the processes of the Factory's own sandbox unit on the host.
 //   cache line (Ticket C, its own storage; no VM boot, no model):
 //     c1-cache-cut          SIGKILL inside the host Git cache preparation: right after the fetch credential was self-revoked (fetch done, clone
 //                           not done, cache state `mutating`).
@@ -15,8 +15,10 @@ import { snapshotStorage } from './publication14-qualification.js';
 //                           started; the next preparation meets the incomplete checkout and is HELD (never adopted, never repaired); clean stop.
 //   main line (Ticket M, real Builder + Standards/Spec reviewers, ONE environment):
 //     s1-sources-cut        the Builder preserves the request; once spec/v1/ticket.json exists and spec/v1/sources.json does NOT, the orchestrator
-//                           freezes the survivor unit (systemctl --user freeze) and SIGKILLs the controller: interrupted BEFORE sources complete.
-//     s2-sources-recovery   boot reconciliation stops the frozen survivor (systemd thaws a unit before stopping it), ONE operational recovery
+//                           pauses every process of the survivor unit (systemctl --user kill --kill-whom=all --signal=SIGSTOP) and SIGKILLs
+//                           the controller: interrupted BEFORE sources complete. The unit stays ACTIVE and stoppable (v2 froze it with the
+//                           cgroup freezer and systemd 262 refused every stop job: "Cannot stop frozen unit").
+//     s2-sources-recovery   boot reconciliation stops the paused survivor (systemd sends SIGCONT right after the stop signal), ONE operational recovery
 //                           completes the preservation without overwriting it and asks the Ticket's Question; SIGKILL right after the Question
 //                           is published and the ask Execution ended (crash-left storage). The operator then answers while the controller is down.
 //     t1-tool-cut           the answer is accepted by the BOOTING owner; the answered Execution runs the documented gate (declared 240 s); the
@@ -31,7 +33,7 @@ import { snapshotStorage } from './publication14-qualification.js';
 // Phases and child steps are one-shot: an exclusive intent tombstone precedes effects; a consumed phase never reruns; nothing is retried.
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const observations = `${root}/q34-crash-a-v2`;
+const observations = `${root}/q34-crash-a-v3`;
 /**
  * The recipe's OWN Factory root (environments, host Git cache, Records, worker runtime, model OAuth store): never the shared y5 root, so a cache
  * cut or a failed reconciliation can only affect this recipe. It cannot live inside the namespace: worker sockets under <root>/r/<boot>/s/ must
@@ -42,7 +44,8 @@ const observations = `${root}/q34-crash-a-v2`;
  * owner rightly listed the cache line's environment as UNKNOWN_RESOURCE). Each owner gets the inventory of its own root as is. Both are new
  * (v1 used c34) and 38 bytes long. The cache line never activates a worker, so its root needs `setup` only (no model login).
  */
-export const factoryRoots = { main: '/home/sanmoo/software-factory-test/cr2', cache: '/home/sanmoo/software-factory-test/ck2' } as const;
+// v3: NEW roots (cr2/ck2 hold v2's environments and caches; preflight requires fresh roots), still 38 bytes.
+export const factoryRoots = { main: '/home/sanmoo/software-factory-test/cr3', cache: '/home/sanmoo/software-factory-test/ck3' } as const;
 export const factoryRoot = factoryRoots.main;
 export const rootOf = (step: Step) => factoryRoots[lineOf(step)];
 /** The shared host Git cache other recipes use; this recipe never reads or writes it. */
@@ -50,8 +53,10 @@ export const sharedCache = `${root}/cache`;
 const setupEntries = ['releases', 'assets', 'credentials', 'data', 'environments', 'run', 'config.yaml'];
 // v1 held at `sources` (real run): both lines shared ONE Factory root with separate storages, so the main owner listed the cache line's
 // environment as UNKNOWN_RESOURCE (single authority per root: correct product behaviour) and dispatch stayed closed for 30 min. v2: one root
-// per line, nothing filtered.
-const revision = 'q34-crash-a-v2';
+// per line, nothing filtered. v2 held at `sources`: the cut WAS reached (s1-cut proven), but the recipe had frozen the survivor unit and
+// systemd 262 refused the next owner's stop job ("Cannot stop frozen unit"); the product rightly held RECOVERY_CESSATION_UNCONFIRMED (a frozen
+// unit is not a stopped one), so s2 never reached its Question. v3: SIGSTOP of the unit's processes instead of the freeze.
+const revision = 'q34-crash-a-v3';
 export const phases = ['preflight', 'cache', 'sources', 'tool', 'inspect', 'stop-environment'] as const;
 export type Phase = typeof phases[number];
 export const steps = ['c1-cache-cut', 'c2-cache-reconcile', 's1-sources-cut', 's2-sources-recovery', 't1-tool-cut', 'h1-handoff-cut', 'f1-final'] as const;
@@ -121,7 +126,7 @@ export function plan() {
     configuration, guestAssets, skillPack, pollingSeconds, gateMarkers, storages: { cache: `${observations}/cache-line/control.sqlite`, main: `${observations}/control.sqlite` },
     requires: [`${root}/${githubApp.privateKeyFile} present`, 'the supervisor created the TWO new issues (titles/bodies above, label ready-for-agent) and pinned both numbers in a reviewed commit',
       'no other open issue carries the label', 'main protected with NO bypass for the App', `TWO new Factory roots, one per line: ${factoryRoots.main} (setup + login) and ${factoryRoots.cache} (setup only), nothing else in them; each its own host Git cache, never ${sharedCache})`,
-      'systemd user manager with the cgroup v2 freezer (systemctl --user freeze)', 'explicit operator authorization for THIS run, including host fault injection (SIGKILL, unit freeze); one-shot'],
+      'systemd user manager (systemctl --user kill of the recipe\'s own unit)', 'explicit operator authorization for THIS run, including host fault injection (SIGKILL, SIGSTOP of the own unit\'s processes); one-shot'],
     model: { provider: 'openai', model: 'gpt-6-luna', auth: 'factory-oauth', providerRetries: 0, sdkRetries: 0, cacheLine: 'none (no Builder is ever activated for Ticket C)',
       builderActivations: { 's1-sources-cut': ['initial'], 's2-sources-recovery': ['operational recovery (asks)'], 't1-tool-cut': ['answered resume'], 'h1-handoff-cut': ['operational recovery'], 'f1-final': ['operational recovery'] },
       reviewers: `standards + spec in h1 (first round only, cut on the first opinion) and f1 (at most ${rounds.max} rounds, one retry per role)` },
@@ -130,12 +135,12 @@ export function plan() {
         'App: access_tokens issuance POSTs and DELETE /installation/token revocations (the fetch credential of c1 is revoked BEFORE the cut)'],
       human: ['between the sources and tool phases (controller stopped): on Ticket M, from the operator account, ONE comment `/factory answer <question-id> docs/FACTORY_CRASH_A.md` (question id in sources-result.json)'],
       never: ['push', 'pull request', 'merge', 'approval', 'ready-for-review conversion', 'labels/assignees', 'closing an issue', 'branch deletion/cleanup', 'any write by this recipe itself'] },
-    hostEffects: ['SIGKILL of the recipe\'s own controller children (5 cuts)', 'ONE `systemctl --user freeze factory-sandbox-<boot>.service` of the s1 survivor (its own unit; the next owner stops it)',
+    hostEffects: ['SIGKILL of the recipe\'s own controller children (5 cuts)', 'ONE `systemctl --user kill --kill-whom=all --signal=SIGSTOP factory-sandbox-<boot>.service` of the s1 survivor (its own unit stays active; the next owner\'s stop job sends SIGTERM then SIGCONT)',
       `the cache line's OWN host Git cache (${factoryRoots.cache}/cache/git) left \`mutating\` by c1 and reconciled by c2; the shared ${sharedCache} is never touched`],
     effects: [
       'preflight: key source check BEFORE any effect; exclusive namespace; read-only: operator id, the label lists exactly the two pinned issues, no associated PR, no factory/<n>- branch, base protection, App bot identity, cache idle, environments ceased',
       'cache: c1 (SIGKILL after the fetch credential revocation returned, cache `mutating`) then c2 (boot reconciliation of the cache; preparation held, never adopted; clean stop)',
-      'sources: s1 (freeze + SIGKILL before spec sources.json) then s2 (survivor stopped, recovery completes the preservation and asks; SIGKILL after the Question is published)',
+      'sources: s1 (SIGSTOP of the survivor + SIGKILL before spec sources.json) then s2 (survivor stopped, recovery completes the preservation and asks; SIGKILL after the Question is published)',
       'tool: t1 (answer accepted at boot; SIGKILL during the documented gate) then h1 (recovery; SIGKILL at the first reviewer opinion) then f1 (recovery, carried opinion, clean stop)',
       'inspect: storage copies of both lines; preserved artifacts read confined; read-only GitHub: Question comments, PRs of Ticket M; cache state; verdict; secret-shape scan',
       'stop-environment: own boot of the last recorded main Execution when it may still run'],
@@ -143,7 +148,7 @@ export function plan() {
       'builder-publish always refused', 'prepare at most once per step and only for its line\'s Ticket', 'each line\'s owner sees only its own Ticket', 'no retry, no remove/cleanup'],
     expected: [
       'c1: SIGKILL after `fetch-revoked` with the cache state `mutating`; c2: cache reconciliation `reconciled` (or `kept` with the operator action), the c1 Execution reconciled not-started, the next preparation held PREPARE_CHECKOUT_PREPARATION_INCOMPLETE, no Builder, exit 0',
-      's1: SIGKILL with spec/v1/ticket.json present and spec/v1/sources.json absent (frozen survivor); s2: sources.json still absent when the survivor was stopped; the s1 Execution failure CONTROLLER_CRASH, cessation confirmed, operational recovery; the files hashed at the cut unchanged; a complete preservation afterwards',
+      's1: SIGKILL with spec/v1/ticket.json present and spec/v1/sources.json absent (paused survivor); s2: sources.json still absent when the survivor was stopped; the s1 Execution failure CONTROLLER_CRASH, cessation confirmed, operational recovery; the files hashed at the cut unchanged; a complete preservation afterwards',
       's2: ONE Question comment; SIGKILL after it was published and the ask Execution ended; t1: the answer accepted once while the booting owner\'s dispatch was still closed',
       't1: SIGKILL with the gate start marker present and its end marker absent; h1: the end marker still absent after the survivor stop (never finished, never replayed blindly)',
       'h1: SIGKILL right after the first reviewer opinion; f1: that opinion carried into the recovery round (source carried, never re-run) and only the other role reviewed; implementation Execution ends, exit 0',
@@ -551,7 +556,15 @@ async function systemctlUser(args: string[]) {
 }
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-/** s1: freeze the survivor unit and SIGKILL the controller once the preservation started and is not complete. */
+/**
+ * The s1 pause (pure): every process of the survivor's OWN unit gets SIGSTOP. Never a cgroup freeze: systemd 262 refuses to stop a frozen unit
+ * (real run v2), and a frozen unit must never read as stopped. The unit stays active, so the next owner's stop job runs (SIGTERM, then SIGCONT).
+ */
+export function pauseSurvivorCommand(boot: string): string[] {
+  if (!bootPattern.test(boot)) throw new Error('BOOT_REF_INVALID');
+  return ['kill', '--kill-whom=all', '--signal=SIGSTOP', `factory-sandbox-${boot}.service`];
+}
+/** s1: pause the survivor unit's processes and SIGKILL the controller once the preservation started and is not complete. */
 const sourcesWatch: Watch = async (kill, live) => {
   const { save } = await io();
   while (live()) {
@@ -561,11 +574,11 @@ const sourcesWatch: Watch = async (kill, live) => {
     const before = await preserved(environment);
     const observed = { ticketJson: before['spec/v1/ticket.json'] !== null, sourcesJson: before['spec/v1/sources.json'] !== null };
     if (!observed.ticketJson && !observed.sourcesJson) continue;
-    // Freeze FIRST (the Builder can no longer finish), then re-read: the cut is proven only on the frozen state.
-    const freeze = sourcesCutProof(observed) ? await systemctlUser(['freeze', `factory-sandbox-${boot}.service`]) : null;
+    // Pause FIRST (the Builder can no longer finish), then re-read: the cut is proven only on the paused state.
+    const paused = sourcesCutProof(observed) ? await systemctlUser(pauseSurvivorCommand(boot)) : null;
     const hashes = await preserved(environment);
-    const proven = freeze === 0 && sourcesCutProof({ ticketJson: hashes['spec/v1/ticket.json'] !== null, sourcesJson: hashes['spec/v1/sources.json'] !== null });
-    await save('s1-cut', { at: new Date().toISOString(), environment, boot, freeze, proven, hashes, code: proven ? null : observed.sourcesJson ? 'SOURCES_ALREADY_COMPLETE' : 'FREEZE_FAILED' });
+    const proven = paused === 0 && sourcesCutProof({ ticketJson: hashes['spec/v1/ticket.json'] !== null, sourcesJson: hashes['spec/v1/sources.json'] !== null });
+    await save('s1-cut', { at: new Date().toISOString(), environment, boot, paused, proven, hashes, code: proven ? null : observed.sourcesJson ? 'SOURCES_ALREADY_COMPLETE' : 'PAUSE_FAILED' });
     const { appendFileSync } = await import('node:fs');
     appendFileSync(`${observations}/s1-sources-cut-events.jsonl`, `${JSON.stringify({ at: new Date().toISOString(), step: 's1-sources-cut', call: proven ? 'cut-observed' : 'cut-missed', by: 'orchestrator' })}\n`, { mode: 0o600 });
     kill();
@@ -644,10 +657,9 @@ export async function runPhase(phase: Phase) {
       const listed = { environments: roots.flatMap(item => item.environments), unknown: roots.flatMap(item => item.unknown), cache: roots.flatMap(item => item.cache) };
       const observed: { environment: string; condition: string; cessationConfirmed: boolean }[] = [];
       const cache = listed.cache;
-      const freezer = await fs.access(`/sys/fs/cgroup/user.slice/user-${process.getuid?.()}.slice/cgroup.freeze`).then(() => true, () => false);
       if (!clean || !refs || factoryBranches?.length || publication.kind !== 'observed' || publication.baseProtection?.state !== 'pull-request-required' || !app || listed.unknown.length ||
-        listed.environments.length || cache.length || !freezer) {
-        await save('preflight-held', { publication, factoryBranches, app, observed, unknown: listed.unknown, cache, freezer }); throw new Error('PRECONDITION_HELD');
+        listed.environments.length || cache.length) {
+        await save('preflight-held', { publication, factoryBranches, app, observed, unknown: listed.unknown, cache }); throw new Error('PRECONDITION_HELD');
       }
       await save('preflight-result', { status: 'success', operators: [operator], base: { state: 'present', sha: refs[`refs/heads/${repository.base}`] }, app,
         roots: factoryRoots, observed, cache });
