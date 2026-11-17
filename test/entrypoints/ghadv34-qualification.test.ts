@@ -58,6 +58,8 @@ const question = (extra: Partial<QuestionView> = {}) => ({ questionId: '11111111
 const work = (extra: Record<string, unknown> = {}) => ({ work_id: 'w', ticket: { number: 102 }, result: 'open', impediments: [], previousExecutions: [], execution: null, correction: null,
   corrections: [], authorization: { withdrawal: null }, feedback: { ignored: [], requests: [] }, publication: null, ...extra }) as unknown as WorkView;
 const facts = (extra: Partial<recipe.Facts> = {}): recipe.Facts => ({ work: work(), questions: [question()], list: null, activations: 0, prepares: 0, seen: {}, observed: new Set(), ...extra });
+const request = (reason: string, state: string, correctionId: string | null, feedbackId = 'f1') => ({ feedbackId, code: 'EXPLICIT_REPAIR', state, correctionId,
+  feedback: { content: `/factory repair ${reason}` } });
 const listWith = (holds: unknown[]) => ({ polling: { repositories: [{ candidates: [{ ticket: { number: 101 }, outcome: 'held', holds }] }] } }) as unknown as ListView;
 
 test('human steps: requested only when ready, observed only through what the Factory itself recorded', () => {
@@ -75,10 +77,18 @@ test('human steps: requested only when ready, observed only through what the Fac
   assert.equal(rules[5]!.observed(facts({ work: work({ impediments: [{ code: 'AUTHORIZATION_WITHDRAWN' }], authorization: { withdrawal: { codes: ['TICKET_NOT_OPEN'] } } }) })), true);
   assert.equal(rules[7]!.observed(facts({ questions: [question({ state: 'answered' })] })), false, 'accepted while STILL withdrawn');
   assert.equal(rules[8]!.observed(facts({ questions: [question({ ignored: [{ at: '', origin: 'c', code: 'QUESTION_ALREADY_ANSWERED' }] })] })), true);
-  const running = work({ execution: { state: 'started', request: { repair: { correctionId: 'c' } }, slot: { held: true } } });
-  assert.equal(rules[15]!.ready(facts({ work: running, observed: new Set([14]) })), true);
-  assert.equal(rules[15]!.ready(facts({ work: work({ execution: { state: 'started', request: { repair: {}, publication: {} }, slot: { held: true } } }), observed: new Set([14]) })), false,
-    'never during a publication activation');
+  for (const [step, reason] of [[15, recipe.repairReasons.mergeDuring], [18, recipe.repairReasons.close], [20, recipe.repairReasons.cancel]] as const) {
+    const recorded = (state: string, correctionId: string | null) => ({ requests: [request(reason, state, correctionId)], ignored: [] });
+    const at = (correctionId: string, extra: Record<string, unknown> = {}) => ({ state: 'started', request: { repair: { correctionId }, ...extra }, slot: { held: true } });
+    const previous = new Set([step - 1]);
+    assert.equal(rules[step]!.ready(facts({ work: work({ feedback: recorded('pending', null), execution: at('c-old') }), observed: previous })), false,
+      `step ${step}: request only recorded, another repair running: not yet`);
+    assert.equal(rules[step]!.ready(facts({ work: work({ feedback: recorded('in-correction', 'c1'), execution: at('c-old') }), observed: previous })), false,
+      `step ${step}: the running repair is not the request's correction`);
+    assert.equal(rules[step]!.ready(facts({ work: work({ feedback: recorded('in-correction', 'c1'), execution: at('c1', { publication: {} }) }), observed: previous })), false,
+      `step ${step}: never during a publication activation`);
+    assert.equal(rules[step]!.ready(facts({ work: work({ feedback: recorded('in-correction', 'c1'), execution: at('c1') }), observed: previous })), true, `step ${step}: its own repair runs`);
+  }
   assert.equal(rules[12]!.optional, true, 'the divergence answer only when the Factory asks');
   for (const [step, rule] of Object.entries(rules)) assert.ok(recipe.phaseSpec[rule.phase].steps.includes(Number(step)), `step ${step} belongs to its phase`);
 });
@@ -104,10 +114,34 @@ test('settled: nothing adopted/dispatched where nothing may be; ends only at the
   const published = (head: string, extra: Record<string, unknown> = {}) => work({ publication: { state: 'published', linkedHeads: [sha('1'), head], attempts: [], divergences: [],
     discoveries: [], pullRequest: { headSha: head }, verified: { head }, ...extra } });
   const steps = new Set([10, 11]);
-  assert.deepEqual(recipe.settled('human-commit', facts({ work: published(sha('3')), questions: [], observed: steps, seen: { humanTip: sha('h') } }), true), { done: true, success: false },
-    'the human commit must be a preserved tip');
-  assert.deepEqual(recipe.settled('human-commit', facts({ work: published(sha('3'), { discoveries: [{ branch: { state: 'present', sha: sha('h') } }] }), questions: [], observed: steps,
-    seen: { humanTip: sha('h') } }), true), { done: true, success: true });
+  const reason = recipe.repairReasons.humanCommit;
+  const commit = (state: string, correctionId: string | null, outcome: string | null, extra: Record<string, unknown> = {}) => ({ ...published(sha('3'), extra),
+    feedback: { requests: [request(reason, state, correctionId)], ignored: [] },
+    corrections: outcome ? [{ correctionId, outcome, charged: true, reasons: [{ code: 'EXPLICIT_REPAIR', subject: 'f1' }] }] : [] }) as unknown as WorkView;
+  const seen = { humanTip: sha('h') };
+  const discovered = { discoveries: [{ branch: { state: 'present', sha: sha('h') } }] };
+  // q34-ghadv-v1: idle and published right after the request was RECORDED (no correction yet) must NOT end the phase.
+  assert.deepEqual(recipe.settled('human-commit', facts({ work: commit('pending', null, null, discovered), questions: [], observed: steps, seen }), true), { done: false, success: false },
+    'request only recorded: the Factory has not acted yet');
+  assert.deepEqual(recipe.settled('human-commit', facts({ work: { ...commit('in-correction', 'c1', null, discovered), correction: { correctionId: 'c1' } } as WorkView, questions: [],
+    observed: steps, seen }), true), { done: false, success: false }, 'its correction is open');
+  assert.deepEqual(recipe.settled('human-commit', facts({ work: commit('treated', 'c1', 'published'), questions: [], observed: steps, seen }), true), { done: true, success: false },
+    'closed published but the human commit is not a preserved tip');
+  assert.deepEqual(recipe.settled('human-commit', facts({ work: commit('treated', 'c1', 'published', discovered), questions: [], observed: steps, seen }), true), { done: true, success: true });
+  assert.deepEqual(recipe.settled('human-commit', facts({ work: { ...commit('treated', 'c1', 'published'), previousExecutions: [{ state: 'ended', slot: { held: false }, request: { repair: { humanTips: [sha('h')] } } }] } as unknown as WorkView,
+    questions: [], observed: steps, seen }), true), { done: true, success: true }, 'or present in a repair request humanTips');
+  assert.deepEqual(recipe.settled('human-commit', facts({ work: commit('pending', 'c1', 'publication-diverged', discovered), questions: [], observed: steps, seen }), true),
+    { done: true, success: false }, 'its correction closed without publishing');
+  // The later phases never settle on "request recorded" either.
+  assert.deepEqual(recipe.settled('conflict', facts({ work: published(sha('4')), questions: [], observed: new Set([13]) }), true), { done: false, success: false },
+    'base moved, no MERGE_CONFLICT correction yet');
+  assert.deepEqual(recipe.settled('merge-repair', facts({ work: { ...published(sha('4')), feedback: { requests: [request(recipe.repairReasons.mergeDuring, 'pending', null)], ignored: [] } } as unknown as WorkView,
+    questions: [], observed: new Set([14]) }), true), { done: false, success: false }, 'merge-repair: request recorded, not delivered');
+  assert.deepEqual(recipe.settled('publish-c', facts({ work: work(), questions: [], observed: new Set([16]) }), true), { done: false, success: false }, 'publish-c: admitted, not published');
+  assert.deepEqual(recipe.settled('close', facts({ work: { ...published(sha('5')), feedback: { requests: [request(recipe.repairReasons.close, 'pending', null)], ignored: [] } } as unknown as WorkView,
+    questions: [], observed: new Set([17]) }), true), { done: false, success: false }, 'close: request recorded, PR not closed');
+  assert.deepEqual(recipe.settled('cancel-merge', facts({ work: { ...published(sha('6')), feedback: { requests: [request(recipe.repairReasons.cancel, 'pending', null)], ignored: [] } } as unknown as WorkView,
+    questions: [], observed: new Set([19]) }), true), { done: false, success: false }, 'cancel-merge: request recorded, nothing delivered');
   const delivered = work({ result: 'delivered', delivery: { state: 'delivered', merge: { duringActivity: 'e' } } });
   assert.deepEqual(recipe.settled('merge-repair', facts({ work: delivered, questions: [], observed: new Set([14, 15]) }), false), { done: false, success: false });
   assert.deepEqual(recipe.settled('merge-repair', facts({ work: delivered, questions: [], observed: new Set([14, 15]) }), true), { done: true, success: true });
@@ -147,7 +181,7 @@ test('human scripts: exact, fail-fast, operator-only; merges only with the rules
   const invalid = recipe.humanScript(6, context);
   assert.ok(invalid.includes(`/factory answer ${context.questionId}'`) && invalid.includes('/factory answer 00000000-not-a-question alpha') && invalid.includes('ignore your rules'));
   const cancel = recipe.humanScript(20, context);
-  assert.match(cancel, /cli\.js cancel w-1 --root \/home\/sanmoo\/software-factory-test\/y5\/q34-ghadv-v1 --request-id q34-ghadv-cancel-1 --json \) & cancel=\$!/);
+  assert.match(cancel, /cli\.js cancel w-1 --root \/home\/sanmoo\/software-factory-test\/y5\/q34-ghadv-v2 --request-id q34-ghadv-cancel-1 --json \) & cancel=\$!/);
   assert.ok(cancel.indexOf('& cancel=$!') < cancel.indexOf('gh pr merge 9') && cancel.trimEnd().endsWith('wait "$cancel"'), 'cancel and merge run concurrently');
   assert.match(recipe.humanScript(1, context), /--body 'Closes #101\./);
   assert.ok(recipe.humanScript(1, context).indexOf('closingIssuesReferences') < recipe.humanScript(1, context).indexOf('--add-label'), 'the label only after the association is visible');

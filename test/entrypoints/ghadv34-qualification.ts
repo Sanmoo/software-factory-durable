@@ -16,8 +16,9 @@ import { baseMoved } from './repair22-qualification.js';
 // strict third-party HUMAN identity is recorded as a limit (plan().limits).
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const observations = `${root}/q34-ghadv-v1`;
-const revision = 'q34-ghadv-v1';
+/** v2: q34-ghadv-v1 held at human-commit (the phase settled on "request recorded" before the Factory opened the correction). */
+const observations = `${root}/q34-ghadv-v2`;
+const revision = 'q34-ghadv-v2';
 export const phases = ['preflight', 'foreign', 'ask', 'strangers', 'withdraw', 'resume', 'human-commit', 'conflict', 'merge-repair', 'publish-c', 'close',
   'cancel-merge', 'inspect', 'stop-environment'] as const;
 export type Phase = typeof phases[number];
@@ -202,8 +203,28 @@ const ignored = (question: QuestionView | null, code: string) => (question?.igno
 const workIgnored = (work: WorkView | undefined, code: string) => (work?.feedback?.ignored ?? []).some(item => item.code === code);
 const repairRecorded = (work: WorkView | undefined, reason: string) => (work?.feedback?.requests ?? []).some(item => item.code === 'EXPLICIT_REPAIR' &&
   item.feedback.content.replace(/^\/factory repair\s+/, '').trim() === reason);
+/** The EXPLICIT_REPAIR request a scripted `/factory repair` step recorded (by its exact reason). */
+const requestOf = (work: WorkView | undefined, reason: string) => (work?.feedback?.requests ?? []).find(item => item.code === 'EXPLICIT_REPAIR' &&
+  item.feedback.content.replace(/^\/factory repair\s+/, '').trim() === reason);
+/**
+ * The repair Execution that carries THAT request (its correction), running now. v1 lesson: a recorded request is not yet a Factory action;
+ * the human step that must land DURING the repair waits for the Execution of the request's own correction.
+ */
+export const repairRunningFor = (work: WorkView | undefined, reason: string) => {
+  const request = requestOf(work, reason);
+  return Boolean(request?.correctionId && work?.execution?.state === 'started' && work.execution.request.repair?.correctionId === request.correctionId &&
+    !work.execution.request.publication);
+};
+/** Where the Factory is with the request: `pending` (recorded, nothing done), `open` (its correction is open), or its closed correction's outcome. */
+export function requestOutcome(work: WorkView | undefined, reason: string): 'absent' | 'pending' | 'open' | ClosedOutcome {
+  const request = requestOf(work, reason);
+  if (!request) return 'absent';
+  const closed = (work?.corrections ?? []).filter(item => item.reasons.some(reason => reason.subject === request.feedbackId)).at(-1);
+  if (request.state === 'treated' || (closed && request.state !== 'in-correction')) return closed?.outcome ?? 'pending';
+  return request.state === 'in-correction' ? 'open' : 'pending';
+}
+type ClosedOutcome = NonNullable<WorkView['corrections']>[number]['outcome'];
 const idlePublished = (work: WorkView | undefined) => work?.publication?.state === 'published' && !occupying(work) && !work?.correction;
-const repairRunning = (work: WorkView | undefined) => Boolean(work?.execution?.state === 'started' && work.execution.request.repair && !work.execution.request.publication);
 const holdOf = (list: ListView | null, number: number) => (list?.polling.repositories ?? []).flatMap(item => item.candidates ?? [])
   .find(item => item.ticket.number === number);
 /** The foreign PR hold of A as the Factory REPORTS it (never adopted: no Work for A). */
@@ -233,13 +254,13 @@ export const humanStepRules: Record<number, { phase: ControlPhase; optional?: bo
     observed: facts => facts.questions.some(item => item.recordedFrom === 'controller-divergence' && item.state === 'answered') },
   13: { phase: 'conflict', ready: facts => idlePublished(facts.work), observed: facts => Boolean(facts.seen.baseTip) },
   14: { phase: 'merge-repair', ready: facts => idlePublished(facts.work), observed: facts => repairRecorded(facts.work, repairReasons.mergeDuring) },
-  15: { phase: 'merge-repair', ready: facts => facts.observed.has(14) && repairRunning(facts.work), observed: facts => facts.work?.delivery?.state === 'delivered' },
+  15: { phase: 'merge-repair', ready: facts => facts.observed.has(14) && repairRunningFor(facts.work, repairReasons.mergeDuring), observed: facts => facts.work?.delivery?.state === 'delivered' },
   16: { phase: 'publish-c', ready: () => true, observed: facts => Boolean(facts.work) },
   17: { phase: 'close', ready: facts => idlePublished(facts.work), observed: facts => repairRecorded(facts.work, repairReasons.close) },
-  18: { phase: 'close', ready: facts => facts.observed.has(17) && repairRunning(facts.work), observed: facts => facts.work?.result === 'closed-unmerged' },
+  18: { phase: 'close', ready: facts => facts.observed.has(17) && repairRunningFor(facts.work, repairReasons.close), observed: facts => facts.work?.result === 'closed-unmerged' },
   19: { phase: 'cancel-merge', ready: facts => facts.work?.closure?.reopen?.state === 'confirmed' && !has(facts.work, 'RESUME_REQUIRED') && idlePublished(facts.work) &&
     facts.work?.result === 'open', observed: facts => repairRecorded(facts.work, repairReasons.cancel) },
-  20: { phase: 'cancel-merge', ready: facts => facts.observed.has(19) && repairRunning(facts.work), observed: facts => facts.work?.delivery?.state === 'delivered' },
+  20: { phase: 'cancel-merge', ready: facts => facts.observed.has(19) && repairRunningFor(facts.work, repairReasons.cancel), observed: facts => facts.work?.delivery?.state === 'delivered' },
 };
 
 /**
@@ -283,8 +304,15 @@ export function settled(phase: ControlPhase, facts: Facts, quiet: boolean): { do
     case 'resume': case 'publish-c':
       return work?.publication?.state === 'published' && !occupying(work) && (phase === 'resume' || steps) ? { done: true, success: true } : wait;
     case 'human-commit': {
-      if (!steps || !facts.seen.humanTip || !idlePublished(work)) return wait;
-      return { done: true, success: humanTipRecorded(work!.publication, facts.seen.humanTip) && work!.publication!.pullRequest?.headSha !== facts.seen.humanTip };
+      // v1 held here: "request recorded" is not the end. The correction holding step 11's request must have opened AND closed published.
+      if (!steps || !facts.seen.humanTip) return wait;
+      const outcome = requestOutcome(work, repairReasons.humanCommit);
+      if (outcome === 'absent' || outcome === 'pending' || outcome === 'open' || !idlePublished(work)) return wait;
+      if (outcome !== 'published') return fail;
+      const tip = facts.seen.humanTip;
+      const executions = [...work!.previousExecutions, ...(work!.execution ? [work!.execution] : [])];
+      const kept = humanTipRecorded(work!.publication, tip) || executions.some(item => (item.request.repair?.humanTips ?? []).includes(tip) || item.request.reconciliation?.authorizedRemote === tip);
+      return { done: true, success: kept && work!.publication!.pullRequest?.headSha !== tip };
     }
     case 'conflict': {
       const closed = (work?.corrections ?? []).find(item => item.reasons.some(reason => reason.code === 'MERGE_CONFLICT'));
