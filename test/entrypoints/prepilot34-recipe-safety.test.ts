@@ -75,7 +75,7 @@ test('R-CAND phase guard: pinned issue; each phase once after the previous succe
 test('R-CAND human commands: the operator\'s own gh; answers on the issue, review/comment/approve/merge on the own PR; never admin, squash, branch deletion or force', () => {
   assert.deepEqual(cand.humanCommands(1, { issue: 50, questionId: 'q-1' }),
     [`gh issue comment 50 --repo Sanmoo/java-springboot-event-sourcing --body '/factory answer q-1 ${cand.humanSteps[1].body}'`]);
-  assert.match(cand.humanCommands(2, { issue: 50, pullRequest: 51 })[0]!, /^gh pr review 51 --repo \S+ --request-changes --body 'Please restore AGENTS.md/);
+  assert.equal(cand.humanCommands(2, { issue: 50, pullRequest: 51 })[0], `gh pr review 51 --repo Sanmoo/java-springboot-event-sourcing --request-changes --body 'In ${cand.candidateFile}, end the first paragraph (under \`# Factory candidate\`) with exactly this sentence: \`${cand.reviewSentence}\` Change nothing else.'`);
   assert.equal(cand.humanCommands(3, { issue: 50, pullRequest: 51 })[0], `gh pr comment 51 --repo Sanmoo/java-springboot-event-sourcing --body '/factory repair Delete ${cand.candidateFile} and close this pull request.'`);
   assert.deepEqual(cand.humanCommands(5, { issue: 50, pullRequest: 51 }), [`gh pr review 51 --repo Sanmoo/java-springboot-event-sourcing --approve --body 'Approved after the candidate journey.'`,
     'gh pr merge 51 --repo Sanmoo/java-springboot-event-sourcing --merge']);
@@ -172,8 +172,8 @@ function savedJourney() {
   return { identity, preflight: phase(null), run: phase('foreground', { outcome: 'question-published', q1: 'q1' }), answer: phase('service', { outcome: 'published', prFiles: ['AGENTS.md', cand.candidateFile] }),
     review: phase('service', { outcome: 'treated' }), repair: phase('service', { outcome: 'asked-then-closed', q2: 'q2' }), ready: phase('service', { outcome: 'ready' }),
     deliver: phase('service', { outcome: 'delivered' }),
-    inspect: phase('service', { outcome: 'inspected', work: finalWork, questions: [question('q1', 'answered'), question('q2', 'answered')], prFiles: [cand.candidateFile],
-      agentsAtBase: 'sha-base', agentsAtMerge: 'sha-base', cli: [{ args: ['show'], code: 0 }, { args: ['usage'], code: 0 }], secrets: { storage: 0, observations: 0 },
+    inspect: phase('service', { outcome: 'inspected', work: finalWork, questions: [question('q1', 'answered'), question('q2', 'answered')], prFiles: ['AGENTS.md', cand.candidateFile],
+      agentsAtBase: 'sha-base', agentsAtMerge: 'sha-merge', reviewSentenceAtMerge: true, cli: [{ args: ['show'], code: 0 }, { args: ['usage'], code: 0 }], secrets: { storage: 0, observations: 0 },
       usage: { byRole: { builder: { measured: 2, tokens: { total: 10 } }, standards: { measured: 1, tokens: { total: 5 } }, spec: { measured: 1, tokens: { total: 4 } } } } }) };
 }
 
@@ -187,8 +187,11 @@ test('R-CAND verdict: every obligation proven only by what the saved results sho
   assert.equal(cand.verdict(worktree as never).obligations['V-08.g'], 'not-proven', 'not run from the installed release');
   const silent = savedJourney(); (silent.repair as unknown as { outcome: string }).outcome = 'closed-without-question';
   assert.equal(cand.verdict(silent as never).obligations['V-10.d'], 'not-proven');
-  const kept = savedJourney(); (kept.inspect as unknown as { prFiles: string[] }).prFiles = ['AGENTS.md', cand.candidateFile];
-  assert.equal(cand.verdict(kept as never).obligations['V-07.f'], 'not-proven', 'the instruction change was merged');
+  const twoVersions = savedJourney();
+  (twoVersions.inspect as unknown as { work: { execution: { review: { rounds: { versions: unknown }[] } } } }).work.execution.review.rounds.push({ versions: { instructions: { sha256: 'j'.repeat(64) } } });
+  assert.equal(cand.verdict(twoVersions as never).obligations['V-07.f'], 'not-proven', 'the Builder\'s own AGENTS.md line changed the instructions it ran with');
+  const noSentence = savedJourney(); (noSentence.inspect as unknown as { reviewSentenceAtMerge: boolean }).reviewSentenceAtMerge = false;
+  assert.equal(cand.verdict(noSentence as never).obligations['V-06.h'], 'not-proven', 'the human review was not applied');
   const service = savedJourney(); for (const name of ['answer', 'review', 'repair', 'ready', 'deliver', 'inspect'] as const) (service[name] as { controller: { sandboxesSeen: string[] } }).controller.sandboxesSeen = [];
   assert.equal(cand.verdict(service as never).obligations['V-16.d'], 'not-proven', 'service mode never ran an environment');
 });
@@ -220,10 +223,10 @@ test('R-CAND service environment: a credential or Node override in the user mana
   assert.deepEqual(cand.unsafeServiceEnvironment(['PATH', 'HOME', 'DBUS_SESSION_BUS_ADDRESS']), []);
 });
 
-test('R-CAND v3: the human review asks only what the Ticket anticipates; ended predecessor cycles hold no capacity', () => {
+test('R-CAND v7: the human review edits only the candidate file inside the Ticket scope; ended predecessor cycles hold no capacity', () => {
   const review = cand.humanCommands(2, { issue: 50, pullRequest: 51 })[0]!;
-  assert.ok(!/Review notes/.test(review), 'v2 asked for a section outside the Ticket scope (Spec finding, unscripted Question)');
-  assert.match(review, /supersedes item 3/);
+  assert.ok(!/Review notes|AGENTS\.md/.test(review), 'v2 asked outside the Ticket scope; v3-v6 asked for the AGENTS.md restore the Spec reviewers misjudged');
+  assert.ok(review.includes(cand.candidateFile) && review.includes(cand.reviewSentence) && review.includes('Change nothing else.'));
   assert.match(cand.ticketBody, /a later operator review that asks to remove it supersedes this item/);
   const of = (...results: string[]) => results.map(result => ({ result })) as never;
   assert.equal(cand.countedWorks(of('cancelled', 'open')), 1, 'the cancelled v2 Work on #49 does not count');

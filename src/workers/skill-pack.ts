@@ -10,7 +10,8 @@ import { factorySkillPackIds, type FactorySkillPackId } from '../contracts/index
  * v3 = ticket 12: v2 plus the review handoff and the Factory commit identity rule; v4 = ticket 11: v3 plus continue/recovery
  * context, authorized scope changes and instruction precedence; v5 = ticket 13: v4 plus repeated review rounds with treatments of listed
  * findings and Host-evidenced gates; v6 = ticket 14: v5 plus the direct publication of a Factory-requested publish-only activation and the
- * short Summary/Validation/Risk PR body). */
+ * short Summary/Validation/Risk PR body; v7 = ticket 34: v6 plus `not-adopted` (never `fixed`) for a finding the reviewed content already
+ * satisfies). */
 const pack = <T extends string>(id: T) => Object.freeze({ id, seedName: `factory/skill-pack/${id}`, guestDirectory: `/artifacts/factory/skill-pack/${id}`,
   directory: fileURLToPath(new URL(`../../../assets/skill-pack/${id}`, import.meta.url)) });
 export const skillPacks = Object.freeze(Object.fromEntries(factorySkillPackIds.map(id => [id, pack(id)]))) as { readonly [K in FactorySkillPackId]: ReturnType<typeof pack<K>> };

@@ -20,7 +20,9 @@ export const releaseNamespace = `${y5}/prel34-v2`;
 // qcand34-v3 held at preflight: config.yaml was the one qcand34-v2 had written, not the setup template (now accepted when byte-identical).
 // qcand34-v4 held at run: snapshot() read ONE fitted page of `factory list` and never saw its own Work (now every page is followed).
 // qcand34-v5 held at review: the repair Execution asked again whether the step-1 waiver covered it (safe; now ONE scripted answer, step 6).
-export const candidateNamespace = `${y5}/qcand34-v6`;
+// qcand34-v6 held at review: a false Spec finding (AGENTS.md restore already done) declared `fixed` without change (FIX_NOT_REVIEWED, correct);
+// the review now edits the candidate file only and the Builder pack v7 treats an already-satisfied finding as not-adopted.
+export const candidateNamespace = `${y5}/qcand34-v7`;
 export const inspectNamespace = `${y5}/qinspect34-v1`;
 /** Written by R-REL `install` (after `verify`): the release first installed into the root (mvp-34.2). */
 export const releaseIdentityFile = `${releaseNamespace}/observations/release-identity.json`;

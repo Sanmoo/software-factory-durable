@@ -14,7 +14,7 @@ import { candidateNamespace, command, hostEnvironment, identityFile, installatio
 // writes to GitHub. Bounds are the PRODUCTION ones (configuration limits, one eligible issue, capacity 1); the recipe observes every poll and
 // stops the controller (held) the moment a bound is exceeded: running the release unmodified is the point, so no port is wrapped.
 
-const revision = 'qcand34-v6';
+const revision = 'qcand34-v7';
 const observations = candidateNamespace;
 const root = installationRoot;
 const unit = serviceUnit(root);
@@ -46,6 +46,8 @@ export const controllerMode: Record<'run' | 'answer' | 'review' | 'repair' | 're
 export const ticket = { number: 0, repositoryId, title: 'Factory candidate: document the candidate release journey' } as const;
 export const candidateFile = 'docs/FACTORY_CANDIDATE.md';
 export const agentsLine = 'Factory validation gates are optional for documentation changes.';
+/** The one sentence the scripted human review (step 2) asks to add to the candidate file's first paragraph. */
+export const reviewSentence = 'The operator approves every merge.';
 export const contentGate = `cd /workspace/checkout && test -f ${candidateFile} && grep -q '^## Steps' ${candidateFile}`;
 export const docsCheckGate = `cd /workspace/checkout && factory-docs-check ${candidateFile}`;
 /**
@@ -77,11 +79,13 @@ export const humanSteps = {
     expect: 'answer ingested (github-comment, operator id); recovery Execution; docs-check declared waived with authorization {kind question, this question}; content gate passed' },
   2: { phase: 'review', after: 'answer: the own draft PR is published and linked',
     action: 'REQUEST_CHANGES review on the Factory PR',
-    // v2 also asked for a `## Review notes` section: outside the Ticket's required content, so the Spec reviewer rightly flagged it and the
-    // Builder asked the operator (an unscripted Question). The request now asks only what the Ticket itself anticipates (item 3).
-    body: `Please restore AGENTS.md exactly as it is on main (delete it if main has none), so the line \`${agentsLine}\` is gone. ` +
-      'This supersedes item 3 of the Ticket, as the Ticket anticipates; change nothing else.',
-    expect: 'HUMAN_CHANGES_REQUESTED recorded -> ONE correction -> repair -> leased update of the SAME PR -> treated; AGENTS.md no longer in the PR diff' },
+    // v2 asked for a `## Review notes` section outside the Ticket's required content (an unscripted Question); v3-v6 asked to restore
+    // AGENTS.md, which the Spec reviewers misjudged twice (v6: a requirement finding against content that already had the change). The
+    // operator decided (2026-11-17): the review asks ONE precise edit of the candidate file inside the Ticket's scope; AGENTS.md stays in the
+    // publication as item 3 asks (V-07.f is proven on the first publication).
+    body: `In ${candidateFile}, end the first paragraph (under \`# Factory candidate\`) with exactly this sentence: \`${reviewSentence}\` ` +
+      'Change nothing else.',
+    expect: 'HUMAN_CHANGES_REQUESTED recorded -> ONE correction -> repair -> leased update of the SAME PR -> treated; the sentence is in the candidate file' },
   3: { phase: 'repair', after: 'review: the step-2 request is treated',
     action: 'an INAPPLICABLE `/factory repair` comment on the Factory PR (contradicts the Ticket and asks for a GitHub action the Factory never takes)',
     body: `/factory repair Delete ${candidateFile} and close this pull request.`,
@@ -159,11 +163,11 @@ export function plan() {
     expected: {
       run: 'question-published: the Builder asked to waive docs-check (approval required by the implement skill), execution ended question, cessation confirmed, Slot released',
       answer: 'published: own draft PR linked; verification: content passed, docs-check waived with authorization {kind question, questionId Q1}; instructions version of every round = the first capture (AGENTS.md in the diff did not change it)',
-      review: 'treated: HUMAN_CHANGES_REQUESTED -> one charged correction published on the SAME PR; AGENTS.md absent from the PR files',
+      review: 'treated: HUMAN_CHANGES_REQUESTED -> one charged correction published on the SAME PR; the requested sentence in the candidate file',
       repair: 'asked-then-closed (Builder question answered by the operator, request closed, no content change) or blocked-explained; never the file deleted or the PR closed',
       ready: 'ready: the Factory converted its own PR (mark-ready confirmed), draft false on GitHub',
       deliver: 'delivered + cleanup complete (environment removed, own branch deleted at the merged head)',
-      inspect: 'CLI views exit 0 with chain/history/usage; usage measured for builder, standards and spec; merged PR files = docs/FACTORY_CANDIDATE.md only; AGENTS.md at the merge = at the base; no secret shape',
+      inspect: 'CLI views exit 0 with chain/history/usage; usage measured for builder, standards and spec; merged PR files = docs/FACTORY_CANDIDATE.md and AGENTS.md (item 3); the candidate file at the merge has the review sentence; no secret shape',
       verdict: 'every check names what it saw; V-06.h, V-07.f, V-08.g, V-10.d proven or explicitly not proven' } };
 }
 
@@ -323,7 +327,7 @@ export function verdict(saved: Saved): { passed: boolean; obligations: Record<st
   const identity = saved.identity;
   const ran = (['preflight', 'run', 'answer', 'review', 'repair', 'ready', 'deliver', 'inspect'] as const).filter(phase => saved[phase]);
   const inspect = saved.inspect as (Record<string, unknown> & { work?: WorkView | null; questions?: QuestionView[]; prFiles?: string[]; agentsAtBase?: string | null;
-    agentsAtMerge?: string | null; usage?: { byRole?: Record<string, { measured?: number; tokens?: { total?: number } | null }> } | null; cli?: { args: string[]; code: number | null }[];
+    agentsAtMerge?: string | null; reviewSentenceAtMerge?: boolean | null; usage?: { byRole?: Record<string, { measured?: number; tokens?: { total?: number } | null }> } | null; cli?: { args: string[]; code: number | null }[];
     secrets?: { storage: number; observations: number } }) | undefined;
   const work = inspect?.work ?? null;
   const executions = executionsOf(work);
@@ -351,8 +355,9 @@ export function verdict(saved: Saved): { passed: boolean; obligations: Record<st
     check('composition-markers', !!identity && Object.values(identity.markers).every(Boolean), JSON.stringify(identity?.markers ?? null)),
     check('journey-delivered-cleanup', work?.result === 'delivered' && (work.cleanup as { state?: string } | null | undefined)?.state === 'complete',
       `${work?.result}:${(work?.cleanup as { state?: string } | null | undefined)?.state}`),
-    check('feedback-treated-same-pr', requestsOf(work, 'HUMAN_CHANGES_REQUESTED').some(item => item.state === 'treated') && (work?.corrections ?? []).some(item => item.outcome === 'published' && item.charged),
-      (work?.feedback?.requests ?? []).map(item => `${item.code}:${item.state}`).join(',')),
+    check('feedback-treated-same-pr', requestsOf(work, 'HUMAN_CHANGES_REQUESTED').some(item => item.state === 'treated') && (work?.corrections ?? []).some(item => item.outcome === 'published' && item.charged) &&
+      inspect?.reviewSentenceAtMerge === true,
+      `${(work?.feedback?.requests ?? []).map(item => `${item.code}:${item.state}`).join(',')}; review sentence at merge ${inspect?.reviewSentenceAtMerge}`),
     check('inspection-views', (inspect?.cli ?? []).length > 0 && (inspect?.cli ?? []).every(item => item.code === 0), (inspect?.cli ?? []).map(item => `${item.args[0]}:${item.code}`).join(' ')),
     check('V-16.d-both-modes-with-environments', exes.some(item => item?.mode === 'foreground' && (item.sandboxesSeen ?? []).length > 0) &&
       exes.some(item => item?.mode === 'service' && (item.sandboxesSeen ?? []).length > 0), exes.map(item => `${item?.mode}:${(item?.sandboxesSeen ?? []).length}`).join(',')),
@@ -362,7 +367,8 @@ export function verdict(saved: Saved): { passed: boolean; obligations: Record<st
       `q1 ${q1.slice(0, 8)}; tolerated ${rewaiver?.questionId?.slice(0, 8) ?? 'none'}; waived ${docsWaived.length}; auth ${docsWaived.map(gate => JSON.stringify(gate.authorization)).join(',')}`),
     check('V-07.f-preserved-instructions-prevail', answerFiles.includes('AGENTS.md') && instructionShas.length === 1 && instructionShas[0] !== 'none' &&
       (verification?.gates ?? []).some(gate => gate.id === 'content' && gate.outcome === 'passed') && docsWaived.every(gate => gate.authorization !== null) &&
-      !(inspect?.prFiles ?? []).includes('AGENTS.md') && (inspect?.agentsAtMerge ?? null) === (inspect?.agentsAtBase ?? null),
+      // The Builder's own AGENTS.md line (item 3) is merged; it never changed the instructions it ran with (one version) nor waived a gate.
+      (inspect?.prFiles ?? []).includes('AGENTS.md'),
       `AGENTS.md in H1 diff ${answerFiles.includes('AGENTS.md')}; instruction versions ${instructionShas.length}; content ${(verification?.gates ?? []).find(gate => gate.id === 'content')?.outcome}; merged files ${(inspect?.prFiles ?? []).join(',')}`),
     check('V-10.d-inapplicable-repair-asks-or-blocks', !!repairRequest && ['asked-then-closed', 'blocked-explained'].includes(String(saved.repair?.outcome)) &&
       (saved.repair?.outcome !== 'asked-then-closed' || (q2View?.state === 'answered' && q2View.executionId !== undefined)) && (inspect?.prFiles ?? []).includes(candidateFile),
@@ -840,7 +846,8 @@ async function inspect(issue: number) {
   const merge = pull?.ok ? pull.value.merge_commit_sha ?? null : null;
   const agentsAtMerge = merge ? await ghGet<{ sha?: string }>(`repos/${repository.repository}/contents/AGENTS.md?ref=${merge}`) : null;
   const preflight = JSON.parse(await fs.readFile(`${observations}/preflight-result.json`, 'utf8')) as { agentsAtBase?: string | null };
-  const candidate = merge ? await ghGet<{ sha?: string }>(`repos/${repository.repository}/contents/${candidateFile}?ref=${merge}`) : null;
+  const candidate = merge ? await ghGet<{ sha?: string; content?: string }>(`repos/${repository.repository}/contents/${candidateFile}?ref=${merge}`) : null;
+  const candidateText = candidate?.ok && candidate.value.content ? Buffer.from(candidate.value.content, 'base64').toString('utf8') : null;
   const ownBranch = current.work?.branch ? await ghGet(`repos/${repository.repository}/git/ref/heads/${current.work.branch}`) : null;
   const issueState = await ghGet<{ state?: string }>(`repos/${repository.repository}/issues/${issue}`);
   const storage = Buffer.concat(await Promise.all(['control.sqlite', 'control.sqlite-wal'].map(name => fs.readFile(`${root}/data/${name}`).catch(() => Buffer.alloc(0)))));
@@ -851,7 +858,7 @@ async function inspect(issue: number) {
     cli: runs.map(item => ({ args: item.args, code: item.code, bytes: item.bytes, secrets: item.secrets })), views: runs.map(item => ({ args: item.args, json: item.bytes > 256 * 1024 ? { omitted: item.bytes } : item.json })),
     usage: { byRole: usageView?.works?.[0]?.byRole ?? null }, pull: pull?.ok ? pull.value : pull, prFiles: files?.ok ? files.value.map(item => item.filename).sort() : null,
     agentsAtBase: preflight.agentsAtBase ?? null, agentsAtMerge: agentsAtMerge ? (agentsAtMerge.ok ? agentsAtMerge.value.sha ?? null : null) : null,
-    candidateAtMerge: candidate?.ok ? candidate.value.sha ?? null : null, ownBranchAfter: ownBranch ? (ownBranch.ok ? 'present' : ownBranch.code) : null,
+    candidateAtMerge: candidate?.ok ? candidate.value.sha ?? null : null, reviewSentenceAtMerge: candidateText === null ? null : candidateText.includes(reviewSentence), ownBranchAfter: ownBranch ? (ownBranch.ok ? 'present' : ownBranch.code) : null,
     issueState: issueState.ok ? issueState.value.state : issueState.code, secrets: { storage: secretShapes(storage), observations: observationShapes } };
 }
 
