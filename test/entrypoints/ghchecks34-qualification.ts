@@ -18,7 +18,11 @@ const root = '/home/sanmoo/software-factory-test/y5';
 // operator PR under `relaxed` (no required check) and puts the required check only afterwards.
 // v2 (#75/#76, run/ghchecks-v2 8fdc303) held in strict on a Question: the repair placed the line factory-gate requires between the paragraph and
 // `## Steps`, a Spec finding said it broke the Ticket's order, the Builder asked. v3 states the scope in the Ticket and tolerates ONE such Question.
-const revision = 'q34-ghchecks-v3';
+// v3 (#86/#87) lost V-10.b: its Ticket said content a required check demands is in scope, so the Builder read ci/factory-gate.sh and the FIRST head
+// passed; the phase waited 39 min and was killed, and inspect then held on the key copy the killed phase never removed (no teardown requested).
+// v4: the v2 Ticket wording (no hint), `failing` holds at once with FAILURE_PRECONDITION_NOT_MET, a stale key copy is removed (and SIGTERM
+// removes it), inspect requests the teardown FIRST from local data only.
+const revision = 'q34-ghchecks-v4';
 const observations = `${root}/${revision}`;
 export const phases = ['preflight', 'waiver', 'run', 'failing', 'strict', 'human-draft', 'rerun', 'contexts', 'classic', 'homonym', 'inspect', 'stop-environment'] as const;
 export type Phase = typeof phases[number];
@@ -85,9 +89,6 @@ export const checksBody = [
   '', 'Required content:',
   '1. A `# Factory checks` title and one paragraph explaining that this file exists only to exercise how the Software Factory treats required checks.',
   '2. A `## Steps` section with a numbered list of exactly three steps: publish, check, repair.',
-  // Deliberately generic (the line itself is not named): naming it would make the first head pass and lose the failed required check (V-10.b).
-  '', 'If a check this repository REQUIRES for merging demands additional content in this file, adding exactly that content is in scope: put it AFTER the ' +
-    '`## Steps` list and keep the title, the paragraph and the `## Steps` order. Nothing else is in scope.',
   '', 'Documentation only: the operator explicitly approves that no tests, seams or code changes are needed. Do not create or edit other files. Commit the change on your branch.',
   '', 'Validation (documented gate; the bash tool always runs in `/workspace`, so declare cwd `/workspace` and put the directory change inside the command; it must exit 0):',
   '`cd /workspace/checkout && test -f docs/FACTORY_CHECKS.md && grep -q \'^## Steps\' docs/FACTORY_CHECKS.md`'].join('\n');
@@ -152,7 +153,7 @@ const heredoc = (path: string, content: string) => `mkdir -p "$(dirname ${path})
 export function operatorPr(name: string, expectedMain: string, edits: string[], message: string): string[] {
   const dir = `/tmp/q34-${name}`;
   return [`rm -rf ${dir} && git clone --quiet https://github.com/${repository.repository}.git ${dir} && cd ${dir}`,
-    `test "$(git rev-parse origin/${repository.base})" = "${expectedMain}"   # the base tip the phase expects; stop if it differs`,
+    ...(expectedMain ? [`test "$(git rev-parse origin/${repository.base})" = "${expectedMain}"   # the base tip the phase expects; stop if it differs`] : []),
     `git switch --quiet -c q34-${name} origin/${repository.base}`, ...edits, `git add -A && git commit --quiet -m '${message}'`,
     `git push --quiet origin q34-${name}   # the operator's OWN branch (a workflow file needs the gh token's workflow scope); never --force`,
     `gh pr create --repo ${repository.repository} --base ${repository.base} --head q34-${name} --title 'q34 ${name}' --body 'Operator step of the R-GH-CHECKS qualification.'`,
@@ -187,8 +188,10 @@ export function humanSteps(input: { mainTip: string; pullRequest?: number | unde
       apply: [`gh api --method POST repos/${r}/statuses/${input.head ?? '<head>'} -f state=failure -f context=${checkName} -f description='q34 homonym status by the operator' --silent`],
       restore: [], note: 'GitHub cannot delete a commit status: it stays on that head of the (never merged, closed at teardown) Factory PR' },
     teardown: { name: 'teardown', phase: 'inspect', expect: 'workflow/script/base note removed from main; Factory PR closed; issues unlabelled and closed; ruleset as before',
-      apply: [putRuleset('relaxed'), ...operatorPr('teardown', input.mainTip, [`git rm --quiet ${workflowPath} ${scriptPath} docs/FACTORY_CHECKS_BASE_NOTE.md`], 'ci: remove the q34 factory-gate check'),
-      ...(input.pullRequest ? [`gh pr close ${input.pullRequest} --repo ${r} --comment 'q34 R-GH-CHECKS qualification finished (closed by the operator; never merged).'`] : []),
+      apply: [putRuleset('relaxed'), ...operatorPr('teardown', input.mainTip, [`git rm --quiet --ignore-unmatch ${workflowPath} ${scriptPath} docs/FACTORY_CHECKS_BASE_NOTE.md   # the base note exists only if strict ran`], 'ci: remove the q34 factory-gate check'),
+      // The Factory PR(s) of T1, found at teardown time (works even when inspect could not read the storage).
+      `for n in $(gh pr list --repo ${r} --state open --json number,headRefName -q '.[]|select(.headRefName|startswith("factory/${tickets.checks.number}-"))|.number'); do ` +
+        `gh pr close "$n" --repo ${r} --comment 'q34 R-GH-CHECKS qualification finished (closed by the operator; never merged).'; done`,
       `gh issue edit ${tickets.waiver.number} --repo ${r} --remove-label ${repository.label} && gh issue close ${tickets.waiver.number} --repo ${r} --reason 'not planned'`,
       `gh issue edit ${tickets.checks.number} --repo ${r} --remove-label ${repository.label} && gh issue close ${tickets.checks.number} --repo ${r} --reason 'not planned'`, putRuleset('before')],
       restore: [putRuleset('before')], note: 'the final state is the live ruleset read at preflight, no classic protection, no q34 file on main' },
@@ -354,6 +357,18 @@ export function settled(phase: ControlPhase, work: WorkView | undefined, facts: 
   const wanted = phase === 'failing' ? confirmed(work, 'mark-ready') === 1 : confirmed(work, 'mark-ready') === 2 && confirmed(work, 'convert-to-draft') === 1;
   if (closed && ready && wanted && work?.checks?.latest.outcome === 'satisfied') return { done: true, success: facts.activations === 2 + (facts.resumes ?? 0) && (phase === 'failing' || facts.humanObserved) };
   return { done: false, success: false };
+}
+
+/**
+ * V-10.b needs the FIRST Factory head to FAIL the required check. `not-met`: the check of H1 completed green with no correction (v3: the Builder
+ * satisfied the check up front) — the phase holds at once with FAILURE_PRECONDITION_NOT_MET instead of waiting for its deadline.
+ */
+export function failurePrecondition(work: Pick<WorkView, 'publication' | 'checks' | 'correction' | 'corrections'> | undefined): 'met' | 'not-met' | 'pending' {
+  const h1 = work?.publication?.linkedHeads?.[0];
+  if ((work?.corrections ?? []).length || work?.correction) return 'met';
+  const latest = work?.checks?.latest;
+  if (!h1 || !latest || latest.pullRequest.headSha !== h1) return 'pending';
+  return latest.outcome === 'satisfied' ? 'not-met' : latest.outcome === 'failing' ? 'met' : 'pending';
 }
 
 /** The base tip moved away from `expected` (the operator's merge into main). */
@@ -683,6 +698,7 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
   let quietFrom: number | null = null;
   let lastChecks = '';
   let questions: Awaited<ReturnType<typeof questionsOf>> = [];
+  let holdCode: string | null = null;
   try {
     while (Date.now() < deadline) {
       await sleep(15000);
@@ -730,6 +746,10 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
         continue;
       }
       const work = workOf(listed, number);
+      if (phase === 'failing' && failurePrecondition(work) === 'not-met') {
+        log({ call: 'failure-precondition-not-met', head: work?.checks?.latest.pullRequest.headSha, outcome: work?.checks?.latest.outcome });
+        holdCode = 'FAILURE_PRECONDITION_NOT_MET'; outcome = { done: true, success: false }; break;
+      }
       const checks = work?.checks?.latest;
       const key = checks ? `${checks.pullRequest.headSha}:${checks.outcome}` : '';
       if (checks && key !== lastChecks) { lastChecks = key; log({ call: 'checks', head: checks.pullRequest.headSha, outcome: checks.outcome, reasons: reasonCodes(checks) }); }
@@ -744,7 +764,8 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
     const result = await running;
     const unscripted = questions.filter(item => item.questionId !== tolerated);
     await save(`${phase}-result`, { status: outcome.success ? 'success' : 'held', ...(unscripted.length ? { holdReason: 'UNSCRIPTED_QUESTION', questions: unscripted } : {}),
-      ...(tolerated ? { toleratedQuestion: tolerated } : {}),
+      ...(tolerated ? { toleratedQuestion: tolerated } : {}), ...(holdCode ? { holdReason: holdCode,
+        note: 'The first Factory head passed factory-gate: the failure V-10.b needs never happened. Held at once (no wait for the deadline).' } : {}),
       outcome: result, final, human, counts, events, deadlineReached: Date.now() >= deadline });
   }
   if (!outcome.success) throw new Error('PHASE_NOT_AS_EXPECTED');
@@ -829,6 +850,11 @@ export async function runPhase(phase: Phase) {
     if (usesGitHub) {
       await requireKeySource(path => fs.access(path));
       const { constants } = await import('node:fs');
+      // A phase killed before its `finally` leaves its key copy (v3: inspect then held on EEXIST): the namespace's own copy is removed, recorded.
+      if (await fs.lstat(`${observations}/${githubApp.privateKeyFile}`).then(() => true, () => false)) {
+        await fs.rm(`${observations}/${githubApp.privateKeyFile}`, { force: true });
+        await save(`stale-key-copy-removed-${phase}`, { phase, at: new Date().toISOString() });
+      }
       await fs.copyFile(keySource, `${observations}/${githubApp.privateKeyFile}`, constants.COPYFILE_EXCL);
       await fs.chmod(`${observations}/${githubApp.privateKeyFile}`, 0o600);
     }
@@ -883,6 +909,11 @@ export async function runPhase(phase: Phase) {
     if (!Array.isArray(operators) || operators.length !== 1) throw new Error('OPERATOR_IDENTITY_UNRESOLVED');
     if (controlPhases.includes(phase)) { await runControl(phase as ControlPhase, save, operators, load); return; }
     if (readPhases.includes(phase)) { await runRead(phase as ReadPhase, save, load); return; }
+    // inspect requests the teardown FIRST, from local data only (no storage, no GitHub): a killed or held phase never leaves it unrequested.
+    if (phase === 'inspect') {
+      const teardown = humanSteps({ mainTip: '' }).teardown!;
+      await save('human-step-teardown-requested', { ...teardown, at: new Date().toISOString(), note: `${teardown.note}. Requested before anything else is read.` });
+    }
     // inspect / stop-environment: a private COPY of the storage (the original is never written).
     const { openControl } = await import('../../src/control/index.js');
     const copy = await snapshotStorage(observations, `${observations}/${phase}-storage-copy`);
@@ -934,9 +965,6 @@ export async function runPhase(phase: Phase) {
         humanDraft: await load('human-draft-result'), rerun: await load('rerun-result'), contexts: await load('contexts-result'), classic: await load('classic-result'),
         homonym: await load('homonym-result'), strictObserved: await load('strict-observed'), inspect: JSON.parse(JSON.stringify(saved)) as Saved });
       await save('inspect-result', { verdict, ...saved });
-      const tip = await mainTip(github) ?? '<main tip>';
-      const teardown = humanSteps({ mainTip: tip, pullRequest: work.publication?.pullRequest?.number }).teardown!;
-      await save('human-step-teardown-requested', { ...teardown, at: new Date().toISOString(), note: `${teardown.note}. Check the main tip first (the teardown PR verifies it).` });
       await save('verdict', verdict);
       return;
     }
@@ -963,6 +991,10 @@ export async function main(args: string[]) {
   await runPhase(args[0] as Phase);
 }
 if (process.argv[1] === new URL(import.meta.url).pathname) {
+  // A killed phase (SIGTERM/SIGINT) removes the namespace's key copy before exiting (its `finally` never runs).
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => {
+    void import('node:fs/promises').then(fs => fs.rm(`${observations}/${githubApp.privateKeyFile}`, { force: true })).finally(() => process.exit(143));
+  });
   main(process.argv.slice(2)).then(() => process.exit(0), (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     console.error(message.startsWith('APP_KEY_SOURCE_MISSING') || message === 'TICKET_NOT_PINNED' ? message : `Qualification held; no retry. (${message.slice(0, 128)})`); process.exit(1);

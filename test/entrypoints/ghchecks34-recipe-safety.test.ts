@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { WorkView } from '../../src/control/index.js';
-import { activationGuard, actionsAppId, conversionGuard, grantGuard, humanSteps, labelExact, listAll, operatorPr, phaseGuard, questionDecision, questionsOf, rulesetBody, rulesetMatches, runIdOf, secretScan, settled,
+import { activationGuard, actionsAppId, conversionGuard, failurePrecondition, grantGuard, humanSteps, labelExact, listAll, operatorPr, phaseGuard, questionDecision, questionsOf, rulesetBody, rulesetMatches, runIdOf, secretScan, settled,
   tickets, verdictOf, type Ruleset } from './ghchecks34-qualification.js';
 
 // R-GH-CHECKS recipe safety on controlled data only (never the real root, a real gh, GitHub, a VM or a model).
@@ -82,7 +82,8 @@ test('human steps: operator PRs check the base tip, never force or bypass; every
   assert.ok(steps.strict!.apply.at(-1)!.endsWith('rulesets/strict.json --silent') && steps.strict!.restore[0]!.endsWith('rulesets/loose.json --silent'));
   assert.ok(steps.contexts!.restore[0]!.endsWith('rulesets/loose.json --silent'));
   assert.ok(steps.teardown!.apply.at(-1)!.endsWith('rulesets/before.json --silent'), 'teardown ends with the live ruleset');
-  assert.ok(steps.teardown!.apply.some(line => line.startsWith('gh pr close 12')));
+  assert.ok(steps.teardown!.apply.some(line => line.startsWith('git rm --quiet --ignore-unmatch')), 'teardown works whichever phase stopped the run (no base note before strict)');
+  assert.ok(steps.teardown!.apply.some(line => line.includes('startswith("factory/0-")') && line.includes('gh pr close "$n"')), 'the Factory PR is found at teardown time');
   assert.ok(steps.classic!.apply[0]!.includes('already present: stop'), 'classic is applied only over NO classic protection, so DELETE restores it');
   assert.equal(runIdOf('https://github.com/Sanmoo/x/actions/runs/123456/job/789'), 123456);
   assert.equal(runIdOf('https://github.com/Sanmoo/x/runs/1'), null);
@@ -238,4 +239,17 @@ test('ONE tolerated Question (failing/strict, Spec vs the required check); any o
   assert.equal(guard(c('spec', 'p', 'e2'), { round: 1 }, 9), true, 'its reviews start again');
   assert.equal(guard(c('builder', 'builder-recovery', 'e3'), undefined, 9), false, 'only once');
   assert.equal(guard(c('builder', 'builder-publication', 'e4'), undefined, 9), true);
+});
+
+test('v3 lesson: failing holds at once when the FIRST head passed the required check; a failing H1 or a correction meets the precondition', () => {
+  const h1 = '1'.repeat(40), h2 = '2'.repeat(40);
+  const work = (outcome: string | null, head = h1, extra: Record<string, unknown> = {}) => ({ publication: { linkedHeads: [h1] }, correction: null, corrections: [],
+    checks: outcome ? { latest: { outcome, pullRequest: { headSha: head } } } : null, ...extra }) as unknown as WorkView;
+  assert.equal(failurePrecondition(work('satisfied')), 'not-met', 'v3: H1 green');
+  assert.equal(failurePrecondition(work('waiting')), 'pending', 'the check still runs (sleep 120)');
+  assert.equal(failurePrecondition(work('failing')), 'met');
+  assert.equal(failurePrecondition(work(null)), 'pending');
+  assert.equal(failurePrecondition(work('satisfied', h2)), 'pending', 'only H1 decides');
+  assert.equal(failurePrecondition(work('satisfied', h2, { corrections: [{ outcome: 'published' }] })), 'met', 'after the repair, green is the expected end');
+  assert.equal(failurePrecondition(undefined), 'pending');
 });

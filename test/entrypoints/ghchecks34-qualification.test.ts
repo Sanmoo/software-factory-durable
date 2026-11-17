@@ -18,14 +18,14 @@ test('R-GH-CHECKS recipe: import and --plan are inert; own namespace, two pinned
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q34-ghchecks-v3');
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q34-ghchecks-v4');
   assert.deepEqual(plan.phases, ['preflight', 'waiver', 'run', 'failing', 'strict', 'human-draft', 'rerun', 'contexts', 'classic', 'homonym', 'inspect', 'stop-environment']);
   assert.deepEqual([plan.tickets.waiver.pinned, plan.tickets.checks.pinned], [false, false], 'the supervisor pins both NEW issues in a reviewed commit before any phase');
   assert.match(plan.tickets.waiver.body, /## Waiver/);
   assert.match(plan.tickets.waiver.body, /requiredCheck: factory-gate/);
   assert.match(plan.tickets.checks.body, /docs\/FACTORY_CHECKS\.md/);
   assert.doesNotMatch(plan.tickets.checks.body, /Checked-by/, 'the Ticket never names the line the check requires: the first Factory head fails');
-  assert.match(plan.tickets.checks.body, /REQUIRES for merging demands additional content in this file, adding exactly that content is in scope: put it AFTER the `## Steps` list/);
+  assert.doesNotMatch(plan.tickets.checks.body, /REQUIRE|in scope/, 'v3 lesson: no hint about the required check content (the first head must fail)');
   assert.match(plan.requiredCheck.script.content, /Checked-by: factory-gate/);
   assert.match(plan.requiredCheck.workflow.content, /path: base[\s\S]*sh \.\.\/base\/ci\/factory-gate\.sh/, 'the script always comes from the base');
   assert.equal(plan.repository.correctionLimit, 2);
