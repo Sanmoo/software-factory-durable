@@ -74,3 +74,17 @@ Contagens novas: 112 obrigações, das quais 71 aprovadas, 0 reprovadas, 29 inco
 Os bloqueios dos gates são G3 com 2 (V-06.h, V-15.c), G4 com 24 e G5 com 3 (V-14.f, V-16.b, V-16.d); G1, G2 e G6 continuam sem bloqueio.
 CA-08 e o cenário V-02 passam a dependentes do piloto, e os demais RF/RNF/CA seguem inconclusivos, exceto RF-08 e CA-01 (dependentes
 do piloto).
+
+## Comments
+
+- 2026-11-17 (supervisor, operator-authorized pre-pilot runs): results recorded in
+  [docs/evidence/34-prepilot-results.md](../../../docs/evidence/34-prepilot-results.md).
+  - R-INSPECT `qinspect34-v1`: V-15.c approved.
+  - R-GH-DEP `q34-ghdep-v1`: V-05.c, V-05.e and V-14.f approved.
+  - R-CAND `qcand34-v9` (release mvp-34.4, PR #69 merged by the operator): V-06.h, V-10.d and V-16.d approved; V-08.g approved by
+    evidence (D-09). V-07.f is deferred to R-INSTR.
+  - R-CRASH-A `q34-crash-a-v5`: V-07.b, V-12.c and V-12.d approved (D-10).
+  - R-HOSTFAULT v3 (V-14.c) was already recorded.
+  - Matrix: 72/0/28/12 → 83/0/17/12. G3 has no blocker; G4 has 16 and G5 has 1 (V-16.b).
+  - The R-CAND inspect now saves the full Work.
+  - Flake ticket [42](42-records-raw-test-flake-under-load.md).

@@ -1,0 +1,382 @@
+{
+ "verdict": {
+  "status": "inconclusive",
+  "checks": {
+   "cacheCut": true,
+   "cacheReconciled": true,
+   "cachePreparationHeldNotAdopted": true,
+   "sourcesCut": true,
+   "sourcesInterrupted": true,
+   "channelLossReconciled": true,
+   "sourcesRecoveryReconciled": true,
+   "preservedNeverOverwritten": true,
+   "preservationCompleted": true,
+   "questionCut": true,
+   "singleQuestionComment": true,
+   "answerAcceptedOnce": true,
+   "answerDuringBoot": false,
+   "toolCut": true,
+   "toolCutReconciled": true,
+   "toolNeverFinishedNorReplayedBlindly": true,
+   "handoffCut": true,
+   "handoffReconciled": true,
+   "opinionCarriedNotRerun": true,
+   "finalCompleted": true,
+   "noPublication": true,
+   "budget": true
+  },
+  "inconclusive": [
+   "ANSWER_NOT_OBSERVED_DURING_BOOT"
+  ],
+  "failures": []
+ },
+ "versions": {
+  "spec/v2": {
+   "complete": true
+  },
+  "instructions/v2": {
+   "complete": true
+  }
+ },
+ "cacheState": {
+  "version": 1,
+  "state": "idle",
+  "at": "2026-11-17T09:51:59.085Z",
+  "reconciled": {
+   "previous": "mutating",
+   "cache": "connectivity-verified"
+  },
+  "lock": "git-flock-v1"
+ },
+ "questionComments": 1,
+ "pullRequests": 0,
+ "reviewSpecVersions": [
+  {
+   "executionId": "e3031ea8-1f5f-4cbd-9c09-5600d6f54e55",
+   "round": 1,
+   "spec": {
+    "version": "v2",
+    "sources": "/artifacts/spec/v2/sources.json",
+    "sha256": "280f9190ee2cce0ae621cc726d83193e60b63b7867778921245e48dbdf81a746"
+   },
+   "reviewers": {
+    "standards": null,
+    "spec": null
+   }
+  },
+  {
+   "executionId": "04a01439-659d-4149-88dd-7a7ea660694d",
+   "round": 2,
+   "spec": {
+    "version": "v2",
+    "sources": "/artifacts/spec/v2/sources.json",
+    "sha256": "280f9190ee2cce0ae621cc726d83193e60b63b7867778921245e48dbdf81a746"
+   },
+   "reviewers": {
+    "standards": "carried",
+    "spec": "notification"
+   }
+  },
+  {
+   "executionId": "04a01439-659d-4149-88dd-7a7ea660694d",
+   "round": 3,
+   "spec": {
+    "version": "v2",
+    "sources": "/artifacts/spec/v2/sources.json",
+    "sha256": "280f9190ee2cce0ae621cc726d83193e60b63b7867778921245e48dbdf81a746"
+   },
+   "reviewers": {
+    "standards": null,
+    "spec": null
+   }
+  },
+  {
+   "executionId": "04a01439-659d-4149-88dd-7a7ea660694d",
+   "round": 4,
+   "spec": {
+    "version": "v2",
+    "sources": "/artifacts/spec/v2/sources.json",
+    "sha256": "280f9190ee2cce0ae621cc726d83193e60b63b7867778921245e48dbdf81a746"
+   },
+   "reviewers": {
+    "standards": null,
+    "spec": null
+   }
+  }
+ ],
+ "executions": {
+  "main": [
+   {
+    "executionId": "fd4d295d-662b-4ecc-98c5-977bbdade7e8",
+    "state": "ended",
+    "end": {
+     "at": "2026-11-17T09:53:33.886Z",
+     "outcome": "failure",
+     "code": "CONTROLLER_CRASH",
+     "cessation": "confirmed"
+    },
+    "held": null,
+    "recovery": [
+     {
+      "at": "2026-11-17T09:53:33.886Z",
+      "controllerRunId": "13f44d64-c252-461d-8591-204f059136a2",
+      "trigger": "boot",
+      "found": {
+       "state": "started",
+       "phase": "started",
+       "held": null,
+       "end": null,
+       "origin": "6374848c-4175-461f-bb8f-004f7b706671"
+      },
+      "cessation": {
+       "result": "confirmed",
+       "basis": "sandbox-stop",
+       "environment": "env-632f970f5959d80ca564c6367db7a9d8db0e162d60fe745e5401198a22411672",
+       "boot": "boot-d84d9f64-27f8-4fb3-93ce-657ef5ee84f4"
+      },
+      "start": {
+       "kind": "confirmed",
+       "detail": "notification:a8f98f08-cde0-402f-b3dc-1c6dda6aaa9a"
+      },
+      "decision": "operational-recovery",
+      "code": "CONTROLLER_CRASH",
+      "question": "absent"
+     }
+    ],
+    "charge": {
+     "kind": "none",
+     "correctionId": null,
+     "counter": null,
+     "state": "none",
+     "settledAt": null
+    }
+   },
+   {
+    "executionId": "69935614-4f56-4d54-b0fe-69cdd1c2bda3",
+    "state": "ended",
+    "end": {
+     "at": "2026-11-17T09:54:21.872Z",
+     "outcome": "question",
+     "code": null,
+     "cessation": "confirmed",
+     "questionId": "4cb38ea3-2d67-4791-9324-8b15fc756a3f",
+     "session": {
+      "ref": "r/UeSU9RslTlesyBkD-VRaFg/w-8Fg4h7/profile/sessions/2026-11-17T09-54-01-308Z_01a1e8ed-7fdb-707b-8e37-a2248dff37dd.jsonl",
+      "sessionId": "01a1e8ed-7fdb-707b-8e37-a2248dff37dd",
+      "sha256": "246ddfcac0446896e2a039a8f1fa5595a94471d62fc4dffc1de0bf947cd4a84c",
+      "bytes": 38336,
+      "format": "pi-session-jsonl-v3",
+      "profile": {
+       "sdkProfile": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+       "providerId": "openai",
+       "modelId": "gpt-6-luna",
+       "skillPack": "factory-skills-v6",
+       "tools": [
+        "ask_user",
+        "bash",
+        "edit",
+        "handoff",
+        "read",
+        "write"
+       ]
+      }
+     }
+    },
+    "held": null,
+    "recovery": [],
+    "charge": {
+     "kind": "recovery",
+     "correctionId": null,
+     "counter": "recoveries",
+     "state": "consumed",
+     "settledAt": "2026-11-17T09:54:00.447Z"
+    }
+   },
+   {
+    "executionId": "2f0ecf92-cd49-4ab2-a026-b93be4d4550d",
+    "state": "ended",
+    "end": {
+     "at": "2026-11-17T09:55:57.897Z",
+     "outcome": "failure",
+     "code": "CONTROLLER_CRASH",
+     "cessation": "confirmed"
+    },
+    "held": null,
+    "recovery": [
+     {
+      "at": "2026-11-17T09:55:57.897Z",
+      "controllerRunId": "6cf62ff6-9a0a-458b-8682-49570a04b738",
+      "trigger": "boot",
+      "found": {
+       "state": "started",
+       "phase": "started",
+       "held": null,
+       "end": null,
+       "origin": "6494aedb-157e-4757-bc67-20edf847d9f5"
+      },
+      "cessation": {
+       "result": "confirmed",
+       "basis": "sandbox-stop",
+       "environment": "env-632f970f5959d80ca564c6367db7a9d8db0e162d60fe745e5401198a22411672",
+       "boot": "boot-cde0c6c4-598c-4d47-88d4-c92f41145e33"
+      },
+      "start": {
+       "kind": "confirmed",
+       "detail": "notification:5a3039e3-d27f-4b42-af27-1b88d2686e59"
+      },
+      "decision": "operational-recovery",
+      "code": "CONTROLLER_CRASH",
+      "question": "absent"
+     }
+    ],
+    "charge": {
+     "kind": "none",
+     "correctionId": null,
+     "counter": null,
+     "state": "none",
+     "settledAt": null
+    }
+   },
+   {
+    "executionId": "e3031ea8-1f5f-4cbd-9c09-5600d6f54e55",
+    "state": "ended",
+    "end": {
+     "at": "2026-11-17T10:02:31.595Z",
+     "outcome": "failure",
+     "code": "CONTROLLER_CRASH",
+     "cessation": "confirmed"
+    },
+    "held": null,
+    "recovery": [
+     {
+      "at": "2026-11-17T10:02:31.595Z",
+      "controllerRunId": "e4f830ca-e83c-4114-b64e-50db560b785c",
+      "trigger": "boot",
+      "found": {
+       "state": "started",
+       "phase": "started",
+       "held": null,
+       "end": null,
+       "origin": "6cf62ff6-9a0a-458b-8682-49570a04b738"
+      },
+      "cessation": {
+       "result": "confirmed",
+       "basis": "sandbox-stop",
+       "environment": "env-632f970f5959d80ca564c6367db7a9d8db0e162d60fe745e5401198a22411672",
+       "boot": "boot-dc1235fd-0c1a-4b64-a92a-b4b3f908efd2"
+      },
+      "start": {
+       "kind": "confirmed",
+       "detail": "notification:8377dc8d-d0b3-420d-8fe4-28b3c3d78c83"
+      },
+      "decision": "operational-recovery",
+      "code": "CONTROLLER_CRASH",
+      "question": "absent"
+     }
+    ],
+    "charge": {
+     "kind": "recovery",
+     "correctionId": null,
+     "counter": "recoveries",
+     "state": "consumed",
+     "settledAt": "2026-11-17T09:57:24.314Z"
+    }
+   },
+   {
+    "executionId": "04a01439-659d-4149-88dd-7a7ea660694d",
+    "state": "ended",
+    "end": {
+     "at": "2026-11-17T10:13:25.871Z",
+     "outcome": "completed",
+     "code": null,
+     "cessation": "confirmed",
+     "session": {
+      "ref": "r/ynPLfrC0T3a4RKe7F9D0Aw/w-QqLYYU/profile/sessions/2026-11-17T10-03-58-039Z_01a1e8f6-9ad6-716d-934a-b040ba578196.jsonl",
+      "sessionId": "01a1e8f6-9ad6-716d-934a-b040ba578196",
+      "sha256": "8567f91784cf612f621e2c346a102bfe7a7530925179c4cec0ee2e2824ca3ec4",
+      "bytes": 66057,
+      "format": "pi-session-jsonl-v3",
+      "profile": {
+       "sdkProfile": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+       "providerId": "openai",
+       "modelId": "gpt-6-luna",
+       "skillPack": "factory-skills-v6",
+       "tools": [
+        "ask_user",
+        "bash",
+        "edit",
+        "handoff",
+        "read",
+        "write"
+       ]
+      }
+     }
+    },
+    "held": null,
+    "recovery": [],
+    "charge": {
+     "kind": "recovery",
+     "correctionId": null,
+     "counter": "recoveries",
+     "state": "consumed",
+     "settledAt": "2026-11-17T10:03:57.343Z"
+    }
+   }
+  ],
+  "cache": [
+   {
+    "executionId": "ec9e2097-8920-4892-a975-c0b77273a5da",
+    "state": "released",
+    "end": null,
+    "held": {
+     "code": "INTERRUPTED_BEFORE_START",
+     "phase": "reserved",
+     "at": "2026-11-17T09:51:59.301Z",
+     "nextStep": "No worker started (no-activation-request); the reservation was released without consumption."
+    },
+    "recovery": [
+     {
+      "at": "2026-11-17T09:51:59.301Z",
+      "controllerRunId": "c9396d77-15d0-48cc-868b-86047d60a1de",
+      "trigger": "boot",
+      "found": {
+       "state": "reserved",
+       "phase": "reserved",
+       "held": null,
+       "end": null,
+       "origin": null
+      },
+      "cessation": {
+       "result": "confirmed",
+       "basis": "preparation:never-booted",
+       "environment": "env-0a195e28568f54146b6317490c91d9637d44fe76217a69c3a4b624f6e8b260ad",
+       "boot": null
+      },
+      "start": {
+       "kind": "not-started",
+       "detail": "no-activation-request"
+      },
+      "decision": "requeued",
+      "code": null
+     }
+    ]
+   },
+   {
+    "executionId": "5e4b653a-58f7-477a-b3e4-1bfd9b724653",
+    "state": "held",
+    "end": null,
+    "held": {
+     "code": "PREPARE_CHECKOUT_PREPARATION_INCOMPLETE",
+     "phase": "reserved",
+     "at": "2026-11-17T09:52:11.400Z",
+     "nextStep": "Preparation did not complete; it is never retried automatically. Inspect the environment (ticket 26 recovery)."
+    },
+    "recovery": []
+   }
+  ]
+ },
+ "secretShapes": {
+  "/home/sanmoo/software-factory-test/y5/q34-crash-a-v5": 0,
+  "/home/sanmoo/software-factory-test/cr4/2ce6b55c-34f6-49f7-829e-d3592911f6c6": 0
+ }
+}

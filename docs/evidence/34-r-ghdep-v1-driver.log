@@ -1,0 +1,15 @@
+== phase preflight 2026-11-16T15:55:41-03:00
+preflight exit=0
+== phase cleanup-forget 2026-11-16T15:55:59-03:00
+cleanup-forget exit=0
+== phase unconfigured 2026-11-16T15:59:30-03:00
+unconfigured exit=0
+== phase configured 2026-11-16T15:59:49-03:00
+== apply human-step-close-blockers 2026-11-16T16:00:06-03:00
+✓ Closed issue Sanmoo/factory-dependency-fixture#1 (Factory qualification: cross-repository blocker)
+✓ Closed issue Sanmoo/java-springboot-event-sourcing#18 ([factory-q25] Synthetic: full build summary (cancellation qualification, do not merge))
+apply human-step-close-blockers exit=0
+configured exit=0
+== phase inspect 2026-11-16T16:01:22-03:00
+inspect exit=0
+driver done

@@ -869,6 +869,17 @@ async function preflight(issue: number, save: (name: string, data: unknown) => P
   if (!ok) throw new Error('DOCTOR_NOT_READY');
 }
 
+/** The full Work view (nothing omitted) from an inert Control over a private copy of the installation storage; the copy is never the live storage. */
+async function fullWork(workId: string): Promise<WorkView | null> {
+  const { snapshotStorage } = await import('./review12-qualification.js');
+  const { openControl } = await import('../../src/control/index.js');
+  const stored = await openControl({ storagePath: await snapshotStorage(`${root}/data`, `${observations}/inspect-storage-copy`), runtimeInventory: 'unknown' });
+  try {
+    const shown = await stored.inspect({ kind: 'show', work_id: workId }) as { kind?: string; work?: WorkView };
+    return shown.kind === 'work' && shown.work ? shown.work : null;
+  } finally { const halt = new AbortController(); halt.abort(); await stored.run(halt.signal); }
+}
+
 async function inspect(issue: number) {
   const fs = await import('node:fs/promises');
   const current = await snapshot(issue);
@@ -901,7 +912,11 @@ async function inspect(issue: number) {
   let observationShapes = 0;
   for (const name of await fs.readdir(observations)) if (name.endsWith('.json')) observationShapes += secretShapes(await fs.readFile(`${observations}/${name}`));
   const usageView = usage as { works?: { byRole?: Record<string, unknown> }[] } | null;
-  return { work: current.work, questions: current.questions,
+  // qcand34-v9: the CLI `show` is fitted to one frame (earlier Executions and rounds trimmed), so the verdict saw no docs-check waiver
+  // although the product had one per round. The verdict reads the FULL Work: in-process `show` over a private copy of the storage
+  // (never the live files), the view the supervisor used for the v9 V-08.g evidence. Without it, the fitted view stays and V-08.g fails closed.
+  const full = id ? await fullWork(id).catch(() => null) : null;
+  return { work: full ?? current.work, workView: full ? 'full-in-process-copy' : 'cli-fitted', questions: current.questions,
     cli: runs.map(item => ({ args: item.args, code: item.code, bytes: item.bytes, secrets: item.secrets })), views: runs.map(item => ({ args: item.args, json: item.bytes > 256 * 1024 ? { omitted: item.bytes } : item.json })),
     usage: { byRole: usageView?.works?.[0]?.byRole ?? null }, pull: pull?.ok ? pull.value : pull, prFiles: files?.ok ? files.value.map(item => item.filename).sort() : null,
     agentsAtBase: preflight.agentsAtBase ?? null, agentsAtMerge: agentsAtMerge ? (agentsAtMerge.ok ? agentsAtMerge.value.sha ?? null : null) : null,

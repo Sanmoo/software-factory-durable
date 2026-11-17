@@ -1,0 +1,72 @@
+{
+ "revision": "qcand34-v9",
+ "by": "supervisor",
+ "at": "2026-11-17T09:55Z",
+ "kind": "read-only evidence from a copy of pr2/data/control.sqlite opened with openControl (full in-process show, nothing omitted)",
+ "work": "7b94d2d3 (delivered)",
+ "q1": "efaa533a-e084-471f-8de7-b9cb162b99d3",
+ "docsCheckWaivers": [
+  {
+   "execution": "12df0f45",
+   "round": 1,
+   "declared": "waived",
+   "outcome": "waived",
+   "authorization": {
+    "kind": "question",
+    "questionId": "efaa533a-e084-471f-8de7-b9cb162b99d3"
+   }
+  },
+  {
+   "execution": "12df0f45",
+   "round": 2,
+   "declared": "waived",
+   "outcome": "waived",
+   "authorization": {
+    "kind": "question",
+    "questionId": "efaa533a-e084-471f-8de7-b9cb162b99d3"
+   }
+  },
+  {
+   "execution": "3f04ffbd",
+   "round": 4,
+   "declared": "waived",
+   "outcome": "waived",
+   "authorization": {
+    "kind": "question",
+    "questionId": "efaa533a-e084-471f-8de7-b9cb162b99d3"
+   }
+  },
+  {
+   "execution": "3f04ffbd",
+   "round": 5,
+   "declared": "waived",
+   "outcome": "waived",
+   "authorization": {
+    "kind": "question",
+    "questionId": "efaa533a-e084-471f-8de7-b9cb162b99d3"
+   }
+  },
+  {
+   "execution": "52bf27c0",
+   "round": 7,
+   "declared": "waived",
+   "outcome": "waived",
+   "authorization": {
+    "kind": "question",
+    "questionId": "efaa533a-e084-471f-8de7-b9cb162b99d3"
+   }
+  },
+  {
+   "execution": "52bf27c0",
+   "round": 8,
+   "declared": "waived",
+   "outcome": "waived",
+   "authorization": {
+    "kind": "question",
+    "questionId": "efaa533a-e084-471f-8de7-b9cb162b99d3"
+   }
+  }
+ ],
+ "contentGate": "passed in every round",
+ "why": "verdict-result.json V-08.g read 'waived 0' because inspect-result.json saved the fitted CLI show view (previousExecutions [] and the final Execution's rounds trimmed); the product record has every docs-check waiver authorized by the step-1 Question"
+}

@@ -1,0 +1,93 @@
+{
+ "revision": "qinspect34-v1",
+ "factory": {
+  "commit": "5fac598edfd87a32d8a1458fb49c3812cde24701",
+  "dirty": false,
+  "cli": "dist/src/entrypoints/cli.js of this checkout (R-INSPECT does not need the release)"
+ },
+ "status": "success",
+ "obligation": {
+  "V-15.c": "proven"
+ },
+ "usage": {
+  "proven": true,
+  "exercised": {
+   "partialOrAbsent": true
+  },
+  "checks": [
+   {
+    "id": "measured-three-roles",
+    "passed": true,
+    "observed": "builder:8/1532939 standards:5/173272 spec:5/206896"
+   },
+   {
+    "id": "resumed-session-counted-once",
+    "passed": true,
+    "observed": "3 continued sessions; 01a1e3b6:20+0/14+20/16+34/14+50 01a1e3d3:11+0/9+11 01a1e3d3:10+0/11+10; totals true"
+   },
+   {
+    "id": "partial-or-absent-never-zero",
+    "passed": true,
+    "observed": "0 unavailable (); 10 partial"
+   }
+  ]
+ },
+ "checks": [
+  {
+   "name": "exit-codes",
+   "ok": true,
+   "detail": "status:0 list:0 usage:0 show:0 history:0 history:0 history:0 history:0 logs:0 logs:0 logs:0 usage:0"
+  },
+  {
+   "name": "stable-json",
+   "ok": true,
+   "detail": "every stdout is one JSON document"
+  },
+  {
+   "name": "frame-fit",
+   "ok": true,
+   "detail": "no view exceeds one protocol frame"
+  },
+  {
+   "name": "no-secret",
+   "ok": true,
+   "detail": "0 secret-shaped matches (redacted before saving)"
+  },
+  {
+   "name": "chain",
+   "ok": true,
+   "detail": "1 show views with a chain"
+  },
+  {
+   "name": "usage-never-false-zero",
+   "ok": true,
+   "detail": "0 unavailable activities with numbers"
+  },
+  {
+   "name": "history-paged",
+   "ok": true,
+   "detail": "4 history pages"
+  },
+  {
+   "name": "logs-complete",
+   "ok": true,
+   "detail": "v2: every logs listing complete (preserved evidence is a known non-capture)"
+  },
+  {
+   "name": "logs-explained",
+   "ok": true,
+   "detail": "every logs listing is complete or carries its code"
+  },
+  {
+   "name": "copy-unchanged",
+   "ok": true,
+   "detail": "state digest of the copy before/after the inspection"
+  },
+  {
+   "name": "source-unchanged",
+   "ok": true,
+   "detail": "{\"before\":{\"control.sqlite\":\"16d74d1cb4333ecd487e96a26f04cd9450504c0d95cc3de2e1b7821fff49afbe\",\"control.sqlite-wal\":null},\"after\":{\"control.sqlite\":\"16d74d1cb4333ecd487e96a26f04cd9450504c0d95cc3de2e1b7821fff49afbe\",\"control.sqlite-wal\":null}}"
+  }
+ ],
+ "note": "Computed from this run's CLI views of the copy; the source storage was hashed before and after."
+}

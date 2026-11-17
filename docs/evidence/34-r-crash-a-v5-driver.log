@@ -1,0 +1,25 @@
+https://github.com/Sanmoo/java-springboot-event-sourcing/issues/50
+https://github.com/Sanmoo/java-springboot-event-sourcing/issues/51
+labelled 50 51
+listing 1: []
+listing 2: [50,51]
+listing confirm: [50,51]
+== phase preflight 2026-11-17T06:51:20-03:00
+preflight exit=0
+== phase cache 2026-11-17T06:51:35-03:00
+cache exit=0
+== phase sources 2026-11-17T06:52:13-03:00
+sources exit=0
+https://github.com/Sanmoo/java-springboot-event-sourcing/issues/50#issuecomment-6944660191
+answered 4cb38ea3-2d67-4791-9324-8b15fc756a3f
+== phase tool 2026-11-17T06:54:27-03:00
+tool exit=0
+== phase inspect 2026-11-17T07:13:28-03:00
+inspect exit=0
+== phase stop-environment 2026-11-17T07:13:38-03:00
+stop-environment exit=1
+driver done
+https://github.com/Sanmoo/java-springboot-event-sourcing/issues/50
+unlabelled 50
+https://github.com/Sanmoo/java-springboot-event-sourcing/issues/51
+unlabelled 51

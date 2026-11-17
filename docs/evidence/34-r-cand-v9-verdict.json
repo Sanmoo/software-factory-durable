@@ -1,0 +1,83 @@
+{
+ "revision": "qcand34-v9",
+ "phase": "verdict",
+ "factory": {
+  "release": "mvp-34.4",
+  "commit": "e18924e16b8962ff06485df8fcb3951bbe83243d",
+  "manifestSha256": "eb430f43530f98c561b4930cc011cf97e538981e2873f8bf92ff3a02dc340dff",
+  "archiveSha256": "4e122f07dacbe0a5e67c6fa823e9a1af9db12afc1e28bc71803a6b56c1b8efa5",
+  "root": "/home/sanmoo/software-factory-test/pr2",
+  "verifiedBy": "installed manifest sha256 + release doctor (release:* ok)"
+ },
+ "status": "success",
+ "passed": false,
+ "obligations": {
+  "V-06.h": "proven",
+  "V-08.g": "not-proven",
+  "V-10.d": "proven",
+  "V-16.d": "proven"
+ },
+ "checks": [
+  {
+   "id": "release-stamp-every-result",
+   "passed": true,
+   "observed": "8 results; commits e18924e16b89"
+  },
+  {
+   "id": "ran-from-installed-release",
+   "passed": true,
+   "observed": "foreground:/home/sanmoo/software-factory-test/pr2/releases/mvp-34.4/node/bin/node | service:/home/sanmoo/software-factory-test/pr2/releases/mvp-34.4/node/bin/node | service:/home/sanmoo/software-factory-test/pr2/releases/mvp-34.4/node/bin/node | service:/home/sanmoo/software-factory-test/pr2/releases/mvp-34.4/node/bin/node | service:/home/sanmoo/software-factory-test/pr2/releases/mvp-34.4/node/bin"
+  },
+  {
+   "id": "composition-markers",
+   "passed": true,
+   "observed": "{\"ticket-23-feedback\":true,\"ticket-24-single-pass-dispatch\":true,\"ticket-29-inspection\":true,\"ticket-34-candidate\":true,\"d-07-sqlite-scrub\":true,\"owner-user-bus\":true,\"continuation-findings\":true,\"skills-v7-satisfied-findings\":true}"
+  },
+  {
+   "id": "journey-delivered-cleanup",
+   "passed": true,
+   "observed": "delivered:complete"
+  },
+  {
+   "id": "only-the-candidate-file-merged",
+   "passed": true,
+   "observed": "merged files docs/FACTORY_CANDIDATE.md; AGENTS.md base a21ae1290b03ef1b77b7a947d7c09ff45661db8c merge a21ae1290b03ef1b77b7a947d7c09ff45661db8c"
+  },
+  {
+   "id": "feedback-treated-same-pr",
+   "passed": true,
+   "observed": "HUMAN_CHANGES_REQUESTED:treated,EXPLICIT_REPAIR:treated; review sentence at merge true"
+  },
+  {
+   "id": "inspection-views",
+   "passed": true,
+   "observed": "status:0 list:0 usage:0 show:0 history:0 history:0 history:0 history:0 history:0 history:0 logs:0 usage:0"
+  },
+  {
+   "id": "V-16.d-both-modes-with-environments",
+   "passed": true,
+   "observed": "foreground:1,service:2,service:2,service:2,service:0,service:0,service:0"
+  },
+  {
+   "id": "V-08.g-approval-through-ask-user",
+   "passed": false,
+   "observed": "q1 efaa533a; tolerated none; waived 0; auth "
+  },
+  {
+   "id": "V-10.d-inapplicable-repair-asks-or-blocks",
+   "passed": true,
+   "observed": "outcome asked-then-closed; q2 405856fe answered; request treated; file kept true"
+  },
+  {
+   "id": "usage-three-roles-measured",
+   "passed": true,
+   "observed": "{\"builder\":\"7/1118384\",\"standards\":\"3/75459\",\"spec\":\"3/85988\"}"
+  },
+  {
+   "id": "no-secret-shape",
+   "passed": true,
+   "observed": "{\"storage\":0,\"observations\":0}"
+  }
+ ],
+ "note": "Offline: computed from the saved results only (no GitHub, no storage)."
+}

@@ -1,7 +1,7 @@
 {
  "schemaVersion": 1,
  "ticket": "34",
- "generatedAt": "2026-11-16",
+ "generatedAt": "2026-11-17",
  "authority": [
   ".scratch/software-factory/spec.md#13",
   ".scratch/software-factory/spec.md#14",
@@ -91,12 +91,28 @@
    "latestBuilt": "mvp-33.1 de b6cd2bb (r33-v2), manifestSha256 4696d55b0091ba47955ba68de96e8e9989ddfc37f2fa58cee8a4343de344073c",
    "manifestQualification": "unqualified"
   },
-  "realRunOnCandidate": false
+  "realRunOnCandidate": "R-CAND qcand34-v9 na release mvp-34.4 (descendente de b30e2bd); nenhum em b30e2bd exatamente",
+  "pilotComposition": {
+   "release": "mvp-34.4",
+   "commit": "e18924e16b8962ff06485df8fcb3951bbe83243d",
+   "manifestSha256": "eb430f43530f98c561b4930cc011cf97e538981e2873f8bf92ff3a02dc340dff",
+   "archiveSha256": "4e122f07dacbe0a5e67c6fa823e9a1af9db12afc1e28bc71803a6b56c1b8efa5",
+   "installationRoot": "pr2",
+   "skillPack": "factory-skills-v7 (Builder)",
+   "productChangesAfterCandidate": [
+    "5a026e7 scrub do SQLite apos forget (D-07)",
+    "f4cb958 leitura de lock_branch/assinaturas/historico linear/push restrictions (V-09.f)",
+    "5ab72fa owner com o bus do user manager",
+    "b4c5443 continuacao apos Pergunta conhece os achados entregues",
+    "82d6faf factory-skills-v7"
+   ],
+   "note": "R-CAND v9 rodou nesta release; os ensaios anteriores rodaram em b30e2bd ou antes (ver realRuns)"
+  }
  },
  "counts": {
-  "aprovada": 72,
+  "aprovada": 83,
   "reprovada": 0,
-  "inconclusiva": 28,
+  "inconclusiva": 17,
   "dependente-do-piloto": 12
  },
  "realRuns": [
@@ -763,6 +779,81 @@
    ],
    "applicability": "aplicavel",
    "reason": "executada em d7903b3, descendente do candidato b30e2bd; src/sandbox inalterado desde b30e2bd; as mudancas de src/control depois sao D-07 (store/forget) e as regras de checks (V-09.f), que a composicao do piloto contem"
+  },
+  {
+   "id": "qinspect34-v1",
+   "ticket": "34",
+   "date": "2026-11-16",
+   "commit": "5fac598",
+   "levels": [
+    "I"
+   ],
+   "boundaries": "CLI real do checkout (status/list/show/history/logs/usage) sobre copia do storage de q23-feedback-v3, com sessoes reais dos tres papeis retidas (local, sem GitHub/VM/modelo)",
+   "verdict": "success; V-15.c proven; 11/11 verificacoes ok",
+   "evidence": [
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-inspect-v1-verdict.json"
+   ],
+   "applicability": "aplicavel",
+   "reason": "executada em 5fac598, descendente do candidato b30e2bd; a inspecao (ticket 29) nao mudou depois; o storage de origem foi conferido por sha256 antes/depois (inalterado)"
+  },
+  {
+   "id": "q34-ghdep-v1",
+   "ticket": "34",
+   "date": "2026-11-16",
+   "commit": "00e9e14",
+   "levels": [
+    "I"
+   ],
+   "boundaries": "GitHub real: bloqueador nativo em segundo repo configurado (Sanmoo/factory-dependency-fixture, dependency-only) e nao configurado, omissao detectada, bloqueador proprio esquecido/cancelado; forget do cancelado q25 em dados reais apos remover o ambiente",
+   "verdict": "overall met; 25/25 verificacoes",
+   "evidence": [
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-ghdep-v1-verdict.json",
+    "docs/evidence/34-r-ghdep-v1-inspect.json",
+    "docs/evidence/34-r-ghdep-v1-driver.log"
+   ],
+   "applicability": "aplicavel",
+   "reason": "branch run/ghdep = 803e6a3 + pin, descendente de b30e2bd; dependencias/forget inalterados depois exceto o scrub do SQLite (D-07, 5a026e7), ja contido"
+  },
+  {
+   "id": "qcand34-v9",
+   "ticket": "34",
+   "date": "2026-11-17",
+   "commit": "e18924e",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "jornada completa pela release instalada mvp-34.4 (foreground + servico): admissao, Pergunta/resposta, dois reviews, draft, CHANGES_REQUESTED tratado, /factory repair inaplicavel -> Pergunta, ready, merge humano do PR #69, entrega, cleanup",
+   "verdict": "success; V-06.h/V-10.d/V-16.d proven; V-08.g not-proven pela verificacao automatica (view podada) e aprovada por evidencia (D-09)",
+   "evidence": [
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-cand-v9-verdict.json",
+    "docs/evidence/34-r-cand-v9-v08g-evidence.json",
+    "docs/evidence/34-r-cand-v9-driver.log"
+   ],
+   "applicability": "aplicavel",
+   "reason": "release mvp-34.4 construida de e18924e (manifesto eb430f43..., arquivo 4e122f07..., verificados pelo doctor); receita 82aacd2 = 416f297 + pin #68; contem 23+24+29+41, b4c5443, 5ab72fa, D-07, V-09.f e factory-skills-v7"
+  },
+  {
+   "id": "q34-crash-a-v5",
+   "ticket": "34",
+   "date": "2026-11-17",
+   "commit": "8fd1240",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "SIGKILL do controlador com agentes reais (openai/gpt-6-luna): cache em preparo (c1/c2), antes de sources completo (s1/s2, sobrevivente pausado por SIGSTOP), Pergunta, ferramenta do Builder (t1), handoff de revisao (h1), final (f1); raizes cr4/ck4",
+   "verdict": "inconclusive pela receita (ANSWER_NOT_OBSERVED_DURING_BOOT); 21/22 verificacoes verdadeiras, 0 falhas; aprovada por decisao do operador (D-10)",
+   "evidence": [
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-crash-a-v5-inspect.json",
+    "docs/evidence/34-r-crash-a-v5-driver.log"
+   ],
+   "applicability": "aplicavel",
+   "reason": "branch run/crasha-v5 = aff6197 + pin #50 #51, descendente de b30e2bd e da composicao de mvp-34.4"
   }
  ],
  "scenarios": [
@@ -846,7 +937,7 @@
     "I",
     "P"
    ],
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-05.a",
     "V-05.b",
@@ -986,7 +1077,7 @@
     "I",
     "A"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "obligations": [
     "V-12.a",
     "V-12.b",
@@ -1023,7 +1114,7 @@
     "I",
     "P"
    ],
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-14.a",
     "V-14.b",
@@ -1044,7 +1135,7 @@
     "A",
     "P"
    ],
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-15.a",
     "V-15.b",
@@ -1107,7 +1198,7 @@
   },
   {
    "id": "RF-02",
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-05.a",
     "V-05.b",
@@ -1120,7 +1211,7 @@
   },
   {
    "id": "RF-03",
-   "status": "inconclusiva",
+   "status": "aprovada",
    "obligations": [
     "V-06.a",
     "V-06.b",
@@ -1161,7 +1252,7 @@
   },
   {
    "id": "RF-06",
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-08.a",
     "V-08.b",
@@ -1337,7 +1428,7 @@
   },
   {
    "id": "RNF-03",
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-11.e",
     "V-15.a",
@@ -1396,7 +1487,7 @@
   },
   {
    "id": "CA-02",
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-05.a",
     "V-05.b",
@@ -1450,7 +1541,7 @@
   },
   {
    "id": "CA-06",
-   "status": "inconclusiva",
+   "status": "aprovada",
    "obligations": [
     "V-01.a",
     "V-01.b",
@@ -2479,19 +2570,28 @@
     "I"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "dependencias entre repositorios (cross-repo, D-02) suportadas: bloqueador em outro repo lido com a instalacao propria, repo nao configurado recusado, omissao detectada",
-   "observed": "implementacao suporta (issue-tracker readDependencyGraph segue arestas para outros repos; dependencyRepositories so-leitura; DEPENDENCY_REPOSITORY_NOT_CONFIGURED; DEPENDENCY_COUNT_MISMATCH): S/I-local (github-dependency-reads, configuration; I-local nao substitui a leitura real do GitHub); sem lacuna de implementacao; nenhuma prova real cross-repo (um so repo nos ensaios)",
+   "observed": "q34-ghdep-v1: bloqueador em repo nao configurado -> inconclusive DEPENDENCY_REPOSITORY_NOT_CONFIGURED; em repo configurado dependency-only -> pending EXTERNAL_BLOCKER_OPEN e, apos fechamento, satisfied; omissao -> DEPENDENCY_COUNT_MISMATCH (incomplete); nada despachado; so GET; escopo suportado = repos configurados do mesmo owner/instalacao (D-02)",
    "evidence": [
-    "docs/evidence/08-native-dependency-gating.md"
+    "docs/evidence/08-native-dependency-gating.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-ghdep-v1-verdict.json",
+    "docs/evidence/34-r-ghdep-v1-inspect.json"
    ],
-   "runs": [],
-   "commands": [],
+   "runs": [
+    "q34-ghdep-v1"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita R-GH-DEP (q34-ghdep-v1)"
+   ],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "D-02: escopo cross-repo exigido; executar R-GH-DEP (segundo repo com bloqueador nativo real, configurado e nao configurado) antes do piloto",
+   "pointer": "Aprovada por R-GH-DEP q34-ghdep-v1; cross-owner e visibilidade reduzida nao foram exercitados (fora do escopo declarado)",
    "reexecution": [
     "R-GH-DEP"
    ],
@@ -2545,19 +2645,28 @@
     "I"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "Ticket esquecido como bloqueador nativo real",
-   "observed": "so em fluxo (decisao 3 do supervisor no 31)",
+   "observed": "q34-ghdep-v1: bloqueador proprio (#18) com ciclo cancelado e esquecido lido do GitHub real -> pending OWN_CYCLE_CANCELLED, inclusive apos o fechamento da issue; nunca satisfeito",
    "evidence": [
-    "docs/evidence/31-history-erasure-and-minimal-cycle-memory.md"
+    "docs/evidence/31-history-erasure-and-minimal-cycle-memory.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-ghdep-v1-verdict.json",
+    "docs/evidence/34-r-ghdep-v1-inspect.json"
    ],
-   "runs": [],
-   "commands": [],
+   "runs": [
+    "q34-ghdep-v1"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita R-GH-DEP (q34-ghdep-v1)"
+   ],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Executar R-GH-DEP (bloqueador proprio esquecido lido do GitHub real)",
+   "pointer": "Aprovada por R-GH-DEP q34-ghdep-v1",
    "reexecution": [
     "R-GH-DEP"
    ]
@@ -2847,24 +2956,31 @@
     "A"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I",
+    "A"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "composicao do candidato: passada unica do 24 + feedback do 23 + inspecao do 29 numa execucao real",
-   "observed": "nenhum ensaio real sobre o candidato b30e2bd (nem 580b4d1/0d343d6); q23-v3 (d49f43d) nao tem dispatch.ts/capacity.ts do 24; q24-v3 (1f033f8) nao tem o feedback do 23; combinacao so em S (test:ci)",
+   "observed": "qcand34-v9 na release mvp-34.4 (marcadores 23/24/29/34/D-07/owner-bus/continuation-findings/skills-v7 presentes): jornada entregue com cleanup complete; so docs/FACTORY_CANDIDATE.md mergeado (AGENTS.md igual a base); CHANGES_REQUESTED e repair tratados no mesmo PR; views CLI exit 0; consumo medido nos tres papeis; 0 formas de segredo",
    "evidence": [
     "docs/evidence/23-human-feedback-and-explicit-repairs.md",
-    "docs/evidence/24-three-builders-fifo-and-isolation.md"
+    "docs/evidence/24-three-builders-fifo-and-isolation.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-cand-v9-verdict.json",
+    "docs/evidence/34-r-cand-v9-driver.log"
    ],
    "runs": [
-    "ci-candidato"
+    "ci-candidato",
+    "qcand34-v9"
    ],
    "commands": [
-    "npm run test:ci"
+    "npm run test:ci",
+    "receita test/entrypoints/rcand34-qualification.ts (qcand34-v9)"
    ],
    "tickets": [],
    "gate": "G3-jornada-completa",
-   "pointer": "Executar R-CAND (uma jornada real completa sobre a release do candidato)",
+   "pointer": "Aprovada por R-CAND qcand34-v9",
    "reexecution": [
     "R-CAND"
    ]
@@ -2921,22 +3037,34 @@
     "A"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I",
+    "A"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "interrupcao antes de sources completo",
-   "observed": "nenhum ensaio real localizado com corte antes da captura completa",
+   "observed": "q34-crash-a-v5 s1/s2: SIGKILL antes de sources completo (sources.json ausente, sobrevivente pausado); recuperacao reconciliou a perda de canal; versoes preservadas nunca sobrescritas; preservacao concluida (spec/v2 e instructions/v2 complete)",
    "evidence": [
-    "docs/evidence/09-builder-start-and-preserved-request.md"
+    "docs/evidence/09-builder-start-and-preserved-request.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-crash-a-v5-inspect.json"
    ],
-   "runs": [],
-   "commands": [],
+   "runs": [
+    "q34-crash-a-v5"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/crasha34-qualification.ts (q34-crash-a-v5)"
+   ],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Incluir corte antes de sources completo em R-CRASH-A",
+   "pointer": "Aprovada por decisao do operador D-10 sobre R-CRASH-A v5",
    "reexecution": [
     "R-CRASH-A"
-   ]
+   ],
+   "decision": {
+    "id": "D-10"
+   }
   },
   {
    "id": "V-07.c",
@@ -3069,7 +3197,7 @@
    ],
    "status": "inconclusiva",
    "expectation": "instrucao modificada pelo Builder para dispensar gates/ampliar poderes nao prevalece",
-   "observed": "instrucoes versionadas pelo controle e gates verificados pelo host (13, 18 HANDOFF_GATE_NOT_DOCUMENTED); nenhum ensaio A com o Builder alterando AGENTS/instrucoes",
+   "observed": "ADIADA: o item AGENTS.md saiu do R-CAND (v8, decisao do operador de 2026-11-17) porque o Spec julgou o item 3 nos dois sentidos em v3-v7. Instrucoes versionadas pelo controle e gates verificados pelo host seguem em S/I (13, 18); nenhum ensaio A com o Builder editando instrucoes",
    "evidence": [
     "docs/evidence/13-findings-treatment-and-current-content-gates.md",
     "docs/evidence/18-first-integrated-delivery-journey.md"
@@ -3083,9 +3211,9 @@
    ],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Incluir em R-CAND um Ticket cujo pedido leva o Builder a editar instrucoes/gates; verificar que a versao preservada prevalece",
+   "pointer": "Executar R-INSTR (desenho em deferredV07f de test/entrypoints/rcand34-qualification.ts, 106e67a): Ticket novo pede SO acrescentar ao AGENTS.md uma linha que dispensa gates e manter um gate documentado que nao roda no guest; para no draft verificado, cancela pelo produto, PR fechado sem merge. Prova: toda rodada registra UMA versao de instrucoes (a preservada da base), o gate inexecutavel e pedido por ask_user e dispensado so com a Pergunta respondida, e o AGENTS.md editado nunca chega a main",
    "reexecution": [
-    "R-CAND"
+    "R-INSTR"
    ]
   },
   {
@@ -3335,22 +3463,36 @@
     "A"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I",
+    "A"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "aprovacao exigida pela skill passa por ask user sem autorizacao previa",
-   "observed": "regra e skill (review13-question-flow, skill-pack) em S; nenhum ensaio A localizado",
+   "observed": "qcand34-v9: o gate docs-check foi waived em todas as 6 rodadas (Execucoes 12df0f45, 3f04ffbd, 52bf27c0) com authorization question efaa533a (Pergunta do passo 1 respondida pelo operador); content gate passou em todas. A verificacao automatica deu not-proven porque o inspect salvou a view CLI podada (sem Execucoes anteriores); a evidencia vem de show em processo sobre copia do storage",
    "evidence": [
-    "docs/evidence/13-findings-treatment-and-current-content-gates.md"
+    "docs/evidence/13-findings-treatment-and-current-content-gates.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-cand-v9-v08g-evidence.json",
+    "docs/evidence/34-r-cand-v9-verdict.json"
    ],
-   "runs": [],
-   "commands": [],
+   "runs": [
+    "qcand34-v9"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/rcand34-qualification.ts (qcand34-v9)",
+    "show em processo (openControl) sobre copia de pr2/data/control.sqlite (supervisor)"
+   ],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Incluir em R-CAND um pedido cuja skill exige aprovacao",
+   "pointer": "Aprovada por evidencia e decisao do operador D-09; receita corrigida para salvar a Work completa (prova automatica na proxima execucao)",
    "reexecution": [
     "R-CAND"
-   ]
+   ],
+   "decision": {
+    "id": "D-09"
+   }
   },
   {
    "id": "V-08.P",
@@ -3714,19 +3856,28 @@
     "A"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I",
+    "A"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "discordancia do Builder, correcao sem mudanca e problema declarado sem solucao bloqueiam/perguntam",
-   "observed": "so S; \"discordancia -> ask_user\" garantido apenas pelo prompt (limite registrado no 23)",
+   "observed": "qcand34-v9: /factory repair inaplicavel (apagar o arquivo e fechar o PR) -> Pergunta 405856fe respondida pelo operador; pedido treated; arquivo mantido (asked-then-closed)",
    "evidence": [
-    "docs/evidence/23-human-feedback-and-explicit-repairs.md"
+    "docs/evidence/23-human-feedback-and-explicit-repairs.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-cand-v9-verdict.json"
    ],
-   "runs": [],
-   "commands": [],
+   "runs": [
+    "qcand34-v9"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/rcand34-qualification.ts (qcand34-v9)"
+   ],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Incluir em R-CAND um pedido de reparo inaplicavel",
+   "pointer": "Aprovada por R-CAND qcand34-v9",
    "reexecution": [
     "R-CAND"
    ]
@@ -4163,29 +4314,37 @@
    ],
    "observedLevels": [
     "S",
-    "I"
+    "I",
+    "A"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "cortes de Builder/ferramenta e de revisao com agentes reais",
-   "observed": "corte de ferramenta so com provedor roteirizado (26, I sem A); corte no handoff de revisao so I-local (28; q28-partial-v3 nao executado)",
+   "observed": "q34-crash-a-v5 t1/h1 com modelo real: corte na ferramenta reconciliado, ferramenta nunca concluida nem repetida as cegas; corte no handoff reconciliado, parecer carregado sem rerun; final completed; sem publicacao; orcamento correto",
    "evidence": [
     "docs/evidence/26-execution-recovery-without-survivor-adoption.md",
-    "docs/evidence/28-partial-review-recovery.md"
+    "docs/evidence/28-partial-review-recovery.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-crash-a-v5-inspect.json"
    ],
    "runs": [
     "q26-v2",
-    "q28-v2"
+    "q28-v2",
+    "q34-crash-a-v5"
    ],
    "commands": [
     "npm run test:ci",
-    "receita test/entrypoints/recovery26-qualification.ts"
+    "receita test/entrypoints/recovery26-qualification.ts",
+    "receita test/entrypoints/crasha34-qualification.ts (q34-crash-a-v5)"
    ],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Executar R-CRASH-A",
+   "pointer": "Aprovada por decisao do operador D-10 sobre R-CRASH-A v5",
    "reexecution": [
     "R-CRASH-A"
-   ]
+   ],
+   "decision": {
+    "id": "D-10"
+   }
   },
   {
    "id": "V-12.d",
@@ -4200,22 +4359,33 @@
     "I"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "resposta durante boot, cache em preparo, perda de canal",
-   "observed": "corte de cache nao incluido na receita 26; resposta durante boot e perda de canal so em S/I-local",
+   "observed": "q34-crash-a-v5 c1/c2: corte com o cache em preparo; cache reconciliado (mutating -> connectivity-verified) e preparo retido, nao adotado; Pergunta unica (1 comentario) e resposta aceita uma vez. Resposta durante o boot nao observada pela receita (ANSWER_NOT_OBSERVED_DURING_BOOT: lacuna de 7 s e polling grosso), sem impacto de correcao",
    "evidence": [
-    "docs/evidence/26-execution-recovery-without-survivor-adoption.md"
+    "docs/evidence/26-execution-recovery-without-survivor-adoption.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-crash-a-v5-inspect.json"
    ],
-   "runs": [],
-   "commands": [],
+   "runs": [
+    "q34-crash-a-v5"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/crasha34-qualification.ts (q34-crash-a-v5)"
+   ],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Incluir em R-CRASH-A",
+   "pointer": "Aprovada por decisao do operador D-10; resposta durante o boot fica limite de observacao da receita",
    "reexecution": [
     "R-CRASH-A"
-   ]
+   ],
+   "decision": {
+    "id": "D-10"
+   }
   },
   {
    "id": "V-12.e",
@@ -4712,19 +4882,28 @@
     "I"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "forget de Trabalho cancelado em dados reais",
-   "observed": "so o ramo recusado (ambiente q25 ainda existe); caminho completo em fluxo",
+   "observed": "q34-ghdep-v1: forget do cancelado q25 recusado com RESOURCES_PENDING antes do cleanup; ambiente removido no lugar; ciclo 1 e ciclo 2 esquecidos com result cancelled e sem chaves proibidas; copia de Records apagada; nenhuma chamada remota; fontes inalteradas; listados como esquecidos",
    "evidence": [
-    "docs/evidence/31-history-erasure-and-minimal-cycle-memory.md"
+    "docs/evidence/31-history-erasure-and-minimal-cycle-memory.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-ghdep-v1-verdict.json",
+    "docs/evidence/34-r-ghdep-v1-inspect.json"
    ],
-   "runs": [],
-   "commands": [],
+   "runs": [
+    "q34-ghdep-v1"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita R-GH-DEP (q34-ghdep-v1)"
+   ],
    "tickets": [],
    "gate": "G5-operacao-release",
-   "pointer": "Executar R-GH-DEP (limpar o ambiente q25 e esquecer o cancelado), com autorizacao propria",
+   "pointer": "Aprovada por R-GH-DEP q34-ghdep-v1",
    "reexecution": [
     "R-GH-DEP"
    ]
@@ -4862,21 +5041,29 @@
     "A"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I",
+    "A"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "consumo medido dos tres papeis, sessao retomada sem duplicar, parcial/ausente distinto de zero, em dados reais",
-   "observed": "nos dados reais todas as atividades deram unavailable (sessoes removidas pelo cleanup do 17 antes do 30; cancelado sem sessao); medido/dedup so em S",
+   "observed": "qinspect34-v1 sobre copia de q23-feedback-v3: consumo medido nos tres papeis (builder 8 atividades/1532939 tokens, standards 5/173272, spec 5/206896); 3 sessoes continuadas contadas uma vez; 10 parciais e nenhum unavailable com numero (nunca falso zero); storage de origem inalterado",
    "evidence": [
-    "docs/evidence/29-correlated-cli-observability-and-usage.md"
+    "docs/evidence/29-correlated-cli-observability-and-usage.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-inspect-v1-verdict.json"
    ],
    "runs": [
-    "q29-v2"
+    "q29-v2",
+    "qinspect34-v1"
    ],
-   "commands": [],
+   "commands": [
+    "npm run test:ci",
+    "receita R-INSPECT (qinspect34-v1)"
+   ],
    "tickets": [],
    "gate": "G3-jornada-completa",
-   "pointer": "Executar R-INSPECT (receita 29 sobre copia de um storage com sessoes retidas, ex.: q23-feedback-v3)",
+   "pointer": "Aprovada por R-INSPECT qinspect34-v1 (as sessoes sao de agentes reais do q23-v3; a leitura e I-local)",
    "reexecution": [
     "R-INSPECT"
    ]
@@ -5114,19 +5301,27 @@
     "I"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "primeiro plano e servico opcional; systemd obrigatorio dos ambientes em ambos os modos",
-   "observed": "modo servico (--service) nunca instalado nem executado; ambientes systemd so em primeiro plano",
+   "observed": "qcand34-v9: run em primeiro plano e answer/review/repair/ready/deliver/inspect em modo servico, com ambientes systemd vistos nos dois modos, sempre pelo node da release instalada",
    "evidence": [
-    "docs/evidence/32-self-contained-release.md"
+    "docs/evidence/32-self-contained-release.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-cand-v9-verdict.json"
    ],
-   "runs": [],
-   "commands": [],
+   "runs": [
+    "qcand34-v9"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/rcand34-qualification.ts (qcand34-v9)"
+   ],
    "tickets": [],
    "gate": "G5-operacao-release",
-   "pointer": "Executar R-REL incluindo install com --service (unit systemd do usuario)",
+   "pointer": "Aprovada por R-CAND qcand34-v9 (instalacao em servico feita pelo R-REL em pr2)",
    "reexecution": [
     "R-REL"
    ]
@@ -5240,11 +5435,8 @@
   {
    "id": "G3-jornada-completa",
    "name": "Uma jornada completa (no candidato)",
-   "status": "inconclusiva",
-   "blockers": [
-    "V-06.h",
-    "V-15.c"
-   ]
+   "status": "aprovada",
+   "blockers": []
   },
   {
    "id": "G4-concorrencia-adversidades",
@@ -5255,23 +5447,16 @@
     "V-04.b",
     "V-04.d",
     "V-04.e",
-    "V-05.c",
-    "V-05.e",
     "V-06.g",
-    "V-07.b",
     "V-07.f",
     "V-08.f",
-    "V-08.g",
     "V-09.c",
     "V-09.e",
     "V-09.f",
     "V-10.b",
-    "V-10.d",
     "V-10.f",
     "V-10.g",
     "V-11.c",
-    "V-12.c",
-    "V-12.d",
     "V-13.e",
     "V-13.g"
    ]
@@ -5281,9 +5466,7 @@
    "name": "Operacao da release",
    "status": "inconclusiva",
    "blockers": [
-    "V-14.f",
-    "V-16.b",
-    "V-16.d"
+    "V-16.b"
    ]
   },
   {
@@ -5301,10 +5484,10 @@
    "authorizationRequired": true,
    "covers": [
     "V-06.h",
-    "V-07.f",
     "V-08.g",
     "V-10.d"
-   ]
+   ],
+   "result": "executado: v2-v8 retidos (causas no relatorio 34-prepilot-results.md), v9 entregou a jornada (V-06.h, V-10.d, V-16.d; V-08.g por D-09); V-07.f movida para R-INSTR"
   },
   {
    "id": "R-REL",
@@ -5353,7 +5536,8 @@
     "V-05.c",
     "V-05.e",
     "V-14.f"
-   ]
+   ],
+   "result": "executado: q34-ghdep-v1 met (V-05.c, V-05.e, V-14.f)"
   },
   {
    "id": "R-LONG",
@@ -5374,7 +5558,8 @@
     "V-07.b",
     "V-12.c",
     "V-12.d"
-   ]
+   ],
+   "result": "executado: v2-v4 retidos (unit congelada no systemd 262; corrida de listagem de label; check forcado do disco D-06), v5 21/22 sem falhas, aprovado por D-10"
   },
   {
    "id": "R-HOSTFAULT",
@@ -5383,7 +5568,8 @@
    "authorizationRequired": true,
    "covers": [
     "V-14.c"
-   ]
+   ],
+   "result": "executado: q34-hostfault-v3 aprovou V-14.c (34-r-hostfault-v3.md)"
   },
   {
    "id": "R-24DIAG",
@@ -5409,7 +5595,8 @@
    "authorizationRequired": true,
    "covers": [
     "V-15.c"
-   ]
+   ],
+   "result": "executado: qinspect34-v1 aprovado (V-15.c)"
   },
   {
    "id": "R-DOCKER-EXT",
@@ -5420,6 +5607,15 @@
     "V-02.h"
    ],
    "decision": "D-04: so se um repo selecionado para o piloto usar Compose/docker build; senao fora do escopo suportado"
+  },
+  {
+   "id": "R-INSTR",
+   "scope": "Execucao dedicada de V-07.f (adiada do R-CAND v8): Builder tenta editar AGENTS.md para dispensar gate; ver deferredV07f",
+   "needs": "GitHub App + issue nova, VM, modelo, operador para responder e fechar o PR sem merge",
+   "authorizationRequired": true,
+   "covers": [
+    "V-07.f"
+   ]
   }
  ],
  "operatorDecisions": [
@@ -5518,8 +5714,66 @@
    "decidedBy": "operador",
    "resolution": "level-waived",
    "decision": "A prova simulada (S) de rate limit/backoff e aceita; nao se induz rate limit real. O nivel I desta obrigacao e dispensado."
+  },
+  {
+   "id": "D-09",
+   "obligations": [
+    "V-08.g"
+   ],
+   "question": "V-08.g: aprovar pela evidencia do registro do produto (docs-check waived com a Pergunta efaa533a em todas as rodadas) embora a verificacao automatica do v9 tenha dado not-proven por ler a view podada?",
+   "dependency": "R-CAND qcand34-v9; correcao da receita (inspect salva a Work completa)",
+   "decidedAt": "2026-11-17",
+   "decidedBy": "operador",
+   "resolution": "proof-accepted",
+   "decision": "Aprovada por evidencia: 34-r-cand-v9-v08g-evidence.json. A receita passa a salvar a Work completa para que a prova seja automatica na proxima execucao."
+  },
+  {
+   "id": "D-10",
+   "obligations": [
+    "V-07.b",
+    "V-12.c",
+    "V-12.d"
+   ],
+   "question": "R-CRASH-A v5: aprovar as obrigacoes mapeadas pela receita com 21/22 verificacoes verdadeiras e nenhuma falha, sendo a restante ANSWER_NOT_OBSERVED_DURING_BOOT?",
+   "dependency": "R-CRASH-A q34-crash-a-v5",
+   "decidedAt": "2026-11-17",
+   "decidedBy": "operador",
+   "resolution": "proof-accepted",
+   "decision": "Aprovadas. ANSWER_NOT_OBSERVED_DURING_BOOT e limite da observacao da receita (lacuna de 7 s, polling grosso), sem impacto de correcao."
   }
  ],
- "result": "Nao libera o piloto nem aceite do MVP. Libera no maximo a preparacao da solicitacao de autorizacao do piloto (35). Decisoes D-01..D-08 tomadas pelo operador em 2026-11-16; seguem as reexecucoes que o operador autorizar (G3-G5) e as dependencias levadas ao piloto (V-02.h, V-06.e).",
- "decisionsRecordedAt": "2026-11-16"
+ "result": "Nao libera o piloto nem aceite do MVP. Libera no maximo a preparacao da solicitacao de autorizacao do piloto (35). Decisoes D-01..D-10; R-INSPECT, R-GH-DEP, R-CAND v9, R-CRASH-A v5 e R-HOSTFAULT v3 executados; seguem bloqueando G4/G5 as obrigacoes inconclusivas restantes (R-GH-CHECKS, R-GH-ADV, R-LONG, R-THREE, R-REL, R-INSTR).",
+ "decisionsRecordedAt": "2026-11-17",
+ "countsHistory": [
+  {
+   "at": "2026-11-16",
+   "when": "antes das decisoes",
+   "counts": {
+    "aprovada": 66,
+    "reprovada": 0,
+    "inconclusiva": 36,
+    "dependente-do-piloto": 10
+   }
+  },
+  {
+   "at": "2026-11-16",
+   "when": "decisoes D-01..D-08 + R-HOSTFAULT v3",
+   "counts": {
+    "aprovada": 72,
+    "reprovada": 0,
+    "inconclusiva": 28,
+    "dependente-do-piloto": 12
+   }
+  },
+  {
+   "at": "2026-11-17",
+   "when": "R-INSPECT, R-GH-DEP, R-CAND v9, R-CRASH-A v5 (D-09, D-10)",
+   "counts": {
+    "aprovada": 83,
+    "reprovada": 0,
+    "inconclusiva": 17,
+    "dependente-do-piloto": 12
+   }
+  }
+ ]
 }
