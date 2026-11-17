@@ -13,6 +13,7 @@ for (const name of ['node:net', 'node:tls', 'node:dns', 'node:child_process', 'n
 const rel = await import('./rrel34-qualification.js');
 const cand = await import('./rcand34-qualification.js');
 const inspect = await import('./rinspect34-qualification.js');
+const upg = await import('./rupg34-qualification.js');
 
 async function planOf(main: (args: string[]) => Promise<void>) {
   const logged: string[] = [];
@@ -41,9 +42,9 @@ test('R-REL plan: inert; fresh namespace under y5, 38-byte root, the exact unit 
 test('R-CAND plan: inert; runs the INSTALLED release; issue 0 refuses every phase; human steps by the operator with exact commands; GET-only recipe reads', async () => {
   const plan = await planOf(cand.main);
   assert.equal(forbidden, 0);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/qcand34-v2');
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/qcand34-v3');
   assert.equal(plan.root, '/home/sanmoo/software-factory-test/pr2');
-  assert.equal(plan.identityFile, '/home/sanmoo/software-factory-test/y5/prel34-v2/observations/release-identity.json');
+  assert.equal(plan.identityFile, '/home/sanmoo/software-factory-test/y5/prel34-v3/observations/release-identity.json');
   assert.match(plan.release, /RE-VERIFIED at each phase/);
   assert.equal(plan.ticket.pinned, false);
   assert.equal(plan.ticket.number, 0);
@@ -67,5 +68,21 @@ test('R-INSPECT plan: inert; local copy of q23-feedback-v3 only, never its run/ 
   assert.ok(plan.never.some((item: string) => item.includes('q23-feedback-v3/run (stale mount)')));
   assert.deepEqual([plan.bounds.network, plan.bounds.github, plan.bounds.vm, plan.bounds.model], ['none', 'none', 'none', 'none']);
   await assert.rejects(inspect.main(['again']), /EXACT_PHASE_REQUIRED/);
+  assert.equal(forbidden, 0);
+});
+
+test('R-UPG plan: inert; upgrades the SAME R-REL root to mvp-34.3 with the product\'s own upgrade; never the model login; R-CAND reads its identity', async () => {
+  const plan = await planOf(upg.main);
+  assert.equal(forbidden, 0);
+  assert.equal(plan.base, '/home/sanmoo/software-factory-test/y5/prel34-v3');
+  assert.equal(plan.root, '/home/sanmoo/software-factory-test/pr2');
+  assert.deepEqual([plan.release, plan.previousRelease], ['mvp-34.3', 'mvp-34.2']);
+  assert.deepEqual(plan.phases, ['build', 'verify', 'extract', 'upgrade', 'unpause']);
+  assert.equal(plan.identityFile, (await planOf(cand.main)).identityFile, 'R-CAND v3 proves it ran on the upgraded release');
+  assert.equal(plan.releaseIdentityFile, (await planOf(rel.main)).identityFile, 'R-REL keeps its own (mvp-34.2) identity');
+  assert.ok(plan.never.some((item: string) => /model login/.test(item)));
+  assert.ok(plan.never.some((item: string) => /migration, rollback or resume/.test(item)));
+  for (const phase of plan.phases) assert.equal(upg.tombstonePath(phase), `${plan.base}/intent-${phase}.json`);
+  await assert.rejects(upg.main(['retry']), /EXACT_PHASE_REQUIRED/);
   assert.equal(forbidden, 0);
 });

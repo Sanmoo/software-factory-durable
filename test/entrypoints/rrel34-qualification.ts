@@ -1,4 +1,4 @@
-import { candidateNamespace, command, compositionMarkers, identityFile, installationRoot, integrationBranch, mountsBelow, observationWriter, parseShow, release,
+import { candidateNamespace, command, compositionMarkers, releaseIdentityFile as identityFile, installationRoot, integrationBranch, mountsBelow, observationWriter, parseShow, release,
   releaseNamespace, serviceDirectory, serviceUnit, type ReleaseIdentity } from './prepilot34-qualification.js';
 import { listingViolations } from './release32-qualification.js';
 

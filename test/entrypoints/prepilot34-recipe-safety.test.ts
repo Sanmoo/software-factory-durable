@@ -158,7 +158,7 @@ test('R-CAND bounds, answers and the deliver precondition', () => {
 
 const identity: ReleaseIdentity = { release: 'mvp-34.2', commit: 'c'.repeat(40), commitTime: 't', branch: 'b', dirty: false, archive: 'a.tar', archiveSha256: 'a'.repeat(64),
   manifestSha256: 'm'.repeat(64), guestAssets: { manifestSha256: 'g' }, lockfileSha256: 'l', node: '24.21.0', root: installationRoot, unit: 'u', builtAt: 't',
-  markers: { 'ticket-23-feedback': true, 'ticket-24-single-pass-dispatch': true, 'ticket-29-inspection': true, 'ticket-34-candidate': true, 'd-07-sqlite-scrub': true, 'owner-user-bus': true } };
+  markers: { 'ticket-23-feedback': true, 'ticket-24-single-pass-dispatch': true, 'ticket-29-inspection': true, 'ticket-34-candidate': true, 'd-07-sqlite-scrub': true, 'owner-user-bus': true, 'continuation-findings': true } };
 function savedJourney() {
   const factory = { release: identity.release, commit: identity.commit, manifestSha256: identity.manifestSha256, archiveSha256: identity.archiveSha256, root: identity.root, verifiedBy: 'x' };
   const exe = `${installationRoot}/releases/mvp-34.2/node/bin/node`;
@@ -218,4 +218,30 @@ test('R-CAND service environment: a credential or Node override in the user mana
   assert.deepEqual(cand.unsafeServiceEnvironment(['PATH', 'HOME', 'GH_TOKEN', 'GITHUB_TOKEN', 'OPENAI_API_KEY', 'NODE_OPTIONS', 'XDG_RUNTIME_DIR']),
     ['GH_TOKEN', 'GITHUB_TOKEN', 'OPENAI_API_KEY', 'NODE_OPTIONS']);
   assert.deepEqual(cand.unsafeServiceEnvironment(['PATH', 'HOME', 'DBUS_SESSION_BUS_ADDRESS']), []);
+});
+
+test('R-CAND v3: the human review asks only what the Ticket anticipates; ended predecessor cycles hold no capacity', () => {
+  const review = cand.humanCommands(2, { issue: 50, pullRequest: 51 })[0]!;
+  assert.ok(!/Review notes/.test(review), 'v2 asked for a section outside the Ticket scope (Spec finding, unscripted Question)');
+  assert.match(review, /supersedes item 3/);
+  assert.match(cand.ticketBody, /a later operator review that asks to remove it supersedes this item/);
+  const of = (...results: string[]) => results.map(result => ({ result })) as never;
+  assert.equal(cand.countedWorks(of('cancelled', 'open')), 1, 'the cancelled v2 Work on #49 does not count');
+  assert.equal(cand.countedWorks(of('delivered', 'cancelled')), 0);
+  assert.equal(cand.countedWorks(of('open', 'closed-unmerged')), 2, 'a closed-unmerged cycle can still continue');
+});
+
+test('R-UPG: phases in order once; apply only after a compatible check with nothing blocked (never a migration)', async () => {
+  const upg = await import('./rupg34-qualification.js');
+  const none = new Set<string>();
+  assert.equal(upg.phaseGuard('build', none, none), null);
+  assert.equal(upg.phaseGuard('build', none, new Set(['build'])), 'PHASE_ALREADY_RAN');
+  assert.equal(upg.phaseGuard('extract', new Set(['build']), new Set(['build'])), 'VERIFY_RESULT_REQUIRED');
+  assert.equal(upg.phaseGuard('upgrade', new Set(['build', 'verify', 'extract']), new Set(['build', 'verify', 'extract'])), null);
+  assert.equal(upg.phaseGuard('unpause', new Set(['build', 'verify', 'extract']), none), 'UPGRADE_RESULT_REQUIRED');
+  assert.equal(upg.applicable({ code: 'UPGRADE_COMPATIBLE', checks: [{ id: 'upgrade:pause', status: 'ok' }] }), null);
+  assert.equal(upg.applicable({ code: 'UPGRADE_COMPATIBLE', checks: [{ id: 'upgrade:pause', status: 'blocked' }] }), 'CHECK_BLOCKED');
+  assert.equal(upg.applicable({ code: 'UPGRADE_MIGRATION_REQUIRED' }), 'MIGRATION_REQUIRED');
+  assert.equal(upg.applicable({ code: 'UPGRADE_INCOMPATIBLE' }), 'CHECK_UPGRADE_INCOMPATIBLE');
+  assert.equal(upg.applicable(null), 'CHECK_UNPARSABLE');
 });

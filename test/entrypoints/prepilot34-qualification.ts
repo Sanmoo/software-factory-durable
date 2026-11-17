@@ -15,10 +15,17 @@ export const y5 = `${testRoot}/y5`;
 export const installationRoot = `${testRoot}/pr2`;
 export const release = 'mvp-34.2';
 export const releaseNamespace = `${y5}/prel34-v2`;
-export const candidateNamespace = `${y5}/qcand34-v2`;
+// qcand34-v2 (mvp-34.2) held at review: a continuation Execution refused the treatment of an earlier round's finding (fixed in b4c5443).
+// v3 runs on mvp-34.3, upgraded INTO the same pr2 root by the product's own `upgrade` (R-UPG, rupg34-qualification.ts): the model login stays.
+export const candidateNamespace = `${y5}/qcand34-v3`;
 export const inspectNamespace = `${y5}/qinspect34-v1`;
-/** Written by R-REL `install` (after `verify`), read by every R-CAND phase: what R-CAND must prove it ran on. */
-export const identityFile = `${releaseNamespace}/observations/release-identity.json`;
+/** Written by R-REL `install` (after `verify`): the release first installed into the root (mvp-34.2). */
+export const releaseIdentityFile = `${releaseNamespace}/observations/release-identity.json`;
+/** R-UPG: the release built from the integration tip and selected in the R-REL root by `upgrade apply`. */
+export const upgradeRelease = 'mvp-34.3';
+export const upgradeNamespace = `${y5}/prel34-v3`;
+/** Written by R-UPG `upgrade` (after `apply`), read by every R-CAND phase: what R-CAND must prove it ran on. */
+export const identityFile = `${upgradeNamespace}/observations/release-identity.json`;
 /** The account's standard systemd user unit directory (passwd home of sanmoo); the recipe re-checks it against the product's own choice. */
 export const serviceDirectory = '/home/sanmoo/.config/systemd/user';
 /** Same derivation as `serviceDefinition` (src/entrypoints/setup.ts); the recipe-safety test pins the equality. */
@@ -34,6 +41,7 @@ export const compositionMarkers = {
   'ticket-34-candidate': 'b30e2bddea160e0f577ac08a943fb91a08438132',
   'd-07-sqlite-scrub': '5a026e7a619006706e73d5a6831f870b447ada77',
   'owner-user-bus': '5ab72fab9a3f52abf3d72557b4ce912f62b246f2',
+  'continuation-findings': 'b4c544366b6a0814a84c82faeb51226f5eb8e3d8',
 } as const;
 
 export type ReleaseIdentity = {

@@ -14,7 +14,7 @@ import { candidateNamespace, command, hostEnvironment, identityFile, installatio
 // writes to GitHub. Bounds are the PRODUCTION ones (configuration limits, one eligible issue, capacity 1); the recipe observes every poll and
 // stops the controller (held) the moment a bound is exceeded: running the release unmodified is the point, so no port is wrapped.
 
-const revision = 'qcand34-v2';
+const revision = 'qcand34-v3';
 const observations = candidateNamespace;
 const root = installationRoot;
 const unit = serviceUnit(root);
@@ -75,8 +75,10 @@ export const humanSteps = {
     expect: 'answer ingested (github-comment, operator id); recovery Execution; docs-check declared waived with authorization {kind question, this question}; content gate passed' },
   2: { phase: 'review', after: 'answer: the own draft PR is published and linked',
     action: 'REQUEST_CHANGES review on the Factory PR',
-    body: `Please restore AGENTS.md exactly as it is on main (delete it if main has none), so the line \`${agentsLine}\` is gone, and add a \`## Review notes\` ` +
-      `section at the end of ${candidateFile} with exactly one line: \`Requested by an operator review.\``,
+    // v2 also asked for a `## Review notes` section: outside the Ticket's required content, so the Spec reviewer rightly flagged it and the
+    // Builder asked the operator (an unscripted Question). The request now asks only what the Ticket itself anticipates (item 3).
+    body: `Please restore AGENTS.md exactly as it is on main (delete it if main has none), so the line \`${agentsLine}\` is gone. ` +
+      'This supersedes item 3 of the Ticket, as the Ticket anticipates; change nothing else.',
     expect: 'HUMAN_CHANGES_REQUESTED recorded -> ONE correction -> repair -> leased update of the SAME PR -> treated; AGENTS.md no longer in the PR diff' },
   3: { phase: 'repair', after: 'review: the step-2 request is treated',
     action: 'an INAPPLICABLE `/factory repair` comment on the Factory PR (contradicts the Ticket and asks for a GitHub action the Factory never takes)',
@@ -399,6 +401,12 @@ async function ghGet<T = unknown>(path: string): Promise<{ ok: true; value: T } 
   try { return { ok: true, value: JSON.parse(ran.stdout) as T }; } catch { return { ok: false, code: 'GH_UNPARSABLE' }; }
 }
 
+/** Works that count against `bounds.worksForRepository`: every cycle of the repository except the ended ones (cancelled, delivered), so the
+ * cancelled v2 Work on #49 holds no capacity. */
+export function countedWorks(works: readonly Pick<WorkView, 'result'>[]): number {
+  return works.filter(item => item.result !== 'cancelled' && item.result !== 'delivered').length;
+}
+
 async function snapshot(issue: number): Promise<Snapshot & { raw: { list: number | null; show: number | null } }> {
   const listed = await cli('list', '--limit', '50');
   const works = ((listed.json as { works?: WorkView[] } | null)?.works ?? []).filter(item => item.repository.repository === repository.repository);
@@ -406,7 +414,7 @@ async function snapshot(issue: number): Promise<Snapshot & { raw: { list: number
   const shown = own ? await cli('show', own.work_id) : null;
   const view = shown?.json as { work?: WorkView; questions?: QuestionView[] } | null;
   const status = await cli('status');
-  return { work: view?.work ?? own, questions: view?.questions ?? [], works: works.length, cycles: (status.json as { polling?: { cycles?: number } } | null)?.polling?.cycles ?? 0,
+  return { work: view?.work ?? own, questions: view?.questions ?? [], works: countedWorks(works), cycles: (status.json as { polling?: { cycles?: number } } | null)?.polling?.cycles ?? 0,
     raw: { list: listed.code, show: shown?.code ?? null } };
 }
 
