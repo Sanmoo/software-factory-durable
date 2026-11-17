@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { WorkView } from '../../src/control/index.js';
-import { activationGuard, actionsAppId, conversionGuard, failurePrecondition, grantGuard, humanSteps, labelExact, listAll, operatorPr, phaseGuard, questionDecision, questionsOf, rulesetBody, rulesetMatches, runIdOf, secretScan, settled,
+import { activationGuard, actionsAppId, conversionGuard, failurePrecondition, grantGuard, stuckReason, humanSteps, labelExact, listAll, operatorPr, phaseGuard, questionDecision, questionsOf, rulesetBody, rulesetMatches, runIdOf, secretScan, settled,
   tickets, verdictOf, type Ruleset } from './ghchecks34-qualification.js';
 
 // R-GH-CHECKS recipe safety on controlled data only (never the real root, a real gh, GitHub, a VM or a model).
@@ -252,4 +252,13 @@ test('v3 lesson: failing holds at once when the FIRST head passed the required c
   assert.equal(failurePrecondition(work('satisfied', h2)), 'pending', 'only H1 decides');
   assert.equal(failurePrecondition(work('satisfied', h2, { corrections: [{ outcome: 'published' }] })), 'met', 'after the repair, green is the expected end');
   assert.equal(failurePrecondition(undefined), 'pending');
+});
+
+test('v4 gap: a held phase names why — the not-publishable publication with its verification reasons (q34-ghchecks-v4 failing)', () => {
+  const work = (extra: Record<string, unknown>) => ({ publication: { state: 'published' }, execution: null, impediments: [], ...extra }) as unknown as WorkView;
+  assert.equal(stuckReason(work({ publication: { state: 'not-publishable', reasons: ['REVIEW_NOT_VERIFIED', 'VERIFICATION:FIX_NOT_REVIEWED:4/spec/S1'] } }), 0),
+    'PUBLICATION_NOT_PUBLISHABLE:REVIEW_NOT_VERIFIED,VERIFICATION:FIX_NOT_REVIEWED:4/spec/S1');
+  assert.equal(stuckReason(work({ impediments: [{ code: 'QUESTION_PENDING' }] }), 0), 'IMPEDIMENT_QUESTION_PENDING');
+  assert.equal(stuckReason(work({}), 1), 'CONVERSION_REFUSED_BY_RECIPE');
+  assert.equal(stuckReason(work({}), 0), null);
 });

@@ -328,12 +328,27 @@ const list = (value: unknown) => Array.isArray(value) ? value as Record<string, 
 const effectsOf = (work: unknown) => list(pick(work, 'readiness', 'effects')).concat(pick(work, 'readiness', 'effect') ? [pick(work, 'readiness', 'effect') as Record<string, unknown>] : []);
 const confirmed = (work: unknown, action: string) => effectsOf(work).filter(item => item.action === action && item.state === 'confirmed').length;
 
+/**
+ * Why a phase cannot reach its expected end any more, as a code with its detail (v4 held with no holdReason: the publication had become
+ * not-publishable with VERIFICATION:FIX_NOT_REVIEWED, visible only in the storage). Null while nothing blocks.
+ */
+export function stuckReason(work: WorkView | undefined, refusedConversions: number): string | null {
+  const state = work?.publication?.state ?? '';
+  if (['blocked', 'not-publishable', 'base-changed', 'diverged'].includes(state)) {
+    const reasons = (pick(work, 'publication', 'reasons') as unknown[] | undefined ?? []).map(String).join(',');
+    return `PUBLICATION_${state.toUpperCase().replace('-', '_')}${reasons ? `:${reasons}` : ''}`.slice(0, 300);
+  }
+  if (work?.execution?.state === 'held') return `EXECUTION_HELD:${String(pick(work, 'execution', 'held', 'code') ?? '')}`;
+  if (refusedConversions > 0) return 'CONVERSION_REFUSED_BY_RECIPE';
+  const impediment = (work?.impediments ?? []).find(item => ['REPAIR_EVENT_ALREADY_TREATED', 'CORRECTION_LIMIT_REACHED', 'QUESTION_PENDING'].includes(item.code));
+  return impediment ? `IMPEDIMENT_${impediment.code}` : null;
+}
+
 type Facts = { resumes?: number; activations: number; humanObserved: boolean; quietCyclesDone: boolean; conversions: number; refusedConversions: number };
 /** Whether a Control phase reached its end (or a state that ends it early); `success` says whether it is the expected end. */
 export function settled(phase: ControlPhase, work: WorkView | undefined, facts: Facts): { done: boolean; success: boolean } {
   const state = work?.publication?.state ?? '';
-  const stuck = ['blocked', 'not-publishable', 'base-changed', 'diverged'].includes(state) || work?.execution?.state === 'held' || facts.refusedConversions > 0 ||
-    (work?.impediments ?? []).some(item => ['REPAIR_EVENT_ALREADY_TREATED', 'CORRECTION_LIMIT_REACHED', 'QUESTION_PENDING'].includes(item.code));
+  const stuck = stuckReason(work, facts.refusedConversions) !== null;
   if (phase === 'waiver') {
     const verification = work?.execution?.review?.verification;
     if (work?.execution?.state !== 'ended' || !verification) return { done: stuck && state !== 'not-publishable', success: false };
@@ -699,6 +714,7 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
   let lastChecks = '';
   let questions: Awaited<ReturnType<typeof questionsOf>> = [];
   let holdCode: string | null = null;
+  let lastWork: WorkView | undefined;
   try {
     while (Date.now() < deadline) {
       await sleep(15000);
@@ -754,6 +770,7 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
       const key = checks ? `${checks.pullRequest.headSha}:${checks.outcome}` : '';
       if (checks && key !== lastChecks) { lastChecks = key; log({ call: 'checks', head: checks.pullRequest.headSha, outcome: checks.outcome, reasons: reasonCodes(checks) }); }
       if (phase === 'human-draft' && quietFrom === null && human) quietFrom = Date.now();
+      lastWork = work;
       outcome = settled(phase, work, { resumes, activations: counts.activations, humanObserved: human !== null, conversions: counts.conversions, refusedConversions: counts.refusedConversions,
         quietCyclesDone: quietFrom !== null && Date.now() - quietFrom >= quietCycles * pollingSeconds * 1000 });
       if (outcome.done) break;
@@ -763,9 +780,13 @@ async function runControl(phase: ControlPhase, save: (name: string, data: unknow
     stop.abort();
     const result = await running;
     const unscripted = questions.filter(item => item.questionId !== tolerated);
+    // Every held phase names why (fix of the v4 gap: failing-held without detail).
+    if (!outcome.success && !holdCode && !unscripted.length) {
+      holdCode = stuckReason(lastWork, counts.refusedConversions) ?? (Date.now() >= deadline ? 'DEADLINE_REACHED' : 'EXPECTATION_NOT_MET');
+    }
     await save(`${phase}-result`, { status: outcome.success ? 'success' : 'held', ...(unscripted.length ? { holdReason: 'UNSCRIPTED_QUESTION', questions: unscripted } : {}),
-      ...(tolerated ? { toleratedQuestion: tolerated } : {}), ...(holdCode ? { holdReason: holdCode,
-        note: 'The first Factory head passed factory-gate: the failure V-10.b needs never happened. Held at once (no wait for the deadline).' } : {}),
+      ...(tolerated ? { toleratedQuestion: tolerated } : {}), ...(holdCode ? { holdReason: holdCode, ...(holdCode === 'FAILURE_PRECONDITION_NOT_MET' ? {
+        note: 'The first Factory head passed factory-gate: the failure V-10.b needs never happened. Held at once (no wait for the deadline).' } : {}) } : {}),
       outcome: result, final, human, counts, events, deadlineReached: Date.now() >= deadline });
   }
   if (!outcome.success) throw new Error('PHASE_NOT_AS_EXPECTED');
