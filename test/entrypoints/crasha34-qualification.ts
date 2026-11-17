@@ -45,7 +45,8 @@ const observations = `${root}/q34-crash-a-v5`;
  * (v1 used c34) and 38 bytes long. The cache line never activates a worker, so its root needs `setup` only (no model login).
  */
 // v3: NEW roots (cr2/ck2 hold v2's environments and caches; preflight requires fresh roots), still 38 bytes.
-export const factoryRoots = { main: '/home/sanmoo/software-factory-test/cr3', cache: '/home/sanmoo/software-factory-test/ck3' } as const;
+// v5: new roots (cr3/ck3 keep v4's environments and host caches; D-06 recovery is manual and the cleanup does not cover host caches).
+export const factoryRoots = { main: '/home/sanmoo/software-factory-test/cr4', cache: '/home/sanmoo/software-factory-test/ck4' } as const;
 export const factoryRoot = factoryRoots.main;
 export const rootOf = (step: Step) => factoryRoots[lineOf(step)];
 /** The shared host Git cache other recipes use; this recipe never reads or writes it. */
