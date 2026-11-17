@@ -16,9 +16,11 @@ import { baseMoved } from './repair22-qualification.js';
 // strict third-party HUMAN identity is recorded as a limit (plan().limits).
 
 const root = '/home/sanmoo/software-factory-test/y5';
-/** v2: q34-ghadv-v1 held at human-commit (the phase settled on "request recorded" before the Factory opened the correction). */
-const observations = `${root}/q34-ghadv-v2`;
-const revision = 'q34-ghadv-v2';
+/** v2: q34-ghadv-v1 held at human-commit (the phase settled on "request recorded" before the Factory opened the correction). v3: q34-ghadv-v2
+ * held there too, on an unscripted Builder Question after three Standards rounds exhausted the reviewer budget (WORKER_INTERRUPTED) during the
+ * reconciliation the divergence answer authorized; that path (diverged -> incorporate -> reconciliation) is now an accepted end. */
+const observations = `${root}/q34-ghadv-v3`;
+const revision = 'q34-ghadv-v3';
 export const phases = ['preflight', 'foreign', 'ask', 'strangers', 'withdraw', 'resume', 'human-commit', 'conflict', 'merge-repair', 'publish-c', 'close',
   'cancel-merge', 'inspect', 'stop-environment'] as const;
 export type Phase = typeof phases[number];
@@ -75,7 +77,8 @@ export const tickets = {
       'Do not guess and do not continue before an accepted answer. Use exactly the word of the accepted answer.', '', 'Required content:',
     '1. A `# Factory adverse` title and one paragraph explaining that this file exists only to exercise how the Software Factory handles adversarial GitHub events.',
     '2. A `## Choice` section with one line: the word of the accepted answer.', '3. A `## Steps` section with a numbered list of exactly three steps: ask, publish, repair.', '',
-    'If the base branch or your branch already contains this file or other files when you work on it, keep every line and file they already have and add the required content.', '',
+    'If the base branch or your branch already contains this file or other files when you work on it, keep every line and file they already have and add the required content.',
+    'The operator may add `docs/FACTORY_ADVERSE_HUMAN.md` to your branch: it is an authorized human change outside this request; keep it byte-for-byte and do not review, edit or move it.', '',
     docOnly, ...gate('docs/FACTORY_ADVERSE.md')].join('\n') },
   C: { number: 0, title: 'Factory qualification R-GH-ADV: own pull request closed, reopened, cancelled and merged', body: [
     'Add a short documentation page `docs/FACTORY_CLOSE.md`. This exact upper-case file name was decided by the operator.', '', 'Required content:',
@@ -107,17 +110,17 @@ export const phaseSpec: Record<ControlPhase, { line: Line; operators: 'operator'
   strangers: { line: 'B', operators: 'sentinel', builders: 0, publication: false, reopen: false, socket: false, deadlineMinutes: 160, steps: [3, 4] },
   withdraw: { line: 'B', operators: 'operator', builders: 0, publication: false, reopen: false, socket: false, deadlineMinutes: 340, steps: [5, 6, 7, 8, 9] },
   // Question-resumed implementation + publication, plus at most ONE operational recovery (ticket 26) of the implementation.
-  resume: { line: 'B', operators: 'operator', builders: 3, publication: true, reopen: false, socket: false, deadlineMinutes: 150, steps: [] },
+  resume: { line: 'B', operators: 'operator', builders: 3, publication: true, reopen: false, socket: false, deadlineMinutes: 150, steps: [21] },
   // Repair (explicit), the reconciliation the divergence answer authorizes, the publication, plus one recovery.
-  'human-commit': { line: 'B', operators: 'operator', builders: 4, publication: true, reopen: false, socket: false, deadlineMinutes: 280, steps: [10, 11, 12] },
-  conflict: { line: 'B', operators: 'operator', builders: 3, publication: true, reopen: false, socket: false, deadlineMinutes: 200, steps: [13] },
+  'human-commit': { line: 'B', operators: 'operator', builders: 4, publication: true, reopen: false, socket: false, deadlineMinutes: 280, steps: [21, 10, 11, 12] },
+  conflict: { line: 'B', operators: 'operator', builders: 3, publication: true, reopen: false, socket: false, deadlineMinutes: 200, steps: [21, 13] },
   // ONE repair Execution, merged during its activity: no publication may follow.
   'merge-repair': { line: 'B', operators: 'operator', builders: 1, publication: false, reopen: false, socket: false, deadlineMinutes: 160, steps: [14, 15] },
-  'publish-c': { line: 'C', operators: 'operator', builders: 3, publication: true, reopen: false, socket: false, deadlineMinutes: 120, steps: [16] },
+  'publish-c': { line: 'C', operators: 'operator', builders: 3, publication: true, reopen: false, socket: false, deadlineMinutes: 120, steps: [21, 16] },
   // ONE repair Execution; the own PR is closed during it: nothing else may start.
   close: { line: 'C', operators: 'operator', builders: 1, publication: false, reopen: false, socket: false, deadlineMinutes: 160, steps: [17, 18] },
   // Factory reopen + resume (recipe local commands), the pending publication, then ONE repair cancelled while merged; plus one recovery.
-  'cancel-merge': { line: 'C', operators: 'operator', builders: 3, publication: true, reopen: true, socket: true, deadlineMinutes: 260, steps: [19, 20] },
+  'cancel-merge': { line: 'C', operators: 'operator', builders: 3, publication: true, reopen: true, socket: true, deadlineMinutes: 260, steps: [21, 19, 20] },
 };
 
 /** Phase order: each phase once, only after the previous one SUCCEEDED; inspect after any ended phase once nothing still runs. */
@@ -184,6 +187,7 @@ export function grantGuard(phase: ControlPhase, max = 2) {
 // ---- Facts and human steps (pure) ----
 
 export type Facts = { work: WorkView | undefined; questions: QuestionView[]; list: ListView | null; activations: number; prepares: number;
+  /** Whether the ONE tolerated review-incomplete answer (step 21) was already requested in an EARLIER phase of this run. */ toleranceUsed?: boolean;
   /** Shas the recipe observed for its own waits (human push, base tip). */ seen: { humanTip?: string; baseTip?: string; botComments?: number };
   /** Recipe-side context: the Work ids of each line and the step numbers already observed in this phase. */ observed: ReadonlySet<number> };
 const active = (execution: ExecutionView | null | undefined) => Boolean(execution && (execution.slot.held || execution.state === 'reserved' || execution.state === 'started'));
@@ -193,6 +197,14 @@ const has = (work: WorkView | undefined, code: string) => (work?.impediments ?? 
 export const scriptedQuestion = (question: QuestionView | null) => Boolean(question && /\balpha\b/.test(question.content?.question ?? '') && /\bbeta\b/.test(question.content?.question ?? '') &&
   /## Choice|Choice/.test(question.content?.question ?? ''));
 /** The Builder's own Question (not a divergence Question): an OPEN one first (a later, unexpected one is never hidden), else the latest. */
+/**
+ * q34-ghadv-v2: a Builder asked, after Standards rounds ended WORKER_INTERRUPTED (reviewer request budget), whether to hand off again. The
+ * ONE unscripted Question the recipe tolerates per run (scripted answer, step 21); any other, or a second one, holds.
+ */
+export const reviewIncomplete = (question: QuestionView | null) => Boolean(question && question.recordedFrom !== 'controller-divergence' && question.state === 'open' &&
+  /review/i.test(question.content?.question ?? '') && /WORKER_INTERRUPTED|incomplete|interrupted|no findings/i.test(question.content?.question ?? ''));
+export const reviewAnswer = 'Hand off again for another review round of the same content: an incomplete review is neither an approval nor a finding; change nothing for it. ' +
+  '(Scripted operator answer of the q34 R-GH-ADV qualification, at most once per run.)';
 export const builderQuestion = (facts: Pick<Facts, 'work' | 'questions'>) => {
   const own = facts.questions.filter(item => item.recordedFrom !== 'controller-divergence' && item.workId === facts.work?.work_id);
   return own.find(item => item.state === 'open') ?? own.at(-1) ?? null;
@@ -235,7 +247,7 @@ export function foreignHold(list: ListView | null, number = tickets.A.number) {
 }
 
 /** Whether human step k may be requested now (its precondition holds) and whether the Factory itself recorded its effect. */
-export const humanStepRules: Record<number, { phase: ControlPhase; optional?: boolean; ready(facts: Facts): boolean; observed(facts: Facts): boolean }> = {
+export const humanStepRules: Record<number, { phase: ControlPhase; phases?: readonly ControlPhase[]; optional?: boolean; ready(facts: Facts): boolean; observed(facts: Facts): boolean }> = {
   1: { phase: 'foreign', ready: () => true, observed: facts => foreignHold(facts.list) !== null },
   2: { phase: 'ask', ready: () => true, observed: facts => Boolean(facts.work) },
   3: { phase: 'strangers', ready: facts => builderQuestion(facts)?.state === 'open' && builderQuestion(facts)?.publication.state === 'published',
@@ -261,6 +273,10 @@ export const humanStepRules: Record<number, { phase: ControlPhase; optional?: bo
   19: { phase: 'cancel-merge', ready: facts => facts.work?.closure?.reopen?.state === 'confirmed' && !has(facts.work, 'RESUME_REQUIRED') && idlePublished(facts.work) &&
     facts.work?.result === 'open', observed: facts => repairRecorded(facts.work, repairReasons.cancel) },
   20: { phase: 'cancel-merge', ready: facts => facts.observed.has(19) && repairRunningFor(facts.work, repairReasons.cancel), observed: facts => facts.work?.delivery?.state === 'delivered' },
+  // The ONE tolerated review-incomplete Question per run (any phase with reviews), answered by the scripted operator text.
+  21: { phase: 'human-commit', phases: ['resume', 'human-commit', 'conflict', 'publish-c', 'cancel-merge'], optional: true,
+    ready: facts => !facts.toleranceUsed && reviewIncomplete(builderQuestion(facts)) && builderQuestion(facts)!.publication.state === 'published',
+    observed: facts => facts.questions.some(item => item.recordedFrom !== 'controller-divergence' && item.answer?.text === reviewAnswer) },
 };
 
 /**
@@ -270,6 +286,37 @@ export const humanStepRules: Record<number, { phase: ControlPhase; optional?: bo
 export const humanTipRecorded = (publication: WorkView['publication'] | undefined, tip: string) => Boolean(publication && (
   (publication.divergences ?? []).some(item => item.current === tip) ||
   (publication.discoveries ?? []).some(item => item.branch.state === 'present' && item.branch.sha === tip)));
+/**
+ * human-commit ends only after the Factory acted on step 11's request, on one of two paths:
+ * (a) the correction holding it closed `published` (the human tip recorded or in a repair's humanTips), or
+ * (b) it closed `publication-diverged` (the Factory found the human commit before updating the branch), the divergence Question was
+ *     answered `incorporate` by step 12, and the reconciliation was consumed by a publication leased on exactly the human tip, whose head
+ *     is a new Factory head (the human tip plus the Factory result).
+ * Waits while the request is recorded/in a correction, the reconciliation runs, or a request returned to pending will be corrected again.
+ */
+export function humanCommitSettled(facts: Facts, steps: boolean): { done: boolean; success: boolean } {
+  const wait = { done: false, success: false }, fail = { done: true, success: false };
+  const { work } = facts;
+  const tip = facts.seen.humanTip;
+  if (!steps || !tip) return wait;
+  const request = requestOf(work, repairReasons.humanCommit);
+  const outcome = requestOutcome(work, repairReasons.humanCommit);
+  if (outcome === 'absent' || outcome === 'pending' || outcome === 'open' || request?.state === 'pending' || request?.state === 'in-correction') return wait;
+  const publication = work!.publication!;
+  const reconciliation = publication?.reconciliation ?? null;
+  if (reconciliation && (reconciliation.state === 'failed' || reconciliation.state === 'superseded')) return fail;
+  if (!idlePublished(work) || (reconciliation && reconciliation.state !== 'consumed')) return wait;
+  const head = publication.pullRequest?.headSha;
+  const executions = [...work!.previousExecutions, ...(work!.execution ? [work!.execution] : [])];
+  if (outcome === 'published') {
+    const kept = humanTipRecorded(publication, tip) || executions.some(item => (item.request.repair?.humanTips ?? []).includes(tip) || item.request.reconciliation?.authorizedRemote === tip);
+    return { done: true, success: kept && head !== tip };
+  }
+  if (outcome !== 'publication-diverged') return fail;
+  const answered = (publication.divergences ?? []).some(item => item.current === tip && item.answer?.decision === 'incorporate') && facts.observed.has(12);
+  const leased = (publication.attempts ?? []).some(item => item.head === head && item.expectedRemote?.state === 'present' && item.expectedRemote.sha === tip);
+  return { done: true, success: answered && reconciliation?.state === 'consumed' && reconciliation.authorizedRemote === tip && leased && Boolean(head) && head !== tip };
+}
 const stuckOf = (work: WorkView | undefined) => ['blocked', 'not-publishable', 'base-changed'].includes(work?.publication?.state ?? '') || work?.execution?.state === 'held' ||
   ['REPAIR_EVENT_ALREADY_TREATED', 'CORRECTION_LIMIT_REACHED', 'RECOVERY_BLOCKED'].some(code => has(work, code));
 /**
@@ -288,8 +335,11 @@ export function settled(phase: ControlPhase, facts: Facts, quiet: boolean): { do
   }
   if (stuckOf(work)) return fail;
   const question = builderQuestion(facts);
-  // An unexpected Builder Question (outside the ask line) is an end: never answered by the recipe.
-  if (phase !== 'ask' && phase !== 'strangers' && phase !== 'withdraw' && question?.state === 'open') return fail;
+  // An unexpected Builder Question (outside the ask line) is an end: never answered by the recipe — except the ONE tolerated review-incomplete
+  // Question of the run, while its scripted answer (step 21) is still to come in THIS phase.
+  const tolerated = reviewIncomplete(question) && !facts.toleranceUsed && !facts.observed.has(21) && (phaseSpec[phase].steps as readonly number[]).includes(21);
+  if (phase !== 'ask' && phase !== 'strangers' && phase !== 'withdraw' && question?.state === 'open' && !tolerated) return fail;
+  if (tolerated) return wait;
   switch (phase) {
     case 'ask':
       if (work?.publication || facts.activations > 1) return fail;
@@ -303,17 +353,7 @@ export function settled(phase: ControlPhase, facts: Facts, quiet: boolean): { do
       return { done: true, success: phase === 'strangers' ? question?.state === 'open' : question?.state === 'answered' && has(work, 'AUTHORIZATION_WITHDRAWN') };
     case 'resume': case 'publish-c':
       return work?.publication?.state === 'published' && !occupying(work) && (phase === 'resume' || steps) ? { done: true, success: true } : wait;
-    case 'human-commit': {
-      // v1 held here: "request recorded" is not the end. The correction holding step 11's request must have opened AND closed published.
-      if (!steps || !facts.seen.humanTip) return wait;
-      const outcome = requestOutcome(work, repairReasons.humanCommit);
-      if (outcome === 'absent' || outcome === 'pending' || outcome === 'open' || !idlePublished(work)) return wait;
-      if (outcome !== 'published') return fail;
-      const tip = facts.seen.humanTip;
-      const executions = [...work!.previousExecutions, ...(work!.execution ? [work!.execution] : [])];
-      const kept = humanTipRecorded(work!.publication, tip) || executions.some(item => (item.request.repair?.humanTips ?? []).includes(tip) || item.request.reconciliation?.authorizedRemote === tip);
-      return { done: true, success: kept && work!.publication!.pullRequest?.headSha !== tip };
-    }
+    case 'human-commit': return humanCommitSettled(facts, steps);
     case 'conflict': {
       const closed = (work?.corrections ?? []).find(item => item.reasons.some(reason => reason.code === 'MERGE_CONFLICT'));
       if (closed && closed.outcome !== 'published') return fail;
@@ -362,7 +402,7 @@ export const cancelRequestId = 'q34-ghadv-cancel-1';
 export const cancelCommand = (workId: string) => `env -u NODE_OPTIONS -u NODE_COMPILE_CACHE NODE_DISABLE_COMPILE_CACHE=1 node dist/src/entrypoints/cli.js cancel ${workId} ` +
   `--root ${observations} --request-id ${cancelRequestId} --json`;
 /** Context the scripts need: pinned numbers, the Builder Question, the own PR, the expected tips (from the Factory's own records). */
-export type ScriptContext = { questionId?: string | null; divergenceQuestionId?: string | null; pullRequest?: number | null; expectedTip?: string | null;
+export type ScriptContext = { questionId?: string | null; divergenceQuestionId?: string | null; reviewQuestionId?: string | null; issue?: number | null; pullRequest?: number | null; expectedTip?: string | null;
   branch?: string | null; expectedMain?: string | null; workId?: string | null };
 /** The exact script of human step k (`set -euo pipefail`, run by the supervisor with the OPERATOR's gh login, from the composed checkout). */
 export function humanScript(step: number, context: ScriptContext): string {
@@ -413,6 +453,7 @@ export function humanScript(step: number, context: ScriptContext): string {
     17: () => [comment(C, `/factory repair ${repairReasons.close}`)],
     18: () => [`gh pr close ${need(context.pullRequest, 'pullRequest')} --repo ${R}   # WITHOUT merge, while the repair runs; never --delete-branch`],
     19: () => [comment(C, `/factory repair ${repairReasons.cancel}`)],
+    21: () => [comment(need(context.issue, 'issue'), `/factory answer ${need(context.reviewQuestionId, 'reviewQuestionId')} ${reviewAnswer}`)],
     20: () => [...rulesetScript(20), 'cd "${FACTORY_CHECKOUT:?the composed checkout of this recipe}"',
       `( ${cancelCommand(need(context.workId, 'workId'))} ) & cancel=$!`,
       `gh pr ready ${need(context.pullRequest, 'pullRequest')} --repo ${R} && gh pr merge ${context.pullRequest} --repo ${R} --squash   # concurrent with the cancel above`,
@@ -453,7 +494,8 @@ export function plan() {
         { step: 10, change: 'one operator commit on the Factory branch of B (plain fast-forward)', restore: 'none (kept by design: the repair must preserve it)' }],
       bot: 'github-actions[bot] (type Bot): `/factory answer <q> alpha` and `/factory repair …` on B while the Question is open',
       never: ['merge by the Factory', 'approval', 'ready-for-review conversion by the Factory', 'bare --force', 'push to main', 'App bypass', 'any GitHub write by this recipe itself'] },
-    humanSteps: Object.fromEntries(Object.entries(humanStepRules).map(([step, rule]) => [step, { phase: rule.phase, optional: rule.optional ?? false }])),
+    humanSteps: Object.fromEntries(Object.entries(humanStepRules).map(([step, rule]) => [step, { phases: rule.phases ?? [rule.phase], optional: rule.optional ?? false }])),
+    toleratedQuestion: 'ONE per run: a Builder Question saying a review ended incomplete (e.g. Standards WORKER_INTERRUPTED) is answered by step 21 with the fixed text reviewAnswer; any other unscripted Question, or a second one, holds',
     effects: [
       'preflight: key check BEFORE any effect; exclusive namespace; read-only: operator id pinned, the label lists NO issue, the three issues open with exact titles, no associated PR, no factory/<n>- or ghadv-* branch, base protection pull-request-required, App identity, refs',
       'foreign (A): step 1 (foreign PR from factory/<A>-foreign, then the label) -> polling reports A held FOREIGN_PULL_REQUEST naming the PR; no Work, no prepare, no activation for the quiet window',
@@ -731,6 +773,8 @@ async function runControl(phase: ControlPhase, save: Save, load: Load, operator:
   const extra: Record<string, unknown> = {};
   const preflight = await load('preflight-result');
   let lastPrint = '', lastChangeAt = Date.now();
+  // The tolerated review-incomplete answer is ONE per run: used if an earlier phase already requested step 21.
+  const toleranceUsed = (await load('human-step-21-requested')) !== null;
   try {
     if (phase === 'resume' || phase === 'cancel-merge') {
       const work = workIn(await listView());
@@ -749,7 +793,7 @@ async function runControl(phase: ControlPhase, save: Save, load: Load, operator:
       const work = workIn(view);
       currentWork = work?.work_id ?? null;
       const questions = await questionsOf(control as never, work);
-      const facts: Facts = { work, questions, list: view, activations, prepares, seen, observed: observedSteps };
+      const facts: Facts = { work, questions, list: view, activations, prepares, seen, observed: observedSteps, toleranceUsed };
       const print = progressFingerprint(work, questions, eventsLog.length, observedSteps.size);
       if (print !== lastPrint) { lastPrint = print; lastChangeAt = Date.now(); }
       else if (Date.now() - lastChangeAt > stallMinutes * 60 * 1000) {
@@ -792,6 +836,7 @@ async function runControl(phase: ControlPhase, save: Save, load: Load, operator:
         }
         const question = builderQuestion(facts);
         const context: ScriptContext = { questionId: question?.questionId ?? null, divergenceQuestionId: divergenceQuestion(facts)?.questionId ?? null,
+          reviewQuestionId: reviewIncomplete(question) ? question!.questionId : null, issue: number,
           pullRequest: work?.pullRequest?.number ?? null, expectedTip: work?.publication?.pullRequest?.headSha ?? null, branch: work?.branch ?? null,
           expectedMain: (extra.expectedMain as string | null | undefined) ?? null, workId: work?.work_id ?? null };
         asked = { step, at: Date.now() };

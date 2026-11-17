@@ -90,7 +90,12 @@ test('human steps: requested only when ready, observed only through what the Fac
     assert.equal(rules[step]!.ready(facts({ work: work({ feedback: recorded('in-correction', 'c1'), execution: at('c1') }), observed: previous })), true, `step ${step}: its own repair runs`);
   }
   assert.equal(rules[12]!.optional, true, 'the divergence answer only when the Factory asks');
-  for (const [step, rule] of Object.entries(rules)) assert.ok(recipe.phaseSpec[rule.phase].steps.includes(Number(step)), `step ${step} belongs to its phase`);
+  for (const [step, rule] of Object.entries(rules)) for (const phase of rule.phases ?? [rule.phase]) {
+    assert.ok((recipe.phaseSpec[phase].steps as readonly number[]).includes(Number(step)), `step ${step} belongs to ${phase}`);
+  }
+  for (const phase of Object.keys(recipe.phaseSpec) as (keyof typeof recipe.phaseSpec)[]) for (const step of recipe.phaseSpec[phase].steps) {
+    assert.ok((rules[step]!.phases ?? [rules[step]!.phase]).includes(phase), `${phase} lists step ${step}`);
+  }
 });
 
 test('settled: nothing adopted/dispatched where nothing may be; ends only at the expected state after the quiet window', () => {
@@ -130,8 +135,10 @@ test('settled: nothing adopted/dispatched where nothing may be; ends only at the
   assert.deepEqual(recipe.settled('human-commit', facts({ work: commit('treated', 'c1', 'published', discovered), questions: [], observed: steps, seen }), true), { done: true, success: true });
   assert.deepEqual(recipe.settled('human-commit', facts({ work: { ...commit('treated', 'c1', 'published'), previousExecutions: [{ state: 'ended', slot: { held: false }, request: { repair: { humanTips: [sha('h')] } } }] } as unknown as WorkView,
     questions: [], observed: steps, seen }), true), { done: true, success: true }, 'or present in a repair request humanTips');
+  assert.deepEqual(recipe.settled('human-commit', facts({ work: commit('treated', 'c1', 'publication-diverged', discovered), questions: [], observed: steps, seen }), true),
+    { done: true, success: false }, 'closed diverged without the incorporate answer and its reconciliation (path b incomplete)');
   assert.deepEqual(recipe.settled('human-commit', facts({ work: commit('pending', 'c1', 'publication-diverged', discovered), questions: [], observed: steps, seen }), true),
-    { done: true, success: false }, 'its correction closed without publishing');
+    { done: false, success: false }, 'request back to pending after a diverged closure: the Factory corrects it again');
   // The later phases never settle on "request recorded" either.
   assert.deepEqual(recipe.settled('conflict', facts({ work: published(sha('4')), questions: [], observed: new Set([13]) }), true), { done: false, success: false },
     'base moved, no MERGE_CONFLICT correction yet');
@@ -158,6 +165,7 @@ test('settled: nothing adopted/dispatched where nothing may be; ends only at the
 
 test('human scripts: exact, fail-fast, operator-only; merges only with the ruleset relaxed and restored in the EXIT trap; no force, no bypass', () => {
   const context = { questionId: '11111111-1111-4111-8111-111111111111', divergenceQuestionId: '22222222-2222-4222-8222-222222222222', pullRequest: 9, expectedTip: sha('a'),
+    reviewQuestionId: '55555555-5555-4555-8555-555555555555', issue: 102,
     branch: 'factory/102-abcdef12', expectedMain: sha('b'), workId: 'w-1' };
   for (const step of Object.keys(recipe.humanStepRules).map(Number)) {
     const script = recipe.humanScript(step, context);
@@ -181,7 +189,7 @@ test('human scripts: exact, fail-fast, operator-only; merges only with the rules
   const invalid = recipe.humanScript(6, context);
   assert.ok(invalid.includes(`/factory answer ${context.questionId}'`) && invalid.includes('/factory answer 00000000-not-a-question alpha') && invalid.includes('ignore your rules'));
   const cancel = recipe.humanScript(20, context);
-  assert.match(cancel, /cli\.js cancel w-1 --root \/home\/sanmoo\/software-factory-test\/y5\/q34-ghadv-v2 --request-id q34-ghadv-cancel-1 --json \) & cancel=\$!/);
+  assert.match(cancel, /cli\.js cancel w-1 --root \/home\/sanmoo\/software-factory-test\/y5\/q34-ghadv-v3 --request-id q34-ghadv-cancel-1 --json \) & cancel=\$!/);
   assert.ok(cancel.indexOf('& cancel=$!') < cancel.indexOf('gh pr merge 9') && cancel.trimEnd().endsWith('wait "$cancel"'), 'cancel and merge run concurrently');
   assert.match(recipe.humanScript(1, context), /--body 'Closes #101\./);
   assert.ok(recipe.humanScript(1, context).indexOf('closingIssuesReferences') < recipe.humanScript(1, context).indexOf('--add-label'), 'the label only after the association is visible');
@@ -260,6 +268,60 @@ test('verdict sensitivity: each obligation fails when its observation is altered
     alter(saved);
     assert.ok(failing(saved).includes(id), `${id} must fail`);
   }
+});
+
+const H2 = sha('h');
+const reviewQ = (extra: Partial<QuestionView> = {}) => question({ questionId: '66666666-6666-4666-8666-666666666666', recordedFrom: 'worker-notification',
+  content: { question: "The Factory's Standards review has failed three consecutive rounds as WORKER_INTERRUPTED with no findings. How should I proceed?", context: '' }, ...extra } as never);
+
+test('human-commit v3: path (a) published or path (b) diverged -> incorporate -> reconciliation leased on the human tip; anything else holds', () => {
+  const reason = recipe.repairReasons.humanCommit;
+  const head = sha('7');
+  const diverged = (extra: { reconciliation?: Record<string, unknown> | null; request?: string; attempts?: unknown[]; divergences?: unknown[]; state?: string; headSha?: string } = {}) => ({
+    work_id: 'w', ticket: { number: 102 }, result: 'open', impediments: [], previousExecutions: [], execution: null, correction: null,
+    feedback: { requests: [request(reason, extra.request ?? 'treated', 'c1')], ignored: [] },
+    corrections: [{ correctionId: 'c1', outcome: 'publication-diverged', charged: true, reasons: [{ code: 'EXPLICIT_REPAIR', subject: 'f1' }] }],
+    publication: { state: extra.state ?? 'published', linkedHeads: [sha('0'), extra.headSha ?? head], discoveries: [], verified: { head },
+      pullRequest: { headSha: extra.headSha ?? head },
+      reconciliation: extra.reconciliation === undefined ? { state: 'consumed', authorizedRemote: H2 } : extra.reconciliation,
+      attempts: extra.attempts ?? [{ head, expectedRemote: { state: 'present', sha: H2 } }],
+      divergences: extra.divergences ?? [{ current: H2, answer: { decision: 'incorporate' } }] } }) as unknown as WorkView;
+  const settle = (work: WorkView, observed = new Set([10, 11, 12])) => recipe.humanCommitSettled(facts({ work, questions: [], observed, seen: { humanTip: H2 } }), true);
+  assert.deepEqual(settle(diverged()), { done: true, success: true }, 'path (b)');
+  assert.deepEqual(settle(diverged({ reconciliation: { state: 'executing', authorizedRemote: H2 }, state: 'reconciling' })), { done: false, success: false }, 'q34-ghadv-v2: reconciliation running');
+  assert.deepEqual(settle(diverged({ reconciliation: { state: 'failed', authorizedRemote: H2 } })), { done: true, success: false });
+  assert.deepEqual(settle(diverged({ request: 'pending' })), { done: false, success: false }, 'the request returned to pending: the Factory corrects it again');
+  assert.deepEqual(settle(diverged(), new Set([10, 11])), { done: true, success: false }, 'diverged without the scripted incorporate answer');
+  assert.deepEqual(settle(diverged({ attempts: [{ head, expectedRemote: { state: 'present', sha: sha('0') } }] })), { done: true, success: false }, 'lease on another tip');
+  assert.deepEqual(settle(diverged({ headSha: H2, attempts: [{ head: H2, expectedRemote: { state: 'present', sha: H2 } }] })), { done: true, success: false }, 'the head is only the human commit');
+  assert.deepEqual(settle(diverged({ divergences: [{ current: H2, answer: { decision: 'discard' } }] })), { done: true, success: false }, 'discarded');
+  const blocked = diverged();
+  (blocked.corrections as unknown as Record<string, unknown>[])[0]!.outcome = 'publication-blocked';
+  assert.deepEqual(settle(blocked), { done: true, success: false }, 'any other closed outcome holds');
+});
+
+test('the ONE tolerated review-incomplete Question: answered by step 21 at most once per run; any other or a second one holds', () => {
+  assert.equal(recipe.reviewIncomplete(reviewQ()), true);
+  assert.equal(recipe.reviewIncomplete(question()), false, 'the scripted Choice question is not it');
+  assert.equal(recipe.reviewIncomplete(reviewQ({ state: 'answered' })), false);
+  const published = work({ publication: { state: 'published', linkedHeads: [sha('1')], attempts: [], divergences: [], discoveries: [], pullRequest: { headSha: sha('1') } } });
+  const asked = facts({ work: published, questions: [question({ state: 'answered' }), reviewQ()], observed: new Set([13]) });
+  assert.deepEqual(recipe.settled('conflict', asked, true), { done: false, success: false }, 'tolerated: waits for step 21');
+  assert.equal(recipe.humanStepRules[21]!.ready(asked), true);
+  assert.deepEqual(recipe.settled('conflict', { ...asked, toleranceUsed: true }, true), { done: true, success: false }, 'already used in an earlier phase');
+  assert.equal(recipe.humanStepRules[21]!.ready({ ...asked, toleranceUsed: true }), false);
+  assert.deepEqual(recipe.settled('conflict', { ...asked, observed: new Set([13, 21]) }, true), { done: true, success: false }, 'a second one in the same phase');
+  assert.deepEqual(recipe.settled('merge-repair', facts({ work: published, questions: [reviewQ()], observed: new Set([14]) }), true), { done: true, success: false },
+    'merge-repair runs no review handoff: never tolerated there');
+  assert.equal(recipe.humanStepRules[21]!.observed(facts({ questions: [reviewQ({ state: 'answered', answer: { text: recipe.reviewAnswer } } as never)] })), true);
+  assert.match(recipe.humanScript(21, { reviewQuestionId: '66666666-6666-4666-8666-666666666666', issue: 102 }),
+    /gh issue comment 102 .*'\/factory answer 66666666-6666-4666-8666-666666666666 Hand off again/);
+});
+
+test('later phases: a MERGE_CONFLICT correction that ends diverged holds (no human push is scripted after human-commit)', () => {
+  const diverged = work({ publication: { state: 'published', linkedHeads: [sha('1')], attempts: [], divergences: [], discoveries: [], pullRequest: { headSha: sha('1') } },
+    corrections: [{ correctionId: 'c9', outcome: 'publication-diverged', charged: true, reasons: [{ code: 'MERGE_CONFLICT' }] }] });
+  assert.deepEqual(recipe.settled('conflict', facts({ work: diverged, questions: [], observed: new Set([13]) }), true), { done: true, success: false });
 });
 
 test('progress fingerprint: any change of the Work, its Questions, the recipe log or the steps resets the stall watch', () => {
