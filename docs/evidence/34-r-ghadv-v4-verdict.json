@@ -1,0 +1,118 @@
+{
+ "run": "q34-ghadv-v4",
+ "pin": "6bf5e9d (run/ghadv-v4: integracao 85a6b48 + pin #101 #102 #103)",
+ "namespace": "y5/q34-ghadv-v4",
+ "source": "y5/q34-ghadv-v4/inspect-result.json (verdict copiado sem alteracao)",
+ "verdict": {
+  "passed": false,
+  "checks": [
+   {
+    "obligation": "V-04.b",
+    "id": "foreign-reported-not-adopted",
+    "expected": "A held FOREIGN_PULL_REQUEST naming the foreign PR; no Work for A; nothing prepared/activated",
+    "observed": "{\"status\":\"success\",\"pulls\":[104],\"workA\":false,\"prepares\":0,\"activations\":0}",
+    "met": true
+   },
+   {
+    "obligation": "V-04.b",
+    "id": "foreign-still-held-at-end",
+    "expected": "the last Control phase still reports A held FOREIGN_PULL_REQUEST",
+    "observed": "{\"code\":\"FOREIGN_PULL_REQUEST\",\"pullRequests\":[{\"pullRequestId\":5365760033,\"number\":104,\"url\":\"https://github.com/Sanmoo/java-springboot-event-sourcing/pull/104\",\"state\":\"open\",\"merged\":false,\"association\":[\"closing-reference\",\"cross-reference\"]}],\"nextStep\":\"A pull request associated with this Ticket is not recognised as the Factory's own; it is neither adopted nor admitted automatically. Open, c",
+    "met": true
+   },
+   {
+    "obligation": "V-04.d",
+    "id": "close-withdraws-reopen-does-not-redispatch",
+    "expected": "withdraw: authorization-withdrawn (TICKET_NOT_OPEN) then authorization-restored-observed; NO prepare/activation; still AUTHORIZATION_WITHDRAWN at its end",
+    "observed": "{\"status\":\"success\",\"withdrawn\":11,\"restored\":13,\"prepares\":0,\"activations\":0}",
+    "met": true
+   },
+   {
+    "obligation": "V-04.d",
+    "id": "only-explicit-resume-continues",
+    "expected": "resume receipt accepted; resume-confirmed precedes the next activation",
+    "observed": "{\"receipt\":\"accepted\",\"confirmed\":15}",
+    "met": true
+   },
+   {
+    "obligation": "V-04.e",
+    "id": "closed-during-activity-not-ceased-not-delivered-not-cancelled",
+    "expected": "closed-unmerged recorded WITH the active repair Execution; that activity not aborted (end not stopped/WORK_*); close result closed-unmerged, no delivery, no cancellation, no publication activation",
+    "observed": "{\"status\":\"held\",\"aborted\":3,\"result\":\"open\",\"delivery\":\"watching\",\"cancellation\":null,\"publications\":0}",
+    "met": false
+   },
+   {
+    "obligation": "V-10.f",
+    "id": "merge-of-base-with-human-commit",
+    "expected": "conflict repair with humanTips ∋ 1c48ad1453b326cae98db2a919d17b528bfe73c0; base daf79423cf95beb23139727e023b06dcd53e9aeb and the human commit ancestors of the repaired head; a merge commit (2 parents), never a rebase",
+    "observed": "{\"status\":\"success\",\"humanTips\":[\"1c48ad1453b326cae98db2a919d17b528bfe73c0\"],\"baseBehind\":0,\"humanBehind\":0,\"merges\":1}",
+    "met": true
+   },
+   {
+    "obligation": "V-10.g",
+    "id": "merge-during-repair-delivers-and-interrupts",
+    "expected": "delivered with duringActivity = the repair Execution; it ended WORK_DELIVERED with confirmed cessation; no publication activation, no builder-publish in the phase",
+    "observed": "{\"status\":\"success\",\"during\":null,\"publish\":0}",
+    "met": false
+   },
+   {
+    "obligation": "V-11.c",
+    "id": "bot-and-non-operator-ignored",
+    "expected": "question ignored AUTHOR_IS_BOT (github-actions[bot] answer) and AUTHOR_NOT_OPERATOR (User not configured); bot /factory repair ignored AUTHOR_IS_BOT; no activation",
+    "observed": "{\"status\":\"success\",\"codes\":[\"AUTHOR_IS_BOT\",\"AUTHOR_NOT_OPERATOR\",\"QUESTION_ALREADY_ANSWERED\"],\"workCodes\":[\"AUTHOR_IS_BOT\",\"ANSWER_TEXT_MISSING\",\"QUESTION_ID_INVALID\"]}",
+    "met": true
+   },
+   {
+    "obligation": "V-11.c",
+    "id": "prose-insufficient-repeated-grant-nothing",
+    "expected": "prose ignored silently; ANSWER_TEXT_MISSING and QUESTION_ID_INVALID; the accepted answer is the operator's \"alpha\"; the repeat ignored QUESTION_ALREADY_ANSWERED",
+    "observed": "{\"codes\":[\"AUTHOR_IS_BOT\",\"AUTHOR_NOT_OPERATOR\",\"QUESTION_ALREADY_ANSWERED\"],\"workCodes\":[\"AUTHOR_IS_BOT\",\"ANSWER_TEXT_MISSING\",\"QUESTION_ID_INVALID\"],\"answer\":\"alpha\",\"author\":\"Sanmoo\"}",
+    "met": true
+   },
+   {
+    "obligation": "V-13.g",
+    "id": "cancel-concurrent-with-merge",
+    "expected": "cancel via CLI during the repair (in its VM) concurrent with the merge: final result delivered; cancel-first => cancellation recorded on the repair Execution and delivery-confirmed names it; merge-first => cancel not-applied WORK_DELIVERED; the activity ceased (cessation confirmed, Slot released)",
+    "observed": "{\"order\":\"unknown\",\"receipt\":{}}",
+    "met": false
+   },
+   {
+    "obligation": "all",
+    "id": "leased-pushes-only",
+    "expected": "every session push is an exact recorded lease",
+    "observed": "[]",
+    "met": true
+   },
+   {
+    "obligation": "all",
+    "id": "no-secret",
+    "expected": "no token/private key in storage, sessions or observations",
+    "observed": "{\"storage\":false,\"sessions\":false,\"observations\":false}",
+    "met": true
+   }
+  ],
+  "byObligation": {
+   "V-04.b": true,
+   "V-04.d": true,
+   "V-04.e": false,
+   "V-10.f": true,
+   "V-10.g": false,
+   "V-11.c": true,
+   "V-13.g": false,
+   "all": true
+  }
+ },
+ "phases": {
+  "preflight": "success",
+  "foreign": "success",
+  "ask": "success",
+  "strangers": "success",
+  "withdraw": "success",
+  "resume": "success",
+  "human-commit": "success",
+  "conflict": "success",
+  "merge-repair": "success",
+  "publish-c": "success",
+  "close": "held"
+ }
+}

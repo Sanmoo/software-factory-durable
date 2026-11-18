@@ -1,0 +1,95 @@
+{
+ "run": "q34-ghchecks-s-v1",
+ "pin": "c63a613 (run/ghchecks-s: pin #108)",
+ "namespace": "y5/q34-ghchecks-s-v1",
+ "source": "y5/q34-ghchecks-s-v1/inspect-result.json (verdict copiado sem alteracao)",
+ "verdict": {
+  "passed": true,
+  "checks": [
+   {
+    "id": "run.pending-then-satisfied",
+    "obligation": "V-09.c",
+    "expected": "the Factory PR's first head: factory-gate waiting, then satisfied (current head only)",
+    "observed": "[\"waiting\",\"satisfied\"]",
+    "met": true
+   },
+   {
+    "id": "run.factory-ready",
+    "obligation": "V-09.e",
+    "expected": "the Factory placed ready on its own PR (mark-ready confirmed) with satisfied checks",
+    "observed": "{\"status\":\"success\",\"effects\":[\"mark-ready\",\"convert-to-draft\",\"mark-ready\"]}",
+    "met": true
+   },
+   {
+    "id": "strict.repair",
+    "obligation": "V-10.b",
+    "expected": "ONE correction STRICT_UPDATE_REQUIRED@H1 against the advanced base 9eb89809b85c8da0a3f779892d07a3421b17a89f, published; H2 contains it",
+    "observed": "{\"reason\":\"STRICT_UPDATE_REQUIRED@06d940efec3a6d80123e11178c85e6d32730fd89^9eb89809b85c8da0a3f779892d07a3421b17a89f\",\"outcome\":\"published\",\"behindBy\":0,\"heads\":[\"06d940efec3a6d80123e11178c85e6d32730fd89\",\"3b1fc17b0e1c8fad56acd89192696b24b2f1c1b8\"]}",
+    "met": true
+   },
+   {
+    "id": "strict.loss-back-to-draft",
+    "obligation": "V-09.e",
+    "expected": "confirmed conversions: mark-ready, convert-to-draft (condition lost under strict), mark-ready (after the repair)",
+    "observed": "[\"mark-ready\",\"convert-to-draft\",\"mark-ready\"]",
+    "met": true
+   },
+   {
+    "id": "human-draft.respected",
+    "obligation": "V-09.e",
+    "expected": "human draft recorded; no conversion attempted, no correction, no activation in the quiet window",
+    "observed": "{\"humanDraft\":{\"observedAt\":\"2026-11-18T00:59:08.975Z\",\"headSha\":\"3b1fc17b0e1c8fad56acd89192696b24b2f1c1b8\"},\"events\":0}",
+    "met": true
+   },
+   {
+    "id": "rerun.pending",
+    "obligation": "V-09.c",
+    "expected": "factory-gate waiting during the rerun of the probe head, never covered by the older green",
+    "observed": "{\"reads\":[\"satisfied\",\"waiting\",\"waiting\",\"waiting\",\"waiting\",\"waiting\",\"satisfied\"]}",
+    "met": true
+   },
+   {
+    "id": "contexts.skipped-absent-strict",
+    "obligation": "V-09.c",
+    "expected": "factory-optional satisfied by a skipped run; factory-absent REQUIRED_CHECK_ABSENT; strict required from the ruleset; linear history interpreted",
+    "observed": "{\"optional\":\"satisfied\",\"reasons\":[\"wait:REQUIRED_CHECK_ABSENT:factory-absent\"],\"strict\":{\"required\":true,\"sources\":[\"ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing\"],\"state\":\"up-to-date\",\"behindBy\":0}}",
+    "met": true
+   },
+   {
+    "id": "classic.accumulated",
+    "obligation": "V-09.f",
+    "expected": "requirement factory-gate@15368 accumulated from classic AND the ruleset",
+    "observed": "[\"classic\",\"ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing\"]",
+    "met": true
+   },
+   {
+    "id": "classic.settings-merge-blocking",
+    "obligation": "V-09.f",
+    "expected": "classic lock_branch and signatures read and merge-blocking (source classic); outcome blocked, never satisfied",
+    "observed": "{\"outcome\":\"blocked\",\"modalities\":[\"lock_branch:blocking:BRANCH_LOCKED\",\"required_signatures:blocking:SIGNED_COMMITS_REQUIRED\",\"required_linear_history:not-blocking:LINEAR_HISTORY_METHOD_ALLOWED\"]}",
+    "met": true
+   },
+   {
+    "id": "homonym.other-origin",
+    "obligation": "V-09.c",
+    "expected": "the operator's factory-gate failure status is another origin than Actions: visible only, the requirement stays satisfied",
+    "observed": "{\"state\":\"satisfied\",\"otherOrigin\":[\"status:failure\"]}",
+    "met": true
+   },
+   {
+    "id": "no-bypass",
+    "obligation": "V-09.e/V-10.b",
+    "expected": "the Factory PR never merged; every push leased; only the Ticket file changed",
+    "observed": "{\"merged\":false,\"changedFiles\":[\"docs/FACTORY_CHECKS_S.md\"],\"pushViolations\":[]}",
+    "met": true
+   },
+   {
+    "id": "no-token",
+    "obligation": "all",
+    "expected": "no token or private key in sessions or in the namespace",
+    "observed": "{\"sessions\":0,\"namespace\":[]}",
+    "met": true
+   }
+  ]
+ }
+}

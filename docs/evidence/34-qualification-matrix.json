@@ -1,7 +1,7 @@
 {
  "schemaVersion": 1,
  "ticket": "34",
- "generatedAt": "2026-11-17",
+ "generatedAt": "2026-11-18",
  "authority": [
   ".scratch/software-factory/spec.md#13",
   ".scratch/software-factory/spec.md#14",
@@ -110,9 +110,9 @@
   }
  },
  "counts": {
-  "aprovada": 84,
+  "aprovada": 92,
   "reprovada": 0,
-  "inconclusiva": 16,
+  "inconclusiva": 8,
   "dependente-do-piloto": 12
  },
  "realRuns": [
@@ -906,6 +906,110 @@
    ],
    "applicability": "inconclusiva",
    "reason": "desvio do Builder (modelo) numa cadeia de dois reparos; nenhuma obrigacao nova"
+  },
+  {
+   "id": "q34-ghadv-v1",
+   "ticket": "34",
+   "date": "2026-11-17",
+   "commit": "d334d8b",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "GitHub real (App, issues/PRs descartaveis, github-actions[bot], ruleset 26435808 relaxado so em torno dos merges do operador), VM Gondolin/KVM, modelo openai/gpt-6-luna",
+   "verdict": "retido em human-commit: settle da receita aceitou \"pedido registrado\" antes de a Factory abrir a correcao (lacuna da receita)",
+   "evidence": [
+    "docs/evidence/34-prepilot-results.md"
+   ],
+   "applicability": "inconclusiva",
+   "reason": "lacuna da receita; nenhuma obrigacao alem de V-04.b/V-04.d/V-11.c, repetidas em v4"
+  },
+  {
+   "id": "q34-ghadv-v2",
+   "ticket": "34",
+   "date": "2026-11-17",
+   "commit": "724fbd9",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "GitHub real (App, issues/PRs descartaveis, github-actions[bot], ruleset 26435808 relaxado so em torno dos merges do operador), VM Gondolin/KVM, modelo openai/gpt-6-luna",
+   "verdict": "retido em human-commit: Pergunta nao roteirizada apos 3 rodadas Standards WORKER_INTERRUPTED na reconciliacao (defeito do produto: ticket 43)",
+   "evidence": [
+    "docs/evidence/34-prepilot-results.md"
+   ],
+   "applicability": "inconclusiva",
+   "reason": "defeito do produto da reconciliacao, corrigido em 6c4a9e0"
+  },
+  {
+   "id": "q34-ghadv-v3",
+   "ticket": "34",
+   "date": "2026-11-17",
+   "commit": "763e1bf",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "GitHub real (App, issues/PRs descartaveis, github-actions[bot], ruleset 26435808 relaxado so em torno dos merges do operador), VM Gondolin/KVM, modelo openai/gpt-6-luna",
+   "verdict": "retido em human-commit: reconciliacao falhou (RECONCILIATION_FAILED, REVIEW_NOT_VERIFIED) pela mesma causa (ticket 43)",
+   "evidence": [
+    "docs/evidence/34-prepilot-results.md"
+   ],
+   "applicability": "inconclusiva",
+   "reason": "defeito do produto da reconciliacao, corrigido em 6c4a9e0"
+  },
+  {
+   "id": "q34-ghadv-v4",
+   "ticket": "34",
+   "date": "2026-11-17",
+   "commit": "6bf5e9d",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "GitHub real (App, issues/PRs descartaveis, github-actions[bot], ruleset 26435808 relaxado so em torno dos merges do operador), VM Gondolin/KVM, modelo openai/gpt-6-luna",
+   "verdict": "V-04.b, V-04.d, V-10.f e V-11.c met; human-commit (ticket 43 validado), conflict, merge-repair e publish-c success; retido no close por Pergunta nao roteirizada (Spec x linha do /factory repair)",
+   "evidence": [
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-ghadv-v4-verdict.json"
+   ],
+   "applicability": "aplicavel",
+   "reason": "run/ghadv-v4 = integracao 85a6b48 (com o ticket 43, 6c4a9e0) + pin #101-#103, descendente de b30e2bd"
+  },
+  {
+   "id": "q34-ghadv-v5",
+   "ticket": "34",
+   "date": "2026-11-18",
+   "commit": "4277f97",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "GitHub real (App, issues/PRs descartaveis, github-actions[bot], ruleset 26435808 relaxado so em torno dos merges do operador), VM Gondolin/KVM, modelo openai/gpt-6-luna",
+   "verdict": "retido no resume: Pergunta nao roteirizada (manter linhas existentes x texto da base em conflito); variacao do modelo (v4 passou o resume)",
+   "evidence": [
+    "docs/evidence/34-prepilot-results.md"
+   ],
+   "applicability": "inconclusiva",
+   "reason": "variacao do modelo; nenhuma obrigacao nova"
+  },
+  {
+   "id": "q34-ghchecks-s-v1",
+   "ticket": "34",
+   "date": "2026-11-18",
+   "commit": "c63a613",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "GitHub real: PR de sonda do operador (rerun, skipped/ausente, strict, homonimo, protecao classica + ruleset) e UM Trabalho (#108): ready da Factory, strict -> UM reparo, draft humano",
+   "verdict": "12/12 verificacoes met (V-09.c, V-09.e, V-09.f, V-10.b strict)",
+   "evidence": [
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-ghchecks-s-v1-verdict.json"
+   ],
+   "applicability": "aplicavel",
+   "reason": "run/ghchecks-s = integracao com factory-skills-v7 e V-09.f (f4cb958) + pin #108, descendente de b30e2bd"
   }
  ],
  "scenarios": [
@@ -1069,7 +1173,7 @@
     "A",
     "P"
    ],
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-09.a",
     "V-09.b",
@@ -1110,7 +1214,7 @@
     "A",
     "P"
    ],
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-11.a",
     "V-11.b",
@@ -1274,7 +1378,7 @@
   },
   {
    "id": "RF-04",
-   "status": "inconclusiva",
+   "status": "aprovada",
    "obligations": [
     "V-02.a",
     "V-02.b",
@@ -1360,7 +1464,7 @@
   },
   {
    "id": "RF-10",
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-11.a",
     "V-11.b",
@@ -1492,7 +1596,7 @@
   },
   {
    "id": "RNF-04",
-   "status": "inconclusiva",
+   "status": "aprovada",
    "obligations": [
     "V-05.a",
     "V-05.b",
@@ -1580,7 +1684,7 @@
   },
   {
    "id": "CA-05",
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-06.d",
     "V-06.h",
@@ -1632,7 +1736,7 @@
   },
   {
    "id": "CA-09",
-   "status": "inconclusiva",
+   "status": "aprovada",
    "obligations": [
     "V-10.e",
     "V-10.f"
@@ -2310,19 +2414,27 @@
     "I"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "PR nao reconhecido reportado, nao adotado",
-   "observed": "so fixture: nenhum PR alheio com palavra de fechamento no repo de teste (07, 14)",
+   "observed": "q34-ghadv-v4 (consistente em v1-v4): PR #104 do operador em factory/101-foreign com \"Closes #101\"; a admissao reportou FOREIGN_PULL_REQUEST nomeando o PR e nunca o adotou (nenhum Trabalho, prepare ou ativacao para #101); a retencao seguia ate a ultima fase",
    "evidence": [
-    "docs/evidence/07-unique-ticket-admission.md"
+    "docs/evidence/07-unique-ticket-admission.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-ghadv-v4-verdict.json"
    ],
-   "runs": [],
-   "commands": [],
+   "runs": [
+    "q34-ghadv-v4"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita R-GH-ADV (test/entrypoints/ghadv34-qualification.ts, q34-ghadv-v4)"
+   ],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Executar R-GH-ADV (PR alheio com closing keyword no repo de teste)",
+   "pointer": "Aprovada por R-GH-ADV q34-ghadv-v4 (foreign-reported-not-adopted, foreign-still-held-at-end)",
    "reexecution": [
     "R-GH-ADV"
    ]
@@ -2374,19 +2486,27 @@
     "I"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "fechar/reabrir issue sem redisparo",
-   "observed": "reopen so em fluxo (lacuna aceita pelo supervisor no 25)",
+   "observed": "q34-ghadv-v4 (consistente em v1-v4): fechar a issue com Trabalho vigente -> AUTHORIZATION_WITHDRAWN (TICKET_NOT_OPEN); reabrir so registrou a restauracao; nenhum prepare/ativacao com a resposta ja aceita; so o resume explicito (resume-confirmed) continuou",
    "evidence": [
-    "docs/evidence/25-authorization-withdrawal-and-work-cycles.md"
+    "docs/evidence/25-authorization-withdrawal-and-work-cycles.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-ghadv-v4-verdict.json"
    ],
-   "runs": [],
-   "commands": [],
+   "runs": [
+    "q34-ghadv-v4"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita R-GH-ADV (test/entrypoints/ghadv34-qualification.ts, q34-ghadv-v4)"
+   ],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Executar R-GH-ADV (fechar/reabrir issue com Trabalho vigente)",
+   "pointer": "Aprovada por R-GH-ADV q34-ghadv-v4 (close-withdraws-reopen-does-not-redispatch, only-explicit-resume-continues)",
    "reexecution": [
     "R-GH-ADV"
    ]
@@ -2407,7 +2527,7 @@
    ],
    "status": "inconclusiva",
    "expectation": "fechar PR sem merge nao comprova cessacao, entrega ou cancelamento",
-   "observed": "so em fluxo (lacuna aceita no 25)",
+   "observed": "R-GH-ADV v1-v5 nao alcancou o close (v4 retido no close por Pergunta Spec x linha do /factory repair); so em fluxo (25)",
    "evidence": [
     "docs/evidence/25-authorization-withdrawal-and-work-cycles.md"
    ],
@@ -2415,9 +2535,9 @@
    "commands": [],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Executar R-GH-ADV (fechar o PR proprio sem merge)",
+   "pointer": "Executar R-GH-ADV-S (um Ticket C: publicar -> fechar durante reparo -> reabrir -> cancelar durante reparo + merge do operador)",
    "reexecution": [
-    "R-GH-ADV"
+    "R-GH-ADV-S"
    ]
   },
   {
@@ -3668,22 +3788,27 @@
     "S",
     "I"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "checks: head atual x antigo, App emissora, homonimos, neutral/skipped, rerun pendente, contexto ausente, strict/loose",
-   "observed": "q34-ghchecks-v2 (parcial): check obrigatorio real no head atual waiting -> failing em H1 e waiting -> satisfied em H2 (resultado do head antigo nao emprestado), origem App 15368; rerun pendente, skipped/ausente, strict/loose e homonimos ainda nao executados",
+   "observed": "q34-ghchecks-s-v1 (12/12) com q34-ghchecks-v2: head atual waiting -> satisfied (e v2 waiting -> failing/satisfied), rerun pendente nunca coberto pelo verde antigo, skipped satisfaz, ausente -> REQUIRED_CHECK_ABSENT, strict lido do ruleset, homonimo de outra origem so visivel, App emissora 15368",
    "evidence": [
     "docs/evidence/15-required-checks-evaluation.md",
     "docs/evidence/34-prepilot-results.md",
-    "docs/evidence/34-r-ghchecks-v2-verdict.json"
+    "docs/evidence/34-r-ghchecks-v2-verdict.json",
+    "docs/evidence/34-r-ghchecks-s-v1-verdict.json"
    ],
    "runs": [
     "q15-v2",
-    "q34-ghchecks-v2"
+    "q34-ghchecks-v2",
+    "q34-ghchecks-s-v1"
    ],
-   "commands": [],
+   "commands": [
+    "npm run test:ci",
+    "receita R-GH-CHECKS-S (test/entrypoints/ghchecks34s-qualification.ts, q34-ghchecks-s-v1)"
+   ],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Parcial (decisao do operador 2026-11-17): executar R-GH-CHECKS-S (leituras GET-only em PR de sonda do operador: rerun, contextos, homonimo)",
+   "pointer": "Aprovada por R-GH-CHECKS-S q34-ghchecks-s-v1 com R-GH-CHECKS v2",
    "reexecution": [
     "R-GH-CHECKS-S"
    ]
@@ -3738,19 +3863,27 @@
     "I"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "mudanca de head/regra/base entre leituras e conversao; perda de condicao volta a draft; draft humano respeitado",
-   "observed": "so em S/I(sub) (readiness-flow, github-readiness-composed)",
+   "observed": "q34-ghchecks-s-v1: ready da Factory com checks satisfeitos; perda da condicao sob strict -> convert-to-draft; ready de novo apos o reparo; draft humano registrado e respeitado (nenhuma conversao, correcao ou ativacao)",
    "evidence": [
-    "docs/evidence/16-evidence-based-readiness.md"
+    "docs/evidence/16-evidence-based-readiness.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-ghchecks-s-v1-verdict.json"
    ],
-   "runs": [],
-   "commands": [],
+   "runs": [
+    "q34-ghchecks-s-v1"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita R-GH-CHECKS-S (test/entrypoints/ghchecks34s-qualification.ts, q34-ghchecks-s-v1)"
+   ],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Executar R-GH-CHECKS-S (PR proprio: ready da Factory, perda sob strict -> draft, draft humano respeitado)",
+   "pointer": "Aprovada por R-GH-CHECKS-S q34-ghchecks-s-v1 (run.factory-ready, strict.loss-back-to-draft, human-draft.respected)",
    "reexecution": [
     "R-GH-CHECKS-S"
    ]
@@ -3770,19 +3903,25 @@
     "S",
     "I"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "protecao tradicional + rulesets e paginacao incompleta",
-   "observed": "protecao classica, lock_branch, assinaturas, historico linear e metodos de merge nao lidos (39, MERGE_METHODS_UNKNOWN -> indeterminado)",
+   "observed": "q34-ghchecks-s-v1: requisito factory-gate@15368 acumulado de protecao classica E do ruleset 26435808; lock_branch e assinaturas classicos lidos como bloqueio de merge (outcome blocked, nunca satisfied)",
    "evidence": [
-    "docs/evidence/39-merge-blocking-base-rules.md"
+    "docs/evidence/39-merge-blocking-base-rules.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-ghchecks-s-v1-verdict.json"
    ],
    "runs": [
-    "q39-v1"
+    "q39-v1",
+    "q34-ghchecks-s-v1"
    ],
-   "commands": [],
+   "commands": [
+    "npm run test:ci",
+    "receita R-GH-CHECKS-S (test/entrypoints/ghchecks34s-qualification.ts, q34-ghchecks-s-v1)"
+   ],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Executar R-GH-CHECKS-S (protecao classica + ruleset lidas no PR de sonda; lock_branch/assinaturas lidos desde f4cb958)",
+   "pointer": "Aprovada por R-GH-CHECKS-S q34-ghchecks-s-v1 (classic.accumulated, classic.settings-merge-blocking)",
    "reexecution": [
     "R-GH-CHECKS-S"
    ]
@@ -3860,21 +3999,27 @@
     "I",
     "A"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "check obrigatorio atual falho e impedimento strict geram reparo",
-   "observed": "q34-ghchecks-v2 (parcial): check obrigatorio atual falho -> UMA correcao REQUIRED_CHECK_FAILED:factory-gate@H1 com evidencia, cobrada, reparo publicado como H2 no MESMO PR (verificacao failing.repair corrigida offline: prefixo check-run:); a metade strict nao foi alcancada (v2 Pergunta, v3 H1 ja verde, v4 tratamento fixed sem mudanca)",
+   "observed": "q34-ghchecks-v2 (check falho -> UMA correcao REQUIRED_CHECK_FAILED -> reparo no mesmo PR) e q34-ghchecks-s-v1 (strict: UMA correcao STRICT_UPDATE_REQUIRED contra a base avancada, publicada; H2 contem a base)",
    "evidence": [
     "docs/evidence/22-effective-impediments-and-automatic-repairs.md",
     "docs/evidence/34-prepilot-results.md",
-    "docs/evidence/34-r-ghchecks-v2-verdict.json"
+    "docs/evidence/34-r-ghchecks-v2-verdict.json",
+    "docs/evidence/34-r-ghchecks-s-v1-verdict.json"
    ],
    "runs": [
-    "q34-ghchecks-v2"
+    "q34-ghchecks-v2",
+    "q34-ghchecks-s-v1"
    ],
-   "commands": [],
+   "commands": [
+    "npm run test:ci",
+    "receita R-GH-CHECKS-S (test/entrypoints/ghchecks34s-qualification.ts, q34-ghchecks-s-v1)",
+    "receita R-GH-CHECKS (q34-ghchecks-v2)"
+   ],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Parcial (decisao do operador 2026-11-17): executar R-GH-CHECKS-S para STRICT_UPDATE_REQUIRED -> UM reparo",
+   "pointer": "Aprovada por R-GH-CHECKS v2 (failing.repair) + R-GH-CHECKS-S (strict.repair)",
    "reexecution": [
     "R-GH-CHECKS-S"
    ]
@@ -4002,19 +4147,28 @@
     "A"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I",
+    "A"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "politica alternativa do repo: merge da base quando ha commits de terceiros",
-   "observed": "so S (no 22 nao havia commit humano na branch)",
+   "observed": "q34-ghadv-v4: commit humano 1c48ad1 na branch da Factory incorporado (divergencia -> incorporate -> reconciliacao, ticket 43); conflito add/add na base -> correcao MERGE_CONFLICT com humanTips [1c48ad1] -> a base foi MERGEADA (um commit de merge, 2 pais), nunca rebase; base e commit humano ancestrais do head reparado (behind 0)",
    "evidence": [
-    "docs/evidence/22-effective-impediments-and-automatic-repairs.md"
+    "docs/evidence/22-effective-impediments-and-automatic-repairs.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-ghadv-v4-verdict.json"
    ],
-   "runs": [],
-   "commands": [],
+   "runs": [
+    "q34-ghadv-v4"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita R-GH-ADV (test/entrypoints/ghadv34-qualification.ts, q34-ghadv-v4)"
+   ],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Executar R-GH-ADV (conflito com commit humano na branch)",
+   "pointer": "Aprovada por R-GH-ADV q34-ghadv-v4 (merge-of-base-with-human-commit)",
    "reexecution": [
     "R-GH-ADV"
    ]
@@ -4036,17 +4190,21 @@
    ],
    "status": "inconclusiva",
    "expectation": "encerrar PR/realizar merge durante reparo",
-   "observed": "merge durante atividade so em S (17)",
+   "observed": "q34-ghadv-v4 merge-repair: o operador mergeou o PR #105 as 23:55:34Z durante o reparo 4cd050ae (23:55:15-23:56:40), mas a Factory so confirmou a entrega as 23:56:50, depois do fim da atividade (duringActivity null); nenhuma publicacao depois do merge. A interrupcao pela entrega nao foi observada",
    "evidence": [
-    "docs/evidence/17-confirmed-delivery-and-owned-cleanup.md"
+    "docs/evidence/17-confirmed-delivery-and-owned-cleanup.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-ghadv-v4-verdict.json"
    ],
-   "runs": [],
+   "runs": [
+    "q34-ghadv-v4"
+   ],
    "commands": [],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Executar R-GH-ADV (merge humano durante uma correcao ativa)",
+   "pointer": "Executar R-GH-ADV-S (um Ticket C: publicar -> fechar durante reparo -> reabrir -> cancelar durante reparo + merge do operador)",
    "reexecution": [
-    "R-GH-ADV"
+    "R-GH-ADV-S"
    ]
   },
   {
@@ -4155,19 +4313,28 @@
     "A"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I",
+    "A"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "bot/terceiro/prosa maliciosa, resposta insuficiente e comando repetido nao desbloqueiam nem autorizam",
-   "observed": "so S (question-rules, feedback-rules); nenhuma resposta real de terceiro",
+   "observed": "q34-ghadv-v4 (consistente em v1-v4): resposta e /factory repair de github-actions[bot] ignorados (AUTHOR_IS_BOT); resposta de conta User nao configurada como operador ignorada (AUTHOR_NOT_OPERATOR); prosa nao concedeu nada; resposta vazia e id invalido recusados (ANSWER_TEXT_MISSING, QUESTION_ID_INVALID); resposta repetida ignorada (QUESTION_ALREADY_ANSWERED); a resposta aceita e a do operador. Limite registrado: sem segunda conta humana, o terceiro humano e a conta do operador fora da configuracao (sentinela)",
    "evidence": [
-    "docs/evidence/10-durable-questions-and-queued-resumption.md"
+    "docs/evidence/10-durable-questions-and-queued-resumption.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-ghadv-v4-verdict.json"
    ],
-   "runs": [],
-   "commands": [],
+   "runs": [
+    "q34-ghadv-v4"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita R-GH-ADV (test/entrypoints/ghadv34-qualification.ts, q34-ghadv-v4)"
+   ],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Executar R-GH-ADV (resposta de conta terceira e de bot)",
+   "pointer": "Aprovada por R-GH-ADV q34-ghadv-v4 (bot-and-non-operator-ignored, prose-insufficient-repeated-grant-nothing); limite: identidade humana terceira distinta nao exercitada",
    "reexecution": [
     "R-GH-ADV"
    ]
@@ -4755,7 +4922,7 @@
    ],
    "status": "inconclusiva",
    "expectation": "cancelar antes/depois de requisicao enviada e durante containers; merge concorrente ao cancelamento",
-   "observed": "merge durante cancelamento e efeitos tardios sob cancelamento so em fluxo (25, 27)",
+   "observed": "R-GH-ADV v1-v5 nao alcancou o cancel-merge; merge durante cancelamento so em fluxo (25, 27)",
    "evidence": [
     "docs/evidence/25-authorization-withdrawal-and-work-cycles.md",
     "docs/evidence/27-external-effect-crash-reconciliation.md"
@@ -4764,9 +4931,9 @@
    "commands": [],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Executar R-GH-ADV (cancel com PR proprio e merge humano concorrente)",
+   "pointer": "Executar R-GH-ADV-S (um Ticket C: publicar -> fechar durante reparo -> reabrir -> cancelar durante reparo + merge do operador)",
    "reexecution": [
-    "R-GH-ADV"
+    "R-GH-ADV-S"
    ]
   },
   {
@@ -5515,18 +5682,10 @@
    "status": "inconclusiva",
    "blockers": [
     "V-03.c",
-    "V-04.b",
-    "V-04.d",
     "V-04.e",
     "V-06.g",
     "V-07.f",
-    "V-09.c",
-    "V-09.e",
-    "V-09.f",
-    "V-10.b",
-    "V-10.f",
     "V-10.g",
-    "V-11.c",
     "V-13.e",
     "V-13.g"
    ]
@@ -5580,11 +5739,12 @@
     "V-09.e",
     "V-09.f",
     "V-10.b"
-   ]
+   ],
+   "result": "completo com R-GH-CHECKS-S: V-08.f (v2), V-09.c/V-10.b (v2 + S), V-09.e/V-09.f (S)"
   },
   {
    "id": "R-GH-ADV",
-   "scope": "Bateria adversa GitHub: PR alheio com closing keyword, fechar/reabrir issue, fechar PR proprio sem merge, merge humano durante reparo e durante cancelamento, conflito com commit humano (merge da base), resposta de conta terceira e de bot",
+   "scope": "Bateria adversa GitHub: PR alheio com closing keyword, fechar/reabrir issue, fechar PR proprio sem merge, merge humano durante reparo e durante cancelamento, conflito com commit humano (merge da base), resposta de conta terceira e de bot — EXECUTADO PARCIALMENTE (v1-v5; parcial por decisao do operador 2026-11-18): V-04.b, V-04.d, V-10.f e V-11.c aprovadas (v4); V-04.e, V-10.g e V-13.g passam ao R-GH-ADV-S",
    "needs": "repo/issues/PRs descartaveis, segunda conta GitHub, VM e modelo, passos humanos",
    "authorizationRequired": true,
    "covers": [
@@ -5595,7 +5755,8 @@
     "V-10.g",
     "V-11.c",
     "V-13.g"
-   ]
+   ],
+   "result": "parcial: q34-ghadv-v4 (V-04.b, V-04.d, V-10.f, V-11.c); v1-v3 lacunas da receita e ticket 43; v5 variacao do modelo"
   },
   {
    "id": "R-GH-DEP",
@@ -5697,6 +5858,18 @@
     "V-09.e",
     "V-09.f",
     "V-10.b"
+   ],
+   "result": "executado: q34-ghchecks-s-v1 12/12 met (V-09.c, V-09.e, V-09.f, V-10.b); com R-GH-CHECKS v2 o grupo fica completo"
+  },
+  {
+   "id": "R-GH-ADV-S",
+   "scope": "Desenho menor (decisao do operador 2026-11-18): UM Ticket C — publicar -> /factory repair -> fechar o PR proprio durante o reparo (sem merge) -> reopen + resume pela Factory -> /factory repair -> cancel pela CLI durante o reparo concorrente com o merge do operador; pedidos /factory repair no escopo; UMA resposta roteirizada tolerada (Spec x linha do reparo); toda fase retida nomeia o motivo",
+   "needs": "GitHub App, UM issue novo, VM e modelo, passos humanos (label, comentarios, fechar PR, cancel + merge com o ruleset relaxado so em torno do merge)",
+   "authorizationRequired": true,
+   "covers": [
+    "V-04.e",
+    "V-10.g",
+    "V-13.g"
    ]
   }
  ],
@@ -5824,7 +5997,7 @@
    "decision": "Aprovadas. ANSWER_NOT_OBSERVED_DURING_BOOT e limite da observacao da receita (lacuna de 7 s, polling grosso), sem impacto de correcao."
   }
  ],
- "result": "Nao libera o piloto nem aceite do MVP. Libera no maximo a preparacao da solicitacao de autorizacao do piloto (35). Decisoes D-01..D-10; R-INSPECT, R-GH-DEP, R-CAND v9, R-CRASH-A v5 e R-HOSTFAULT v3 executados; seguem bloqueando G4/G5 as obrigacoes inconclusivas restantes (R-GH-CHECKS, R-GH-ADV, R-LONG, R-THREE, R-REL, R-INSTR).",
+ "result": "Nao libera o piloto nem aceite do MVP. Libera no maximo a preparacao da solicitacao de autorizacao do piloto (35). Decisoes D-01..D-10; R-INSPECT, R-GH-DEP, R-CAND v9, R-CRASH-A v5 e R-HOSTFAULT v3 executados; R-GH-CHECKS completo (v2 + R-GH-CHECKS-S) e R-GH-ADV parcial (v4); seguem bloqueando G4/G5 as obrigacoes inconclusivas restantes (R-GH-ADV-S, R-LONG, R-THREE, R-REL, R-INSTR).",
  "decisionsRecordedAt": "2026-11-17",
  "countsHistory": [
   {

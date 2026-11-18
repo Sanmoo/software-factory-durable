@@ -1,4 +1,4 @@
-# Evidência 34 / ensaios pré-piloto: R-INSPECT, R-GH-DEP, R-CAND e R-CRASH-A
+# Evidência 34 / ensaios pré-piloto: R-INSPECT, R-GH-DEP, R-CAND, R-CRASH-A, R-GH-CHECKS e R-GH-ADV
 
 Ticket: [34](../../.scratch/software-factory-mvp/issues/34-candidate-qualification-and-acceptance-coverage.md). Relatório principal:
 [34-candidate-qualification.md](34-candidate-qualification.md). Matriz: [34-qualification-matrix.json](34-qualification-matrix.json).
@@ -166,9 +166,58 @@ execuções, isso quebrou em três pontos diferentes. O `R-GH-CHECKS-S` cobre o 
 - V-09.e e a metade strict de V-10.b: UM Trabalho cujo head passa um check sempre verde; depois ready da Factory, strict, UM reparo com volta a
   draft e ready, e draft humano respeitado.
 
+## R-GH-CHECKS-S `y5/q34-ghchecks-s-v1` — V-09.c, V-09.e, V-09.f e V-10.b aprovadas; R-GH-CHECKS completo
+
+Totais: 84/0/16/12 → 88/0/12/12 (antes do registro do R-GH-ADV abaixo). `run/ghchecks-s` = `c63a613` (pin #108). As 12 verificações deram
+`met`. O veredito foi copiado sem alteração em [34-r-ghchecks-s-v1-verdict.json](34-r-ghchecks-s-v1-verdict.json), a partir de
+`y5/q34-ghchecks-s-v1/inspect-result.json`.
+
+- **V-09.c:** no primeiro head do PR da Factory, `factory-gate` foi de waiting a satisfied, sem usar o head antigo. O rerun ficou pendente e nunca foi
+  coberto pelo verde anterior. Um check skipped satisfaz. Um check ausente dá `REQUIRED_CHECK_ABSENT`. O strict foi lido do ruleset. O homônimo de outra
+  origem (status do operador) ficou só visível. Junto com v2 (waiting → failing/satisfied, App 15368), a obrigação está completa.
+- **V-09.e:** ready da Factory com checks satisfeitos; a perda da condição sob strict levou a `convert-to-draft` e houve `mark-ready` depois do
+  reparo. O draft humano foi registrado e respeitado: nenhuma conversão, correção ou ativação.
+- **V-09.f:** o requisito `factory-gate@15368` foi acumulado da proteção clássica e do ruleset 26435808. `lock_branch` e assinaturas
+  clássicos foram lidos como bloqueio de merge (outcome `blocked`).
+- **V-10.b, metade strict:** UMA correção `STRICT_UPDATE_REQUIRED` contra a base avançada, publicada, e H2 contém a base. A metade do check falho
+  veio do v2.
+- `no-bypass`: o PR nunca foi mergeado, todo push teve lease e só o arquivo do Ticket mudou. `no-token` atendido.
+
+## R-GH-ADV `y5/q34-ghadv-v1..v5` — parcial (decisão do operador 2026-11-18): V-04.b, V-04.d, V-10.f e V-11.c aprovadas
+
+Totais: 88/0/12/12 → **92/0/8/12**. Decisão do operador: "Partial + smaller recipe". V-04.e, V-10.g e V-13.g passam ao `R-GH-ADV-S`
+(receita `test/entrypoints/ghadvs34-qualification.ts`, namespace `q34-ghadv-s-v1`, não executado). O melhor ensaio por obrigação é o v4
+(`run/ghadv-v4` = `6bf5e9d`, issues #101–#103, com o ticket 43). O veredito, copiado sem alteração, está em
+[34-r-ghadv-v4-verdict.json](34-r-ghadv-v4-verdict.json): V-04.b, V-04.d, V-10.f e V-11.c `true`, mais `leased-pushes-only` e `no-secret`.
+
+- **V-04.b:** PR #104 do operador em `factory/101-foreign` com "Closes #101". O Ticket foi retido `FOREIGN_PULL_REQUEST` nomeando o PR e nunca foi
+  adotado: nenhum Trabalho, prepare ou ativação. A retenção seguia até a última fase. Igual em v1–v4.
+- **V-04.d:** fechar a issue com Trabalho vigente levou a `AUTHORIZATION_WITHDRAWN` (`TICKET_NOT_OPEN`). Reabrir só registrou a restauração. Não houve
+  prepare nem ativação, mesmo com a resposta já aceita; só o `resume` explícito continuou. Igual em v1–v4.
+- **V-11.c:** resposta e `/factory repair` de `github-actions[bot]` (workflow por push numa branch órfã) ficaram `AUTHOR_IS_BOT`. Uma resposta
+  de conta User não configurada como operador ficou `AUTHOR_NOT_OPERATOR`. A prosa não concedeu nada. Resposta vazia e id inválido foram recusados, a
+  resposta repetida foi ignorada e a resposta aceita é a do operador. Igual em v1–v4. **Limite registrado:** sem segunda conta humana, o terceiro humano
+  é a conta do operador fora da configuração (operador sentinela); uma identidade humana distinta não foi exercitada.
+- **V-10.f:** o commit humano `1c48ad1` na branch da Factory gerou a sequência divergência → `incorporate` → reconciliação, publicada com lease
+  nessa ponta. Depois, o conflito add/add na base abriu a correção `MERGE_CONFLICT` com `humanTips [1c48ad1]`. A base foi **mergeada** (um commit de
+  merge com 2 pais), nunca rebase, e a base e o commit humano são ancestrais do head reparado.
+- **V-10.g (não aprovada):** no merge-repair do v4, o operador mergeou o PR #105 às 23:55:34Z, durante o reparo `4cd050ae`
+  (23:55:15–23:56:40). Nenhuma publicação veio depois. Mas a Factory só confirmou a entrega às 23:56:50, depois do fim da atividade
+  (`duringActivity` null): a interrupção pela entrega não foi observada.
+
+| Ensaio | Pin | Onde parou | Causa | Correção |
+| --- | --- | --- | --- | --- |
+| v1 | `d334d8b` | human-commit | lacuna da receita: o settle aceitou "pedido registrado" 6 s depois do passo 11, antes de a Factory abrir a correção | `bf2fdea` |
+| v2 | `724fbd9` | human-commit | **defeito do produto (ticket 43):** em toda rodada da reconciliação o Standards esgotou as 24 requisições (`WORKER_INTERRUPTED`). Faltava o patch próprio a julgar (só havia o diff relativo à base, com o commit humano); o Builder perguntou ao operador | `9c3416d` (receita); produto em `6c4a9e0` |
+| v3 | `763e1bf` | human-commit | mesma causa: a reconciliação falhou (`RECONCILIATION_FAILED`, `REVIEW_NOT_VERIFIED`) | `6c4a9e0`: a revisão de reconciliação julga `own.patch` (ponta autorizada..HEAD); validado em v4 (human-commit passou) |
+| v4 | `6bf5e9d` | close | Pergunta não roteirizada: a Spec apontou como não autorizada a linha pedida pelo `/factory repair` do passo 17 (o mesmo padrão do R-CAND v8) | `87e8ef6`: pedidos de reparo no escopo, UMA resposta tolerada, `holdReason` |
+| v5 | `4277f97` | resume | Pergunta não roteirizada (manter todas as linhas existentes × texto da base em conflito): variação do modelo, porque o v4 passou o resume | decisão do operador: parcial + `R-GH-ADV-S` |
+
 ## Pendências deste registro
 
 - Novo ticket para o flake `test/records/raw.test.ts` sob carga de VM:
   [42](../../.scratch/software-factory-mvp/issues/42-records-raw-test-flake-under-load.md).
-- G4 e G5 continuam bloqueados. As obrigações restantes estão em `R-GH-CHECKS-S`, `R-GH-ADV`, `R-LONG`, `R-THREE`, `R-REL` (V-16.b) e
-  `R-INSTR`. Este resultado continua liberando no máximo a preparação da solicitação de autorização do piloto (35).
+- G4 e G5 continuam bloqueados. As obrigações restantes estão em `R-GH-ADV-S` (V-04.e, V-10.g, V-13.g), `R-LONG`, `R-THREE`, `R-REL` (V-16.b) e
+  `R-INSTR`.
+- Ticket 43 (revisão de reconciliação) resolvido em `6c4a9e0` e validado em `q34-ghadv-v4`:
+  [43](../../.scratch/software-factory-mvp/issues/43-reconciliation-review-own-patch.md). Este resultado continua liberando no máximo a preparação da solicitação de autorização do piloto (35).

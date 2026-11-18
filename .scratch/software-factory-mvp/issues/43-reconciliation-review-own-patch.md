@@ -29,7 +29,7 @@ Decisão do operador (2026-11-17): corrigir o produto e rodar o v4. O orçamento
 - [x] Orçamento do reviewer inalterado (24 requisições).
 - [x] Divergência de versão de instruções (v2 × v3) investigada: NÃO confirmada. Em cada ensaio, o reparo e a reconciliação usaram a mesma
   versão (v2: v3/v3; v3: v2/v2). A comparação inicial misturava ensaios diferentes, então nada foi alterado.
-- [ ] Prova real: R-GH-ADV v4 (`q34-ghadv-v4`).
+- [x] Prova real: R-GH-ADV v4 (`q34-ghadv-v4`): human-commit passou; a reconciliação foi publicada com lease na ponta humana e o V-10.f foi aprovado.
 
 ## Comments
 
