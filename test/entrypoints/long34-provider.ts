@@ -4,7 +4,9 @@ import { suiteCommand } from './three24-qualification.js';
 // TEST ONLY. Scripted local model provider (openai-completions SSE on 127.0.0.1) for the ticket 34 R-LONG real-run recipe: it replaces the
 // model so the real Builder worker runs a FIXED, bounded Bash schedule whose long part is REAL work the Factory sees as one tool call — a
 // flakiness census of the repository's own test suite (the q24 v4 command: README `./gradlew --no-daemon test` in a pinned JDK image on the
-// guest's Docker). No sleep anywhere: the census repeats the suite until it has run for at least `censusSeconds` (at most `maxRuns` runs).
+// guest's Docker) with `--rerun-tasks`, so every run re-executes the tests. No sleep anywhere: the census repeats the suite WHILE less than
+// `censusSeconds` have elapsed (`maxRuns` is only a safety cap). Real run v1: without --rerun-tasks Gradle skipped the suite after run 1
+// (`:test UP-TO-DATE`, 16 s) and the old 12-run cap ended the census at 963 s, before the first token expired.
 // No request-selected tools/commands/routes; any deviation holds the fixture.
 export const port = 18734;
 export const path = '/q34l-v1/chat/completions';
@@ -12,15 +14,17 @@ export const apiKey = 'q34l-dummy-key-v1';
 const repository = 'Sanmoo/java-springboot-event-sourcing';
 /** 75 min of real suite work: the first installation token (3600 s) expires inside this ONE command. */
 export const censusSeconds = 4500;
-export const maxRuns = 12;
+export const maxRuns = 40;
 // Fingerprint = first 12 hex of sha256(GH_TOKEN): identifies WHICH grant a command saw without exposing the value (never the token itself).
 const fp = (label: string) => `printf 'q34l-${label}:%s\\n' "$(printf %s "\${GH_TOKEN-}" | sha256sum | cut -c1-12)"`;
 /** A read with the command's own GH_TOKEN: `ok:<full_name>`, or `fail:HTTP-<status>` (an expired token is HTTP 401). Never prints the value. */
 const read = (label: string) => `{ gh api repos/${repository} --jq '"q34l-gh-${label}:ok:" + .full_name' 2>/workspace/.q34l-gh.err || ` +
   `printf 'q34l-gh-${label}:fail:%s\\n' "$(grep -o 'HTTP [0-9][0-9][0-9]' /workspace/.q34l-gh.err | head -1 | tr ' ' '-')"; }`;
-/** The census: real suite runs, one line per run (index, exit code, seconds); stops once `censusSeconds` of work have elapsed. */
-export const census = `start=$(date +%s); i=0; while [ "$i" -lt ${maxRuns} ]; do i=$((i+1)); t0=$(date +%s); ( ${suiteCommand} ) >/workspace/.q34l-run-$i.log 2>&1; rc=$?; ` +
-  `printf 'q34l-run:%s:%s:%s\\n' "$i" "$rc" "$(( $(date +%s) - t0 ))"; [ "$(( $(date +%s) - start ))" -ge ${censusSeconds} ] && break; done; ` +
+/** The README suite, forced to re-execute every run (never UP-TO-DATE). */
+export const rerunSuite = `${suiteCommand} --rerun-tasks`;
+/** The census: real suite runs, one line per run (index, exit code, seconds), WHILE less than `censusSeconds` have elapsed (cap `maxRuns`). */
+export const census = `start=$(date +%s); i=0; while [ "$(( $(date +%s) - start ))" -lt ${censusSeconds} ] && [ "$i" -lt ${maxRuns} ]; do i=$((i+1)); t0=$(date +%s); ` +
+  `( ${rerunSuite} ) >/workspace/.q34l-run-$i.log 2>&1; rc=$?; printf 'q34l-run:%s:%s:%s\\n' "$i" "$rc" "$(( $(date +%s) - t0 ))"; done; ` +
   `printf 'q34l-census:%s:%s\\n' "$i" "$(( $(date +%s) - start ))"`;
 /** c1 spans the first token's expiry (and the renewal ~50 min after issuance); c2 is the first command after it. */
 export const schedule = [

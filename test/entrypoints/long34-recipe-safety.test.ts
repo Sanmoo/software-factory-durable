@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { assess, clockDrift, grantAllowed, labelExact, phaseGuard, runOutcome, teardownSteps, walkWorks, type LongInput } from './long34-qualification.js';
+import { assess, censusCrossedExpiry, clockDrift, grantAllowed, labelExact, phaseGuard, runOutcome, teardownSteps, walkWorks, type LongInput } from './long34-qualification.js';
 import * as provider from './long34-provider.js';
 
 // Recipe safety of the R-LONG real run, on controlled data only (never the real root, GitHub, VM or model).
@@ -20,7 +20,7 @@ test('the schedule: fingerprints and reads only, never a value; the census is RE
   assert.equal(provider.schedule.length, 3);
   for (const call of provider.schedule) assert.doesNotMatch(call.command, /gh[sopu]_|echo "\$GH_TOKEN"|printenv|\benv\b|\bsleep\b/, 'never prints the value or the environment; no sleep');
   assert.match(provider.census, /\.\/gradlew --no-daemon test/, 'the README suite (q24 v4 command)');
-  assert.match(provider.census, new RegExp(`-ge ${provider.censusSeconds}`));
+  assert.match(provider.census, new RegExp(`-lt ${provider.censusSeconds} `), 'the census runs while less than censusSeconds have elapsed');
   assert.ok(provider.censusSeconds >= 4500, 'the census outlives the 3600 s token by a margin');
   assert.ok(provider.schedule[1].timeout > provider.censusSeconds, 'the tool call bound exceeds the census (it is not a Factory timeout)');
   assert.match(provider.schedule[1].command, /q34l-c1a.*q34l-gh-c1a.*q34l-run.*q34l-c1b.*q34l-gh-c1b/s, 'c1 fingerprints and reads before and after the census');
@@ -122,4 +122,36 @@ test('lessons: builder-publish is refused (no GitHub write); inspect requests th
   const text = readFileSync(join(process.cwd(), 'test', 'entrypoints', 'long34-qualification.ts'), 'utf8');
   assert.match(text, /for \(const signal of \['SIGTERM', 'SIGINT'\] as const\) process\.once\(signal/, 'SIGTERM/SIGINT remove the namespace key copy');
   assert.ok(text.indexOf("save('teardown-request'") < text.indexOf('snapshotStorage(observations'), 'the teardown request is saved before any storage/GitHub read');
+});
+
+test('real run v1: Gradle skipped the suite after run 1 (`:test UP-TO-DATE`, 16 s) and the 12-run cap ended the census at 963 s; v2 forces re-execution and bounds the census by TIME', () => {
+  assert.match(provider.census, /\.\/gradlew --no-daemon test --rerun-tasks/, 'every run re-executes the tests (never UP-TO-DATE)');
+  assert.ok(provider.maxRuns >= 40, 'the run cap is only a safety bound, far above 4500 s of real runs');
+  assert.match(provider.census, new RegExp(`while \\[ "\\$\\(\\( \\$\\(date \\+%s\\) - start \\)\\)" -lt ${provider.censusSeconds} \\] && \\[ "\\$i" -lt ${provider.maxRuns} \\]`),
+    'the loop runs WHILE the elapsed time is below the census, the count is only the safety cap');
+  assert.doesNotMatch(provider.census, /\bsleep\b/);
+});
+
+test('CENSUS_SHORT: the census call must end after the first grant expires', () => {
+  assert.equal(censusCrossedExpiry({ start: '2026-11-18T08:10:17.221Z', end: '2026-11-18T08:26:22.548Z' }, '2026-11-18T09:10:15Z'), false, 'v1');
+  assert.equal(censusCrossedExpiry({ start: '2026-11-18T08:10:17Z', end: '2026-11-18T09:26:00Z' }, '2026-11-18T09:10:15Z'), true);
+  assert.equal(censusCrossedExpiry(undefined, '2026-11-18T09:10:15Z'), null);
+  assert.equal(censusCrossedExpiry({ start: 'a', end: 'b' }, null), null);
+  const ended = { state: 'ended', end: { outcome: 'completed' }, dispatch: { phase: 'stopped' } };
+  assert.deepEqual(runOutcome({ execution: ended, questions: [], deadlineReached: false, listComplete: true, censusCrossed: false }), { status: 'held', holdReason: 'CENSUS_SHORT' });
+  assert.deepEqual(runOutcome({ execution: ended, questions: [], deadlineReached: false, listComplete: true, censusCrossed: true }), { status: 'success', holdReason: null });
+});
+
+test('real run v1 verdict: a run that never reached the renewal point is INCONCLUSIVE, never failed by newCommandGotRenewal', () => {
+  const v1 = world(input => {
+    input.execution = { end: { outcome: 'completed' }, timing: { timeoutSeconds: null, timeout: null, duration: { kind: 'measured', elapsedMs: 967863, endedAt: '2026-11-18T08:26:23.343Z' } },
+      credentialIssuance: { outcome: 'issued', metadata: { issuedAt: '2026-11-18T08:10:15.289Z', expiresAt: '2026-11-18T09:10:15Z' } }, credentialRenewals: [] } as never;
+    input.issued = ['f1']; input.delivered = ['f1']; input.deliveredAt = [];
+    input.markers = [['c0:f1', 'gh-c0:ok:x'], ['c1a:f1', 'gh-c1a:ok:x', 'census:12:963', 'c1b:f1', 'gh-c1b:ok:x'], ['c2:f1', 'gh-c2:ok:x']];
+    input.c1 = { start: '2026-11-18T08:10:17.221Z', end: '2026-11-18T08:26:22.548Z' }; input.revocations = ['revoked']; input.postCheck = ['already-invalid'];
+    input.observedMonotonicMs = 970910;
+  });
+  assert.equal(v1.status, 'inconclusive', JSON.stringify(v1));
+  assert.deepEqual(v1.failures, []);
+  assert.ok(v1.inconclusive.includes('CENSUS_DID_NOT_CROSS_THE_FIRST_EXPIRY') && v1.inconclusive.includes('RENEWAL_POINT_NOT_REACHED'));
 });

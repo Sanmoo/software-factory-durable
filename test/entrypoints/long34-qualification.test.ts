@@ -18,9 +18,10 @@ test('R-LONG recipe: import and --plan are inert; own namespace; no timeout, pro
   log.mock.restore();
   const plan = JSON.parse(logged[0]!);
   assert.equal(forbidden, 0);
-  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q34-long-v1');
+  assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q34-long-v2');
   assert.deepEqual(plan.phases, ['preflight', 'run', 'inspect', 'stop-environment']);
   assert.equal(plan.ticket.pinned, false);
+  assert.equal(plan.factoryRoot, '/home/sanmoo/software-factory-test/lv2', 'a fresh root (l34 holds v1), named in the plan for the driver gate');
   assert.equal(plan.repository.timeoutSeconds, undefined, 'no timeout configured');
   assert.match(plan.renewal.policy, /production default/);
   assert.equal(plan.hostClock.injected, false);

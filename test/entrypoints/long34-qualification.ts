@@ -12,14 +12,19 @@ import type { ExecutionView, QuestionView, WorkView } from '../../src/control/in
 // Phases are one-shot: an exclusive intent tombstone precedes effects; a consumed phase never reruns; nothing is retried automatically.
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const observations = `${root}/q34-long-v1`;
+const observations = `${root}/q34-long-v2`;
 /**
  * The recipe's OWN Factory root (environments, host Git cache, Records, worker runtime), created by preflight: never the shared y5 root. Outside
  * the namespace because worker sockets under <root>/r/<boot>/s/ must stay within 107 bytes (at most 38 bytes of root). No model store needed.
  */
-export const factoryRoot = '/home/sanmoo/software-factory-test/l34';
+// v2: a NEW root (l34 holds v1's environment). Three characters keep the worker sockets within 107 bytes ("l34v2" would not).
+export const factoryRoot = '/home/sanmoo/software-factory-test/lv2';
 export const sharedCache = `${root}/cache`;
-const revision = 'q34-long-v1';
+// v1 (real run, #118) ended after 16 min: Gradle skipped the suite after run 1 (`:test UP-TO-DATE`) and the 12-run cap ended the census at
+// 963 s, before the first token expired; its verdict read FAILED (newCommandGotRenewal) although no renewal was due yet. v2: the census
+// re-executes the suite (--rerun-tasks) WHILE less than 75 min elapsed; renewal is judged only once the renewal point was reached; a census
+// that ends before the first expiry holds CENSUS_SHORT.
+const revision = 'q34-long-v2';
 export const phases = ['preflight', 'run', 'inspect', 'stop-environment'] as const;
 export type Phase = typeof phases[number];
 /** No `timeoutSeconds`: the repository has no timeout (spec: no implicit 60 min cut). recoveryLimit/correctionLimit: production defaults. */
@@ -41,13 +46,15 @@ const runDeadlineMs = 140 * 60 * 1000;
 const maxIssuances = 5;
 const clockSampleMs = 60_000;
 const hour = 3_600_000;
+/** The production renewal margin (credentialRenewal absent: 600 s before expiresAt; src/control/durable/dispatch.ts). */
+const renewalMarginSeconds = 600;
 
 export function plan() {
   return { revision, root, observations, factoryRoot, cacheRoot: `${factoryRoot}/cache/git`, sharedCache, phases, repository, ticket: { ...ticket, body: ticketBody, label: repository.label, pinned: ticket.number > 0, labelAtCreation: false,
       labelledBy: 'the main session, right before preflight (preflight waits, GET only, up to 10 min until the label lists EXACTLY this issue)' }, configuration, guestAssets,
     renewal: { policy: 'production default: renew 600 s before expiresAt (no override)', tokenLifetimeSeconds: 3600, maxIssuances },
     timeout: 'none configured (repository.timeoutSeconds absent)',
-    model: 'none: scripted local provider on 127.0.0.1:18734 (openai-completions SSE): c0 fingerprint+read; c1 fingerprint+read, the suite census (>= 75 min of real suite runs, no sleep), fingerprint+read; c2 fingerprint+read; then "Complete."; no OAuth/model request',
+    model: 'none: scripted local provider on 127.0.0.1:18734 (openai-completions SSE): c0 fingerprint+read; c1 fingerprint+read, the suite census (README suite with --rerun-tasks, repeated WHILE < 75 min elapsed, safety cap 40 runs; no sleep), fingerprint+read; c2 fingerprint+read; then "Complete."; no OAuth/model request',
     hostClock: { injected: false, reason: 'changing the system clock is host-wide (other sessions, TLS, the App JWT iat/exp); not done', observed: `calendar vs monotonic samples every ${clockSampleMs / 1000} s, timedatectl NTP state at start/end, Control duration vs both` },
     requires: [`${root}/${githubApp.privateKeyFile} present`, 'the supervisor created the NEW issue (title/body above) UNLABELLED and pinned its number in a reviewed commit; the main session labels it right before preflight', 'no other open issue carries the label',
       `a fresh ${factoryRoot} (absent: preflight creates it with the setup layout); no model login (scripted provider)`, 'one VM for about 90-140 min (guest 4096 MiB / 2 vCPU / 40 GiB virtual disk)',
@@ -73,7 +80,8 @@ export function plan() {
       'grant 1 expiresAt falls inside the activity; a renewal issued BEFORE it and delivered; c1a = c1b = fp(grant 1); the c1b read fails HTTP-401 (expiry during the command); c2 sees a renewed, delivered grant and its read works',
       'every grant revoked at the end and rejected afterwards (already-invalid)',
       'recorded duration within 60 s of the orchestrator monotonic measure; clock drift and NTP state reported (no injection)',
-      'verdict: passed only if every check holds; inconclusive when the census ended before the first token expired or the deadline was reached; failed on a timeout cut, a lost renewal or a token left valid'],
+      'run: held CENSUS_SHORT when the census call ended before the first grant expiresAt (nothing about expiry/renewal proven)',
+      'verdict: passed only if every check holds; inconclusive when the census ended before the first token expired, the renewal point (expiresAt - 600 s) was not reached or the deadline was reached; failed on a timeout cut, a lost renewal or a token left valid'],
   };
 }
 
@@ -120,6 +128,9 @@ export function assess(input: LongInput): Assessment {
   const renewedBeforeExpiry = firstExpiry !== null && (execution?.credentialRenewals ?? []).some(item => item.outcome === 'issued' && item.delivery === 'delivered' &&
     item.metadata !== null && item.metadata.issuedAt < firstExpiry);
   const c1Crossed = input.c1 !== undefined && firstExpiry !== null && input.c1.start < firstExpiry && input.c1.end > firstExpiry;
+  // The production policy renews 600 s before expiresAt: before that instant no renewal is due, so its absence proves nothing.
+  const renewalPoint = firstExpiry !== null ? new Date(Date.parse(firstExpiry) - renewalMarginSeconds * 1000).toISOString() : null;
+  const renewalPointReached = renewalPoint !== null && endedAt !== null && endedAt > renewalPoint;
   const checks = {
     completedWithoutTimeout: execution?.end?.outcome === 'completed' && execution.timing?.timeoutSeconds === null && execution.timing.timeout === null,
     activityOverOneHour: elapsedMs !== null && elapsedMs >= hour,
@@ -134,10 +145,11 @@ export function assess(input: LongInput): Assessment {
     durationMonotonic: elapsedMs !== null && input.observedMonotonicMs !== null && Math.abs(elapsedMs - input.observedMonotonicMs) <= 60_000,
   };
   const failures = (['completedWithoutTimeout', 'renewedBeforeExpiry', 'runningCommandKeptItsValue', 'newCommandGotRenewal', 'everyGrantRevoked', 'githubRejectsEveryGrantAfterwards'] as const)
-    .filter(key => !checks[key] && !(input.deadlineReached && key === 'completedWithoutTimeout') && !(key === 'renewedBeforeExpiry' && !checks.activityOverOneHour));
+    .filter(key => !checks[key] && !(input.deadlineReached && key === 'completedWithoutTimeout') &&
+      !((key === 'renewedBeforeExpiry' || key === 'newCommandGotRenewal') && !renewalPointReached));
   if (execution?.end?.code === 'EXECUTION_TIMEOUT' || execution?.timing?.timeout) failures.push('completedWithoutTimeout');
   const inconclusive = [...(input.deadlineReached ? ['DEADLINE_REACHED'] : []), ...(!c1Crossed ? ['CENSUS_DID_NOT_CROSS_THE_FIRST_EXPIRY'] : []),
-    ...(elapsedMs !== null && elapsedMs < hour ? ['ACTIVITY_SHORTER_THAN_ONE_HOUR'] : [])];
+    ...(elapsedMs !== null && elapsedMs < hour ? ['ACTIVITY_SHORTER_THAN_ONE_HOUR'] : []), ...(!renewalPointReached ? ['RENEWAL_POINT_NOT_REACHED'] : [])];
   const unique = [...new Set(failures)];
   const status = unique.length ? 'failed' : inconclusive.length ? 'inconclusive' : Object.values(checks).every(Boolean) ? 'passed' : 'failed';
   return { status, checks, inconclusive, failures: unique };
@@ -169,7 +181,13 @@ type OutcomeExecution = { state?: string; end?: { outcome?: string; code?: strin
  * Lesson (every held phase names its reason): the run phase is `success` only when the ONE Execution ended completed and stopped; the scripted
  * schedule never asks, so ANY Question holds (its text is saved, read by id). Otherwise the reason is named.
  */
-export function runOutcome(input: { execution: OutcomeExecution; questions: readonly ({ questionId: string } & Record<string, unknown>)[]; deadlineReached: boolean; listComplete: boolean }):
+/** CENSUS_SHORT (pure): whether the census call ended after the first grant's expiry (null when either fact is unknown). */
+export function censusCrossedExpiry(c1: { start: string; end: string } | undefined, firstExpiresAt: string | null): boolean | null {
+  if (!c1 || !firstExpiresAt || Number.isNaN(Date.parse(c1.end)) || Number.isNaN(Date.parse(firstExpiresAt))) return null;
+  return Date.parse(c1.end) > Date.parse(firstExpiresAt);
+}
+export function runOutcome(input: { execution: OutcomeExecution; questions: readonly ({ questionId: string } & Record<string, unknown>)[]; deadlineReached: boolean; listComplete: boolean;
+  /** Absent: not judged; false: the census ended before the first grant expired (nothing about expiry or renewal can be proven). */ censusCrossed?: boolean | null }):
     { status: 'success' | 'held'; holdReason: string | null } {
   const held = (holdReason: string) => ({ status: 'held' as const, holdReason });
   if (input.questions.length) return held(`UNSCRIPTED_QUESTION:${input.questions[0]!.questionId}`);
@@ -177,7 +195,7 @@ export function runOutcome(input: { execution: OutcomeExecution; questions: read
   const execution = input.execution;
   if (execution?.state === 'held') return held(`EXECUTION_HELD:${execution.held?.code ?? 'UNKNOWN'}`);
   if (execution?.state === 'ended' && execution.end?.outcome !== 'completed') return held(`EXECUTION_ENDED:${execution.end?.outcome ?? 'unknown'}:${execution.end?.code ?? ''}`);
-  if (execution?.state === 'ended' && execution.dispatch?.phase === 'stopped') return { status: 'success', holdReason: null };
+  if (execution?.state === 'ended' && execution.dispatch?.phase === 'stopped') return input.censusCrossed === false || input.censusCrossed === null ? held('CENSUS_SHORT') : { status: 'success', holdReason: null };
   if (execution?.state === 'released') return held('EXECUTION_RELEASED_BEFORE_START');
   return held(input.deadlineReached ? 'DEADLINE_REACHED' : `EXECUTION_NOT_SETTLED:${execution?.state ?? 'none'}`);
 }
@@ -377,7 +395,10 @@ export async function runPhase(phase: Phase) {
           if (execution && (['held', 'released'].includes(execution.state) || (execution.state === 'ended' && execution.dispatch.phase === 'stopped'))) break;
         }
         const final = found.work ?? null;
-        const settled = runOutcome({ execution: found.work?.execution ?? undefined, questions, deadlineReached: Date.now() >= deadline, listComplete: found.complete });
+        const observed = model.observation();
+        const firstExpiresAt = (events.find(event => event.call === 'issued')?.metadata as { expiresAt?: string } | undefined)?.expiresAt ?? null;
+        const censusCrossed = censusCrossedExpiry(observed.emitted[1] && observed.results[1] ? { start: observed.emitted[1], end: observed.results[1].at } : undefined, firstExpiresAt);
+        const settled = runOutcome({ execution: found.work?.execution ?? undefined, questions, deadlineReached: Date.now() >= deadline, listComplete: found.complete, censusCrossed });
         stop.abort();
         const outcome = await running;
         // Post-check: GitHub must no longer accept any grant (one DELETE each, expected 401 -> already-invalid). Never retried.
@@ -385,7 +406,7 @@ export async function runPhase(phase: Phase) {
         for (const grant of grants) postCheck.push({ fingerprint: fingerprint(grant.delivery.token), result: await real.revoke(grant) });
         grants.length = 0;
         sample();
-        await save('run-result', { status: settled.status, holdReason: settled.holdReason, questions, outcome, final, events, postCheck, provider: model.observation(), observedMonotonicMs: startedMono !== null && endedMono !== null ? Math.round(endedMono - startedMono) : null,
+        await save('run-result', { status: settled.status, holdReason: settled.holdReason, censusCrossed, questions, outcome, final, events, postCheck, provider: model.observation(), observedMonotonicMs: startedMono !== null && endedMono !== null ? Math.round(endedMono - startedMono) : null,
           clock: { samples, ntpAtStart, ntpAtEnd: await ntpState() }, deadlineReached: Date.now() >= deadline });
       } finally { clearInterval(sampler); await model.close(); }
       const saved = await load('run-result') as { status?: string; holdReason?: string | null } | null;
