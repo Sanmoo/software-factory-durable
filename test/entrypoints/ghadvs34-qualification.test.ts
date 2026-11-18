@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { QuestionView, WorkView } from '../../src/control/index.js';
-import { specRepairAnswer } from './ghadv34-qualification.js';
+import { abortsBeforeEnd, specRepairAnswer } from './ghadv34-qualification.js';
 import * as recipe from './ghadvs34-qualification.js';
 
 // Rules of the R-GH-ADV-S real-run recipe on controlled data only (no GitHub, VM, model or real root). A test number is pinned in THIS process
@@ -142,6 +142,22 @@ test('verdict: V-04.e, V-10.g and V-13.g met by a consistent saved run; merge-fi
   Object.assign(mergeFirst['cancel-merge'], { cancelReceipt: { outcome: 'not-applied', reason: 'WORK_DELIVERED' } });
   Object.assign(mergeFirst['cancel-merge'].work, { cancellation: null, delivery: { merge: { mergedAt: T1, duringActivity: 'e-cm' } }, history: [] });
   assert.deepEqual(failing(mergeFirst), []);
+});
+
+test('q34-ghadv-s-v2 (D-12): the owner-shutdown aborts AFTER the repair completed are not an interruption; an abort before its end still fails', () => {
+  const v2 = passing();
+  const repair = v2.inspect.works[0].previousExecutions[0];
+  repair.executionId = '0b523339-f7ef-40b2-9163-e6c144f6626e';
+  repair.end = { at: '2026-11-18T09:00:20.996Z', outcome: 'completed', cessation: 'confirmed' };
+  v2.inspect.works[0].history[0].detail = '#121:active:0b523339-f7ef-40b2-9163-e6c144f6626e';
+  for (const role of ['builder', 'standards', 'spec']) v2.close.events.push({ at: '2026-11-18T09:02:05.324Z', call: 'activity-aborted', role, executionId: repair.executionId });
+  assert.ok(!failing(v2).includes('closed-during-repair-not-ceased-not-delivered-not-cancelled'), 'the v2 run meets V-04.e');
+  assert.equal(abortsBeforeEnd(v2.close.events, repair), 0);
+  v2.close.events.push({ at: '2026-11-18T09:00:10.000Z', call: 'activity-aborted', role: 'builder', executionId: repair.executionId });
+  assert.equal(abortsBeforeEnd(v2.close.events, repair), 1);
+  assert.ok(failing(v2).includes('closed-during-repair-not-ceased-not-delivered-not-cancelled'), 'an abort before the end is an interruption');
+  assert.equal(abortsBeforeEnd([{ call: 'activity-aborted' }], repair), 1, 'an abort without a time counts');
+  assert.equal(abortsBeforeEnd([{ call: 'activity-aborted', at: '2026-11-18T09:00:10.000Z', executionId: 'other' }], repair), 0, 'another Execution');
 });
 
 test('verdict sensitivity: each obligation fails when its observation is altered', () => {

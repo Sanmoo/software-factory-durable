@@ -577,6 +577,18 @@ const list = (value: unknown) => Array.isArray(value) ? value as Record<string, 
 const events = (phase: Saved | undefined, call: string) => list(pick(phase, 'events')).filter(item => item.call === call);
 const historyOf = (work: unknown) => list(pick(work, 'history')).map(item => ({ event: String(item.event), detail: String(item.detail ?? '') }));
 const executionsOf = (work: unknown) => [...list(pick(work, 'previousExecutions')), ...(pick(work, 'execution') ? [pick(work, 'execution') as Record<string, unknown>] : [])];
+/**
+ * q34-ghadv-s-v2 (D-12): the `activity-aborted` events that interrupted the closed Execution — those of that Execution (or unattributed)
+ * recorded BEFORE its end. The recipe's own owner shutdown at the end of the phase aborts every invocation signal, also of activities that
+ * had already completed (v2: repair ended 09:00:20.996Z, shutdown aborts at 09:02:05.324Z); those are not an interruption. An abort whose
+ * time or the Execution's end is unknown counts (never assumed harmless).
+ */
+export function abortsBeforeEnd(phaseEvents: readonly Record<string, unknown>[], execution: Record<string, unknown> | undefined): number {
+  const id = execution?.executionId;
+  const end = Date.parse(String(pick(execution, 'end', 'at') ?? ''));
+  return phaseEvents.filter(item => item.call === 'activity-aborted' && (item.executionId === undefined || item.executionId === id) &&
+    !(Number.isFinite(end) && Number.isFinite(Date.parse(String(item.at ?? ''))) && Date.parse(String(item.at)) >= end)).length;
+}
 /** Every expectation of the plan per obligation, expected vs observed, from the saved phase results and the inspect reads. */
 export function verdictOf(saved: Partial<Record<Phase, Saved>> & { steps: Record<number, Saved>; inspect: Saved }): { passed: boolean; checks: Check[]; byObligation: Record<string, boolean> } {
   const checks: Check[] = [];
@@ -608,10 +620,10 @@ export function verdictOf(saved: Partial<Record<Phase, Saved>> & { steps: Record
   const closedActive = closure?.detail.split(':active:')[1] ?? null;
   const closedExecution = executionsOf(C).find(item => item.executionId === closedActive);
   check('V-04.e', 'closed-during-activity-not-ceased-not-delivered-not-cancelled', 'closed-unmerged recorded WITH the active repair Execution; that activity not aborted (end not stopped/WORK_*); close result closed-unmerged, no delivery, no cancellation, no publication activation',
-    { status: saved.close?.status, closure, end: pick(closedExecution, 'end'), aborted: events(saved.close, 'activity-aborted').length,
+    { status: saved.close?.status, closure, end: pick(closedExecution, 'end'), aborted: abortsBeforeEnd(events(saved.close, 'activity-aborted'), closedExecution),
       result: pick(saved.close, 'work', 'result'), delivery: pick(saved.close, 'work', 'delivery', 'state') ?? null, cancellation: pick(saved.close, 'work', 'cancellation') ?? null,
       publications: events(saved.close, 'activate').filter(item => pick(item, 'context', 'phaseId') === 'builder-publication').length },
-    success('close') && Boolean(closedExecution && pick(closedExecution, 'request', 'repair')) && events(saved.close, 'activity-aborted').length === 0 &&
+    success('close') && Boolean(closedExecution && pick(closedExecution, 'request', 'repair')) && abortsBeforeEnd(events(saved.close, 'activity-aborted'), closedExecution) === 0 &&
       pick(closedExecution, 'end', 'outcome') !== 'stopped' && pick(saved.close, 'work', 'result') === 'closed-unmerged' && !pick(saved.close, 'work', 'delivery', 'merge') &&
       !pick(saved.close, 'work', 'cancellation') && events(saved.close, 'activate').every(item => pick(item, 'context', 'phaseId') !== 'builder-publication'));
   // V-10.f

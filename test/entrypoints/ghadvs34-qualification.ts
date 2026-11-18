@@ -1,7 +1,7 @@
 import type { ExecutionView, ListView, QuestionView, WorkView } from '../../src/control/index.js';
 import { readBounded, sessionCommands, snapshotStorage } from './publication14-qualification.js';
 import { keySource, pushViolations, requireKeySource, resolveOperator } from './humanchanges21-qualification.js';
-import { progressFingerprint, repairRefOf, repairRunningFor, requestOutcome, secretScan, specRepairAnswer, specVsRepair, stuckReason, type Settle }
+import { abortsBeforeEnd, progressFingerprint, repairRefOf, repairRunningFor, requestOutcome, secretScan, specRepairAnswer, specVsRepair, stuckReason, type Settle }
   from './ghadv34-qualification.js';
 
 // TEST ONLY. Ticket 34 pre-pilot group R-GH-ADV-S (operator decision 2026-11-18, "Partial + smaller recipe"): the part of R-GH-ADV that v1-v5
@@ -311,11 +311,11 @@ export function verdictOf(saved: Partial<Record<Phase, Saved>> & { inspect: Save
   const closure = historyOf(work).find(item => item.event === 'pull-request-closed-unmerged');
   const closedActive = closure?.detail.split(':active:')[1] ?? null;
   const closedExecution = executionsOf(work).find(item => item.executionId === closedActive);
-  const closeOk = success('close') && repairOf(closedExecution) && events(saved.close, 'activity-aborted').length === 0 && pick(closedExecution, 'end', 'outcome') !== 'stopped' &&
+  const closeOk = success('close') && repairOf(closedExecution) && abortsBeforeEnd(events(saved.close, 'activity-aborted'), closedExecution) === 0 && pick(closedExecution, 'end', 'outcome') !== 'stopped' &&
     pick(saved.close, 'work', 'result') === 'closed-unmerged' && !pick(saved.close, 'work', 'delivery', 'merge') && !pick(saved.close, 'work', 'cancellation') &&
     events(saved.close, 'activate').every(item => pick(item, 'context', 'phaseId') !== 'builder-publication') && events(saved.close, 'issue').every(item => item.purpose !== 'builder-publish');
-  check('V-04.e', 'closed-during-repair-not-ceased-not-delivered-not-cancelled', 'closed-unmerged recorded WITH the active repair Execution; that activity not aborted (end not stopped); close result closed-unmerged, no delivery, no cancellation, no publication activation, no builder-publish',
-    { status: saved.close?.status, closure, end: pick(closedExecution, 'end'), aborted: events(saved.close, 'activity-aborted').length, result: pick(saved.close, 'work', 'result'),
+  check('V-04.e', 'closed-during-repair-not-ceased-not-delivered-not-cancelled', 'closed-unmerged recorded WITH the active repair Execution; that activity not aborted before its end (end not stopped); close result closed-unmerged, no delivery, no cancellation, no publication activation, no builder-publish',
+    { status: saved.close?.status, closure, end: pick(closedExecution, 'end'), aborted: abortsBeforeEnd(events(saved.close, 'activity-aborted'), closedExecution), result: pick(saved.close, 'work', 'result'),
       delivery: pick(saved.close, 'work', 'delivery', 'state') ?? null, cancellation: pick(saved.close, 'work', 'cancellation') ?? null }, closeOk);
   // cancel-merge: the cancel of the repair Execution and the merge, launched together.
   const receipt = pick(saved['cancel-merge'], 'cancelReceipt');

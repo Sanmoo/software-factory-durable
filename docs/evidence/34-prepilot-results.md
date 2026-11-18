@@ -214,11 +214,29 @@ Totais: 88/0/12/12 → **92/0/8/12**. Decisão do operador: "Partial + smaller r
 | v4 | `6bf5e9d` | close | Pergunta não roteirizada: a Spec apontou como não autorizada a linha pedida pelo `/factory repair` do passo 17 (o mesmo padrão do R-CAND v8) | `87e8ef6`: pedidos de reparo no escopo, UMA resposta tolerada, `holdReason` |
 | v5 | `4277f97` | resume | Pergunta não roteirizada (manter todas as linhas existentes × texto da base em conflito): variação do modelo, porque o v4 passou o resume | decisão do operador: parcial + `R-GH-ADV-S` |
 
+## R-GH-ADV-S `y5/q34-ghadv-s-v2` — V-13.g aprovada; V-04.e aprovada por evidência (D-12); R-GH-ADV completo
+
+Totais: 93/0/7/12 → **95/0/5/12**. `run/ghadv` = `5ad0cf7` (pin #120). Todas as fases saíram com 0 (preflight, publish-c, close,
+cancel-merge, inspect) e os passos 1–5 também. O ruleset ficou idêntico, nada ficou com label e a branch `factory/120-78a90030` foi mantida. O veredito,
+copiado sem alteração, está em [34-r-ghadv-s-v2-verdict.json](34-r-ghadv-s-v2-verdict.json). O v1 (#119, `9be330d`) ficou retido no publish-c com
+`EXECUTION_HELD:START_INSUFFICIENT_MEMORY_FOR_BOOT`: o host estava ocupado, o produto recusou o boot corretamente e o erro foi de agendamento.
+
+- **V-13.g (veredito automático met):** `factory cancel` pela CLI durante o reparo na VM, com o merge do operador logo depois. Ordem cancel-first:
+  o cancelamento ficou registrado no reparo (`WORK_CANCELLED`, cessação confirmada, Slot liberado) e o merge seguinte ainda entregou.
+- **V-04.e (aprovada por evidência, D-12):** o operador fechou o PR #121 sem merge às 08:57:59Z, durante o reparo `0b523339`
+  (`pull-request-closed-unmerged` com `:active:`). A atividade não foi interrompida e terminou sozinha às 09:00:20 (`completed`, cessação
+  confirmada, Slot liberado às 09:00:22). Não houve entrega nem cancelamento, e nada foi publicado depois (só `builder-start`; nenhum
+  `builder-publication`). O verificador da receita deu `false` só porque contou 3 `activity-aborted` às 09:02:05.324Z. Esses eventos são o desligamento do dono
+  pela própria receita no fim da janela de silêncio (`close-cessation.json` 09:02:05.390Z), depois do fim do reparo. A verificação passou a contar
+  só interrupções antes de `end.at` da Execução fechada, com teste dos tempos do v2, nas receitas `ghadvs34` e `ghadv34`.
+- V-10.g (já aprovada por D-11): aqui o merge às 09:06:00Z veio depois do fim do reparo (09:05:56.838Z), e `duringActivity` ficou null.
+- `leased-pushes-only` e `no-secret` atendidos.
+
 ## Pendências deste registro
 
 - Novo ticket para o flake `test/records/raw.test.ts` sob carga de VM:
   [42](../../.scratch/software-factory-mvp/issues/42-records-raw-test-flake-under-load.md).
-- G4 e G5 continuam bloqueados. As obrigações restantes estão em `R-GH-ADV-S` (V-04.e, V-13.g), `R-LONG`, `R-THREE`, `R-REL` (V-16.b) e
+- G4 e G5 continuam bloqueados. As obrigações restantes estão em `R-LONG`, `R-THREE`, `R-REL` (V-16.b) e
   `R-INSTR`.
 - Ticket 43 (revisão de reconciliação) resolvido em `6c4a9e0` e validado em `q34-ghadv-v4`:
   [43](../../.scratch/software-factory-mvp/issues/43-reconciliation-review-own-patch.md). Este resultado continua liberando no máximo a preparação da solicitação de autorização do piloto (35).

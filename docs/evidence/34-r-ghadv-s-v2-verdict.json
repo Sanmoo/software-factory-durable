@@ -1,0 +1,69 @@
+{
+ "run": "q34-ghadv-s-v2",
+ "pin": "5ad0cf7 (run/ghadv: integracao 7e59ec6 + pin #120)",
+ "namespace": "y5/q34-ghadv-s-v2",
+ "source": "y5/q34-ghadv-s-v2/inspect-result.json (verdict copiado sem alteracao)",
+ "verdict": {
+  "passed": false,
+  "checks": [
+   {
+    "obligation": "V-04.e",
+    "id": "closed-during-repair-not-ceased-not-delivered-not-cancelled",
+    "expected": "closed-unmerged recorded WITH the active repair Execution; that activity not aborted (end not stopped); close result closed-unmerged, no delivery, no cancellation, no publication activation, no builder-publish",
+    "observed": "{\"status\":\"success\",\"closure\":{\"event\":\"pull-request-closed-unmerged\",\"detail\":\"#121:active:0b523339-f7ef-40b2-9163-e6c144f6626e\"},\"end\":{\"at\":\"2026-11-18T09:00:20.996Z\",\"outcome\":\"completed\",\"code\":null,\"cessation\":\"confirmed\",\"session\":{\"ref\":\"r/BS9T2ja7RhGTQR_HCbH1Jg/w-yft8AV/profile/sessions/2026-11-18T08-51-43-145Z_01a1edda-d1a9-7343-874d-2be119b07d36.jsonl\",\"sessionId\":\"01a1edda-d1a9-7343-87",
+    "met": false
+   },
+   {
+    "obligation": "V-10.g",
+    "id": "pull-request-ended-during-repair",
+    "expected": "the own PR closed during a repair (close phase, as V-04.e) AND merged at a GitHub time inside the repair activity; no publication after the merge; delivered",
+    "observed": "{\"close\":false,\"mergedAt\":\"2026-11-18T09:06:00Z\",\"repair\":{\"started\":\"2026-11-18T09:05:51.956Z\",\"ended\":\"2026-11-18T09:05:56.838Z\"},\"duringActivity\":null,\"publishedAfter\":0}",
+    "met": false
+   },
+   {
+    "obligation": "V-13.g",
+    "id": "cancel-concurrent-with-merge",
+    "expected": "cancel via CLI during the repair (in its VM) with the merge launched right after: final result delivered; cancel-first => cancellation recorded on the repair Execution and delivery-confirmed names it; merge-first => cancel not-applied WORK_DELIVERED; the activity ceased (cessation confirmed, Slot released)",
+    "observed": "{\"status\":\"success\",\"order\":\"cancel-first\",\"receipt\":{},\"result\":\"delivered\",\"end\":{\"at\":\"2026-11-18T09:05:56.838Z\",\"outcome\":\"stopped\",\"code\":\"WORK_CANCELLED\",\"cessation\":\"confirmed\",\"session\":null},\"slot\":false}",
+    "met": true
+   },
+   {
+    "obligation": "all",
+    "id": "leased-pushes-only",
+    "expected": "every session push is an exact recorded lease",
+    "observed": "[]",
+    "met": true
+   },
+   {
+    "obligation": "all",
+    "id": "no-secret",
+    "expected": "no token/private key in storage, sessions or observations",
+    "observed": "{\"storage\":false,\"sessions\":false,\"observations\":false}",
+    "met": true
+   }
+  ],
+  "byObligation": {
+   "V-04.e": false,
+   "V-10.g": false,
+   "V-13.g": true,
+   "all": true
+  }
+ },
+ "phases": {
+  "preflight": "success",
+  "publish-c": "success",
+  "close": "success",
+  "cancel-merge": "success"
+ },
+ "v04eDiagnosis": {
+  "decision": "D-12",
+  "closure": "pull-request-closed-unmerged 2026-11-18T08:57:59Z #121:active:0b523339-f7ef-40b2-9163-e6c144f6626e",
+  "repairEnd": "2026-11-18T09:00:20.996Z outcome completed, cessation confirmed; Slot released 09:00:22.853Z",
+  "abortedEvents": "3 activity-aborted (builder, standards, spec) at 09:02:05.324Z = the recipe owner shutdown at the end of the quiet window (close-cessation.json 09:02:05.390Z), AFTER the repair completed; recipe check counted them (ghadvs34-qualification.ts:314 at 5ad0cf7), fixed to count only aborts before end.at",
+  "sources": [
+   "y5/q34-ghadv-s-v2/close-result.json",
+   "y5/q34-ghadv-s-v2/close-cessation.json",
+   "y5/q34-ghadv-s-v2/inspect-result.json"
+  ]
+ }
+}

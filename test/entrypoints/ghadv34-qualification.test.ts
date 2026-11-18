@@ -367,6 +367,15 @@ test('v5: every held end names its reason (holdReason)', () => {
   assert.equal(recipe.stuckReason(work()), null);
 });
 
+test('q34-ghadv-s-v2 (D-12): V-04.e ignores aborts recorded after the closed repair ended (the recipe owner shutdown)', () => {
+  const saved = passing();
+  saved.inspect.works[1].previousExecutions[0].end = { outcome: 'completed', at: '2026-11-18T09:00:20.996Z' };
+  saved.close.events.push({ at: '2026-11-18T09:02:05.324Z', call: 'activity-aborted', role: 'builder', executionId: 'e-cl' });
+  assert.ok(!failing(saved).includes('closed-during-activity-not-ceased-not-delivered-not-cancelled'));
+  saved.close.events.push({ at: '2026-11-18T09:00:00.000Z', call: 'activity-aborted', role: 'builder', executionId: 'e-cl' });
+  assert.ok(failing(saved).includes('closed-during-activity-not-ceased-not-delivered-not-cancelled'));
+});
+
 test('progress fingerprint: any change of the Work, its Questions, the recipe log or the steps resets the stall watch', () => {
   const base = recipe.progressFingerprint(work(), [question()], 3, 1);
   assert.equal(recipe.progressFingerprint(work(), [question()], 3, 1), base);

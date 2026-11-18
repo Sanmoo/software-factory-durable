@@ -110,9 +110,9 @@
   }
  },
  "counts": {
-  "aprovada": 93,
+  "aprovada": 95,
   "reprovada": 0,
-  "inconclusiva": 7,
+  "inconclusiva": 5,
   "dependente-do-piloto": 12
  },
  "realRuns": [
@@ -1010,6 +1010,41 @@
    ],
    "applicability": "aplicavel",
    "reason": "run/ghchecks-s = integracao com factory-skills-v7 e V-09.f (f4cb958) + pin #108, descendente de b30e2bd"
+  },
+  {
+   "id": "q34-ghadv-s-v1",
+   "ticket": "34",
+   "date": "2026-11-18",
+   "commit": "9be330d",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "GitHub real (App, UM issue, PR proprio fechado/reaberto, cancel pela CLI + merge do operador com o ruleset 26435808 relaxado so em torno do merge), VM Gondolin/KVM, modelo openai/gpt-6-luna",
+   "verdict": "retido no publish-c: EXECUTION_HELD:START_INSUFFICIENT_MEMORY_FOR_BOOT (host ocupado; o produto recusou o boot corretamente)",
+   "evidence": [
+    "docs/evidence/34-prepilot-results.md"
+   ],
+   "applicability": "inconclusiva",
+   "reason": "agendamento do supervisor, nenhuma obrigacao"
+  },
+  {
+   "id": "q34-ghadv-s-v2",
+   "ticket": "34",
+   "date": "2026-11-18",
+   "commit": "5ad0cf7",
+   "levels": [
+    "I",
+    "A"
+   ],
+   "boundaries": "GitHub real (App, UM issue, PR proprio fechado/reaberto, cancel pela CLI + merge do operador com o ruleset 26435808 relaxado so em torno do merge), VM Gondolin/KVM, modelo openai/gpt-6-luna",
+   "verdict": "todas as fases exit 0; V-13.g met; V-04.e aprovada por evidencia (D-12, verificador da receita estrito demais); V-10.g ja aprovada por D-11",
+   "evidence": [
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-ghadv-s-v2-verdict.json"
+   ],
+   "applicability": "aplicavel",
+   "reason": "run/ghadv = integracao 7e59ec6 (ticket 43, receitas v5/S) + pin #120, descendente de b30e2bd"
   }
  ],
  "scenarios": [
@@ -1072,7 +1107,7 @@
     "I",
     "P"
    ],
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-04.a",
     "V-04.b",
@@ -1478,7 +1513,7 @@
   },
   {
    "id": "RF-11",
-   "status": "inconclusiva",
+   "status": "aprovada",
    "obligations": [
     "V-04.c",
     "V-04.d",
@@ -1491,7 +1526,7 @@
   },
   {
    "id": "RF-12",
-   "status": "inconclusiva",
+   "status": "aprovada",
    "obligations": [
     "V-11.b",
     "V-11.e",
@@ -1712,7 +1747,7 @@
   },
   {
    "id": "CA-07",
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-13.c",
     "V-13.f",
@@ -1744,7 +1779,7 @@
   },
   {
    "id": "CA-10",
-   "status": "inconclusiva",
+   "status": "aprovada",
    "obligations": [
     "V-04.a",
     "V-04.b",
@@ -2523,22 +2558,33 @@
     "I"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "fechar PR sem merge nao comprova cessacao, entrega ou cancelamento",
-   "observed": "R-GH-ADV v1-v5 nao alcancou o close (v4 retido no close por Pergunta Spec x linha do /factory repair); so em fluxo (25)",
+   "observed": "q34-ghadv-s-v2: o operador fechou o PR #121 sem merge as 08:57:59Z durante o reparo 0b523339 (closed-unmerged registrado com :active:); a atividade NAO foi interrompida e terminou sozinha as 09:00:20 (completed, cessacao confirmada, Slot liberado); nao entregue, nao cancelada, nenhuma publicacao nem builder-publish depois. O verificador da receita contou 3 activity-aborted que sao o desligamento do dono da propria receita as 09:02:05, depois do fim do reparo; aprovada por evidencia (D-12)",
    "evidence": [
-    "docs/evidence/25-authorization-withdrawal-and-work-cycles.md"
+    "docs/evidence/25-authorization-withdrawal-and-work-cycles.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-ghadv-s-v2-verdict.json"
    ],
-   "runs": [],
-   "commands": [],
+   "runs": [
+    "q34-ghadv-s-v2"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita R-GH-ADV-S (test/entrypoints/ghadvs34-qualification.ts, q34-ghadv-s-v2)"
+   ],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Executar R-GH-ADV-S (um Ticket C: publicar -> fechar durante reparo -> reabrir -> cancelar durante reparo + merge do operador)",
+   "pointer": "Aprovada por decisao do operador D-12 sobre R-GH-ADV-S q34-ghadv-s-v2 (prova por evidencia; verificador da receita corrigido)",
    "reexecution": [
     "R-GH-ADV-S"
-   ]
+   ],
+   "decision": {
+    "id": "D-12"
+   }
   },
   {
    "id": "V-04.f",
@@ -4926,20 +4972,29 @@
     "A"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I",
+    "A"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "cancelar antes/depois de requisicao enviada e durante containers; merge concorrente ao cancelamento",
-   "observed": "R-GH-ADV v1-v5 nao alcancou o cancel-merge; merge durante cancelamento so em fluxo (25, 27)",
+   "observed": "q34-ghadv-s-v2 (veredito automatico met): factory cancel pela CLI durante o reparo na VM, com o merge do operador logo depois; ordem cancel-first: cancelamento registrado no reparo (end WORK_CANCELLED, cessacao confirmada, Slot liberado); o merge depois ainda entregou (delivery-confirmed nomeia o cancel-requested)",
    "evidence": [
     "docs/evidence/25-authorization-withdrawal-and-work-cycles.md",
-    "docs/evidence/27-external-effect-crash-reconciliation.md"
+    "docs/evidence/27-external-effect-crash-reconciliation.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-ghadv-s-v2-verdict.json"
    ],
-   "runs": [],
-   "commands": [],
+   "runs": [
+    "q34-ghadv-s-v2"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita R-GH-ADV-S (test/entrypoints/ghadvs34-qualification.ts, q34-ghadv-s-v2)"
+   ],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Executar R-GH-ADV-S (um Ticket C: publicar -> fechar durante reparo -> reabrir -> cancelar durante reparo + merge do operador)",
+   "pointer": "Aprovada por R-GH-ADV-S q34-ghadv-s-v2 (cancel-concurrent-with-merge)",
    "reexecution": [
     "R-GH-ADV-S"
    ]
@@ -5690,11 +5745,9 @@
    "status": "inconclusiva",
    "blockers": [
     "V-03.c",
-    "V-04.e",
     "V-06.g",
     "V-07.f",
-    "V-13.e",
-    "V-13.g"
+    "V-13.e"
    ]
   },
   {
@@ -5763,7 +5816,7 @@
     "V-11.c",
     "V-13.g"
    ],
-   "result": "parcial: q34-ghadv-v4 (V-04.b, V-04.d, V-10.f, V-11.c; V-10.g por D-11); v1-v3 lacunas da receita e ticket 43; v5 variacao do modelo"
+   "result": "completo: q34-ghadv-v4 (V-04.b, V-04.d, V-10.f, V-11.c; V-10.g por D-11) + R-GH-ADV-S q34-ghadv-s-v2 (V-13.g; V-04.e por D-12)"
   },
   {
    "id": "R-GH-DEP",
@@ -5876,7 +5929,8 @@
    "covers": [
     "V-04.e",
     "V-13.g"
-   ]
+   ],
+   "result": "executado: v1 retido por memoria do host (agendamento); v2 todas as fases ok, V-13.g met, V-04.e aprovada por evidencia (D-12)"
   }
  ],
  "operatorDecisions": [
@@ -6013,9 +6067,21 @@
    "decidedBy": "operador",
    "resolution": "proof-accepted",
    "decision": "Aprovada: 'merge com horario do GitHub dentro da correcao e nenhuma publicacao depois' e suficiente para V-10.g. R-GH-ADV-S segue com V-04.e e V-13.g."
+  },
+  {
+   "id": "D-12",
+   "obligations": [
+    "V-04.e"
+   ],
+   "question": "R-GH-ADV-S v2: aprovar V-04.e por evidencia, sendo os 3 activity-aborted contados pelo verificador o desligamento do dono da propria receita (09:02:05) depois de o reparo terminar (09:00:20)?",
+   "dependency": "R-GH-ADV-S q34-ghadv-s-v2 (y5/q34-ghadv-s-v2/close-result.json, close-cessation.json, inspect-result.json; docs/evidence/34-r-ghadv-s-v2-verdict.json)",
+   "decidedAt": "2026-11-18",
+   "decidedBy": "operador",
+   "resolution": "proof-accepted",
+   "decision": "Aprovada por evidencia: fechamento sem merge durante o reparo ativo, atividade concluida por conta propria, nao entregue, nao cancelada, sem publicacao depois; o verificador da receita passa a contar so interrupcoes antes do fim da Execucao."
   }
  ],
- "result": "Nao libera o piloto nem aceite do MVP. Libera no maximo a preparacao da solicitacao de autorizacao do piloto (35). Decisoes D-01..D-11; R-INSPECT, R-GH-DEP, R-CAND v9, R-CRASH-A v5 e R-HOSTFAULT v3 executados; R-GH-CHECKS completo (v2 + R-GH-CHECKS-S) e R-GH-ADV parcial (v4); seguem bloqueando G4/G5 as obrigacoes inconclusivas restantes (R-GH-ADV-S, R-LONG, R-THREE, R-REL, R-INSTR).",
+ "result": "Nao libera o piloto nem aceite do MVP. Libera no maximo a preparacao da solicitacao de autorizacao do piloto (35). Decisoes D-01..D-12; R-INSPECT, R-GH-DEP, R-CAND v9, R-CRASH-A v5 e R-HOSTFAULT v3 executados; R-GH-CHECKS completo (v2 + R-GH-CHECKS-S) e R-GH-ADV completo (v4 + R-GH-ADV-S v2, D-11, D-12); seguem bloqueando G4/G5 as obrigacoes inconclusivas restantes (R-LONG, R-THREE, R-REL, R-INSTR).",
  "decisionsRecordedAt": "2026-11-18",
  "countsHistory": [
   {
