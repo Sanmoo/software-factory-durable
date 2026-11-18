@@ -21,7 +21,8 @@ test('R-GH-ADV-S recipe: import and --plan are inert; fresh namespace q34-ghadv-
   assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/q34-ghadv-s-v1');
   assert.match(plan.github.accessRoot, /^\/home\/sanmoo\/software-factory-test\/y5\/q34-ghadv-s-v1 \(own namespace/);
   assert.deepEqual([plan.ticket.number, plan.ticket.pinned], [0, false], 'the supervisor pins the NEW issue in a reviewed commit');
-  assert.deepEqual(Object.keys(plan.obligations).sort(), ['V-04.e', 'V-10.g', 'V-13.g']);
+  assert.deepEqual(Object.keys(plan.obligations).sort(), ['V-04.e', 'V-13.g'], 'V-10.g was approved by D-11 (q34-ghadv-v4)');
+  assert.deepEqual(Object.keys(plan.extraEvidence), ['V-10.g'], 'its checks stay as extra evidence');
   for (const phases of Object.values(plan.obligations) as string[][]) for (const phase of phases) assert.ok(plan.phases.includes(phase), phase);
   assert.ok(plan.github.repositoryChanges.every((item: { restore: string }) => /EXIT trap/.test(item.restore)));
   assert.ok(plan.github.never.includes('merge by the Factory') && plan.github.never.includes('App bypass'));

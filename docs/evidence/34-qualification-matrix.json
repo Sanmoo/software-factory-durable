@@ -110,9 +110,9 @@
   }
  },
  "counts": {
-  "aprovada": 92,
+  "aprovada": 93,
   "reprovada": 0,
-  "inconclusiva": 8,
+  "inconclusiva": 7,
   "dependente-do-piloto": 12
  },
  "realRuns": [
@@ -1193,7 +1193,7 @@
     "A",
     "P"
    ],
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-10.a",
     "V-10.b",
@@ -1447,7 +1447,7 @@
   },
   {
    "id": "RF-09",
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-09.c",
     "V-09.e",
@@ -1670,7 +1670,7 @@
   },
   {
    "id": "CA-04",
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-06.a",
     "V-09.c",
@@ -4186,11 +4186,13 @@
     "A"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I",
+    "A"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "encerrar PR/realizar merge durante reparo",
-   "observed": "q34-ghadv-v4 merge-repair: o operador mergeou o PR #105 as 23:55:34Z durante o reparo 4cd050ae (23:55:15-23:56:40), mas a Factory so confirmou a entrega as 23:56:50, depois do fim da atividade (duringActivity null); nenhuma publicacao depois do merge. A interrupcao pela entrega nao foi observada",
+   "observed": "q34-ghadv-v4 merge-repair: o operador mergeou o PR #105 as 23:55:34Z (horario do GitHub) dentro da atividade do reparo 4cd050ae (23:55:15-23:56:40); nenhuma publicacao depois do merge; entrega confirmada as 23:56:50 (duringActivity null porque a leitura veio depois do fim da atividade). Aprovada por decisao do operador (D-11)",
    "evidence": [
     "docs/evidence/17-confirmed-delivery-and-owned-cleanup.md",
     "docs/evidence/34-prepilot-results.md",
@@ -4199,13 +4201,19 @@
    "runs": [
     "q34-ghadv-v4"
    ],
-   "commands": [],
+   "commands": [
+    "npm run test:ci",
+    "receita R-GH-ADV (test/entrypoints/ghadv34-qualification.ts, q34-ghadv-v4)"
+   ],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Executar R-GH-ADV-S (um Ticket C: publicar -> fechar durante reparo -> reabrir -> cancelar durante reparo + merge do operador)",
+   "pointer": "Aprovada por decisao do operador D-11 sobre R-GH-ADV q34-ghadv-v4 (merge com horario do GitHub dentro do reparo, nenhuma publicacao depois)",
    "reexecution": [
-    "R-GH-ADV-S"
-   ]
+    "R-GH-ADV"
+   ],
+   "decision": {
+    "id": "D-11"
+   }
   },
   {
    "id": "V-10.P",
@@ -5685,7 +5693,6 @@
     "V-04.e",
     "V-06.g",
     "V-07.f",
-    "V-10.g",
     "V-13.e",
     "V-13.g"
    ]
@@ -5756,7 +5763,7 @@
     "V-11.c",
     "V-13.g"
    ],
-   "result": "parcial: q34-ghadv-v4 (V-04.b, V-04.d, V-10.f, V-11.c); v1-v3 lacunas da receita e ticket 43; v5 variacao do modelo"
+   "result": "parcial: q34-ghadv-v4 (V-04.b, V-04.d, V-10.f, V-11.c; V-10.g por D-11); v1-v3 lacunas da receita e ticket 43; v5 variacao do modelo"
   },
   {
    "id": "R-GH-DEP",
@@ -5868,7 +5875,6 @@
    "authorizationRequired": true,
    "covers": [
     "V-04.e",
-    "V-10.g",
     "V-13.g"
    ]
   }
@@ -5995,10 +6001,22 @@
    "decidedBy": "operador",
    "resolution": "proof-accepted",
    "decision": "Aprovadas. ANSWER_NOT_OBSERVED_DURING_BOOT e limite da observacao da receita (lacuna de 7 s, polling grosso), sem impacto de correcao."
+  },
+  {
+   "id": "D-11",
+   "obligations": [
+    "V-10.g"
+   ],
+   "question": "R-GH-ADV v4: aceitar como prova de V-10.g o merge do PR #105 com horario do GitHub (23:55:34Z) dentro da atividade do reparo 4cd050ae (23:55:15-23:56:40), sem publicacao depois, embora a Factory so tenha confirmado a entrega as 23:56:50 (duringActivity null)?",
+   "dependency": "R-GH-ADV q34-ghadv-v4 (y5/q34-ghadv-v4, docs/evidence/34-r-ghadv-v4-verdict.json)",
+   "decidedAt": "2026-11-18",
+   "decidedBy": "operador",
+   "resolution": "proof-accepted",
+   "decision": "Aprovada: 'merge com horario do GitHub dentro da correcao e nenhuma publicacao depois' e suficiente para V-10.g. R-GH-ADV-S segue com V-04.e e V-13.g."
   }
  ],
- "result": "Nao libera o piloto nem aceite do MVP. Libera no maximo a preparacao da solicitacao de autorizacao do piloto (35). Decisoes D-01..D-10; R-INSPECT, R-GH-DEP, R-CAND v9, R-CRASH-A v5 e R-HOSTFAULT v3 executados; R-GH-CHECKS completo (v2 + R-GH-CHECKS-S) e R-GH-ADV parcial (v4); seguem bloqueando G4/G5 as obrigacoes inconclusivas restantes (R-GH-ADV-S, R-LONG, R-THREE, R-REL, R-INSTR).",
- "decisionsRecordedAt": "2026-11-17",
+ "result": "Nao libera o piloto nem aceite do MVP. Libera no maximo a preparacao da solicitacao de autorizacao do piloto (35). Decisoes D-01..D-11; R-INSPECT, R-GH-DEP, R-CAND v9, R-CRASH-A v5 e R-HOSTFAULT v3 executados; R-GH-CHECKS completo (v2 + R-GH-CHECKS-S) e R-GH-ADV parcial (v4); seguem bloqueando G4/G5 as obrigacoes inconclusivas restantes (R-GH-ADV-S, R-LONG, R-THREE, R-REL, R-INSTR).",
+ "decisionsRecordedAt": "2026-11-18",
  "countsHistory": [
   {
    "at": "2026-11-16",

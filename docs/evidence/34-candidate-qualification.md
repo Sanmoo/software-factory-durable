@@ -11,21 +11,22 @@ só a suíte local `npm run test:ci` sobre o candidato. Depois, com autorizaçã
 R-HOSTFAULT v3, R-INSPECT, R-GH-DEP, R-CAND v9, R-CRASH-A v5, R-GH-CHECKS (v2-v4 e S) e R-GH-ADV (v1-v5), registrados em [34-prepilot-results.md](34-prepilot-results.md).
 Aprovação documental não é funcionamento e build verde não é estado externo atual.
 
-**Resultado (2026-11-18, após os ensaios pré-piloto).** 112 obrigações: 92 aprovadas, 0 reprovadas,
-8 inconclusivas e 12 dependentes do piloto. Histórico: 66/0/36/10 na versão inicial; 72/0/28/12 após as decisões D-01–D-08 e
+**Resultado (2026-11-18, após os ensaios pré-piloto).** 112 obrigações: 93 aprovadas, 0 reprovadas,
+7 inconclusivas e 12 dependentes do piloto. Histórico: 66/0/36/10 na versão inicial; 72/0/28/12 após as decisões D-01–D-08 e
 R-HOSTFAULT v3 ([34-r-hostfault-v3.md](34-r-hostfault-v3.md)); 83/0/17/12 após R-INSPECT, R-GH-DEP, R-CAND v9 e R-CRASH-A v5 (decisões
 D-09 e D-10; [34-prepilot-results.md](34-prepilot-results.md)); 84/0/16/12 após R-GH-CHECKS registrado como parcial (v2: V-08.f aprovada);
 92/0/8/12 após R-GH-CHECKS-S (V-09.c, V-09.e, V-09.f, V-10.b; R-GH-CHECKS completo com v2) e R-GH-ADV registrado como parcial por decisão do
-operador de 2026-11-18 (v4: V-04.b, V-04.d, V-10.f, V-11.c; V-04.e, V-10.g e V-13.g passam ao R-GH-ADV-S). G3 está sem bloqueio; as inconclusivas restantes bloqueiam G4 (7) e
+operador de 2026-11-18 (v4: V-04.b, V-04.d, V-10.f, V-11.c; V-04.e, V-10.g e V-13.g passam ao R-GH-ADV-S); 93/0/7/12 com V-10.g aprovada pela
+decisão D-11 sobre o v4 (merge com horário do GitHub dentro da correção, nenhuma publicação depois); R-GH-ADV-S segue com V-04.e e V-13.g. G3 está sem bloqueio; as inconclusivas restantes bloqueiam G4 (6) e
 G5 (1). As dependentes do piloto (as 10 de nível P, mais V-02.h e V-06.e, levadas ao piloto por D-04/D-01) não são aceite antecipado. O
 resultado libera **no máximo a preparação da solicitação de autorização do piloto** (ticket 35). Não libera sua execução, não declara o
 MVP aceito, não seleciona nem acessa recursos reais e não certifica barreiras de merge/CI do time.
 
 ## 1. Lacunas que bloqueiam e decisões do operador
 
-### Decisões do operador (2026-11-16 e 2026-11-17)
+### Decisões do operador (2026-11-16 a 2026-11-18)
 
-As decisões D-01–D-08 foram tomadas pelo operador em 2026-11-16 e D-09–D-10 em 2026-11-17; todas estão registradas no JSON (`operatorDecisions[].decision`,
+As decisões D-01–D-08 foram tomadas pelo operador em 2026-11-16, D-09–D-10 em 2026-11-17 e D-11 em 2026-11-18; todas estão registradas no JSON (`operatorDecisions[].decision`,
 `resolution`, e `decision` em cada obrigação afetada). O teste da matriz exige que um nível só seja dispensado por uma decisão
 `level-waived` que nomeie a obrigação (nunca P), e que uma obrigação pré-piloto só fique `dependente-do-piloto` quando uma decisão a levou
 ao piloto (ticket 35).
@@ -40,6 +41,7 @@ ao piloto (ticket 35).
 - **D-08** (V-15.e), level-waived: A prova simulada (S) de rate limit/backoff e aceita; nao se induz rate limit real. O nivel I desta obrigacao e dispensado. Dependência: RNF-04; ticket 07.
 - **D-09** (V-08.g), proof-accepted: Aprovada por evidencia: 34-r-cand-v9-v08g-evidence.json. A receita passa a salvar a Work completa para que a prova seja automatica na proxima execucao. Dependência: R-CAND qcand34-v9; correcao da receita (inspect salva a Work completa).
 - **D-10** (V-07.b, V-12.c, V-12.d), proof-accepted: Aprovadas. ANSWER_NOT_OBSERVED_DURING_BOOT e limite da observacao da receita (lacuna de 7 s, polling grosso), sem impacto de correcao. Dependência: R-CRASH-A q34-crash-a-v5.
+- **D-11** (V-10.g), proof-accepted: Aprovada: 'merge com horario do GitHub dentro da correcao e nenhuma publicacao depois' e suficiente para V-10.g. R-GH-ADV-S segue com V-04.e e V-13.g. Dependência: R-GH-ADV q34-ghadv-v4 (y5/q34-ghadv-v4, docs/evidence/34-r-ghadv-v4-verdict.json).
 
 **D-02: suporte atual a dependências entre repositórios (verificado no código).** Já existe. `readDependencyGraph`
 (`src/issue-tracker/index.ts`) percorre as arestas nativas `blocked_by` para qualquer repositório. Cada nó é lido com a instalação da App
@@ -60,7 +62,6 @@ implementação.** A prova real veio em R-GH-DEP `q34-ghdep-v1` (2026-11-16): V-
 | V-04.e | G4-concorrencia-adversidades | R-GH-ADV v1-v5 nao alcancou o close (v4 retido no close por Pergunta Spec x linha do /factory repair); so em fluxo (25) | Executar R-GH-ADV-S (um Ticket C: publicar -> fechar durante reparo -> reabrir -> cancelar durante reparo + merge do operador) |
 | V-06.g | G4-concorrencia-adversidades | io.stat ilegivel (ioRead/ioWrite null em todas as unidades); uso do disco do guest fora dos resumos | Implementacao: ler I/O (habilitar/declarar o controlador io na delegacao systemd do usuario ou fonte alternativa) e registrar disco do guest no resumo; revalidar em R-THREE |
 | V-07.f | G4-concorrencia-adversidades | ADIADA: o item AGENTS.md saiu do R-CAND (v8, decisao do operador de 2026-11-17) porque o Spec julgou o item 3 nos dois sentidos em v3-v7. Instrucoes versionadas pelo controle e gates verificados pelo host seguem em S/I (13, 18); nenhum ensaio A com o Builder editando instrucoes | Executar R-INSTR (desenho em deferredV07f de test/entrypoints/rcand34-qualification.ts, 106e67a): Ticket novo pede SO acrescentar ao AGENTS.md uma linha que dispensa gates e manter um gate documentado que nao roda no guest; para no draft verificado, cancela pelo produto, PR fechado sem merge. Prova: toda rodada registra UMA versao de instrucoes (a preservada da base), o gate inexecutavel e pedido por ask_user e dispensado so com a Pergunta respondida, e o AGENTS.md editado nunca chega a main |
-| V-10.g | G4-concorrencia-adversidades | q34-ghadv-v4 merge-repair: o operador mergeou o PR #105 as 23:55:34Z durante o reparo 4cd050ae (23:55:15-23:56:40), mas a Factory so confirmou a entrega as 23:56:50, depois do fim da atividade (duringActivity null); nenhuma publicacao depois do merge. A interrupcao pela entrega nao foi observada | Executar R-GH-ADV-S (um Ticket C: publicar -> fechar durante reparo -> reabrir -> cancelar durante reparo + merge do operador) |
 | V-13.e | G4-concorrencia-adversidades | nenhuma atividade real > 60 min; ajuste de hora so S (relogio monotonico) | Executar R-LONG (uma atividade real > 60 min sem timeout; ajuste de hora do host com autorizacao de injecao) |
 | V-13.g | G4-concorrencia-adversidades | R-GH-ADV v1-v5 nao alcancou o cancel-merge; merge durante cancelamento so em fluxo (25, 27) | Executar R-GH-ADV-S (um Ticket C: publicar -> fechar durante reparo -> reabrir -> cancelar durante reparo + merge do operador) |
 | V-16.b | G5-operacao-release | nenhuma release construida de 0d343d6; ultima: mvp-33.1 de b6cd2bb; qualification: unqualified | Executar R-REL (build/verify/install/setup/doctor da release do candidato) |
@@ -86,8 +87,8 @@ R-HOSTFAULT e R-GH-ADV ficaram menores (D-03, D-05, D-06, D-08).
 | R-REL | Build/verify/install/setup/doctor da release construida de 0d343d6, inclusive install --service (unit systemd do usuario) | host local (sem GitHub/modelo); instalacao de unit systemd do usuario | V-16.b, V-16.d | não executado |
 | R-GH-CHECKS | Workflow Actions + ruleset com check obrigatorio (strict e loose) e protecao classica no repo de teste: pendente/falho/rerun/homonimos/neutral/skipped, check falho -> reparo, strict -> reparo, dispensa x check obrigatorio, perda de condicao apos ready e draft humano | configuracao do repo pelo operador, GitHub App, VM e modelo para o reparo | V-08.f, V-09.c, V-09.e, V-09.f, V-10.b | completo: v2 (V-08.f; metades de V-09.c/V-10.b) + R-GH-CHECKS-S (V-09.c, V-09.e, V-09.f, V-10.b strict) |
 | R-GH-CHECKS-S | Desenho menor sem cadeia de reparos: leituras GET-only de um PR de sonda do operador (rerun pendente, skipped/ausente, strict, homonimo, protecao classica + ruleset) e UM Trabalho cujo head passa o check sempre verde -> ready da Factory -> strict -> UM reparo com volta a draft e ready -> draft humano respeitado | configuracao do repo e PRs do operador, GitHub App, VM e modelo para UMA implementacao e UM reparo | V-09.c, V-09.e, V-09.f, V-10.b | executado: q34-ghchecks-s-v1 12/12 met (V-09.c, V-09.e, V-09.f, V-10.b strict) |
-| R-GH-ADV | Bateria adversa GitHub: PR alheio com closing keyword, fechar/reabrir issue, fechar PR proprio sem merge, merge humano durante reparo e durante cancelamento, conflito com commit humano (merge da base), resposta de conta terceira e de bot | repo/issues/PRs descartaveis, segunda conta GitHub, VM e modelo, passos humanos | V-04.b, V-04.d, V-04.e, V-10.f, V-10.g, V-11.c, V-13.g | executado parcialmente (v1-v5; parcial por decisão do operador 2026-11-18): v4 aprovou V-04.b, V-04.d, V-10.f, V-11.c; V-04.e, V-10.g, V-13.g passam ao R-GH-ADV-S |
-| R-GH-ADV-S | Desenho menor (decisao do operador 2026-11-18): UM Ticket C — publicar -> /factory repair -> fechar o PR proprio durante o reparo (sem merge) -> reopen + resume pela Factory -> /factory repair -> cancel pela CLI durante o reparo concorrente com o merge do operador; pedidos /factory repair no escopo; UMA resposta roteirizada tolerada (Spec x linha do reparo); toda fase retida nomeia o motivo | GitHub App, UM issue novo, VM e modelo, passos humanos (label, comentarios, fechar PR, cancel + merge com o ruleset relaxado so em torno do merge) | V-04.e, V-10.g, V-13.g | não executado (receita `ghadvs34-qualification.ts`, namespace q34-ghadv-s-v1) |
+| R-GH-ADV | Bateria adversa GitHub: PR alheio com closing keyword, fechar/reabrir issue, fechar PR proprio sem merge, merge humano durante reparo e durante cancelamento, conflito com commit humano (merge da base), resposta de conta terceira e de bot | repo/issues/PRs descartaveis, segunda conta GitHub, VM e modelo, passos humanos | V-04.b, V-04.d, V-04.e, V-10.f, V-10.g, V-11.c, V-13.g | executado parcialmente (v1-v5; parcial por decisão do operador 2026-11-18): v4 aprovou V-04.b, V-04.d, V-10.f, V-11.c e V-10.g (D-11); V-04.e e V-13.g passam ao R-GH-ADV-S |
+| R-GH-ADV-S | Desenho menor (decisao do operador 2026-11-18): UM Ticket C — publicar -> /factory repair -> fechar o PR proprio durante o reparo (sem merge) -> reopen + resume pela Factory -> /factory repair -> cancel pela CLI durante o reparo concorrente com o merge do operador; pedidos /factory repair no escopo; UMA resposta roteirizada tolerada (Spec x linha do reparo); toda fase retida nomeia o motivo | GitHub App, UM issue novo, VM e modelo, passos humanos (label, comentarios, fechar PR, cancel + merge com o ruleset relaxado so em torno do merge) | V-04.e, V-13.g | não executado (receita `ghadvs34-qualification.ts`, namespace q34-ghadv-s-v1) |
 | R-GH-DEP | Dependencias entre repositorios (exigidas por D-02): bloqueador nativo real em segundo repo configurado (dependencyRepositories) e em repo nao configurado; bloqueador proprio esquecido lido do GitHub real; forget de cancelado em dados reais (apos limpar o ambiente q25) | segundo repo/owner, relacoes nativas de teste, limpeza do ambiente q25 | V-05.c, V-05.e, V-14.f | executado: q34-ghdep-v1 met (V-05.c, V-05.e, V-14.f) |
 | R-LONG | Uma atividade real > 60 min sem timeout configurado, com renovacao de credencial e comando atravessando a expiracao; ajuste de hora do host | VM + modelo/provedor roteirizado por > 1 h; injecao de falha no host (relogio) | V-03.c, V-13.e | não executado |
 | R-CRASH-A | Cortes com agentes reais: ferramenta do Builder com modelo real, handoff de revisao (q28-partial-v3), antes de sources completo, cache em preparo, resposta durante boot (perda real de sessao nao exigida: D-05) | VM, modelo, SIGKILL de processos da Factory no host | V-07.b, V-12.c, V-12.d | executado: v2-v4 retidos (unit congelada no systemd 262; corrida de listagem de label; check forcado do disco D-06), v5 21/22 sem falhas, aprovado por D-10 |
@@ -193,7 +194,7 @@ comandos, correlações (ensaios) e evidências completas por obrigação estão
 | V-07 — Pedido preservado e retomada de contexto | S + I + A + P | inconclusiva | 7 |
 | V-08 — Skills, pareceres e validacoes | S + I + A + P | dependente-do-piloto | 8 |
 | V-09 — Publicacao, checks e prontidao | S + I + A + P | dependente-do-piloto | 7 |
-| V-10 — Manutencao e concorrencia Git | S + I + A + P | inconclusiva | 8 |
+| V-10 — Manutencao e concorrencia Git | S + I + A + P | dependente-do-piloto | 8 |
 | V-11 — Perguntas, comandos e CLI | S + I + A + P | dependente-do-piloto | 7 |
 | V-12 — Crash e efeitos parciais | S + I + A | aprovada | 6 |
 | V-13 — Limites, tempo e interrupcao | S + I + A | inconclusiva | 7 |
@@ -272,7 +273,7 @@ comandos, correlações (ensaios) e evidências completas por obrigação estão
 | V-10.d | RF-09, CA-04 | S+I+A | S+I+A | **aprovada** | discordancia do Builder, correcao sem mudanca e problema declarado sem solucao bloqueiam/perguntam | qcand34-v9: /factory repair inaplicavel (apagar o arquivo e fechar o PR) -> Pergunta 405856fe respondida pelo operador; pedido treated; arquivo mantido (asked-then-closed) | qcand34-v9 | [23-human-feedback-and-explicit-repairs.md](23-human-feedback-and-explicit-repairs.md), [34-prepilot-results.md](34-prepilot-results.md), [34-r-cand-v9-verdict.json](34-r-cand-v9-verdict.json) |
 | V-10.e | RF-04, RF-09, CA-09 | S+I+A | S+I+A | **aprovada** | push humano concorrente, lease com OID anterior, divergencia nova apos autorizacao, sem --force nem sobrescrita | 21 v9: lease falho preservou C1; Pergunta 1 incorporate; C2 apos a resposta -> Pergunta 2; publicacao com lease na segunda ponta; ambos os commits humanos preservados | q21-v9 | [21-human-changes-and-explicit-lease.md](21-human-changes-and-explicit-lease.md), [21-real-human-v9-verdict-2026-11-16.json](21-real-human-v9-verdict-2026-11-16.json) |
 | V-10.f | RF-04, CA-09 | S+I+A | S+I+A | **aprovada** | politica alternativa do repo: merge da base quando ha commits de terceiros | q34-ghadv-v4: commit humano 1c48ad1 na branch da Factory incorporado (divergencia -> incorporate -> reconciliacao, ticket 43); conflito add/add na base -> correcao MERGE_CONFLICT com humanTips [1c48ad1] -> a base foi MERGEADA (um commit de merge, 2 pais), nunca rebase; base e commit humano ancestrais do head reparado (behind 0) | q34-ghadv-v4 | [22-effective-impediments-and-automatic-repairs.md](22-effective-impediments-and-automatic-repairs.md), [34-prepilot-results.md](34-prepilot-results.md), [34-r-ghadv-v4-verdict.json](34-r-ghadv-v4-verdict.json) |
-| V-10.g | RF-09, CA-04 | S+I+A | S | **inconclusiva** | encerrar PR/realizar merge durante reparo | q34-ghadv-v4 merge-repair: o operador mergeou o PR #105 as 23:55:34Z durante o reparo 4cd050ae (23:55:15-23:56:40), mas a Factory so confirmou a entrega as 23:56:50, depois do fim da atividade (duringActivity null); nenhuma publicacao depois do merge. A interrupcao pela entrega nao foi observada | q34-ghadv-v4 | [17-confirmed-delivery-and-owned-cleanup.md](17-confirmed-delivery-and-owned-cleanup.md), [34-prepilot-results.md](34-prepilot-results.md), [34-r-ghadv-v4-verdict.json](34-r-ghadv-v4-verdict.json) |
+| V-10.g | RF-09, CA-04 | S+I+A | S+I+A | **aprovada** | encerrar PR/realizar merge durante reparo | q34-ghadv-v4 merge-repair: o operador mergeou o PR #105 as 23:55:34Z (horario do GitHub) dentro da atividade do reparo 4cd050ae (23:55:15-23:56:40); nenhuma publicacao depois do merge; entrega confirmada as 23:56:50 (duringActivity null porque a leitura veio depois do fim da atividade). Aprovada por decisao do operador (D-11) | q34-ghadv-v4 | [17-confirmed-delivery-and-owned-cleanup.md](17-confirmed-delivery-and-owned-cleanup.md), [34-prepilot-results.md](34-prepilot-results.md), [34-r-ghadv-v4-verdict.json](34-r-ghadv-v4-verdict.json) |
 | V-10.P | RF-09, CA-04 | P | — | **dependente-do-piloto** | manutencao de PR em tickets reais | pendente do piloto (35) | — | — |
 | V-11.a | RF-10, CA-05 | S+I+A | S+I+A | **aprovada** | ask user, pergunta duravel identificavel, suspensao com cessacao, resposta por comentario correlacionado, retomada pela fila | 10 v2 e 18 v4: Pergunta publicada, Slot liberado apos cessacao, /factory answer do operador, retomada QUESTION_ANSWERED | q10-v2, q18-v4 | [10-durable-questions-and-queued-resumption.md](10-durable-questions-and-queued-resumption.md), [18-first-integrated-delivery-journey.md](18-first-integrated-delivery-journey.md) |
 | V-11.b | RF-10, RF-12 | S+I | S+I | **aprovada** | resposta pela CLI | answer-cli com CLI real sobre socket (I-local); r33-v2: Pergunta pendente respondida pela CLI apos a troca de release | r33-v2, ci-candidato | [33-compatible-upgrades-and-recoverable-migration.md](33-compatible-upgrades-and-recoverable-migration.md) |
@@ -331,7 +332,7 @@ Estado = pior das obrigações que o rastreiam (pela matriz do plano). Inconclus
 | RF-06 | dependente-do-piloto | V-08.a, V-08.b, V-08.c, V-08.d, V-08.g, V-08.P, V-09.a |
 | RF-07 | dependente-do-piloto | V-02.f, V-02.g, V-02.h, V-08.c, V-08.e, V-08.f, V-15.b |
 | RF-08 | dependente-do-piloto | V-09.a, V-09.b, V-09.d, V-09.P, V-12.b, V-17.a, V-17.P |
-| RF-09 | inconclusiva | V-09.c, V-09.e, V-09.f, V-10.a, V-10.b, V-10.c, V-10.d, V-10.e, V-10.g, V-10.P, V-15.d |
+| RF-09 | dependente-do-piloto | V-09.c, V-09.e, V-09.f, V-10.a, V-10.b, V-10.c, V-10.d, V-10.e, V-10.g, V-10.P, V-15.d |
 | RF-10 | dependente-do-piloto | V-11.a, V-11.b, V-11.c, V-11.d, V-11.P, V-12.b, V-17.a, V-17.P |
 | RF-11 | inconclusiva | V-04.c, V-04.d, V-04.e, V-04.f, V-04.g, V-13.f, V-13.g |
 | RF-12 | inconclusiva | V-11.b, V-11.e, V-11.f, V-13.c, V-13.f, V-13.g, V-15.a |
@@ -345,7 +346,7 @@ Estado = pior das obrigações que o rastreiam (pela matriz do plano). Inconclus
 | CA-01 | dependente-do-piloto | V-07.a, V-07.P, V-08.b, V-08.P, V-09.a, V-09.b, V-09.P, V-14.a, V-14.P, V-17.a, V-17.P |
 | CA-02 | dependente-do-piloto | V-05.a, V-05.b, V-05.c, V-05.d, V-05.e, V-05.P |
 | CA-03 | inconclusiva | V-02.a, V-02.i, V-06.b, V-06.c, V-06.e, V-06.f, V-06.g, V-06.h, V-12.f |
-| CA-04 | inconclusiva | V-06.a, V-09.c, V-10.a, V-10.b, V-10.c, V-10.d, V-10.g, V-10.P |
+| CA-04 | dependente-do-piloto | V-06.a, V-09.c, V-10.a, V-10.b, V-10.c, V-10.d, V-10.g, V-10.P |
 | CA-05 | dependente-do-piloto | V-06.d, V-06.h, V-11.a, V-11.c, V-11.P, V-17.a, V-17.P |
 | CA-06 | aprovada | V-01.a, V-01.b, V-01.c, V-07.b, V-07.e, V-12.a, V-12.b, V-12.c, V-12.d |
 | CA-07 | inconclusiva | V-13.c, V-13.f, V-13.g, V-14.a, V-14.b, V-14.c, V-14.d, V-15.P |
@@ -362,7 +363,7 @@ Estado = pior das obrigações que o rastreiam (pela matriz do plano). Inconclus
 | G1-fronteiras-frageis | Fronteiras frageis | aprovada | — |
 | G2-controle-deterministico | Controle deterministico | aprovada | — |
 | G3-jornada-completa | Uma jornada completa (no candidato) | aprovada | — |
-| G4-concorrencia-adversidades | Concorrencia e adversidades | inconclusiva | V-03.c, V-04.e, V-06.g, V-07.f, V-10.g, V-13.e, V-13.g |
+| G4-concorrencia-adversidades | Concorrencia e adversidades | inconclusiva | V-03.c, V-04.e, V-06.g, V-07.f, V-13.e, V-13.g |
 | G5-operacao-release | Operacao da release | inconclusiva | V-16.b |
 | G6-preparacao-piloto | Preparacao da solicitacao de autorizacao do piloto (nao a execucao do piloto, que exige G3-G5) | aprovada | — |
 

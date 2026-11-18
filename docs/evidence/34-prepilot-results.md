@@ -201,9 +201,10 @@ Totais: 88/0/12/12 → **92/0/8/12**. Decisão do operador: "Partial + smaller r
 - **V-10.f:** o commit humano `1c48ad1` na branch da Factory gerou a sequência divergência → `incorporate` → reconciliação, publicada com lease
   nessa ponta. Depois, o conflito add/add na base abriu a correção `MERGE_CONFLICT` com `humanTips [1c48ad1]`. A base foi **mergeada** (um commit de
   merge com 2 pais), nunca rebase, e a base e o commit humano são ancestrais do head reparado.
-- **V-10.g (não aprovada):** no merge-repair do v4, o operador mergeou o PR #105 às 23:55:34Z, durante o reparo `4cd050ae`
-  (23:55:15–23:56:40). Nenhuma publicação veio depois. Mas a Factory só confirmou a entrega às 23:56:50, depois do fim da atividade
-  (`duringActivity` null): a interrupção pela entrega não foi observada.
+- **V-10.g (aprovada por D-11, 2026-11-18):** no merge-repair do v4, o operador mergeou o PR #105 às 23:55:34Z (horário do GitHub), durante o reparo
+  `4cd050ae` (23:55:15–23:56:40), e nenhuma publicação veio depois. A Factory só confirmou a entrega às 23:56:50, depois do fim da atividade
+  (`duringActivity` null). Decisão do operador: "merge com horário do GitHub dentro da correção e nenhuma publicação depois" é suficiente.
+  Totais 92/0/8/12 → **93/0/7/12**; o `R-GH-ADV-S` segue com V-04.e e V-13.g (as verificações de V-10.g da receita ficam como evidência extra).
 
 | Ensaio | Pin | Onde parou | Causa | Correção |
 | --- | --- | --- | --- | --- |
@@ -217,7 +218,7 @@ Totais: 88/0/12/12 → **92/0/8/12**. Decisão do operador: "Partial + smaller r
 
 - Novo ticket para o flake `test/records/raw.test.ts` sob carga de VM:
   [42](../../.scratch/software-factory-mvp/issues/42-records-raw-test-flake-under-load.md).
-- G4 e G5 continuam bloqueados. As obrigações restantes estão em `R-GH-ADV-S` (V-04.e, V-10.g, V-13.g), `R-LONG`, `R-THREE`, `R-REL` (V-16.b) e
+- G4 e G5 continuam bloqueados. As obrigações restantes estão em `R-GH-ADV-S` (V-04.e, V-13.g), `R-LONG`, `R-THREE`, `R-REL` (V-16.b) e
   `R-INSTR`.
 - Ticket 43 (revisão de reconciliação) resolvido em `6c4a9e0` e validado em `q34-ghadv-v4`:
   [43](../../.scratch/software-factory-mvp/issues/43-reconciliation-review-own-patch.md). Este resultado continua liberando no máximo a preparação da solicitação de autorização do piloto (35).

@@ -260,7 +260,9 @@ export function plan() {
       'the supervisor created the ONE issue above WITHOUT the label and pinned its number in a reviewed commit', 'no open issue carries the label (preflight: the listing is empty)',
       'main protected with NO bypass for the App (pull requests required)', 'operator first-login store under root/credentials (model OAuth)',
       'the supervisor runs every human-step script with the operator gh login from the composed checkout (FACTORY_CHECKOUT exported for step 5)'],
-    obligations: { 'V-04.e': ['close'], 'V-10.g': ['close', 'cancel-merge'], 'V-13.g': ['cancel-merge'] },
+    obligations: { 'V-04.e': ['close'], 'V-13.g': ['cancel-merge'] },
+    /** V-10.g was approved by operator decision D-11 on q34-ghadv-v4; this recipe still checks it, as extra evidence only. */
+    extraEvidence: { 'V-10.g': ['close', 'cancel-merge'] },
     github: { app: githubApp, accessRoot: `${observations} (own namespace: credentials/ per-phase copy of ${keySource}, run/); never y5/run`,
       factoryWrites: ['Builder (guest, builder-publish, only in publish-c and cancel-merge while Control requested it): leased pushes of the own branch and ONE draft PR',
         'controller: Question comments and replies to /factory commands on the issue, ONE reopen of the own PR (cancel-merge, pull-request-reopen grant)',
