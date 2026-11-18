@@ -30,9 +30,10 @@ export const inspectNamespace = `${y5}/qinspect34-v1`;
 export const releaseIdentityFile = `${releaseNamespace}/observations/release-identity.json`;
 /** R-UPG: the release built from the integration tip and selected in the R-REL root by `upgrade apply`. */
 // prel34-v3 upgraded pr2 mvp-34.2 -> mvp-34.3 (continuation findings); prel34-v4 upgrades mvp-34.3 -> mvp-34.4 (Builder pack v7).
-export const upgradeFromRelease = 'mvp-34.3';
-export const upgradeRelease = 'mvp-34.4';
-export const upgradeNamespace = `${y5}/prel34-v4`;
+// prel34-v5 upgrades mvp-34.4 -> mvp-34.5: the pilot candidate (V-16.b) with ticket 43 (6c4a9e0) and skills v7 from the integration tip.
+export const upgradeFromRelease = 'mvp-34.4';
+export const upgradeRelease = 'mvp-34.5';
+export const upgradeNamespace = `${y5}/prel34-v5`;
 /** Written by R-UPG `upgrade` (after `apply`), read by every R-CAND phase: what R-CAND must prove it ran on. */
 export const identityFile = `${upgradeNamespace}/observations/release-identity.json`;
 /** The account's standard systemd user unit directory (passwd home of sanmoo); the recipe re-checks it against the product's own choice. */
@@ -52,6 +53,7 @@ export const compositionMarkers = {
   'owner-user-bus': '5ab72fab9a3f52abf3d72557b4ce912f62b246f2',
   'continuation-findings': 'b4c544366b6a0814a84c82faeb51226f5eb8e3d8',
   'skills-v7-satisfied-findings': '82d6faf3a79fdd6e09e6a0eb480d17fa20346f56',
+  'ticket-43-reconciliation-review': '6c4a9e05de57aa71b0f817e1a7a248d504ba77db',
 } as const;
 
 export type ReleaseIdentity = {

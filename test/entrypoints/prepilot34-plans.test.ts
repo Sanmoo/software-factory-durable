@@ -44,7 +44,7 @@ test('R-CAND plan: inert; runs the INSTALLED release; issue 0 refuses every phas
   assert.equal(forbidden, 0);
   assert.equal(plan.observations, '/home/sanmoo/software-factory-test/y5/qcand34-v9');
   assert.equal(plan.root, '/home/sanmoo/software-factory-test/pr2');
-  assert.equal(plan.identityFile, '/home/sanmoo/software-factory-test/y5/prel34-v4/observations/release-identity.json');
+  assert.equal(plan.identityFile, '/home/sanmoo/software-factory-test/y5/prel34-v5/observations/release-identity.json');
   assert.match(plan.release, /RE-VERIFIED at each phase/);
   assert.equal(plan.ticket.pinned, false);
   assert.equal(plan.ticket.number, 0);
@@ -71,12 +71,12 @@ test('R-INSPECT plan: inert; local copy of q23-feedback-v3 only, never its run/ 
   assert.equal(forbidden, 0);
 });
 
-test('R-UPG plan: inert; upgrades the SAME R-REL root to mvp-34.4 with the product\'s own upgrade; never the model login; R-CAND reads its identity', async () => {
+test('R-UPG plan: inert; upgrades the SAME R-REL root to mvp-34.5 with the product\'s own upgrade; never the model login; R-CAND reads its identity', async () => {
   const plan = await planOf(upg.main);
   assert.equal(forbidden, 0);
-  assert.equal(plan.base, '/home/sanmoo/software-factory-test/y5/prel34-v4');
+  assert.equal(plan.base, '/home/sanmoo/software-factory-test/y5/prel34-v5');
   assert.equal(plan.root, '/home/sanmoo/software-factory-test/pr2');
-  assert.deepEqual([plan.release, plan.previousRelease], ['mvp-34.4', 'mvp-34.3']);
+  assert.deepEqual([plan.release, plan.previousRelease], ['mvp-34.5', 'mvp-34.4']);
   assert.deepEqual(plan.phases, ['build', 'verify', 'extract', 'upgrade', 'unpause']);
   assert.equal(plan.identityFile, (await planOf(cand.main)).identityFile, 'R-CAND v3 proves it ran on the upgraded release');
   assert.equal(plan.releaseIdentityFile, (await planOf(rel.main)).identityFile, 'R-REL keeps its own (mvp-34.2) identity');
