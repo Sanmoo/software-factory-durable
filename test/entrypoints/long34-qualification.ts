@@ -113,7 +113,8 @@ export type LongInput = {
   issued: string[]; delivered: string[]; deliveredAt: string[]; markers: string[][];
   /** c1: when the census call was handed out and when its result came back. */
   c1: { start: string; end: string } | undefined;
-  revocations: string[]; postCheck: string[];
+  /** One per revocation attempt at the end: its result kind, when, and the expiresAt of the grant it revoked (null when unknown). */
+  revocations: { kind: string; at: string; expiresAt: string | null }[]; postCheck: string[];
   /** Orchestrator monotonic measure from the first `started` observation to the first `ended` observation (null when either is missing). */
   observedMonotonicMs: number | null; deadlineReached: boolean;
 };
@@ -140,7 +141,10 @@ export function assess(input: LongInput): Assessment {
     expiryObservedDuringCommand: c1Crossed && marker('gh-c1a')?.startsWith('ok:') === true && marker('gh-c1b') === 'fail:HTTP-401',
     renewalDeliveredWhileC1Ran: input.c1 !== undefined && input.deliveredAt.some(at => at > input.c1!.start && at < input.c1!.end),
     newCommandGotRenewal: marker('c2') !== undefined && marker('c2') !== input.issued[0] && input.delivered.includes(marker('c2')!) && marker('gh-c2')?.startsWith('ok:') === true,
-    everyGrantRevoked: input.revocations.length === input.issued.length && input.issued.length > 0 && input.revocations.every(kind => kind === 'revoked'),
+    // Real run v2: grant 1 had expired when the end revocation ran, and GitHub answered 401 (already-invalid). A grant is settled when it was
+    // revoked, or when GitHub no longer accepts it AFTER its own expiresAt; already-invalid before expiry (or with an unknown expiry) is a failure.
+    everyGrantRevoked: input.revocations.length === input.issued.length && input.issued.length > 0 && input.revocations.every(item => item.kind === 'revoked' ||
+      (item.kind === 'already-invalid' && item.expiresAt !== null && !Number.isNaN(Date.parse(item.expiresAt)) && Date.parse(item.at) > Date.parse(item.expiresAt))),
     githubRejectsEveryGrantAfterwards: input.postCheck.length === input.issued.length && input.postCheck.every(kind => kind === 'already-invalid'),
     durationMonotonic: elapsedMs !== null && input.observedMonotonicMs !== null && Math.abs(elapsedMs - input.observedMonotonicMs) <= 60_000,
   };
@@ -430,7 +434,8 @@ export async function runPhase(phase: Phase) {
       const verdict = assess({ execution: work.execution, issued: ran.events.filter(event => event.call === 'issued').map(event => event.fingerprint!),
         delivered: [ran.events.find(event => event.call === 'issued')?.fingerprint ?? '', ...delivered.map(event => event.fingerprint!)], deliveredAt: delivered.map(event => event.at),
         markers: ran.provider.results.map(result => result.markers), c1: ran.provider.emitted[1] && ran.provider.results[1] ? { start: ran.provider.emitted[1], end: ran.provider.results[1].at } : undefined,
-        revocations: ran.events.filter(event => event.call === 'revoke').map(event => event.result?.kind ?? ''), postCheck: ran.postCheck.map(entry => entry.result.kind),
+        revocations: ran.events.filter(event => event.call === 'revoke').map(event => ({ kind: event.result?.kind ?? '', at: event.at,
+          expiresAt: (ran.events.find(issued => issued.call === 'issued' && issued.fingerprint === event.fingerprint) as { metadata?: { expiresAt?: string } } | undefined)?.metadata?.expiresAt ?? null })), postCheck: ran.postCheck.map(entry => entry.result.kind),
         observedMonotonicMs: ran.observedMonotonicMs, deadlineReached: ran.deadlineReached });
       const census = ran.provider.results[1]?.markers.filter(item => item.startsWith('run:') || item.startsWith('census:')) ?? [];
       await fs.rm(`${observations}/${githubApp.privateKeyFile}`, { force: true }); // before the scan: any hit is then a real leak

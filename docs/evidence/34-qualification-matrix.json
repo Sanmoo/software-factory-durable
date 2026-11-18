@@ -110,10 +110,10 @@
   }
  },
  "counts": {
-  "aprovada": 95,
+  "aprovada": 97,
   "reprovada": 0,
-  "inconclusiva": 5,
-  "dependente-do-piloto": 12
+  "inconclusiva": 2,
+  "dependente-do-piloto": 13
  },
  "realRuns": [
   {
@@ -1045,6 +1045,39 @@
    ],
    "applicability": "aplicavel",
    "reason": "run/ghadv = integracao 7e59ec6 (ticket 43, receitas v5/S) + pin #120, descendente de b30e2bd"
+  },
+  {
+   "id": "q34-long-v1",
+   "ticket": "34",
+   "date": "2026-11-18",
+   "commit": "511bae7",
+   "levels": [
+    "I"
+   ],
+   "boundaries": "GitHub App real (tokens de 1 h, renovacao de producao), VM Gondolin/KVM, provedor roteirizado (sem modelo), raiz propria l34",
+   "verdict": "inconclusivo: a atividade durou 16 min; o Gradle pulou a suite depois da 1a execucao (:test UP-TO-DATE) e o limite de 12 execucoes encerrou o censo em 963 s, antes da expiracao do 1o token (o veredito da receita v1 dizia failed por newCommandGotRenewal sem renovacao devida; a regra v2 o le como inconclusivo)",
+   "evidence": [
+    "docs/evidence/34-prepilot-results.md"
+   ],
+   "applicability": "aplicavel",
+   "reason": "run/long = integracao com a receita v1 (1d68394) + pin #118, descendente de b30e2bd; nao prova nada por ser curta"
+  },
+  {
+   "id": "q34-long-v2",
+   "ticket": "34",
+   "date": "2026-11-18",
+   "commit": "ca13cf1",
+   "levels": [
+    "I"
+   ],
+   "boundaries": "GitHub App real (tokens de 1 h, renovacao de producao 600 s antes), VM Gondolin/KVM, provedor roteirizado (censo real da suite com --rerun-tasks, 37 execucoes em 4576 s, sem sleep), sem timeout configurado, relogio do host so observado",
+   "verdict": "4579 s medidos no relogio monotonico, completed sem timeout; 10/11 verificacoes verdadeiras; everyGrantRevoked false so porque o grant 1 ja tinha expirado (already-invalid apos expiresAt); reavaliado com a regra corrigida: passed",
+   "evidence": [
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-long-v2-verdict.json"
+   ],
+   "applicability": "aplicavel",
+   "reason": "run/long = integracao com a receita v2 (efaf8c7) + pin #122, descendente de b30e2bd"
   }
  ],
  "scenarios": [
@@ -1090,7 +1123,7 @@
     "I",
     "A"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "obligations": [
     "V-03.a",
     "V-03.b",
@@ -1146,7 +1179,7 @@
     "I",
     "A"
    ],
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-06.a",
     "V-06.b",
@@ -1286,7 +1319,7 @@
     "I",
     "A"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "obligations": [
     "V-13.a",
     "V-13.b",
@@ -1539,7 +1572,7 @@
   },
   {
    "id": "RF-13",
-   "status": "inconclusiva",
+   "status": "aprovada",
    "obligations": [
     "V-01.a",
     "V-01.c",
@@ -1555,7 +1588,7 @@
   },
   {
    "id": "RF-14",
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-03.a",
     "V-03.b",
@@ -1597,7 +1630,7 @@
   },
   {
    "id": "RNF-02",
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-02.a",
     "V-02.b",
@@ -1690,7 +1723,7 @@
   },
   {
    "id": "CA-03",
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "obligations": [
     "V-02.a",
     "V-02.i",
@@ -1795,7 +1828,7 @@
   },
   {
    "id": "CA-11",
-   "status": "inconclusiva",
+   "status": "aprovada",
    "obligations": [
     "V-06.a",
     "V-06.d",
@@ -2317,22 +2350,33 @@
     "I"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "renovacao alem de uma hora e expiracao real durante comando",
-   "observed": "expiracao real de 1 h durante comando so em S; o ensaio 20 durou minutos",
+   "observed": "q34-long-v2: atividade real de 4579 s; o 1o token (1 h) expirou durante o comando do censo (c1b HTTP 401) com o valor mantido; renovacao emitida 10 min antes da expiracao e entregue durante o comando; o comando seguinte usou o grant renovado; todo grant rejeitado pelo GitHub depois; grant expirado registrado already-invalid (D-13)",
    "evidence": [
-    "docs/evidence/20-active-credential-lifecycle.md"
+    "docs/evidence/20-active-credential-lifecycle.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-long-v2-verdict.json"
    ],
-   "runs": [],
-   "commands": [],
+   "runs": [
+    "q34-long-v2"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/long34-qualification.ts (v2)"
+   ],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Executar R-LONG (atividade real > 60 min com renovacao e comando atravessando a expiracao)",
+   "pointer": "Aprovada por evidencia (D-13) com q34-long-v2",
    "reexecution": [
     "R-LONG"
-   ]
+   ],
+   "decision": {
+    "id": "D-13"
+   }
   },
   {
    "id": "V-03.d",
@@ -3144,7 +3188,7 @@
     "I"
    ],
    "observedLevels": [],
-   "status": "inconclusiva",
+   "status": "dependente-do-piloto",
    "expectation": "I/O e disco medidos",
    "observed": "io.stat ilegivel (ioRead/ioWrite null em todas as unidades); uso do disco do guest fora dos resumos",
    "evidence": [
@@ -3154,10 +3198,13 @@
    "commands": [],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Implementacao: ler I/O (habilitar/declarar o controlador io na delegacao systemd do usuario ou fonte alternativa) e registrar disco do guest no resumo; revalidar em R-THREE",
+   "pointer": "D-15: RISCO CONHECIDO DO PILOTO (ticket 35); medicao de I/O e disco do guest nao implementada agora; nao e aprovacao",
    "reexecution": [
     "R-THREE"
-   ]
+   ],
+   "decision": {
+    "id": "D-15"
+   }
   },
   {
    "id": "V-06.h",
@@ -4905,22 +4952,33 @@
     "I"
    ],
    "observedLevels": [
-    "S"
+    "S",
+    "I"
    ],
-   "status": "inconclusiva",
+   "status": "aprovada",
    "expectation": "ausencia de timeout sem corte de 60 min; ajuste de hora; duracao perdida apos crash",
-   "observed": "nenhuma atividade real > 60 min; ajuste de hora so S (relogio monotonico)",
+   "observed": "> 60 min sem timeout em ensaio real (q34-long-v2: 4579 s monotonicos, completed, timeoutSeconds null, nenhum registro de timeout; duracao registrada = medida do orquestrador em 0,7 s). LIMITE (D-14): ajuste de hora so S (relogio monotonico; sem injecao; 78 amostras, deriva maxima 1 ms, NTP sincronizado); duracao perdida apos crash so I-local (test/control/timeout-flow.test.ts, SIGKILL real)",
    "evidence": [
-    "docs/evidence/19-budgets-optional-timeout-and-grants.md"
+    "docs/evidence/19-budgets-optional-timeout-and-grants.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-long-v2-verdict.json"
    ],
-   "runs": [],
-   "commands": [],
+   "runs": [
+    "q34-long-v2"
+   ],
+   "commands": [
+    "npm run test:ci",
+    "receita test/entrypoints/long34-qualification.ts (v2)"
+   ],
    "tickets": [],
    "gate": "G4-concorrencia-adversidades",
-   "pointer": "Executar R-LONG (uma atividade real > 60 min sem timeout; ajuste de hora do host com autorizacao de injecao)",
+   "pointer": "Aprovada com limite (D-14): ajuste de hora em S, duracao apos crash em I-local",
    "reexecution": [
     "R-LONG"
-   ]
+   ],
+   "decision": {
+    "id": "D-14"
+   }
   },
   {
    "id": "V-13.f",
@@ -5744,10 +5802,7 @@
    "name": "Concorrencia e adversidades",
    "status": "inconclusiva",
    "blockers": [
-    "V-03.c",
-    "V-06.g",
-    "V-07.f",
-    "V-13.e"
+    "V-07.f"
    ]
   },
   {
@@ -6079,9 +6134,45 @@
    "decidedBy": "operador",
    "resolution": "proof-accepted",
    "decision": "Aprovada por evidencia: fechamento sem merge durante o reparo ativo, atividade concluida por conta propria, nao entregue, nao cancelada, sem publicacao depois; o verificador da receita passa a contar so interrupcoes antes do fim da Execucao."
+  },
+  {
+   "id": "D-13",
+   "obligations": [
+    "V-03.c"
+   ],
+   "question": "R-LONG v2: aprovar V-03.c pela evidencia, sendo a unica falha everyGrantRevoked um grant ja expirado (already-invalid apos expiresAt) e corrigir a verificacao da receita?",
+   "dependency": "R-LONG q34-long-v2 (y5/q34-long-v2; docs/evidence/34-r-long-v2-verdict.json)",
+   "decidedAt": "2026-11-18",
+   "decidedBy": "operador",
+   "resolution": "proof-accepted",
+   "decision": "Aprovada por evidencia: expiracao real de 1 h durante o comando (c1b HTTP 401), renovacao emitida antes da expiracao e entregue durante o comando, o comando seguinte usou a renovacao, todo grant rejeitado depois. A verificacao passa a aceitar revoked ou already-invalid so depois do expiresAt do grant; already-invalid antes da expiracao continua falha. Veredito original failed, reavaliado passed."
+  },
+  {
+   "id": "D-14",
+   "obligations": [
+    "V-13.e"
+   ],
+   "question": "V-13.e: aprovar com > 60 min provado em ensaio real e os demais itens no nivel S/I-local?",
+   "dependency": "R-LONG q34-long-v2; test/control/timeout-flow.test.ts (SIGKILL real); relogio do host nao injetado",
+   "decidedAt": "2026-11-18",
+   "decidedBy": "operador",
+   "resolution": "proof-accepted",
+   "decision": "Aprovada com limite: > 60 min sem timeout provado em ensaio real (v2: 4579 s, completed, sem timeout configurado nem registrado). Ajuste de hora provado so em S (relogio monotonico; sem injecao; observacao passiva de 78 amostras, deriva maxima 1 ms, NTP sincronizado). Duracao perdida apos crash em nivel I-local (test/control/timeout-flow.test.ts, SIGKILL real)."
+  },
+  {
+   "id": "D-15",
+   "obligations": [
+    "V-06.g"
+   ],
+   "question": "V-06.g (I/O e disco do guest medidos): implementar antes do piloto ou registrar como risco conhecido do piloto?",
+   "dependency": "RNF-02/CA-03; ticket 35 (risco conhecido do piloto); leitura de I/O e disco do guest nao implementada; R-THREE nao executado",
+   "decidedAt": "2026-11-18",
+   "decidedBy": "operador",
+   "resolution": "carried-to-pilot",
+   "decision": "RISCO CONHECIDO DO PILOTO: a medicao de I/O (io.stat ilegivel) e do disco do guest nao e implementada agora. V-06.g continua nao aprovada e segue ao piloto (ticket 35) como risco conhecido."
   }
  ],
- "result": "Nao libera o piloto nem aceite do MVP. Libera no maximo a preparacao da solicitacao de autorizacao do piloto (35). Decisoes D-01..D-12; R-INSPECT, R-GH-DEP, R-CAND v9, R-CRASH-A v5 e R-HOSTFAULT v3 executados; R-GH-CHECKS completo (v2 + R-GH-CHECKS-S) e R-GH-ADV completo (v4 + R-GH-ADV-S v2, D-11, D-12); seguem bloqueando G4/G5 as obrigacoes inconclusivas restantes (R-LONG, R-THREE, R-REL, R-INSTR).",
+ "result": "Nao libera o piloto nem aceite do MVP. Libera no maximo a preparacao da solicitacao de autorizacao do piloto (35). Decisoes D-01..D-15; R-INSPECT, R-GH-DEP, R-CAND v9, R-CRASH-A v5, R-HOSTFAULT v3 e R-LONG v2 executados; R-GH-CHECKS completo (v2 + R-GH-CHECKS-S) e R-GH-ADV completo (v4 + R-GH-ADV-S v2, D-11, D-12); V-03.c (D-13) e V-13.e (D-14, com limite S/I-local) aprovadas; V-06.g levada ao piloto como risco conhecido (D-15); seguem bloqueando G4/G5 so V-07.f (R-INSTR) e V-16.b (R-REL, release do candidato).",
  "decisionsRecordedAt": "2026-11-18",
  "countsHistory": [
   {

@@ -1,4 +1,4 @@
-# Evidência 34 / ensaios pré-piloto: R-INSPECT, R-GH-DEP, R-CAND, R-CRASH-A, R-GH-CHECKS e R-GH-ADV
+# Evidência 34 / ensaios pré-piloto: R-INSPECT, R-GH-DEP, R-CAND, R-CRASH-A, R-GH-CHECKS, R-GH-ADV e R-LONG
 
 Ticket: [34](../../.scratch/software-factory-mvp/issues/34-candidate-qualification-and-acceptance-coverage.md). Relatório principal:
 [34-candidate-qualification.md](34-candidate-qualification.md). Matriz: [34-qualification-matrix.json](34-qualification-matrix.json).
@@ -232,11 +232,41 @@ copiado sem alteração, está em [34-r-ghadv-s-v2-verdict.json](34-r-ghadv-s-v2
 - V-10.g (já aprovada por D-11): aqui o merge às 09:06:00Z veio depois do fim do reparo (09:05:56.838Z), e `duringActivity` ficou null.
 - `leased-pushes-only` e `no-secret` atendidos.
 
+## R-LONG `y5/q34-long-v1..v2` — V-03.c aprovada (D-13); V-13.e aprovada com limite S/I-local (D-14)
+
+Totais: 95/0/5/12 → **97/0/2/13**. Na mesma atualização, V-06.g foi levada ao piloto como risco conhecido (D-15), o que move
+uma obrigação de inconclusiva para dependente do piloto. Receita
+`long34-qualification.ts`: provedor roteirizado (sem modelo), tokens reais da App (1 h) com a renovação de produção (600 s antes da
+expiração), nenhum timeout configurado, raiz própria da Factory e relógio do host só observado (nunca alterado).
+
+- **v1** (`511bae7`, #118, raiz `l34`): **inconclusivo**. A atividade durou 16 min (967,9 s). O roteiro rodou como planejado, mas o
+  Gradle pulou a suíte depois da 1ª execução (`:test UP-TO-DATE`, 16 s; a 1ª levou 10m29s). O limite de 12 execuções encerrou o censo
+  em 963 s, antes da expiração do 1º token (09:10:15). A receita v1 dizia `failed` por `newCommandGotRenewal`, mas nenhuma renovação era
+  devida antes de ~09:00. Era defeito da receita, e a regra da v2 lê esse resultado como inconclusivo.
+- **v2** (`ca13cf1`, #122, raiz `lv2`, namespace `q34-long-v2`): 4579 s medidos no relógio monotônico, `completed`, sem timeout. O censo
+  teve 37 execuções reais da suíte com `--rerun-tasks` em 4576 s, sem `sleep`. O grant 1 (emitido 09:10:53, expira 10:10:52) foi mantido
+  pelo comando do censo, cuja leitura final deu HTTP 401 (expiração real durante o comando). O grant 2 foi emitido às 10:00:55 (antes
+  da expiração) e entregue durante o comando; o comando seguinte o usou e a leitura funcionou. Depois, o GitHub rejeitou os dois
+  grants. A duração registrada bate com a medida do orquestrador (diferença de 0,7 s). Relógio do host: 78 amostras, deriva máxima de
+  1 ms, nenhum salto, NTP sincronizado no início e no fim.
+- **Veredito do v2, original e reavaliado.** O original deu `failed` só por `everyGrantRevoked`. O grant 1 já tinha expirado quando a
+  revogação do fim rodou (10:27:13), e o GitHub respondeu 401. O produto registrou `already-invalid` / `GITHUB_TOKEN_NOT_ACCEPTED`
+  (`src/platform/github/index.ts:438`), o registro honesto. A verificação da receita estava estrita demais. Pela decisão do operador,
+  ela passa a aceitar `revoked` ou `already-invalid` só depois do `expiresAt` do grant; `already-invalid` antes da expiração, ou com
+  expiração desconhecida, continua falha (teste com os dados do v2). Reavaliado com a regra corrigida: **passed**. Os dois vereditos
+  estão em [34-r-long-v2-verdict.json](34-r-long-v2-verdict.json).
+- **V-03.c (D-13):** aprovada por evidência.
+- **V-13.e (D-14), com limite:** mais de 60 min sem timeout está provado em ensaio real. O ajuste de hora está provado só em S (relógio
+  monotônico, sem injeção, porque mudar o relógio do sistema afeta o host inteiro). A duração perdida após crash está provada em nível
+  I-local (`test/control/timeout-flow.test.ts`, SIGKILL real).
+- **V-06.g (D-15):** RISCO CONHECIDO DO PILOTO. A medição de I/O e do disco do guest não é implementada agora. Continua não aprovada
+  e segue ao piloto (ticket 35). Efeito nos totais: inconclusivas −1, dependentes do piloto +1.
+
 ## Pendências deste registro
 
 - Novo ticket para o flake `test/records/raw.test.ts` sob carga de VM:
   [42](../../.scratch/software-factory-mvp/issues/42-records-raw-test-flake-under-load.md).
-- G4 e G5 continuam bloqueados. As obrigações restantes estão em `R-LONG`, `R-THREE`, `R-REL` (V-16.b) e
-  `R-INSTR`.
+- G4 e G5 continuam bloqueados só por V-07.f (`R-INSTR`) e V-16.b (`R-REL`, release do candidato). `R-THREE` não é mais exigido
+  antes do piloto (V-06.g levada ao piloto, D-15).
 - Ticket 43 (revisão de reconciliação) resolvido em `6c4a9e0` e validado em `q34-ghadv-v4`:
   [43](../../.scratch/software-factory-mvp/issues/43-reconciliation-review-own-patch.md). Este resultado continua liberando no máximo a preparação da solicitação de autorização do piloto (35).

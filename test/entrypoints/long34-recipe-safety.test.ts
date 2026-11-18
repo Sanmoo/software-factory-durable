@@ -64,6 +64,7 @@ test('host clock: drift is calendar minus monotonic per interval; a jump over 1 
 });
 
 const expiresAt = '2026-11-20T11:00:00.000Z';
+const rev = (kind: string, at: string, grantExpiresAt: string | null) => ({ kind, at, expiresAt: grantExpiresAt });
 function world(change: (input: LongInput) => void = () => {}) {
   const input: LongInput = {
     execution: { end: { outcome: 'completed' }, timing: { timeoutSeconds: null, timeout: null, duration: { kind: 'measured', elapsedMs: 80 * 60_000, endedAt: '2026-11-20T11:21:00.000Z' } },
@@ -71,7 +72,7 @@ function world(change: (input: LongInput) => void = () => {}) {
       credentialRenewals: [{ outcome: 'issued', delivery: 'delivered', metadata: { issuedAt: '2026-11-20T10:50:00.000Z', expiresAt: '2026-11-20T11:50:00.000Z' } }] } as never,
     issued: ['f1', 'f2'], delivered: ['f1', 'f2'], deliveredAt: ['2026-11-20T10:50:01.000Z'],
     markers: [['c0:f1', 'gh-c0:ok:Sanmoo/java-springboot-event-sourcing'], ['c1a:f1', 'gh-c1a:ok:x', 'run:1:0:600', 'census:8:4510', 'c1b:f1', 'gh-c1b:fail:HTTP-401'], ['c2:f2', 'gh-c2:ok:x']],
-    c1: { start: '2026-11-20T10:01:00.000Z', end: '2026-11-20T11:16:30.000Z' }, revocations: ['revoked', 'revoked'], postCheck: ['already-invalid', 'already-invalid'],
+    c1: { start: '2026-11-20T10:01:00.000Z', end: '2026-11-20T11:16:30.000Z' }, revocations: [rev('revoked', '2026-11-20T11:21:01.000Z', '2026-11-20T11:00:00.000Z'), rev('revoked', '2026-11-20T11:21:01.500Z', '2026-11-20T11:50:00.000Z')], postCheck: ['already-invalid', 'already-invalid'],
     observedMonotonicMs: 80 * 60_000 + 7000, deadlineReached: false };
   change(input);
   return assess(input);
@@ -83,7 +84,7 @@ test('V-03.c/V-13.e verdict: passed only with every check; a timeout cut or a lo
   assert.deepEqual([cut.status, cut.failures], ['failed', ['completedWithoutTimeout']], 'any timeout cut fails the run');
   assert.deepEqual(world(input => { input.markers[1] = ['c1a:f1', 'gh-c1a:ok:x', 'c1b:f2', 'gh-c1b:ok:x']; }).failures, ['runningCommandKeptItsValue'], 'a running command never changes its value');
   assert.deepEqual(world(input => { input.markers[2] = ['c2:f1', 'gh-c2:fail:HTTP-401']; }).failures, ['newCommandGotRenewal']);
-  assert.deepEqual(world(input => { input.revocations = ['revoked', 'unknown']; }).failures, ['everyGrantRevoked']);
+  assert.deepEqual(world(input => { input.revocations = [rev('revoked', '2026-11-20T11:21:01.000Z', expiresAt), rev('unknown', '2026-11-20T11:21:01.500Z', '2026-11-20T11:50:00.000Z')]; }).failures, ['everyGrantRevoked']);
   assert.deepEqual(world(input => { input.postCheck = ['already-invalid', 'revoked']; }).failures, ['githubRejectsEveryGrantAfterwards'], 'a grant still accepted afterwards');
   const late = world(input => { (input.execution!.credentialRenewals[0]!.metadata as { issuedAt: string }).issuedAt = '2026-11-20T11:05:00.000Z'; });
   assert.deepEqual(late.failures, ['renewedBeforeExpiry'], 'a renewal after the first expiry is a lost renewal');
@@ -148,10 +149,28 @@ test('real run v1 verdict: a run that never reached the renewal point is INCONCL
       credentialIssuance: { outcome: 'issued', metadata: { issuedAt: '2026-11-18T08:10:15.289Z', expiresAt: '2026-11-18T09:10:15Z' } }, credentialRenewals: [] } as never;
     input.issued = ['f1']; input.delivered = ['f1']; input.deliveredAt = [];
     input.markers = [['c0:f1', 'gh-c0:ok:x'], ['c1a:f1', 'gh-c1a:ok:x', 'census:12:963', 'c1b:f1', 'gh-c1b:ok:x'], ['c2:f1', 'gh-c2:ok:x']];
-    input.c1 = { start: '2026-11-18T08:10:17.221Z', end: '2026-11-18T08:26:22.548Z' }; input.revocations = ['revoked']; input.postCheck = ['already-invalid'];
+    input.c1 = { start: '2026-11-18T08:10:17.221Z', end: '2026-11-18T08:26:22.548Z' }; input.revocations = [rev('revoked', '2026-11-18T08:26:23.939Z', '2026-11-18T09:10:15Z')]; input.postCheck = ['already-invalid'];
     input.observedMonotonicMs = 970910;
   });
   assert.equal(v1.status, 'inconclusive', JSON.stringify(v1));
   assert.deepEqual(v1.failures, []);
   assert.ok(v1.inconclusive.includes('CENSUS_DID_NOT_CROSS_THE_FIRST_EXPIRY') && v1.inconclusive.includes('RENEWAL_POINT_NOT_REACHED'));
+});
+
+test('real run v2 (4579 s, every other check true): grant 1 had EXPIRED (10:10:52) when it was revoked (10:27:13), GitHub answered 401 -> already-invalid; that is a settled grant, not a failure', () => {
+  const v2 = (revocations: LongInput['revocations']) => assess({
+    execution: { end: { outcome: 'completed' }, timing: { timeoutSeconds: null, timeout: null, duration: { kind: 'measured', elapsedMs: 4579724.589655, endedAt: '2026-11-18T10:27:12.000Z' } },
+      credentialIssuance: { outcome: 'issued', metadata: { issuedAt: '2026-11-18T09:10:53.009Z', expiresAt: '2026-11-18T10:10:52Z' } },
+      credentialRenewals: [{ outcome: 'issued', delivery: 'delivered', metadata: { issuedAt: '2026-11-18T10:00:55.329Z', expiresAt: '2026-11-18T11:00:54Z' } }] } as never,
+    issued: ['26d121c16f00', '8cb348d6e8e1'], delivered: ['26d121c16f00', '8cb348d6e8e1'], deliveredAt: ['2026-11-18T10:00:55.942Z'],
+    markers: [['c0:26d121c16f00', 'gh-c0:ok:x'], ['c1a:26d121c16f00', 'gh-c1a:ok:x', 'census:37:4576', 'c1b:26d121c16f00', 'gh-c1b:fail:HTTP-401'], ['c2:8cb348d6e8e1', 'gh-c2:ok:x']],
+    c1: { start: '2026-11-18T09:10:55.000Z', end: '2026-11-18T10:27:11.000Z' }, revocations,
+    postCheck: ['already-invalid', 'already-invalid'], observedMonotonicMs: 4578983, deadlineReached: false });
+  const observed = v2([rev('already-invalid', '2026-11-18T10:27:13.321Z', '2026-11-18T10:10:52Z'), rev('revoked', '2026-11-18T10:27:13.804Z', '2026-11-18T11:00:54Z')]);
+  assert.equal(observed.status, 'passed', JSON.stringify(observed));
+  // already-invalid BEFORE its expiry is not explained by expiry: it still fails (revoked by someone else, or the grant was never valid).
+  const early = v2([rev('already-invalid', '2026-11-18T10:05:00.000Z', '2026-11-18T10:10:52Z'), rev('revoked', '2026-11-18T10:27:13.804Z', '2026-11-18T11:00:54Z')]);
+  assert.deepEqual([early.status, early.failures], ['failed', ['everyGrantRevoked']]);
+  assert.equal(v2([rev('already-invalid', '2026-11-18T10:27:13.321Z', null), rev('revoked', '2026-11-18T10:27:13.804Z', '2026-11-18T11:00:54Z')]).status, 'failed', 'an unknown expiry never excuses it');
+  assert.equal(v2([rev('revoked', '2026-11-18T10:27:13.321Z', '2026-11-18T10:10:52Z')]).status, 'failed', 'one revocation per issued grant');
 });

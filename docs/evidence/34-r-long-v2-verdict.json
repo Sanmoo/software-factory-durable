@@ -1,0 +1,173 @@
+{
+ "run": "q34-long-v2",
+ "namespace": "/home/sanmoo/software-factory-test/y5/q34-long-v2",
+ "issue": 122,
+ "pin": "ca13cf1",
+ "recipe": "test/entrypoints/long34-qualification.ts",
+ "originalVerdict": {
+  "status": "failed",
+  "checks": {
+   "completedWithoutTimeout": true,
+   "activityOverOneHour": true,
+   "initialGrantExpiredDuringActivity": true,
+   "renewedBeforeExpiry": true,
+   "runningCommandKeptItsValue": true,
+   "expiryObservedDuringCommand": true,
+   "renewalDeliveredWhileC1Ran": true,
+   "newCommandGotRenewal": true,
+   "everyGrantRevoked": false,
+   "githubRejectsEveryGrantAfterwards": true,
+   "durationMonotonic": true
+  },
+  "inconclusive": [],
+  "failures": [
+   "everyGrantRevoked"
+  ]
+ },
+ "reevaluatedVerdict": {
+  "status": "passed",
+  "checks": {
+   "completedWithoutTimeout": true,
+   "activityOverOneHour": true,
+   "initialGrantExpiredDuringActivity": true,
+   "renewedBeforeExpiry": true,
+   "runningCommandKeptItsValue": true,
+   "expiryObservedDuringCommand": true,
+   "renewalDeliveredWhileC1Ran": true,
+   "newCommandGotRenewal": true,
+   "everyGrantRevoked": true,
+   "githubRejectsEveryGrantAfterwards": true,
+   "durationMonotonic": true
+  },
+  "inconclusive": [],
+  "failures": []
+ },
+ "reevaluatedWith": "everyGrantRevoked: revoked, or already-invalid only after the grant expiresAt (operator decision 2026-11-18)",
+ "grants": [
+  {
+   "fingerprint": "26d121c16f00",
+   "issuedAt": "2026-11-18T09:10:51.730Z",
+   "expiresAt": "2026-11-18T10:10:52Z"
+  },
+  {
+   "fingerprint": "8cb348d6e8e1",
+   "issuedAt": "2026-11-18T10:00:52.841Z",
+   "expiresAt": "2026-11-18T11:00:54Z"
+  }
+ ],
+ "revocations": [
+  {
+   "kind": "already-invalid",
+   "at": "2026-11-18T10:27:13.321Z",
+   "expiresAt": "2026-11-18T10:10:52Z",
+   "fingerprint": "26d121c16f00",
+   "code": "GITHUB_TOKEN_NOT_ACCEPTED"
+  },
+  {
+   "kind": "revoked",
+   "at": "2026-11-18T10:27:13.804Z",
+   "expiresAt": "2026-11-18T11:00:54Z",
+   "fingerprint": "8cb348d6e8e1",
+   "code": "GITHUB_TOKEN_REVOKED"
+  }
+ ],
+ "postCheck": [
+  {
+   "fingerprint": "26d121c16f00",
+   "kind": "already-invalid",
+   "code": "GITHUB_TOKEN_NOT_ACCEPTED"
+  },
+  {
+   "fingerprint": "8cb348d6e8e1",
+   "kind": "already-invalid",
+   "code": "GITHUB_TOKEN_NOT_ACCEPTED"
+  }
+ ],
+ "census": [
+  "run:1:0:244",
+  "run:2:0:113",
+  "run:3:0:106",
+  "run:4:0:114",
+  "run:5:0:124",
+  "run:6:0:181",
+  "run:7:0:139",
+  "run:8:0:129",
+  "run:9:0:116",
+  "run:10:0:120",
+  "run:11:0:138",
+  "run:12:0:105",
+  "run:13:0:107",
+  "run:14:0:107",
+  "run:15:0:109",
+  "run:16:0:109",
+  "run:17:0:113",
+  "run:18:0:113",
+  "run:19:0:108",
+  "run:20:0:108",
+  "run:21:0:113",
+  "run:22:0:110",
+  "run:23:0:115",
+  "run:24:0:169",
+  "run:25:0:110",
+  "run:26:1:117",
+  "run:27:0:109",
+  "run:28:0:120",
+  "run:29:1:132",
+  "run:30:1:110",
+  "run:31:0:110",
+  "run:32:0:109",
+  "run:33:0:110",
+  "run:34:1:171",
+  "run:35:0:137",
+  "run:36:0:119",
+  "run:37:0:112",
+  "census:37:4576"
+ ],
+ "hostClock": {
+  "injected": false,
+  "samples": 78,
+  "maxDriftMs": 1,
+  "totalDriftMs": 0,
+  "steps": 0,
+  "ntpAtStart": "Timezone=America/Fortaleza\nNTP=yes\nNTPSynchronized=yes",
+  "ntpAtEnd": "Timezone=America/Fortaleza\nNTP=yes\nNTPSynchronized=yes",
+  "recordedElapsedMs": 4579724.589655,
+  "observedMonotonicMs": 4578983
+ },
+ "execution": {
+  "executionId": "c8e320ed-56f3-4590-adac-9371ef6c4b30",
+  "end": {
+   "outcome": "completed",
+   "code": null,
+   "cessation": "confirmed"
+  },
+  "timing": {
+   "timeoutSeconds": null,
+   "clock": "controller-monotonic",
+   "origin": "3843b576-e943-4d5f-add9-0b674943f3d4",
+   "startedAt": "2026-11-18T09:10:53.210Z",
+   "lastActivity": {
+    "at": "2026-11-18T10:27:12.935Z",
+    "elapsedMs": 4579724.589655,
+    "event": "ended-completed"
+   },
+   "duration": {
+    "kind": "measured",
+    "elapsedMs": 4579724.589655,
+    "endedAt": "2026-11-18T10:27:12.935Z"
+   },
+   "timeout": null,
+   "overrun": "not-applicable"
+  }
+ },
+ "secretShapes": {
+  "/home/sanmoo/software-factory-test/y5/q34-long-v2": 0,
+  "/home/sanmoo/software-factory-test/lv2/09f29860-b1f1-4d2a-a8ce-91963bb728e9": 0,
+  "/home/sanmoo/software-factory-test/lv2/r/fDzRjE7KQ3G4Y6n4Pts3Hw": 16
+ },
+ "runStatus": {
+  "status": "success",
+  "holdReason": null,
+  "censusCrossed": true
+ }
+}
