@@ -23,10 +23,10 @@
  "applicabilityPolicy": "aplicavel: executada no candidato. aplicavel-encadeada: anterior ao candidato; mudancas posteriores na mesma fronteira tiveram prova real propria em ensaio posterior (citado) e a suite local passa no candidato; combinacoes nunca executadas juntas ficam como obrigacao inconclusiva propria (V-06.h). inconclusiva: mudanca posterior sem prova real. Excecao registrada: ci-d07 conta como aplicavel para V-14.g porque roda no commit da mudanca decidida pelo operador (D-07, 5a026e7), descendente do candidato; o piloto exige uma composicao que a contenha.",
  "candidate": {
   "integrationBranch": "integration/software-factory-mvp",
-  "commit": "b30e2bddea160e0f577ac08a943fb91a08438132",
-  "tree": "74508e972ea18df3417faaa28924c99649fcf387",
-  "srcTree": "212c4952296a6a77690b29dcf5e3838b13d5f6d8",
-  "includesTickets": "01-33, 36-40 (29 integrado em 0d343d6); 41 integrado em b30e2bd como capacidade extra fora da spec (override explicito de RECOVERY_BLOCKED, local), sem obrigacao na matriz",
+  "commit": "f3c7cf3041dd01e6136f4b53ec4db4b4e17b809c",
+  "tree": "b1f7fd71a06b991adc935f88d03f9abe90a3a284",
+  "srcTree": "723c0a2221ddd67b39de2597d9b35d87d4b94096",
+  "includesTickets": "01-33, 36-40, 41 (override explicito de RECOVERY_BLOCKED, local, sem obrigacao na matriz) e 43 (revisao de reconciliacao, 6c4a9e0); mais D-07 (5a026e7), V-09.f (f4cb958), bus do owner (5ab72fa), continuacao apos Pergunta (b4c5443), factory-skills-v7 (82d6faf) e as receitas pre-piloto",
   "excludedTickets": [
    "35 (piloto, depende deste)"
   ],
@@ -53,9 +53,9 @@
   "storageFormat": 2,
   "protocolVersion": 1,
   "skillPack": {
-   "id": "factory-skills-v6",
-   "version": "6.0.0",
-   "gitTree": "80330ee89749b7a441d4a00abe9a381f8e0a03c8"
+   "id": "factory-skills-v7",
+   "version": "7.0.0",
+   "gitTree": "8fea9d7611502682990c247795c0bf17612a0f15"
   },
   "guestAssets": {
    "name": "assets34",
@@ -87,26 +87,47 @@
   },
   "effectiveConfiguration": "Nao existe configuracao operacional do candidato: cada ensaio usou a configuracao da sua receita (ex.: q24 capacity 3, guest 2048 MiB/2 vCPU/40 GiB, minFreeSpaceGiB 4, minFreeMemoryMiB 1024; q18 guest 4096 MiB/2 vCPU). A configuracao efetiva do piloto e escolha do ticket 35.",
   "release": {
-   "builtFromCandidate": false,
-   "latestBuilt": "mvp-33.1 de b6cd2bb (r33-v2), manifestSha256 4696d55b0091ba47955ba68de96e8e9989ddfc37f2fa58cee8a4343de344073c",
-   "manifestQualification": "unqualified"
+   "builtFromCandidate": true,
+   "release": "mvp-34.5",
+   "commit": "f3c7cf3041dd01e6136f4b53ec4db4b4e17b809c",
+   "manifestSha256": "4988db2aa98c3a1dbc6e790628b80afcc9d18d74247d172396bbe035ddd0796e",
+   "archiveSha256": "f50795dd18db69aa0670d3861e13f85e74b1d836690eaf0da5554dfc50a32ad7",
+   "installationRoot": "/home/sanmoo/software-factory-test/pr2 (selecionada; controlador inativo)",
+   "run": "prel34-v5",
+   "manifestQualification": "unqualified",
+   "evidence": "docs/evidence/34-r-upg-v5-release.json"
   },
-  "realRunOnCandidate": "R-CAND qcand34-v9 na release mvp-34.4 (descendente de b30e2bd); nenhum em b30e2bd exatamente",
+  "realRunOnCandidate": "prel34-v5 (build/verify/identidade/upgrade da propria release mvp-34.5); jornadas completas em mvp-34.4 (e18924e, R-CAND v9) e na dist de checkouts da mesma linha (R-GH-ADV-S v2, R-GH-CHECKS-S, R-LONG v2, R-INSTR v1)",
   "pilotComposition": {
-   "release": "mvp-34.4",
-   "commit": "e18924e16b8962ff06485df8fcb3951bbe83243d",
-   "manifestSha256": "eb430f43530f98c561b4930cc011cf97e538981e2873f8bf92ff3a02dc340dff",
-   "archiveSha256": "4e122f07dacbe0a5e67c6fa823e9a1af9db12afc1e28bc71803a6b56c1b8efa5",
+   "release": "mvp-34.5",
+   "commit": "f3c7cf3041dd01e6136f4b53ec4db4b4e17b809c",
+   "manifestSha256": "4988db2aa98c3a1dbc6e790628b80afcc9d18d74247d172396bbe035ddd0796e",
+   "archiveSha256": "f50795dd18db69aa0670d3861e13f85e74b1d836690eaf0da5554dfc50a32ad7",
    "installationRoot": "pr2",
    "skillPack": "factory-skills-v7 (Builder)",
-   "productChangesAfterCandidate": [
-    "5a026e7 scrub do SQLite apos forget (D-07)",
-    "f4cb958 leitura de lock_branch/assinaturas/historico linear/push restrictions (V-09.f)",
-    "5ab72fa owner com o bus do user manager",
-    "b4c5443 continuacao apos Pergunta conhece os achados entregues",
-    "82d6faf factory-skills-v7"
+   "note": "a composicao do piloto e o proprio candidato; a solicitacao de autorizacao esta em docs/evidence/35-pilot-authorization-request.md"
+  },
+  "previousCandidate": {
+   "commit": "b30e2bddea160e0f577ac08a943fb91a08438132",
+   "tree": "74508e972ea18df3417faaa28924c99649fcf387",
+   "srcTree": "212c4952296a6a77690b29dcf5e3838b13d5f6d8",
+   "note": "candidato ate 2026-11-18 (decisao do operador: o candidato passa a ser a release mvp-34.5 de f3c7cf3, descendente de b30e2bd)"
+  },
+  "candidateChange": {
+   "decidedAt": "2026-11-18",
+   "decidedBy": "operador",
+   "from": "b30e2bd",
+   "to": "f3c7cf3 (release mvp-34.5)",
+   "why": "acrescenta b4c5443 (continuacao apos Pergunta conhece os achados entregues), factory-skills-v7 82d6faf, ticket 43 6c4a9e0 (revisao de reconciliacao) e as correcoes das receitas; todo ensaio pre-piloto a partir de mvp-34.4/f3c7cf3 rodou sobre esse codigo",
+   "productChangesAfterPreviousCandidate": [
+    "5a026e7 scrub do SQLite apos forget (D-07): control/durable/{forget,retention-desk,store,control}.ts, rules/forget.ts, types.ts",
+    "f4cb958 leitura classica de lock_branch/assinaturas/historico linear/push restrictions: code-repository/{index,pull-request}.ts, control/rules/checks.ts",
+    "5ab72fa owner com o bus do user manager: entrypoints/controller.ts",
+    "b4c5443 continuacao apos Pergunta conhece os achados entregues: control/durable/{dispatch,review}.ts, control/rules/review.ts, platform/host/worker-bootstrap.ts, workers/{builder-handoff,index,worker-start}.ts",
+    "82d6faf factory-skills-v7 (pacote novo do Builder; v6 intacto): assets/skill-pack/factory-skills-v7, contracts/index.ts, workers/skill-pack.ts",
+    "6c4a9e0 revisao de reconciliacao julga o patch proprio a partir da ponta autorizada: contracts/index.ts, control/rules/review.ts, workers/handoff.ts"
    ],
-   "note": "R-CAND v9 rodou nesta release; os ensaios anteriores rodaram em b30e2bd ou antes (ver realRuns)"
+   "revalidation": "ver docs/evidence/34-candidate-qualification.md secao 2 (Revalidacao das provas na troca de candidato): 23 obrigacoes aprovadas tem prova anterior a uma mudanca de produto da sua area; nenhum estado foi alterado"
   }
  },
  "counts": {

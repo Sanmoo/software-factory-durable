@@ -102,23 +102,43 @@ R-HOSTFAULT e R-GH-ADV ficaram menores (D-03, D-05, D-06, D-08).
 
 ## 2. Identidade do candidato
 
-- Integração `integration/software-factory-mvp`, commit `b30e2bddea160e0f577ac08a943fb91a08438132`, tree `74508e972ea18df3417faaa28924c99649fcf387`, `src/` tree `212c4952296a6a77690b29dcf5e3838b13d5f6d8`.
-- Conteúdo: tickets 01-33, 36-40 (29 integrado em 0d343d6); 41 integrado em b30e2bd como capacidade extra fora da spec (override explicito de RECOVERY_BLOCKED, local), sem obrigacao na matriz. Fora: 35 (piloto, depende deste).
+- **Candidato (decisão do operador de 2026-11-18): a release `mvp-34.5` de `f3c7cf3041dd01e6136f4b53ec4db4b4e17b809c`**, tree `b1f7fd71a06b991adc935f88d03f9abe90a3a284`, `src/` tree `723c0a2221ddd67b39de2597d9b35d87d4b94096`, instalada e selecionada em `pr2` pelo R-UPG v5 (manifesto `4988db2a…`, arquivo `f50795dd…`). Candidato anterior: `b30e2bddea160e0f577ac08a943fb91a08438132` (tree `74508e97…`, `src/` `212c4952…`), do qual `f3c7cf3` descende.
+- Por que mudou: `f3c7cf3` acrescenta `b4c5443` (a continuação após uma Pergunta conhece os achados entregues), `factory-skills-v7` (`82d6faf`), o ticket 43 (`6c4a9e0`, revisão de reconciliação) e as correções das receitas; todo ensaio pré-piloto a partir de `mvp-34.4`/`f3c7cf3` rodou sobre esse código.
+- Conteúdo: tickets 01-33, 36-40, 41 (override explícito de RECOVERY_BLOCKED, local, sem obrigação na matriz) e 43; mais D-07 (`5a026e7`), V-09.f (`f4cb958`), bus do owner (`5ab72fa`), `b4c5443` e `factory-skills-v7`. Fora: 35 (piloto, depende deste).
 - `package-lock.json` sha256 `de1b76b7c26de69d087075260c2f409edd3544f2d113ad8faa5a593ae2ae4587`; Node 24.21.0, npm 11.19.0; runtime `@earendil-works/pi-durable` 1.5.0, `@earendil-works/chord` 1.5.0, `@earendil-works/gondolin` 0.14.0, `yaml` 2.9.1, `zod` 4.6.7.
 - SDK: Pi coding-agent 1.5.2, perfil `factory-development-pi-1.5.2-read-async-bash-lexical-v3`. SQLite 3.53.4 WAL/FULL. Storage formato 2, protocolo 1.
-- Pacote `factory-skills-v6` 6.0.0 (git tree `80330ee89749b7a441d4a00abe9a381f8e0a03c8`).
+- Pacote do Builder `factory-skills-v7` 7.0.0 (git tree `8fea9d7611502682990c247795c0bf17612a0f15`; o v6 segue intacto).
 - Assets do guest `assets34`: manifesto sha256 `8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807`, buildId `541fc455-59d8-5358-8d26-5cc416a53a92`, perfil `gondolin-qemu-alpine-dev-v1`, Alpine 3.23.7, kernel 6.18.58-0-virt, Docker 29.5.2 (vfs); não qualificados.
 - Modelos: Builder openai/gpt-6-luna (factory-oauth), Standards openai/gpt-6-luna (factory-oauth), Spec openai/gpt-6-luna (factory-oauth); retries de provedor/SDK 0; mesmo modelo nos tres papeis em todos os ensaios A; modelos distintos por papel nao foram exercitados.
 - Host: Arch Linux x86_64, kernel 7.1.9-arch1-2, QEMU 11.1.2, systemd 262, 8 CPUs, 15.7 GiB, KVM (evidencias 03/32/24; kernel, CPUs e memoria reconferidos read-only em 2026-11-16 (uname/nproc/free); nenhum boot ou VM).
 - Configuração efetiva: Nao existe configuracao operacional do candidato: cada ensaio usou a configuracao da sua receita (ex.: q24 capacity 3, guest 2048 MiB/2 vCPU/40 GiB, minFreeSpaceGiB 4, minFreeMemoryMiB 1024; q18 guest 4096 MiB/2 vCPU). A configuracao efetiva do piloto e escolha do ticket 35.
-- Release: nenhuma construída do candidato; última construída mvp-33.1 de b6cd2bb (r33-v2), manifestSha256 4696d55b0091ba47955ba68de96e8e9989ddfc37f2fa58cee8a4343de344073c; manifesto `qualification: unqualified`.
+- Release: `mvp-34.5`, construída do candidato (`prel34-v5`, [34-r-upg-v5-release.json](34-r-upg-v5-release.json)); manifesto `qualification: unqualified` (é a afirmação do manifesto, não falha de verificação).
 
-**Composição do piloto.** R-CAND v9 rodou a jornada completa na release `mvp-34.4` (`e18924e`, manifesto `eb430f43…`), descendente do
-candidato, com as mudanças de produto posteriores listadas em `candidate.pilotComposition` do JSON (D-07, V-09.f, bus do owner,
-`b4c5443`, `factory-skills-v7`); o piloto (35) deve usar uma release que as contenha. **Antes do R-CAND v9**, nenhum ensaio real rodou sobre o candidato, e os mais recentes ficavam em metades diferentes da composição: `q23-feedback-v3`
-(`d49f43d`) não tem a passada única de despacho/capacidade do 24 (`dispatch.ts`, `capacity.ts`, `start.ts`), a inspeção do 29 nem o
-override do 41; `q24-three-v3` (`1f033f8`) não tem o feedback do 23. A combinação só tem prova S no candidato (V-06.h → R-CAND).
-Não existe configuração efetiva do piloto: cada ensaio usou a da sua receita.
+**Composição do piloto.** É o próprio candidato: `mvp-34.5` (`f3c7cf3`) em `pr2`. A solicitação de autorização está em
+[35-pilot-authorization-request.md](35-pilot-authorization-request.md). Não existe configuração efetiva do piloto: cada ensaio usou a da sua receita.
+
+### Revalidação das provas na troca de candidato (2026-11-18)
+
+Para cada obrigação aprovada, comparei os commits dos ensaios que ela cita com as seis mudanças de produto entre `b30e2bd` e `f3c7cf3`
+(`git merge-base --is-ancestor`) e com a área de cada mudança. Das 99 aprovadas, 23 citam só ensaios anteriores a uma mudança da sua área.
+Para 14 a prova antiga continua valendo porque a mudança não toca o comportamento verificado. **9 ficam sinalizadas**: a mudança toca a
+área, e a prova na composição nova existe em ensaios posteriores que a obrigação ainda não cita. **Nenhum estado foi alterado**; citar os
+ensaios novos (ou reabrir) é decisão do operador.
+
+| Obrigação | Mudança da área ausente nos ensaios citados | Avaliação |
+| --- | --- | --- |
+| V-07.a, V-07.c, V-07.e | `b4c5443` | vale: captura, escopo e substituição de sessão não mudaram (a mudança só passa as rodadas herdadas à continuação) |
+| **V-07.d** | `b4c5443` | **sinalizada**: o caminho da continuação mudou (`worker-start`/`worker-bootstrap`); reexercitado no código novo por qcand34-v9 e q34-ghadv-s-v2 |
+| V-08.a, V-08.b, V-08.d | `b4c5443`, `82d6faf` | vale: o carregador e o registro de pacotes, o despacho paralelo dos revisores e o retry do falho não mudaram; o v7 é versão nova pelo mesmo mecanismo (usada em qcand34-v9, q34-instr-v1, q34-ghadv-s-v2) |
+| **V-08.c** | `b4c5443`, `82d6faf` | **sinalizada**: a verificação passou a cobrir rodadas herdadas e o v7 muda a orientação de tratamento; reexercitado por qcand34-v9 (rodadas verificadas) e q34-instr-v1 (`GATE_NOT_RUN`) |
+| **V-08.e** | `b4c5443`, `82d6faf` | **sinalizada**: gate não executado exige orientação; no código novo, q34-instr-v1 mostrou a recusa (`GATE_NOT_RUN`, publicação recusada) |
+| V-09.a | `f4cb958` | vale: a publicação não depende da leitura de proteção clássica |
+| **V-09.b**, **V-09.d** | `f4cb958` | **sinalizadas**: `checks.ts` passou a ler `lock_branch`, assinaturas, histórico linear e push restrictions, o que entra na prontidão; reexercitado por q34-ghchecks-s-v1 (proteção clássica + ruleset, conversão a pronto) |
+| **V-10.a**, **V-10.e** | `6c4a9e0` | **sinalizadas**: o reparo de conflito e a divergência com commit humano passam pela revisão de reconciliação corrigida; reexercitado por q34-ghadv-v4 (commit humano e merge da base, ticket 43 validado) |
+| V-10.c, V-10.d | `6c4a9e0` | vale: CHANGES_REQUESTED, comandos e discordância do Builder não passam pela revisão de reconciliação |
+| V-14.a, V-14.b | `5a026e7` | vale: entrega e cleanup não mudaram (o scrub só roda no forget) |
+| **V-14.d**, **V-14.e** | `5a026e7` | **sinalizadas**: `retention-desk.ts` e o forget ganharam o scrub do SQLite; o passo novo tem prova S/I-local em ci-d07 (arquivo SQLite real), não em ensaio real |
+| V-16.a, V-16.c, V-16.e | `5ab72fa` | vale: o bus do owner só afeta o início de ambientes pelo controlador; release, setup e upgrade não mudaram (o upgrade foi reexercitado por prel34-v3..v5) |
 
 ## 3. Reaproveitamento de provas históricas
 
@@ -430,7 +450,7 @@ em dados reais (V-15.c), I/O/disco e tempos do PRD em tickets reais (piloto).
 
 ## 8. Gate local no candidato
 
-`npm run test:ci` em 2026-11-16 sobre o candidato `b30e2bd` (este branch apenas acrescenta este relatório, a matriz JSON e o teste
+`npm run test:ci` em 2026-11-16 sobre o candidato anterior `b30e2bd` (e em 2026-11-18 sobre `cb9da38`, que contém `f3c7cf3`, 1723 pass) (este branch apenas acrescenta este relatório, a matriz JSON e o teste
 `test/architecture/qualification-matrix.test.ts`): **PASS**, 1595 testes (1585 pass, 0 fail, 10 skip), 278 arquivos na lane paralela
 (N=8), 191,7 s de 600 s, carga 0,71 → 10,87; `test/runner/fresh-tree.test.ts` fica para o noturno (`full`). Isso é S + I-local no
 candidato (ensaio `ci-candidato`), sem VM/GitHub/modelo: não substitui nenhuma prova de fronteira real.
@@ -455,6 +475,6 @@ para a composição que contém `5a026e7`.
 Somente a preparação da solicitação de autorização do piloto (ticket 35). Ela leva as decisões D-01–D-16 e as dependências explícitas
 V-06.e (D-01), V-02.h (D-04) e V-06.g (D-15, risco conhecido). Em 2026-11-18 G1–G6 estão sem bloqueio (99/0/0/13). A execução do piloto
 exige uma composição que contenha D-07 (`5a026e7`), o ticket 43 (`6c4a9e0`) e as skills v7 (`82d6faf`): a release mvp-34.5 (de `f3c7cf3`, R-UPG v5)
-as contém e está selecionada em pr2; o candidato registrado nesta matriz segue `b30e2bd` e a solicitação do piloto deve nomear a release
-mvp-34.5 (`f3c7cf3`) como a composição a pilotar. As obrigações P continuam obrigações. O aceite do MVP exige
+as contém, está selecionada em pr2 e é o candidato desta matriz desde 2026-11-18; a solicitação está em
+[35-pilot-authorization-request.md](35-pilot-authorization-request.md). As obrigações P continuam obrigações. O aceite do MVP exige
 todos os RF/RNF/CA no nível fiel e a avaliação humana da utilidade e da qualidade.

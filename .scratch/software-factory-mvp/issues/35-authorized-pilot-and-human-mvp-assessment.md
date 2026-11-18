@@ -26,3 +26,10 @@
 ## Autorização e limites
 
 Publicação é planejamento aprovado, não autorização de construção, uso de host/credenciais/GitHub/modelos reais, injeção de falhas ou piloto. Obter autorização pertinente antes da execução. Não alterar decisões aprovadas silenciosamente; lacuna de desenho volta ao operador. Merge e avaliação humana não são delegados aos agentes.
+
+## Comments
+
+- 2026-11-18 (supervisor): rascunho da solicitação de autorização do piloto em
+  [docs/evidence/35-pilot-authorization-request.md](../../../docs/evidence/35-pilot-authorization-request.md): composição `mvp-34.5`
+  (`f3c7cf3`, selecionada em `pr2`), o que o piloto fará, as 13 obrigações dependentes do piloto, riscos conhecidos, regras de parada,
+  reversão e a lista de autorizações (sim/não por item). Nada foi iniciado; aguarda as respostas do operador.
