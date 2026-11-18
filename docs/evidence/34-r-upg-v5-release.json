@@ -1,0 +1,135 @@
+{
+ "run": "prel34-v5",
+ "group": "R-UPG v5",
+ "date": "2026-11-18",
+ "root": "/home/sanmoo/software-factory-test/pr2",
+ "worktree": "run-upg5 detached at f3c7cf3",
+ "phases": {
+  "build": {
+   "status": "success",
+   "head": "f3c7cf3041dd01e6136f4b53ec4db4b4e17b809c",
+   "branch": "integration/software-factory-mvp",
+   "markers": {
+    "ticket-23-feedback": true,
+    "ticket-24-single-pass-dispatch": true,
+    "ticket-29-inspection": true,
+    "ticket-34-candidate": true,
+    "d-07-sqlite-scrub": true,
+    "owner-user-bus": true,
+    "continuation-findings": true,
+    "skills-v7-satisfied-findings": true,
+    "ticket-43-reconciliation-review": true
+   },
+   "report": {
+    "release": "mvp-34.5",
+    "archive": "software-factory-mvp-34.5.tar",
+    "archiveSha256": "f50795dd18db69aa0670d3861e13f85e74b1d836690eaf0da5554dfc50a32ad7",
+    "manifestSha256": "4988db2aa98c3a1dbc6e790628b80afcc9d18d74247d172396bbe035ddd0796e",
+    "source": {
+     "commit": "f3c7cf3041dd01e6136f4b53ec4db4b4e17b809c",
+     "commitTime": "2026-11-18T09:24:07-03:00",
+     "dirty": false
+    }
+   },
+   "durationMs": 21258
+  },
+  "verify": {
+   "status": "success",
+   "archiveSha256": "f50795dd18db69aa0670d3861e13f85e74b1d836690eaf0da5554dfc50a32ad7",
+   "sidecarMatches": true,
+   "reportMatches": true,
+   "manifestSha256": "4988db2aa98c3a1dbc6e790628b80afcc9d18d74247d172396bbe035ddd0796e",
+   "manifestMatches": true,
+   "entries": 23782,
+   "violations": []
+  },
+  "extract": {
+   "status": "success",
+   "previousTreeUnchanged": true,
+   "launcherUnchanged": true,
+   "installedManifestSha256": "4988db2aa98c3a1dbc6e790628b80afcc9d18d74247d172396bbe035ddd0796e",
+   "releases": [
+    "mvp-34.2",
+    "mvp-34.3",
+    "mvp-34.4",
+    "mvp-34.5"
+   ]
+  },
+  "upgrade": {
+   "check": "UPGRADE_COMPATIBLE",
+   "apply": "UPGRADE_COMPLETED",
+   "doctor": {
+    "release": "mvp-34.5",
+    "manifestSha256": "4988db2aa98c3a1dbc6e790628b80afcc9d18d74247d172396bbe035ddd0796e",
+    "qualification": {
+     "status": "unqualified",
+     "statement": "This release asserts the integrity and exact composition of the distributed set only. It claims no functional coverage: VM boot, Docker/TLS, real GitHub, model and pilot behaviour, and features not yet integrated (later MVP tickets) are qualified separately on the final composition, never by checksums or build success."
+    },
+    "releaseChecks": [
+     {
+      "id": "release:integrity",
+      "status": "ok"
+     },
+     {
+      "id": "release:location",
+      "status": "ok"
+     },
+     {
+      "id": "release:selected",
+      "status": "ok"
+     },
+     {
+      "id": "release:node",
+      "status": "ok"
+     },
+     {
+      "id": "release:assets",
+      "status": "ok"
+     },
+     {
+      "id": "release:qualification",
+      "status": "unverified"
+     }
+    ]
+   }
+  },
+  "unpause": {
+   "status": "success",
+   "paused": false,
+   "exe": "/home/sanmoo/software-factory-test/pr2/releases/mvp-34.5/node/bin/node",
+   "final": {
+    "ActiveState": "inactive"
+   }
+  }
+ },
+ "identity": {
+  "release": "mvp-34.5",
+  "commit": "f3c7cf3041dd01e6136f4b53ec4db4b4e17b809c",
+  "commitTime": "2026-11-18T09:24:07-03:00",
+  "branch": "integration/software-factory-mvp",
+  "dirty": false,
+  "archive": "software-factory-mvp-34.5.tar",
+  "archiveSha256": "f50795dd18db69aa0670d3861e13f85e74b1d836690eaf0da5554dfc50a32ad7",
+  "manifestSha256": "4988db2aa98c3a1dbc6e790628b80afcc9d18d74247d172396bbe035ddd0796e",
+  "guestAssets": {
+   "manifestSha256": "8efa506aed5f8fcbd9a233c7e30aa5d4418f83d47456a5a430d4666d07ade807"
+  },
+  "lockfileSha256": "de1b76b7c26de69d087075260c2f409edd3544f2d113ad8faa5a593ae2ae4587",
+  "node": "24.21.0",
+  "markers": {
+   "ticket-23-feedback": true,
+   "ticket-24-single-pass-dispatch": true,
+   "ticket-29-inspection": true,
+   "ticket-34-candidate": true,
+   "d-07-sqlite-scrub": true,
+   "owner-user-bus": true,
+   "continuation-findings": true,
+   "skills-v7-satisfied-findings": true,
+   "ticket-43-reconciliation-review": true
+  },
+  "root": "/home/sanmoo/software-factory-test/pr2",
+  "unit": "software-factory-0cb1d1f488b0.service",
+  "builtAt": "2026-11-18T12:36:09.506Z"
+ },
+ "judgement": "V-16.b met: the candidate's release was built from the clean integration tip (dirty false, every composition marker an ancestor incl. ticket 43 and skills v7), verified (archive/sidecar/report/manifest SHA-256 match, listing confined, 0 violations), identified (release-identity.json: release, commit, archive and manifest SHA-256, guest assets, lockfile, node, markers) and selected in pr2 by the product's own upgrade; the doctor re-verifies every release:* check ok. release:qualification is always 'unverified' by design (src/entrypoints/release.ts:371: it reports the manifest's qualification statement; checksums and build success are not qualification) until ticket 34 qualifies the composition."
+}

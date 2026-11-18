@@ -1,0 +1,17 @@
+2026-11-18T09:35:02-03:00 gate ok: /home/sanmoo/dev/github.com/Sanmoo/software-factory-durable/.worktrees/run-upg5 (f3c7cf3) -> mvp-34.5 in /home/sanmoo/software-factory-test/pr2 (from mvp-34.4)
+{"code":"REQUEST_IDENTIFIED","request_id":"192d9b3a-87be-4869-82cf-7f096417cb15"}
+{"kind":"durable","request_id":"192d9b3a-87be-4869-82cf-7f096417cb15","operation":"pause","paused":true,"historySequence":5}
+2026-11-18T09:35:12-03:00 pr2 paused and stopped
+2026-11-18T09:35:12-03:00 == phase build
+2026-11-18T09:35:33-03:00 build exit=0
+2026-11-18T09:35:33-03:00 == phase verify
+2026-11-18T09:35:37-03:00 verify exit=0
+2026-11-18T09:35:37-03:00 == phase extract
+2026-11-18T09:35:44-03:00 extract exit=0
+2026-11-18T09:35:44-03:00 == phase upgrade
+2026-11-18T09:36:09-03:00 upgrade exit=0
+2026-11-18T09:36:09-03:00 == phase unpause
+2026-11-18T09:36:20-03:00 unpause exit=0
+upgraded: UPGRADE_COMPATIBLE UPGRADE_COMPLETED mvp-34.5 f3c7cf3041dd True
+2026-11-18T09:36:26-03:00 doctor: mvp-34.5 ['release:qualification']
+2026-11-18T09:36:26-03:00 driver exit rc=0

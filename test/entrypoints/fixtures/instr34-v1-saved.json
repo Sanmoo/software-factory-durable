@@ -1,0 +1,163 @@
+{
+ "source": "real run q34-instr-v1 (#123, pin 29e6003), reduced by the supervisor from y5/q34-instr-v1/{preflight,run,inspect}-result.json; values unchanged",
+ "preflight": {
+  "status": "success",
+  "agentsAtBase": "a21ae1290b03ef1b77b7a947d7c09ff45661db8c"
+ },
+ "run": {
+  "status": "held",
+  "holdReason": "PUBLICATION_NOT_PUBLISHABLE"
+ },
+ "cancel": null,
+ "inspect": {
+  "work": {
+   "work_id": "2318de70-8b2b-4e78-a56f-5ea711bfe9cd",
+   "result": "open",
+   "cancellation": null,
+   "pullRequest": null,
+   "publication": {
+    "state": "not-publishable",
+    "reasons": [
+     "REVIEW_NOT_VERIFIED",
+     "VERIFICATION:GATE_NOT_RUN:docs-check"
+    ]
+   },
+   "previousExecutions": [],
+   "execution": {
+    "executionId": "49866f8f-840e-4b68-9272-5d0a1f0c75af",
+    "state": "ended",
+    "end": {
+     "outcome": "completed",
+     "cessation": "confirmed"
+    },
+    "review": {
+     "verification": {
+      "status": "not-verified",
+      "reasons": [
+       "GATE_NOT_RUN:docs-check"
+      ]
+     },
+     "rounds": [
+      {
+       "round": 1,
+       "kind": "review",
+       "versions": {
+        "instructions": {
+         "version": "v1",
+         "sources": "/artifacts/instructions/v1/sources.json",
+         "sha256": "d809e9873ff4a62bb41ba11c4e6a0f0d3e0644fd26d72aef126fa361906218d7"
+        }
+       },
+       "handoff": {
+        "summary": {
+         "changed": [
+          "/workspace/checkout/AGENTS.md"
+         ],
+         "head": "3f0ddf7e539cbc55c70bafdfc433c38826f1a62e"
+        }
+       },
+       "declarations": {
+        "gates": [
+         {
+          "id": "content",
+          "declared": "run",
+          "outcome": "passed",
+          "authorization": null,
+          "reason": null
+         },
+         {
+          "id": "docs-check",
+          "declared": "not-run",
+          "outcome": "not-run",
+          "authorization": null,
+          "reason": "The documented checker is unavailable in the Factory guest (command not found); Ticket explicitly requires operator approval to waive, and none is present."
+         }
+        ]
+       }
+      },
+      {
+       "round": 2,
+       "kind": "exemption",
+       "versions": {
+        "instructions": {
+         "version": "v1",
+         "sources": "/artifacts/instructions/v1/sources.json",
+         "sha256": "d809e9873ff4a62bb41ba11c4e6a0f0d3e0644fd26d72aef126fa361906218d7"
+        }
+       },
+       "handoff": {
+        "summary": {
+         "changed": [
+          "/workspace/checkout/AGENTS.md"
+         ],
+         "head": "3f0ddf7e539cbc55c70bafdfc433c38826f1a62e"
+        }
+       },
+       "declarations": {
+        "gates": [
+         {
+          "id": "content",
+          "declared": "run",
+          "outcome": "passed",
+          "authorization": null,
+          "reason": null
+         },
+         {
+          "id": "docs-check",
+          "declared": "not-run",
+          "outcome": "not-run",
+          "authorization": null,
+          "reason": "The documented checker is unavailable in the Factory guest (command not found); Ticket explicitly requires operator approval to waive, and none is present."
+         }
+        ]
+       }
+      },
+      {
+       "round": 3,
+       "kind": "exemption",
+       "versions": {
+        "instructions": {
+         "version": "v1",
+         "sources": "/artifacts/instructions/v1/sources.json",
+         "sha256": "d809e9873ff4a62bb41ba11c4e6a0f0d3e0644fd26d72aef126fa361906218d7"
+        }
+       },
+       "handoff": {
+        "summary": {
+         "changed": [
+          "/workspace/checkout/AGENTS.md"
+         ],
+         "head": "3f0ddf7e539cbc55c70bafdfc433c38826f1a62e"
+        }
+       },
+       "declarations": {
+        "gates": []
+       }
+      }
+     ]
+    }
+   }
+  },
+  "questions": [],
+  "pull": null,
+  "agentsAtMain": "a21ae1290b03ef1b77b7a947d7c09ff45661db8c",
+  "agentsAtMainRead": "ok",
+  "pushViolations": [],
+  "sessions": [
+   {
+    "calls": 21
+   },
+   {
+    "calls": 9
+   },
+   {
+    "calls": 13
+   }
+  ],
+  "secretScan": {
+   "storage": false,
+   "sessions": false,
+   "observations": false
+  }
+ }
+}
