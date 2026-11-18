@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { assess, clockDrift, phaseGuard, type LongInput } from './long34-qualification.js';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { assess, clockDrift, grantAllowed, labelExact, phaseGuard, runOutcome, teardownSteps, walkWorks, type LongInput } from './long34-qualification.js';
 import * as provider from './long34-provider.js';
 
 // Recipe safety of the R-LONG real run, on controlled data only (never the real root, GitHub, VM or model).
@@ -90,4 +92,34 @@ test('V-03.c/V-13.e verdict: passed only with every check; a timeout cut or a lo
   assert.ok(short.inconclusive.includes('CENSUS_DID_NOT_CROSS_THE_FIRST_EXPIRY') && short.inconclusive.includes('ACTIVITY_SHORTER_THAN_ONE_HOUR'));
   assert.equal(world(input => { input.observedMonotonicMs = 70 * 60_000; }).checks.durationMonotonic, false, 'a recorded duration far from the monotonic measure');
   assert.equal(world(input => { input.observedMonotonicMs = 70 * 60_000; }).status, 'failed', 'never passed with a duration mismatch');
+});
+
+test('lessons (R-CAND/R-CRASH-A/R-GH): label exact before preflight; every list page walked; Questions by id and any Question holds with its text', async () => {
+  assert.equal(labelExact([9], [9]), true);
+  assert.equal(labelExact([], [9]), false, 'GitHub may list nothing right after labelling');
+  assert.equal(labelExact([9, 10], [9]), false);
+  // In-process `list` pages too: the Work may be on a later page; a non-advancing page is incomplete, never a silent partial list.
+  const pages: Record<number, unknown> = { 0: { kind: 'list', works: [{ work_id: 'a' }], page: { nextCursor: 1 } }, 1: { kind: 'list', works: [{ work_id: 'b' }], page: { nextCursor: null } } };
+  assert.deepEqual(await walkWorks(async cursor => pages[cursor]), { works: [{ work_id: 'a' }, { work_id: 'b' }], complete: true });
+  assert.equal((await walkWorks(async () => ({ kind: 'list', works: [], page: { nextCursor: 0 } }))).complete, false);
+  const ended = { state: 'ended', end: { outcome: 'completed' }, dispatch: { phase: 'stopped' } };
+  assert.deepEqual(runOutcome({ execution: ended, questions: [], deadlineReached: false, listComplete: true }), { status: 'success', holdReason: null });
+  assert.deepEqual(runOutcome({ execution: ended, questions: [{ questionId: 'q1', state: 'open', request: { question: 'Which name?' } }], deadlineReached: false, listComplete: true }),
+    { status: 'held', holdReason: 'UNSCRIPTED_QUESTION:q1' }, 'the scripted schedule never asks: any Question holds');
+  assert.deepEqual(runOutcome({ execution: { state: 'held', held: { code: 'START_X' } }, questions: [], deadlineReached: false, listComplete: true }), { status: 'held', holdReason: 'EXECUTION_HELD:START_X' });
+  assert.deepEqual(runOutcome({ execution: { ...ended, end: { outcome: 'failure', code: 'EXECUTION_TIMEOUT' } }, questions: [], deadlineReached: false, listComplete: true }),
+    { status: 'held', holdReason: 'EXECUTION_ENDED:failure:EXECUTION_TIMEOUT' });
+  assert.deepEqual(runOutcome({ execution: undefined, questions: [], deadlineReached: true, listComplete: true }), { status: 'held', holdReason: 'DEADLINE_REACHED' });
+  assert.deepEqual(runOutcome({ execution: undefined, questions: [], deadlineReached: false, listComplete: false }), { status: 'held', holdReason: 'LIST_INCOMPLETE' });
+});
+
+test('lessons: builder-publish is refused (no GitHub write); inspect requests the teardown first; a killed phase removes the key copy', () => {
+  assert.equal(grantAllowed('builder-start'), true);
+  assert.equal(grantAllowed(undefined), true);
+  assert.equal(grantAllowed('builder-publish'), false);
+  const steps = teardownSteps(9);
+  assert.ok(steps.some(item => /remove the label ready-for-agent from #9/.test(item)) && steps.some(item => /close #9/.test(item)));
+  const text = readFileSync(join(process.cwd(), 'test', 'entrypoints', 'long34-qualification.ts'), 'utf8');
+  assert.match(text, /for \(const signal of \['SIGTERM', 'SIGINT'\] as const\) process\.once\(signal/, 'SIGTERM/SIGINT remove the namespace key copy');
+  assert.ok(text.indexOf("save('teardown-request'") < text.indexOf('snapshotStorage(observations'), 'the teardown request is saved before any storage/GitHub read');
 });

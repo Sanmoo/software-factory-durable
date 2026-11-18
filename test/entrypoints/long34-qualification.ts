@@ -1,4 +1,4 @@
-import type { ExecutionView, ListView, WorkView } from '../../src/control/index.js';
+import type { ExecutionView, QuestionView, WorkView } from '../../src/control/index.js';
 
 // TEST ONLY. Ticket 34 pre-pilot group R-LONG (V-03.c, V-13.e): ONE real activity of more than 60 minutes with NO timeout configured, real
 // GitHub App installation tokens (they live 3600 s) renewed by the production policy (600 s before expiry) and ONE command that crosses the
@@ -43,21 +43,28 @@ const clockSampleMs = 60_000;
 const hour = 3_600_000;
 
 export function plan() {
-  return { revision, root, observations, factoryRoot, cacheRoot: `${factoryRoot}/cache/git`, sharedCache, phases, repository, ticket: { ...ticket, body: ticketBody, label: repository.label, pinned: ticket.number > 0 }, configuration, guestAssets,
+  return { revision, root, observations, factoryRoot, cacheRoot: `${factoryRoot}/cache/git`, sharedCache, phases, repository, ticket: { ...ticket, body: ticketBody, label: repository.label, pinned: ticket.number > 0, labelAtCreation: false,
+      labelledBy: 'the main session, right before preflight (preflight waits, GET only, up to 10 min until the label lists EXACTLY this issue)' }, configuration, guestAssets,
     renewal: { policy: 'production default: renew 600 s before expiresAt (no override)', tokenLifetimeSeconds: 3600, maxIssuances },
     timeout: 'none configured (repository.timeoutSeconds absent)',
     model: 'none: scripted local provider on 127.0.0.1:18734 (openai-completions SSE): c0 fingerprint+read; c1 fingerprint+read, the suite census (>= 75 min of real suite runs, no sleep), fingerprint+read; c2 fingerprint+read; then "Complete."; no OAuth/model request',
     hostClock: { injected: false, reason: 'changing the system clock is host-wide (other sessions, TLS, the App JWT iat/exp); not done', observed: `calendar vs monotonic samples every ${clockSampleMs / 1000} s, timedatectl NTP state at start/end, Control duration vs both` },
-    requires: [`${root}/${githubApp.privateKeyFile} present`, 'the supervisor created the NEW issue (title/body above, label ready-for-agent) and pinned its number in a reviewed commit', 'no other open issue carries the label',
+    requires: [`${root}/${githubApp.privateKeyFile} present`, 'the supervisor created the NEW issue (title/body above) UNLABELLED and pinned its number in a reviewed commit; the main session labels it right before preflight', 'no other open issue carries the label',
+      `a fresh ${factoryRoot} (absent: preflight creates it with the setup layout); no model login (scripted provider)`, 'one VM for about 90-140 min (guest 4096 MiB / 2 vCPU / 40 GiB virtual disk)',
       'the guest egress reaches services.gradle.org and the eclipse-temurin:25-jdk image registry (as in q24 v4)', 'explicit operator authorization for THIS run (one-shot; a consumed namespace is never reused)'],
     github: { app: githubApp, accessRoot: `${observations} (own namespace: credentials/ copy of ${root}/${githubApp.privateKeyFile}, run/); never y5/run`,
       controllerPurposes: ['tracker-read', 'association-read', 'dependency-read', 'repository-read', 'repository-fetch {metadata:read, contents:read}'],
       builderPurpose: 'builder-start {metadata:read, contents:read, issues:read} for Sanmoo/java-springboot-event-sourcing only (initial + each renewal)',
-      writes: 'POST access_tokens (issuance) and DELETE /installation/token (self-revocation; one post-check DELETE per Builder grant expecting 401); nothing else' },
+      writes: 'POST access_tokens (issuance) and DELETE /installation/token (self-revocation; one post-check DELETE per Builder grant expecting 401); nothing else: no comment, label, branch, push or PR (builder-publish refused)',
+      mainSession: ['label the pinned issue right before preflight', 'teardown after inspect: see teardown'] },
+    teardown: teardownSteps(ticket.number),
+    lessons: ['label listing EXACT before preflight', 'every page of the in-process list walked', 'Questions read by id; any Question holds UNSCRIPTED_QUESTION with its text saved',
+      'every held phase names its reason (run-result.holdReason, preflight-held.reasons)', 'SIGTERM/SIGINT remove the namespace key copy', 'inspect requests the teardown FIRST (teardown-request.json)',
+      'no stall watch: the census is ONE tool call of >= 75 min with no observable change in between'],
     effects: [
       `preflight: key source check BEFORE any effect; exclusive namespace; read-only GitHub: the label lists exactly the pinned issue, no associated PR; creates the NEW own Factory root ${factoryRoot} (exclusive, setup layout); the shared ${sharedCache} is never touched`,
       `run: new Control storage; ONE Execution: host fetch, clone, Sandbox.prepare/start (1 new VM), Builder grant, Workers.activate (scripted provider), renewals delivered over the host channel, end, withdrawal + self-revocation, Sandbox.stop, Slot release; post-check revocation; clock samples; ${runDeadlineMs / 60000} min deadline`,
-      'inspect: read-only on a private storage COPY; verdict; secret-shape scan (counts only) of storage/observations/records/session; the namespace key copy removed first',
+      'inspect: FIRST teardown-request.json (local data only), then read-only on a private storage COPY; verdict; secret-shape scan (counts only) of storage/observations/records/session; the namespace key copy removed first',
       'stop-environment: own boot of the recorded Execution if it may still run and is observed active: public Sandbox.stop of that exact boot'],
     guards: ['one-shot intent tombstones, phase order', `at most ${maxIssuances} Builder issuances`, 'prepare/activate allowed once and only for the Work of the pinned issue', 'no retry', 'no remove/cleanup',
       'no push/PR (read-only grants)', 'only sha256 12-hex fingerprints of grants are recorded, never values'],
@@ -136,6 +143,50 @@ export function assess(input: LongInput): Assessment {
   return { status, checks, inconclusive, failures: unique };
 }
 
+/** Lesson (R-GH-CHECKS v3 race): GitHub may list nothing (or a partial set) right after labelling; preflight waits for EXACTLY the pins. */
+export function labelExact(listed: readonly number[], expected: readonly number[]): boolean {
+  return JSON.stringify([...listed].sort((a, b) => a - b)) === JSON.stringify([...expected].sort((a, b) => a - b));
+}
+/** Lesson (R-CAND v4): every page of `list` is walked (the page is fitted); a failed or non-advancing page is INCOMPLETE, never a partial list. */
+export async function walkWorks(read: (cursor: number) => Promise<unknown>, maxPages = 100): Promise<{ works: WorkView[]; complete: boolean }> {
+  const works: WorkView[] = [];
+  let cursor = 0;
+  for (let pages = 0; pages < maxPages; pages++) {
+    const view = await read(cursor) as { kind?: string; works?: WorkView[]; page?: { nextCursor?: number | null } } | null;
+    if (view?.kind !== 'list' || !Array.isArray(view.works)) return { works, complete: false };
+    works.push(...view.works);
+    const next = view.page?.nextCursor ?? null;
+    if (next === null) return { works, complete: true };
+    if (typeof next !== 'number' || next <= cursor) return { works, complete: false };
+    cursor = next;
+  }
+  return { works, complete: false };
+}
+/** No GitHub write: the recipe never lets a publication activation get a token (there are no reviews, so none is expected anyway). */
+export const grantAllowed = (purpose: string | undefined) => purpose === undefined || purpose === 'builder-start';
+type OutcomeExecution = { state?: string; end?: { outcome?: string; code?: string | null } | null; held?: { code?: string } | null; dispatch?: { phase?: string } } | undefined;
+/**
+ * Lesson (every held phase names its reason): the run phase is `success` only when the ONE Execution ended completed and stopped; the scripted
+ * schedule never asks, so ANY Question holds (its text is saved, read by id). Otherwise the reason is named.
+ */
+export function runOutcome(input: { execution: OutcomeExecution; questions: readonly ({ questionId: string } & Record<string, unknown>)[]; deadlineReached: boolean; listComplete: boolean }):
+    { status: 'success' | 'held'; holdReason: string | null } {
+  const held = (holdReason: string) => ({ status: 'held' as const, holdReason });
+  if (input.questions.length) return held(`UNSCRIPTED_QUESTION:${input.questions[0]!.questionId}`);
+  if (!input.listComplete) return held('LIST_INCOMPLETE');
+  const execution = input.execution;
+  if (execution?.state === 'held') return held(`EXECUTION_HELD:${execution.held?.code ?? 'UNKNOWN'}`);
+  if (execution?.state === 'ended' && execution.end?.outcome !== 'completed') return held(`EXECUTION_ENDED:${execution.end?.outcome ?? 'unknown'}:${execution.end?.code ?? ''}`);
+  if (execution?.state === 'ended' && execution.dispatch?.phase === 'stopped') return { status: 'success', holdReason: null };
+  if (execution?.state === 'released') return held('EXECUTION_RELEASED_BEFORE_START');
+  return held(input.deadlineReached ? 'DEADLINE_REACHED' : `EXECUTION_NOT_SETTLED:${execution?.state ?? 'none'}`);
+}
+/** Lesson (R-GH-CHECKS v4): the teardown the main session performs, requested by inspect FIRST from local data only. */
+export function teardownSteps(number: number): string[] {
+  return [`remove the label ${repository.label} from #${number} (main session; no other issue is touched)`, `close #${number} as completed with no comment by the Factory`,
+    'run `stop-environment` only if inspect or stop-environment-result says the own boot may still run', `remove ${factoryRoot} after the evidence is kept (its environment and cache are this recipe's only)`];
+}
+
 export const keySource = `${root}/${githubApp.privateKeyFile}`;
 async function io() {
   const fs = await import('node:fs/promises');
@@ -159,8 +210,21 @@ async function compose() {
   const tracker = createIssueTracker({ github, scopes: [repository], dependencyScopes: [] });
   return { github, tracker, codeRepository: createCodeRepository({ github }), createBuilderCredentials, createRepositoryFetchCredentials };
 }
-const workOf = (list: unknown): WorkView | undefined => (list as { kind?: string; works?: WorkView[] }).kind === 'list'
-  ? (list as { works: WorkView[] }).works.find(item => item.ticket.number === ticket.number && item.ticket.repositoryId === ticket.repositoryId) : undefined;
+const ownWork = (works: readonly WorkView[]) => works.find(item => item.ticket.number === ticket.number && item.ticket.repositoryId === ticket.repositoryId);
+/** The recipe's Work over EVERY page of the in-process list (never only the first page). */
+async function findWork(control: { inspect(query: never): Promise<unknown> }) {
+  const walked = await walkWorks(cursor => control.inspect({ kind: 'list', cursor } as never));
+  return { work: ownWork(walked.works), complete: walked.complete };
+}
+/** Every Question of the Work, read BY ID (`show`/list may omit them), with its text. */
+async function questionsOf(control: { inspect(query: never): Promise<unknown> }, work: WorkView | undefined): Promise<QuestionView[]> {
+  const found: QuestionView[] = [];
+  for (const id of (work?.questions ?? []).slice(0, 16)) {
+    const view = await control.inspect({ kind: 'question', question_id: id } as never) as { kind?: string; question?: QuestionView };
+    if (view.kind === 'question' && view.question) found.push(view.question);
+  }
+  return found;
+}
 async function ntpState() {
   const { execFile } = await import('node:child_process');
   return new Promise<string | null>(resolve => execFile('/usr/bin/timedatectl', ['show', '--property=NTP', '--property=NTPSynchronized', '--property=Timezone'],
@@ -171,6 +235,10 @@ export async function runPhase(phase: Phase) {
   if (!phases.includes(phase)) throw new Error('UNKNOWN_PHASE');
   if (ticket.number <= 0) throw new Error('TICKET_NOT_PINNED');
   const { fs, save, exists, load } = await io();
+  // inspect requests the teardown FIRST, from local data only (no storage, no GitHub): a held or killed run never leaves it unrequested.
+  if (phase === 'inspect' && !(await exists('teardown-request'))) {
+    await save('teardown-request', { at: new Date().toISOString(), by: 'main session', steps: teardownSteps(ticket.number) }).catch(() => {});
+  }
   if (phase === 'preflight') {
     const { requireKeySource } = await import('./crashfx27-qualification.js');
     await requireKeySource(path => fs.access(path)); // before ANY effect
@@ -192,9 +260,19 @@ export async function runPhase(phase: Phase) {
   try {
     if (phase === 'preflight') {
       const { tracker, codeRepository } = await compose();
-      const listing = await tracker.listCandidates(repository);
-      if (listing.kind !== 'observed' || listing.candidates.length !== 1 || listing.candidates[0]!.number !== ticket.number || listing.repositoryId !== ticket.repositoryId) {
-        await save('preflight-held', { listing }); throw new Error('PRECONDITION_HELD');
+      // The main session labels the issue right before preflight: wait (bounded, GET only) until the listing is EXACTLY the pinned issue.
+      let listing = await tracker.listCandidates(repository);
+      for (const until = Date.now() + 10 * 60 * 1000; Date.now() < until; listing = await tracker.listCandidates(repository)) {
+        if (listing.kind === 'observed' && labelExact(listing.candidates.map(item => item.number), [ticket.number])) break;
+        await new Promise(resolve => setTimeout(resolve, 15000));
+      }
+      if (listing.kind !== 'observed' || !labelExact(listing.candidates.map(item => item.number), [ticket.number]) || listing.repositoryId !== ticket.repositoryId) {
+        await save('preflight-held', { status: 'held', reasons: ['LABEL_LISTING_NOT_EXACT'], listing }); throw new Error('PRECONDITION_HELD:LABEL_LISTING_NOT_EXACT');
+      }
+      const issue = await (await compose()).github.read(repository, 'tracker-read', session => session.get(`/repos/${repository.repository}/issues/${ticket.number}`));
+      const value = issue.ok ? issue.value as { state?: string; title?: string; body?: string | null } : null;
+      if (!value || value.state !== 'open' || value.title !== ticket.title || (value.body ?? '').replaceAll('\r\n', '\n').trim() !== ticketBody.trim()) {
+        await save('preflight-held', { status: 'held', reasons: ['ISSUE_NOT_AS_PINNED'], issue: value ? { state: value.state, title: value.title } : issue }); throw new Error('PRECONDITION_HELD:ISSUE_NOT_AS_PINNED');
       }
       const publication = await codeRepository.findPublication({ repo: repository, issueNumbers: [ticket.number], knownBranches: [] });
       const associated = publication.kind === 'observed' ? publication.issues[String(ticket.number)] : undefined;
@@ -207,7 +285,9 @@ export async function runPhase(phase: Phase) {
         observed.push({ environment: item.environment, condition: lifecycle.condition, cessationConfirmed: lifecycle.cessationConfirmed });
       }
       if (associated?.completeness !== 'complete' || associated.candidates.length || listed.unknown.length || !observed.every(item => item.cessationConfirmed || item.condition === 'removed')) {
-        await save('preflight-held', { publication, observed, unknown: listed.unknown }); throw new Error('PRECONDITION_HELD');
+        const reasons = [...(associated?.completeness !== 'complete' ? ['PUBLICATION_UNKNOWN'] : associated.candidates.length ? ['ASSOCIATED_PULL_REQUEST'] : []),
+          ...(listed.unknown.length ? ['UNKNOWN_RUNTIME_RESOURCE'] : []), ...(!observed.every(item => item.cessationConfirmed || item.condition === 'removed') ? ['ENVIRONMENT_NOT_CEASED'] : [])];
+        await save('preflight-held', { status: 'held', reasons, publication, observed, unknown: listed.unknown }); throw new Error(`PRECONDITION_HELD:${reasons.join(',')}`);
       }
       await save('preflight-result', { status: 'success', ticket: listing.candidates[0], preexisting: listed.environments.map(item => item.environment), observed, ntp: await ntpState() });
       return;
@@ -235,6 +315,7 @@ export async function runPhase(phase: Phase) {
       const credentials: typeof real = {
         async issue(context) {
           if (grants.length >= maxIssuances) throw Object.assign(new Error('RECIPE_ISSUANCE_LIMIT'), { outcome: 'known-rejected' });
+          if (!grantAllowed(context.purpose)) throw Object.assign(new Error('RECIPE_NO_PUBLICATION'), { outcome: 'known-rejected' });
           log({ call: 'issue', purpose: context.purpose ?? 'builder-start' });
           const grant = await real.issue(context);
           grants.push(grant);
@@ -245,7 +326,7 @@ export async function runPhase(phase: Phase) {
       };
       let prepared = 0, activated = 0;
       let control!: Awaited<ReturnType<typeof openControl>>;
-      const allowed = async (workId: string) => { const work = workOf(await control.inspect({ kind: 'list' })); return work?.work_id === workId; };
+      const allowed = async (workId: string) => (await findWork(control as never)).work?.work_id === workId;
       const samples: { wall: number; mono: number }[] = [];
       const sample = () => samples.push({ wall: Date.now(), mono: performance.now() });
       const ntpAtStart = await ntpState();
@@ -282,16 +363,21 @@ export async function runPhase(phase: Phase) {
         const stop = new AbortController();
         const running = control.run(stop.signal);
         const deadline = Date.now() + runDeadlineMs;
-        let final: unknown;
+        let found: Awaited<ReturnType<typeof findWork>> = { work: undefined, complete: false };
+        let questions: QuestionView[] = [];
         while (Date.now() < deadline) {
           await new Promise(resolve => setTimeout(resolve, 5000));
-          const list = await control.inspect({ kind: 'list' });
-          const execution = workOf(list)?.execution;
+          found = await findWork(control as never);
+          const execution = found.work?.execution;
           if (execution?.state === 'started' && startedMono === null) startedMono = performance.now();
           if (execution && execution.state !== 'reserved' && execution.state !== 'started' && endedMono === null && startedMono !== null) endedMono = performance.now();
-          if (execution && (['held', 'released'].includes(execution.state) || (execution.state === 'ended' && execution.dispatch.phase === 'stopped'))) { final = list; break; }
+          // The scripted schedule never asks: any Question ends the run held, with its text (read by id).
+          questions = await questionsOf(control as never, found.work);
+          if (questions.length) break;
+          if (execution && (['held', 'released'].includes(execution.state) || (execution.state === 'ended' && execution.dispatch.phase === 'stopped'))) break;
         }
-        final ??= await control.inspect({ kind: 'list' });
+        const final = found.work ?? null;
+        const settled = runOutcome({ execution: found.work?.execution ?? undefined, questions, deadlineReached: Date.now() >= deadline, listComplete: found.complete });
         stop.abort();
         const outcome = await running;
         // Post-check: GitHub must no longer accept any grant (one DELETE each, expected 401 -> already-invalid). Never retried.
@@ -299,9 +385,11 @@ export async function runPhase(phase: Phase) {
         for (const grant of grants) postCheck.push({ fingerprint: fingerprint(grant.delivery.token), result: await real.revoke(grant) });
         grants.length = 0;
         sample();
-        await save('run-result', { status: 'observed', outcome, final, events, postCheck, provider: model.observation(), observedMonotonicMs: startedMono !== null && endedMono !== null ? Math.round(endedMono - startedMono) : null,
+        await save('run-result', { status: settled.status, holdReason: settled.holdReason, questions, outcome, final, events, postCheck, provider: model.observation(), observedMonotonicMs: startedMono !== null && endedMono !== null ? Math.round(endedMono - startedMono) : null,
           clock: { samples, ntpAtStart, ntpAtEnd: await ntpState() }, deadlineReached: Date.now() >= deadline });
       } finally { clearInterval(sampler); await model.close(); }
+      const saved = await load('run-result') as { status?: string; holdReason?: string | null } | null;
+      if (saved?.status !== 'success') throw new Error(`PHASE_NOT_AS_EXPECTED:${saved?.holdReason ?? 'RUN_RESULT_MISSING'}`);
       return;
     }
     // inspect / stop-environment: a private COPY of the storage (the original is never written).
@@ -309,10 +397,9 @@ export async function runPhase(phase: Phase) {
     const { openControl } = await import('../../src/control/index.js');
     const copy = await snapshotStorage(observations, `${observations}/${phase}-storage-copy`);
     const stored = await openControl({ storagePath: copy, runtimeInventory: 'unknown' });
-    const list = await stored.inspect({ kind: 'list' }) as ListView;
+    const { work } = await findWork(stored as never);
     const halt = new AbortController(); halt.abort();
     await stored.run(halt.signal);
-    const work = workOf(list);
     if (!work?.execution?.dispatch.environment) throw new Error('NO_EXECUTION_OBSERVED');
     if (phase === 'inspect') {
       const ran = await load('run-result') as { events: { call: string; fingerprint?: string; directive?: string; at: string; result?: { kind?: string; status?: string } }[];
@@ -357,6 +444,10 @@ export async function main(args: string[]) {
   await runPhase(args[0] as Phase);
 }
 if (process.argv[1] === new URL(import.meta.url).pathname) {
+  // A killed phase (SIGTERM/SIGINT) removes the namespace's key copy before exiting (its `finally` never runs).
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => {
+    void import('node:fs/promises').then(fs => fs.rm(`${observations}/${githubApp.privateKeyFile}`, { force: true })).finally(() => process.exit(143));
+  });
   main(process.argv.slice(2)).then(() => process.exit(0), (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     console.error(message.startsWith('APP_KEY_SOURCE_MISSING') || message === 'TICKET_NOT_PINNED' ? message : `Qualification held; no retry. (${message.slice(0, 128)})`); process.exit(1);
