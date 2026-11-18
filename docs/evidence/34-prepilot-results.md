@@ -186,7 +186,7 @@ Totais: 84/0/16/12 → 88/0/12/12 (antes do registro do R-GH-ADV abaixo). `run/g
 ## R-GH-ADV `y5/q34-ghadv-v1..v5` — parcial (decisão do operador 2026-11-18): V-04.b, V-04.d, V-10.f e V-11.c aprovadas
 
 Totais: 88/0/12/12 → **92/0/8/12**. Decisão do operador: "Partial + smaller recipe". V-04.e, V-10.g e V-13.g passam ao `R-GH-ADV-S`
-(receita `test/entrypoints/ghadvs34-qualification.ts`, namespace `q34-ghadv-s-v1`, não executado). O melhor ensaio por obrigação é o v4
+(receita `test/entrypoints/ghadvs34-qualification.ts`, namespace `q34-ghadv-s-v2`; o v1, #119, ficou retido no publish-c com `EXECUTION_HELD:START_INSUFFICIENT_MEMORY_FOR_BOOT`: o host estava ocupado e o produto recusou o boot corretamente). O melhor ensaio por obrigação é o v4
 (`run/ghadv-v4` = `6bf5e9d`, issues #101–#103, com o ticket 43). O veredito, copiado sem alteração, está em
 [34-r-ghadv-v4-verdict.json](34-r-ghadv-v4-verdict.json): V-04.b, V-04.d, V-10.f e V-11.c `true`, mais `leased-pushes-only` e `no-secret`.
 

@@ -110,7 +110,7 @@ test('human scripts: exact, fail-fast, operator-only; the ONE merge relaxes the 
   const both = recipe.humanScript(5, context);
   assert.ok(both.indexOf('trap restore EXIT') < both.indexOf('--input "$D/relaxed.json"') && both.indexOf('--input "$D/relaxed.json"') < both.indexOf('gh pr merge'));
   assert.ok(both.indexOf('& cancel=$!') < both.indexOf('gh pr merge 9') && both.trimEnd().endsWith('wait "$cancel"'), 'cancel first, merge concurrently');
-  assert.match(both, /cli\.js cancel w-1 --root \/home\/sanmoo\/software-factory-test\/y5\/q34-ghadv-s-v1 --request-id q34-ghadv-s-cancel-1 --json/);
+  assert.match(both, /cli\.js cancel w-1 --root \/home\/sanmoo\/software-factory-test\/y5\/q34-ghadv-s-v2 --request-id q34-ghadv-s-cancel-1 --json/);
   assert.match(recipe.humanScript(3, context), /^gh pr close 9 --repo /m);
   assert.doesNotMatch(recipe.humanScript(3, context).split('   #')[0]!, /delete-branch/);
   assert.match(recipe.humanScript(6, context), /gh issue comment 120 .*'\/factory answer 88888888-8888-4888-8888-888888888888 Keep the line the operator'\\''s repair request repair-github-comment-6964906809 added/);

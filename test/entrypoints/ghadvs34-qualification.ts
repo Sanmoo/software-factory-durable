@@ -16,8 +16,9 @@ import { progressFingerprint, repairRefOf, repairRunningFor, requestOutcome, sec
 // the supervisor with the OPERATOR's gh account (never the App).
 
 const root = '/home/sanmoo/software-factory-test/y5';
-const observations = `${root}/q34-ghadv-s-v1`;
-const revision = 'q34-ghadv-s-v1';
+/** v2: q34-ghadv-s-v1 (#119) held in publish-c on EXECUTION_HELD:START_INSUFFICIENT_MEMORY_FOR_BOOT (host busy; the product rightly refused the boot). */
+const observations = `${root}/q34-ghadv-s-v2`;
+const revision = 'q34-ghadv-s-v2';
 export const phases = ['preflight', 'publish-c', 'close', 'cancel-merge', 'inspect', 'stop-environment'] as const;
 export type Phase = typeof phases[number];
 export type ControlPhase = Exclude<Phase, 'preflight' | 'inspect' | 'stop-environment'>;
