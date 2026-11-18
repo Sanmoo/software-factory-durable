@@ -1,0 +1,205 @@
+{
+ "date": "2026-11-18",
+ "by": "supervisor (read-only)",
+ "candidate": "f3c7cf3 (release mvp-34.5)",
+ "method": "for each obligation flagged in docs/evidence/34-candidate-qualification.md section 2, the real observations of later runs whose commit contains the product change of the area (git merge-base --is-ancestor) were read: saved verdicts in docs/evidence and the runs' storages read through openControl on private copies",
+ "runsContain": {
+  "qcand34-v9 (e18924e, mvp-34.4)": [
+   "5a026e7",
+   "f4cb958",
+   "5ab72fa",
+   "b4c5443",
+   "82d6faf"
+  ],
+  "q34-ghadv-v4 (6bf5e9d)": [
+   "all six incl. 6c4a9e0"
+  ],
+  "q34-ghchecks-s-v1 (c63a613)": [
+   "all six"
+  ],
+  "q34-instr-v1 (29e6003)": [
+   "all six"
+  ]
+ },
+ "obligations": {
+  "V-07.d": {
+   "run": "qcand34-v9",
+   "source": "pr2/data/control.sqlite (private copy, openControl show of Work 7b94d2d3, #68)",
+   "observed": {
+    "12df0f45": {
+     "session": {
+      "mode": "continue",
+      "reason": "SESSION_COMPATIBLE"
+     },
+     "resume": "answer to Question efaa533a"
+    },
+    "edcbdef1": {
+     "session": {
+      "mode": "replace",
+      "reason": "PUBLISH_ONLY_SESSION"
+     }
+    },
+    "3f04ffbd": {
+     "session": {
+      "mode": "continue",
+      "reason": "SESSION_COMPATIBLE"
+     },
+     "resume": "REPAIR_REQUESTED"
+    },
+    "5cd8c36b": {
+     "session": {
+      "mode": "replace",
+      "reason": "PUBLISH_ONLY_SESSION"
+     }
+    },
+    "6f25e8b8": {
+     "session": {
+      "mode": "continue",
+      "reason": "SESSION_COMPATIBLE"
+     }
+    },
+    "52bf27c0": {
+     "session": {
+      "mode": "continue",
+      "reason": "SESSION_COMPATIBLE"
+     },
+     "resume": "answer to Question 405856fe"
+    }
+   },
+   "covers": "compatible session continued with continue and explicit replacement on the candidate's code",
+   "notReexercised": "rebase (q22-v1; the rebase path is not touched by b4c5443)"
+  },
+  "V-08.c": {
+   "runs": [
+    "q34-ghadv-v4",
+    "qcand34-v9"
+   ],
+   "source": "y5/q34-ghadv-v4/inspect-result.json (works[#102]); pr2 storage copy for qcand34-v9",
+   "observed": {
+    "q34-ghadv-v4": "#102 Execution 3fc70447 (repair): round 10 Spec S1 (requirement) -> round 11 review with treatment {round 10, S1, fixed} on changed content; verification verified, reasons []",
+    "qcand34-v9": "rounds 2-3, 5-6, 8-9 exemption 'unchanged' (identical content, no redundant review round); rounds 4 and 7 new reviews after the relevant change; verification verified in 12df0f45, 3f04ffbd, 52bf27c0"
+   },
+   "covers": "finding fixed with new opinions after the change; identical commit without a redundant round",
+   "notReexercised": "a real gate failing (q13-v5; GATE_FAILED rule not touched by b4c5443/82d6faf)"
+  },
+  "V-08.e": {
+   "run": "q34-instr-v1",
+   "source": "y5/q34-instr-v1/run-result.json, docs/evidence/34-r-instr-v1-verdict.json",
+   "observed": {
+    "docs-check": "declared not-run, authorization null",
+    "verification": "not-verified, reasons [GATE_NOT_RUN:docs-check]",
+    "publication": "not-publishable, reasons [REVIEW_NOT_VERIFIED, VERIFICATION:GATE_NOT_RUN:docs-check]"
+   },
+   "covers": "a gate not executed is never success: the Factory refuses the publication"
+  },
+  "V-09.b": {
+   "run": "q34-ghchecks-s-v1",
+   "source": "docs/evidence/34-r-ghchecks-s-v1-verdict.json",
+   "observed": [
+    {
+     "id": "run.factory-ready",
+     "met": true,
+     "observed": "{\"status\":\"success\",\"effects\":[\"mark-ready\",\"convert-to-draft\",\"mark-ready\"]}"
+    },
+    {
+     "id": "strict.loss-back-to-draft",
+     "met": true,
+     "observed": "[\"mark-ready\",\"convert-to-draft\",\"mark-ready\"]"
+    },
+    {
+     "id": "human-draft.respected",
+     "met": true,
+     "observed": "{\"humanDraft\":{\"observedAt\":\"2026-11-18T00:59:08.975Z\",\"headSha\":\"3b1fc17b0e1c8fad56acd89192696b24b2f1c1b8\"},\"events\":0}"
+    },
+    {
+     "id": "no-bypass",
+     "met": true,
+     "observed": "{\"merged\":false,\"changedFiles\":[\"docs/FACTORY_CHECKS_S.md\"],\"pushViolations\":[]}"
+    }
+   ],
+   "covers": "controlled ready conversion with current checks, back to draft when the condition is lost, human draft respected, never merged by the Factory"
+  },
+  "V-09.d": {
+   "run": "q34-ghchecks-s-v1",
+   "source": "docs/evidence/34-r-ghchecks-s-v1-verdict.json",
+   "observed": [
+    {
+     "id": "contexts.skipped-absent-strict",
+     "met": true,
+     "observed": "{\"optional\":\"satisfied\",\"reasons\":[\"wait:REQUIRED_CHECK_ABSENT:factory-absent\"],\"strict\":{\"required\":true,\"sources\":[\"ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing\"],\"state\":\"up-to-date\",\"behindBy\":0}}"
+    },
+    {
+     "id": "classic.accumulated",
+     "met": true,
+     "observed": "[\"classic\",\"ruleset:26435808:Repository:Sanmoo/java-springboot-event-sourcing\"]"
+    },
+    {
+     "id": "classic.settings-merge-blocking",
+     "met": true,
+     "observed": "{\"outcome\":\"blocked\",\"modalities\":[\"lock_branch:blocking:BRANCH_LOCKED\",\"required_signatures:blocking:SIGNED_COMMITS_REQUIRED\",\"required_linear_history:not-blocking:LINEAR_HISTORY_METHOD_ALLOWED\"]}"
+    }
+   ],
+   "covers": "the inherited ruleset 26435808 read and interpreted (strict, required checks) together with classic protection; merge-blocking settings make readiness blocked, never satisfied"
+  },
+  "V-10.a": {
+   "run": "q34-ghadv-v4",
+   "source": "y5/q34-ghadv-v4/inspect-result.json (works[#102].corrections); docs/evidence/34-r-ghadv-v4-verdict.json",
+   "observed": {
+    "corrections": [
+     [
+      "publication-diverged",
+      true,
+      [
+       "EXPLICIT_REPAIR"
+      ]
+     ],
+     [
+      "published",
+      true,
+      [
+       "MERGE_CONFLICT"
+      ]
+     ]
+    ],
+    "check": [
+     {
+      "id": "merge-of-base-with-human-commit",
+      "met": true,
+      "observed": "{\"status\":\"success\",\"humanTips\":[\"1c48ad1453b326cae98db2a919d17b528bfe73c0\"],\"baseBehind\":0,\"humanBehind\":0,\"merges\":1}"
+     }
+    ]
+   },
+   "covers": "confirmed conflict (add/add) -> ONE charged correction, published on the same PR",
+   "notReexercised": "base only advancing -> zero Executions (q22-v1; dispatch of base advances not touched by 6c4a9e0)"
+  },
+  "V-10.e": {
+   "run": "q34-ghadv-v4",
+   "source": "y5/q34-ghadv-v4/inspect-result.json (works[#102], Execution b53bf4de reconciliation, verified); docs/evidence/34-r-ghadv-v4-verdict.json",
+   "observed": {
+    "reconciliation": "human commit 1c48ad1 on the Factory branch -> divergence -> incorporate -> reconciliation Execution b53bf4de verified, published with lease on that tip",
+    "checks": [
+     {
+      "id": "merge-of-base-with-human-commit",
+      "met": true,
+      "observed": "{\"status\":\"success\",\"humanTips\":[\"1c48ad1453b326cae98db2a919d17b528bfe73c0\"],\"baseBehind\":0,\"humanBehind\":0,\"merges\":1}"
+     },
+     {
+      "id": "leased-pushes-only",
+      "met": true,
+      "observed": "[]"
+     }
+    ]
+   },
+   "covers": "concurrent human push incorporated, never --force or overwrite, every push an exact lease, with the corrected reconciliation review (ticket 43)",
+   "notReexercised": "a failed lease with the previous OID and a second divergence after the authorization (q21-v9; lease/publication code not touched by 6c4a9e0)"
+  },
+  "V-14.d": {
+   "decision": "D-17",
+   "observed": "no real run on f3c7cf3 exercised the retention sweep; the new step (scrubForgotten in the sweep, 5a026e7) has S/I-local proof only: ci-d07 (npm run test:ci, test/control/forget-scrub.test.ts on a real SQLite file)"
+  },
+  "V-14.e": {
+   "decision": "D-17",
+   "observed": "no real run on f3c7cf3 exercised forget; the scrub after forget (5a026e7) has S/I-local proof only: ci-d07 (test/control/forget-scrub.test.ts, real SQLite file: deleted rows absent from pages and WAL)"
+  }
+ }
+}

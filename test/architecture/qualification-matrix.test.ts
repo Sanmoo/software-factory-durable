@@ -3,7 +3,7 @@
 // scenario V-01..V-17 and every RF/RNF/CA of the plan is present, statuses come from the allowed set, an approved obligation cites
 // existing evidence and the real levels the plan requires (a historical real run counts only when its applicability to the
 // candidate is recorded), the aggregates never turn a pilot dependency or an inconclusive obligation into an approval, and every
-// open obligation has a gate and a pointer. Operator decisions (D-01..D-08, 2026-11-16; D-09..D-10, 2026-11-17; D-11..D-16, 2026-11-18) are recorded with their resolution: a level is
+// open obligation has a gate and a pointer. Operator decisions (D-01..D-08, 2026-11-16; D-09..D-10, 2026-11-17; D-11..D-17, 2026-11-18) are recorded with their resolution: a level is
 // waived only by a `level-waived` decision naming the obligation (never P), and a pre-pilot obligation is a pilot dependency only when a
 // decision carried it to the pilot (ticket 35). It does not run anything real and does not judge the evidence itself.
 import assert from 'node:assert/strict';
@@ -227,14 +227,14 @@ test('docs/evidence/34-qualification-matrix.json is consistent with the plan and
   assert.deepEqual(problems(matrix, plan, path => existsSync(join(root, path))), []);
 });
 
-test('the operator decisions D-01..D-08 of 2026-11-16, D-09..D-10 of 2026-11-17 and D-11..D-16 of 2026-11-18 are all recorded with a resolution', () => {
+test('the operator decisions D-01..D-08 of 2026-11-16, D-09..D-10 of 2026-11-17 and D-11..D-17 of 2026-11-18 are all recorded with a resolution', () => {
   assert.deepEqual(matrix.operatorDecisions.map(decision => [decision.id, decision.decidedAt, decision.resolution]), [
     ['D-01', '2026-11-16', 'carried-to-pilot'], ['D-02', '2026-11-16', 'scope-required'], ['D-03', '2026-11-16', 'level-waived'],
     ['D-04', '2026-11-16', 'out-of-scope-unless-pilot-needs'], ['D-05', '2026-11-16', 'proof-accepted'], ['D-06', '2026-11-16', 'limit-accepted'],
     ['D-07', '2026-11-16', 'implemented'], ['D-08', '2026-11-16', 'level-waived'],
     ['D-09', '2026-11-17', 'proof-accepted'], ['D-10', '2026-11-17', 'proof-accepted'], ['D-11', '2026-11-18', 'proof-accepted'], ['D-12', '2026-11-18', 'proof-accepted'],
     ['D-13', '2026-11-18', 'proof-accepted'], ['D-14', '2026-11-18', 'proof-accepted'], ['D-15', '2026-11-18', 'carried-to-pilot'],
-    ['D-16', '2026-11-18', 'proof-accepted']]);
+    ['D-16', '2026-11-18', 'proof-accepted'], ['D-17', '2026-11-18', 'limit-accepted']]);
   // D-02 keeps cross-repository dependencies as a required pre-pilot proof: approved only by the real R-GH-DEP run, never by the decision.
   // D-15 records V-06.g as a KNOWN PILOT RISK: carried to the pilot (ticket 35), never an approval.
   const pilotRisk = matrix.obligations.find(obligation => obligation.id === 'V-06.g')!;

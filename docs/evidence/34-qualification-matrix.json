@@ -127,7 +127,7 @@
     "82d6faf factory-skills-v7 (pacote novo do Builder; v6 intacto): assets/skill-pack/factory-skills-v7, contracts/index.ts, workers/skill-pack.ts",
     "6c4a9e0 revisao de reconciliacao julga o patch proprio a partir da ponta autorizada: contracts/index.ts, control/rules/review.ts, workers/handoff.ts"
    ],
-   "revalidation": "ver docs/evidence/34-candidate-qualification.md secao 2 (Revalidacao das provas na troca de candidato): 23 obrigacoes aprovadas tem prova anterior a uma mudanca de produto da sua area; nenhum estado foi alterado"
+   "revalidation": "docs/evidence/34-revalidation-f3c7cf3.json e secao 2 do relatorio: 23 obrigacoes aprovadas citavam so ensaios anteriores a uma mudanca de produto da sua area; 14 valem sem nova prova; 7 revalidadas por ensaios no codigo do candidato (V-07.d, V-08.c, V-08.e, V-09.b, V-09.d, V-10.a, V-10.e); 2 mantidas com limite S/I-local (D-17: V-14.d, V-14.e); nenhum estado mudou"
   }
  },
  "counts": {
@@ -3443,15 +3443,19 @@
    ],
    "status": "aprovada",
    "expectation": "sessao compatível continua com continue; incompativel substituida explicitamente; rebase",
-   "observed": "11: SESSION_COMPATIBLE e substituicao por mudanca de perfil; 22: builder-continuation com rebase; 23 v3: continuacao da mesma correcao",
+   "observed": "11: SESSION_COMPATIBLE e substituicao por mudanca de perfil; 22: builder-continuation com rebase; 23 v3: continuacao da mesma correcao. Revalidado no candidato f3c7cf3 (b4c5443): qcand34-v9 continuou sessoes compativeis com continue (SESSION_COMPATIBLE em 12df0f45, 3f04ffbd, 6f25e8b8, 52bf27c0) e substituiu explicitamente (replace PUBLISH_ONLY_SESSION em edcbdef1, 5cd8c36b); o rebase segue provado por q22-v1 (caminho nao tocado)",
    "evidence": [
     "docs/evidence/11-context-continuation-and-authorized-scope.md",
-    "docs/evidence/22-effective-impediments-and-automatic-repairs.md"
+    "docs/evidence/22-effective-impediments-and-automatic-repairs.md",
+    "docs/evidence/34-prepilot-results.md",
+    "docs/evidence/34-r-cand-v9-verdict.json",
+    "docs/evidence/34-revalidation-f3c7cf3.json"
    ],
    "runs": [
     "q11",
     "q22-v1",
-    "q23-v3"
+    "q23-v3",
+    "qcand34-v9"
    ],
    "commands": [
     "npm run test:ci",
@@ -3661,13 +3665,18 @@
    ],
    "status": "aprovada",
    "expectation": "achado corrigido, novos pareceres apos mudanca relevante, commit identico sem rodada redundante, gate real falho",
-   "observed": "13 v5: gate falhou de verdade, achado requirement corrigido, dois revisores novos, identical-commit, verified",
+   "observed": "13 v5: gate falhou de verdade, achado requirement corrigido, dois revisores novos, identical-commit, verified. Revalidado no candidato f3c7cf3 (b4c5443, 82d6faf): q34-ghadv-v4 #102 reparo 3fc70447 com Spec S1 (requirement) na rodada 10 corrigido e revisado de novo na 11, verified; qcand34-v9 com rodadas de isencao 'unchanged' para conteudo identico e reviews novos apos a mudanca; gate real falho segue provado por q13-v5 (regra GATE_FAILED nao tocada)",
    "evidence": [
     "docs/evidence/13-findings-treatment-and-current-content-gates.md",
-    "docs/evidence/13-real-rounds-run-2026-11-14.json"
+    "docs/evidence/13-real-rounds-run-2026-11-14.json",
+    "docs/evidence/34-r-ghadv-v4-verdict.json",
+    "docs/evidence/34-r-cand-v9-verdict.json",
+    "docs/evidence/34-revalidation-f3c7cf3.json"
    ],
    "runs": [
-    "q13-v5"
+    "q13-v5",
+    "q34-ghadv-v4",
+    "qcand34-v9"
    ],
    "commands": [
     "npm run test:ci",
@@ -3731,15 +3740,18 @@
    ],
    "status": "aprovada",
    "expectation": "falta de instrucao, falha ou gate nao executado exige orientacao, nao sucesso",
-   "observed": "18 v2: gate inventado -> HANDOFF_GATE_NOT_DOCUMENTED; 21 v6: gate so embutido -> HANDOFF_GATE_NOT_RUN; 24: GATE_FAILED nunca verificado",
+   "observed": "18 v2: gate inventado -> HANDOFF_GATE_NOT_DOCUMENTED; 21 v6: gate so embutido -> HANDOFF_GATE_NOT_RUN; 24: GATE_FAILED nunca verificado. Revalidado no candidato f3c7cf3: q34-instr-v1 com docs-check not-run sem autorizacao -> verificacao GATE_NOT_RUN:docs-check e publicacao not-publishable (nunca sucesso)",
    "evidence": [
     "docs/evidence/18-first-integrated-delivery-journey.md",
-    "docs/evidence/21-human-changes-and-explicit-lease.md"
+    "docs/evidence/21-human-changes-and-explicit-lease.md",
+    "docs/evidence/34-r-instr-v1-verdict.json",
+    "docs/evidence/34-revalidation-f3c7cf3.json"
    ],
    "runs": [
     "q18-v4",
     "q21-v9",
-    "q24-v3"
+    "q24-v3",
+    "q34-instr-v1"
    ],
    "commands": [
     "npm run test:ci"
@@ -3911,14 +3923,17 @@
    ],
    "status": "aprovada",
    "expectation": "conversao controlada a pronto com evidencias atuais; aberto/pronto/entregue distintos; sem merge pela Factory",
-   "observed": "16 v1: uma mutacao, grant revogado, observacao independente; 18 v4: ready apos remocao autorizada de update; merge so humano",
+   "observed": "16 v1: uma mutacao, grant revogado, observacao independente; 18 v4: ready apos remocao autorizada de update; merge so humano. Revalidado no candidato f3c7cf3 (f4cb958): q34-ghchecks-s-v1 run.factory-ready (mark-ready confirmado com checks satisfeitos), strict.loss-back-to-draft (mark-ready, convert-to-draft, mark-ready), human-draft.respected e no-bypass (PR nunca mergeado pela Factory)",
    "evidence": [
     "docs/evidence/16-evidence-based-readiness.md",
-    "docs/evidence/18-first-integrated-delivery-journey.md"
+    "docs/evidence/18-first-integrated-delivery-journey.md",
+    "docs/evidence/34-r-ghchecks-s-v1-verdict.json",
+    "docs/evidence/34-revalidation-f3c7cf3.json"
    ],
    "runs": [
     "q16-v1",
-    "q18-v4"
+    "q18-v4",
+    "q34-ghchecks-s-v1"
    ],
    "commands": [
     "npm run test:ci",
@@ -3989,15 +4004,18 @@
    ],
    "status": "aprovada",
    "expectation": "rulesets herdados lidos e interpretados; regra que bloqueia merge impede prontidao",
-   "observed": "15: ruleset 26435808 interpretado; 39: update -> UPDATE_RESTRICTED; 18 v4: MERGE_BLOCKED_UPDATE_RESTRICTED real",
+   "observed": "15: ruleset 26435808 interpretado; 39: update -> UPDATE_RESTRICTED; 18 v4: MERGE_BLOCKED_UPDATE_RESTRICTED real. Revalidado no candidato f3c7cf3 (f4cb958): q34-ghchecks-s-v1 contexts.skipped-absent-strict (strict do ruleset 26435808), classic.accumulated (classic + ruleset) e classic.settings-merge-blocking (lock_branch/assinaturas bloqueiam: outcome blocked, nunca satisfied)",
    "evidence": [
     "docs/evidence/39-merge-blocking-base-rules.md",
-    "docs/evidence/18-first-integrated-delivery-journey.md"
+    "docs/evidence/18-first-integrated-delivery-journey.md",
+    "docs/evidence/34-r-ghchecks-s-v1-verdict.json",
+    "docs/evidence/34-revalidation-f3c7cf3.json"
    ],
    "runs": [
     "q15-v2",
     "q39-v1",
-    "q18-v4"
+    "q18-v4",
+    "q34-ghchecks-s-v1"
    ],
    "commands": [
     "npm run test:ci",
@@ -4124,13 +4142,16 @@
    ],
    "status": "aprovada",
    "expectation": "conflito confirmado -> um reparo; base apenas avancando -> zero Execucoes",
-   "observed": "22: avanco da base sem disparo; conflito add/add -> uma correcao cobrada, rebase e push com lease no mesmo PR",
+   "observed": "22: avanco da base sem disparo; conflito add/add -> uma correcao cobrada, rebase e push com lease no mesmo PR. Revalidado no candidato f3c7cf3 (6c4a9e0): q34-ghadv-v4 #102 conflito add/add -> UMA correcao MERGE_CONFLICT cobrada e publicada no mesmo PR (merge-of-base-with-human-commit); base so avancando -> zero Execucoes segue provado por q22-v1 (nao tocado)",
    "evidence": [
     "docs/evidence/22-effective-impediments-and-automatic-repairs.md",
-    "docs/evidence/22-real-repair-verdict-2026-11-16.json"
+    "docs/evidence/22-real-repair-verdict-2026-11-16.json",
+    "docs/evidence/34-r-ghadv-v4-verdict.json",
+    "docs/evidence/34-revalidation-f3c7cf3.json"
    ],
    "runs": [
-    "q22-v1"
+    "q22-v1",
+    "q34-ghadv-v4"
    ],
    "commands": [
     "npm run test:ci",
@@ -4276,13 +4297,16 @@
    ],
    "status": "aprovada",
    "expectation": "push humano concorrente, lease com OID anterior, divergencia nova apos autorizacao, sem --force nem sobrescrita",
-   "observed": "21 v9: lease falho preservou C1; Pergunta 1 incorporate; C2 apos a resposta -> Pergunta 2; publicacao com lease na segunda ponta; ambos os commits humanos preservados",
+   "observed": "21 v9: lease falho preservou C1; Pergunta 1 incorporate; C2 apos a resposta -> Pergunta 2; publicacao com lease na segunda ponta; ambos os commits humanos preservados. Revalidado no candidato f3c7cf3 (6c4a9e0): q34-ghadv-v4 #102 commit humano 1c48ad1 na branch da Factory -> divergencia -> incorporate -> reconciliacao b53bf4de verified, publicada com lease nessa ponta; leased-pushes-only; lease falho com OID anterior e segunda divergencia seguem provados por q21-v9 (codigo de lease/publicacao nao tocado)",
    "evidence": [
     "docs/evidence/21-human-changes-and-explicit-lease.md",
-    "docs/evidence/21-real-human-v9-verdict-2026-11-16.json"
+    "docs/evidence/21-real-human-v9-verdict-2026-11-16.json",
+    "docs/evidence/34-r-ghadv-v4-verdict.json",
+    "docs/evidence/34-revalidation-f3c7cf3.json"
    ],
    "runs": [
-    "q21-v9"
+    "q21-v9",
+    "q34-ghadv-v4"
    ],
    "commands": [
     "npm run test:ci",
@@ -5244,21 +5268,29 @@
    ],
    "status": "aprovada",
    "expectation": "logs/sessoes de entregues elegiveis 30 dias apos merge na varredura; nao entregues preservados; fim de pendencia nao reinicia prazo; historico ate exclusao",
-   "observed": "30 v3 sobre copia real de q17: 40 removidos, 49 mantidos, dueAt merge+30 d (relogio controlado; armazenamento/varredura reais)",
+   "observed": "30 v3 sobre copia real de q17: 40 removidos, 49 mantidos, dueAt merge+30 d (relogio controlado; armazenamento/varredura reais). LIMITE (D-17): no candidato f3c7cf3 o passo novo (scrub do SQLite apos forget, 5a026e7, chamado pela varredura) tem prova so S/I-local (ci-d07: test/control/forget-scrub.test.ts sobre arquivo SQLite real); nenhum ensaio real; a prova real q30-v3 e anterior ao scrub; o piloto observa forget/scrub se o exercitar naturalmente",
    "evidence": [
     "docs/evidence/30-retention-and-explicit-cleanup.md",
-    "docs/evidence/30-real-retention-v3-verdict-2026-11-15.json"
+    "docs/evidence/30-real-retention-v3-verdict-2026-11-15.json",
+    "docs/evidence/31-history-erasure-and-minimal-cycle-memory.md",
+    "docs/evidence/34-revalidation-f3c7cf3.json"
    ],
    "runs": [
-    "q30-v3"
+    "q30-v3",
+    "ci-d07"
    ],
    "commands": [
     "npm run test:ci",
-    "receita test/entrypoints/retention30-qualification.ts"
+    "receita test/entrypoints/retention30-qualification.ts",
+    "receita/teste test/control/forget-scrub.test.ts (ci-d07)"
    ],
    "tickets": [
     "30"
-   ]
+   ],
+   "decision": {
+    "id": "D-17"
+   },
+   "pointer": "Aprovada com limite (D-17): prova S/I-local do scrub no candidato; o piloto observa forget/scrub se o exercitar"
   },
   {
    "id": "V-14.e",
@@ -5278,21 +5310,28 @@
    ],
    "status": "aprovada",
    "expectation": "exclusao exige encerramento sem pendencias e conserva memoria minima antirredisparo",
-   "observed": "31 v2: entregue esquecido sem chaves proibidas; polling apos restart -> existing; recusa com RESOURCES_PENDING",
+   "observed": "31 v2: entregue esquecido sem chaves proibidas; polling apos restart -> existing; recusa com RESOURCES_PENDING. LIMITE (D-17): no candidato f3c7cf3 o passo novo (scrub do SQLite apos forget, 5a026e7) tem prova so S/I-local (ci-d07: test/control/forget-scrub.test.ts sobre arquivo SQLite real); nenhum ensaio real; a prova real q31-v2 e anterior ao scrub; o piloto observa forget/scrub se o exercitar naturalmente",
    "evidence": [
     "docs/evidence/31-history-erasure-and-minimal-cycle-memory.md",
-    "docs/evidence/31-real-forget-v2-verdict-2026-11-15.json"
+    "docs/evidence/31-real-forget-v2-verdict-2026-11-15.json",
+    "docs/evidence/34-revalidation-f3c7cf3.json"
    ],
    "runs": [
-    "q31-v2"
+    "q31-v2",
+    "ci-d07"
    ],
    "commands": [
     "npm run test:ci",
-    "receita test/entrypoints/forget31-qualification.ts"
+    "receita test/entrypoints/forget31-qualification.ts",
+    "receita/teste test/control/forget-scrub.test.ts (ci-d07)"
    ],
    "tickets": [
     "31"
-   ]
+   ],
+   "decision": {
+    "id": "D-17"
+   },
+   "pointer": "Aprovada com limite (D-17): prova S/I-local do scrub no candidato; o piloto observa forget/scrub se o exercitar"
   },
   {
    "id": "V-14.f",
@@ -6251,9 +6290,22 @@
    "decidedBy": "operador",
    "resolution": "proof-accepted",
    "decision": "Aprovada por evidencia: a instrucao que o Builder escreveu (AGENTS.md com a linha que dispensa gates) nao prevaleceu: uma unica versao de instrucoes (a da base) em todas as rodadas, o gate inexecutavel continuou exigido (GATE_NOT_RUN, publicacao recusada, nenhum PR) e nada chegou a main. O veredito da receita passa a aceitar os dois caminhos honestos (dispensa so com a Pergunta respondida, OU not-run com publicacao recusada GATE_NOT_RUN e nenhum PR) e pula o cancel quando not-publishable; reavaliado com os dados reais da v1: proven."
+  },
+  {
+   "id": "D-17",
+   "obligations": [
+    "V-14.d",
+    "V-14.e"
+   ],
+   "question": "V-14.d/V-14.e: manter aprovadas no candidato f3c7cf3, cuja prova real (q30-v3, q31-v2) e anterior ao scrub do SQLite apos forget (5a026e7)?",
+   "dependency": "5a026e7 (D-07); ci-d07 (test/control/forget-scrub.test.ts, SQLite real); docs/evidence/34-revalidation-f3c7cf3.json; o piloto (35) observa forget/scrub se o exercitar",
+   "decidedAt": "2026-11-18",
+   "decidedBy": "operador",
+   "resolution": "limit-accepted",
+   "decision": "Mantidas aprovadas com limite: no candidato f3c7cf3 o scrub do SQLite apos forget (5a026e7), tambem chamado pela varredura de retencao, tem prova so S/I-local (ci-d07, arquivo SQLite real); nenhum ensaio real na composicao f3c7cf3; a prova real da varredura (q30-v3) e do forget (q31-v2) e anterior ao scrub. O piloto registra forget/scrub se o exercitar naturalmente. As outras 7 obrigacoes sinalizadas foram revalidadas por ensaios no codigo do candidato (34-revalidation-f3c7cf3.json)."
   }
  ],
- "result": "Nao libera o piloto nem aceite do MVP. Libera no maximo a preparacao da solicitacao de autorizacao do piloto (35). Decisoes D-01..D-16; todos os grupos pre-piloto executados ou decididos: R-INSPECT, R-GH-DEP, R-CAND v9, R-CRASH-A v5, R-HOSTFAULT v3, R-LONG v2, R-GH-CHECKS (v2 + S), R-GH-ADV (v4 + S v2), R-INSTR v1 (V-07.f aprovada por evidencia, D-16) e R-UPG v5 (V-16.b: release mvp-34.5 de f3c7cf3 construida, verificada, identificada e selecionada em pr2). Nenhuma obrigacao pre-piloto segue inconclusiva; as 13 dependentes-do-piloto (12 de nivel P e V-06.g, D-15) seguem ao piloto (ticket 35).",
+ "result": "Nao libera o piloto nem aceite do MVP. Libera no maximo a preparacao da solicitacao de autorizacao do piloto (35). Decisoes D-01..D-17; todos os grupos pre-piloto executados ou decididos: R-INSPECT, R-GH-DEP, R-CAND v9, R-CRASH-A v5, R-HOSTFAULT v3, R-LONG v2, R-GH-CHECKS (v2 + S), R-GH-ADV (v4 + S v2), R-INSTR v1 (V-07.f aprovada por evidencia, D-16) e R-UPG v5 (V-16.b: release mvp-34.5 de f3c7cf3 construida, verificada, identificada e selecionada em pr2). Nenhuma obrigacao pre-piloto segue inconclusiva; as 13 dependentes-do-piloto (12 de nivel P e V-06.g, D-15) seguem ao piloto (ticket 35).",
  "decisionsRecordedAt": "2026-11-18",
  "countsHistory": [
   {
@@ -6289,6 +6341,16 @@
   {
    "at": "2026-11-18",
    "when": "R-INSTR v1 (D-16) + R-UPG v5 (V-16.b)",
+   "counts": {
+    "aprovada": 99,
+    "reprovada": 0,
+    "inconclusiva": 0,
+    "dependente-do-piloto": 13
+   }
+  },
+  {
+   "at": "2026-11-18",
+   "when": "candidato f3c7cf3 (mvp-34.5): revalidacao das 9 sinalizadas (7 por ensaios no codigo novo, D-17 para V-14.d/e)",
    "counts": {
     "aprovada": 99,
     "reprovada": 0,

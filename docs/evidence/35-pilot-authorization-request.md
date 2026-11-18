@@ -25,7 +25,7 @@ sem resposta) bloqueia a parte do piloto que depende dele. Merge, aprovação e 
 | Host | Arch Linux, kernel 7.1.9, QEMU 11.1.2, systemd 262, 8 CPUs, 15,7 GiB, KVM |
 
 Prova da composição: [34-r-upg-v5-release.json](34-r-upg-v5-release.json). A revalidação das provas antigas na troca de candidato
-(9 obrigações sinalizadas, nenhum estado alterado) está na seção 2 de [34-candidate-qualification.md](34-candidate-qualification.md).
+(9 sinalizadas: 7 revalidadas por ensaios no código do candidato e 2 mantidas com limite por D-17; nenhum estado alterado) está na seção 2 de [34-candidate-qualification.md](34-candidate-qualification.md).
 
 ## 2. O que o piloto fará
 
@@ -70,7 +70,7 @@ Prova da composição: [34-r-upg-v5-release.json](34-r-upg-v5-release.json). A r
 | V-09.P | P | publicação/prontidão em tickets reais | draft verificado, conversão a pronto pela Factory, prontidão bloqueada quando checks ou regras bloqueiam | estado da publicação, leituras de checks e ruleset |
 | V-10.P | P | manutenção de PR em tickets reais | `CHANGES_REQUESTED` e `/factory repair` reais tratados no mesmo PR; base que avança tratada sem reparo inútil | correções, reparos, leases e histórico |
 | V-11.P | P | interação real com operador | Perguntas reais publicadas no issue e respondidas por comentário do operador | Perguntas e respostas (origem, autor) e retomadas |
-| V-14.P | P | cleanup de entrega real | após o merge humano, branch e ambiente próprios removidos; evidências preservadas | `cleanup` por Trabalho; retenção |
+| V-14.P | P | cleanup de entrega real | após o merge humano, branch e ambiente próprios removidos; evidências preservadas. Se o operador fizer `forget` de um Trabalho entregue ou cancelado, observar o scrub do SQLite (limite D-17) | `cleanup` por Trabalho; retenção; estado do scrub (`scrubbed`/`pending`) no `status` |
 | V-15.P | P | métricas do PRD no piloto | tempos de elegibilidade, início, PR, prontidão e merge separados da espera; intervenções, Perguntas, correções, recoveries, consumo dos três papéis | `status`/`usage`/`history` e o relatório do piloto |
 | V-17.P | P | utilidade e qualidade com avaliação humana; CA-08 com suítes reais | o operador registra aderência, qualidade e utilidade de cada entrega e do conjunto | avaliação escrita do operador no relatório do piloto |
 
@@ -90,7 +90,7 @@ Nenhuma dessas obrigações vira aprovada pela execução sozinha. P exige a ava
   correções, que as métricas registram.
 - **Ticket 42: teste instável `test/records/raw.test.ts` sob carga.** Afeta só a suíte de desenvolvimento (`test:ci`) com VMs no host,
   não o produto em execução. Durante o piloto, nenhum gate de desenvolvimento é rodado no mesmo host sem registrar a carga.
-- **Limites das decisões D-09…D-16:**
+- **Limites das decisões D-09…D-17:**
   - D-09: V-08.g aprovada por evidência; o veredito automático leu uma view podada.
   - D-10: a resposta durante o boot não foi observada pela granularidade da receita.
   - D-11: V-10.g aceita com "merge dentro da correção e nenhuma publicação depois".
@@ -99,6 +99,7 @@ Nenhuma dessas obrigações vira aprovada pela execução sozinha. P exige a ava
   - D-14: ajuste de hora provado só em S; duração após crash só em I-local.
   - D-15: V-06.g é risco do piloto.
   - D-16: V-07.f provada pelo caminho de recusa (`GATE_NOT_RUN`), não pelo da Pergunta; a recusa de uma dispensa que cite o próprio `AGENTS.md` só está provada no código.
+  - D-17: V-14.d e V-14.e mantidas com limite: o scrub do SQLite após `forget` (`5a026e7`, também chamado pela varredura de retenção) tem prova só S/I-local no candidato (ci-d07); nenhum ensaio real em `f3c7cf3`. Se o piloto fizer `forget` ou passar por uma varredura com Trabalho esquecido, registrar o resultado do scrub (`status`: memória mínima `scrubbed`/`pending`).
 - **Memória do host com três guests.** Há risco de recusa de boot ou de ITs lentas. O motivo é registrado e o operador reduz a
   capacidade ou a memória do guest.
 - **Custos do modelo.** O R-INSPECT mediu ~1,5 M tokens do Builder num Ticket pequeno de documentação. Tickets de código devem custar
