@@ -24,3 +24,7 @@ seguindo os guardrails de ensaios.
 
 - Criado na triagem de 2026-11-19 a partir dos critérios de prova real retirados de 47, 48, 50 e 51.
 - Relacionados: [35](35-authorized-pilot-and-human-mvp-assessment.md), relatório do piloto 1 em `docs/evidence/35-pilot-report.md`.
+- 2026-11-19 (supervisor): assets com ext4 journalado do ticket 47 gerados em `/home/sanmoo/software-factory-test/assets35/assets`, derivados de
+  assets34 (manifesto `8efa506a…`) com `deriveJournaledGuestAssets`; só `rootfs` mudou (`has_journal`, estado `clean`). Pin novo: manifesto
+  `72e00546beba8e1c8b4b6f9d7a17de635e27fe2de79ffa85688bb2bdeebb5c12`. A release do piloto 2 usa esse pin; ambientes preparados com o pin
+  anterior (inclusive os da `pl1`) não sobem com ele, então o piloto 2 começa com ambientes novos.

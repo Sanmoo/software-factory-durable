@@ -20,7 +20,7 @@ Princípio: só é crítico o que deixa efeito desconhecido. Uma recusa antes de
 
 **Type:** task
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
