@@ -80,7 +80,10 @@ export async function checkDiskFilesystem(directory: string, disk: string, size:
     try { await file.chmod(0o600); } finally { await file.close(); }
     // Ticket 47: a journaled root stopped abruptly is consistent only after its journal is replayed (as the guest kernel does at mount).
     // The replay touches THIS private copy only; a read-only check of the unreplayed image would refuse a healthy disk.
-    if ((await journalState(raw)).needsRecovery) await run('/usr/bin/e2fsck', ['-E', 'journal_only', '-p', raw], native);
+    // Exit 1 only says the copy was modified (the replay itself); the full read-only check below decides.
+    if ((await journalState(raw)).needsRecovery) {
+      await run('/usr/bin/e2fsck', ['-E', 'journal_only', '-p', raw], native).catch((error: { code?: unknown }) => { if (error.code !== 1) throw error; });
+    }
     await checkFilesystem(raw, size);
     const after = await lstat(disk, { bigint: true });
     for (const key of ['dev', 'ino', 'size', 'mtimeNs', 'ctimeNs', 'uid', 'mode', 'nlink'] as const) {
