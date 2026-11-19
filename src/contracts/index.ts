@@ -94,7 +94,7 @@ export type ReviewOpinion = {
   conclusion: 'clean' | 'findings' | 'incomplete' | 'failure' | 'cancelled'; code: string | null;
   coverage: { scope: 'incremental' | 'broad'; justification: string; examined: string[] } | null;
   findings: ReviewFinding[]; limitations: ReviewLimitation[];
-  hostChecks: { reads: number; failedReads: { path: string; code: string }[]; requiredNotFullyRead: string[]; downgraded: string[] };
+  hostChecks: { reads: number; failedReads: { path: string; code: string; offset?: number }[]; requiredNotFullyRead: string[]; downgraded: string[] };
   finalMessageSha256: string | null; recordedAt: string;
 };
 /** Small Builder handoff summary sent to Control; the full index/diffs live in the Work's artifact area for the reviewers. */

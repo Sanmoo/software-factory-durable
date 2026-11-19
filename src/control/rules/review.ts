@@ -126,7 +126,9 @@ export function deliveryPrompt(input: { round: number; conclusion: string; appli
   const reviewers = reviewerRoles.map(role => {
     const { opinion, failure } = input.reviewers[role];
     return opinion ? { role, conclusion: opinion.conclusion, code: opinion.code, coverage: opinion.coverage, findings: opinion.findings,
-      limitations: opinion.limitations, hostDowngrades: opinion.hostChecks.downgraded, model: opinion.model, opinionReference: opinion.reference.id }
+      limitations: opinion.limitations, hostDowngrades: opinion.hostChecks.downgraded,
+      // Ticket 51: an unreadable source is named (path and offset), so the Builder and the operator can tell what failed.
+      ...(opinion.hostChecks.failedReads.length ? { hostFailedReads: opinion.hostChecks.failedReads.slice(0, 10) } : {}), model: opinion.model, opinionReference: opinion.reference.id }
       : { role, conclusion: 'failure', code: failure?.code ?? 'OPINION_MISSING', findings: [] };
   });
   const head = `FACTORY REVIEW RESULTS — round ${input.round}. Round conclusion: ${input.conclusion}; applicability: ${input.applicability}` +

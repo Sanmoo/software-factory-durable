@@ -67,3 +67,12 @@ test('ticket 14 real run v7: the reviewer prompt says that named-but-nonexistent
     assert.match(plan.prompt, /Only a REQUIRED input that is missing, or an EXISTING file that cannot be read/);
   }
 });
+
+test('ticket 51: a downgrade for an unreadable source names the failed reads (path and offset) in the delivered results', () => {
+  const failing = { ...opinion('spec', 'incomplete'), hostChecks: { reads: 4, requiredNotFullyRead: [], downgraded: ['SOURCE_UNREADABLE'],
+    failedReads: [{ path: '/workspace/checkout/src/Lock.java', code: 'GUEST_READ_FAILED', offset: 401 }] } } as ReviewOpinion;
+  const prompt = deliveryPrompt({ round: 1, conclusion: 'incomplete', applicability: 'current', reasons: ['SPEC_INCOMPLETE'],
+    reviewers: { standards: { opinion: opinion('standards', 'clean'), failure: null }, spec: { opinion: failing, failure: null } } });
+  const [standards, spec] = JSON.parse(prompt.slice(prompt.indexOf('['))) as { hostFailedReads?: unknown }[];
+  assert.deepEqual([standards!.hostFailedReads, spec!.hostFailedReads], [undefined, [{ path: '/workspace/checkout/src/Lock.java', code: 'GUEST_READ_FAILED', offset: 401 }]]);
+});

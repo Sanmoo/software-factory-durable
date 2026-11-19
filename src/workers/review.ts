@@ -33,10 +33,17 @@ export const opinionMaxBytes = 20 * 1024;
 /**
  * Host observation of the reviewer's native reads (what was actually read, failures and truncation not overcome). A path is fully read
  * when reads starting at line 1 follow each truncation's continuation until one ends without truncation and without a user limit.
+ * Ticket 51 (pilot 35): a window asked past the end of a file the reviewer read to its last line (the SDK's "Offset N is beyond end of file")
+ * is not a failed source read, whatever the order of the two reads; every failed read that remains names its path and offset.
  */
+/** A failed read the Host observed: the path (as read) and, when the reviewer asked for one, the 1-based line offset. */
+export type FailedRead = { path: string; code: string; offset?: number };
+// The native SDK read refusal for a window starting after the last line (pi-coding-agent core/tools/read.js).
+const pastEndMessage = /^Offset \d+ is beyond end of file \(\d+ lines? total\)$/;
 export function createReadObserver() {
   const reads = new Map<string, { covered: number; full: boolean }>();
-  const failures: { path: string; code: string }[] = [];
+  const failures: FailedRead[] = [];
+  const pastEnd: FailedRead[] = [];
   let count = 0;
   const normalize = (path: unknown) => typeof path === 'string' ? posix.normalize(path.startsWith('/') ? path : `/workspace/${path}`) : '';
   return {
@@ -51,7 +58,14 @@ export function createReadObserver() {
         if (error instanceof Error && error.message.startsWith('READ_IS_DIRECTORY')) return;
         // Ticket 14: an absent path is an answer too; a REQUIRED input that is absent is still never fully read (incomplete).
         if (error instanceof Error && error.message.startsWith('READ_NOT_FOUND')) return;
-        if (failures.length < 50) failures.push({ path: path.slice(0, 1024), code: error instanceof Error && /^[A-Z_]{1,64}$/.test(error.message) ? error.message : 'READ_FAILED' });
+        const message = error instanceof Error ? error.message : ('content' in outcome ? outcome.content ?? [] : []).map(block => block.text ?? '').join('');
+        const offset = typeof input.offset === 'number' && Number.isSafeInteger(input.offset) && input.offset > 0 ? { offset: input.offset } : {};
+        if (pastEndMessage.test(message)) {
+          // Decided at the summary: it is a failed read only if the file was never read to its last line.
+          if (pastEnd.length < 50) pastEnd.push({ path: path.slice(0, 1024), code: 'READ_BEYOND_END', ...offset });
+          return;
+        }
+        if (failures.length < 50) failures.push({ path: path.slice(0, 1024), code: error instanceof Error && /^[A-Z_]{1,64}$/.test(error.message) ? error.message : 'READ_FAILED', ...offset });
         return;
       }
       const state = reads.get(path) ?? { covered: 1, full: false };
@@ -72,7 +86,8 @@ export function createReadObserver() {
       reads.set(path, state);
     },
     summary(required: readonly string[]) {
-      return { reads: count, failedReads: [...failures], requiredNotFullyRead: required.filter(path => !reads.get(path)?.full) };
+      const unread = pastEnd.filter(item => !reads.get(item.path)?.full);
+      return { reads: count, failedReads: [...failures, ...unread].slice(0, 50), requiredNotFullyRead: required.filter(path => !reads.get(path)?.full) };
     },
   };
 }
@@ -130,7 +145,8 @@ export const opinionSchema = z.strictObject({
   input: z.strictObject({ handoffIndexSha256: z.string().regex(/^[0-9a-f]{64}$/), required: z.array(z.string().max(1024)).max(32), missing: z.array(z.string().max(64)).max(3) }),
   conclusion: z.enum(['clean', 'findings', 'incomplete', 'failure', 'cancelled']), code: z.string().regex(/^[A-Z_]{1,64}$/).nullable(),
   coverage: verdictSchema.shape.coverage.nullable(), findings: z.array(finding).max(40), limitations: verdictSchema.shape.limitations,
-  hostChecks: z.strictObject({ reads: count, failedReads: z.array(z.strictObject({ path: z.string().max(1024), code: z.string().max(64) })).max(50),
+  hostChecks: z.strictObject({ reads: count, failedReads: z.array(z.strictObject({ path: z.string().max(1024), code: z.string().max(64),
+    offset: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional() })).max(50),
     requiredNotFullyRead: z.array(z.string().max(1024)).max(32), downgraded: z.array(z.string().max(64)).max(8) }),
   finalMessageSha256: z.string().regex(/^[0-9a-f]{64}$/).nullable(), recordedAt: z.iso.datetime(),
 });
