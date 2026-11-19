@@ -5,7 +5,13 @@ libera: [34-candidate-qualification.md](34-candidate-qualification.md) e
 [34-qualification-matrix.json](34-qualification-matrix.json) (99 aprovadas, 0 reprovadas, 0 inconclusivas, 13 dependentes do piloto;
 G1–G6 sem bloqueio). Ensaios pré-piloto: [34-prepilot-results.md](34-prepilot-results.md).
 
-**Este documento só pede autorização. Nada foi iniciado:** nenhum Ticket criado, nenhum label aplicado, nenhum controlador iniciado,
+**Autorizado pelo operador em 2026-11-18** (respostas da seção 8, marcadas por ele na página de autorização; teto do item 9: 60 M tokens).
+Estado em 2026-11-18: raiz `pl1` (`/home/sanmoo/software-factory-test/pl1`) instalada do arquivo `mvp-34.5` (sha256 conferido),
+`setup`, `setup --service` (unit `software-factory-5a8f73c74014.service` gravada, não iniciada) e `doctor` feitos; configuração igual
+à de `pr2` exceto `concurrency` 3 e guest 3072 MiB. Pendentes antes do início: `factory login` pelo operador, Tickets reais, remoção das
+26 branches (item 4) e a mudança do ruleset (11a) no início da janela.
+
+**Texto original do pedido** (antes da autorização): nenhum Ticket criado, nenhum label aplicado, nenhum controlador iniciado,
 nenhuma escrita no GitHub. Cada item da seção 8 precisa de um "sim" explícito do operador antes de qualquer efeito. Um "não" (ou item
 sem resposta) bloqueia a parte do piloto que depende dele. Merge, aprovação e avaliação humana nunca são delegados aos agentes.
 
@@ -157,25 +163,25 @@ V-06.e).
 
 | # | Autorização | Sim | Não |
 | --- | --- | --- | --- |
-| 1 | Usar a release `mvp-34.5` (`f3c7cf3`) como composição do piloto | [ ] | [ ] |
-| 2a | Raiz A: usar `pr2` como está | [ ] | [ ] |
-| 2b | Raiz B: criar `pl1` com o arquivo `mvp-34.5`, `setup --service`, `doctor` e um login novo do modelo pelo operador | [ ] | [ ] |
-| 3 | Repositório `Sanmoo/java-springboot-event-sourcing`, base `main`, com a App `sanmoo-factory` (instalação 177599217) | [ ] | [ ] |
-| 4 | Remoção prévia, pelo operador, das 26 branches `factory/*` da qualificação (ou mantê-las; a Factory nunca as toca) | [ ] | [ ] |
-| 5 | De 4 a 6 Tickets reais escritos pelo operador, com a cobertura mínima da seção 2 | [ ] | [ ] |
-| 6 | `concurrency` 3 com guest 4096 MiB / 2 vCPU / 40 GiB | [ ] | [ ] |
-| 6b | Alternativa: guest 3072 MiB na janela com três simultâneos | [ ] | [ ] |
-| 7 | Janela de até 3 dias corridos, serviço ativo só com o operador disponível | [ ] | [ ] |
-| 8 | Chave da App em `<raiz>/credentials/app.pem` (0600) durante a janela, removida ao fim | [ ] | [ ] |
-| 9 | Modelo `openai/gpt-6-luna` nos três papéis via `factory-oauth`, com teto de consumo de ____ tokens (o operador define) | [ ] | [ ] |
-| 10 | Escritas da Factory listadas na seção 2 (branch própria com lease, UM draft PR, pronto do próprio PR, comentários, reabertura, limpeza própria) | [ ] | [ ] |
-| 11a | Ruleset `26435808`: remover `update` durante a janela e restaurar ao fim | [ ] | [ ] |
-| 11b | Ruleset: relaxar só em volta de cada merge humano | [ ] | [ ] |
-| 11c | Ruleset: manter como está (merges bloqueados pela regra `update`) | [ ] | [ ] |
-| 12 | Merge e aprovação só pelo operador (nunca pelos agentes) | [ ] | [ ] |
-| 13 | Nenhuma injeção de falha no piloto (sem SIGKILL, congelamento, disco cheio ou relógio) | [ ] | [ ] |
-| 14 | Limpeza pela Factory da própria branch e do próprio ambiente após cada entrega; retenção padrão de 30 dias | [ ] | [ ] |
-| 15 | V-02.h: executar R-DOCKER-EXT só se um Ticket selecionado usar Compose ou `docker build` | [ ] | [ ] |
-| 16 | Regras de parada da seção 5 | [ ] | [ ] |
-| 17 | Reversão da seção 6, inclusive `upgrade rollback` para `mvp-34.4` se necessário | [ ] | [ ] |
-| 18 | Registro de métricas (V-15.P) e da avaliação humana (V-17.P) no relatório do piloto | [ ] | [ ] |
+| 1 | Usar a release `mvp-34.5` (`f3c7cf3`) como composição do piloto | [x] | [ ] |
+| 2a | Raiz A: usar `pr2` como está | [ ] | [x] |
+| 2b | Raiz B: criar `pl1` com o arquivo `mvp-34.5`, `setup --service`, `doctor` e um login novo do modelo pelo operador | [x] | [ ] |
+| 3 | Repositório `Sanmoo/java-springboot-event-sourcing`, base `main`, com a App `sanmoo-factory` (instalação 177599217) | [x] | [ ] |
+| 4 | Remoção prévia, pelo operador, das 26 branches `factory/*` da qualificação (ou mantê-las; a Factory nunca as toca) | [x] | [ ] |
+| 5 | De 4 a 6 Tickets reais escritos pelo operador, com a cobertura mínima da seção 2 | [x] | [ ] |
+| 6 | `concurrency` 3 com guest 4096 MiB / 2 vCPU / 40 GiB | [ ] | [x] |
+| 6b | Alternativa: guest 3072 MiB na janela com três simultâneos | [x] | [ ] |
+| 7 | Janela de até 3 dias corridos, serviço ativo só com o operador disponível | [x] | [ ] |
+| 8 | Chave da App em `<raiz>/credentials/app.pem` (0600) durante a janela, removida ao fim | [x] | [ ] |
+| 9 | Modelo `openai/gpt-6-luna` nos três papéis via `factory-oauth`, com teto de consumo de **60 M tokens** no total dos três papéis | [x] | [ ] |
+| 10 | Escritas da Factory listadas na seção 2 (branch própria com lease, UM draft PR, pronto do próprio PR, comentários, reabertura, limpeza própria) | [x] | [ ] |
+| 11a | Ruleset `26435808`: remover `update` durante a janela e restaurar ao fim | [x] | [ ] |
+| 11b | Ruleset: relaxar só em volta de cada merge humano | [ ] | [x] |
+| 11c | Ruleset: manter como está (merges bloqueados pela regra `update`) | [ ] | [x] |
+| 12 | Merge e aprovação só pelo operador (nunca pelos agentes) | [x] | [ ] |
+| 13 | Nenhuma injeção de falha no piloto (sem SIGKILL, congelamento, disco cheio ou relógio) | [x] | [ ] |
+| 14 | Limpeza pela Factory da própria branch e do próprio ambiente após cada entrega; retenção padrão de 30 dias | [x] | [ ] |
+| 15 | V-02.h: executar R-DOCKER-EXT só se um Ticket selecionado usar Compose ou `docker build` | [x] | [ ] |
+| 16 | Regras de parada da seção 5 | [x] | [ ] |
+| 17 | Reversão da seção 6, inclusive `upgrade rollback` para `mvp-34.4` se necessário | [x] | [ ] |
+| 18 | Registro de métricas (V-15.P) e da avaliação humana (V-17.P) no relatório do piloto | [x] | [ ] |
