@@ -33,3 +33,7 @@ Publicação é planejamento aprovado, não autorização de construção, uso d
   [docs/evidence/35-pilot-authorization-request.md](../../../docs/evidence/35-pilot-authorization-request.md): composição `mvp-34.5`
   (`f3c7cf3`, selecionada em `pr2`), o que o piloto fará, as 13 obrigações dependentes do piloto, riscos conhecidos, regras de parada,
   reversão e a lista de autorizações (sim/não por item). Nada foi iniciado; aguarda as respostas do operador.
+- 2026-11-18 (operador): autorização concedida (respostas na seção 8 do pedido; raiz `pl1`, teto 60 M tokens, depois 120 M).
+- 2026-11-19 (supervisor): piloto 1 encerrado pelo operador sem entregas, por defeitos que bloqueiam Tickets de código. Relatório em
+  [docs/evidence/35-pilot-report.md](../../../docs/evidence/35-pilot-report.md); achados viraram os tickets 44–53 (46 integrado como
+  `mvp-34.6`). Um piloto 2 depende de 47, 48, 50 e 51.
