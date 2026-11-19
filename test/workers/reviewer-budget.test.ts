@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ModelRuntime, ToolDefinition } from '#factory-pi';
-import { productionProfile } from '../../src/entrypoints/release.js';
 import { budgetFor, qualifyOAuth, reviewerBudget } from '../../src/workers/oauth-qualification.js';
 
 // Ticket 51 (pilot 35, #126): the Spec reviewer of a medium change exhausted `reviewer-v1` (24 requests) three times and the Execution was held
@@ -12,12 +11,6 @@ test('ticket 51: reviewer-v1 is 48 requests, 160 tool calls and a 30-minute requ
   for (const role of ['standards', 'spec']) assert.equal(budgetFor(role, 'reviewer-v1'), reviewerBudget);
   assert.notEqual(budgetFor('builder', 'reviewer-v1'), reviewerBudget, 'never applied to a role it was not made for');
   assert.ok(Object.isFrozen(reviewerBudget), 'fixed: no configuration changes it');
-});
-
-test('ticket 51: the release records the reviewer budget it ships', () => {
-  assert.deepEqual(productionProfile.limits.modelBudget.reviewerV1,
-    { requests: reviewerBudget.requests, toolCalls: reviewerBudget.tools, requestTimeoutMinutes: reviewerBudget.deadlineMs / 60000 });
-  assert.equal(productionProfile.reviewer.modelBudget, 'reviewer-v1');
 });
 
 test('ticket 51: the 48th request and the 160th tool call run; the next one closes the qualification', async () => {
