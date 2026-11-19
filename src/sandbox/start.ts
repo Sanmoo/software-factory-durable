@@ -9,7 +9,7 @@ import { promisify } from 'node:util';
 import { workerRuntimeDirectory, inspectStorage, inspectMemory } from '../platform/host/index.js';
 import { bootMemoryAllows } from './capacity.js';
 import { inspectGuestAssets, type GuestAssetPin } from './guest-assets.js';
-import type { SandboxConfiguration } from './configuration.js';
+import { environmentIdentityChanges, type SandboxConfiguration } from './configuration.js';
 import type { EnvironmentRef } from './prepare.js';
 import { checkDiskFilesystem } from './filesystem.js';
 import { cleanupRequested } from './cleanup-records.js';
@@ -17,7 +17,8 @@ import { currentSchema, identitySchema, metadata, observeEnvironment, ownedEnvir
   startupFailureSchema, supervisionHierarchy, type BootRef, type StartupFailure } from './lifecycle.js';
 
 export type StartResult = { status: 'success'; boot: BootRef } |
-  { status: 'failure' | 'indeterminate'; code: string; boot?: BootRef; failure?: StartupFailure };
+  /** `detail` (ticket 50): what the operator must see to decide (e.g. the changed environment identity fields). */
+  { status: 'failure' | 'indeterminate'; code: string; boot?: BootRef; failure?: StartupFailure; detail?: string };
 const run = promisify(execFile);
 
 /** Fixed SDK 0.14 socket composition; no caller-provided mounts or free flags. */
@@ -65,12 +66,11 @@ export async function startEnvironment(root: string, pin: GuestAssetPin | undefi
   let boot: BootRef | undefined;
   try {
     const { directory, owner } = await ownedEnvironment(root, environment);
-    if (owner.configuration.profile !== configuration.profile || owner.configuration.diskGiB !== configuration.diskGiB ||
-        owner.configuration.minFreeSpaceGiB !== configuration.minFreeSpaceGiB) {
-      return { status: 'failure', code: 'ENVIRONMENT_CONFIGURATION_MISMATCH' };
-    }
+    // Ticket 50: only the disk/profile identity binds the environment; memory/vCPU and host admission settings are this boot's (identity.json).
+    const changes = environmentIdentityChanges(owner, { configuration, guestAssets: owner.guestAssets }).filter(change => !change.startsWith('guest assets'));
+    if (changes.length) return { status: 'failure', code: 'ENVIRONMENT_CONFIGURATION_MISMATCH', detail: changes.join('; ') };
     if (!pin || pin.directory !== owner.guestAssets.directory || pin.manifestSha256 !== owner.guestAssets.manifestSha256) {
-      return { status: 'failure', code: 'GUEST_ASSET_PIN_MISMATCH' };
+      return { status: 'failure', code: 'GUEST_ASSET_PIN_MISMATCH', detail: environmentIdentityChanges(owner, { configuration, guestAssets: pin }).join('; ') };
     }
     const lock = join(directory, 'lifecycle-lock');
     try { await mkdir(lock, { mode: 0o700 }); }

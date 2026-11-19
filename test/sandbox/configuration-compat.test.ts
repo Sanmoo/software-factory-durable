@@ -53,3 +53,14 @@ console.log('LoadState=loaded\\nActiveState=inactive\\nSubState=dead\\nInvocatio
   const { storage: _storage, ...lifecycle } = await createSandbox({ root }).observe({ environment });
   assert.deepEqual(lifecycle, { condition: 'stopped', cessationConfirmed: true, consumption: 'unavailable', boot });
 });
+
+test('ticket 50: only profile, disk size and guest assets are the identity of a prepared environment', async () => {
+  const { environmentIdentityChanges } = await import('../../src/sandbox/configuration.js');
+  const pin = { directory: '/assets/a', manifestSha256: 'a'.repeat(64) };
+  const prepared = { configuration: withFloor as never as { profile: 'gondolin-qemu-alpine-dev-v1'; diskGiB: number }, guestAssets: pin };
+  assert.deepEqual(environmentIdentityChanges(prepared, { configuration: { ...withFloor, memoryMiB: 4096, vcpus: 8, minFreeSpaceGiB: 9, shutdownGraceSeconds: 1,
+    minFreeMemoryMiB: 1 } as never, guestAssets: pin }), [], 'guest resources and host settings are per boot');
+  assert.deepEqual(environmentIdentityChanges(prepared, { configuration: { ...withFloor, diskGiB: 60 } as never, guestAssets: { ...pin, manifestSha256: 'b'.repeat(64) } }),
+    ['sandbox.diskGiB 40 -> 60', `guest assets ${'a'.repeat(12)} -> ${'b'.repeat(12)}`]);
+  assert.deepEqual(environmentIdentityChanges(prepared, { configuration: withFloor as never, guestAssets: undefined }), [`guest assets ${'a'.repeat(12)} -> none`]);
+});

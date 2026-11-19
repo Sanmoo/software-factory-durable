@@ -42,7 +42,9 @@ test('Sandbox.prepare creates a real standalone persistent disk idempotently and
     const repeated = await sandbox.prepare({ workId: 'work-03', configuration });
     assert.deepEqual(repeated, first);
     assert.deepEqual(await sandbox.prepare({ workId: 'work-03', configuration: { ...configuration, diskGiB: 41 } }),
-      { status: 'failure', code: 'ENVIRONMENT_CONFIGURATION_MISMATCH' });
+      { status: 'failure', code: 'ENVIRONMENT_CONFIGURATION_MISMATCH', detail: 'sandbox.diskGiB 1 -> 41' });
+    // Ticket 50: guest resources are per boot; the prepared environment is reused as is.
+    assert.deepEqual(await sandbox.prepare({ workId: 'work-03', configuration: { ...configuration, memoryMiB: 4096, vcpus: 4 } }), first);
     assert.deepEqual(await sandbox.prepare({ workId: 'work-03', configuration: { ...configuration, accel: 'tcg' } }),
       { status: 'failure', code: 'SANDBOX_CONFIGURATION_INVALID' });
     const statfs = fs.statfs;

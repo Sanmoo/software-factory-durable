@@ -28,3 +28,21 @@ export function validateConfiguration(configuration: unknown) {
 }
 
 export type SandboxConfiguration = z.infer<typeof configurationSchema>;
+
+/**
+ * Ticket 50: what identifies a prepared environment's DISK and PROFILE — the profile, the virtual disk size and the guest asset pin it was
+ * built from. Guest resources (`memoryMiB`, `vcpus`) and host admission/stop settings (`minFreeSpaceGiB`, `minFreeMemoryMiB`,
+ * `shutdownGraceSeconds`) are read from the CURRENT configuration at each boot (recorded per boot in its `identity.json`), so changing them
+ * never invalidates a prepared environment. Returns the changed identity fields, human readable; empty = the environment stays usable.
+ */
+export function environmentIdentityChanges(prepared: { configuration: Pick<SandboxConfiguration, 'profile' | 'diskGiB'>; guestAssets: { directory: string; manifestSha256: string } },
+  current: { configuration: Pick<SandboxConfiguration, 'profile' | 'diskGiB'>; guestAssets: { directory: string; manifestSha256: string } | undefined }): string[] {
+  const changes: string[] = [];
+  if (prepared.configuration.profile !== current.configuration.profile) changes.push(`sandbox.profile ${prepared.configuration.profile} -> ${current.configuration.profile}`);
+  if (prepared.configuration.diskGiB !== current.configuration.diskGiB) changes.push(`sandbox.diskGiB ${prepared.configuration.diskGiB} -> ${current.configuration.diskGiB}`);
+  const pin = current.guestAssets;
+  if (!pin || pin.directory !== prepared.guestAssets.directory || pin.manifestSha256 !== prepared.guestAssets.manifestSha256) {
+    changes.push(`guest assets ${prepared.guestAssets.manifestSha256.slice(0, 12)} -> ${pin ? pin.manifestSha256.slice(0, 12) : 'none'}`);
+  }
+  return changes;
+}

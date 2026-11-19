@@ -43,7 +43,18 @@ test('Sandbox.start refuses an incompatible persistent disk configuration before
   try {
     const { directory, sandbox } = await ownedRecords(root);
     assert.deepEqual(await sandbox.start({ environment, configuration: { ...configuration, diskGiB: 41 } }),
-      { status: 'failure', code: 'ENVIRONMENT_CONFIGURATION_MISMATCH' });
+      { status: 'failure', code: 'ENVIRONMENT_CONFIGURATION_MISMATCH', detail: 'sandbox.diskGiB 40 -> 41' });
+    assert.deepEqual((await readdir(directory)).sort(), ['owner.json', 'ready.json']);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('ticket 50: guest memory/vCPU and host admission settings never invalidate a prepared environment (boot uses the current values)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'factory-start-'));
+  try {
+    const { directory, sandbox } = await ownedRecords(root);
+    // The incomplete fixture has no disk: the start goes PAST the identity check and stops at its own missing disk (never a mismatch).
+    const result = await sandbox.start({ environment, configuration: { ...configuration, memoryMiB: 4096, vcpus: 4, minFreeSpaceGiB: 8, shutdownGraceSeconds: 60, minFreeMemoryMiB: 512 } });
+    assert.notEqual(result.status === 'success' ? null : result.code, 'ENVIRONMENT_CONFIGURATION_MISMATCH');
     assert.deepEqual((await readdir(directory)).sort(), ['owner.json', 'ready.json']);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -54,7 +65,7 @@ test('Sandbox.start refuses an asset pin different from trusted composition', as
     const { directory } = await ownedRecords(root);
     const sandbox = createSandbox({ root, guestAssets: { directory: join(root, 'other'), manifestSha256: 'b'.repeat(64) } });
     assert.deepEqual(await sandbox.start({ environment, configuration }),
-      { status: 'failure', code: 'GUEST_ASSET_PIN_MISMATCH' });
+      { status: 'failure', code: 'GUEST_ASSET_PIN_MISMATCH', detail: `guest assets ${'a'.repeat(12)} -> ${'b'.repeat(12)}` });
     assert.deepEqual((await readdir(directory)).sort(), ['owner.json', 'ready.json']);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

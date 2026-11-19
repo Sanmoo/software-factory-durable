@@ -5,13 +5,15 @@ import { lstat, mkdir, open, readFile, realpath, unlink } from 'node:fs/promises
 import { join } from 'node:path';
 import { inspectStorage } from '../platform/host/index.js';
 import { inspectGuestAssets, type GuestAssetPin } from './guest-assets.js';
-import type { SandboxConfiguration } from './configuration.js';
+import { environmentIdentityChanges, type SandboxConfiguration } from './configuration.js';
+import { ownerSchema } from './lifecycle.js';
 import { growFilesystemCopy } from './filesystem.js';
 import { cleanupRequested } from './cleanup-records.js';
 
 export type EnvironmentRef = string & { readonly environmentRef: unique symbol };
 export type PrepareResult = { status: 'success'; environment: EnvironmentRef } |
-  { status: 'failure' | 'indeterminate'; code: string };
+  /** `detail` (ticket 50): what the operator must see to decide (e.g. the changed environment identity fields, the divergent seed file). */
+  { status: 'failure' | 'indeterminate'; code: string; detail?: string };
 const run = promisify(execFile);
 
 async function privateDirectory(path: string) {
@@ -48,8 +50,14 @@ export async function prepareEnvironment(root: string, pin: GuestAssetPin | unde
     await privateDirectory(directory);
     if (await cleanupRequested(directory)) return { status: 'failure', code: 'ENVIRONMENT_CLEANUP_PENDING' };
     try {
-      const previous = JSON.parse(await readFile(join(directory, 'owner.json'), 'utf8'));
-      if (JSON.stringify(previous) !== JSON.stringify(identity)) return { status: 'failure', code: 'ENVIRONMENT_CONFIGURATION_MISMATCH' };
+      const previous = ownerSchema.safeParse(JSON.parse(await readFile(join(directory, 'owner.json'), 'utf8')));
+      if (!previous.success || previous.data.workId !== workId || previous.data.environment !== environment) {
+        return { status: 'failure', code: 'ENVIRONMENT_CONFIGURATION_MISMATCH', detail: 'environment owner record does not match this Work' };
+      }
+      // Ticket 50: only the disk/profile identity (profile, disk size, guest assets) binds a prepared environment; guest memory/vCPU and host
+      // admission settings come from the current configuration at each boot.
+      const changes = environmentIdentityChanges(previous.data, { configuration, guestAssets: pin });
+      if (changes.length) return { status: 'failure', code: 'ENVIRONMENT_CONFIGURATION_MISMATCH', detail: changes.join('; ') };
       const ready = JSON.parse(await readFile(join(directory, 'ready.json'), 'utf8'));
       if (ready.environment !== environment) return { status: 'indeterminate', code: 'ENVIRONMENT_PREPARATION_INCOMPLETE' };
       const disk = await lstat(join(directory, 'root.qcow2'));
