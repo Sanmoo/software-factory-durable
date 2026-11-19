@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import type { Diagnostic } from '../contracts/index.js';
 import { readConfiguration } from './configuration.js';
 import { inspectRelease, productionModelChecks, productionProfile } from './release.js';
-import { capacityDiagnostic, observeHostCapacity } from '../sandbox/index.js';
+import { capacityDiagnostic, environmentIdentityDiagnostic, observeHostCapacity } from '../sandbox/index.js';
 
 export async function doctor(root: string) {
   const canonicalRoot = await realpath(root).catch(() => resolve(root));
@@ -15,6 +15,10 @@ export async function doctor(root: string) {
   // Ticket 24: configured Slots x guest limits against what the host shows NOW (virtual limits are not reservations or proven capacity).
   if (configuration.valid) checks.push(capacityDiagnostic({ concurrency: configuration.effective.concurrency, configuration: configuration.effective.sandbox,
     host: await observeHostCapacity(canonicalRoot) }));
+  // Ticket 50: before a restart, which retained prepared environments this configuration would invalidate (memory/vCPU never do).
+  if (configuration.valid) checks.push(await environmentIdentityDiagnostic(canonicalRoot, configuration.effective.sandbox, release.guestAssets).catch(() => ({
+    id: 'environment-identity', status: 'unverified' as const, message: 'Prepared environments could not be listed; their identity was not evaluated.',
+    nextStep: 'Inspect `<root>/environments` permissions; doctor never repairs them.' })));
   const paths = { root: canonicalRoot, config: join(canonicalRoot, 'config.yaml'),
     storage: join(canonicalRoot, 'data'), socket: join(canonicalRoot, 'run', 'factory.sock') };
   for (const name of ['', 'credentials', 'data', 'environments', 'run']) {
