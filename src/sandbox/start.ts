@@ -11,7 +11,7 @@ import { bootMemoryAllows } from './capacity.js';
 import { inspectGuestAssets, type GuestAssetPin } from './guest-assets.js';
 import { environmentIdentityChanges, type SandboxConfiguration } from './configuration.js';
 import type { EnvironmentRef } from './prepare.js';
-import { checkDiskFilesystem } from './filesystem.js';
+import { checkDiskFilesystem, repairPreservedDisk, replacePreservedDisk } from './filesystem.js';
 import { readGuestStop, type GuestStop } from './guest-shutdown.js';
 import { cleanupRequested } from './cleanup-records.js';
 import { currentSchema, identitySchema, metadata, observeEnvironment, ownedEnvironment, privateDirectory,
@@ -19,10 +19,26 @@ import { currentSchema, identitySchema, metadata, observeEnvironment, ownedEnvir
 
 export type StartResult = { status: 'success'; boot: BootRef;
   /** Ticket 47: how the environment's previous boot was stopped (clean = its root was left read-only; forced otherwise), recorded with this boot. */
-  previousStop?: GuestStop & { boot: BootRef } } |
+  previousStop?: GuestStop & { boot: BootRef };
+  /** Ticket 47: the operator's disk remedy requested with this start and what it did. */
+  remedy?: StartRemedyOutcome } |
   /** `detail` (ticket 50): what the operator must see to decide (e.g. the changed environment identity fields). */
   { status: 'failure' | 'indeterminate'; code: string; boot?: BootRef; failure?: StartupFailure; detail?: string };
 const run = promisify(execFile);
+/** Ticket 47: explicit operator remedies for a preserved disk that fails its check (`START_PRESERVED_DISK_CHECK_REQUIRED`). */
+export type DiskRemedy = 'repair-disk' | 'replace-disk';
+export type StartRemedyOutcome = { remedy: DiskRemedy; outcome: 'applied' | 'not-needed'; detail: string };
+
+async function workAreasUnsafe(directory: string) {
+  try { for (const name of ['workspace', 'artifacts']) await privateDirectory(join(directory, name)); return false; }
+  catch { return true; }
+}
+
+/** The pinned ext4 template (already verified against the pin by the caller). */
+async function templateOf(pin: GuestAssetPin) {
+  const manifest = JSON.parse(await readFile(join(pin.directory, 'manifest.json'), 'utf8')) as { assets: { rootfs: string } };
+  return join(pin.directory, manifest.assets.rootfs);
+}
 
 /** Fixed SDK 0.14 socket composition; no caller-provided mounts or free flags. */
 export function bootRuntimePaths(root: string, boot: BootRef) {
@@ -52,20 +68,22 @@ async function syncDirectory(path: string) {
   try { await directory.sync(); } finally { await directory.close(); }
 }
 
-async function failedStart(status: 'failure' | 'indeterminate', code: string, boot: BootRef, path: string): Promise<StartResult> {
+async function failedStart(status: 'failure' | 'indeterminate', code: string, boot: BootRef, path: string, detail?: string): Promise<StartResult> {
   let failure: StartupFailure | undefined;
   try {
     const record = await metadata(join(path, 'failure.json'), startupFailureSchema);
     if (record.boot === boot) failure = { phase: record.phase, code: record.code };
   } catch { /* Missing, unsafe or uncorrelated evidence is not a diagnosis. */ }
-  return { status, code, boot, ...(failure ? { failure } : {}) };
+  return { status, code, boot, ...(failure ? { failure } : {}), ...(detail ? { detail: detail.slice(0, 512) } : {}) };
 }
 
 /** A new boot requires prior cessation and a read-only full filesystem check. */
 export async function startEnvironment(root: string, pin: GuestAssetPin | undefined,
   environment: EnvironmentRef, configuration: SandboxConfiguration,
   /** Ticket 24: free-memory admission of this boot (default: this guest alone against the current observation). */
-  admitMemory: () => Promise<boolean> = async () => bootMemoryAllows({ availableBytes: (await inspectMemory())?.availableBytes, configuration })): Promise<StartResult> {
+  admitMemory: () => Promise<boolean> = async () => bootMemoryAllows({ availableBytes: (await inspectMemory())?.availableBytes, configuration }),
+  /** Ticket 47: the operator's explicit disk remedy for THIS start only (applied only if the preserved disk still fails its check). */
+  diskRemedy?: DiskRemedy): Promise<StartResult> {
   let boot: BootRef | undefined;
   try {
     const { directory, owner } = await ownedEnvironment(root, environment);
@@ -96,14 +114,17 @@ export async function startEnvironment(root: string, pin: GuestAssetPin | undefi
         if (!observed.cessationConfirmed) return { status: 'indeterminate', code: 'PREVIOUS_BOOT_NOT_STOPPED', boot: previous.boot as BootRef };
       }
       const disk = join(directory, 'root.qcow2');
+      let diskSafe = true;
       try {
         for (const name of ['workspace', 'artifacts']) await privateDirectory(join(directory, name));
         const diskInfo = await lstat(disk);
         if (!diskInfo.isFile() || diskInfo.isSymbolicLink() || diskInfo.nlink !== 1 ||
             diskInfo.uid !== process.getuid?.() || (diskInfo.mode & 0o077)) throw new Error('UNSAFE_ROOT_DISK');
       } catch (error) {
-        if (previous) return await failedStart('failure', 'PRESERVED_DISK_CHECK_REQUIRED', previous.boot as BootRef, join(directory, previous.boot));
-        throw error;
+        // Ticket 47: a missing/unsafe preserved disk is replaceable by the operator's decision (the discarded one is set aside, never deleted).
+        if (previous && diskRemedy === 'replace-disk' && !(await workAreasUnsafe(directory))) diskSafe = false;
+        else if (previous) return await failedStart('failure', 'PRESERVED_DISK_CHECK_REQUIRED', previous.boot as BootRef, join(directory, previous.boot));
+        else throw error;
       }
       const canonicalRoot = await realpath(root);
       const candidateBoot = `boot-${randomUUID()}` as BootRef;
@@ -118,10 +139,19 @@ export async function startEnvironment(root: string, pin: GuestAssetPin | undefi
       // Ticket 24: the host's free memory must cover this guest, the other own boots still launching and the floor NOW; refused, never retried.
       if (!await admitMemory()) return { status: 'failure', code: 'INSUFFICIENT_MEMORY_FOR_BOOT' };
       if ((await inspectGuestAssets(pin)).some(check => check.status !== 'ok')) return { status: 'failure', code: 'GUEST_ASSETS_INVALID' };
-      if (!await checkDiskFilesystem(directory, disk, size)) {
-        if (previous) return await failedStart('failure', 'PRESERVED_DISK_CHECK_REQUIRED', previous.boot as BootRef, join(directory, previous.boot));
-        return { status: 'failure', code: 'ROOT_FILESYSTEM_CHECK_FAILED' };
-      }
+      let remedy: StartRemedyOutcome | undefined;
+      if (!diskSafe || !await checkDiskFilesystem(directory, disk, size)) {
+        if (!previous) return { status: 'failure', code: 'ROOT_FILESYSTEM_CHECK_FAILED' };
+        const refused = (detail?: string) => failedStart('failure', 'PRESERVED_DISK_CHECK_REQUIRED', previous.boot as BootRef, join(directory, previous.boot), detail);
+        if (!diskRemedy) return await refused();
+        // Ticket 47: the operator's explicit remedy, applied only now: under the lifecycle lock, after the previous boot's cessation was
+        // confirmed and the disk check failed again. Room for a whole copy of the disk is required, like a preparation.
+        if (BigInt(storage.availableBytes) < 2n * size + BigInt(configuration.minFreeSpaceGiB) * 1073741824n) return { status: 'failure', code: 'INSUFFICIENT_STORAGE_FOR_BOOT' };
+        const outcome = diskRemedy === 'repair-disk' ? await repairPreservedDisk(directory, disk, size) : await replacePreservedDisk(directory, disk, await templateOf(pin), size);
+        if (outcome.status !== 'applied') return await refused(`${diskRemedy}: ${outcome.detail}`);
+        if (!await checkDiskFilesystem(directory, disk, size)) return await refused(`${diskRemedy} applied (${outcome.detail}) but the disk still fails the check`);
+        remedy = { remedy: diskRemedy, outcome: 'applied', detail: outcome.detail };
+      } else if (diskRemedy) remedy = { remedy: diskRemedy, outcome: 'not-needed', detail: 'the preserved disk passed the check; nothing was changed' };
       if (previous && !(await observeEnvironment(root, environment, previous.boot as BootRef)).cessationConfirmed) {
         return { status: 'indeterminate', code: 'PREVIOUS_BOOT_NOT_STOPPED', boot: previous.boot as BootRef };
       }
@@ -161,7 +191,7 @@ export async function startEnvironment(root: string, pin: GuestAssetPin | undefi
       const deadline = Date.now() + 60000;
       while (Date.now() < deadline) {
         const observed = await observeEnvironment(root, environment, boot);
-        if (observed.condition === 'active') return { status: 'success', boot, ...(previousStop ? { previousStop } : {}) };
+        if (observed.condition === 'active') return { status: 'success', boot, ...(previousStop ? { previousStop } : {}), ...(remedy ? { remedy } : {}) };
         if (observed.cessationConfirmed) return await failedStart('failure', 'BOOT_ENDED_BEFORE_OPERATIONAL_CONFIRMATION', boot, path);
         await delay(250);
       }

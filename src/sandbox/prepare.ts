@@ -1,19 +1,16 @@
 import { createHash } from 'node:crypto';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { lstat, mkdir, open, readFile, realpath, unlink } from 'node:fs/promises';
+import { lstat, mkdir, open, readFile, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { inspectStorage } from '../platform/host/index.js';
 import { inspectGuestAssets, type GuestAssetPin } from './guest-assets.js';
 import { configurationSchema, environmentIdentityChanges, type SandboxConfiguration } from './configuration.js';
-import { growFilesystemCopy } from './filesystem.js';
+import { buildRootDisk } from './filesystem.js';
 import { cleanupRequested } from './cleanup-records.js';
 
 export type EnvironmentRef = string & { readonly environmentRef: unique symbol };
 export type PrepareResult = { status: 'success'; environment: EnvironmentRef } |
   /** `detail` (ticket 50): what the operator must see to decide (e.g. the changed environment identity fields, the divergent seed file). */
   { status: 'failure' | 'indeterminate'; code: string; detail?: string };
-const run = promisify(execFile);
 
 async function privateDirectory(path: string) {
   const info = await lstat(path);
@@ -100,19 +97,13 @@ export async function prepareEnvironment(root: string, pin: GuestAssetPin | unde
   try {
     await mkdir(join(directory, 'workspace'), { mode: 0o700 });
     await mkdir(join(directory, 'artifacts'), { mode: 0o700 });
-    const disk = join(directory, 'root.qcow2');
-    const raw = join(directory, 'rootfs-preparing.ext4');
-    await growFilesystemCopy(source, raw, size);
-    // Standalone copy: no temporary overlay, backing file or deletion-on-close dependency.
-    await run('qemu-img', ['convert', '-f', 'raw', '-O', 'qcow2', raw, disk], { timeout: 30000, maxBuffer: 65536 });
-    const info = JSON.parse((await run('qemu-img', ['info', '--output=json', disk], { timeout: 10_000 })).stdout);
-    if (BigInt(info['virtual-size']) > size) return { status: 'failure', code: 'BASE_DISK_EXCEEDS_CONFIGURED_CAPACITY' };
-    await run('qemu-img', ['resize', '-f', 'qcow2', disk, size.toString()], { timeout: 10_000, maxBuffer: 65536 });
-    const file = await open(disk, 'r+');
-    try { await file.chmod(0o600); await file.sync(); } finally { await file.close(); }
     // Only the successful new intermediate is disposable; failed preparations
     // retain their candidate and are never adopted/retried automatically.
-    await unlink(raw);
+    try { await buildRootDisk(source, join(directory, 'rootfs-preparing.ext4'), join(directory, 'root.qcow2'), size); }
+    catch (error) {
+      if (error instanceof Error && error.message === 'BASE_DISK_EXCEEDS_CONFIGURED_CAPACITY') return { status: 'failure', code: 'BASE_DISK_EXCEEDS_CONFIGURED_CAPACITY' };
+      throw error;
+    }
     await durableJson(join(directory, 'ready.json'), { environment });
     await syncDirectory(directory);
     return { status: 'success', environment };

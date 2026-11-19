@@ -35,8 +35,9 @@ import type { Observation as LifecycleObservation } from './lifecycle.js';
 import { observeStorage, type StorageObservation } from './storage-observation.js';
 export type { StorageObservation } from './storage-observation.js';
 export type Observation = LifecycleObservation & { storage?: StorageObservation };
-import { startEnvironment, type StartResult } from './start.js';
-export type { StartResult } from './start.js';
+import { startEnvironment, type DiskRemedy, type StartResult } from './start.js';
+export type { DiskRemedy, StartRemedyOutcome, StartResult } from './start.js';
+export type { GuestStop, GuestStopReason } from './guest-shutdown.js';
 import { stopEnvironment } from './stop.js';
 export type { StopResult } from './stop.js';
 import { removeEnvironment } from './remove.js';
@@ -126,12 +127,14 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
     },
     /** `pass`: the dispatch pass that reserved this boot (ticket 24; correlation only). The memory precondition counts every other own
      * boot still launching, whatever its pass; this boot leaves that set when its start returns. */
-    async start({ environment, configuration }: { environment: EnvironmentRef; configuration: unknown; pass?: string }): Promise<StartResult> {
+    /** `diskRemedy` (ticket 47): the operator's explicit decision for a preserved disk that fails its check, applied by this start only. */
+    async start({ environment, configuration, diskRemedy }: { environment: EnvironmentRef; configuration: unknown; pass?: string; diskRemedy?: DiskRemedy }): Promise<StartResult> {
       const parsed = validateConfiguration(configuration);
       if (!parsed.valid) return { status: 'failure', code: 'SANDBOX_CONFIGURATION_INVALID' };
       let release: (() => void) | null = null;
       try {
-        return await startEnvironment(root, guestAssets, environment, parsed.effective, async () => (release = await bootLedger.admit(parsed.effective)) !== null);
+        return await startEnvironment(root, guestAssets, environment, parsed.effective, async () => (release = await bootLedger.admit(parsed.effective)) !== null,
+          diskRemedy === 'repair-disk' || diskRemedy === 'replace-disk' ? diskRemedy : undefined);
       } finally { (release as (() => void) | null)?.(); }
     },
     async observe({ environment, boot }: { environment: EnvironmentRef; boot?: BootRef }): Promise<Observation> {
