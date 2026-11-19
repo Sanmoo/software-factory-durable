@@ -99,9 +99,12 @@ export function builderBash(context: ToolContext, sandbox: ToolProjection, onCri
       const result = await sandbox.executeTool(context, { name: 'bash', command, callId: randomUUID(),
         ...(options.timeout === undefined ? {} : { timeout: options.timeout }) }, options.onDataAsync, options.signal);
       if (result.status === 'failure') {
+        // Ticket 46: recorded before critical() aborts the session, so the reachable message names the timeout. It stays critical:
+        // the guest exec has no termination request, so the Host can neither stop the command nor confirm its cessation.
+        if (result.code === 'BASH_TIMEOUT_EFFECTS_UNKNOWN') timeoutFailure = true;
         if (!['BASH_ROLE_DENIED', 'INVALID_TOOL_CALL'].includes(result.code)) critical();
+        if (timeoutFailure) throw new Error(`timeout: ${options.timeout}`);
         if (options.signal?.aborted) throw new Error('aborted');
-        if (result.code === 'BASH_TIMEOUT_EFFECTS_UNKNOWN') { timeoutFailure = true; throw new Error(`timeout: ${options.timeout}`); }
         throw new Error(result.code);
       }
       if (result.format !== 'text' || result.exitCode === undefined) { critical(); throw new Error('BASH_RESULT_UNAVAILABLE'); }
@@ -154,8 +157,8 @@ export function builderBash(context: ToolContext, sandbox: ToolProjection, onCri
         if (snapshot && !signal?.aborted) afterSha = await snapshot().catch(() => null);
         record('BASH_EFFECTS_OR_CAPTURE_UNKNOWN');
         critical();
-        if (signal?.aborted) throw new Error('Command aborted (effects unknown)');
         if (timeoutFailure) throw new Error(`Command timed out after ${input.timeout} seconds (effects unknown)`);
+        if (signal?.aborted) throw new Error('Command aborted (effects unknown)');
         throw new Error('BASH_EFFECTS_OR_CAPTURE_UNKNOWN');
       }
     },

@@ -106,6 +106,21 @@ for (const mode of ['null-exit', 'timeout', 'abort', 'callback-failure'] as cons
   if (mode === 'timeout') assert.equal(abortRequested, true, 'abort requested; external double proves no physical cessation');
 });
 
+test('ticket 46: a timeout stays critical (no guest cessation exists) but the session abort it causes does not mask the timeout', async t => {
+  // Gondolin exec abort only rejects the host session: the guest process is never signalled, so cessation cannot be confirmed.
+  const f = await nativeOwner(context, { exec(_argv, options) {
+    const stopped = new Promise<void>(resolve => options.signal.addEventListener('abort', () => resolve(), { once: true }));
+    return { async *output() { await stopped; }, result: Promise.resolve({ exitCode: 0 }) };
+  } }); t.after(() => f.close());
+  // As in the Worker session: critical() aborts the session, which aborts this tool's signal.
+  const session = new AbortController();
+  let critical = 0;
+  const native = builderBash(context, createSandbox({ root: f.root, toolEndpoint: f.owner.endpoint }), () => { critical++; session.abort(); });
+  await assert.rejects(native.execute('build', { command: './gradlew test', timeout: 0.01 }, session.signal, undefined, {} as never),
+    /^Error: Command timed out after 0\.01 seconds \(effects unknown\)$/);
+  assert.ok(critical > 0);
+});
+
 test('Bash role forging, stale phase/boot and administrative names cannot reach the VM', async t => {
   const f = await nativeOwner(context, { exec() { assert.fail('unauthorized guest execution'); } }); t.after(() => f.close());
   const sandbox = createSandbox({ root: f.root, toolEndpoint: f.owner.endpoint });
