@@ -41,7 +41,9 @@ export function recoveryBackoff(notBeforeMs: number | null, nowMs: number): bool
 const transient = new Set(['WORKER_EXECUTION_UNCERTAIN', 'WORKER_CHANNEL_CLOSED', 'WORKER_START_UNCERTAIN', 'WORKER_LAUNCH_UNCERTAIN', 'WORKER_PROVIDER_UNAVAILABLE',
   'WORKER_MODEL_UNAVAILABLE', 'WORKER_INTERRUPTED', 'TOOL_CHANNEL_CLOSED', 'CONTROLLER_CRASH', 'REVIEWER_CESSATION_UNCONFIRMED', 'REVIEW_DELIVERY_UNCERTAIN',
   'REVIEW_DELIVERY_FAILED', 'OWNER_STOPPED_BEFORE_ACTIVATION_CESSATION_UNCONFIRMED', 'ACTIVATION_REFUSED_CESSATION_UNCONFIRMED', 'ADMINISTRATIVE_STOP_CESSATION_UNCONFIRMED',
-  'ADMINISTRATIVE_STOP_FORCED', 'RECOVERY_CESSATION_UNCONFIRMED']);
+  'ADMINISTRATIVE_STOP_FORCED', 'RECOVERY_CESSATION_UNCONFIRMED',
+  // Ticket 48: a Builder budget end WITHOUT Host-observed progress is an operational recovery as before (with progress: a continuation).
+  'WORKER_BUDGET_EXHAUSTED']);
 // Phase prefixes of the dispatch holds (`${phase}_${code}`) that may wrap a transient worker failure.
 const phases = ['ACTIVATE_', 'STARTED_', 'REVIEW_', 'COMPLETED_', 'STOP_'];
 
@@ -323,11 +325,17 @@ const fenced = (text: string) => {
  * inspected before anything is repeated (never a blind replay).
  */
 export function interruptionRecoveryPrompt(input: { ticketUrl: string; repository: string; base: string; baseCommit: string; branch: string; checkout: string;
-  skillDirectory: string; workId: string; executionId: string; previousExecutionId: string; reason: 'OPERATIONAL_RECOVERY' | 'ADMINISTRATIVE_STOP'; code: string;
-  reviews: boolean }): string {
+  skillDirectory: string; workId: string; executionId: string; previousExecutionId: string; reason: 'OPERATIONAL_RECOVERY' | 'ADMINISTRATIVE_STOP' | 'BUDGET_CONTINUATION'; code: string;
+  reviews: boolean;
+  /** Ticket 48: the bounded state summary (`stateSummary`): last phase, last gates, answered Questions. */
+  summary?: string | null }): string {
   const why = input.reason === 'ADMINISTRATIVE_STOP'
     ? 'The previous Execution was stopped administratively (clean stop with confirmed cessation); this continuation is not a failure recovery.'
-    : `The previous Execution was interrupted (${input.code}) and its activity ceased; the Factory starts this operational recovery after reconciliation.`;
+    : input.reason === 'BUDGET_CONTINUATION'
+      ? `The previous Execution reached its per-Execution Builder budget (${input.code}) after progress the Factory host observed in the checkout; its ` +
+        'boot was stopped cleanly. This is a CONTINUATION of the same work, not a failure recovery: do not restart or redo finished work; continue ' +
+        'from the preserved state and the summary below instead of re-reading everything.'
+      : `The previous Execution was interrupted (${input.code}) and its activity ceased; the Factory starts this operational recovery after reconciliation.`;
   return [`Factory recovery instruction for Ticket ${input.ticketUrl}.`,
     `Execution context (from the Factory, authoritative): repository=${input.repository} base=${input.base} base-commit=${input.baseCommit} branch=${input.branch} ` +
       `checkout=${input.checkout} artifacts=/artifacts work=${input.workId} execution=${input.executionId} previous-execution=${input.previousExecutionId}` +
@@ -337,5 +345,6 @@ export function interruptionRecoveryPrompt(input: { ticketUrl: string; repositor
       'no process of it survives. The output of its last tool call may be lost: inspect the current state (files, git status/log, /artifacts) before ' +
       'repeating anything, and never repeat a tool call blindly.',
     `Read ${input.skillDirectory}/skills/implement/SKILL.md with the read tool and follow its instructions, resuming from the preserved state.`,
+    ...(input.summary ? ['', input.summary] : []),
     '', 'Reason recorded by the Factory:', fenced(`${input.reason}:${input.code}`)].join('\n');
 }

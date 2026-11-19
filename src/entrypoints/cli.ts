@@ -11,7 +11,7 @@ import { releaseInstallationRoot } from './release.js';
 // Ticket 41: the blocked reference shown by `factory show`; its shape is shared, Control checks it is exactly the blocked one.
 import { blockedReferencePattern as blockedReference, blockedStartCodePattern, startRetryRemedies } from '../contracts/index.js';
 
-const usage = 'factory <setup|doctor|run|status|list [--cursor <n> --limit <n>]|show <work> [--cursor <n> --limit <n>]|history <work>|logs <work> [--after <capture>] [--read <capture> [--offset <n>]]|usage [<work>]|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>)|update-scope <work> --reason <text>|authorize-readiness <work> --reason <text>|repair <work> --reason <text>|cancel <work>|resume <work> [--override-blocked-recovery <reference> --request-id <id>|--new-review-round --request-id <id>|--retry-blocked-start <code> [--remedy <recreate-artifact-seed|repair-disk|replace-disk>] --request-id <id>]|reopen <work>|new <owner/repo#number> [--keep-predecessor-pr]|cleanup <work> --select <logs,sessions,environment,remote-branch> [--yes]|cleanup-confirm <work> <plan>|forget <work> [--yes]|forget-confirm <work> <plan>|request <id>|upgrade <check|apply|status|resume|rollback> [--migrate <id>]> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service [--service-directory <absolute dir>]] [history|logs: --execution <id> --role <builder|standards|spec> --limit <n>; history: --cursor <n>]; factory login --root <canonical-absolute-installation>';
+const usage = 'factory <setup|doctor|run|status|list [--cursor <n> --limit <n>]|show <work> [--cursor <n> --limit <n>]|history <work>|logs <work> [--after <capture>] [--read <capture> [--offset <n>]]|usage [<work>]|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>|--continuations <n>)|update-scope <work> --reason <text>|authorize-readiness <work> --reason <text>|repair <work> --reason <text>|cancel <work>|resume <work> [--override-blocked-recovery <reference> --request-id <id>|--new-review-round --request-id <id>|--retry-blocked-start <code> [--remedy <recreate-artifact-seed|repair-disk|replace-disk>] --request-id <id>]|reopen <work>|new <owner/repo#number> [--keep-predecessor-pr]|cleanup <work> --select <logs,sessions,environment,remote-branch> [--yes]|cleanup-confirm <work> <plan>|forget <work> [--yes]|forget-confirm <work> <plan>|request <id>|upgrade <check|apply|status|resume|rollback> [--migrate <id>]> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service [--service-directory <absolute dir>]] [history|logs: --execution <id> --role <builder|standards|spec> --limit <n>; history: --cursor <n>]; factory login --root <canonical-absolute-installation>';
 const upgradeUsage = 'factory upgrade <check|apply|status|resume|rollback> [--root <installation>] [--migrate <migration id>] — run with the NEW release: ' +
   '<root>/releases/<id>/node/bin/node <root>/releases/<id>/dist/src/entrypoints/cli.js upgrade ...';
 // Ticket 25 (spec §11.3): cycle commands; `new` names the Ticket as owner/repo#number.
@@ -75,7 +75,7 @@ function inspectionQuery(command: string, work: string | undefined, options: Ins
 }
 
 async function operational(root: string, command: string, requestId: string | undefined, requested: string | undefined, json: boolean, text?: string,
-  grant?: { counter: 'corrections' | 'recoveries'; amount: number }, cycle?: { repository: string; number: number; keep: boolean },
+  grant?: { counter: 'corrections' | 'recoveries' | 'continuations'; amount: number }, cycle?: { repository: string; number: number; keep: boolean },
   cleanup?: { select?: string[]; yes?: boolean; plan?: string }, inspection: Inspection = {}, override?: string, newReviewRound = false,
   retry?: { code: string; remedy?: string }) {
   const query = (): Envelope['payload'] => ['history', 'logs', 'usage', 'list', 'show'].includes(command) ? inspectionQuery(command, requested, inspection)
@@ -231,12 +231,14 @@ export async function main(input: string[]): Promise<number> {
   // Ticket 50: `resume <work> --retry-blocked-start <code> [--remedy <name>]` (generic retry of a refused boot/preparation).
   let retry: string | undefined;
   let remedy: string | undefined;
-  // `grant <work> --corrections <n>` or `--recoveries <n>`: exactly one counter, a plain positive integer up to 100 (spec §11.3).
-  let grant: { counter: 'corrections' | 'recoveries'; amount: number } | undefined;
+  // `grant <work> --corrections <n>`, `--recoveries <n>` or (ticket 48) `--continuations <n>`: exactly one counter, a plain positive integer
+  // up to 100 (spec §11.3).
+  let grant: { counter: 'corrections' | 'recoveries' | 'continuations'; amount: number } | undefined;
   if (command === 'grant') {
     const flag = args[2], amount = args[3];
-    if ((flag === '--corrections' || flag === '--recoveries') && amount?.match(/^[1-9][0-9]{0,2}$/) && Number(amount) <= 100) {
-      grant = { counter: flag === '--corrections' ? 'corrections' : 'recoveries', amount: Number(amount) };
+    const counters = { '--corrections': 'corrections', '--recoveries': 'recoveries', '--continuations': 'continuations' } as const;
+    if ((flag === '--corrections' || flag === '--recoveries' || flag === '--continuations') && amount?.match(/^[1-9][0-9]{0,2}$/) && Number(amount) <= 100) {
+      grant = { counter: counters[flag], amount: Number(amount) };
     } else valid = false;
   }
   // `answer <question> <text>`: exactly one text argument (quote it), trimmed by the operator, at most 2000 characters.

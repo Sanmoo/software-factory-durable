@@ -6,7 +6,7 @@ import type { CredentialGrantRecord, CredentialWithdrawal, ExecutionCharge, Exec
 import { ticketKey } from '../rules/admission.js';
 import { observationDriven } from '../rules/repair.js';
 import { undeliveredHuman } from '../rules/feedback.js';
-import { chargeDecision, classifyOverrun, exhaustionImpediment, initialBudget, overrunNotExcludedImpediment, timeoutImpediment, timeoutReached, type Motive } from '../rules/budget.js';
+import { chargeDecision, classifyOverrun, counterOf, exhaustionImpediment, initialBudget, overrunNotExcludedImpediment, timeoutImpediment, timeoutReached, type Motive } from '../rules/budget.js';
 import { dispatchBlockers } from '../rules/dependencies.js';
 import { installation, legacyCredentialLifecycle, ticketIndex, works, type WorkRecord } from './admission.js';
 import { questions } from './questions.js';
@@ -17,7 +17,9 @@ import { attemptsOf, publicationResumes } from '../rules/publication.js';
 import { authorizationInForce } from '../rules/divergence.js';
 import type { Session } from './store.js';
 import { classifyInterruption } from '../rules/recovery.js';
-import { applyRecoveryRequest, backoffRunning, bootDeferralRunning } from './recovery-request.js';
+import { applyContinuationRequest, applyRecoveryRequest, backoffRunning, bootDeferralRunning } from './recovery-request.js';
+import { budgetEndProgress, budgetExhaustedCode } from '../rules/budget-continuation.js';
+import type { CheckoutFingerprint } from '../../contracts/index.js';
 import { settleCancellation } from '../rules/cycles.js';
 
 /** Ticket 25: after a Slot/reservation release, a cancelled Work's cancellation becomes `ceased` when nothing of it can still act. */
@@ -33,7 +35,8 @@ export function interruptionBasis(work: Pick<WorkRecord, 'execution' | 'pendingR
   if (execution.state === 'released' && !execution.start) return execution.interruption ?? null;
   if (execution.state !== 'ended' || execution.slot.held || !execution.end) return null;
   if (execution.end.outcome === 'stopped') return { previousExecutionId: execution.executionId, reason: 'ADMINISTRATIVE_STOP', code: execution.end.code ?? 'ADMINISTRATIVE_STOP' };
-  if (execution.end.outcome === 'failure' && work.pendingRecovery) return { previousExecutionId: execution.executionId, reason: 'OPERATIONAL_RECOVERY', code: execution.end.code ?? 'CONTROLLER_CRASH' };
+  if (execution.end.outcome === 'failure' && work.pendingRecovery) return { previousExecutionId: execution.executionId,
+    reason: work.pendingRecovery.kind === 'budget-continuation' ? 'BUDGET_CONTINUATION' : 'OPERATIONAL_RECOVERY', code: execution.end.code ?? 'CONTROLLER_CRASH' };
   return null;
 }
 const interruptionHolds = (work: WorkRecord, basis: NonNullable<ExecutionView['interruption']>) => JSON.stringify(interruptionBasis(work)) === JSON.stringify(basis);
@@ -173,17 +176,19 @@ export async function admitExecution(session: Session, input: { work_id: string;
       // Durable, visible exhaustion: the impediment keeps the Work out of selection (no automatic loop) until an explicit grant.
       if (!work.impediments.some(item => item.code === decision.code)) {
         work.impediments.push(exhaustionImpediment(decision.counter, work.work_id, now));
-        budgetHistory(work, 'budget-exhausted', null, `${decision.counter}:${work.budget[decision.counter].consumed}/${work.budget[decision.counter].limit + work.budget[decision.counter].granted}`);
+        const counter = counterOf(work.budget, decision.counter);
+        budgetHistory(work, 'budget-exhausted', null, `${decision.counter}:${counter.consumed}/${counter.limit + counter.granted}`);
       }
       return { kind: 'refused' as const, reasons: [decision.code] };
     }
     const executionId = randomUUID();
-    const charge: ExecutionCharge = decision.kind === 'reserve' ? { kind: decision.counter === 'corrections' ? 'correction' : 'recovery', correctionId: decision.correctionId,
+    const charge: ExecutionCharge = decision.kind === 'reserve' ? { kind: decision.counter === 'corrections' ? 'correction' : decision.counter === 'continuations' ? 'continuation' : 'recovery',
+      correctionId: decision.correctionId,
       counter: decision.counter, state: 'reserved', settledAt: null }
       : decision.kind === 'preserve' ? { kind: 'correction', correctionId: decision.correctionId, counter: 'corrections', state: 'preserved', settledAt: now }
         : { kind: 'none', correctionId: null, counter: null, state: 'none', settledAt: null };
     if (decision.kind === 'reserve') {
-      work.budget[decision.counter].reserved = executionId;
+      counterOf(work.budget, decision.counter).reserved = executionId;
       budgetHistory(work, 'budget-reserved', executionId, decision.counter);
     }
     const execution: ExecutionView = {
@@ -241,7 +246,8 @@ const requestOf = <T extends { publication?: unknown; reconciliation?: unknown; 
 };
 /** Motive of the next activation: a pending operational recovery, else the open correction (charged once), else nothing to charge. */
 function motiveOf(work: WorkRecord): Motive {
-  if (work.pendingRecovery) return { kind: 'recovery', correctionId: work.correction?.correctionId ?? null };
+  // Ticket 48: a pending continuation after a budget end with progress draws on `continuations`, never on `recoveries`.
+  if (work.pendingRecovery) return { kind: work.pendingRecovery.kind === 'budget-continuation' ? 'continuation' : 'recovery', correctionId: work.correction?.correctionId ?? null };
   if (work.correction) return { kind: 'correction', correctionId: work.correction.correctionId, consumed: work.correction.consumed };
   return { kind: 'none' };
 }
@@ -252,19 +258,20 @@ export const budgetHistory = (work: WorkRecord, event: 'budget-reserved' | 'budg
 export function consumeReservation(work: WorkRecord, execution: ExecutionView, at: string) {
   const charge = execution.charge;
   if (!charge || charge.state !== 'reserved' || !charge.counter || !work.budget) return;
-  const counter = work.budget[charge.counter];
+  const counter = counterOf(work.budget, charge.counter);
   if (counter.reserved === execution.executionId) counter.reserved = null;
   counter.consumed += 1;
   Object.assign(charge, { state: 'consumed', settledAt: at });
   if (charge.kind === 'correction' && work.correction?.correctionId === charge.correctionId) work.correction.consumed = true;
-  if (charge.kind === 'recovery') work.pendingRecovery = null;
+  if (charge.kind === 'recovery' || charge.kind === 'continuation') work.pendingRecovery = null;
   budgetHistory(work, 'budget-consumed', execution.executionId, charge.counter);
 }
 /** Proven non-start (spec §4.4): the reservation is released without consumption; the correction/recovery stays pending. */
 export function releaseReservation(work: WorkRecord, execution: ExecutionView, at: string) {
   const charge = execution.charge;
   if (!charge || charge.state !== 'reserved' || !charge.counter || !work.budget) return;
-  if (work.budget[charge.counter].reserved === execution.executionId) work.budget[charge.counter].reserved = null;
+  const counter = counterOf(work.budget, charge.counter);
+  if (counter.reserved === execution.executionId) counter.reserved = null;
   Object.assign(charge, { state: 'released', settledAt: at });
   budgetHistory(work, 'budget-released', execution.executionId, charge.counter);
 }
@@ -608,14 +615,25 @@ export async function reconcileDurations(session: Session, live: (executionId: s
   return reconciled;
 }
 
+/** Ticket 48: what the Host observed when a Builder that ended its budget had ceased (its checkout fingerprint and how the guest stopped). */
+export type BudgetEndObservation = { atEnd: CheckoutFingerprint | null; guestStop: string | null };
+
 /** Slot is released only after confirmed cessation of the Execution's own boot (spec §5.3: "Slot só após cessação"). */
-export async function releaseAfterCessation(session: Session, work_id: string, executionId: string, cessation: 'confirmed' | 'unconfirmed') {
+export async function releaseAfterCessation(session: Session, work_id: string, executionId: string, cessation: 'confirmed' | 'unconfirmed', budgetEnd?: BudgetEndObservation) {
   return session.commit(async tx => {
     const document = await tx.doc(works, work_id, null);
     const execution = document.work?.execution ?? null;
     if (!document.work || !execution || execution.executionId !== executionId || !execution.end) return 'stale' as const;
     execution.end.cessation = cessation;
     execution.dispatch.phase = 'stopped';
+    if (budgetEnd && execution.end.code === budgetExhaustedCode) {
+      // Ticket 48: progress is decided from the Host's two fingerprints only (start recorded at preparation, end after the clean stop).
+      const progress = budgetEndProgress(execution.checkout?.atStart ?? null, budgetEnd.atEnd);
+      execution.checkout = { atStart: execution.checkout?.atStart ?? null, atEnd: budgetEnd.atEnd, progress, guestStop: budgetEnd.guestStop };
+      document.work.history.push({ at: new Date().toISOString(), event: 'budget-end-observed', origin: 'controller-budget', executionId,
+        detail: `${progress.kind === 'progress' ? `progress:${progress.commits ? 'commits' : ''}${progress.commits && progress.checkout ? '+' : ''}${progress.checkout ? 'checkout' : ''}`
+          : progress.kind === 'none' ? 'no-progress' : `unknown:${progress.code}`}; guest-stop ${budgetEnd.guestStop ?? 'not-recorded'}`.slice(0, 512) });
+    }
     if (cessation !== 'confirmed') return 'kept' as const;
     applyConfirmedCessation(document.work, execution, await tx.doc(slots));
     return 'released' as const;
@@ -649,7 +667,12 @@ export function applyConfirmedCessation(work: WorkRecord, execution: ExecutionVi
   // back through the queue as ONE operational recovery after its persisted wait (same commit as the cessation, never lost by a crash).
   if (end.outcome === 'stopped') work.queue = { ...work.queue, pending: true };
   // Ticket 25: a cancelled Work never comes back through the queue (no recovery, no continuation).
-  if (end.outcome === 'failure' && classifyInterruption(end.code).kind === 'recoverable' && !work.cancellation) {
+  // Ticket 48: a Builder budget end WITH Host-observed progress continues on its own counter; without (or unknown) progress it recovers.
+  const progress = execution.checkout?.progress ?? null;
+  if (end.outcome === 'failure' && end.code === budgetExhaustedCode && progress?.kind === 'progress' && !work.cancellation) {
+    applyContinuationRequest(work, { executionId, code: end.code, at: execution.slot.releasedAt!,
+      detail: `${end.code}:progress:${progress.commits ? 'commits' : ''}${progress.commits && progress.checkout ? '+' : ''}${progress.checkout ? 'checkout' : ''}` });
+  } else if (end.outcome === 'failure' && classifyInterruption(end.code).kind === 'recoverable' && !work.cancellation) {
     applyRecoveryRequest(work, { executionId, code: end.code ?? 'CONTROLLER_CRASH', at: execution.slot.releasedAt! });
   }
   history(work, 'slot-released', executionId);

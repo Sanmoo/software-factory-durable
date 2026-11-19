@@ -25,6 +25,8 @@ export { inventoryRuntime, type RuntimeListing } from './inventory.js';
 export { environmentIdentityDiagnostic } from './environment-identity.js';
 export { reconcileInterruptedCaches, type CacheReconciliation } from './checkout.js';
 import { observeProposal } from './proposal-identity.js';
+import { fingerprintCheckout } from './checkout-fingerprint.js';
+import type { CheckoutFingerprint } from '../contracts/index.js';
 export type PreparedWork = PrepareResult | { status: 'success'; environment: EnvironmentRef; checkout: CheckoutView;
   seeds: { name: string; manifestSha256: string; reused: boolean; replaced?: string }[] };
 export type { GuestAssetPin } from './guest-assets.js';
@@ -94,6 +96,11 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
     async observeProposal({ environment, round }: { environment: EnvironmentRef; round: number }) {
       if (!/^env-[a-f0-9]{64}$/.test(environment)) return { status: 'refused' as const, code: 'ENVIRONMENT_REF_INVALID' };
       return observeProposal(join(await realpath(root), 'environments', environment), round);
+    },
+    /** Ticket 48: Host fingerprint of the Work's checkout (confined Git metadata reads + bounded no-follow tree walk; no host git, no guest command). */
+    async observeCheckout({ environment }: { environment: EnvironmentRef }): Promise<CheckoutFingerprint> {
+      if (!/^env-[a-f0-9]{64}$/.test(environment)) return { status: 'unavailable', code: 'ENVIRONMENT_REF_INVALID' };
+      return fingerprintCheckout(join(await realpath(root), 'environments', environment));
     },
     /**
      * Ticket 13 (review fix 3): Host confirmation of a preserved-source authorization. Confined, no-follow reads only: the referenced

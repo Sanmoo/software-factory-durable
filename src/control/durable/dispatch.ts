@@ -28,6 +28,7 @@ import { evaluatePublication, recordDiscovery, resolveDivergence } from './publi
 import { purposeOf } from './execution.js';
 import type { SessionRef } from '../types.js';
 import { interruptionRecoveryPrompt, isDiskRemedy, reviewerRetryLimitCode, refusedWithoutActivity } from '../rules/recovery.js';
+import { budgetExhaustedCode, builderBudgetPolicy, stateSummary } from '../rules/budget-continuation.js';
 import { reconcileExecution } from './recovery.js';
 import type { WorkerQuestion } from '../../workers/index.js';
 import type { Session } from './store.js';
@@ -514,10 +515,21 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       if (!context.sufficient) return { kind: 'insufficient', reasons: context.reasons };
       const reconciling = execution.request.reconciliation ? reconciliationNotice(execution.request.reconciliation, execution.request.branch, prepared.checkout.path,
         publicationRemote(work.repository.repository)) : null;
+      // Ticket 48: a continuation after a budget end gets the bounded state summary (last phase, gates, answered Questions); an operational
+      // recovery gets it when the Work has answered Questions, so an answer already given is never asked again (ticket 45 seams).
+      const answered = current ? (await readQuestions(session, current)).filter(item => item.state === 'answered' && item.answer)
+        .map(item => ({ questionId: item.questionId, question: item.content.question, answer: item.answer!.text })) : [];
+      const summary = basis.reason === 'BUDGET_CONTINUATION' || (basis.reason === 'OPERATIONAL_RECOVERY' && answered.length) ? stateSummary({
+        previousExecutionId: basis.previousExecutionId, code: basis.code,
+        progress: basis.reason === 'BUDGET_CONTINUATION' && previous.checkout?.progress ? { decision: previous.checkout.progress, start: previous.checkout.atStart, end: previous.checkout.atEnd ?? null } : null,
+        rounds: [...(current?.previousExecutions ?? []), ...(current?.execution && current.execution.executionId !== execution.executionId ? [current.execution] : [])]
+          .flatMap(item => item.review?.rounds ?? []).map(round => ({ round: round.round, state: round.state, closing: round.closing === true, conclusion: round.conclusion,
+            head: round.handoff.summary?.head ?? null, gates: round.declarations?.gates ?? [] })),
+        answered }) : null;
       const prompt = [...(reconciling ? [reconciling, ''] : []), interruptionRecoveryPrompt({ ticketUrl: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
         baseCommit: prepared.checkout.baseCommit, branch: execution.request.branch, checkout: prepared.checkout.path, workId: work.work_id,
         executionId: execution.executionId, skillDirectory, previousExecutionId: basis.previousExecutionId, reason: basis.reason, code: basis.code,
-        reviews: Boolean(ports.reviews) }), ...(updates.length ? ['', ...scopeSection(updates)] : []), ...(repair ?? [])].join('\n');
+        reviews: Boolean(ports.reviews), summary }), ...(updates.length ? ['', ...scopeSection(updates)] : []), ...(repair ?? [])].join('\n');
       // Ticket 28 (spec §5.6): the preserved review state of the interrupted Execution, context only (a delivery to the old session is not
       // proof it was consumed); its valid opinions are carried at the next handoff when the proposal is unchanged. Dropped under the bound.
       const review = ports.reviews?.partialRecovery ? preservedReviewContext(previous.review?.rounds ?? [], 6000, { carry: true }) : null;
@@ -841,6 +853,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     // The review loop of this Execution: an interruption/stop waits for it to settle (ticket 28: a retry that was never launched releases
     // its reservation) before the end is recorded.
     let reviewTask: Promise<boolean> | undefined;
+    let endCode: string | null = null;
     const stopOwnBoot = async (reason: string) => environment && boot ? ports.sandbox.stop({ environment, boot, reason }).catch(() => ({ status: 'indeterminate' as const, cessationConfirmed: false as const, code: 'STOP_UNAVAILABLE' })) : undefined;
     try {
       checkStop();
@@ -853,8 +866,12 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       if (prepared.status !== 'success') { await refused('prepare', prepared); return; }
       environment = prepared.environment;
       const pack = prepared.seeds.find(seed => seed.name.startsWith('factory/skill-pack/'));
+      // Ticket 48: the Host fingerprint of the checkout BEFORE any boot of this Execution (progress at a budget end is measured from it).
+      const atStart = ports.sandbox.observeCheckout ? await ports.sandbox.observeCheckout({ environment: prepared.environment })
+        .catch(() => ({ status: 'unavailable' as const, code: 'CHECKOUT_OBSERVATION_FAILED' })) : null;
       if ((await recordPhase(session, work.work_id, executionId, 'reserved', 'prepared', 'execution-prepared', current => {
         current.dispatch.environment = prepared.environment;
+        current.checkout = { atStart };
         current.request.baseCommit = prepared.checkout.baseCommit;
         current.request.checkout = prepared.checkout.path;
         current.request.skillPack = pack ? { name: pack.name, manifestSha256: pack.manifestSha256 } : null;
@@ -977,6 +994,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         environmentRef: environment, bootRef: boot, phaseId: execution.request.publication ? 'builder-publication' : execution.request.reconciliation && resume?.reason !== 'QUESTION_ANSWERED' ? 'builder-reconciliation'
           : plan.continuation ? 'builder-continuation' : resume || execution.interruption ? 'builder-recovery' : 'builder-initial' },
         prompt, signal: activitySignal, ...(execution.request.publication ? publishOnly(ports.builder) : ports.builder),
+        // Ticket 48: the repository's Builder budget adjustment recorded with this Execution's policies.
+        ...(execution.request.policies.builderBudget ? { builderBudget: { ...execution.request.policies.builderBudget } } : {}),
         // Ticket 21 review: the exact leased push Control derived; any other push form is refused by the Builder Host.
         ...(execution.request.publication ? { pushPolicy: { branch: execution.request.publication.branch, head: execution.request.publication.head, remote: publicationRemote(work.repository.repository),
           expected: execution.request.publication.expectedRemote.state === 'present' ? execution.request.publication.expectedRemote.sha : null } } : {}),
@@ -1077,13 +1096,19 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           }
           await recordEnd(session, work.work_id, executionId, completed.status === 'success' ? 'completed' : 'failure', completed.status === 'success' ? null : completed.code,
             null, elapsed(), completed.status === 'success' ? completed.session ?? null : null);
+          if (completed.status === 'failure') endCode = completed.code;
           if (completed.status === 'failure') await questionUncertain();
         }
       } finally { timerStop.abort(); startCommitted(false); handle.close(); }
       await lifecycle.withdraw('ended', { notifyWorker: false });
       phase = 'stop';
+      // Ticket 47: the budget end stops through the same clean stop as every end (guest shutdown, root read-only, then the VMM).
       const stop = await stopOwnBoot('builder execution ended');
-      await releaseAfterCessation(session, work.work_id, executionId, stop?.cessationConfirmed ? 'confirmed' : 'unconfirmed');
+      // Ticket 48: after a budget end whose boot ceased, the Host fingerprints the checkout again; progress decides continuation vs recovery.
+      const budgetEnd = endCode === budgetExhaustedCode && stop?.cessationConfirmed && environment ? {
+        atEnd: ports.sandbox.observeCheckout ? await ports.sandbox.observeCheckout({ environment }).catch(() => ({ status: 'unavailable' as const, code: 'CHECKOUT_OBSERVATION_FAILED' })) : null,
+        guestStop: 'guestShutdown' in stop && stop.guestShutdown ? `${stop.guestShutdown.result}:${stop.guestShutdown.reason}` : null } : undefined;
+      await releaseAfterCessation(session, work.work_id, executionId, stop?.cessationConfirmed ? 'confirmed' : 'unconfirmed', budgetEnd);
       observe(work.work_id, stop?.cessationConfirmed ? 'ended-slot-released' : 'ended-cessation-unconfirmed');
     } catch (error) {
       if (interrupted() && !stopping.signal.aborted && interruption.reason === 'cancelled') {
@@ -1364,11 +1389,17 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     // Ticket 26: after an interrupted Execution, its basis (operational recovery or clean-stop continuation), re-checked in the commit.
     const interruption = interruptionBasis(work);
     const { attemptId } = await freshEvaluation(work);
+    const configuredScope = deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase());
+    // Ticket 48: the repository's Builder budget adjustment (validated by the configuration: at most 2x) travels with the Execution's policies.
+    let builderBudget: ReturnType<typeof builderBudgetPolicy>;
+    try { builderBudget = ports.builder.modelBudget === 'builder-v1' ? builderBudgetPolicy(configuredScope?.builderBudget) : null; }
+    catch { observe(work.work_id, 'refused', ['BUILDER_BUDGET_ABOVE_MAXIMUM']); return true; }
+    const policies = { ...(publication ? publishOnly(ports.builder) : ports.builder), ...(builderBudget ? { builderBudget } : {}) };
     const admission = await admitExecution(session, { ...(interruption ? { interruption } : {}), now: (ports.calendar ?? Date).now(), work_id: work.work_id, attemptId, capacity: ports.capacity, authorizationObservedAt: authorization.observedAt,
       request: { ticket: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
-        branch: `factory/${work.ticket.number}-${work.work_id.slice(0, 8)}`, policies: publication ? publishOnly(ports.builder) : { ...ports.builder }, ...(publication ? { publication } : {}),
+        branch: `factory/${work.ticket.number}-${work.work_id.slice(0, 8)}`, policies, ...(publication ? { publication } : {}),
         ...(reconciliation ? { reconciliation } : {}), ...(repair ? { repair } : {}) }, ...(resume ? { resume } : {}),
-      limits: deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase()) ?? {} });
+      limits: configuredScope ?? {} });
     if (admission.kind === 'refused') { observe(work.work_id, 'refused', admission.reasons); return true; }
     observe(work.work_id, 'reserved');
     passes.set(work.work_id, pass);

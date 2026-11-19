@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { BudgetCounter, ClosedCorrection, ControlReceipt, ConfiguredRepository, RepairReason } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
-import { availableOf, counterView, exhaustionCodes, exhaustionImpediment, grantDecision, initialBudget, type BudgetCounterName } from '../rules/budget.js';
+import { availableOf, counterOf, counterView, exhaustionCodes, exhaustionImpediment, grantDecision, initialBudget, type BudgetCounterName } from '../rules/budget.js';
 import { requests, ticketIndex, works, type TicketIndex, type WorkRecord } from './admission.js';
 import { activeExecution } from './execution.js';
 import { applyRecoveryRequest } from './recovery-request.js';
@@ -41,7 +41,7 @@ export async function grantBudget(session: Session, input: GrantInput, limits: (
     else {
       const now = new Date().toISOString();
       const budget = ensureBudget(work, limits(work.repository.repository), now);
-      const counter = budget[input.counter];
+      const counter = counterOf(budget, input.counter);
       const before = copy(counter);
       counter.granted += input.amount;
       budget.grants.push({ at: now, request_id: input.request_id, origin: 'local-cli', counter: input.counter, amount: input.amount, before, after: copy(counter) });
@@ -74,9 +74,10 @@ async function charge(session: Session, work_id: string, limits: (repository: st
 /** Pending again; exhaustion is visible at once (no activation is attempted to discover it); only an explicit grant resolves it. */
 function markPending(work: WorkRecord, counter: BudgetCounterName, now: string) {
   const budget = work.budget!;
-  if (availableOf(budget[counter]) === 0 && !work.impediments.some(item => item.code === exhaustionCodes[counter])) {
+  const stored = counterOf(budget, counter);
+  if (availableOf(stored) === 0 && !work.impediments.some(item => item.code === exhaustionCodes[counter])) {
     work.impediments.push(exhaustionImpediment(counter, work.work_id, now));
-    work.history.push({ at: now, event: 'budget-exhausted', origin: 'controller-budget', executionId: null, detail: `${counter}:${budget[counter].consumed}/${budget[counter].limit + budget[counter].granted}` });
+    work.history.push({ at: now, event: 'budget-exhausted', origin: 'controller-budget', executionId: null, detail: `${counter}:${stored.consumed}/${stored.limit + stored.granted}` });
   }
   work.queue = { ...work.queue, pending: true };
 }

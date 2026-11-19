@@ -10,7 +10,7 @@ import { blockedReferencePattern, blockedStartCodePattern, startRetryRemedies } 
 const requestId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
 const command = z.union([z.strictObject({ request_id: requestId, operation: z.enum(['pause', 'unpause']), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('answer'), question_id: z.uuid(), text: z.string().min(1).max(2000), origin: z.literal('local-cli') }),
-  z.strictObject({ request_id: requestId, operation: z.literal('grant'), work_id: z.uuid(), counter: z.enum(['corrections', 'recoveries']),
+  z.strictObject({ request_id: requestId, operation: z.literal('grant'), work_id: z.uuid(), counter: z.enum(['corrections', 'recoveries', 'continuations']),
     amount: z.number().int().min(1).max(100), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('update-scope'), work_id: z.uuid(), reason: z.string().min(1).max(2000), origin: z.literal('local-cli') }),
   // Ticket 23: explicit repair inside the current scope (corrections budget); concreteness/phase decided by the commit.

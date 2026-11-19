@@ -128,6 +128,8 @@ export async function composeProductionExecution(input: ProductionInput): Promis
   const ports: ExecutionPorts = {
     sandbox: { prepare: input => sandbox.prepare(input), start: input => sandbox.start(input), stop: input => sandbox.stop(input),
       observeProposal: input => sandbox.observeProposal(input),
+      // Ticket 48: Host fingerprint of the checkout (start of the Execution / after a budget end): progress decides continuation vs recovery.
+      observeCheckout: input => sandbox.observeCheckout(input),
       // Ticket 13: confined Host confirmation of preserved-source authorizations (absent = none would ever correlate).
       verifyPreservedSource: input => sandbox.verifyPreservedSource(input),
       // Ticket 26: host observation (works without the old Gondolin owner) for boot reconciliation of survivors.

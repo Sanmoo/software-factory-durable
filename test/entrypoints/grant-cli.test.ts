@@ -26,7 +26,8 @@ test('AC3/AC7: `factory grant` is an identified local ingress (exactly one count
   const cli = async (...args: string[]) => { const result = await invoke(root, args).result; return { ...result, json: result.stdout ? JSON.parse(result.stdout) : undefined }; };
   for (const bad of [['grant', work], ['grant', work, '--corrections'], ['grant', work, '--corrections', '0'], ['grant', work, '--corrections', '101'],
     ['grant', work, '--corrections', '1.5'], ['grant', work, '--corrections', '-1'], ['grant', work, '--corrections', '1', '--recoveries', '1'],
-    ['grant', 'not-a-uuid', '--corrections', '1'], ['grant', work, '--corrections', '01'], ['grant', work, '--minutes', '5']]) {
+    ['grant', 'not-a-uuid', '--corrections', '1'], ['grant', work, '--corrections', '01'], ['grant', work, '--minutes', '5'],
+    /* ticket 48 */ ['grant', work, '--continuations', '0'], ['grant', work, '--continuations', '1', '--recoveries', '1']]) {
     assert.equal((await cli(...bad)).code, 2, bad.join(' '));
   }
   const offline = await cli('grant', work, '--corrections', '2', '--request-id', 'grant-offline');
@@ -43,6 +44,9 @@ test('AC3/AC7: `factory grant` is an identified local ingress (exactly one count
   assert.deepEqual((await cli('grant', work, '--recoveries', '2', '--request-id', 'grant-1')).json, first.json, 'same identity and content: same durable result');
   assert.deepEqual((await cli('grant', work, '--corrections', '2', '--request-id', 'grant-1')).json, { kind: 'refused', code: 'REQUEST_ID_CONFLICT' });
   assert.deepEqual((await cli('request', 'grant-1')).json, { kind: 'request', receipt: first.json });
+  // Ticket 48: the continuations counter has the same ingress (`grant <work> --continuations <n>`).
+  const continuations = await cli('grant', work, '--continuations', '3', '--request-id', 'grant-48');
+  assert.deepEqual([continuations.code, continuations.json.counter, continuations.json.amount, continuations.json.reason], [2, 'continuations', 3, 'WORK_NOT_FOUND']);
   owner.child.kill('SIGTERM');
   assert.equal((await owner.result).code, 0);
 });

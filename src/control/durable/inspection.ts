@@ -4,7 +4,7 @@ import type { CounterView, EvidenceState, ExecutionPorts, UsageObservation, Hist
   UsageView, WorkUsageView } from '../types.js';
 import { aggregateUsage, captureState, combineAggregates, executionsOf, fitPage, historyEntries, inspectionLimits, page, pageState, sessionCopy, sessionLocator, trimEntry, captureRemoval,
   usageActivity, usageSubjects } from '../rules/inspection.js';
-import { counterView } from '../rules/budget.js';
+import { counterView, defaultLimits } from '../rules/budget.js';
 import type { WorkRecord } from './admission.js';
 
 /** Serialized size budget of one view (the local protocol frame is 64 KiB, envelope included). */
@@ -139,7 +139,9 @@ export async function workUsage(work: WorkRecord, ports: ExecutionPorts | undefi
   }
   const counter = (key: 'corrections' | 'recoveries'): CounterView | null => work.budget ? counterView(work.budget[key]) : null;
   return { work_id: work.work_id, ticket: `${work.ticket.repository}#${work.ticket.number}`, activities, byRole, total: aggregateUsage(activities),
-    budget: { corrections: counter('corrections'), recoveries: counter('recoveries'), grants: work.budget?.grants.length ?? 0 },
+    budget: { corrections: counter('corrections'), recoveries: counter('recoveries'),
+      continuations: work.budget ? counterView(work.budget.continuations ?? { limit: defaultLimits.continuations, granted: 0, consumed: 0, reserved: null }) : null,
+      grants: work.budget?.grants.length ?? 0 },
     time: { executions: executions.length, measuredMs, lowerBoundMs, unknown,
       measurement: executions.length === 0 ? 'unavailable' : unknown === 0 && lowerBoundMs === 0 ? 'complete' : 'partial' } };
 }

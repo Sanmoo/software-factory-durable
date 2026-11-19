@@ -19,7 +19,7 @@ import { createQuestionDesk } from './question-desk.js';
 import { acceptAnswer, readQuestion, readQuestions } from './questions.js';
 import { acceptScopeUpdate } from './scope.js';
 import { dispatchBlockers, selectNext } from '../rules/dependencies.js';
-import { counterView, durationView, maxGrantAmount } from '../rules/budget.js';
+import { counterView, defaultLimits, durationView, maxGrantAmount } from '../rules/budget.js';
 import { grantBudget, openCorrection, requestOperationalRecovery } from './budget.js';
 import { reconcileBoot } from './recovery.js';
 import { dispatchGate } from '../rules/recovery.js';
@@ -39,7 +39,7 @@ import { inspectHistory, inspectLog, inspectLogs, inspectUsage, viewBudgetBytes 
 
 const requestId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
 const inputSchema = z.union([z.strictObject({ request_id: requestId, operation: z.enum(['pause', 'unpause']), origin: z.literal('local-cli') }),
-  z.strictObject({ request_id: requestId, operation: z.literal('grant'), work_id: z.uuid(), counter: z.enum(['corrections', 'recoveries']),
+  z.strictObject({ request_id: requestId, operation: z.literal('grant'), work_id: z.uuid(), counter: z.enum(['corrections', 'recoveries', 'continuations']),
     amount: z.number().int().min(1).max(maxGrantAmount), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('answer'), question_id: z.uuid(), origin: z.literal('local-cli'),
     text: z.string().max(2000).refine(text => text.trim().length > 0 && text === text.trim() && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) }),
@@ -216,6 +216,7 @@ export async function openControl(options: { storagePath: string;
     const live = execution ? dispatcher?.liveElapsed(execution.executionId) ?? null : null;
     const timing = execution?.timing ?? null;
     return { corrections: work.budget ? counterView(work.budget.corrections) : null, recoveries: work.budget ? counterView(work.budget.recoveries) : null,
+      continuations: work.budget ? counterView(work.budget.continuations ?? { limit: defaultLimits.continuations, granted: 0, consumed: 0, reserved: null }) : null,
       grants: work.budget?.grants.length ?? 0,
       timeout: { seconds: timing ? timing.timeoutSeconds : configuredRepository(work.repository.repository)?.timeoutSeconds ?? null, scope: 'per-execution',
         reached: timing?.timeout ?? null, overrun: timing?.overrun ?? null },

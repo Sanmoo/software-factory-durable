@@ -1,17 +1,25 @@
 // Pure budget/timeout rules (spec §4.4/§5.7). No I/O, clock or randomness: callers pass the configuration, instants and elapsed values.
 import type { BudgetCounter, CounterView, DurationView, ExecutionTiming, Impediment, WorkBudget } from '../types.js';
+import { continuationsPerWork } from '../../contracts/index.js';
 
-export const defaultLimits = { corrections: 3, recoveries: 3 } as const;
+/** Ticket 48: `continuations` (budget ends with progress) is fixed per Work by the release (5), not configured; only grants add to it. */
+export const defaultLimits = { corrections: 3, recoveries: 3, continuations: continuationsPerWork } as const;
 /** Upper bound of ONE grant command (typo guard); successive grants accumulate with history. */
 export const maxGrantAmount = 100;
-export type BudgetCounterName = 'corrections' | 'recoveries';
-export const exhaustionCodes = { corrections: 'CORRECTION_LIMIT_REACHED', recoveries: 'RECOVERY_LIMIT_REACHED' } as const;
+export type BudgetCounterName = 'corrections' | 'recoveries' | 'continuations';
+export const exhaustionCodes = { corrections: 'CORRECTION_LIMIT_REACHED', recoveries: 'RECOVERY_LIMIT_REACHED', continuations: 'CONTINUATION_LIMIT_REACHED' } as const;
 
 /** Snapshot at admission of the repository configuration (defaults three/three). Later YAML changes never alter it. */
 export function initialBudget(limits: { correctionLimit?: number | undefined; recoveryLimit?: number | undefined }, repository: string, recordedAt: string): WorkBudget {
   const counter = (limit: number): BudgetCounter => ({ limit, granted: 0, consumed: 0, reserved: null });
   return { corrections: counter(limits.correctionLimit ?? defaultLimits.corrections), recoveries: counter(limits.recoveryLimit ?? defaultLimits.recoveries),
-    source: { kind: 'repository-configuration', repository, recordedAt }, grants: [] };
+    continuations: counter(defaultLimits.continuations), source: { kind: 'repository-configuration', repository, recordedAt }, grants: [] };
+}
+
+/** Ticket 48: the counter as stored; a budget recorded before ticket 48 gets its `continuations` counter (release value) on first use. */
+export function counterOf(budget: WorkBudget, name: BudgetCounterName): BudgetCounter {
+  if (name === 'continuations' && !budget.continuations) budget.continuations = { limit: defaultLimits.continuations, granted: 0, consumed: 0, reserved: null };
+  return name === 'continuations' ? budget.continuations! : budget[name];
 }
 
 /** Remaining capacity: limit + grants - consumptions - an outstanding (possibly uncertain) reservation; never negative. */
@@ -25,7 +33,9 @@ export function counterView(counter: BudgetCounter): CounterView {
 }
 
 /** Why the next activation of a Work runs: the initial implementation charges nothing; a correction once; each operational recovery once. */
-export type Motive = { kind: 'none' } | { kind: 'correction'; correctionId: string; consumed: boolean } | { kind: 'recovery'; correctionId: string | null };
+export type Motive = { kind: 'none' } | { kind: 'correction'; correctionId: string; consumed: boolean } | { kind: 'recovery'; correctionId: string | null } |
+  /** Ticket 48: a continuation after a Builder budget end with progress (charged once to `continuations`, never to `recoveries`). */
+  { kind: 'continuation'; correctionId: string | null };
 export type ChargeDecision = { kind: 'none' } | { kind: 'preserve'; correctionId: string } |
   { kind: 'reserve'; counter: BudgetCounterName; correctionId: string | null } |
   { kind: 'exhausted'; counter: BudgetCounterName; code: typeof exhaustionCodes[BudgetCounterName] };
@@ -34,12 +44,16 @@ export type ChargeDecision = { kind: 'none' } | { kind: 'preserve'; correctionId
 export function chargeDecision(budget: WorkBudget, motive: Motive): ChargeDecision {
   if (motive.kind === 'none') return { kind: 'none' };
   if (motive.kind === 'correction' && motive.consumed) return { kind: 'preserve', correctionId: motive.correctionId };
-  const counter: BudgetCounterName = motive.kind === 'correction' ? 'corrections' : 'recoveries';
-  if (availableOf(budget[counter]) === 0) return { kind: 'exhausted', counter, code: exhaustionCodes[counter] };
+  const counter: BudgetCounterName = motive.kind === 'correction' ? 'corrections' : motive.kind === 'continuation' ? 'continuations' : 'recoveries';
+  if (availableOf(counterOf(budget, counter)) === 0) return { kind: 'exhausted', counter, code: exhaustionCodes[counter] };
   return { kind: 'reserve', counter, correctionId: motive.correctionId };
 }
 
 export function exhaustionImpediment(counter: BudgetCounterName, work_id: string, since: string): Impediment {
+  if (counter === 'continuations') return { code: exhaustionCodes.continuations, scope: 'work', since, nextStep: 'The Builder reached its per-Execution ' +
+    'budget again after progress, and the continuations of this Work are exhausted; nothing continues automatically. Inspect the progress ' +
+    `(\`factory show ${work_id}\`), then grant more explicitly with \`factory grant ${work_id} --continuations <n>\` (history is kept, counters are ` +
+    `never reset), or \`factory cancel ${work_id}\`.` };
   const flag = counter === 'corrections' ? '--corrections' : '--recoveries';
   return { code: exhaustionCodes[counter], scope: 'work', since, nextStep: `The ${counter === 'corrections' ? 'correction' : 'operational recovery'} budget of this Work is ` +
     `exhausted; nothing is retried automatically. Grant more explicitly with \`factory grant ${work_id} ${flag} <n>\` (history is kept, counters are never reset).` };

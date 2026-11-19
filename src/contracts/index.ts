@@ -95,6 +95,15 @@ export const builderBudgetMaximumFactor = 2;
 export type BuilderBudgetConfiguration = { requests?: number | undefined; toolCalls?: number | undefined; requestTimeoutMinutes?: number | undefined };
 /** Ticket 48: a budget end WITH Host-observed progress continues in a new Execution charged to this per-Work counter, not to recoveries. */
 export const continuationsPerWork = 5;
+/**
+ * Ticket 48: the Host's fingerprint of a Work's checkout (confined reads, no host git, no guest command): `head` = the HEAD file, `ref` = the
+ * value of the branch ref HEAD names, `git` = hash of HEAD/ref/packed-refs/index, `tree` = hash of a bounded metadata walk (path, kind, size,
+ * mtime) of the working tree outside `.git` and build/cache directories, null when the walk exceeded its bound (then only Git counts).
+ */
+export type CheckoutFingerprint = { status: 'observed'; head: string | null; ref: string | null; git: string; tree: string | null; entries: number; observedAt: string } |
+  { status: 'unavailable'; code: string };
+/** Ticket 48: what the Host established about progress between the start and the end of a Builder Execution. */
+export type BudgetEndProgress = { kind: 'progress'; commits: boolean; checkout: boolean } | { kind: 'none' } | { kind: 'unknown'; code: string };
 /** Stable correlation marker of a Work's own pull request (spec §9.1, ticket 14): first line of its body `<!-- software-factory:work:<work-id> -->`. */
 export const publicationMarkerPrefix = 'software-factory:work:';
 /** Reviewer roles bound by the Host (spec §5.6/§6.4); never chosen by a model. */

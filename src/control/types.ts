@@ -1,4 +1,4 @@
-import type { AccessDiagnostic, BuilderBudgetConfiguration, BuilderCredentials, BuilderGrantMetadata, GitHubScope, HandoffDeclarations, ProposalHandoff, ProposalIdentity, ReviewerRole, ReviewOpinion, RevocationResult, StartRetryRemedy } from '../contracts/index.js';
+import type { AccessDiagnostic, BudgetEndProgress, BuilderBudgetConfiguration, BuilderCredentials, CheckoutFingerprint, BuilderGrantMetadata, GitHubScope, HandoffDeclarations, ProposalHandoff, ProposalIdentity, ReviewerRole, ReviewOpinion, RevocationResult, StartRetryRemedy } from '../contracts/index.js';
 import type { CheckoutRequest, EnvironmentRef, PreparedWork, RemoveResult, StartResult, StopResult, BootRef } from '../sandbox/index.js';
 import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion, SessionObservation, WorkerSessionRef, OpinionObservation, QuestionObservation } from '../workers/index.js';
 export type { SessionObservation, WorkerSessionRef as SessionRef } from '../workers/index.js';
@@ -29,7 +29,7 @@ export type ExecutionOptions = ExecutionPorts;
 export type ControlInput = { request_id: string; operation: 'pause' | 'unpause'; origin: 'local-cli' } |
   { request_id: string; operation: 'answer'; question_id: string; text: string; origin: 'local-cli' } |
   /** Explicit additional budget for ONE counter of a Work (spec §11.3 `grant`), from the authorized local ingress. */
-  { request_id: string; operation: 'grant'; work_id: string; counter: 'corrections' | 'recoveries'; amount: number; origin: 'local-cli' } |
+  { request_id: string; operation: 'grant'; work_id: string; counter: 'corrections' | 'recoveries' | 'continuations'; amount: number; origin: 'local-cli' } |
   /** Ticket 11 (spec §11.3): authorize ONE concrete new version of the Work's request; never applied to a running activity. */
   { request_id: string; operation: 'update-scope'; work_id: string; reason: string; origin: 'local-cli' } |
   /** Ticket 16 (spec §9.3): authorize ONE restoration of ready after an unexpected human draft, or ONE repeat of a conversion that was not
@@ -66,7 +66,7 @@ export type ControlInput = { request_id: string; operation: 'pause' | 'unpause';
 export type ControlReceipt = { kind: 'durable'; request_id: string; operation: 'pause' | 'unpause'; paused: boolean; historySequence: number } |
   { kind: 'durable'; request_id: string; operation: 'answer'; question_id: string; outcome: 'accepted' | 'not-applied'; reason: string | null; work_id: string | null } |
   /** `grant`: `accepted` added capacity (history kept, counters untouched); `not-applied` changed nothing (unknown/closed/old Work). */
-  { kind: 'durable'; request_id: string; operation: 'grant'; work_id: string; counter: 'corrections' | 'recoveries'; amount: number;
+  { kind: 'durable'; request_id: string; operation: 'grant'; work_id: string; counter: 'corrections' | 'recoveries' | 'continuations'; amount: number;
     outcome: 'accepted' | 'not-applied'; reason: string | null; budget: CounterView | null } |
   /** `accepted`: recorded for the next activation (the Work re-enters its queue position if it was idle after a completed Execution);
    * `deferred`: an activity is running or held, nothing reaches it, the change waits for the next safe activation; `not-applied`: nothing changed. */
@@ -145,6 +145,9 @@ export type ExecutionPorts = {
     verifyPreservedSource?(input: { environment: EnvironmentRef; reference: string }): Promise<{ status: 'verified' | 'invalid'; code: string }>;
     /** Ticket 26: Sandbox `observe` (host path, works without the old Gondolin owner); without `boot`, the environment's current boot. */
     observe?(input: { environment: EnvironmentRef; boot?: BootRef }): Promise<{ condition: string; cessationConfirmed: boolean; boot?: BootRef | null }>;
+    /** Ticket 48: Host fingerprint of the Work's checkout (confined reads of Git metadata + a bounded walk of the tree; no host git, no guest
+     * command). Absent = progress after a budget end is never established (it goes to recovery). */
+    observeCheckout?(input: { environment: EnvironmentRef }): Promise<CheckoutFingerprint>;
   };
   workers: { activate(invocation: Invocation, delivery?: ActivationDelivery, events?: ActivationEvents): Promise<{ worker: string;
     started: Promise<{ receipt: { workId: string; id: string }; invocation: { executionId: string; invocationId: string } }>; completed: Promise<WorkerCompletion>;
@@ -208,16 +211,18 @@ export type CredentialWithdrawal = 'ended' | 'external-wait' | 'cancelled' | 'he
  */
 export type BudgetCounter = { limit: number; granted: number; consumed: number; reserved: string | null };
 /** Explicit, auditable grant (spec §4.4/§11.3): never a counter reset; before/after keep the history. */
-export type BudgetGrant = { at: string; request_id: string; origin: 'local-cli'; counter: 'corrections' | 'recoveries'; amount: number;
+export type BudgetGrant = { at: string; request_id: string; origin: 'local-cli'; counter: 'corrections' | 'recoveries' | 'continuations'; amount: number;
   before: BudgetCounter; after: BudgetCounter };
 /** Corrections and operational recoveries, separate (spec §4.4). Changing the YAML later neither erases exhaustion nor replaces a grant. */
 export type WorkBudget = { corrections: BudgetCounter; recoveries: BudgetCounter;
+  /** Ticket 48: continuations after a Builder budget end WITH Host-observed progress (5 per Work, grantable); absent on earlier records. */
+  continuations?: BudgetCounter;
   source: { kind: 'repository-configuration'; repository: string; recordedAt: string }; grants: BudgetGrant[] };
 /**
  * Budget charge of one Execution: `reserved` in the "Admitir Execução" commit, `consumed` once in "Confirmar início", `released` when non-start
  * is proven; an uncertain start keeps `reserved`. `preserved`: a continuation of a correction already charged (question/answer).
  */
-export type ExecutionCharge = { kind: 'none' | 'correction' | 'recovery'; correctionId: string | null; counter: 'corrections' | 'recoveries' | null;
+export type ExecutionCharge = { kind: 'none' | 'correction' | 'recovery' | 'continuation'; correctionId: string | null; counter: 'corrections' | 'recoveries' | 'continuations' | null;
   state: 'none' | 'reserved' | 'consumed' | 'released' | 'preserved'; settledAt: string | null };
 /**
  * Duration/timeout evidence of one Execution (spec §5.7). Elapsed values are measured on the monotonic clock of ONE controller process
@@ -247,7 +252,7 @@ export type ExecutionView = {
   dispatch: { intent: 'prepare-start-activate'; phase: 'reserved' | 'prepared' | 'booted' | 'activation-requested' | 'started' | 'completed' | 'stopped';
     environment: string | null; boot: string | null; updatedAt: string };
   request: { ticket: string; repository: string; base: string; branch: string; baseCommit: string | null; checkout: string | null; promptSha256: string | null;
-    skillPack: { name: string; manifestSha256: string } | null; policies: Pick<Invocation, 'skillPack' | 'modelBudget' | 'copyOutput' | 'editSourceMaxBytes'>;
+    skillPack: { name: string; manifestSha256: string } | null; policies: Pick<Invocation, 'skillPack' | 'modelBudget' | 'copyOutput' | 'editSourceMaxBytes' | 'builderBudget'>;
     /** Resumption basis (re-checked in the admission commit): the previous Execution and what authorizes the new activation — its answered
      * Question and/or concrete scope updates. `NEW_BOOT_REPLACEMENT_SESSION` is the ticket-10 record of an answered Question. */
     resume?: { previousExecutionId: string; questionId: string | null; answerSha256: string | null; scopeUpdateIds?: string[];
@@ -302,7 +307,11 @@ export type ExecutionView = {
   /** Ticket 50: the boot/preparation refusal that blocked this (never started) Execution's recovery and the operator's explicit retry. */
   blockedStart?: BlockedStartView;
   /** Ticket 26: basis of an Execution that follows an interrupted one (operational recovery or continuation after a clean stop). */
-  interruption?: { previousExecutionId: string; reason: 'OPERATIONAL_RECOVERY' | 'ADMINISTRATIVE_STOP'; code: string } | null;
+  /** Ticket 48: `BUDGET_CONTINUATION` = the previous Builder ended its budget WITH Host-observed progress (charged to `continuations`). */
+  interruption?: { previousExecutionId: string; reason: 'OPERATIONAL_RECOVERY' | 'ADMINISTRATIVE_STOP' | 'BUDGET_CONTINUATION'; code: string } | null;
+  /** Ticket 48: the Host's fingerprint of the Work's checkout when this Execution was prepared and, after a budget end, when its boot ceased,
+   * with the progress decided from them (never from the model's claim). */
+  checkout?: { atStart: CheckoutFingerprint | null; atEnd?: CheckoutFingerprint | null; progress?: BudgetEndProgress | null; guestStop?: string | null };
 };
 /** Remote tip of the Work's own branch as observed by a complete read (`absent` = no such ref). */
 export type BranchObservation = { state: 'absent' } | { state: 'present'; sha: string };
@@ -719,7 +728,9 @@ export type WorkView = {
   /** A pending operational recovery (ticket 26 decides it); consumed by the start of the recovery Execution. */
   pendingRecovery: { reason: string; requestedAt: string;
     /** Ticket 26: persisted wait (calendar) before the recovery may start, its length and the attempt index it was derived from. */
-    notBefore?: string; waitSeconds?: number; attempt?: number; executionId?: string | null } | null;
+    notBefore?: string; waitSeconds?: number; attempt?: number; executionId?: string | null;
+    /** Ticket 48: a continuation after a budget end with progress (charged to `continuations`, no wait); absent = operational recovery. */
+    kind?: 'budget-continuation' } | null;
   /** Ticket 50: persisted capacity wait after a boot/preparation refused for lack of host memory/storage (nothing started, nothing charged). */
   bootDeferral?: { code: string; executionId: string; requestedAt: string; notBefore: string; waitSeconds: number; attempt: number } | null;
   /** Ticket 50: operator remedy accepted with a retry, applied by the NEXT preparation (recreate the divergent artifact seeds) or, ticket 47, the
@@ -752,7 +763,8 @@ export type WorkView = {
     { at: string; event: 'question-recorded' | 'question-published' | 'question-answered' | 'question-refused';
       origin: 'controller-dispatch' | 'controller-publication' | 'github-comment' | 'local-cli' | 'records-recovery';
       questionId: string; detail?: string } |
-    { at: string; event: 'budget-reserved' | 'budget-consumed' | 'budget-released' | 'budget-exhausted' | 'budget-granted' | 'correction-opened' | 'correction-reason-added' | 'recovery-requested';
+    { at: string; event: 'budget-reserved' | 'budget-consumed' | 'budget-released' | 'budget-exhausted' | 'budget-granted' | 'correction-opened' | 'correction-reason-added' | 'recovery-requested' |
+      /* ticket 48 */ 'continuation-requested' | 'budget-end-observed';
       origin: 'controller-budget' | 'local-cli'; executionId: string | null; detail: string } |
     { at: string; event: 'timeout-reached' | 'duration-reconciled'; origin: 'controller-clock'; executionId: string; detail: string } |
     { at: string; event: 'repair-consolidated' | 'repair-withdrawn' | 'repair-revalidated' | 'repair-repeated' | 'correction-closed' | 'repair-continued'; origin: 'controller-repair';
@@ -810,7 +822,7 @@ export type CounterView = { limit: number; granted: number; effectiveLimit: numb
 export type DurationView = { state: 'not-recorded' | 'not-started' | 'running' | 'measured' | 'lower-bound' | 'unknown'; elapsedMs: number | null;
   lowerBoundMs: number | null; calendarEstimateMs: number | null; clock: 'controller-monotonic' | null; startedAt: string | null;
   lastActivity: ExecutionTiming['lastActivity']; note: string };
-export type LimitsView = { corrections: CounterView | null; recoveries: CounterView | null; grants: number;
+export type LimitsView = { corrections: CounterView | null; recoveries: CounterView | null; continuations: CounterView | null; grants: number;
   timeout: { seconds: number | null; scope: 'per-execution'; reached: ExecutionTiming['timeout']; overrun: ExecutionTiming['overrun'] };
   duration: DurationView; actions: { code: string; nextStep: string }[] };
 /** One authorized scope change (spec §6.2/§11.3), never applied to a running activity. `pending` = will go with the next activation;
@@ -1003,7 +1015,7 @@ export type UsageAggregate = { measurement: UsageMeasurement; activities: number
   tokens: TokenUsage | null; cost: CostEstimate | null };
 export type WorkUsageView = { work_id: string; ticket: string; activities: UsageActivityView[]; byRole: Record<InspectionRole, UsageAggregate>; total: UsageAggregate;
   /** Non-token consumption (spec §4.4/§5.7): budgets, Executions and their measured durations. */
-  budget: { corrections: CounterView | null; recoveries: CounterView | null; grants: number };
+  budget: { corrections: CounterView | null; recoveries: CounterView | null; continuations?: CounterView | null; grants: number };
   time: { executions: number; measuredMs: number; lowerBoundMs: number; unknown: number; measurement: UsageMeasurement } };
 export type UsageView = { kind: 'usage'; scope: 'installation' | 'work'; at: string; works: WorkUsageView[];
   /** Total of THIS page's Works (the installation total only when the page holds every Work). */ total: UsageAggregate; page: PageView;

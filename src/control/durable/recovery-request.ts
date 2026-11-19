@@ -1,4 +1,4 @@
-import { availableOf, exhaustionCodes, exhaustionImpediment, initialBudget } from '../rules/budget.js';
+import { availableOf, counterOf, exhaustionCodes, exhaustionImpediment, initialBudget } from '../rules/budget.js';
 import { bootCapacityWait, recoveryBackoff, recoveryRequest } from '../rules/recovery.js';
 import type { WorkRecord } from './admission.js';
 
@@ -31,6 +31,30 @@ export function applyRecoveryRequest(work: WorkRecord, input: { executionId: str
   }
   work.queue = { ...work.queue, pending: true };
   return decision.kind === 'keep' ? 'already-open' as const : 'requested' as const;
+}
+
+/**
+ * Inside a commit (ticket 48): a Builder budget end WITH Host-observed progress returns the Work to its SAME queue position as ONE pending
+ * continuation, charged to the Work's own `continuations` counter (not `recoveries`) and without a wait (nothing failed). Exhausted
+ * continuations become the visible CONTINUATION_LIMIT_REACHED impediment at once, with `factory grant <work> --continuations <n>` as its exit.
+ */
+export function applyContinuationRequest(work: WorkRecord, input: { executionId: string; code: string; at: string; detail: string }) {
+  if (!work.budget) work.budget = initialBudget({}, work.repository.repository, input.at);
+  const counter = counterOf(work.budget, 'continuations');
+  if (work.pendingRecovery) {
+    work.history.push({ at: input.at, event: 'recovery-wait-kept', origin: 'controller-recovery', executionId: input.executionId, detail: `budget-continuation:${input.code}; pending kept` });
+  } else {
+    work.pendingRecovery = { reason: `budget-continuation:${input.code}`, requestedAt: input.at, executionId: input.executionId, notBefore: input.at, waitSeconds: 0,
+      attempt: counter.consumed, kind: 'budget-continuation' };
+    work.history.push({ at: input.at, event: 'continuation-requested', origin: 'controller-budget', executionId: input.executionId,
+      detail: `${input.detail}; continuations ${counter.consumed}/${counter.limit + counter.granted}`.slice(0, 512) });
+  }
+  if (availableOf(counter) === 0 && !work.impediments.some(item => item.code === exhaustionCodes.continuations)) {
+    work.impediments.push(exhaustionImpediment('continuations', work.work_id, input.at));
+    work.history.push({ at: input.at, event: 'budget-exhausted', origin: 'controller-budget', executionId: null,
+      detail: `continuations:${counter.consumed}/${counter.limit + counter.granted}` });
+  }
+  work.queue = { ...work.queue, pending: true };
 }
 
 /**

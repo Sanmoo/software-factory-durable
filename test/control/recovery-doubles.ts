@@ -4,7 +4,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
-import type { ProposalHandoff, ReviewOpinion } from '../../src/contracts/index.js';
+import type { CheckoutFingerprint, ProposalHandoff, ReviewOpinion } from '../../src/contracts/index.js';
 import type { ExecutionPorts } from '../../src/control/types.js';
 import { createRecords } from '../../src/records/index.js';
 import { createWorkers, type Invocation, type WorkerQuestion } from '../../src/workers/index.js';
@@ -62,6 +62,10 @@ export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options:
   startRefusal?: () => { status: 'failure' | 'indeterminate'; code: string; detail?: string } | undefined;
   /** Ticket 47: what a successful start reports besides its boot (previous stop result, applied disk remedy). */
   startReport?: (input: { diskRemedy?: string }) => Record<string, unknown>;
+  /** Ticket 48: the Host's checkout fingerprint (absent = the port is not composed). */
+  observeCheckout?: (environment: string) => CheckoutFingerprint;
+  /** Ticket 48: what a confirmed stop reports about the guest shutdown (ticket 47). */
+  guestShutdown?: { result: 'clean' | 'forced'; reason: string };
   /** Ticket 24: the Builder script chosen by the activation itself (e.g. per Work); `undefined` falls back to the ordered `scripts`. */
   script?: (invocation: Invocation) => RecoveryScript | undefined } = {}) {
   const prompts: { executionId: string; phaseId: string; prompt: string }[] = [];
@@ -150,8 +154,10 @@ export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options:
         const stuck = readHost(dir).stuck.includes(input.boot);
         updateHost(dir, state => { state.log.push({ kind: 'stop', detail: { boot: input.boot, reason: input.reason, stuck } }); if (!stuck) state.boots[input.boot] = 'stopped'; });
         return stuck ? { status: 'indeterminate', code: 'ENVIRONMENT_STOP_UNCONFIRMED', cessationConfirmed: false }
-          : { status: 'success', cessationConfirmed: true, termination: readHost(dir).forced ? 'forced' : 'unconfirmed', guestFinalization: 'observed' };
+          : { status: 'success', cessationConfirmed: true, termination: readHost(dir).forced ? 'forced' : 'unconfirmed', guestFinalization: 'observed',
+            ...(options.guestShutdown ? { guestShutdown: options.guestShutdown as never } : {}) };
       },
+      ...(options.observeCheckout ? { async observeCheckout(input: { environment: string }) { log('observe-checkout', input); return options.observeCheckout!(input.environment); } } : {}),
       ...(options.observe === false ? {} : { async observe(input: { environment: string; boot?: string }) {
         const state = readHost(dir);
         log('observe', input);
