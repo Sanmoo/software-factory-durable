@@ -14,6 +14,7 @@ const exempt: Record<string, string> = {
   'test/entrypoints/long34-provider.ts': 'scripted model provider of the long34 (R-LONG) qualification recipe: Bash tool arguments (seconds)',
   'test/entrypoints/finite-qualification-provider.ts': 'scripted model provider of the finite qualification recipe: Bash tool arguments (seconds)',
   'test/workers/native-builder-bash.test.ts': 'the Bash tool `timeout` argument is the input under test (its expiry path), not a test timer',
+  'test/workers/skill-pack-v8.test.ts': 'the skill text under test tells the Builder which Bash tool `timeout` argument to give (seconds), not a test timer',
 };
 
 function sources(directory: string, root: string): string[] {

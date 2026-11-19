@@ -183,7 +183,7 @@ test('Builder composition has host-fixed lexical Write and independent host-gate
     tools.push('read');
   }
   if (editEnabled) {
-    customTools.push(builderEdit(invocation.context, options.sandbox, critical));
+    customTools.push(builderEdit(invocation.context, options.sandbox, critical, invocation.editSourceMaxBytes));
     tools.push('edit');
   }`)), 'default tools and independent Read/Edit additions must stay inside their exact host gates');
   // No second, unguarded adapter construction or active Edit name elsewhere.
