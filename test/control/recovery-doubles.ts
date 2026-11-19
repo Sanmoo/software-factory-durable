@@ -60,6 +60,8 @@ export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options:
   /** Ticket 50: a Sandbox refusal returned by `prepare`/`start` instead of success (undefined = the ordinary success). */
   prepareRefusal?: () => { status: 'failure' | 'indeterminate'; code: string; detail?: string } | undefined;
   startRefusal?: () => { status: 'failure' | 'indeterminate'; code: string; detail?: string } | undefined;
+  /** Ticket 47: what a successful start reports besides its boot (previous stop result, applied disk remedy). */
+  startReport?: (input: { diskRemedy?: string }) => Record<string, unknown>;
   /** Ticket 24: the Builder script chosen by the activation itself (e.g. per Work); `undefined` falls back to the ordered `scripts`. */
   script?: (invocation: Invocation) => RecoveryScript | undefined } = {}) {
   const prompts: { executionId: string; phaseId: string; prompt: string }[] = [];
@@ -141,8 +143,8 @@ export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options:
         const refusal = options.startRefusal?.();
         if (refusal) { log('start-refused', refusal); return refusal; }
         const boot = `boot-${randomUUID()}`;
-        updateHost(dir, state => { state.boots[boot] = 'active'; state.current[input.environment] = boot; state.log.push({ kind: 'start', detail: { boot, pass: (input as { pass?: string }).pass ?? null } }); });
-        return { status: 'success', boot: boot as never };
+        updateHost(dir, state => { state.boots[boot] = 'active'; state.current[input.environment] = boot; state.log.push({ kind: 'start', detail: { boot, pass: (input as { pass?: string }).pass ?? null, diskRemedy: input.diskRemedy ?? null } }); });
+        return { status: 'success', boot: boot as never, ...options.startReport?.(input) };
       },
       async stop(input) {
         const stuck = readHost(dir).stuck.includes(input.boot);

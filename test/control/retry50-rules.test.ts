@@ -43,15 +43,22 @@ test('AC2: the impediment names the refusal, its detail and the exact retry comm
   assert.ok(seed.nextStep.includes(`factory resume w-1 --retry-blocked-start ${code} --request-id <id>`), seed.nextStep);
   assert.ok(seed.nextStep.includes('--remedy recreate-artifact-seed'), 'recreating the seed is offered');
   const disk = blockedStartImpediment('w-1', 'START_PRESERVED_DISK_CHECK_REQUIRED', null, '2026-11-19T10:00:00.000Z');
-  assert.ok(!disk.nextStep.includes('--remedy') && disk.nextStep.includes('--retry-blocked-start START_PRESERVED_DISK_CHECK_REQUIRED'));
+  // Ticket 47: the preserved disk check offers its two disk remedies (the plain retry still applies).
+  assert.ok(disk.nextStep.includes('--remedy repair-disk|replace-disk') && disk.nextStep.includes('--retry-blocked-start START_PRESERVED_DISK_CHECK_REQUIRED'), disk.nextStep);
+  assert.match(disk.nextStep, /e2fsck -p.*NEW root disk.*\/workspace and \/artifacts are kept and the old disk is set aside, never deleted/);
   const mismatch = blockedStartImpediment('w-1', 'PREPARE_ENVIRONMENT_CONFIGURATION_MISMATCH', 'sandbox.diskGiB 40 -> 60', '2026-11-19T10:00:00.000Z');
   assert.match(mismatch.nextStep, /sandbox\.diskGiB 40 -> 60.*memory\/vCPU never do.*NEW environment/);
-  assert.deepEqual([remediesFor(code), remediesFor('START_PRESERVED_DISK_CHECK_REQUIRED')], [['recreate-artifact-seed'], []]);
+  assert.deepEqual([remediesFor(code), remediesFor('START_PRESERVED_DISK_CHECK_REQUIRED')], [['recreate-artifact-seed'], ['repair-disk', 'replace-disk']]);
+  assert.equal(blockedStartImpediment('w-1', 'START_GUEST_ASSETS_INVALID', null, '2026-11-19T10:00:00.000Z').nextStep.includes('--remedy'), false);
 });
 
 test('AC2: accepted only for exactly the blocking refusal of a current open Work, ceased, released, without Slot; remedy only where it applies', () => {
   assert.deepEqual(retryBlockedStartDecision(facts()), { kind: 'accept', code });
   assert.equal(outcome(facts({ remedy: 'recreate-artifact-seed' })), 'accept');
+  // Ticket 47: the disk remedies only for the preserved disk check.
+  assert.equal(outcome(facts({ remedy: 'repair-disk' })), 'REMEDY_NOT_APPLICABLE');
+  assert.equal(outcome(facts({ code: 'START_PRESERVED_DISK_CHECK_REQUIRED', remedy: 'replace-disk',
+    execution: { state: 'released', started: false, slotHeld: false, blockedStart: { code: 'START_PRESERVED_DISK_CHECK_REQUIRED', cessation: 'confirmed', retry: null } } })), 'accept');
   assert.equal(outcome(facts({ work: null })), 'WORK_NOT_FOUND');
   assert.equal(outcome(facts({ work: { result: 'open', current: false, impediments: [{ code: 'RECOVERY_BLOCKED' }] } })), 'WORK_NOT_CURRENT');
   assert.equal(outcome(facts({ work: { result: 'cancelled', current: true, impediments: [{ code: 'RECOVERY_BLOCKED' }] } })), 'WORK_CANCELLED');

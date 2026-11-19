@@ -107,6 +107,11 @@ test('AC3: `factory update-scope <work> --reason` identifies the request first, 
     retried.json, 'replay: the recorded receipt');
   assert.deepEqual((await cli('resume', work, '--retry-blocked-start', 'PREPARE_ARTIFACT_SEED_VERSION_CONFLICT', '--request-id', 'retry-1')).json,
     { kind: 'refused', code: 'REQUEST_ID_CONFLICT' }, 'same identity without the remedy is another decision');
+  // Ticket 47: the disk remedies travel through the same CLI/socket shapes (applicability is Control's: no Work here).
+  for (const remedy of ['repair-disk', 'replace-disk']) {
+    const disk = await cli('resume', work, '--retry-blocked-start', 'START_PRESERVED_DISK_CHECK_REQUIRED', '--remedy', remedy, '--request-id', `disk-${remedy}`);
+    assert.deepEqual([disk.code, disk.json], [2, { kind: 'durable', request_id: `disk-${remedy}`, operation: 'resume', work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', created: null }], disk.stderr);
+  }
   const created = await cli('new', 'acme/project#3', '--keep-predecessor-pr', '--request-id', 'new-1');
   assert.equal(created.code, 2, created.stderr);
   assert.deepEqual(created.json, { kind: 'durable', request_id: 'new-1', operation: 'new', work_id: null, outcome: 'not-applied', reason: 'TICKET_NOT_KNOWN', created: null });

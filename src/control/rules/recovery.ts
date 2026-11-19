@@ -201,8 +201,16 @@ export function overrideBlockedRecoveryDecision(input: OverrideFacts): { kind: '
   return { kind: 'accept', code: request.code };
 }
 
-/** Ticket 50: which refusal codes each explicit remedy applies to (ticket 47 adds its disk remedies here). */
-export const startRetryRemedyCodes: Record<StartRetryRemedy, readonly string[]> = { 'recreate-artifact-seed': ['PREPARE_ARTIFACT_SEED_VERSION_CONFLICT'] };
+/** Ticket 50: which refusal codes each explicit remedy applies to; ticket 47: the disk remedies of a preserved disk that fails its check. */
+export const startRetryRemedyCodes: Record<StartRetryRemedy, readonly string[]> = { 'recreate-artifact-seed': ['PREPARE_ARTIFACT_SEED_VERSION_CONFLICT'],
+  'repair-disk': ['START_PRESERVED_DISK_CHECK_REQUIRED'], 'replace-disk': ['START_PRESERVED_DISK_CHECK_REQUIRED'] };
+/** Ticket 47: the remedies applied by the boot (`Sandbox.start`), not by the preparation. */
+export const isDiskRemedy = (remedy: StartRetryRemedy | null | undefined): remedy is 'repair-disk' | 'replace-disk' => remedy === 'repair-disk' || remedy === 'replace-disk';
+const remedyEffects: Record<StartRetryRemedy, string> = {
+  'recreate-artifact-seed': 'recreate-artifact-seed to set the divergent /artifacts copy aside and write a fresh seed',
+  'repair-disk': 'repair-disk to run `e2fsck -p` on a copy of the preserved root disk and boot the repaired copy',
+  'replace-disk': 'replace-disk to boot a NEW root disk from the pinned template (JDK, caches and Docker images on the old root are lost)',
+};
 
 /** Ticket 50: the remedies the operator may name for a refusal code (shown in the impediment). */
 export const remediesFor = (code: string) => (Object.keys(startRetryRemedyCodes) as StartRetryRemedy[]).filter(remedy => startRetryRemedyCodes[remedy].includes(code));
@@ -217,7 +225,8 @@ export function blockedStartImpediment(workId: string, code: string, detail: str
   return { code: 'RECOVERY_BLOCKED', scope: 'work', since, nextStep: `The Execution's boot/preparation was refused with ${code}${detail ? ` (${detail})` : ''}; ` +
     `nothing started and nothing is retried automatically.${why} After inspecting/fixing the cause, retry it explicitly: ` +
     `\`factory resume ${workId} --retry-blocked-start ${code} --request-id <id>\`` +
-    (remedies.length ? ` (or with \`--remedy ${remedies.join('|')}\`${remedies.includes('recreate-artifact-seed') ? ' to set the divergent /artifacts copy aside and write a fresh seed' : ''})` : '') +
+    (remedies.length ? ` (or with \`--remedy ${remedies.join('|')}\`: ${remedies.map(remedy => remedyEffects[remedy]).join('; ')}${remedies.some(isDiskRemedy)
+      ? '; /workspace and /artifacts are kept and the old disk is set aside, never deleted' : ''})` : '') +
     `, one operational recovery unit; or \`factory cancel ${workId}\`.` };
 }
 

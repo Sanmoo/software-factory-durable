@@ -202,7 +202,7 @@ async function acceptBlockedStartRetry(session: Session, input: Extract<CycleInp
     const at = new Date().toISOString();
     removeImpediments(work!, ['RECOVERY_BLOCKED']);
     work!.history.push({ at, event: 'blocked-start-retried', origin: 'local-cli', executionId: execution!.executionId,
-      detail: `${input.request_id}:${decision.code}${remedy ? `:${remedy}:${seeds.join(',')}` : ''}`.slice(0, 512) });
+      detail: `${input.request_id}:${decision.code}${remedy ? `:${remedy}${remedy === 'recreate-artifact-seed' ? `:${seeds.join(',')}` : ''}` : ''}`.slice(0, 512) });
     const opened = applyRecoveryRequest(work!, { executionId: execution!.executionId, code: decision.code, at, reason: `operator-retry:${decision.code}` });
     work!.startRemedy = remedy ? { remedy, request_id: input.request_id, executionId: execution!.executionId, at, seeds } : null;
     // Assigned as a new object: a doc value assigned then mutated in place is not what the commit persists.

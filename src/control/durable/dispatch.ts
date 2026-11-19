@@ -27,7 +27,7 @@ import { humanTips, authorizationInForce, comparisonBase, knownRemote, preservat
 import { evaluatePublication, recordDiscovery, resolveDivergence } from './publication.js';
 import { purposeOf } from './execution.js';
 import type { SessionRef } from '../types.js';
-import { interruptionRecoveryPrompt, reviewerRetryLimitCode, refusedWithoutActivity } from '../rules/recovery.js';
+import { interruptionRecoveryPrompt, isDiskRemedy, reviewerRetryLimitCode, refusedWithoutActivity } from '../rules/recovery.js';
 import { reconcileExecution } from './recovery.js';
 import type { WorkerQuestion } from '../../workers/index.js';
 import type { Session } from './store.js';
@@ -859,7 +859,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         current.request.checkout = prepared.checkout.path;
         current.request.skillPack = pack ? { name: pack.name, manifestSha256: pack.manifestSha256 } : null;
       }, current => {
-        if (!remedy || current.startRemedy?.request_id !== remedy.request_id) return;
+        // Ticket 47: a disk remedy is the boot's, settled by the boot phase commit below.
+        if (!remedy || isDiskRemedy(remedy.remedy) || current.startRemedy?.request_id !== remedy.request_id) return;
         const replaced = prepared.seeds.filter(seed => seed.replaced).map(seed => `${seed.name}->${seed.replaced}`);
         current.history.push({ at: new Date().toISOString(), event: 'start-remedy-applied', origin: 'controller-recovery', executionId,
           detail: `${remedy.request_id}:${remedy.remedy}:${replaced.length ? replaced.join(',') : 'no divergent copy found'}`.slice(0, 512) });
@@ -869,10 +870,21 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       checkStop();
       startRequested = true;
       const pass = passes.get(work.work_id);
-      const started = await ports.sandbox.start({ environment, configuration: ports.configuration, ...(pass ? { pass } : {}) });
+      // Ticket 47: the operator's disk remedy (repair/replace of a preserved disk that failed its check) is applied by THIS boot only.
+      const diskRemedy = remedy && isDiskRemedy(remedy.remedy) ? remedy.remedy : null;
+      const started = await ports.sandbox.start({ environment, configuration: ports.configuration, ...(pass ? { pass } : {}), ...(diskRemedy ? { diskRemedy } : {}) });
       if (started.status !== 'success') { await refused('start', started); return; }
       boot = started.boot;
-      if ((await recordPhase(session, work.work_id, executionId, 'prepared', 'booted', 'execution-booted', current => { current.dispatch.boot = started.boot; })).kind !== 'advanced') { observe(work.work_id, 'stale'); return; }
+      if ((await recordPhase(session, work.work_id, executionId, 'prepared', 'booted', 'execution-booted', current => { current.dispatch.boot = started.boot; }, current => {
+        const at = new Date().toISOString();
+        // Ticket 47: how the previous boot of this environment was stopped (clean = its root left read-only; forced otherwise), on the record.
+        if (started.previousStop) current.history.push({ at, event: 'previous-boot-stop', origin: 'controller-recovery', executionId,
+          detail: `${started.previousStop.boot}:${started.previousStop.result}:${started.previousStop.reason}` });
+        if (!remedy || !diskRemedy || current.startRemedy?.request_id !== remedy.request_id) return;
+        current.history.push({ at, event: 'start-remedy-applied', origin: 'controller-recovery', executionId,
+          detail: `${remedy.request_id}:${remedy.remedy}:${started.remedy ? `${started.remedy.outcome}:${started.remedy.detail}` : 'not reported'}`.slice(0, 512) });
+        current.startRemedy = null;
+      })).kind !== 'advanced') { observe(work.work_id, 'stale'); return; }
       // Revalidation immediately before activation: authorization and a FRESH dependency evaluation of THIS attempt.
       phase = 'revalidate';
       checkStop();

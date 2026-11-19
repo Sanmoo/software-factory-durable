@@ -14,12 +14,13 @@ import { recoveryDoubles } from './recovery-doubles.js';
 // host, Builder, credentials, GitHub. Not evidence of a VM, of host memory, of a disk or of a model.
 type Refusal = { status: 'failure' | 'indeterminate'; code: string; detail?: string };
 
-async function harness(t: { after(fn: () => Promise<void>): void }, refusals: { prepare?: Refusal[]; start?: Refusal[] }) {
+async function harness(t: { after(fn: () => Promise<void>): void }, refusals: { prepare?: Refusal[]; start?: Refusal[] },
+  startReport?: (input: { diskRemedy?: string }) => Record<string, unknown>) {
   const dir = await mkdtemp(join(tmpdir(), 'factory-retry50-flow-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const github = githubDoubles({ pulls: {}, issues: [remoteIssue(3)] });
   const prepare = [...(refusals.prepare ?? [])], start = [...(refusals.start ?? [])];
-  const doubles = recoveryDoubles(dir, [], { prepareRefusal: () => prepare.shift(), startRefusal: () => start.shift() });
+  const doubles = recoveryDoubles(dir, [], { prepareRefusal: () => prepare.shift(), startRefusal: () => start.shift(), ...(startReport ? { startReport } : {}) });
   let current!: { control: Control; stop: AbortController; running: Promise<unknown>; time: ReturnType<typeof manualClock> };
   async function open() {
     const time = manualClock();
@@ -43,7 +44,7 @@ async function harness(t: { after(fn: () => Promise<void>): void }, refusals: { 
     return false;
   }, 5);
   const accept = (input: ControlInput) => control.accept(input);
-  const retry = (work_id: string, code: string, request_id: string, remedy?: 'recreate-artifact-seed') =>
+  const retry = (work_id: string, code: string, request_id: string, remedy?: 'recreate-artifact-seed' | 'repair-disk' | 'replace-disk') =>
     accept({ request_id, operation: 'resume', work_id, retry_blocked_start: code, ...(remedy ? { remedy } : {}), origin: 'local-cli' });
   const blocked = async () => { await until(async () => (await work())?.impediments.some(item => item.code === 'RECOVERY_BLOCKED') ?? false, 'blocked'); return work(); };
   return { control, doubles, work, show, until, accept, retry, blocked, restart };
@@ -163,4 +164,44 @@ test('AC1/AC2 after a restart (pilot 35 state): held refusals of an earlier cont
   work = await disk.work();
   assert.deepEqual([work.execution!.blockedStart!.code, work.execution!.blockedStart!.cessation], ['START_PRESERVED_DISK_CHECK_REQUIRED', 'confirmed']);
   assert.deepEqual(outcome(await disk.retry(work.work_id, 'START_PRESERVED_DISK_CHECK_REQUIRED', 'r50-restart')), ['accepted', null]);
+});
+
+// Ticket 47: the disk remedies of START_PRESERVED_DISK_CHECK_REQUIRED reuse ticket 50's retry; the remedy is applied by the next BOOT only.
+for (const remedy of ['repair-disk', 'replace-disk'] as const) {
+  test(`ticket 47: a preserved disk failing its check is resumed by the operator's ${remedy} decision through ONE recovery (no cancel + new)`, async t => {
+    const code = 'START_PRESERVED_DISK_CHECK_REQUIRED';
+    const previous = 'boot-47474747-2222-4333-8444-555555555555';
+    const h = await harness(t, { start: [{ status: 'failure', code: 'PRESERVED_DISK_CHECK_REQUIRED' }] }, input => ({
+      previousStop: { boot: previous, result: 'forced', reason: 'NO_GUEST_STOP_RECORD' },
+      ...(input.diskRemedy ? { remedy: { remedy: input.diskRemedy, outcome: 'applied', detail: `original kept as root.qcow2.${input.diskRemedy === 'repair-disk' ? 'damaged' : 'replaced'}-20261119t120000z` } } : {}) }));
+    const work = await h.blocked();
+    const impediment = work.impediments.find(item => item.code === 'RECOVERY_BLOCKED')!;
+    assert.ok(impediment.nextStep.includes('--remedy repair-disk|replace-disk') && impediment.nextStep.includes('e2fsck -p'), impediment.nextStep);
+    assert.deepEqual(outcome(await h.retry(work.work_id, 'START_GUEST_ASSETS_INVALID', 'r47-wrong', remedy)), ['not-applied', 'BLOCKED_CODE_MISMATCH']);
+    assert.deepEqual(outcome(await h.retry(work.work_id, code, 'r47-disk', remedy)), ['accepted', null]);
+    let after = await h.work();
+    assert.deepEqual(after.startRemedy && [after.startRemedy.remedy, after.startRemedy.request_id, after.startRemedy.seeds], [remedy, 'r47-disk', []]);
+    assert.deepEqual(after.history.filter(item => item.event === 'blocked-start-retried').map(item => 'detail' in item ? item.detail : null), [`r47-disk:${code}:${remedy}`]);
+    h.doubles.jumpCalendar(60_000);
+    await h.until(async () => (await h.work()).execution?.end?.outcome === 'completed', 'recovery ran');
+    after = await h.work();
+    const starts = h.doubles.calls('start').map(item => (item.detail as { diskRemedy: string | null }).diskRemedy);
+    const prepares = h.doubles.calls('prepare').map(item => (item.detail as { recreateSeeds: string[] | null }).recreateSeeds);
+    assert.deepEqual([starts, prepares], [[remedy], [null, null]], 'only the boot after the decision carries the disk remedy; preparations never do');
+    assert.deepEqual([after.startRemedy, after.budget!.recoveries.consumed, after.execution!.charge!.kind], [null, 1, 'recovery'], 'consumed by that boot; one recovery unit');
+    const history = after.history.filter(item => item.event === 'start-remedy-applied' || item.event === 'previous-boot-stop').map(item => [item.event, 'detail' in item ? item.detail : null]);
+    assert.deepEqual(history, [['previous-boot-stop', `${previous}:forced:NO_GUEST_STOP_RECORD`],
+      ['start-remedy-applied', `r47-disk:${remedy}:applied:original kept as root.qcow2.${remedy === 'repair-disk' ? 'damaged' : 'replaced'}-20261119t120000z`]]);
+  });
+}
+
+test('ticket 47: every boot records how the previous boot of its environment was stopped (clean/forced), visible in the history', async t => {
+  const h = await harness(t, {}, () => ({ previousStop: { boot: 'boot-47474747-2222-4333-8444-555555555555', result: 'clean', reason: 'GUEST_ROOT_READ_ONLY' } }));
+  await h.until(async () => (await h.work())?.execution?.end?.outcome === 'completed', 'ran');
+  const work = await h.work();
+  const entry = work.history.find(item => item.event === 'previous-boot-stop')!;
+  assert.deepEqual(['detail' in entry ? entry.detail : null, 'executionId' in entry ? entry.executionId : null],
+    ['boot-47474747-2222-4333-8444-555555555555:clean:GUEST_ROOT_READ_ONLY', work.execution!.executionId]);
+  const history = await h.control.inspect({ kind: 'history', work_id: work.work_id, execution: work.execution!.executionId, limit: 200 }) as HistoryView;
+  assert.equal(history.entries.filter(item => item.entry.event === 'previous-boot-stop').length, 1);
 });

@@ -133,7 +133,8 @@ export type ExecutionPorts = {
     /** `recreateSeeds` (ticket 50): artifact seeds the operator explicitly decided to recreate (divergent copy set aside, never deleted). */
     prepare(input: { workId: string; configuration: unknown; checkout: CheckoutRequest; recreateSeeds?: readonly string[] }): Promise<PreparedWork>;
     /** `pass`: identity of the dispatch pass that reserved this Execution (ticket 24; correlation/evidence only). */
-    start(input: { environment: EnvironmentRef; configuration: unknown; pass?: string }): Promise<StartResult>;
+    /** `diskRemedy` (ticket 47): the operator's repair/replace decision for a preserved disk that fails its check, applied by this boot only. */
+    start(input: { environment: EnvironmentRef; configuration: unknown; pass?: string; diskRemedy?: 'repair-disk' | 'replace-disk' }): Promise<StartResult>;
     stop(input: { environment: EnvironmentRef; boot: BootRef; reason: string }): Promise<StopResult>;
     /** Ticket 12: Host identity of a handed-off proposal (confined reads); required when `reviews` is composed. */
     observeProposal?(input: { environment: EnvironmentRef; round: number }): Promise<ProposalIdentity>;
@@ -719,7 +720,8 @@ export type WorkView = {
     notBefore?: string; waitSeconds?: number; attempt?: number; executionId?: string | null } | null;
   /** Ticket 50: persisted capacity wait after a boot/preparation refused for lack of host memory/storage (nothing started, nothing charged). */
   bootDeferral?: { code: string; executionId: string; requestedAt: string; notBefore: string; waitSeconds: number; attempt: number } | null;
-  /** Ticket 50: operator remedy accepted with a retry, applied by the NEXT preparation (e.g. recreate the divergent artifact seeds). */
+  /** Ticket 50: operator remedy accepted with a retry, applied by the NEXT preparation (recreate the divergent artifact seeds) or, ticket 47, the
+   * next boot (repair/replace a preserved disk that fails its check). */
   startRemedy?: { remedy: StartRetryRemedy; request_id: string; executionId: string; at: string; seeds: string[] } | null;
   /** Presentation only (never persisted): limits/reservations/consumption, timeout, duration/last activity and the action required. */
   limits: LimitsView;
@@ -776,6 +778,8 @@ export type WorkView = {
     /** Ticket 50: operator retry of a refused boot/preparation; capacity wait; remedy applied by a preparation (correlated with the Execution). */
     { at: string; event: 'blocked-start-retried'; origin: 'local-cli'; executionId: string; detail: string } |
     { at: string; event: 'boot-deferred' | 'start-remedy-applied'; origin: 'controller-recovery'; executionId: string; detail: string } |
+    /** Ticket 47: how the environment's previous boot was stopped (`<boot>:clean|forced:<reason>`), recorded with the next boot. */
+    { at: string; event: 'previous-boot-stop'; origin: 'controller-recovery'; executionId: string; detail: string } |
     { at: string; event: RetentionEvent; origin: 'controller-retention' | 'local-cli'; detail: string })[];
 };
 /** Ticket 50: a boot/preparation refusal that blocks recovery (cessation from the reconciliation) and the operator's explicit, audited retry. */

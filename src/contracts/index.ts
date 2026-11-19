@@ -81,7 +81,7 @@ export const blockedStartCodePattern = /^(PREPARE|START)_[A-Z][A-Z0-9_]{0,95}$/;
  * Ticket 50: explicit operator remedies applied together with a retry of a blocked start (`--remedy <name>`), each valid for exactly the
  * refusal codes Control maps it to. Ticket 47 adds its disk remedies for `START_PRESERVED_DISK_CHECK_REQUIRED` here.
  */
-export const startRetryRemedies = ['recreate-artifact-seed'] as const;
+export const startRetryRemedies = ['recreate-artifact-seed', /* ticket 47 */ 'repair-disk', 'replace-disk'] as const;
 export type StartRetryRemedy = typeof startRetryRemedies[number];
 /** Stable correlation marker of a Work's own pull request (spec §9.1, ticket 14): first line of its body `<!-- software-factory:work:<work-id> -->`. */
 export const publicationMarkerPrefix = 'software-factory:work:';
