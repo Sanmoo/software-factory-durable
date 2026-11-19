@@ -97,3 +97,23 @@ Não confiar nela para liberar Slot, executar ferramenta ou autorizar recovery.
 Sem instalar APK ou mudar tmpfs/journal/assets. Permanecem pendentes provas de
 execução/persistência pelo guest no perfil atual com novo orçamento específico;
 comando esperado ou shellsyntax correto não são execução real de FUSE/Alpine.
+
+## Journal do ext4 do guest (ticket 47)
+
+O builder de imagem do Gondolin 0.14 formata o root com `mke2fs -O ^has_journal`
+fixo (`createRootfsImage` em `dist/src/alpine/utils.js`, sem opção), e o piloto 35
+mostrou o custo: parada abrupta durante Gradle/Docker deixa bitmaps/checksums
+inconsistentes. Como nas variantes anteriores (finalização host de uma NOVA cópia
+do raw + manifesto recalculado), a versão journalada é DERIVADA de um pin publicado
+por `deriveJournaledGuestAssets` (`src/sandbox/guest-journal.ts`): copia os assets,
+cresce a cópia do rootfs pelo tamanho do journal, `e2fsck -fn`, `resize2fs`,
+`tune2fs -O has_journal -J size=<MiB>` (128 por padrão), `e2fsck -fn` limpo,
+manifesto no formato Gondolin (buildId = `computeAssetBuildId`) e `provenance.json`
+ao lado do diretório de saída. Fonte nunca alterada; saída sempre NOVA; sem VM ou
+rede. O kernel58 já carrega `jbd2` (dependência de `ext4.ko`).
+
+O novo pin muda a identidade do ambiente (ticket 50): ambientes já preparados
+continuam no pin antigo (sem journal) e um Trabalho só usa o journal num ambiente
+novo. Os já existentes ficam protegidos pela parada limpa e pelos remédios
+`repair-disk`/`replace-disk`. A checagem do disco preservado reproduz o journal
+pendente só na cópia privada (`e2fsck -E journal_only`) antes do `e2fsck -fn`.
