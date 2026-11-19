@@ -48,6 +48,9 @@ export const productionProfile = Object.freeze({
   // Ticket 13: captures per Builder activation (handoffs + the Host's closing capture); further rounds inside one Execution charge nothing.
   reviewRounds: Object.freeze({ max: 4 }),
   tools: Object.freeze({ builder: ['write', 'bash', 'read', 'edit', 'ask_user', 'handoff'], standards: ['read'], spec: ['read'] }),
+  // Ticket 46 review: write/edit stay at 8192. Each owner RPC (write content, edit commit replacement, edit source page) is ONE protocol
+  // frame of at most 64 KiB (protocol maxFrameBytes; tool calls capped at 49152 encoded bytes), so a 64 KiB file cannot cross the channel
+  // in one call and there is no chunked write/commit/page protocol. A larger file is changed with bash; the refusal is an ordinary tool error.
   limits: Object.freeze({ socketPathBytes: 107, writeMaxBytes: 8192, editSourceMaxBytes: 8192,
     // `modelBudget` governs request/tool/byte limits only.
     modelBudget: Object.freeze({ builderV1: Object.freeze({ requests: 60, toolCalls: 120 }), reviewerV1: Object.freeze({ requests: 24, toolCalls: 80 }) }),
