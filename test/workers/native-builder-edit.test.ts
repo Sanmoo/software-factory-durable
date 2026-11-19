@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { createEditTool, type ToolDefinition } from '#factory-pi';
 import { createSandbox, type ToolContext, type ToolProjection } from '../../src/sandbox/index.js';
 import { nativeOwner } from '../sandbox/native-owner.fixture.js';
-import { builderEdit } from '../../src/workers/edit.js';
+import { builderEdit, captureRefusal } from '../../src/workers/edit.js';
 
 const context: ToolContext = { workId: 'edit-work', executionId: 'edit-exec', invocationId: 'edit-invocation',
   role: 'builder', environmentRef: 'edit-env', bootRef: 'edit-boot', phaseId: 'edit-phase' };
@@ -18,6 +18,7 @@ async function fixture(t: { after(fn: () => Promise<void>): void }, original: st
   let onCommit = () => {};
   let onCapture = () => {};
   let captureGate = Promise.resolve();
+  let captureExit = 0;
   const calls: string[][] = [];
   const f = await nativeOwner(context, { exec(argv, options) {
     calls.push(argv);
@@ -36,7 +37,7 @@ async function fixture(t: { after(fn: () => Promise<void>): void }, original: st
       }
     }
     return { async *output() { if (!commit) { await captureGate; yield { stream: 'stdout' as const, data: captured }; } },
-      result: Promise.resolve({ exitCode: commit ? exitCode : 0 }) };
+      result: Promise.resolve({ exitCode: commit ? exitCode : captureExit }) };
   } }, { editSourceMaxBytes: 8192 });
   t.after(() => f.close());
   const projection = createSandbox({ root: f.root, toolEndpoint: f.owner.endpoint });
@@ -46,7 +47,7 @@ async function fixture(t: { after(fn: () => Promise<void>): void }, original: st
   const tool = builderEdit(context, sandbox, () => { critical++; });
   return { ...f, tool, sandbox, wire, calls, get critical() { return critical; }, get text() { return virtual.toString(); },
     change(text: string) { virtual = Buffer.from(text); }, outcome(code: number | null) { outcome = code; },
-    partial() { partial = true; },
+    partial() { partial = true; }, captureExit(code: number) { captureExit = code; },
     holdCapture(gate: Promise<void>) { captureGate = gate; },
     onCommit(fn: () => void) { onCommit = fn; }, onCapture(fn: () => void) { onCapture = fn; } };
 }
@@ -200,8 +201,31 @@ test('known source change has no effect, spends once, permits fresh capture; unk
   assert.equal(f.wire.length, before);
 });
 
-test('source filtering, malformed UTF8, image and source cap fail closed before native Buffer', async t => {
-  for (const source of ['synthetic-secret', Buffer.from([0xc3, 0x28]), 'GIF89aimage', 'x'.repeat(8193)]) {
+test('ticket 46: capture refusals before any effect are ordinary tool errors; the invocation and session stay usable', async t => {
+  for (const [name, source, reason] of [['source cap', 'x'.repeat(8193), /EDIT_SOURCE_NOT_LOSSLESS.*8192 bytes.*bash/],
+    ['control byte', 'old\x01', /EDIT_SOURCE_NOT_LOSSLESS.*bash/], ['known secret', 'synthetic-secret', /EDIT_SOURCE_NOT_LOSSLESS/], ['image', 'GIF89aimage', /READ_BINARY_UNSUPPORTED/],
+    ['missing', '', /GUEST_READ_FAILED.*missing/]] as const) {
+    const f = await fixture(t, source);
+    if (name === 'missing') f.captureExit(1);
+    await assert.rejects(run(f.tool, `refused-${name}`, args()), reason);
+    assert.equal(f.wire.some(c => operation(c) === 'commit'), false);
+    assert.equal(f.critical, 0, `${name}: no critical(), so the session is not aborted`);
+    f.change('old'); f.captureExit(0);
+    await run(f.tool, `after-${name}`, args());
+    assert.equal(f.text, 'new', `${name}: the same invocation still edits`);
+  }
+});
+
+test('ticket 46 pure rule: only owner capture refusals without effect are ordinary errors; unknown state stays critical', () => {
+  for (const code of ['EDIT_SOURCE_NOT_LOSSLESS', 'READ_BINARY_UNSUPPORTED', 'READ_PATH_DENIED', 'GUEST_READ_FAILED'])
+    assert.match(captureRefusal(code) ?? '', new RegExp(`^${code}: .+`));
+  for (const code of ['PROTECTED_READ_UNAVAILABLE', 'STALE_TOOL_CONTEXT', 'TOOL_CHANNEL_CLOSED', 'EDIT_SOURCE_LIMIT', 'EDIT_SOURCE_DENIED',
+    'INVALID_TOOL_CALL', 'EDIT_SOURCE_VERSION_DENIED', 'PROTECTED_EDIT_SOURCE_UNAVAILABLE', 'EDIT_EFFECTS_UNCERTAIN', 'toString', '__proto__'])
+    assert.equal(captureRefusal(code), undefined, code);
+});
+
+test('malformed UTF8 fails closed before native Buffer (protected capture unavailable stays critical)', async t => {
+  for (const source of [Buffer.from([0xc3, 0x28])]) {
     const f = await fixture(t, source);
     await assert.rejects(run(f.tool, 'bad-source', args()), /LOSSLESS|UNAVAILABLE|UNSUPPORTED/);
     assert.equal(f.wire.some(c => ('operation' in c ? c.operation : '') === 'commit'), false);

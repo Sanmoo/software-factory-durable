@@ -7,6 +7,22 @@ type LexicalEditOptions = NonNullable<Parameters<typeof createEditTool>[1]> & { 
 type TextResult = Extract<ReadResult, { status: 'success'; format: 'text' }>;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Ticket 46: capture refusals the owner decides on its read-only guest read, before a source version exists. The guest is
+ * unchanged and no source is retained, so they are ordinary tool errors with an actionable reason, never critical(). Every
+ * other capture failure (channel, protected Records, stale context, version limit) keeps effects or state unknown: critical. */
+const captureRefusals = new Map<string, string>([
+  ['EDIT_SOURCE_NOT_LOSSLESS', 'the file exceeds the edit source limit of 8192 bytes or is not plain UTF-8 text (or holds protected content), so edit cannot change it. ' +
+    'Change it with bash instead (for example an in-place python3 or sed patch); write accepts at most 8192 characters'],
+  ['READ_BINARY_UNSUPPORTED', 'the file is binary, so edit cannot change it'],
+  ['READ_PATH_DENIED', 'the path is not a plain path under /workspace or /artifacts'],
+  ['GUEST_READ_FAILED', 'the file could not be read (missing, a directory, a symbolic link or unreadable); check the path or create it with write or bash'],
+]);
+/** Pure rule (ticket 46): the model-visible reason of a capture refusal without effect, or undefined when the failure is critical. */
+export function captureRefusal(code: string): string | undefined {
+  const reason = captureRefusals.get(code);
+  return reason === undefined ? undefined : `${code}: ${reason}`;
+}
+
 /** Bound only known fields BEFORE native preparation/diff or JSON traversal. This
  * is a technical whole-buffer cap, not a second edit validator/parity claim. */
 function boundedInput(input: unknown) {
@@ -104,7 +120,12 @@ export function builderEdit(context: ToolContext, sandbox: ToolProjection, onCri
         async access(path) {
           if (path.length > 4096) throw new Error('EDIT_PAYLOAD_TOO_LARGE');
           const result = await rpc({ name: 'edit-source', operation: 'capture', path, callId: randomUUID() });
-          if (result.status !== 'success') { check(); critical(); throw new Error(result.code); }
+          if (result.status !== 'success') {
+            check();
+            const refusal = captureRefusal(result.code);
+            if (refusal !== undefined) throw new Error(refusal);
+            critical(); throw new Error(result.code);
+          }
           if (result.format !== 'text' || !validReference(result) || !result.sourceVersion || !uuid.test(result.sourceVersion)) return unavailable();
           capture = { path, result: { ...result, sourceVersion: result.sourceVersion } };
           check();
