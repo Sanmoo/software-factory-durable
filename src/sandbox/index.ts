@@ -24,7 +24,8 @@ export { inspectCheckout, type CheckoutInspection } from './checkout-inspection.
 export { inventoryRuntime, type RuntimeListing } from './inventory.js';
 export { reconcileInterruptedCaches, type CacheReconciliation } from './checkout.js';
 import { observeProposal } from './proposal-identity.js';
-export type PreparedWork = PrepareResult | { status: 'success'; environment: EnvironmentRef; checkout: CheckoutView; seeds: { name: string; manifestSha256: string; reused: boolean }[] };
+export type PreparedWork = PrepareResult | { status: 'success'; environment: EnvironmentRef; checkout: CheckoutView;
+  seeds: { name: string; manifestSha256: string; reused: boolean; replaced?: string }[] };
 export type { GuestAssetPin } from './guest-assets.js';
 import { currentBoot, observeEnvironment, type BootRef } from './lifecycle.js';
 import type { EnvironmentRef } from './prepare.js';
@@ -143,7 +144,8 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
       return { ...observation, ...(storage ? { storage } : {}) };
     },
     /** With `checkout`, the environment also receives the Work's own checkout (spec §7.3) and the composed artifact seeds; never a boot or agent. */
-    async prepare({ workId, configuration, checkout }: { workId: string; configuration: unknown; checkout?: CheckoutRequest }): Promise<PreparedWork> {
+    /** `recreateSeeds` (ticket 50): seeds the operator explicitly decided to recreate after an ARTIFACT_SEED_VERSION_CONFLICT. */
+    async prepare({ workId, configuration, checkout, recreateSeeds }: { workId: string; configuration: unknown; checkout?: CheckoutRequest; recreateSeeds?: readonly string[] }): Promise<PreparedWork> {
       const parsed = validateConfiguration(configuration);
       if (!parsed.valid) return { status: 'failure', code: 'SANDBOX_CONFIGURATION_INVALID' };
       let prepared: PrepareResult;
@@ -154,7 +156,7 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
       const directory = join(await realpath(root), 'environments', prepared.environment);
       const result = await checkouts.prepare(directory, checkout);
       if (result.status !== 'success') return result;
-      const seeds = await seedArtifacts(join(directory, 'artifacts'), artifactSeeds);
+      const seeds = await seedArtifacts(join(directory, 'artifacts'), artifactSeeds, recreateSeeds?.length ? { recreate: recreateSeeds } : {});
       if (seeds.status !== 'success') return seeds;
       return { status: 'success', environment: prepared.environment, checkout: result.checkout, seeds: seeds.seeds };
     },

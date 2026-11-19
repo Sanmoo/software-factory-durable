@@ -178,11 +178,27 @@ test('AC3/AC4: Sandbox.prepare composes the own checkout and seeds versioned Fac
   // Review 7: on reuse EVERY listed file is verified, not just the manifest; a modified copy is a conflict, never overwritten.
   const copied = join(directory, 'artifacts', 'factory', 'skill-pack', 'pack-v1', 'skills', 'implement', 'SKILL.md');
   await writeFile(copied, 'guest-modified');
-  assert.deepEqual(await sandbox.prepare({ workId, configuration, checkout }), { status: 'failure', code: 'ARTIFACT_SEED_VERSION_CONFLICT' });
+  // Ticket 50: the refusal names the divergent file so the operator can inspect it before deciding.
+  assert.deepEqual(await sandbox.prepare({ workId, configuration, checkout }), { status: 'failure', code: 'ARTIFACT_SEED_VERSION_CONFLICT',
+    detail: 'factory/skill-pack/pack-v1/skills/implement/SKILL.md' });
   assert.equal(await readFile(copied, 'utf8'), 'guest-modified', 'not overwritten');
   await writeFile(copied, 'implement v1');
   await writeFile(join(pack, 'manifest.json'), JSON.stringify({ ...JSON.parse(packManifest), changed: true }));
-  assert.deepEqual(await sandbox.prepare({ workId, configuration, checkout }), { status: 'failure', code: 'ARTIFACT_SEED_VERSION_CONFLICT' }, 'a version is never overwritten');
+  assert.deepEqual(await sandbox.prepare({ workId, configuration, checkout }), { status: 'failure', code: 'ARTIFACT_SEED_VERSION_CONFLICT',
+    detail: 'factory/skill-pack/pack-v1/manifest.json' }, 'a version is never overwritten');
+  await writeFile(join(pack, 'manifest.json'), packManifest);
+  // Ticket 50: only an explicit operator decision recreates the seed; the divergent copy is set aside (renamed, kept), never deleted or merged.
+  await writeFile(copied, 'guest-modified');
+  assert.deepEqual(await sandbox.prepare({ workId, configuration, checkout, recreateSeeds: ['factory/skill-pack/other'] }), { status: 'failure', code: 'ARTIFACT_SEED_VERSION_CONFLICT',
+    detail: 'factory/skill-pack/pack-v1/skills/implement/SKILL.md' }, 'a decision about another seed changes nothing');
+  const recreated = await sandbox.prepare({ workId, configuration, checkout, recreateSeeds: ['factory/skill-pack/pack-v1'] });
+  assert.ok(recreated.status === 'success' && 'seeds' in recreated, JSON.stringify(recreated));
+  const seed = recreated.seeds[0]!;
+  assert.match(seed.replaced!, /^factory\/skill-pack\/pack-v1\.divergent-\d{8}t\d{6}z$/);
+  assert.deepEqual([seed.reused, await readFile(copied, 'utf8')], [false, 'implement v1']);
+  assert.equal(await readFile(join(directory, 'artifacts', seed.replaced!, 'skills', 'implement', 'SKILL.md'), 'utf8'), 'guest-modified', 'the divergent copy is kept for inspection');
+  const settled = await sandbox.prepare({ workId, configuration, checkout });
+  assert.ok(settled.status === 'success' && 'seeds' in settled && settled.seeds[0]!.reused, 'the recreated seed is then reused');
   assert.deepEqual(await createSandbox({ root: w.root, guestAssets }).prepare({ workId, configuration, checkout }), { status: 'failure', code: 'CHECKOUT_NOT_COMPOSED' });
   // Review 7: a symlinked component of the target path is refused (never followed to write outside /artifacts).
   const { seedArtifacts } = await import('../../src/sandbox/artifact-seeds.js');

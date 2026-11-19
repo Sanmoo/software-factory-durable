@@ -128,7 +128,8 @@ export type RecoveryRecord = { at: string; controllerRunId: string;
 /** Injected execution boundaries (spec §2.4/Q11): public Sandbox lifecycle, Workers activation and the Builder credential projection. */
 export type ExecutionPorts = {
   sandbox: {
-    prepare(input: { workId: string; configuration: unknown; checkout: CheckoutRequest }): Promise<PreparedWork>;
+    /** `recreateSeeds` (ticket 50): artifact seeds the operator explicitly decided to recreate (divergent copy set aside, never deleted). */
+    prepare(input: { workId: string; configuration: unknown; checkout: CheckoutRequest; recreateSeeds?: readonly string[] }): Promise<PreparedWork>;
     /** `pass`: identity of the dispatch pass that reserved this Execution (ticket 24; correlation/evidence only). */
     start(input: { environment: EnvironmentRef; configuration: unknown; pass?: string }): Promise<StartResult>;
     stop(input: { environment: EnvironmentRef; boot: BootRef; reason: string }): Promise<StopResult>;
