@@ -92,8 +92,27 @@ for (const evidence of ['valid', 'missing', 'foreign-boot', 'raw-fields'] as con
       }), { mode: 0o600 });
       const stopped = await fixture.sandbox.stop({ environment, boot, reason: 'pause' });
       assert.deepEqual(stopped, { status: 'success', cessationConfirmed: true,
-        termination: 'unconfirmed', guestFinalization: evidence === 'valid' ? 'observed' : 'unavailable' });
+        termination: 'unconfirmed', guestFinalization: evidence === 'valid' ? 'observed' : 'unavailable',
+        guestShutdown: { result: 'forced', reason: 'NO_GUEST_STOP_RECORD' } });
       assert.equal(JSON.stringify(stopped).includes('PRIVATE_FINALIZATION_CANARY'), false);
+    } finally { await fixture.cleanup(); }
+  });
+}
+
+// Ticket 47: the adapter's per-boot stop record says whether the guest left its root clean; a foreign or invalid record is an abrupt end.
+for (const record of ['clean', 'timeout', 'foreign-boot', 'invalid'] as const) {
+  test(`ticket 47: Sandbox.stop reports the guest stop result from the boot record: ${record} (manager double)`, async () => {
+    const fixture = await managerDouble();
+    try {
+      await writeFile(join(fixture.path, 'guest-stop.json'), JSON.stringify({ version: 1,
+        boot: record === 'foreign-boot' ? 'boot-99999999-2222-4333-8444-555555555555' : boot,
+        ...(record === 'clean' || record === 'foreign-boot' ? { result: 'clean', reason: 'GUEST_ROOT_READ_ONLY' }
+          : record === 'timeout' ? { result: 'forced', reason: 'GUEST_FINALIZATION_TIMEOUT' } : { result: 'clean', reason: 'TRUST_ME' }) }), { mode: 0o600 });
+      const stopped = await fixture.sandbox.stop({ environment, boot, reason: 'builder execution ended' });
+      assert.equal(stopped.status, 'success');
+      if (stopped.status !== 'success') return;
+      assert.deepEqual(stopped.guestShutdown, record === 'clean' ? { result: 'clean', reason: 'GUEST_ROOT_READ_ONLY' }
+        : record === 'timeout' ? { result: 'forced', reason: 'GUEST_FINALIZATION_TIMEOUT' } : { result: 'forced', reason: 'NO_GUEST_STOP_RECORD' });
     } finally { await fixture.cleanup(); }
   });
 }

@@ -98,10 +98,17 @@ test(`Sandbox operational adapter finalizes the direct Alpine daemon before clos
     } else if (mode === 'shutdown-write-fails') {
       assert.equal(await readFile(join(path, 'guest-synced.json'), 'utf8'), '');
     } else assert.equal((await readdir(path)).includes('guest-synced.json'), false);
+    // Ticket 47: the stop result is recorded for the next boot whatever happened (clean only when the guest left its root read-only).
+    assert.deepEqual(JSON.parse(await readFile(join(path, 'guest-stop.json'), 'utf8')), { version: 1, boot,
+      ...(mode === 'shutdown-timeout' ? { result: 'forced', reason: 'GUEST_FINALIZATION_TIMEOUT' }
+        : mode === 'shutdown-nonzero' || mode === 'shutdown-exec-fails' ? { result: 'forced', reason: 'GUEST_FINALIZATION_FAILED' }
+          : { result: 'clean', reason: 'GUEST_ROOT_READ_ONLY' }) });
     if (mode === 'shutdown-success' || mode === 'shutdown-concurrent' || mode === 'shutdown-write-fails') {
       const command = await readFile(join(root, 'guest-finalization-command'), 'utf8');
       // DATA assertion only; never hand the guest command body to a host shell.
       assert.equal(command.includes('rc-service'), false);
+      // Ticket 47: the guest stops every writer (not only dockerd) and leaves its root read-only before the VMM is closed.
+      for (const step of ['docker stop', 'kill -TERM', 'kill -KILL', 'sync', 'mount -o remount,ro /', '/proc/sysrq-trigger']) assert.ok(command.includes(step), step);
     }
     assert.equal(`${child.stdout}${child.stderr}`.includes('PRIVATE_TOKEN_CANARY'), false);
   } finally { await rm(root, { recursive: true, force: true }); }

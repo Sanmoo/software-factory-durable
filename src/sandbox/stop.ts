@@ -8,9 +8,12 @@ import { identitySchema, metadata, observeEnvironment, ownedEnvironment, private
   startedSchema, supervisionHierarchy, unitState, type BootRef } from './lifecycle.js';
 import type { EnvironmentRef } from './prepare.js';
 import { durableJson } from './start.js';
+import { readGuestStop, type GuestStop } from './guest-shutdown.js';
 
 export type StopResult = { status: 'success'; cessationConfirmed: true;
-  termination: 'forced' | 'unconfirmed'; guestFinalization: 'observed' | 'unavailable' } |
+  termination: 'forced' | 'unconfirmed'; guestFinalization: 'observed' | 'unavailable';
+  /** Ticket 47: whether the guest left its root filesystem clean (read-only before the VMM closed) or the stop was forced; absent = not read. */
+  guestShutdown?: GuestStop } |
   { status: 'failure' | 'indeterminate'; code: string; cessationConfirmed: false };
 const run = promisify(execFile);
 const stopRequestSchema = z.strictObject({ version: z.literal(1), boot: identitySchema.shape.boot,
@@ -69,6 +72,7 @@ export async function stopEnvironment(root: string, environment: EnvironmentRef,
     const state = await unitState(unit);
     if (state.InvocationID && state.InvocationID !== started.invocation) return unknown;
     return { status: 'success', cessationConfirmed: true,
-      termination: state.Result === 'timeout' || state.Result === 'oom-kill' ? 'forced' : 'unconfirmed', guestFinalization };
+      termination: state.Result === 'timeout' || state.Result === 'oom-kill' ? 'forced' : 'unconfirmed', guestFinalization,
+      guestShutdown: await readGuestStop(path, boot) };
   } catch { return unknown; }
 }

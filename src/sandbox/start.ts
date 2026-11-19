@@ -12,11 +12,14 @@ import { inspectGuestAssets, type GuestAssetPin } from './guest-assets.js';
 import { environmentIdentityChanges, type SandboxConfiguration } from './configuration.js';
 import type { EnvironmentRef } from './prepare.js';
 import { checkDiskFilesystem } from './filesystem.js';
+import { readGuestStop, type GuestStop } from './guest-shutdown.js';
 import { cleanupRequested } from './cleanup-records.js';
 import { currentSchema, identitySchema, metadata, observeEnvironment, ownedEnvironment, privateDirectory,
   startupFailureSchema, supervisionHierarchy, type BootRef, type StartupFailure } from './lifecycle.js';
 
-export type StartResult = { status: 'success'; boot: BootRef } |
+export type StartResult = { status: 'success'; boot: BootRef;
+  /** Ticket 47: how the environment's previous boot was stopped (clean = its root was left read-only; forced otherwise), recorded with this boot. */
+  previousStop?: GuestStop & { boot: BootRef } } |
   /** `detail` (ticket 50): what the operator must see to decide (e.g. the changed environment identity fields). */
   { status: 'failure' | 'indeterminate'; code: string; boot?: BootRef; failure?: StartupFailure; detail?: string };
 const run = promisify(execFile);
@@ -122,6 +125,7 @@ export async function startEnvironment(root: string, pin: GuestAssetPin | undefi
       if (previous && !(await observeEnvironment(root, environment, previous.boot as BootRef)).cessationConfirmed) {
         return { status: 'indeterminate', code: 'PREVIOUS_BOOT_NOT_STOPPED', boot: previous.boot as BootRef };
       }
+      const previousStop = previous ? { boot: previous.boot as BootRef, ...await readGuestStop(join(directory, previous.boot), previous.boot as BootRef) } : undefined;
       const namespaces = { cgroupNamespace: await readlink('/proc/self/ns/cgroup'), mountNamespace: await readlink('/proc/self/ns/mnt') };
       await supervisionHierarchy(namespaces);
       boot = candidateBoot;
@@ -157,7 +161,7 @@ export async function startEnvironment(root: string, pin: GuestAssetPin | undefi
       const deadline = Date.now() + 60000;
       while (Date.now() < deadline) {
         const observed = await observeEnvironment(root, environment, boot);
-        if (observed.condition === 'active') return { status: 'success', boot };
+        if (observed.condition === 'active') return { status: 'success', boot, ...(previousStop ? { previousStop } : {}) };
         if (observed.cessationConfirmed) return await failedStart('failure', 'BOOT_ENDED_BEFORE_OPERATIONAL_CONFIRMATION', boot, path);
         await delay(250);
       }
