@@ -10,9 +10,11 @@ export const oauthQualification = Object.freeze({ requests: 2, tools: 1, promptB
 export const builderBudget = Object.freeze({ requests: 60, tools: 120, promptBytes: 16384, contextBytes: 2 * 1024 * 1024,
   toolBytes: 262144, providerBytes: 16 * 1024 * 1024, deadlineMs: 30 * 60 * 1000 });
 /** Host-selected reviewer budget (ticket 12): one bounded Standards or Spec opinion over a handed-off proposal, read-only tools. Same
- * native SDK/no-retry path; observation limits, NOT a billing cap. The reviewers share the Execution and its Slot (no own budget/Slot). */
-export const reviewerBudget = Object.freeze({ requests: 24, tools: 80, promptBytes: 16384, contextBytes: 2 * 1024 * 1024,
-  toolBytes: 262144, providerBytes: 16 * 1024 * 1024, deadlineMs: 15 * 60 * 1000 });
+ * native SDK/no-retry path; observation limits, NOT a billing cap. The reviewers share the Execution and its Slot (no own budget/Slot).
+ * Ticket 51 (operator decision 2026-11-19, pilot 35): 48 requests, 160 tool calls and 30 minutes, fixed and recorded in the release
+ * (`productionProfile.limits.modelBudget.reviewerV1`); the old 24/80/15 was exhausted by the Spec review of a medium change. */
+export const reviewerBudget = Object.freeze({ requests: 48, tools: 160, promptBytes: 16384, contextBytes: 2 * 1024 * 1024,
+  toolBytes: 262144, providerBytes: 16 * 1024 * 1024, deadlineMs: 30 * 60 * 1000 });
 export type QualificationLimits = typeof oauthQualification | typeof builderBudget | typeof reviewerBudget;
 /** Host policy -> limits; a budget never applies to a role it was not made for. */
 export function budgetFor(role: string, modelBudget: string | undefined): QualificationLimits {

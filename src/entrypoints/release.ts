@@ -52,8 +52,10 @@ export const productionProfile = Object.freeze({
   // frame of at most 64 KiB (protocol maxFrameBytes; tool calls capped at 49152 encoded bytes), so a 64 KiB file cannot cross the channel
   // in one call and there is no chunked write/commit/page protocol. A larger file is changed with bash; the refusal is an ordinary tool error.
   limits: Object.freeze({ socketPathBytes: 107, writeMaxBytes: 8192, editSourceMaxBytes: 8192,
-    // `modelBudget` governs request/tool/byte limits only.
-    modelBudget: Object.freeze({ builderV1: Object.freeze({ requests: 60, toolCalls: 120 }), reviewerV1: Object.freeze({ requests: 24, toolCalls: 80 }) }),
+    // `modelBudget` governs request/tool/byte limits only. Ticket 51: reviewer-v1 (per reviewer attempt of a round) is 48 requests, 160 tool
+    // calls and 30 minutes, which bound each model request (the SDK request timeout); it is not a worker clock cut (spec §4.4, below).
+    modelBudget: Object.freeze({ builderV1: Object.freeze({ requests: 60, toolCalls: 120 }),
+      reviewerV1: Object.freeze({ requests: 48, toolCalls: 160, requestTimeoutMinutes: 30 }) }),
     providerRetries: 0, sdkRetries: 0,
     // Spec §4.4: the production composition sets NO worker clock deadline. Without a configured repository timeout there is no cut; the
     // optional per-repository `timeoutSeconds` is the only deadline (tickets 19) and this release never invents another.
