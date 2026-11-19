@@ -4,7 +4,7 @@ import type { ExecutionPorts, ExecutionView, RecoveryRecord, RecoveryView, Runti
 import type { QuestionObservation } from '../../workers/index.js';
 import { blockedRequestReference } from '../../contracts/index.js';
 import { classifyOverrun, overrunNotExcludedImpediment, timeoutImpediment } from '../rules/budget.js';
-import { blockedRequestImpediment, blockedRequestToken, classifyInterruption, recoveryImpediment, startDecision } from '../rules/recovery.js';
+import { blockedRequestImpediment, blockedRequestToken, classifyInterruption, recoveryImpediment, reviewerRetryLimitCode, reviewerRetryLimitImpediment, startDecision } from '../rules/recovery.js';
 import { interruptedEnd, questionRecordFound, recoveredQuestionDecision } from '../rules/questions.js';
 import { readWork, ticketIndex, works, type WorkRecord } from './admission.js';
 import { applyConfirmedCessation, consumeReservation, reofferUnlessCompleted, releaseReservation, settleCancelled, slots } from './execution.js';
@@ -272,7 +272,9 @@ export async function settleInterruption(session: Session, input: { work_id: str
       }
       if (classified.kind === 'blocking') {
         const lost = execution.blockedRequest && !execution.blockedRequest.override && execution.blockedRequest.code === classified.code ? execution.blockedRequest : null;
-        addImpediment(work, lost ? blockedRequestImpediment(work.work_id, lost.reference, lost.code, now) : recoveryImpediment('RECOVERY_BLOCKED', classified.code, now));
+        // Ticket 51: REVIEWER_RETRY_LIMIT names its two operator decisions (new review round, cancel).
+        addImpediment(work, lost ? blockedRequestImpediment(work.work_id, lost.reference, lost.code, now) : classified.code === reviewerRetryLimitCode
+          ? reviewerRetryLimitImpediment(work.work_id, now) : recoveryImpediment('RECOVERY_BLOCKED', classified.code, now));
         return record(startRecord, 'blocked', classified.code);
       }
     }

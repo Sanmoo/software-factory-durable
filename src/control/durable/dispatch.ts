@@ -27,7 +27,7 @@ import { humanTips, authorizationInForce, comparisonBase, knownRemote, preservat
 import { evaluatePublication, recordDiscovery, resolveDivergence } from './publication.js';
 import { purposeOf } from './execution.js';
 import type { SessionRef } from '../types.js';
-import { interruptionRecoveryPrompt } from '../rules/recovery.js';
+import { interruptionRecoveryPrompt, reviewerRetryLimitCode } from '../rules/recovery.js';
 import { reconcileExecution } from './recovery.js';
 import type { WorkerQuestion } from '../../workers/index.js';
 import type { Session } from './store.js';
@@ -430,7 +430,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       }
       // Operator decision 2026-11-15: two failed retries of the same role in this round hold the Execution, whatever budget remains.
       if (retryLimited && !await stillRunning(work.work_id, executionId, round)) return hold('REVIEWER_RETRY_LIMIT',
-        'A reviewer failed again after its 2 automatic retries in this round; nothing more is retried and the Builder stays suspended. Inspect the reviewer failures (`factory show`) and decide explicitly.');
+        'A reviewer failed again after its 2 automatic retries in this round; nothing more is retried. The own boot is stopped now (ticket 51); then decide: ' +
+        '`factory resume <work> --new-review-round --request-id <id>` or `factory cancel <work>`.');
     }
     checkStop();
     if (await stillRunning(work.work_id, executionId, round)) return hold('REVIEWER_CESSATION_UNCONFIRMED',
@@ -974,7 +975,21 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
             }
             return true;
           })();
-          if (!await wait(lifecycle.renewWhile(reviewed))) return;
+          if (!await wait(lifecycle.renewWhile(reviewed))) {
+            // Ticket 51: REVIEWER_RETRY_LIMIT waits for an operator decision (new review round or cancel) with nothing running: the own boot
+            // (suspended Builder) is stopped now and the Execution settled like an interruption, so its Slot is released and it never
+            // stays held. Unconfirmed cessation keeps it held (RECOVERY_CESSATION_UNCONFIRMED) for the next boot, as usual.
+            const shown = await readWork(session, work.work_id);
+            if (shown?.execution?.executionId === executionId && shown.execution.state === 'held' && shown.execution.held?.code === reviewerRetryLimitCode) {
+              timerStop.abort();
+              const stop = await stopOwnBoot('reviewer retry limit: waiting for the operator decision');
+              const { decision } = await reconcileExecution({ session, ports, controllerRunId: deps.controllerRunId ?? 'unknown', inventory: 'empty' }, shown, 'review-retry-limit',
+                { result: stop?.cessationConfirmed ? 'confirmed' : 'unconfirmed', basis: stop?.cessationConfirmed ? 'sandbox-stop' : `sandbox-stop:${stop && 'code' in stop ? stop.code : 'UNCONFIRMED'}`,
+                  environment, boot }).catch(() => ({ decision: 'stale' as const }));
+              observe(work.work_id, 'review-retry-limit-settled', [String(decision)]);
+            }
+            return;
+          }
         }
         phase = 'completed';
         // Renewal happens only while waiting for THIS activity; it never restarts, replays or recovers the Builder.

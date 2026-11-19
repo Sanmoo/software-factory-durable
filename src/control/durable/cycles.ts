@@ -7,7 +7,7 @@ import { initialBudget } from '../rules/budget.js';
 import { authorizationChange, authorizationFacts, cancelDecision, cycleImpediments, hasImpediment, newCycleDecision, occupying, reopenDecision, resumeDecision,
   settleCancellation } from '../rules/cycles.js';
 import { decideMerge, ownPullRequestOf } from '../rules/delivery.js';
-import { overrideBlockedRecoveryDecision, positiveResolution } from '../rules/recovery.js';
+import { newReviewRoundDecision, overrideBlockedRecoveryDecision, positiveResolution, reviewerRetryLimitCode } from '../rules/recovery.js';
 import { readForgotten, readWork, readWorks, requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import { questions } from './questions.js';
 import { applyRecoveryRequest } from './recovery-request.js';
@@ -70,6 +70,12 @@ export async function acceptCancel(session: Session, input: CycleInput & { opera
     addImpediment(work!, { code: cycleImpediments.cancelled, scope: 'work', since: at, nextStep: 'Cancelled by the operator: no new action, publication or renewal. ' +
       '`factory new <owner/repo#number>` starts another cycle once cessation is confirmed.' });
     history(work!, 'cancel-requested', 'local-cli', `${input.request_id}${active ? `:active:${active}` : ''}`, at);
+    // Ticket 51: a cancel of a Work stopped by REVIEWER_RETRY_LIMIT IS the operator's decision on it (the other one is a new review round).
+    const execution = work!.execution;
+    if (execution && !execution.reviewRetryLimit && (execution.end ? execution.end.code === reviewerRetryLimitCode : execution.held?.code === reviewerRetryLimitCode)) {
+      execution.reviewRetryLimit = { decision: 'cancel', request_id: input.request_id, operator: { kind: 'local-administrator' }, at };
+      work!.history.push({ at, event: 'review-retry-limit-decided', origin: 'local-cli', executionId: execution.executionId, detail: `${input.request_id}:cancel` });
+    }
     if (settleCancellation(work!, at)) history(work!, 'cancellation-ceased', 'controller-cycles', 'no own activity was running', at);
     rememberResult(index, work!);
     return receiptOf(input, work!.work_id, 'accepted', null);
@@ -79,6 +85,7 @@ export async function acceptCancel(session: Session, input: CycleInput & { opera
 /** `resume <work>`: removes ONLY the suspension codes it answers and leaves a pending-read impediment; never touches any other impediment. */
 export async function acceptResume(session: Session, input: CycleInput & { operation: 'resume' }, facts: { running(work_id: string): boolean } = { running: () => false }) {
   if ('override_blocked_recovery' in input) return acceptBlockedRecoveryOverride(session, input, facts);
+  if ('new_review_round' in input) return acceptNewReviewRound(session, input, facts);
   return command(session, input, async tx => {
     const index = await tx.doc(ticketIndex);
     const work = (await tx.doc(works, input.work_id, null)).work;
@@ -129,6 +136,34 @@ async function acceptBlockedRecoveryOverride(session: Session, input: Extract<Cy
     // Assigned as a new object: a doc value assigned then mutated in place is not what the commit persists.
     execution!.blockedRequest = { ...execution!.blockedRequest!, override: { request_id: input.request_id, operator: { kind: 'local-administrator' }, at,
       reference: input.override_blocked_recovery, recoveryRequest: 'requested' } };
+    return receiptOf(input, work!.work_id, 'accepted', null);
+  });
+}
+
+/**
+ * Ticket 51: `resume <work> --new-review-round` — ONE commit (deduplicated by request identity) revalidates that the Work is blocked by
+ * REVIEWER_RETRY_LIMIT after confirmed cessation (no activity, no Slot, no pending recovery), records the operator's decision with history,
+ * lifts ONLY that `RECOVERY_BLOCKED` and opens ONE operational recovery through ticket 26's ordinary path (persisted wait; one `recoveries` unit
+ * at the confirmed start). Nothing is launched here; the recovery's Builder hands off again and the new round follows ticket 28's rules.
+ */
+async function acceptNewReviewRound(session: Session, input: Extract<CycleInput, { new_review_round: true }>, facts: { running(work_id: string): boolean }) {
+  return command(session, input, async tx => {
+    const index = await tx.doc(ticketIndex);
+    const work = (await tx.doc(works, input.work_id, null)).work;
+    const execution = work?.execution ?? null;
+    const decision = newReviewRoundDecision({
+      work: work ? { result: work.result, current: index.tickets[ticketKey(work.ticket)]?.current === work.work_id, impediments: work.impediments } : null,
+      execution: execution ? { state: execution.state, slotHeld: execution.slot.held, held: execution.held ?? null, end: execution.end ?? null,
+        reviewRetryLimit: execution.reviewRetryLimit ?? null } : null,
+      running: facts.running(input.work_id), cancelling: Boolean(work?.cancellation), pendingRecovery: Boolean(work?.pendingRecovery) });
+    if (decision.kind === 'refuse') return receiptOf(input, input.work_id, 'not-applied', decision.code);
+    if (decision.kind === 'already') return receiptOf(input, input.work_id, 'already-satisfied', decision.code);
+    const at = new Date().toISOString();
+    removeImpediments(work!, ['RECOVERY_BLOCKED']);
+    // Assigned as a new object: a doc value assigned then mutated in place is not what the commit persists.
+    execution!.reviewRetryLimit = { decision: 'new-review-round', request_id: input.request_id, operator: { kind: 'local-administrator' }, at };
+    work!.history.push({ at, event: 'review-retry-limit-decided', origin: 'local-cli', executionId: execution!.executionId, detail: `${input.request_id}:new-review-round` });
+    applyRecoveryRequest(work!, { executionId: execution!.executionId, code: reviewerRetryLimitCode, at, reason: 'operator-new-review-round' });
     return receiptOf(input, work!.work_id, 'accepted', null);
   });
 }

@@ -41,6 +41,9 @@ export type ControlInput = { request_id: string; operation: 'pause' | 'unpause';
    * (`RECOVERY_BLOCKED`) by a lost Builder request whose blocked reference is EXACTLY `override_blocked_recovery`. Revalidated in the commit;
    * the lost request is never invented; the Work returns through ONE operational recovery (ticket 26). */
   { request_id: string; operation: 'resume'; work_id: string; override_blocked_recovery: string; origin: 'local-cli' } |
+  /** Ticket 51: `resume <work> --new-review-round` — the operator's explicit decision, after REVIEWER_RETRY_LIMIT, to review again in a new round
+   * (ONE operational recovery, ticket 26). The other decision is `cancel`; no input accepts the unverified round. */
+  { request_id: string; operation: 'resume'; work_id: string; new_review_round: true; origin: 'local-cli' } |
   /** Ticket 25: an explicit new cycle of a Ticket after delivery/cancellation (predecessor + own resources). `keepPredecessorPullRequest`: the
    * operator's explicit decision that a cancelled cycle's own PR that may still be open stays as it is (never adopted, closed or replaced). */
   { request_id: string; operation: 'new'; ticket: { repository: string; number: number }; keepPredecessorPullRequest: boolean; origin: 'local-cli' } |
@@ -111,7 +114,9 @@ export type RuntimeInventory = { kind: 'listed'; observedAt: string; environment
 export type StartObservation = { kind: 'receipt'; receipt: { workId: string; id: string; executionId: string; invocationId: string }; recordedAt: string } |
   { kind: 'absent'; completeness: 'complete' } | { kind: 'uncertain'; code: string };
 /** Durable boot/live reconciliation of one interrupted Execution (spec §5.2-5.4): what was observed and decided, by which controller run. */
-export type RecoveryRecord = { at: string; controllerRunId: string; trigger: 'boot' | 'administrative-stop';
+export type RecoveryRecord = { at: string; controllerRunId: string;
+  /** `review-retry-limit` (ticket 51): the live cessation of an Execution held REVIEWER_RETRY_LIMIT, so it never stays held waiting for the operator. */
+  trigger: 'boot' | 'administrative-stop' | 'review-retry-limit';
   /** Old evidence incorporated explicitly: the phase/hold/end found, and whose origin measured the Execution. */
   found: { state: ExecutionView['state']; phase: ExecutionView['dispatch']['phase']; held: string | null; end: string | null; origin: string | null };
   cessation: { result: 'confirmed' | 'unconfirmed'; basis: string; environment: string | null; boot: string | null };
@@ -285,6 +290,8 @@ export type ExecutionView = {
   /** Ticket 41: the Builder request preserved in Records that boot reconciliation found but could not read intact (ticket 27: partial,
    * multiple, unreadable, conflicting) and that blocked this Execution's recovery; `override` is the operator's explicit, audited decision. */
   blockedRequest?: BlockedRequestView;
+  /** Ticket 51: the operator's explicit, audited decision on this Execution's REVIEWER_RETRY_LIMIT (a new review round, or cancel). */
+  reviewRetryLimit?: ReviewRetryLimitDecisionView;
   /** Ticket 26: basis of an Execution that follows an interrupted one (operational recovery or continuation after a clean stop). */
   interruption?: { previousExecutionId: string; reason: 'OPERATIONAL_RECOVERY' | 'ADMINISTRATIVE_STOP'; code: string } | null;
 };
@@ -754,11 +761,15 @@ export type WorkView = {
     { at: string; event: CycleEvent; origin: 'controller-cycles' | 'local-cli'; detail: string } |
     /** Ticket 41: correlated with the blocked Execution (ticket 29 `history --execution`). */
     { at: string; event: 'blocked-recovery-overridden'; origin: 'local-cli'; executionId: string; detail: string } |
+    /** Ticket 51: the operator's decision on REVIEWER_RETRY_LIMIT (`<request id>:new-review-round` or `<request id>:cancel`). */
+    { at: string; event: 'review-retry-limit-decided'; origin: 'local-cli'; executionId: string; detail: string } |
     { at: string; event: RetentionEvent; origin: 'controller-retention' | 'local-cli'; detail: string })[];
 };
 /** Ticket 41: a lost Builder request that blocks recovery, and the operator's explicit decision to continue without it. */
 export type BlockedRequestView = { reference: string; code: string; questionId: string | null; records: string[]; at: string;
   override: { request_id: string; operator: { kind: 'local-administrator' }; at: string; reference: string; recoveryRequest: 'requested' } | null };
+/** Ticket 51: the operator's decision on REVIEWER_RETRY_LIMIT. There is no decision that accepts the unverified round. */
+export type ReviewRetryLimitDecisionView = { decision: 'new-review-round' | 'cancel'; request_id: string; operator: { kind: 'local-administrator' }; at: string };
 /** Ticket 25 history events (cycle, authorization, cancellation, closure/reopen). */
 export type CycleEvent = 'authorization-withdrawn' | 'authorization-restored-observed' | 'authorization-confirmed' | 'cancel-requested' | 'cancellation-ceased' |
   'resume-accepted' | 'resume-confirmed' | 'resume-not-confirmed' | 'pull-request-closed-unmerged' | 'reopen-intended' | 'reopen-attempted' | 'reopen-confirmed' |

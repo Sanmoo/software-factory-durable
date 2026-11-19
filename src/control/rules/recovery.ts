@@ -170,6 +170,51 @@ export function overrideBlockedRecoveryDecision(input: OverrideFacts): { kind: '
   return { kind: 'accept', code: request.code };
 }
 
+/** Ticket 51: the code of an Execution stopped because a reviewer failed again after its automatic retries in the round (ticket 28). */
+export const reviewerRetryLimitCode = 'REVIEWER_RETRY_LIMIT';
+
+/** Ticket 51: `RECOVERY_BLOCKED` by REVIEWER_RETRY_LIMIT, naming the only two operator decisions. */
+export function reviewerRetryLimitImpediment(workId: string, since: string): Impediment {
+  return { code: 'RECOVERY_BLOCKED', scope: 'work', since, nextStep: 'A reviewer failed again after its 2 automatic retries in the review round ' +
+    '(REVIEWER_RETRY_LIMIT); its own boot was stopped and nothing is retried automatically. Inspect the reviewer failures (`factory show`), then decide: ' +
+    `a new review round, \`factory resume ${workId} --new-review-round --request-id <id>\` (one operational recovery unit: the Builder resumes on the ` +
+    `preserved workspace and hands off again for a new round with the current reviewer budget), or \`factory cancel ${workId}\`. The unverified round is never accepted as verified.` };
+}
+
+export type NewReviewRoundFacts = {
+  work: { result: string; current: boolean; impediments: readonly { code: string }[] } | null;
+  execution: { state: string; slotHeld: boolean; held: { code: string } | null; end: { outcome: string; code: string | null; cessation: string } | null;
+    reviewRetryLimit: { decision: 'new-review-round' | 'cancel'; request_id: string } | null } | null;
+  /** Live own activity of the Work in this controller process. */
+  running: boolean;
+  /** The Work has a cancellation (stopping or ceased): never continued. */
+  cancelling: boolean;
+  /** An operational recovery is already pending: the decision never opens a second one. */
+  pendingRecovery: boolean };
+
+/**
+ * Ticket 51 (operator decision 2026-11-19): whether the operator may answer REVIEWER_RETRY_LIMIT with a NEW REVIEW ROUND. The other decision
+ * is `cancel`; there is no decision that accepts the unverified round. Only for a current open Work whose Execution ended with that code after
+ * confirmed cessation, with no activity or Slot, still blocked and with no recovery pending. The round itself is never re-reviewed in place:
+ * the Work comes back through ONE operational recovery (ticket 26), whose Builder hands off again for a new round (ticket 28 carry rules).
+ */
+export function newReviewRoundDecision(input: NewReviewRoundFacts): { kind: 'accept' } | { kind: 'already'; code: string } | { kind: 'refuse'; code: string } {
+  const { work, execution } = input;
+  if (!work) return { kind: 'refuse', code: 'WORK_NOT_FOUND' };
+  if (!work.current) return { kind: 'refuse', code: 'WORK_NOT_CURRENT' };
+  if (work.result !== 'open') return { kind: 'refuse', code: work.result === 'cancelled' ? 'WORK_CANCELLED' : work.result === 'delivered' ? 'WORK_DELIVERED' : 'WORK_NOT_OPEN' };
+  if (input.cancelling) return { kind: 'refuse', code: 'WORK_CANCELLING' };
+  if (execution?.reviewRetryLimit?.decision === 'new-review-round') return { kind: 'already', code: 'NEW_REVIEW_ROUND_ALREADY_DECIDED' };
+  const limited = execution && (execution.end ? execution.end.code === reviewerRetryLimitCode : execution.held?.code === reviewerRetryLimitCode);
+  if (!execution || !limited) return { kind: 'refuse', code: 'REVIEWER_RETRY_LIMIT_NOT_PENDING' };
+  if (input.running) return { kind: 'refuse', code: 'EXECUTION_ACTIVE' };
+  if (execution.state !== 'ended' || !execution.end || execution.end.cessation !== 'confirmed') return { kind: 'refuse', code: 'CESSATION_NOT_CONFIRMED' };
+  if (execution.slotHeld) return { kind: 'refuse', code: 'SLOT_HELD' };
+  if (!work.impediments.some(item => item.code === 'RECOVERY_BLOCKED')) return { kind: 'refuse', code: 'RECOVERY_NOT_BLOCKED' };
+  if (input.pendingRecovery) return { kind: 'refuse', code: 'RECOVERY_ALREADY_PENDING' };
+  return { kind: 'accept' };
+}
+
 const fenced = (text: string) => {
   const longest = Math.max(0, ...[...text.matchAll(/`+/g)].map(run => run[0].length));
   const fence = '`'.repeat(Math.max(3, longest + 1));

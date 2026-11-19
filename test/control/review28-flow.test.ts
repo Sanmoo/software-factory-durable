@@ -37,7 +37,9 @@ function opinionOf(invocation: Invocation, findings: string[], conclusion?: Revi
     limitations: [], hostChecks: { reads: 1, failedReads: [], requiredNotFullyRead: [], downgraded: [] }, finalMessageSha256: null, recordedAt: new Date().toISOString() };
 }
 
-function doubles(script: { captures: HandoffEvent[]; behaviour: (role: Role, round: number, attempt: number) => Behaviour;
+function doubles(script: { captures: HandoffEvent[];
+  /** Ticket 51: the captures of the n-th Builder activation (1-based) when a later Execution hands off again; default `captures`. */
+  capturesOf?: (activation: number) => HandoffEvent[]; behaviour: (role: Role, round: number, attempt: number) => Behaviour;
   /** The Host identity of round N at its k-th observation (default: the capture's content). */ identity?: (round: number, call: number) => string | null;
   /** A retry wait (ms) that never ends before an interruption, or that fails. Other durations (the Execution timer) sleep briefly for real. */
   clock?: { hang?: number; reject?: number } }) {
@@ -52,7 +54,7 @@ function doubles(script: { captures: HandoffEvent[]; behaviour: (role: Role, rou
   const identity = (round: number): ProposalIdentity => {
     const call = (observations.get(round) ?? 0) + 1;
     observations.set(round, call);
-    const event = script.captures.find(item => item.round === round);
+    const event = [...script.captures, ...(script.capturesOf?.(2) ?? [])].find(item => item.round === round);
     const content = script.identity?.(round, call) ?? (event?.status === 'captured' ? event.summary.content?.sha256 ?? 'x' : 'x');
     return { status: 'observed', sha256: content.slice(0, 64), indexSha256: event?.status === 'captured' ? event.summary.indexSha256 : '',
       entries: 1, consistent: true, observedAt: new Date().toISOString() };
@@ -60,7 +62,11 @@ function doubles(script: { captures: HandoffEvent[]; behaviour: (role: Role, rou
   const receipt = (invocation: Invocation) => ({ receipt: { workId: invocation.context.workId, id: '99999999-2222-4333-8444-555555555555' },
     invocation: { executionId: invocation.context.executionId, invocationId: invocation.context.invocationId } });
   let delivered: ((directive: BuilderDirective) => void) | undefined;
+  // Ticket 51: calendar of the persisted recovery waits, jumped by the test (never slept).
+  let calendarOffsetMs = 0;
+  const prepared = new Set<string>();
   const ports: ExecutionPorts = {
+    calendar: { now: () => Date.now() + calendarOffsetMs },
     configuration: { schemaVersion: 1 }, capacity: 1, builder: { skillPack: 'factory-skills-v3', modelBudget: 'builder-v1', copyOutput: true },
     reviews: { reviewer: { modelBudget: 'reviewer-v1', imageSourceMaxBytes: 5242880 }, rounds: { max: 4 }, partialRecovery: true },
     // Retry waits are recorded, not slept: the persisted 5/15/45 s schedule is asserted on the requested durations.
@@ -80,9 +86,12 @@ function doubles(script: { captures: HandoffEvent[]; behaviour: (role: Role, rou
     } },
     sandbox: {
       async prepare(input) {
-        return { status: 'success', environment: `env-${'c'.repeat(64)}` as never, seeds: [{ name: 'factory/skill-pack/factory-skills-v3', manifestSha256: 'f'.repeat(64), reused: false }],
+        // Ticket 51: a later Execution of the same Work reuses its preserved environment (required by a recovery's continuation context).
+        const reused = prepared.has(input.workId);
+        prepared.add(input.workId);
+        return { status: 'success', environment: `env-${'c'.repeat(64)}` as never, seeds: [{ name: 'factory/skill-pack/factory-skills-v3', manifestSha256: 'f'.repeat(64), reused }],
           checkout: { path: '/workspace/checkout', repository: input.checkout.repository, repositoryId: input.checkout.repositoryId, base: 'main', branch: input.checkout.branch,
-            baseCommit: 'a'.repeat(40), origin: 'https://github.com/acme/project.git', reused: false, preparedAt: new Date().toISOString() } };
+            baseCommit: 'a'.repeat(40), origin: 'https://github.com/acme/project.git', reused, preparedAt: new Date().toISOString() } };
       },
       async start() { return { status: 'success', boot: 'boot-11111111-2222-4333-8444-555555555555' as never }; },
       async stop() { kinds.push('stop'); return { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'observed' }; },
@@ -111,7 +120,7 @@ function doubles(script: { captures: HandoffEvent[]; behaviour: (role: Role, rou
         const role = invocation.context.role;
         if (role === 'builder') {
           kinds.push('activate-builder');
-          const queue = [...script.captures];
+          const queue = [...(script.capturesOf?.(invocations.filter(item => item.context.role === 'builder').length) ?? script.captures)];
           let finish!: () => void;
           const done = new Promise<void>(resolve => { finish = resolve; });
           let waiting: Promise<BuilderDirective> | null = null;
@@ -143,7 +152,7 @@ function doubles(script: { captures: HandoffEvent[]; behaviour: (role: Role, rou
       },
     },
   };
-  return { ports, directives, invocations, kinds, sleeps };
+  return { ports, directives, invocations, kinds, sleeps, jumpCalendar: (ms: number) => { calendarOffsetMs += ms; } };
 }
 
 async function harness(t: { after(fn: () => Promise<void>): void }, script: Parameters<typeof doubles>[0], limits: { recoveryLimit?: number; timeoutSeconds?: number } = {},
@@ -153,8 +162,9 @@ async function harness(t: { after(fn: () => Promise<void>): void }, script: Para
   const remote: Remote = world.remote ?? { pulls: {}, issues: [remoteIssue(3)] };
   const github = githubDoubles(remote);
   const execution = doubles(script);
+  const time = manualClock();
   const control: Control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty', execution: execution.ports,
-    access: { tracker: github.tracker, repository: github.repository, repositories: [{ ...scope, ...limits }] }, polling: { intervalSeconds: 60, clock: manualClock().clock } });
+    access: { tracker: github.tracker, repository: github.repository, repositories: [{ ...scope, ...limits }] }, polling: { intervalSeconds: 60, clock: time.clock } });
   const stop = new AbortController();
   const running = control.run(stop.signal);
   t.after(async () => { stop.abort(); await running; });
@@ -165,7 +175,17 @@ async function harness(t: { after(fn: () => Promise<void>): void }, script: Para
     return value?.execution?.slot.held === false || value?.execution?.state === 'held' ? value : undefined;
   }, 5);
   const shown = await control.inspect({ kind: 'show', work_id: current.work_id });
-  return { execution, work: current, shown: 'work' in shown ? shown.work : undefined, list: await list() };
+  /** Ticket 51: waits for a later state, advancing the polling clock while the owner sleeps (bounded by the runner budget). */
+  let lastSeen: WorkView | undefined;
+  const settle = (stage: string, probe: (value: WorkView) => boolean) => until(() => `${stage}; last: ${JSON.stringify({ execution: lastSeen?.execution && { id: lastSeen.execution.executionId,
+    state: lastSeen.execution.state, held: lastSeen.execution.held, end: lastSeen.execution.end, phase: lastSeen.execution.dispatch.phase }, impediments: lastSeen?.impediments.map(item => item.code),
+    pending: lastSeen?.pendingRecovery, queue: lastSeen?.queue, kinds: execution.kinds.slice(-8) })}`, async () => {
+    const value = lastSeen = await work();
+    if (value && probe(value)) return value;
+    if (time.isSleeping()) time.advance();
+    return undefined;
+  }, 5);
+  return { execution, work: current, shown: 'work' in shown ? shown.work : undefined, list: await list(), control, settle };
 }
 const activations = (kinds: string[]) => kinds.filter(kind => kind.startsWith('activate-'));
 
@@ -284,13 +304,68 @@ test('review MED 6: a failure inside one role\'s recovery never abandons the sib
   assert.equal(h.execution.directives.length, 0, 'nothing is delivered to the suspended Builder');
 });
 
-test('operator decision 2026-11-15: after 2 failed retries of the same role in the round the Execution is held REVIEWER_RETRY_LIMIT, even with budget left', async t => {
+/** Ticket 51: the Execution stopped by REVIEWER_RETRY_LIMIT, once its own boot was stopped and the Execution settled (Slot released). */
+const retryLimited = (h: Awaited<ReturnType<typeof harness>>) =>
+  h.settle('REVIEWER_RETRY_LIMIT settled', value => value.execution?.state === 'ended' && value.execution.slot.held === false);
+
+test('operator decision 2026-11-15: after 2 failed retries of the same role in the round the Execution stops REVIEWER_RETRY_LIMIT, even with budget left', async t => {
   const h = await harness(t, { captures: [capture(1, '1', true)], behaviour: role => role === 'spec' ? 'fail' : 'clean' }, { recoveryLimit: 10 });
-  const round = h.work.execution!.review!.rounds[0]!;
+  const work = await retryLimited(h);
+  const round = work.execution!.review!.rounds[0]!;
   assert.deepEqual(activations(h.execution.kinds), ['activate-builder', 'activate-standards-r1a1', 'activate-spec-r1a1', 'activate-spec-r1a2', 'activate-spec-r1a3']);
-  assert.deepEqual([round.reviewers.spec.attempt, round.reviewers.spec.notRetried?.code, h.shown!.budget!.recoveries.consumed], [3, 'REVIEWER_RETRY_LIMIT', 2]);
-  assert.deepEqual([h.work.execution!.state, h.work.execution!.held?.code], ['held', 'REVIEWER_RETRY_LIMIT']);
-  assert.equal(h.execution.directives.length, 0, 'nothing is delivered: the Builder stays suspended for the operator');
+  assert.deepEqual([round.reviewers.spec.attempt, round.reviewers.spec.notRetried?.code, work.budget!.recoveries.consumed], [3, 'REVIEWER_RETRY_LIMIT', 2]);
+  assert.equal(h.execution.directives.length, 0, 'nothing is delivered: the unverified round never reaches the Builder as results');
+  // Ticket 51: it never stays held. The own boot (the suspended Builder) is stopped and the Execution settled at once: Slot released, nothing
+  // retried automatically, and the Work blocked for the operator's decision, which the impediment names.
+  assert.deepEqual([work.execution!.held?.code, work.execution!.end?.outcome, work.execution!.end?.code, work.execution!.end?.cessation],
+    ['REVIEWER_RETRY_LIMIT', 'failure', 'REVIEWER_RETRY_LIMIT', 'confirmed']);
+  assert.deepEqual(work.execution!.recovery!.map(item => [item.trigger, item.decision, item.code]), [['review-retry-limit', 'blocked', 'REVIEWER_RETRY_LIMIT']]);
+  assert.ok(h.execution.kinds.indexOf('stop') > h.execution.kinds.indexOf('end-spec-r1a3'), 'the own boot is stopped after the last reviewer ended');
+  assert.equal(work.pendingRecovery, null, 'no automatic recovery');
+  const blocked = work.impediments.find(item => item.code === 'RECOVERY_BLOCKED')!;
+  assert.ok(blocked.nextStep.includes(`factory resume ${work.work_id} --new-review-round --request-id <id>`) && blocked.nextStep.includes(`factory cancel ${work.work_id}`), blocked.nextStep);
+});
+
+test('ticket 51: the operator decides a NEW REVIEW ROUND: one audited, deduplicated decision; the Work comes back through ONE operational recovery that reviews again', async t => {
+  const h = await harness(t, { captures: [capture(1, '1', true)], capturesOf: activation => [capture(activation, '1', true)],
+    behaviour: (role, round) => role === 'spec' && round === 1 ? 'fail' : 'clean' }, { recoveryLimit: 10 });
+  const work = await retryLimited(h);
+  const decide = (request_id: string) => h.control.accept({ request_id, operation: 'resume', work_id: work.work_id, new_review_round: true, origin: 'local-cli' });
+  // A plain resume never lifts it; nothing accepts the unverified round.
+  const plain = await h.control.accept({ request_id: 'r51-plain', operation: 'resume', work_id: work.work_id, origin: 'local-cli' });
+  assert.equal('reason' in plain && plain.reason, 'NOTHING_TO_RESUME');
+  const receipt = await decide('r51-round');
+  assert.deepEqual(receipt, { kind: 'durable', request_id: 'r51-round', operation: 'resume', work_id: work.work_id, outcome: 'accepted', reason: null, created: null });
+  assert.deepEqual(await decide('r51-round'), receipt, 'replay returns the recorded receipt');
+  const again = await decide('r51-again');
+  assert.deepEqual(['outcome' in again && again.outcome, 'reason' in again && again.reason], ['already-satisfied', 'NEW_REVIEW_ROUND_ALREADY_DECIDED']);
+  let after = await h.settle('decision recorded', value => value.pendingRecovery !== null);
+  const decision = after.execution!.reviewRetryLimit!;
+  assert.deepEqual([decision.decision, decision.request_id, decision.operator], ['new-review-round', 'r51-round', { kind: 'local-administrator' }]);
+  assert.deepEqual(after.history.filter(item => item.event === 'review-retry-limit-decided').map(item => 'detail' in item ? item.detail : null), ['r51-round:new-review-round']);
+  assert.deepEqual([after.impediments.some(item => item.code === 'RECOVERY_BLOCKED'), after.pendingRecovery!.reason, after.pendingRecovery!.waitSeconds], [false, 'operator-new-review-round', 45]);
+  // The persisted wait (45 s after two consumed recoveries) runs on the calendar; then the recovery Execution hands off and is reviewed again.
+  h.execution.jumpCalendar(60000);
+  after = await h.settle('recovery reviewed and completed', value => value.execution?.executionId !== work.execution!.executionId && value.execution?.end?.outcome === 'completed');
+  assert.deepEqual([after.execution!.interruption, after.execution!.charge!.kind, after.budget!.recoveries.consumed],
+    [{ previousExecutionId: work.execution!.executionId, reason: 'OPERATIONAL_RECOVERY', code: 'REVIEWER_RETRY_LIMIT' }, 'recovery', 3]);
+  const round = after.execution!.review!.rounds[0]!;
+  assert.deepEqual([round.round, round.conclusion, round.reviewers.spec.opinion?.conclusion], [2, 'clean', 'clean']);
+  assert.ok(activations(h.execution.kinds).includes('activate-spec-r2a1'), 'Spec reviews again in the new round');
+  assert.match(h.execution.directives.at(-1)!.prompt, /Round conclusion: clean/);
+});
+
+test('ticket 51: the operator CANCELS instead: the decision is recorded and the cancellation ceases at once (nothing held, no Slot, no restart)', async t => {
+  const h = await harness(t, { captures: [capture(1, '1', true)], behaviour: role => role === 'spec' ? 'fail' : 'clean' }, { recoveryLimit: 10 });
+  const work = await retryLimited(h);
+  const receipt = await h.control.accept({ request_id: 'r51-cancel', operation: 'cancel', work_id: work.work_id, origin: 'local-cli' });
+  assert.equal('outcome' in receipt && receipt.outcome, 'accepted');
+  const after = await h.settle('cancellation ceased', value => value.cancellation?.state === 'ceased');
+  assert.deepEqual([after.result, after.execution!.reviewRetryLimit?.decision, after.execution!.reviewRetryLimit?.request_id], ['cancelled', 'cancel', 'r51-cancel']);
+  assert.deepEqual(after.history.filter(item => item.event === 'review-retry-limit-decided').map(item => 'detail' in item ? item.detail : null), ['r51-cancel:cancel']);
+  const round = await h.control.accept({ request_id: 'r51-late', operation: 'resume', work_id: work.work_id, new_review_round: true, origin: 'local-cli' });
+  assert.equal('reason' in round && round.reason, 'WORK_CANCELLED', 'a cancel decision is final');
+  assert.equal(activations(h.execution.kinds).filter(kind => kind === 'activate-builder').length, 1, 'nothing runs again');
 });
 
 test('q28 recipe world: issue #3 (labeled, with the ticket 14 draft PR attached) is held FOREIGN_PULL_REQUEST — no Work, no Slot — and only #6 runs; the oracle reads #6', async t => {

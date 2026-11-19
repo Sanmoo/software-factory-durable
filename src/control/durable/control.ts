@@ -53,6 +53,7 @@ const inputSchema = z.union([z.strictObject({ request_id: requestId, operation: 
   z.strictObject({ request_id: requestId, operation: z.literal('resume'), work_id: z.uuid(), origin: z.literal('local-cli') }),
   // Ticket 41: explicit exit of a recovery blocked by a lost Builder request (the exact blocked reference).
   z.strictObject({ request_id: requestId, operation: z.literal('resume'), work_id: z.uuid(), override_blocked_recovery: z.string().regex(blockedReferencePattern), origin: z.literal('local-cli') }),
+  z.strictObject({ request_id: requestId, operation: z.literal('resume'), work_id: z.uuid(), new_review_round: z.literal(true), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('reopen'), work_id: z.uuid(), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('new'), ticket: z.strictObject({ repository: z.string().regex(/^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/),
     number: z.number().int().positive().max(2 ** 31) }), keepPredecessorPullRequest: z.boolean(), origin: z.literal('local-cli') }),
