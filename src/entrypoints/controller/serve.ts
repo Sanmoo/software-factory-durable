@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { Control, ControlInput } from '../../control/index.js';
 import { listen, protocolVersion, type Envelope } from '../../protocol/index.js';
 import { answerInspection } from './inspection.js';
-import { blockedReferencePattern } from '../../contracts/index.js';
+import { blockedReferencePattern, blockedStartCodePattern, startRetryRemedies } from '../../contracts/index.js';
 
 // The owner's local operator socket (spec §11.3): the SAME schema validation and Control accept/inspect path for every caller of the CLI.
 // Shared by the controller owner and (ticket 25) the qualification recipes that must receive real CLI commands.
@@ -20,8 +20,11 @@ const command = z.union([z.strictObject({ request_id: requestId, operation: z.en
   // Ticket 41: Control checks the exact blocked reference; only its shared shape is checked here.
   z.strictObject({ request_id: requestId, operation: z.literal('resume'), work_id: z.uuid(), override_blocked_recovery: z.string().regex(blockedReferencePattern), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('resume'), work_id: z.uuid(), new_review_round: z.literal(true), origin: z.literal('local-cli') }),
+  // Ticket 50: explicit retry of the boot/preparation refusal that blocked the recovery (exact code), optionally with a remedy.
+  z.strictObject({ request_id: requestId, operation: z.literal('resume'), work_id: z.uuid(), retry_blocked_start: z.string().regex(blockedStartCodePattern),
+    remedy: z.enum(startRetryRemedies).optional(), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('new'), ticket: z.strictObject({ repository: z.string().min(3).max(201), number: z.number().int().positive() }),
-    keepPredecessorPullRequest: z.boolean(), origin: z.literal('local-cli') }),
+  keepPredecessorPullRequest: z.boolean(), origin: z.literal('local-cli') }),
   // Ticket 30: explicit cleanup plan and confirmation (Control revalidates the selection and the plan).
   z.strictObject({ request_id: requestId, operation: z.literal('cleanup-plan'), work_id: z.uuid(), select: z.array(z.enum(['logs', 'sessions', 'environment', 'remote-branch'])).min(1).max(4),
     origin: z.literal('local-cli') }),

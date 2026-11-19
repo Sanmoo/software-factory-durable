@@ -4,7 +4,9 @@ import type { ExecutionPorts, ExecutionView, RecoveryRecord, RecoveryView, Runti
 import type { QuestionObservation } from '../../workers/index.js';
 import { blockedRequestReference } from '../../contracts/index.js';
 import { classifyOverrun, overrunNotExcludedImpediment, timeoutImpediment } from '../rules/budget.js';
-import { blockedRequestImpediment, blockedRequestToken, classifyInterruption, recoveryImpediment, reviewerRetryLimitCode, reviewerRetryLimitImpediment, startDecision } from '../rules/recovery.js';
+import { blockedRequestImpediment, blockedRequestToken, blockedStartImpediment, blockingStartRefusal, classifyInterruption, isBootCapacityRefusal, recoveryImpediment, reviewerRetryLimitCode, reviewerRetryLimitImpediment,
+  startDecision } from '../rules/recovery.js';
+import { applyBootDeferral } from './recovery-request.js';
 import { interruptedEnd, questionRecordFound, recoveredQuestionDecision } from '../rules/questions.js';
 import { readWork, ticketIndex, works, type WorkRecord } from './admission.js';
 import { applyConfirmedCessation, consumeReservation, reofferUnlessCompleted, releaseReservation, settleCancelled, slots } from './execution.js';
@@ -180,9 +182,16 @@ export async function settleInterruption(session: Session, input: { work_id: str
       work.history.push({ at: now, event: 'slot-released', origin: 'controller-dispatch', executionId: execution.executionId });
       const classified = classifyInterruption(code);
       if (classified.kind === 'blocking') {
-        addImpediment(work, recoveryImpediment('RECOVERY_BLOCKED', classified.code, now));
+        // Ticket 50: a refused boot/preparation keeps its code and the Sandbox's detail, with the explicit operator retry as its exit.
+        if (blockingStartRefusal(classified.code)) {
+          const detail = execution.held?.detail ?? null;
+          execution.blockedStart = { code: classified.code, detail, at: now, cessation: input.cessation.result, retry: null };
+          addImpediment(work, blockedStartImpediment(work.work_id, classified.code, detail, now));
+        } else addImpediment(work, recoveryImpediment('RECOVERY_BLOCKED', classified.code, now));
         return record({ kind: 'not-started', detail: start.basis }, 'blocked', classified.code);
       }
+      // Ticket 50: lack of host memory/storage passes on its own: same queue position behind a persisted capacity wait, nothing charged.
+      if (isBootCapacityRefusal(code)) applyBootDeferral(work, { executionId: execution.executionId, code: code!, at: now });
       return record({ kind: 'not-started', detail: start.basis }, 'requeued', code);
     }
     if (start.kind === 'uncertain') {

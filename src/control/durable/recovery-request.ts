@@ -1,5 +1,5 @@
 import { availableOf, exhaustionCodes, exhaustionImpediment, initialBudget } from '../rules/budget.js';
-import { recoveryBackoff, recoveryRequest } from '../rules/recovery.js';
+import { bootCapacityWait, recoveryBackoff, recoveryRequest } from '../rules/recovery.js';
 import type { WorkRecord } from './admission.js';
 
 /**
@@ -32,6 +32,24 @@ export function applyRecoveryRequest(work: WorkRecord, input: { executionId: str
   work.queue = { ...work.queue, pending: true };
   return decision.kind === 'keep' ? 'already-open' as const : 'requested' as const;
 }
+
+/**
+ * Inside a commit (ticket 50): a boot/preparation refused for lack of host memory/storage, with nothing started, keeps the Work's queue position
+ * behind a persisted capacity wait that grows while the refusals repeat (reset by the next operational boot). No budget unit is touched.
+ */
+export function applyBootDeferral(work: WorkRecord, input: { executionId: string; code: string; at: string }) {
+  const attempt = work.bootDeferral ? work.bootDeferral.attempt + 1 : 0;
+  const waitSeconds = bootCapacityWait(attempt);
+  const notBefore = new Date(Date.parse(input.at) + waitSeconds * 1000).toISOString();
+  work.bootDeferral = { code: input.code, executionId: input.executionId, requestedAt: input.at, notBefore, waitSeconds, attempt };
+  work.history.push({ at: input.at, event: 'boot-deferred', origin: 'controller-recovery', executionId: input.executionId,
+    detail: `${input.code}; capacity wait ${waitSeconds}s (attempt ${attempt + 1}); nothing started, nothing charged` });
+  work.queue = { ...work.queue, pending: true };
+}
+
+/** Ticket 50: whether the persisted capacity wait of a Work still runs at `nowMs` (calendar). */
+export const bootDeferralRunning = (work: Pick<WorkRecord, 'bootDeferral'>, nowMs: number) =>
+  recoveryBackoff(work.bootDeferral?.notBefore ? Date.parse(work.bootDeferral.notBefore) : null, nowMs);
 
 /** Whether the persisted recovery wait of a Work still runs at `nowMs` (calendar). */
 export const backoffRunning = (work: Pick<WorkRecord, 'pendingRecovery'>, nowMs: number) =>

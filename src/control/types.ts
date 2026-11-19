@@ -1,4 +1,4 @@
-import type { AccessDiagnostic, BuilderCredentials, BuilderGrantMetadata, GitHubScope, HandoffDeclarations, ProposalHandoff, ProposalIdentity, ReviewerRole, ReviewOpinion, RevocationResult } from '../contracts/index.js';
+import type { AccessDiagnostic, BuilderCredentials, BuilderGrantMetadata, GitHubScope, HandoffDeclarations, ProposalHandoff, ProposalIdentity, ReviewerRole, ReviewOpinion, RevocationResult, StartRetryRemedy } from '../contracts/index.js';
 import type { CheckoutRequest, EnvironmentRef, PreparedWork, RemoveResult, StartResult, StopResult, BootRef } from '../sandbox/index.js';
 import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion, SessionObservation, WorkerSessionRef, OpinionObservation, QuestionObservation } from '../workers/index.js';
 export type { SessionObservation, WorkerSessionRef as SessionRef } from '../workers/index.js';
@@ -44,6 +44,8 @@ export type ControlInput = { request_id: string; operation: 'pause' | 'unpause';
   /** Ticket 51: `resume <work> --new-review-round` — the operator's explicit decision, after REVIEWER_RETRY_LIMIT, to review again in a new round
    * (ONE operational recovery, ticket 26). The other decision is `cancel`; no input accepts the unverified round. */
   { request_id: string; operation: 'resume'; work_id: string; new_review_round: true; origin: 'local-cli' } |
+  /** Ticket 50: explicit operator retry of the boot/preparation refusal that blocked the Work's recovery (exact code), optionally with a remedy. */
+  { request_id: string; operation: 'resume'; work_id: string; retry_blocked_start: string; remedy?: StartRetryRemedy; origin: 'local-cli' } |
   /** Ticket 25: an explicit new cycle of a Ticket after delivery/cancellation (predecessor + own resources). `keepPredecessorPullRequest`: the
    * operator's explicit decision that a cancelled cycle's own PR that may still be open stays as it is (never adopted, closed or replaced). */
   { request_id: string; operation: 'new'; ticket: { repository: string; number: number }; keepPredecessorPullRequest: boolean; origin: 'local-cli' } |
@@ -116,7 +118,7 @@ export type StartObservation = { kind: 'receipt'; receipt: { workId: string; id:
 /** Durable boot/live reconciliation of one interrupted Execution (spec §5.2-5.4): what was observed and decided, by which controller run. */
 export type RecoveryRecord = { at: string; controllerRunId: string;
   /** `review-retry-limit` (ticket 51): the live cessation of an Execution held REVIEWER_RETRY_LIMIT, so it never stays held waiting for the operator. */
-  trigger: 'boot' | 'administrative-stop' | 'review-retry-limit';
+  trigger: 'boot' | 'administrative-stop' | 'review-retry-limit' | /* ticket 50 */ 'start-refused';
   /** Old evidence incorporated explicitly: the phase/hold/end found, and whose origin measured the Execution. */
   found: { state: ExecutionView['state']; phase: ExecutionView['dispatch']['phase']; held: string | null; end: string | null; origin: string | null };
   cessation: { result: 'confirmed' | 'unconfirmed'; basis: string; environment: string | null; boot: string | null };
@@ -275,7 +277,8 @@ export type ExecutionView = {
   end: { at: string; outcome: 'completed' | 'failure' | 'question' | 'timeout' | 'stopped'; code: string | null; cessation: 'confirmed' | 'unconfirmed' | 'not-attempted'; questionId?: string | null;
     /** Host-observed preserved Builder session (ticket 11); null/absent = not recorded. */
     session?: WorkerSessionRef | null } | null;
-  held: { code: string; phase: string; at: string; nextStep: string } | null;
+  /** `detail` (ticket 50): what the Sandbox said about the refusal (changed identity fields, divergent seed file). */
+  held: { code: string; phase: string; at: string; nextStep: string; detail?: string } | null;
   completion: { automatic: false; reason: string };
   /** Review rounds of this Execution (ticket 12); absent when reviews are not composed. Reviewers never hold a Slot of their own.
    * Ticket 13: `firstRound` continues the round numbers of earlier Executions of the Work; `verification` is Control's presence/correlation
@@ -293,6 +296,8 @@ export type ExecutionView = {
   blockedRequest?: BlockedRequestView;
   /** Ticket 51: the operator's explicit, audited decision on this Execution's REVIEWER_RETRY_LIMIT (a new review round, or cancel). */
   reviewRetryLimit?: ReviewRetryLimitDecisionView;
+  /** Ticket 50: the boot/preparation refusal that blocked this (never started) Execution's recovery and the operator's explicit retry. */
+  blockedStart?: BlockedStartView;
   /** Ticket 26: basis of an Execution that follows an interrupted one (operational recovery or continuation after a clean stop). */
   interruption?: { previousExecutionId: string; reason: 'OPERATIONAL_RECOVERY' | 'ADMINISTRATIVE_STOP'; code: string } | null;
 };
@@ -712,6 +717,10 @@ export type WorkView = {
   pendingRecovery: { reason: string; requestedAt: string;
     /** Ticket 26: persisted wait (calendar) before the recovery may start, its length and the attempt index it was derived from. */
     notBefore?: string; waitSeconds?: number; attempt?: number; executionId?: string | null } | null;
+  /** Ticket 50: persisted capacity wait after a boot/preparation refused for lack of host memory/storage (nothing started, nothing charged). */
+  bootDeferral?: { code: string; executionId: string; requestedAt: string; notBefore: string; waitSeconds: number; attempt: number } | null;
+  /** Ticket 50: operator remedy accepted with a retry, applied by the NEXT preparation (e.g. recreate the divergent artifact seeds). */
+  startRemedy?: { remedy: StartRetryRemedy; request_id: string; executionId: string; at: string; seeds: string[] } | null;
   /** Presentation only (never persisted): limits/reservations/consumption, timeout, duration/last activity and the action required. */
   limits: LimitsView;
   /** Ticket 29, presentation only: this view is a compacted form of the Work (to fit one frame); the counts left out and where to read them. */
@@ -764,8 +773,14 @@ export type WorkView = {
     { at: string; event: 'blocked-recovery-overridden'; origin: 'local-cli'; executionId: string; detail: string } |
     /** Ticket 51: the operator's decision on REVIEWER_RETRY_LIMIT (`<request id>:new-review-round` or `<request id>:cancel`). */
     { at: string; event: 'review-retry-limit-decided'; origin: 'local-cli'; executionId: string; detail: string } |
+    /** Ticket 50: operator retry of a refused boot/preparation; capacity wait; remedy applied by a preparation (correlated with the Execution). */
+    { at: string; event: 'blocked-start-retried'; origin: 'local-cli'; executionId: string; detail: string } |
+    { at: string; event: 'boot-deferred' | 'start-remedy-applied'; origin: 'controller-recovery'; executionId: string; detail: string } |
     { at: string; event: RetentionEvent; origin: 'controller-retention' | 'local-cli'; detail: string })[];
 };
+/** Ticket 50: a boot/preparation refusal that blocks recovery (cessation from the reconciliation) and the operator's explicit, audited retry. */
+export type BlockedStartView = { code: string; detail: string | null; at: string; cessation: 'confirmed' | 'unconfirmed';
+  retry: { request_id: string; operator: { kind: 'local-administrator' }; at: string; code: string; remedy: StartRetryRemedy | null; recoveryRequest: 'requested' | 'already-open' } | null };
 /** Ticket 41: a lost Builder request that blocks recovery, and the operator's explicit decision to continue without it. */
 export type BlockedRequestView = { reference: string; code: string; questionId: string | null; records: string[]; at: string;
   override: { request_id: string; operator: { kind: 'local-administrator' }; at: string; reference: string; recoveryRequest: 'requested' } | null };
@@ -1023,6 +1038,8 @@ export type ChainExecutionView = { executionId: string; mode: ExecutionView['mod
   /** Ticket 41: the lost Builder request that blocked this Execution's recovery and the operator's explicit decision, if any. */
   blockedRequest?: { reference: string; code: string; state: 'blocking' | 'overridden';
     override: { request_id: string; at: string; operator: { kind: 'local-administrator' } } | null } | null;
+  /** Ticket 50: the boot/preparation refusal that blocked this Execution's recovery and the operator's retry, if any. */
+  blockedStart?: { code: string; detail: string | null; state: 'blocking' | 'retried'; retry: { request_id: string; at: string; remedy: string | null } | null } | null;
   reviews: { round: number; attempt: number; kind: string; conclusion: string | null;
     reviewers: { role: 'standards' | 'spec'; state: string; attempt: number; conclusion: string | null; source: string | null; opinion: string | null }[] }[] };
 /** Ticket 29: the read-only Records facets inspection uses (spec §2.3 `Records.read`). */

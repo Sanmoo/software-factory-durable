@@ -17,7 +17,7 @@ import { attemptsOf, publicationResumes } from '../rules/publication.js';
 import { authorizationInForce } from '../rules/divergence.js';
 import type { Session } from './store.js';
 import { classifyInterruption } from '../rules/recovery.js';
-import { applyRecoveryRequest, backoffRunning } from './recovery-request.js';
+import { applyRecoveryRequest, backoffRunning, bootDeferralRunning } from './recovery-request.js';
 import { settleCancellation } from '../rules/cycles.js';
 
 /** Ticket 25: after a Slot/reservation release, a cancelled Work's cancellation becomes `ceased` when nothing of it can still act. */
@@ -95,6 +95,8 @@ export async function admitExecution(session: Session, input: { work_id: string;
     if (Object.keys(occupancy.held).length >= input.capacity) reasons.push('NO_SLOT_AVAILABLE');
     // Ticket 26: the persisted recovery wait is never anticipated, and an interruption basis must still name the Work's current Execution.
     if (backoffRunning(work, input.now ?? Date.now())) reasons.push('RECOVERY_BACKOFF');
+    // Ticket 50: the persisted capacity wait after a boot refused for lack of host memory/storage is never anticipated either.
+    if (bootDeferralRunning(work, input.now ?? Date.now())) reasons.push('BOOT_CAPACITY_WAIT');
     if (input.interruption && !interruptionHolds(work, input.interruption)) reasons.push('INTERRUPTION_BASIS_CHANGED');
     const previous = resumeBasis(work);
     // Every pending authorized scope change is bound to THIS Execution (ticket 11), and the resumption basis must name exactly them.
@@ -284,8 +286,17 @@ export async function advance(session: Session, work_id: string, executionId: st
 }
 
 export const recordPhase = (session: Session, work_id: string, executionId: string, from: ExecutionView['dispatch']['phase'],
-  to: ExecutionView['dispatch']['phase'], event: 'execution-prepared' | 'execution-booted', patch: (execution: ExecutionView) => void) =>
-  advance(session, work_id, executionId, { state: 'reserved', phases: [from] }, (execution, work) => { patch(execution); execution.dispatch.phase = to; history(work, event, executionId); });
+  to: ExecutionView['dispatch']['phase'], event: 'execution-prepared' | 'execution-booted', patch: (execution: ExecutionView) => void,
+  /** Ticket 50: Work facts settled by the same phase commit (an applied operator remedy). */
+  patchWork?: (work: WorkRecord) => void) =>
+  advance(session, work_id, executionId, { state: 'reserved', phases: [from] }, (execution, work) => {
+    patch(execution);
+    patchWork?.(work);
+    execution.dispatch.phase = to;
+    // Ticket 50: an operational boot ends a run of capacity refusals (the next one starts again at the first wait).
+    if (to === 'booted' && work.bootDeferral) work.bootDeferral = null;
+    history(work, event, executionId);
+  });
 
 /**
  * Revalidation commit immediately before activation: still current, Slot held, no impediment and an evaluation of THIS activation attempt
@@ -651,12 +662,14 @@ export function applyConfirmedCessation(work: WorkRecord, execution: ExecutionVi
  */
 export async function holdExecution(session: Session, work_id: string, executionId: string, code: string, nextStep: string,
   /** Proven non-start (no worker was ever activated): the reservation is released without consumption; the hold still blocks retry. */
-  provenNonStart = false) {
+  provenNonStart = false,
+  /** Ticket 50: the Sandbox's detail of a refusal (changed identity fields, divergent seed file), shown with the block. */
+  detail?: string) {
   return session.commit(async tx => {
     const document = await tx.doc(works, work_id, null);
     const execution = document.work?.execution ?? null;
     if (!document.work || !execution || execution.executionId !== executionId || execution.state === 'released') return 'stale' as const;
-    execution.held = { code, phase: execution.dispatch.phase, at: new Date().toISOString(), nextStep };
+    execution.held = { code, phase: execution.dispatch.phase, at: new Date().toISOString(), nextStep, ...(detail ? { detail: detail.slice(0, 512) } : {}) };
     // An explicit hold means the outcome is unknown: the scope changes it delivered are offered again, not lost.
     for (const update of deliveredBy(document.work, executionId)) {
       Object.assign(update, { state: 'pending', executionId: null, reoffers: (update.reoffers ?? 0) + 1 });

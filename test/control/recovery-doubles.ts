@@ -57,6 +57,9 @@ export function updateHost(dir: string, change: (state: HostState) => void) { co
 export type Review28 = 'lost' | 'retry' | 'complete';
 export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options: { capacity?: number; observe?: boolean; observeStart?: boolean; reviews?: boolean; review28?: Review28;
   onPrepare?: () => Promise<void>; onActivate?: (invocation: Invocation) => void | Promise<void>;
+  /** Ticket 50: a Sandbox refusal returned by `prepare`/`start` instead of success (undefined = the ordinary success). */
+  prepareRefusal?: () => { status: 'failure' | 'indeterminate'; code: string; detail?: string } | undefined;
+  startRefusal?: () => { status: 'failure' | 'indeterminate'; code: string; detail?: string } | undefined;
   /** Ticket 24: the Builder script chosen by the activation itself (e.g. per Work); `undefined` falls back to the ordered `scripts`. */
   script?: (invocation: Invocation) => RecoveryScript | undefined } = {}) {
   const prompts: { executionId: string; phaseId: string; prompt: string }[] = [];
@@ -124,14 +127,19 @@ export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options:
       async prepare(input) {
         const environment = `env-${createHash('sha256').update(input.workId).digest('hex')}`;
         const reused = readHost(dir).prepared.includes(environment);
-        log('prepare', { environment, reused });
+        log('prepare', { environment, reused, recreateSeeds: input.recreateSeeds ?? null });
         await options.onPrepare?.();
+        const refusal = options.prepareRefusal?.();
+        if (refusal) return refusal;
         updateHost(dir, state => { if (!state.prepared.includes(environment)) state.prepared.push(environment); state.current[environment] ??= null; });
-        return { status: 'success', environment: environment as never, seeds: [{ name: 'factory/skill-pack/factory-skills-v4', manifestSha256: 'f'.repeat(64), reused }],
+        const replaced = input.recreateSeeds?.includes('factory/skill-pack/factory-skills-v4') ? { replaced: 'factory/skill-pack/factory-skills-v4.divergent-20261119t100000z' } : {};
+        return { status: 'success', environment: environment as never, seeds: [{ name: 'factory/skill-pack/factory-skills-v4', manifestSha256: 'f'.repeat(64), reused, ...replaced }],
           checkout: { path: '/workspace/checkout', repository: input.checkout.repository, repositoryId: input.checkout.repositoryId, base: 'main', branch: input.checkout.branch,
             baseCommit: 'a'.repeat(40), origin: 'https://github.com/acme/project.git', reused, preparedAt: new Date().toISOString() } };
       },
       async start(input) {
+        const refusal = options.startRefusal?.();
+        if (refusal) { log('start-refused', refusal); return refusal; }
         const boot = `boot-${randomUUID()}`;
         updateHost(dir, state => { state.boots[boot] = 'active'; state.current[input.environment] = boot; state.log.push({ kind: 'start', detail: { boot, pass: (input as { pass?: string }).pass ?? null } }); });
         return { status: 'success', boot: boot as never };

@@ -27,7 +27,7 @@ import { humanTips, authorizationInForce, comparisonBase, knownRemote, preservat
 import { evaluatePublication, recordDiscovery, resolveDivergence } from './publication.js';
 import { purposeOf } from './execution.js';
 import type { SessionRef } from '../types.js';
-import { interruptionRecoveryPrompt, reviewerRetryLimitCode } from '../rules/recovery.js';
+import { interruptionRecoveryPrompt, reviewerRetryLimitCode, refusedWithoutActivity } from '../rules/recovery.js';
 import { reconcileExecution } from './recovery.js';
 import type { WorkerQuestion } from '../../workers/index.js';
 import type { Session } from './store.js';
@@ -763,10 +763,27 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       (error instanceof Error && ['WORKER_LAUNCH_INVALID', 'STALE_TOOL_CONTEXT', 'WORKER_EXECUTION_NOT_ENABLED', 'WORKER_PROFILE_NOT_CONFIGURED', 'WORKER_POLICY_ROLE_DENIED'].includes(error.message)));
     // A held Execution is not authorized to advance: its credentials are withdrawn and known grants revocation is attempted, even if the
     // hold commit itself fails.
-    const hold = async (code: string, nextStep: string, provenNonStart = false) => {
-    try { await holdExecution(session, work.work_id, executionId, code, nextStep, provenNonStart); observe(work.work_id, 'held', [code]); }
+    const hold = async (code: string, nextStep: string, provenNonStart = false, detail?: string) => {
+    try { await holdExecution(session, work.work_id, executionId, code, nextStep, provenNonStart, detail); observe(work.work_id, 'held', [code]); }
     finally { await lifecycle?.withdraw('held', { notifyWorker: true }); }
   };
+    /**
+     * Ticket 50: a boot/preparation the Sandbox REFUSED (a returned definitive refusal: nothing of it still runs) is settled at once by the
+     * ordinary reconciliation with that confirmed cessation — Slot freed, proven non-start — instead of waiting for a controller restart: a
+     * capacity refusal returns to the queue behind its wait, any other one blocks with the explicit operator retry. Indeterminate results keep
+     * the hold (host evidence at the next boot).
+     */
+    const refused = async (phaseOf: 'prepare' | 'start', result: { status: 'failure' | 'indeterminate'; code: string; detail?: string; boot?: BootRef }) => {
+      const code = `${phaseOf === 'prepare' ? 'PREPARE' : 'START'}_${result.code}`;
+      await hold(code, phaseOf === 'prepare' ? 'Preparation did not complete; it is never retried automatically. Inspect the environment (ticket 26 recovery).'
+        : 'The boot did not become operational; no automatic retry. Observe/stop the environment explicitly.', true, result.detail);
+      if (!refusedWithoutActivity({ phase: phaseOf, status: result.status, code: result.code })) return;
+      const shown = await readWork(session, work.work_id);
+      if (shown?.execution?.executionId !== executionId || shown.execution.state !== 'held') return;
+      await reconcileExecution({ session, ports, controllerRunId: deps.controllerRunId ?? 'unknown', inventory: 'empty' }, shown, 'start-refused',
+        { result: 'confirmed', basis: `${phaseOf}-refused:${result.code}`.slice(0, 160), environment: phaseOf === 'start' ? environment ?? null : null, boot: result.boot ?? null })
+        .catch(() => { /* the hold stands; the next controller boot reconciles it */ });
+    };
     // Activity scope of THIS Execution: the timeout interrupts it (Builder and reviewers) without stopping the owner.
     const interrupt = new AbortController();
     // Ticket 17: why the activity scope was interrupted — the timeout (default) or a confirmed delivery (merge observed meanwhile).
@@ -827,9 +844,13 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const stopOwnBoot = async (reason: string) => environment && boot ? ports.sandbox.stop({ environment, boot, reason }).catch(() => ({ status: 'indeterminate' as const, cessationConfirmed: false as const, code: 'STOP_UNAVAILABLE' })) : undefined;
     try {
       checkStop();
+      // Ticket 50: an operator remedy accepted with a retry (recreate the divergent artifact seeds) is applied by THIS preparation only.
+      const remedy = work.startRemedy ?? null;
       const prepared = await ports.sandbox.prepare({ workId: work.work_id, configuration: ports.configuration,
-        checkout: { repository: work.repository.repository, repositoryId: work.repository.repositoryId, installationId: configured.installationId, base: work.repository.base, branch: execution.request.branch } });
-      if (prepared.status !== 'success' || !('checkout' in prepared)) { await hold(`PREPARE_${prepared.status === 'success' ? 'CHECKOUT_MISSING' : prepared.code}`, 'Preparation did not complete; it is never retried automatically. Inspect the environment (ticket 26 recovery).', true); return; }
+        checkout: { repository: work.repository.repository, repositoryId: work.repository.repositoryId, installationId: configured.installationId, base: work.repository.base, branch: execution.request.branch },
+        ...(remedy?.remedy === 'recreate-artifact-seed' ? { recreateSeeds: remedy.seeds } : {}) });
+      if (prepared.status === 'success' && !('checkout' in prepared)) { await hold('PREPARE_CHECKOUT_MISSING', 'Preparation did not complete; it is never retried automatically. Inspect the environment (ticket 26 recovery).', true); return; }
+      if (prepared.status !== 'success') { await refused('prepare', prepared); return; }
       environment = prepared.environment;
       const pack = prepared.seeds.find(seed => seed.name.startsWith('factory/skill-pack/'));
       if ((await recordPhase(session, work.work_id, executionId, 'reserved', 'prepared', 'execution-prepared', current => {
@@ -837,13 +858,19 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         current.request.baseCommit = prepared.checkout.baseCommit;
         current.request.checkout = prepared.checkout.path;
         current.request.skillPack = pack ? { name: pack.name, manifestSha256: pack.manifestSha256 } : null;
+      }, current => {
+        if (!remedy || current.startRemedy?.request_id !== remedy.request_id) return;
+        const replaced = prepared.seeds.filter(seed => seed.replaced).map(seed => `${seed.name}->${seed.replaced}`);
+        current.history.push({ at: new Date().toISOString(), event: 'start-remedy-applied', origin: 'controller-recovery', executionId,
+          detail: `${remedy.request_id}:${remedy.remedy}:${replaced.length ? replaced.join(',') : 'no divergent copy found'}`.slice(0, 512) });
+        current.startRemedy = null;
       })).kind !== 'advanced') { observe(work.work_id, 'stale'); return; }
       phase = 'start';
       checkStop();
       startRequested = true;
       const pass = passes.get(work.work_id);
       const started = await ports.sandbox.start({ environment, configuration: ports.configuration, ...(pass ? { pass } : {}) });
-      if (started.status !== 'success') { await hold(`START_${started.code}`, 'The boot did not become operational; no automatic retry. Observe/stop the environment explicitly.', true); return; }
+      if (started.status !== 'success') { await refused('start', started); return; }
       boot = started.boot;
       if ((await recordPhase(session, work.work_id, executionId, 'prepared', 'booted', 'execution-booted', current => { current.dispatch.boot = started.boot; })).kind !== 'advanced') { observe(work.work_id, 'stale'); return; }
       // Revalidation immediately before activation: authorization and a FRESH dependency evaluation of THIS attempt.

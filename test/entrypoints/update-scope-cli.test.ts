@@ -87,6 +87,26 @@ test('AC3: `factory update-scope <work> --reason` identifies the request first, 
   assert.deepEqual(round.json, { kind: 'durable', request_id: 'round-1', operation: 'resume', work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', created: null });
   assert.deepEqual((await cli('resume', work, '--new-review-round', '--request-id', 'round-1')).json, round.json, 'replay: the recorded receipt');
   assert.deepEqual((await cli('resume', work, '--request-id', 'round-1')).json, { kind: 'refused', code: 'REQUEST_ID_CONFLICT' }, 'plain resume under the same identity');
+  // Ticket 50: `resume <work> --retry-blocked-start <code> [--remedy <name>] --request-id <id>` (identity required; code/remedy shapes checked
+  // locally, exactness by Control); never together with an override; a remedy only with a retry.
+  for (const bad of [['resume', work, '--retry-blocked-start', 'START_PRESERVED_DISK_CHECK_REQUIRED'], ['resume', work, '--retry-blocked-start', 'WORKER_INTERRUPTED', '--request-id', 'r-bad'],
+    ['resume', work, '--retry-blocked-start', 'PREPARE_ARTIFACT_SEED_VERSION_CONFLICT', '--remedy', 'wipe', '--request-id', 'r-bad'],
+    ['resume', work, '--remedy', 'recreate-artifact-seed', '--request-id', 'r-bad'],
+    ['resume', work, '--retry-blocked-start', 'START_PRESERVED_DISK_CHECK_REQUIRED', '--override-blocked-recovery', blocked, '--request-id', 'r-bad'],
+    ['resume', work, '--retry-blocked-start', 'START_PRESERVED_DISK_CHECK_REQUIRED', '--new-review-round', '--request-id', 'r-bad'],
+    ['cancel', work, '--retry-blocked-start', 'START_PRESERVED_DISK_CHECK_REQUIRED', '--request-id', 'r-bad']]) {
+    const result = await cli(...bad);
+    assert.equal(result.code, 2, bad.join(' '));
+    assert.match(result.stderr, /INVALID_ARGUMENTS/, bad.join(' '));
+  }
+  const retried = await cli('resume', work, '--retry-blocked-start', 'PREPARE_ARTIFACT_SEED_VERSION_CONFLICT', '--remedy', 'recreate-artifact-seed', '--request-id', 'retry-1');
+  assert.equal(retried.code, 2, retried.stderr);
+  assert.match(retried.stderr, /REQUEST_IDENTIFIED.*retry-1/);
+  assert.deepEqual(retried.json, { kind: 'durable', request_id: 'retry-1', operation: 'resume', work_id: work, outcome: 'not-applied', reason: 'WORK_NOT_FOUND', created: null });
+  assert.deepEqual((await cli('resume', work, '--retry-blocked-start', 'PREPARE_ARTIFACT_SEED_VERSION_CONFLICT', '--remedy', 'recreate-artifact-seed', '--request-id', 'retry-1')).json,
+    retried.json, 'replay: the recorded receipt');
+  assert.deepEqual((await cli('resume', work, '--retry-blocked-start', 'PREPARE_ARTIFACT_SEED_VERSION_CONFLICT', '--request-id', 'retry-1')).json,
+    { kind: 'refused', code: 'REQUEST_ID_CONFLICT' }, 'same identity without the remedy is another decision');
   const created = await cli('new', 'acme/project#3', '--keep-predecessor-pr', '--request-id', 'new-1');
   assert.equal(created.code, 2, created.stderr);
   assert.deepEqual(created.json, { kind: 'durable', request_id: 'new-1', operation: 'new', work_id: null, outcome: 'not-applied', reason: 'TICKET_NOT_KNOWN', created: null });

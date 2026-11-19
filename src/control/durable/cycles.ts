@@ -7,7 +7,7 @@ import { initialBudget } from '../rules/budget.js';
 import { authorizationChange, authorizationFacts, cancelDecision, cycleImpediments, hasImpediment, newCycleDecision, occupying, reopenDecision, resumeDecision,
   settleCancellation } from '../rules/cycles.js';
 import { decideMerge, ownPullRequestOf } from '../rules/delivery.js';
-import { newReviewRoundDecision, overrideBlockedRecoveryDecision, positiveResolution, reviewerRetryLimitCode } from '../rules/recovery.js';
+import { newReviewRoundDecision, overrideBlockedRecoveryDecision, positiveResolution, retryBlockedStartDecision, reviewerRetryLimitCode } from '../rules/recovery.js';
 import { readForgotten, readWork, readWorks, requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import { questions } from './questions.js';
 import { applyRecoveryRequest } from './recovery-request.js';
@@ -86,6 +86,7 @@ export async function acceptCancel(session: Session, input: CycleInput & { opera
 export async function acceptResume(session: Session, input: CycleInput & { operation: 'resume' }, facts: { running(work_id: string): boolean } = { running: () => false }) {
   if ('override_blocked_recovery' in input) return acceptBlockedRecoveryOverride(session, input, facts);
   if ('new_review_round' in input) return acceptNewReviewRound(session, input, facts);
+  if ('retry_blocked_start' in input) return acceptBlockedStartRetry(session, input, facts);
   return command(session, input, async tx => {
     const index = await tx.doc(ticketIndex);
     const work = (await tx.doc(works, input.work_id, null)).work;
@@ -164,6 +165,49 @@ async function acceptNewReviewRound(session: Session, input: Extract<CycleInput,
     execution!.reviewRetryLimit = { decision: 'new-review-round', request_id: input.request_id, operator: { kind: 'local-administrator' }, at };
     work!.history.push({ at, event: 'review-retry-limit-decided', origin: 'local-cli', executionId: execution!.executionId, detail: `${input.request_id}:new-review-round` });
     applyRecoveryRequest(work!, { executionId: execution!.executionId, code: reviewerRetryLimitCode, at, reason: 'operator-new-review-round' });
+    return receiptOf(input, work!.work_id, 'accepted', null);
+  });
+}
+
+/** Ticket 50: the artifact seed (`factory/<kind>/<version>`) named by a seed-conflict detail (`<seed>/<file>`), if any. */
+const seedOfDetail = (detail: string | null) => {
+  const parts = (detail ?? '').split('/');
+  return parts.length >= 3 && parts[0] === 'factory' ? [parts.slice(0, 3).join('/')] : [];
+};
+
+/**
+ * Ticket 50: `resume <work> --retry-blocked-start <code> [--remedy <name>]` — the GENERIC operator exit of a recovery blocked by a refused
+ * boot/preparation (ticket 47 reuses it for START_PRESERVED_DISK_CHECK_REQUIRED). ONE commit (deduplicated by request identity) revalidates the
+ * block against the durable facts (exact code, the refused Execution released after confirmed cessation, nothing started, no Slot/activity),
+ * records the operator's decision on that Execution with history, lifts ONLY that `RECOVERY_BLOCKED` and requests ONE operational recovery
+ * through ticket 26's ordinary path (persisted wait; one `recoveries` unit at the confirmed start; an already pending one is kept, never a
+ * second). A remedy is recorded for the NEXT preparation/boot only. Nothing is launched here.
+ */
+async function acceptBlockedStartRetry(session: Session, input: Extract<CycleInput, { retry_blocked_start: string }>, facts: { running(work_id: string): boolean }) {
+  return command(session, input, async tx => {
+    const index = await tx.doc(ticketIndex);
+    const work = (await tx.doc(works, input.work_id, null)).work;
+    const execution = work?.execution ?? null;
+    const remedy = input.remedy ?? null;
+    const refusal = execution?.blockedStart;
+    const decision = retryBlockedStartDecision({
+      work: work ? { result: work.result, current: index.tickets[ticketKey(work.ticket)]?.current === work.work_id, impediments: work.impediments } : null,
+      execution: execution ? { state: execution.state, started: Boolean(execution.start), slotHeld: execution.slot.held,
+        blockedStart: refusal ? { code: refusal.code, cessation: refusal.cessation, retry: refusal.retry } : undefined } : null,
+      code: input.retry_blocked_start, remedy, running: facts.running(input.work_id), cancelling: Boolean(work?.cancellation) });
+    if (decision.kind === 'refuse') return receiptOf(input, input.work_id, 'not-applied', decision.code);
+    if (decision.kind === 'already') return receiptOf(input, input.work_id, 'already-satisfied', decision.code);
+    const seeds = remedy === 'recreate-artifact-seed' ? seedOfDetail(refusal!.detail) : [];
+    if (remedy === 'recreate-artifact-seed' && !seeds.length) return receiptOf(input, input.work_id, 'not-applied', 'SEED_NOT_IDENTIFIED');
+    const at = new Date().toISOString();
+    removeImpediments(work!, ['RECOVERY_BLOCKED']);
+    work!.history.push({ at, event: 'blocked-start-retried', origin: 'local-cli', executionId: execution!.executionId,
+      detail: `${input.request_id}:${decision.code}${remedy ? `:${remedy}:${seeds.join(',')}` : ''}`.slice(0, 512) });
+    const opened = applyRecoveryRequest(work!, { executionId: execution!.executionId, code: decision.code, at, reason: `operator-retry:${decision.code}` });
+    work!.startRemedy = remedy ? { remedy, request_id: input.request_id, executionId: execution!.executionId, at, seeds } : null;
+    // Assigned as a new object: a doc value assigned then mutated in place is not what the commit persists.
+    execution!.blockedStart = { ...refusal!, retry: { request_id: input.request_id, operator: { kind: 'local-administrator' }, at, code: decision.code, remedy,
+      recoveryRequest: opened } };
     return receiptOf(input, work!.work_id, 'accepted', null);
   });
 }

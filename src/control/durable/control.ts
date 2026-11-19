@@ -23,8 +23,8 @@ import { counterView, durationView, maxGrantAmount } from '../rules/budget.js';
 import { grantBudget, openCorrection, requestOperationalRecovery } from './budget.js';
 import { reconcileBoot } from './recovery.js';
 import { dispatchGate } from '../rules/recovery.js';
-import { blockedReferencePattern } from '../../contracts/index.js';
-import { backoffRunning } from './recovery-request.js';
+import { blockedReferencePattern, blockedStartCodePattern, startRetryRemedies } from '../../contracts/index.js';
+import { backoffRunning, bootDeferralRunning } from './recovery-request.js';
 import { createDeliveryDesk } from './delivery-desk.js';
 import { acceptCancel, acceptNewCycle, acceptReopen, acceptResume, createCycleDesk, recordAuthorization } from './cycles.js';
 import { createRetentionDesk } from './retention-desk.js';
@@ -54,6 +54,9 @@ const inputSchema = z.union([z.strictObject({ request_id: requestId, operation: 
   // Ticket 41: explicit exit of a recovery blocked by a lost Builder request (the exact blocked reference).
   z.strictObject({ request_id: requestId, operation: z.literal('resume'), work_id: z.uuid(), override_blocked_recovery: z.string().regex(blockedReferencePattern), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('resume'), work_id: z.uuid(), new_review_round: z.literal(true), origin: z.literal('local-cli') }),
+  // Ticket 50: Control checks the exact blocking refusal and the remedy; only their shared shapes are checked here.
+  z.strictObject({ request_id: requestId, operation: z.literal('resume'), work_id: z.uuid(), retry_blocked_start: z.string().regex(blockedStartCodePattern),
+    remedy: z.enum(startRetryRemedies).optional(), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('reopen'), work_id: z.uuid(), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('new'), ticket: z.strictObject({ repository: z.string().regex(/^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/),
     number: z.number().int().positive().max(2 ** 31) }), keepPredecessorPullRequest: z.boolean(), origin: z.literal('local-cli') }),
@@ -122,7 +125,8 @@ export async function openControl(options: { storagePath: string;
   // Boot facts of THIS run (ticket 26): a repository whose host Git cache was being prepared stays blocked (a fetch/clone may still run).
   const runBlockers = (work: WorkRecord): string[] => [
     ...(recovery?.cachePreparing.includes(work.repository.repositoryId) ? ['CACHE_RECONCILIATION_REQUIRED'] : []),
-    ...(backoffRunning(work, calendar.now()) ? ['RECOVERY_BACKOFF'] : [])];
+    ...(backoffRunning(work, calendar.now()) ? ['RECOVERY_BACKOFF'] : []),
+    ...(bootDeferralRunning(work, calendar.now()) ? ['BOOT_CAPACITY_WAIT'] : [])];
   const configuredRepository = (repository: string) => options.access?.repositories.find(scope => scope.repository.toLowerCase() === repository.toLowerCase());
   // Question publication and answer ingestion need the tracker; they run whatever the dispatch barrier (no spawn involved).
   const desk = options.access && options.polling ? createQuestionDesk({ session: state, tracker: options.access.tracker, operators: options.access.operators ?? [],
