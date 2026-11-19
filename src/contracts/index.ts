@@ -83,6 +83,18 @@ export const blockedStartCodePattern = /^(PREPARE|START)_[A-Z][A-Z0-9_]{0,95}$/;
  */
 export const startRetryRemedies = ['recreate-artifact-seed', /* ticket 47 */ 'repair-disk', 'replace-disk'] as const;
 export type StartRetryRemedy = typeof startRetryRemedies[number];
+
+/**
+ * Ticket 48 (operator decision 2026-11-19, pilot 35): the Builder budget of ONE Execution (`builder-v1`): model requests, tool calls and the
+ * timeout of each model request (the SDK request timeout; there is no worker clock in production, spec §4.4). A repository may adjust each
+ * value from 1 up to `builderBudgetMaximumFactor` times it; above that the configuration is refused (no silent fallback).
+ */
+export const builderBudgetV1 = Object.freeze({ requests: 150, toolCalls: 300, requestTimeoutMinutes: 60 });
+export const builderBudgetMaximumFactor = 2;
+/** Ticket 48: per-repository Builder budget adjustment as configured (each field optional; absent = the release value). */
+export type BuilderBudgetConfiguration = { requests?: number | undefined; toolCalls?: number | undefined; requestTimeoutMinutes?: number | undefined };
+/** Ticket 48: a budget end WITH Host-observed progress continues in a new Execution charged to this per-Work counter, not to recoveries. */
+export const continuationsPerWork = 5;
 /** Stable correlation marker of a Work's own pull request (spec §9.1, ticket 14): first line of its body `<!-- software-factory:work:<work-id> -->`. */
 export const publicationMarkerPrefix = 'software-factory:work:';
 /** Reviewer roles bound by the Host (spec §5.6/§6.4); never chosen by a model. */

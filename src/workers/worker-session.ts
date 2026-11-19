@@ -60,7 +60,7 @@ export async function executeSession(options: Options, invocation: Invocation, r
   const oauth = !('apiKey' in profile);
   // After a question no further model request or tool runs in this activation (spec §5.5: the activation ends, nothing waits).
   let asked: AskedQuestion | undefined;
-  const limits = budgetFor(invocation.context.role, invocation.modelBudget);
+  const limits = budgetFor(invocation.context.role, invocation.modelBudget, invocation.builderBudget);
   const role = invocation.context.role;
   if (invocation.handoff !== undefined && (role !== 'builder' || !options.onHandoff)) throw new Error('WORKER_HANDOFF_UNAVAILABLE');
   // No implicit clock cut (spec §4.4): only an explicit Host deadline bounds the activation, and the Execution-level clock is the
@@ -229,7 +229,10 @@ export async function executeSession(options: Options, invocation: Invocation, r
         }
         const status = signal.aborted || interrupted || qualification?.failed() ? 'interrupted' as const : 'completed' as const;
         const sessionFile = manager.getSessionFile() ?? null;
-        if (role === 'builder' || !invocation.review) return { status, receipt, sessionFile: manager.getSessionFile(), ...(role === 'builder' ? { sessionTools: [...tools].sort() } : {}) };
+        // Ticket 48: a Builder session closed by its own request/tool count says so (the Host's count, never a model claim).
+        const budgetExhausted = role === 'builder' && status === 'interrupted' ? qualification?.exhausted() ?? null : null;
+        if (role === 'builder' || !invocation.review) return { status, receipt, sessionFile: manager.getSessionFile(), ...(role === 'builder' ? { sessionTools: [...tools].sort() } : {}),
+          ...(budgetExhausted ? { budgetExhausted } : {}) };
         // Reviewer: the complete opinion from the FINAL assistant message is preserved durably BEFORE any notification.
         const last = [...session.messages].reverse().find(message => message.role === 'assistant');
         const finalText = last && 'content' in last && Array.isArray(last.content)

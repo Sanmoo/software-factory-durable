@@ -127,6 +127,7 @@ export async function run(input: unknown, parentSignal: AbortSignal, ipc?: Worke
     ...(bootstrap.copyOutput === undefined ? {} : { copyOutput: bootstrap.copyOutput }),
     ...(bootstrap.skillPack === undefined ? {} : { skillPack: bootstrap.skillPack }),
     ...(bootstrap.modelBudget === undefined ? {} : { modelBudget: bootstrap.modelBudget }),
+    ...(bootstrap.builderBudget === undefined ? {} : { builderBudget: bootstrap.builderBudget }),
     ...(bootstrap.deadlineMs === undefined ? {} : { deadlineMs: bootstrap.deadlineMs }),
     ...(bootstrap.editSourceMaxBytes === undefined ? {} : { editSourceMaxBytes: bootstrap.editSourceMaxBytes }),
     ...(bootstrap.handoff === undefined ? {} : { handoff: bootstrap.handoff }),

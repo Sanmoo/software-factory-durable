@@ -4,7 +4,7 @@ import { lstat, readdir, readFile, readlink, realpath } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
-import type { Diagnostic } from '../contracts/index.js';
+import { builderBudgetMaximumFactor, builderBudgetV1, continuationsPerWork, type Diagnostic } from '../contracts/index.js';
 
 /**
  * Self-contained release (spec §11.1/§14, ticket 32): the release tree `releases/<id>/` of a canonical installation root carries
@@ -54,7 +54,12 @@ export const productionProfile = Object.freeze({
   limits: Object.freeze({ socketPathBytes: 107, writeMaxBytes: 8192, editSourceMaxBytes: 8192,
     // `modelBudget` governs request/tool/byte limits only. Ticket 51: reviewer-v1 (per reviewer attempt of a round) is 48 requests, 160 tool
     // calls and 30 minutes, which bound each model request (the SDK request timeout); it is not a worker clock cut (spec §4.4, below).
-    modelBudget: Object.freeze({ builderV1: Object.freeze({ requests: 60, toolCalls: 120 }),
+    // Ticket 48: builder-v1 (per Builder Execution) is 150 requests, 300 tool calls and 60 minutes (same per-request meaning); a repository
+    // may adjust it up to `repositoryMaximum` (2x; above it the configuration is refused). A budget end WITH Host-observed progress continues
+    // in a new Execution charged to the Work's own `continuationsPerWork` counter, not to recoveries.
+    modelBudget: Object.freeze({ builderV1: Object.freeze({ ...builderBudgetV1,
+      repositoryMaximum: Object.freeze({ requests: builderBudgetV1.requests * builderBudgetMaximumFactor, toolCalls: builderBudgetV1.toolCalls * builderBudgetMaximumFactor,
+        requestTimeoutMinutes: builderBudgetV1.requestTimeoutMinutes * builderBudgetMaximumFactor }), continuationsPerWork }),
       reviewerV1: Object.freeze({ requests: 48, toolCalls: 160, requestTimeoutMinutes: 30 }) }),
     providerRetries: 0, sdkRetries: 0,
     // Spec §4.4: the production composition sets NO worker clock deadline. Without a configured repository timeout there is no cut; the

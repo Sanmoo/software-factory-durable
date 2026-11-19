@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { parseDocument } from 'yaml';
 import { z } from 'zod';
 import { createSandbox } from '../sandbox/index.js';
+import { builderBudgetMaximumFactor, builderBudgetV1 } from '../contracts/index.js';
 
 const text = z.string().trim().min(1).max(256).refine(value =>
   !/(?:gh[pousr]_|github_pat_|sk-[a-zA-Z0-9]|-----BEGIN.*PRIVATE KEY)/.test(value), 'Secret values are forbidden');
@@ -23,6 +24,13 @@ const repository = z.strictObject({
   correctionLimit: z.number().int().nonnegative().safe().default(3),
   recoveryLimit: z.number().int().nonnegative().safe().default(3),
   timeoutSeconds: positive.optional(),
+  // Ticket 48: per-repository adjustment of the Builder budget of one Execution (release values 150 requests, 300 tool calls, 60 minutes per
+  // model request). Each value from 1 up to 2x the release value; above it the whole configuration is refused (BUILDER_BUDGET_ABOVE_MAXIMUM).
+  builderBudget: z.strictObject({
+    requests: z.number().int().positive().max(builderBudgetV1.requests * builderBudgetMaximumFactor).optional(),
+    toolCalls: z.number().int().positive().max(builderBudgetV1.toolCalls * builderBudgetMaximumFactor).optional(),
+    requestTimeoutMinutes: z.number().int().positive().max(builderBudgetV1.requestTimeoutMinutes * builderBudgetMaximumFactor).optional(),
+  }).optional(),
 });
 // Readable ONLY for native dependency reads (spec §4.2): never a Ticket origin, never executable, no base/label/limits.
 const dependencyRepository = z.strictObject({
@@ -75,7 +83,8 @@ export async function readConfiguration(root: string, guestAssets?: { directory:
   const validatedSandbox = sandbox.configuration;
   if (!parsed.success || !validatedSandbox.valid) {
     return { checks: sandbox.checks, versions: sandbox.versions, configuration: { valid: false as const, errors: [
-      ...(!parsed.success ? parsed.error.issues.map(issue => ({ code: 'CONFIGURATION_INVALID', path: issue.path.join('.') })) : []),
+      ...(!parsed.success ? parsed.error.issues.map(issue => ({ code: issue.code === 'too_big' && issue.path.includes('builderBudget')
+        ? 'BUILDER_BUDGET_ABOVE_MAXIMUM' : 'CONFIGURATION_INVALID', path: issue.path.join('.') })) : []),
       ...(!validatedSandbox.valid ? validatedSandbox.errors : []),
     ] } };
   }

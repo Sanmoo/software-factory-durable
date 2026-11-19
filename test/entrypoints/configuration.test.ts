@@ -145,3 +145,24 @@ test('review 3: an operator can be pinned by immutable GitHub user id next to th
     assert.equal((await diagnose(configuration.replace('operators: [operator-one]', bad))).report.configuration.valid, false, bad);
   }
 });
+
+test('ticket 48: a repository adjusts the Builder budget up to 2x of 150 requests / 300 tool calls / 60 minutes; above it the configuration is refused', async () => {
+  const adjusted = configuration.replace('workflows: false', 'workflows: false\n    builderBudget: {requests: 300, toolCalls: 450, requestTimeoutMinutes: 120}');
+  const { report } = await diagnose(adjusted);
+  assert.equal(report.configuration.valid, true);
+  assert.deepEqual(report.configuration.effective.repositories[0].builderBudget, { requests: 300, toolCalls: 450, requestTimeoutMinutes: 120 });
+  const partial = await diagnose(configuration.replace('workflows: false', 'workflows: false\n    builderBudget: {requests: 200}'));
+  assert.deepEqual(partial.report.configuration.effective.repositories[0].builderBudget, { requests: 200 }, 'absent values keep the release values');
+  for (const [field, value] of [['requests', 301], ['toolCalls', 601], ['requestTimeoutMinutes', 121]] as const) {
+    const { status, report: refused } = await diagnose(configuration.replace('workflows: false', `workflows: false\n    builderBudget: {${field}: ${value}}`));
+    assert.equal(status, 2, field);
+    assert.equal(refused.configuration.valid, false, 'no silent fallback to the release value');
+    assert.equal('effective' in refused.configuration, false);
+    assert.deepEqual(refused.configuration.errors, [{ code: 'BUILDER_BUDGET_ABOVE_MAXIMUM', path: `repositories.0.builderBudget.${field}` }]);
+  }
+  for (const yaml of ['builderBudget: {requests: 0}', 'builderBudget: {requests: 1.5}', 'builderBudget: {deadlineMs: 1000}']) {
+    const { report: invalid } = await diagnose(configuration.replace('workflows: false', `workflows: false\n    ${yaml}`));
+    assert.equal(invalid.configuration.valid, false, yaml);
+    assert.equal(invalid.configuration.errors[0].code, 'CONFIGURATION_INVALID', yaml);
+  }
+});

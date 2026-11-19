@@ -56,7 +56,7 @@ test('build: one exclusive archive with checksum and manifest pinning Node/SDKs/
   // Ticket 13: the newest registered pack (multi-round reviews, with continuation) ships and is the production pack; the bound is recorded.
   assert.equal(manifest.production.builder.skillPack, factorySkillPackIds.at(-1));
   assert.deepEqual(manifest.production.reviewRounds, { max: 4 });
-  assert.equal(manifest.production.limits.modelBudget.builderV1.requests, 60);
+  assert.equal(manifest.production.limits.modelBudget.builderV1.requests, 150);
   assert.match(manifest.production.limits.deadline, /only the optional configured per-repository timeoutSeconds applies/);
   assert.doesNotMatch(JSON.stringify(manifest.production.limits), /deadlineMinutes|deadlineMs/);
   assert.deepEqual(manifest.production.tools.standards, ['read']);

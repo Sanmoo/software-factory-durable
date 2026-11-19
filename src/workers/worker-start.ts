@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { loadSkillPack, skillPacks, type SkillPackId } from './skill-pack.js';
 import type { ReviewInput } from './review.js';
 import type { WorkerSessionRef } from './session-ref.js';
+import type { BuilderBudgetOverride } from './oauth-qualification.js';
 
 type ReviewerModel = { id: string; name: string; reasoning: boolean; input: ('text' | 'image')[];
   cost: { input: number; output: number; cacheRead: number; cacheWrite: number }; contextWindow: number; maxTokens: number };
@@ -21,6 +22,8 @@ export type Invocation = { context: ToolContext; prompt: string; signal: AbortSi
   skillPack?: SkillPackId;
   /** Bounded OAuth budget instead of the 05 qualification envelope: `builder-v1` for the Builder, `reviewer-v1` for Standards/Spec. */
   modelBudget?: 'builder-v1' | 'reviewer-v1';
+  /** Ticket 48, Builder only: the repository's adjustment of `builder-v1` (requests, tool calls, per-request timeout; at most 2x). */
+  builderBudget?: BuilderBudgetOverride;
   /** Explicit invocational clock bound (ticket 19): only a Host policy may set it. Absent means NO implicit cut (spec §4.4);
    * the Execution-level clock is the repository's optional timeout, enforced by the controller. */
   deadlineMs?: number;
@@ -55,7 +58,7 @@ export async function startWorker(profile: ReviewerProfile, records: Awaited<Ret
   if (!['standards', 'spec', 'builder'].includes(invocation.context.role)) throw new Error('WORKER_ROLE_UNSUPPORTED');
   if ('apiKey' in profile) records.registerSecret(profile.apiKey);
   const reviewer = invocation.context.role !== 'builder';
-  if (((invocation.skillPack !== undefined || invocation.handoff !== undefined || invocation.modelBudget === 'builder-v1' || invocation.continuedSession !== undefined) && reviewer) ||
+  if (((invocation.skillPack !== undefined || invocation.handoff !== undefined || invocation.modelBudget === 'builder-v1' || invocation.builderBudget !== undefined || invocation.continuedSession !== undefined) && reviewer) ||
       ((invocation.review !== undefined || invocation.modelBudget === 'reviewer-v1') && !reviewer)) throw new Error('WORKER_POLICY_ROLE_DENIED');
   // The exact verified pack identity enters the start receipt; drift refuses the start before any model/tool.
   const pack = invocation.skillPack ? await loadSkillPack(skillPacks[invocation.skillPack].directory, invocation.skillPack) : undefined;
@@ -67,6 +70,7 @@ export async function startWorker(profile: ReviewerProfile, records: Awaited<Ret
     promptSha256: createHash('sha256').update(invocation.prompt).digest('hex'),
     skillPack: pack ? { id: pack.id, version: pack.version, manifestSha256: pack.manifestSha256 } : null,
     modelBudget: invocation.modelBudget ?? null,
+    ...(invocation.builderBudget ? { builderBudget: invocation.builderBudget } : {}),
     deadlineMs: invocation.deadlineMs ?? null,
     handoff: invocation.handoff ? { baseCommit: invocation.handoff.baseCommit, ...(invocation.handoff.preserve ? { preserve: invocation.handoff.preserve } : {}) } : null,
     // Ticket 11 (spec §6.1): the session format and whether this activation continues a preserved session (identity/hash) or starts one.

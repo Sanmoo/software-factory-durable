@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { factorySkillPackIds } from '../../contracts/index.js';
+import { builderBudgetMaximumFactor, builderBudgetV1, factorySkillPackIds } from '../../contracts/index.js';
 import { sessionRefSchema } from './worker-session-file.js';
 
 const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
@@ -26,6 +26,10 @@ const bootstrap = z.strictObject({
   // Host-selected Builder start policies (ticket 09): the Factory skill pack and the bounded Builder model budget.
   skillPack: z.enum(factorySkillPackIds).optional(),
   modelBudget: z.enum(['builder-v1', 'reviewer-v1']).optional(),
+  // Ticket 48: the repository's Builder budget adjustment of builder-v1 (never above 2x of 150 requests / 300 tools / 60 min per request).
+  builderBudget: z.strictObject({ requests: z.number().int().min(1).max(builderBudgetV1.requests * builderBudgetMaximumFactor),
+    tools: z.number().int().min(1).max(builderBudgetV1.toolCalls * builderBudgetMaximumFactor),
+    deadlineMs: z.number().int().min(60_000).max(builderBudgetV1.requestTimeoutMinutes * builderBudgetMaximumFactor * 60_000).multipleOf(60_000) }).optional(),
   deadlineMs: z.number().int().positive().max(86_400_000).optional(),
   // Ticket 37: how long the worker waits for the owner's ACK of a secret registration before failing closed. Absent (production) is
   // the publisher's 5000 ms default; a Host may only shorten it (a fixture proving the held-ACK path need not wait 5 s).
@@ -71,8 +75,9 @@ const bootstrap = z.strictObject({
 
 function rolePolicies(input: { context: { role: string }; copyOutput?: boolean | undefined; selectedOutputCopies?: readonly string[] | undefined;
   skillPackFiles?: readonly string[] | undefined;
-  skillPack?: string | undefined; modelBudget?: string | undefined; handoff?: unknown; pushPolicy?: unknown; review?: unknown; continueSession?: unknown; continuedSession?: unknown }) {
+  skillPack?: string | undefined; modelBudget?: string | undefined; builderBudget?: unknown; handoff?: unknown; pushPolicy?: unknown; review?: unknown; continueSession?: unknown; continuedSession?: unknown }) {
   if (input.pushPolicy !== undefined && input.context.role !== 'builder') return false;
+  if (input.builderBudget !== undefined && (input.context.role !== 'builder' || input.modelBudget !== 'builder-v1')) return false;
   // A session continuation is a Builder policy only, and never both the launch form and the bootstrap form.
   if ((input.continueSession !== undefined || input.continuedSession !== undefined) && (input.context.role !== 'builder' ||
       (input.continueSession !== undefined && input.continuedSession !== undefined))) return false;
@@ -86,7 +91,7 @@ function rolePolicies(input: { context: { role: string }; copyOutput?: boolean |
     !(input.context.role !== 'builder' && input.copyOutput === true);
 }
 export const workerBootstrapSchema = bootstrap.refine(rolePolicies, 'WORKER_POLICY_ROLE_DENIED');
-export const workerLaunchSchema =  bootstrap.pick({ context: true, knownSecrets: true, prompt: true, imageSourceMaxBytes: true, editSourceMaxBytes: true, copyOutput: true, selectedOutputCopies: true, skillPack: true, skillPackFiles: true, modelBudget: true, deadlineMs: true, secretAckTimeoutMs: true, handoff: true, pushPolicy: true, review: true, continueSession: true }).extend({ profile: launchProfile }).strict().refine(rolePolicies, 'WORKER_POLICY_ROLE_DENIED')
+export const workerLaunchSchema =  bootstrap.pick({ context: true, knownSecrets: true, prompt: true, imageSourceMaxBytes: true, editSourceMaxBytes: true, copyOutput: true, selectedOutputCopies: true, skillPack: true, skillPackFiles: true, modelBudget: true, builderBudget: true, deadlineMs: true, secretAckTimeoutMs: true, handoff: true, pushPolicy: true, review: true, continueSession: true }).extend({ profile: launchProfile }).strict().refine(rolePolicies, 'WORKER_POLICY_ROLE_DENIED')
   // The continued session is resolved by the owner launcher from `continueFrom`, never supplied by the launch request.
   .refine(input => input.review?.session === undefined, 'WORKER_POLICY_ROLE_DENIED');
 export type WorkerLaunch = z.infer<typeof workerLaunchSchema>;
