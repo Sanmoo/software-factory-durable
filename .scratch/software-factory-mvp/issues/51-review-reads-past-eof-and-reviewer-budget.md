@@ -15,20 +15,21 @@
 
 **Type:** task
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 ## Acceptance criteria
 
 - [ ] Leitura além do fim de um arquivo que o revisor já leu até a última linha não é fonte ilegível; o motivo do Host diz o caminho e o
   offset quando a leitura falha de verdade (teste de regra com os casos do piloto).
-- [ ] Orçamento do revisor revisto com as medições do piloto (requisições por rodada no #124, #125 e #126); proporcional ao tamanho da mudança
-  ou com um teto maior registrado na release.
-- [ ] `REVIEWER_RETRY_LIMIT` tem decisão explícita do operador (nova rodada, aceitar a rodada com a opinião disponível, ou cancelar),
-  registrada; a Execução não fica retida indefinidamente.
-- [ ] Prova real: um Ticket médio com as duas revisões verificadas.
+- [ ] Orçamento do revisor passa a 48 requisições, 160 ferramentas e 30 minutos por rodada, fixo e registrado na release.
+- [ ] `REVIEWER_RETRY_LIMIT` tem decisão explícita do operador, registrada: nova rodada ou cancelar. Não existe opção de aceitar uma rodada
+  não verificada. A Execução não fica retida indefinidamente.
+- [ ] Testes offline cobrem a regra de leitura além do fim, o novo orçamento e as duas decisões do operador.
 
 ## Comments
 
 - Evidência: `pl1-pilot-evidence/findings.md` itens 11 e 12; `artifacts/review/r1/index.json` do ambiente do #124; sessões dos revisores em
   `pl1/r/BJksTe-QQZ2bYkcgbfjdkg/`.
+- A prova real (Ticket médio com as duas revisões verificadas) foi para o [54](54-pilot-2.md).
 - Relacionados: [43](43-reconciliation-review-own-patch.md), [52](52-cancel-of-held-execution.md).
+- 2026-11-19 triagem (operador, decisões registradas): 48 requisições / 160 ferramentas / 30 min fixos; sem opção de aceitar rodada não verificada; independente, primeiro da fila junto com o 50; prova real no 54.

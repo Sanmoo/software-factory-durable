@@ -16,13 +16,14 @@ A única saída foi `cancel` + `new`, que perde ambiente e trabalho não publica
 
 **Type:** task
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 ## Acceptance criteria
 
 - [ ] Falta de memória/disco no boot é transitória: volta à fila com espera e sem cobrar recovery quando nada iniciou.
 - [ ] Para as demais recusas de boot/preparo, `factory resume <work>` (ou forma equivalente) aceita a decisão explícita do operador depois de
-  cessação confirmada, registrada e auditável, e o Trabalho volta pela recovery normal.
+  cessação confirmada, registrada e auditável, e o Trabalho volta pela recovery normal. Este é o mecanismo genérico; o ticket 47 o usa para
+  `START_PRESERVED_DISK_CHECK_REQUIRED`.
 - [ ] Mudança de recursos do guest (memória, vCPU) na configuração não invalida ambientes preparados; só o que muda a identidade do disco ou do
   perfil (tamanho de disco, perfil, assets) exige ambiente novo, com mensagem que diga isso antes de aplicar.
 - [ ] `doctor` avisa, antes do reinício, quando a nova configuração vai invalidar ambientes de Trabalhos abertos.
@@ -32,3 +33,4 @@ A única saída foi `cancel` + `new`, que perde ambiente e trabalho não publica
 
 - Evidência: `pl1-pilot-evidence/findings.md` itens 1, 5 e 6.
 - Relacionados: [41](41-explicit-unblock-of-blocked-recovery.md), [47](47-clean-guest-stop-and-disk-recovery.md).
+- 2026-11-19 triagem (operador, decisões registradas): primeiro da fila junto com o 51; dono do mecanismo genérico de retomada por decisão do operador (antes previsto também no 47); prova real no [54](54-pilot-2.md).
