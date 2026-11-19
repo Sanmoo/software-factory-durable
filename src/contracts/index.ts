@@ -72,6 +72,17 @@ export const replyMarkerPrefix = 'software-factory:reply:';
 export const blockedReferencePattern = /^request:[A-Za-z0-9][A-Za-z0-9-]{0,79}:[A-Z][A-Z0-9_]{0,63}$/;
 export const blockedReferenceToken = /^[A-Za-z0-9][A-Za-z0-9-]{0,79}$/;
 export const blockedRequestReference = (token: string, code: string) => `request:${token}:${code}`;
+/**
+ * Ticket 50: the boot/preparation refusal that blocked a Work's recovery (`PREPARE_<sandbox code>` / `START_<sandbox code>`), shown by
+ * `factory show` and named EXACTLY by `factory resume <work> --retry-blocked-start <code>`. One shape for Control, socket and CLI.
+ */
+export const blockedStartCodePattern = /^(PREPARE|START)_[A-Z][A-Z0-9_]{0,95}$/;
+/**
+ * Ticket 50: explicit operator remedies applied together with a retry of a blocked start (`--remedy <name>`), each valid for exactly the
+ * refusal codes Control maps it to. Ticket 47 adds its disk remedies for `START_PRESERVED_DISK_CHECK_REQUIRED` here.
+ */
+export const startRetryRemedies = ['recreate-artifact-seed'] as const;
+export type StartRetryRemedy = typeof startRetryRemedies[number];
 /** Stable correlation marker of a Work's own pull request (spec §9.1, ticket 14): first line of its body `<!-- software-factory:work:<work-id> -->`. */
 export const publicationMarkerPrefix = 'software-factory:work:';
 /** Reviewer roles bound by the Host (spec §5.6/§6.4); never chosen by a model. */

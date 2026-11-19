@@ -1,5 +1,5 @@
 // Pure recovery rules (ticket 26, spec §4.4/§5.2/§5.3/§5.4/§11.4). No I/O, clock or randomness: callers supply every fact.
-import { blockedReferenceToken } from '../../contracts/index.js';
+import { blockedReferenceToken, blockedStartCodePattern, type StartRetryRemedy } from '../../contracts/index.js';
 import type { Impediment } from '../types.js';
 
 /** Persisted waits of the operational recoveries of one Work (spec §4.4): 5/15/45 s, the last one repeated for explicitly granted extra units. */
@@ -45,10 +45,41 @@ const transient = new Set(['WORKER_EXECUTION_UNCERTAIN', 'WORKER_CHANNEL_CLOSED'
 // Phase prefixes of the dispatch holds (`${phase}_${code}`) that may wrap a transient worker failure.
 const phases = ['ACTIVATE_', 'STARTED_', 'REVIEW_', 'COMPLETED_', 'STOP_'];
 
+/**
+ * Ticket 50: host capacity refusals raised BEFORE any boot/preparation effect (free memory or storage below what this guest needs NOW). They
+ * pass when another guest ends or space is freed, so they are transient: the Work keeps its queue position behind a persisted capacity wait,
+ * and nothing is charged because nothing started.
+ */
+export const bootCapacityCodes = ['START_INSUFFICIENT_MEMORY_FOR_BOOT', 'START_INSUFFICIENT_STORAGE_FOR_BOOT', 'PREPARE_INSUFFICIENT_STORAGE_FOR_PREPARATION'] as const;
+export const isBootCapacityRefusal = (code: string | null | undefined) => (bootCapacityCodes as readonly string[]).includes(code ?? '');
+/** Persisted capacity waits (ticket 50): 15 s, 60 s, then 300 s repeated while the host stays short (a refusal costs no budget). */
+export const bootCapacityWaitsSeconds = [15, 60, 300] as const;
+export function bootCapacityWait(attempt: number): number {
+  return bootCapacityWaitsSeconds[Math.min(Math.max(0, Math.floor(attempt)), bootCapacityWaitsSeconds.length - 1)]!;
+}
+
+// Ticket 50: Sandbox.prepare refusals that complete before any native effect still runs (checks, or a refusal returned after the awaited
+// work ended): the controller itself observed the end of the call, so its cessation is confirmed without a restart. Anything else (e.g. an
+// incomplete or indeterminate preparation) keeps the Slot until the host evidence of the boot reconciliation.
+const preparationRefusals = new Set(['ENVIRONMENT_CONFIGURATION_MISMATCH', 'ARTIFACT_SEED_VERSION_CONFLICT', 'ARTIFACT_SEED_SOURCE_DRIFT', 'ARTIFACT_SEED_INVALID',
+  'ARTIFACT_SEED_PATH_UNSAFE', 'INSUFFICIENT_STORAGE_FOR_PREPARATION', 'GUEST_ASSETS_INVALID', 'ENVIRONMENT_CLEANUP_PENDING', 'SANDBOX_CONFIGURATION_INVALID',
+  'CHECKOUT_NOT_COMPOSED']);
+/**
+ * Ticket 50: whether a returned Sandbox refusal proves that nothing of this Execution's preparation/boot still runs. A `start` failure is the
+ * Sandbox's definitive refusal (no boot launched, or a boot whose cessation it confirmed); an `indeterminate` result never is.
+ */
+export function refusedWithoutActivity(input: { phase: 'prepare' | 'start'; status: 'failure' | 'indeterminate'; code: string }): boolean {
+  if (input.status !== 'failure') return false;
+  return input.phase === 'start' || preparationRefusals.has(input.code);
+}
+/** Ticket 50: a boot/preparation refusal (`PREPARE_*`/`START_*`) that blocks and can only be retried by an explicit operator decision. */
+export const blockingStartRefusal = (code: string | null | undefined): code is string =>
+  typeof code === 'string' && blockedStartCodePattern.test(code) && !isBootCapacityRefusal(code);
+
 /** Whether an interrupted Execution may come back through the queue as an operational recovery (counter + persisted wait) or must block. */
 export function classifyInterruption(code: string | null): { kind: 'recoverable' } | { kind: 'blocking'; code: string } {
   const value = code ?? 'CONTROLLER_CRASH';
-  if (transient.has(value)) return { kind: 'recoverable' };
+  if (transient.has(value) || isBootCapacityRefusal(value)) return { kind: 'recoverable' };
   const prefix = phases.find(item => value.startsWith(item));
   if (prefix && transient.has(value.slice(prefix.length))) return { kind: 'recoverable' };
   return { kind: 'blocking', code: value };
@@ -168,6 +199,62 @@ export function overrideBlockedRecoveryDecision(input: OverrideFacts): { kind: '
   if (execution.end.outcome !== 'failure' || execution.end.code !== request.code) return { kind: 'refuse', code: 'BLOCK_CHANGED' };
   if (input.pendingRecovery) return { kind: 'refuse', code: 'RECOVERY_ALREADY_PENDING' };
   return { kind: 'accept', code: request.code };
+}
+
+/** Ticket 50: which refusal codes each explicit remedy applies to (ticket 47 adds its disk remedies here). */
+export const startRetryRemedyCodes: Record<StartRetryRemedy, readonly string[]> = { 'recreate-artifact-seed': ['PREPARE_ARTIFACT_SEED_VERSION_CONFLICT'] };
+
+/** Ticket 50: the remedies the operator may name for a refusal code (shown in the impediment). */
+export const remediesFor = (code: string) => (Object.keys(startRetryRemedyCodes) as StartRetryRemedy[]).filter(remedy => startRetryRemedyCodes[remedy].includes(code));
+
+/** `RECOVERY_BLOCKED` by a boot/preparation refusal (ticket 50), with its explicit exit (operator retry through one operational recovery). */
+export function blockedStartImpediment(workId: string, code: string, detail: string | null, since: string): Impediment {
+  const remedies = remediesFor(code);
+  const why = code.endsWith('ENVIRONMENT_CONFIGURATION_MISMATCH') || code === 'START_GUEST_ASSET_PIN_MISMATCH'
+    ? ' The configuration changed what identifies the prepared environment (profile, disk size or guest assets; memory/vCPU never do): restore it ' +
+      'and retry, or `factory cancel` + `factory new` for a NEW environment (the current one and its unpublished work are not reused).'
+    : '';
+  return { code: 'RECOVERY_BLOCKED', scope: 'work', since, nextStep: `The Execution's boot/preparation was refused with ${code}${detail ? ` (${detail})` : ''}; ` +
+    `nothing started and nothing is retried automatically.${why} After inspecting/fixing the cause, retry it explicitly: ` +
+    `\`factory resume ${workId} --retry-blocked-start ${code} --request-id <id>\`` +
+    (remedies.length ? ` (or with \`--remedy ${remedies.join('|')}\`${remedies.includes('recreate-artifact-seed') ? ' to set the divergent /artifacts copy aside and write a fresh seed' : ''})` : '') +
+    `, one operational recovery unit; or \`factory cancel ${workId}\`.` };
+}
+
+export type StartRetryFacts = {
+  work: { result: string; current: boolean; impediments: readonly { code: string }[] } | null;
+  execution: { state: string; started: boolean; slotHeld: boolean;
+    blockedStart?: { code: string; cessation: 'confirmed' | 'unconfirmed'; retry: { code: string } | null } | undefined } | null;
+  /** The refusal code the operator named. */
+  code: string;
+  remedy: StartRetryRemedy | null;
+  /** Live own activity of the Work in this controller process. */
+  running: boolean;
+  cancelling: boolean };
+
+/**
+ * Ticket 50 (generic operator retry of a refused boot/preparation; ticket 47 reuses it for START_PRESERVED_DISK_CHECK_REQUIRED): accepted
+ * only for EXACTLY the refusal that blocked the Work, after confirmed cessation (the refused Execution was released: no activity, no Slot,
+ * nothing started), and with a remedy only where it applies. Accepting lifts only that block; the Work returns through ONE operational recovery.
+ */
+export function retryBlockedStartDecision(input: StartRetryFacts): { kind: 'accept'; code: string } | { kind: 'already'; code: string } | { kind: 'refuse'; code: string } {
+  const { work, execution } = input;
+  if (!work) return { kind: 'refuse', code: 'WORK_NOT_FOUND' };
+  if (!work.current) return { kind: 'refuse', code: 'WORK_NOT_CURRENT' };
+  if (work.result !== 'open') return { kind: 'refuse', code: work.result === 'cancelled' ? 'WORK_CANCELLED' : work.result === 'delivered' ? 'WORK_DELIVERED' : 'WORK_NOT_OPEN' };
+  if (input.cancelling) return { kind: 'refuse', code: 'WORK_CANCELLING' };
+  const blocked = work.impediments.some(item => item.code === 'RECOVERY_BLOCKED');
+  const refusal = execution?.blockedStart;
+  if (!blocked && refusal?.retry?.code === input.code) return { kind: 'already', code: 'BLOCKED_START_ALREADY_RETRIED' };
+  if (!blocked) return { kind: 'refuse', code: 'RECOVERY_NOT_BLOCKED' };
+  if (!execution || !refusal || refusal.retry) return { kind: 'refuse', code: 'BLOCK_NOT_A_START_REFUSAL' };
+  if (refusal.code !== input.code) return { kind: 'refuse', code: 'BLOCKED_CODE_MISMATCH' };
+  if (input.running || execution.state !== 'released') return { kind: 'refuse', code: 'EXECUTION_ACTIVE' };
+  if (execution.started) return { kind: 'refuse', code: 'BLOCK_NOT_A_START_REFUSAL' };
+  if (refusal.cessation !== 'confirmed') return { kind: 'refuse', code: 'CESSATION_NOT_CONFIRMED' };
+  if (execution.slotHeld) return { kind: 'refuse', code: 'SLOT_HELD' };
+  if (input.remedy && !startRetryRemedyCodes[input.remedy]?.includes(input.code)) return { kind: 'refuse', code: 'REMEDY_NOT_APPLICABLE' };
+  return { kind: 'accept', code: input.code };
 }
 
 /** Ticket 51: the code of an Execution stopped because a reviewer failed again after its automatic retries in the round (ticket 28). */
