@@ -5,8 +5,7 @@ import { lstat, mkdir, open, readFile, realpath, unlink } from 'node:fs/promises
 import { join } from 'node:path';
 import { inspectStorage } from '../platform/host/index.js';
 import { inspectGuestAssets, type GuestAssetPin } from './guest-assets.js';
-import { environmentIdentityChanges, type SandboxConfiguration } from './configuration.js';
-import { ownerSchema } from './lifecycle.js';
+import { configurationSchema, environmentIdentityChanges, type SandboxConfiguration } from './configuration.js';
 import { growFilesystemCopy } from './filesystem.js';
 import { cleanupRequested } from './cleanup-records.js';
 
@@ -50,13 +49,15 @@ export async function prepareEnvironment(root: string, pin: GuestAssetPin | unde
     await privateDirectory(directory);
     if (await cleanupRequested(directory)) return { status: 'failure', code: 'ENVIRONMENT_CLEANUP_PENDING' };
     try {
-      const previous = ownerSchema.safeParse(JSON.parse(await readFile(join(directory, 'owner.json'), 'utf8')));
-      if (!previous.success || previous.data.workId !== workId || previous.data.environment !== environment) {
+      const previous = JSON.parse(await readFile(join(directory, 'owner.json'), 'utf8'));
+      const recorded = configurationSchema.safeParse(previous?.configuration);
+      if (previous?.version !== 1 || previous.workId !== workId || previous.environment !== environment || !recorded.success ||
+          typeof previous.guestAssets?.directory !== 'string' || typeof previous.guestAssets?.manifestSha256 !== 'string') {
         return { status: 'failure', code: 'ENVIRONMENT_CONFIGURATION_MISMATCH', detail: 'environment owner record does not match this Work' };
       }
       // Ticket 50: only the disk/profile identity (profile, disk size, guest assets) binds a prepared environment; guest memory/vCPU and host
       // admission settings come from the current configuration at each boot.
-      const changes = environmentIdentityChanges(previous.data, { configuration, guestAssets: pin });
+      const changes = environmentIdentityChanges({ configuration: recorded.data, guestAssets: previous.guestAssets }, { configuration, guestAssets: pin });
       if (changes.length) return { status: 'failure', code: 'ENVIRONMENT_CONFIGURATION_MISMATCH', detail: changes.join('; ') };
       const ready = JSON.parse(await readFile(join(directory, 'ready.json'), 'utf8'));
       if (ready.environment !== environment) return { status: 'indeterminate', code: 'ENVIRONMENT_PREPARATION_INCOMPLETE' };
