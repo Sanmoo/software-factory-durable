@@ -16,7 +16,11 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => 
   const disabled = ['absent', 'standards', 'spec'].includes(mode);
   const tools = JSON.parse(body).tools.map((t: { function: { name: string } }) => t.function.name).sort();
   assert.deepEqual(tools, mode === 'standards' || mode === 'spec' ? ['read'] : disabled ? ['ask_user', 'bash', 'write'] : ['ask_user', 'bash', 'edit', 'write']);
-  const critical = ['uncertain', 'persist', 'cancel', 'eof', 'budget', 'secret'].includes(mode);
+  const critical = ['uncertain', 'persist', 'cancel', 'eof'].includes(mode);
+  // Ticket 46: a capture refused before effect (source over the 0-byte budget, or holding a known secret) reaches the model as an
+  // ordinary tool error naming the Host limit (never the secret).
+  if (mode === 'secret' && requests === 2) assert.match(body, /EDIT_SOURCE_NOT_LOSSLESS: the file exceeds the edit source limit of 8192 bytes/);
+  if (mode === 'budget' && requests === 2) assert.match(body, /EDIT_SOURCE_NOT_LOSSLESS: the file exceeds the edit source limit of 0 bytes/);
   assert.ok(requests <= (critical || disabled ? 1 : mode === 'mismatch' || mode === 'no-match' ? 3 : 2), 'no provider continuation after critical Edit');
   process.send?.({ kind: 'provider-validated', count: requests });
   const edit = (id: string, oldText: string) => ({ id, type: 'function', function: { name: 'edit', arguments: JSON.stringify({ path: 'source', edits: [{ oldText, newText: 'new' }], editSourceMaxBytes: 8192 }) } });

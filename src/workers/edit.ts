@@ -10,17 +10,17 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Ticket 46: capture refusals the owner decides on its read-only guest read, before a source version exists. The guest is
  * unchanged and no source is retained, so they are ordinary tool errors with an actionable reason, never critical(). Every
  * other capture failure (channel, protected Records, stale context, version limit) keeps effects or state unknown: critical. */
-const captureRefusals = new Map<string, string>([
-  ['EDIT_SOURCE_NOT_LOSSLESS', 'the file exceeds the edit source limit of 8192 bytes or is not plain UTF-8 text (or holds protected content), so edit cannot change it. ' +
-    'Change it with bash instead (for example an in-place python3 or sed patch); write accepts at most 8192 characters'],
-  ['READ_BINARY_UNSUPPORTED', 'the file is binary, so edit cannot change it'],
-  ['READ_PATH_DENIED', 'the path is not a plain path under /workspace or /artifacts'],
-  ['GUEST_READ_FAILED', 'the file could not be read (missing, a directory, a symbolic link or unreadable); check the path or create it with write or bash'],
+const captureRefusals = new Map<string, (limit: number) => string>([
+  ['EDIT_SOURCE_NOT_LOSSLESS', limit => `the file exceeds the edit source limit of ${limit} bytes or is not plain UTF-8 text (or holds protected content), ` +
+    'so edit cannot change it. Change it with bash instead (for example an in-place python3 or sed patch); write accepts at most 8192 characters'],
+  ['READ_BINARY_UNSUPPORTED', () => 'the file is binary, so edit cannot change it'],
+  ['READ_PATH_DENIED', () => 'the path is not a plain path under /workspace or /artifacts'],
+  ['GUEST_READ_FAILED', () => 'the file could not be read (missing, a directory, a symbolic link or unreadable); check the path or create it with write or bash'],
 ]);
 /** Pure rule (ticket 46): the model-visible reason of a capture refusal without effect, or undefined when the failure is critical. */
-export function captureRefusal(code: string): string | undefined {
+export function captureRefusal(code: string, sourceMaxBytes = 8192): string | undefined {
   const reason = captureRefusals.get(code);
-  return reason === undefined ? undefined : `${code}: ${reason}`;
+  return reason === undefined ? undefined : `${code}: ${reason(sourceMaxBytes)}`;
 }
 
 /** Bound only known fields BEFORE native preparation/diff or JSON traversal. This
@@ -55,7 +55,9 @@ function boundedInput(input: unknown) {
 /** Private adapter; normal Builder sessions require explicit trusted Host policy.
  * The SDK owns schema, lexical queue, matching, BOM/EOL engine and diff. Q5 owns
  * source identity, confined existing-FD comparison and mutation evidence. */
-export function builderEdit(context: ToolContext, sandbox: ToolProjection, onCritical: () => void = () => {}): ToolDefinition {
+export function builderEdit(context: ToolContext, sandbox: ToolProjection, onCritical: () => void = () => {},
+  /** The Host's edit source limit, named in the refusal the model sees (the owner enforces it). */
+  sourceMaxBytes = 8192): ToolDefinition {
   const bound = Object.freeze({ ...context });
   let revoked = false;
   // Technical admission bound: at most 16 retained executions/captures (owner
@@ -122,7 +124,7 @@ export function builderEdit(context: ToolContext, sandbox: ToolProjection, onCri
           const result = await rpc({ name: 'edit-source', operation: 'capture', path, callId: randomUUID() });
           if (result.status !== 'success') {
             check();
-            const refusal = captureRefusal(result.code);
+            const refusal = captureRefusal(result.code, sourceMaxBytes);
             if (refusal !== undefined) throw new Error(refusal);
             critical(); throw new Error(result.code);
           }

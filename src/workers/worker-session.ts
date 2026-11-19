@@ -145,7 +145,7 @@ export async function executeSession(options: Options, invocation: Invocation, r
         tools.push('read');
       }
       if (editEnabled) {
-        customTools.push(builderEdit(invocation.context, options.sandbox, critical));
+        customTools.push(builderEdit(invocation.context, options.sandbox, critical, invocation.editSourceMaxBytes));
         tools.push('edit');
       }
       // Reviewer with a review input: the SAME native read, observed by the Host (reads, failures, truncation) for the opinion checks.

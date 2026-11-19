@@ -52,7 +52,8 @@ async function activation(mode: string, run: Chain, batched: boolean) {
 async function check(mode: string, run: Chain, batched: boolean) {
   const { audit, result } = await activation(mode, run, batched);
   const disabled = ['absent', 'invalid', 'standards', 'spec'].includes(mode);
-  const critical = ['uncertain', 'persist', 'budget', 'cancel', 'eof', 'secret'].includes(mode);
+  // Ticket 46: `budget`/`secret` are captures refused before effect: no commit, but the following write and the next turn still run.
+  const critical = ['uncertain', 'persist', 'cancel', 'eof'].includes(mode);
   assert.equal(audit.filter(x => x === 'worker-spawn').length, mode === 'invalid' ? 0 : 1, mode);
   assert.equal(audit.filter(x => x.includes('"kind":"provider-request"')).length, mode === 'invalid' ? 0 : disabled || critical ? 1 : ['mismatch', 'no-match'].includes(mode) ? 3 : 2, mode);
   assert.equal(audit.filter(x => x.includes('"kind":"provider-validated"')).length, audit.filter(x => x.includes('"kind":"provider-request"')).length, mode);

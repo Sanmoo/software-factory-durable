@@ -31,7 +31,8 @@ export async function normalEdit(root: string, context: { workId: string; enviro
   try {
     const started = await worker.started;
     const completed = await worker.completed;
-    const interrupted = ['uncertain', 'persist', 'budget', 'cancel', 'eof', 'secret'].includes(mode);
+    // Ticket 46: `budget`/`secret` (capture refused before effect) are ordinary tool errors; the session continues and completes.
+    const interrupted = ['uncertain', 'persist', 'cancel', 'eof'].includes(mode);
     assert.equal(completed.status, interrupted ? 'failure' : 'success');
     if (completed.status === 'failure') assert.equal(completed.code, mode === 'eof' ? 'WORKER_EXECUTION_UNCERTAIN' : 'WORKER_INTERRUPTED');
     const receipt = JSON.parse(await readFile(join(root, context.workId, 'evidence', started.receipt.id, 'output'), 'utf8')).event;
@@ -49,7 +50,9 @@ export async function normalEdit(root: string, context: { workId: string; enviro
     if (!['absent', 'standards', 'spec'].includes(mode)) {
       assert.ok(messages.some(m => m.role === 'toolResult'));
       if (mode === 'empty') assert.match(transcript, /Could not find|empty/i);
-      if (!interrupted && mode !== 'empty') {
+      const refused = mode === 'secret' || mode === 'budget';
+      if (refused) { assert.match(transcript, /EDIT_SOURCE_NOT_LOSSLESS/); assert.doesNotMatch(transcript, /Successfully replaced/); }
+      if (!interrupted && mode !== 'empty' && !refused) {
         assert.match(transcript, /Successfully replaced/);
         assert.match(transcript, /diff/);
         assert.match(transcript, /█/);
