@@ -87,7 +87,7 @@ export function plan() {
     expected: [
       'round 1: standards.source records-discovery, state ended, attempt 1, NO second standards activation for round 1',
       'round 1: spec.attempts[0] {attempt 1, opinion conclusion cancelled code REVIEWER_INTERRUPTED (or failure WORKER_* with cessation completion-observed)}; spec.attempt 2, ' +
-        'spec.retry.waitSeconds 5, spec.charge consumed; budget.recoveries.consumed 1, reserved null; the round delivery after BOTH ended',
+        'spec.retry.waitSeconds 5, spec.charge null (ticket 57: no recoveries unit); budget.recoveries.consumed 0, reserved null; the round delivery after BOTH ended',
       'if instead spec r1a1 ends as REVIEWER_OUTCOME_UNCERTAIN (channel closed by the deadline): the Execution is held REVIEWER_CESSATION_UNCONFIRMED (no retry on unknown cessation) — record as a finding',
       'a later round with changed content: both reviewers activated again (attempt 1), sources notification; no carried opinion inside one Execution',
       'execution ended, slot released after confirmed cessation; review.verification present (verified or explicit reasons); no token in storage/observations',
@@ -116,11 +116,12 @@ export function verdict(execution: OracleView, budget: { recoveries: { consumed:
   const provoked = spec?.attempts?.[0];
   const provokedCause = provoked ? provoked.opinion ? `${provoked.opinion.conclusion}:${provoked.opinion.code ?? ''}` : `failure:${provoked.failure?.code ?? ''}` : 'none';
   check('provoked-spec-failure', Boolean(provoked && provoked.attempt === 1 && !realResult(provoked.opinion?.conclusion) && provoked.cessation === 'completion-observed'), provokedCause);
-  check('spec-retried-once', Boolean(spec && spec.attempt === 2 && spec.attempts?.length === 1 && spec.charge?.state === 'consumed' && spec.retry?.waitSeconds === 5 &&
+  // Ticket 57: a reviewer retry is bounded by the round's own limit and charges nothing to the Work's recoveries.
+  check('spec-retried-once', Boolean(spec && spec.attempt === 2 && spec.attempts?.length === 1 && (spec.charge ?? null) === null && spec.retry?.waitSeconds === 5 &&
     realResult(spec.opinion?.conclusion)), `a${spec?.attempt ?? 1}:${spec?.opinion?.conclusion ?? spec?.failure?.code ?? 'none'}:${spec?.charge?.state ?? 'no-charge'}`);
   const retriedRoles = rounds.flatMap(round => (['standards', 'spec'] as const).filter(role => (round.reviewers[role].attempts?.length ?? 0) > 0).map(role => `r${round.round}/${role}`));
   check('only-spec-r1-retried', JSON.stringify(retriedRoles) === JSON.stringify(['r1/spec']), retriedRoles.join(',') || 'none');
-  check('budget', budget?.recoveries.consumed === 1 && budget.recoveries.reserved === null, `${budget?.recoveries.consumed ?? '?'}/${budget?.recoveries.reserved ?? 'null'}`);
+  check('budget', budget?.recoveries.consumed === 0 && budget.recoveries.reserved === null, `${budget?.recoveries.consumed ?? '?'}/${budget?.recoveries.reserved ?? 'null'}`);
   check('later-round-both-reviewed', rounds.length >= 2 && (['standards', 'spec'] as const).every(role => rounds[1]!.reviewers[role].source !== 'carried' && (rounds[1]!.reviewers[role].attempt ?? 1) === 1),
     `${rounds.length} rounds`);
   check('execution-ended', execution.state === 'ended' && execution.slot.held === false && execution.end?.cessation === 'confirmed',

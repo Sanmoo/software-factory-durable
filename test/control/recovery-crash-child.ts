@@ -31,12 +31,16 @@ const reached = async () => {
     return log.filter(item => item.kind === 'receipt').length === 2;
   }
   if (mode === 'question') return works[0]?.questions.length === 1;
-  // Ticket 28 cuts: Standards' complete opinion is in Records (notification lost) while both reviewers run; or Spec's retry is reserved and waiting.
+  // Ticket 28 cuts: Standards' complete opinion is in Records (notification lost) while both reviewers run; or Spec's retry is recorded and
+  // waiting (ticket 57: the retry intent, with no recoveries reservation).
   if (mode === 'review28-lost') {
     const round = works[0]?.execution?.review?.rounds[0];
     return round?.reviewers.spec.state === 'started' && round.reviewers.standards.state === 'started' && log.some(item => item.kind === 'opinion-recorded');
   }
-  if (mode === 'review28-retry') return works[0]?.execution?.review?.rounds[0]?.reviewers.spec.charge?.state === 'reserved' && log.some(item => item.kind === 'activate-reviewer');
+  if (mode === 'review28-retry') {
+    const spec = works[0]?.execution?.review?.rounds[0]?.reviewers.spec;
+    return spec?.attempt === 2 && spec.state === 'requested' && log.some(item => item.kind === 'activate-reviewer');
+  }
   if (mode === 'review') { const round = works[0]?.execution?.review?.rounds[0]; return round?.reviewers.spec.state === 'started' && round.reviewers.standards.state === 'started'; }
   return works.length > 0 && works.every(work => work.execution?.state === 'started');
 };

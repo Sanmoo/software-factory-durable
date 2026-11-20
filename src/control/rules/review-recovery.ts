@@ -1,12 +1,15 @@
 // Pure partial review recovery rules (ticket 28, spec §4.4/§5.6/§6.4). No I/O, clock or randomness: callers supply every fact.
-import type { ProposalHandoff, ProposalIdentity, ReviewerRole, ReviewOpinion } from '../../contracts/index.js';
-import type { BudgetCounter, CarriedOpinionView, ExecutionView, ReviewerView, ReviewRoundView } from '../types.js';
-import { availableOf } from './budget.js';
+import { reviewerRetriesPerRound, type ProposalHandoff, type ProposalIdentity, type ReviewerRole, type ReviewOpinion } from '../../contracts/index.js';
+import type { CarriedOpinionView, ExecutionView, ReviewerView, ReviewRoundView } from '../types.js';
 import { recoveryWait } from './recovery.js';
 import { reviewerRoles, sameProposal } from './review.js';
 
-/** The persisted wait of an operational recovery (ticket 26's `recoveryWait`, spec §4.4: 5/15/45 s by the recoveries already consumed). */
-export const reviewerRetryWait = (consumed: number): number => recoveryWait({ attempt: consumed });
+/**
+ * The persisted wait before retry attempt `attempt` (2 or 3) of ONE reviewer in ONE round: spec §4.4's 5/15/45 s schedule (ticket 26's
+ * `recoveryWait`) indexed by the retries this role already had IN THIS ROUND (attempt 2 waits 5 s, attempt 3 waits 15 s). Ticket 57: never by
+ * the Work's recoveries, which reviewer retries no longer touch.
+ */
+export const reviewerRetryWait = (attempt: number): number => recoveryWait({ attempt: attempt - 2 });
 
 /** An opinion is a real reviewer result when it concluded (clean, findings or incomplete); failure/cancellation is a failure, never zero findings. */
 export const concluded = (opinion: ReviewOpinion | null | undefined): opinion is ReviewOpinion =>
@@ -23,14 +26,21 @@ export function reviewerFailure(reviewer: Pick<ReviewerView, 'state' | 'opinion'
 // modelo/transporte/worker"). Configuration, authorization, correlation/integrity and session-safety failures are never retried.
 const transient = new Set(['WORKER_MODEL_UNAVAILABLE', 'WORKER_PROVIDER_UNAVAILABLE', 'WORKER_INTERRUPTED', 'WORKER_CHANNEL_CLOSED', 'WORKER_EXECUTION_UNCERTAIN',
   'WORKER_START_UNCERTAIN', 'TOOL_CHANNEL_CLOSED', 'REVIEWER_INTERRUPTED', 'OPINION_MISSING', 'REVIEW_VERDICT_INVALID', 'REVIEW_VERDICT_ROLE_MISMATCH',
-  'REVIEW_VERDICT_BASIS_INVALID', 'REVIEW_VERDICT_TOO_LARGE']);
-/** Operator decision 2026-11-15: at most TWO retries per role per round (attempt 3 is the last), whatever the recoveries budget left;
- * the next failure holds the Execution (`REVIEWER_RETRY_LIMIT`) for the operator. */
-export const maxReviewerRetries = 2;
+  'REVIEW_VERDICT_BASIS_INVALID', 'REVIEW_VERDICT_TOO_LARGE',
+  // Ticket 57: the reviewer's own request/tool budget closed its session (Host count). The model is not deterministic (pilot 2: the retried
+  // Spec concluded within the same budget), so it is retried like an interruption, within the per-round limit below.
+  'REVIEWER_BUDGET_EXHAUSTED']);
+/**
+ * Operator decision 2026-11-15: at most TWO retries per role per round (attempt 3 is the last); the next failure stops the Execution
+ * (`REVIEWER_RETRY_LIMIT`, ticket 51) for the operator's decision. Ticket 57: this is the reviewers' OWN limit. A reviewer retry no longer
+ * reserves or consumes the Work's `recoveries` (pilot 2: three Spec retries spent all three, and the Builder's later interruption found none
+ * left). Recorded in the release (`productionProfile.limits.reviewerRetriesPerRound`).
+ */
+export const maxReviewerRetries = reviewerRetriesPerRound;
 
 export type RetryDecision = { kind: 'retry'; attempt: number; waitSeconds: number } |
-  { kind: 'not-retried'; code: 'REVIEWER_CESSATION_UNCONFIRMED' | 'REVIEWER_FAILURE_NOT_TRANSIENT' | 'RECOVERY_LIMIT_REACHED' | 'RECOVERY_RESERVATION_BUSY' |
-    'RECOVERY_BUDGET_UNAVAILABLE' | 'PROPOSAL_CHANGED' | 'PROPOSAL_IDENTITY_UNKNOWN' | 'REVIEWER_RETRY_LIMIT' } | { kind: 'none' };
+  { kind: 'not-retried'; code: 'REVIEWER_CESSATION_UNCONFIRMED' | 'REVIEWER_FAILURE_NOT_TRANSIENT' | 'PROPOSAL_CHANGED' | 'PROPOSAL_IDENTITY_UNKNOWN' |
+    'REVIEWER_RETRY_LIMIT' } | { kind: 'none' };
 
 /** The proposal identity re-observed is NOT the one the round started on (or cannot be shown to be): never reviewed on the old input. */
 export function identityChange(before: ProposalIdentity | null, now: ProposalIdentity | null): 'PROPOSAL_CHANGED' | 'PROPOSAL_IDENTITY_UNKNOWN' | null {
@@ -41,12 +51,13 @@ export function identityChange(before: ProposalIdentity | null, now: ProposalIde
 
 /**
  * Whether ONE failed reviewer is re-obtained alone in the same round (spec §5.6/§6.4): only with its cessation known (completion observed
- * or never launched), a transient failure, the proposal identity re-observed EQUAL to the identity the round started on (same content and
- * index, consistent), and one unit of the Work's existing `recoveries` counter available. A changed or unknown proposal is never retried:
- * the round concludes on what it has and the next capture gets new opinions of BOTH reviewers.
+ * or never launched), a transient failure, a retry left in this round's own limit (`maxReviewerRetries`) and the proposal identity
+ * re-observed EQUAL to the identity the round started on (same content and index, consistent). A changed or unknown proposal is never
+ * retried: the round concludes on what it has and the next capture gets new opinions of BOTH reviewers. Ticket 57: the Work's
+ * `recoveries` are not consulted (they stay for Builder interruptions).
  */
 export function retryDecision(input: { reviewer: Pick<ReviewerView, 'state' | 'opinion' | 'failure' | 'cessation' | 'attempt'>; before: ProposalIdentity | null;
-  now: ProposalIdentity | null; counter: BudgetCounter | null | undefined }): RetryDecision {
+  now: ProposalIdentity | null }): RetryDecision {
   const failure = reviewerFailure(input.reviewer);
   if (!failure) return { kind: 'none' };
   if (input.reviewer.cessation !== 'completion-observed' && input.reviewer.cessation !== 'never-started') return { kind: 'not-retried', code: 'REVIEWER_CESSATION_UNCONFIRMED' };
@@ -55,10 +66,7 @@ export function retryDecision(input: { reviewer: Pick<ReviewerView, 'state' | 'o
   if (attempt > 1 + maxReviewerRetries) return { kind: 'not-retried', code: 'REVIEWER_RETRY_LIMIT' };
   const changed = identityChange(input.before, input.now);
   if (changed) return { kind: 'not-retried', code: changed };
-  if (!input.counter) return { kind: 'not-retried', code: 'RECOVERY_BUDGET_UNAVAILABLE' };
-  if (input.counter.reserved) return { kind: 'not-retried', code: 'RECOVERY_RESERVATION_BUSY' };
-  if (availableOf(input.counter) === 0) return { kind: 'not-retried', code: 'RECOVERY_LIMIT_REACHED' };
-  return { kind: 'retry', attempt, waitSeconds: reviewerRetryWait(input.counter.consumed) };
+  return { kind: 'retry', attempt, waitSeconds: reviewerRetryWait(attempt) };
 }
 
 /**

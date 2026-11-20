@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { opinionCorrelated, verifyExecution } from '../../src/control/rules/review.js';
 import { carryBasis, carryPlan, carrySource, identityChange, incorporable, notRetriedReasons, packIdentity, preservedReviewContext, retryDecision, reviewerFailure, reviewerRetryWait,
-  reviewProfile, sameReviewProfile, undiscovered } from '../../src/control/rules/review-recovery.js';
+  maxReviewerRetries, reviewProfile, sameReviewProfile, undiscovered } from '../../src/control/rules/review-recovery.js';
 import { pendingReviewerReservations, settleReviewerReservations } from '../../src/control/durable/review-recovery.js';
 import type { WorkRecord } from '../../src/control/durable/admission.js';
-import type { ProposalHandoff, ProposalIdentity, ReviewOpinion } from '../../src/contracts/index.js';
-import type { BudgetCounter, ExecutionView, ReviewerView, ReviewRoundView } from '../../src/control/types.js';
+import { reviewerRetriesPerRound, type ProposalHandoff, type ProposalIdentity, type ReviewOpinion } from '../../src/contracts/index.js';
+import type { ExecutionView, ReviewerView, ReviewRoundView } from '../../src/control/types.js';
 
 // Rules level (R): pure ticket 28 partial review recovery rules over canonical types. Not evidence of any real reviewer, Records or crash.
 const summary = (round: number, content = '7', extra: Partial<ProposalHandoff> = {}): ProposalHandoff => ({
@@ -24,7 +24,6 @@ const opinion = (role: 'standards' | 'spec', round: number, extra: Partial<Revie
 const view = (role: 'standards' | 'spec', round: number, extra: Partial<ReviewerView> = {}): ReviewerView => ({ invocationId: `${role}-e1-r${round}a1`, phaseId: `review-r${round}`,
   promptSha256: 'p', state: 'ended', requestedAt: 'now', receiptId: 'r', endedAt: 'now', opinion: opinion(role, round), failure: null, cessation: 'completion-observed',
   input: { required: [], missing: [] }, ...extra });
-const counter = (extra: Partial<BudgetCounter> = {}): BudgetCounter => ({ limit: 3, granted: 0, consumed: 0, reserved: null, ...extra });
 const profile: ReviewRoundView['versions']['profile'] = { skillPack: { name: 'factory/skill-pack/v5', manifestSha256: 'f'.repeat(64) }, builder: {}, reviewer: { modelBudget: 'reviewer-v1' } };
 function round(number: number, reviewers: Partial<Record<'standards' | 'spec', Partial<ReviewerView>>> = {}, content = '7'): ReviewRoundView {
   const s = summary(number, content);
@@ -36,15 +35,14 @@ function round(number: number, reviewers: Partial<Record<'standards' | 'spec', P
 }
 const failed = (code: string, cessation: ReviewerView['cessation'] = 'completion-observed'): Partial<ReviewerView> => ({ state: 'failed', opinion: null, failure: { code }, cessation });
 
-test('AC2/AC3: only a failure with known cessation, transient cause, unchanged proposal and existing budget is re-obtained', () => {
+test('AC2/AC3: only a failure with known cessation, transient cause, unchanged proposal and a retry left in the round is re-obtained', () => {
   const failure = { ...view('spec', 1), ...failed('WORKER_INTERRUPTED') };
-  assert.deepEqual(retryDecision({ reviewer: failure, before: observed(), now: observed(), counter: counter() }), { kind: 'retry', attempt: 2, waitSeconds: 5 });
-  assert.deepEqual(retryDecision({ reviewer: view('spec', 1), before: observed(), now: observed(), counter: counter() }), { kind: 'none' }, 'a valid opinion is never re-obtained');
-  assert.deepEqual(retryDecision({ reviewer: view('spec', 1, { opinion: opinion('spec', 1, { conclusion: 'incomplete' }) }), before: observed(), now: observed(), counter: counter() }), { kind: 'none' },
+  assert.deepEqual(retryDecision({ reviewer: failure, before: observed(), now: observed() }), { kind: 'retry', attempt: 2, waitSeconds: 5 });
+  assert.deepEqual(retryDecision({ reviewer: view('spec', 1), before: observed(), now: observed() }), { kind: 'none' }, 'a valid opinion is never re-obtained');
+  assert.deepEqual(retryDecision({ reviewer: view('spec', 1, { opinion: opinion('spec', 1, { conclusion: 'incomplete' }) }), before: observed(), now: observed() }), { kind: 'none' },
     'an incomplete opinion is a real reviewer result, not a failure');
-  const code = (reviewer: ReviewerView, extra: { before?: ProposalIdentity | null; now?: ProposalIdentity | null; counter?: BudgetCounter | null } = {}) =>
-    retryDecision({ reviewer, before: extra.before === undefined ? observed() : extra.before, now: extra.now === undefined ? observed() : extra.now,
-      counter: extra.counter === undefined ? counter() : extra.counter });
+  const code = (reviewer: ReviewerView, extra: { before?: ProposalIdentity | null; now?: ProposalIdentity | null } = {}) =>
+    retryDecision({ reviewer, before: extra.before === undefined ? observed() : extra.before, now: extra.now === undefined ? observed() : extra.now });
   const notRetried = (decision: ReturnType<typeof code>) => decision.kind === 'not-retried' ? decision.code : decision.kind;
   assert.equal(notRetried(code({ ...view('spec', 1), ...failed('REVIEWER_OUTCOME_UNCERTAIN', 'unconfirmed') })), 'REVIEWER_CESSATION_UNCONFIRMED');
   assert.equal(notRetried(code({ ...view('spec', 1), ...failed('REVIEWER_UNAVAILABLE', 'never-started') })), 'REVIEWER_FAILURE_NOT_TRANSIENT');
@@ -53,18 +51,28 @@ test('AC2/AC3: only a failure with known cessation, transient cause, unchanged p
   assert.equal(notRetried(code(failure, { now: observed('i', 'y') })), 'PROPOSAL_CHANGED', 'changed index');
   assert.equal(notRetried(code(failure, { now: { status: 'unavailable', code: 'X' } })), 'PROPOSAL_IDENTITY_UNKNOWN');
   assert.equal(notRetried(code(failure, { now: observed('i', 'x', false) })), 'PROPOSAL_IDENTITY_UNKNOWN');
-  assert.equal(notRetried(code(failure, { counter: counter({ consumed: 3 }) })), 'RECOVERY_LIMIT_REACHED');
-  assert.equal(code(failure, { counter: counter({ consumed: 3, granted: 1 }) }).kind, 'retry', 'an explicit grant counts');
-  assert.equal(notRetried(code(failure, { counter: counter({ reserved: 'other' }) })), 'RECOVERY_RESERVATION_BUSY');
-  assert.equal(notRetried(code(failure, { counter: null })), 'RECOVERY_BUDGET_UNAVAILABLE');
-  // Operator decision 2026-11-15: at most 2 retries per role per round (attempt 3 is the last), whatever the recoveries budget.
-  assert.equal(code({ ...failure, attempt: 2 }).kind, 'retry', 'the second retry');
+  // Operator decision 2026-11-15: at most 2 retries per role per round (attempt 3 is the last). Ticket 57: that is the reviewers' own limit.
+  assert.deepEqual(code({ ...failure, attempt: 2 }), { kind: 'retry', attempt: 3, waitSeconds: 15 }, 'the second retry waits 15 s');
+  assert.deepEqual([maxReviewerRetries, reviewerRetriesPerRound], [2, 2], 'the release value (contracts) is the one Control enforces');
   assert.equal(notRetried(code({ ...failure, attempt: 3 })), 'REVIEWER_RETRY_LIMIT');
-  assert.equal(notRetried(code({ ...failure, attempt: 3 }, { counter: counter({ limit: 10 }) })), 'REVIEWER_RETRY_LIMIT', 'budget left does not lift the cap');
   // A recorded failure opinion (invalid verdict, cancellation) is a failure, never zero findings.
   assert.deepEqual(reviewerFailure(view('spec', 1, { opinion: opinion('spec', 1, { conclusion: 'cancelled', code: 'REVIEWER_INTERRUPTED' }) })), { code: 'REVIEWER_INTERRUPTED' });
   assert.equal(code(view('spec', 1, { opinion: opinion('spec', 1, { conclusion: 'failure', code: 'REVIEW_VERDICT_INVALID' }) })).kind, 'retry');
-  assert.deepEqual([0, 1, 2, 3, 7].map(reviewerRetryWait), [5, 15, 45, 45, 45], 'the persisted 5/15/45 s waits of spec §4.4, by consumed recoveries');
+  assert.deepEqual([2, 3].map(reviewerRetryWait), [5, 15], 'the persisted 5/15 s waits of spec §4.4, by the retries of this role in this round');
+});
+
+test('ticket 57: a reviewer retry is bounded by the round, never by the Work recoveries; budget and provider closures are retried explicitly', () => {
+  const failure = (code: string, attempt = 1, conclusion: ReviewOpinion['conclusion'] = 'cancelled') =>
+    view('spec', 1, { attempt, opinion: opinion('spec', 1, { attempt, conclusion, code }) });
+  const decide = (reviewer: ReviewerView) => retryDecision({ reviewer, before: observed(), now: observed() });
+  // Pilot 2 (#126): the Spec reviewer closed by its own 48-request budget. Retried within the round, whatever the Work's recoveries.
+  assert.deepEqual(decide(failure('REVIEWER_BUDGET_EXHAUSTED')), { kind: 'retry', attempt: 2, waitSeconds: 5 });
+  assert.deepEqual(decide(failure('REVIEWER_BUDGET_EXHAUSTED', 2)), { kind: 'retry', attempt: 3, waitSeconds: 15 });
+  assert.deepEqual(decide(failure('REVIEWER_BUDGET_EXHAUSTED', 3)), { kind: 'not-retried', code: 'REVIEWER_RETRY_LIMIT' });
+  // A model request that failed without a Host abort: transient, the same bounded retry, never an implicit unbounded one.
+  assert.deepEqual(decide(failure('WORKER_PROVIDER_UNAVAILABLE', 1, 'failure')), { kind: 'retry', attempt: 2, waitSeconds: 5 });
+  assert.deepEqual(decide(failure('WORKER_PROVIDER_UNAVAILABLE', 3, 'failure')), { kind: 'not-retried', code: 'REVIEWER_RETRY_LIMIT' });
+  assert.equal(retryDecision.length, 1, 'one input object, with no recoveries counter in it');
 });
 
 test('AC1/AC2: a discovered record is incorporated only as the complete opinion of exactly that request', () => {
@@ -167,7 +175,7 @@ test('review HIGH 2: the carry compares a normalized pack identity, with the PRO
   assert.deepEqual([identityChange(observed(), observed()), identityChange(observed(), observed('j')), identityChange(null, observed())], [null, 'PROPOSAL_CHANGED', 'PROPOSAL_IDENTITY_UNKNOWN']);
 });
 
-test('review HIGH 1: reconciliation settles an outstanding retry reservation — receipt consumes once, proven absence releases, uncertainty keeps', () => {
+test('review HIGH 1 (records before ticket 57): reconciliation settles an outstanding retry reservation — receipt consumes once, proven absence releases, uncertainty keeps', () => {
   const make = () => {
     const value = round(1, { spec: { state: 'started', attempt: 2, invocationId: 'spec-e1-r1a2', opinion: null, cessation: null, charge: { counter: 'recoveries', state: 'reserved', settledAt: null } } });
     const execution = { executionId: 'e1', review: { rounds: [value] } } as unknown as ExecutionView;

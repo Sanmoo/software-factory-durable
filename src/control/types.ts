@@ -431,8 +431,9 @@ export type ReviewerView = { invocationId: string; phaseId: string; promptSha256
  * `attempt`/`attempts`: the current attempt of this role in this round and the earlier ones that failed with KNOWN cessation (oldest first).
  * `source`: how the effective opinion reached Control — its completion notification, discovery of its complete protected record (lost
  * notification), or `carried` from the interrupted round of the previous Execution with the SAME proposal identity and context.
- * `charge`: a retry draws ONE unit of the Work's existing `recoveries` counter (no parallel review budget): reserved at the retry intent,
- * consumed with the reviewer's confirmed start, released on a proven non-start. `retry`: the persisted wait before that attempt.
+ * `charge`: before ticket 57 a retry drew ONE unit of the Work's `recoveries` counter (reserved at the retry intent, consumed with the
+ * reviewer's confirmed start, released on a proven non-start); such records are still settled. Since ticket 57 a retry records `null`: it
+ * is bounded by the round's own limit (`maxReviewerRetries`) and charges nothing to the Work. `retry`: the persisted wait before that attempt.
  * `notRetried`: why a failure stays a failure (explicit; never zero findings).
  */
 export type ReviewerRecoveryView = {

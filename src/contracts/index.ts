@@ -96,6 +96,11 @@ export type BuilderBudgetConfiguration = { requests?: number | undefined; toolCa
 /** Ticket 48: a budget end WITH Host-observed progress continues in a new Execution charged to this per-Work counter, not to recoveries. */
 export const continuationsPerWork = 5;
 /**
+ * Operator decision 2026-11-15 (ticket 28), own budget since ticket 57: automatic retries of ONE reviewer role in ONE review round (attempt 3
+ * is the last). They charge nothing to the Work's `recoveries`; the next failure stops the Execution `REVIEWER_RETRY_LIMIT` (ticket 51).
+ */
+export const reviewerRetriesPerRound = 2;
+/**
  * Ticket 48: the Host's fingerprint of a Work's checkout (confined reads, no host git, no guest command): `head` = the HEAD file, `ref` = the
  * value of the branch ref HEAD names, `git` = hash of HEAD/ref/packed-refs/index, `tree` = hash of a bounded metadata walk (path, kind, size,
  * mtime) of the working tree outside `.git` and build/cache directories, null when the walk exceeded its bound (then only Git counts).

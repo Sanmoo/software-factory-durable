@@ -73,9 +73,9 @@ const view = (rounds: Record<string, Reviewer>[], extra: Record<string, unknown>
 const expected = () => [{
   standards: reviewer({ source: 'records-discovery' }),
   spec: reviewer({ attempt: 2, attempts: [{ attempt: 1, state: 'ended', opinion: { conclusion: 'cancelled', code: 'REVIEWER_INTERRUPTED' }, failure: null, cessation: 'completion-observed' }],
-    charge: { state: 'consumed' }, retry: { waitSeconds: 5 } }),
+    charge: null, retry: { waitSeconds: 5 } }),
 }, { standards: reviewer(), spec: reviewer() }];
-const budget = { recoveries: { consumed: 1, reserved: null } };
+const budget = { recoveries: { consumed: 0, reserved: null } };
 
 test('AC7 recipe oracle: the expected partial recovery passes; a Standards `incomplete` (absent named context) is a limitation, never the provoked failure or a retried role', () => {
   const ok = recipe.verdict(view(expected()) as never, budget);
@@ -104,8 +104,13 @@ test('AC7 recipe oracle: a retried Standards, an incomplete Spec a1 taken for th
   const b = recipe.verdict(view(incompleteSpec) as never, { recoveries: { consumed: 0, reserved: null } });
   assert.equal(b.checks.find(item => item.name === 'provoked-spec-failure')!.ok, false);
   assert.equal(b.passed, false);
-  const c = recipe.verdict(view(expected()) as never, { recoveries: { consumed: 1, reserved: 'spec-x-r1a2' } });
+  const c = recipe.verdict(view(expected()) as never, { recoveries: { consumed: 0, reserved: 'spec-x-r1a2' } });
   assert.equal(c.checks.find(item => item.name === 'budget')!.ok, false);
+  // Ticket 57: a reviewer retry that still charged the Work's recoveries fails the verdict.
+  const charged = expected();
+  charged[0]!.spec = { ...charged[0]!.spec, charge: { state: 'consumed' } };
+  const e = recipe.verdict(view(charged) as never, { recoveries: { consumed: 1, reserved: null } });
+  assert.deepEqual([e.checks.find(item => item.name === 'spec-retried-once')!.ok, e.checks.find(item => item.name === 'budget')!.ok], [false, false]);
   const d = recipe.verdict(view(expected(), { state: 'held', held: { code: 'REVIEWER_CESSATION_UNCONFIRMED' } }) as never, budget);
   assert.equal(d.checks.find(item => item.name === 'execution-ended')!.observed, 'held:REVIEWER_CESSATION_UNCONFIRMED');
 });

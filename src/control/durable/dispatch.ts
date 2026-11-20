@@ -364,22 +364,19 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     };
     /**
      * Ticket 28: only the failed reviewer is re-obtained, alone, in the same round, while the Builder stays suspended and the other opinion
-     * stays as recorded — under a re-observed UNCHANGED proposal identity, with known cessation, a transient failure and the Work's existing
-     * recoveries counter (one unit per retry, persisted 5/15/45 s wait). Anything else stays an explicit failure in the round.
+     * stays as recorded — under a re-observed UNCHANGED proposal identity, with known cessation, a transient failure and a retry left in the
+     * round's own limit (`maxReviewerRetries`, persisted 5/15 s wait). Ticket 57: nothing is reserved from the Work's recoveries, so each
+     * role retries on its own (no shared reservation to serialize on). Anything else stays an explicit failure in the round.
      */
-    // Retries of ONE round are serialized: the Work has a single recoveries reservation, so a second failed role waits until the first
-    // retry settled it (consumed with its start, released on a proven non-start) instead of being dropped as RECOVERY_RESERVATION_BUSY.
-    let retryLock: Promise<unknown> = Promise.resolve();
     let retryLimited = false;
-    const serialized = <T>(fn: () => Promise<T>): Promise<T> => { const run = retryLock.then(fn); retryLock = run.catch(() => {}); return run; };
-    const retryOnce = (plan: ReviewPlan): Promise<ReviewPlan | null> => serialized(async () => {
+    const retryOnce = async (plan: ReviewPlan): Promise<ReviewPlan | null> => {
       if (event.status !== 'captured') return null;
       const shown = (await deps.readWorks()).find(item => item.work_id === work.work_id);
       const reviewer = shown?.execution?.executionId === executionId ? shown.execution.review?.rounds.find(item => item.round === round)?.reviewers[plan.role] : undefined;
       // A real result needs nothing (and no Host observation).
       if (!reviewer || !reviewerFailure(reviewer)) return null;
       checkStop();
-      const decision = retryDecision({ reviewer, before, now: reviewer.cessation === 'unconfirmed' ? null : await observeProposal(), counter: shown?.budget?.recoveries });
+      const decision = retryDecision({ reviewer, before, now: reviewer.cessation === 'unconfirmed' ? null : await observeProposal() });
       if (decision.kind === 'none') return null;
       if (decision.kind === 'not-retried') {
         // Unconfirmed cessation keeps the existing hold path (the round is never concluded on it); the rest is recorded explicitly.
@@ -409,12 +406,12 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         launched = true;
         await attemptReviewer(next);
       } catch (error) {
-        // Recorded but never launched (interruption, owner stop, failure before the launch): a proven non-start releases the reservation.
+        // Recorded but never launched (interruption, owner stop, failure before the launch): a proven non-start, recorded as such.
         if (!launched) await releaseReviewerRetry(session, work.work_id, executionId, round, plan.role, { attempt: decision.attempt, code: 'RETRY_NOT_LAUNCHED' }).catch(() => {});
         throw error;
       }
       return next;
-    });
+    };
     const runReviewer = async (first: ReviewPlan) => {
       await attemptReviewer(first);
       if (!recovery) return;

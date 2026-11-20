@@ -85,15 +85,17 @@ test('AC1/AC3/AC4/AC6/AC7 handoff crash: the lost Standards opinion is found in 
   assert.equal(work.budget!.recoveries.consumed, 1, 'only the operational recovery of the Execution; carrying the opinion charges nothing');
 });
 
-test('review HIGH 1 + ticket 26: a crash during a reviewer retry wait — reconciliation proves the retry never started (no receipt) and releases its reservation', async t => {
+test('review HIGH 1 + ticket 26/57: a crash during a reviewer retry wait — reconciliation settles the retry, with no recoveries reservation to release', async t => {
   const dir = await scratch(t);
   await crash(dir, 'review28-retry');
   const h = await reopen(t, dir, [], 'complete');
   const work = await h.until(value => value.previousExecutions.length === 1 || (value.execution?.end?.cessation === 'confirmed'), 'interrupted Execution settled');
   const crashed = work.previousExecutions[0] ?? work.execution!;
   const spec = crashed.review!.rounds[0]!.reviewers.spec;
-  assert.deepEqual([spec.attempt, spec.charge?.state, spec.attempts?.[0]?.failure?.code], [2, 'released', 'WORKER_INTERRUPTED']);
-  assert.notEqual(work.budget!.recoveries.reserved, spec.invocationId, 'never left reserved (it would block every later retry and recovery)');
+  assert.deepEqual([spec.attempt, spec.charge, spec.attempts?.[0]?.failure?.code], [2, null, 'WORKER_INTERRUPTED']);
+  assert.notEqual(spec.state, 'requested', 'the retry intent is settled by the reconciliation, never left pending');
+  assert.notEqual(work.budget!.recoveries.reserved, spec.invocationId, 'never reserved (it would block every later retry and recovery)');
   assert.equal(work.impediments.some(item => item.code === 'RECOVERY_START_UNCERTAIN'), false);
-  assert.ok(work.history.some(item => item.event === 'budget-released' && 'detail' in item && item.detail === `recoveries:${spec.invocationId}`));
+  assert.equal(work.history.some(item => item.event.startsWith('budget-') && 'detail' in item && item.detail === `recoveries:${spec.invocationId}`), false,
+    'ticket 57: the reviewer retry neither reserved nor released a recovery');
 });

@@ -4,7 +4,7 @@ import { lstat, readdir, readFile, readlink, realpath } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
-import { builderBudgetMaximumFactor, builderBudgetV1, continuationsPerWork, type Diagnostic } from '../contracts/index.js';
+import { builderBudgetMaximumFactor, builderBudgetV1, continuationsPerWork, reviewerRetriesPerRound, type Diagnostic } from '../contracts/index.js';
 
 /**
  * Self-contained release (spec §11.1/§14, ticket 32): the release tree `releases/<id>/` of a canonical installation root carries
@@ -61,6 +61,9 @@ export const productionProfile = Object.freeze({
       repositoryMaximum: Object.freeze({ requests: builderBudgetV1.requests * builderBudgetMaximumFactor, toolCalls: builderBudgetV1.toolCalls * builderBudgetMaximumFactor,
         requestTimeoutMinutes: builderBudgetV1.requestTimeoutMinutes * builderBudgetMaximumFactor }), continuationsPerWork }),
       reviewerV1: Object.freeze({ requests: 48, toolCalls: 160, requestTimeoutMinutes: 30 }) }),
+    // Ticket 57: automatic retries of one reviewer role per review round, the reviewers' OWN limit (never the Work's recoveries); the next
+    // failure stops the Execution REVIEWER_RETRY_LIMIT for the operator (ticket 51). No retry happens inside a session (below).
+    reviewerRetriesPerRound,
     providerRetries: 0, sdkRetries: 0,
     // Spec §4.4: the production composition sets NO worker clock deadline. Without a configured repository timeout there is no cut; the
     // optional per-repository `timeoutSeconds` is the only deadline (tickets 19) and this release never invents another.

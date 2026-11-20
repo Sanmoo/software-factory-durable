@@ -23,7 +23,7 @@ const summary = (round: number, content: string): ProposalHandoff => ({ version:
   changed: ['/workspace/checkout/docs/a.md'], changedTruncated: false, content: { sha256: content.repeat(64), clean: false, headMatches: false } });
 const capture = (round: number, content: string, closing = false): HandoffEvent => ({ round, status: 'captured', summary: summary(round, content), ...(closing ? { closing: true as const } : {}) });
 /** Reviewer behaviour of ONE attempt: a verdict, a transient failure, a completion whose opinion is only in Records, or a config refusal. */
-type Behaviour = 'clean' | 'fail' | 'invalid' | 'lost' | 'lost-unreadable' | 'config' | string[];
+type Behaviour = 'clean' | 'fail' | 'budget' | 'invalid' | 'lost' | 'lost-unreadable' | 'config' | string[];
 type Role = 'standards' | 'spec';
 
 function opinionOf(invocation: Invocation, findings: string[], conclusion?: ReviewOpinion['conclusion'], code: string | null = null): ReviewOpinion {
@@ -142,6 +142,8 @@ function doubles(script: { captures: HandoffEvent[];
         const completed = Promise.resolve().then(() => {
           kinds.push(`end-${role}-r${round}a${attempt}`);
           if (behaviour === 'fail') return { status: 'failure' as const, code: 'WORKER_INTERRUPTED' };
+          // Ticket 57: the reviewer's own request budget closed its session (pilot 2, #126 Spec): a recorded cancellation with its cause.
+          if (behaviour === 'budget') return { status: 'success' as const, receipt: receipt(invocation).receipt, opinion: opinionOf(invocation, [], 'cancelled', 'REVIEWER_BUDGET_EXHAUSTED') };
           if (behaviour === 'invalid') return { status: 'success' as const, receipt: receipt(invocation).receipt, opinion: opinionOf(invocation, [], 'failure', 'REVIEW_VERDICT_INVALID') };
           // The worker preserved the complete opinion before notifying; the notification arrives without it (or the record is unreadable).
           if (behaviour === 'lost') { records.set(invocation.context.invocationId, opinionOf(invocation, [])); return { status: 'success' as const, receipt: receipt(invocation).receipt }; }
@@ -189,7 +191,7 @@ async function harness(t: { after(fn: () => Promise<void>): void }, script: Para
 }
 const activations = (kinds: string[]) => kinds.filter(kind => kind.startsWith('activate-'));
 
-test('AC3/AC4/AC5: a failed Spec reviewer is re-obtained alone in the same round; the valid Standards opinion is kept; one recovery unit with the 5 s wait', async t => {
+test('AC3/AC4/AC5: a failed Spec reviewer is re-obtained alone in the same round; the valid Standards opinion is kept; the 5 s wait, no recovery unit', async t => {
   const h = await harness(t, { captures: [capture(1, '1', true)], behaviour: (role, _round, attempt) => role === 'spec' && attempt === 1 ? 'fail' : 'clean' });
   const round = h.work.execution!.review!.rounds[0]!;
   assert.deepEqual(activations(h.execution.kinds), ['activate-builder', 'activate-standards-r1a1', 'activate-spec-r1a1', 'activate-spec-r1a2'], 'Standards is never rerun');
@@ -197,11 +199,13 @@ test('AC3/AC4/AC5: a failed Spec reviewer is re-obtained alone in the same round
   const spec = round.reviewers.spec;
   assert.deepEqual([spec.attempt, spec.invocationId, spec.opinion?.attempt, spec.opinion?.invocationId, spec.source], [2, `spec-${h.work.execution!.executionId}-r1a2`, 2, spec.invocationId, 'notification']);
   assert.deepEqual(spec.attempts?.map(item => [item.attempt, item.invocationId.endsWith('-r1a1'), item.state, item.failure?.code, item.cessation]), [[1, true, 'failed', 'WORKER_INTERRUPTED', 'completion-observed']]);
-  assert.deepEqual([spec.charge?.state, spec.retry?.waitSeconds, spec.retry?.after], ['consumed', 5, 'WORKER_INTERRUPTED']);
+  assert.deepEqual([spec.charge, spec.retry?.waitSeconds, spec.retry?.after], [null, 5, 'WORKER_INTERRUPTED']);
   assert.deepEqual([round.reviewers.standards.attempt, round.reviewers.standards.attempts, round.reviewers.standards.opinion?.attempt], [undefined, undefined, 1]);
-  assert.deepEqual(h.execution.sleeps, [5000], 'the persisted wait of the first operational recovery');
+  assert.deepEqual(h.execution.sleeps, [5000], 'the persisted wait of the first retry of this role in this round');
   const budget = h.shown!.budget!.recoveries;
-  assert.deepEqual([budget.consumed, budget.reserved, budget.limit], [1, null, 3], 'the existing recoveries counter, no parallel review budget');
+  assert.deepEqual([budget.consumed, budget.reserved, budget.limit], [0, null, 3], 'ticket 57: a reviewer retry never charges the Work recoveries');
+  assert.ok(h.shown!.history.some(item => item.event === 'reviewer-retried' && 'detail' in item && item.detail === 'r1:spec:a2:after:WORKER_INTERRUPTED:wait:5s:retry:1/2'));
+  assert.equal(h.shown!.history.some(item => item.event.startsWith('budget-')), false);
   // The Builder stays suspended until BOTH reviewers' activity ended: the only delivery follows the retried Spec's end.
   const order = h.execution.kinds;
   assert.ok(order.indexOf('deliver-r1') > order.indexOf('end-spec-r1a2') && order.indexOf('deliver-r1') > order.indexOf('end-standards-r1a1'));
@@ -239,15 +243,17 @@ test('AC3: a changed proposal is never retried on the old input; the round is in
   assert.match(h.execution.directives[0]!.prompt, /"code": "WORKER_INTERRUPTED"/, 'the real failure reaches the Builder, never zero findings');
 });
 
-test('AC4: retries draw only on the existing recoveries counter; exhaustion and non-transient failures stay explicit failures', async t => {
-  const h = await harness(t, { captures: [capture(1, '1', true)], behaviour: role => role === 'spec' ? 'invalid' : ['H1'] }, { recoveryLimit: 1 });
+test('AC4 / ticket 57: retries draw on the round\'s own limit, never on the Work recoveries; non-transient failures stay explicit failures', async t => {
+  // One recovery unit only: two Spec retries in the round still run, and the Work keeps its unit for a Builder interruption.
+  const h = await harness(t, { captures: [capture(1, '1', true)], behaviour: (role, _round, attempt) => role === 'spec' && attempt < 3 ? 'invalid' : role === 'spec' ? 'clean' : ['H1'] },
+    { recoveryLimit: 1 });
   const round = h.work.execution!.review!.rounds[0]!;
-  assert.deepEqual(activations(h.execution.kinds), ['activate-builder', 'activate-standards-r1a1', 'activate-spec-r1a1', 'activate-spec-r1a2']);
-  assert.deepEqual([round.reviewers.spec.attempt, round.reviewers.spec.opinion?.conclusion, round.reviewers.spec.notRetried?.code], [2, 'failure', 'RECOVERY_LIMIT_REACHED']);
-  assert.deepEqual([round.conclusion, round.reasons], ['incomplete', ['SPEC_FAILURE', 'SPEC_NOT_RETRIED:RECOVERY_LIMIT_REACHED']]);
-  assert.deepEqual([h.shown!.budget!.recoveries.consumed, h.shown!.budget!.recoveries.reserved], [1, null]);
+  assert.deepEqual(activations(h.execution.kinds), ['activate-builder', 'activate-standards-r1a1', 'activate-spec-r1a1', 'activate-spec-r1a2', 'activate-spec-r1a3']);
+  assert.deepEqual([round.reviewers.spec.attempt, round.reviewers.spec.opinion?.conclusion, round.reviewers.spec.notRetried ?? null], [3, 'clean', null]);
+  assert.deepEqual([round.conclusion, round.reasons], ['findings', []]);
+  assert.deepEqual([h.shown!.budget!.recoveries.consumed, h.shown!.budget!.recoveries.reserved], [0, null]);
   assert.equal(round.reviewers.standards.opinion?.findings[0]?.id, 'H1', 'the valid opinion with findings is preserved as is');
-  assert.ok(h.shown!.history.some(item => item.event === 'budget-exhausted'));
+  assert.equal(h.shown!.history.some(item => item.event.startsWith('budget-')), false, 'nothing reserved, consumed or exhausted');
 
   const config = await harness(t, { captures: [capture(1, '1', true)], behaviour: role => role === 'spec' ? 'config' : 'clean' });
   const refused = config.work.execution!.review!.rounds[0]!;
@@ -256,50 +262,68 @@ test('AC4: retries draw only on the existing recoveries counter; exhaustion and 
   assert.equal(config.shown!.budget!.recoveries.consumed, 0);
 });
 
-test('AC4: the persisted waits follow the recoveries already consumed (5 then 15 s); a second failure of the same role is retried again within the budget', async t => {
+test('AC4: the persisted waits follow the retries of the role in the round (5 then 15 s); a second failure of the same role is retried again within the limit', async t => {
   const h = await harness(t, { captures: [capture(1, '1', true)], behaviour: (role, _round, attempt) => role === 'spec' && attempt < 3 ? 'fail' : 'clean' });
   const spec = h.work.execution!.review!.rounds[0]!.reviewers.spec;
   assert.deepEqual(h.execution.sleeps, [5000, 15000]);
-  assert.deepEqual([spec.attempt, spec.attempts?.map(item => item.charge?.state ?? null), spec.charge?.state], [3, [null, 'consumed'], 'consumed']);
-  assert.equal(h.shown!.budget!.recoveries.consumed, 2);
+  assert.deepEqual([spec.attempt, spec.attempts?.map(item => item.charge), spec.charge], [3, [null, null], null]);
+  assert.equal(h.shown!.budget!.recoveries.consumed, 0);
   assert.equal(h.work.execution!.review!.rounds[0]!.conclusion, 'clean');
 });
 
-test('review HIGH 1: an Execution interrupted during the persisted wait releases the retry reservation (proven non-start), never leaves it stuck', async t => {
+test('ticket 57 (pilot 2, #126): Spec reviewers closed by their own budget are retried in each round without touching the Work recoveries', async t => {
+  // Round 1: a1 and a2 budget-closed, a3 concludes; round 2: a1 budget-closed, a2 concludes (the pilot spent 3/3 recoveries on these).
+  const h = await harness(t, { captures: [capture(1, '1'), capture(2, '2', true)],
+    behaviour: (role, round, attempt) => role === 'spec' && ((round === 1 && attempt < 3) || (round === 2 && attempt === 1)) ? 'budget' : 'clean' }, { recoveryLimit: 3 });
+  const [first, second] = h.work.execution!.review!.rounds;
+  assert.deepEqual([first!.reviewers.spec.attempts?.map(item => item.opinion?.code), first!.reviewers.spec.attempt, first!.conclusion],
+    [['REVIEWER_BUDGET_EXHAUSTED', 'REVIEWER_BUDGET_EXHAUSTED'], 3, 'clean']);
+  assert.deepEqual([second!.reviewers.spec.attempts?.map(item => item.opinion?.code), second!.reviewers.spec.attempt, second!.conclusion],
+    [['REVIEWER_BUDGET_EXHAUSTED'], 2, 'clean']);
+  assert.deepEqual(h.execution.sleeps, [5000, 15000, 5000], 'the wait restarts with each round (it follows the round, not the Work)');
+  const recoveries = h.shown!.budget!.recoveries;
+  assert.deepEqual([recoveries.consumed, recoveries.reserved, recoveries.limit], [0, null, 3], 'all three units stay for a Builder interruption');
+  assert.deepEqual(h.shown!.history.filter(item => item.event === 'reviewer-retried').map(item => 'detail' in item ? item.detail : null), [
+    'r1:spec:a2:after:REVIEWER_BUDGET_EXHAUSTED:wait:5s:retry:1/2', 'r1:spec:a3:after:REVIEWER_BUDGET_EXHAUSTED:wait:15s:retry:2/2',
+    'r2:spec:a2:after:REVIEWER_BUDGET_EXHAUSTED:wait:5s:retry:1/2']);
+  assert.equal(h.shown!.history.some(item => item.event.startsWith('budget-')), false);
+});
+
+test('review HIGH 1: an Execution interrupted during the persisted wait records the retry as a proven non-start, never left requested', async t => {
   const h = await harness(t, { captures: [capture(1, '1', true)], behaviour: (role, _round, attempt) => role === 'spec' && attempt === 1 ? 'fail' : 'clean',
     clock: { hang: 5000 } }, { timeoutSeconds: 1 });
   const spec = h.work.execution!.review!.rounds[0]!.reviewers.spec;
   assert.equal(h.work.execution!.end?.code, 'EXECUTION_TIMEOUT');
-  assert.deepEqual([spec.attempt, spec.state, spec.failure?.code, spec.cessation, spec.charge?.state, spec.notRetried?.code],
-    [2, 'failed', 'RETRY_NOT_LAUNCHED', 'never-started', 'released', 'RETRY_NOT_LAUNCHED']);
+  assert.deepEqual([spec.attempt, spec.state, spec.failure?.code, spec.cessation, spec.charge, spec.notRetried?.code],
+    [2, 'failed', 'RETRY_NOT_LAUNCHED', 'never-started', null, 'RETRY_NOT_LAUNCHED']);
   assert.deepEqual([h.shown!.budget!.recoveries.reserved, h.shown!.budget!.recoveries.consumed], [null, 0]);
   assert.deepEqual(activations(h.execution.kinds), ['activate-builder', 'activate-standards-r1a1', 'activate-spec-r1a1'], 'never launched');
 });
 
-test('review MED 3: both reviewers failing at once are BOTH re-obtained, serialized on the single reservation (5 then 15 s), never dropped as busy', async t => {
+test('review MED 3 / ticket 57: both reviewers failing at once are BOTH re-obtained, each with its own first-retry wait (5 s), never dropped', async t => {
   const h = await harness(t, { captures: [capture(1, '1', true)], behaviour: (_role, _round, attempt) => attempt === 1 ? 'fail' : 'clean' });
   const round = h.work.execution!.review!.rounds[0]!;
   assert.deepEqual([round.reviewers.standards.attempt, round.reviewers.spec.attempt, round.reviewers.standards.notRetried ?? null, round.reviewers.spec.notRetried ?? null], [2, 2, null, null]);
-  assert.deepEqual([round.conclusion, h.shown!.budget!.recoveries.consumed, h.shown!.budget!.recoveries.reserved], ['clean', 2, null]);
-  assert.deepEqual(h.execution.sleeps, [5000, 15000]);
+  assert.deepEqual([round.conclusion, h.shown!.budget!.recoveries.consumed, h.shown!.budget!.recoveries.reserved], ['clean', 0, null]);
+  assert.deepEqual(h.execution.sleeps, [5000, 5000]);
 });
 
-test('review LOW: the proposal is re-observed right before the launch; a change during the wait releases the reservation and is never reviewed', async t => {
+test('review LOW: the proposal is re-observed right before the launch; a change during the wait is recorded and never reviewed', async t => {
   // Round 1 observations: 1 handoff, 2 retry decision, 3 right before the launch (changed), 4 conclusion.
   const h = await harness(t, { captures: [capture(1, '1', true)], behaviour: (role, _round, attempt) => role === 'spec' && attempt === 1 ? 'fail' : 'clean',
     identity: (round, call) => round === 1 && call >= 3 ? '9' : null });
   const round = h.work.execution!.review!.rounds[0]!;
-  assert.deepEqual([round.reviewers.spec.notRetried?.code, round.reviewers.spec.charge?.state, round.applicability], ['PROPOSAL_CHANGED', 'released', 'invalidated']);
+  assert.deepEqual([round.reviewers.spec.notRetried?.code, round.reviewers.spec.charge, round.applicability], ['PROPOSAL_CHANGED', null, 'invalidated']);
   assert.deepEqual([h.shown!.budget!.recoveries.reserved, h.shown!.budget!.recoveries.consumed], [null, 0]);
   assert.deepEqual(activations(h.execution.kinds), ['activate-builder', 'activate-standards-r1a1', 'activate-spec-r1a1']);
 });
 
-test('review MED 6: a failure inside one role\'s recovery never abandons the sibling: all roles settle, the reservation is released and the Execution is held', async t => {
+test('review MED 6: a failure inside one role\'s recovery never abandons the sibling: all roles settle, the retry is recorded not launched and the Execution is held', async t => {
   const h = await harness(t, { captures: [capture(1, '1', true)], behaviour: (role, _round, attempt) => role === 'spec' && attempt === 1 ? 'fail' : 'clean',
     clock: { reject: 5000 } });
   const round = h.work.execution!.review!.rounds[0]!;
   assert.deepEqual([h.work.execution!.state, h.work.execution!.held?.code], ['held', 'REVIEWER_RECOVERY_FAILED']);
-  assert.deepEqual([round.reviewers.standards.state, round.reviewers.spec.charge?.state], ['ended', 'released']);
+  assert.deepEqual([round.reviewers.standards.state, round.reviewers.spec.charge, round.reviewers.spec.notRetried?.code], ['ended', null, 'RETRY_NOT_LAUNCHED']);
   assert.equal(h.shown!.budget!.recoveries.reserved, null);
   assert.equal(h.execution.directives.length, 0, 'nothing is delivered to the suspended Builder');
 });
@@ -313,7 +337,7 @@ test('operator decision 2026-11-15: after 2 failed retries of the same role in t
   const work = await retryLimited(h);
   const round = work.execution!.review!.rounds[0]!;
   assert.deepEqual(activations(h.execution.kinds), ['activate-builder', 'activate-standards-r1a1', 'activate-spec-r1a1', 'activate-spec-r1a2', 'activate-spec-r1a3']);
-  assert.deepEqual([round.reviewers.spec.attempt, round.reviewers.spec.notRetried?.code, work.budget!.recoveries.consumed], [3, 'REVIEWER_RETRY_LIMIT', 2]);
+  assert.deepEqual([round.reviewers.spec.attempt, round.reviewers.spec.notRetried?.code, work.budget!.recoveries.consumed], [3, 'REVIEWER_RETRY_LIMIT', 0]);
   assert.equal(h.execution.directives.length, 0, 'nothing is delivered: the unverified round never reaches the Builder as results');
   // Ticket 51: it never stays held. The own boot (the suspended Builder) is stopped and the Execution settled at once: Slot released, nothing
   // retried automatically, and the Work blocked for the operator's decision, which the impediment names.
@@ -343,12 +367,12 @@ test('ticket 51: the operator decides a NEW REVIEW ROUND: one audited, deduplica
   const decision = after.execution!.reviewRetryLimit!;
   assert.deepEqual([decision.decision, decision.request_id, decision.operator], ['new-review-round', 'r51-round', { kind: 'local-administrator' }]);
   assert.deepEqual(after.history.filter(item => item.event === 'review-retry-limit-decided').map(item => 'detail' in item ? item.detail : null), ['r51-round:new-review-round']);
-  assert.deepEqual([after.impediments.some(item => item.code === 'RECOVERY_BLOCKED'), after.pendingRecovery!.reason, after.pendingRecovery!.waitSeconds], [false, 'operator-new-review-round', 45]);
-  // The persisted wait (45 s after two consumed recoveries) runs on the calendar; then the recovery Execution hands off and is reviewed again.
+  assert.deepEqual([after.impediments.some(item => item.code === 'RECOVERY_BLOCKED'), after.pendingRecovery!.reason, after.pendingRecovery!.waitSeconds], [false, 'operator-new-review-round', 5]);
+  // The persisted wait (5 s: the reviewer retries consumed no recovery, ticket 57) runs on the calendar; then the recovery Execution hands off and is reviewed again.
   h.execution.jumpCalendar(60000);
   after = await h.settle('recovery reviewed and completed', value => value.execution?.executionId !== work.execution!.executionId && value.execution?.end?.outcome === 'completed');
   assert.deepEqual([after.execution!.interruption, after.execution!.charge!.kind, after.budget!.recoveries.consumed],
-    [{ previousExecutionId: work.execution!.executionId, reason: 'OPERATIONAL_RECOVERY', code: 'REVIEWER_RETRY_LIMIT' }, 'recovery', 3]);
+    [{ previousExecutionId: work.execution!.executionId, reason: 'OPERATIONAL_RECOVERY', code: 'REVIEWER_RETRY_LIMIT' }, 'recovery', 1]);
   const round = after.execution!.review!.rounds[0]!;
   assert.deepEqual([round.round, round.conclusion, round.reviewers.spec.opinion?.conclusion], [2, 'clean', 'clean']);
   assert.ok(activations(h.execution.kinds).includes('activate-spec-r2a1'), 'Spec reviews again in the new round');
