@@ -4,7 +4,7 @@ Status: open
 Type: grilling
 Label: wayfinder:grilling
 Map: [Software Factory v2 — ambientes reconstruíveis em Lambda MicroVMs](../map.md)
-Blocked by: 02
+Blocked by: 02, 09
 
 ## Question
 

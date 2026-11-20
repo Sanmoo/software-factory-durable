@@ -45,6 +45,7 @@ As dependências canônicas são os campos `Blocked by:` dos tickets.
 
 - [direção Lambda](issues/01-lambda-microvms-direction.md#answer) →
   [prova Docker e transporte](issues/02-lambda-microvms-prototype.md) →
+  [prova de continuidade do agente entre boots](issues/09-agent-continuity-on-lambda-proof.md) →
   [consolidar PRD/spec e contratos da v2](issues/03-revised-sandbox-contract.md).
   Evidências adicionais e implementação/validação futura devem ganhar filhos quando o escopo
   necessário estiver definido, sem inventar uma implementação já autorizada.
@@ -59,7 +60,7 @@ As dependências canônicas são os campos `Blocked by:` dos tickets.
 
 - Compatibilidade real de Docker/Compose/Testcontainers/Ryuk, DNS, binds e portas em Lambda.
 - Viabilidade de SSH/WebSocket, limites, custo e evidências de cessação/rede/credenciais do serviço.
-- Detalhes do gate Git, reconstrução, rotação e contexto de recuperação após troca de boot.
+- Detalhes do gate Git, reconstrução e rotação que a consolidação precisará fixar.
 - Configuração/instalação revisadas, custos/quotas, observabilidade/retenção, impacto nos contratos
   existentes e matriz de aceite da v2.
 

@@ -99,3 +99,4 @@ Fontes trazidas pela pesquisa documental da sessão; não revalidadas independen
 
 - Aberto como próximo passo pós-MVP; sem execução ou recursos AWS criados nesta sessão.
 - 2026-11-20: reivindicado pelo Operador (sessão Claude Code); branch `docs/v2-lambda-prototype`, worktree `.worktrees/v2-lambda-prototype/`, destino `main`. Primeira etapa: revalidação documental e de preços, sem recursos AWS.
+- 2026-11-20: [plano de execução](../research/lambda-microvms-execution-plan.md) autorizado e [rubrica v1](../research/lambda-proof-rubric.json) aprovada pelo Operador. Prova sem harness; a continuidade do agente foi para o [ticket 09](09-agent-continuity-on-lambda-proof.md). Roles, bucket e repositório sintético criados; nenhuma MicroVM ainda.
