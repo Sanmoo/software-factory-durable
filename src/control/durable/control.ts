@@ -18,6 +18,7 @@ import { createPoller, systemClock } from './polling.js';
 import { createQuestionDesk } from './question-desk.js';
 import { acceptAnswer, readQuestion, readQuestions } from './questions.js';
 import { acceptScopeUpdate } from './scope.js';
+import { acceptPublicationReevaluation } from './publication.js';
 import { dispatchBlockers, selectNext } from '../rules/dependencies.js';
 import { counterView, defaultLimits, durationView, maxGrantAmount } from '../rules/budget.js';
 import { grantBudget, openCorrection, requestOperationalRecovery } from './budget.js';
@@ -48,6 +49,8 @@ const inputSchema = z.union([z.strictObject({ request_id: requestId, operation: 
   z.strictObject({ request_id: requestId, operation: z.literal('authorize-readiness'), work_id: z.uuid(), reason: z.string().min(1).max(2000), origin: z.literal('local-cli') }),
   // Ticket 23: concreteness and the phase answer are durable decisions of the commit; only the shape is checked here.
   z.strictObject({ request_id: requestId, operation: z.literal('repair'), work_id: z.uuid(), reason: z.string().min(1).max(2000), origin: z.literal('local-cli') }),
+  // Ticket 61: eligibility (blocked only by unexpected ref changes after an attempt) is a durable decision of the commit.
+  z.strictObject({ request_id: requestId, operation: z.literal('reevaluate-publication'), work_id: z.uuid(), reason: z.string().min(1).max(2000), origin: z.literal('local-cli') }),
   // Ticket 25 (spec §11.3).
   z.strictObject({ request_id: requestId, operation: z.literal('cancel'), work_id: z.uuid(), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('resume'), work_id: z.uuid(), origin: z.literal('local-cli') }),
@@ -278,6 +281,8 @@ export async function openControl(options: { storagePath: string;
       if (parsed.data.operation === 'authorize-readiness') return acceptReadinessAuthorization(state, parsed.data);
       // Ticket 23: recorded for the next safe activation (accepted / deferred / already covered / refused); never a launch.
       if (parsed.data.operation === 'repair') return acceptRepairRequest(state, { request_id: parsed.data.request_id, work_id: parsed.data.work_id, reason: parsed.data.reason, origin: { kind: 'local-cli' } });
+      // Ticket 61: recorded for the next discovery pass (which re-reads the remote); never a publication or an adoption.
+      if (parsed.data.operation === 'reevaluate-publication') return acceptPublicationReevaluation(state, parsed.data);
       if (parsed.data.operation === 'answer') return acceptAnswer(state, { request_id: parsed.data.request_id, question_id: parsed.data.question_id, text: parsed.data.text, origin: { kind: 'local-cli' } });
       if (parsed.data.operation === 'grant') return grantBudget(state, parsed.data, configuredRepository);
       if (parsed.data.operation === 'cancel') {

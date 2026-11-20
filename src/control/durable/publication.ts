@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
-import type { DivergenceView, ExecutionView, PublicationDiscovery, PublicationView } from '../types.js';
+import type { ControlInput, ControlReceipt, DivergenceView, ExecutionView, PublicationDiscovery, PublicationView } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
 import { authorizationInForce, divergenceQuestion, reconciliationAnswer } from '../rules/divergence.js';
-import { descriptionCheck, guestEffectOutOfScope, publicationAttempted, publicationMarker, publicationStep, publishableContent, type DiscoveryDecision } from '../rules/publication.js';
+import { descriptionCheck, guestEffectOutOfScope, publicationAttempted, publicationMarker, publicationStep, publishableContent, reevaluableReasons, reevaluationCommand,
+  reevaluationEligibility, type DiscoveryDecision } from '../rules/publication.js';
 import { validateQuestionRequest } from '../rules/questions.js';
-import { ticketIndex, works, type WorkRecord } from './admission.js';
+import { linkRequest, requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import { questions, questionSha256 } from './questions.js';
 import type { Session } from './store.js';
 
@@ -105,7 +106,9 @@ export async function recordDiscovery(session: Session, work_id: string, input: 
   observedAt: string | null; branch: PublicationDiscovery['branch']; decision: DiscoveryDecision; ticketNumber: number }): Promise<PublicationView | 'stale'> {
   return onWork(session, work_id, async (work, tx) => {
     const publication = work.publication;
-    if (!publication || (publication.state !== 'awaiting-discovery' && publication.state !== 'base-changed') || publication.basisExecutionId !== input.basisExecutionId ||
+    // Ticket 61: a blocked publication is discovered again only for the operator's pending re-evaluation.
+    const reevaluation = publication?.state === 'blocked' && publication.reevaluation?.state === 'pending' ? publication.reevaluation : null;
+    if (!publication || (publication.state !== 'awaiting-discovery' && publication.state !== 'base-changed' && !reevaluation) || publication.basisExecutionId !== input.basisExecutionId ||
       (work.execution?.executionId ?? null) !== input.executionId || publicationStep(work).kind !== 'discover') return 'stale' as const;
     const { decision } = input;
     const at = new Date().toISOString();
@@ -115,6 +118,24 @@ export async function recordDiscovery(session: Session, work_id: string, input: 
     if (!repeated) publication.discoveries = [...publication.discoveries, { at, observedAt: input.observedAt, trigger: input.trigger, outcome: decision.outcome,
       reasons: [...decision.reasons], branch: copy(input.branch), candidates: copy(decision.candidates) }].slice(-20);
     publication.updatedAt = at;
+    if (reevaluation) {
+      // An incomplete read decides nothing: the block and its reasons stay, the re-evaluation stays pending (read again on a later cycle).
+      if (decision.outcome === 'incomplete' || decision.outcome === 'held') {
+        if (!repeated) history(work, 'publication-discovery-incomplete', input.executionId, `reevaluation:${reevaluation.request_id}:${decision.reasons.join(',')}`);
+        return copy(publication);
+      }
+      Object.assign(reevaluation, { settledAt: at, outcome: decision.outcome, reasons: [...decision.reasons], state: decision.outcome === 'blocked' ? 'still-blocked' : 'accepted' });
+      history(work, 'publication-reevaluated', input.executionId, `${reevaluation.request_id}:${reevaluation.state}${decision.outcome === 'blocked'
+        ? `:${decision.reasons.join(',')}` : `:${decision.outcome}`}`);
+      if (decision.outcome === 'blocked') {
+        // Still blocked: the block's reasons and impediments are those of THIS read (an out-of-scope effect impediment only while one is shown).
+        work.impediments = work.impediments.filter(item => item.code !== publicationImpediment && item.code !== guestEffectImpediment);
+      } else {
+        // Accepted: the false positive's impediments lift and the decision applies exactly as a discovery after the attempt would have.
+        work.impediments = work.impediments.filter(item => item.code !== publicationImpediment && item.code !== guestEffectImpediment);
+        publication.state = 'awaiting-discovery';
+      }
+    }
     publication.reasons = [...decision.reasons];
     // Ticket 21: the changed base was restored (the linked own PR targets the Work's base again): the block lifts and the decision applies.
     if (publication.state === 'base-changed' && decision.outcome !== 'base-changed' && decision.outcome !== 'incomplete') {
@@ -162,13 +183,15 @@ export async function recordDiscovery(session: Session, work_id: string, input: 
     } else if (decision.outcome === 'blocked') {
       if (decision.pullRequest) link(decision.pullRequest);
       publication.state = 'blocked';
-      publication.nextStep = `Publication is not repeated or adopted automatically (${decision.reasons.join(', ')}). Operator must inspect the branch and pull requests on GitHub and decide explicitly (ticket 26).`;
+      publication.nextStep = `Publication is not repeated or adopted automatically (${decision.reasons.join(', ')}). Operator must inspect the branch and pull requests on GitHub and decide explicitly (ticket 26).` +
+        // Ticket 61: a block only by ref changes may be another Work's own publication: the operator can have it re-evaluated (never repeated).
+        (reevaluableReasons(decision.reasons) ? ` If the changed refs are another Work's own publication, re-evaluate with \`${reevaluationCommand(work.work_id)}\`.` : '');
       if (!work.impediments.some(item => item.code === publicationImpediment)) work.impediments.push({ code: publicationImpediment, scope: 'work', since: at, nextStep: publication.nextStep });
       const outOfScope = publicationAttempted(work) ? guestEffectOutOfScope(decision.reasons) : [];
       if (outOfScope.length && !work.impediments.some(item => item.code === guestEffectImpediment)) work.impediments.push({ code: guestEffectImpediment, scope: 'work', since: at,
         nextStep: `The publish-only session's effects exceeded its scope (${outOfScope.join(', ')}): GitHub permissions cannot separate push from merge, so Control ` +
           'verified it after the activation. Nothing is repaired or repeated; operator must inspect the repository (refs, pull requests) and decide explicitly.' });
-      history(work, 'publication-blocked', input.executionId, decision.reasons.join(','));
+      if (!reevaluation) history(work, 'publication-blocked', input.executionId, decision.reasons.join(','));
     } else if (decision.outcome === 'diverged') {
       // Ticket 21 (spec §10.1): never a recapture of the remote tip as a new lease. The divergence, its Question and the write block share
       // this commit; the local result and the earlier expectation stay as they are. An authorization in force for another tip is superseded.
@@ -287,4 +310,49 @@ export function markReconciliationExecution(work: WorkRecord, execution: Executi
   const authorization = work.publication ? authorizationInForce(work.publication) : null;
   if (!authorization || execution.request.reconciliation?.divergenceId !== authorization.divergenceId) return;
   Object.assign(authorization, { state: 'executing', executionId: execution.executionId });
+}
+
+/**
+ * Ticket 61 "Aceitar comando" for `reevaluate-publication <work> --reason`: records ONE pending re-evaluation of a publication blocked ONLY by
+ * unexpected ref changes after an attempt (deduplicated by request identity). Nothing is read or decided here: the next discovery pass re-reads
+ * the remote (complete read required) and re-applies the discovery rule to the persisted window with the current Control state. It never
+ * repeats the publication nor adopts anything the rule does not accept.
+ */
+export async function acceptPublicationReevaluation(session: Session, input: Extract<ControlInput, { operation: 'reevaluate-publication' }>):
+Promise<Extract<ControlReceipt, { operation: 'reevaluate-publication' }> | { kind: 'refused'; code: 'REQUEST_ID_CONFLICT' }> {
+  type Receipt = Extract<ControlReceipt, { operation: 'reevaluate-publication' }>;
+  return session.commit(async tx => {
+    const request = await tx.doc(requests, input.request_id, null);
+    if (request.input) {
+      if (JSON.stringify(request.input) !== JSON.stringify(input)) return { kind: 'refused' as const, code: 'REQUEST_ID_CONFLICT' as const };
+      return copy(request.receipt) as Receipt;
+    }
+    const index = await tx.doc(ticketIndex);
+    const work = (await tx.doc(works, input.work_id, null)).work;
+    const base = { kind: 'durable' as const, request_id: input.request_id, operation: 'reevaluate-publication' as const, work_id: input.work_id };
+    const refuse = (code: string): Receipt => ({ ...base, outcome: 'not-applied', reason: code, nextStep: null });
+    const publication = work?.publication ?? null;
+    let receipt: Receipt;
+    if (!work) receipt = refuse('WORK_NOT_FOUND');
+    else if (work.result !== 'open' || index.tickets[ticketKey(work.ticket)]?.current !== work.work_id) receipt = refuse('WORK_NOT_CURRENT');
+    else if (!publication) receipt = refuse('PUBLICATION_NOT_BLOCKED');
+    else if (publication.state === 'blocked' && publication.reevaluation?.state === 'pending') {
+      receipt = { ...base, outcome: 'already-covered', reason: null, nextStep: `Re-evaluation ${publication.reevaluation.request_id} is already pending.` };
+    } else {
+      const eligible = reevaluationEligibility(publication);
+      if (!eligible.ok) receipt = refuse(eligible.code);
+      else {
+        const at = new Date().toISOString();
+        publication.reevaluation = { request_id: input.request_id, reason: input.reason, requestedAt: at, state: 'pending', settledAt: null, outcome: null, reasons: [] };
+        publication.updatedAt = at;
+        work.history.push({ at, event: 'publication-reevaluation-requested', origin: 'local-cli', detail: input.request_id });
+        receipt = { ...base, outcome: 'accepted', reason: null, nextStep: 'The next discovery pass re-reads the remote (complete read required) and re-applies the ' +
+          'discovery rule to the recorded window; nothing is published again.' };
+      }
+    }
+    request.input = input;
+    request.receipt = receipt;
+    if (work) await linkRequest(tx, work.work_id, input.request_id);
+    return copy(receipt);
+  }, BACKGROUND_CONTEXT);
 }

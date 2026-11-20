@@ -148,11 +148,63 @@ export type DiscoveryDecision = { outcome: 'linked'; pullRequest: CandidateFacts
   /** Ticket 21: the linked own PR now targets another base (changed outside the Factory): nothing continues until it is restored. */
   { outcome: 'base-changed'; reasons: string[]; pullRequest: CandidateFacts; from: string; to: string; candidates: Summary };
 
-/** Refs that changed between the snapshot of the request and now, other than the Work's own branch (bounded list). */
-export function unexpectedRefChanges(before: Record<string, string>, now: Record<string, string>, ownBranch: string): string[] {
-  const own = `refs/heads/${ownBranch}`;
-  return [...new Set([...Object.keys(before), ...Object.keys(now)])].filter(ref => ref !== own && before[ref] !== now[ref]).sort().slice(0, 16);
+/**
+ * Ticket 61: the own publication Control recorded for ANOTHER Work of this installation in the same repository — its own branch and the heads
+ * Control requested, attempted (recorded at the activation commit, before any launch) or linked as its own PR head. Plain data from Control
+ * state; never inferred from the remote.
+ */
+export type OtherPublication = { workId: string; branch: string; heads: readonly string[] };
+type ListedWork = { work_id: string; repository: { repositoryId: number };
+  publication?: (Pick<PublicationView, 'branch' | 'state' | 'verified'> & Partial<Pick<PublicationView, 'attempts' | 'linkedHeads'>>) | null };
+/** Ticket 61: the other Works' own publication expectations (same repository, not `self`, with at least one recorded head). */
+export function otherPublications(works: readonly ListedWork[], self: { workId: string; repositoryId: number }): OtherPublication[] {
+  const result: OtherPublication[] = [];
+  for (const work of works) {
+    const publication = work.publication;
+    if (work.work_id === self.workId || work.repository.repositoryId !== self.repositoryId || !publication?.branch) continue;
+    const heads = [...new Set([...(publication.attempts ?? []).map(item => item.head), ...(publication.linkedHeads ?? []),
+      ...(publication.state === 'requested' && publication.verified ? [publication.verified.head] : [])])];
+    if (heads.length) result.push({ workId: work.work_id, branch: publication.branch, heads });
+  }
+  return result;
 }
+
+/**
+ * Refs that changed between the snapshot of the request and now, other than the Work's own branch (bounded list). Ticket 61: a ref that is
+ * ANOTHER Work's own branch, created or moved to a head Control recorded for that Work's publication, is that Work's own publication, not an
+ * unexpected change. A deletion, another head, another ref or a tag still counts.
+ */
+export function unexpectedRefChanges(before: Record<string, string>, now: Record<string, string>, ownBranch: string,
+  others: readonly OtherPublication[] = []): string[] {
+  const own = `refs/heads/${ownBranch}`;
+  const concurrent = new Map<string, Set<string>>();
+  for (const other of others) {
+    const ref = `refs/heads/${other.branch}`;
+    if (ref === own) continue;
+    concurrent.set(ref, new Set([...(concurrent.get(ref) ?? []), ...other.heads]));
+  }
+  const attributable = (ref: string) => now[ref] !== undefined && concurrent.get(ref)?.has(now[ref]) === true;
+  return [...new Set([...Object.keys(before), ...Object.keys(now)])].filter(ref => ref !== own && before[ref] !== now[ref] && !attributable(ref)).sort().slice(0, 16);
+}
+
+const refChange = /^UNEXPECTED_REF_CHANGE:/;
+/** Ticket 61: a block whose ONLY reasons are unexpected ref changes (the ones the corrected rule may now attribute to another Work). */
+export const reevaluableReasons = (reasons: readonly string[]) => reasons.length > 0 && reasons.every(reason => refChange.test(reason));
+/**
+ * Ticket 61: whether an operator may ask for a re-evaluation of the blocked publication: blocked ONLY by unexpected ref changes, after an
+ * attempt of the verified head, with the request's refs snapshot (the window the rule is re-applied to). Anything else: the code.
+ */
+export function reevaluationEligibility(publication: Pick<PublicationView, 'state' | 'reasons' | 'refsBefore' | 'verified' | 'attempts' | 'reconciliation'>):
+  { ok: true } | { ok: false; code: string } {
+  if (publication.state !== 'blocked') return { ok: false, code: 'PUBLICATION_NOT_BLOCKED' };
+  const other = publication.reasons.filter(reason => !refChange.test(reason));
+  if (!reevaluableReasons(publication.reasons)) return { ok: false, code: `NOT_REEVALUABLE:${other.join(',') || 'NO_REASON'}`.slice(0, 200) };
+  if (!publication.refsBefore) return { ok: false, code: 'REFS_SNAPSHOT_ABSENT' };
+  if (!publication.verified || attemptsOf(publication, publication.verified.head).length === 0) return { ok: false, code: 'PUBLICATION_NOT_ATTEMPTED' };
+  return { ok: true };
+}
+/** Ticket 61: the operator command named by a block it applies to. */
+export const reevaluationCommand = (workId: string) => `factory reevaluate-publication ${workId} --reason <text>`;
 
 /**
  * Spec §9.1 recovery: a correlated own publication is linked, never recreated. A publication is requested only from a COMPLETE read, when
@@ -162,6 +214,8 @@ export function unexpectedRefChanges(before: Record<string, string>, now: Record
  * read decides nothing (a safe read may be repeated); an unknown associated PR before any attempt is held (re-read; never adopted).
  */
 export function decideDiscovery(input: { expect: Expect; attempted: boolean; previousHeads?: readonly string[]; refsBefore?: Record<string, string> | null;
+  /** Ticket 61: the other Works' own publication expectations in this installation (Control state). */
+  others?: readonly OtherPublication[];
   /** The only attempt of this head expected the own branch ABSENT (it pushed); no PR-only continuation ran yet. */
   prOnlyRecovery?: boolean; known?: KnownRemote; observation: DiscoveryObservation }): DiscoveryDecision {
   const { expect, observation } = input;
@@ -186,7 +240,7 @@ export function decideDiscovery(input: { expect: Expect; attempted: boolean; pre
   // Contents W is repository-wide: after an attempt, any other branch/tag changed since the request's snapshot blocks (explicit refs).
   if (input.attempted && input.refsBefore) {
     if (observation.refs.state !== 'complete') return { outcome: 'incomplete', reasons: [`REFS_UNKNOWN:${observation.refs.code}`], candidates };
-    const changed = unexpectedRefChanges(input.refsBefore, observation.refs.refs, expect.branch);
+    const changed = unexpectedRefChanges(input.refsBefore, observation.refs.refs, expect.branch, input.others ?? []);
     if (changed.length) return blocked([`UNEXPECTED_REF_CHANGE:${changed.join(',')}`], own[0] ?? null);
   }
   if (unknownPulls.length) return { outcome: 'held', reasons: unknownPulls, candidates };
@@ -398,7 +452,9 @@ export function publicationStep(work: WorkFacts): PublicationStep {
   const last = [work.execution, ...[...(work.previousExecutions ?? [])].reverse()].find(item => item?.end) ?? null;
   if (!last?.end || last.end.cessation !== 'confirmed') return { kind: 'none' };
   const publication = work.publication ?? null;
-  if (publication?.state === 'blocked') return { kind: 'none' };
+  // Ticket 61: a block is settled, except for ONE discovery an operator explicitly asked for (re-evaluation of the same window).
+  if (publication?.state === 'blocked') return publication.reevaluation?.state === 'pending' && publicationAttempted(work)
+    ? { kind: 'discover', trigger: 'after-publication', attempted: true } : { kind: 'none' };
   if (publication?.state === 'diverged') {
     const divergence = publication.divergences?.at(-1);
     return divergence && divergence.state === 'awaiting-answer' ? { kind: 'resolve', divergenceId: divergence.divergenceId, questionId: divergence.questionId } : { kind: 'none' };

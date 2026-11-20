@@ -61,7 +61,10 @@ export type ControlInput = { request_id: string; operation: 'pause' | 'unpause';
   { request_id: string; operation: 'forget-confirm'; work_id: string; plan_id: string; origin: 'local-cli' } |
   /** Ticket 23 (spec §11.3 `repair <work> --reason`): an explicit repair inside the current scope, charged to `corrections`; recorded for the
    * next safe activation, never delivered to a running activity, never a launch. */
-  { request_id: string; operation: 'repair'; work_id: string; reason: string; origin: 'local-cli' };
+  { request_id: string; operation: 'repair'; work_id: string; reason: string; origin: 'local-cli' } |
+  /** Ticket 61: re-evaluate ONE publication blocked only by unexpected ref changes: the next discovery pass re-reads the remote (complete
+   * read) and re-applies the discovery rule to the persisted window with the current Control state. Never repeats or adopts anything. */
+  { request_id: string; operation: 'reevaluate-publication'; work_id: string; reason: string; origin: 'local-cli' };
 /** `answer`: `accepted` removed only that Question's impediment; `not-applied` (already answered, unknown, closed Work...) changed nothing. */
 export type ControlReceipt = { kind: 'durable'; request_id: string; operation: 'pause' | 'unpause'; paused: boolean; historySequence: number } |
   { kind: 'durable'; request_id: string; operation: 'answer'; question_id: string; outcome: 'accepted' | 'not-applied'; reason: string | null; work_id: string | null } |
@@ -96,7 +99,11 @@ export type ControlReceipt = { kind: 'durable'; request_id: string; operation: '
   { kind: 'durable'; request_id: string; operation: 'repair'; work_id: string; outcome: 'accepted' | 'deferred' | 'already-covered' | 'not-applied';
     reason: string | null; feedbackId: string | null; appliesAt: 'next-activation' | null;
     /** What the operator can do next (refusals name the command that applies, e.g. `update-scope` without an own PR). */
-    nextStep: string | null };
+    nextStep: string | null } |
+  /** Ticket 61 `reevaluate-publication`: `accepted` (recorded; the next discovery pass decides, result in `show`/`history`), `already-covered`
+   * (a re-evaluation is already pending), `not-applied` (refused with `reason`: nothing changed). */
+  { kind: 'durable'; request_id: string; operation: 'reevaluate-publication'; work_id: string; outcome: 'accepted' | 'already-covered' | 'not-applied';
+    reason: string | null; nextStep: string | null };
 export type ControlQuery = { kind: 'status' } | { kind: 'request'; request_id: string } | { kind: 'access' } |
   /** Ticket 29: `cursor`/`limit` page the Works (admission order) and the page is fitted to one frame; neither = the full list. */
   { kind: 'list'; cursor?: number | undefined; limit?: number | undefined } |
@@ -405,6 +412,10 @@ export type PublicationView = {
   baseChange?: { from: string; to: string; observedAt: string; pullRequest: number } | null;
   /** Review HIGH: commits pushed by others whose loss the operator explicitly authorized (`discard <tip>`): no longer required at linking. */
   waived?: string[];
+  /** Ticket 61: the latest operator re-evaluation of a block (`reevaluate-publication`). `pending`: the next discovery pass re-reads the remote
+   * and re-applies the rule to `refsBefore`; `accepted`: the block lifted with the decision `outcome`; `still-blocked`: `reasons` remain. */
+  reevaluation?: { request_id: string; reason: string; requestedAt: string; state: 'pending' | 'accepted' | 'still-blocked'; settledAt: string | null;
+    outcome: PublicationDiscovery['outcome'] | null; reasons: string[] } | null;
 };
 /**
  * Ticket 13: end-of-Execution verification (spec §6.4/§9.3). `verified` only with no reason; every reason is independent and explicit.
@@ -795,8 +806,10 @@ export type WorkView = {
     { at: string; event: 'execution-reconciled' | 'recovery-wait-kept'; origin: 'controller-recovery'; executionId: string | null; detail: string } |
     { at: string; event: 'publication-evaluated' | 'publication-requested' | 'publication-started' | 'publication-linked' | 'publication-blocked' | 'publication-discovery-incomplete' |
       /* ticket 21 */ 'publication-diverged' | 'reconciliation-authorized' | 'reconciliation-not-authorized' | 'reconciliation-superseded' | 'publication-base-changed' | 'publication-base-restored' |
-      'reconciliation-failed';
+      'reconciliation-failed' | /* ticket 61 */ 'publication-reevaluated';
       origin: 'controller-publication'; executionId: string | null; detail: string } |
+    /** Ticket 61: the operator asked to re-evaluate a blocked publication (`<request id>`). */
+    { at: string; event: 'publication-reevaluation-requested'; origin: 'local-cli'; detail: string } |
     { at: string; event: 'checks-evaluated'; origin: 'controller-checks'; detail: string } |
     /* ticket 44 */ { at: string; event: 'environment-evaluated'; origin: 'github-polling' | 'controller-dispatch'; detail: string } |
     { at: string; event: 'readiness-evaluated' | 'readiness-intended' | 'readiness-attempted' | 'readiness-confirmed' | 'readiness-not-applied' | 'readiness-human-flag';

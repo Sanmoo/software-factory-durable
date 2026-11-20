@@ -22,7 +22,7 @@ import { intactRequest, readQuestion, readQuestions, recordContentLost, register
 import { pendingScope } from './scope.js';
 import { recoveryPrompt, type KnownContext } from '../rules/questions.js';
 import { continuationPrompt, initialPrompt, promptBudgetBytes, recoveryContext, scopeSection, sessionDecision } from '../rules/continuation.js';
-import { attemptsOf, decideDiscovery, publicationAttempted, publicationPrompt, publicationResumes, publicationStep, type DiscoveryObservation } from '../rules/publication.js';
+import { attemptsOf, decideDiscovery, otherPublications, publicationAttempted, publicationPrompt, publicationResumes, publicationStep, type DiscoveryObservation } from '../rules/publication.js';
 import { humanTips, authorizationInForce, comparisonBase, knownRemote, preservationTips, reconciliationNotice, reconciliationPrompt } from '../rules/divergence.js';
 import { evaluatePublication, recordDiscovery, resolveDivergence } from './publication.js';
 import { purposeOf } from './execution.js';
@@ -688,11 +688,12 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
   const discoveriesPerTick = 4;
   async function reconcilePublications() {
     let reads = 0;
-    for (const listed of await deps.readWorks()) {
+    const listing = await deps.readWorks();
+    for (const listed of listing) {
       if (stopping.signal.aborted || reads >= discoveriesPerTick) return;
       if (running.has(listed.work_id)) continue;
       // One Work's failure is recorded and never stops the others (review LOW).
-      try { if (await reconcileOne(listed)) reads++; }
+      try { if (await reconcileOne(listed, listing)) reads++; }
       catch (error) { observe(listed.work_id, 'publication-reconcile-failed', [codeOf(error, 'PUBLICATION_RECONCILE_FAILED')]); }
     }
   }
@@ -702,7 +703,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     return attempts.length === 1 && attempts[0]!.expectedRemote?.state === 'absent';
   };
   /** Returns whether a discovery read was made. */
-  async function reconcileOne(listed: WorkRecord): Promise<boolean> {
+  /** `listing`: every Work of the installation, read BEFORE this Work's remote read — another Work's attempt is recorded at its activation
+   * commit, before any push, so each concurrent own publication the read can observe is already in it (ticket 61). */
+  async function reconcileOne(listed: WorkRecord, listing: readonly WorkRecord[]): Promise<boolean> {
     let step = publicationStep(listed);
     if (step.kind === 'evaluate') {
       const evaluated = await evaluatePublication(session, listed.work_id, step.basisExecutionId);
@@ -752,7 +755,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const decision = decideDiscovery({ expect: { workId: work.work_id, ticketNumber: work.ticket.number, branch: publication.branch, base: publication.base,
       repositoryId: work.repository.repositoryId, head: publication.verified.head, app }, attempted: step.attempted, previousHeads: publication.linkedHeads ?? [],
       prOnlyRecovery: prOnlyRecovery(publication), known,
-      refsBefore: publication.refsBefore ?? null, observation });
+      refsBefore: publication.refsBefore ?? null, observation,
+      // Ticket 61: the other Works' own publication expectations (Control state): their own branch at a recorded head is not unexpected.
+      others: otherPublications(listing, { workId: work.work_id, repositoryId: work.repository.repositoryId }) });
     const recorded = await recordDiscovery(session, work.work_id, { basisExecutionId: publication.basisExecutionId, executionId: work.execution?.executionId ?? null,
       trigger: step.trigger, observedAt, ticketNumber: work.ticket.number, decision,
       branch: observation.kind === 'observed' ? observation.branch : { state: 'unknown', code: observation.code } });

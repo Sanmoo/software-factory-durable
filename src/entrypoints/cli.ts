@@ -11,7 +11,7 @@ import { releaseInstallationRoot } from './release.js';
 // Ticket 41: the blocked reference shown by `factory show`; its shape is shared, Control checks it is exactly the blocked one.
 import { blockedReferencePattern as blockedReference, blockedStartCodePattern, startRetryRemedies } from '../contracts/index.js';
 
-const usage = 'factory <setup|doctor|run|status|list [--cursor <n> --limit <n>]|show <work> [--cursor <n> --limit <n>]|history <work>|logs <work> [--after <capture>] [--read <capture> [--offset <n>]]|usage [<work>]|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>|--continuations <n>)|update-scope <work> --reason <text>|authorize-readiness <work> --reason <text>|repair <work> --reason <text>|cancel <work>|resume <work> [--override-blocked-recovery <reference> --request-id <id>|--new-review-round --request-id <id>|--retry-blocked-start <code> [--remedy <recreate-artifact-seed|repair-disk|replace-disk>] --request-id <id>]|reopen <work>|new <owner/repo#number> [--keep-predecessor-pr]|cleanup <work> --select <logs,sessions,environment,remote-branch> [--yes]|cleanup-confirm <work> <plan>|forget <work> [--yes]|forget-confirm <work> <plan>|request <id>|upgrade <check|apply|status|resume|rollback> [--migrate <id>]> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service [--service-directory <absolute dir>]] [history|logs: --execution <id> --role <builder|standards|spec> --limit <n>; history: --cursor <n>]; factory login --root <canonical-absolute-installation>';
+const usage = 'factory <setup|doctor|run|status|list [--cursor <n> --limit <n>]|show <work> [--cursor <n> --limit <n>]|history <work>|logs <work> [--after <capture>] [--read <capture> [--offset <n>]]|usage [<work>]|question <id>|pause|unpause|answer <question> <text>|grant <work> (--corrections <n>|--recoveries <n>|--continuations <n>)|update-scope <work> --reason <text>|authorize-readiness <work> --reason <text>|repair <work> --reason <text>|reevaluate-publication <work> --reason <text>|cancel <work>|resume <work> [--override-blocked-recovery <reference> --request-id <id>|--new-review-round --request-id <id>|--retry-blocked-start <code> [--remedy <recreate-artifact-seed|repair-disk|replace-disk>] --request-id <id>]|reopen <work>|new <owner/repo#number> [--keep-predecessor-pr]|cleanup <work> --select <logs,sessions,environment,remote-branch> [--yes]|cleanup-confirm <work> <plan>|forget <work> [--yes]|forget-confirm <work> <plan>|request <id>|upgrade <check|apply|status|resume|rollback> [--migrate <id>]> [--root <installation>] [--json] [--request-id <id>] [doctor --authenticated] [setup --service [--service-directory <absolute dir>]] [history|logs: --execution <id> --role <builder|standards|spec> --limit <n>; history: --cursor <n>]; factory login --root <canonical-absolute-installation>';
 const upgradeUsage = 'factory upgrade <check|apply|status|resume|rollback> [--root <installation>] [--migrate <migration id>] — run with the NEW release: ' +
   '<root>/releases/<id>/node/bin/node <root>/releases/<id>/dist/src/entrypoints/cli.js upgrade ...';
 // Ticket 25 (spec §11.3): cycle commands; `new` names the Ticket as owner/repo#number.
@@ -80,7 +80,7 @@ async function operational(root: string, command: string, requestId: string | un
   retry?: { code: string; remedy?: string }) {
   const query = (): Envelope['payload'] => ['history', 'logs', 'usage', 'list', 'show'].includes(command) ? inspectionQuery(command, requested, inspection)
     : command === 'doctor' ? { kind: 'access' } : command === 'question' ? { kind: 'question', question_id: requested! } : { kind: 'request', request_id: requested! };
-  const mutable = command === 'pause' || command === 'unpause' || command === 'answer' || command === 'grant' || command === 'update-scope' || command === 'authorize-readiness' || command === 'repair' ||
+  const mutable = command === 'pause' || command === 'unpause' || command === 'answer' || command === 'grant' || command === 'update-scope' || command === 'authorize-readiness' || command === 'repair' || command === 'reevaluate-publication' ||
     cycleCommands.includes(command) || cleanupCommands.includes(command);
   const id = requestId ?? randomUUID();
   // Present identity BEFORE sending; stdout remains a single machine-readable result.
@@ -91,7 +91,7 @@ async function operational(root: string, command: string, requestId: string | un
     const response = command === 'status' ? status : await exchange(root, mutable ? 'accept' : 'inspect',
       mutable ? (command === 'answer' ? { request_id: id, operation: 'answer', question_id: requested!, text: text!, origin: 'local-cli' }
         : command === 'grant' ? { request_id: id, operation: 'grant', work_id: requested!, counter: grant!.counter, amount: grant!.amount, origin: 'local-cli' }
-          : command === 'update-scope' || command === 'authorize-readiness' || command === 'repair' ? { request_id: id, operation: command, work_id: requested!, reason: text!, origin: 'local-cli' }
+          : command === 'update-scope' || command === 'authorize-readiness' || command === 'repair' || command === 'reevaluate-publication' ? { request_id: id, operation: command, work_id: requested!, reason: text!, origin: 'local-cli' }
           : command === 'resume' && override ? { request_id: id, operation: 'resume', work_id: requested!, override_blocked_recovery: override, origin: 'local-cli' }
           : command === 'resume' && newReviewRound ? { request_id: id, operation: 'resume', work_id: requested!, new_review_round: true, origin: 'local-cli' }
           : command === 'resume' && retry ? { request_id: id, operation: 'resume', work_id: requested!, retry_blocked_start: retry.code, ...(retry.remedy ? { remedy: retry.remedy } : {}), origin: 'local-cli' }
@@ -198,7 +198,7 @@ export async function main(input: string[]): Promise<number> {
       return 2;
     }
   }
-  let valid = ['setup', 'doctor', 'run', 'status', 'list', 'show', 'history', 'logs', 'usage', 'question', 'pause', 'unpause', 'answer', 'grant', 'update-scope', 'authorize-readiness', 'repair', 'request', ...cycleCommands,
+  let valid = ['setup', 'doctor', 'run', 'status', 'list', 'show', 'history', 'logs', 'usage', 'question', 'pause', 'unpause', 'answer', 'grant', 'update-scope', 'authorize-readiness', 'repair', 'reevaluate-publication', 'request', ...cycleCommands,
     ...cleanupCommands].includes(command ?? '');
   // Ticket 29: `history <work>`, `logs <work>` (filters/page or `--read <capture> [--offset <n>]`) and `usage [<work>]`.
   let inspection: Inspection = {};
@@ -209,7 +209,7 @@ export async function main(input: string[]): Promise<number> {
     else { inspection = parsed.options; args = [...args.slice(0, hasWork ? 2 : 1), ...parsed.rest]; }
   }
   let requestId: string | undefined;
-  const withReason = command === 'update-scope' || command === 'authorize-readiness' || command === 'repair';
+  const withReason = command === 'update-scope' || command === 'authorize-readiness' || command === 'repair' || command === 'reevaluate-publication';
   const requested = command === 'request' || command === 'show' || command === 'question' || command === 'answer' || command === 'grant' || withReason ||
     cycleCommands.includes(command ?? '') || cleanupCommands.includes(command ?? '') ||
     command === 'history' || command === 'logs' || (command === 'usage' && args[1] !== undefined && !args[1].startsWith('--')) ? args[1] : undefined;

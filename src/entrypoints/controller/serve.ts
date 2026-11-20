@@ -16,6 +16,8 @@ const command = z.union([z.strictObject({ request_id: requestId, operation: z.en
   // Ticket 23: explicit repair inside the current scope (corrections budget); concreteness/phase decided by the commit.
   z.strictObject({ request_id: requestId, operation: z.literal('repair'), work_id: z.uuid(), reason: z.string().min(1).max(2000), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.literal('authorize-readiness'), work_id: z.uuid(), reason: z.string().min(1).max(2000), origin: z.literal('local-cli') }),
+  // Ticket 61: re-evaluation of a publication blocked only by unexpected ref changes (eligibility decided by the commit).
+  z.strictObject({ request_id: requestId, operation: z.literal('reevaluate-publication'), work_id: z.uuid(), reason: z.string().min(1).max(2000), origin: z.literal('local-cli') }),
   z.strictObject({ request_id: requestId, operation: z.enum(['cancel', 'resume', 'reopen']), work_id: z.uuid(), origin: z.literal('local-cli') }),
   // Ticket 41: Control checks the exact blocked reference; only its shared shape is checked here.
   z.strictObject({ request_id: requestId, operation: z.literal('resume'), work_id: z.uuid(), override_blocked_recovery: z.string().regex(blockedReferencePattern), origin: z.literal('local-cli') }),
