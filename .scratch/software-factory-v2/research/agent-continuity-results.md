@@ -2,9 +2,10 @@
 
 Data: 2026-11-20. Ticket: [Validar a continuidade do agente entre boots em Lambda MicroVMs](../issues/09-agent-continuity-on-lambda-proof.md).
 [Plano autorizado](agent-continuity-execution-plan.md) · [rubrica v1](agent-continuity-rubric.json) ·
-[aprovação](agent-continuity-rubric-approval.json) · [evidência sanitizada](agent-continuity-evidence.json).
+[aprovação](agent-continuity-rubric-approval.json) · [evidência sanitizada](agent-continuity-evidence.json) ·
+[avaliação por critério](agent-continuity-assessment.json).
 
-**Estado: campanha executada; vereditos propostos, pendentes de revisão do Operador. Cleanup ainda não feito.**
+**Estado: aceito pelo Operador em 2026-11-20, com os dois critérios reprovados; cleanup concluído e verificado.**
 
 **Alcance.** Vale só para o perfil testado: Pi coding-agent 1.5.2 (perfil `factory-development-pi-1.5.2-read-async-bash-lexical-v3`)
 no host, `openai/gpt-6-luna` por OAuth nativa, raciocínio desligado, quatro ferramentas de um adapter
@@ -24,9 +25,9 @@ Não é aceite da fábrica, adapter da v2 nem homologação de produção.
 - **Depois da perda a ativação continuou viva.** A sessão fez dois pedidos de modelo e tentou uma
   chamada de ferramenta, recusada, antes de encerrar por conta própria.
 
-## Resultado por critério (proposto)
+## Resultado por critério
 
-| Critério | Proposto | Observação mínima |
+| Critério | Resultado | Observação mínima |
 | --- | --- | --- |
 | A1 adapter | approved | Preflight sem modelo: marcador escrito por `write`, `bash` e `edit` lido por conexão independente e ausente do host; `read` devolveu o marcador; chamada fora de ativação recusada. As 41 chamadas do modelo coincidem com 41 registros do adapter, e todo resultado na sessão traz o boot ou o diagnóstico de ambiente encerrado. Inventário reportado pelo SDK para a mesma configuração, conferido depois sem inferência: só `bash`, `read`, `write`, `edit`. |
 | A2 perfil | approved | Manifesto gravado antes da execução e comparado no início; modelo e provedor conferidos a cada pedido. Na primeira campanha o manifesto listava as ferramentas e a sessão não tinha nenhuma: opção pedida não era inventário efetivo. |
@@ -40,8 +41,8 @@ Não é aceite da fábrica, adapter da v2 nem homologação de produção.
 | E1 efeito ambíguo | approved | Contador: 0 antes, 1 no instante da morte, 1 ao final. A substituta tinha o script e não o chamou, citando o registro do controlador. A sessão original, após o resultado desconhecido, tentou só um push. |
 | I1 identidade e consumo | approved | Um único Trabalho; boots A, B e C com motivo (`planned-switch`, `killed-before-push`, fim); 6 ativações, 43 pedidos e 360 s acumulados sem reinício. |
 | I2 quietude | rejected | Janela da troca planejada: nenhum pedido nem chamada entre 21:54:09 e 21:54:34. **Janela da perda:** a ativação seguia admitida quando a MicroVM morreu; houve dois pedidos de modelo (21:56:55 e 21:57:00) e uma tentativa de ferramenta recusada, antes da admissão seguinte. |
-| C1 custo | approved, leitura pendente | 8 de 12 MicroVMs, 1.531 s somados (0,43 h de 3 h), nenhum build; estimativa abaixo de US$ 0,20 de US$ 10. Modelo: 11 de 12 ativações, 48 de 120 pedidos; 25,5 mil tokens de entrada, 4,4 mil de saída, 206 mil lidos de cache; cobrança da assinatura indisponível. Cost Explorer no cleanup. |
-| C2 cleanup | pendente | Nenhuma MicroVM ativa. Remoção total autorizada, ainda não executada. |
+| C1 custo | approved | 8 de 12 MicroVMs, 1.531 s somados (0,43 h de 3 h), nenhum build; estimativa abaixo de US$ 0,20 de US$ 10. Modelo: 11 de 12 ativações, 48 de 120 pedidos; 25,5 mil tokens de entrada, 4,4 mil de saída, 206 mil lidos de cache; cobrança da assinatura indisponível. Cost Explorer lido em 2026-11-20: ainda sem linha do serviço, o faturamento atrasa. |
+| C2 cleanup | approved | Inventário final vazio: nenhuma MicroVM ativa, imagens, log groups, bucket, roles e recursos com a tag do experimento em zero; repositório sintético inexistente (a deploy key foi com ele); chaves, tokens e sessões Pi locais apagados. A evidência foi preservada antes da remoção. |
 
 ## Achados para o desenho
 
@@ -81,9 +82,20 @@ Não é aceite da fábrica, adapter da v2 nem homologação de produção.
 - A verificação da fase 3 pelo runner falhou por um motivo coerente com o resultado: o remoto ainda
   estava na fase 2.
 
-## Recursos existentes (para o cleanup)
+## Cleanup
 
-Os herdados da prova de infraestrutura, sem acréscimo na AWS além de MicroVMs já encerradas. No GitHub,
-as branches `cont-work` e `cont-effects` do repositório sintético. Local: evidência bruta e sessões Pi em
-`/home/sanmoo/software-factory-test/v2-lambda-continuity/`, chaves em `/home/sanmoo/software-factory-test/v2-lambda/`.
-Código descartável: branch `prototype/v2-agent-continuity`, commit `65c82d2`, não integrada.
+Feito em 2026-11-20 pelo helper de finalização: cessação confirmada, evidência sanitizada gravada e
+conferida, avaliação registrada e só então a remoção. Cobriu esta prova e tudo o que foi herdado da
+prova de infraestrutura.
+
+- Removidos e verificados: imagens `sfv2proof-min` e `sfv2proof-full`, log groups, bucket de artefatos,
+  roles `sfv2proof-operator` e `sfv2proof-build`, repositório `Sanmoo/sfv2proof-synthetic` com sua
+  deploy key, chaves e tokens locais, sessões Pi (hashes na evidência) e ferramentas locais do túnel.
+- Desvio: o script tentou apagar as imagens pelo nome, a API exige o ARN, e ele seguiu adiante até
+  apagar as roles. O helper registrou a remoção como falha. As imagens foram apagadas em seguida com a
+  identidade base da conta, e o inventário final ficou vazio.
+- Retido de propósito, só local: evidência bruta das duas provas em
+  `/home/sanmoo/software-factory-test/v2-lambda/evidence` e `/home/sanmoo/software-factory-test/v2-lambda-continuity/`.
+- Continua existindo: a retenção mínima do armazenamento de imagem que o serviço cobra após a remoção,
+  e o código descartável nas branches `prototype/v2-lambda-microvms` e `prototype/v2-agent-continuity`
+  (commit `57b4449`), não integradas.

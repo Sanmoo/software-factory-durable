@@ -1,0 +1,26 @@
+{
+  "rubric": "agent-continuity-on-lambda-proof v1",
+  "rubricSha256": "fd47503d1e59293c32720113458d749a7d7f0ac64a4db1c3c8c9fbe4c261af00",
+  "reviewedBy": "Operador, na sessão de 2026-11-20 (resposta: aceito como está, concordo com os rejected); registro de revisão, não autenticação",
+  "evidenceSnapshotSha256": "90a983e421e4eff9d240331be2efedacb4174f01a8122004fd34c21edd8bbe86",
+  "notes": [
+    "O helper de finalização registrou C2-cleanup como inconclusive, porque avalia antes de remover, e cleanup failed, porque a remoção das duas imagens falhou na primeira tentativa (a API exige ARN). As imagens foram removidas em seguida com a identidade base e o inventário final ficou vazio; C2 está approved por essa verificação posterior.",
+    "C1-custo: consumo dentro dos tetos; a leitura do Cost Explorer em 2026-11-20 ainda não mostrava linha do serviço (faturamento atrasado)."
+  ],
+  "criteria": {
+    "A1-adapter": "approved",
+    "A2-perfil": "approved",
+    "B1-fase-inicial": "approved",
+    "R1-troca-preservacao": "approved",
+    "R2-mesma-sessao": "approved",
+    "R3-chamada-em-voo": "approved",
+    "P1-perda-detectada": "approved",
+    "P2-sessao-substituta": "rejected",
+    "P3-contexto": "approved",
+    "E1-efeito-ambiguo": "approved",
+    "I1-identidade-consumo": "approved",
+    "I2-quietude": "rejected",
+    "C1-custo": "approved",
+    "C2-cleanup": "approved"
+  }
+}

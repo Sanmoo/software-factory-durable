@@ -60,12 +60,19 @@ As dependências canônicas são os campos `Blocked by:` dos tickets.
   Docker (com Compose e Testcontainers), SSH sobre WebSocket pelo `HTTP_INGRESS` e reconstrução pelo Git
   remoto funcionam no perfil testado, sem harness; canal fechado não encerra processo, egress sem
   filtro e limites de quota/disco ficam para a consolidação. Recursos retidos para a prova seguinte.
+- [Validar a continuidade do agente entre boots em Lambda MicroVMs](issues/09-agent-continuity-on-lambda-proof.md#answer):
+  com o Pi do MVP no host, a troca planejada funciona com a mesma sessão sobre o ambiente reconstruído e o
+  efeito ambíguo não é repetido; após perda, a sessão substituta não presume o que sumiu mas não concluiu a
+  fase, e a ativação segue viva depois da morte do ambiente. Uma campanha; recursos das duas provas removidos.
 
 ## Not yet specified
 
 - Suspend/resume, execuções de oito horas, carga sustentada e o perfil de um repositório real em Lambda:
   não cobertos pela prova de infraestrutura; decidir se a consolidação os exige como prova.
-- Detalhes do gate Git, reconstrução e rotação que a consolidação precisará fixar.
+- Detalhes do gate Git, reconstrução e rotação que a consolidação precisará fixar, incluindo o que a
+  prova de continuidade deixou em aberto: encerrar a ativação quando o ambiente morre, o que a sessão
+  substituta faz depois de um efeito incerto e como se reconcilia, e publicação obrigatória antes de
+  toda devolução de controle.
 - Configuração/instalação revisadas, custos/quotas, observabilidade/retenção, impacto nos contratos
   existentes e matriz de aceite da v2.
 
