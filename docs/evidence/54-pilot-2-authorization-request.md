@@ -150,3 +150,18 @@ Recomendação do supervisor: **sim** em todos, exceto 11b e 11c (alternativas a
   (`pl2-pilot-evidence/pilot-watch.sh`, log em `watch.log`, teto de 120 M tokens com pausa automática).
 - **Labels (opção A, escolhida pelo operador).** `ready-for-agent` em #124, #125 e #126 às 03:19 UTC. #127 e #128 recebem o label
   depois que os bloqueadores forem mergeados.
+
+## 11. Encerramento (2026-11-20 05:41 UTC)
+
+- **Parada global** às 05:41 pelo supervisor (`factory pause`), pela regra da seção 5. A parada registrada como `clean` perde escritas de
+  metadados do disco raiz do guest, e os três Trabalhos foram recusados em `START_PRESERVED_DISK_CHECK_REQUIRED`. Isso aconteceu inclusive num
+  disco novo de `replace-disk` que rodou só 3 minutos; o disco base está íntegro. Ticket 55.
+- **Decisões do operador durante a janela:** respostas do supervisor a duas Perguntas (item 13); `replace-disk` no #124; `grant --recoveries 2`
+  no #126; `update-scope` no #125, com a instrução de rodar o gate exato, porque o `repair` exige PR publicado; `concurrency` de 3 para 2 às 05:38.
+- **Por critério:** (44) comprovado (ambiente preparado e reaproveitado, gate só com o comando do projeto); (50) comprovado na parte transitória;
+  (48) fim de orçamento com continuação comprovado, sem entrega; (51) revisões limpas no #125, mas a publicação foi recusada por gate (ticket 56);
+  (47) **reprovado** (ticket 55); (53) duas Perguntas, uma do Ticket (#125) e uma da skill (#126, seam `domain/`).
+- **Outros achados:** tickets 56 (declaração de gate contra a execução observada), 57 (novas tentativas de revisor consomem as recuperações do
+  Trabalho) e 58 (`not-publishable` sem PR fica sem próximo passo); memória do host no limite com 3 guests (swap de 3–4 GiB por VM).
+- **Reversão feita:** ruleset `26435808` restaurado (com `update`); serviço parado; watcher parado; `pl2/credentials/app.pem` removido. A `pl2` e
+  seus Trabalhos ficam preservados como evidência. A branch `chore/factory-environment` continua no remoto. 62,3 M tokens nas sessões.

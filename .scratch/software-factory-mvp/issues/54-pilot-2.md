@@ -31,3 +31,12 @@ seguindo os guardrails de ensaios.
   assets34 (manifesto `8efa506a…`) com `deriveJournaledGuestAssets`; só `rootfs` mudou (`has_journal`, estado `clean`). Pin novo: manifesto
   `72e00546beba8e1c8b4b6f9d7a17de635e27fe2de79ffa85688bb2bdeebb5c12`. A release do piloto 2 usa esse pin; ambientes preparados com o pin
   anterior (inclusive os da `pl1`) não sobem com ele, então o piloto 2 começa com ambientes novos.
+- 2026-11-20 (supervisor): janela do piloto 2 aberta às 03:19 UTC e encerrada às 05:41 UTC pela regra de parada global (defeito da Factory que
+  bloqueia todo Trabalho), sem nenhuma entrega. Comprovados: (44) ambiente declarado preparado (JDK 25) e reaproveitado; (50) recusa de memória
+  volta à fila sozinha (duas vezes); (48) fim de orçamento com continuação no mesmo ambiente (`requests` 40); (51) revisões Standards e Spec
+  limpas no #125. Reprovado: (47) a parada `clean` perde escritas de metadados do disco raiz → `START_PRESERVED_DISK_CHECK_REQUIRED` nos três
+  Trabalhos, inclusive depois de `replace-disk`. Novos tickets: [55](55-guest-stop-loses-root-metadata-writes.md) (defeito do disco),
+  [56](56-gate-declaration-against-observed-run.md), [57](57-reviewer-retries-charge-work-recoveries.md),
+  [58](58-not-publishable-without-pr-next-step.md). Ruleset restaurado, serviço parado, chave da App removida; `pl2` preservada como evidência
+  (Trabalhos pausados). 62,3 M tokens nas sessões. Detalhe em `docs/evidence/54-pilot-2-authorization-request.md` §11 e
+  `/home/sanmoo/software-factory-test/pl2-pilot-evidence/findings.md`. Um novo piloto fica bloqueado por 55.
