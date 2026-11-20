@@ -24,6 +24,17 @@ sem supor arquivos que não existem mais e sem repetir efeitos externos ambíguo
 - Cobrir troca planejada antes do limite de vida, perda antes do push com sessão substituta, e o
   contexto entregue à sessão que continua.
 
+## Inherited resources and cleanup
+
+A [prova de infraestrutura](02-lambda-microvms-prototype.md#answer) teve resultado utilizável. Por decisão
+do Operador em 2026-11-20, seus recursos ficaram retidos para este ticket, que herda o cleanup: imagens
+`sfv2proof-min` e `sfv2proof-full`, bucket de artefatos, log groups, roles `sfv2proof-operator` e
+`sfv2proof-build` (AWS, `us-east-1`, tag `experiment=sf-v2-lambda-proof`), repositório privado
+`Sanmoo/sfv2proof-synthetic` com deploy key, e o código descartável na branch `prototype/v2-lambda-microvms`.
+Inventário e ordem de remoção no [relatório](../research/lambda-proof-results.md). Se este ticket for
+fechado sem execução, o cleanup continua devido. A autorização de custo e prazo da prova anterior não se
+estende a este ticket.
+
 ## Authorization gate
 
 Consome tokens de modelo e recursos AWS. Antes de executar: rubrica aprovada, perfil do harness e

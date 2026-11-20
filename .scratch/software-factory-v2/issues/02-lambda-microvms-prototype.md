@@ -1,6 +1,6 @@
 # Validar Docker e transporte em Lambda MicroVMs
 
-Status: claimed
+Status: resolved
 Type: prototype
 Label: wayfinder:prototype
 Map: [Software Factory v2 — ambientes reconstruíveis em Lambda MicroVMs](../map.md)
@@ -95,8 +95,44 @@ Fontes trazidas pela pesquisa documental da sessão; não revalidadas independen
 - [Experimento de terceiro — Sealant PR 247](https://github.com/sealant-sh/sealant/pull/247).
 - [Pricing Lambda](https://aws.amazon.com/lambda/pricing/).
 
+## Answer
+
+Aceito pelo Operador em 2026-11-20. Detalhe e evidência no [relatório](../research/lambda-proof-results.md),
+com [avaliação por critério](../research/lambda-proof-assessment.json) sobre a
+[rubrica v1](../research/lambda-proof-rubric.json).
+
+**Sim, no perfil testado.** Em `us-east-1`, ARM64, baseline 1 GB / 0,5 vCPU com pico de 4 GB / 2 vCPU e
+`additionalOsCapabilities: ["ALL"]`:
+
+- **Docker: funciona.** `dockerd` iniciado no hook `/run`, build, run com bind mount, volume e porta,
+  Compose com DNS entre serviços, e Testcontainers com Ryuk e PostgreSQL. Sem suporte documentado da AWS.
+- **Transporte: funciona.** SSH sobre WebSocket pelo `HTTP_INGRESS` com componentes prontos (`websocat`
+  e `wstunnel`), token do serviço por porta mais chave de sessão; streaming, exit code, interrupção e
+  arquivos binários íntegros a cerca de 4 MB/s. Revisor somente leitura imposto pelo guest.
+- **Vida limitada e Git: funciona.** Cessação confirmada por `GetMicrovm`; encerramento no tempo máximo
+  com o hook de término chamado antes; gate de preservação recusando os seis casos sujos; reconstrução
+  em outra MicroVM a partir do commit remoto; perda antes do push detectável.
+
+**Limites e diferenças frente ao MVP que a consolidação precisa tratar:**
+
+- Queda do canal não encerra o processo remoto; token vencido não derruba conexão aberta.
+- Saída pública sem filtro de destinos (relaxamento que exige aprovação); UDP e IPv6 de saída indisponíveis.
+- Portas locais do guest, inclusive a dos hooks, ficam ao alcance do revisor.
+- Quota da conta de 8 GB de memória alocada; disco de 8 GB neste tamanho; sem logs de runtime sem
+  execution role.
+- Ressalvas: ociosidade sem keepalive e conexões além de 38 min não medidas.
+
+**Não provado aqui:** harness e continuidade do agente entre boots
+([ticket 09](09-agent-continuity-on-lambda-proof.md)), suspend/resume, oito horas, carga sustentada,
+repositório real. Não é aceite da fábrica nem homologação de produção.
+
+**Custo e recursos.** 5 MicroVMs, 1,12 MicroVM-hora, 2 builds; estimativa abaixo de US$ 1 do teto de
+US$ 20; leitura do Cost Explorer pendente. Por decisão do Operador, imagens, roles, bucket e
+repositório sintético ficam retidos para o ticket 09, que herda o cleanup; nenhuma MicroVM ativa.
+
 ## Comments
 
 - Aberto como próximo passo pós-MVP; sem execução ou recursos AWS criados nesta sessão.
 - 2026-11-20: reivindicado pelo Operador (sessão Claude Code); branch `docs/v2-lambda-prototype`, worktree `.worktrees/v2-lambda-prototype/`, destino `main`. Primeira etapa: revalidação documental e de preços, sem recursos AWS.
 - 2026-11-20: [plano de execução](../research/lambda-microvms-execution-plan.md) autorizado e [rubrica v1](../research/lambda-proof-rubric.json) aprovada pelo Operador. Prova sem harness; a continuidade do agente foi para o [ticket 09](09-agent-continuity-on-lambda-proof.md). Roles, bucket e repositório sintético criados; nenhuma MicroVM ainda.
+- 2026-11-20: prova executada e aceita pelo Operador; resolvido. Cleanup adiado por decisão do Operador e transferido ao ticket 09.

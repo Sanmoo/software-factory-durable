@@ -44,7 +44,7 @@ diferenças frente ao MVP estão em "Achados para o desenho".
 | N1 egress | caracterizado | IMDS responde (região, placement, tags) mas sem credenciais (`security-credentials` 404) e sem variáveis `AWS_*` de credencial; faixas privadas e 169.254.170.2 inalcançáveis; saída IPv4 pública sim, IPv6 não; container aninhado não alcança o IMDS. Sem filtragem de destinos: relaxamento frente à mediação do MVP. |
 | N2 ingress | funciona | Sem token, com token inválido e com token vencido: 403. Token da porta 8080 usado na 9000: 403 "Access to port denied". |
 | C1 custo | dentro dos tetos | 5 MicroVMs, 4.017 s somados (1,12 h de 20 h), 2 builds de 12. Compute estimado entre US$ 0,07 (baseline) e US$ 0,28 (pico); total estimado abaixo de US$ 1 de US$ 20. Leitura do Cost Explorer pendente (a fatura atrasa). |
-| C2 cleanup | pendente | Nenhuma MicroVM ativa. Imagens, bucket, log groups, roles e repositório ainda existem, aguardando decisão do Operador. |
+| C2 cleanup | adiado | Nenhuma MicroVM ativa. Por decisão do Operador em 2026-11-20, imagens, bucket, log groups, roles e repositório ficam retidos para o ticket 09, que herda o cleanup. |
 
 ## Achados para o desenho
 

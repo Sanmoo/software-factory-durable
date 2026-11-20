@@ -56,10 +56,15 @@ As dependências canônicas são os campos `Blocked by:` dos tickets.
   contrato por propriedades/capacidades, preservação Git remoto antes das esperas humanas,
   reconstrução entre boots e transporte SSH/WebSocket como hipótese; sem alteração do MVP nem
   homologação de Docker ou transporte.
+- [Validar Docker e transporte em Lambda MicroVMs](issues/02-lambda-microvms-prototype.md#answer):
+  Docker (com Compose e Testcontainers), SSH sobre WebSocket pelo `HTTP_INGRESS` e reconstrução pelo Git
+  remoto funcionam no perfil testado, sem harness; canal fechado não encerra processo, egress sem
+  filtro e limites de quota/disco ficam para a consolidação. Recursos retidos para a prova seguinte.
+
 ## Not yet specified
 
-- Compatibilidade real de Docker/Compose/Testcontainers/Ryuk, DNS, binds e portas em Lambda.
-- Viabilidade de SSH/WebSocket, limites, custo e evidências de cessação/rede/credenciais do serviço.
+- Suspend/resume, execuções de oito horas, carga sustentada e o perfil de um repositório real em Lambda:
+  não cobertos pela prova de infraestrutura; decidir se a consolidação os exige como prova.
 - Detalhes do gate Git, reconstrução e rotação que a consolidação precisará fixar.
 - Configuração/instalação revisadas, custos/quotas, observabilidade/retenção, impacto nos contratos
   existentes e matriz de aceite da v2.

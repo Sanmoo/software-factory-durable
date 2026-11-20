@@ -2,7 +2,7 @@
   "rubricId": "lambda-microvms-proof",
   "rubricVersion": 1,
   "assessedAt": "2026-11-20",
-  "assessedBy": "sessão Claude Code; aguardando aceite do Operador",
+  "assessedBy": "sessão Claude Code; aceito pelo Operador em 2026-11-20",
   "results": {
     "L1-ciclo": "approved",
     "L2-duracao": "approved",
@@ -32,6 +32,6 @@
     "T4-conexao": "approved with caveat: idle without keepalive and durations beyond 38 min not measured",
     "T5-papeis": "approved with caveat: reviewer reaches loopback hook port",
     "C1-custo": "approved on own accounting; Cost Explorer reading pending",
-    "C2-cleanup": "pending operator decision"
+    "C2-cleanup": "deferred by operator decision of 2026-11-20; cleanup inherited by ticket 09"
   }
 }
