@@ -147,7 +147,8 @@ export async function startEnvironment(root: string, pin: GuestAssetPin | undefi
         // Ticket 47: the operator's explicit remedy, applied only now: under the lifecycle lock, after the previous boot's cessation was
         // confirmed and the disk check failed again. Room for a whole copy of the disk is required, like a preparation.
         if (BigInt(storage.availableBytes) < 2n * size + BigInt(configuration.minFreeSpaceGiB) * 1073741824n) return { status: 'failure', code: 'INSUFFICIENT_STORAGE_FOR_BOOT' };
-        const outcome = diskRemedy === 'repair-disk' ? await repairPreservedDisk(directory, disk, size) : await replacePreservedDisk(directory, disk, await templateOf(pin), size);
+        const outcome = diskRemedy === 'repair-disk' ? await repairPreservedDisk(directory, disk, size) : await replacePreservedDisk(directory, disk,
+          owner.environmentBase ? { base: join(await realpath(root), 'environment-bases', `base-${owner.environmentBase.key}`, 'base.qcow2') } : await templateOf(pin), size);
         if (outcome.status !== 'applied') return await refused(`${diskRemedy}: ${outcome.detail}`);
         if (!await checkDiskFilesystem(directory, disk, size)) return await refused(`${diskRemedy} applied (${outcome.detail}) but the disk still fails the check`);
         remedy = { remedy: diskRemedy, outcome: 'applied', detail: outcome.detail };

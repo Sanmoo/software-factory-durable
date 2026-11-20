@@ -28,7 +28,15 @@ import { observeProposal } from './proposal-identity.js';
 import { fingerprintCheckout } from './checkout-fingerprint.js';
 import type { CheckoutFingerprint } from '../contracts/index.js';
 export type PreparedWork = PrepareResult | { status: 'success'; environment: EnvironmentRef; checkout: CheckoutView;
-  seeds: { name: string; manifestSha256: string; reused: boolean; replaced?: string }[] };
+  seeds: { name: string; manifestSha256: string; reused: boolean; replaced?: string }[];
+  /** Ticket 44: the environment base the root disk was copied from (declaration hash + resolved manifest). */
+  base?: EnvironmentBaseIdentity };
+import type { EnvironmentBaseIdentity } from '../contracts/index.js';
+import type { AlpineRepositories, EnvironmentRequest, PreparationVm } from './environment-base.js';
+// Ticket 44: environment bases (pure parts exported for the controller composition and tests; the VM runs only through the port).
+export { environmentBaseKey, guestAlpine, parseResolvedManifest, preparationEgress, preparationScript, preparationTimeoutSeconds,
+  type AlpineRepositories, type EnvironmentRequest, type PreparationVm, type PreparationVmInput, type PreparationVmResult } from './environment-base.js';
+export { createPreparationVm, runEnvironmentPreparation } from './preparation-vm.js';
 export type { GuestAssetPin } from './guest-assets.js';
 import { currentBoot, observeEnvironment, type BootRef } from './lifecycle.js';
 import type { EnvironmentRef } from './prepare.js';
@@ -61,8 +69,11 @@ export type { WriteCall } from './write-tools.js';
  * `repositoryFetch`/`remoteUrl`/`artifactSeeds` are trusted composition inputs (controller only): the host Contents:read fetch credential,
  * the upstream fetch URL (GitHub by default) and read-only Factory material copied once per environment into /artifacts.
  */
-export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch, remoteUrl, artifactSeeds = [] }: { root: string; guestAssets?: GuestAssetPin; toolEndpoint?: string;
-  repositoryFetch?: RepositoryFetchCredentials; remoteUrl?: (scope: { repository: string }) => string; artifactSeeds?: readonly ArtifactSeed[] }) {
+/** `preparationVm`/`alpine` (ticket 44): the port that runs environment preparation VMs (absent: a declared environment is refused, never
+ * replaced by the generic guest) and the Alpine repositories of the release guest assets. */
+export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch, remoteUrl, artifactSeeds = [], preparationVm, alpine }: { root: string; guestAssets?: GuestAssetPin; toolEndpoint?: string;
+  repositoryFetch?: RepositoryFetchCredentials; remoteUrl?: (scope: { repository: string }) => string; artifactSeeds?: readonly ArtifactSeed[];
+  preparationVm?: PreparationVm; alpine?: AlpineRepositories }) {
   const checkouts = repositoryFetch ? createCheckouts({ root, fetch: repositoryFetch, ...(remoteUrl ? { remoteUrl } : {}) }) : undefined;
   const projections = new Map<string, Promise<Awaited<ReturnType<typeof connectReadTools>>>>();
   const bindings = new Map<string, string>();
@@ -158,11 +169,13 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
     },
     /** With `checkout`, the environment also receives the Work's own checkout (spec §7.3) and the composed artifact seeds; never a boot or agent. */
     /** `recreateSeeds` (ticket 50): seeds the operator explicitly decided to recreate after an ARTIFACT_SEED_VERSION_CONFLICT. */
-    async prepare({ workId, configuration, checkout, recreateSeeds }: { workId: string; configuration: unknown; checkout?: CheckoutRequest; recreateSeeds?: readonly string[] }): Promise<PreparedWork> {
+    /** `environment`/`retryEnvironmentBase` (ticket 44): the Work's pinned declaration and the operator's retry of a failed base preparation. */
+    async prepare({ workId, configuration, checkout, recreateSeeds, environment, retryEnvironmentBase }: { workId: string; configuration: unknown; checkout?: CheckoutRequest;
+      recreateSeeds?: readonly string[]; environment?: EnvironmentRequest; retryEnvironmentBase?: boolean }): Promise<PreparedWork> {
       const parsed = validateConfiguration(configuration);
       if (!parsed.valid) return { status: 'failure', code: 'SANDBOX_CONFIGURATION_INVALID' };
       let prepared: PrepareResult;
-      try { prepared = await prepareEnvironment(root, guestAssets, workId, parsed.effective); }
+      try { prepared = await prepareEnvironment(root, guestAssets, workId, parsed.effective, { environment, retryEnvironmentBase, vm: preparationVm, alpine }); }
       catch { return { status: 'indeterminate', code: 'ENVIRONMENT_PREPARATION_UNAVAILABLE' }; }
       if (prepared.status !== 'success' || !checkout) return prepared;
       if (!checkouts) return { status: 'failure', code: 'CHECKOUT_NOT_COMPOSED' };
@@ -171,7 +184,7 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
       if (result.status !== 'success') return result;
       const seeds = await seedArtifacts(join(directory, 'artifacts'), artifactSeeds, recreateSeeds?.length ? { recreate: recreateSeeds } : {});
       if (seeds.status !== 'success') return seeds;
-      return { status: 'success', environment: prepared.environment, checkout: result.checkout, seeds: seeds.seeds };
+      return { status: 'success', environment: prepared.environment, checkout: result.checkout, seeds: seeds.seeds, ...(prepared.base ? { base: prepared.base } : {}) };
     },
     async validate(configuration: unknown) {
       const validated = validateConfiguration(configuration);

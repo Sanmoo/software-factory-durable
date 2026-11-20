@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { z } from 'zod';
 import { configurationSchema } from './configuration.js';
+import { environmentBaseRecordSchema } from './environment-base.js';
 import { cleanupRequestSchema, cleanupRuntime, removedSchema } from './cleanup-records.js';
 import type { EnvironmentRef } from './prepare.js';
 
@@ -26,6 +27,8 @@ export const ownerSchema = z.strictObject({
   version: z.literal(1), workId: z.string().min(1).max(512), environment: environmentRef,
   configuration: configurationSchema,
   guestAssets: z.strictObject({ directory: z.string(), manifestSha256: z.string().regex(/^[a-f0-9]{64}$/) }),
+  /** Ticket 44: the environment base this environment's root disk was copied from (absent: generic guest, before ticket 44). */
+  environmentBase: environmentBaseRecordSchema.optional(),
 });
 const readySchema = z.strictObject({ environment: environmentRef });
 export const currentSchema = z.strictObject({ version: z.literal(1), environment: environmentRef, boot: bootRef });

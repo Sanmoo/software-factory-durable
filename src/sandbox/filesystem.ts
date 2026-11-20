@@ -185,7 +185,7 @@ export async function repairPreservedDisk(directory: string, disk: string, size:
  * into the guest), not part of the root disk, so they are kept as they are; what lived only on the root (JDK, caches, Docker images) is lost.
  * The discarded disk is kept as `root.qcow2.replaced-<stamp>`.
  */
-export async function replacePreservedDisk(directory: string, disk: string, template: string, size: bigint, now = new Date()): Promise<DiskRemedyOutcome> {
+export async function replacePreservedDisk(directory: string, disk: string, template: string | { base: string }, size: bigint, now = new Date()): Promise<DiskRemedyOutcome> {
   const stamp = stampOf(now);
   const work = join(directory, `disk-replace-${stamp}`);
   const raw = join(work, 'rootfs.ext4');
@@ -196,11 +196,14 @@ export async function replacePreservedDisk(directory: string, disk: string, temp
     if (before && (!before.isFile() || before.nlink !== 1n || before.uid !== BigInt(process.getuid?.() ?? -1))) throw new Error('UNSAFE_ROOT_DISK');
     await mkdir(work, { mode: 0o700 });
     const candidate = join(work, 'root.qcow2');
-    await buildRootDisk(template, raw, candidate, size);
+    // Ticket 44: an environment created from a prepared environment base is replaced by a new copy of THAT base (same declared stack).
+    if (typeof template === 'string') await buildRootDisk(template, raw, candidate, size);
+    else await copyBaseDisk(template.base, candidate, size);
     const kept = `root.qcow2.replaced-${stamp}`;
     await swapDisk(directory, disk, candidate, join(directory, kept), before);
-    return { status: 'applied', detail: before ? `new root disk from the pinned template; /workspace and /artifacts kept; discarded disk kept as ${kept}`
-      : 'new root disk from the pinned template (no disk was present); /workspace and /artifacts kept' };
+    const from = typeof template === 'string' ? 'the pinned template' : 'the environment base it was created from';
+    return { status: 'applied', detail: before ? `new root disk from ${from}; /workspace and /artifacts kept; discarded disk kept as ${kept}`
+      : `new root disk from ${from} (no disk was present); /workspace and /artifacts kept` };
   } catch (error) {
     await unlink(raw).catch(() => {});
     return { status: 'refused', detail: `replacement not applied (${error instanceof Error && /^[A-Z_]{1,64}$/.test(error.message) ? error.message : 'native step failed'}); the preserved disk is unchanged` };
@@ -219,4 +222,22 @@ export async function buildRootDisk(template: string, raw: string, disk: string,
   try { await file.chmod(0o600); await file.sync(); } finally { await file.close(); }
   // Only the successful new intermediate is disposable.
   await unlink(raw);
+}
+
+/**
+ * Ticket 44: a Work's own standalone qcow2 root disk of `size` copied from a prepared environment base disk (no backing file, overlay or
+ * data file: the base can be kept, checked or set aside without touching the environments created from it). The base is only read.
+ */
+export async function copyBaseDisk(base: string, disk: string, size: bigint): Promise<void> {
+  const source = await lstat(base);
+  if (!source.isFile() || source.isSymbolicLink() || source.nlink !== 1 || source.uid !== process.getuid?.() || (source.mode & 0o077)) throw new Error('UNSAFE_ENVIRONMENT_BASE');
+  const facts = JSON.parse((await run('/usr/bin/qemu-img', ['info', '-f', 'qcow2', '--output=json', base], native)).stdout);
+  if (facts.format !== 'qcow2' || facts['backing-filename'] || facts['format-specific']?.data?.['data-file'] || BigInt(facts['virtual-size']) !== size) {
+    throw new Error('ENVIRONMENT_BASE_GEOMETRY_MISMATCH');
+  }
+  await run('/usr/bin/qemu-img', ['convert', '-f', 'qcow2', '-O', 'qcow2', base, disk], remedy);
+  const copied = JSON.parse((await run('/usr/bin/qemu-img', ['info', '-f', 'qcow2', '--output=json', disk], native)).stdout);
+  if (copied.format !== 'qcow2' || copied['backing-filename'] || BigInt(copied['virtual-size']) !== size) throw new Error('ENVIRONMENT_DISK_GEOMETRY_MISMATCH');
+  const file = await open(disk, constants.O_RDWR | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try { await file.chmod(0o600); await file.sync(); } finally { await file.close(); }
 }

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { AccessDependencies, ConfiguredRepository, DetailPorts, ExecutionPorts } from '../../control/index.js';
 import { createIssueTracker } from '../../issue-tracker/index.js';
 import { createCodeRepository } from '../../code-repository/index.js';
-import { createSandbox, type GuestAssetPin } from '../../sandbox/index.js';
+import { createPreparationVm, createSandbox, type GuestAssetPin } from '../../sandbox/index.js';
 import { lstat, readdir, realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { forgetWorkRecords, inspectWorkRecords, listDetails, createRecords, preserveEvidence, preserveSessionCopy, removeRecordsDetail } from '../../records/index.js';
@@ -122,7 +122,9 @@ export async function composeProductionExecution(input: ProductionInput): Promis
   const pack = skillPacks[skillPack];
   const sandbox = createSandbox({ root: input.root, guestAssets: input.guestAssets,
     repositoryFetch: createRepositoryFetchCredentials({ github: input.github, repositories: input.effective.repositories }),
-    artifactSeeds: [{ name: pack.seedName, directory: pack.directory }] });
+    artifactSeeds: [{ name: pack.seedName, directory: pack.directory }],
+    // Ticket 44: environment bases are prepared in their own supervised preparation VM (transient unit), never in the controller process.
+    preparationVm: createPreparationVm({ root: input.root }) });
   // Ticket 18: the Builder's system prompt is chosen per session mode, naming only the tools of that session.
   const workers = createWorkers({ root: input.root, knownSecrets: [], profile: profiles.builder, profiles, builderPrompt: productionBuilderPrompt });
   const ports: ExecutionPorts = {
