@@ -48,3 +48,8 @@ seguindo os guardrails de ensaios.
   (passos de imagem inteira com limite de 30 min; motivo da recusa registrado). Os três Trabalhos da `pl2` têm discos íntegros e voltam com
   `--retry-blocked-start` numa release com a correção. A prova real do (47) continua pendente: fim de orçamento com continuação no mesmo
   ambiente passou, mas as paradas sob carga só foram checadas com a correção fora do piloto (ticket 55, 6 runs).
+- 2026-11-20 (supervisor), **janela 2 encerrada:** os três Trabalhos foram entregues (PRs #130, #131 e #132 mesclados pelo operador). O (47)
+  ficou comprovado com a correção 55. Corrigidos na janela: [60](60-truncated-bash-copy-denied-by-snapshot-probe.md) e
+  [61](61-concurrent-own-publication-flags-unexpected-ref.md). Auditoria de restrições aberta em
+  [62](62-controller-restrictions-audit.md). Reversão feita (ruleset restaurado, serviço parado, chave da App removida). Detalhe em
+  `docs/evidence/54-pilot-2-authorization-request.md` §13.
