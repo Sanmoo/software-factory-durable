@@ -82,6 +82,23 @@ test('readTicket returns state, reason, labels and identity only; unconfigured r
   assert.equal((await world.trace()).length, before);
 });
 
+// Ticket 53 (pilot 35, #126): the issue's `updated_at` moves with every comment, including the Factory's own Question and answer comments.
+// The Factory's Ticket read never carries it (nor the comment count), so a comment can never look like a change of the Ticket.
+test('readTicket is the same observation when only comments moved the issue (updated_at, comment count): no timestamp is a Ticket change', async t => {
+  const ref = { tracker: 'github' as const, repository: 'acme/project', repositoryId: 3, issueId: 7001, nodeId: 'I_node1', number: 1, url: 'https://github.com/acme/project/issues/1' };
+  const read = async (overrides: Parameters<typeof issue>[1]) => {
+    const world = await compose(t, { issues: [issue(1, overrides)], pulls: [] });
+    const observed = await world.tracker.readTicket(ref);
+    assert.equal(observed.kind, 'observed');
+    const { observedAt: _observedAt, ...rest } = observed as Extract<typeof observed, { kind: 'observed' }>;
+    return rest;
+  };
+  const before = await read({ updated_at: '2026-11-18T10:00:00Z', comments: 0 });
+  const after = await read({ updated_at: '2026-11-18T12:34:56Z', comments: 2 });
+  assert.deepEqual(after, before);
+  assert.doesNotMatch(JSON.stringify(after), /updated|2026-11-18|comments/i);
+});
+
 const issueOf = (observed: Awaited<ReturnType<ReturnType<typeof createCodeRepository>['findPublication']>>, number: number) =>
   observed.kind === 'observed' ? observed.issues[String(number)] : undefined;
 

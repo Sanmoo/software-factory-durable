@@ -11,6 +11,8 @@ import { installNativeAppFixture } from './native-app-fixture.js';
 export type WorldIssue = {
   id: number; node_id: string; number: number; title: string; body: string | null; state: 'open' | 'closed'; state_reason: string | null;
   labels: { id: number; name: string }[]; user: { id: number; login: string; type: string }; pull_request?: object;
+  /** Served as is (ticket 53: moved by every comment; the Factory never reads it). */
+  updated_at?: string; comments?: number;
   /** Issue timeline events served at /issues/{n}/timeline (paginated). */
   timeline?: object[];
   /** Owning repository (default acme/project). Issue ids stay globally unique across repositories, like GitHub. */
