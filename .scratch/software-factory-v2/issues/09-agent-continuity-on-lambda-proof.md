@@ -1,6 +1,6 @@
 # Validar a continuidade do agente entre boots em Lambda MicroVMs
 
-Status: open
+Status: claimed
 Type: prototype
 Label: wayfinder:prototype
 Map: [Software Factory v2 — ambientes reconstruíveis em Lambda MicroVMs](../map.md)
@@ -44,3 +44,4 @@ os [guardrails de ensaios](../../../docs/agents/experiment-proofs.md).
 ## Comments
 
 - 2026-11-20: aberto ao aprovar a rubrica da prova de infraestrutura sem harness.
+- 2026-11-20: reivindicado pelo Operador (sessão Claude Code); branch `docs/v2-agent-continuity-proof`, worktree `.worktrees/v2-agent-continuity-proof/`, destino `main`. Primeira etapa: rubrica, perfil e plano para aprovação, sem modelos nem recursos AWS.
