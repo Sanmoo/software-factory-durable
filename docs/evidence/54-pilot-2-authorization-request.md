@@ -176,3 +176,29 @@ inteiro, passa no `e2fsck` (código 0). O "disco novo do `replace-disk`" era o a
 05:41 se baseou nesse erro. Correção e evidência: ticket 55, commit `532402e`, `docs/evidence/55-guest-stop-disk-check-2026-11-20.json`.
 
 **Por critério, corrigido:** o (47) deixa de estar reprovado e fica pendente da prova real com a correção. O restante da seção 11 vale como estava.
+
+## 13. Janela 2 (2026-11-20 12:22–17:48 UTC)
+
+- **Preparação.** Correções 56, 57 e 59 integradas antes da reabertura. Releases `mvp-59.0` (`4867ed0`), `mvp-60.0` (`c9ee007`) e `mvp-61.0`
+  (`5948511`), cada uma por `factory upgrade` com parada limpa, sem migração; skill pack `factory-skills-v11`. Chave da App copiada sem
+  leitura, `update` removido do ruleset, `doctor --authenticated` ok, `concurrency` 2. `--retry-blocked-start
+  START_PRESERVED_DISK_CHECK_REQUIRED` nos três Trabalhos, sem remédio de disco.
+- **Resultado.** Os três Trabalhos foram entregues por merge humano (operador; supervisor aprovou e mesclou com a conta do operador, por
+  pedido explícito, sem `--admin`, squash travado no head revisado, sem apagar branches): #125 → PR #130 (`47663bf`), #124 → PR #131
+  (`70f6744`), #126 → PR #132 (`f71ba27`). `delivered=3`, limpeza completa. Uso registrado pelo Factory: 137,0 M tokens (60 de 74 atividades
+  medidas), estimativa de catálogo US$ 8,95; o watcher somou 158 M nas sessões preservadas antes da retenção.
+- **Por critério:** (47) comprovado: os três discos preservados passaram na checagem com a correção 55 e os starts seguiram. (51) e (53)
+  reforçados: revisões verificadas nos três; conflito de merge do #126 corrigido automaticamente (`MERGE_CONFLICT` → correção → PR atualizado).
+  Correção 57 observada: novas tentativas de revisor (`REVIEWER_BUDGET_EXHAUSTED`, até 2/2) sem consumir recuperações do Trabalho.
+- **Defeitos achados e corrigidos na janela:** [60](../../.scratch/software-factory-mvp/issues/60-truncated-bash-copy-denied-by-snapshot-probe.md)
+  (saída de bash > 50 KB abortava o Builder; janela pausada até a `mvp-60.0`) e
+  [61](../../.scratch/software-factory-mvp/issues/61-concurrent-own-publication-flags-unexpected-ref.md) (publicação concorrente bloqueava
+  como mudança inesperada de ref; #124 reavaliado com o comando novo `reevaluate-publication`).
+- **Intervenções do operador:** `pause` duas vezes para upgrade; `update-scope` duas vezes no #126 (achado S1 do Spec; achado heurístico do
+  Standards marcado `not-adopted` com justificativa); `repair` no #124 (conflito com o #130); resposta a uma Pergunta do #126 causada por
+  instrução do supervisor (integrar a `main`, que o guest não tem); teto do watcher de 120 M para 300 M.
+- **Achados para a auditoria de restrições (ticket 62):** orçamento do revisor (48 requisições) esgotado repetidamente; `not-publishable` sem
+  próximo passo (58) duas vezes no #126; achado só heurístico impede verificação; o guest não enxerga a base atualizada fora de correção de
+  conflito.
+- **Reversão feita:** pausa, serviço parado (parada limpa 17:48 UTC), `pl2/credentials/app.pem` removido, ruleset `26435808` restaurado igual ao
+  original (com `update`). A `pl2` fica preservada como evidência. Detalhe em `/home/sanmoo/software-factory-test/pl2-pilot-evidence/`.
