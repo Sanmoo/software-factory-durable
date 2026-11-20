@@ -17,7 +17,7 @@ const actual = await import('../../src/sandbox/filesystem.js') as Record<string,
 mock.module(filesystemUrl, { namedExports: { ...actual,
   buildRootDisk: async (template: string, _raw: string, disk: string) => { await copyFile(template, disk); await fs.chmod(disk, 0o600); },
   copyBaseDisk: async (base: string, disk: string) => { await copyFile(base, disk); await fs.chmod(disk, 0o600); },
-  checkDiskFilesystem: async () => true } });
+  checkDiskFilesystem: async () => ({ ok: true }) } });
 const sandboxModule = await import('../../src/sandbox/index.js');
 const { createSandbox, environmentBaseKey, guestAlpine, parseResolvedManifest, preparationEgress, preparationScript, createPreparationVm } = sandboxModule;
 

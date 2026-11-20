@@ -296,7 +296,8 @@ async function prepareBase(root: string, directory: string, key: string, input: 
   }
   const parsed = parseResolvedManifest(result.output, input.declaration);
   if (!parsed.ok) return fail('ENVIRONMENT_BASE_PREPARATION_FAILED', `resolved manifest refused: ${parsed.detail}`);
-  if (!await checkDiskFilesystem(directory, candidate, size)) return fail('ENVIRONMENT_BASE_PREPARATION_FAILED', 'the prepared base disk failed its filesystem check');
+  const check = await checkDiskFilesystem(directory, candidate, size);
+  if (!check.ok) return fail('ENVIRONMENT_BASE_PREPARATION_FAILED', `the prepared base disk failed its filesystem check: ${check.reason}`);
   const manifest: ResolvedManifest = { schemaVersion: 1, repository: input.environment.repository, repositoryId: input.environment.repositoryId,
     declarationSha256: input.environment.sha256, alpine, guestAssetsManifestSha256: input.guestAssets.manifestSha256,
     declared: Object.fromEntries(input.declaration.apk.map(item => [item.name, item.version])), installed: parsed.installed, images: parsed.images };

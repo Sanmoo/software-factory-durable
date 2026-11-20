@@ -140,17 +140,20 @@ export async function startEnvironment(root: string, pin: GuestAssetPin | undefi
       if (!await admitMemory()) return { status: 'failure', code: 'INSUFFICIENT_MEMORY_FOR_BOOT' };
       if ((await inspectGuestAssets(pin)).some(check => check.status !== 'ok')) return { status: 'failure', code: 'GUEST_ASSETS_INVALID' };
       let remedy: StartRemedyOutcome | undefined;
-      if (!diskSafe || !await checkDiskFilesystem(directory, disk, size)) {
-        if (!previous) return { status: 'failure', code: 'ROOT_FILESYSTEM_CHECK_FAILED' };
+      const check = diskSafe ? await checkDiskFilesystem(directory, disk, size) : { ok: false as const, reason: 'root disk: missing or unsafe' };
+      if (!check.ok) {
+        if (!previous) return { status: 'failure', code: 'ROOT_FILESYSTEM_CHECK_FAILED', detail: check.reason };
         const refused = (detail?: string) => failedStart('failure', 'PRESERVED_DISK_CHECK_REQUIRED', previous.boot as BootRef, join(directory, previous.boot), detail);
-        if (!diskRemedy) return await refused();
+        // Ticket 55: the refusal says which step refused and why (a timed-out copy is not a damaged disk).
+        if (!diskRemedy) return await refused(`preserved disk check: ${check.reason}`);
         // Ticket 47: the operator's explicit remedy, applied only now: under the lifecycle lock, after the previous boot's cessation was
         // confirmed and the disk check failed again. Room for a whole copy of the disk is required, like a preparation.
         if (BigInt(storage.availableBytes) < 2n * size + BigInt(configuration.minFreeSpaceGiB) * 1073741824n) return { status: 'failure', code: 'INSUFFICIENT_STORAGE_FOR_BOOT' };
         const outcome = diskRemedy === 'repair-disk' ? await repairPreservedDisk(directory, disk, size) : await replacePreservedDisk(directory, disk,
           owner.environmentBase ? { base: join(await realpath(root), 'environment-bases', `base-${owner.environmentBase.key}`, 'base.qcow2') } : await templateOf(pin), size);
         if (outcome.status !== 'applied') return await refused(`${diskRemedy}: ${outcome.detail}`);
-        if (!await checkDiskFilesystem(directory, disk, size)) return await refused(`${diskRemedy} applied (${outcome.detail}) but the disk still fails the check`);
+        const recheck = await checkDiskFilesystem(directory, disk, size);
+        if (!recheck.ok) return await refused(`${diskRemedy} applied (${outcome.detail}) but the disk still fails the check: ${recheck.reason}`);
         remedy = { remedy: diskRemedy, outcome: 'applied', detail: outcome.detail };
       } else if (diskRemedy) remedy = { remedy: diskRemedy, outcome: 'not-needed', detail: 'the preserved disk passed the check; nothing was changed' };
       if (previous && !(await observeEnvironment(root, environment, previous.boot as BootRef)).cessationConfirmed) {

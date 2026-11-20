@@ -1,0 +1,195 @@
+{
+ "ticket": 55,
+ "date": "2026-11-20",
+ "recipe": "test/sandbox/disk-stop55-qualification.ts",
+ "guestAssets": {
+  "directory": "/home/sanmoo/software-factory-test/assets35/assets",
+  "manifestSha256": "72e00546beba8e1c8b4b6f9d7a17de635e27fe2de79ffa85688bb2bdeebb5c12"
+ },
+ "pilotDiskCheck": {
+  "disks": "btrfs reflink copies of the three pl2 root.qcow2 (13.5-16.7 GiB allocated), originals untouched",
+  "fullConvertOfOriginals": "qemu-img convert -U of each pl2 root.qcow2 (26, 25, 35 s alone) then e2fsck -f -n: exit 0 for all three; journal start 0",
+  "keptSnapshots": "all four pl2 filesystem-check-*/snapshot.ext4: mtime = birth + 30.0 s; env-9a1 snapshot identical to the full conversion for the first 11.0 GiB, nothing after (full copy has data up to 38.0 GiB; inode tables of flex groups 288/304 at ~36/38 GiB)",
+  "preFixConcurrent3": [
+   [
+    "a",
+    false,
+    30.058
+   ],
+   [
+    "b",
+    false,
+    30.058
+   ],
+   [
+    "c",
+    false,
+    30.046
+   ]
+  ],
+  "preFixKeptSnapshotE2fsck": "exit 4: Entry 'data' -> deleted/unused inode 2068993, Entry 'workspace' -> 2183937, Inode 2 ref count 23 != 21, 39 block bitmap checksum mismatches (the pilot signature)",
+  "postFixConcurrent3": [
+   [
+    "a",
+    {
+     "ok": true
+    },
+    90.832
+   ],
+   [
+    "b",
+    {
+     "ok": true
+    },
+    90.832
+   ],
+   [
+    "c",
+    {
+     "ok": true
+    },
+    98.275
+   ]
+  ],
+  "pl2ReplaceDisk": "control record pl2-124-replace-disk-1:replace-disk:not-needed (the recheck passed under 30 s): the 05:35 boot ran on the OLD disk (mount count 5, 36 GB lifetime writes), not a new one"
+ },
+ "realVmRuns": [
+  {
+   "mode": "adapter",
+   "load": "light",
+   "stop": {
+    "result": "clean",
+    "reason": "GUEST_ROOT_READ_ONLY"
+   },
+   "check": {
+    "ok": true
+   },
+   "journalPendingAfterStop": false,
+   "replayExit": null,
+   "e2fsckExit": 0,
+   "e2fsckFindings": [],
+   "markerReadBack": true,
+   "bigSha256ReadBack": null,
+   "smallFiles": null,
+   "pass": true,
+   "root": "/home/sanmoo/software-factory-test/fix55-r1"
+  },
+  {
+   "mode": "adapter",
+   "load": "heavy",
+   "stop": {
+    "result": "clean",
+    "reason": "GUEST_ROOT_READ_ONLY"
+   },
+   "check": {
+    "ok": true
+   },
+   "journalPendingAfterStop": false,
+   "replayExit": null,
+   "e2fsckExit": 0,
+   "e2fsckFindings": [],
+   "markerReadBack": true,
+   "bigSha256ReadBack": true,
+   "smallFiles": 5000,
+   "pass": true,
+   "root": "/home/sanmoo/software-factory-test/fix55-r2"
+  },
+  {
+   "mode": "adapter-sigkill",
+   "load": "heavy",
+   "stop": {
+    "result": "clean",
+    "reason": "GUEST_ROOT_READ_ONLY"
+   },
+   "check": {
+    "ok": true
+   },
+   "journalPendingAfterStop": false,
+   "replayExit": null,
+   "e2fsckExit": 0,
+   "e2fsckFindings": [],
+   "markerReadBack": true,
+   "bigSha256ReadBack": true,
+   "smallFiles": 5000,
+   "pass": true,
+   "root": "/home/sanmoo/software-factory-test/fix55-r3"
+  },
+  {
+   "mode": "sigkill",
+   "load": "heavy",
+   "stop": "none",
+   "check": {
+    "ok": true
+   },
+   "journalPendingAfterStop": true,
+   "replayExit": 0,
+   "e2fsckExit": 0,
+   "e2fsckFindings": [],
+   "markerReadBack": true,
+   "bigSha256ReadBack": false,
+   "smallFiles": 5000,
+   "pass": true,
+   "root": "/home/sanmoo/software-factory-test/fix55-r4"
+  },
+  {
+   "mode": "adapter",
+   "load": "heavy",
+   "stop": {
+    "result": "clean",
+    "reason": "GUEST_ROOT_READ_ONLY"
+   },
+   "check": {
+    "ok": true
+   },
+   "journalPendingAfterStop": false,
+   "replayExit": null,
+   "e2fsckExit": 0,
+   "e2fsckFindings": [],
+   "markerReadBack": true,
+   "bigSha256ReadBack": true,
+   "smallFiles": 5000,
+   "pass": true,
+   "root": "/home/sanmoo/software-factory-test/fix55-r5"
+  },
+  {
+   "mode": "adapter",
+   "load": "light",
+   "stop": {
+    "result": "clean",
+    "reason": "GUEST_ROOT_READ_ONLY"
+   },
+   "check": {
+    "ok": true
+   },
+   "journalPendingAfterStop": false,
+   "replayExit": null,
+   "e2fsckExit": 0,
+   "e2fsckFindings": [],
+   "markerReadBack": true,
+   "bigSha256ReadBack": null,
+   "smallFiles": null,
+   "pass": true,
+   "root": "/home/sanmoo/software-factory-test/fix55-r6"
+  },
+  {
+   "mode": "adapter-sigkill",
+   "load": "light",
+   "stop": {
+    "result": "clean",
+    "reason": "GUEST_ROOT_READ_ONLY"
+   },
+   "check": {
+    "ok": true
+   },
+   "journalPendingAfterStop": false,
+   "replayExit": null,
+   "e2fsckExit": 0,
+   "e2fsckFindings": [],
+   "markerReadBack": true,
+   "bigSha256ReadBack": null,
+   "smallFiles": null,
+   "pass": true,
+   "root": "/home/sanmoo/software-factory-test/fix55-r7"
+  }
+ ]
+}

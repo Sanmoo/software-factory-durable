@@ -6,11 +6,21 @@ import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 
 const run = promisify(execFile);
+/** The native tool runner (`execFile`: on expiry of `timeout` the tool is SIGTERMed and the call rejects with `killed`). Injectable for tests. */
+export type NativeRun = (file: string, args: string[], options: { timeout: number; maxBuffer: number; env: Record<string, string> }) =>
+  Promise<{ stdout: string; stderr: string }>;
 const native = { timeout: 30000, maxBuffer: 65536,
   env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' } };
 
+/**
+ * Tickets 47/55: native steps that read or write a WHOLE disk image (qemu-img check/convert of the root disk, e2fsck/resize2fs of its raw
+ * copy). They scale with the allocated data (13-17 GiB after a Gradle/Docker Work: 26-35 s for one convert on an idle host, more with
+ * three guests booting at once), so the 30 s bound of the small metadata calls killed them midway: a truncated copy, refused as damaged
+ * (ticket 55). Bounded only against a hung tool.
+ */
+const image = { ...native, timeout: 1_800_000, maxBuffer: 4 * 1024 * 1024 };
 /** Ticket 47: native remedies on a whole disk image outlast the bounded checks (minutes for a large Gradle/Docker disk). */
-const remedy = { ...native, timeout: 1_800_000, maxBuffer: 4 * 1024 * 1024 };
+const remedy = image;
 
 /** The ext4 superblock of an own, private image (never followed, aliased or foreign). */
 async function superblock(raw: string): Promise<Buffer> {
@@ -51,48 +61,80 @@ export async function growFilesystemCopy(source: string, raw: string, size: bigi
     await file.truncate(Number(size));
   } finally { await file.close(); }
   // No host mount, privileged helper, scripts or repair flags. Nonzero is a refusal.
-  await run('/usr/bin/e2fsck', ['-f', '-n', raw], native);
-  await run('/usr/bin/resize2fs', [raw], native);
+  await run('/usr/bin/e2fsck', ['-f', '-n', raw], image);
+  await run('/usr/bin/resize2fs', [raw], image);
   await checkFilesystem(raw, size);
 }
 
-export async function checkFilesystem(raw: string, size: bigint): Promise<void> {
-  await run('/usr/bin/e2fsck', ['-f', '-n', raw], native);
+export async function checkFilesystem(raw: string, size: bigint, runner: NativeRun = run): Promise<void> {
+  await runner('/usr/bin/e2fsck', ['-f', '-n', raw], image);
   if (await filesystemBytes(raw) !== size) throw new Error('FILESYSTEM_CAPACITY_MISMATCH');
 }
 
-/** Call only while holding the environment lifecycle lock, after any prior boot ceased. */
-export async function checkDiskFilesystem(directory: string, disk: string, size: bigint): Promise<boolean> {
+/** Ticket 55: the outcome of a preserved-disk check; a refusal says which step refused and why (never a bare `false`). */
+export type DiskCheck = { ok: true } | { ok: false; reason: string };
+
+/** Ticket 55: one line on why a native step failed: expiry (the tool was killed: its output is incomplete), signal or exit + first output. */
+function nativeFailure(step: string, error: unknown, bound: number): string {
+  const failure = (error ?? {}) as { killed?: unknown; signal?: unknown; code?: unknown; stdout?: unknown; stderr?: unknown; message?: unknown };
+  const output = [failure.stdout, failure.stderr].filter((text): text is string => typeof text === 'string').join('\n')
+    .split('\n').map(line => line.trim()).filter(line => line && !/^e2fsck \d|^Pass \d/.test(line)).slice(0, 4).join(' | ');
+  let cause: string;
+  if (failure.killed === true) cause = `timed out after ${bound / 1000} s and was killed (its output is incomplete)`;
+  else if (typeof failure.signal === 'string') cause = `killed by ${failure.signal}`;
+  else if (typeof failure.code === 'number') cause = `exit ${failure.code}`;
+  else if (typeof failure.message === 'string' && /^[A-Z_]{1,64}$/.test(failure.message)) cause = failure.message;
+  else cause = 'failed';
+  return `${step}: ${cause}${output ? ` (${output})` : ''}`.slice(0, 480);
+}
+
+/**
+ * Call only while holding the environment lifecycle lock, after any prior boot ceased. A refusal keeps the private snapshot (when one
+ * was made) with `refusal.txt` beside it, so whoever inspects it knows whether it is a complete copy (ticket 55).
+ */
+export async function checkDiskFilesystem(directory: string, disk: string, size: bigint, runner: NativeRun = run): Promise<DiskCheck> {
+  let snapshot: string | undefined;
+  let step = 'root disk';
+  const refuse = async (reason: string): Promise<DiskCheck> => {
+    if (snapshot) await writeFile(join(snapshot, 'refusal.txt'), `${reason}\n`, { mode: 0o600, flag: 'wx' }).catch(() => {});
+    return { ok: false, reason };
+  };
   try {
     const before = await lstat(disk, { bigint: true });
     if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n ||
-        before.uid !== BigInt(process.getuid?.() ?? -1) || (before.mode & 0o077n)) return false;
-    const info = JSON.parse((await run('/usr/bin/qemu-img', ['info', '-f', 'qcow2', '--output=json', disk], native)).stdout);
+        before.uid !== BigInt(process.getuid?.() ?? -1) || (before.mode & 0o077n)) return await refuse('root disk: not a private regular file of this user');
+    step = 'qemu-img info';
+    const info = JSON.parse((await runner('/usr/bin/qemu-img', ['info', '-f', 'qcow2', '--output=json', disk], native)).stdout);
     if (info.format !== 'qcow2' || info['backing-filename'] || info['format-specific']?.data?.['data-file'] ||
-        BigInt(info['virtual-size']) !== size) return false;
-    await run('/usr/bin/qemu-img', ['check', '-f', 'qcow2', disk], native);
-    const snapshot = join(directory, `filesystem-check-${randomUUID()}`);
+        BigInt(info['virtual-size']) !== size) return await refuse('qemu-img info: not a standalone qcow2 of the configured size');
+    step = 'qemu-img check';
+    await runner('/usr/bin/qemu-img', ['check', '-f', 'qcow2', disk], image);
+    snapshot = join(directory, `filesystem-check-${randomUUID()}`);
     await mkdir(snapshot, { mode: 0o700 });
     const raw = join(snapshot, 'snapshot.ext4');
-    await run('/usr/bin/qemu-img', ['convert', '-f', 'qcow2', '-O', 'raw', disk, raw], native);
+    step = 'qemu-img convert';
+    await runner('/usr/bin/qemu-img', ['convert', '-f', 'qcow2', '-O', 'raw', disk, raw], image);
     // The parser never mounts/repairs the preserved disk; it checks a private copy.
+    step = 'private copy';
     const file = await open(raw, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     try { await file.chmod(0o600); } finally { await file.close(); }
     // Ticket 47: a journaled root stopped abruptly is consistent only after its journal is replayed (as the guest kernel does at mount).
     // The replay touches THIS private copy only; a read-only check of the unreplayed image would refuse a healthy disk.
     // Exit 1 only says the copy was modified (the replay itself); the full read-only check below decides.
     if ((await journalState(raw)).needsRecovery) {
-      await run('/usr/bin/e2fsck', ['-E', 'journal_only', '-p', raw], native).catch((error: { code?: unknown }) => { if (error.code !== 1) throw error; });
+      step = 'e2fsck journal replay';
+      await runner('/usr/bin/e2fsck', ['-E', 'journal_only', '-p', raw], image).catch((error: { code?: unknown }) => { if (error.code !== 1) throw error; });
     }
-    await checkFilesystem(raw, size);
+    step = 'e2fsck -f -n';
+    await checkFilesystem(raw, size, runner);
     const after = await lstat(disk, { bigint: true });
     for (const key of ['dev', 'ino', 'size', 'mtimeNs', 'ctimeNs', 'uid', 'mode', 'nlink'] as const) {
-      if (after[key] !== before[key]) return false;
+      if (after[key] !== before[key]) return await refuse('root disk: changed during the check');
     }
     await unlink(raw);
     await rmdir(snapshot);
-    return true;
-  } catch { return false; } // Keep failed snapshots, never auto-repair or launch.
+    return { ok: true };
+  } catch (error) { return await refuse(nativeFailure(step, error, step === 'qemu-img info' ? native.timeout : image.timeout)); } // Keep failed snapshots, never auto-repair or launch.
 }
 
 /** Ticket 47: the result of an operator disk remedy. `refused` leaves the preserved disk exactly as it was (detail says why). */
@@ -147,7 +189,7 @@ export async function repairPreservedDisk(directory: string, disk: string, size:
   const raw = join(work, 'repair.ext4');
   try {
     const before = await ownDisk(disk, size);
-    await run('/usr/bin/qemu-img', ['check', '-f', 'qcow2', disk], native);
+    await run('/usr/bin/qemu-img', ['check', '-f', 'qcow2', disk], image);
     await mkdir(work, { mode: 0o700 });
     await run('/usr/bin/qemu-img', ['convert', '-f', 'qcow2', '-O', 'raw', disk, raw], remedy);
     await privateFile(raw);
@@ -214,7 +256,7 @@ export async function replacePreservedDisk(directory: string, disk: string, temp
 export async function buildRootDisk(template: string, raw: string, disk: string, size: bigint): Promise<void> {
   await growFilesystemCopy(template, raw, size);
   // Standalone copy: no temporary overlay, backing file or deletion-on-close dependency.
-  await run('/usr/bin/qemu-img', ['convert', '-f', 'raw', '-O', 'qcow2', raw, disk], native);
+  await run('/usr/bin/qemu-img', ['convert', '-f', 'raw', '-O', 'qcow2', raw, disk], image);
   const info = JSON.parse((await run('/usr/bin/qemu-img', ['info', '-f', 'qcow2', '--output=json', disk], native)).stdout);
   if (BigInt(info['virtual-size']) > size) throw new Error('BASE_DISK_EXCEEDS_CONFIGURED_CAPACITY');
   await run('/usr/bin/qemu-img', ['resize', '-f', 'qcow2', disk, size.toString()], native);
