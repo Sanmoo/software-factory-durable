@@ -119,3 +119,19 @@ Recomendação do supervisor: **sim** em todos, exceto 11b e 11c (alternativas a
 | 15 | Limpeza pela Factory da própria branch e do próprio ambiente após cada entrega; retenção padrão de 30 dias | [x] | [ ] |
 | 16 | Regras de parada da seção 5 e reversão da seção 6 | [x] | [ ] |
 | 17 | Registro de métricas, Perguntas por origem e avaliação humana no relatório do piloto 2 | [x] | [ ] |
+
+## 9. Preparação executada (2026-11-20)
+
+- **Raiz `pl2` (itens 1, 2, 6, 7).** Arquivo `mvp-54.0` conferido (`sha256sum -c` OK) e extraído com `tar -xpkf`; `setup` e
+  `setup --service` (unidade `software-factory-3b72496268c7.service`, criada, não registrada nem iniciada). `config.yaml` copiado do da
+  `pl1` com `concurrency` 3 e `builderBudget: {requests: 40}` no repositório; configuração válida. `doctor` offline: integridade da release,
+  assets `72e00546…`, KVM e perfis de worker ok. Bloqueios: só `credential-file:factory-oauth` e `credential-file:githubApp`, que dependem do
+  operador. `sandbox-tool-channel` aparece como `blocked`, mas é diagnóstico estático do perfil de desenvolvimento e não impede o boot.
+- **PR do ambiente (item 4).** [Sanmoo/java-springboot-event-sourcing#129](https://github.com/Sanmoo/java-springboot-event-sourcing/pull/129),
+  branch `chore/factory-environment`, um arquivo `.factory/environment.yaml` (`openjdk25-jdk=25.0.5.1_p2-r0`, ainda a versão do mirror
+  v3.23 em 2026-11-20), validado com o parser da release. Merge pelo operador.
+- **Tickets (item 5).** Corpos de #124–#128 editados: a frase de cwd do bash e "If the environment prevents a test from running, stop and
+  say why" foram removidas; o gate ficou só o comando do projeto. Corpos antes e depois em `pl2-pilot-evidence/issue-bodies-{before,after}/`.
+- **Ponto aberto: dependências.** As dependências nativas são #127 ← #126 e #128 ← #124. A cobertura da seção 2 contava #127 como elegível
+  de início, mas ele está bloqueado por #126. Sem label nada é elegível, e a escolha de quais Tickets recebem `ready-for-agent` é do operador.
+  O corpo de #128 diz "blocked_by both", mas só #124 está registrado.
