@@ -17,6 +17,7 @@ const exempt: Record<string, string> = {
   'test/workers/skill-pack-v8.test.ts': 'the skill text under test tells the Builder which Bash tool `timeout` argument to give (seconds), not a test timer',
   'test/workers/skill-pack-v9.test.ts': 'the skill text under test (carried over from v8) tells the Builder which Bash tool `timeout` argument to give (seconds), not a test timer',
   'test/workers/skill-pack-v10.test.ts': 'the skill text under test (carried over from v8) tells the Builder which Bash tool `timeout` argument to give (seconds), not a test timer',
+  'test/workers/skill-pack-v11.test.ts': 'the skill text under test (carried over from v8) tells the Builder which Bash tool `timeout` argument to give (seconds), not a test timer',
 };
 
 function sources(directory: string, root: string): string[] {
