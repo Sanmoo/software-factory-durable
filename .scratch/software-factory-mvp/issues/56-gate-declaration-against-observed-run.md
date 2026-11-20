@@ -11,7 +11,7 @@ O Builder termina achando que entregou, e o Trabalho fica `not-publishable` sem 
 
 **Type:** task
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
