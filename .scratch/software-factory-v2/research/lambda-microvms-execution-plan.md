@@ -3,8 +3,25 @@
 Data: 2026-11-20. Ticket: [Validar Docker e transporte em Lambda MicroVMs](../issues/02-lambda-microvms-prototype.md).
 Base factual: [revalidação documental e de preços](lambda-microvms-docs-revalidation.md).
 
-**Estado: proposta. Nada aqui está autorizado.** Nenhum recurso AWS ou GitHub foi criado. Cada item da
-seção "Autorização pedida" precisa da resposta explícita do Operador antes da primeira chamada à AWS.
+**Estado: autorizado pelo Operador em 2026-11-20**, com os valores da seção "Autorização registrada".
+A tabela "Autorização pedida" abaixo é a proposta original e fica como histórico; onde divergem, vale
+a seção "Autorização registrada". A rubrica ainda precisa de aprovação antes do primeiro build.
+
+## Autorização registrada
+
+Respostas do Operador na sessão de 2026-11-20:
+
+- Conta: a que a AWS CLI local usa hoje. Preflight sem custo feito nela (identidade, quotas, imagens base).
+- Identidade: autorizado criar uma role com política mínima para a prova; a prova roda assumindo essa role.
+- Região `us-east-1`. Arquitetura: somente ARM64, sem smoke x86.
+- Tamanho: baseline 1 GB / 0,5 vCPU, pico 4 GB / 2 vCPU, disco máximo 16 GB, em todas as fases. Se o disco
+  ou a memória não bastarem, registrar como achado e voltar ao Operador antes de subir de tamanho.
+- Teto de custo: US$ 20, com parada obrigatória ao estimar US$ 15.
+- Tetos de uso: 20 MicroVM-horas, 12 builds de imagem, `maximumDurationInSeconds` de no máximo 3600,
+  prazo de 5 dias corridos (até 2026-11-25), cleanup ao final.
+- Repositório sintético privado no GitHub com deploy key própria: autorizado, apagado no cleanup.
+- Achados do preflight: quota de memória ARM alocada da conta é 8 GB (no máximo duas MicroVMs deste
+  tamanho ao mesmo tempo); conexões simultâneas por MicroVM de 2 vCPU: 16, abaixo do piso documentado.
 
 ## O que a documentação já decidiu
 
