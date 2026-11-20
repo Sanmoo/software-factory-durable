@@ -43,7 +43,10 @@ const transient = new Set(['WORKER_EXECUTION_UNCERTAIN', 'WORKER_CHANNEL_CLOSED'
   'REVIEW_DELIVERY_FAILED', 'OWNER_STOPPED_BEFORE_ACTIVATION_CESSATION_UNCONFIRMED', 'ACTIVATION_REFUSED_CESSATION_UNCONFIRMED', 'ADMINISTRATIVE_STOP_CESSATION_UNCONFIRMED',
   'ADMINISTRATIVE_STOP_FORCED', 'RECOVERY_CESSATION_UNCONFIRMED',
   // Ticket 48: a Builder budget end WITHOUT Host-observed progress is an operational recovery as before (with progress: a continuation).
-  'WORKER_BUDGET_EXHAUSTED']);
+  'WORKER_BUDGET_EXHAUSTED',
+  // Ticket 59: the owner could not deliver a secret-sync ACK in time or at all (transport, like a lost channel). Every other refused sync
+  // (`WORKER_SECRET_SYNC_LIMIT`, replay, schema...) is a Host protocol/limit fact and blocks.
+  'WORKER_SECRET_SYNC_TIMEOUT', 'WORKER_SECRET_SYNC_SEND']);
 // Phase prefixes of the dispatch holds (`${phase}_${code}`) that may wrap a transient worker failure.
 const phases = ['ACTIVATE_', 'STARTED_', 'REVIEW_', 'COMPLETED_', 'STOP_'];
 

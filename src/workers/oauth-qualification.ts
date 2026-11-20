@@ -1,10 +1,10 @@
 import type { ModelRuntime, ToolDefinition } from '#factory-pi';
-import { builderBudgetMaximumFactor, builderBudgetV1 } from '../contracts/index.js';
+import { builderBudgetMaximumFactor, builderBudgetV1, qualificationRequestsV1, reviewerBudgetV1 } from '../contracts/index.js';
 
 /** Invocation-local qualification limits, NOT an admission/billing scheduler.
  * Observed parsed bytes/deadline do not bound remote output, billing, RSS or
  * physical cessation. The built-in ChatGPT route omits max_output_tokens. */
-export const oauthQualification = Object.freeze({ requests: 2, tools: 1, promptBytes: 4096,
+export const oauthQualification = Object.freeze({ requests: qualificationRequestsV1, tools: 1, promptBytes: 4096,
   contextBytes: 32768, toolBytes: 8192, providerBytes: 65536, deadlineMs: 30000 });
 /** Host-selected Builder start budget (ticket 09): a bounded, explicit envelope for one real Builder Execution with the skill pack.
  * Same native SDK/no-retry path; these are observation limits, NOT a billing cap, RSS bound or physical cessation.
@@ -27,8 +27,8 @@ export function builderBudgetOverrideValid(value: BuilderBudgetOverride): boolea
  * native SDK/no-retry path; observation limits, NOT a billing cap. The reviewers share the Execution and its Slot (no own budget/Slot).
  * Ticket 51 (operator decision 2026-11-19, pilot 35): 48 requests, 160 tool calls and 30 minutes, fixed and recorded in the release
  * (`productionProfile.limits.modelBudget.reviewerV1`); the old 24/80/15 was exhausted by the Spec review of a medium change. */
-export const reviewerBudget = Object.freeze({ requests: 48, tools: 160, promptBytes: 16384, contextBytes: 2 * 1024 * 1024,
-  toolBytes: 262144, providerBytes: 16 * 1024 * 1024, deadlineMs: 30 * 60 * 1000 });
+export const reviewerBudget = Object.freeze({ requests: reviewerBudgetV1.requests, tools: reviewerBudgetV1.toolCalls, promptBytes: 16384, contextBytes: 2 * 1024 * 1024,
+  toolBytes: 262144, providerBytes: 16 * 1024 * 1024, deadlineMs: reviewerBudgetV1.requestTimeoutMinutes * 60 * 1000 });
 export type QualificationLimits = { readonly requests: number; readonly tools: number; readonly promptBytes: number; readonly contextBytes: number;
   readonly toolBytes: number; readonly providerBytes: number; readonly deadlineMs: number };
 /** Host policy -> limits; a budget never applies to a role it was not made for. Ticket 48: a Builder override (per repository, validated

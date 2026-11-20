@@ -5,12 +5,15 @@ import { mkdtemp, mkdir, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { createRecords } from '../../src/records/index.js';
-import { createSecretPublisher, createOwnerSecretReceiver } from '../../src/platform/host/index.js';
+import { createSecretPublisher, createOwnerSecretReceiver, secretSyncLimit, type SecretChannelFailure } from '../../src/platform/host/index.js';
+import { reviewerBudgetV1 } from '../../src/contracts/index.js';
 import { remainingMs } from '../runner/budget.js';
 
 const context = { workId: 'work', executionId: 'exec', invocationId: 'invocation', role: 'spec' as const,
   environmentRef: 'environment', bootRef: 'boot', phaseId: 'phase' };
 const values = ['synthetic-access-168', 'synthetic-refresh-168', 'synthetic-client-168'];
+// Ticket 59: the owner's sync bound of this (spec reviewer) context, derived from its request budget as the launcher derives it.
+const limit = secretSyncLimit(reviewerBudgetV1.requests);
 class Wire extends EventEmitter {
   connected = true;
   sent: Record<string, unknown>[] = [];
@@ -130,14 +133,18 @@ test('full serialized UTF8 budget includes JSON escaping, NUL and non-ASCII; inv
   f.publisher.close();
 });
 
-test('owner readiness, context, duplicate, capacity and send failures revoke only bound lifetime', async () => {
+test('owner readiness, context, duplicate, capacity and send failures revoke only bound lifetime, each with its closed reason', async () => {
+  // Ticket 59: the reason the owner closed the channel is recorded (closed set, never a value).
+  const expected: Record<string, SecretChannelFailure> = { early: 'not-started', context: 'context', version: 'schema', unknown: 'schema', id: 'schema',
+    duplicate: 'replay', capacity: 'register', send: 'send', closed: 'abort' };
   for (const mode of ['early', 'context', 'version', 'unknown', 'id', 'duplicate', 'capacity', 'send', 'closed']) {
     const wire = new Wire(), abort = new AbortController();
     let registrations = 0, failures = 0;
+    const reasons: SecretChannelFailure[] = [];
     const receiver = createOwnerSecretReceiver(wire, context, abort.signal, () => mode !== 'early', value => {
       registrations++;
       if (mode === 'capacity') throw new Error(value);
-    }, () => { failures++; abort.abort(); });
+    }, reason => { failures++; reasons.push(reason); abort.abort(); }, limit);
     let request: Record<string, unknown> = { kind: 'worker-secret-register', version: 1,
       id: '00000000-0000-4000-8000-000000000000', context, values };
     if (mode === 'context') request = { ...request, context: { ...context, bootRef: 'different' } };
@@ -151,6 +158,7 @@ test('owner readiness, context, duplicate, capacity and send failures revoke onl
     if (mode === 'duplicate') wire.emit('message', request);
     assert.equal(failures, 1);
     assert.equal(registrations, ['duplicate', 'send'].includes(mode) ? 3 : mode === 'capacity' ? 1 : 0);
+    assert.deepEqual(reasons, [expected[mode]], mode);
     assert.doesNotMatch(JSON.stringify(wire.sent), /synthetic-/);
     receiver.close();
   }
@@ -185,17 +193,20 @@ test('send throws are contained; closed error ACK denies; bounded correlation to
   await denied(pending);
   const wire = new Wire(), abort = new AbortController();
   let registrations = 0, failures = 0;
-  createOwnerSecretReceiver(wire, context, abort.signal, () => true, () => { registrations++; }, () => { failures++; });
-  for (let i = 0; i < 129; i++) wire.emit('message', { kind: 'worker-secret-register', version: 1,
+  const reasons: SecretChannelFailure[] = [];
+  createOwnerSecretReceiver(wire, context, abort.signal, () => true, () => { registrations++; }, reason => { failures++; reasons.push(reason); }, limit);
+  // Ticket 59: the bound is the context's derived `limit` (was a fixed 128): `limit` syncs are acknowledged, the next one is refused.
+  for (let i = 0; i <= limit; i++) wire.emit('message', { kind: 'worker-secret-register', version: 1,
     id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, context, values });
-  assert.equal(registrations, 128 * 3); assert.equal(failures, 1); assert.equal(wire.sent.length, 128);
+  assert.equal(registrations, limit * 3); assert.equal(failures, 1); assert.equal(wire.sent.length, limit);
+  assert.deepEqual(reasons, ['limit']);
 });
 
 test('owner all-seven context matrix rejects before registration; other child cannot settle pending ACK', async () => {
   for (const key of Object.keys(context)) {
     const wire = new Wire(), signal = new AbortController();
     let attempts = 0, failures = 0;
-    const receiver = createOwnerSecretReceiver(wire, context, signal.signal, () => true, () => { attempts++; }, () => { failures++; });
+    const receiver = createOwnerSecretReceiver(wire, context, signal.signal, () => true, () => { attempts++; }, () => { failures++; }, limit);
     wire.emit('message', { kind: 'worker-secret-register', version: 1, id: '00000000-0000-4000-8000-000000000000',
       context: { ...context, [key]: key === 'role' ? 'standards' : 'other' }, values });
     assert.equal(attempts, 0); assert.equal(failures, 1); assert.equal(wire.sent.length, 0);
@@ -216,7 +227,7 @@ test('actual registry128 exhaustion produces only closed error, no ACK, and reta
   let attempts = 0, failures = 0;
   const receiver = createOwnerSecretReceiver(wire, context, abort.signal, () => true, value => {
     attempts++; records.registerSecret(value);
-  }, () => { failures++; });
+  }, () => { failures++; }, limit);
   wire.emit('message', { kind: 'worker-secret-register', version: 1, id: '00000000-0000-4000-8000-000000000000', context, values });
   assert.equal(attempts, 2); assert.equal(failures, 1);
   assert.deepEqual(wire.sent.map(frame => frame.kind), ['worker-secret-error']);
@@ -227,11 +238,13 @@ test('actual registry128 exhaustion produces only closed error, no ACK, and reta
 });
 
 test('owner pending ACK callback deadline, concurrent request, and post-abort late send cannot resurrect', async () => {
+  const expected: Record<string, SecretChannelFailure> = { deadline: 'timeout', concurrent: 'busy', abort: 'abort' };
   for (const mode of ['deadline', 'concurrent', 'abort']) {
     const wire = new Wire(), abort = new AbortController();
     let callback!: (error: Error | null) => void, failures = 0, registrations = 0, sends = 0;
+    const reasons: SecretChannelFailure[] = [];
     wire.send = (_message, cb) => { sends++; callback = cb; return true; };
-    createOwnerSecretReceiver(wire, context, abort.signal, () => true, () => { registrations++; }, () => { failures++; }, 5);
+    createOwnerSecretReceiver(wire, context, abort.signal, () => true, () => { registrations++; }, reason => { failures++; reasons.push(reason); }, limit, 5);
     const request = { kind: 'worker-secret-register', version: 1, id: '00000000-0000-4000-8000-000000000000', context, values };
     wire.emit('message', request);
     if (mode === 'concurrent') wire.emit('message', { ...request, id: '00000000-0000-4000-8000-000000000001' });
@@ -240,6 +253,7 @@ test('owner pending ACK callback deadline, concurrent request, and post-abort la
     callback(null);
     wire.emit('message', { ...request, id: '00000000-0000-4000-8000-000000000002' });
     assert.equal(failures, 1); assert.equal(sends, 1); assert.equal(registrations, 3);
+    assert.deepEqual(reasons, [expected[mode]], mode);
     assert.equal(wire.listenerCount('message'), 0);
   }
 });
@@ -260,7 +274,7 @@ test('actual fixed standalone child denies dependent use on real IPC EOF, forged
     const abort = new AbortController();
     const receiver = mode === 'capacity' ? createOwnerSecretReceiver(child, context, abort.signal, () => true, value => {
       registrations++; owner.registerSecret(value);
-    }, () => { failures++; }) : undefined;
+    }, () => { failures++; }, limit) : undefined;
     child.on('message', message => {
       const frame = message as Record<string, unknown>;
       if (frame.kind === 'fixture-result') uses += Number(frame.uses);
@@ -319,7 +333,7 @@ test('actual fixed Node24 IPC, actual helper/receiver and TWO Records: registry 
   });
   const receiver = createOwnerSecretReceiver(held, context, abort.signal, () => true, value => {
     registrations++; owner.registerSecret(value);
-  }, () => abort.abort());
+  }, () => abort.abort(), limit);
   const result = once(child, 'message').then(async () => {
     await ackReady;
     assert.equal(dependentUses, 0);

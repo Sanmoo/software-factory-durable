@@ -73,6 +73,9 @@ test('ticket 57: a reviewer retry is bounded by the round, never by the Work rec
   assert.deepEqual(decide(failure('WORKER_PROVIDER_UNAVAILABLE', 1, 'failure')), { kind: 'retry', attempt: 2, waitSeconds: 5 });
   assert.deepEqual(decide(failure('WORKER_PROVIDER_UNAVAILABLE', 3, 'failure')), { kind: 'not-retried', code: 'REVIEWER_RETRY_LIMIT' });
   assert.equal(retryDecision.length, 1, 'one input object, with no recoveries counter in it');
+  // Ticket 59: an owner secret-sync ACK not delivered is retried like a lost channel; a refused sync (limit, replay...) is not.
+  assert.deepEqual(decide(failure('WORKER_SECRET_SYNC_TIMEOUT', 1, 'failure')), { kind: 'retry', attempt: 2, waitSeconds: 5 });
+  assert.deepEqual(decide(failure('WORKER_SECRET_SYNC_LIMIT', 1, 'failure')), { kind: 'not-retried', code: 'REVIEWER_FAILURE_NOT_TRANSIENT' });
 });
 
 test('AC1/AC2: a discovered record is incorporated only as the complete opinion of exactly that request', () => {

@@ -6,7 +6,8 @@ import { promisify } from 'node:util';
 import { workerLaunchSchema, type WorkerLaunch } from './worker-bootstrap.js';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
-import { createOwnerSecretReceiver } from './worker-secret-ipc.js';
+import { builderBudgetV1, qualificationRequestsV1, reviewerBudgetV1 } from '../../contracts/index.js';
+import { createOwnerSecretReceiver, secretSyncLimit, type SecretChannelFailure } from './worker-secret-ipc.js';
 import { serveQuestionRelay, workerQuestionSchema, type QuestionRelayAck, type WorkerQuestionRequest } from './worker-question-ipc.js';
 import { copyPreservedSession, observePreservedSession } from './worker-session-file.js';
 
@@ -144,6 +145,25 @@ export async function prepareReviewerContinuation(runtimeDirectory: string, prof
   } catch { return replaced('SESSION_COPY_FAILED'); } finally { await handle.close(); }
 }
 
+/**
+ * Ticket 59: the maximum model requests of the session this launch starts, from the same Host policy the worker turns into its limits
+ * (`budgetFor`): the repository's Builder override, `builder-v1`, `reviewer-v1`, else the bounded qualification.
+ */
+export function sessionRequestBudget(request: Pick<WorkerLaunch, 'context' | 'modelBudget' | 'builderBudget'>): number {
+  const role = request.context.role;
+  if (request.modelBudget === 'builder-v1' && role === 'builder') return request.builderBudget?.requests ?? builderBudgetV1.requests;
+  if (request.modelBudget === 'reviewer-v1' && role !== 'builder') return reviewerBudgetV1.requests;
+  return qualificationRequestsV1;
+}
+/**
+ * Ticket 59: the Execution end of an owner-closed secret channel. Channel or lifetime loss (and the owner's own close) stays the uncertain
+ * end it always was; a refused sync is its own cause (`WORKER_SECRET_SYNC_<REASON>`), never a provider failure or a silent uncertainty.
+ */
+export function secretChannelEndCode(reason: SecretChannelFailure): string {
+  return reason === 'disconnect' || reason === 'abort' || reason === 'closed' ? 'WORKER_EXECUTION_UNCERTAIN'
+    : `WORKER_SECRET_SYNC_${reason.toUpperCase().replace('-', '_')}`;
+}
+
 /** Spawn only inside the existing correlated boot owner. Failures after claiming
  * remain uncertain: caller retains its invocation tombstone and must not retry. */
 export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, endpoint: string, root: string, signal: AbortSignal,
@@ -155,6 +175,8 @@ export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, en
   const request = workerLaunchSchema.parse(input);
   const plan = planWorkerLaunch(host, { workId: request.context.workId, environmentRef: request.context.environmentRef,
     bootRef: request.context.bootRef, invocationId: request.context.invocationId, role: request.context.role });
+  // Ticket 59: derived before any effect, so an invalid budget never leaves a spawned child without its receiver.
+  const secretSyncs = secretSyncLimit(sessionRequestBudget(request));
   await privatePath(host.runtimeDirectory);
   const directory = await mkdtemp(join(host.runtimeDirectory, 'w-'));
   const profileDirectory = join(directory, 'profile');
@@ -186,11 +208,11 @@ export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, en
   let startReference: z.infer<typeof reference> | undefined;
   let resulted = false;
   const secretReceiver = createOwnerSecretReceiver(child, request.context, signal, () => startReference !== undefined,
-    value => secrets.registerSecret(value), () => {
+    value => secrets.registerSecret(value), reason => {
       startReject(new Error('WORKER_START_UNCERTAIN'));
-      if (!resulted) completeResolve({ status: 'failure', code: 'WORKER_EXECUTION_UNCERTAIN' });
+      if (!resulted) completeResolve({ status: 'failure', code: secretChannelEndCode(reason) });
       secrets.revoke();
-    });
+    }, secretSyncs);
   const questions = relay && request.context.role === 'builder'
     ? serveQuestionRelay(child, request.context, signal, () => startReference !== undefined, question => relay.question(question)) : undefined;
   child.on('message', message => {

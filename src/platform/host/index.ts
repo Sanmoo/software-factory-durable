@@ -1,6 +1,9 @@
 export { workerBootstrapSchema, workerLaunchSchema, type WorkerLaunch } from './worker-bootstrap.js';
 // Private composition on an existing fixed child channel; no public tool/reader.
-export { createSecretPublisher, createOwnerSecretReceiver, deliverSchema } from './worker-secret-ipc.js';
+export { createSecretPublisher, createOwnerSecretReceiver, deliverSchema, secretChannelFailures, secretSyncLimit, secretSyncSetupMargin,
+  type SecretChannelFailure } from './worker-secret-ipc.js';
+// Ticket 59: the launch's session request budget and the Execution end of an owner-closed secret channel.
+export { secretChannelEndCode, sessionRequestBudget } from './worker-launch.js';
 // Same fixed child channel: one ask_user notification per Builder activation and its Control ACK.
 // Ticket 11: confined Host reads of preserved Builder sessions (runtime tree, never guest paths).
 export { copyPreservedSession, launchToolNames, observePreservedSession, readConfinedFile, readSessionFile, sessionRefSchema, sessionFileLimits, type HostSessionRef } from './worker-session-file.js';

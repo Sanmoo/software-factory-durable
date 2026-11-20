@@ -40,6 +40,16 @@ test('AC6: only transient worker/transport/channel interruptions are recoverable
   }
 });
 
+test('ticket 59: a refused secret sync is its own cause; only an undelivered ACK (timeout/send) is recovered like a lost channel', () => {
+  for (const code of ['WORKER_SECRET_SYNC_TIMEOUT', 'WORKER_SECRET_SYNC_SEND', 'STARTED_WORKER_SECRET_SYNC_TIMEOUT']) {
+    assert.deepEqual(classifyInterruption(code), { kind: 'recoverable' }, code);
+  }
+  for (const code of ['WORKER_SECRET_SYNC_LIMIT', 'WORKER_SECRET_SYNC_REPLAY', 'WORKER_SECRET_SYNC_SCHEMA', 'WORKER_SECRET_SYNC_CONTEXT',
+    'WORKER_SECRET_SYNC_BUSY', 'WORKER_SECRET_SYNC_NOT_STARTED', 'WORKER_SECRET_SYNC_REGISTER']) {
+    assert.deepEqual(classifyInterruption(code), { kind: 'blocking', code }, code);
+  }
+});
+
 test('AC3: start evidence — a notified or discovered complete receipt confirms; absence proves non-start only after confirmed cessation; otherwise uncertain', () => {
   const base = { cessation: 'confirmed' as const, observation: null };
   assert.deepEqual(startDecision({ ...base, confirmed: { receiptId: 'r1' }, phase: 'started' }), { kind: 'confirmed', receiptId: 'r1', source: 'notification' });

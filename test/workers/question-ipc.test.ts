@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { test } from 'node:test';
-import { createOwnerSecretReceiver, createQuestionSender, createSecretPublisher, serveQuestionRelay } from '../../src/platform/host/index.js';
+import { createOwnerSecretReceiver, createQuestionSender, createSecretPublisher, secretSyncLimit, serveQuestionRelay } from '../../src/platform/host/index.js';
 
 // Protocol level: the private ask_user seam over a fake child channel (two linked emitters). No process, SDK or Control.
 const context = { workId: 'w', executionId: 'e', invocationId: 'i', role: 'builder' as const, environmentRef: 'env', bootRef: 'boot', phaseId: 'p' };
@@ -49,7 +49,7 @@ test('AC5: silence or channel loss is UNACKNOWLEDGED, never recorded; a refusal 
 test('the secret seams on the same channel ignore question messages instead of revoking the invocation', async () => {
   const { worker, owner } = pair();
   let ownerRevoked = false, workerRevoked = false;
-  createOwnerSecretReceiver(owner, context, new AbortController().signal, () => true, () => {}, () => { ownerRevoked = true; });
+  createOwnerSecretReceiver(owner, context, new AbortController().signal, () => true, () => {}, () => { ownerRevoked = true; }, secretSyncLimit(150));
   const publisher = createSecretPublisher(worker, context, new AbortController().signal, 1000, () => { workerRevoked = true; });
   publisher.protectedStarted();
   serveQuestionRelay(owner, context, new AbortController().signal, () => true, async () => ({ status: 'recorded' }));

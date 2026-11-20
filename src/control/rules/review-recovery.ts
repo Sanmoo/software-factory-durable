@@ -29,7 +29,10 @@ const transient = new Set(['WORKER_MODEL_UNAVAILABLE', 'WORKER_PROVIDER_UNAVAILA
   'REVIEW_VERDICT_BASIS_INVALID', 'REVIEW_VERDICT_TOO_LARGE',
   // Ticket 57: the reviewer's own request/tool budget closed its session (Host count). The model is not deterministic (pilot 2: the retried
   // Spec concluded within the same budget), so it is retried like an interruption, within the per-round limit below.
-  'REVIEWER_BUDGET_EXHAUSTED']);
+  'REVIEWER_BUDGET_EXHAUSTED',
+  // Ticket 59: the owner could not deliver a secret-sync ACK in time or at all (transport, like a lost channel). Every other refused sync
+  // (`WORKER_SECRET_SYNC_LIMIT`, replay, schema...) is a Host protocol/limit fact and blocks.
+  'WORKER_SECRET_SYNC_TIMEOUT', 'WORKER_SECRET_SYNC_SEND']);
 /**
  * Operator decision 2026-11-15: at most TWO retries per role per round (attempt 3 is the last); the next failure stops the Execution
  * (`REVIEWER_RETRY_LIMIT`, ticket 51) for the operator's decision. Ticket 57: this is the reviewers' OWN limit. A reviewer retry no longer

@@ -91,6 +91,11 @@ export type StartRetryRemedy = typeof startRetryRemedies[number];
  */
 export const builderBudgetV1 = Object.freeze({ requests: 150, toolCalls: 300, requestTimeoutMinutes: 60 });
 export const builderBudgetMaximumFactor = 2;
+/** Ticket 51 (operator decision 2026-11-19, pilot 35): the fixed reviewer budget of ONE opinion (`reviewer-v1`). Ticket 59: one source for the
+ * worker limits, the release record and the owner's secret-sync bound. */
+export const reviewerBudgetV1 = Object.freeze({ requests: 48, toolCalls: 160, requestTimeoutMinutes: 30 });
+/** The model requests of a session launched without a Host budget policy (the bounded OAuth qualification). */
+export const qualificationRequestsV1 = 2;
 /** Ticket 48: per-repository Builder budget adjustment as configured (each field optional; absent = the release value). */
 export type BuilderBudgetConfiguration = { requests?: number | undefined; toolCalls?: number | undefined; requestTimeoutMinutes?: number | undefined };
 /** Ticket 48: a budget end WITH Host-observed progress continues in a new Execution charged to this per-Work counter, not to recoveries. */
