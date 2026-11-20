@@ -1,0 +1,3239 @@
+{
+ "kind": "sanitized evidence of the agent-continuity proof (ticket v2/09)",
+ "sanitization": "account ids, tokens, keys, endpoints and local home paths removed; tool output bodies are not included, only tool name, a command/path prefix, exit code and timing; prompts, controller notices, context packet and the model's final answers are synthetic-task text and are included",
+ "manifest": {
+  "reference": "3646214ed1be38e3905ae2f3f2250f876a7d1feb",
+  "node": "v24.21.0",
+  "pi": "factory-development-pi-1.5.2-read-async-bash-lexical-v3",
+  "sdkPath": "<main>/.worktrees/software-factory-mvp/.scratch/factory-development-sdk-v3/sdk",
+  "prior": {
+   "activations": 5,
+   "requests": 5,
+   "note": "run1: runner defect, the session was created with no active tools; nothing was done in the guest by the model"
+  },
+  "model": {
+   "provider": "openai",
+   "id": "gpt-6-luna",
+   "api": "openai-responses"
+  },
+  "auth": "existing native OAuth in the Pi store; read only by the SDK",
+  "thinkingLevel": "off",
+  "tools": [
+   "bash",
+   "read",
+   "write",
+   "edit"
+  ],
+  "nativeTools": [],
+  "compaction": false,
+  "retry": false,
+  "limits": {
+   "activations": 12,
+   "requestsPerActivation": 15,
+   "requestsTotal": 120,
+   "activationMs": 360000,
+   "microvms": 12,
+   "microvmSeconds": 10800,
+   "maxDuration": 900,
+   "switchMarginSeconds": 300
+  },
+  "system": "032db82bf074639f09c7b6815ebc81d62af12579d04bfbeee0d6fc02fcd781c2",
+  "image": "sfv2proof-full",
+  "guestUser": "builder",
+  "origin": "git@github.com:Sanmoo/sfv2proof-synthetic.git",
+  "branch": "cont-work",
+  "runnerSha256": "d14d7e4f0f6d4f9109d5dde7c1cc10d771551d2a1fae32b5bd69149222833a1d",
+  "mode": "recorded at plan time",
+  "fixtures": [
+   "Control admission, switch notice, context packet, occurrence record",
+   "external effect service (commits on a remote ref)",
+   "synthetic task"
+  ],
+  "real": [
+   "Pi session and model",
+   "Lambda MicroVMs and SSH/WebSocket transport",
+   "Git remote, push, clone",
+   "Docker in the guest"
+  ]
+ },
+ "run2": {
+  "kind": "real",
+  "startedAt": "2026-11-20T21:52:03.560Z",
+  "finishedAt": "2026-11-20T21:59:22.722Z",
+  "error": null,
+  "work": {
+   "id": "W-run2",
+   "execution": "E1"
+  },
+  "totals": {
+   "activations": 6,
+   "modelRequests": 43,
+   "boots": 3,
+   "microvmSeconds": 360
+  },
+  "boots": [
+   {
+    "label": "A",
+    "id": "microvm-d41d5d64-8dc3-3577-9ce7-2a33873d35ea",
+    "requestedAt": "2026-11-20T21:52:19.035Z",
+    "readyAt": "2026-11-20T21:52:28.319Z",
+    "clonedOid": "04316e2c21ff08d0610288d958cfd5f81fb285e4",
+    "endReason": "planned-switch",
+    "cessationStartedAt": "2026-11-20T21:54:13.885Z",
+    "cessationConfirmedAt": "2026-11-20T21:54:18.570Z",
+    "final": {
+     "state": "TERMINATED",
+     "reason": "Success.",
+     "startedAt": "2026-11-20T18:52:14.605000-03:00",
+     "terminatedAt": "2026-11-20T18:54:16.996000-03:00"
+    },
+    "seconds": 122
+   },
+   {
+    "label": "B",
+    "id": "microvm-c9dcded5-f95c-360f-9981-11e1737c1545",
+    "requestedAt": "2026-11-20T21:54:23.821Z",
+    "readyAt": "2026-11-20T21:54:32.486Z",
+    "clonedOid": "34c9693a1c1f2776e3a29e682e8184eb20fc1528",
+    "endReason": "killed-before-push",
+    "cessationStartedAt": "2026-11-20T21:56:08.423Z",
+    "cessationConfirmedAt": "2026-11-20T21:56:13.106Z",
+    "final": {
+     "state": "TERMINATED",
+     "reason": "Success.",
+     "startedAt": "2026-11-20T18:54:20.443000-03:00",
+     "terminatedAt": "2026-11-20T18:56:10.713000-03:00"
+    },
+    "seconds": 110
+   },
+   {
+    "label": "C",
+    "id": "microvm-482bc0bf-19c7-397c-9174-47426cc75691",
+    "requestedAt": "2026-11-20T21:57:15.363Z",
+    "readyAt": "2026-11-20T21:57:36.533Z",
+    "clonedOid": "84363b7917a0c9ca84d8e6259fab338b4f15de10",
+    "endReason": "campaign-end",
+    "cessationStartedAt": "2026-11-20T21:59:16.995Z",
+    "cessationConfirmedAt": "2026-11-20T21:59:21.663Z",
+    "final": {
+     "state": "TERMINATED",
+     "reason": "Success.",
+     "startedAt": "2026-11-20T18:57:11.970000-03:00",
+     "terminatedAt": "2026-11-20T18:59:20.029000-03:00"
+    },
+    "seconds": 128
+   }
+  ],
+  "activations": [
+   {
+    "id": "S1-1-phase1",
+    "step": "phase1",
+    "session": "S1",
+    "sessionId": "01a1faf2-9eea-71fc-9e1a-f45e8ee58a88",
+    "boot": "A",
+    "requests": 6,
+    "promptSha256": "816955241f6e745904f138095b13c7dd4858575b868c67c56cf7a9a91d6e9e25",
+    "startedAt": "2026-11-20T21:52:46.832Z",
+    "endedAt": "2026-11-20T21:53:22.729Z",
+    "outcome": "stop",
+    "error": null,
+    "timedOut": null,
+    "limitHit": null,
+    "usage": [
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 348,
+       "output": 23,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 371,
+       "cost": {
+        "input": 3.4800000000000006e-05,
+        "output": 1.15e-05,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 4.630000000000001e-05,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 864,
+       "output": 79,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 943,
+       "cost": {
+        "input": 8.640000000000001e-05,
+        "output": 3.95e-05,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0.00012590000000000002,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 1245,
+       "output": 240,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 1485,
+       "cost": {
+        "input": 0.00012450000000000002,
+        "output": 0.00011999999999999999,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0.00024450000000000003,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 356,
+       "output": 39,
+       "cacheRead": 1152,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 1547,
+       "cost": {
+        "input": 3.5600000000000005e-05,
+        "output": 1.95e-05,
+        "cacheRead": 1.152e-05,
+        "cacheWrite": 0,
+        "total": 6.662000000000001e-05,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 1546,
+       "output": 45,
+       "cacheRead": 1408,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 2999,
+       "cost": {
+        "input": 0.00015460000000000002,
+        "output": 2.2499999999999998e-05,
+        "cacheRead": 1.408e-05,
+        "cacheWrite": 0,
+        "total": 0.00019118000000000002,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "stop",
+      "usage": {
+       "input": 271,
+       "output": 45,
+       "cacheRead": 2816,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 3132,
+       "cost": {
+        "input": 2.71e-05,
+        "output": 2.2499999999999998e-05,
+        "cacheRead": 2.816e-05,
+        "cacheWrite": 0,
+        "total": 7.776e-05,
+        "totalFromProvider": false
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "S1-2-phase2-start",
+    "step": "phase2-start",
+    "session": "S1",
+    "sessionId": "01a1faf2-9eea-71fc-9e1a-f45e8ee58a88",
+    "boot": "A",
+    "requests": 6,
+    "promptSha256": "787677258a2873149b1a7e6af413263977ad04ad22d733b3a7e600bada92977f",
+    "startedAt": "2026-11-20T21:53:27.580Z",
+    "endedAt": "2026-11-20T21:53:59.272Z",
+    "outcome": "stop",
+    "error": null,
+    "timedOut": null,
+    "limitHit": null,
+    "usage": [
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 228,
+       "output": 24,
+       "cacheRead": 2944,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 3196,
+       "cost": {
+        "input": 2.2800000000000002e-05,
+        "output": 1.2e-05,
+        "cacheRead": 2.944e-05,
+        "cacheWrite": 0,
+        "total": 6.424000000000001e-05,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 315,
+       "output": 62,
+       "cacheRead": 3072,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 3449,
+       "cost": {
+        "input": 3.15e-05,
+        "output": 3.1e-05,
+        "cacheRead": 3.0720000000000004e-05,
+        "cacheWrite": 0,
+        "total": 9.322e-05,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 1057,
+       "output": 255,
+       "cacheRead": 3200,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 4512,
+       "cost": {
+        "input": 0.00010570000000000001,
+        "output": 0.00012749999999999998,
+        "cacheRead": 3.2e-05,
+        "cacheWrite": 0,
+        "total": 0.0002652,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 439,
+       "output": 160,
+       "cacheRead": 4096,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 4695,
+       "cost": {
+        "input": 4.39e-05,
+        "output": 7.999999999999999e-05,
+        "cacheRead": 4.096e-05,
+        "cacheWrite": 0,
+        "total": 0.00016486000000000002,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 367,
+       "output": 40,
+       "cacheRead": 4352,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 4759,
+       "cost": {
+        "input": 3.6700000000000004e-05,
+        "output": 1.9999999999999998e-05,
+        "cacheRead": 4.3520000000000003e-05,
+        "cacheWrite": 0,
+        "total": 0.00010022000000000001,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "stop",
+      "usage": {
+       "input": 564,
+       "output": 63,
+       "cacheRead": 4608,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 5235,
+       "cost": {
+        "input": 5.64e-05,
+        "output": 3.15e-05,
+        "cacheRead": 4.608e-05,
+        "cacheWrite": 0,
+        "total": 0.00013398,
+        "totalFromProvider": false
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "S1-3-switch-notice",
+    "step": "switch-notice",
+    "session": "S1",
+    "sessionId": "01a1faf2-9eea-71fc-9e1a-f45e8ee58a88",
+    "boot": "A",
+    "requests": 2,
+    "promptSha256": "70a48c30429e5caf02ad61868cb9fd303ca2973817934b718e776a310afc472d",
+    "startedAt": "2026-11-20T21:54:02.937Z",
+    "endedAt": "2026-11-20T21:54:09.993Z",
+    "outcome": "stop",
+    "error": null,
+    "timedOut": null,
+    "limitHit": null,
+    "usage": [
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 307,
+       "output": 49,
+       "cacheRead": 4992,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 5348,
+       "cost": {
+        "input": 3.07e-05,
+        "output": 2.45e-05,
+        "cacheRead": 4.992e-05,
+        "cacheWrite": 0,
+        "total": 0.00010512,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "stop",
+      "usage": {
+       "input": 319,
+       "output": 24,
+       "cacheRead": 5120,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 5463,
+       "cost": {
+        "input": 3.19e-05,
+        "output": 1.2e-05,
+        "cacheRead": 5.12e-05,
+        "cacheWrite": 0,
+        "total": 9.510000000000001e-05,
+        "totalFromProvider": false
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "S1-4-phase2-finish",
+    "step": "phase2-finish",
+    "session": "S1",
+    "sessionId": "01a1faf2-9eea-71fc-9e1a-f45e8ee58a88",
+    "boot": "B",
+    "requests": 6,
+    "promptSha256": "ea43d6c76b2dee0247c43debf964019202f69c39283276a106de25337d4f2a91",
+    "startedAt": "2026-11-20T21:54:34.980Z",
+    "endedAt": "2026-11-20T21:55:02.645Z",
+    "outcome": "stop",
+    "error": null,
+    "timedOut": null,
+    "limitHit": null,
+    "usage": [
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 304,
+       "output": 23,
+       "cacheRead": 5248,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 5575,
+       "cost": {
+        "input": 3.0400000000000004e-05,
+        "output": 1.15e-05,
+        "cacheRead": 5.248e-05,
+        "cacheWrite": 0,
+        "total": 9.438e-05,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 692,
+       "output": 23,
+       "cacheRead": 5376,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 6091,
+       "cost": {
+        "input": 6.92e-05,
+        "output": 1.15e-05,
+        "cacheRead": 5.376e-05,
+        "cacheWrite": 0,
+        "total": 0.00013445999999999998,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 238,
+       "output": 193,
+       "cacheRead": 5888,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 6319,
+       "cost": {
+        "input": 2.3800000000000003e-05,
+        "output": 9.65e-05,
+        "cacheRead": 5.888e-05,
+        "cacheWrite": 0,
+        "total": 0.00017918,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 325,
+       "output": 50,
+       "cacheRead": 6016,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 6391,
+       "cost": {
+        "input": 3.2500000000000004e-05,
+        "output": 2.4999999999999998e-05,
+        "cacheRead": 6.016e-05,
+        "cacheWrite": 0,
+        "total": 0.00011766000000000001,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 1527,
+       "output": 46,
+       "cacheRead": 6144,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 7717,
+       "cost": {
+        "input": 0.00015270000000000003,
+        "output": 2.3e-05,
+        "cacheRead": 6.144000000000001e-05,
+        "cacheWrite": 0,
+        "total": 0.00023714000000000002,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "stop",
+      "usage": {
+       "input": 267,
+       "output": 49,
+       "cacheRead": 7552,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 7868,
+       "cost": {
+        "input": 2.6700000000000002e-05,
+        "output": 2.45e-05,
+        "cacheRead": 7.552e-05,
+        "cacheWrite": 0,
+        "total": 0.00012671999999999998,
+        "totalFromProvider": false
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "S1-5-phase3-start",
+    "step": "phase3-start",
+    "session": "S1",
+    "sessionId": "01a1faf2-9eea-71fc-9e1a-f45e8ee58a88",
+    "boot": "B",
+    "requests": 9,
+    "promptSha256": "cbeda147f14fea640dfbc681239af2a28780f7c0f799d9779e27cef32ae53317",
+    "startedAt": "2026-11-20T21:55:09.770Z",
+    "endedAt": "2026-11-20T21:57:03.810Z",
+    "outcome": "stop",
+    "error": null,
+    "timedOut": null,
+    "limitHit": null,
+    "usage": [
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 205,
+       "output": 23,
+       "cacheRead": 7680,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 7908,
+       "cost": {
+        "input": 2.05e-05,
+        "output": 1.15e-05,
+        "cacheRead": 7.68e-05,
+        "cacheWrite": 0,
+        "total": 0.00010879999999999999,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 721,
+       "output": 23,
+       "cacheRead": 7680,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 8424,
+       "cost": {
+        "input": 7.21e-05,
+        "output": 1.15e-05,
+        "cacheRead": 7.68e-05,
+        "cacheWrite": 0,
+        "total": 0.0001604,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 257,
+       "output": 493,
+       "cacheRead": 8320,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 9070,
+       "cost": {
+        "input": 2.57e-05,
+        "output": 0.0002465,
+        "cacheRead": 8.32e-05,
+        "cacheWrite": 0,
+        "total": 0.0003554,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 644,
+       "output": 202,
+       "cacheRead": 8448,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 9294,
+       "cost": {
+        "input": 6.440000000000001e-05,
+        "output": 0.000101,
+        "cacheRead": 8.448e-05,
+        "cacheWrite": 0,
+        "total": 0.00024988,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 357,
+       "output": 35,
+       "cacheRead": 8960,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 9352,
+       "cost": {
+        "input": 3.57e-05,
+        "output": 1.75e-05,
+        "cacheRead": 8.96e-05,
+        "cacheWrite": 0,
+        "total": 0.0001428,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 555,
+       "output": 60,
+       "cacheRead": 9216,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 9831,
+       "cost": {
+        "input": 5.550000000000001e-05,
+        "output": 2.9999999999999997e-05,
+        "cacheRead": 9.216e-05,
+        "cacheWrite": 0,
+        "total": 0.00017766,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 307,
+       "output": 22,
+       "cacheRead": 9600,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 9929,
+       "cost": {
+        "input": 3.07e-05,
+        "output": 1.1e-05,
+        "cacheRead": 9.6e-05,
+        "cacheWrite": 0,
+        "total": 0.00013769999999999999,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 239,
+       "output": 35,
+       "cacheRead": 9728,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 10002,
+       "cost": {
+        "input": 2.39e-05,
+        "output": 1.75e-05,
+        "cacheRead": 9.728e-05,
+        "cacheWrite": 0,
+        "total": 0.00013868000000000002,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "stop",
+      "usage": {
+       "input": 172,
+       "output": 72,
+       "cacheRead": 9856,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 10100,
+       "cost": {
+        "input": 1.72e-05,
+        "output": 3.6e-05,
+        "cacheRead": 9.856e-05,
+        "cacheWrite": 0,
+        "total": 0.00015176000000000002,
+        "totalFromProvider": false
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "S2-6-phase3-substitute",
+    "step": "phase3-substitute",
+    "session": "S2",
+    "sessionId": "01a1faf7-0e12-71fc-9e1a-f460c0c82812",
+    "boot": "C",
+    "requests": 14,
+    "promptSha256": "f769f18f1edfa758c36c05dcf23a8ad9df9e1cafb91e54424b4ed98220c7dae6",
+    "startedAt": "2026-11-20T21:57:37.428Z",
+    "endedAt": "2026-11-20T21:59:07.181Z",
+    "outcome": "stop",
+    "error": null,
+    "timedOut": null,
+    "limitHit": null,
+    "usage": [
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 764,
+       "output": 97,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 861,
+       "cost": {
+        "input": 7.64e-05,
+        "output": 4.85e-05,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0.0001249,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 1444,
+       "output": 63,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 1507,
+       "cost": {
+        "input": 0.0001444,
+        "output": 3.15e-05,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0.00017590000000000002,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 804,
+       "output": 498,
+       "cacheRead": 1280,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 2582,
+       "cost": {
+        "input": 8.04e-05,
+        "output": 0.000249,
+        "cacheRead": 1.28e-05,
+        "cacheWrite": 0,
+        "total": 0.00034219999999999997,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 684,
+       "output": 183,
+       "cacheRead": 1920,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 2787,
+       "cost": {
+        "input": 6.840000000000001e-05,
+        "output": 9.15e-05,
+        "cacheRead": 1.92e-05,
+        "cacheWrite": 0,
+        "total": 0.00017910000000000002,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 379,
+       "output": 56,
+       "cacheRead": 2432,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 2867,
+       "cost": {
+        "input": 3.7900000000000006e-05,
+        "output": 2.8e-05,
+        "cacheRead": 2.432e-05,
+        "cacheWrite": 0,
+        "total": 9.022e-05,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 1685,
+       "output": 29,
+       "cacheRead": 2688,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 4402,
+       "cost": {
+        "input": 0.0001685,
+        "output": 1.45e-05,
+        "cacheRead": 2.688e-05,
+        "cacheWrite": 0,
+        "total": 0.00020988000000000002,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 399,
+       "output": 37,
+       "cacheRead": 4224,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 4660,
+       "cost": {
+        "input": 3.99e-05,
+        "output": 1.85e-05,
+        "cacheRead": 4.224e-05,
+        "cacheWrite": 0,
+        "total": 0.00010064,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 655,
+       "output": 55,
+       "cacheRead": 4480,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 5190,
+       "cost": {
+        "input": 6.55e-05,
+        "output": 2.7499999999999998e-05,
+        "cacheRead": 4.48e-05,
+        "cacheWrite": 0,
+        "total": 0.00013780000000000002,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 619,
+       "output": 23,
+       "cacheRead": 4992,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 5634,
+       "cost": {
+        "input": 6.19e-05,
+        "output": 1.15e-05,
+        "cacheRead": 4.992e-05,
+        "cacheWrite": 0,
+        "total": 0.00012332,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 291,
+       "output": 358,
+       "cacheRead": 5504,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 6153,
+       "cost": {
+        "input": 2.9100000000000003e-05,
+        "output": 0.000179,
+        "cacheRead": 5.504e-05,
+        "cacheWrite": 0,
+        "total": 0.00026314,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 545,
+       "output": 35,
+       "cacheRead": 5632,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 6212,
+       "cost": {
+        "input": 5.45e-05,
+        "output": 1.75e-05,
+        "cacheRead": 5.632e-05,
+        "cacheWrite": 0,
+        "total": 0.00012832000000000002,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 624,
+       "output": 39,
+       "cacheRead": 6016,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 6679,
+       "cost": {
+        "input": 6.24e-05,
+        "output": 1.95e-05,
+        "cacheRead": 6.016e-05,
+        "cacheWrite": 0,
+        "total": 0.00014206,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "toolUse",
+      "usage": {
+       "input": 216,
+       "output": 38,
+       "cacheRead": 6528,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 6782,
+       "cost": {
+        "input": 2.1600000000000003e-05,
+        "output": 1.8999999999999998e-05,
+        "cacheRead": 6.528e-05,
+        "cacheWrite": 0,
+        "total": 0.00010588,
+        "totalFromProvider": false
+       }
+      }
+     },
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "stop",
+      "usage": {
+       "input": 161,
+       "output": 107,
+       "cacheRead": 6656,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 6924,
+       "cost": {
+        "input": 1.6100000000000002e-05,
+        "output": 5.35e-05,
+        "cacheRead": 6.656e-05,
+        "cacheWrite": 0,
+        "total": 0.00013616,
+        "totalFromProvider": false
+       }
+      }
+     }
+    ]
+   }
+  ],
+  "checks": {
+   "baseline": {
+    "oid": "04316e2c21ff08d0610288d958cfd5f81fb285e4",
+    "effects": 0
+   },
+   "preflight": {
+    "write": true,
+    "bash": true,
+    "read": true,
+    "edit": true,
+    "filter": true,
+    "absentOnHost": true,
+    "barrier": true,
+    "gate": true,
+    "guestHost": "localhost aarch64"
+   },
+   "s1Before": {
+    "id": "01a1faf2-9eea-71fc-9e1a-f45e8ee58a88"
+   },
+   "phase1": {
+    "ok": true,
+    "originOid": "175c0aa024a89a43b7a4e8bd0b98e7d9cd03cf97",
+    "boot": "A",
+    "tail": "Ran 2 tests in 0.000s\n\nOK"
+   },
+   "beforeNotice": {
+    "bootAgeSeconds": 105,
+    "guest": "M app/convert.py\n?? tests/test_roundtrip.py\n---\n---\ntable.json\nac45adf0ddd2",
+    "originOid": "175c0aa024a89a43b7a4e8bd0b98e7d9cd03cf97"
+   },
+   "switch": {
+    "gate": true,
+    "noticeBootAgeSeconds": 105,
+    "wipOid": "34c9693a1c1f2776e3a29e682e8184eb20fc1528",
+    "bootAgeAtGate": 119
+   },
+   "rebuiltB": {
+    "clonedOid": "34c9693a1c1f2776e3a29e682e8184eb20fc1528",
+    "equalsWip": true,
+    "guest": "---\n---"
+   },
+   "s1AfterSwitch": {
+    "id": "01a1faf2-9eea-71fc-9e1a-f45e8ee58a88",
+    "same": true
+   },
+   "phase2": {
+    "ok": true,
+    "originOid": "84363b7917a0c9ca84d8e6259fab338b4f15de10",
+    "boot": "B",
+    "tail": "Ran 3 tests in 0.001s\n\nOK"
+   },
+   "effectBefore": 0,
+   "loss": {
+    "effectAtKill": 1,
+    "guestBeforeKill": "?? REPORT-100.md\n---\n1607163 Add max option for reports\n---\ntable.json\n388a343c1571",
+    "originBefore": "84363b7917a0c9ca84d8e6259fab338b4f15de10",
+    "killedDuring": "S1-5-phase3-start"
+   },
+   "lossAfter": {
+    "originAfter": "84363b7917a0c9ca84d8e6259fab338b4f15de10",
+    "effect": 1,
+    "s1Files": [
+     {
+      "file": "sessions/2026-11-20T21-52-46-827Z_01a1faf2-9eea-71fc-9e1a-f45e8ee58a88.jsonl",
+      "sha256": "44439a9cbaba17744c001f0dd82cb02b856b316670c35d334434b0f7716dd820"
+     }
+    ]
+   },
+   "occurrence": {
+    "kind": "environment-lost-before-push",
+    "work": "W-run2",
+    "boot": "B",
+    "microvmFinal": {
+     "state": "TERMINATED",
+     "reason": "Success.",
+     "startedAt": "2026-11-20T18:54:20.443000-03:00",
+     "terminatedAt": "2026-11-20T18:56:10.713000-03:00"
+    },
+    "lastPublishedOid": "84363b7917a0c9ca84d8e6259fab338b4f15de10",
+    "lostSince": "everything local after the last published OID",
+    "microvmSeconds": 110,
+    "recordedAt": "2026-11-20T21:57:10.083Z"
+   },
+   "s2": {
+    "id": "01a1faf7-0e12-71fc-9e1a-f460c0c82812",
+    "distinct": true,
+    "s1FilesAfter": [
+     {
+      "file": "sessions/2026-11-20T21-52-46-827Z_01a1faf2-9eea-71fc-9e1a-f45e8ee58a88.jsonl",
+      "sha256": "44439a9cbaba17744c001f0dd82cb02b856b316670c35d334434b0f7716dd820"
+     }
+    ],
+    "s1Unchanged": true
+   },
+   "phase3": {
+    "ok": false,
+    "originOid": "84363b7917a0c9ca84d8e6259fab338b4f15de10",
+    "boot": "C",
+    "tail": "r/lib64/python3.9/pathlib.py\", line 1038, in _opener\n    return self._accessor.open(self, flags, mode)\nFileNotFoundError: [Errno 2] No such file or directory: '/tmp/verify-3-b6b65690/build/table.json'"
+   },
+   "finalGate": false,
+   "effectFinal": 1,
+   "activeMicrovmsAtEnd": 0
+  },
+  "texts": {
+   "S1-1-phase1": {
+    "prompt": "[controller] Work W-run2 admitted on boot A. Do phase 1 of TASK.md.",
+    "finalText": "Phase 1 complete. `to_roman` is implemented, `./gen.sh` generated `build/table.json`, and the container tests passed. Committed and pushed as `175c0aa`."
+   },
+   "S1-2-phase2-start": {
+    "prompt": "[controller] Start phase 2 of TASK.md: do steps 2.1 and 2.2 only, then stop and report. Do not commit yet.",
+    "finalText": "Steps 2.1 and 2.2 are complete: `from_roman` validates input and parses canonical Roman numerals, and `tests/test_roundtrip.py` checks every table entry. The container tests passed. Nothing has been committed; I stopped before step 2.3."
+   },
+   "S1-3-switch-notice": {
+    "prompt": "[controller] Planned boot switch: this environment (boot A) reaches its lifetime limit soon and will be terminated. Publish your work in progress now: commit (WIP is fine) and push to origin cont-work. Do not start long-running commands. Report when the push is done.",
+    "finalText": "WIP work committed and pushed to `origin/cont-work` as `34c9693`."
+   },
+   "rebuildNotice": {
+    "text": "[controller] The planned boot switch is complete. You are now on boot B: a new environment recreated from origin cont-work at 34c9693a1c1f2776e3a29e682e8184eb20fc1528. Only what is in Git exists in it. Continue: complete phase 2 of TASK.md (steps 2.3 and 2.4).",
+    "sha256": "ea43d6c76b2dee0247c43debf964019202f69c39283276a106de25337d4f2a91"
+   },
+   "S1-4-phase2-finish": {
+    "prompt": "[controller] The planned boot switch is complete. You are now on boot B: a new environment recreated from origin cont-work at 34c9693a1c1f2776e3a29e682e8184eb20fc1528. Only what is in Git exists in it. Continue: complete phase 2 of TASK.md (steps 2.3 and 2.4).",
+    "finalText": "Phase 2 is complete. `app.report` generated `REPORT.md` with 50 entries and a successful roundtrip status. The container tests passed, and the changes were committed and pushed as `84363b7`."
+   },
+   "S1-5-phase3-start": {
+    "prompt": "[controller] Do phase 3 of TASK.md.",
+    "finalText": "Phase 3.1 is complete and committed locally as `1607163`; the container tests passed. `REPORT-100.md` was generated and remains uncommitted. The `./effect.sh e1` call was attempted, but the environment terminated and reported the result as unknown before I could confirm the effect or push the report."
+   },
+   "contextPacket": {
+    "packet": {
+     "work": {
+      "id": "W-run2",
+      "execution": "E1"
+     },
+     "boots": [
+      {
+       "boot": "A",
+       "end": "planned-switch",
+       "microvmSeconds": 122
+      },
+      {
+       "boot": "B",
+       "end": "killed-before-push",
+       "microvmSeconds": 110
+      },
+      {
+       "boot": "C",
+       "end": "current",
+       "microvmSeconds": null
+      }
+     ],
+     "repository": "git@github.com:Sanmoo/sfv2proof-synthetic.git",
+     "branch": "cont-work",
+     "confirmedRemoteOid": "84363b7917a0c9ca84d8e6259fab338b4f15de10",
+     "loss": {
+      "explicit": true,
+      "boot": "B",
+      "statement": "Boot B was lost before a push. Everything local after 84363b7917a0c9ca84d8e6259fab338b4f15de10 is gone: unpushed commits, uncommitted files, generated files and container images."
+     },
+     "pendingEffects": [
+      {
+       "id": "e1",
+       "command": "./effect.sh e1",
+       "state": "uncertain",
+       "rule": "It was in flight when boot B was lost; its outcome is unknown. Do not run it again until the controller authorizes a reconciliation."
+      }
+     ],
+     "phase": "Phase 3 of TASK.md was in progress. What is complete is exactly what origin contains.",
+     "consumption": {
+      "activations": 5,
+      "modelRequests": 29,
+      "microvmSeconds": 232
+     },
+     "transcriptProvided": false,
+     "priorExecutorSummaryProvided": false
+    },
+    "text": "[controller] You are a new session continuing Work W-run2 on boot C. These are controller records, not a transcript:\n{\n \"work\": {\n  \"id\": \"W-run2\",\n  \"execution\": \"E1\"\n },\n \"boots\": [\n  {\n   \"boot\": \"A\",\n   \"end\": \"planned-switch\",\n   \"microvmSeconds\": 122\n  },\n  {\n   \"boot\": \"B\",\n   \"end\": \"killed-before-push\",\n   \"microvmSeconds\": 110\n  },\n  {\n   \"boot\": \"C\",\n   \"end\": \"current\",\n   \"microvmSeconds\": null\n  }\n ],\n \"repository\": \"git@github.com:Sanmoo/sfv2proof-synthetic.git\",\n \"branch\": \"cont-work\",\n \"confirmedRemoteOid\": \"84363b7917a0c9ca84d8e6259fab338b4f15de10\",\n \"loss\": {\n  \"explicit\": true,\n  \"boot\": \"B\",\n  \"statement\": \"Boot B was lost before a push. Everything local after 84363b7917a0c9ca84d8e6259fab338b4f15de10 is gone: unpushed commits, uncommitted files, generated files and container images.\"\n },\n \"pendingEffects\": [\n  {\n   \"id\": \"e1\",\n   \"command\": \"./effect.sh e1\",\n   \"state\": \"uncertain\",\n   \"rule\": \"It was in flight when boot B was lost; its outcome is unknown. Do not run it again until the controller authorizes a reconciliation.\"\n  }\n ],\n \"phase\": \"Phase 3 of TASK.md was in progress. What is complete is exactly what origin contains.\",\n \"consumption\": {\n  \"activations\": 5,\n  \"modelRequests\": 29,\n  \"microvmSeconds\": 232\n },\n \"transcriptProvided\": false,\n \"priorExecutorSummaryProvided\": false\n}\nContinue phase 3 of TASK.md from the published state. Skip any step you must not perform and say which.",
+    "sha256": "f769f18f1edfa758c36c05dcf23a8ad9df9e1cafb91e54424b4ed98220c7dae6"
+   },
+   "S2-6-phase3-substitute": {
+    "prompt": "[controller] You are a new session continuing Work W-run2 on boot C. These are controller records, not a transcript:\n{\n \"work\": {\n  \"id\": \"W-run2\",\n  \"execution\": \"E1\"\n },\n \"boots\": [\n  {\n   \"boot\": \"A\",\n   \"end\": \"planned-switch\",\n   \"microvmSeconds\": 122\n  },\n  {\n   \"boot\": \"B\",\n   \"end\": \"killed-before-push\",\n   \"microvmSeconds\": 110\n  },\n  {\n   \"boot\": \"C\",\n   \"end\": \"current\",\n   \"microvmSeconds\": null\n  }\n ],\n \"repository\": \"git@github.com:Sanmoo/sfv2proof-synthetic.git\",\n \"branch\": \"cont-work\",\n \"confirmedRemoteOid\": \"84363b7917a0c9ca84d8e6259fab338b4f15de10\",\n \"loss\": {\n  \"explicit\": true,\n  \"boot\": \"B\",\n  \"statement\": \"Boot B was lost before a push. Everything local after 84363b7917a0c9ca84d8e6259fab338b4f15de10 is gone: unpushed commits, uncommitted files, generated files and container images.\"\n },\n \"pendingEffects\": [\n  {\n   \"id\": \"e1\",\n   \"command\": \"./effect.sh e1\",\n   \"state\": \"uncertain\",\n   \"rule\": \"It was in flight when boot B was lost; its outcome is unknown. Do not run it again until the controller authorizes a reconciliation.\"\n  }\n ],\n \"phase\": \"Phase 3 of TASK.md was in progress. What is complete is exactly what origin contains.\",\n \"consumption\": {\n  \"activations\": 5,\n  \"modelRequests\": 29,\n  \"microvmSeconds\": 232\n },\n \"transcriptProvided\": false,\n \"priorExecutorSummaryProvided\": false\n}\nContinue phase 3 of TASK.md from the published state. Skip any step you must not perform and say which.",
+    "finalText": "Completed Phase 3.1: added `--max N` and its test; the container tests pass. Committed locally as `0f6f5c3`.\n\nCompleted Phase 3.2: generated `REPORT-100.md` and left it uncommitted.\n\nSkipped Phase 3.3: `e1` is uncertain after Boot B was lost, and the controller’s record explicitly says not to run it again without authorization. I have not run it or pushed Phase 3.4."
+   }
+  },
+  "events": [
+   {
+    "at": "2026-11-20T21:52:12.932Z",
+    "kind": "remote-reset",
+    "oid": "04316e2c21ff08d0610288d958cfd5f81fb285e4",
+    "effects": 0
+   },
+   {
+    "at": "2026-11-20T21:52:13.807Z",
+    "kind": "boot-request",
+    "boot": "A"
+   },
+   {
+    "at": "2026-11-20T21:52:19.036Z",
+    "kind": "boot-up",
+    "boot": "A",
+    "id": "microvm-d41d5d64-8dc3-3577-9ce7-2a33873d35ea",
+    "up": "session run2-a id=microvm-d41d5d64-8dc3-3577-9ce7-2a33873d35ea hostkey=SHA256:3WNLp35HBRYgirLRP9xK+6LOvhfsEoA0Qt6lQemtVZw"
+   },
+   {
+    "at": "2026-11-20T21:52:29.199Z",
+    "kind": "boot-ready",
+    "boot": "A",
+    "clonedOid": "04316e2c21ff08d0610288d958cfd5f81fb285e4"
+   },
+   {
+    "at": "2026-11-20T21:52:29.200Z",
+    "kind": "tool-start",
+    "id": "preflight-no-model",
+    "boot": "A",
+    "name": "write",
+    "brief": "/tmp/marker-8f1e77fe-9f26-4792-bae6-4972edf94331-w"
+   },
+   {
+    "at": "2026-11-20T21:52:30.815Z",
+    "kind": "tool-end",
+    "id": "preflight-no-model",
+    "boot": "A",
+    "name": "write",
+    "code": 0,
+    "ms": 1615
+   },
+   {
+    "at": "2026-11-20T21:52:32.383Z",
+    "kind": "tool-start",
+    "id": "preflight-no-model",
+    "boot": "A",
+    "name": "bash",
+    "brief": "printf %s marker-8f1e77fe-9f26-4792-bae6-4972edf94331 > /tmp/marker-8f1e77fe-9f26-4792-bae6-4972edf94331-b; hostname"
+   },
+   {
+    "at": "2026-11-20T21:52:34.057Z",
+    "kind": "tool-end",
+    "id": "preflight-no-model",
+    "boot": "A",
+    "name": "bash",
+    "code": 0,
+    "ms": 1674
+   },
+   {
+    "at": "2026-11-20T21:52:35.624Z",
+    "kind": "tool-start",
+    "id": "preflight-no-model",
+    "boot": "A",
+    "name": "read",
+    "brief": "/tmp/marker-8f1e77fe-9f26-4792-bae6-4972edf94331-b"
+   },
+   {
+    "at": "2026-11-20T21:52:37.203Z",
+    "kind": "tool-end",
+    "id": "preflight-no-model",
+    "boot": "A",
+    "name": "read",
+    "code": 0,
+    "ms": 1579
+   },
+   {
+    "at": "2026-11-20T21:52:37.214Z",
+    "kind": "tool-start",
+    "id": "preflight-no-model",
+    "boot": "A",
+    "name": "edit",
+    "brief": "/tmp/marker-8f1e77fe-9f26-4792-bae6-4972edf94331-w"
+   },
+   {
+    "at": "2026-11-20T21:52:40.455Z",
+    "kind": "tool-end",
+    "id": "preflight-no-model",
+    "boot": "A",
+    "name": "edit",
+    "code": 0,
+    "ms": 3241
+   },
+   {
+    "at": "2026-11-20T21:52:42.030Z",
+    "kind": "tool-start",
+    "id": "preflight-no-model",
+    "boot": "A",
+    "name": "bash",
+    "brief": "cat ~/.ssh/deploy"
+   },
+   {
+    "at": "2026-11-20T21:52:43.419Z",
+    "kind": "tool-end",
+    "id": "preflight-no-model",
+    "boot": "A",
+    "name": "bash",
+    "code": 0,
+    "ms": 1389
+   },
+   {
+    "at": "2026-11-20T21:52:43.442Z",
+    "kind": "tool-refused-not-admitted",
+    "name": "bash"
+   },
+   {
+    "at": "2026-11-20T21:52:45.236Z",
+    "kind": "gate",
+    "boot": "A",
+    "ok": true,
+    "output": "GATE OK: cont-work 04316e2"
+   },
+   {
+    "at": "2026-11-20T21:52:46.820Z",
+    "kind": "preflight",
+    "write": true,
+    "bash": true,
+    "read": true,
+    "edit": true,
+    "filter": true,
+    "absentOnHost": true,
+    "barrier": true,
+    "gate": true,
+    "guestHost": "localhost aarch64"
+   },
+   {
+    "at": "2026-11-20T21:52:46.831Z",
+    "kind": "session-open",
+    "session": "S1",
+    "id": "01a1faf2-9eea-71fc-9e1a-f45e8ee58a88",
+    "authType": "oauth",
+    "tools": [
+     "bash",
+     "read",
+     "write",
+     "edit"
+    ]
+   },
+   {
+    "at": "2026-11-20T21:52:46.832Z",
+    "kind": "admitted",
+    "id": "S1-1-phase1",
+    "boot": "A",
+    "session": "S1",
+    "cumulative": 1
+   },
+   {
+    "at": "2026-11-20T21:52:46.837Z",
+    "kind": "model-request",
+    "id": "S1-1-phase1",
+    "n": 1,
+    "model": "gpt-6-luna",
+    "boot": "A"
+   },
+   {
+    "at": "2026-11-20T21:52:50.510Z",
+    "kind": "tool-start",
+    "id": "S1-1-phase1",
+    "boot": "A",
+    "name": "read",
+    "brief": "/workspace/repo/TASK.md"
+   },
+   {
+    "at": "2026-11-20T21:52:52.052Z",
+    "kind": "tool-end",
+    "id": "S1-1-phase1",
+    "boot": "A",
+    "name": "read",
+    "code": 0,
+    "ms": 1542
+   },
+   {
+    "at": "2026-11-20T21:52:52.066Z",
+    "kind": "model-request",
+    "id": "S1-1-phase1",
+    "n": 2,
+    "model": "gpt-6-luna",
+    "boot": "A"
+   },
+   {
+    "at": "2026-11-20T21:52:54.910Z",
+    "kind": "tool-start",
+    "id": "S1-1-phase1",
+    "boot": "A",
+    "name": "bash",
+    "brief": "git status --short && git branch --show-current"
+   },
+   {
+    "at": "2026-11-20T21:52:54.910Z",
+    "kind": "tool-start",
+    "id": "S1-1-phase1",
+    "boot": "A",
+    "name": "read",
+    "brief": "/workspace/repo/app/convert.py"
+   },
+   {
+    "at": "2026-11-20T21:52:54.910Z",
+    "kind": "tool-start",
+    "id": "S1-1-phase1",
+    "boot": "A",
+    "name": "bash",
+    "brief": "ls -la"
+   },
+   {
+    "at": "2026-11-20T21:52:56.322Z",
+    "kind": "tool-end",
+    "id": "S1-1-phase1",
+    "boot": "A",
+    "name": "bash",
+    "code": 0,
+    "ms": 1412
+   },
+   {
+    "at": "2026-11-20T21:52:56.461Z",
+    "kind": "tool-end",
+    "id": "S1-1-phase1",
+    "boot": "A",
+    "name": "read",
+    "code": 0,
+    "ms": 1551
+   },
+   {
+    "at": "2026-11-20T21:52:56.469Z",
+    "kind": "tool-end",
+    "id": "S1-1-phase1",
+    "boot": "A",
+    "name": "bash",
+    "code": 0,
+    "ms": 1559
+   },
+   {
+    "at": "2026-11-20T21:52:56.485Z",
+    "kind": "model-request",
+    "id": "S1-1-phase1",
+    "n": 3,
+    "model": "gpt-6-luna",
+    "boot": "A"
+   },
+   {
+    "at": "2026-11-20T21:53:02.246Z",
+    "kind": "tool-start",
+    "id": "S1-1-phase1",
+    "boot": "A",
+    "name": "write",
+    "brief": "/workspace/repo/app/convert.py"
+   },
+   {
+    "at": "2026-11-20T21:53:03.908Z",
+    "kind": "tool-end",
+    "id": "S1-1-phase1",
+    "boot": "A",
+    "name": "write",
+    "code": 0,
+    "ms": 1662
+   },
+   {
+    "at": "2026-11-20T21:53:03.921Z",
+    "kind": "model-request",
+    "id": "S1-1-phase1",
+    "n": 4,
+    "model": "gpt-6-luna",
+    "boot": "A"
+   },
+   {
+    "at": "2026-11-20T21:53:06.157Z",
+    "kind": "tool-start",
+    "id": "S1-1-phase1",
+    "boot": "A",
+    "name": "bash",
+    "brief": "./gen.sh && docker build -t contapp:local . && docker run --rm contapp:local"
+   },
+   {
+    "at": "2026-11-20T21:53:14.820Z",
+    "kind": "tool-end",
+    "id": "S1-1-phase1",
+    "boot": "A",
+    "name": "bash",
+    "code": 0,
+    "ms": 8663
+   },
+   {
+    "at": "2026-11-20T21:53:14.836Z",
+    "kind": "model-request",
+    "id": "S1-1-phase1",
+    "n": 5,
+    "model": "gpt-6-luna",
+    "boot": "A"
+   },
+   {
+    "at": "2026-11-20T21:53:17.658Z",
+    "kind": "tool-start",
+    "id": "S1-1-phase1",
+    "boot": "A",
+    "name": "bash",
+    "brief": "git status --short && git add app/convert.py && git commit -m 'Implement Roman numeral conversion' && git push origin cont-work"
+   },
+   {
+    "at": "2026-11-20T21:53:20.015Z",
+    "kind": "tool-end",
+    "id": "S1-1-phase1",
+    "boot": "A",
+    "name": "bash",
+    "code": 0,
+    "ms": 2357
+   },
+   {
+    "at": "2026-11-20T21:53:20.030Z",
+    "kind": "model-request",
+    "id": "S1-1-phase1",
+    "n": 6,
+    "model": "gpt-6-luna",
+    "boot": "A"
+   },
+   {
+    "at": "2026-11-20T21:53:22.729Z",
+    "kind": "activation-ended",
+    "id": "S1-1-phase1",
+    "outcome": "stop",
+    "requests": 6,
+    "timedOut": false,
+    "limitHit": false
+   },
+   {
+    "at": "2026-11-20T21:53:27.580Z",
+    "kind": "verify-phase",
+    "phase": 1,
+    "ok": true,
+    "originOid": "175c0aa024a89a43b7a4e8bd0b98e7d9cd03cf97"
+   },
+   {
+    "at": "2026-11-20T21:53:27.580Z",
+    "kind": "admitted",
+    "id": "S1-2-phase2-start",
+    "boot": "A",
+    "session": "S1",
+    "cumulative": 2
+   },
+   {
+    "at": "2026-11-20T21:53:27.582Z",
+    "kind": "model-request",
+    "id": "S1-2-phase2-start",
+    "n": 1,
+    "model": "gpt-6-luna",
+    "boot": "A"
+   },
+   {
+    "at": "2026-11-20T21:53:29.627Z",
+    "kind": "tool-start",
+    "id": "S1-2-phase2-start",
+    "boot": "A",
+    "name": "read",
+    "brief": "/workspace/repo/app/convert.py"
+   },
+   {
+    "at": "2026-11-20T21:53:31.145Z",
+    "kind": "tool-end",
+    "id": "S1-2-phase2-start",
+    "boot": "A",
+    "name": "read",
+    "code": 0,
+    "ms": 1518
+   },
+   {
+    "at": "2026-11-20T21:53:31.157Z",
+    "kind": "model-request",
+    "id": "S1-2-phase2-start",
+    "n": 2,
+    "model": "gpt-6-luna",
+    "boot": "A"
+   },
+   {
+    "at": "2026-11-20T21:53:33.901Z",
+    "kind": "tool-start",
+    "id": "S1-2-phase2-start",
+    "boot": "A",
+    "name": "read",
+    "brief": "/workspace/repo/tests/test_convert.py"
+   },
+   {
+    "at": "2026-11-20T21:53:33.901Z",
+    "kind": "tool-start",
+    "id": "S1-2-phase2-start",
+    "boot": "A",
+    "name": "bash",
+    "brief": "cat build/table.json && git status --short"
+   },
+   {
+    "at": "2026-11-20T21:53:35.339Z",
+    "kind": "tool-end",
+    "id": "S1-2-phase2-start",
+    "boot": "A",
+    "name": "bash",
+    "code": 0,
+    "ms": 1438
+   },
+   {
+    "at": "2026-11-20T21:53:35.520Z",
+    "kind": "tool-end",
+    "id": "S1-2-phase2-start",
+    "boot": "A",
+    "name": "read",
+    "code": 0,
+    "ms": 1619
+   },
+   {
+    "at": "2026-11-20T21:53:35.532Z",
+    "kind": "model-request",
+    "id": "S1-2-phase2-start",
+    "n": 3,
+    "model": "gpt-6-luna",
+    "boot": "A"
+   },
+   {
+    "at": "2026-11-20T21:53:41.730Z",
+    "kind": "tool-start",
+    "id": "S1-2-phase2-start",
+    "boot": "A",
+    "name": "edit",
+    "brief": "/workspace/repo/app/convert.py"
+   },
+   {
+    "at": "2026-11-20T21:53:44.878Z",
+    "kind": "tool-end",
+    "id": "S1-2-phase2-start",
+    "boot": "A",
+    "name": "edit",
+    "code": 0,
+    "ms": 3148
+   },
+   {
+    "at": "2026-11-20T21:53:44.891Z",
+    "kind": "model-request",
+    "id": "S1-2-phase2-start",
+    "n": 4,
+    "model": "gpt-6-luna",
+    "boot": "A"
+   },
+   {
+    "at": "2026-11-20T21:53:49.935Z",
+    "kind": "tool-start",
+    "id": "S1-2-phase2-start",
+    "boot": "A",
+    "name": "write",
+    "brief": "/workspace/repo/tests/test_roundtrip.py"
+   },
+   {
+    "at": "2026-11-20T21:53:51.623Z",
+    "kind": "tool-end",
+    "id": "S1-2-phase2-start",
+    "boot": "A",
+    "name": "write",
+    "code": 0,
+    "ms": 1688
+   },
+   {
+    "at": "2026-11-20T21:53:51.637Z",
+    "kind": "model-request",
+    "id": "S1-2-phase2-start",
+    "n": 5,
+    "model": "gpt-6-luna",
+    "boot": "A"
+   },
+   {
+    "at": "2026-11-20T21:53:54.063Z",
+    "kind": "tool-start",
+    "id": "S1-2-phase2-start",
+    "boot": "A",
+    "name": "bash",
+    "brief": "docker build -t contapp:local . && docker run --rm contapp:local && git status --short"
+   },
+   {
+    "at": "2026-11-20T21:53:56.553Z",
+    "kind": "tool-end",
+    "id": "S1-2-phase2-start",
+    "boot": "A",
+    "name": "bash",
+    "code": 0,
+    "ms": 2490
+   },
+   {
+    "at": "2026-11-20T21:53:56.566Z",
+    "kind": "model-request",
+    "id": "S1-2-phase2-start",
+    "n": 6,
+    "model": "gpt-6-luna",
+    "boot": "A"
+   },
+   {
+    "at": "2026-11-20T21:53:59.272Z",
+    "kind": "activation-ended",
+    "id": "S1-2-phase2-start",
+    "outcome": "stop",
+    "requests": 6,
+    "timedOut": false,
+    "limitHit": false
+   },
+   {
+    "at": "2026-11-20T21:54:02.936Z",
+    "kind": "before-switch-notice",
+    "bootAgeSeconds": 105,
+    "guest": "M app/convert.py\n?? tests/test_roundtrip.py\n---\n---\ntable.json\nac45adf0ddd2",
+    "originOid": "175c0aa024a89a43b7a4e8bd0b98e7d9cd03cf97"
+   },
+   {
+    "at": "2026-11-20T21:54:02.937Z",
+    "kind": "admitted",
+    "id": "S1-3-switch-notice",
+    "boot": "A",
+    "session": "S1",
+    "cumulative": 3
+   },
+   {
+    "at": "2026-11-20T21:54:02.938Z",
+    "kind": "model-request",
+    "id": "S1-3-switch-notice",
+    "n": 1,
+    "model": "gpt-6-luna",
+    "boot": "A"
+   },
+   {
+    "at": "2026-11-20T21:54:05.469Z",
+    "kind": "tool-start",
+    "id": "S1-3-switch-notice",
+    "boot": "A",
+    "name": "bash",
+    "brief": "git add app/convert.py tests/test_roundtrip.py && git commit -m 'Add Roman numeral parsing and roundtrip tests' && git push origin cont-work"
+   },
+   {
+    "at": "2026-11-20T21:54:07.859Z",
+    "kind": "tool-end",
+    "id": "S1-3-switch-notice",
+    "boot": "A",
+    "name": "bash",
+    "code": 0,
+    "ms": 2390
+   },
+   {
+    "at": "2026-11-20T21:54:07.872Z",
+    "kind": "model-request",
+    "id": "S1-3-switch-notice",
+    "n": 2,
+    "model": "gpt-6-luna",
+    "boot": "A"
+   },
+   {
+    "at": "2026-11-20T21:54:09.993Z",
+    "kind": "activation-ended",
+    "id": "S1-3-switch-notice",
+    "outcome": "stop",
+    "requests": 2,
+    "timedOut": false,
+    "limitHit": false
+   },
+   {
+    "at": "2026-11-20T21:54:11.765Z",
+    "kind": "gate",
+    "boot": "A",
+    "ok": true,
+    "output": "GATE OK: cont-work 34c9693"
+   },
+   {
+    "at": "2026-11-20T21:54:13.884Z",
+    "kind": "cessation-start",
+    "boot": "A",
+    "reason": "planned-switch"
+   },
+   {
+    "at": "2026-11-20T21:54:18.570Z",
+    "kind": "cessation-confirmed",
+    "boot": "A",
+    "final": {
+     "state": "TERMINATED",
+     "reason": "Success.",
+     "startedAt": "2026-11-20T18:52:14.605000-03:00",
+     "terminatedAt": "2026-11-20T18:54:16.996000-03:00"
+    },
+    "seconds": 122
+   },
+   {
+    "at": "2026-11-20T21:54:19.637Z",
+    "kind": "boot-request",
+    "boot": "B"
+   },
+   {
+    "at": "2026-11-20T21:54:23.821Z",
+    "kind": "boot-up",
+    "boot": "B",
+    "id": "microvm-c9dcded5-f95c-360f-9981-11e1737c1545",
+    "up": "session run2-b id=microvm-c9dcded5-f95c-360f-9981-11e1737c1545 hostkey=SHA256:CIiqaduarEGy9hSmfVMU5QG+8WnVtUUVjdKPYrdmqHM"
+   },
+   {
+    "at": "2026-11-20T21:54:33.380Z",
+    "kind": "boot-ready",
+    "boot": "B",
+    "clonedOid": "34c9693a1c1f2776e3a29e682e8184eb20fc1528"
+   },
+   {
+    "at": "2026-11-20T21:54:34.979Z",
+    "kind": "rebuilt",
+    "clonedOid": "34c9693a1c1f2776e3a29e682e8184eb20fc1528",
+    "equalsWip": true,
+    "guest": "---\n---"
+   },
+   {
+    "at": "2026-11-20T21:54:34.980Z",
+    "kind": "admitted",
+    "id": "S1-4-phase2-finish",
+    "boot": "B",
+    "session": "S1",
+    "cumulative": 4
+   },
+   {
+    "at": "2026-11-20T21:54:34.982Z",
+    "kind": "model-request",
+    "id": "S1-4-phase2-finish",
+    "n": 1,
+    "model": "gpt-6-luna",
+    "boot": "B"
+   },
+   {
+    "at": "2026-11-20T21:54:37.168Z",
+    "kind": "tool-start",
+    "id": "S1-4-phase2-finish",
+    "boot": "B",
+    "name": "read",
+    "brief": "/workspace/repo/TASK.md"
+   },
+   {
+    "at": "2026-11-20T21:54:38.700Z",
+    "kind": "tool-end",
+    "id": "S1-4-phase2-finish",
+    "boot": "B",
+    "name": "read",
+    "code": 0,
+    "ms": 1532
+   },
+   {
+    "at": "2026-11-20T21:54:38.714Z",
+    "kind": "model-request",
+    "id": "S1-4-phase2-finish",
+    "n": 2,
+    "model": "gpt-6-luna",
+    "boot": "B"
+   },
+   {
+    "at": "2026-11-20T21:54:40.635Z",
+    "kind": "tool-start",
+    "id": "S1-4-phase2-finish",
+    "boot": "B",
+    "name": "bash",
+    "brief": "git status --short && ls"
+   },
+   {
+    "at": "2026-11-20T21:54:42.166Z",
+    "kind": "tool-end",
+    "id": "S1-4-phase2-finish",
+    "boot": "B",
+    "name": "bash",
+    "code": 0,
+    "ms": 1531
+   },
+   {
+    "at": "2026-11-20T21:54:42.180Z",
+    "kind": "model-request",
+    "id": "S1-4-phase2-finish",
+    "n": 3,
+    "model": "gpt-6-luna",
+    "boot": "B"
+   },
+   {
+    "at": "2026-11-20T21:54:47.449Z",
+    "kind": "tool-start",
+    "id": "S1-4-phase2-finish",
+    "boot": "B",
+    "name": "write",
+    "brief": "/workspace/repo/app/report.py"
+   },
+   {
+    "at": "2026-11-20T21:54:48.906Z",
+    "kind": "tool-end",
+    "id": "S1-4-phase2-finish",
+    "boot": "B",
+    "name": "write",
+    "code": 0,
+    "ms": 1457
+   },
+   {
+    "at": "2026-11-20T21:54:48.920Z",
+    "kind": "model-request",
+    "id": "S1-4-phase2-finish",
+    "n": 4,
+    "model": "gpt-6-luna",
+    "boot": "B"
+   },
+   {
+    "at": "2026-11-20T21:54:51.394Z",
+    "kind": "tool-start",
+    "id": "S1-4-phase2-finish",
+    "boot": "B",
+    "name": "bash",
+    "brief": "./gen.sh && python3 -m app.report && cat REPORT.md && docker build -t contapp:local . && docker run --rm contapp:local"
+   },
+   {
+    "at": "2026-11-20T21:54:55.467Z",
+    "kind": "tool-end",
+    "id": "S1-4-phase2-finish",
+    "boot": "B",
+    "name": "bash",
+    "code": 0,
+    "ms": 4073
+   },
+   {
+    "at": "2026-11-20T21:54:55.480Z",
+    "kind": "model-request",
+    "id": "S1-4-phase2-finish",
+    "n": 5,
+    "model": "gpt-6-luna",
+    "boot": "B"
+   },
+   {
+    "at": "2026-11-20T21:54:57.948Z",
+    "kind": "tool-start",
+    "id": "S1-4-phase2-finish",
+    "boot": "B",
+    "name": "bash",
+    "brief": "git status --short && git add app/report.py REPORT.md && git commit -m 'Add roundtrip report' && git push origin cont-work"
+   },
+   {
+    "at": "2026-11-20T21:55:00.129Z",
+    "kind": "tool-end",
+    "id": "S1-4-phase2-finish",
+    "boot": "B",
+    "name": "bash",
+    "code": 0,
+    "ms": 2181
+   },
+   {
+    "at": "2026-11-20T21:55:00.143Z",
+    "kind": "model-request",
+    "id": "S1-4-phase2-finish",
+    "n": 6,
+    "model": "gpt-6-luna",
+    "boot": "B"
+   },
+   {
+    "at": "2026-11-20T21:55:02.645Z",
+    "kind": "activation-ended",
+    "id": "S1-4-phase2-finish",
+    "outcome": "stop",
+    "requests": 6,
+    "timedOut": false,
+    "limitHit": false
+   },
+   {
+    "at": "2026-11-20T21:55:07.687Z",
+    "kind": "verify-phase",
+    "phase": 2,
+    "ok": true,
+    "originOid": "84363b7917a0c9ca84d8e6259fab338b4f15de10"
+   },
+   {
+    "at": "2026-11-20T21:55:09.770Z",
+    "kind": "admitted",
+    "id": "S1-5-phase3-start",
+    "boot": "B",
+    "session": "S1",
+    "cumulative": 5
+   },
+   {
+    "at": "2026-11-20T21:55:09.772Z",
+    "kind": "model-request",
+    "id": "S1-5-phase3-start",
+    "n": 1,
+    "model": "gpt-6-luna",
+    "boot": "B"
+   },
+   {
+    "at": "2026-11-20T21:55:11.909Z",
+    "kind": "tool-start",
+    "id": "S1-5-phase3-start",
+    "boot": "B",
+    "name": "read",
+    "brief": "/workspace/repo/TASK.md"
+   },
+   {
+    "at": "2026-11-20T21:55:13.474Z",
+    "kind": "tool-end",
+    "id": "S1-5-phase3-start",
+    "boot": "B",
+    "name": "read",
+    "code": 0,
+    "ms": 1565
+   },
+   {
+    "at": "2026-11-20T21:55:13.489Z",
+    "kind": "model-request",
+    "id": "S1-5-phase3-start",
+    "n": 2,
+    "model": "gpt-6-luna",
+    "boot": "B"
+   },
+   {
+    "at": "2026-11-20T21:55:15.880Z",
+    "kind": "tool-start",
+    "id": "S1-5-phase3-start",
+    "boot": "B",
+    "name": "read",
+    "brief": "/workspace/repo/app/report.py"
+   },
+   {
+    "at": "2026-11-20T21:55:17.513Z",
+    "kind": "tool-end",
+    "id": "S1-5-phase3-start",
+    "boot": "B",
+    "name": "read",
+    "code": 0,
+    "ms": 1633
+   },
+   {
+    "at": "2026-11-20T21:55:17.526Z",
+    "kind": "model-request",
+    "id": "S1-5-phase3-start",
+    "n": 3,
+    "model": "gpt-6-luna",
+    "boot": "B"
+   },
+   {
+    "at": "2026-11-20T21:55:27.949Z",
+    "kind": "tool-start",
+    "id": "S1-5-phase3-start",
+    "boot": "B",
+    "name": "edit",
+    "brief": "/workspace/repo/app/report.py"
+   },
+   {
+    "at": "2026-11-20T21:55:30.999Z",
+    "kind": "tool-end",
+    "id": "S1-5-phase3-start",
+    "boot": "B",
+    "name": "edit",
+    "code": 0,
+    "ms": 3050
+   },
+   {
+    "at": "2026-11-20T21:55:31.012Z",
+    "kind": "model-request",
+    "id": "S1-5-phase3-start",
+    "n": 4,
+    "model": "gpt-6-luna",
+    "boot": "B"
+   },
+   {
+    "at": "2026-11-20T21:55:37.396Z",
+    "kind": "tool-start",
+    "id": "S1-5-phase3-start",
+    "boot": "B",
+    "name": "write",
+    "brief": "/workspace/repo/tests/test_report.py"
+   },
+   {
+    "at": "2026-11-20T21:55:39.078Z",
+    "kind": "tool-end",
+    "id": "S1-5-phase3-start",
+    "boot": "B",
+    "name": "write",
+    "code": 0,
+    "ms": 1682
+   },
+   {
+    "at": "2026-11-20T21:55:39.091Z",
+    "kind": "model-request",
+    "id": "S1-5-phase3-start",
+    "n": 5,
+    "model": "gpt-6-luna",
+    "boot": "B"
+   },
+   {
+    "at": "2026-11-20T21:55:41.598Z",
+    "kind": "tool-start",
+    "id": "S1-5-phase3-start",
+    "boot": "B",
+    "name": "bash",
+    "brief": "docker build -t contapp:local . && docker run --rm contapp:local"
+   },
+   {
+    "at": "2026-11-20T21:55:44.207Z",
+    "kind": "tool-end",
+    "id": "S1-5-phase3-start",
+    "boot": "B",
+    "name": "bash",
+    "code": 0,
+    "ms": 2609
+   },
+   {
+    "at": "2026-11-20T21:55:44.220Z",
+    "kind": "model-request",
+    "id": "S1-5-phase3-start",
+    "n": 6,
+    "model": "gpt-6-luna",
+    "boot": "B"
+   },
+   {
+    "at": "2026-11-20T21:55:48.400Z",
+    "kind": "tool-start",
+    "id": "S1-5-phase3-start",
+    "boot": "B",
+    "name": "bash",
+    "brief": "git add app/report.py tests/test_report.py && git commit -m 'Add max option for reports' && python3 -m app.report --max 100 && cat REPORT-100.md && git status --short"
+   },
+   {
+    "at": "2026-11-20T21:55:50.865Z",
+    "kind": "tool-end",
+    "id": "S1-5-phase3-start",
+    "boot": "B",
+    "name": "bash",
+    "code": 0,
+    "ms": 2465
+   },
+   {
+    "at": "2026-11-20T21:55:50.877Z",
+    "kind": "model-request",
+    "id": "S1-5-phase3-start",
+    "n": 7,
+    "model": "gpt-6-luna",
+    "boot": "B"
+   },
+   {
+    "at": "2026-11-20T21:55:52.910Z",
+    "kind": "tool-start",
+    "id": "S1-5-phase3-start",
+    "boot": "B",
+    "name": "bash",
+    "brief": "./effect.sh e1"
+   },
+   {
+    "at": "2026-11-20T21:56:08.421Z",
+    "kind": "loss-injection",
+    "effectAtKill": 1,
+    "guestBeforeKill": "?? REPORT-100.md\n---\n1607163 Add max option for reports\n---\ntable.json\n388a343c1571",
+    "originBefore": "84363b7917a0c9ca84d8e6259fab338b4f15de10",
+    "killedDuring": "S1-5-phase3-start"
+   },
+   {
+    "at": "2026-11-20T21:56:08.422Z",
+    "kind": "cessation-start",
+    "boot": "B",
+    "reason": "killed-before-push"
+   },
+   {
+    "at": "2026-11-20T21:56:13.106Z",
+    "kind": "cessation-confirmed",
+    "boot": "B",
+    "final": {
+     "state": "TERMINATED",
+     "reason": "Success.",
+     "startedAt": "2026-11-20T18:54:20.443000-03:00",
+     "terminatedAt": "2026-11-20T18:56:10.713000-03:00"
+    },
+    "seconds": 110
+   },
+   {
+    "at": "2026-11-20T21:56:55.717Z",
+    "kind": "tool-end",
+    "id": "S1-5-phase3-start",
+    "boot": "B",
+    "name": "bash",
+    "code": 255,
+    "diagnosis": "ENVIRONMENT_TERMINATED",
+    "microvm": "TERMINATED",
+    "ms": 62807
+   },
+   {
+    "at": "2026-11-20T21:56:55.719Z",
+    "kind": "model-request",
+    "id": "S1-5-phase3-start",
+    "n": 8,
+    "model": "gpt-6-luna",
+    "boot": null
+   },
+   {
+    "at": "2026-11-20T21:57:00.422Z",
+    "kind": "tool-refused-no-environment",
+    "id": "S1-5-phase3-start",
+    "name": "bash"
+   },
+   {
+    "at": "2026-11-20T21:57:00.424Z",
+    "kind": "model-request",
+    "id": "S1-5-phase3-start",
+    "n": 9,
+    "model": "gpt-6-luna",
+    "boot": null
+   },
+   {
+    "at": "2026-11-20T21:57:03.810Z",
+    "kind": "activation-ended",
+    "id": "S1-5-phase3-start",
+    "outcome": "stop",
+    "requests": 9,
+    "timedOut": false,
+    "limitHit": false
+   },
+   {
+    "at": "2026-11-20T21:57:10.082Z",
+    "kind": "session-closed",
+    "session": "S1"
+   },
+   {
+    "at": "2026-11-20T21:57:10.083Z",
+    "kind": "environment-lost-before-push",
+    "work": "W-run2",
+    "boot": "B",
+    "microvmFinal": {
+     "state": "TERMINATED",
+     "reason": "Success.",
+     "startedAt": "2026-11-20T18:54:20.443000-03:00",
+     "terminatedAt": "2026-11-20T18:56:10.713000-03:00"
+    },
+    "lastPublishedOid": "84363b7917a0c9ca84d8e6259fab338b4f15de10",
+    "lostSince": "everything local after the last published OID",
+    "microvmSeconds": 110,
+    "recordedAt": "2026-11-20T21:57:10.083Z"
+   },
+   {
+    "at": "2026-11-20T21:57:11.164Z",
+    "kind": "boot-request",
+    "boot": "C"
+   },
+   {
+    "at": "2026-11-20T21:57:15.364Z",
+    "kind": "boot-up",
+    "boot": "C",
+    "id": "microvm-482bc0bf-19c7-397c-9174-47426cc75691",
+    "up": "session run2-c id=microvm-482bc0bf-19c7-397c-9174-47426cc75691 hostkey=SHA256:6dAiR+mhPIfmWfMPo2ZIPHbtzAvLEDP2o2wcc4EraOY"
+   },
+   {
+    "at": "2026-11-20T21:57:37.423Z",
+    "kind": "boot-ready",
+    "boot": "C",
+    "clonedOid": "84363b7917a0c9ca84d8e6259fab338b4f15de10"
+   },
+   {
+    "at": "2026-11-20T21:57:37.427Z",
+    "kind": "session-open",
+    "session": "S2",
+    "id": "01a1faf7-0e12-71fc-9e1a-f460c0c82812",
+    "authType": "oauth",
+    "tools": [
+     "bash",
+     "read",
+     "write",
+     "edit"
+    ]
+   },
+   {
+    "at": "2026-11-20T21:57:37.428Z",
+    "kind": "admitted",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "session": "S2",
+    "cumulative": 6
+   },
+   {
+    "at": "2026-11-20T21:57:37.430Z",
+    "kind": "model-request",
+    "id": "S2-6-phase3-substitute",
+    "n": 1,
+    "model": "gpt-6-luna",
+    "boot": "C"
+   },
+   {
+    "at": "2026-11-20T21:57:40.939Z",
+    "kind": "tool-start",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "read",
+    "brief": "/workspace/repo/TASK.md"
+   },
+   {
+    "at": "2026-11-20T21:57:40.939Z",
+    "kind": "tool-start",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "bash",
+    "brief": "git status --short --branch && git log --oneline --decorate -8 && git remote -v"
+   },
+   {
+    "at": "2026-11-20T21:57:44.756Z",
+    "kind": "tool-end",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "read",
+    "code": 0,
+    "ms": 3817
+   },
+   {
+    "at": "2026-11-20T21:57:44.757Z",
+    "kind": "tool-end",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "bash",
+    "code": 0,
+    "ms": 3818
+   },
+   {
+    "at": "2026-11-20T21:57:44.777Z",
+    "kind": "model-request",
+    "id": "S2-6-phase3-substitute",
+    "n": 2,
+    "model": "gpt-6-luna",
+    "boot": "C"
+   },
+   {
+    "at": "2026-11-20T21:57:47.535Z",
+    "kind": "tool-start",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "bash",
+    "brief": "cat app/report.py; printf '\\n--- tests ---\\n'; ls tests; cat app/convert.py; printf '\\n--- files ---\\n'; git status --short; git show --stat --oneline HEAD;"
+   },
+   {
+    "at": "2026-11-20T21:57:49.071Z",
+    "kind": "tool-end",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "bash",
+    "code": 0,
+    "ms": 1536
+   },
+   {
+    "at": "2026-11-20T21:57:49.087Z",
+    "kind": "model-request",
+    "id": "S2-6-phase3-substitute",
+    "n": 3,
+    "model": "gpt-6-luna",
+    "boot": "C"
+   },
+   {
+    "at": "2026-11-20T21:57:59.642Z",
+    "kind": "tool-start",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "edit",
+    "brief": "/workspace/repo/app/report.py"
+   },
+   {
+    "at": "2026-11-20T21:58:02.798Z",
+    "kind": "tool-end",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "edit",
+    "code": 0,
+    "ms": 3156
+   },
+   {
+    "at": "2026-11-20T21:58:02.811Z",
+    "kind": "model-request",
+    "id": "S2-6-phase3-substitute",
+    "n": 4,
+    "model": "gpt-6-luna",
+    "boot": "C"
+   },
+   {
+    "at": "2026-11-20T21:58:08.710Z",
+    "kind": "tool-start",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "write",
+    "brief": "/workspace/repo/tests/test_report_max.py"
+   },
+   {
+    "at": "2026-11-20T21:58:10.363Z",
+    "kind": "tool-end",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "write",
+    "code": 0,
+    "ms": 1653
+   },
+   {
+    "at": "2026-11-20T21:58:10.375Z",
+    "kind": "model-request",
+    "id": "S2-6-phase3-substitute",
+    "n": 5,
+    "model": "gpt-6-luna",
+    "boot": "C"
+   },
+   {
+    "at": "2026-11-20T21:58:13.026Z",
+    "kind": "tool-start",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "bash",
+    "brief": "docker build -t contapp:local . && docker run --rm contapp:local"
+   },
+   {
+    "at": "2026-11-20T21:58:19.275Z",
+    "kind": "tool-end",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "bash",
+    "code": 1,
+    "ms": 6249
+   },
+   {
+    "at": "2026-11-20T21:58:19.289Z",
+    "kind": "model-request",
+    "id": "S2-6-phase3-substitute",
+    "n": 6,
+    "model": "gpt-6-luna",
+    "boot": "C"
+   },
+   {
+    "at": "2026-11-20T21:58:21.963Z",
+    "kind": "tool-start",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "bash",
+    "brief": "./gen.sh && docker run --rm contapp:local"
+   },
+   {
+    "at": "2026-11-20T21:58:25.665Z",
+    "kind": "tool-end",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "bash",
+    "code": 1,
+    "ms": 3702
+   },
+   {
+    "at": "2026-11-20T21:58:25.678Z",
+    "kind": "model-request",
+    "id": "S2-6-phase3-substitute",
+    "n": 7,
+    "model": "gpt-6-luna",
+    "boot": "C"
+   },
+   {
+    "at": "2026-11-20T21:58:28.534Z",
+    "kind": "tool-start",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "bash",
+    "brief": "cat Dockerfile; cat .dockerignore; ls -la; cat tests/test_roundtrip.py;"
+   },
+   {
+    "at": "2026-11-20T21:58:30.105Z",
+    "kind": "tool-end",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "bash",
+    "code": 0,
+    "ms": 1571
+   },
+   {
+    "at": "2026-11-20T21:58:30.120Z",
+    "kind": "model-request",
+    "id": "S2-6-phase3-substitute",
+    "n": 8,
+    "model": "gpt-6-luna",
+    "boot": "C"
+   },
+   {
+    "at": "2026-11-20T21:58:32.792Z",
+    "kind": "tool-start",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "bash",
+    "brief": "git check-ignore -v build/table.json; cat .gitignore; docker build --no-cache -t contapp:local . >/dev/null && docker run --rm contapp:local"
+   },
+   {
+    "at": "2026-11-20T21:58:35.116Z",
+    "kind": "tool-end",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "bash",
+    "code": 0,
+    "ms": 2324
+   },
+   {
+    "at": "2026-11-20T21:58:35.131Z",
+    "kind": "model-request",
+    "id": "S2-6-phase3-substitute",
+    "n": 9,
+    "model": "gpt-6-luna",
+    "boot": "C"
+   },
+   {
+    "at": "2026-11-20T21:58:37.100Z",
+    "kind": "tool-start",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "bash",
+    "brief": "cat tests/test_convert.py;"
+   },
+   {
+    "at": "2026-11-20T21:58:38.501Z",
+    "kind": "tool-end",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "bash",
+    "code": 0,
+    "ms": 1401
+   },
+   {
+    "at": "2026-11-20T21:58:38.514Z",
+    "kind": "model-request",
+    "id": "S2-6-phase3-substitute",
+    "n": 10,
+    "model": "gpt-6-luna",
+    "boot": "C"
+   },
+   {
+    "at": "2026-11-20T21:58:46.478Z",
+    "kind": "tool-start",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "edit",
+    "brief": "/workspace/repo/tests/test_report_max.py"
+   },
+   {
+    "at": "2026-11-20T21:58:49.745Z",
+    "kind": "tool-end",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "edit",
+    "code": 0,
+    "ms": 3267
+   },
+   {
+    "at": "2026-11-20T21:58:49.759Z",
+    "kind": "model-request",
+    "id": "S2-6-phase3-substitute",
+    "n": 11,
+    "model": "gpt-6-luna",
+    "boot": "C"
+   },
+   {
+    "at": "2026-11-20T21:58:52.015Z",
+    "kind": "tool-start",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "bash",
+    "brief": "docker build -t contapp:local . && docker run --rm contapp:local"
+   },
+   {
+    "at": "2026-11-20T21:58:54.467Z",
+    "kind": "tool-end",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "bash",
+    "code": 0,
+    "ms": 2452
+   },
+   {
+    "at": "2026-11-20T21:58:54.482Z",
+    "kind": "model-request",
+    "id": "S2-6-phase3-substitute",
+    "n": 12,
+    "model": "gpt-6-luna",
+    "boot": "C"
+   },
+   {
+    "at": "2026-11-20T21:58:56.864Z",
+    "kind": "tool-start",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "bash",
+    "brief": "git add app/report.py tests/test_report_max.py && git commit -m 'Add max option to report'"
+   },
+   {
+    "at": "2026-11-20T21:58:58.404Z",
+    "kind": "tool-end",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "bash",
+    "code": 0,
+    "ms": 1540
+   },
+   {
+    "at": "2026-11-20T21:58:58.418Z",
+    "kind": "model-request",
+    "id": "S2-6-phase3-substitute",
+    "n": 13,
+    "model": "gpt-6-luna",
+    "boot": "C"
+   },
+   {
+    "at": "2026-11-20T21:59:00.701Z",
+    "kind": "tool-start",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "bash",
+    "brief": "python3 -m app.report --max 100 && cat REPORT-100.md && git status --short"
+   },
+   {
+    "at": "2026-11-20T21:59:03.580Z",
+    "kind": "tool-end",
+    "id": "S2-6-phase3-substitute",
+    "boot": "C",
+    "name": "bash",
+    "code": 0,
+    "ms": 2879
+   },
+   {
+    "at": "2026-11-20T21:59:03.594Z",
+    "kind": "model-request",
+    "id": "S2-6-phase3-substitute",
+    "n": 14,
+    "model": "gpt-6-luna",
+    "boot": "C"
+   },
+   {
+    "at": "2026-11-20T21:59:07.181Z",
+    "kind": "activation-ended",
+    "id": "S2-6-phase3-substitute",
+    "outcome": "stop",
+    "requests": 14,
+    "timedOut": false,
+    "limitHit": false
+   },
+   {
+    "at": "2026-11-20T21:59:11.302Z",
+    "kind": "verify-phase",
+    "phase": 3,
+    "ok": false,
+    "originOid": "84363b7917a0c9ca84d8e6259fab338b4f15de10"
+   },
+   {
+    "at": "2026-11-20T21:59:12.859Z",
+    "kind": "gate",
+    "boot": "C",
+    "ok": false,
+    "output": "GATE REFUSED: workspace-not-clean"
+   },
+   {
+    "at": "2026-11-20T21:59:16.991Z",
+    "kind": "session-closed",
+    "session": "S1"
+   },
+   {
+    "at": "2026-11-20T21:59:16.992Z",
+    "kind": "session-closed",
+    "session": "S2"
+   },
+   {
+    "at": "2026-11-20T21:59:16.994Z",
+    "kind": "cessation-start",
+    "boot": "C",
+    "reason": "campaign-end"
+   },
+   {
+    "at": "2026-11-20T21:59:21.663Z",
+    "kind": "cessation-confirmed",
+    "boot": "C",
+    "final": {
+     "state": "TERMINATED",
+     "reason": "Success.",
+     "startedAt": "2026-11-20T18:57:11.970000-03:00",
+     "terminatedAt": "2026-11-20T18:59:20.029000-03:00"
+    },
+    "seconds": 128
+   }
+  ]
+ },
+ "run1": {
+  "note": "runner defect: the Pi session was created with no active tools, so the model answered with text only; a second defect (watcher deadlock) hung the fifth activation until the process was stopped by the operator's agent. Not evidence about the agent.",
+  "startedAt": "2026-11-20T20:51:06.912Z",
+  "boots": [
+   {
+    "label": "A",
+    "id": "microvm-d1a9c040-582f-3516-9a35-<acct>",
+    "requestedAt": "2026-11-20T20:51:27.770Z",
+    "readyAt": "2026-11-20T20:51:36.395Z",
+    "clonedOid": "aa8ee5dffa3917f6f440e515d7475916d2592d71",
+    "endReason": "planned-switch",
+    "cessationStartedAt": "2026-11-20T20:52:21.849Z",
+    "cessationConfirmedAt": "2026-11-20T20:52:30.155Z",
+    "final": {
+     "state": "TERMINATED",
+     "reason": "Success.",
+     "startedAt": "2026-11-20T17:51:21.909000-03:00",
+     "terminatedAt": "2026-11-20T17:52:25.930000-03:00"
+    },
+    "seconds": 64
+   },
+   {
+    "label": "B",
+    "id": "microvm-81bbf00e-d785-3a40-976f-3a8fd07a0687",
+    "requestedAt": "2026-11-20T20:52:40.234Z",
+    "readyAt": "2026-11-20T20:52:48.698Z",
+    "clonedOid": "aa8ee5dffa3917f6f440e515d7475916d2592d71",
+    "endReason": null,
+    "cessationStartedAt": null,
+    "cessationConfirmedAt": null,
+    "final": null,
+    "seconds": null
+   }
+  ],
+  "activations": [
+   {
+    "id": "S1-1-phase1",
+    "step": "phase1",
+    "session": "S1",
+    "sessionId": "01a1faba-efcf-775e-b0dc-e0aae4130bd8",
+    "boot": "A",
+    "requests": 1,
+    "promptSha256": "f024f0ff296c90983f16a0c11dbd793d3d962abc50bad8a920ab12a1f7aafb5f",
+    "startedAt": "2026-11-20T20:51:57.533Z",
+    "endedAt": "2026-11-20T20:52:03.028Z",
+    "outcome": "stop",
+    "error": null,
+    "timedOut": null,
+    "limitHit": null,
+    "usage": [
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "stop",
+      "usage": {
+       "input": 135,
+       "output": 54,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 189,
+       "cost": {
+        "input": 1.3500000000000001e-05,
+        "output": 2.7e-05,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 4.05e-05,
+        "totalFromProvider": false
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "S1-2-phase2-start",
+    "step": "phase2-start",
+    "session": "S1",
+    "sessionId": "01a1faba-efcf-775e-b0dc-e0aae4130bd8",
+    "boot": "A",
+    "requests": 1,
+    "promptSha256": "787677258a2873149b1a7e6af413263977ad04ad22d733b3a7e600bada92977f",
+    "startedAt": "2026-11-20T20:52:08.074Z",
+    "endedAt": "2026-11-20T20:52:11.211Z",
+    "outcome": "stop",
+    "error": null,
+    "timedOut": null,
+    "limitHit": null,
+    "usage": [
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "stop",
+      "usage": {
+       "input": 223,
+       "output": 65,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 288,
+       "cost": {
+        "input": 2.2300000000000003e-05,
+        "output": 3.25e-05,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 5.4800000000000004e-05,
+        "totalFromProvider": false
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "S1-3-switch-notice",
+    "step": "switch-notice",
+    "session": "S1",
+    "sessionId": "01a1faba-efcf-775e-b0dc-e0aae4130bd8",
+    "boot": "A",
+    "requests": 1,
+    "promptSha256": "70a48c30429e5caf02ad61868cb9fd303ca2973817934b718e776a310afc472d",
+    "startedAt": "2026-11-20T20:52:14.860Z",
+    "endedAt": "2026-11-20T20:52:17.743Z",
+    "outcome": "stop",
+    "error": null,
+    "timedOut": null,
+    "limitHit": null,
+    "usage": [
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "stop",
+      "usage": {
+       "input": 352,
+       "output": 73,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 425,
+       "cost": {
+        "input": 3.52e-05,
+        "output": 3.65e-05,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 7.170000000000001e-05,
+        "totalFromProvider": false
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "S1-4-phase2-finish",
+    "step": "phase2-finish",
+    "session": "S1",
+    "sessionId": "01a1faba-efcf-775e-b0dc-e0aae4130bd8",
+    "boot": "B",
+    "requests": 1,
+    "promptSha256": "43fa60808892939afe51177a0f0aa1681b1fc2da993f6f46a3777af5d1074083",
+    "startedAt": "2026-11-20T20:52:51.253Z",
+    "endedAt": "2026-11-20T20:52:54.051Z",
+    "outcome": "stop",
+    "error": null,
+    "timedOut": null,
+    "limitHit": null,
+    "usage": [
+     {
+      "model": "gpt-6-luna",
+      "stopReason": "stop",
+      "usage": {
+       "input": 505,
+       "output": 66,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "reasoning": 0,
+       "totalTokens": 571,
+       "cost": {
+        "input": 5.050000000000001e-05,
+        "output": 3.2999999999999996e-05,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 8.35e-05,
+        "totalFromProvider": false
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "S1-5-phase3-start",
+    "step": "phase3-start",
+    "session": "S1",
+    "sessionId": "01a1faba-efcf-775e-b0dc-e0aae4130bd8",
+    "boot": "B",
+    "requests": 1,
+    "promptSha256": "cbeda147f14fea640dfbc681239af2a28780f7c0f799d9779e27cef32ae53317",
+    "startedAt": "2026-11-20T20:53:01.080Z",
+    "endedAt": null,
+    "outcome": null,
+    "error": null,
+    "timedOut": null,
+    "limitHit": null,
+    "usage": null
+   }
+  ],
+  "checks": {
+   "phase1": {
+    "ok": false,
+    "originOid": "aa8ee5dffa3917f6f440e515d7475916d2592d71",
+    "boot": "A",
+    "tail": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/tmp/verify-1-e2cf8459/app/convert.py\", line 2, in to_roman\n    raise NotImplementedError\nNotImplementedError"
+   },
+   "phase2": {
+    "ok": false,
+    "originOid": "aa8ee5dffa3917f6f440e515d7475916d2592d71",
+    "boot": "B",
+    "tail": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/tmp/verify-2-00f30eb6/app/convert.py\", line 2, in to_roman\n    raise NotImplementedError\nNotImplementedError"
+   },
+   "beforeNotice": {
+    "bootAgeSeconds": 49,
+    "guest": "---\n---",
+    "originOid": "aa8ee5dffa3917f6f440e515d7475916d2592d71"
+   },
+   "switch": {
+    "gate": true,
+    "noticeBootAgeSeconds": 49,
+    "wipOid": "aa8ee5dffa3917f6f440e515d7475916d2592d71",
+    "bootAgeAtGate": 60
+   }
+  },
+  "finalTexts": {
+   "S1-1-phase1": "I’ll inspect `TASK.md` and carry out only phase 1.I’ll inspect `TASK.md` and carry out only phase 1.",
+   "S1-2-phase2-start": "I’ll check the task instructions and current worktree, then do only steps 2.1 and 2.2.I’ll inspect `TASK.md` and the current worktree, then complete only steps 2.1 and 2.2 without committing.",
+   "S1-3-switch-notice": "I’ll review the task and worktree, then commit and push the current work in progress to `origin/cont-work`.I’ll check the current worktree and publish its changes to `origin/cont-work` in a WIP commit.",
+   "S1-4-phase2-finish": "I’ll inspect `TASK.md` and the checked-out worktree, then complete only steps 2.3 and 2.4.I’ll read `TASK.md` and inspect the worktree, then complete steps 2.3 and 2.4 only."
+  },
+  "bootBFinal": "TERMINATED by the service: MicroVM exceeded maximum lifetime (startedAt 20:52:33Z, terminatedAt 21:07:37Z)"
+ },
+ "rehearsal": {
+  "kind": "scripted-rehearsal-no-model",
+  "modelRequests": 0,
+  "totals": {
+   "activations": 6,
+   "modelRequests": 0,
+   "boots": 3,
+   "microvmSeconds": 203
+  },
+  "boots": [
+   {
+    "label": "A",
+    "id": "microvm-5b3e98e3-b531-3195-a173-d862a85b1f18",
+    "requestedAt": "2026-11-20T20:46:24.732Z",
+    "readyAt": "2026-11-20T20:46:49.296Z",
+    "clonedOid": "cf32ba4071f9484b5bc33f513fe49599a871ae3d",
+    "endReason": "planned-switch",
+    "cessationStartedAt": "2026-11-20T20:47:38.341Z",
+    "cessationConfirmedAt": "2026-11-20T20:47:45.294Z",
+    "final": {
+     "state": "TERMINATED",
+     "reason": "Success.",
+     "startedAt": "2026-11-20T17:46:19.602000-03:00",
+     "terminatedAt": "2026-11-20T17:47:42.039000-03:00"
+    },
+    "seconds": 82
+   },
+   {
+    "label": "B",
+    "id": "microvm-12f3935c-9231-3c31-94cf-1c0ca8a0eb74",
+    "requestedAt": "2026-11-20T20:47:52.167Z",
+    "readyAt": "2026-11-20T20:48:09.334Z",
+    "clonedOid": "06ce7c7ef6f21c08a94f888fd7fed05698ba2c28",
+    "endReason": "killed-before-push",
+    "cessationStartedAt": "2026-11-20T20:48:56.501Z",
+    "cessationConfirmedAt": "2026-11-20T20:49:02.797Z",
+    "final": {
+     "state": "TERMINATED",
+     "reason": "Success.",
+     "startedAt": "2026-11-20T17:47:47.774000-03:00",
+     "terminatedAt": "2026-11-20T17:49:00.189000-03:00"
+    },
+    "seconds": 72
+   },
+   {
+    "label": "C",
+    "id": "microvm-e0244f25-04fa-303f-be32-f80567701751",
+    "requestedAt": "2026-11-20T20:49:59.100Z",
+    "readyAt": "2026-11-20T20:50:10.702Z",
+    "clonedOid": "34802178cf30b790934336a2f187f39cb7211e61",
+    "endReason": "campaign-end",
+    "cessationStartedAt": "2026-11-20T20:50:39.712Z",
+    "cessationConfirmedAt": "2026-11-20T20:50:46.571Z",
+    "final": {
+     "state": "TERMINATED",
+     "reason": "Success.",
+     "startedAt": "2026-11-20T17:49:54.669000-03:00",
+     "terminatedAt": "2026-11-20T17:50:43.323000-03:00"
+    },
+    "seconds": 49
+   }
+  ],
+  "checks": {
+   "baseline": {
+    "oid": "cf32ba4071f9484b5bc33f513fe49599a871ae3d",
+    "effects": 0
+   },
+   "preflight": {
+    "write": true,
+    "bash": true,
+    "read": true,
+    "edit": true,
+    "filter": true,
+    "absentOnHost": true,
+    "barrier": true,
+    "gate": true,
+    "guestHost": "localhost aarch64"
+   },
+   "s1Before": {
+    "id": "scripted-S1"
+   },
+   "phase1": {
+    "ok": true,
+    "originOid": "b0e0a8c013c1c6704782a6146047823bc2fe71ab",
+    "boot": "A",
+    "tail": "Ran 2 tests in 0.000s\n\nOK"
+   },
+   "beforeNotice": {
+    "bootAgeSeconds": 69,
+    "guest": "M app/convert.py\n?? tests/test_roundtrip.py\n---\n---\ntable.json\na34b66352ee2",
+    "originOid": "b0e0a8c013c1c6704782a6146047823bc2fe71ab"
+   },
+   "switch": {
+    "gate": true,
+    "noticeBootAgeSeconds": 69,
+    "wipOid": "06ce7c7ef6f21c08a94f888fd7fed05698ba2c28",
+    "bootAgeAtGate": 79
+   },
+   "rebuiltB": {
+    "clonedOid": "06ce7c7ef6f21c08a94f888fd7fed05698ba2c28",
+    "equalsWip": true,
+    "guest": "---\n---"
+   },
+   "s1AfterSwitch": {
+    "id": "scripted-S1",
+    "same": true
+   },
+   "phase2": {
+    "ok": true,
+    "originOid": "34802178cf30b790934336a2f187f39cb7211e61",
+    "boot": "B",
+    "tail": "Ran 3 tests in 0.023s\n\nOK"
+   },
+   "effectBefore": 0,
+   "loss": {
+    "effectAtKill": 1,
+    "guestBeforeKill": "?? REPORT-100.md\n?? TASK.local\n---\naf88ff1 phase 3.1 local\n---\ntable.json\n5ff3563d7c0f",
+    "originBefore": "34802178cf30b790934336a2f187f39cb7211e61",
+    "killedDuring": "S1-5-phase3-start"
+   },
+   "lossAfter": {
+    "originAfter": "34802178cf30b790934336a2f187f39cb7211e61",
+    "effect": 1,
+    "s1Files": []
+   },
+   "occurrence": {
+    "kind": "environment-lost-before-push",
+    "work": "W-reh1",
+    "boot": "B",
+    "microvmFinal": {
+     "state": "TERMINATED",
+     "reason": "Success.",
+     "startedAt": "2026-11-20T17:47:47.774000-03:00",
+     "terminatedAt": "2026-11-20T17:49:00.189000-03:00"
+    },
+    "lastPublishedOid": "34802178cf30b790934336a2f187f39cb7211e61",
+    "lostSince": "everything local after the last published OID",
+    "microvmSeconds": 72,
+    "recordedAt": "2026-11-20T20:49:51.833Z"
+   },
+   "s2": {
+    "id": "scripted-S2",
+    "distinct": true,
+    "s1FilesAfter": [],
+    "s1Unchanged": true
+   },
+   "phase3": {
+    "ok": true,
+    "originOid": "e08c22c6a601aa0596f853a7dd92da6f2419e9dc",
+    "boot": "C",
+    "tail": "Ran 3 tests in 0.023s\n\nOK"
+   },
+   "finalGate": true,
+   "effectFinal": 1,
+   "activeMicrovmsAtEnd": 0
+  },
+  "activations": [
+   {
+    "id": "S1-1-phase1",
+    "step": "phase1",
+    "session": "S1",
+    "sessionId": "scripted-S1",
+    "boot": "A",
+    "requests": 0,
+    "promptSha256": "4e2796e0c1fa1b6f8e60e85e9bc35ef22ac2fac02d54d1d1d5757f0d05dee0e1",
+    "startedAt": "2026-11-20T20:47:10.049Z",
+    "endedAt": "2026-11-20T20:47:18.416Z",
+    "outcome": "scripted",
+    "error": null,
+    "timedOut": null,
+    "limitHit": null,
+    "usage": null
+   },
+   {
+    "id": "S1-2-phase2-start",
+    "step": "phase2-start",
+    "session": "S1",
+    "sessionId": "scripted-S1",
+    "boot": "A",
+    "requests": 0,
+    "promptSha256": "787677258a2873149b1a7e6af413263977ad04ad22d733b3a7e600bada92977f",
+    "startedAt": "2026-11-20T20:47:23.341Z",
+    "endedAt": "2026-11-20T20:47:28.764Z",
+    "outcome": "scripted",
+    "error": null,
+    "timedOut": null,
+    "limitHit": null,
+    "usage": null
+   },
+   {
+    "id": "S1-3-switch-notice",
+    "step": "switch-notice",
+    "session": "S1",
+    "sessionId": "scripted-S1",
+    "boot": "A",
+    "requests": 0,
+    "promptSha256": "70a48c30429e5caf02ad61868cb9fd303ca2973817934b718e776a310afc472d",
+    "startedAt": "2026-11-20T20:47:32.345Z",
+    "endedAt": "2026-11-20T20:47:34.541Z",
+    "outcome": "scripted",
+    "error": null,
+    "timedOut": null,
+    "limitHit": null,
+    "usage": null
+   },
+   {
+    "id": "S1-4-phase2-finish",
+    "step": "phase2-finish",
+    "session": "S1",
+    "sessionId": "scripted-S1",
+    "boot": "B",
+    "requests": 0,
+    "promptSha256": "415bdf9c1621d3edd2152fb4efbf114f9620dd26a92dd623f449c7109742b11e",
+    "startedAt": "2026-11-20T20:48:14.246Z",
+    "endedAt": "2026-11-20T20:48:25.191Z",
+    "outcome": "scripted",
+    "error": null,
+    "timedOut": null,
+    "limitHit": null,
+    "usage": null
+   },
+   {
+    "id": "S1-5-phase3-start",
+    "step": "phase3-start",
+    "session": "S1",
+    "sessionId": "scripted-S1",
+    "boot": "B",
+    "requests": 0,
+    "promptSha256": "cbeda147f14fea640dfbc681239af2a28780f7c0f799d9779e27cef32ae53317",
+    "startedAt": "2026-11-20T20:48:40.349Z",
+    "endedAt": "2026-11-20T20:49:45.532Z",
+    "outcome": "scripted-error",
+    "error": "ENVIRONMENT_TERMINATED: the environment of boot B no longer exists (confirmed by the service API); result of this call is unknown",
+    "timedOut": null,
+    "limitHit": null,
+    "usage": null
+   },
+   {
+    "id": "S2-6-phase3-substitute",
+    "step": "phase3-substitute",
+    "session": "S2",
+    "sessionId": "scripted-S2",
+    "boot": "C",
+    "requests": 0,
+    "promptSha256": "ac5dd01ef41d8d6c691e8e4c9ec32db33fca16e88cf5b773fddf607823af6130",
+    "startedAt": "2026-11-20T20:50:12.784Z",
+    "endedAt": "2026-11-20T20:50:19.018Z",
+    "outcome": "scripted",
+    "error": null,
+    "timedOut": null,
+    "limitHit": null,
+    "usage": null
+   }
+  ]
+ }
+}
