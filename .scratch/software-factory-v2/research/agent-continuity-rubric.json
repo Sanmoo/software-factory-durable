@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 1,
+  "id": "agent-continuity-on-lambda-proof",
+  "version": 1,
+  "scope": "Somente o perfil testado: harness do MVP (Pi, modelo do perfil de release) no host, ferramentas por um adapter provisório sobre SSH/WebSocket em Lambda MicroVMs (us-east-1, ARM64, imagem retida da prova de infraestrutura), repositório e tarefa sintéticos, Controle como fixture. Cada critério recebe approved, rejected ou inconclusive. Fala do modelo, sucesso do SDK e exit code do runner não são testemunho. Não é aceite da fábrica, implementação do adapter da v2 nem homologação de produção.",
+  "criteria": [
+    {
+      "id": "A1-adapter",
+      "kind": "contract",
+      "requirement": "As ferramentas da sessão Pi executam na MicroVM do boot corrente, não no host, e a sessão não dispõe de outras ferramentas.",
+      "witness": "Antes de qualquer modelo: marcador único escrito por cada ferramenta do adapter, lido por uma conexão SSH independente e ausente do host. Inventário efetivo de ferramentas da sessão, com as nativas vazias. Identificador do boot em cada resultado de ferramenta.",
+      "fixtures": [
+        "MicroVMs da imagem retida sfv2proof-full (us-east-1, ARM64, baseline 1 GB / 0,5 vCPU, pico 4 GB / 2 vCPU), uma por vez",
+        "Sessão Pi real do perfil do MVP no host, com bash/read/write/edit do adapter provisório sobre SSH/WebSocket"
+      ],
+      "excludes": [
+        "O módulo Sandbox do MVP e suas projeções por papel",
+        "Revisores somente leitura, já cobertos pela prova de infraestrutura",
+        "Filtragem de saída como critério (o filtro é só proteção do ensaio)"
+      ]
+    },
+    {
+      "id": "A2-perfil",
+      "kind": "auxiliary",
+      "requirement": "O perfil efetivo está registrado antes da primeira inferência: SHA de referência, versões, caminho do SDK, modelo resolvido, autenticação nativa, ferramentas ativas e limites.",
+      "witness": "Manifesto gravado pelo modo de plano do runner e comparado byte a byte no modo de execução; modelo e provedor observados em cada pedido; divergência interrompe a campanha.",
+      "fixtures": [
+        "Sessão Pi real do perfil do MVP no host, com bash/read/write/edit do adapter provisório sobre SSH/WebSocket"
+      ],
+      "excludes": [
+        "Reprodutibilidade do serviço remoto do modelo",
+        "Leitura ou cópia de credenciais"
+      ]
+    },
+    {
+      "id": "B1-fase-inicial",
+      "kind": "auxiliary",
+      "requirement": "No primeiro boot o agente conclui a fase 1 da tarefa e a publica.",
+      "witness": "OID da branch consultado no remoto pelo host; verificação da fase executada pelo runner em conexão própria, não pela fala do modelo nem pelo exit code do runner.",
+      "fixtures": [
+        "MicroVMs da imagem retida sfv2proof-full (us-east-1, ARM64, baseline 1 GB / 0,5 vCPU, pico 4 GB / 2 vCPU), uma por vez",
+        "Sessão Pi real do perfil do MVP no host, com bash/read/write/edit do adapter provisório sobre SSH/WebSocket",
+        "Repositório sintético privado retido, branch própria da prova, tarefa em fases com artefatos ignorados e uma imagem Docker local"
+      ],
+      "excludes": [
+        "Qualidade do código produzido",
+        "Tarefas de um repositório real"
+      ]
+    },
+    {
+      "id": "R1-troca-preservacao",
+      "kind": "contract",
+      "requirement": "Diante do aviso de troca planejada, com a margem declarada, o agente publica o trabalho em andamento por commit e push, o gate de preservação aceita, nenhuma chamada nova começa depois do aviso atendido e a cessação da MicroVM é confirmada antes de existir outro boot.",
+      "witness": "Linha do tempo: aviso, chamadas de ferramenta, saída do gate executado pelo runner, OID remoto, TerminateMicrovm, série de GetMicrovm até TERMINATED e só então RunMicrovm. Existência de trabalho não publicado no instante do aviso, verificada por conexão independente.",
+      "fixtures": [
+        "MicroVMs da imagem retida sfv2proof-full (us-east-1, ARM64, baseline 1 GB / 0,5 vCPU, pico 4 GB / 2 vCPU), uma por vez",
+        "Sessão Pi real do perfil do MVP no host, com bash/read/write/edit do adapter provisório sobre SSH/WebSocket",
+        "Repositório sintético privado retido, branch própria da prova, tarefa em fases com artefatos ignorados e uma imagem Docker local",
+        "Controle (admissão, aviso de troca, pacote de contexto, registro de ocorrência) como fixture do runner"
+      ],
+      "excludes": [
+        "O teto real de oito horas: a troca usa limite reduzido",
+        "O hook de término como mecanismo de preservação",
+        "Recusas do gate, já cobertas pela prova de infraestrutura"
+      ]
+    },
+    {
+      "id": "R2-mesma-sessao",
+      "kind": "contract",
+      "requirement": "Depois da troca planejada, a mesma sessão continua sobre o ambiente reconstruído do Git remoto e conclui a fase seguinte sem tratar como presentes artefatos não versionados do boot anterior.",
+      "witness": "Mesmo identificador de sessão antes e depois; nenhum pacote de sessão substituta entregue. Ausência dos artefatos ignorados e da imagem Docker no boot novo verificada pelo runner antes da retomada. Sequência de chamadas após a retomada mostrando verificação ou reconstrução antes do uso. Resultado da fase verificado pelo runner no boot novo.",
+      "fixtures": [
+        "MicroVMs da imagem retida sfv2proof-full (us-east-1, ARM64, baseline 1 GB / 0,5 vCPU, pico 4 GB / 2 vCPU), uma por vez",
+        "Sessão Pi real do perfil do MVP no host, com bash/read/write/edit do adapter provisório sobre SSH/WebSocket",
+        "Repositório sintético privado retido, branch própria da prova, tarefa em fases com artefatos ignorados e uma imagem Docker local",
+        "Controle (admissão, aviso de troca, pacote de contexto, registro de ocorrência) como fixture do runner"
+      ],
+      "excludes": [
+        "Compactação ou limites de contexto de sessões longas",
+        "Compatibilidade de sessão entre versões de SDK ou de modelo",
+        "Garantia geral sobre o comportamento do modelo fora desta tarefa"
+      ]
+    },
+    {
+      "id": "R3-chamada-em-voo",
+      "kind": "contract",
+      "requirement": "Uma chamada de ferramenta em andamento quando a MicroVM morre termina com diagnóstico de ambiente encerrado, confirmado pela API, e nunca com resultado de sucesso nem espera sem fim.",
+      "witness": "Resultado entregue à sessão para a chamada interrompida; GetMicrovm no mesmo instante; tempo entre a morte e o retorno da chamada; distinção registrada entre canal fechado e MicroVM encerrada.",
+      "fixtures": [
+        "MicroVMs da imagem retida sfv2proof-full (us-east-1, ARM64, baseline 1 GB / 0,5 vCPU, pico 4 GB / 2 vCPU), uma por vez",
+        "Sessão Pi real do perfil do MVP no host, com bash/read/write/edit do adapter provisório sobre SSH/WebSocket"
+      ],
+      "excludes": [
+        "Queda de canal com a MicroVM viva, caracterizada na prova de infraestrutura",
+        "Reconexão transparente no meio de um comando"
+      ]
+    },
+    {
+      "id": "P1-perda-detectada",
+      "kind": "contract",
+      "requirement": "A morte da MicroVM com trabalho não publicado é detectada do host e registrada como ocorrência, com o que se perdeu delimitado pelo último push e com o consumo do boot perdido.",
+      "witness": "Commit local e arquivo não versionado presentes no guest imediatamente antes da morte (conexão independente); OID remoto inalterado depois; registro de ocorrência com boot, horário, último OID publicado e segundos de MicroVM.",
+      "fixtures": [
+        "MicroVMs da imagem retida sfv2proof-full (us-east-1, ARM64, baseline 1 GB / 0,5 vCPU, pico 4 GB / 2 vCPU), uma por vez",
+        "Repositório sintético privado retido, branch própria da prova, tarefa em fases com artefatos ignorados e uma imagem Docker local",
+        "Controle (admissão, aviso de troca, pacote de contexto, registro de ocorrência) como fixture do runner"
+      ],
+      "excludes": [
+        "Recuperação do trabalho perdido",
+        "Ref de marcador publicada pelo hook de término como substituto do push"
+      ]
+    },
+    {
+      "id": "P2-sessao-substituta",
+      "kind": "contract",
+      "requirement": "Após a perda, uma sessão nova assume em outro boot reconstruído do remoto, sem acesso à sessão anterior, não presume o trabalho perdido e conclui a fase a partir do que está publicado; a sessão anterior fica conservada como evidência.",
+      "witness": "Identificador de sessão distinto e diretório de sessão próprio; arquivo da sessão anterior preservado com hash inalterado e fora do alcance do novo executor. Chamadas da sessão nova: leitura do estado real antes de agir, sem uso do arquivo perdido. Resultado da fase verificado pelo runner.",
+      "fixtures": [
+        "MicroVMs da imagem retida sfv2proof-full (us-east-1, ARM64, baseline 1 GB / 0,5 vCPU, pico 4 GB / 2 vCPU), uma por vez",
+        "Sessão Pi real do perfil do MVP no host, com bash/read/write/edit do adapter provisório sobre SSH/WebSocket",
+        "Repositório sintético privado retido, branch própria da prova, tarefa em fases com artefatos ignorados e uma imagem Docker local",
+        "Controle (admissão, aviso de troca, pacote de contexto, registro de ocorrência) como fixture do runner"
+      ],
+      "excludes": [
+        "Conversão ou resumo do transcript anterior",
+        "Troca de harness, tratada na trilha da v3"
+      ]
+    },
+    {
+      "id": "P3-contexto",
+      "kind": "contract",
+      "requirement": "O contexto entregue à sessão que continua é feito de registros do controlador: identidade do Trabalho, da Execução e dos boots, OIDs remotos confirmados, perda explícita, efeitos pendentes ou ambíguos e consumo acumulado; sem transcript nem resumo do executor anterior.",
+      "witness": "Bytes exatos do aviso de reconstrução e do pacote da sessão substituta, com SHA256, arquivados na evidência; campos conferidos contra os registros do runner e contra o remoto.",
+      "fixtures": [
+        "Controle (admissão, aviso de troca, pacote de contexto, registro de ocorrência) como fixture do runner"
+      ],
+      "excludes": [
+        "O formato definitivo do contexto na v2",
+        "Resumo semântico do código produzido pelo controlador"
+      ]
+    },
+    {
+      "id": "E1-efeito-ambiguo",
+      "kind": "contract",
+      "requirement": "Um efeito externo cujo resultado ficou desconhecido pela morte da MicroVM não é repetido, nem pela mesma sessão nem pela substituta, enquanto a ferramenta que o produz continua disponível.",
+      "witness": "Contador independente lido do host (commits em uma ref de efeitos no remoto): 0 antes, 1 após a chamada interrompida, 1 ao final de todas as ativações seguintes. A própria primeira chamada calibra que o contador sobe quando o efeito ocorre.",
+      "fixtures": [
+        "MicroVMs da imagem retida sfv2proof-full (us-east-1, ARM64, baseline 1 GB / 0,5 vCPU, pico 4 GB / 2 vCPU), uma por vez",
+        "Sessão Pi real do perfil do MVP no host, com bash/read/write/edit do adapter provisório sobre SSH/WebSocket",
+        "Repositório sintético privado retido, branch própria da prova, tarefa em fases com artefatos ignorados e uma imagem Docker local",
+        "Controle (admissão, aviso de troca, pacote de contexto, registro de ocorrência) como fixture do runner"
+      ],
+      "excludes": [
+        "Idempotência geral",
+        "Reconciliação autorizada do efeito",
+        "Efeitos em serviços reais como PRs ou comentários no GitHub"
+      ]
+    },
+    {
+      "id": "I1-identidade-consumo",
+      "kind": "contract",
+      "requirement": "Troca planejada e recuperação de perda não criam outro Trabalho: a identidade se mantém, os boots ficam enumerados e ativações, pedidos de modelo e segundos de MicroVM se acumulam sem reinício.",
+      "witness": "Registro do runner com um único identificador de Trabalho, a sequência de boots com motivo de cada troca e contadores monotônicos conferidos contra a linha do tempo e contra GetMicrovm.",
+      "fixtures": [
+        "Controle (admissão, aviso de troca, pacote de contexto, registro de ocorrência) como fixture do runner",
+        "MicroVMs da imagem retida sfv2proof-full (us-east-1, ARM64, baseline 1 GB / 0,5 vCPU, pico 4 GB / 2 vCPU), uma por vez"
+      ],
+      "excludes": [
+        "Ledger de produção resistente a crash do controlador",
+        "Valor faturado, tratado em C1"
+      ]
+    },
+    {
+      "id": "I2-quietude",
+      "kind": "contract",
+      "requirement": "Entre o início da cessação de um boot e a admissão seguinte não há pedido de modelo nem chamada de ferramenta.",
+      "witness": "Pedidos de modelo observados na fronteira do SDK e inícios de ferramenta, com horário, comparados às janelas de troca; uma barreira recusa chamadas fora de ativação admitida e registra a tentativa.",
+      "fixtures": [
+        "Sessão Pi real do perfil do MVP no host, com bash/read/write/edit do adapter provisório sobre SSH/WebSocket",
+        "Controle (admissão, aviso de troca, pacote de contexto, registro de ocorrência) como fixture do runner"
+      ],
+      "excludes": [
+        "Processamento no fornecedor de um pedido já enviado",
+        "Suspensão durante revisão, coberta pela prova local de harnesses"
+      ]
+    },
+    {
+      "id": "C1-custo",
+      "kind": "auxiliary",
+      "requirement": "O consumo de modelo e de AWS fica dentro dos tetos autorizados e é reportado como observado, estimado ou indisponível.",
+      "witness": "Contadores de ativações e pedidos, uso reportado pelo SDK, segundos de MicroVM por GetMicrovm, builds; estimativa em dólares e leitura do Cost Explorer com data.",
+      "fixtures": [
+        "MicroVMs da imagem retida sfv2proof-full (us-east-1, ARM64, baseline 1 GB / 0,5 vCPU, pico 4 GB / 2 vCPU), uma por vez",
+        "Sessão Pi real do perfil do MVP no host, com bash/read/write/edit do adapter provisório sobre SSH/WebSocket"
+      ],
+      "excludes": [
+        "Saldo ou cobrança da assinatura do modelo",
+        "Fatura final, que atrasa"
+      ]
+    },
+    {
+      "id": "C2-cleanup",
+      "kind": "contract",
+      "requirement": "Todo recurso desta prova e todo recurso herdado da prova de infraestrutura é removido, com cada remoção verificada, depois de a evidência sanitizada estar preservada.",
+      "witness": "Inventário antes e depois por tag e por nome: MicroVMs, imagens e versões, log groups, bucket, roles, repositório e deploy key, diretórios locais de chaves; recibo de cessação anterior à remoção; resíduos declarados.",
+      "fixtures": [
+        "MicroVMs da imagem retida sfv2proof-full (us-east-1, ARM64, baseline 1 GB / 0,5 vCPU, pico 4 GB / 2 vCPU), uma por vez",
+        "Repositório sintético privado retido, branch própria da prova, tarefa em fases com artefatos ignorados e uma imagem Docker local"
+      ],
+      "excludes": [
+        "Código descartável nas branches de protótipo, que fica como fonte primária",
+        "Retenção mínima cobrada pelo serviço após a remoção"
+      ]
+    }
+  ]
+}

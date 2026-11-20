@@ -45,3 +45,4 @@ os [guardrails de ensaios](../../../docs/agents/experiment-proofs.md).
 
 - 2026-11-20: aberto ao aprovar a rubrica da prova de infraestrutura sem harness.
 - 2026-11-20: reivindicado pelo Operador (sessão Claude Code); branch `docs/v2-agent-continuity-proof`, worktree `.worktrees/v2-agent-continuity-proof/`, destino `main`. Primeira etapa: rubrica, perfil e plano para aprovação, sem modelos nem recursos AWS.
+- 2026-11-20: formato decidido com o Operador: Pi real no host com ferramentas por SSH e Controle como fixture; troca planejada com a mesma sessão e perda com sessão substituta; tarefa leve com estado reconstruível. Propostos o [plano de execução](../research/agent-continuity-execution-plan.md) e a [rubrica v1](../research/agent-continuity-rubric.json), ambos pendentes de aprovação. Nada executado.
