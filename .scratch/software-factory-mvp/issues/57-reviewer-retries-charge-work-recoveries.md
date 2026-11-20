@@ -11,7 +11,7 @@ Trabalho.
 
 **Type:** task
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 ## Acceptance criteria
 
