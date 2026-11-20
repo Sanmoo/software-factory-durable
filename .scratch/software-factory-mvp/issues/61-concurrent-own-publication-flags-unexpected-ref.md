@@ -11,7 +11,7 @@ comando de operador para reavaliar o bloqueio.
 
 **Type:** task
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
