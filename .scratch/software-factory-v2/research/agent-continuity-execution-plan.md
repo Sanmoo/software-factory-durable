@@ -4,9 +4,10 @@ Data: 2026-11-20. Ticket: [Validar a continuidade do agente entre boots em Lambd
 Base: [resultados da prova de infraestrutura](lambda-proof-results.md) e o runner de continuidade da
 [prova de harnesses](harness-proof-terminal-summary.md). Rubrica proposta: [rubrica v1](agent-continuity-rubric.json).
 
-**Estado: proposta, sem autorização.** Nada foi executado: nenhuma inferência, nenhuma chamada à AWS,
-nenhum recurso criado. A rubrica precisa de aprovação e a tabela "Autorização pedida" precisa de
-resposta explícita antes do preflight com custo.
+**Estado: autorizado pelo Operador em 2026-11-20.** A [rubrica v1](agent-continuity-rubric.json) foi
+[aprovada](agent-continuity-rubric-approval.json) e a tabela "Autorização pedida" foi aceita sem ajustes,
+inclusive o cleanup total ao final. A primeira inferência ainda depende do manifesto de perfil gravado e do
+preflight sem modelo.
 
 ## Decisões de formato já tomadas
 
