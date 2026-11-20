@@ -1,22 +1,21 @@
-# Consolidar o PRD e a spec integrada da v2 para sandboxes e harnesses
+# Consolidar o PRD e a spec da v2 para o sandbox Lambda MicroVMs
 
 Status: open
 Type: grilling
 Label: wayfinder:grilling
-Map: [Software Factory v2 — ambientes reconstruíveis e harnesses substituíveis](../map.md)
-Blocked by: 08
+Map: [Software Factory v2 — ambientes reconstruíveis em Lambda MicroVMs](../map.md)
+Blocked by: 02
 
 ## Question
 
-Como consolidar as direções de [sandbox](01-lambda-microvms-direction.md#answer) e
-[harnesses](04-substitutable-harnesses-direction.md#answer), as provas e a
-[decisão de composição](08-runtime-sandbox-composition-decision.md) em requisitos e contratos
-implementáveis integrados da v2, preservando a autoridade e o escopo do MVP?
+Como consolidar a direção de [sandbox](01-lambda-microvms-direction.md#answer) e os resultados da
+[prova Lambda](02-lambda-microvms-prototype.md) em requisitos e contratos implementáveis da v2,
+mantendo o harness do MVP e preservando a autoridade e o escopo do MVP?
 
 ## Scope
 
-- Trabalhar sobre evidências das duas trilhas e a decisão de composição, sem presumir êxito,
-  suporte oficial Docker/SSH, autorização de assinatura ou equivalência de harnesses. Hipótese
+- Trabalhar sobre as evidências da prova Lambda, sem presumir êxito nem suporte oficial
+  Docker/SSH. Hipótese
   que falhou/inconclusiva exige decisão do operador, não substituição silenciosa de escopo.
 - Propor revisão versionada do PRD/spec na feature v2, rastreando diferenças frente ao
   [PRD](../../software-factory/prd.md), à [spec](../../software-factory/spec.md) e às
@@ -34,18 +33,9 @@ implementáveis integrados da v2, preservando a autoridade e o escopo do MVP?
   fronteira confiável dos componentes. Autenticação do túnel não é autorização de todas as operações.
 - Explicitar propriedades de egress demonstradas e relaxamentos frente ao MVP que precisem de
   confirmação; não equiparar internet pública automaticamente a mediação/isolamento comprovados.
-- Incorporar a interface de execução e os adapters Pi/Claude sustentados pela decisão, preferindo
-  evolução dos contratos existentes. Separar harness, modelo/provider e sandbox, com requisitos
-  mínimos/capacidades e diagnóstico explícito das combinações suportadas.
-- Definir seleção de harness por papel, perfil dedicado, autenticação nativa do Operador e registro
-  efetivo por Execução; parada/configuração/reinício sem comando de troca ou fallback silencioso.
-  Preservar identidade, histórico, consumo e controles do Trabalho ao substituir a sessão.
-- Precisar pedido/instruções/estado Git/registros entregues à sessão substituta, sem transcript
-  universal nem resumo semântico pelo controlador. Compatibilidade de sessão não é continuidade
-  obrigatória do Trabalho e mudança de harness não elimina efeitos ambíguos.
-- Definir instalação, observabilidade, quotas/custos, retenção/cleanup e matriz de aceite integrada.
-  Distinguir evidência local, combinação com Lambda e gates de validação futura. Seleção automática
-  de sandbox, Slots por adapter e política híbrida não são autorizados pela seleção de harness.
+- Definir instalação, observabilidade, quotas/custos, retenção/cleanup e matriz de aceite.
+  Distinguir evidência da prova e gates de validação futura. Seleção automática de sandbox,
+  Slots por adapter e política híbrida não estão autorizados.
 
 ## Exit criteria
 
@@ -60,3 +50,4 @@ Não implementar o adapter nem alterar retroativamente o PRD/spec aprovado do MV
 - Ampliação aprovada do mapa em 2026-11-14: este ticket é o ponto de consolidação integrada após
   a decisão de composição (08), que depende das duas provas. Preservado o caminho e o escopo de
   sandbox; adicionados harness/contexto/reconfiguração, sem antecipar resolução ou alterar o MVP.
+- 2026-11-20: reescopo do Operador. A v2 trata só do sandbox Lambda MicroVMs; harnesses substituíveis ficam para a v3. Removidos os itens de harness e a dependência da decisão de composição (08, fechado); passa a depender só da prova Lambda (02).

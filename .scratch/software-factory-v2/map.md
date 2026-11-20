@@ -1,20 +1,20 @@
-# Software Factory v2 — ambientes reconstruíveis e harnesses substituíveis
+# Software Factory v2 — ambientes reconstruíveis em Lambda MicroVMs
 
 Status: open
 Label: wayfinder:map
 
 ## Destination
 
-Definir e validar a arquitetura da Software Factory v2 para ambientes reconstruíveis e harnesses
-substituíveis, preservando a continuidade do Trabalho e a autoridade do controlador. Investigar AWS
-Lambda MicroVMs como sandbox e Pi/Claude Code como harnesses concretos, incluindo assinatura própria
-do Operador, sem prometer combinações universais nem homologação por pesquisa documental.
+Definir e validar a arquitetura da Software Factory v2 para um novo tipo de sandbox: ambientes
+reconstruíveis em AWS Lambda MicroVMs, preservando a continuidade do Trabalho e a autoridade do
+controlador. O harness continua sendo o do MVP; harnesses substituíveis ficam para a v3.
+Sem prometer suporte por pesquisa documental nem homologação antes da prova.
 
 ## Notes
 
-- Um único mapa coordena as duas trilhas e sua convergência. Pesquisas/provas independentes podem
-  avançar em paralelo; contratos compartilhados precisam de decisão e especificação integradas.
-  A investigação de harness não espera a prova Lambda, mas não homologa a composição com ela.
+- Reescopo decidido pelo Operador em 2026-11-20: a v2 trata somente do sandbox Lambda MicroVMs.
+  A trilha de harnesses substituíveis (Pi/Claude Code) saiu deste mapa e fica para a v3; seus
+  tickets resolvidos permanecem como registro e evidência, listados em Out of scope.
 - O [PRD](../software-factory/prd.md), a [spec](../software-factory/spec.md) e os tickets do MVP
   permanecem intactos. As direções aprovadas vivem nos respectivos Answers; ampliar este mapa não
   reinterpreta a decisão de Lambda como aprovação prévia de Claude ou de uma interface nova.
@@ -41,20 +41,13 @@ do Operador, sem prometer combinações universais nem homologação por pesquis
 
 ## Work structure
 
-As dependências canônicas são os campos `Blocked by:` dos tickets. A convergência não transforma
-as trilhas em sequência única nem permite aprovar contratos de composição independentemente.
+As dependências canônicas são os campos `Blocked by:` dos tickets.
 
-- **Sandbox:** [direção Lambda](issues/01-lambda-microvms-direction.md#answer) →
-  [prova Docker e transporte](issues/02-lambda-microvms-prototype.md).
-- **Harness:** [direção de substituição](issues/04-substitutable-harnesses-direction.md#answer) →
-  [investigar interface existente](issues/05-execution-seam-research.md) →
-  [especificar a prova](issues/06-harness-proof-spec.md) →
-  [prova Pi/Claude](issues/07-harness-compatibility-prototype.md).
-- **Convergência:** ambas as provas →
-  [decidir a composição](issues/08-runtime-sandbox-composition-decision.md) →
+- [direção Lambda](issues/01-lambda-microvms-direction.md#answer) →
+  [prova Docker e transporte](issues/02-lambda-microvms-prototype.md) →
   [consolidar PRD/spec e contratos da v2](issues/03-revised-sandbox-contract.md).
-  Evidências cruzadas adicionais e implementação/validação integrada futura devem ganhar filhos
-  quando o escopo necessário estiver definido, sem inventar uma implementação já autorizada.
+  Evidências adicionais e implementação/validação futura devem ganhar filhos quando o escopo
+  necessário estiver definido, sem inventar uma implementação já autorizada.
 
 ## Decisions so far
 
@@ -62,35 +55,13 @@ as trilhas em sequência única nem permite aprovar contratos de composição in
   contrato por propriedades/capacidades, preservação Git remoto antes das esperas humanas,
   reconstrução entre boots e transporte SSH/WebSocket como hipótese; sem alteração do MVP nem
   homologação de Docker ou transporte.
-- [Definir a direção da v2 para harnesses substituíveis](issues/04-substitutable-harnesses-direction.md#answer):
-  Pi/Claude com seleção por papel, assinatura própria do Operador e continuidade por sessão substituta;
-  mudança por parada/configuração/reinício, sem comando de troca nem migração de transcripts.
-  Provas próprias convergem neste mapa e no PRD/spec integrado, sem fallback ou execução autorizada.
-- [Localizar a interface de execução e as dependências entre harness e sandbox](issues/05-execution-seam-research.md#answer):
-  pesquisa no MVP `aabe06abfb20e83593020c0fee19b078d235466b`; Workers é o seam candidato, com
-  hipótese Claude host + MCP confinado, sem adoção aprovada. Acoplamentos Pi, suspensão/filtragem/
-  cessação e diferenças v2 de reconstrução/WIP estão rastreados; dez cenários alimentam a spec da prova.
-
-- [Especificar a prova de harnesses substituíveis com Pi e Claude Code](issues/06-harness-proof-spec.md#answer):
-  [spec local aprovada](harness-proof-spec.md), focada nas diferenças de harness em três jornadas e dois
-  desvios, sem regressão geral do MVP; execução depende de manifesto e autorização operacional própria.
-
-- [Validar Pi e Claude Code nos contratos de execução e continuidade](issues/07-harness-compatibility-prototype.md#answer):
-  aceite contratual local C1–C12 aprovado pelo Operador, com ressalva da edição auxiliar RESUMED
-  não concluída; evidência para composição posterior, sem homologação de produção ou Lambda.
-
 ## Not yet specified
 
 - Compatibilidade real de Docker/Compose/Testcontainers/Ryuk, DNS, binds e portas em Lambda.
 - Viabilidade de SSH/WebSocket, limites, custo e evidências de cessação/rede/credenciais do serviço.
-- Além da prova local especificada, determinar quais evidências adicionais a composição final exigirá,
-  à luz dos resultados de harness e sandbox; não estender o aceite local automaticamente à produção.
-- Detalhes do gate Git, reconstrução, rotação e contexto independente de transcript; compatibilidade
-  de sessão, perfis versionados e recuperação entre harnesses após reconfiguração da instalação.
-- Localização de loops/ferramentas e combinações harness/sandbox suportadas; capacidades mínimas,
-  diagnósticos e provas cruzadas que impeçam aprovação isolada de contratos incompatíveis.
+- Detalhes do gate Git, reconstrução, rotação e contexto de recuperação após troca de boot.
 - Configuração/instalação revisadas, custos/quotas, observabilidade/retenção, impacto nos contratos
-  existentes e matriz de aceite integrada da v2.
+  existentes e matriz de aceite da v2.
 
 ## Out of scope
 
@@ -102,3 +73,13 @@ as trilhas em sequência única nem permite aprovar contratos de composição in
 - Prometer Docker, restauração de RAM, snapshots transferíveis ou SSH funcional antes das provas.
 - Adotar S3/git bundle como checkpoint inicial, serviço exec próprio ou outro motor por suposição.
 - Publicar branches, GitHub Issues, PRs ou recursos externos automaticamente.
+- Harnesses substituíveis (Pi/Claude Code, seleção por papel, assinatura do Operador, sessão
+  substituta entre harnesses): fora da v2 por decisão do Operador em 2026-11-20; ficam para a v3,
+  como esforço novo. Tickets já resolvidos nessa trilha, preservados como evidência:
+  [direção de harnesses](issues/04-substitutable-harnesses-direction.md#answer),
+  [interface de execução](issues/05-execution-seam-research.md#answer),
+  [spec da prova](issues/06-harness-proof-spec.md#answer) e
+  [prova Pi/Claude](issues/07-harness-compatibility-prototype.md#answer) (aceite local C1–C12,
+  com ressalva; sem homologação de produção ou Lambda).
+- [Decidir a composição de harnesses e sandboxes da v2](issues/08-runtime-sandbox-composition-decision.md):
+  fechado sem resolução; a pergunta só existe com mais de um harness.

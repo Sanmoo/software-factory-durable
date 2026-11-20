@@ -1,9 +1,9 @@
 # Decidir a composição de harnesses e sandboxes da v2
 
-Status: open
+Status: closed
 Type: grilling
 Label: wayfinder:grilling
-Map: [Software Factory v2 — ambientes reconstruíveis e harnesses substituíveis](../map.md)
+Map: [Software Factory v2 — ambientes reconstruíveis em Lambda MicroVMs](../map.md)
 Blocked by: 02, 07
 
 ## Question
@@ -48,3 +48,4 @@ Answer aprovado pelo operador com composição suportada, contratos/limitações
 MVP, evidências e pendências explícitas. Divergência da direção exige confirmação. Não fechar com
 lacunas obrigatórias ocultas; se necessário criar dependências adicionais antes de resolver. Não
 implementar produção nem alterar retroativamente decisões do MVP.
+- 2026-11-20: fechado sem resolução, fora de escopo. O Operador restringiu a v2 ao sandbox Lambda MicroVMs e deixou harnesses substituíveis para a v3; sem segundo harness não há composição a decidir.

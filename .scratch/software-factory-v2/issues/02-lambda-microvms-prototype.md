@@ -3,7 +3,7 @@
 Status: claimed
 Type: prototype
 Label: wayfinder:prototype
-Map: [Software Factory v2 — ambientes reconstruíveis e harnesses substituíveis](../map.md)
+Map: [Software Factory v2 — ambientes reconstruíveis em Lambda MicroVMs](../map.md)
 Blocked by: 01
 
 ## Question
