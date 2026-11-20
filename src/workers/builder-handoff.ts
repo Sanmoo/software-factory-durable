@@ -73,7 +73,7 @@ export function builderHandoff(policy?: HandoffRounds, ledger?: ReturnType<typeo
   // Ticket 13: repeated rounds with treatments and gate declarations; the Host resolves gate evidence from its own ledger.
   const multi: ToolDefinition = { ...legacy,
     description: 'Factory review handoff. Call it alone, when your proposal is complete in /workspace/checkout (committed or not) and after re-running the ' +
-      'documented gates as your LAST commands. Arguments: `gates` (ONLY gates whose exact command the Ticket or preserved instructions document — never one to say none exists: id, source document#section, the EXACT bash command you ran, ' +
+      'documented gates as your LAST commands, each ALONE as its own bash call (never inside a compound command; a `run` gate whose last exact call failed or never happened is refused). Arguments: `gates` (ONLY gates whose exact command the Ticket or preserved instructions document — never one to say none exists: id, source document#section, the EXACT bash command you ran, ' +
       'its documented cwd, status run|not-run|waived, a reason when not run/waived, a waiver references its concrete prior authorization, requiredCheck when ' +
       'it is a GitHub required check) and `treatments` (only for every finding the delivered results listed, never a placeholder for a reviewer without findings: round, role, findingId, outcome fixed|not-adopted, justification, ' +
       'optional evidence/authorization). The Factory takes gate results only from its own record of your Bash calls, suspends ALL your tools and turns, ' +
@@ -108,12 +108,24 @@ export function builderHandoff(policy?: HandoffRounds, ledger?: ReturnType<typeo
           `the Ticket or the preserved instructions document (cite that file#section and run that command); if none is documented, omit gates — never declare a ` +
           `gate to say it does not exist. ${problems.slice(0, 8).join('; ')}`.slice(0, 1500));
       }
-      // Real run q21-human-v6: a `run` gate is evidenced only by a Bash call of EXACTLY its command; one that ran only inside a larger script
-      // or with another prefix would end unverified after a whole review round. Refused here, in session, with the command to run alone.
-      const unrun = ledger && !ledger.exhausted() ? (parsed.data.gates ?? []).filter(item => item.status === 'run' && ledger.ranOnlyEmbedded(item.command)) : [];
+      // Real run q21-human-v6 / ticket 56 (pilot 2, #125): a `run` gate is evidenced only by the LATEST bash call of EXACTLY its command, run
+      // alone. A declaration with no such call (never run, or only inside a compound command) or whose last exact call did not pass
+      // contradicts the Host's own record and would end unverified/failed after a whole round; refused here, in session, with the command.
+      // `not-run`/`waived` stay declarable (Control fails them closed); an exhausted ledger already makes every run gate unverified.
+      const observed = ledger && !ledger.exhausted() ? (parsed.data.gates ?? []).filter(item => item.status === 'run')
+        .map(item => ({ item, last: ledger.lastExact(item.command) })) : [];
+      const unrun = observed.filter(entry => entry.last === 'missing').map(entry => entry.item);
       if (unrun.length) return refused('HANDOFF_GATE_NOT_RUN: no handoff happened and no review round was used. A gate result is taken only from a bash call of ' +
-        `EXACTLY the declared command. ${unrun.slice(0, 4).map(item => `${item.id}: run exactly this command ALONE as its own bash call, then hand off again: ${item.command}`)
+        'EXACTLY the declared command, run alone (never inside a compound command such as `git commit && <gate>`). If you cannot run it, declare it ' +
+        `\`not-run\` with the reason. ${unrun.slice(0, 4).map(item => `${item.id}: run exactly this command ALONE as its own bash call, then hand off again: ${item.command}`)
           .join('; ')}`.slice(0, 1500));
+      const failed = observed.flatMap(({ item, last }) => last !== 'missing' && last.exitCode !== 0 ? [{ item, exitCode: last.exitCode }] : []);
+      if (failed.length) return refused('HANDOFF_GATE_FAILED: no handoff happened and no review round was used. The Factory binds a gate only to your LAST bash ' +
+        'call of EXACTLY the declared command, run alone, never inside a compound command (runs such as `git add && git commit && <gate>` or ' +
+        '`git status && <gate>` never count). Fix the proposal, run the gate alone as your last command and hand off again; if the failure cannot be ' +
+        'resolved, declare it `not-run` with the reason and ask the operator. ' +
+        `${failed.slice(0, 4).map(({ item, exitCode }) => `${item.id}: your last bash call of exactly this command ${exitCode === null ? 'ended without an exit code'
+          : `failed (exit ${exitCode})`}; run it ALONE as its own bash call, as your last command, then hand off again: ${item.command}`).join('; ')}`.slice(0, 1500));
       declarations = parsed.data;
       rounds++; suspended = true; pending = true;
       return { content: [{ type: 'text' as const, text: `Handoff accepted for capture round ${policy!.first + rounds - 1}. Your tools are suspended; stop now and wait.` }],

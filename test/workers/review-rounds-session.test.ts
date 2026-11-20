@@ -71,7 +71,9 @@ test('AC1-AC3: repeated handoffs carry treatments and Host gate evidence from th
     { tools: [{ name: 'bash', arguments: { command: 'npm test' } }] }, { tools: [{ name: 'bash', arguments: { command: 'npm test' } }] },
     { tools: [{ name: 'bash', arguments: { command: 'npm run lint' } }] },
     { tools: [{ name: 'handoff', arguments: { gates: [gate('ci', 'npm run ci', { status: 'waived', reason: 'faster' })] } }] },
+    // Ticket 56: a `run` gate never run as an exact bash call is refused in session, no round used.
     { tools: [{ name: 'handoff', arguments: { gates: [gate('test', 'npm test'), gate('lint', 'npm run lint'), gate('typecheck', 'npm run typecheck')] } }] },
+    { tools: [{ name: 'handoff', arguments: { gates: [gate('test', 'npm test'), gate('lint', 'npm run lint')] } }] },
     { tools: [{ name: 'bash', arguments: { command: 'echo fix >> docs/a.md' } }] },
     // Real-run regression (q13-rounds-v3): a placeholder treatment for a reviewer without findings is refused, no round used.
     { tools: [{ name: 'handoff', arguments: { treatments: [{ round: 1, role: 'spec', findingId: 'S1', outcome: 'fixed', justification: 'Appended the missing line.' },
@@ -94,14 +96,15 @@ test('AC1-AC3: repeated handoffs carry treatments and Host gate evidence from th
     async onHandoff(event) { events.push(event); return directives.shift()!; } });
   const result = await session.activate({ context: builder, prompt: 'Implement.', signal: f.authority.signal, handoff: { baseCommit: base, rounds: { first: 1, max: 4 } } });
   assert.equal(result.status, 'completed');
-  assert.equal(bodies.length, 12, 'no provider request after the closing directive ended the activation');
+  assert.equal(bodies.length, 13, 'no provider request after the closing directive ended the activation');
   assert.match(bodies[4]!, /HANDOFF_DECLARATIONS_INVALID/, 'a waiver without authorization is refused before any capture');
-  assert.match(bodies[7]!, /HANDOFF_TREATMENT_UNKNOWN_FINDING[^"]*1\/standards\/none/, 'an unlisted finding is refused before any capture');
-  assert.match(bodies[11]!, /HANDOFF_ROUND_LIMIT/, 'the last capture is reserved for the closing one');
+  assert.match(bodies[5]!, /HANDOFF_GATE_NOT_RUN[^"]*typecheck: run exactly this command ALONE/, 'a run gate without an exact bash call is refused before any capture');
+  assert.match(bodies[8]!, /HANDOFF_TREATMENT_UNKNOWN_FINDING[^"]*1\/standards\/none/, 'an unlisted finding is refused before any capture');
+  assert.match(bodies[12]!, /HANDOFF_ROUND_LIMIT/, 'the last capture is reserved for the closing one');
   assert.deepEqual(events.map(event => [event.round, event.status, event.closing ?? false]), [[1, 'captured', false], [2, 'captured', false], [3, 'captured', false], [4, 'captured', true]]);
   const first = events[0]!.declarations!;
   assert.deepEqual(first.gates.map(item => [item.id, item.outcome, item.exitCode, item.current, item.code]),
-    [['test', 'passed', 0, true, null], ['lint', 'passed', 0, true, null], ['typecheck', 'unverified', null, false, 'GATE_RESULT_NOT_FOUND']]);
+    [['test', 'passed', 0, true, null], ['lint', 'passed', 0, true, null]]);
   assert.ok(first.gates[0]!.output && first.gates[0]!.output.workId === 'work-13', 'evidence is the protected output reference of the real Bash result');
   const output = await f.records.read({ reference: first.gates[0]!.output!, offset: 0, limit: 4096 });
   assert.match(output.data.toString('utf8'), /ran npm test/, 'the referenced protected output is the latest run of that command');

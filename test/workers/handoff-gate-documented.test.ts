@@ -30,7 +30,8 @@ test('rule: a gate command is documented only when its cited source carries it a
 test('handoff: the exact q18-v2 declaration is refused in session with an explicit reason, no round used; omitting it is accepted', async () => {
   const sources: Record<string, string> = { '/artifacts/instructions/v2/AGENTS.md': agents, '/artifacts/spec/v1/ticket.json': ticket };
   const read: string[] = [];
-  const gate = builderHandoff({ first: 1, max: 4 }, createToolLedger(), async path => { read.push(path); return sources[path] ?? null; });
+  const ledger = createToolLedger();
+  const gate = builderHandoff({ first: 1, max: 4 }, ledger, async path => { read.push(path); return sources[path] ?? null; });
   const refused = await call(gate, { gates: [realDeclaration] });
   assert.equal(refused.isError, true);
   assert.match(text(refused), /^HANDOFF_GATE_NOT_DOCUMENTED: no handoff happened/);
@@ -44,6 +45,9 @@ test('handoff: the exact q18-v2 declaration is refused in session with an explic
   assert.match(text(unreadable), /HANDOFF_GATE_NOT_DOCUMENTED.*could not be read/);
   const documented = { id: 'docs', source: '/artifacts/spec/v1/ticket.json#validation', cwd: '/workspace', status: 'run',
     command: 'cd /workspace/checkout && test -f docs/FACTORY_JOURNEY.md && grep -q \'^## Steps\' docs/FACTORY_JOURNEY.md' };
+  // Ticket 56: a `run` gate is accepted only after a green bash call of exactly its command.
+  ledger.begin('bash', 'g1');
+  ledger.bash('g1', { command: documented.command, cwd: '/workspace', exitCode: 0, output: null, code: null, contentBeforeSha: 'a', contentAfterSha: 'a' });
   const accepted = await call(gate, { gates: [documented] });
   assert.equal(accepted.terminate, true, 'a documented gate is accepted');
   assert.equal(gate.round(), 1);
@@ -85,7 +89,7 @@ test('real run q21-human-v6: a `run` gate whose EXACT command never ran alone is
   observe('c3', declared);
   const accepted = await call(gate, { gates: [gateDeclaration] });
   assert.match(text(accepted), /^Handoff accepted for capture round 1/);
-  // A gate that never ran at all is still accepted and ends unverified (ticket 13 semantics, unchanged).
+  // Ticket 56: a gate that never ran at all is refused the same way (it used to be accepted and end unverified after a whole round).
   const fresh = builderHandoff({ first: 1, max: 4 }, createToolLedger(), async () => ticket24);
-  assert.match(text(await call(fresh, { gates: [gateDeclaration] })), /^Handoff accepted/);
+  assert.match(text(await call(fresh, { gates: [gateDeclaration] })), /^HANDOFF_GATE_NOT_RUN: no handoff happened/);
 });
