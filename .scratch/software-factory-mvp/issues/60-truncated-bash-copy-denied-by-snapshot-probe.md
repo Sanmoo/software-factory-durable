@@ -11,7 +11,7 @@ unknown)" e `WORKER_INTERRUPTED`, gastando uma recuperação. O workspace ficou 
 
 **Type:** task
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
