@@ -62,12 +62,18 @@ de `factorySkillPackIds` (`latestContinuationPack`), sem pin manual.
 **Testes.** `test/workers/skill-pack-v9.test.ts` (4: seams, respostas dadas, mudança por título/corpo e ausência de `updatedAt`, herança e v8
 intacto); `test/control/continuation48-flow.test.ts` +2 (Control + Pi Durable/SQLite reais: duas Perguntas de seam respondidas em Execuções
 anteriores chegam com as respostas à nova sessão de uma continuação após fim de orçamento e de uma recovery operacional comum);
-`test/entrypoints/github-admission-reads.test.ts` +1 (adaptador real: `readTicket` sem timestamp).
+`test/entrypoints/github-admission-reads.test.ts` +1 (adaptador real: `readTicket` sem timestamp); mais os dois testes de fluxo abaixo.
 
-**Limites.** A não-repetição depende do prompt/skill; o Control não recusa uma Pergunta repetida. O resumo com Perguntas respondidas entra em
-continuação de orçamento e recovery operacional (48); uma retomada após resposta em sessão substituta (`recoveryPrompt`, `SESSION_LOST`) e
-uma parada administrativa levam só a resposta atual; respostas mais antigas ficam nos comentários e nas versões `spec/vN` preservadas.
-Um ciclo novo (Trabalho novo) não herda respostas. Prova real no [54](54-pilot-2.md).
+**Respostas em toda nova sessão (Control).** Além da continuação de orçamento e da recovery operacional (48), o resumo com TODAS as Perguntas
+respondidas do Trabalho (mesmo bloco limitado `answered-questions` de `stateSummary`) entra agora também (a) na retomada após resposta em
+sessão substituta (`recoveryPrompt`, campo `summary`, nunca descartado pelo limite de tamanho; ex. `SESSION_LOST`/`SESSION_NOT_RECORDED`), junto
+da resposta atual, e (b) na continuação após parada administrativa (`ADMINISTRATIVE_STOP`, sempre). `answeredOf`/`workSummary` em
+`src/control/durable/dispatch.ts`. Testes de fluxo: `continuation48-flow.test.ts` (sessão substituta com duas Perguntas de seam) e
+`recovery-flow.test.ts` (parada administrativa com Pergunta respondida antes).
+
+**Limites.** A não-repetição depende do prompt/skill; o Control não recusa uma Pergunta repetida. Um `continue` na MESMA sessão leva só a
+resposta atual (as anteriores estão na própria conversa). Um ciclo novo (Trabalho novo) não herda respostas (fora do escopo). Prova real no
+[54](54-pilot-2.md).
 
 ## Comments
 
