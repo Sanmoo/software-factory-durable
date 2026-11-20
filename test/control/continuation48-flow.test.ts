@@ -123,3 +123,47 @@ test('ticket 48: the repository Builder budget adjustment is recorded with the E
   assert.deepEqual((await h.work()).execution!.request.policies.builderBudget, expected);
   assert.deepEqual(h.invocations[0], { builderBudget: expected });
 });
+
+// Ticket 53 (pilot 35, #125/#126): seam answers already given in the Work reach every later Execution through ticket 48's state summary, so a
+// new session (continuation after a budget end, or an ordinary operational recovery) never asks the seam Question again. The skill pack
+// (factory-skills-v9, `implement` §4/§5 and `tdd`) tells the Builder to use them (test/workers/skill-pack-v9.test.ts).
+const seamQuestions = [
+  { questionId: '0b9c6a52-3d3e-4c8f-9a51-000000000531', question: 'May the tests use the seams the Ticket names (domain, use case with fake ports, Postgres IT, REST)?',
+    answer: 'Yes: those seams are approved; Cucumber for the acceptance flow.' },
+  { questionId: '0b9c6a52-3d3e-4c8f-9a51-000000000532', question: 'May the new V2 event get its own repository port seam?', answer: 'Yes, a new port seam for the V2 event.' },
+];
+async function answerBoth(h: Awaited<ReturnType<typeof harness>>) {
+  await h.idle(1);
+  await h.control.accept({ request_id: 'answer-53-1', operation: 'answer', question_id: seamQuestions[0]!.questionId, text: seamQuestions[0]!.answer, origin: 'local-cli' });
+  await h.idle(2);
+  await h.control.accept({ request_id: 'answer-53-2', operation: 'answer', question_id: seamQuestions[1]!.questionId, text: seamQuestions[1]!.answer, origin: 'local-cli' });
+  await h.idle(3);
+}
+function assertSeamAnswers(prompt: string) {
+  assert.match(prompt, /^Factory recovery instruction for Ticket /, 'a NEW session (not `continue`)');
+  assert.match(prompt, /answered-questions \(already answered: do NOT ask them again; use these answers\)/);
+  for (const item of seamQuestions) {
+    const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    assert.match(prompt, new RegExp(`Question ${item.questionId}:\\n\`\`\`\\n${escape(item.question)}\\n\`\`\`\\n    Answer:\\n\`\`\`\\n${escape(item.answer)}\\n\`\`\``), item.questionId);
+  }
+}
+
+test('ticket 53: seam answers given in earlier Executions reach a continuation after a budget end (the new session gets both)', async t => {
+  const h = await harness(t, { progress: true });
+  h.scripts.push({ kind: 'ask', ...seamQuestions[0]! }, { kind: 'ask', ...seamQuestions[1]! }, budgetEnd, { kind: 'complete' });
+  await answerBoth(h);
+  await h.idle(4);
+  assert.equal((await h.work()).execution!.interruption!.reason, 'BUDGET_CONTINUATION');
+  assertSeamAnswers(h.doubles.prompts.at(-1)!.prompt);
+});
+
+test('ticket 53: seam answers given in earlier Executions reach an ordinary operational recovery (the new session gets both)', async t => {
+  const h = await harness(t, { progress: false });
+  h.scripts.push({ kind: 'ask', ...seamQuestions[0]! }, { kind: 'ask', ...seamQuestions[1]! }, { kind: 'fail', code: 'WORKER_EXECUTION_UNCERTAIN' }, { kind: 'complete' });
+  await answerBoth(h);
+  h.doubles.jumpCalendar(60000);
+  await h.idle(4);
+  const work = await h.work();
+  assert.deepEqual([work.execution!.interruption!.reason, work.execution!.charge!.kind], ['OPERATIONAL_RECOVERY', 'recovery']);
+  assertSeamAnswers(h.doubles.prompts.at(-1)!.prompt);
+});
