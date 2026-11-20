@@ -35,29 +35,107 @@ Decisões a tomar (triagem):
 
 **Type:** task
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
-- [ ] Decisões da triagem de 2026-11-19 (abaixo) registradas na spec §7.4 (ou ADR) junto da implementação.
-- [ ] Todo repositório declara seu ambiente em `.factory/environment.yaml` (esquema fechado e validado: pacotes `apk` com versão exata e,
+- [x] Decisões da triagem de 2026-11-19 (abaixo) registradas na spec §7.4 (ou ADR) junto da implementação.
+- [x] Todo repositório declara seu ambiente em `.factory/environment.yaml` (esquema fechado e validado: pacotes `apk` com versão exata e,
   opcionalmente, imagens de container fixadas por digest para baixar antes; sem scripts nem comandos livres). A Factory confia no arquivo:
   não há aprovação do operador.
-- [ ] Repositório sem `.factory/environment.yaml` (ou com arquivo inválido): o Trabalho não começa, impedimento `ENVIRONMENT_NOT_DECLARED`
+- [x] Repositório sem `.factory/environment.yaml` (ou com arquivo inválido): o Trabalho não começa, impedimento `ENVIRONMENT_NOT_DECLARED`
   (ou de arquivo inválido com o caminho do erro) que diz o que criar; nenhum fallback para o guest genérico.
-- [ ] O arquivo é lido do commit base na criação do Trabalho e fixado no Trabalho pelo hash; mudança do arquivo vale para Trabalhos seguintes.
+- [x] O arquivo é lido do commit base na criação do Trabalho e fixado no Trabalho pelo hash; mudança do arquivo vale para Trabalhos seguintes.
 - [ ] O controlador prepara, antes do primeiro boot, um disco base por (repositório, hash do arquivo) sobre os assets da release, numa VM de
   preparo com acesso só ao mirror Alpine e aos registries das imagens declaradas; o arquivo nunca executa no host (o host só lê e valida o
   YAML). Versão ausente no mirror recusa o preparo, sem trocar de versão. Trabalhos seguintes com o mesmo hash reutilizam o disco base.
-- [ ] Identidade do ambiente = hash do arquivo + manifesto resolvido (versões e digests). Hash novo gera disco base novo usado só por ambientes
+- [x] Identidade do ambiente = hash do arquivo + manifesto resolvido (versões e digests). Hash novo gera disco base novo usado só por ambientes
   novos; ambientes já preparados continuam com o anterior, registrado.
-- [ ] Teste offline: um repositório que declara JDK 25 tem o disco base preparado com o manifesto esperado, e o mesmo ambiente nos Trabalhos
+- [x] Teste offline: um repositório que declara JDK 25 tem o disco base preparado com o manifesto esperado, e o mesmo ambiente nos Trabalhos
   seguintes (identidade igual).
 - [ ] O gate do Ticket fica só o comando do projeto (`./gradlew check acceptanceTest`); nenhum detalhe de ambiente no corpo do Ticket.
-- [ ] Falha de preparo vira impedimento visível com causa, sem retry implícito e sem fallback de imagem/versão; retomada pelo
+- [x] Falha de preparo vira impedimento visível com causa, sem retry implícito e sem fallback de imagem/versão; retomada pelo
   `--retry-blocked-start` do ticket 50.
-- [ ] O Builder pode instalar extras que o Ticket exija e registra; nunca troca a stack/versão declarada. Skills dizem que o ambiente declarado
+- [x] O Builder pode instalar extras que o Ticket exija e registra; nunca troca a stack/versão declarada. Skills dizem que o ambiente declarado
   já está pronto (nova versão do pacote de skills, sobre a do ticket 53).
+
+## Answer
+
+Resolvido em 2026-11-19 (branch `fix/44-repo-environment`, sobre `0502c10`). Dois critérios ficam desmarcados porque só se provam com VM
+real e Tickets reais: o boot da VM de preparo (critério 5: implementado e testado offline até a porta da VM) e o corpo dos Tickets do piloto 2
+(critério 8). Prova real no [54](54-pilot-2.md). Decisões registradas na spec §7.4 ("Ambiente por repositório").
+
+**Declaração.** `.factory/environment.yaml`, esquema fechado em `src/contracts/environment.ts` (`validateEnvironmentDeclaration`, sem
+dependências): `schemaVersion: 1`; `apk: [{ name, version }]` (obrigatória, pode ser vazia; versão Alpine exata com `-rN`, sem faixa/`~`);
+`images: [{ reference: <registry>/<path>@sha256:<64 hex> }]` opcional (registry explícito, sem tag). Chave desconhecida (scripts, comandos),
+duplicata ou limite (64 pacotes, 16 imagens, 64 KiB) é erro com caminho (`apk[0].version`, `run`...). Parse YAML como dado só
+(`parseEnvironmentDeclaration` em `src/code-repository/environment.ts`: um documento, chaves únicas, sem âncora/alias/tag explícita, UTF-8).
+
+**Leitura e fixação.** `CodeRepository.readEnvironmentDeclaration` (grant novo `environment-read` = metadata R + Contents R): ponta da base por
+`git/matching-refs/heads/<base>` (ref exata) e `GET /contents/.factory/environment.yaml?ref=<sha>`; sha256 dos bytes. 404 num commit conhecido =
+`missing`; qualquer falha = `unavailable` (nunca ausência). O poller lê UMA vez por repositório por rodada: a admissão fixa no Trabalho
+(`work.environment = { state: 'pinned', pin: { path, commit, sha256, declaration } }`, evento `environment-evaluated`) ou registra o
+impedimento `ENVIRONMENT_NOT_DECLARED` (diz o que criar), `ENVIRONMENT_DECLARATION_INVALID` (caminhos do erro) ou `ENVIRONMENT_NOT_EVALUATED`
+(leitura indisponível); a fase 3 do polling relê só Trabalhos não fixados até fixar. Fixado nunca relê: mudança do arquivo vale para Trabalhos
+seguintes (`factory new` cria o ciclo `not-evaluated`, fixa o seu). Regra pura: `src/control/rules/environment.ts`. Trabalhos admitidos antes do
+44 (sem `environment`) seguem no guest genérico, nunca bloqueados (compatibilidade do armazenamento; formato inalterado, campo opcional).
+
+**Disco base.** `src/sandbox/environment-base.ts` (`ensureEnvironmentBase`): chave = sha256(repositoryId, hash do arquivo, pin dos assets,
+perfil, `diskGiB`) — inclui assets/perfil/tamanho porque é outro disco; diretório `<root>/environment-bases/base-<chave>/`. Novo: disco
+candidato do rootfs da release (`buildRootDisk`), script FIXO montado só de valores revalidados (`apk add --update-cache --repositories-file
+/dev/null --repository <mirror>/v3.23/main --repository <mirror>/v3.23/community -- 'name=version'...`, `docker pull --quiet 'ref@sha256:…'`,
+depois `apk info -v` e `docker image inspect` como relatório entre marcadores, `sync`), VM pela porta `PreparationVm`, relatório aceito só com
+EXATAMENTE as versões/digests declarados (`parseResolvedManifest`), `checkDiskFilesystem` do candidato, `manifest.json` (manifesto resolvido:
+declarado + todos os instalados + digests), `base.qcow2`, `ready.json`. Reuso = `ready.json` + manifesto conferido; Trabalhos concorrentes da
+mesma chave compartilham UMA preparação (em processo). O ambiente do Trabalho recebe cópia qcow2 independente (`copyBaseDisk`, sem backing) e
+grava a base em `owner.json` (`environmentBase`); `replace-disk` (47) copia a mesma base. O mirror/branch vêm do perfil do guest
+(`guestAlpine`, teste confere com `alpine-docker-vfs.json`).
+
+**VM de preparo (produção).** `createPreparationVm` (`src/sandbox/preparation-vm.ts`, composta em `controller/composition.ts`): grava
+`vm-request.json` e roda `systemd-run --user --wait --collect` (unit `factory-environment-preparation-<uuid>.service`, `RuntimeMaxSec` =
+1800 s + graça + 60) com o adapter em modo `prepare-environment <root> <dir>`; cessação = unit não ativa no gerenciador, só então lê
+`vm-result.json`. Dentro da unit (`runEnvironmentPreparation`): confere assets e supervisão, `VM.create` com o disco candidato,
+`createHttpHooks({ allowedHosts })` + exclusão das interfaces do host, DNS sintético, sem WebSocket/SSH/ingress; executa o script uma vez com
+prazo, parada limpa do guest (47), fecha a VM. **Egress** (`preparationEgress`): host do mirror (`dl-cdn.alpinelinux.org`) + por imagem o
+registry e seus hosts de token/blob conhecidos (docker.io → registry-1/auth/production.cloudflare.docker.com; ghcr.io →
+pkg-containers.githubusercontent.com; quay.io; mcr) ou só o próprio host.
+
+**Identidade.** = hash do arquivo + sha256 do manifesto resolvido (`EnvironmentBaseIdentity`: base, declarationSha256, manifestSha256, reused,
+packages declarados, images), devolvida por `prepare` e gravada em `execution.request.environment` + histórico `environment-base:…`. Ambiente
+já preparado devolve a base registrada qualquer que seja a declaração passada (nunca `ENVIRONMENT_CONFIGURATION_MISMATCH`); o check do 50
+(`environmentIdentityChanges`) continua só perfil/disco/assets e o `doctor` diz que a declaração só vale para ambientes novos.
+
+**Falha e retomada.** Recusa com causa (`failed.json`; detalhe com o fim da saída do apk/docker, p. ex. `unable to select packages`):
+`PREPARE_ENVIRONMENT_BASE_PREPARATION_FAILED` ou `…_INCOMPLETE` (tentativa interrompida, sem resultado), assentadas na hora (Slot livre),
+`RECOVERY_BLOCKED` explicando que nada foi instalado no lugar; outros Trabalhos da mesma chave recebem a mesma recusa (sem retry implícito).
+`factory resume <work> --retry-blocked-start PREPARE_ENVIRONMENT_BASE_PREPARATION_FAILED --request-id <id>` grava `work.environmentRetry`;
+o próximo preparo passa `retryEnvironmentBase`, a tentativa é posta de lado (`base-<chave>.failed-<stamp>`, nunca apagada) e refeita. VM sem
+cessação confirmada → `indeterminate` `ENVIRONMENT_PREPARATION_VM_UNCONFIRMED` (disco nunca lido, nada gravado; o retry recusa enquanto a unit
+estiver ativa). Sem porta de VM: `ENVIRONMENT_PREPARATION_VM_NOT_COMPOSED` (nunca guest genérico).
+
+**Skills.** `factory-skills-v10` (10.0.0) = v9 + `implement` §2 e `alpine-diagnostics`: o ambiente declarado já está instalado; não reinstalar,
+atualizar ou trocar pacote/versão/runtime/imagem nem a stack; extras que o Ticket exija com `apk add` e registrados (pacote, versão exata, por
+quê); ambiente declarado que impede um gate = bloqueio. v1–v9 intactos; a release escolhe v10.
+
+**Testes.** `test/control/environment-rules.test.ts` (esquema, regra de fixação, recusas/retry, parse YAML, o arquivo proposto do piloto);
+`test/control/environment44-flow.test.ts` (S: Control + Pi Durable/SQLite reais; sem arquivo → nunca prepara, depois fixa e começa; inválido →
+caminhos; pin lido uma vez, Trabalho seguinte com hash novo; falha de base → bloqueio com causa, sem retry implícito, retry refaz);
+`test/sandbox/environment-base.test.ts` (script exato `pkg=version`, egress, manifesto resolvido, JDK 25: uma base para três Trabalhos com a
+mesma identidade, concorrência, hash novo só para ambiente novo, versão ausente recusada e retry, VM não confirmada, porta de produção com
+`systemd-run` dublado); `test/sandbox/environment-base-native.test.ts` (gated `FACTORY_SANDBOX_TEST_ROOT`: e2fsprogs/qemu-img reais, base com
+marcador gravado por debugfs, cópias standalone, replace-disk da base); `test/entrypoints/github-admission-reads.test.ts` +2 (adaptador real
+sobre o fixture gh); `test/workers/skill-pack-v10.test.ts`.
+
+**Para o 54 (VM real).** Verificar: boot da VM de preparo na unit transitória; `apk add` do mirror v3.23 com a CA de mediação (`apk info -v` sai
+no formato esperado pelo parser, apk-tools 3); que hosts fora da allowlist são recusados; `docker pull` por digest via dockerd do guest pela
+allowlist; parada limpa e `e2fsck` do candidato; boot do ambiente do Trabalho a partir da cópia (`java -version` no PATH, `./gradlew check
+acceptanceTest`, Testcontainers/Ryuk); um segundo Trabalho do mesmo repositório reutiliza a base (sem nova VM); um `apk add` extra do Builder
+com `openjdk25-jdk=…` no world após o mirror avançar.
+
+**Limites.** Bases não entram no inventário de boot (26) nem no cleanup (candidato ao ticket de retenção, como os discos `*.replaced-*`). O
+`.factory/environment.yaml` do `Sanmoo/java-springboot-event-sourcing` está proposto em `docs/evidence/44-java-springboot-environment.yaml`
+(openjdk25-jdk 25.0.5.1_p2-r0, Alpine v3.23 community, consultado em 2026-11-19); o operador o mergeia na preparação do piloto 2. Alpine estável
+mantém só o build corrente: quando a versão sair do mirror, preparos NOVOS são recusados até atualizar a declaração (sem troca de versão).
 
 ## Comments
 
