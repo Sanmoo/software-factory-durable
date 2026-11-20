@@ -229,17 +229,19 @@ export async function executeSession(options: Options, invocation: Invocation, r
         }
         const status = signal.aborted || interrupted || qualification?.failed() ? 'interrupted' as const : 'completed' as const;
         const sessionFile = manager.getSessionFile() ?? null;
-        // Ticket 48: a Builder session closed by its own request/tool count says so (the Host's count, never a model claim).
-        const budgetExhausted = role === 'builder' && status === 'interrupted' ? qualification?.exhausted() ?? null : null;
+        // Ticket 48: a session closed by its own request/tool count says so (the Host's count, never a model claim). Ticket 57: so does a session
+        // whose model request failed without a Host abort (reviewers too: their cause reaches Control in the opinion code).
+        const budgetExhausted = status === 'interrupted' ? qualification?.exhausted() ?? null : null;
+        const providerUnavailable = status === 'interrupted' && !budgetExhausted && qualification?.providerFailed() === true;
         if (role === 'builder' || !invocation.review) return { status, receipt, sessionFile: manager.getSessionFile(), ...(role === 'builder' ? { sessionTools: [...tools].sort() } : {}),
-          ...(budgetExhausted ? { budgetExhausted } : {}) };
+          ...(role === 'builder' && budgetExhausted ? { budgetExhausted } : {}), ...(role === 'builder' && providerUnavailable ? { providerUnavailable: true as const } : {}) };
         // Reviewer: the complete opinion from the FINAL assistant message is preserved durably BEFORE any notification.
         const last = [...session.messages].reverse().find(message => message.role === 'assistant');
         const finalText = last && 'content' in last && Array.isArray(last.content)
           ? last.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n') : null;
         const composed = composeOpinion({ role, invocationId: invocation.context.invocationId, review: invocation.review, status, finalText, sessionFile, sessionMode,
           model: { providerId: profile.providerId, modelId: profile.modelId }, profile: { id: profile.id, modelBudget: invocation.modelBudget ?? null },
-          host: observer.summary(invocation.review.required) });
+          host: observer.summary(invocation.review.required), ...(budgetExhausted ? { closedBy: budgetExhausted } : providerUnavailable ? { closedBy: 'provider' as const } : {}) });
         const { phaseId: _phase, ...context } = invocation.context;
         const recordedAt = new Date().toISOString();
         const reference = await options.records.record({ ...context, callId: 'review-opinion' }, { kind: 'review-opinion', ...composed, recordedAt });

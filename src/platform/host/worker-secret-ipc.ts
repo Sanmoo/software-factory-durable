@@ -31,8 +31,9 @@ const ownerLifecycleSchema = z.union([
   // Ticket 11: a Builder result names its exact session tool set (the owner observes the preserved session itself).
   z.strictObject({ kind: z.literal('worker-result'), status: z.enum(['completed', 'interrupted']), receipt, sessionFile: z.string().nullable().optional(),
     sessionTools: z.array(z.string().regex(/^[a-z_]{1,32}$/)).max(16).optional(), opinion: z.record(z.string(), z.json()).optional(),
-    // Ticket 48: an interrupted Builder whose own request/tool budget count closed the session.
-    budgetExhausted: z.enum(['requests', 'tools']).optional() }),
+    // Ticket 48: an interrupted Builder whose own request/tool budget count closed the session. Ticket 57: one whose model request failed
+    // without a Host abort.
+    budgetExhausted: z.enum(['requests', 'tools']).optional(), providerUnavailable: z.literal(true).optional() }),
   z.strictObject({ kind: z.literal('worker-result'), status: z.literal('failure'), code: z.string().regex(/^[A-Z_]{1,128}$/) }),
   z.strictObject({ kind: z.literal('worker-result'), status: z.literal('question'), receipt, sessionFile: z.string().nullable().optional(),
     sessionTools: z.array(z.string().regex(/^[a-z_]{1,32}$/)).max(16).optional(), question: workerQuestionSchema.extend({ acknowledged: z.boolean() }) }),

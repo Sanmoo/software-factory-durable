@@ -99,14 +99,17 @@ export function createReadObserver() {
  */
 export function composeOpinion(input: { role: ReviewerRole; invocationId: string; review: ReviewInput; status: 'completed' | 'interrupted';
   finalText: string | null; sessionFile: string | null; sessionMode?: { mode: 'new' | 'continued' | 'replaced'; from: string | null; code: string | null }; model: { providerId: string; modelId: string }; profile: { id: string; modelBudget: string | null };
-  host: ReturnType<ReturnType<typeof createReadObserver>['summary']> }): Omit<ReviewOpinion, 'reference' | 'recordedAt'> {
+  host: ReturnType<ReturnType<typeof createReadObserver>['summary']>;
+  /** Ticket 57: why an interrupted session closed (Host fact): its own request/tool budget count, or a model request that failed without a Host abort. */
+  closedBy?: 'requests' | 'tools' | 'provider' }): Omit<ReviewOpinion, 'reference' | 'recordedAt'> {
   const base = { version: 1 as const, role: input.role, round: input.review.round, attempt: input.review.attempt, invocationId: input.invocationId,
     session: { file: input.sessionFile, ...(input.sessionMode ?? {}) }, model: input.model, profile: input.profile,
     input: { handoffIndexSha256: input.review.handoffIndexSha256, required: [...input.review.required], missing: [...input.review.missing] },
     finalMessageSha256: input.finalText === null ? null : createHash('sha256').update(input.finalText).digest('hex') };
   const hostChecks = { ...input.host, downgraded: [] as string[] };
   const failed = (conclusion: 'failure' | 'cancelled', code: string) => ({ ...base, conclusion, code, coverage: null, findings: [], limitations: [], hostChecks });
-  if (input.status !== 'completed') return failed('cancelled', 'REVIEWER_INTERRUPTED');
+  if (input.status !== 'completed') return input.closedBy === 'provider' ? failed('failure', 'WORKER_PROVIDER_UNAVAILABLE')
+    : failed('cancelled', input.closedBy ? 'REVIEWER_BUDGET_EXHAUSTED' : 'REVIEWER_INTERRUPTED');
   // The WHOLE final message is the verdict: a bare JSON object, or exactly one fenced block holding it. Never extracted from prose.
   const message = (input.finalText ?? '').trim();
   const fenced = /^```(?:json)?[ \t]*\n([\s\S]*?)\n[ \t]*```$/.exec(message);

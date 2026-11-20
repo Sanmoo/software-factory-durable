@@ -207,7 +207,8 @@ export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, en
     if ('kind' in message && message.kind === 'worker-result') {
       const parsed = z.discriminatedUnion('status', [
         z.strictObject({ kind: z.literal('worker-result'), status: z.enum(['completed', 'interrupted']), receipt: reference, sessionFile: z.string().nullable().optional(),
-          sessionTools: z.array(z.string()).max(16).optional(), opinion: z.record(z.string(), z.json()).optional(), budgetExhausted: z.enum(['requests', 'tools']).optional() }),
+          sessionTools: z.array(z.string()).max(16).optional(), opinion: z.record(z.string(), z.json()).optional(), budgetExhausted: z.enum(['requests', 'tools']).optional(),
+          providerUnavailable: z.literal(true).optional() }),
         z.strictObject({ kind: z.literal('worker-result'), status: z.literal('failure'), code: z.string() }),
         z.strictObject({ kind: z.literal('worker-result'), status: z.literal('question'), receipt: reference, sessionFile: z.string().nullable().optional(),
           sessionTools: z.array(z.string()).max(16).optional(), question: askedSchema }),
@@ -223,9 +224,11 @@ export async function launchWorker(host: WorkerBootHost, input: WorkerLaunch, en
           if (result.status === 'question' && own && request.context.role === 'builder' && result.question.reference.workId === request.context.workId) {
             completeResolve({ status: 'question', receipt: result.receipt, question: result.question, ...preserved });
           } else if (result.status === 'completed' && own) completeResolve({ status: 'success', receipt: result.receipt, ...(result.opinion ? { opinion: result.opinion } : {}), ...preserved });
-          // Ticket 48: a Builder closed by its own budget count (worker Host fact) is told apart from any other interruption.
-          else completeResolve({ status: 'failure', code: result.status === 'interrupted' ? own && request.context.role === 'builder' && result.budgetExhausted
-            ? 'WORKER_BUDGET_EXHAUSTED' : 'WORKER_INTERRUPTED' : 'WORKER_EXECUTION_UNCERTAIN' });
+          // Ticket 48: a Builder closed by its own budget count (worker Host fact) is told apart from any other interruption. Ticket 57: so is a
+          // Builder whose model request failed without a Host abort (an operational recovery, bounded by the Work's recoveries; never retried here).
+          else completeResolve({ status: 'failure', code: result.status !== 'interrupted' ? 'WORKER_EXECUTION_UNCERTAIN'
+            : own && request.context.role === 'builder' && result.budgetExhausted ? 'WORKER_BUDGET_EXHAUSTED'
+              : own && request.context.role === 'builder' && result.providerUnavailable ? 'WORKER_PROVIDER_UNAVAILABLE' : 'WORKER_INTERRUPTED' });
           secretReceiver.close();
         })();
       }

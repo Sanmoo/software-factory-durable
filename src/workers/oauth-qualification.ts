@@ -51,10 +51,14 @@ export function qualifyOAuth(runtime: ModelRuntime, signal: AbortSignal, publicI
   let requests = 0, tools = 0, providerBytes = 0, failed = false;
   // Ticket 48: which count of the budget closed the session (Host fact, never a model claim); null = closed for another reason or open.
   let exhausted: 'requests' | 'tools' | null = null;
+  // Ticket 57: a model request ended in error while the Host had NOT aborted this session (provider, transport or credential failure inside
+  // the request). Host fact for the result's cause; the native SDK never retries it (maxRetries 0, SDK retry disabled).
+  let providerFailed = false;
   const close = () => { failed = true; abort(); return unavailable(); };
   const check = () => { if (failed || signal.aborted || !publicInputIsSafe()) throw close(); };
   const safeMessage = (message: Message): Message => {
     if (message.stopReason === 'error' || message.stopReason === 'aborted' || message.errorMessage !== undefined) {
+      if (!failed && message.stopReason !== 'aborted' && !signal.aborted) providerFailed = true;
       failed = true;
       return { role: 'assistant', content: [], api: 'openai-responses', provider: 'openai', model: 'gpt-6-luna',
         usage: structuredClone(message.usage), stopReason: 'error', errorMessage: 'WORKER_PROVIDER_UNAVAILABLE', timestamp: message.timestamp };
@@ -92,7 +96,7 @@ export function qualifyOAuth(runtime: ModelRuntime, signal: AbortSignal, publicI
     stream.end = result => end(result === undefined ? undefined : safeMessage(result));
     return stream;
   };
-  return { check, failed: () => failed, exhausted: () => exhausted,
+  return { check, failed: () => failed, exhausted: () => exhausted, providerFailed: () => providerFailed,
     tool(tool: ToolDefinition): ToolDefinition {
       return { ...tool, async execute(...args) {
         const count = ++tools; // before delegate/adapter, including concurrent calls
