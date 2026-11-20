@@ -11,7 +11,7 @@ que o canal falhou.
 
 **Type:** task
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
