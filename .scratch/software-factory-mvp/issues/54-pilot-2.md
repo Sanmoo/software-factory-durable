@@ -40,3 +40,11 @@ seguindo os guardrails de ensaios.
   [58](58-not-publishable-without-pr-next-step.md). Ruleset restaurado, serviço parado, chave da App removida; `pl2` preservada como evidência
   (Trabalhos pausados). 62,3 M tokens nas sessões. Detalhe em `docs/evidence/54-pilot-2-authorization-request.md` §11 e
   `/home/sanmoo/software-factory-test/pl2-pilot-evidence/findings.md`. Um novo piloto fica bloqueado por 55.
+- 2026-11-20 (supervisor), **correção do comentário anterior:** o critério (47) **não** foi reprovado. A investigação do [55](55-guest-stop-loses-root-metadata-writes.md)
+  mostrou que nenhuma escrita do guest se perdeu: a checagem de disco do start convertia a imagem inteira com o limite de 30 s das chamadas
+  pequenas. Sob carga (discos de 13–17 GiB, três checagens juntas depois do reinício), a conversão era cortada e o disco recusado. O "dano"
+  que o supervisor viu era de cópias truncadas, e o "disco novo do replace-disk" era o disco antigo (o remédio deu `not-needed`). A conversão
+  completa do disco do #124 passa no `e2fsck`. A parada global das 05:41 se baseou nesse diagnóstico errado. Corrigido em `532402e`
+  (passos de imagem inteira com limite de 30 min; motivo da recusa registrado). Os três Trabalhos da `pl2` têm discos íntegros e voltam com
+  `--retry-blocked-start` numa release com a correção. A prova real do (47) continua pendente: fim de orçamento com continuação no mesmo
+  ambiente passou, mas as paradas sob carga só foram checadas com a correção fora do piloto (ticket 55, 6 runs).

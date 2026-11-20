@@ -165,3 +165,14 @@ Recomendação do supervisor: **sim** em todos, exceto 11b e 11c (alternativas a
   Trabalho) e 58 (`not-publishable` sem PR fica sem próximo passo); memória do host no limite com 3 guests (swap de 3–4 GiB por VM).
 - **Reversão feita:** ruleset `26435808` restaurado (com `update`); serviço parado; watcher parado; `pl2/credentials/app.pem` removido. A `pl2` e
   seus Trabalhos ficam preservados como evidência. A branch `chore/factory-environment` continua no remoto. 62,3 M tokens nas sessões.
+
+## 12. Correção do diagnóstico (2026-11-20)
+
+O diagnóstico da seção 11 estava errado. Nenhuma escrita do guest se perdeu e a parada limpa do ticket 47 funcionou. Quem falhou foi a
+checagem de disco do start: ela convertia o `root.qcow2` inteiro com o limite de 30 s das chamadas pequenas. Os discos estavam com 13–17 GiB,
+e depois do reinício três checagens rodavam juntas, então a conversão era morta aos 30 s e o disco recusado. As quatro cópias guardadas têm
+exatamente 30 s e estão truncadas; o supervisor rodou `e2fsck` nelas e leu o corte como perda de metadados. O disco do #124, convertido por
+inteiro, passa no `e2fsck` (código 0). O "disco novo do `replace-disk`" era o antigo, porque o remédio deu `not-needed`. A parada global das
+05:41 se baseou nesse erro. Correção e evidência: ticket 55, commit `532402e`, `docs/evidence/55-guest-stop-disk-check-2026-11-20.json`.
+
+**Por critério, corrigido:** o (47) deixa de estar reprovado e fica pendente da prova real com a correção. O restante da seção 11 vale como estava.

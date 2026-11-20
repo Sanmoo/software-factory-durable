@@ -21,7 +21,7 @@ fazem diferença.
 
 **Type:** research
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
