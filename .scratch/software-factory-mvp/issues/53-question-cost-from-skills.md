@@ -16,16 +16,58 @@ pela revisão Spec do #125 (1). O resto:
 
 **Type:** task
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
-- [ ] Skill: quando o Ticket nomeia as camadas/estilos de teste, os seams correspondentes à arquitetura existente do repositório contam como
+- [x] Skill: quando o Ticket nomeia as camadas/estilos de teste, os seams correspondentes à arquitetura existente do repositório contam como
   aprovados; a Pergunta fica para seams novos ou ambíguos. Nova versão do pacote de skills.
-- [ ] Respostas a Perguntas de seam já dadas no Trabalho chegam às Execuções seguintes (preservadas como fonte) e não geram nova Pergunta.
+- [x] Respostas a Perguntas de seam já dadas no Trabalho chegam às Execuções seguintes (preservadas como fonte) e não geram nova Pergunta.
   O ticket 48 já passa as Perguntas respondidas no resumo de continuação/recovery; aqui só se confirma (teste) que isso cobre os seams e que a
   skill manda usá-las.
-- [ ] A verificação de mudança do Ticket compara título/corpo preservados, não `updatedAt`; comentários não contam como mudança de escopo.
+- [x] A verificação de mudança do Ticket compara título/corpo preservados, não `updatedAt`; comentários não contam como mudança de escopo.
+
+## Answer
+
+Resolvido em 2026-11-19 (branch `fix/53-fewer-questions`, sobre `6cd3184`). A medição de Perguntas por origem fica no [54](54-pilot-2.md).
+
+**Pacote `factory-skills-v9` (9.0.0)** = v8 mais (v1–v8 inalterados; a release compõe o último pacote com `continuation`, agora o v9):
+
+- `tdd` ("Seams"): um seam é acordado por (1) **o Ticket nomeia e o repositório tem**: o Ticket ou documento que ele referencia nomeia a
+  interface/seams, ou as camadas/estilos de teste (domínio, use case com portas falsas, IT Postgres, REST, Cucumber), e os seams
+  correspondentes já existem na arquitetura do repositório ("Those seams count as approved: do not ask about them"); ou (2) **resposta já
+  dada no Trabalho** (resposta aceita do `continue`/recovery, resposta anterior na sessão ou `answered-questions` do resumo do 48: "never
+  ask that question again, not even reworded"). "Ask ONLY for seams that are new [...] or ambiguous", nomeando só esses e listando os já
+  acordados com a fonte. `implement` §2 aponta para essa regra.
+- `implement` §4.5 (nova) e §5.2: toda Pergunta já respondida no Trabalho está decidida (resposta aceita e cada `answered-questions` do
+  "Factory state summary"); usar e nunca perguntar de novo.
+- `implement` §6: "**Has the Ticket changed?** Compare only its current `title` and `body` with those of `ticket.json` in the latest complete
+  preserved version, never `updatedAt` or another timestamp [...]. Comments [...] are never a scope change"; título/corpo iguais não são
+  mudança. §1.2 deixou de buscar `updatedAt` (`gh issue view <link> --json number,title,body,url,author,labels`) e `revision` do Ticket é `null`.
+
+**Onde estava o `updatedAt`.** Só no pacote: `implement` §1.2 buscava `updatedAt` e §1.5 o gravava como `revision`; em recovery/nova versão o
+Builder comparava com o Ticket atual. No Control nada compara o Ticket por tempo: `issueSchema` (`src/issue-tracker/index.ts`) nem lê
+`updated_at`/título/corpo do issue; o `updatedAt` de comentários só serve à regra de comentário editado (`commentEligibility`/`commentCommand`).
+Teste de regressão: `readTicket` é a mesma observação quando só comentários mudaram o issue.
+
+**Procedimento de nova versão (repetível pelo 44).** 1) `cp -r assets/skill-pack/factory-skills-v9 assets/skill-pack/factory-skills-v10`;
+2) trocar `factory-skills-v9` por `-v10` nos `prompts/*.md` e no título do `CREDITS.md`; 3) editar as skills; 4) acrescentar a linha da
+versão no `CREDITS.md`; 5) no `manifest.json` trocar `id`, `version`, `guestDirectory` e recalcular o `sha256` de cada arquivo (python:
+`hashlib.sha256(Path(f['path']).read_bytes())`, `json.dumps(m, indent=2, ensure_ascii=False) + '\n'`); 6) acrescentar o id em
+`factorySkillPackIds` (`src/contracts/index.ts`) e a linha no comentário de `src/workers/skill-pack.ts`; 7) teste
+`test/workers/skill-pack-v10.test.ts` (hashes, regras novas e herdadas, caminhos de guest, `continuation`, CREDITS, versão anterior intacta)
+e, se o teste citar o `timeout: 1800` herdado, isenção em `test/runner/fixed-timers.test.ts`. Release, composição, inventário e upgrade derivam
+de `factorySkillPackIds` (`latestContinuationPack`), sem pin manual.
+
+**Testes.** `test/workers/skill-pack-v9.test.ts` (4: seams, respostas dadas, mudança por título/corpo e ausência de `updatedAt`, herança e v8
+intacto); `test/control/continuation48-flow.test.ts` +2 (Control + Pi Durable/SQLite reais: duas Perguntas de seam respondidas em Execuções
+anteriores chegam com as respostas à nova sessão de uma continuação após fim de orçamento e de uma recovery operacional comum);
+`test/entrypoints/github-admission-reads.test.ts` +1 (adaptador real: `readTicket` sem timestamp).
+
+**Limites.** A não-repetição depende do prompt/skill; o Control não recusa uma Pergunta repetida. O resumo com Perguntas respondidas entra em
+continuação de orçamento e recovery operacional (48); uma retomada após resposta em sessão substituta (`recoveryPrompt`, `SESSION_LOST`) e
+uma parada administrativa levam só a resposta atual; respostas mais antigas ficam nos comentários e nas versões `spec/vN` preservadas.
+Um ciclo novo (Trabalho novo) não herda respostas. Prova real no [54](54-pilot-2.md).
 
 ## Comments
 
