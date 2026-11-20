@@ -195,7 +195,7 @@ export const reviewVerdictFormat = 'Your FINAL message must be ONLY the JSON ver
  * decides its own guest paths and, in its manifest, which session protocols it supports). Consumers derive their enum/registry from this
  * list, so renumbering or adding a version is a data change here plus the pack directory.
  */
-export const factorySkillPackIds = ['factory-skills-v1', 'factory-skills-v2', 'factory-skills-v3', 'factory-skills-v4', 'factory-skills-v5', 'factory-skills-v6', 'factory-skills-v7', 'factory-skills-v8', 'factory-skills-v9'] as const;
+export const factorySkillPackIds = ['factory-skills-v1', 'factory-skills-v2', 'factory-skills-v3', 'factory-skills-v4', 'factory-skills-v5', 'factory-skills-v6', 'factory-skills-v7', 'factory-skills-v8', 'factory-skills-v9', 'factory-skills-v10'] as const;
 export type FactorySkillPackId = typeof factorySkillPackIds[number];
 
 /**

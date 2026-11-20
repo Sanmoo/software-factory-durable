@@ -12,7 +12,9 @@ import { factorySkillPackIds, type FactorySkillPackId } from '../contracts/index
  * findings and Host-evidenced gates; v6 = ticket 14: v5 plus the direct publication of a Factory-requested publish-only activation and the
  * short Summary/Validation/Risk PR body; v7 = ticket 34: v6 plus `not-adopted` (never `fixed`) for a finding the reviewed content already
  * satisfies; v8 = ticket 46: v7 plus generous build/test Bash timeouts and Bash for files over the edit/write limits; v9 = ticket 53: v8
- * plus Ticket-named seams matching the repository as approved, answers already given never asked again, and Ticket change by title/body). */
+ * plus Ticket-named seams matching the repository as approved, answers already given never asked again, and Ticket change by title/body;
+ * v10 = ticket 44: v9 plus the repository's declared environment (`.factory/environment.yaml`) already installed: never reinstalled or
+ * swapped, extras the Ticket needs installed and recorded). */
 const pack = <T extends string>(id: T) => Object.freeze({ id, seedName: `factory/skill-pack/${id}`, guestDirectory: `/artifacts/factory/skill-pack/${id}`,
   directory: fileURLToPath(new URL(`../../../assets/skill-pack/${id}`, import.meta.url)) });
 export const skillPacks = Object.freeze(Object.fromEntries(factorySkillPackIds.map(id => [id, pack(id)]))) as { readonly [K in FactorySkillPackId]: ReturnType<typeof pack<K>> };
