@@ -135,3 +135,18 @@ Recomendação do supervisor: **sim** em todos, exceto 11b e 11c (alternativas a
 - **Ponto aberto: dependências.** As dependências nativas são #127 ← #126 e #128 ← #124. A cobertura da seção 2 contava #127 como elegível
   de início, mas ele está bloqueado por #126. Sem label nada é elegível, e a escolha de quais Tickets recebem `ready-for-agent` é do operador.
   O corpo de #128 diz "blocked_by both", mas só #124 está registrado.
+
+## 10. Abertura da janela (2026-11-20 03:19 UTC)
+
+- **Login e chave.** O operador fez `factory login` (callback entregue no loopback do host por `curl`, sem túnel). A pedido do operador,
+  o supervisor copiou a chave da App de `y5/credentials/app.pem` para `pl2/credentials/app.pem` (0600, sem ler o conteúdo).
+  `doctor --authenticated`: tracker e repositório `OPERATIONAL_ACCESS_VERIFIED`.
+- **Merge do #129 por bypass.** O ruleset exige 1 aprovação e o PR foi aberto pela conta do operador, que não pode aprovar o próprio PR.
+  O operador autorizou explicitamente uma exceção única: o supervisor rodou `gh pr merge 129 --squash --admin`. Squash `455e993` na `main`.
+  A exceção vale só para este PR de configuração, nunca para PRs da Factory. A branch `chore/factory-environment` continua no remoto.
+- **Ruleset (item 11a).** `update` removido do `26435808`; ficam `pull_request`, `non_fast_forward` e `deletion`. Estado anterior em
+  `pl2-pilot-evidence/ruleset-26435808-before.json`, para restaurar ao fim.
+- **Serviço.** `software-factory-3b72496268c7.service` ativo (run `c4baca2b…`), 3 slots. Watcher da `pl1` adaptado
+  (`pl2-pilot-evidence/pilot-watch.sh`, log em `watch.log`, teto de 120 M tokens com pausa automática).
+- **Labels (opção A, escolhida pelo operador).** `ready-for-agent` em #124, #125 e #126 às 03:19 UTC. #127 e #128 recebem o label
+  depois que os bloqueadores forem mergeados.
