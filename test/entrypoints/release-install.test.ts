@@ -1,16 +1,30 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { buildRelease } from '../../src/entrypoints/release-build.js';
 import { inventoryTree } from '../../src/entrypoints/release.js';
 import { builtRelease, canaryPath, check, id, type Check } from './release-fixture.js';
 
 // I-local (ticket 32): clean and repeated installation from the extracted release, offline diagnostics, foreground/service lock and the
 // production composition refusal, all with the release's private Node.
-let work: string, root: string, report: Awaited<ReturnType<typeof buildRelease>>, factory: Awaited<ReturnType<typeof builtRelease>>['factory'];
-before(async () => ({ work, root, report, factory } = await builtRelease()));
+let work: string, root: string, output: string, report: Awaited<ReturnType<typeof buildRelease>>, factory: Awaited<ReturnType<typeof builtRelease>>['factory'];
+before(async () => ({ work, root, output, report, factory } = await builtRelease()));
+
+/** A second installation of its own, extracted from the same archive, set up and configured (tests never share installation state). */
+async function configuredInstallation(name: string): Promise<string> {
+  const installation = join(work, name);
+  await mkdir(installation, { mode: 0o700 });
+  const extracted = spawnSync('tar', ['-xpkf', join(output, report.archive), '-C', installation], { encoding: 'utf8' });
+  assert.equal(extracted.status, 0, extracted.stderr);
+  const setup = factory(installation, ['setup', '--json'], { XDG_CONFIG_HOME: join(work, `${name}-xdg`) });
+  assert.equal(setup.status, 0, setup.stderr);
+  await writeFile(join(installation, 'config.yaml'), (await readFile(join(installation, 'config.yaml'), 'utf8')).replace('operators: []', 'operators: [operador]')
+    .replaceAll('{ provider: null, model: null }', '{ provider: openai, model: gpt-6-luna }').replace('appId: null', 'appId: 123'));
+  await writeFile(join(installation, 'credentials', 'github-app.pem'), 'synthetic-never-read', { mode: 0o600 });
+  return installation;
+}
 after(async () => { if (work) await rm(work, { recursive: true, force: true }); });
 
 test('extracted release: repeated setup and offline doctor verify integrity with the private Node, preserve everything and never install or escalate', async () => {
@@ -59,6 +73,7 @@ test('extracted release: repeated setup and offline doctor verify integrity with
 });
 
 test('foreground run and the explicitly requested user service use the same stable lock; setup registers nothing unless asked', async () => {
+  const root = await configuredInstallation('installation-service');
   const lock = join(root, 'data', 'control.lock');
   await writeFile(lock, '', { mode: 0o600, flag: 'a' });
   const holder = spawn('flock', ['--exclusive', '--no-fork', lock, 'sleep', '30'], { stdio: 'ignore' });
