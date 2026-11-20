@@ -766,8 +766,33 @@ Após crash reconciliar processos próprios de preparo antes de mutar cache.
 
 Assets prontos de release com Alpine, ferramentas básicas, Git/gh, certificados, Docker e utilitários de boot/disco.
 Instalação/Trabalho não constroem imagem nem exigem Docker/Podman host só para produzi-la.
-Runtimes/dependências do repo são instalados pelo Builder no guest, orientado pela skill Alpine: versões exigidas, `apk`, musl/compilação e diagnóstico.
 Sem troca silenciosa de stack/versão/testes/imagem; glibc/musl e dependências nativas precisam compatibilidade demonstrada.
+
+**Ambiente por repositório** (decisão do operador, 2026-11-19, ticket MVP 44; substitui "runtimes instalados pelo Builder"):
+- Todo repositório configurado declara o ambiente em `.factory/environment.yaml`, esquema fechado (`schemaVersion: 1`; `apk`: lista de
+  `{ name, version }` com a versão Alpine exata e `-rN`; `images` opcional: `{ reference: <registry>/<path>@sha256:<digest> }`, registry
+  explícito, sem tag). Sem scripts, comandos livres, faixas de versão ou registry implícito. A Factory confia no arquivo (sem aprovação do operador).
+- O host só lê e valida: o controlador lê o arquivo no commit da ponta da base (grant `environment-read`, Contents R) na rodada de polling
+  que cria o Trabalho e o fixa no Trabalho por commit + sha256 dos bytes; um Trabalho fixado nunca relê (mudança do arquivo vale para
+  Trabalhos seguintes, inclusive um novo ciclo). Sem arquivo: `ENVIRONMENT_NOT_DECLARED`; inválido: `ENVIRONMENT_DECLARATION_INVALID` com os
+  caminhos do erro; leitura indisponível: `ENVIRONMENT_NOT_EVALUATED`. Os três impedem o início e são relidos a cada rodada até fixar; nunca
+  há fallback para o guest genérico. Trabalhos admitidos antes do ticket 44 (sem registro de ambiente) seguem no guest genérico.
+- Antes do primeiro boot do ambiente do Trabalho o controlador prepara **um disco base por (repositório, hash do arquivo)** — chave que inclui
+  também o pin dos assets da release, o perfil e `diskGiB`, porque é outro disco — sobre os assets da release, numa **VM de preparo** (unit
+  transitória própria, como um boot) cuja saída HTTP(S) é só o mirror Alpine da release (`alpine.mirror`/`alpine.branch` do perfil do guest)
+  e os registries das imagens declaradas (mais os hosts de token/blob conhecidos desses registries). O host monta UM script fixo dos valores
+  validados: `apk add` com `name=version` exatos só dos repositórios da release e `docker pull` por digest; versão ausente no mirror recusa o
+  preparo (sem trocar de versão); o manifesto resolvido (pacotes instalados com versões e digests) só é aceito com exatamente o declarado;
+  o disco passa pela checagem `e2fsck`/geometria antes de virar base. Trabalhos seguintes com a mesma chave reutilizam o disco base; o disco
+  do ambiente é uma cópia qcow2 independente (sem backing) da base, e `replace-disk` (ticket 47) copia a mesma base.
+- Identidade do ambiente = hash do arquivo + manifesto resolvido (sha256), registrada no `owner.json` do ambiente e na Execução. Hash novo
+  gera base nova usada só por ambientes novos; um ambiente já preparado continua com a base de que foi criado (não é mismatch, ticket 50).
+- Falha de preparo é impedimento visível com causa (`PREPARE_ENVIRONMENT_BASE_PREPARATION_FAILED|INCOMPLETE`), registrada na base, sem retry
+  implícito nem fallback de imagem/versão; outros Trabalhos com a mesma chave recebem a mesma recusa. A retomada é
+  `factory resume <work> --retry-blocked-start <code>` (ticket 50), que põe de lado a tentativa falha (`base-….failed-<stamp>`, nunca apagada)
+  e prepara de novo; uma VM de preparo sem cessação confirmada nunca é disputada.
+- O Builder encontra o ambiente declarado pronto (pacote de skills v10): não reinstala nem troca pacote/versão/runtime/imagem declarados; pode
+  instalar extras que o Ticket exija, com `apk`, e os registra; o gate do Ticket fica só o comando do projeto.
 
 Disco próprio persistente, `rootDiskPath`/formato explícitos e `rootDiskDeleteOnClose: false`, não overlay temporário padrão.
 Manter base/assets enquanto houver discos dependentes. `tmpfs: {}` preserva `/root`, `/tmp`, `/var/tmp`, `/var/cache`, `/var/log` no disco;

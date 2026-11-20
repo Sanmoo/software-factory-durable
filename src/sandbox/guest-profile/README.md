@@ -117,3 +117,16 @@ continuam no pin antigo (sem journal) e um Trabalho só usa o journal num ambien
 novo. Os já existentes ficam protegidos pela parada limpa e pelos remédios
 `repair-disk`/`replace-disk`. A checagem do disco preservado reproduz o journal
 pendente só na cópia privada (`e2fsck -E journal_only`) antes do `e2fsck -fn`.
+
+## Ambiente declarado por repositório (ticket 44)
+
+Os assets da release continuam genéricos. O ambiente de cada repositório (`.factory/environment.yaml`: pacotes `apk` com
+versão exata e imagens por digest) vira um **disco base** derivado do rootfs da release, preparado pelo controlador numa VM de
+preparo (`src/sandbox/environment-base.ts`, `src/sandbox/preparation-vm.ts`) e guardado em
+`<root>/environment-bases/base-<chave>/` (`identity.json`, `request.json`, `vm-request.json`/`vm-result.json`, `preparation.log`,
+`manifest.json` = manifesto resolvido, `base.qcow2`, `ready.json`, ou `failed.json` com a causa). A chave é
+sha256(repositório, hash do arquivo, pin dos assets, perfil, `diskGiB`). Os repositórios Alpine do preparo são os deste perfil
+(`alpine.mirror`/`alpine.branch` de `alpine-docker-vfs.json`, espelhados em `guestAlpine`; um teste confere que são iguais): o
+script ignora o `/etc/apk/repositories` do guest. A egress da VM de preparo é só esse mirror e os registries declarados.
+Cada ambiente de Trabalho recebe uma cópia qcow2 independente da base; a base fica enquanto houver ambientes dela (sem
+cleanup automático: candidato ao ticket de retenção). Prova real (boot da VM de preparo, apk/Docker no guest, Testcontainers): ticket 54.

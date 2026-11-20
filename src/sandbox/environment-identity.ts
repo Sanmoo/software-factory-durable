@@ -42,5 +42,5 @@ export async function environmentIdentityDiagnostic(root: string, configuration:
       `their Works refuse preparation with ENVIRONMENT_CONFIGURATION_MISMATCH and need a NEW environment (cancel + new cycle loses the environment and unpublished work): ` +
       `${affected.slice(0, 20).join('; ')}${affected.length > 20 ? `; and ${affected.length - 20} more` : ''}.${unread}`,
     nextStep: 'Before restarting: restore sandbox.profile/sandbox.diskGiB (or the release guest assets) to keep those environments, or accept that each listed ' +
-      'open Work needs `factory cancel <work>` + `factory new <owner/repo#number>`. Only profile, disk size and guest assets bind an environment.' };
+      'open Work needs `factory cancel <work>` + `factory new <owner/repo#number>`. Only profile, disk size and guest assets bind an environment; a changed repository environment declaration (ticket 44) only applies to new environments.' };
 }

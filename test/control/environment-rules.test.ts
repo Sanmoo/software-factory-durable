@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { imageReferenceParts, validateEnvironmentDeclaration } from '../../src/contracts/index.js';
 import { environmentNotEvaluated, environmentOutcome } from '../../src/control/rules/environment.js';
@@ -62,4 +63,18 @@ test('ticket 44: environment base refusals settle at once and only their operato
   assert.match(impediment.nextStep, /apk: unable to select packages/);
   assert.match(impediment.nextStep, /no other version or image/);
   assert.match(impediment.nextStep, /factory resume w --retry-blocked-start PREPARE_ENVIRONMENT_BASE_PREPARATION_FAILED --request-id <id>/);
+});
+
+test('ticket 44: the YAML parse is data only (no anchors/aliases/tags, unique keys) and the proposed JDK 25 file of the pilot repository is valid', async () => {
+  const { parseEnvironmentDeclaration } = await import('../../src/code-repository/index.js');
+  const proposed = parseEnvironmentDeclaration(await readFile('docs/evidence/44-java-springboot-environment.yaml'));
+  assert.deepEqual(proposed, { valid: true, declaration: { schemaVersion: 1, apk: [{ name: 'openjdk25-jdk', version: '25.0.5.1_p2-r0' }], images: [] } });
+  const invalid = (text: string) => { const result = parseEnvironmentDeclaration(Buffer.from(text)); return result.valid ? null : result.errors[0]!.message; };
+  assert.match(invalid('schemaVersion: 1\napk: &a []\nimages: *a\n')!, /anchors, aliases and explicit tags/);
+  assert.match(invalid('schemaVersion: !!int 1\napk: []\n')!, /anchors, aliases and explicit tags/);
+  assert.match(invalid('schemaVersion: 1\nschemaVersion: 1\napk: []\n')!, /YAML syntax/);
+  assert.match(invalid('schemaVersion: 1\napk: [\n')!, /YAML syntax/);
+  assert.match(invalid('---\nschemaVersion: 1\napk: []\n---\nx: 1\n')!, /YAML syntax/, 'one document only');
+  assert.match(invalid(`schemaVersion: 1\napk: []\n#${'x'.repeat(70000)}\n`)!, /larger than 65536 bytes/);
+  assert.equal(parseEnvironmentDeclaration(Buffer.from([0xff, 0xfe])).valid, false);
 });
