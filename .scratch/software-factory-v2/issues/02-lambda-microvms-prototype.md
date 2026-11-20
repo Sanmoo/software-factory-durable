@@ -1,6 +1,6 @@
 # Validar Docker e transporte em Lambda MicroVMs
 
-Status: open
+Status: claimed
 Type: prototype
 Label: wayfinder:prototype
 Map: [Software Factory v2 — ambientes reconstruíveis e harnesses substituíveis](../map.md)
@@ -98,3 +98,4 @@ Fontes trazidas pela pesquisa documental da sessão; não revalidadas independen
 ## Comments
 
 - Aberto como próximo passo pós-MVP; sem execução ou recursos AWS criados nesta sessão.
+- 2026-11-20: reivindicado pelo Operador (sessão Claude Code); branch `docs/v2-lambda-prototype`, worktree `.worktrees/v2-lambda-prototype/`, destino `main`. Primeira etapa: revalidação documental e de preços, sem recursos AWS.
