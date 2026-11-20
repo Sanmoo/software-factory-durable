@@ -209,7 +209,9 @@ export function recoveryPrompt(input: { ticketUrl: string; repository: string; b
   /** Ticket 13: the recovered Builder keeps the multi-round review handoff (its rounds continue the Work's numbering). */
   reviewRounds?: boolean;
   /** Ticket 22: the repair section (effective impediments of the own PR), never dropped under the size bound. */
-  repair?: readonly string[] }): { kind: 'prompt'; prompt: string } | { kind: 'too-large'; bytes: number } {
+  repair?: readonly string[];
+  /** Ticket 53: ticket 48's bounded state summary with EVERY answered Question of the Work (never dropped under the size bound). */
+  summary?: string | null }): { kind: 'prompt'; prompt: string } | { kind: 'too-large'; bytes: number } {
   const known = input.known;
   // Identities the Factory observed are quoted only in their exact canonical form (otherwise omitted, never interpreted).
   const versions = known?.versions ? { spec: known.versions.spec && versionId.test(known.versions.spec) ? known.versions.spec : null,
@@ -239,6 +241,7 @@ export function recoveryPrompt(input: { ticketUrl: string; repository: string; b
       ...(input.question.context ? withContext ? ['Context you gave:', fenced(input.question.context)]
         : ['(The context you gave is omitted here for size; it is preserved with the question in the Factory.)'] : [])] : []),
     ...(input.answer ? ['', `Accepted answer (by ${input.answer.author}, via ${input.answer.origin}):`, fenced(input.answer.text)] : []),
+    ...(input.summary ? ['', input.summary] : []),
     ...(known?.scopeUpdates.length ? ['', ...scopeSection(known.scopeUpdates),
       'Before implementing a scope change, preserve a NEW request version that records it (never edit an earlier version).'] : []), ...(input.repair ?? [])].join('\n');
   for (const effects of [20, 5, 1, 0]) {

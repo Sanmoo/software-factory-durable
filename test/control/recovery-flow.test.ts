@@ -206,3 +206,22 @@ test('review LOW: a FORCED termination at an administrative stop is not clean â€
   assert.deepEqual([work.execution!.end!.outcome, work.execution!.end!.code, work.execution!.slot.held, work.pendingRecovery!.waitSeconds],
     ['failure', 'ADMINISTRATIVE_STOP_FORCED', false, 5]);
 });
+
+test('ticket 53: the continuation after an administrative stop carries the state summary with every answered Question of the Work', async t => {
+  const h = await harness(t);
+  const questionId = '0b9c6a52-3d3e-4c8f-9a51-000000000533';
+  await h.start([{ kind: 'ask', questionId, question: 'May the tests use the seams the Ticket names?' }, { kind: 'hang' }]);
+  await idle(h, 1);
+  await h.current().control.accept({ request_id: 'answer-53-stop', operation: 'answer', question_id: questionId, text: 'Yes, those seams are approved.', origin: 'local-cli' });
+  await h.until(async () => h.current().doubles.calls('activate').length === 2 && (await h.work()).execution?.state === 'started', 'second started');
+  assert.deepEqual(await h.halt(), { kind: 'clean' });
+  await h.start([{ kind: 'complete' }]);
+  await idle(h, 3); // the activation log of the host double spans both controller runs
+  const work = await h.work();
+  assert.equal(work.execution!.interruption!.reason, 'ADMINISTRATIVE_STOP');
+  const prompt = h.current().doubles.prompts.at(-1)!.prompt;
+  assert.match(prompt, /stopped administratively/);
+  assert.match(prompt, /Factory state summary/);
+  assert.match(prompt, /answered-questions \(already answered: do NOT ask them again; use these answers\)/);
+  assert.match(prompt, new RegExp(`Question ${questionId}:\\n\`\`\`\\nMay the tests use the seams the Ticket names\\?\\n\`\`\`\\n    Answer:\\n\`\`\`\\nYes, those seams are approved\\.`));
+});

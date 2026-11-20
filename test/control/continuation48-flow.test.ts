@@ -167,3 +167,15 @@ test('ticket 53: seam answers given in earlier Executions reach an ordinary oper
   assert.deepEqual([work.execution!.interruption!.reason, work.execution!.charge!.kind], ['OPERATIONAL_RECOVERY', 'recovery']);
   assertSeamAnswers(h.doubles.prompts.at(-1)!.prompt);
 });
+
+test('ticket 53: a resume after an answer in a REPLACEMENT session carries every answered Question of the Work, not only the current answer', async t => {
+  const h = await harness(t, { progress: false });
+  h.scripts.push({ kind: 'ask', ...seamQuestions[0]! }, { kind: 'ask', ...seamQuestions[1]! }, { kind: 'complete' });
+  await answerBoth(h);
+  const work = await h.work();
+  assert.equal(work.execution!.request.resume!.reason, 'QUESTION_ANSWERED');
+  const prompt = h.doubles.prompts.at(-1)!.prompt;
+  assert.match(prompt, /its session is not continued \(reason: SESSION_/, 'a replacement session, not `continue`');
+  assert.match(prompt, new RegExp(`Accepted answer \\(by`), 'the current answer stays');
+  assertSeamAnswers(prompt);
+});

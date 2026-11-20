@@ -28,7 +28,7 @@ import { evaluatePublication, recordDiscovery, resolveDivergence } from './publi
 import { purposeOf } from './execution.js';
 import type { SessionRef } from '../types.js';
 import { interruptionRecoveryPrompt, isDiskRemedy, reviewerRetryLimitCode, refusedWithoutActivity } from '../rules/recovery.js';
-import { budgetExhaustedCode, builderBudgetPolicy, stateSummary } from '../rules/budget-continuation.js';
+import { budgetExhaustedCode, builderBudgetPolicy, stateSummary, type AnsweredQuestion, type SummaryInput } from '../rules/budget-continuation.js';
 import { reconcileExecution } from './recovery.js';
 import type { WorkerQuestion } from '../../workers/index.js';
 import type { Session } from './store.js';
@@ -479,6 +479,19 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     return !current || Object.values(current.reviewers).some(reviewer => reviewer.cessation === 'unconfirmed');
   }
 
+  /** Ticket 48/53: every answered Question of the Work with its accepted answer, oldest first. */
+  async function answeredOf(current: WorkRecord | null | undefined): Promise<AnsweredQuestion[]> {
+    return current ? (await readQuestions(session, current)).filter(item => item.state === 'answered' && item.answer)
+      .map(item => ({ questionId: item.questionId, question: item.content.question, answer: item.answer!.text })) : [];
+  }
+  /** Ticket 48/53: the bounded state summary of the Work (review rounds of its earlier Executions) for a new Builder session. */
+  function workSummary(current: WorkRecord | null | undefined, execution: ExecutionView, input: Omit<SummaryInput, 'rounds'>): string {
+    return stateSummary({ ...input,
+      rounds: [...(current?.previousExecutions ?? []), ...(current?.execution && current.execution.executionId !== execution.executionId ? [current.execution] : [])]
+        .flatMap(item => item.review?.rounds ?? []).map(round => ({ round: round.round, state: round.state, closing: round.closing === true, conclusion: round.conclusion,
+          head: round.handoff.summary?.head ?? null, gates: round.declarations?.gates ?? [] })) });
+  }
+
   type Plan = { kind: 'ready'; prompt: string; resume: ExecutionView['request']['resume']; decision: ExecutionView['request']['session']; continuation: SessionRef | null } |
     { kind: 'refused'; reasons: string[] } | { kind: 'insufficient'; reasons: string[] };
   /**
@@ -516,16 +529,13 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       const reconciling = execution.request.reconciliation ? reconciliationNotice(execution.request.reconciliation, execution.request.branch, prepared.checkout.path,
         publicationRemote(work.repository.repository)) : null;
       // Ticket 48: a continuation after a budget end gets the bounded state summary (last phase, gates, answered Questions); an operational
-      // recovery gets it when the Work has answered Questions, so an answer already given is never asked again (ticket 45 seams).
-      const answered = current ? (await readQuestions(session, current)).filter(item => item.state === 'answered' && item.answer)
-        .map(item => ({ questionId: item.questionId, question: item.content.question, answer: item.answer!.text })) : [];
-      const summary = basis.reason === 'BUDGET_CONTINUATION' || (basis.reason === 'OPERATIONAL_RECOVERY' && answered.length) ? stateSummary({
-        previousExecutionId: basis.previousExecutionId, code: basis.code,
-        progress: basis.reason === 'BUDGET_CONTINUATION' && previous.checkout?.progress ? { decision: previous.checkout.progress, start: previous.checkout.atStart, end: previous.checkout.atEnd ?? null } : null,
-        rounds: [...(current?.previousExecutions ?? []), ...(current?.execution && current.execution.executionId !== execution.executionId ? [current.execution] : [])]
-          .flatMap(item => item.review?.rounds ?? []).map(round => ({ round: round.round, state: round.state, closing: round.closing === true, conclusion: round.conclusion,
-            head: round.handoff.summary?.head ?? null, gates: round.declarations?.gates ?? [] })),
-        answered }) : null;
+      // recovery gets it when the Work has answered Questions, so an answer already given is never asked again (ticket 45 seams). Ticket 53:
+      // so does the continuation after an administrative stop.
+      const answered = await answeredOf(current);
+      const summary = basis.reason === 'BUDGET_CONTINUATION' || basis.reason === 'ADMINISTRATIVE_STOP' || (basis.reason === 'OPERATIONAL_RECOVERY' && answered.length)
+        ? workSummary(current, execution, { previousExecutionId: basis.previousExecutionId, code: basis.code,
+          progress: basis.reason === 'BUDGET_CONTINUATION' && previous.checkout?.progress ? { decision: previous.checkout.progress, start: previous.checkout.atStart, end: previous.checkout.atEnd ?? null } : null,
+          answered }) : null;
       const prompt = [...(reconciling ? [reconciling, ''] : []), interruptionRecoveryPrompt({ ticketUrl: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
         baseCommit: prepared.checkout.baseCommit, branch: execution.request.branch, checkout: prepared.checkout.path, workId: work.work_id,
         executionId: execution.executionId, skillDirectory, previousExecutionId: basis.previousExecutionId, reason: basis.reason, code: basis.code,
@@ -578,6 +588,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       if (continued.kind === 'insufficient') return { kind: 'insufficient', reasons: continued.reasons };
       return { kind: 'ready', prompt: continued.prompt, resume, decision, continuation: recorded };
     }
+    const allAnswered = await answeredOf(current);
     const lastRound = [...(current?.previousExecutions ?? [])].reverse().flatMap(item => [...(item.review?.rounds ?? [])].reverse()).find(round => round.handoff.summary) ?? null;
     const known: KnownContext = {
       previousExecutions: (current?.previousExecutions ?? []).map(item => ({ executionId: item.executionId,
@@ -592,7 +603,10 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       baseCommit: prepared.checkout.baseCommit, branch: execution.request.branch, checkout: prepared.checkout.path, workId: work.work_id, executionId: execution.executionId,
       skillDirectory, previousExecutionId: previous.executionId,
       question: answered ? { questionId: answered.questionId, question: answered.content.question, context: answered.content.context } : null,
-      answer, replacement: { reason: decided.reason }, known, reviewRounds: Boolean(ports.reviews?.rounds), ...(repair ? { repair } : {}) });
+      answer, replacement: { reason: decided.reason }, known, reviewRounds: Boolean(ports.reviews?.rounds), ...(repair ? { repair } : {}),
+      // Ticket 53: a replacement session gets EVERY answered Question of the Work (ticket 48's bounded block), not only the current answer.
+      summary: allAnswered.length ? workSummary(current, execution, { previousExecutionId: previous.executionId,
+        code: previous.end?.code ?? previous.end?.outcome ?? previous.state, progress: null, answered: allAnswered }) : null });
     if (recovered.kind === 'too-large') return { kind: 'insufficient', reasons: ['PROMPT_TOO_LARGE'] };
     return { kind: 'ready', prompt: recovered.prompt, resume, decision, continuation: null };
   }
