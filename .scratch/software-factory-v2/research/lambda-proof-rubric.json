@@ -1,0 +1,293 @@
+{
+  "schemaVersion": 1,
+  "id": "lambda-microvms-proof",
+  "version": 1,
+  "scope": "Somente o perfil testado: Lambda MicroVMs em us-east-1, ARM64, baseline 1 GB / 0,5 vCPU com pico de 4 GB / 2 vCPU, repositório sintético, harness ausente. Cada critério recebe: funciona no perfil testado, falha conhecida ou indeterminado. Não é aceite da fábrica, homologação de produção nem suporte oficial da AWS.",
+  "criteria": [
+    {
+      "id": "L1-ciclo",
+      "kind": "contract",
+      "requirement": "Uma MicroVM é criada, observada em execução e encerrada, e a cessação é confirmada pela API, não pelo pedido de término.",
+      "witness": "IDs e horários de RunMicrovm e TerminateMicrovm; série de GetMicrovm até TERMINATED com terminatedAt; ListMicrovms sem itens ativos; latência medida.",
+      "fixtures": [
+        "Imagem própria sfv2proof-* (ARM64, baseline 1 GB / 0,5 vCPU, additionalOsCapabilities ALL), us-east-1"
+      ],
+      "excludes": [
+        "Cessação física além do que a API reporta",
+        "Evidência por CloudTrail"
+      ]
+    },
+    {
+      "id": "L2-duracao",
+      "kind": "contract",
+      "requirement": "Ao atingir maximumDurationInSeconds a MicroVM é encerrada pelo serviço, e o estado final e o motivo são observáveis.",
+      "witness": "Execução com duração curta; estado e stateReason após o limite; registro de o hook de término ter sido chamado ou não e com que prazo.",
+      "fixtures": [
+        "Imagem própria sfv2proof-* (ARM64, baseline 1 GB / 0,5 vCPU, additionalOsCapabilities ALL), us-east-1"
+      ],
+      "excludes": [
+        "O teto de 8 horas em si, tomado da documentação e da quota da conta"
+      ]
+    },
+    {
+      "id": "L3-perfil",
+      "kind": "auxiliary",
+      "requirement": "O perfil efetivo do guest está medido: capabilities, cgroups, memória, vCPU, disco livre, kernel, tempo de build e de boot.",
+      "witness": "Saídas de capsh/proc, df, nproc, free e tempos, coletadas dentro do container da aplicação.",
+      "fixtures": [
+        "Imagem própria sfv2proof-* (ARM64, baseline 1 GB / 0,5 vCPU, additionalOsCapabilities ALL), us-east-1"
+      ],
+      "excludes": [
+        "Comparação entre tamanhos ou arquiteturas"
+      ]
+    },
+    {
+      "id": "D1-daemon",
+      "kind": "contract",
+      "requirement": "O dockerd inicia no hook /run dentro do container da aplicação e fica operacional.",
+      "witness": "docker info completo (storage driver, cgroup driver, versão) e docker run hello-world com exit code 0.",
+      "fixtures": [
+        "Imagem própria sfv2proof-* (ARM64, baseline 1 GB / 0,5 vCPU, additionalOsCapabilities ALL), us-east-1"
+      ],
+      "excludes": [
+        "dockerd capturado no snapshot de build",
+        "Suporte oficial da AWS a Docker"
+      ]
+    },
+    {
+      "id": "D2-build-run",
+      "kind": "contract",
+      "requirement": "docker build de um Dockerfile de várias camadas e docker run com bind mount, volume nomeado e port mapping funcionam.",
+      "witness": "Saída do build; arquivo escrito pelo container visível no host do guest e vice-versa; resposta HTTP pela porta mapeada.",
+      "fixtures": [
+        "Dockerfile sintético no repositório sintético"
+      ],
+      "excludes": [
+        "Buildx multi-plataforma",
+        "Registros privados"
+      ]
+    },
+    {
+      "id": "D3-compose",
+      "kind": "contract",
+      "requirement": "Compose sobe dois serviços em rede própria que se resolvem por nome e se comunicam.",
+      "witness": "docker compose up; requisição de um serviço ao outro pelo nome; docker compose down sem resíduos.",
+      "fixtures": [
+        "compose.yaml sintético com dois serviços"
+      ],
+      "excludes": [
+        "Compose com perfis, GPUs ou swarm"
+      ]
+    },
+    {
+      "id": "D4-dns",
+      "kind": "contract",
+      "requirement": "Containers aninhados resolvem nomes externos e alcançam a internet por TCP; o comportamento de UDP de saída fica registrado.",
+      "witness": "Resolução e HTTPS a um host público de dentro de um container, sem --dns; teste de UDP de saída com resultado explícito; workaround usado, se algum, declarado.",
+      "fixtures": [
+        "Imagem própria sfv2proof-* (ARM64, baseline 1 GB / 0,5 vCPU, additionalOsCapabilities ALL), us-east-1"
+      ],
+      "excludes": [
+        "Garantia universal de qualquer workaround de terceiro"
+      ]
+    },
+    {
+      "id": "D5-testcontainers",
+      "kind": "contract",
+      "requirement": "Um teste Java com Testcontainers cria um container de banco, comunica-se com ele e o Ryuk remove os recursos ao final.",
+      "witness": "Relatório do teste aprovado; docker ps durante e depois do teste; ausência de containers e redes do teste após o término.",
+      "fixtures": [
+        "Projeto Java sintético com um teste de PostgreSQL via Testcontainers"
+      ],
+      "excludes": [
+        "O perfil completo do repositório do piloto",
+        "Desempenho"
+      ]
+    },
+    {
+      "id": "D6-recursos",
+      "kind": "auxiliary",
+      "requirement": "O perfil Docker cabe em 4 GB de pico e 16 GB de disco, ou o limite atingido fica identificado.",
+      "witness": "Pico de memória e uso de disco durante D2 a D5; erro exato se faltar recurso.",
+      "fixtures": [
+        "Imagem própria sfv2proof-* (ARM64, baseline 1 GB / 0,5 vCPU, additionalOsCapabilities ALL), us-east-1"
+      ],
+      "excludes": [
+        "Dimensionamento de produção"
+      ]
+    },
+    {
+      "id": "T1-tunel",
+      "kind": "contract",
+      "requirement": "Uma sessão SSH com componentes prontos atravessa o HTTP_INGRESS por WebSocket, autenticada pelo token do serviço e por chave SSH de sessão.",
+      "witness": "Comando remoto executado do host com saída correta; versões dos componentes; host key verificada contra a gerada no /run e entregue fora do túnel.",
+      "fixtures": [
+        "sshd no guest, wstunnel ou websocat nos dois lados, chave efêmera por runHookPayload"
+      ],
+      "excludes": [
+        "SHELL_INGRESS",
+        "Servidor exec próprio"
+      ]
+    },
+    {
+      "id": "T2-exec",
+      "kind": "contract",
+      "requirement": "stdout e stderr chegam em streaming e separados, o exit code é fiel e um comando em execução pode ser interrompido.",
+      "witness": "Comando que emite em intervalos, com horários de chegada; exit codes 0 e não zero; interrupção com confirmação de que o processo terminou no guest.",
+      "fixtures": [
+        "Scripts sintéticos de emissão e de espera"
+      ],
+      "excludes": [
+        "PTY interativo"
+      ]
+    },
+    {
+      "id": "T3-arquivos",
+      "kind": "contract",
+      "requirement": "Arquivos binários trafegam íntegros nos dois sentidos e o throughput fica medido.",
+      "witness": "SHA256 igual na origem e no destino para um arquivo de 100 MB em cada sentido; MB/s observados.",
+      "fixtures": [
+        "Arquivo aleatório gerado localmente"
+      ],
+      "excludes": [
+        "Arquivos maiores que o disco do guest"
+      ]
+    },
+    {
+      "id": "T4-conexao",
+      "kind": "contract",
+      "requirement": "Queda do canal, expiração do token e ociosidade ficam caracterizadas, e o host distingue canal fechado de processo encerrado e de MicroVM encerrada.",
+      "witness": "Conexão mantida além da validade do token, com o resultado; queda forçada do túnel com processo ainda vivo no guest e reconexão com token novo; sinal observado em cada caso; efeito de keepalive sobre a ociosidade.",
+      "fixtures": [
+        "Processo longo sintético com marcador de vida no guest"
+      ],
+      "excludes": [
+        "Retomada transparente de uma sessão SSH interrompida"
+      ]
+    },
+    {
+      "id": "T5-papeis",
+      "kind": "contract",
+      "requirement": "O revisor somente leitura não consegue escrever no workspace nem escalar por shell, SFTP, port forwarding ou socket do Docker; o Builder consegue trabalhar.",
+      "witness": "Tentativas negativas de cada via com a recusa registrada; controle positivo do Builder; a restrição é imposta pelo guest, não por instrução.",
+      "fixtures": [
+        "Dois usuários no guest com chaves distintas e configuração de sshd por usuário"
+      ],
+      "excludes": [
+        "Isolamento entre MicroVMs",
+        "Resistência a exploits de kernel"
+      ]
+    },
+    {
+      "id": "T6-segredos",
+      "kind": "contract",
+      "requirement": "A chave privada do túnel, o token do serviço e a deploy key não ficam legíveis para o usuário revisor nem para containers aninhados sem montagem explícita.",
+      "witness": "Tentativas de leitura como revisor e de dentro de um container; inventário de onde cada segredo reside no guest.",
+      "fixtures": [
+        "Imagem própria sfv2proof-* (ARM64, baseline 1 GB / 0,5 vCPU, additionalOsCapabilities ALL), us-east-1"
+      ],
+      "excludes": [
+        "Proteção contra o próprio Builder, que tem Docker com ALL"
+      ]
+    },
+    {
+      "id": "G1-gate",
+      "kind": "contract",
+      "requirement": "O gate de preservação recusa workspace com untracked, alterações, stash, commit sem push, remoto indisponível e ref de acompanhamento desatualizada, e aceita só o estado publicado.",
+      "witness": "Uma execução por caso com o veredito do gate; o caso aceito confere HEAD com ls-remote, não com a ref local.",
+      "fixtures": [
+        "Repositório sintético privado com deploy key"
+      ],
+      "excludes": [
+        "Regras de publicação da fábrica",
+        "Conteúdo de segredos em commits"
+      ]
+    },
+    {
+      "id": "G2-reconstrucao",
+      "kind": "contract",
+      "requirement": "Após a cessação confirmada da primeira MicroVM, outra é criada e reconstrói o ambiente a partir do mesmo commit remoto, sem nada do disco anterior.",
+      "witness": "IDs distintos; TERMINATED da primeira anterior ao Run da segunda; mesmo SHA em checkout; build e teste do projeto sintético repetidos com sucesso.",
+      "fixtures": [
+        "Repositório sintético"
+      ],
+      "excludes": [
+        "Continuidade de sessão de harness, fora do escopo da v2",
+        "Suspend/resume"
+      ]
+    },
+    {
+      "id": "G3-troca",
+      "kind": "contract",
+      "requirement": "A troca planejada antes do limite funciona com duração reduzida: push WIP, gate, cessação e novo boot sobre o estado remoto.",
+      "witness": "Sequência com horários, margem usada antes do limite e o SHA publicado encontrado no segundo boot.",
+      "fixtures": [
+        "Repositório sintético; maximumDurationInSeconds curto"
+      ],
+      "excludes": [
+        "Execução real de oito horas"
+      ]
+    },
+    {
+      "id": "G4-perda",
+      "kind": "contract",
+      "requirement": "Morte da MicroVM antes do push perde só o trabalho local desde o último push, e a perda é detectável do host.",
+      "witness": "Término forçado com commit não publicado; segundo boot encontra o último SHA publicado; diferença reportada.",
+      "fixtures": [
+        "Repositório sintético"
+      ],
+      "excludes": [
+        "Recuperação do trabalho perdido"
+      ]
+    },
+    {
+      "id": "N1-egress",
+      "kind": "contract",
+      "requirement": "O alcance de rede do guest em INTERNET_EGRESS está caracterizado: internet pública, link-local e metadados, endereços privados.",
+      "witness": "Tentativas de conexão a cada classe de destino, do guest e de um container aninhado, com resultado; ausência de credenciais AWS no guest sem execution role.",
+      "fixtures": [
+        "Imagem própria sfv2proof-* (ARM64, baseline 1 GB / 0,5 vCPU, additionalOsCapabilities ALL), us-east-1"
+      ],
+      "excludes": [
+        "Mediação HTTP(S) equivalente à do MVP",
+        "Testes em VPC"
+      ]
+    },
+    {
+      "id": "N2-ingress",
+      "kind": "contract",
+      "requirement": "O endpoint recusa acesso sem token válido e o token é restrito à porta para a qual foi emitido.",
+      "witness": "Requisições sem token, com token expirado e com token de outra porta, e as respostas.",
+      "fixtures": [
+        "Imagem própria sfv2proof-* (ARM64, baseline 1 GB / 0,5 vCPU, additionalOsCapabilities ALL), us-east-1"
+      ],
+      "excludes": [
+        "Resistência a negação de serviço"
+      ]
+    },
+    {
+      "id": "C1-custo",
+      "kind": "auxiliary",
+      "requirement": "O custo real e o consumo ficam dentro dos tetos autorizados e a medição da cobrança acima do baseline fica registrada.",
+      "witness": "Contabilidade própria de segundos, builds e GB; leitura do Cost Explorer com a data; comparação com a estimativa.",
+      "fixtures": [
+        "Conta e região autorizadas"
+      ],
+      "excludes": [
+        "Preços de outras regiões ou arquiteturas"
+      ]
+    },
+    {
+      "id": "C2-cleanup",
+      "kind": "contract",
+      "requirement": "Todo recurso criado pela prova é removido e a remoção é verificada, exceto o que o plano declara reter.",
+      "witness": "Inventário por tipo com o comando de verificação e o resultado; resíduos e custos remanescentes declarados.",
+      "fixtures": [
+        "MicroVMs, imagens e versões, bucket, log groups, roles, repositório e deploy key"
+      ],
+      "excludes": [
+        "Cobrança de retenção mínima de armazenamento já incorrida"
+      ]
+    }
+  ]
+}
