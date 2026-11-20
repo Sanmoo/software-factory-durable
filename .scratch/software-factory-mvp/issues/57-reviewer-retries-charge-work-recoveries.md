@@ -11,7 +11,7 @@ Trabalho.
 
 **Type:** task
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
