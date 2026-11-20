@@ -51,3 +51,5 @@ Não implementar o adapter nem alterar retroativamente o PRD/spec aprovado do MV
   a decisão de composição (08), que depende das duas provas. Preservado o caminho e o escopo de
   sandbox; adicionados harness/contexto/reconfiguração, sem antecipar resolução ou alterar o MVP.
 - 2026-11-20: reescopo do Operador. A v2 trata só do sandbox Lambda MicroVMs; harnesses substituíveis ficam para a v3. Removidos os itens de harness e a dependência da decisão de composição (08, fechado); passa a depender só da prova Lambda (02).
+- 2026-11-20: reivindicado pelo Operador (sessão Claude Code); branch `docs/v2-consolidation`, worktree `.worktrees/v2-consolidation/`, destino `main`.
+- 2026-11-20: 24 decisões tomadas com o Operador em três rodadas, todas conforme recomendado. Proposta a [spec da v2](../spec.md) (requisitos V2-01 a V2-34, matriz de aceite e rastreio frente ao MVP) e aberto o filho [Validar o guest Alpine com o ambiente declarado em Lambda MicroVMs](10-alpine-guest-on-lambda-proof.md). Pendente de aprovação do documento; a regra de três recusas do gate (V2-07) não foi perguntada nas rodadas e precisa de confirmação.
