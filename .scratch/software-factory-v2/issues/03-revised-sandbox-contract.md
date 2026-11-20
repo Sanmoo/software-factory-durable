@@ -1,6 +1,6 @@
 # Consolidar o PRD e a spec da v2 para o sandbox Lambda MicroVMs
 
-Status: open
+Status: claimed
 Type: grilling
 Label: wayfinder:grilling
 Map: [Software Factory v2 — ambientes reconstruíveis em Lambda MicroVMs](../map.md)
