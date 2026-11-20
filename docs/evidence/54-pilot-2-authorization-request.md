@@ -1,9 +1,12 @@
-# 54: solicitação de autorização do piloto 2 (rascunho para o operador)
+# 54: autorização do piloto 2 (respondida pelo operador)
 
 Ticket: [54](../../.scratch/software-factory-mvp/issues/54-pilot-2.md). Piloto anterior: [35-pilot-report.md](35-pilot-report.md)
 (nenhuma entrega; bloqueadores corrigidos nos tickets 44, 47, 48, 50, 51 e 53, todos resolvidos só com testes offline).
 
-**Estado em 2026-11-19:** nada foi instalado, nenhum Ticket foi editado, nenhum label aplicado, nenhum controlador iniciado e nenhuma escrita
+**Respostas do operador (2026-11-20 03:01 UTC, pela página de autorização):** sim em 1–10, 11a e 12–17; não em 11b e 11c (alternativas
+ao 11a). Nenhuma observação. As marcas da seção 8 abaixo refletem essas respostas.
+
+**Estado em 2026-11-19 (antes das respostas):** nada foi instalado, nenhum Ticket foi editado, nenhum label aplicado, nenhum controlador iniciado e nenhuma escrita
 no GitHub. Cada item da seção 8 precisa de um "sim" explícito do operador antes de qualquer efeito; um "não" (ou item sem resposta) bloqueia
 a parte do piloto que depende dele. Merge, aprovação e avaliação humana nunca são delegados aos agentes.
 
@@ -97,22 +100,22 @@ Recomendação do supervisor: **sim** em todos, exceto 11b e 11c (alternativas a
 
 | # | Autorização | Sim | Não |
 | --- | --- | --- | --- |
-| 1 | Usar a release `mvp-54.0` (`8f963bb`, assets35) como composição do piloto 2 | [ ] | [ ] |
-| 2 | Criar a raiz `pl2` com `mvp-54.0`, `setup --service`, `doctor` e login novo do modelo pelo operador; `pl1` fica parada | [ ] | [ ] |
-| 3 | Repositório `Sanmoo/java-springboot-event-sourcing`, base `main`, App `sanmoo-factory` | [ ] | [ ] |
-| 4 | Supervisor abre o PR do `.factory/environment.yaml` (JDK 25); merge pelo operador | [ ] | [ ] |
-| 5 | Supervisor edita os corpos de #124–#128 para deixar só o comando do projeto como gate | [ ] | [ ] |
-| 6 | `concurrency` 3 com guest 4096 MiB / 2 vCPU / 40 GiB (terceiro boot espera memória pelo ticket 50) | [ ] | [ ] |
-| 7 | Fase de orçamento curto (`builderBudget.requests` 40) até uma continuação no mesmo ambiente; depois volta a 150 com reinício | [ ] | [ ] |
-| 8 | Janela de até 2 dias corridos, serviço ativo só com o operador disponível | [ ] | [ ] |
-| 9 | Chave da App em `pl2/credentials/app.pem` (0600) durante a janela, removida ao fim | [ ] | [ ] |
-| 10 | Modelo `openai/gpt-6-luna` nos três papéis via `factory-oauth`, teto de **120 M tokens** (soma das sessões preservadas) | [ ] | [ ] |
-| 11a | Ruleset `26435808`: remover `update` durante a janela e restaurar ao fim | [ ] | [ ] |
-| 11b | Ruleset: relaxar só em volta de cada merge humano | [ ] | [ ] |
-| 11c | Ruleset: manter como está | [ ] | [ ] |
-| 12 | Merge e aprovação só pelo operador (nunca pelos agentes nem pelo supervisor) | [ ] | [ ] |
-| 13 | Supervisor responde em nome do operador só Perguntas cuja resposta já está no Ticket ou numa decisão registrada; as demais vão ao operador | [ ] | [ ] |
-| 14 | Nenhuma injeção de falha além da fase de orçamento curto (sem SIGKILL, congelamento, disco cheio ou relógio) | [ ] | [ ] |
-| 15 | Limpeza pela Factory da própria branch e do próprio ambiente após cada entrega; retenção padrão de 30 dias | [ ] | [ ] |
-| 16 | Regras de parada da seção 5 e reversão da seção 6 | [ ] | [ ] |
-| 17 | Registro de métricas, Perguntas por origem e avaliação humana no relatório do piloto 2 | [ ] | [ ] |
+| 1 | Usar a release `mvp-54.0` (`8f963bb`, assets35) como composição do piloto 2 | [x] | [ ] |
+| 2 | Criar a raiz `pl2` com `mvp-54.0`, `setup --service`, `doctor` e login novo do modelo pelo operador; `pl1` fica parada | [x] | [ ] |
+| 3 | Repositório `Sanmoo/java-springboot-event-sourcing`, base `main`, App `sanmoo-factory` | [x] | [ ] |
+| 4 | Supervisor abre o PR do `.factory/environment.yaml` (JDK 25); merge pelo operador | [x] | [ ] |
+| 5 | Supervisor edita os corpos de #124–#128 para deixar só o comando do projeto como gate | [x] | [ ] |
+| 6 | `concurrency` 3 com guest 4096 MiB / 2 vCPU / 40 GiB (terceiro boot espera memória pelo ticket 50) | [x] | [ ] |
+| 7 | Fase de orçamento curto (`builderBudget.requests` 40) até uma continuação no mesmo ambiente; depois volta a 150 com reinício | [x] | [ ] |
+| 8 | Janela de até 2 dias corridos, serviço ativo só com o operador disponível | [x] | [ ] |
+| 9 | Chave da App em `pl2/credentials/app.pem` (0600) durante a janela, removida ao fim | [x] | [ ] |
+| 10 | Modelo `openai/gpt-6-luna` nos três papéis via `factory-oauth`, teto de **120 M tokens** (soma das sessões preservadas) | [x] | [ ] |
+| 11a | Ruleset `26435808`: remover `update` durante a janela e restaurar ao fim | [x] | [ ] |
+| 11b | Ruleset: relaxar só em volta de cada merge humano | [ ] | [x] |
+| 11c | Ruleset: manter como está | [ ] | [x] |
+| 12 | Merge e aprovação só pelo operador (nunca pelos agentes nem pelo supervisor) | [x] | [ ] |
+| 13 | Supervisor responde em nome do operador só Perguntas cuja resposta já está no Ticket ou numa decisão registrada; as demais vão ao operador | [x] | [ ] |
+| 14 | Nenhuma injeção de falha além da fase de orçamento curto (sem SIGKILL, congelamento, disco cheio ou relógio) | [x] | [ ] |
+| 15 | Limpeza pela Factory da própria branch e do próprio ambiente após cada entrega; retenção padrão de 30 dias | [x] | [ ] |
+| 16 | Regras de parada da seção 5 e reversão da seção 6 | [x] | [ ] |
+| 17 | Registro de métricas, Perguntas por origem e avaliação humana no relatório do piloto 2 | [x] | [ ] |
