@@ -37,6 +37,8 @@ test('ticket 57: a request that failed without a Host abort is a provider failur
   host.abort();
   live.push({ type: 'error', reason: 'aborted', error: failedMessage('aborted') });
   assert.deepEqual([stopped.failed(), stopped.providerFailed()], [true, false]);
+  // Ticket 60: the session label of a Host abort is its own closed code, never the provider's.
+  assert.deepEqual([aborted.pushed[0]!.error!.stopReason, aborted.pushed[0]!.error!.errorMessage], ['error', 'WORKER_SESSION_CLOSED_BY_HOST']);
 
   // Its own request budget (the pilot's reviewer case): the 49th request closes, never a provider failure.
   const counted = runtime();

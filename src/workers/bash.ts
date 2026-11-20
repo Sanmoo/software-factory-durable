@@ -135,31 +135,49 @@ export function builderBash(context: ToolContext, sandbox: ToolProjection, onCri
       let observed = false;
       let beforeSha: string | null = null;
       let afterSha: string | null = null;
+      // Ticket 60: the closed code of a failed copy of THIS command's completed capture (recorded and thrown instead of "Command aborted").
+      let copyFailure: string | undefined;
       const record = (code: string | null) => {
         if (observed || !observe) return;
         observed = true;
         observe(callId, { command: input.command, cwd: bashCwd, exitCode: completed && 'exitCode' in completed ? completed.exitCode ?? null : null,
-          output: completed ? { ...completed.reference } : null, code: completed ? null : code, contentBeforeSha: beforeSha, contentAfterSha: afterSha });
+          output: completed ? { ...completed.reference } : null, code: copyFailure ?? (completed ? null : code), contentBeforeSha: beforeSha, contentAfterSha: afterSha });
       };
       try {
         if (snapshot && !signal?.aborted) beforeSha = await snapshot().catch(() => null);
-        const result = await native(value => { completed = value; }).execute(callId, input, signal, onUpdate);
+        let presented = await native(value => { completed = value; }).execute(callId, input, signal, onUpdate);
+        if (copyEnabled && presented.details?.truncation?.truncated === true) {
+          // Ticket 60: the copy runs BEFORE the "after" content probe. The probe is itself a Bash command through this binding, and every new
+          // command spends the owner's latest capture, so a later copy was always BASH_COPY_DENIED. The copy writes only a new
+          // /artifacts/factory-output-<uuid>.txt, outside the /workspace/checkout the probe measures.
+          copyFailure = 'BASH_COPY_UNAVAILABLE';
+          if (!completed || signal?.aborted || failed) throw new Error(copyFailure);
+          const reply = await sandbox.executeTool(context, { name: 'bash', operation: 'copy-output',
+            reference: completed.reference, callId: randomUUID() }, undefined, signal);
+          if (signal?.aborted || failed) throw new Error(copyFailure);
+          if (reply.status === 'failure') {
+            copyFailure = ['BASH_COPY_DENIED', 'BASH_COPY_EFFECTS_OR_CAPTURE_UNKNOWN'].includes(reply.code) ? reply.code : 'BASH_COPY_UNAVAILABLE';
+            throw new Error(copyFailure);
+          }
+          copyFailure = 'BASH_COPY_METADATA_INVALID';
+          const path = copiedPath(reply, context.workId);
+          copyFailure = 'BASH_NATIVE_FOOTER_UNAVAILABLE';
+          presented = guestPresentation(presented, path);
+          copyFailure = undefined;
+        }
         if (snapshot && !signal?.aborted) afterSha = await snapshot().catch(() => null);
         record(null);
-        if (!copyEnabled || result.details?.truncation?.truncated !== true) return result;
-        if (!completed || signal?.aborted || failed) throw new Error('BASH_COPY_UNAVAILABLE');
-        const reply = await sandbox.executeTool(context, { name: 'bash', operation: 'copy-output',
-          reference: completed.reference, callId: randomUUID() }, undefined, signal);
-        if (signal?.aborted || failed) throw new Error('BASH_COPY_UNAVAILABLE');
-        return guestPresentation(result, copiedPath(reply, context.workId));
+        return presented;
       }
       catch {
         if (snapshot && !signal?.aborted) afterSha = await snapshot().catch(() => null);
         record('BASH_EFFECTS_OR_CAPTURE_UNKNOWN');
+        // critical() aborts the session signal, so an OUTSIDE abort is read before it (ticket 60).
+        const aborted = signal?.aborted === true;
         critical();
         if (timeoutFailure) throw new Error(`Command timed out after ${input.timeout} seconds (effects unknown)`);
-        if (signal?.aborted) throw new Error('Command aborted (effects unknown)');
-        throw new Error('BASH_EFFECTS_OR_CAPTURE_UNKNOWN');
+        if (aborted) throw new Error('Command aborted (effects unknown)');
+        throw new Error(copyFailure ?? 'BASH_EFFECTS_OR_CAPTURE_UNKNOWN');
       }
     },
   };

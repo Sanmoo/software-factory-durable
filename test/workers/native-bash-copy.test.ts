@@ -3,6 +3,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { test, type TestContext } from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { builderBash } from '../../src/workers/bash.js';
+import { probeContent } from '../../src/workers/builder-handoff.js';
+import type { BashObservation } from '../../src/workers/gates.js';
 import { createBashTool } from '#factory-pi';
 import { createSandbox, type ToolContext, type ToolProjection, type ReadResult } from '../../src/sandbox/index.js';
 import { nativeOwner } from '../sandbox/native-owner.fixture.js';
@@ -191,4 +193,74 @@ test('actual native trailing footer bridge never replaces lookalike stdout conta
   assert.ok(text.includes(`user stdout Full output: ${host}]`));
   assert.ok(text.includes(`[Showing lines 1-2 of 99. Full output: ${host}]`));
   assert.ok(text.endsWith(`Full output: ${path}]`));
+});
+
+// Ticket 60 (pilot 2, #126): with review rounds active the Host's content probe is a Bash command through the SAME binding; the copy of a
+// truncated agent command must still be published (the probe never invalidates the agent's capture), and the session continues.
+test('truncated output with an active content snapshot publishes the copy and the session continues', async t => {
+  await privateTemporary(t);
+  const sha = 'c'.repeat(64);
+  const seen: string[] = []; let copies = 0;
+  const f = await nativeOwner(context, { exec(argv, options) {
+    if (argv[2] === '/usr/bin/python3') {
+      copies++; seen.push('copy');
+      return { async *output() {
+        assert.ok(options.stdin && typeof options.stdin !== 'string');
+        const chunks: Buffer[] = []; for await (const chunk of options.stdin) chunks.push(chunk);
+        const copied = Buffer.concat(chunks);
+        yield { stream: 'stdout' as const, data: Buffer.from(JSON.stringify({ bytes: copied.length, sha256: createHash('sha256').update(copied).digest('hex') })) };
+      }, result: Promise.resolve({ exitCode: 0 }) };
+    }
+    const command = argv.at(-1)!;
+    const probe = command.startsWith('exec /usr/bin/python3 -I -S - /workspace/checkout');
+    seen.push(probe ? 'probe' : command);
+    const data = Buffer.from(probe ? JSON.stringify({ clean: true, headMatches: true, sha256: sha }) : command === 'big' ? 'line\n'.repeat(15000) : 'small\n');
+    return { async *output() { yield { stream: 'stdout' as const, data }; }, result: Promise.resolve({ exitCode: 0 }) };
+  } }, qualified); t.after(() => f.close());
+  const sandbox = createSandbox({ root: f.root, toolEndpoint: f.owner.endpoint });
+  const references: { workId: string; id: string }[] = [];
+  const projection: ToolProjection = { async executeTool(...args) {
+    const result = await sandbox.executeTool(...args);
+    if (args[1].name === 'bash' && !('operation' in args[1]) && result.status === 'success' && !args[1].callId.startsWith('probe-')) references.push(result.reference);
+    return result;
+  } };
+  const lifetime = new AbortController();
+  let critical = 0;
+  const observations: BashObservation[] = [];
+  const tool = builderBash(context, projection, () => { critical++; lifetime.abort(); }, true, (_id, observation) => { observations.push(observation); },
+    () => probeContent(context, projection, 'a'.repeat(40), lifetime.signal));
+  const result = await tool.execute('model-id', { command: 'big' }, lifetime.signal, undefined, {} as never);
+  assert.equal(critical, 0); assert.equal(copies, 1);
+  const details = result.details as { fullOutputPath: string };
+  assert.match(details.fullOutputPath, /^\/artifacts\/factory-output-[0-9a-f-]{36}\.txt$/);
+  const text = result.content.filter(c => c.type === 'text').map(c => c.text).join('');
+  assert.ok(text.endsWith(`Full output: ${details.fullOutputPath}]`));
+  assert.deepEqual(observations.map(o => [o.command, o.code, o.contentBeforeSha, o.contentAfterSha]), [['big', null, sha, sha]]);
+  // A capture is copied at most once: a repeated copy of the same reference stays denied.
+  assert.deepEqual(await sandbox.executeTool(context, { name: 'bash', operation: 'copy-output', reference: references[0]!, callId: randomUUID() }),
+    { status: 'failure', code: 'BASH_COPY_DENIED' });
+  // The session continues: the next agent command runs normally.
+  const next = await tool.execute('model-id-2', { command: 'small' }, lifetime.signal, undefined, {} as never);
+  assert.equal(critical, 0);
+  assert.ok(next.content.some(c => c.type === 'text' && c.text.includes('small')));
+  // A new agent command still invalidates its predecessor's capture.
+  assert.deepEqual(await sandbox.executeTool(context, { name: 'bash', command: 'other', callId: randomUUID() }, async () => {}).then(r => r.status), 'success');
+  assert.deepEqual(await sandbox.executeTool(context, { name: 'bash', operation: 'copy-output', reference: references[1]!, callId: randomUUID() }),
+    { status: 'failure', code: 'BASH_COPY_DENIED' });
+  assert.deepEqual(seen, ['probe', 'big', 'copy', 'probe', 'probe', 'small', 'probe', 'other']);
+});
+
+test('a genuinely denied copy surfaces its own recorded code, never "Command aborted", even though critical() aborts the session', async t => {
+  await privateTemporary(t);
+  const lifetime = new AbortController();
+  const observations: BashObservation[] = [];
+  const sandbox: ToolProjection = { async executeTool(_context, call, onData) {
+    if ('operation' in call) return { status: 'failure', code: 'BASH_COPY_DENIED' };
+    await onData!(Buffer.from('line\n'.repeat(15000)));
+    return { status: 'success', format: 'text', reference: { workId: context.workId, id: randomUUID() }, bytes: 75000, nextOffset: 0, encoding: 'base64', data: '', exitCode: 0 };
+  } };
+  const tool = builderBash(context, sandbox, () => { lifetime.abort(); }, true, (_id, observation) => { observations.push(observation); });
+  await assert.rejects(tool.execute('id', { command: 'big' }, lifetime.signal, undefined, {} as never), /^Error: BASH_COPY_DENIED$/);
+  assert.equal(lifetime.signal.aborted, true);
+  assert.deepEqual(observations.map(o => [o.exitCode, o.code]), [[0, 'BASH_COPY_DENIED']]);
 });

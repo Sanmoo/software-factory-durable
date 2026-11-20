@@ -61,7 +61,9 @@ export function qualifyOAuth(runtime: ModelRuntime, signal: AbortSignal, publicI
       if (!failed && message.stopReason !== 'aborted' && !signal.aborted) providerFailed = true;
       failed = true;
       return { role: 'assistant', content: [], api: 'openai-responses', provider: 'openai', model: 'gpt-6-luna',
-        usage: structuredClone(message.usage), stopReason: 'error', errorMessage: 'WORKER_PROVIDER_UNAVAILABLE', timestamp: message.timestamp };
+        // Ticket 60: a closed label either way; a Host abort or Host close (budget, owner, critical tool) is never labelled the provider's.
+        usage: structuredClone(message.usage), stopReason: 'error', errorMessage: providerFailed ? 'WORKER_PROVIDER_UNAVAILABLE' : 'WORKER_SESSION_CLOSED_BY_HOST',
+        timestamp: message.timestamp };
     }
     return structuredClone(message);
   };

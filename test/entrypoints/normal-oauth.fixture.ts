@@ -59,7 +59,9 @@ export async function normalOAuth(root: string, identity: { workId: string; envi
       assert.match(text, /toolResult/);
       assert.match(text, /█ █/);
     }
-    if (['http429', 'http500', 'mutable-error', 'provider-bytes'].includes(mode)) assert.match(text, /WORKER_PROVIDER_UNAVAILABLE/);
+    if (['http429', 'http500', 'mutable-error'].includes(mode)) assert.match(text, /WORKER_PROVIDER_UNAVAILABLE/);
+    // Ticket 60: the provider-byte bound is a Host close, never labelled the provider's failure.
+    if (mode === 'provider-bytes') { assert.match(text, /WORKER_SESSION_CLOSED_BY_HOST/); assert.doesNotMatch(text, /WORKER_PROVIDER_UNAVAILABLE/); }
     assert.doesNotMatch(text, /oauth-access-canary|oauth-refresh-canary|oauth-access-rotated|oauth-refresh-rotated|unknown-http-secret-body|unknown-abort-secret/);
     return { pid: start.observedProcess.pid, receipt: started.receipt, counts, mode };
   } finally { handle.close(); }
