@@ -48,6 +48,9 @@ const permissions = {
   // Ticket 17 (spec §8: "cleanup de branch remota própria recebe token próprio com Contents W"): ONE single-use grant per cleanup attempt,
   // never reused for tracking; the session can send only the closed DELETE of the selected own branch ref.
   'branch-cleanup': { metadata: 'read', contents: 'write', pull_requests: 'read' },
+  // Ticket 44: the base branch tip and the `.factory/environment.yaml` file at that commit (Contents R), read by the controller host when a
+  // Work is created; the file is only parsed and validated, never executed on the host.
+  'environment-read': { metadata: 'read', contents: 'read' },
 } as const;
 /** The only two GraphQL documents the controller sends (ticket 16): the draft flag of one pull request, correlated by the effect identity.
  * Never review, approval, merge or any other mutation. */
@@ -59,12 +62,12 @@ export const draftMutations = {
 } as const;
 type Purpose = keyof typeof permissions;
 type DiagnosticPurpose = 'tracker' | 'repository' | 'dependency';
-export type ReadPurpose = 'tracker-read' | 'repository-read' | 'association-read' | 'dependency-read' | 'publication-read' | 'checks-read' | 'delivery-read' | 'feedback-read';
+export type ReadPurpose = 'tracker-read' | 'repository-read' | 'association-read' | 'dependency-read' | 'publication-read' | 'checks-read' | 'delivery-read' | 'feedback-read' | 'environment-read';
 /** Token-free metadata of each reduced read grant (principal/scope evidence; never the token). */
 export const readPermissions: Readonly<Record<ReadPurpose, Readonly<Record<string, 'read'>>>> = {
   'tracker-read': permissions['tracker-read'], 'repository-read': permissions['repository-read'],
   'association-read': permissions['association-read'], 'dependency-read': permissions['dependency-read'], 'publication-read': permissions['publication-read'], 'checks-read': permissions['checks-read'], 'delivery-read': permissions['delivery-read'],
-  'feedback-read': permissions['feedback-read'] };
+  'feedback-read': permissions['feedback-read'], 'environment-read': permissions['environment-read'] };
 const repositorySchema = z.object({ id: z.number().int().positive().safe(), full_name: z.string(), owner: z.object({ login: z.string() }) });
 const permissionSchema = z.record(z.string(), z.enum(['read', 'write']));
 class AccessFailure extends Error {

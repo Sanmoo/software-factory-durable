@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { createGitHubAccess } from '../../src/platform/github/index.js';
 import { createIssueTracker } from '../../src/issue-tracker/index.js';
 import { createCodeRepository } from '../../src/code-repository/index.js';
-import { githubWorld, issue, pull, worldScope, crossReferenced, connected, type World } from './github-world-fixture.js';
+import { defaultEnvironmentFile, githubWorld, issue, pull, worldScope, crossReferenced, connected, type World } from './github-world-fixture.js';
 
 const code = (observation: object) => 'code' in observation ? observation.code : undefined;
 // Real adapters/issuer/transport; only gh/GitHub (and App HTTPS) are substituted by the local world fixture.
@@ -198,4 +199,29 @@ test('configured owner/repository casing differs from GitHub canonical URLs with
   assert.deepEqual(listed.kind === 'observed' && listed.candidates.map(ticket => ticket.issueId), [7001]);
   const found = issueOf(await createCodeRepository({ github }).findPublication({ repo: mixed, issueNumbers: [1], knownBranches: [] }), 1);
   assert.deepEqual(found?.completeness === 'complete' && found.candidates.map(candidate => [candidate.number, candidate.association]), [[10, ['closing-reference', 'cross-reference']]]);
+});
+
+test('ticket 44: readEnvironmentDeclaration reads .factory/environment.yaml AT the base tip commit (narrow Contents grant), hashes its bytes and validates it closed', async t => {
+  const world = await compose(t, { issues: [issue(1)], pulls: [], refs: { main: 'a'.repeat(40) } });
+  const declared = await world.repository.readEnvironmentDeclaration!({ repo: worldScope, base: 'main' });
+  assert.equal(declared.kind, 'declared');
+  if (declared.kind !== 'declared') return;
+  assert.equal(declared.commit, 'a'.repeat(40));
+  assert.equal(declared.sha256, createHash('sha256').update(defaultEnvironmentFile).digest('hex'));
+  assert.deepEqual(declared.declaration, { schemaVersion: 1, apk: [{ name: 'openjdk25-jdk', version: '25.0.5.1_p2-r0' }], images: [] });
+  const trace = await world.trace();
+  const read = trace.find(entry => entry.endpoint.includes('/contents/'));
+  assert.ok(read && read.endpoint.endsWith(`/contents/.factory/environment.yaml?ref=${'a'.repeat(40)}`), 'the file of the pinned commit, never of a moving branch name');
+});
+
+test('ticket 44: a missing file is `missing` at a known commit; an invalid one names the error paths; a transport failure is never absence', async t => {
+  const absent = await compose(t, { issues: [], pulls: [], environmentFiles: { 'acme/project': null } });
+  assert.deepEqual(await absent.repository.readEnvironmentDeclaration!({ repo: worldScope, base: 'main' }).then(o => [o.kind, 'commit' in o ? o.commit : null]), ['missing', 'b'.repeat(40)]);
+  const invalid = await compose(t, { issues: [], pulls: [], environmentFiles: { 'acme/project': 'schemaVersion: 1\napk:\n  - name: openjdk25-jdk\n    version: "25"\nrun: ./install.sh\n' } });
+  const observed = await invalid.repository.readEnvironmentDeclaration!({ repo: worldScope, base: 'main' });
+  assert.equal(observed.kind, 'invalid');
+  assert.deepEqual(observed.kind === 'invalid' ? observed.errors.map(error => error.path) : [], ['run', 'apk[0].version']);
+  const failing = await compose(t, { issues: [], pulls: [], faults: { '/contents/': { status: 503 } } });
+  const unavailable = await failing.repository.readEnvironmentDeclaration!({ repo: worldScope, base: 'main' });
+  assert.equal(unavailable.kind, 'unavailable');
 });

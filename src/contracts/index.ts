@@ -204,3 +204,8 @@ export type FactorySkillPackId = typeof factorySkillPackIds[number];
  * may operate a given storage. A release manifest without this declaration predates ticket 33 and operates format 1 only.
  */
 export const controlStorageCompatibility = Object.freeze({ format: 2, migratesFrom: Object.freeze([1]) });
+
+// Ticket 44: the per-repository environment declaration (`.factory/environment.yaml`), its observation, pin and prepared identity.
+export { apkPackageNamePattern, apkVersionPattern, environmentDeclarationLimits, environmentDeclarationMaxBytes, environmentDeclarationPath, imageReferencePattern,
+  imageReferenceParts, validateEnvironmentDeclaration, type EnvironmentBaseIdentity, type EnvironmentDeclaration, type EnvironmentDeclarationError,
+  type EnvironmentDeclarationObservation, type PinnedEnvironment } from './environment.js';

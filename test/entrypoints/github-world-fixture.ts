@@ -37,7 +37,11 @@ export type WorldPull = {
 /** Issue comment as GitHub REST returns it (html_url/performed_via_github_app computed by the fixture when absent). */
 export type WorldComment = { id: number; issue: number; repository?: string; node_id?: string; body: string | null; user: { id: number; login: string; type: string };
   created_at?: string; updated_at?: string; performed_via_github_app?: { id: number } | null; html_url?: string };
+/** Ticket 44: the `.factory/environment.yaml` every fixture repository serves unless `environmentFiles` says otherwise. */
+export const defaultEnvironmentFile = 'schemaVersion: 1\napk:\n  - name: openjdk25-jdk\n    version: 25.0.5.1_p2-r0\n';
 export type World = {
+  /** Ticket 44: `.factory/environment.yaml` content per repository name (null = absent: 404); default `defaultEnvironmentFile`. */
+  environmentFiles?: Record<string, string | null>;
   issues: WorldIssue[];
   /** Issue comments served at /issues/{n}/comments (GET paginated, POST appends one created by the App bot). */
   comments?: WorldComment[];
@@ -392,7 +396,14 @@ export async function githubWorld(t: { after(fn: () => Promise<void> | void): vo
     const compared = checks.compare?.[rest.slice('/compare/'.length)];
     if (compared) body = compared; else notFound();
   }
-  } else if (/^\\/issues\\/\\d+$/.test(rest)) {
+  } else if (rest === '/contents/.factory/environment.yaml') {
+  // Ticket 44: the repository's environment declaration at ?ref=<commit> (default: a valid JDK 25 declaration; null = absent, 404).
+  const files = world.environmentFiles ?? {};
+  const text = Object.hasOwn(files, repo.name) ? files[repo.name] : ${JSON.stringify(defaultEnvironmentFile)};
+  if (!/^[0-9a-f]{40}$/.test(url.searchParams.get('ref') ?? '')) process.exit(21);
+  if (text === null) { status = 404; body = { message: 'Not Found' }; }
+  else { const bytes = Buffer.from(text, 'utf8'); body = { type: 'file', encoding: 'base64', content: bytes.toString('base64'), size: bytes.length, path: '.factory/environment.yaml', sha: 'f'.repeat(40) }; }
+} else if (/^\\/issues\\/\\d+$/.test(rest)) {
   const found = issuesOf(repo).find(i => i.number === Number(rest.split('/')[2]));
   if (found) body = shape(found);
   else { status = 404; body = { message: 'Not Found' }; }

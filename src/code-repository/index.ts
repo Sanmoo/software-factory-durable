@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import type { AccessDiagnostic, GitHubScope } from '../contracts/index.js';
+import type { AccessDiagnostic, EnvironmentDeclarationObservation, GitHubScope } from '../contracts/index.js';
+import { environmentOperations } from './environment.js';
 import { InvalidGitHubObservation, type GitHubAccess } from '../platform/github/index.js';
 import { createPullRequestReader, type PullRequestObservation, type PullRequestQuery } from './pull-request.js';
 
@@ -77,7 +78,11 @@ export interface CodeRepository {
   reopenPullRequest?(pr: { repo: GitHubScope; number: number; nodeId: string }, effect: { effectId: string }): Promise<PullRequestReopen>;
   /** Ticket 23: human feedback facts (reviews, inline review comments, PR conversation) of a KNOWN own pull request; GET only, never a decision. */
   readFeedback?(query: FeedbackQuery): Promise<FeedbackObservation>;
+  /** Ticket 44: `.factory/environment.yaml` at the CURRENT tip of `base` (commit + sha256 of its bytes + the validated declaration), GET only.
+   * Absent = no environment is ever pinned: the Works of a repository whose port cannot read it never start (no fallback to the generic guest). */
+  readEnvironmentDeclaration?(input: { repo: GitHubScope; base: string }): Promise<EnvironmentDeclarationObservation>;
 }
+export { parseEnvironmentDeclaration } from './environment.js';
 export type { ConversationCommentFact, FeedbackAuthor, FeedbackObservation, FeedbackQuery, ReviewCommentFact, ReviewFact } from './feedback.js';
 export type { PullRequestRef, OwnPullRequestFacts, OwnPullRequestObservation, BranchCleanupSelection, CleanupEffect, BranchCleanupResult } from './delivery.js';
 
@@ -243,6 +248,7 @@ export function createCodeRepository(options: { github: GitHubAccess }): CodeRep
     },
     ...deliveryOperations(options),
     ...feedbackOperations(options),
+    ...environmentOperations(options),
     checkAccess(repo, base) {
       return options.github.diagnose(repo, 'repository', async session => {
         if (!base || /[\x00-\x20\x7f]/.test(base)) throw new InvalidGitHubObservation();
