@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { defineDoc, defineDocFamily } from '@earendil-works/pi-durable';
 import type { TicketRef } from '../../issue-tracker/index.js';
+import type { EnvironmentDeclarationObservation } from '../../contracts/index.js';
+import { environmentImpedimentCodes, environmentNotEvaluated, environmentOutcome } from '../rules/environment.js';
 import type { ControlInput, ControlReceipt, DependencyEvaluation, ForgottenWork, Impediment, WorkView } from '../types.js';
 import { ticketKey } from '../rules/admission.js';
 import { initialBudget } from '../rules/budget.js';
@@ -70,6 +72,9 @@ export const works = defineDocFamily<{ work: WorkRecord | null }, null>({ kind: 
 export type AdmissionEvidence = {
   ticket: TicketRef; repository: { repository: string; repositoryId: number; base: string };
   observedAt: string; label: { id: number; name: string }; publication: { observedAt: string; limitations: string[] };
+  /** Ticket 44: the read of `.factory/environment.yaml` at the base tip made by the polling round that admits the Work (always present there).
+   * Absent only for callers predating ticket 44 (tests); such a Work has no `environment` and is never gated by it. */
+  environment?: EnvironmentDeclarationObservation;
 };
 export type AdmissionResult = { kind: 'admitted'; work_id: string; sequence: number } | { kind: 'existing'; work_id: string } | { kind: 'paused' };
 
@@ -98,6 +103,11 @@ export async function admitTicket(session: Session, evidence: AdmissionEvidence,
     // Replaced by the first native dependency evaluation of the same polling round; a crash in between keeps the Work held.
     const impediments: Impediment[] = [{ code: 'DEPENDENCIES_NOT_EVALUATED', scope: 'work', since: admittedAt,
       nextStep: 'Native blocked_by evaluation must complete before any dispatch; the next polling round evaluates it.' }];
+    // Ticket 44: the environment declaration read at the base tip in the same round, pinned with the Work (or the impediment saying why not).
+    const initial = evidence.environment ? environmentNotEvaluated(admittedAt) : null;
+    const outcome = initial && evidence.environment ? environmentOutcome(initial.environment, evidence.environment,
+      { workId: work_id, repository: evidence.repository.repository, base: evidence.repository.base, at: admittedAt }) : null;
+    if (outcome?.impediment) impediments.push(outcome.impediment);
     document.work = {
       work_id, cycle: 1, predecessor: null, ticket: evidence.ticket, repository: evidence.repository, result: 'open',
       authorization: { state: 'authorized', source: 'github-rest', observedAt: evidence.observedAt,
@@ -108,7 +118,9 @@ export async function admitTicket(session: Session, evidence: AdmissionEvidence,
       previousExecutions: [], questions: [], inputs: { cursor: null }, admittedAt,
       budget: initialBudget(limits, evidence.repository.repository, admittedAt),
       correction: null, pendingRecovery: null,
-      history: [{ at: admittedAt, event: 'admitted', origin: 'github-polling', sequence }],
+      history: [{ at: admittedAt, event: 'admitted', origin: 'github-polling', sequence },
+        ...(outcome?.event ? [{ at: admittedAt, event: 'environment-evaluated' as const, origin: 'github-polling' as const, detail: outcome.event }] : [])],
+      ...(outcome ? { environment: outcome.environment } : {}),
     };
     index.admissionSequence = sequence;
     index.tickets[key] = { current: work_id, previous: [] };
@@ -192,6 +204,27 @@ export async function recordDependencies(session: Session, work_id: string, eval
       ? { evaluationId: evaluation.evaluationId, observedAt: evaluation.observedAt, conclusion: evaluation.conclusion } : previous.lastComplete };
     if (before !== evaluation.conclusion) work.history.push({ at: evaluation.evaluatedAt, event: 'dependencies-changed', origin: 'github-polling',
       before, after: evaluation.conclusion, evaluationId: evaluation.evaluationId });
+    return 'recorded' as const;
+  }, BACKGROUND_CONTEXT);
+}
+
+/**
+ * Ticket 44: record one read of the environment declaration on a pending Work whose environment is not pinned yet (one commit: state,
+ * environment impediments, history on a change). A pinned or legacy Work is left unchanged (the pin is never re-read).
+ */
+export async function recordEnvironment(session: Session, work_id: string, observation: EnvironmentDeclarationObservation): Promise<'recorded' | 'skipped'> {
+  return session.commit(async tx => {
+    const document = await tx.doc(works, work_id, null);
+    const work = document.work;
+    if (!work || work.result !== 'open') return 'skipped' as const;
+    const at = new Date().toISOString();
+    const outcome = environmentOutcome(work.environment, observation, { workId: work_id, repository: work.repository.repository, base: work.repository.base, at });
+    if (!outcome) return 'skipped' as const;
+    const known = new Map(work.impediments.map(item => [item.code, item.since]));
+    work.impediments = [...work.impediments.filter(item => !(environmentImpedimentCodes as readonly string[]).includes(item.code)),
+      ...(outcome.impediment ? [{ ...outcome.impediment, since: known.get(outcome.impediment.code) ?? outcome.impediment.since ?? at }] : [])];
+    work.environment = outcome.environment;
+    if (outcome.event) work.history.push({ at, event: 'environment-evaluated', origin: 'github-polling', detail: outcome.event });
     return 'recorded' as const;
   }, BACKGROUND_CONTEXT);
 }

@@ -4,6 +4,11 @@ import type { IssueTracker, TicketRef, CandidateObservation, TicketObservation, 
 import type { BranchComparison, CodeRepository, ConversationCommentFact, FeedbackObservation, PublicationObservation, PullRequestCandidate, PullRequestObservation, ReviewCommentFact,
   ReviewFact } from '../../src/code-repository/index.js';
 import type { PollingClock } from '../../src/control/types.js';
+import type { EnvironmentDeclarationObservation } from '../../src/contracts/index.js';
+
+/** Ticket 44: the declaration every double repository reports by default (JDK 25 at the base tip 'b'*40). */
+export const declaredEnvironment = { schemaVersion: 1 as const, apk: [{ name: 'openjdk25-jdk', version: '25.0.5.1_p2-r0' }], images: [] };
+export const declaredEnvironmentSha256 = 'e'.repeat(64);
 
 export type RemoteIssue = { ref: TicketRef; state: 'open' | 'closed'; labels: { id: number; name: string }[]; pullRequest?: boolean; reread?: Partial<TicketRef>;
   stateReason?: string | null; /** Native blocked_by edges, by issue number in remote.issues. */ blockedBy?: number[] };
@@ -52,6 +57,9 @@ export type Remote = {
   feedback?: Record<number, { reviews?: ReviewFact[]; reviewComments?: ReviewCommentFact[]; comments?: ConversationCommentFact[] } | 'unavailable'>;
   /** Ticket 21: tip of the base `main` in the refs listing (default 'b'*40); changing it models the base merely advancing. */
   main?: string;
+  /** Ticket 44: what readEnvironmentDeclaration observes (default: `declaredEnvironment` at the base tip); not tracked in `calls`. */
+  environment?: EnvironmentDeclarationObservation extends infer O ? O extends unknown ? Omit<O, 'observedAt'> : never : never;
+  environmentReads?: number;
 };
 let commentSequence = 80000;
 /** A comment as the tracker adapter reports it. */
@@ -156,6 +164,10 @@ export function githubDoubles(remote: Remote) {
   };
   const repository: CodeRepository = {
     checkAccess() { throw new Error('not used by admission'); },
+    readEnvironmentDeclaration: async () => {
+      remote.environmentReads = (remote.environmentReads ?? 0) + 1;
+      return { observedAt: observedAt(), ...(remote.environment ?? { kind: 'declared', commit: remote.main ?? 'b'.repeat(40), sha256: declaredEnvironmentSha256, declaration: declaredEnvironment }) } as EnvironmentDeclarationObservation;
+    },
     findPublication: correlation => track('findPublication', (): PublicationObservation => remote.publicationFailure ? failure(correlation.repo.repository, remote.publicationFailure) : ({
       kind: 'observed', source: 'github-rest', observedAt: observedAt(), repository: correlation.repo.repository, repositoryId: 3, limitations: ['synthetic'],
       issues: Object.fromEntries(correlation.issueNumbers.map(n => [String(n), remote.incompleteAssociation?.[n]

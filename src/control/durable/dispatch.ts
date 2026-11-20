@@ -873,9 +873,16 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       checkStop();
       // Ticket 50: an operator remedy accepted with a retry (recreate the divergent artifact seeds) is applied by THIS preparation only.
       const remedy = work.startRemedy ?? null;
+      // Ticket 44: the declaration pinned in the Work (a Work admitted before ticket 44 has none and keeps the generic guest). A Work gated by
+      // its environment never gets here (its impediment blocks the selection); a defensive refusal never prepares it on a guess.
+      const pinned = work.environment?.state === 'pinned' ? work.environment.pin : null;
+      if (work.environment && !pinned) { await refused('prepare', { status: 'failure', code: 'ENVIRONMENT_NOT_PINNED', detail: `environment ${work.environment.state}` }); return; }
+      const environmentRetry = work.environmentRetry ?? null;
       const prepared = await ports.sandbox.prepare({ workId: work.work_id, configuration: ports.configuration,
         checkout: { repository: work.repository.repository, repositoryId: work.repository.repositoryId, installationId: configured.installationId, base: work.repository.base, branch: execution.request.branch },
-        ...(remedy?.remedy === 'recreate-artifact-seed' ? { recreateSeeds: remedy.seeds } : {}) });
+        ...(remedy?.remedy === 'recreate-artifact-seed' ? { recreateSeeds: remedy.seeds } : {}),
+        ...(pinned ? { environment: { ...pinned, repository: work.repository.repository, repositoryId: work.repository.repositoryId } } : {}),
+        ...(environmentRetry ? { retryEnvironmentBase: true } : {}) });
       if (prepared.status === 'success' && !('checkout' in prepared)) { await hold('PREPARE_CHECKOUT_MISSING', 'Preparation did not complete; it is never retried automatically. Inspect the environment (ticket 26 recovery).', true); return; }
       if (prepared.status !== 'success') { await refused('prepare', prepared); return; }
       environment = prepared.environment;
@@ -889,7 +896,12 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         current.request.baseCommit = prepared.checkout.baseCommit;
         current.request.checkout = prepared.checkout.path;
         current.request.skillPack = pack ? { name: pack.name, manifestSha256: pack.manifestSha256 } : null;
+        // Ticket 44: what this environment was created from (declaration hash + resolved manifest), recorded with the Execution.
+        if ('base' in prepared && prepared.base) current.request.environment = prepared.base;
       }, current => {
+        if ('base' in prepared && prepared.base) current.history.push({ at: new Date().toISOString(), event: 'environment-evaluated', origin: 'controller-dispatch',
+          detail: `environment-base:${prepared.base.base}:${prepared.base.declarationSha256}:${prepared.base.manifestSha256}:${prepared.base.reused ? 'reused' : 'created'}` });
+        if (environmentRetry && current.environmentRetry?.request_id === environmentRetry.request_id) current.environmentRetry = null;
         // Ticket 47: a disk remedy is the boot's, settled by the boot phase commit below.
         if (!remedy || isDiskRemedy(remedy.remedy) || current.startRemedy?.request_id !== remedy.request_id) return;
         const replaced = prepared.seeds.filter(seed => seed.replaced).map(seed => `${seed.name}->${seed.replaced}`);

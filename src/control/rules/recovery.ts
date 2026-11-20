@@ -65,7 +65,13 @@ export function bootCapacityWait(attempt: number): number {
 // incomplete or indeterminate preparation) keeps the Slot until the host evidence of the boot reconciliation.
 const preparationRefusals = new Set(['ENVIRONMENT_CONFIGURATION_MISMATCH', 'ARTIFACT_SEED_VERSION_CONFLICT', 'ARTIFACT_SEED_SOURCE_DRIFT', 'ARTIFACT_SEED_INVALID',
   'ARTIFACT_SEED_PATH_UNSAFE', 'INSUFFICIENT_STORAGE_FOR_PREPARATION', 'GUEST_ASSETS_INVALID', 'ENVIRONMENT_CLEANUP_PENDING', 'SANDBOX_CONFIGURATION_INVALID',
-  'CHECKOUT_NOT_COMPOSED']);
+  'CHECKOUT_NOT_COMPOSED',
+  // Ticket 44: environment base refusals returned after the preparation VM's cessation was confirmed (or before any native effect).
+  'ENVIRONMENT_BASE_PREPARATION_FAILED', 'ENVIRONMENT_BASE_PREPARATION_INCOMPLETE', 'ENVIRONMENT_PREPARATION_VM_NOT_COMPOSED', 'ENVIRONMENT_DECLARATION_INVALID',
+  'ENVIRONMENT_NOT_PINNED']);
+/** Ticket 44: refusals whose operator retry also retries the environment base preparation (the failed attempt is set aside, never deleted). */
+export const environmentBaseRetryCodes = ['PREPARE_ENVIRONMENT_BASE_PREPARATION_FAILED', 'PREPARE_ENVIRONMENT_BASE_PREPARATION_INCOMPLETE'] as const;
+export const retriesEnvironmentBase = (code: string) => (environmentBaseRetryCodes as readonly string[]).includes(code);
 /**
  * Ticket 50: whether a returned Sandbox refusal proves that nothing of this Execution's preparation/boot still runs. A `start` failure is the
  * Sandbox's definitive refusal (no boot launched, or a boot whose cessation it confirmed); an `indeterminate` result never is.
@@ -223,7 +229,12 @@ export function blockedStartImpediment(workId: string, code: string, detail: str
   const why = code.endsWith('ENVIRONMENT_CONFIGURATION_MISMATCH') || code === 'START_GUEST_ASSET_PIN_MISMATCH'
     ? ' The configuration changed what identifies the prepared environment (profile, disk size or guest assets; memory/vCPU never do): restore it ' +
       'and retry, or `factory cancel` + `factory new` for a NEW environment (the current one and its unpublished work are not reused).'
-    : '';
+    : retriesEnvironmentBase(code)
+      ? ' The environment base (the base disk of the repository\'s declared .factory/environment.yaml) could not be prepared; the cause is above. ' +
+        'Nothing else was installed instead (no other version or image). Fix the cause (e.g. a version no longer in the Alpine mirror: update the ' +
+        'declaration on the base branch and start a NEW cycle, since this Work stays pinned to its declaration), or retry if it was transient: the ' +
+        'retry sets the failed attempt aside and prepares the base again.'
+      : '';
   return { code: 'RECOVERY_BLOCKED', scope: 'work', since, nextStep: `The Execution's boot/preparation was refused with ${code}${detail ? ` (${detail})` : ''}; ` +
     `nothing started and nothing is retried automatically.${why} After inspecting/fixing the cause, retry it explicitly: ` +
     `\`factory resume ${workId} --retry-blocked-start ${code} --request-id <id>\`` +

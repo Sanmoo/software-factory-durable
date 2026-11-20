@@ -133,13 +133,18 @@ export function recoveryDoubles(dir: string, scripts: RecoveryScript[], options:
       async prepare(input) {
         const environment = `env-${createHash('sha256').update(input.workId).digest('hex')}`;
         const reused = readHost(dir).prepared.includes(environment);
-        log('prepare', { environment, reused, recreateSeeds: input.recreateSeeds ?? null });
+        log('prepare', { environment, reused, recreateSeeds: input.recreateSeeds ?? null,
+          // Ticket 44: the pinned declaration handed to the Sandbox and the operator's base retry.
+          declaration: input.environment ? { sha256: input.environment.sha256, commit: input.environment.commit, repositoryId: input.environment.repositoryId,
+            packages: input.environment.declaration.apk.map(item => `${item.name}=${item.version}`) } : null, retryEnvironmentBase: input.retryEnvironmentBase ?? false });
         await options.onPrepare?.();
         const refusal = options.prepareRefusal?.();
         if (refusal) return refusal;
         updateHost(dir, state => { if (!state.prepared.includes(environment)) state.prepared.push(environment); state.current[environment] ??= null; });
         const replaced = input.recreateSeeds?.includes('factory/skill-pack/factory-skills-v4') ? { replaced: 'factory/skill-pack/factory-skills-v4.divergent-20261119t100000z' } : {};
-        return { status: 'success', environment: environment as never, seeds: [{ name: 'factory/skill-pack/factory-skills-v4', manifestSha256: 'f'.repeat(64), reused, ...replaced }],
+        const base = input.environment ? { base: 'c'.repeat(64), declarationSha256: input.environment.sha256, manifestSha256: 'd'.repeat(64), reused,
+          packages: Object.fromEntries(input.environment.declaration.apk.map(item => [item.name, item.version])), images: [] } : undefined;
+        return { status: 'success', environment: environment as never, ...(base ? { base } : {}), seeds: [{ name: 'factory/skill-pack/factory-skills-v4', manifestSha256: 'f'.repeat(64), reused, ...replaced }],
           checkout: { path: '/workspace/checkout', repository: input.checkout.repository, repositoryId: input.checkout.repositoryId, base: 'main', branch: input.checkout.branch,
             baseCommit: 'a'.repeat(40), origin: 'https://github.com/acme/project.git', reused, preparedAt: new Date().toISOString() } };
       },

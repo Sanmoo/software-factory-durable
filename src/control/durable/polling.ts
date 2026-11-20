@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { DependencyGraphObservation, TicketRef } from '../../issue-tracker/index.js';
+import type { EnvironmentDeclarationObservation } from '../../contracts/index.js';
+import type { WorkEnvironment } from '../types.js';
 import type { AccessDependencies, CandidateView, ConfiguredRepository, DependencyEvaluation, PollingClock, PollingView, RepositoryPollView } from '../types.js';
 import { evaluateEntry, evaluatePublication, pollDelaySeconds, type Hold, type PublicationFacts } from '../rules/admission.js';
 import { evaluateDependencies, type OwnCycleFacts } from '../rules/dependencies.js';
@@ -42,7 +44,9 @@ type RepositoryState = { scope: ConfiguredRepository; dueAt: number; failures: n
 export function createPoller(deps: {
   access: AccessDependencies; intervalSeconds: number; clock: PollingClock;
   paused(): Promise<boolean>; indexed(ticket: TicketRef): Promise<string | undefined>; admit(evidence: AdmissionEvidence): Promise<AdmissionResult>;
-  pending(repositoryId: number): Promise<{ work_id: string; ticket: TicketRef }[]>;
+  pending(repositoryId: number): Promise<{ work_id: string; ticket: TicketRef; environment?: WorkEnvironment | undefined }[]>;
+  /** Ticket 44: record a read of the environment declaration on a pending Work not pinned yet. */
+  recordEnvironment?(work_id: string, observation: EnvironmentDeclarationObservation): Promise<unknown>;
   ownCycles(issueIds: number[]): Promise<Record<number, OwnCycleFacts>>;
   record(work_id: string, evaluation: DependencyEvaluation): Promise<unknown>;
   /** Called after every completed polling iteration (same loop; no scheduler). */
@@ -90,8 +94,28 @@ export function createPoller(deps: {
       ...(facts.kind === 'unavailable' && transient.has(facts.code) ? { failed: true } : {}) };
   }
 
+  /**
+   * Ticket 44: ONE read of `.factory/environment.yaml` at the base tip per configured repository per round, shared by the Works admitted and
+   * re-evaluated in that round. A repository port that cannot read it yields `unavailable` (the Work never starts on a guess).
+   */
+  const environmentReads = new Map<string, Promise<EnvironmentDeclarationObservation>>();
+  const readEnvironment = (configured: ConfiguredRepository, attemptId: string) => {
+    const key = `${attemptId}:${configured.repository.toLowerCase()}`;
+    let read = environmentReads.get(key);
+    if (!read) {
+      read = repository.readEnvironmentDeclaration
+        ? repository.readEnvironmentDeclaration({ repo: configured, base: configured.base }).catch(() => ({ kind: 'unavailable' as const, observedAt: new Date().toISOString(),
+          code: 'POLLING_QUERY_FAILED', nextStep: 'Unexpected failure while reading the environment declaration; polling retries.' }))
+        : Promise.resolve({ kind: 'unavailable' as const, observedAt: new Date().toISOString(), code: 'ENVIRONMENT_READ_NOT_COMPOSED',
+          nextStep: 'This installation cannot read repository environment declarations; no Work starts without one.' });
+      for (const old of environmentReads.keys()) if (!old.startsWith(`${attemptId}:`)) environmentReads.delete(old);
+      environmentReads.set(key, read);
+    }
+    return read;
+  };
+
   /** Phase 2: ONE pull request listing per configured repository per cycle, shared by every authorized candidate, then admission. */
-  async function publish(pending: Pending[]): Promise<Map<Pending, Outcome>> {
+  async function publish(pending: Pending[], attemptId: string): Promise<Map<Pending, Outcome>> {
     const outcomes = new Map<Pending, Outcome>();
     const groups = new Map<ConfiguredRepository, Pending[]>();
     for (const item of pending) groups.set(item.configured, [...(groups.get(item.configured) ?? []), item]);
@@ -111,8 +135,9 @@ export function createPoller(deps: {
             ...(facts.kind === 'unavailable' && transient.has(facts.code) ? { failed: true } : {}) });
           continue;
         }
+        const environment = await readEnvironment(configured, attemptId);
         const admitted = await deps.admit({ ticket: item.ticket, repository: { repository: configured.repository, repositoryId: item.ticket.repositoryId, base: configured.base },
-          observedAt: item.observedAt, label: item.label, publication: { observedAt: publication.observedAt, limitations: publication.limitations } });
+          observedAt: item.observedAt, label: item.label, publication: { observedAt: publication.observedAt, limitations: publication.limitations }, environment });
         outcomes.set(item, admitted.kind === 'paused'
           ? { view: held(item.ref, [{ code: 'GLOBAL_PAUSE', nextStep: 'Pause committed before admission; unpause to admit on the next poll.' }]) }
           : { view: { ticket: item.ref, observedAt: new Date().toISOString(), outcome: admitted.kind, work_id: admitted.work_id } });
@@ -125,11 +150,18 @@ export function createPoller(deps: {
    * Phase 3: fresh native dependency evaluation of every open pending Work of the repository, in FIFO order, recorded durably with the
    * round's attempt id. Tracking continues while paused. A wait window stops the round; the rest stay not current (held).
    */
-  async function dependencies(repositoryId: number, attemptId: string): Promise<{ waitSeconds?: number; failed: boolean }> {
+  async function dependencies(repositoryId: number, attemptId: string, configured: ConfiguredRepository): Promise<{ waitSeconds?: number; failed: boolean }> {
     let waitSeconds: number | undefined;
     let failed = false;
     for (const work of await deps.pending(repositoryId)) {
       if (waitSeconds !== undefined) break;
+      // Ticket 44: a Work whose declaration is missing/invalid/unread is re-read each round until it is pinned (then never again).
+      if (deps.recordEnvironment && work.environment && work.environment.state !== 'pinned') {
+        const observation = await readEnvironment(configured, attemptId);
+        await deps.recordEnvironment(work.work_id, observation);
+        if (observation.kind === 'unavailable' && observation.waitSeconds !== undefined) waitSeconds = Math.max(waitSeconds ?? 0, observation.waitSeconds);
+        if (observation.kind === 'unavailable' && transient.has(observation.code)) failed = true;
+      }
       const { evaluation, graph } = await evaluateWorkDependencies(tracker, deps.ownCycles, work.ticket, attemptId);
       await deps.record(work.work_id, evaluation);
       for (const problem of graph.problems) {
@@ -163,7 +195,7 @@ export function createPoller(deps: {
         slots.push(result);
       }
       const pending = slots.flatMap(slot => 'pending' in slot ? [slot.pending] : []);
-      const published = pending.length && waitSeconds === undefined ? await publish(pending) : new Map<Pending, Outcome>();
+      const published = pending.length && waitSeconds === undefined ? await publish(pending, attemptId) : new Map<Pending, Outcome>();
       for (const outcome of published.values()) wait(outcome);
       const outcomes: Outcome[] = slots.map(slot => 'notEvaluated' in slot
         ? { view: { ticket: slot.notEvaluated, observedAt: new Date().toISOString(), outcome: 'not-evaluated', reason: 'GitHub wait window open; evaluated on a later poll.' } }
@@ -171,7 +203,7 @@ export function createPoller(deps: {
         : slot);
       let failed = outcomes.some(outcome => outcome.failed);
       if (waitSeconds === undefined) {
-        const evaluated = await dependencies(listing.repositoryId, attemptId);
+        const evaluated = await dependencies(listing.repositoryId, attemptId, entry_.scope);
         if (evaluated.waitSeconds !== undefined) waitSeconds = evaluated.waitSeconds;
         failed ||= evaluated.failed;
       }

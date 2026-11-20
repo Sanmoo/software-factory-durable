@@ -1,4 +1,4 @@
-import type { AccessDiagnostic, BudgetEndProgress, BuilderBudgetConfiguration, BuilderCredentials, CheckoutFingerprint, BuilderGrantMetadata, GitHubScope, HandoffDeclarations, ProposalHandoff, ProposalIdentity, ReviewerRole, ReviewOpinion, RevocationResult, StartRetryRemedy } from '../contracts/index.js';
+import type { AccessDiagnostic, EnvironmentBaseIdentity, EnvironmentDeclarationError, PinnedEnvironment, BudgetEndProgress, BuilderBudgetConfiguration, BuilderCredentials, CheckoutFingerprint, BuilderGrantMetadata, GitHubScope, HandoffDeclarations, ProposalHandoff, ProposalIdentity, ReviewerRole, ReviewOpinion, RevocationResult, StartRetryRemedy } from '../contracts/index.js';
 import type { CheckoutRequest, EnvironmentRef, PreparedWork, RemoveResult, StartResult, StopResult, BootRef } from '../sandbox/index.js';
 import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion, SessionObservation, WorkerSessionRef, OpinionObservation, QuestionObservation } from '../workers/index.js';
 export type { SessionObservation, WorkerSessionRef as SessionRef } from '../workers/index.js';
@@ -133,7 +133,10 @@ export type RecoveryRecord = { at: string; controllerRunId: string;
 export type ExecutionPorts = {
   sandbox: {
     /** `recreateSeeds` (ticket 50): artifact seeds the operator explicitly decided to recreate (divergent copy set aside, never deleted). */
-    prepare(input: { workId: string; configuration: unknown; checkout: CheckoutRequest; recreateSeeds?: readonly string[] }): Promise<PreparedWork>;
+    /** `environment` (ticket 44): the Work's pinned declaration; a NEW environment is created from the base disk prepared for it (an existing one
+     * keeps the base it was created from). `retryEnvironmentBase`: the operator's retry of a failed/incomplete base preparation. */
+    prepare(input: { workId: string; configuration: unknown; checkout: CheckoutRequest; recreateSeeds?: readonly string[];
+      environment?: PinnedEnvironment & { repository: string; repositoryId: number }; retryEnvironmentBase?: boolean }): Promise<PreparedWork>;
     /** `pass`: identity of the dispatch pass that reserved this Execution (ticket 24; correlation/evidence only). */
     /** `diskRemedy` (ticket 47): the operator's repair/replace decision for a preserved disk that fails its check, applied by this boot only. */
     start(input: { environment: EnvironmentRef; configuration: unknown; pass?: string; diskRemedy?: 'repair-disk' | 'replace-disk' }): Promise<StartResult>;
@@ -252,7 +255,10 @@ export type ExecutionView = {
   dispatch: { intent: 'prepare-start-activate'; phase: 'reserved' | 'prepared' | 'booted' | 'activation-requested' | 'started' | 'completed' | 'stopped';
     environment: string | null; boot: string | null; updatedAt: string };
   request: { ticket: string; repository: string; base: string; branch: string; baseCommit: string | null; checkout: string | null; promptSha256: string | null;
-    skillPack: { name: string; manifestSha256: string } | null; policies: Pick<Invocation, 'skillPack' | 'modelBudget' | 'copyOutput' | 'editSourceMaxBytes' | 'builderBudget'>;
+    skillPack: { name: string; manifestSha256: string } | null;
+    /** Ticket 44: identity of the environment base this Execution's environment was created from (declaration hash + resolved manifest). */
+    environment?: EnvironmentBaseIdentity | null;
+    policies: Pick<Invocation, 'skillPack' | 'modelBudget' | 'copyOutput' | 'editSourceMaxBytes' | 'builderBudget'>;
     /** Resumption basis (re-checked in the admission commit): the previous Execution and what authorizes the new activation — its answered
      * Question and/or concrete scope updates. `NEW_BOOT_REPLACEMENT_SESSION` is the ticket-10 record of an answered Question. */
     resume?: { previousExecutionId: string; questionId: string | null; answerSha256: string | null; scopeUpdateIds?: string[];
@@ -499,6 +505,14 @@ export type RepositoryPollView = {
 export type PollingView = { state: 'disabled' | 'starting' | 'polling' | 'sleeping' | 'stopped'; intervalSeconds: number | null; cycles: number;
   lastCycleAt: string | null; source: 'in-memory-observation'; repositories: RepositoryPollView[] };
 
+/**
+ * Ticket 44: the Work's environment declaration (`.factory/environment.yaml` at the base commit). Only `pinned` lets the Work start; it is
+ * read once and never re-read (a later change of the file affects later Works only). The other states keep an impediment and are re-read.
+ */
+export type WorkEnvironment = { state: 'not-evaluated'; since: string; code: string | null } |
+  { state: 'not-declared'; commit: string; observedAt: string } |
+  { state: 'invalid'; commit: string; sha256: string | null; errors: EnvironmentDeclarationError[]; observedAt: string } |
+  { state: 'pinned'; pin: PinnedEnvironment; pinnedAt: string; observedAt: string };
 export type Impediment = { code: string; scope: 'work' | 'installation'; since?: string; nextStep: string; questionId?: string };
 /**
  * Durable record of one native dependency evaluation (spec §4.2): origin, token-free principals/scopes, instants, completeness, the
@@ -736,6 +750,10 @@ export type WorkView = {
   /** Ticket 50: operator remedy accepted with a retry, applied by the NEXT preparation (recreate the divergent artifact seeds) or, ticket 47, the
    * next boot (repair/replace a preserved disk that fails its check). */
   startRemedy?: { remedy: StartRetryRemedy; request_id: string; executionId: string; at: string; seeds: string[] } | null;
+  /** Ticket 44: the environment declaration pinned in this Work (absent = Work admitted before ticket 44: generic guest, never re-evaluated). */
+  environment?: WorkEnvironment;
+  /** Ticket 44: the operator's retry of a failed/incomplete environment base preparation, consumed by the NEXT preparation only. */
+  environmentRetry?: { request_id: string; executionId: string; at: string } | null;
   /** Presentation only (never persisted): limits/reservations/consumption, timeout, duration/last activity and the action required. */
   limits: LimitsView;
   /** Ticket 29, presentation only: this view is a compacted form of the Work (to fit one frame); the counts left out and where to read them. */
@@ -779,6 +797,7 @@ export type WorkView = {
       'reconciliation-failed';
       origin: 'controller-publication'; executionId: string | null; detail: string } |
     { at: string; event: 'checks-evaluated'; origin: 'controller-checks'; detail: string } |
+    /* ticket 44 */ { at: string; event: 'environment-evaluated'; origin: 'github-polling' | 'controller-dispatch'; detail: string } |
     { at: string; event: 'readiness-evaluated' | 'readiness-intended' | 'readiness-attempted' | 'readiness-confirmed' | 'readiness-not-applied' | 'readiness-human-flag';
       origin: 'controller-readiness'; detail: string } |
     { at: string; event: 'readiness-authorized'; origin: 'local-cli'; detail: string } |

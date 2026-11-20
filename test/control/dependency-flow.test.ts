@@ -60,7 +60,7 @@ test('AC3/AC8: an impeded Work keeps its FIFO position without blocking independ
   assert.deepEqual(works[1]!.dispatch.reasons, ['EXECUTION_NOT_ENABLED']);
   assert.equal(list.selection.next, works[1]!.work_id, 'released Work regains its original FIFO turn');
   assert.deepEqual(works[1]!.history.map(item => item.event === 'dependencies-changed' ? [item.event, item.before, item.after] : [item.event]),
-    [['admitted'], ['dependencies-changed', null, 'pending'], ['dependencies-changed', 'pending', 'satisfied']], 'transitions only, not every poll');
+    [['admitted'], ['environment-evaluated'], ['dependencies-changed', null, 'pending'], ['dependencies-changed', 'pending', 'satisfied']], 'transitions only, not every poll');
   const status = await h.control().inspect({ kind: 'status' }) as ControlStatus;
   assert.deepEqual(status.dependencies, { satisfied: 2, pending: 0, inconclusive: 0, notEvaluated: 0 });
   assert.equal(status.selection.next, works[1]!.work_id);

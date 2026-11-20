@@ -196,7 +196,9 @@ test('AC6/AC7: new only after delivery or a ceased cancellation, with predecesso
   assert.equal(created.outcome, 'accepted');
   const successor = (await readWork(h.session, created.created!))!;
   assert.deepEqual([successor.cycle, successor.predecessor, successor.result, successor.queue.sequence], [2, h.work_id, 'open', 2]);
-  assert.deepEqual(successor.impediments.map(item => item.code), ['DEPENDENCIES_NOT_EVALUATED'], 'authorization confirmed by the fresh read at acceptance');
+  // Ticket 44: a new cycle is a new Work: its environment declaration is read (and pinned) by the next polling round, never inherited.
+  assert.deepEqual(successor.impediments.map(item => item.code), ['DEPENDENCIES_NOT_EVALUATED', 'ENVIRONMENT_NOT_EVALUATED'], 'authorization confirmed by the fresh read at acceptance');
+  assert.equal(successor.environment?.state, 'not-evaluated');
   assert.equal(successor.authorization.state, 'authorized');
   assert.deepEqual(await newCycle('new-2', true), created, 'same identity and content: same receipt, no second read decision');
   assert.deepEqual([successor.execution, successor.branch, successor.publication ?? null, successor.pullRequest], [null, null, null, null], 'own resources, nothing adopted');

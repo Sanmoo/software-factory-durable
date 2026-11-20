@@ -11,7 +11,7 @@ import { openStore } from './store.js';
 import { recordRunEnd, recordRunStart } from './migration.js';
 import { currentFormat } from './format.js';
 import { acceptPauseCommand, admitTicket, indexedWork, initialize, ownCycles, pendingWorks, readForgotten, readForgottenWork, readInstallation, readRequest, readWork, readWorks,
-  recordDependencies, type WorkRecord } from './admission.js';
+  recordDependencies, recordEnvironment, type WorkRecord } from './admission.js';
 import { acceptForgetConfirm, acceptForgetPlan } from './forget.js';
 import { forgottenNextStep, forgottenNotRecoverable } from '../rules/forget.js';
 import { createPoller, systemClock } from './polling.js';
@@ -139,6 +139,7 @@ export async function openControl(options: { storagePath: string;
     pending: repositoryId => pendingWorks(state, repositoryId),
     ownCycles: issueIds => ownCycles(state, issueIds),
     record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation),
+    recordEnvironment: (work_id, observation) => recordEnvironment(state, work_id, observation),
     // Ticket 15: required-checks tracking after the dispatch tick (off its critical path), whatever the dispatch barrier or pause.
     // Ticket 16: readiness after the checks explanation (its evidence), whatever the pause (tracking, not a new trigger).
     afterCycle: async () => { await delivery?.cycle().catch(() => {}); await retention?.cycle().catch(() => {}); await cycles?.cycle().catch(() => {}); await desk?.cycle();
@@ -163,7 +164,8 @@ export async function openControl(options: { storagePath: string;
     busy: work_id => dispatcher?.active(work_id) ?? false, limits: configuredRepository }) : undefined;
   if (options.execution && options.access && poller) dispatcher = createDispatcher({ session: state, access: options.access, ports: options.execution,
     currentAttempt: repository => poller.currentAttempt(repository), readWorks: () => readWorks(state), ownCycles: issueIds => ownCycles(state, issueIds),
-    record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation), paused: async () => (await readInstallation(state)).paused,
+    record: (work_id, evaluation) => recordDependencies(state, work_id, evaluation),
+    paused: async () => (await readInstallation(state)).paused,
     heldSlots: () => heldSlots(state), questionRecorded: () => desk?.kick(), controllerRunId: controller_run_id, runBlockers,
     authorizationWithdrawn: (work_id, codes) => recordAuthorization(state, work_id, { kind: 'withdrawn', codes }) });
   // Ticket 25: authorization tracking of open Works and the reopen effects, before the dispatcher tick (a withdrawal observed now blocks it).

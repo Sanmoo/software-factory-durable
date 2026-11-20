@@ -1,3 +1,4 @@
+import { environmentNotEvaluated } from '../rules/environment.js';
 import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { AccessDependencies, ConfiguredRepository, ControlInput, ControlReceipt, CycleEvent, ForgottenWork, Impediment, WorkView } from '../types.js';
@@ -7,7 +8,7 @@ import { initialBudget } from '../rules/budget.js';
 import { authorizationChange, authorizationFacts, cancelDecision, cycleImpediments, hasImpediment, newCycleDecision, occupying, reopenDecision, resumeDecision,
   settleCancellation } from '../rules/cycles.js';
 import { decideMerge, ownPullRequestOf } from '../rules/delivery.js';
-import { newReviewRoundDecision, overrideBlockedRecoveryDecision, positiveResolution, retryBlockedStartDecision, reviewerRetryLimitCode } from '../rules/recovery.js';
+import { newReviewRoundDecision, overrideBlockedRecoveryDecision, positiveResolution, retriesEnvironmentBase, retryBlockedStartDecision, reviewerRetryLimitCode } from '../rules/recovery.js';
 import { readForgotten, readWork, readWorks, requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import { questions } from './questions.js';
 import { applyRecoveryRequest } from './recovery-request.js';
@@ -205,6 +206,8 @@ async function acceptBlockedStartRetry(session: Session, input: Extract<CycleInp
       detail: `${input.request_id}:${decision.code}${remedy ? `:${remedy}${remedy === 'recreate-artifact-seed' ? `:${seeds.join(',')}` : ''}` : ''}`.slice(0, 512) });
     const opened = applyRecoveryRequest(work!, { executionId: execution!.executionId, code: decision.code, at, reason: `operator-retry:${decision.code}` });
     work!.startRemedy = remedy ? { remedy, request_id: input.request_id, executionId: execution!.executionId, at, seeds } : null;
+    // Ticket 44: retrying a failed/interrupted environment base preparation lets the NEXT preparation set it aside and prepare it again.
+    work!.environmentRetry = retriesEnvironmentBase(decision.code) ? { request_id: input.request_id, executionId: execution!.executionId, at } : null;
     // Assigned as a new object: a doc value assigned then mutated in place is not what the commit persists.
     execution!.blockedStart = { ...refusal!, retry: { request_id: input.request_id, operator: { kind: 'local-administrator' }, at, code: decision.code, remedy,
       recoveryRequest: opened } };
@@ -291,7 +294,10 @@ export async function acceptNewCycle(session: Session, input: CycleInput & { ope
           publication: { observedAt, completeness: 'complete' as const, associatedPullRequests: 0 as const,
             limitations: [`Predecessor ${forgotten.work_id} was forgotten (history deleted); only its minimal memory remained.`] } } : {}) },
       queue: { category: 'normal', sequence, pending: true },
-      impediments: [{ code: 'DEPENDENCIES_NOT_EVALUATED', scope: 'work', since: at, nextStep: 'Native blocked_by evaluation must complete before any dispatch; the next polling round evaluates it.' }],
+      impediments: [{ code: 'DEPENDENCIES_NOT_EVALUATED', scope: 'work', since: at, nextStep: 'Native blocked_by evaluation must complete before any dispatch; the next polling round evaluates it.' },
+        // Ticket 44: a new cycle is a new Work: it pins the declaration at the base tip read by the next polling round, never the predecessor's.
+        environmentNotEvaluated(at).impediment],
+      environment: environmentNotEvaluated(at).environment,
       dependencies: { latest: null, lastComplete: null }, execution: null, branch: null, pullRequest: null, previousExecutions: [], questions: [], inputs: { cursor: null }, admittedAt: at,
       budget: initialBudget(configured, previous.repository.repository, at), correction: null, pendingRecovery: null,
       history: [{ at, event: 'cycle-created', origin: 'local-cli', detail: `${input.request_id}:predecessor:${previous.work_id}:cycle:${previous.cycle + 1}${input.keepPredecessorPullRequest ? ':predecessor-pr-kept' : ''}` }],
