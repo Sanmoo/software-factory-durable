@@ -4,7 +4,7 @@
 e 51, que fecham só com testes offline. Pedido de autorização próprio (raiz, repositório de teste, Tickets, teto de tokens, regras de parada),
 seguindo os guardrails de ensaios.
 
-**Blocked by:** 47, 48, 50, 51
+**Blocked by:** 44, 47, 48, 50, 51, 53
 
 **Type:** task
 
@@ -18,6 +18,9 @@ seguindo os guardrails de ensaios.
 - [ ] (48) Um Ticket de código médio entregue sem `grant`.
 - [ ] (50) Recusa de boot por memória volta à fila sozinha; uma recusa não transitória é retomada por decisão do operador sem `cancel` + `new`.
 - [ ] (51) Um Ticket médio com as revisões Spec e Standards verificadas.
+- [ ] (44) O repositório de teste com `.factory/environment.yaml` (JDK 25, mergeado pelo operador) tem `java -version` 25 no guest do primeiro
+  Trabalho sem ação do Builder, o mesmo ambiente nos seguintes, e Testcontainers/Ryuk funcionando; o gate do Ticket é só o comando do projeto.
+- [ ] (53) Perguntas por Ticket separadas por origem (Ticket, skill, ambiente, produto).
 - [ ] Relatório do piloto 2 com resultado por critério e novos achados registrados como tickets.
 
 ## Comments

@@ -16,17 +16,20 @@ pela revisão Spec do #125 (1). O resto:
 
 **Type:** task
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 ## Acceptance criteria
 
 - [ ] Skill: quando o Ticket nomeia as camadas/estilos de teste, os seams correspondentes à arquitetura existente do repositório contam como
   aprovados; a Pergunta fica para seams novos ou ambíguos. Nova versão do pacote de skills.
 - [ ] Respostas a Perguntas de seam já dadas no Trabalho chegam às Execuções seguintes (preservadas como fonte) e não geram nova Pergunta.
+  O ticket 48 já passa as Perguntas respondidas no resumo de continuação/recovery; aqui só se confirma (teste) que isso cobre os seams e que a
+  skill manda usá-las.
 - [ ] A verificação de mudança do Ticket compara título/corpo preservados, não `updatedAt`; comentários não contam como mudança de escopo.
-- [ ] Medição no próximo piloto: Perguntas por Ticket separadas por origem (Ticket, skill, ambiente, produto).
 
 ## Comments
 
 - Evidência: comentários `/factory answer` nos issues #124–#126 de `Sanmoo/java-springboot-event-sourcing`; `pl1-pilot-evidence/findings.md` item 7.
 - Relacionados: [44](44-per-project-guest-environment.md), [48](48-builder-budget-continuation.md).
+- 2026-11-19 triagem (operador): critérios mantidos; nova versão do pacote de skills (v9); a medição de Perguntas por origem foi para o
+  [54](54-pilot-2.md); entra antes do 44.

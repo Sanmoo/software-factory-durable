@@ -31,22 +31,41 @@ Decisões a tomar (triagem):
    registra; o ambiente declarado nunca é trocado silenciosamente (sem troca de stack/versão, spec §7.4).
 6. **Escopo:** pós-MVP ou parte do MVP. Até a decisão, o piloto segue com a regra atual (Builder instala com `apk` e registra).
 
-**Blocked by:** —
+**Blocked by:** 53
 
 **Type:** task
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 ## Acceptance criteria
 
-- [ ] Decisões 1–6 registradas (ADR ou atualização da spec §7.4) antes de implementar.
-- [ ] Um repositório configurado com JDK 25 tem `java -version` 25 no guest do primeiro Trabalho, sem ação do Builder, e o mesmo ambiente
-  nos Trabalhos seguintes (identidade igual).
+- [ ] Decisões da triagem de 2026-11-19 (abaixo) registradas na spec §7.4 (ou ADR) junto da implementação.
+- [ ] Todo repositório declara seu ambiente em `.factory/environment.yaml` (esquema fechado e validado: pacotes `apk` com versão exata e,
+  opcionalmente, imagens de container fixadas por digest para baixar antes; sem scripts nem comandos livres). A Factory confia no arquivo:
+  não há aprovação do operador.
+- [ ] Repositório sem `.factory/environment.yaml` (ou com arquivo inválido): o Trabalho não começa, impedimento `ENVIRONMENT_NOT_DECLARED`
+  (ou de arquivo inválido com o caminho do erro) que diz o que criar; nenhum fallback para o guest genérico.
+- [ ] O arquivo é lido do commit base na criação do Trabalho e fixado no Trabalho pelo hash; mudança do arquivo vale para Trabalhos seguintes.
+- [ ] O controlador prepara, antes do primeiro boot, um disco base por (repositório, hash do arquivo) sobre os assets da release, numa VM de
+  preparo com acesso só ao mirror Alpine e aos registries das imagens declaradas; o arquivo nunca executa no host (o host só lê e valida o
+  YAML). Versão ausente no mirror recusa o preparo, sem trocar de versão. Trabalhos seguintes com o mesmo hash reutilizam o disco base.
+- [ ] Identidade do ambiente = hash do arquivo + manifesto resolvido (versões e digests). Hash novo gera disco base novo usado só por ambientes
+  novos; ambientes já preparados continuam com o anterior, registrado.
+- [ ] Teste offline: um repositório que declara JDK 25 tem o disco base preparado com o manifesto esperado, e o mesmo ambiente nos Trabalhos
+  seguintes (identidade igual).
 - [ ] O gate do Ticket fica só o comando do projeto (`./gradlew check acceptanceTest`); nenhum detalhe de ambiente no corpo do Ticket.
-- [ ] Falha de preparo vira impedimento visível com causa, sem retry implícito e sem fallback de imagem/versão.
-- [ ] Prova real no repositório de teste Java (Testcontainers/Ryuk no guest continuam funcionando).
+- [ ] Falha de preparo vira impedimento visível com causa, sem retry implícito e sem fallback de imagem/versão; retomada pelo
+  `--retry-blocked-start` do ticket 50.
+- [ ] O Builder pode instalar extras que o Ticket exija e registra; nunca troca a stack/versão declarada. Skills dizem que o ambiente declarado
+  já está pronto (nova versão do pacote de skills, sobre a do ticket 53).
 
 ## Comments
 
 - Origem: piloto 35, Pergunta do #125 em `Sanmoo/java-springboot-event-sourcing`; ensaios q24 v2/v3 (`docs/evidence/24-three-builders-fifo-and-isolation.md`).
 - Spec: §7.4 (guest, Docker e persistência), skill `factory-skills-v7/skills/alpine-diagnostics`.
+- 2026-11-19 triagem (operador, decisões registradas): declaração no próprio repositório, obrigatória para todo repositório, em
+  `.factory/environment.yaml` com esquema fechado (apk com versão exata + imagens por digest); a Factory sempre confia no arquivo (sem
+  aprovação); sem arquivo o Trabalho não começa; lido do commit base e fixado no Trabalho; disco base por (repositório, hash) preparado pelo
+  controlador numa VM de preparo; mudança vale só para ambientes novos; Builder pode instalar extras sem trocar a stack; MVP, antes do piloto 2,
+  depois do 53. O `.factory/environment.yaml` do `Sanmoo/java-springboot-event-sourcing` (JDK 25) entra por PR mergeado pelo operador na
+  preparação do piloto 2; a prova real (Testcontainers/Ryuk no guest) está no [54](54-pilot-2.md).
