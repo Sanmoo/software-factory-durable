@@ -1,0 +1,655 @@
+################ l1-diag.txt
+=== id
+uid=0(root) gid=0(root) groups=0(root)
+=== uname
+Linux localhost 6.1.166-24.303.amzn2023.aarch64 #1 SMP Wed Mar 25 10:39:29 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux
+=== nproc
+2
+=== meminfo
+MemTotal:        4094784 kB
+MemFree:         3815688 kB
+MemAvailable:    3787996 kB
+Buffers:            1540 kB
+Cached:           150936 kB
+=== capsh
+Current: =ep
+Bounding set =cap_chown,cap_dac_override,cap_dac_read_search,cap_fowner,cap_fsetid,cap_kill,cap_setgid,cap_setuid,cap_setpcap,cap_linux_immutable,cap_net_bind_service,cap_net_broadcast,cap_net_admin,cap_net_raw,cap_ipc_lock,cap_ipc_owner,cap_sys_module,cap_sys_rawio,cap_sys_chroot,cap_sys_ptrace,cap_sys_pacct,cap_sys_admin,cap_sys_boot,cap_sys_nice,cap_sys_resource,cap_sys_time,cap_sys_tty_config,cap_mknod,cap_lease,cap_audit_write,cap_audit_control,cap_setfcap,cap_mac_override,cap_mac_admin,cap_syslog,cap_wake_alarm,cap_block_suspend,cap_audit_read,cap_perfmon,cap_bpf,cap_checkpoint_restore
+Ambient set =
+Current IAB: 
+Securebits: 00/0x0/1'b0 (no-new-privs=1)
+ secure-noroot: no (unlocked)
+ secure-no-suid-fixup: no (unlocked)
+ secure-keep-caps: no (unlocked)
+ secure-no-ambient-raise: no (unlocked)
+uid=0(root) euid=0(root)
+gid=0(root)
+groups=
+Guessed mode: HYBRID (4)
+=== status-caps
+CapInh:	0000000000000000
+CapPrm:	000001ffffffffff
+CapEff:	000001ffffffffff
+CapBnd:	000001ffffffffff
+CapAmb:	0000000000000000
+NoNewPrivs:	1
+Seccomp:	0
+Seccomp_filters:	0
+=== cgroup
+0::/
+=== cgroup-controllers
+cpuset cpu io memory hugetlb pids
+=== cgroup-fs
+cgroup2fs
+cgroup.controllers
+cgroup.events
+cgroup.freeze
+cgroup.kill
+cgroup.max.depth
+cgroup.max.descendants
+cgroup.procs
+cgroup.stat
+cgroup.subtree_control
+cgroup.threads
+cgroup.type
+cpu.idle
+cpu.max
+cpu.max.burst
+cpu.stat
+cpu.weight
+cpu.weight.nice
+cpuset.cpus
+cpuset.cpus.effective
+cpuset.cpus.partition
+cpuset.mems
+cpuset.mems.effective
+hugetlb.1GB.current
+hugetlb.1GB.events
+hugetlb.1GB.events.local
+hugetlb.1GB.max
+hugetlb.1GB.numa_stat
+hugetlb.1GB.rsvd.current
+hugetlb.1GB.rsvd.max
+hugetlb.2MB.current
+=== mounts
+377 348 254:32 /store/images/docker.io_library_lambda_microvms_f5e71ac0-cf10-4cf7-8048-9f2a1b084d08/fs/latest/rootfs / rw,relatime - ext4 /dev/vdc rw,seclabel
+378 377 0:52 / /proc rw,nosuid,nodev,noexec,relatime - proc proc rw
+379 377 0:53 / /dev rw,nosuid - tmpfs tmpfs rw,seclabel,size=65536k,mode=755
+380 379 0:54 / /dev/pts rw,nosuid,noexec,relatime - devpts devpts rw,seclabel,gid=5,mode=620,ptmxmode=666
+381 379 0:55 / /dev/shm rw,nosuid,nodev,noexec,relatime - tmpfs shm rw,seclabel,size=65536k
+382 379 0:50 / /dev/mqueue rw,nosuid,nodev,noexec,relatime - mqueue mqueue rw,seclabel
+383 377 0:26 / /sys rw,nosuid,nodev,noexec,relatime - sysfs sysfs rw,seclabel
+384 377 0:56 / /run rw,nosuid - tmpfs tmpfs rw,seclabel,size=65536k,mode=755
+385 377 0:22 /opt/aws/platform/etc/resolv.conf /etc/resolv.conf ro,noatime master:1 - overlay overlayfs:/overlay/root rw,seclabel,lowerdir=/,upperdir=/overlay/r
+386 377 0:22 /etc/hosts /etc/hosts ro,noatime master:1 - overlay overlayfs:/overlay/root rw,seclabel,lowerdir=/,upperdir=/overlay/root,workdir=/overlay/work
+387 383 0:30 / /sys/fs/cgroup rw,nosuid,nodev,noexec,relatime - cgroup2 cgroup rw,seclabel,nsdelegate,memory_recursiveprot
+=== df
+Filesystem               Size  Used Avail Use% Mounted on
+/dev/vdc                 7.8G  359M  7.1G   5% /
+tmpfs                     64M     0   64M   0% /dev
+shm                       64M     0   64M   0% /dev/shm
+tmpfs                     64M     0   64M   0% /run
+overlayfs:/overlay/root  974M   13M  894M   2% /etc/hosts
+=== lsblk
+NAME MAJ:MIN RM   SIZE RO TYPE MOUNTPOINTS
+vda  254:0    0 278.3M  1 disk 
+vdb  254:16   0     1G  0 disk 
+vdc  254:32   0     8G  0 disk /
+=== ip
+lo               UNKNOWN        127.0.0.1/8 ::1/128 
+eth0             UP             169.254.0.2/30 169.254.53.53/32 <ipv6>/128 
+=== route
+default via 169.254.0.1 dev eth0 proto static metric 250 
+169.254.0.0/30 dev eth0 proto kernel scope link src 169.254.0.2 
+169.254.169.254 dev eth0 proto static scope link 
+=== resolv
+nameserver 127.0.0.2
+nameserver 169.254.53.53
+search .
+=== pid1
+python3 -u /opt/proof/agent.py === ps
+    PID    PPID USER     COMMAND
+      1       0 root     python3
+     15       1 root     bash
+     55      15 root     ps
+     56      15 root     head
+=== devices
+total 4
+drwxr-xr-x.  5 root root     2480 Nov 20 19:13 .
+drwxr-xr-x. 18 root root     4096 Jan  1  1970 ..
+crw-r--r--.  1 root root  10, 235 Nov 20 19:13 autofs
+lrwxrwxrwx.  1 root root       11 Nov 20 19:13 core -> /proc/kcore
+crw-------.  1 root root  10, 123 Nov 20 19:13 cpu_dma_latency
+lrwxrwxrwx.  1 root root       13 Nov 20 19:13 fd -> /proc/self/fd
+crw-rw-rw-.  1 root root   1,   7 Nov 20 19:13 full
+crw-rw-rw-.  1 root root  10, 229 Nov 20 19:13 fuse
+crw-------.  1 root root  10, 183 Nov 20 19:13 hwrng
+crw-r--r--.  1 root root   1,  11 Nov 20 19:13 kmsg
+crw-rw----.  1 root root  10, 237 Nov 20 19:13 loop-control
+brw-rw----.  1 root root   7,   0 Nov 20 19:13 loop0
+brw-rw----.  1 root root   7,   1 Nov 20 19:13 loop1
+brw-rw----.  1 root root   7,   2 Nov 20 19:13 loop2
+brw-rw----.  1 root root   7,   3 Nov 20 19:13 loop3
+brw-rw----.  1 root root   7,   4 Nov 20 19:13 loop4
+brw-rw----.  1 root root   7,   5 Nov 20 19:13 loop5
+brw-rw----.  1 root root   7,   6 Nov 20 19:13 loop6
+brw-rw----.  1 root root   7,   7 Nov 20 19:13 loop7
+drwxrwxrwt.  2 root root       40 Nov 20 19:13 mqueue
+crw-rw-rw-.  1 root root   1,   3 Nov 20 19:13 null
+crw-r-----.  1 root root   1,   4 Nov 20 19:13 port
+lrwxrwxrwx.  1 root root        8 Nov 20 19:13 ptmx -> pts/ptmx
+crw-------.  1 root root 249,   0 Nov 20 19:13 ptp0
+drwxr-xr-x.  2 root root        0 Nov 20 19:13 pts
+crw-rw-rw-.  1 root root   1,   8 Nov 20 19:13 random
+crw-------.  1 root root 251,   0 Nov 20 19:13 rtc0
+drwxrwxrwt.  2 root root       40 Nov 20 19:13 shm
+crw-------.  1 root root  10, 231 Nov 20 19:13 snapshot
+lrwxrwxrwx.  1 root root       15 Nov 20 19:13 stderr -> /proc/self/fd/2
+lrwxrwxrwx.  1 root root       15 Nov 20 19:13 stdin -> /proc/self/fd/0
+lrwxrwxrwx.  1 root root       15 Nov 20 19:13 stdout -> /proc/self/fd/1
+cr--r--r--.  1 root root  10, 125 Nov 20 19:13 sysgenid
+crw-rw-rw-.  1 root root   5,   0 Nov 20 19:13 tty
+crw--w----.  1 root root   4,   0 Nov 20 19:13 tty0
+crw--w----.  1 root root   4,   1 Nov 20 19:13 tty1
+crw--w----.  1 root root   4,  10 Nov 20 19:13 tty10
+crw--w----.  1 root root   4,  11 Nov 20 19:13 tty11
+crw--w----.  1 root root   4,  12 Nov 20 19:13 tty12
+=== kmsg
+ls: cannot access '/dev/kvm': No such file or directory
+ls: cannot access '/dev/net/tun': No such file or directory
+crw-rw-rw-. 1 root root 10, 229 Nov 20 19:13 /dev/fuse
+crw-r--r--. 1 root root  1,  11 Nov 20 19:13 /dev/kmsg
+=== sys-rw
+touch: cannot touch '/sys/fs/cgroup/probe-test': Permission denied
+cgroup-mkdir-ok
+=== mount-test
+mount-ok
+=== netns-test
+netns-ok
+=== overlay-test
+overlay-ok
+=== modules
+cat: /proc/modules: No such file or directory
+0
+grep: /proc/modules: No such file or directory
+	ext4
+	fuseblk
+nodev	fuse
+nodev	fusectl
+nodev	overlay
+	xfs
+nodev	selinuxfs
+=== env
+AWS_LAMBDA_MICROVM_IMAGE_ARN AWS_LAMBDA_MICROVM_IMAGE_NAME AWS_LAMBDA_MICROVM_IMAGE_VERSION AWS_REGION HOME LC_CTYPE PATH PWD SHLVL _ === imds
+200
+=== dns
+('140.82.113.4', 443)
+=== https
+200
+
+################ l1-events.json
+{"boot": 1795201982.120638, "now": 1795202062.7669919, "events": [{"t": 1795201982.120797, "kind": "start", "pid": 1}, {"t": 1795201982.2702987, "kind": "hook", "hook": "ready", "path": "/aws/lambda-microvms/runtime/v1/ready", "bytes": 0, "keys": null}, {"t": 1795202033.753175, "kind": "hook", "hook": "run", "path": "/aws/lambda-microvms/runtime/v1/run", "bytes": 98, "keys": ["microvmId", "runHookPayload"]}]}
+################ l1-final.json
+{
+    "microvmId": "microvm-<id>",
+    "state": "TERMINATED",
+    "endpoint": "ac<endpoint>.lambda-microvm.us-east-1.on.aws",
+    "imageArn": "arn:aws:lambda:us-east-1:<acct>:microvm-image:sfv2proof-min",
+    "imageVersion": "1.0",
+    "maximumDurationInSeconds": 600,
+    "startedAt": "2026-11-20T16:13:52.716000-03:00",
+    "terminatedAt": "2026-11-20T16:14:40.990000-03:00",
+    "stateReason": "Success.",
+    "ingressNetworkConnectors": [
+        "arn:aws:lambda:us-east-1:aws:network-connector:aws-network-connector:HTTP_INGRESS"
+    ],
+    "egressNetworkConnectors": [
+        "arn:aws:lambda:us-east-1:aws:network-connector:aws-network-connector:INTERNET_EGRESS"
+    ]
+}
+
+################ d-battery.txt
+056619b synthetic project: Testcontainers test, Dockerfile, compose
+f39616d Initial commit
+### D1
+Unable to find image 'public.ecr.aws/docker/library/hello-world:latest' locally
+Hello from Docker!
+rc=0
+### D2 build
+#8 exporting layers done
+#8 writing image sha256:dd434b8e6281294cda0537a106ea45c7c60f426e682dff84cd619f0d9f0f8610 done
+#8 naming to docker.io/library/proof-web done
+#8 DONE 0.0s
+### D2 bind+volume+port
+docker: Error response from daemon: Invalid container name (w), only [a-zA-Z0-9][a-zA-Z0-9_.-] are allowed.
+See 'docker run --help'.
+Error response from daemon: No such container: w
+cat: /workspace/bind/c.txt: No such file or directory
+total 12
+drwxrwxr-x. 2 builder builder 4096 Nov 20 19:24 .
+drwxr-xr-x. 4 builder builder 4096 Nov 20 19:24 ..
+-rw-rw-r--. 1 builder builder   10 Nov 20 19:24 h.txt
+### D4 dns/egress from container
+Error response from daemon: No such container: w
+Unable to find image 'public.ecr.aws/docker/library/alpine:3.20' locally
+3.20: Pulling from docker/library/alpine
+3f26bc2dec0b: Already exists
+Digest: sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+Status: Downloaded newer image for public.ecr.aws/docker/library/alpine:3.20
+nameserver 169.254.53.53
+search .
+Address: 140.82.112.4
+
+Non-authoritative answer:
+
+Accessible for all.
+wget-rc=0
+### D4 udp
+;; connection timed out; no servers could be reached
+
+udp8888-rc=0
+;; communications error to 8.8.8.8#53: timed out
+;; no servers could be reached
+guest-udp-rc=9
+### D3 compose
+ Compose Stopping Aborting on container exit...
+ Container repo-client-1 Stopping 
+ Container repo-client-1 Stopped 
+ Container repo-web-1 Stopping 
+ Container repo-web-1 Stopped 
+[Kweb-1 exited with code 137
+compose-rc=0
+ Container repo-web-1 Removed 
+ Network repo_default Removing 
+ Network repo_default Removed 
+bridge
+host
+none
+### D6
+/dev/vdc        7.8G  1.5G  5.9G  20% /
+Mem:            3998         207        3361           3         430        3599
+
+################ d-battery-2.txt
+### D2 bind+volume+port
+from-host
+x
+from-container
+-rw-r--r--. 1    0    0 15 Nov 20 19:25 c.txt
+-rw-rw-r--. 1 1000 1000 10 Nov 20 19:24 h.txt
+built-layer
+### D3 compose
+ Container repo-client-1 Creating 
+ Container repo-client-1 Created 
+Attaching to client-1, web-1
+ Container repo-client-1 Starting 
+ Container repo-client-1 Started 
+client-1  | built-layer
+[Kclient-1 exited with code 0
+ Container repo-client-1 Stopping 
+ Container repo-client-1 Stopped 
+[Kweb-1 exited with code 137
+compose-rc=0
+0
+### D5 testcontainers
+mvn-rc=127
+### after test
+bridge host none 
+proof-web:latest 8.99MB
+repo-web:latest 8.99MB
+public.ecr.aws/docker/library/alpine:3.20 8.82MB
+public.ecr.aws/docker/library/hello-world:latest 5.2kB
+### D6
+/dev/vdc        7.8G  1.5G  5.9G  20% /
+Mem:            3998         206        3357           3         434        3599
+4.0K	/var/lib/docker
+
+################ d5.txt
+### D5 testcontainers
+mvn-rc=0 seconds=31
+[main] INFO tc.testcontainers/ryuk:0.11.0 - Pulling docker image: testcontainers/ryuk:0.11.0. Please be patient; this may take some time but only needs to be done once.
+[main] INFO org.testcontainers.utility.RegistryAuthLocator - Failure when attempting to lookup auth config. Please ignore if you don't have images in an authenticated registry. Details: (dockerImageName: testcontainers/r
+[docker-java-stream--1327023394] INFO tc.testcontainers/ryuk:0.11.0 - Starting to pull image
+[docker-java-stream--1327023394] INFO tc.testcontainers/ryuk:0.11.0 - Pulling image layers:  0 pending,  0 downloaded,  0 extracted, (0 bytes/0 bytes)
+[docker-java-stream--1327023394] INFO tc.testcontainers/ryuk:0.11.0 - Pulling image layers:  2 pending,  1 downloaded,  0 extracted, (133 KB/? MB)
+[docker-java-stream--1327023394] INFO tc.testcontainers/ryuk:0.11.0 - Pulling image layers:  1 pending,  2 downloaded,  0 extracted, (133 KB/? MB)
+[docker-java-stream--1327023394] INFO tc.testcontainers/ryuk:0.11.0 - Pulling image layers:  0 pending,  3 downloaded,  0 extracted, (148 KB/11 MB)
+[docker-java-stream--1327023394] INFO tc.testcontainers/ryuk:0.11.0 - Pulling image layers:  0 pending,  3 downloaded,  1 extracted, (3 MB/11 MB)
+[docker-java-stream--1327023394] INFO tc.testcontainers/ryuk:0.11.0 - Pulling image layers:  0 pending,  3 downloaded,  2 extracted, (4 MB/11 MB)
+[docker-java-stream--1327023394] INFO tc.testcontainers/ryuk:0.11.0 - Pulling image layers:  0 pending,  3 downloaded,  3 extracted, (11 MB/11 MB)
+[main] INFO tc.testcontainers/ryuk:0.11.0 - Image testcontainers/ryuk:0.11.0 pull took PT0.491947074S
+[main] INFO tc.testcontainers/ryuk:0.11.0 - Creating container for image: testcontainers/ryuk:0.11.0
+[main] INFO tc.testcontainers/ryuk:0.11.0 - Container testcontainers/ryuk:0.11.0 is starting: 6863cdb82a3031679bc4d02bcef8f10413b2ce20a37bf10c7b1e7b309776e5dc
+[main] INFO tc.testcontainers/ryuk:0.11.0 - Container testcontainers/ryuk:0.11.0 started in PT0.535716373S
+[main] INFO org.testcontainers.utility.RyukResourceReaper - Ryuk started - will monitor and terminate Testcontainers containers on JVM exit
+[main] INFO tc.postgres:16-alpine - Container postgres:16-alpine is starting: ca3d3c8656c5ae1331b1c764bf7e6c2cc0c362aabc1a32cfa9c652e8a1268660
+[main] INFO tc.postgres:16-alpine - Container postgres:16-alpine started in PT1.711511464S
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 7.454 s -- in proof.PostgresTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+### during/after
+testcontainers/ryuk:0.11.0 Up 5 seconds
+after 15s:
+bridge host none 
+proof-web:latest 8.99MB
+repo-web:latest 8.99MB
+postgres:16-alpine 288MB
+public.ecr.aws/docker/library/alpine:3.20 8.82MB
+public.ecr.aws/docker/library/hello-world:latest 5.2kB
+testcontainers/ryuk:0.11.0 16.1MB
+### D6
+/dev/vdc        7.8G  1.9G  5.6G  25% /
+Mem:            3998         205        2922           4         869        3589
+37M	/home/builder/.m2
+
+################ t2-t3.txt
+### T2 streaming (stdout/stderr separate, arrival times)
+2845.912 OUT out-1
+2845.912 ERR err-1
+2846.915 OUT out-2
+2846.915 ERR err-2
+2847.916 OUT out-3
+2847.916 ERR err-3
+2848.921 ERR err-4
+2848.921 OUT out-4
+### T2 exit codes
+rc=0
+rc=7
+rc(sigkill)=255
+### T2 interrupt
+    PID     ELAPSED COMMAND
+   2128       00:06 /usr/bin/coreutils --coreutils-prog-shebang=sleep /usr/bin/sleep 300
+local ssh rc=143
+STILL-ALIVE
+### T3 files
+90b62563965d8595
+upload 4.13 MB/s
+90b62563965d8595
+6dbba79844e23b42
+download 4.28 MB/s
+6dbba79844e23b42
+
+################ t4.txt
+### T2 interrupt via ^C on a pty
+ssh rc=255
+process-gone
+### T4a channel drop, no pty, remote process keeps a heartbeat
+killing local proxy pid (found: yes)
+Connection to mvm closed by remote host.
+client_loop: send disconnect: Broken pipe
+local ssh rc=255 (what the host sees on channel loss)
+now=1795203613 hb=1795203612
+remote process ALIVE after channel drop
+### T4a' same with a pty
+pty process ALIVE after channel drop
+### T4b token expiry with an open connection (1-minute token)
++1s tick
++51s tick
++56s tick
++61s tick
++66s tick
++71s tick
++176s tick
+connection lasted 181s on a 60s token
+### T4c new connection with the expired token
+websocat: WebSocketError: WebSocketError: Received unexpected status code (403 Forbidden)
+websocat: error running
+Connection closed by UNKNOWN port 65535
+ssh rc=255
+http=403
+reconnected-with-valid-token
+
+################ t4-longconn.txt
+19:45:40
+19:46:10
+19:46:40
+19:47:10
+19:47:40
+19:48:10
+19:48:40
+19:49:10
+19:49:40
+19:50:10
+19:50:40
+19:51:10
+19:51:40
+19:52:10
+19:52:40
+19:53:10
+19:53:40
+19:54:10
+19:54:40
+19:55:10
+19:55:40
+19:56:10
+19:56:40
+19:57:10
+19:57:40
+19:58:10
+19:58:40
+19:59:10
+19:59:40
+20:00:10
+20:00:40
+20:01:10
+20:01:40
+20:02:10
+20:02:40
+20:03:10
+20:03:40
+20:04:10
+20:04:40
+20:05:10
+20:05:40
+20:06:10
+20:06:40
+20:07:10
+20:07:40
+20:08:10
+20:08:40
+20:09:10
+20:09:40
+20:10:10
+20:10:40
+20:11:10
+20:11:40
+20:12:10
+20:12:40
+20:13:10
+20:13:40
+20:14:10
+20:14:40
+20:15:10
+20:15:40
+20:16:10
+20:16:40
+20:17:10
+20:17:40
+20:18:10
+20:18:40
+20:19:10
+20:19:40
+20:20:10
+20:20:40
+20:21:10
+20:21:40
+20:22:10
+20:22:40
+20:23:10
+websocat: WebSocketError: I/O failure
+websocat: error running
+Connection to mvm closed by remote host.
+client_loop: send disconnect: Broken pipe
+
+20:13:49
+20:14:19
+20:14:49
+20:15:19
+20:15:49
+20:16:19
+20:16:49
+20:17:19
+20:17:49
+20:18:19
+20:18:49
+20:19:19
+20:19:49
+20:20:19
+20:20:49
+20:21:19
+20:21:49
+20:22:19
+20:22:49
+20:23:19
+websocat: WebSocketError: I/O failure
+websocat: error running
+Connection to mvm closed by remote host.
+client_loop: send disconnect: Broken pipe
+ended rc=255 at 20:24:04
+ended rc=255 at 20:24:09
+
+################ t5-t6-n1.txt
+### pty process after sshd keepalive window
+pty process still alive
+### T5 reviewer: identity and positive read
+uid=1001(reviewer) gid=1001(reviewer) groups=1001(reviewer)
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+README.md
+compose.yaml
+pom.xml
+### T5 write attempts
+touch: cannot touch '/workspace/repo/x': Permission denied
+rc=1
+rc=1
+bash: line 1: /workspace/repo/pom.xml: Permission denied
+rm: cannot remove '/workspace/repo/pom.xml': Permission denied
+rc=1
+fatal: detected dubious ownership in repository at '/workspace/repo'
+To add an exception for this directory, call:
+rc=0
+### T5 docker socket
+permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: Get "http://%2Fvar%2Frun%2Fdocker.sock/v1.44/containers/json": dial unix /var/run/docker.sock: connect: permission denied
+srw-rw----. 1 root docker 0 Nov 20 19:24 /var/run/docker.sock
+ curl-rc=0
+### T5 escalation
+bash: line 1: sudo: command not found
+Password: su: Authentication failure
+/usr/sbin/pam_timestamp_check /usr/sbin/unix_chkpwd /usr/bin/su /usr/bin/chage /usr/bin/gpasswd /usr/bin/newgrp /usr/bin/umount /usr/bin/mount 
+CapEff:	0000000000000000
+NoNewPrivs:	1
+### T5 sftp write
+sftp> put /etc/hostname /workspace/repo/sftp-x
+dest open "/workspace/repo/sftp-x": Permission denied
+### T5 port forwarding (reviewer, to docker-published or local port)
+channel 2: open failed: administratively prohibited: open failed
+via-forward http=000
+### T5 control: builder forwarding allowed
+via-forward http=200
+### T5 reviewer reaches local services directly
+agent8080=200
+hook9000=200
+### T6 secrets as reviewer
+cat: /home/builder/.ssh/deploy: Permission denied
+ls: cannot open directory '/home/builder': Permission denied
+cat: /etc/ssh/proof_host_ed25519: Permission denied
+ssh-ed25519 AAAAC3Nz
+total 16
+drwxr-xr-x. 2 root root 4096 Nov 20 19:23 .
+drwxr-xr-x. 5 root root 4096 Nov 20 19:23 ..
+-rw-r--r--. 1 root root   99 Nov 20 19:23 builder
+-rw-r--r--. 1 root root  100 Nov 20 19:23 reviewer
+0
+cat: /proc/1/environ: Permission denied
+### T6 secrets from a nested container
+ls: /workspace: No such file or directory
+0
+builder can mount them explicitly:
+<private key header, redacted>
+http://169.254.169.254/latest/meta-data/ -> 200 placement/ tags/
+http://169.254.169.254/latest/meta-data/iam/security-credentials/ -> 404 Resource not found: /latest/meta-data/iam/security-credentials/.
+http://169.254.169.254/latest/dynamic/instance-identity/document -> 200 {"region":"us-east-1"}
+http://169.254.170.2/ -> 000 {"region":"us-east-1"}
+http://169.254.0.1/ -> 000 {"region":"us-east-1"}
+http://10.0.0.1/ -> 000 {"region":"us-east-1"}
+http://172.31.0.1/ -> 000 {"region":"us-east-1"}
+http://192.168.0.1/ -> 000 {"region":"us-east-1"}
+aws env vars: 0
+
+public ip seen: 18.208.x.x
+ipv6 egress http=000
+wget: download timed out
+container-imds-rc=0
+
+################ g1.txt
+### T1 alternative: wstunnel through HTTP_INGRESS
+wstunnel-ok
+rc=0
+### G1 gate
+remote: 
+1 published clean:      GATE OK: work 17953d6
+2 untracked:            GATE REFUSED: workspace-not-clean
+3 modified:             GATE REFUSED: workspace-not-clean
+4 stash:                GATE REFUSED: stash-present
+5 unpushed commit:      GATE REFUSED: head-not-published (head=e711859 origin=17953d6)
+  after push:           GATE OK: work e711859
+6 remote unavailable:   GATE REFUSED: remote-unconfirmed
+7 stale tracking ref: remote moves from outside
+  local tracking ref == HEAD: yes
+7 stale tracking ref:   GATE REFUSED: head-not-published (head=e711859 origin=5c66a0e)
+  after pull:           GATE OK: work 5c66a0e
+5c66a0e outside change
+e711859 WIP 2 (not pushed)
+17953d6 WIP 1
+### long connection
+19:44:19
+19:44:49
+19:29:35
+
+################ g2-g3.txt
+### G2 fresh boot: nothing from the previous MicroVM
+ls: cannot access '/home/builder/.m2': No such file or directory
+0
+ssh-ed25519 AAAAC3NzaC1lZDI1NT
+cloned 5c66a0e
+### G2 rebuild from the remote commit
+5c66a0e outside change
+e711859 WIP 2 (not pushed)
+mvn-rc=0 seconds=32
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+client-1  | built-layer
+### G3 planned swap: WIP commit, push, gate, then cessation
+GATE OK: work f989896
+19:47:37 terminate requested
+19:47:38 TERMINATING	Success.	None
+19:47:42 TERMINATED	Success.	2026-11-20T16:47:40-03:00
+### marker ref on the remote (terminate hook evidence)
+056619b	HEAD
+056619b	refs/heads/main
+f989896	refs/heads/proof-terminate-marker
+f989896	refs/heads/work
+
+################ g3-g4.txt
+session s4 id=microvm-<id> hostkey=SHA256:uoT14D4B/AbgHvk2eRobCmxrd++R56fkwfuGlEAwpTc
+boot-to-ssh-config 7s
+cloned f989896
+provisioned at +36s
+f989896 WIP 4 on s3 before planned swap
+unpushed head f7d57e3
+GATE REFUSED: head-not-published (head=f7d57e3 origin=f989896)
+remote before expiry: 056619b	refs/heads/main f989896	refs/heads/proof-terminate-marker f989896	refs/heads/work 
+19:50:35 TERMINATED	MicroVM exceeded maximum lifetime.	2026-11-20T16:50:32.962000-03:00
+    "startedAt": "2026-11-20T16:47:59.403000-03:00",
+remote after expiry:  056619b	refs/heads/main f7d57e3	refs/heads/proof-terminate-marker f989896	refs/heads/work 
+
+################ ledger.jsonl
+{"t":"2026-11-20T19:11:25Z","kind":"build","image":"sfv2proof-min","n":1}
+{"t":"2026-11-20T19:14:50Z","kind":"run","id":"microvm-<id>","start":"2026-11-20T19:13:52Z","end":"2026-11-20T19:14:50Z"}
+{"t":"2026-11-20T19:16:38Z","kind":"run","id":"microvm-<id>","seconds":95}
+{"t":"2026-11-20T19:19:29Z","kind":"build","image":"sfv2proof-full","n":2}
+{"t":"2026-11-20T19:23:30Z","kind":"run-start","session":"s2","id":"microvm-<id>","max":3600}
+{"t":"2026-11-20T19:45:41Z","kind":"run-start","session":"s3","id":"microvm-<id>","max":600}
+{"t":"2026-11-20T19:47:43Z","kind":"run-end","session":"s3","id":"microvm-<id>"}
+{"t":"2026-11-20T19:47:59Z","kind":"run-start","session":"s4","id":"microvm-<id>","max":150}
+{"t":"2026-11-20T19:50:35Z","kind":"run-end","session":"s4","id":"microvm-<id>"}
+{"t":"2026-11-20T20:23:39Z","kind":"run-end","session":"s2","id":"microvm-<id>"}
+

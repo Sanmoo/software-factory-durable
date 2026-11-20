@@ -1,0 +1,37 @@
+{
+  "rubricId": "lambda-microvms-proof",
+  "rubricVersion": 1,
+  "assessedAt": "2026-11-20",
+  "assessedBy": "sessão Claude Code; aguardando aceite do Operador",
+  "results": {
+    "L1-ciclo": "approved",
+    "L2-duracao": "approved",
+    "L3-perfil": "approved",
+    "D1-daemon": "approved",
+    "D2-build-run": "approved",
+    "D3-compose": "approved",
+    "D4-dns": "approved",
+    "D5-testcontainers": "approved",
+    "D6-recursos": "approved",
+    "T1-tunel": "approved",
+    "T2-exec": "approved",
+    "T3-arquivos": "approved",
+    "T4-conexao": "approved",
+    "T5-papeis": "approved",
+    "T6-segredos": "approved",
+    "G1-gate": "approved",
+    "G2-reconstrucao": "approved",
+    "G3-troca": "approved",
+    "G4-perda": "approved",
+    "N1-egress": "approved",
+    "N2-ingress": "approved",
+    "C1-custo": "approved",
+    "C2-cleanup": "inconclusive"
+  },
+  "notes": {
+    "T4-conexao": "approved with caveat: idle without keepalive and durations beyond 38 min not measured",
+    "T5-papeis": "approved with caveat: reviewer reaches loopback hook port",
+    "C1-custo": "approved on own accounting; Cost Explorer reading pending",
+    "C2-cleanup": "pending operator decision"
+  }
+}
