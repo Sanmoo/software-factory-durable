@@ -20,10 +20,10 @@ Produzir e aprovar uma **spec técnica implementável** do suporte pós-MVP v2 a
 ## Decisions so far
 
 - [Investigar o que o Jira Cloud permite afirmar sobre Tickets e bloqueadores](issues/01-visibilidade-jira.md): um link visível comprova a relação; esgotar a busca JQL não distingue a ausência de bloqueio de um bloqueador oculto.
+- [Investigar identidades, permissões e comentários no Jira Cloud](issues/02-interacao-jira.md): o Jira identifica a conta autora, não sua autoridade sobre o Trabalho; reencontrar um comentário visível não garante publicação única.
 
 ## Not yet specified
 
-- Quanto à conversa no Ticket, ainda não sabemos se as identidades e permissões observáveis bastam ou se será necessária alguma restrição de instalação.
 - O desenho de persistência e reconciliação mostrará se algum estado legado exige um procedimento específico de atualização ou recuperação; não pressupor migração destrutiva nem ferramenta nova.
 - A matriz de testes mostrará quais propriedades não são demonstráveis offline e se alguma exige um ensaio separado antes da aprovação da spec.
 
