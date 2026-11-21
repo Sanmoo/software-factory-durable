@@ -17,7 +17,7 @@ import { untilHolds } from '../runner/budget.js';
 const main = 'b'.repeat(40), head = 'd'.repeat(40), wip = 'e'.repeat(40);
 const margin = 3000_000, half = 300_000, rest = 300_000;
 
-async function harness(t: { after(fn: () => Promise<void>): void }, scripts: (guest: GuestWorkspace) => Script[], options: { timeoutSeconds?: number } = {}) {
+async function harness(t: { after(fn: () => Promise<void>): void }, scripts: (guest: GuestWorkspace) => Script[], options: { timeoutSeconds?: number; /** How many starts of a swap's new boot the service refuses for quota first. */ swapQuotaRefusals?: number } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'factory-boot-swap-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const remote: Remote = { pulls: {}, issues: [remoteIssue(3)], refs: { main } };
@@ -26,8 +26,16 @@ async function harness(t: { after(fn: () => Promise<void>): void }, scripts: (gu
   const mono = executionClock();
   const execution = executionDoubles(remote, queue, { diskless: true, clock: mono.clock });
   queue.push(...scripts(execution.guest));
+  let quotaRefusals = options.swapQuotaRefusals ?? 0;
+  const start = execution.ports.sandbox.start;
+  execution.ports.sandbox.start = async input => {
+    if (input.reason === 'planned-swap' && quotaRefusals > 0) { quotaRefusals -= 1; execution.calls.push({ kind: 'start-refused' }); return { status: 'failure', code: 'SERVICE_CAPACITY_REFUSED', detail: 'capacity: ServiceQuotaExceededException: allocated memory quota exceeded' }; }
+    return start(input);
+  };
   const time = manualClock();
-  const control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty', execution: execution.ports,
+  // The persisted recovery wait runs on the calendar: jumped, never slept.
+  let calendar = 0;
+  const control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty', execution: { ...execution.ports, calendar: { now: () => Date.now() + calendar } },
     access: { tracker: github.tracker, repository: github.repository, repositories: [{ ...scope, ...(options.timeoutSeconds ? { timeoutSeconds: options.timeoutSeconds } : {}) }], operators: ['operator-one'], factoryApp: async () => app },
     polling: { intervalSeconds: 60, clock: time.clock } });
   const stop = new AbortController();
@@ -36,7 +44,7 @@ async function harness(t: { after(fn: () => Promise<void>): void }, scripts: (gu
   const work = async () => ((await control.inspect({ kind: 'list' })) as ListView).works[0] as WorkView | undefined;
   const settle = (label: string, predicate: (value: WorkView | undefined) => boolean | undefined) => untilHolds(label, async () => {
     if (predicate(await work())) return true;
-    if (time.isSleeping()) time.advance();
+    if (time.isSleeping()) { calendar += 60000; time.advance(); }
     return false;
   }, 5);
   const of = (kind: string) => execution.calls.filter(call => call.kind === kind).map(call => call.detail);
@@ -45,7 +53,7 @@ async function harness(t: { after(fn: () => Promise<void>): void }, scripts: (gu
   const recoveries = async () => { const shown = await control.inspect({ kind: 'show', work_id: (await work())!.work_id }); return 'work' in shown ? shown.work.budget?.recoveries.consumed : undefined; };
   /** The Builder of the current boot is working and the boot clock is armed. */
   const working = (n: number) => settle(`Builder working in boot ${n}`, value => value?.execution?.state === 'started' && activations().length >= n && (value.execution.swaps ?? []).filter(item => item.outcome).length === Math.max(0, of('start').length - 1) && mono.sleepers() > 0);
-  return { remote, mono, work, settle, of, activations, kinds, recoveries, working, guest: execution.guest };
+  return { remote, mono, work, settle, of, activations, kinds, recoveries, working, guest: execution.guest, control };
 }
 
 test('V2-10/V2-13: crossing the margin swaps the boot inside the SAME Execution: notice to the working session, WIP published, gate accepted, cessation confirmed, only then the new boot, and the same session continues with the fixed notice', async t => {
@@ -176,7 +184,7 @@ test('V2-13 with Operator decision 7: a gate that refuses three times during the
 test('V2-14: two boots in a row that publish no new commit block the Work with "sem progresso entre boots" instead of a third boot without progress', async t => {
   const h = await harness(t, guest => [{ kind: 'work', head: main, dirty: 1, yields: 'directive' }, { kind: 'publish', publish: pushWip(guest, wip), end: 'success' },
     { kind: 'work', head: wip, yields: 'directive' }, { kind: 'publish', publish: () => {}, end: 'success' },
-    { kind: 'work', head: wip, yields: 'directive' }, { kind: 'publish', publish: () => {}, end: 'success' }]);
+    { kind: 'work', head: wip, yields: 'directive' }, { kind: 'publish', publish: () => {}, end: 'success' }, { kind: 'hang', head: wip }]);
   // Boot 1 publishes a commit; boots 2 and 3 publish nothing.
   for (const n of [1, 2]) {
     await h.working(2 * n - 1);
@@ -200,6 +208,16 @@ test('V2-14: two boots in a row that publish no new commit block the Work with "
   assert.equal(work.previousExecutions.length, 0);
   assert.equal(await h.recoveries(), 0);
   assert.equal(work.pendingRecovery ?? null, null, 'a block is not retried');
+  // Final review, should-fix 10: the block names its exit, the generic `factory resume <work>`; nothing else has to be cancelled or recreated.
+  assert.ok(impediment.nextStep.includes(`factory resume ${work.work_id} --request-id <id>`));
+  const receipt = await h.control.accept({ request_id: 'resume-no-progress', operation: 'resume', work_id: work.work_id, origin: 'local-cli' });
+  assert.equal('outcome' in receipt && receipt.outcome, 'accepted', JSON.stringify(receipt));
+  const resumed = (await h.work())!;
+  assert.deepEqual([resumed.impediments.map(item => item.code), resumed.bootLedger, resumed.pendingRecovery?.reason, resumed.queue.pending], [[], [], 'operator-resume:NO_PROGRESS_BETWEEN_BOOTS', true]);
+  assert.ok(resumed.history.some(item => item.event === 'resume-accepted' && item.detail?.includes('NO_PROGRESS_BETWEEN_BOOTS')));
+  // It then returns by itself, as one operational recovery, on a new boot.
+  await h.settle('returned', value => value?.execution?.executionId !== execution.executionId && value?.execution?.state === 'started');
+  assert.equal(await h.recoveries(), 1);
 });
 
 test('V2-10/V2-12: the Execution timeout clock keeps running across the swap; the boot clock is another limit and starts again with each boot', async t => {
@@ -219,4 +237,28 @@ test('V2-10/V2-12: the Execution timeout clock keeps running across the swap; th
   const execution = (await h.work())!.execution!;
   assert.equal(execution.timing?.duration?.kind === 'measured' && execution.timing.duration.elapsedMs >= 4000_000, true, JSON.stringify(execution.timing));
   assert.deepEqual(h.of('stop'), ['planned-swap', 'execution timeout']);
+});
+
+test('final review, should-fix 5 (decision 5): the service refusing the swap\'s new boot for quota waits and retries inside the SAME Execution: no operational recovery, the cause on the record, the same session continues', async t => {
+  const h = await harness(t, guest => [{ kind: 'work', head: main, dirty: 1, yields: 'directive' }, { kind: 'publish', publish: pushWip(guest, wip), end: 'success' }, { kind: 'hang', head: wip }], { swapQuotaRefusals: 2 });
+  await h.working(1);
+  const before = (await h.work())!.execution!;
+  h.mono.advance(margin);
+  await h.settle('first refusal waits', value => value?.execution?.swaps?.[0]?.startWait?.attempt === 0 && h.mono.sleepers() > 0);
+  let work = (await h.work())!;
+  assert.deepEqual([work.execution!.executionId, work.execution!.state, work.execution!.swaps![0]!.startWait, work.impediments, work.pendingRecovery ?? null],
+    [before.executionId, 'started', { code: 'START_SERVICE_CAPACITY_REFUSED', detail: 'capacity: ServiceQuotaExceededException: allocated memory quota exceeded', attempt: 0, waitSeconds: 15, at: work.execution!.swaps![0]!.startWait!.at }, [], null]);
+  assert.ok(work.history.some(item => item.event === 'boot-deferred' && item.detail?.includes('ServiceQuotaExceededException')));
+  // Not a hot loop: the next attempt comes only after the wait, and a repeated refusal waits longer (15 s, then 60 s).
+  h.mono.advance(14_000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.of('start-refused').length, 1);
+  h.mono.advance(1_000);
+  await h.settle('second refusal waits', value => value?.execution?.swaps?.[0]?.startWait?.attempt === 1 && h.mono.sleepers() > 0);
+  assert.equal((await h.work())!.execution!.swaps![0]!.startWait!.waitSeconds, 60);
+  h.mono.advance(60_000);
+  await h.settle('swapped', value => value?.execution?.swaps?.[0]?.outcome?.status === 'swapped' && h.activations().length === 3);
+  work = (await h.work())!;
+  assert.deepEqual([work.execution!.executionId, work.previousExecutions.length, await h.recoveries(), h.of('start').length], [before.executionId, 0, 0, 2]);
+  assert.deepEqual(h.activations()[2]!.continuation, { session: sessionRef(2) }, 'the session that received the swap notice continues in the new boot');
 });

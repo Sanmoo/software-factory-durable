@@ -83,10 +83,11 @@ export function bootLoopDecision(ledger: readonly BootLedgerEntry[] | null | und
   return { outcome: 'blocked', code: noProgressCode, boots: [first.boot, second.boot], tip: second.endTip.state === 'present' ? second.endTip.sha : null };
 }
 
-export function noProgressImpediment(input: { boots: readonly [string, string]; tip: string | null; branch: string }, since: string): Impediment {
+export function noProgressImpediment(input: { boots: readonly [string, string]; tip: string | null; branch: string; workId?: string }, since: string): Impediment {
   return { code: noProgressCode, scope: 'work', since,
     nextStep: `No progress between boots (sem progresso entre boots): the last two boots of this Work (${input.boots[0]}, ${input.boots[1]}) each ended by a planned swap or a loss ` +
       `without any new commit published on ${input.branch} (${input.tip ? `still at ${input.tip}` : 'the branch does not exist on origin'}), so no third boot was started. ` +
       'The usual cause is a single step longer than one boot. Inspect the Work (`factory show`, `factory logs`), change what makes the step indivisible or the boot duration of the ' +
-      'sandbox profile, and decide explicitly (cancel, then `factory new` for another cycle).' };
+      `sandbox profile, then let the Work try again with \`factory resume ${input.workId ?? '<work>'} --request-id <id>\` (it returns as one operational recovery and the sequence of ` +
+      'boots is counted from zero), or cancel it.' };
 }

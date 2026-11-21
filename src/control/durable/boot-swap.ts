@@ -100,9 +100,28 @@ export async function recordBootEnd(session: Session, work_id: string, entry: Bo
       detail: `${entry.boot}:${entry.begin}->${entry.end}:${entry.startTip.state === 'present' ? entry.startTip.sha : entry.startTip.state}..${entry.endTip.state === 'present' ? entry.endTip.sha : entry.endTip.state}` });
     const decision = bootLoopDecision(work.bootLedger);
     if (decision.outcome === 'blocked' && !work.impediments.some(item => item.code === decision.code)) {
-      work.impediments.push(noProgressImpediment({ boots: decision.boots, tip: decision.tip, branch }, entry.at));
+      work.impediments.push(noProgressImpediment({ boots: decision.boots, tip: decision.tip, branch, workId: work_id }, entry.at));
       work.history.push({ at: entry.at, event: 'boot-loop-blocked', origin: 'controller-dispatch', executionId: entry.executionId, detail: `${decision.boots.join(',')}:${decision.tip ?? 'absent'}` });
     }
     return decision;
+  }, BACKGROUND_CONTEXT);
+}
+
+/**
+ * Operator decision 5, extended to the swap (final review, should-fix 5): the service refused the start of the swap's NEW boot for
+ * capacity. Nothing started and the work is on `origin`: the Execution waits and tries again by itself. The cause is on the swap and on
+ * the Work's history; no impediment, no operational recovery.
+ */
+export async function recordSwapStartWait(session: Session, work_id: string, executionId: string, input: { code: string; detail: string | null; attempt: number; waitSeconds: number }) {
+  return session.commit(async tx => {
+    const work = (await tx.doc(works, work_id, null)).work;
+    const execution = work?.execution?.executionId === executionId ? work.execution : null;
+    const swap = open(execution?.swaps);
+    if (!work || !execution || !swap || execution.state !== 'started') return 'stale' as const;
+    const at = new Date().toISOString();
+    swap.startWait = { code: input.code, detail: input.detail?.slice(0, 512) ?? null, attempt: input.attempt, waitSeconds: input.waitSeconds, at };
+    work.history.push({ at, event: 'boot-deferred', origin: 'controller-recovery', executionId,
+      detail: `${input.code}${input.detail ? ` (${input.detail.slice(0, 256)})` : ''}; planned swap waits ${input.waitSeconds}s (attempt ${input.attempt + 1}); nothing started, nothing charged`.slice(0, 512) });
+    return 'recorded' as const;
   }, BACKGROUND_CONTEXT);
 }

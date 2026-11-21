@@ -223,7 +223,9 @@ export async function openControl(options: { storagePath: string;
     const waiting = work.execution?.state === 'ended' && !work.execution.slot.held && (work.execution.end?.outcome === 'question' || work.queue.pending);
     const execution = work.execution && work.execution.state !== 'released' && !waiting ? work.execution : null;
     const reasons = [...(execution ? [] : blockers(work)), ...(dispatchReason ? [dispatchReason] : []), ...(paused ? ['GLOBAL_PAUSE'] : [])];
-    return { ...work, impediments, dispatch: { state: execution ? 'executing' : reasons.length ? 'held' : 'eligible', reasons }, limits: limitsOf(work, impediments) };
+    const deferral = reasons.includes('BOOT_CAPACITY_WAIT') ? work.bootDeferral ?? null : null;
+    return { ...work, impediments, dispatch: { state: execution ? 'executing' : reasons.length ? 'held' : 'eligible', reasons,
+      ...(deferral ? { capacityWait: { code: deferral.code, cause: deferral.detail ?? null, notBefore: deferral.notBefore, waitSeconds: deferral.waitSeconds, attempt: deferral.attempt } } : {}) }, limits: limitsOf(work, impediments) };
   };
   // Presentation of limits/reservations/consumption, timeout, duration (live monotonic when THIS process runs it) and the action required.
   const limitsOf = (work: WorkRecord, impediments: Impediment[]): LimitsView => {

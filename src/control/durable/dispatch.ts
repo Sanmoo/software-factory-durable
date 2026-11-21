@@ -26,7 +26,7 @@ import { continuationPrompt, guestCheckoutPath, initialPrompt, promptBudgetBytes
 import { attemptsOf, decideDiscovery, otherPublications, publicationAttempted, publicationPrompt, publicationResumes, publicationStep, type DiscoveryObservation } from '../rules/publication.js';
 import { humanTips, authorizationInForce, comparisonBase, knownRemote, preservationTips, reconciliationNotice, reconciliationPrompt } from '../rules/divergence.js';
 import { recordGateCheck, recordGateCorrection } from './preservation.js';
-import { beginSwap, completeSwap, endSwap, recordBootEnd, recordSwapContinuation, recordSwapNotice } from './boot-swap.js';
+import { beginSwap, completeSwap, endSwap, recordBootEnd, recordSwapContinuation, recordSwapNotice, recordSwapStartWait } from './boot-swap.js';
 import { bootSchedule, noProgressCode, swapContinuationPrompt, swapNoticePrompt } from '../rules/boot-rotation.js';
 import { inheritedFindings as findingsOf, inheritedRounds as roundsInherited } from '../rules/review.js';
 import { recordLossFrom } from './loss.js';
@@ -39,7 +39,7 @@ import { acceptCancel } from './cycles.js';
 import { beginLivePublication, blockLivePublication, evaluateLivePublication, evaluatePublication, recordDiscovery, resolveDivergence, settleLivePublication } from './publication.js';
 import { purposeOf } from './execution.js';
 import type { SessionRef } from '../types.js';
-import { environmentEndedCode, interruptionRecoveryPrompt, isDiskRemedy, reviewerRetryLimitCode, refusedWithoutActivity } from '../rules/recovery.js';
+import { bootCapacityWait, environmentEndedCode, interruptionRecoveryPrompt, isBootCapacityRefusal, isDiskRemedy, reviewerRetryLimitCode, refusedWithoutActivity } from '../rules/recovery.js';
 import { recordEnvironmentEnd } from './environment-end.js';
 import { channelLossReason, channelUnrecoverableCode, failureCodeAfter } from '../rules/channel-report.js';
 import { recordChannelReport, recordChannelReportUnread } from './channel-report.js';
@@ -74,6 +74,8 @@ const reconciliationInterrupted = (work: WorkRecord, previous: ExecutionView) =>
   return Boolean(authorization && authorization.state === 'executing' && authorization.executionId === previous.executionId && interruption &&
     interruption.previousExecutionId === previous.executionId && previous.request.reconciliation?.divergenceId === authorization.divergenceId);
 };
+/** The Workers' refusal of a session it was asked to continue (missing, damaged or incompatible copy): the caller may fall back to a fresh one. */
+const sessionRefusal = (code: string) => /^(WORKER_)?SESSION_/.test(code);
 const codeOf = (error: unknown, fallback: string) => error instanceof Error && /^[A-Z_]{1,64}$/.test(error.message) ? error.message : fallback;
 // Executions whose grants are held in THIS process's memory: boot reconciliation of another run/Control in-process never relabels them.
 const liveExecutions = new Set<string>();
@@ -1023,8 +1025,10 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
      * by `settleUnpublished` once the Execution's end is on the record. Before any Builder ran, the boot holds nothing but its clone.
      */
     let unpublished: { reason: string } | null = null;
+    /** The boot `boot` names already ceased with its work confirmed on `origin` (a planned swap between its two boots): nothing is left to check or lose. */
+    let bootCeased = false;
     const checkBeforeStop = async (why: string) => {
-      if (!diskless || !environment || !boot || !activated || unpublished || gateLoss || channelLost) return;
+      if (!diskless || !environment || !boot || !activated || unpublished || gateLoss || channelLost || bootCeased) return;
       const branch = execution.request.branch;
       const { decision } = await checkPreservation(work, { environment, boot, branch });
       await recordGateCheck(session, work.work_id, executionId, { occasion: 'boot-end', boot, branch, decision }).catch(() => 'stale' as const);
@@ -1100,7 +1104,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
      * commit on the Work. Three refusals in a row return `lost` (Operator decision 7 of 2026-11-21: no hold for the Operator; the caller
      * ends the boot as a loss, `endAsLoss`). The same function serves the planned swap (ticket 09) and the substitute session (ticket 13).
      */
-    const preservationGate = async (occasion: PreservationOccasion): Promise<'accepted' | 'lost' | 'stale'> => {
+    const preservationGate = async (occasion: PreservationOccasion,
+      /** Final review, should-fix 6 (V2-07): the session that returned control; a refusal is returned to IT. Updated to the session as each correction left it. */
+      returned: { session: SessionRef | null } = { session: null }): Promise<'accepted' | 'lost' | 'stale'> => {
       if (!environment || !boot) return 'stale';
       const branch = execution.request.branch;
       const remote = publicationRemote(work.repository.repository);
@@ -1123,12 +1129,22 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           pullRequest: Boolean(fresh?.pullRequest || fresh?.publication?.pullRequest || fresh?.execution?.inBootPublication) });
         // The invocation is recorded BEFORE the launch: an activation of this Execution is never unknown to the authority.
         if (await recordGateCorrection(session, work.work_id, executionId, { invocationId }) === 'stale') return 'stale';
+        // The refusal goes to the session that returned control when the Host preserved it; when that session cannot be continued
+        // (none was returned, or the Host refuses the continuation) a fresh session gets the same self-contained instruction.
+        const head = observation.head;
+        const launch = (session: SessionRef | null) => ports.workers.activate({ context: { workId: work.work_id, executionId, invocationId, role: 'builder', environmentRef: environment!, bootRef: boot!, phaseId: 'builder-preservation' },
+          prompt, signal: activitySignal, ...ports.builder,
+          ...(execution.request.policies.builderBudget ? { builderBudget: { ...execution.request.policies.builderBudget } } : {}),
+          pushPolicy: { branch, head, expected: null, remote, wip: true }, ...(session ? { continuation: { session } } : {}) }, { credential: grant.delivery });
         let corrector: Handle;
+        let continuing = returned.session;
         try {
-          corrector = await ports.workers.activate({ context: { workId: work.work_id, executionId, invocationId, role: 'builder', environmentRef: environment, bootRef: boot, phaseId: 'builder-preservation' },
-            prompt, signal: activitySignal, ...ports.builder,
-            ...(execution.request.policies.builderBudget ? { builderBudget: { ...execution.request.policies.builderBudget } } : {}),
-            pushPolicy: { branch, head: observation.head, expected: null, remote, wip: true } }, { credential: grant.delivery });
+          corrector = await launch(continuing).catch(error => {
+            if (!continuing || interrupted() || stopping.signal.aborted || !sessionRefusal(codeOf(error, ''))) throw error;
+            observe(work.work_id, 'preservation-correction-fresh-session', [codeOf(error, 'CONTINUATION_REFUSED')]);
+            continuing = null;
+            return launch(null);
+          });
         } catch (error) {
           if (interrupted() || stopping.signal.aborted) throw error;
           await recordGateCorrection(session, work.work_id, executionId, { invocationId, status: 'not-started', code: codeOf(error, 'PRESERVATION_ACTIVATION_FAILED') });
@@ -1140,6 +1156,10 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           await activity('preservation-correction-started');
           const result = await wait(lifecycle!.renewWhile(corrector.completed));
           await recordGateCorrection(session, work.work_id, executionId, { invocationId, status: result.status === 'success' ? 'completed' : result.status === 'boot-swap' ? 'failure' : result.status, code: result.status === 'failure' ? result.code : null });
+          // The correction is part of that session from here on (only when it was the one continued).
+          if (continuing && result.status !== 'failure' && result.session) returned.session = result.session;
+          // A session the Host could not continue is not tried again: the next refusal goes to a fresh one.
+          else if (continuing && result.status === 'failure' && sessionRefusal(result.code)) returned.session = null;
         } finally { corrector.close(); }
       }
       // Operator decision 7 of 2026-11-21 (amends V2-07): no hold for the Operator. The caller ends the boot now, as a loss.
@@ -1298,7 +1318,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           const settled = await settleBranchAbsent(session, work.work_id, executionId, { branch: execution.request.branch, confirmed: read.confirmed, base: work.repository.base });
           if (settled.kind === 'asked') deps.questionRecorded?.();
           // "End the Work": the ordinary cancellation, by the answer (nothing of this Execution ever started).
-          if (settled.kind === 'end') await acceptCancel(session, { request_id: `origin-branch-absent-${settled.questionId}`, operation: 'cancel', work_id: work.work_id, origin: 'local-cli' }).catch(() => {});
+          if (settled.kind === 'end') await acceptCancel(session, { request_id: `origin-branch-absent-${settled.questionId}`, operation: 'cancel', work_id: work.work_id, origin: 'local-cli' }, { questionId: settled.questionId })
+            .catch(error => observe(work.work_id, 'origin-branch-absent-end-not-recorded', [codeOf(error, 'CANCEL_NOT_RECORDED')]));
           if (settled.kind !== 'restart') { observe(work.work_id, `origin-branch-absent-${settled.kind}`, [read.code]); return; }
           continuity = { outcome: 'restarted', startCommit: origin.base, confirmed: read.confirmed };
         } else if (read.outcome === 'divergent') {
@@ -1558,7 +1579,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
             }
           }
         }
-        const gate = await preservationGate('planned-swap');
+        const swapping = { session: continued };
+        const gate = await preservationGate('planned-swap', swapping);
+        continued = swapping.session;
         // V2-13 with Operator decision 7: the gate did not accept, so the loss path applies at once (the boot is ended as a loss, the loss
         // is recorded on the Work and a substitute session resumes from the last push through the queue).
         if (gate === 'lost') { await endAsLoss(gateRefusedCode); return { kind: 'return' }; }
@@ -1576,6 +1599,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
             '(never two boots of one Work at once). The Slot is kept; the next controller boot reconciles it (ticket 26).');
           return { kind: 'return' };
         }
+        bootCeased = true;
         // The Execution ends here instead of continuing: its old boot ceased, so the Slot is released at once.
         const endWithoutBoot = async (status: 'blocked' | 'failed', code: string, detail = code) => {
           timerStop.abort();
@@ -1598,10 +1622,21 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         const read = origin.kind === 'observed' ? originContinuity({ preserved, branch, origin: origin.branch, comparison: origin.comparison }) : { outcome: 'unknown' as const, code: origin.code };
         // Not continuous (or unread): the next Execution's own read of origin decides it (ticket 08), as after any interruption.
         if (origin.kind !== 'observed' || read.outcome !== 'continuous') return endWithoutBoot('failed', 'BOOT_SWAP_ORIGIN_NOT_CONTINUOUS', `BOOT_SWAP_ORIGIN_NOT_CONTINUOUS:${read.outcome === 'continuous' ? 'UNREAD' : 'code' in read ? read.code : read.outcome}`);
-        checkStop();
-        bootMono = clock.monotonic();
-        const next = await lifecycle!.renewWhile(ports.sandbox.start({ environment: own, configuration: ports.configuration, ...(pass ? { pass } : {}),
-          checkout: { repository: work.repository.repository, installationId: configured.installationId, commit: read.startCommit, branch }, reason: 'planned-swap' }));
+        // Operator decision 5, extended to the swap (final review, should-fix 5): a refusal of the service for capacity started nothing and
+        // the work is on `origin`, so the Execution waits (15 s, 60 s, then 300 s repeated) and tries again by itself: no impediment and no
+        // operational recovery. The Execution's own timeout still applies to the wait; an interruption ends it at once.
+        let next: Awaited<ReturnType<ExecutionPorts['sandbox']['start']>>;
+        for (let attempt = 0; ; attempt += 1) {
+          checkStop();
+          bootMono = clock.monotonic();
+          next = await lifecycle!.renewWhile(ports.sandbox.start({ environment: own, configuration: ports.configuration, ...(pass ? { pass } : {}),
+            checkout: { repository: work.repository.repository, installationId: configured.installationId, commit: read.startCommit, branch }, reason: 'planned-swap' }));
+          if (next.status !== 'failure' || !isBootCapacityRefusal(`START_${next.code}`)) break;
+          const waitSeconds = bootCapacityWait(attempt);
+          if (await recordSwapStartWait(session, work.work_id, executionId, { code: `START_${next.code}`, detail: next.detail ?? null, attempt, waitSeconds }) === 'stale') { observe(work.work_id, 'stale'); return { kind: 'return' }; }
+          observe(work.work_id, 'boot-swap-capacity-wait', [`START_${next.code}`, String(waitSeconds)]);
+          await wait(lifecycle!.renewWhile(clock.sleep(waitSeconds * 1000, activitySignal)));
+        }
         // A definitive refusal started nothing: the Execution ends and comes back through the queue. An indeterminate one may have.
         if (next.status === 'failure') return endWithoutBoot('failed', 'BOOT_SWAP_START_REFUSED', `BOOT_SWAP_START_REFUSED:${next.code}`);
         if (next.status !== 'success') {
@@ -1610,6 +1645,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           return { kind: 'return' };
         }
         boot = next.boot;
+        bootCeased = false;
         bootBegin = 'planned-swap';
         bootStartTip = origin.branch;
         watchEnvironment();
@@ -1711,6 +1747,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         // clock until the publication activation ended too (stopped by the `finally` below).
         // v2 ticket 07: so does one that returns control on a sandbox without a persistent disk, until its preservation gate ended.
         if (completed.status === 'failure' || !(diskless || execution.request.publishInBoot)) timerStop.abort();
+        // The session that returned control: the preservation gate returns a refusal to it, and the end records it as the gate left it.
+        const returned = { session: completed.status === 'failure' ? null : completed.session ?? null };
         if (completed.status === 'question') {
           // Lost ACK/notification: the completion repeats the SAME identity and content; a missing record is registered once from it.
           // Content not intact and no record: explicit impediment, nothing invented or published.
@@ -1733,14 +1771,14 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           }
           // v2 ticket 07 (V2-05): the Question is recorded; before the boot ends for the wait, the workspace must be on `origin`.
           if (diskless) {
-            const gated = await preservationGate(substitute ? 'substitute-end' : 'question');
+            const gated = await preservationGate(substitute ? 'substitute-end' : 'question', returned);
             // Decision 7: the Question stays recorded and pending; the unpublished work is lost and the substitute waits for the answer.
             if (gated === 'lost') await endAsLoss(gateRefusedCode);
             if (gated !== 'accepted') return;
           }
           timerStop.abort();
           const bound = own(await readQuestion(session, request.questionId));
-          await recordEnd(session, work.work_id, executionId, 'question', code, bound ? request.questionId : null, elapsed(), completed.session ?? null);
+          await recordEnd(session, work.work_id, executionId, 'question', code, bound ? request.questionId : null, elapsed(), returned.session);
         } else {
           // Ticket 13: Control's presence/correlation verification of opinions, treatments, gates and waivers, committed BEFORE the end.
           // It does not gate completion (a `completed` Execution may be `not-verified`); GitHub readiness (tickets 14/15) must consume it.
@@ -1773,7 +1811,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           }
           // v2 ticket 07 (V2-05): a completed Execution returns control to the waits on GitHub (CI, readiness) and its boot ends: gate first.
           if (diskless && completed.status === 'success') {
-            const gated = await preservationGate(substitute ? 'substitute-end' : 'ci-wait');
+            const gated = await preservationGate(substitute ? 'substitute-end' : 'ci-wait', returned);
             if (gated === 'lost') await endAsLoss(gateRefusedCode);
             if (gated !== 'accepted') return;
           }
@@ -1798,7 +1836,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           } else if (completed.status === 'failure' && !interrupted()) await wait(checkBeforeStop(`the Builder activation failed: ${failureCode ?? 'UNEXPECTED_FAILURE'}`));
           timerStop.abort();
           await recordEnd(session, work.work_id, executionId, completed.status === 'success' ? 'completed' : 'failure', failureCode,
-          null, elapsed(), completed.status === 'success' ? completed.session ?? null : null);
+          null, elapsed(), completed.status === 'success' ? returned.session : null);
           if (completed.status === 'failure') endCode = failureCode;
           if (completed.status === 'failure') await questionUncertain();
         }

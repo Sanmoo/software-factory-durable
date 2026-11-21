@@ -31,10 +31,12 @@ async function harness(t: { after(fn: () => Promise<void>): void }, options: { t
     const confirmed = await execution.ports.sandbox.stop(input);
     return stops.shift() === 'unconfirmed' ? { status: 'indeterminate', cessationConfirmed: false, code: 'CESSATION_NOT_CONFIRMED' } : confirmed;
   } };
+  // The persisted recovery wait runs on the calendar: jumped, never slept.
+  let calendar = 0;
   let current: { stop: AbortController; running: Promise<unknown>; control: Awaited<ReturnType<typeof openControl>>; time: ReturnType<typeof manualClock> } | undefined;
   const open = async () => {
     const time = manualClock();
-    const control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty', execution: { ...execution.ports, sandbox },
+    const control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty', execution: { ...execution.ports, sandbox, calendar: { now: () => Date.now() + calendar } },
       access: { tracker: github.tracker, repository: { ...github.repository, readLostMarkers: async () => ({ state: 'complete' as const, observedAt: '2026-11-21T10:00:01.000Z', markers: [] }) },
         repositories: [{ ...scope, ...(options.timeoutSeconds ? { timeoutSeconds: options.timeoutSeconds } : {}) }], operators: ['operator-one'], factoryApp: async () => app },
       polling: { intervalSeconds: 60, clock: time.clock } });
@@ -47,7 +49,7 @@ async function harness(t: { after(fn: () => Promise<void>): void }, options: { t
   const work = async () => ((await current!.control.inspect({ kind: 'list' })) as ListView).works[0] as WorkView | undefined;
   const settle = (label: string, predicate: (value: WorkView | undefined) => boolean | undefined) => untilHolds(label, async () => {
     if (predicate(await work())) return true;
-    if (current!.time.isSleeping()) current!.time.advance();
+    if (current!.time.isSleeping()) { calendar += 60000; current!.time.advance(); }
     return false;
   }, 5);
   const executions = (value: WorkView | undefined) => [...(value?.previousExecutions ?? []), ...(value?.execution ? [value.execution] : [])] as ExecutionView[];

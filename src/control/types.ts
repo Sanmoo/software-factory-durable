@@ -418,6 +418,8 @@ export type BootSwapRecord = { fromBoot: string; dueAt: string;
   notice?: { invocationId: string; status?: 'completed' | 'failure' | 'question' | 'not-started'; code?: string | null };
   /** The Builder activation that continues the session in the new boot, recorded before its launch. */
   continuation?: { invocationId: string };
+  /** Operator decision 5: the service refused the start of the new boot for capacity; the swap waits and tries again inside the Execution (the latest wait). */
+  startWait?: { code: string; detail: string | null; attempt: number; waitSeconds: number; at: string };
   /**
    * `swapped`: gate accepted at `commit`, cessation of `fromBoot` confirmed, `toBoot` started. `lost`: the old boot ended before the gate
    * accepted (the loss path). `blocked`: V2-14. `held`: the gate or the cessation left the Execution held. `failed`: the new boot could
@@ -889,7 +891,9 @@ export type WorkView = {
   queue: { category: 'normal' | 'repair'; sequence: number; pending: boolean; repairSequence?: number };
   impediments: Impediment[];
   dependencies: DependencyState;
-  dispatch: { state: 'held' | 'eligible' | 'executing'; reasons: string[] };
+  dispatch: { state: 'held' | 'eligible' | 'executing'; reasons: string[];
+    /** The capacity wait behind `BOOT_CAPACITY_WAIT`, with its cause as the sandbox or its service gave it (Operator decision 5: the cause stays visible). */
+    capacityWait?: { code: string; cause: string | null; notBefore: string; waitSeconds: number; attempt: number } };
   execution: ExecutionView | null; branch: string | null;
   /** Ticket 14: the own pull request once discovery linked it (questions then belong to its surface). */
   pullRequest: { number: number; url: string } | null;
@@ -992,7 +996,7 @@ export type WorkView = {
     { at: string; event: 'readiness-authorized'; origin: 'local-cli'; detail: string } |
     { at: string; event: 'delivery-observed' | 'delivery-confirmed' | 'cleanup-evaluated' | 'evidence-preserved' | 'cleanup-intended' | 'cleanup-result';
       origin: 'controller-delivery'; detail: string } |
-    { at: string; event: CycleEvent; origin: 'controller-cycles' | 'local-cli'; detail: string } |
+    { at: string; event: CycleEvent; origin: 'controller-cycles' | 'local-cli' | /* the accepted answer of a Question Control asked */ 'controller-dispatch'; detail: string } |
     /** Ticket 41: correlated with the blocked Execution (ticket 29 `history --execution`). */
     { at: string; event: 'blocked-recovery-overridden'; origin: 'local-cli'; executionId: string; detail: string } |
     /** Ticket 51: the operator's decision on REVIEWER_RETRY_LIMIT (`<request id>:new-review-round` or `<request id>:cancel`). */

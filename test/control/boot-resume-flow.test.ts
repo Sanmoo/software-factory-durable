@@ -66,7 +66,7 @@ test('the answered Question resumes in a NEW boot cloned from the branch tip on 
   assert.deepEqual(h.kinds(), ['prepare', 'start', 'activate', 'gate', 'activate', 'gate', 'stop', 'prepare', 'start', 'activate', 'activate', 'gate', 'stop']);
   const [, , continued, publication] = h.activations() as [Activation, Activation, Activation, Activation];
   // The same session continues.
-  assert.deepEqual([continued.phaseId, (continued.continuation as { session: unknown }).session, execution.request.session?.mode, execution.request.session?.reason], ['builder-continuation', sessionRef(1), 'continue', 'SESSION_COMPATIBLE']);
+  assert.deepEqual([continued.phaseId, (continued.continuation as { session: unknown }).session, execution.request.session?.mode, execution.request.session?.reason], ['builder-continuation', sessionRef(2), 'continue', 'SESSION_COMPATIBLE']);
   assert.ok(continued.prompt.startsWith('Factory notice (new boot): this environment was RECREATED'), continued.prompt.slice(0, 200));
   assert.ok(continued.prompt.includes(`Starting commit: ${wip} (the tip of ${h.branch} on origin`));
   assert.match(continued.prompt, /Ignored files, installed packages, caches and Docker data .* no longer exist/);
@@ -97,7 +97,7 @@ test('commits of someone else on top of the confirmed commit keep the same sessi
   const execution = [...work.previousExecutions, ...(work.execution ? [work.execution] : [])].at(-1) as ExecutionView;
   assert.equal(h.starts().at(-1)?.commit, third);
   const continued = h.activations()[2]!;
-  assert.deepEqual([continued.phaseId, (continued.continuation as { session: unknown }).session], ['builder-continuation', sessionRef(1)]);
+  assert.deepEqual([continued.phaseId, (continued.continuation as { session: unknown }).session], ['builder-continuation', sessionRef(2)]);
   assert.ok(continued.prompt.includes(`Starting commit: ${third}`));
   assert.ok(continued.prompt.includes(`New commits on origin since the commit the Factory confirmed before the previous boot ended (${wip})`));
   assert.ok(continued.prompt.includes(`- ${third} Human edit on the Factory branch (operator-one)`));
@@ -185,6 +185,10 @@ test('decision 8: a missing branch answered "end" ends the Work: cancelled, noth
   assert.equal(h.starts().length, 1);
   assert.equal(h.activations().length, 2);
   assert.deepEqual([(work.originDivergence as typeof divergence).state, work.cancellation?.state, work.execution?.slot.held], ['end-authorized', 'ceased', false]);
+  // Final review, should-fix 13: the record says what ended the Work (the accepted answer), not a local cancellation by the operator.
+  const cancelled = work.history.find(item => item.event === 'cancel-requested') as { origin: string; detail: string };
+  assert.deepEqual([cancelled.origin, cancelled.detail], ['controller-dispatch', `origin-branch-absent-${divergence.questionId}:answer of Question ${divergence.questionId}`]);
+  assert.match(work.impediments.find(item => item.code === 'WORK_CANCELLED')!.nextStep, new RegExp(`^Ended by the accepted answer to Question ${divergence.questionId}: `));
 });
 
 test('an ancestry that could not be read decides nothing: no boot starts, and the resume happens once it is readable', async t => {

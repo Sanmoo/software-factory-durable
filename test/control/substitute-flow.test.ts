@@ -135,7 +135,7 @@ test('MANDATORY (V2-17..V2-19): loss with a recorded uncertain effect: the subst
   await h.settle('published', value => value?.publication?.state === 'published');
   const finished = (await h.work())!;
   const continued = h.activations()[3]!;
-  assert.deepEqual([continued.phaseId, (continued.continuation as { session: unknown }).session], ['builder-continuation', sessionRef(2)]);
+  assert.deepEqual([continued.phaseId, (continued.continuation as { session: unknown }).session], ['builder-continuation', sessionRef(3)]);
   assert.ok(continued.prompt.includes('It was deployed: take it as done, do not repeat it.'));
   assert.ok(continued.prompt.includes(`Starting commit: ${done}`));
   assert.equal((await h.recoveries())?.consumed, 1, 'the resume after the answer consumes no operational recovery');

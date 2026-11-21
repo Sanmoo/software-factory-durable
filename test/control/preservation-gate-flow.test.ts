@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { openControl } from '../../src/control/index.js';
 import type { ExecutionView, ListView, WorkView } from '../../src/control/types.js';
 import { githubDoubles, manualClock, remoteIssue, scope, type Remote } from './doubles.js';
-import { app, executionDoubles, publishOwn, pushWip, type Activation, type GuestWorkspace, type Script } from './publication-doubles.js';
+import { sessionRef, app, executionDoubles, publishOwn, pushWip, type Activation, type GuestWorkspace, type Script } from './publication-doubles.js';
 import { untilHolds } from '../runner/budget.js';
 
 // v2 ticket 07 (V2-05..V2-09), flow level: real Control + Pi Durable + temporary SQLite. Doubled: GitHub, clock, the Sandbox (declaring NO
@@ -69,6 +69,10 @@ test('a Question on a sandbox without a persistent disk: the dirty workspace is 
   assert.match(correction.prompt, /No pull request is needed/);
   assert.match(correction.prompt, /does not authorize committing secrets/);
   assert.ok(correction.token, 'the correction runs with the grant of the Execution');
+  // Final review, should-fix 6 (V2-07 "a recusa volta ao Builder"): the refusal goes to the SAME session that returned control, and the
+  // session recorded with the end is that session as the correction left it.
+  assert.deepEqual(correction.continuation, { session: sessionRef(1) });
+  assert.deepEqual(execution.end?.session, sessionRef(2));
   // The confirmed commit is on the Work, for the resume in a new boot; no PR exists.
   assert.deepEqual([work.preservation?.commit, work.preservation?.branch, work.preservation?.occasion, work.preservation?.executionId, work.preservation?.heads],
     [wip, work.branch, 'question', execution.executionId, [wip]]);

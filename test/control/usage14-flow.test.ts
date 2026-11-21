@@ -58,6 +58,8 @@ test('a boot the service refuses for quota waits and is retried by itself: no im
   assert.deepEqual([work.impediments, work.pendingRecovery, work.budget!.recoveries.consumed, work.budget!.recoveries.reserved], [[], null, 0, null]);
   assert.deepEqual([work.bootDeferral!.code, work.bootDeferral!.detail, work.bootDeferral!.waitSeconds, work.bootDeferral!.attempt, work.queue.pending], [code, cause, 15, 0, true]);
   assert.ok(work.dispatch.reasons.includes('BOOT_CAPACITY_WAIT'), 'the wait is visible');
+  // Final review, should-fix 8: the service's cause is part of what `factory status` and the Work view show of the wait.
+  assert.deepEqual(work.dispatch.capacityWait, { code, cause, notBefore: work.bootDeferral!.notBefore, waitSeconds: 15, attempt: 0 });
   assert.ok(work.history.some(item => item.event === 'boot-deferred' && item.detail?.includes(code) && item.detail.includes(cause)), 'the cause is in the history');
 
   // Not a hot loop: nothing is attempted again before the persisted wait ends, and a repeated refusal waits longer.

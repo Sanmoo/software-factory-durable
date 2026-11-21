@@ -8,6 +8,7 @@ import { initialBudget } from '../rules/budget.js';
 import { authorizationChange, authorizationFacts, cancelDecision, cycleImpediments, hasImpediment, newCycleDecision, occupying, reopenDecision, resumeDecision,
   settleCancellation } from '../rules/cycles.js';
 import { decideMerge, ownPullRequestOf } from '../rules/delivery.js';
+import { noProgressCode } from '../rules/boot-rotation.js';
 import { newReviewRoundDecision, overrideBlockedRecoveryDecision, positiveResolution, retriesEnvironmentBase, retryBlockedStartDecision, reviewerRetryLimitCode } from '../rules/recovery.js';
 import { readForgotten, readWork, readWorks, requests, ticketIndex, works, type WorkRecord } from './admission.js';
 import { questions } from './questions.js';
@@ -56,7 +57,9 @@ const receiptOf = (input: CycleInput, work_id: string | null, outcome: Receipt['
  * Ticket memory) and the stop intent are durable BEFORE anything is interrupted. The caller then withdraws credentials and requests the stop;
  * the Slot is released only by the confirmed cessation. Branch, PR, artifacts and GitHub are never touched.
  */
-export async function acceptCancel(session: Session, input: CycleInput & { operation: 'cancel' }) {
+export async function acceptCancel(session: Session, input: CycleInput & { operation: 'cancel' },
+  /** Final review, should-fix 13: the Work is ended by the accepted answer of a Question Control asked (the branch is gone from `origin`), not by a local command. */
+  by?: { questionId: string }) {
   return command(session, input, async tx => {
     const index = await tx.doc(ticketIndex);
     const work = (await tx.doc(works, input.work_id, null)).work;
@@ -68,9 +71,10 @@ export async function acceptCancel(session: Session, input: CycleInput & { opera
     work!.result = 'cancelled';
     work!.cancellation = { request_id: input.request_id, requestedAt: at, state: 'stopping', ceasedAt: null, executionId: active,
       nextStep: 'Cancellation recorded: credentials are withdrawn and the stop requested; the Slot is released only after the confirmed cessation. Nothing on GitHub is undone.' };
-    addImpediment(work!, { code: cycleImpediments.cancelled, scope: 'work', since: at, nextStep: 'Cancelled by the operator: no new action, publication or renewal. ' +
+    addImpediment(work!, { code: cycleImpediments.cancelled, scope: 'work', since: at, nextStep: `${by ? `Ended by the accepted answer to Question ${by.questionId}` : 'Cancelled by the operator'}: no new action, publication or renewal. ` +
       '`factory new <owner/repo#number>` starts another cycle once cessation is confirmed.' });
-    history(work!, 'cancel-requested', 'local-cli', `${input.request_id}${active ? `:active:${active}` : ''}`, at);
+    if (by) work!.history.push({ at, event: 'cancel-requested', origin: 'controller-dispatch', detail: `${input.request_id}:answer of Question ${by.questionId}`.slice(0, 512) });
+    else history(work!, 'cancel-requested', 'local-cli', `${input.request_id}${active ? `:active:${active}` : ''}`, at);
     // Ticket 51: a cancel of a Work stopped by REVIEWER_RETRY_LIMIT IS the operator's decision on it (the other one is a new review round).
     const execution = work!.execution;
     if (execution && !execution.reviewRetryLimit && (execution.end ? execution.end.code === reviewerRetryLimitCode : execution.held?.code === reviewerRetryLimitCode)) {
@@ -92,6 +96,18 @@ export async function acceptResume(session: Session, input: CycleInput & { opera
     const index = await tx.doc(ticketIndex);
     const work = (await tx.doc(works, input.work_id, null)).work;
     const decision = resumeDecision(work, work ? index.tickets[ticketKey(work.ticket)]?.current === work.work_id : false);
+    // Final review, should-fix 10 (V2-14): the operator exit of "no progress between boots". The block is lifted, the sequence of boots is
+    // counted from zero and the Work returns through the queue as ONE operational recovery (kept if one is already pending).
+    if (work && work.result === 'open' && index.tickets[ticketKey(work.ticket)]?.current === work.work_id && hasImpediment(work, noProgressCode) && !(work.execution && occupying(work.execution))) {
+      const at = new Date().toISOString();
+      removeImpediments(work, [noProgressCode, ...(decision.kind === 'accept' ? decision.remove : [])]);
+      work.bootLedger = [];
+      if (decision.kind === 'accept') addImpediment(work, { code: cycleImpediments.resumePending, scope: 'work', since: at, nextStep: 'Resume accepted: the next complete read of the Ticket must ' +
+        'show it open with the configured label; then the Work re-enters its queue position. Other impediments still apply.' });
+      applyRecoveryRequest(work, { executionId: work.execution?.executionId ?? null, code: noProgressCode, at, reason: `operator-resume:${noProgressCode}` });
+      history(work, 'resume-accepted', 'local-cli', `${input.request_id}:${[noProgressCode, ...(decision.kind === 'accept' ? decision.remove : [])].join(',')}`, at);
+      return receiptOf(input, work.work_id, 'accepted', null);
+    }
     if (decision.kind === 'refuse') return receiptOf(input, input.work_id, 'not-applied', decision.code);
     if (decision.kind === 'already') return receiptOf(input, input.work_id, 'already-satisfied', decision.code);
     const at = new Date().toISOString();
