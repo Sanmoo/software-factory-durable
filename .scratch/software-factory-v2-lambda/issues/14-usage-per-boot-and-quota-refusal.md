@@ -82,7 +82,7 @@ Limites e pendências:
 Testes: `test/sandbox/lambda-usage.test.ts`, `test/control/usage14-flow.test.ts`, bloco de consumo no fim de
 `test/entrypoints/lambda-journey-composed.test.ts`.
 
-`npm run test:ci` (2026-11-21, antes do merge da ponta de integração): 2000 testes, 1978 passam, 17 pulados, 5 falham, resultado FAIL. As 5
+`npm run test:ci` (2026-11-21, depois do merge da ponta de integração com os tickets 07 e 10): 2028 testes, 2006 passam, 17 pulados, 5 falham, resultado FAIL. As 5
 falhas são as conhecidas da base: `test/sandbox/audited-vfs-guard.test.ts` (4) e `test/sandbox/sandbox-adapter-diagnostics.test.ts` (1).
 
 O que os tickets seguintes precisam saber:
