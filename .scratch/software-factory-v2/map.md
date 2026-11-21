@@ -1,6 +1,6 @@
 # Software Factory v2 — ambientes reconstruíveis em Lambda MicroVMs
 
-Status: open
+Status: resolved
 Label: wayfinder:map
 
 ## Destination
@@ -47,8 +47,8 @@ As dependências canônicas são os campos `Blocked by:` dos tickets.
   [prova Docker e transporte](issues/02-lambda-microvms-prototype.md) →
   [prova de continuidade do agente entre boots](issues/09-agent-continuity-on-lambda-proof.md) →
   [consolidar PRD/spec e contratos da v2](issues/03-revised-sandbox-contract.md#answer) →
-  [prova do guest Alpine](issues/10-alpine-guest-on-lambda-proof.md).
-  O mapa fecha quando essa prova estiver resolvida e incorporada à [spec da v2](spec.md).
+  [prova do guest Alpine](issues/10-alpine-guest-on-lambda-proof.md#answer).
+  Todos os filhos estão resolvidos ou fechados; o destino é a [spec da v2](spec.md).
 
 ## Decisions so far
 
@@ -70,10 +70,14 @@ As dependências canônicas são os campos `Blocked by:` dos tickets.
   declaradas, gate Git antes de toda espera, troca e perda com limites, relaxamento de rede aprovado e
   matriz de aceite; guest Alpine fica para prova própria e a implementação sai deste mapa.
 
+- [Validar o guest Alpine com o ambiente declarado em Lambda MicroVMs](issues/10-alpine-guest-on-lambda-proof.md#answer):
+  imagem a partir de Alpine pelo `Dockerfile` fixo da declaração funciona em ARM64, com `apk` exato, Docker,
+  SSH, pull por digest, Compose e Testcontainers sobre musl; a causa de falha de build só está no log de
+  build. Reuso por chave e x86 não provados; recursos removidos.
+
 ## Not yet specified
 
-- Se a prova do guest Alpine falhar ou ficar inconclusiva: a forma da declaração de ambiente no perfil
-  Lambda, decisão que volta ao Operador.
+Nada: a prova do guest Alpine passou e a forma da declaração de ambiente não precisou voltar ao Operador.
 
 ## Out of scope
 

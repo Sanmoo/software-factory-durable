@@ -1,7 +1,7 @@
 {
   "rubric": "alpine-guest-on-lambda-proof v1",
   "rubricSha256": "791bd2fd914df814adb7a0c76184925a461f5907dc02e07ced227179f76b42f1",
-  "reviewedBy": "Pendente: aguarda o aceite do Operador",
+  "reviewedBy": "Operador, na sessão de 2026-11-21 (resposta: Aceito como está); registro de revisão, não autenticação",
   "evidenceSnapshotSha256": "d7a729e4645eb47d06ca4609183d98b06f9594cb5d017ae56294bae2b262c05f",
   "notes": [
     "O helper de finalização registrou C2-cleanup como inconclusive porque avalia antes de remover. A remoção terminou com status completed e o inventário lido depois dela veio vazio; por isso o resultado final de C2 aqui é approved.",

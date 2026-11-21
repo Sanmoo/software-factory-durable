@@ -204,14 +204,17 @@ Como no MVP, a instalação não é plataforma para código adversarial.
 
 ## 9. Ambiente por repositório
 
-**V2-27 — Mesma declaração, imagem por chave (decidido; não provado).** O `.factory/environment.yaml`
-do MVP vale sem mudança de esquema. O adapter constrói uma imagem de MicroVM por (repositório, hash do
-arquivo, pin da release) com um `Dockerfile` fixo montado pelo host a partir dos valores validados,
-partindo de Alpine, sem comandos livres. Trabalhos com a mesma chave reutilizam a imagem. Falha de
-build é impedimento visível com causa, sem fallback de imagem ou versão. Guest Alpine com Docker em
-Lambda não foi provado (a prova usou Amazon Linux 2023): depende do ticket
-[Validar o guest Alpine com o ambiente declarado em Lambda MicroVMs](issues/10-alpine-guest-on-lambda-proof.md).
-Se a prova falhar, a decisão volta ao Operador.
+**V2-27 — Mesma declaração, imagem por chave (provado: A1 a A7; reuso por chave não provado).** O
+`.factory/environment.yaml` do MVP vale sem mudança de esquema. O adapter constrói uma imagem de MicroVM
+por (repositório, hash do arquivo, pin da release) com um `Dockerfile` fixo montado pelo host a partir
+dos valores validados, partindo de Alpine, sem comandos livres. Trabalhos com a mesma chave reutilizam a
+imagem. Falha de build é impedimento visível com causa, sem fallback de imagem ou versão. A
+[prova do guest Alpine](research/alpine-guest-results.md) mostrou, em ARM64, build a partir de Alpine,
+pacotes `apk` nas versões exatas, `dockerd` e `sshd` no hook de início, pull por digest, Compose e
+Testcontainers com Ryuk sobre musl. Dela decorrem três obrigações do adapter: ler a causa da falha de
+build no log de build, porque a API devolve só um motivo genérico; fixar no pin da release as versões
+dos pacotes do molde; e desbloquear a conta do usuário para o `sshd`. O storage driver efetivo do
+Docker é `overlayfs`, não o `vfs` do guest do MVP.
 
 **V2-28 — Estado do boot (provado: L3, D1, G2).** Nenhum processo vem do snapshot: `dockerd`, `sshd` e
 a host key nascem no hook de início. As imagens Docker declaradas são baixadas por digest a cada boot;
@@ -271,7 +274,7 @@ depois do aceite.
 | V2-20 a V2-22 | T1 a T4, N2 | Canal caído: reconexão, órfão encerrado, resultado indeterminado | Conexão além de 38 min sem medição |
 | V2-23 | T5, T6 (usuário Unix) | Revisores reais do harness no Lambda | — |
 | V2-24, V2-25 | N1, T6, D4 | Token não persiste no guest; guest sem credenciais AWS | VPC |
-| V2-27, V2-28 | L3, D1, G2 (Amazon Linux 2023) | Ambiente declarado de um repositório real | **Guest Alpine: ticket filho** |
+| V2-27, V2-28 | L3, D1, G2 (Amazon Linux 2023); A1 a A7 (guest Alpine) | Ambiente declarado de um repositório real; causa da falha de build visível | Reuso de imagem por chave, x86 |
 | V2-30, V2-31 | Quota observada | `validate` com quota excedida e com permissão faltante | Outras regiões, x86, outros tamanhos |
 | V2-32 a V2-34 | I1, C1 | Consumo por boot e por Trabalho; reconciliação encerra órfãs por tag | Cobrança acima do baseline |
 

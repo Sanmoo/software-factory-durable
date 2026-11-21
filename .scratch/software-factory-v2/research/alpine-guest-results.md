@@ -4,7 +4,7 @@ Data: 2026-11-21. Ticket: [Validar o guest Alpine com o ambiente declarado em La
 [Plano autorizado](alpine-guest-execution-plan.md), [rubrica v1](alpine-guest-rubric.json),
 [avaliação por critério](alpine-guest-assessment.json), [evidência sanitizada](alpine-guest-evidence.json).
 
-**Estado: executada, cleanup concluído e verificado; aguarda o aceite do Operador.**
+**Estado: aceito pelo Operador em 2026-11-21; cleanup concluído e verificado.**
 
 **Resposta: sim, no perfil testado.** Uma imagem de MicroVM construída a partir de Alpine por um
 `Dockerfile` fixo, montado dos valores de um `.factory/environment.yaml` de esquema v1, inicia com
