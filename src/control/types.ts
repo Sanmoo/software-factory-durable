@@ -363,6 +363,14 @@ export type ExecutionView = {
    */
   origin?: { atStart: OriginObservation; startCommit: string; atEnd?: OriginObservation | null };
   /**
+   * v2 ticket 08 (V2-11): the boot of the last Builder-session activation of this Execution (the implementation session; the gate
+   * correction and the in-boot publication are other sessions of the same boot). "The last boot the session saw" of a Work is the newest
+   * of these (`lastSessionBoot`); the fixed notice is due when the next activation happens in another boot.
+   */
+  sessionBoot?: string;
+  /** v2 ticket 08 (V2-11, decision 3D): the fixed notice this Execution's first prompt started with, as facts (the text is in the prompt). */
+  bootNotice?: BootNoticeRecord;
+  /**
    * v2 ticket 06 (Operator decision 1A): the publication activation of THIS Execution, in the boot that verified the content: its own
    * invocation, the verified commit, the lease expectation and how it ended. The attempt is also recorded in the Work's publication.
    */
@@ -395,6 +403,8 @@ export type PreservationOccasion = 'question' | 'ci-wait' | 'planned-swap' | 'su
  */
 export type PreservationView = { commit: string; branch: string; confirmedAt: string; executionId: string; boot: string; occasion: PreservationOccasion; heads: string[] };
 export type OriginObservation = BranchObservation | { state: 'unknown'; code: string };
+/** `commits`: how many commits the notice named as new since `confirmed` (the gate-confirmed commit; null = none was ever confirmed). */
+export type BootNoticeRecord = { boot: string; previousBoot: string; startCommit: string; confirmed: string | null; commits: number; restored: string[]; lost: boolean };
 /** One indeterminate effect as Control keeps it: the sandbox's report plus the boot it ran in and when Control recorded it. */
 export type IndeterminateEffectRecord = IndeterminateEffect & { boot: string; recordedAt: string };
 /** Remote tip of the Work's own branch as observed by a complete read (`absent` = no such ref). */

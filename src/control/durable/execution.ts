@@ -311,7 +311,9 @@ export const recordPhase = (session: Session, work_id: string, executionId: stri
  */
 export const confirmActivation = (session: Session, work_id: string, executionId: string, attemptId: string, credential: BuilderGrantMetadata, promptSha256: string,
   /** Resumed Builder: the continue/replace decision and its reason, recorded with the activation intent (ticket 11). */
-  sessionDecision: ExecutionView['request']['session'] = null) =>
+  sessionDecision: ExecutionView['request']['session'] = null,
+  /** v2 ticket 08 (V2-11): the fixed new-boot notice the prompt starts with, when one is due. */
+  bootNotice: ExecutionView['bootNotice'] | null = null) =>
   advance(session, work_id, executionId, { state: 'reserved', phases: ['booted'] }, (execution, work, facts) => {
     const reasons = facts.paused ? ['GLOBAL_PAUSE'] : [];
     // Ticket 17: a Work delivered (merged) meanwhile is never activated: no new agent action after delivery.
@@ -327,6 +329,9 @@ export const confirmActivation = (session: Session, work_id: string, executionId
     execution.credential = credential;
     execution.request.promptSha256 = promptSha256;
     execution.request.session = sessionDecision;
+    // v2 ticket 08: the boot this Builder session is activated in is the last one it saw.
+    if (execution.dispatch.boot) execution.sessionBoot = execution.dispatch.boot;
+    if (bootNotice) execution.bootNotice = bootNotice;
     execution.dispatch.phase = 'activation-requested';
     history(work, 'activation-requested', executionId);
     // Ticket 14: the attempt is durable BEFORE any launch: a lost receipt or crash can never lead to a blind second publication.

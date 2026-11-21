@@ -21,6 +21,7 @@ import { timeoutReached } from '../rules/budget.js';
 import { intactRequest, readQuestion, readQuestions, recordContentLost, registerQuestion } from './questions.js';
 import { pendingScope } from './scope.js';
 import { recoveryPrompt, type KnownContext } from '../rules/questions.js';
+import { bootNoticeDue, lastSessionBoot, newBootNotice, originContinuity, recreatedContext, withNotice, type OriginComparison, type OriginContinuity, type RecreatedContext } from '../rules/boot-notice.js';
 import { continuationPrompt, guestCheckoutPath, initialPrompt, promptBudgetBytes, recoveryContext, scopeSection, sessionDecision } from '../rules/continuation.js';
 import { attemptsOf, decideDiscovery, otherPublications, publicationAttempted, publicationPrompt, publicationResumes, publicationStep, type DiscoveryObservation } from '../rules/publication.js';
 import { humanTips, authorizationInForce, comparisonBase, knownRemote, preservationTips, reconciliationNotice, reconciliationPrompt } from '../rules/divergence.js';
@@ -271,16 +272,19 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
    * v2 ticket 06: Control's own read of `origin` (never the guest's word): the tip of the base and of the Work branch. It names the commit
    * a boot without a persistent disk clones, and it is the measure of progress after a budget end (decision 2a).
    */
-  async function readOrigin(work: WorkRecord, branch: string): Promise<{ kind: 'observed'; base: string; branch: BranchObservation } | { kind: 'unavailable'; code: string }> {
+  async function readOrigin(work: WorkRecord, branch: string,
+    /** v2 ticket 08: also compare this commit (the gate-confirmed one) with the branch tip when they differ (ancestry and the new commits). */
+    compareFrom?: string): Promise<{ kind: 'observed'; base: string; branch: BranchObservation; comparison: OriginComparison | null } | { kind: 'unavailable'; code: string }> {
     const configured = deps.access.repositories.find(scope => scope.repository.toLowerCase() === work.repository.repository.toLowerCase());
     if (!configured) return { kind: 'unavailable', code: 'REPOSITORY_NOT_CONFIGURED' };
     try {
-      const read = await deps.access.repository.findPublication({ repo: configured, issueNumbers: [work.ticket.number], knownBranches: [branch, work.repository.base] });
+      const read = await deps.access.repository.findPublication({ repo: configured, issueNumbers: [work.ticket.number], knownBranches: [branch, work.repository.base],
+        ...(compareFrom ? { compareFrom } : {}) });
       if (read.kind !== 'observed') return { kind: 'unavailable', code: `ORIGIN_NOT_READ_${read.code}`.slice(0, 64) };
       const base = read.branches[work.repository.base], tip = read.branches[branch];
       if (!base || base.state !== 'present') return { kind: 'unavailable', code: base?.state === 'absent' ? 'ORIGIN_BASE_ABSENT' : 'ORIGIN_BASE_NOT_READ' };
       if (!tip || tip.state === 'unknown') return { kind: 'unavailable', code: 'ORIGIN_BRANCH_NOT_READ' };
-      return { kind: 'observed', base: base.sha, branch: tip.state === 'present' ? { state: 'present', sha: tip.sha } : { state: 'absent' } };
+      return { kind: 'observed', base: base.sha, branch: tip.state === 'present' ? { state: 'present', sha: tip.sha } : { state: 'absent' }, comparison: read.comparison ?? null };
     } catch { return { kind: 'unavailable', code: 'ORIGIN_NOT_READ' }; }
   }
 
@@ -531,6 +535,14 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
           head: round.handoff.summary?.head ?? null, gates: round.declarations?.gates ?? [] })) });
   }
 
+  /**
+   * What an activation is planned on. `recreated` (v2 ticket 08, V2-11): the sandbox keeps no disk, so the context of a resumption is the
+   * continuity Control read on `origin`, never a reused checkout; `notice` is the fixed text when this boot differs from the last one the
+   * session saw (null: no earlier boot, or the same one).
+   */
+  type Prepared = { checkout: { baseCommit: string; branch: string; path: string; reused: boolean };
+    recreated?: { continuity: 'continuous' | 'unconfirmed'; notice: RecreatedContext | null } | null };
+  const recreatedOf = (prepared: Prepared, interruption = false) => prepared.recreated ? { recreated: { continuity: prepared.recreated.continuity, interruption } } : {};
   type Plan = { kind: 'ready'; prompt: string; resume: ExecutionView['request']['resume']; decision: ExecutionView['request']['session']; continuation: SessionRef | null } |
     { kind: 'refused'; reasons: string[] } | { kind: 'insufficient'; reasons: string[] };
   /**
@@ -538,8 +550,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
    * after an answer or an authorized scope change, `continue` in the previous session when it is recorded, intact and compatible, or an
    * explicit recovery instruction with the replacement reason and the recoverable context. Insufficient context blocks.
    */
-  async function activationPlan(work: WorkRecord, execution: ExecutionView,
-    prepared: { checkout: { baseCommit: string; branch: string; path: string; reused: boolean } }, pack: ExecutionView['request']['skillPack']): Promise<Plan> {
+  async function activationPlan(work: WorkRecord, execution: ExecutionView, prepared: Prepared, pack: ExecutionView['request']['skillPack']): Promise<Plan> {
+    const recreated = prepared.recreated?.notice ?? null;
     const current = await readWork(session, work.work_id);
     const resume = execution.request.resume ?? null;
     const updates = (current?.scopeUpdates ?? []).filter(update => (execution.request.scopeUpdateIds ?? []).includes(update.scopeUpdateId))
@@ -562,7 +574,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       const previous = current?.previousExecutions.find(item => item.executionId === basis.previousExecutionId) ?? null;
       if (!previous) return { kind: 'insufficient', reasons: ['PREVIOUS_EXECUTION_MISSING'] };
       const context = recoveryContext({ previous: { baseCommit: previous.request.baseCommit, branch: previous.request.branch, checkout: previous.request.checkout },
-        prepared: { baseCommit: prepared.checkout.baseCommit, branch: prepared.checkout.branch, checkout: prepared.checkout.path, reused: prepared.checkout.reused },
+        prepared: { baseCommit: prepared.checkout.baseCommit, branch: prepared.checkout.branch, checkout: prepared.checkout.path, reused: prepared.checkout.reused, ...recreatedOf(prepared, true) },
         trigger: { answer: true, scopeUpdates: updates.length } });
       if (!context.sufficient) return { kind: 'insufficient', reasons: context.reasons };
       const reconciling = execution.request.reconciliation ? reconciliationNotice(execution.request.reconciliation, execution.request.branch, prepared.checkout.path,
@@ -578,7 +590,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       const prompt = [...(reconciling ? [reconciling, ''] : []), interruptionRecoveryPrompt({ ticketUrl: work.ticket.url, repository: work.repository.repository, base: work.repository.base,
         baseCommit: prepared.checkout.baseCommit, branch: execution.request.branch, checkout: prepared.checkout.path, workId: work.work_id,
         executionId: execution.executionId, skillDirectory, previousExecutionId: basis.previousExecutionId, reason: basis.reason, code: basis.code,
-        reviews: Boolean(ports.reviews), summary }), ...(updates.length ? ['', ...scopeSection(updates)] : []), ...(repair ?? [])].join('\n');
+        reviews: Boolean(ports.reviews), summary, recreated }), ...(updates.length ? ['', ...scopeSection(updates)] : []), ...(repair ?? [])].join('\n');
       // Ticket 28 (spec §5.6): the preserved review state of the interrupted Execution, context only (a delivery to the old session is not
       // proof it was consumed); its valid opinions are carried at the next handoff when the proposal is unchanged. Dropped under the bound.
       const review = ports.reviews?.partialRecovery ? preservedReviewContext(previous.review?.rounds ?? [], 6000, { carry: true }) : null;
@@ -593,7 +605,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         baseCommit: prepared.checkout.baseCommit, branch: execution.request.branch, checkout: prepared.checkout.path, workId: work.work_id,
         executionId: execution.executionId, reviews: Boolean(ports.reviews), scopeUpdates: updates, reviewRounds: Boolean(ports.reviews?.rounds) });
       if (initial.kind === 'too-large') return { kind: 'insufficient', reasons: ['PROMPT_TOO_LARGE'] };
-      return { kind: 'ready', prompt: initial.prompt, resume: null, decision: null, continuation: null };
+      return { kind: 'ready', prompt: withNotice(recreated, [initial.prompt]).join('\n'), resume: null, decision: null, continuation: null };
     }
     if (resume.reason === 'PUBLICATION_REQUESTED') return publicationPlan(work, execution, prepared, pack, current ?? null, skillDirectory);
     if (resume.reason === 'RECONCILIATION_AUTHORIZED') return reconciliationPlan(work, execution, prepared, current ?? null, skillDirectory);
@@ -603,7 +615,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const previous = current?.previousExecutions.find(item => item.executionId === resume.previousExecutionId) ?? null;
     if (!previous) return { kind: 'insufficient', reasons: ['PREVIOUS_EXECUTION_MISSING'] };
     const context = recoveryContext({ previous: { baseCommit: previous.request.baseCommit, branch: previous.request.branch, checkout: previous.request.checkout },
-      prepared: { baseCommit: prepared.checkout.baseCommit, branch: prepared.checkout.branch, checkout: prepared.checkout.path, reused: prepared.checkout.reused },
+      prepared: { baseCommit: prepared.checkout.baseCommit, branch: prepared.checkout.branch, checkout: prepared.checkout.path, reused: prepared.checkout.reused, ...recreatedOf(prepared) },
       trigger: { answer: Boolean(answered?.answer), scopeUpdates: updates.length, repair: resume.reason === 'REPAIR_REQUESTED' } });
     if (!context.sufficient) return { kind: 'insufficient', reasons: context.reasons };
     const recorded = previous.end?.session ?? null;
@@ -623,7 +635,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     if (decided.mode === 'continue') {
       const continued = continuationPrompt({ executionId: execution.executionId, previousExecutionId: previous.executionId, skillDirectory,
         answer: answered && answer ? { questionId: answered.questionId, ...answer } : null, scopeUpdates: updates, reviewRounds: Boolean(ports.reviews?.rounds),
-        ...(repair ? { repair } : {}) });
+        ...(repair ? { repair } : {}), recreated });
       if (continued.kind === 'insufficient') return { kind: 'insufficient', reasons: continued.reasons };
       return { kind: 'ready', prompt: continued.prompt, resume, decision, continuation: recorded };
     }
@@ -642,7 +654,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       baseCommit: prepared.checkout.baseCommit, branch: execution.request.branch, checkout: prepared.checkout.path, workId: work.work_id, executionId: execution.executionId,
       skillDirectory, previousExecutionId: previous.executionId,
       question: answered ? { questionId: answered.questionId, question: answered.content.question, context: answered.content.context } : null,
-      answer, replacement: { reason: decided.reason }, known, reviewRounds: Boolean(ports.reviews?.rounds), ...(repair ? { repair } : {}),
+      answer, replacement: { reason: decided.reason }, known, reviewRounds: Boolean(ports.reviews?.rounds), ...(repair ? { repair } : {}), recreated,
       // Ticket 53: a replacement session gets EVERY answered Question of the Work (ticket 48's bounded block), not only the current answer.
       summary: allAnswered.length ? workSummary(current, execution, { previousExecutionId: previous.executionId,
         code: previous.end?.code ?? previous.end?.outcome ?? previous.state, progress: null, answered: allAnswered }) : null });
@@ -655,7 +667,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
    * replaced by a self-contained publication instruction; the request (verified commit, branch/base, marker, lease expectation) is the one
    * recorded at admission and must still be the Work's requested publication. Insufficient context blocks before any credential.
    */
-  async function publicationPlan(work: WorkRecord, execution: ExecutionView, prepared: { checkout: { baseCommit: string; branch: string; path: string; reused: boolean } },
+  async function publicationPlan(work: WorkRecord, execution: ExecutionView, prepared: Prepared,
     pack: ExecutionView['request']['skillPack'], current: WorkRecord | null, skillDirectory: string): Promise<Plan> {
     const request = execution.request.publication;
     const resume = execution.request.resume!;
@@ -666,7 +678,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const previous = current?.previousExecutions.find(item => item.executionId === resume.previousExecutionId) ?? null;
     if (!previous) return { kind: 'insufficient', reasons: ['PREVIOUS_EXECUTION_MISSING'] };
     const context = recoveryContext({ previous: { baseCommit: previous.request.baseCommit, branch: previous.request.branch, checkout: previous.request.checkout },
-      prepared: { baseCommit: prepared.checkout.baseCommit, branch: prepared.checkout.branch, checkout: prepared.checkout.path, reused: prepared.checkout.reused },
+      prepared: { baseCommit: prepared.checkout.baseCommit, branch: prepared.checkout.branch, checkout: prepared.checkout.path, reused: prepared.checkout.reused, ...recreatedOf(prepared) },
       trigger: { answer: false, scopeUpdates: 0, publication: true } });
     if (!context.sufficient) return { kind: 'insufficient', reasons: context.reasons };
     // Publish-only (review HIGH 1): ALWAYS a new session without the handoff and edit tools; the implementation session is never continued
@@ -678,7 +690,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       repository: work.repository.repository, base: request.base, branch: request.branch, head: request.head, marker: request.marker,
       ticket: { number: work.ticket.number, url: work.ticket.url }, workId: work.work_id, checkout: prepared.checkout.path, expectedRemote: request.expectedRemote,
       pullRequest: request.pullRequest ?? null, remote: publicationRemote(work.repository.repository),
-      verified: { reviewedRound: requested.verified.reviewedRound, gates: requested.verified.gates, requiredChecks: requested.verified.requiredChecks } });
+      verified: { reviewedRound: requested.verified.reviewedRound, gates: requested.verified.gates, requiredChecks: requested.verified.requiredChecks },
+      recreated: prepared.recreated?.notice ?? null });
     if (prompt.kind === 'too-large') return { kind: 'insufficient', reasons: ['PROMPT_TOO_LARGE'] };
     return { kind: 'ready', prompt: prompt.prompt, resume, decision, continuation: null };
   }
@@ -688,7 +701,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
    * one authorized divergence (expectation, authorized remote tip, local result, the remote commits to preserve). Refused when the
    * authorization changed since admission; insufficient context blocks before any credential.
    */
-  async function reconciliationPlan(work: WorkRecord, execution: ExecutionView, prepared: { checkout: { baseCommit: string; branch: string; path: string; reused: boolean } },
+  async function reconciliationPlan(work: WorkRecord, execution: ExecutionView, prepared: Prepared,
     current: WorkRecord | null, skillDirectory: string): Promise<Plan> {
     const request = execution.request.reconciliation;
     const resume = execution.request.resume!;
@@ -700,7 +713,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const previous = current?.previousExecutions.find(item => item.executionId === resume.previousExecutionId) ?? null;
     if (!previous) return { kind: 'insufficient', reasons: ['PREVIOUS_EXECUTION_MISSING'] };
     const context = recoveryContext({ previous: { baseCommit: previous.request.baseCommit, branch: previous.request.branch, checkout: previous.request.checkout },
-      prepared: { baseCommit: prepared.checkout.baseCommit, branch: prepared.checkout.branch, checkout: prepared.checkout.path, reused: prepared.checkout.reused },
+      prepared: { baseCommit: prepared.checkout.baseCommit, branch: prepared.checkout.branch, checkout: prepared.checkout.path, reused: prepared.checkout.reused, ...recreatedOf(prepared) },
       trigger: { answer: true, scopeUpdates: 0 } });
     if (!context.sufficient) return { kind: 'insufficient', reasons: context.reasons };
     const divergence = current?.publication?.divergences?.find(item => item.divergenceId === request.divergenceId) ?? null;
@@ -713,7 +726,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       workId: work.work_id, repository: work.repository.repository, base: work.repository.base, baseCommit: prepared.checkout.baseCommit, branch: execution.request.branch,
       checkout: prepared.checkout.path, pullRequest: current?.pullRequest ?? null, expected: request.expected, authorizedRemote: request.authorizedRemote,
       localHead: request.localHead, questionId: request.questionId,
-      answer: { author: answered.answer.author.kind === 'github' ? `@${answered.answer.author.login}` : 'local administrator', note }, commits });
+      answer: { author: answered.answer.author.kind === 'github' ? `@${answered.answer.author.login}` : 'local administrator', note }, commits,
+      recreated: prepared.recreated?.notice ?? null });
     if (prompt.kind === 'too-large') return { kind: 'insufficient', reasons: ['PROMPT_TOO_LARGE'] };
     return { kind: 'ready', prompt: prompt.prompt, resume, decision, continuation: null };
   }
@@ -1070,17 +1084,38 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       let checkout: { baseCommit: string; branch: string; path: string; reused: boolean };
       let clone: { repository: string; installationId: number; commit: string; branch: string } | null = null;
       let originAtStart: OriginObservation | null = null;
+      let continuity: Extract<OriginContinuity, { outcome: 'continuous' | 'unconfirmed' }> | null = null;
       if ('checkout' in prepared) checkout = prepared.checkout;
       else {
-        const origin = await readOrigin(work, execution.request.branch);
+        // v2 ticket 08 (V2-11): continuity is a fact of `origin`. With a commit the preservation gate confirmed, the Work branch tip must be
+        // that commit or descend from it (whoever pushed on top of it); the boot then starts at the tip.
+        const confirmed = work.preservation ?? null;
+        const origin = await readOrigin(work, execution.request.branch, confirmed?.branch === execution.request.branch ? confirmed.commit : undefined);
         if (origin.kind !== 'observed') {
           await releaseBeforeStart(session, work.work_id, executionId, [origin.code]);
           observe(work.work_id, 'released-before-start', [origin.code]); return;
         }
+        const read = originContinuity({ preserved: confirmed, branch: execution.request.branch, origin: origin.branch, comparison: origin.comparison });
+        // An ancestry that could not be read decides nothing: nothing starts and the Work returns to the queue (a safe read is repeated).
+        if (read.outcome === 'unknown') {
+          await releaseBeforeStart(session, work.work_id, executionId, [read.code]);
+          observe(work.work_id, 'released-before-start', [read.code]); return;
+        }
+        // Rewritten history or a missing branch (MVP §10.1): a remote change the Factory cannot attribute blocks the next write. No boot is
+        // started from another commit and no Builder is activated; the known and the current refs are presented for an explicit decision.
+        if (read.outcome === 'divergent') {
+          const nextStep = `The resumption context is insufficient (${read.code}): the Work branch ${execution.request.branch} on origin ` +
+            `${read.current ? `is at ${read.current}, which does not descend from` : 'no longer exists; it was confirmed at'} ${read.confirmed}, the commit the Factory ` +
+            'confirmed before the previous boot ended. No environment was started and no Builder was activated; nothing was written. Restore the branch to a descendant of that ' +
+            'commit, or inspect the Work and decide explicitly (ticket 26).';
+          await blockBeforeStart(session, work.work_id, executionId, 'RECOVERY_CONTEXT_INSUFFICIENT', nextStep);
+          observe(work.work_id, 'recovery-context-insufficient', [read.code]); return;
+        }
+        continuity = read;
         // The review base stays the commit the Work started from; a later Execution starts at whatever the Work branch holds on `origin`.
         const firstBase = [...(work.previousExecutions ?? [])].map(item => item.request.baseCommit).find((commit): commit is string => typeof commit === 'string');
         checkout = { baseCommit: firstBase ?? origin.base, branch: execution.request.branch, path: guestCheckoutPath, reused: false };
-        clone = { repository: work.repository.repository, installationId: configured.installationId, commit: origin.branch.state === 'present' ? origin.branch.sha : origin.base, branch: execution.request.branch };
+        clone = { repository: work.repository.repository, installationId: configured.installationId, commit: continuity.startCommit ?? origin.base, branch: execution.request.branch };
         originAtStart = origin.branch;
       }
       // Ticket 48: the Host fingerprint of the checkout BEFORE any boot of this Execution (progress at a budget end is measured from it).
@@ -1157,7 +1192,19 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       if (evaluation.conclusion !== 'satisfied') { await refuse([`DEPENDENCIES_${evaluation.conclusion.toUpperCase()}`]); return; }
       if (await deps.paused()) { await refuse(['GLOBAL_PAUSE']); return; }
       // The first prompt and, for a resumption, the continue/replace decision are planned BEFORE any credential is issued.
-      const plan = await activationPlan(work, execution, { checkout }, pack ? { name: pack.name, manifestSha256: pack.manifestSha256 } : null);
+      // v2 ticket 08 (V2-11, decision 3D): THE seam of the notice. The first activation in a boot different from the last one a Builder
+      // session of this Work saw starts with the fixed text; tickets 09 (planned swap) and 13 (substitute) ask the same question.
+      // `work` is the record read before this Execution was admitted: its `execution` is still the previous one.
+      const lastSeen = lastSessionBoot([...(work.previousExecutions ?? []), ...(work.execution && work.execution.executionId !== executionId ? [work.execution] : []), execution]);
+      const noticed = clone && continuity && bootNoticeDue({ lastSeen, boot }) ? {
+        record: { boot: boot as string, previousBoot: lastSeen!, startCommit: clone.commit, confirmed: continuity.outcome === 'continuous' ? continuity.confirmed : null,
+          commits: continuity.outcome === 'continuous' ? continuity.commits.length : 0, restored: [...(started.artifacts?.restored ?? [])], lost: (started.artifacts?.lost.length ?? 0) > 0 },
+        context: recreatedContext(newBootNotice({ branch: clone.branch, checkout: checkout.path, startCommit: clone.commit,
+          confirmed: continuity.outcome === 'continuous' ? continuity.confirmed : null, commits: continuity.outcome === 'continuous' ? continuity.commits : [],
+          truncated: continuity.outcome === 'continuous' && continuity.truncated,
+          artifacts: { restored: started.artifacts?.restored ?? [], lost: (started.artifacts?.lost.length ?? 0) > 0 } })) } : null;
+      const plan = await activationPlan(work, execution, { checkout, ...(clone && continuity
+        ? { recreated: { continuity: continuity.outcome, notice: noticed?.context ?? null } } : {}) }, pack ? { name: pack.name, manifestSha256: pack.manifestSha256 } : null);
       if (plan.kind === 'refused') { await refuse(plan.reasons); return; }
       if (plan.kind === 'insufficient') {
         // Spec §5.5/§6.1: insufficient recovery context blocks explicitly (before any credential), never a `continue`/recovery without context.
@@ -1202,14 +1249,15 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         await hold('ACTIVATION_CREDENTIALS_WITHDRAWN', 'The activity credentials were withdrawn before activation; the Builder was not activated. No charge was consumed; the Slot is kept (ticket 26).', true);
       };
       if (lifecycle.withdrawn) { await withdrawnBeforeActivation(); return; }
-      // Ticket 13: round numbers continue the earlier Executions of this Work (their /artifacts/review/r<N> directories are preserved).
+      // Ticket 13: round numbers continue the earlier Executions of this Work (their /artifacts/review/r<N> directories are preserved; without a
+      // persistent disk they are not sent back to a new boot, decision 3D, and the numbering still never reuses a round).
       const earlier = [...(work.previousExecutions ?? []), ...(work.execution && work.execution.executionId !== executionId ? [work.execution] : [])];
       const firstRound = 1 + Math.max(0, ...earlier.flatMap(item => item.review?.rounds ?? []).map(item => item.round));
       // Real run R-CAND v2: a continuation after a Question may treat the findings its predecessor delivered (its session holds them); its handoff
       // must know them (otherwise HANDOFF_TREATMENT_UNKNOWN_FINDING refuses every treatment of the earlier round).
       const delivered = inheritedFindings(inheritedRounds(execution, earlier));
       const promptSha256 = createHash('sha256').update(prompt).digest('hex');
-      const confirmed = await confirmActivation(session, work.work_id, executionId, attemptId, grant.metadata, promptSha256, plan.decision);
+      const confirmed = await confirmActivation(session, work.work_id, executionId, attemptId, grant.metadata, promptSha256, plan.decision, noticed?.record ?? null);
       if (confirmed.kind === 'refused') { await revoke(); await refuse(confirmed.reasons); return; }
       if (confirmed.kind === 'stale') { await revoke(); observe(work.work_id, 'stale'); return; }
       phase = 'activate';

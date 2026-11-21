@@ -34,7 +34,9 @@ export type Script = { kind: 'implement'; head: string; gate?: GateEvidence['out
   /** v2 ticket 07: the Builder asks the human (no handoff happened) leaving `head` checked out in the guest. */
   { kind: 'ask'; head: string; question: string; questionId: string };
 /** v2 ticket 07: what the guest of the double holds, as the preservation program would report it (the remote tip is read from `Remote`). */
-export type GuestWorkspace = { head: string | null; modified: number; untracked: number; stashes: number; remoteDown: boolean };
+export type GuestWorkspace = { head: string | null; modified: number; untracked: number; stashes: number; remoteDown: boolean;
+  /** v2 ticket 08 (decision 3D): what the sandbox reports it re-sent into `/artifacts` of every boot after the first one. */
+  restored?: { restored: string[]; from: string | null; lost: string[] } };
 /** v2 ticket 07: the Builder commits what is pending as WIP `head` and pushes it to its branch with the one push its activation names. */
 export const pushWip = (guest: GuestWorkspace, head: string) => (remote: Remote, activation: Activation) => {
   const branch = /HEAD:refs\/heads\/(\S+)/.exec(activation.prompt)![1]!;
@@ -91,7 +93,8 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
         calls.push({ kind: 'start', detail: input.checkout ?? null });
         if (options.diskless && !input.checkout) return { status: 'failure', code: 'CHECKOUT_REQUIRED' };
         return { status: 'success', boot: `boot-11111111-2222-4333-8444-${String(calls.length).padStart(12, '5')}` as never,
-          ...(options.diskless ? { seeds: [{ name: 'factory/skill-pack/factory-skills-v6', manifestSha256: 'f'.repeat(64), reused: false }] } : {}) };
+          ...(options.diskless ? { seeds: [{ name: 'factory/skill-pack/factory-skills-v6', manifestSha256: 'f'.repeat(64), reused: false }] } : {}),
+          ...(options.diskless && guest.restored && calls.filter(call => call.kind === 'start').length > 1 ? { artifacts: structuredClone(guest.restored) as never } : {}) };
       },
       async stop() { calls.push({ kind: 'stop' }); return { status: 'success', cessationConfirmed: true, termination: 'unconfirmed', guestFinalization: 'observed' }; },
       async observeProposal(input): Promise<ProposalIdentity> {
@@ -153,7 +156,8 @@ export function executionDoubles(remote: Remote, scripts: Script[], options: { r
           return { worker: invocation.context.invocationId, started, completed, close() {} };
         }
         // Implementation with ticket 13's handoff: round 1 (gate declared) reviewed by both reviewers, then the Host's closing capture.
-        const branch = /branch=(\S+)/.exec(invocation.prompt)![1]!;
+        // A continuation in a recreated environment names the branch in its notice only (v2 ticket 08).
+        const branch = (/branch=(\S+)/.exec(invocation.prompt) ?? /\(the tip of (\S+) on origin/.exec(invocation.prompt))![1]!;
         const committed = script.committed ?? true;
         guest.head = script.head;
         script.during?.(remote, activation);

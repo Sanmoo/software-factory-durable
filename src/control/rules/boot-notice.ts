@@ -46,6 +46,18 @@ export function originContinuity(input: { preserved: { commit: string; branch: s
  */
 export const bootNoticeDue = (input: { lastSeen: string | null | undefined; boot: string }): boolean => Boolean(input.lastSeen) && input.lastSeen !== input.boot;
 
+/**
+ * The last boot a Builder session of the Work was activated in, from its Executions oldest first (the current one last). Records written
+ * before this ticket carry no `sessionBoot`: the boot of an Execution whose Builder start was confirmed stands for it.
+ */
+export function lastSessionBoot(executions: readonly { sessionBoot?: string | undefined; start?: unknown; dispatch: { boot?: string | null | undefined } }[]): string | null {
+  for (const execution of [...executions].reverse()) {
+    if (execution.sessionBoot) return execution.sessionBoot;
+    if (execution.start && execution.dispatch.boot) return execution.dispatch.boot;
+  }
+  return null;
+}
+
 /** Operator decision 3D: what the host re-sent into `/artifacts` of this boot (`spec/v1`, `instructions/v2`…) and whether an earlier boot ended before its collection. */
 export type RestoredArtifacts = { restored: readonly string[]; lost: boolean };
 const control = /[\u0000-\u001f\u007f`]/g;
