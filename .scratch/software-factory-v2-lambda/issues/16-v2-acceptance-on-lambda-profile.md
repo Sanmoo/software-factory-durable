@@ -18,9 +18,9 @@ Requisitos da [spec da v2](../../software-factory-v2/spec.md): Seção 11 (matri
 - [ ] Rubrica por propriedade aprovada pelo Operador antes de consumir orçamento; plano com teto de consumo e cleanup.
 - [ ] Critérios de aceite do MVP reexecutados no perfil Lambda com um repositório real.
 - [ ] V2-03, V2-04: repositório que exige capacidade ausente recebe diagnóstico.
-- [ ] V2-05 a V2-07: gate recusando com agente real; três recusas geram Bloqueio.
+- [ ] V2-05 a V2-07: gate recusando com agente real; três recusas encerram o boot como perda e a substituta retoma pela fila. (Decisão do Operador em 2026-11-21; antes: "três recusas geram Bloqueio".)
 - [ ] V2-09: espera humana e de CI encerram a MicroVM antes de liberar o Slot.
-- [ ] V2-10, V2-11: mesma sessão após troca; retomada com commits de terceiros.
+- [ ] V2-10, V2-11: mesma sessão após troca; retomada com commits de terceiros; histórico reescrito segue o remoto com sessão substituta e branch ausente abre Pergunta. (Os dois últimos: decisão do Operador em 2026-11-21.)
 - [ ] V2-12, V2-13: troca sob margem real; chamada interrompida na metade da margem; boot acima de uma hora.
 - [ ] V2-14: dois boots sem commit novo geram Bloqueio.
 - [ ] V2-15 (obrigatório): nenhum pedido de modelo nem chamada depois da cessação confirmada.

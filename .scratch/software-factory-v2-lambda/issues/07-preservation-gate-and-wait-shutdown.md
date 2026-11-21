@@ -21,7 +21,7 @@ Testes automáticos usam um fake do serviço Lambda MicroVMs: o CI não tem cont
 - [x] O gate verifica no guest: workspace limpo, incluindo untracked não ignorados; ausência de stash; `HEAD` igual à ponta da branch do Trabalho consultada no `origin` por `ls-remote`, sem confiar na ref de acompanhamento local.
 - [x] Workspace sujo, untracked, stash, commit sem push, remoto indisponível e remoto não confirmado são recusados, cada um com motivo próprio (os seis casos de G1 como testes de regra).
 - [x] A recusa volta ao Builder com o motivo, para correção, na mesma devolução; o Builder pode publicar WIP mesmo antes de existir PR.
-- [x] Três recusas seguidas na mesma devolução geram Bloqueio com o diagnóstico da última.
+- [x] Três recusas seguidas na mesma devolução encerram o boot como perda, com o diagnóstico da última, e a sessão substituta retoma pela fila consumindo uma retomada operacional. (Decisão do Operador em 2026-11-21, V2-07 emendado; antes: "geram Bloqueio com o diagnóstico da última". Implementado no ticket 13.)
 - [x] O texto entregue ao Builder diz que o procedimento não autoriza versionar segredos ou dados impróprios: sem publicação segura, ele reporta o impedimento em vez de forçar o commit.
 - [x] Depois do gate aceito em Pergunta, espera de CI e prontidão, a MicroVM é encerrada e a cessação confirmada pelo serviço precede a liberação do Slot.
 - [x] O commit confirmado pelo gate fica registrado no Trabalho para a retomada.
@@ -114,3 +114,13 @@ MicroVM `TERMINATED`, commit confirmado no Trabalho), `test/control/inboot-publi
 `npm run test:ci` (2026-11-21, depois do merge da ponta de `integration/software-factory-v2-lambda` com o ticket 10): 2015 testes, 1993
 passam, 17 pulados, 5 falham, resultado FAIL. As 5 falhas são as conhecidas da base: `test/sandbox/audited-vfs-guard.test.ts` (4) e
 `test/sandbox/sandbox-adapter-diagnostics.test.ts` (1).
+
+### Emenda de 2026-11-21 (decisão do Operador, implementada no ticket 13)
+
+O que este Answer diz sobre três recusas seguidas (`hold` com `PRESERVATION_GATE_REFUSED`, boot não parado, Slot retido, `gateHold`) deixou de
+valer. Decisão 7 do Operador: depois da terceira recusa o Controle encerra o boot na hora (Parar com motivo `loss`), grava a perda em
+`work.losses[]` com `cause: 'preservation-gate-refused'` e o diagnóstico da última recusa, termina a Execução como `failure` /
+`PRESERVATION_GATE_REFUSED` (agora transitório) e libera o Slot; a substituta volta pela fila consumindo uma retomada operacional.
+`preservationGate` devolve `accepted` | `lost` | `stale`; `gateHold` saiu e `gateLossReason` entrou. Os cenários de três recusas e de remoto
+indisponível em `test/control/preservation-gate-flow.test.ts` e o teste negativo do marcador em `test/control/loss-flow.test.ts` foram
+reescritos para esse fluxo. Detalhes e limites no Answer do ticket 13.

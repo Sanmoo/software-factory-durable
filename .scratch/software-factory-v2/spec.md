@@ -86,8 +86,13 @@ remoto indisponível ou não confirmado nunca equivalem a preservação concluí
 
 **V2-07 — Recusa do gate (decidido).** A recusa volta ao Builder com o motivo, para correção. O gate é
 imposto pelo Controle, não confiado ao prompt (provado como necessidade: continuidade, achado 5). Três
-recusas seguidas na mesma devolução geram Bloqueio com o diagnóstico da última; o ambiente continua
-sujeito à rotação, e se morrer sem publicação vale o caminho de perda. O Builder pode publicar WIP,
+recusas seguidas na mesma devolução não geram Bloqueio à espera do Operador: vale o caminho de perda. O
+boot é encerrado logo após a terceira recusa e registrado como perda com o diagnóstico da última (o
+hook de término empurra a ref de marcador como melhor esforço, V2-16), e a sessão substituta retoma do
+último push pela fila, consumindo uma retomada operacional (V2-10, V2-18, V2-19). O orçamento de
+retomadas operacionais e V2-14 seguem como limites contra laço; orçamento esgotado segue a regra do MVP.
+(Decisão do Operador em 2026-11-21; o texto anterior gerava Bloqueio com o diagnóstico da última recusa
+e mantinha o ambiente sujeito à rotação.) O Builder pode publicar WIP,
 mesmo antes de existir PR. O procedimento não autoriza versionar segredos ou dados impróprios: se não
 for possível publicar com segurança, o Builder reporta o impedimento em vez de forçar o commit.
 
@@ -111,8 +116,13 @@ existente. Cada boot é registrado com motivo: início, troca planejada, perda o
 diferente do último que a sessão viu começa com um aviso fixo do Controle: ambiente recriado, commit de
 partida, e que arquivos ignorados, caches e dados do Docker não existem mais. A mesma sessão continua
 quando a ponta da branch no `origin` é o commit confirmado pelo gate ou descende dele; o aviso lista os
-commits novos. Histórico reescrito ou branch ausente segue a regra de divergência do MVP (§10.1).
-Não provado: retomada com commits de terceiros.
+commits novos. Sem disco persistente, a divergência na retomada não bloqueia: com histórico reescrito, o
+Controle segue o remoto, e o Trabalho retoma da nova ponta com uma sessão substituta (não a antiga) que
+recebe o aviso fixo de que o histórico mudou, com as duas refs, consumindo uma retomada operacional, sem
+Pergunta; com branch ausente, o Controle abre uma Pergunta comum do MVP, recomeçar da base ou encerrar o
+Trabalho, e a resposta decide. Com disco persistente (Gondolin) vale a regra de divergência do MVP
+(§10.1). (Decisão do Operador em 2026-11-21; o texto anterior mandava seguir a regra do MVP nos dois
+casos.) Não provado: retomada com commits de terceiros.
 
 **V2-12 — Duração e margem (decidido; valores acima de 3600 s não provados).** Padrão de 3600 s de
 duração máxima do boot (provado: L2) e 600 s de margem, configuráveis no perfil do adapter. Valor acima
@@ -263,7 +273,7 @@ depois do aceite.
 | Requisito | Provado no protótipo | Gate de validação da implementação | Não coberto |
 | --- | --- | --- | --- |
 | V2-03, V2-04 | Docker: D1 a D5 | Repositório que exige capacidade ausente recebe diagnóstico | — |
-| V2-05 a V2-07 | G1 (seis casos sujos, sem agente) | Gate recusando com agente real; três recusas geram Bloqueio | Push lento |
+| V2-05 a V2-07 | G1 (seis casos sujos, sem agente) | Gate recusando com agente real; três recusas encerram o boot como perda e a substituta retoma pela fila (decisão do Operador em 2026-11-21; antes: geram Bloqueio) | Push lento |
 | V2-09 | L1 | Espera humana e de CI encerram a MicroVM antes de liberar o Slot | — |
 | V2-10, V2-11 | R2, I1, P3 | Mesma sessão após troca; retomada com commits de terceiros | Sessões longas, compactação |
 | V2-12, V2-13 | L2 (até 3600 s), G3, R1 | Troca sob margem real; chamada interrompida na metade da margem; **boot acima de uma hora** | Oito horas, carga sustentada |
@@ -297,7 +307,7 @@ Fora da v2 por decisão: suspend/resume, VPC, escolha de sandbox por repositóri
 | Spec §7.4 (guest, Docker, persistência) | Declaração de ambiente inalterada; disco base substituído por imagem de MicroVM (V2-27); sem persistência entre boots (V2-28). |
 | Spec §7.5 (ferramentas e rede) | Ferramentas por papel inalteradas (V2-23); rede relaxada (V2-25). |
 | Spec §8 (GitHub App, segredos) | Inalterado; acrescidas as credenciais do transporte (V2-24). |
-| Spec §10.1 (lease e divergência) | Inalterado; usado por V2-11. |
+| Spec §10.1 (lease e divergência) | Inalterado na publicação e com disco persistente; na retomada sem disco, substituído por V2-11 (decisão do Operador em 2026-11-21). |
 | Spec §11 (instalação, configuração, CLI) | Acrescidos V2-01 e V2-31. Sem comando novo de troca de sandbox em operação. |
 | Spec §12 (observabilidade, cleanup) | Acrescidos V2-32 a V2-34. |
 | Spec §13 (validação) | Acrescida a seção 11 deste documento. |
