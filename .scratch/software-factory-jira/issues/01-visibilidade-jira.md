@@ -1,6 +1,6 @@
 # Investigar o que o Jira Cloud permite afirmar sobre Tickets e bloqueadores
 
-Status: open
+Status: claimed
 Type: research
 Label: wayfinder:research
 Map: [Operar a Software Factory com tickets do Jira](../map.md)
