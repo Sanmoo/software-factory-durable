@@ -27,6 +27,12 @@ export type SandboxCapabilities = {
    * Absent or `false`: a lost channel ends the activation (the MVP rule) and there is no report to read.
    */
   channelRecovery?: boolean;
+  /**
+   * v2 ticket 10 (V2-15): the sandbox watches the environment of a boot through its service, at an interval of its own, and tells Control
+   * when its cessation is confirmed; it has by then cancelled the tool call in flight and denies every later one. Absent or `false`:
+   * nobody watches the environment (the MVP rule; a guest that is a process of the host ends with its boot owner).
+   */
+  environmentWatch?: boolean;
 };
 
 /** The capabilities a repository can REQUIRE (V2-04). Names are shown to the operator in diagnostics. */

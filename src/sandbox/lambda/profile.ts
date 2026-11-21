@@ -39,7 +39,9 @@ export function lambdaCapabilities(profile: LambdaProfile): SandboxCapabilities 
     // V2-25, `INTERNET_EGRESS`: any public IPv4 destination by TCP, unmediated and unfiltered; no outbound UDP or IPv6; no VPC.
     egress: Object.freeze({ mediation: 'none', publicTcp: true, udp: false, ipv6: false, privateNetwork: false }),
     // V2-21: a dropped channel is recovered while the MicroVM lives (`lambda/tools.ts`).
-    channelRecovery: true });
+    channelRecovery: true,
+    // V2-15: the boot owner asks the service about the environment every `observationIntervalSeconds` (`lambda/tools.ts`).
+    environmentWatch: true });
 }
 
 /**

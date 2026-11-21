@@ -44,7 +44,14 @@ export type GuestOwner = { exec(argv: string[], options: { stdout: 'pipe'; stder
    */
   result: Promise<{ exitCode: number | null; signal?: number; channel?: ChannelDropOutcome }>;
 } };
+/**
+ * v2 ticket 10 (V2-15): the sandbox confirmed that the environment of this binding ended. The call in flight is cancelled and answered
+ * with this code, and so is every later call; nothing is sent to the guest any more. Only an adapter that watches its environment emits it.
+ */
+export const environmentEndedCode = 'SANDBOX_ENVIRONMENT_ENDED';
 export type ReadBinding = { endpoint: string; context: ToolContext; signal: AbortSignal;
+  /** v2 ticket 10: whether the adapter has CONFIRMED the end of this binding's environment (absent: the adapter does not watch it). */
+  environmentEnded?: () => boolean;
   records: Awaited<ReturnType<typeof createRecords>>; imageSourceMaxBytes?: number;
   /** Host-only technical whole-source bound; absent disables edit-source. Not a product reservation. */
   editSourceMaxBytes?: number;
