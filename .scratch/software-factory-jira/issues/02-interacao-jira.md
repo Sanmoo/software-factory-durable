@@ -1,6 +1,7 @@
 # Investigar identidades, permissões e comentários no Jira Cloud
 
-Status: open
+Status: claimed
+Assignee: Samuel Santos
 Type: research
 Label: wayfinder:research
 Map: [Operar a Software Factory com tickets do Jira](../map.md)
