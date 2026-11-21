@@ -1,3 +1,4 @@
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { installationResources, type LambdaArchitecture, type LambdaImageRequest, type LambdaMicrovmRequest, type LambdaService, type LambdaServiceFactory, type LambdaServiceFailure,
   type LambdaServiceResult } from '../../src/sandbox/index.js';
 
@@ -51,6 +52,11 @@ export type FakeLambdaAccount = {
   runRefusal: LambdaServiceFailure | null;
   /** Ingress tokens issued: one MicroVM, one port, an expiry in account time. */
   tokens: { token: string; microvmId: string; port: number; expiresAt: number }[];
+  /**
+   * Ticket 15: whether ListMicrovms shows the tags a MicroVM was run with. `false` is the OBSERVED answer (no tags on an item); `true`
+   * models a service that lists them. The inventory must find the installation's MicroVMs either way.
+   */
+  listsMicrovmTags: boolean;
 };
 export type FakeLambdaMicrovm = { microvmId: string; endpoint: string; imageArn: string; imageVersion: string; state: string; stateReason?: string;
   request: LambdaMicrovmRequest; startedAt: number; runningAt: number; terminatedAt?: number; terminatesAt?: number;
@@ -63,8 +69,23 @@ export type FakeLambdaImage = { name: string; state: string; imageArn: string; t
 
 export type FakeLambdaCall = { operation: keyof LambdaService; awsProfile: string; region: string; input?: unknown };
 
-/** A correctly installed account for `installation` in `region`, reached through the AWS profile `factory` as the operation role. */
-export function lambdaAccountFake({ installation = 'acme', region = 'us-east-1', account = '123456789012' } = {}) {
+const encode = (world: FakeLambdaAccount) => JSON.stringify(world, (_key, value: unknown) => value instanceof Uint8Array ? { $bytes: Buffer.from(value).toString('base64') }
+  : value === Number.POSITIVE_INFINITY ? { $infinity: true } : value);
+const decode = (text: string) => JSON.parse(text, (_key, value: unknown) => {
+  if (value && typeof value === 'object' && '$bytes' in value) return Uint8Array.from(Buffer.from((value as { $bytes: string }).$bytes, 'base64'));
+  if (value && typeof value === 'object' && '$infinity' in value) return Number.POSITIVE_INFINITY;
+  return value;
+}) as FakeLambdaAccount;
+
+/**
+ * A correctly installed account for `installation` in `region`, reached through the AWS profile `factory` as the operation role.
+ *
+ * `stateFile` (ticket 15): the account outlives the process, as the real one does. The state is read from the file when the fake is
+ * created (if the file exists) and written back, atomically, after every service operation and on `persist()`: a process killed with
+ * SIGKILL leaves the account exactly as its last operation left it, and its successor composes a new fake over the same file. The path is
+ * the test's own temporary one; without it the account is in memory only.
+ */
+export function lambdaAccountFake({ installation = 'acme', region = 'us-east-1', account = '123456789012', stateFile }: { installation?: string; region?: string; account?: string; stateFile?: string } = {}) {
   const resources = installationResources({ installation, region }, account);
   const world: FakeLambdaAccount = {
     cli: true, account,
@@ -72,7 +93,14 @@ export function lambdaAccountFake({ installation = 'acme', region = 'us-east-1',
     regions: [region], roles: [resources.operationRole, resources.buildRole], buckets: { [resources.artifactBucket]: region },
     denied: [], memoryQuotaMiB: { arm64: 8192, x86_64: 8192 }, images: [],
     clock: { now: Date.UTC(2026, 10, 21) }, buildSeconds: 130, failedBuildSeconds: 53, buildFailure: null, objects: {}, logs: {},
-    microvms: [], terminateSeconds: 5, pendingSeconds: 1, runHookFails: false, runRefusal: null, tokens: [],
+    microvms: [], terminateSeconds: 5, pendingSeconds: 1, runHookFails: false, runRefusal: null, tokens: [], listsMicrovmTags: false,
+  };
+  if (stateFile && existsSync(stateFile)) Object.assign(world, decode(readFileSync(stateFile, 'utf8')));
+  /** File-backed account only: writes the account as it is now (after a test changed `account` directly). */
+  const persist = () => {
+    if (!stateFile) return;
+    writeFileSync(`${stateFile}.tmp`, encode(world), { mode: 0o600 });
+    renameSync(`${stateFile}.tmp`, stateFile);
   };
   const calls: FakeLambdaCall[] = [];
   const mutations: FakeLambdaCall[] = [];
@@ -127,9 +155,21 @@ export function lambdaAccountFake({ installation = 'acme', region = 'us-east-1',
       if (!profile) return Promise.resolve(fail('profile-not-found', { detail: `The config profile (${awsProfile}) could not be found` }));
       if ('expired' in profile) return Promise.resolve(fail('no-identity', { detail: 'The security token included in the request is expired' }));
       if (action && world.denied.includes(action)) return Promise.resolve(fail('access-denied', { action }));
-      return Promise.resolve(answer());
+      const answered = answer();
+      persist();
+      return Promise.resolve(answered);
     };
-    const images: Pick<LambdaService, 'putBuildArtifact' | 'createImage' | 'image' | 'imageBuilds' | 'buildLog' | 'deleteImageVersion' | 'deleteImage'> = {
+    const images: Pick<LambdaService, 'putBuildArtifact' | 'createImage' | 'image' | 'imageBuilds' | 'buildLog' | 'deleteImageVersion' | 'deleteImage' | 'deleteBuildArtifact' | 'deleteBuildLog'> = {
+      deleteBuildArtifact: input => change('deleteBuildArtifact', 's3:DeleteObject', input, () => {
+        if (!world.buckets[input.bucket]) return fail('not-found', { detail: 'NoSuchBucket' });
+        delete world.objects[input.bucket]?.[input.key];
+        return { ok: true, value: null };
+      }),
+      deleteBuildLog: logGroup => change('deleteBuildLog', 'logs:DeleteLogGroup', logGroup, () => {
+        if (!world.logs[logGroup]) return fail('not-found', { detail: 'The specified log group does not exist' });
+        delete world.logs[logGroup];
+        return { ok: true, value: null };
+      }),
       putBuildArtifact: input => change('putBuildArtifact', 's3:PutObject', { bucket: input.bucket, key: input.key, bytes: input.body.byteLength, tags: input.tags }, () => {
         if (!world.buckets[input.bucket]) return fail('not-found', { detail: 'NoSuchBucket' });
         if (world.denied.includes('s3:PutObjectTagging')) return fail('access-denied', { action: 's3:PutObjectTagging' });
@@ -182,7 +222,13 @@ export function lambdaAccountFake({ installation = 'acme', region = 'us-east-1',
       }),
     };
     const findMicrovm = (microvmId: string) => { settle(); return world.microvms.find(microvm => microvm.microvmId === microvmId); };
-    const microvms: Pick<LambdaService, 'runMicrovm' | 'microvm' | 'terminateMicrovm' | 'createAuthToken'> = {
+    const microvms: Pick<LambdaService, 'runMicrovm' | 'microvm' | 'terminateMicrovm' | 'createAuthToken' | 'listMicrovms'> = {
+      // Every MicroVM of the account, terminated ones included, whoever ran it; tags only when the modelled service lists them.
+      listMicrovms: () => reach('listMicrovms', 'lambda:ListMicrovms', undefined, () => {
+        settle();
+        return { ok: true, value: world.microvms.map(microvm => ({ microvmId: microvm.microvmId, state: microvm.state, imageArn: microvm.imageArn, startedAt: iso(microvm.startedAt),
+          ...(world.listsMicrovmTags ? { tags: { ...microvm.request.tags } } : {}) })) };
+      }),
       runMicrovm: input => change('runMicrovm', 'lambda:RunMicrovm', input, () => {
         if (world.runRefusal) return { ok: false, failure: world.runRefusal };
         const image = find(input.imageArn);
@@ -243,5 +289,21 @@ export function lambdaAccountFake({ installation = 'acme', region = 'us-east-1',
         ? { ok: true, value: { mebibytes: world.memoryQuotaMiB[architecture] } } : fail('unknown', { detail: 'No MicroVM memory quota was listed' })),
     };
   };
-  return { account: world, resources, calls, mutations, service, kill, admits, settle };
+  /**
+   * Ticket 15: a running MicroVM (and its image) of ANOTHER installation in the same account and region, as that installation's own
+   * Factory would have created them. Nothing of this installation may ever touch either.
+   */
+  const plantOtherInstallation = (other: string) => {
+    const name = `factory-${other}-${'9'.repeat(32)}`;
+    const imageArn = `arn:aws:lambda:${region}:${world.account}:microvm-image:${name}`;
+    const tags = { 'software-factory-installation': other, 'software-factory-work': `work-of-${other}` };
+    if (!world.images.some(image => image.imageArn === imageArn)) world.images.push({ name, imageArn, state: 'CREATED', tags: { ...tags }, version: '1.0' });
+    const microvmId = `microvm-00000000-0000-4000-9000-${String(world.microvms.length + 1).padStart(12, '0')}`;
+    world.microvms.push({ microvmId, endpoint: `${microvmId}.lambda-microvm.${region}.on.aws`, imageArn, imageVersion: '1.0', state: 'RUNNING',
+      request: { imageArn, maximumDurationSeconds: 28800, runHookPayload: '{}', tags }, startedAt: world.clock.now, runningAt: world.clock.now,
+      executionRole: null, idlePolicy: null, ingress: [], egress: [] });
+    persist();
+    return { microvmId, imageArn };
+  };
+  return { account: world, resources, calls, mutations, service, kill, admits, settle, persist, plantOtherInstallation };
 }

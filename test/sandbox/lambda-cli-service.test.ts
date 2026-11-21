@@ -210,3 +210,25 @@ test('GetMicrovm, TerminateMicrovm and CreateMicrovmAuthToken are read as the pr
   assert.equal((await gone.service.microvm('microvm-9') as { failure: { kind: string } }).failure.kind, 'not-found');
   assert.equal((await gone.service.createAuthToken({ microvmId: 'microvm-9', port: 8022, expirationMinutes: 60 })).ok, false);
 });
+
+test('ticket 15: ListMicrovms is read as observed (no tags on an item), tags are read if the service ever lists them, and a malformed item makes the whole listing unreadable', async () => {
+  const observed = { microvmId: 'microvm-1', state: 'RUNNING', imageArn: 'arn:aws:lambda:us-east-1:123456789012:microvm-image:factory-acme-a', imageVersion: '1.0', startedAt: '2026-11-21T00:00:00+00:00' };
+  const { service, invocations } = scripted({ 'lambda-microvms list-microvms': { stdout: { items: [observed, { microvmId: 'microvm-2', state: 'TERMINATED',
+    tags: { 'software-factory-installation': 'acme' } }] } } });
+  assert.deepEqual(await service.listMicrovms(), { ok: true, value: [
+    { microvmId: 'microvm-1', state: 'RUNNING', imageArn: observed.imageArn, startedAt: observed.startedAt },
+    { microvmId: 'microvm-2', state: 'TERMINATED', tags: { 'software-factory-installation': 'acme' } }] });
+  assert.deepEqual(invocations, [[...prefix, 'lambda-microvms', 'list-microvms']]);
+  const partial = scripted({ 'lambda-microvms list-microvms': { stdout: { items: [observed, { state: 'RUNNING' }] } } });
+  assert.deepEqual((await partial.service.listMicrovms()).ok, false, 'an inventory is never silently partial');
+  const denied = scripted({ 'lambda-microvms list-microvms': { exitCode: 254, stderr: 'An error occurred (AccessDeniedException): not authorized to perform: lambda:ListMicrovms' } });
+  assert.deepEqual(await denied.service.listMicrovms().then(result => !result.ok && [result.failure.kind, result.failure.action]), ['access-denied', 'lambda:ListMicrovms']);
+});
+
+test('ticket 15: the explicit image cleanup deletes the build artifact and the build log group with the long-standing S3 and Logs commands', async () => {
+  const { service, invocations } = scripted({ 's3api delete-object': {}, 'logs delete-log-group': {} });
+  assert.deepEqual(await service.deleteBuildArtifact({ bucket: 'factory-acme-build-123456789012-us-east-1', key: 'factory-acme-a.zip' }), { ok: true, value: null });
+  assert.deepEqual(await service.deleteBuildLog('/aws/lambda-microvms/factory-acme-a'), { ok: true, value: null });
+  assert.deepEqual(invocations, [[...prefix, 's3api', 'delete-object', '--bucket', 'factory-acme-build-123456789012-us-east-1', '--key', 'factory-acme-a.zip'],
+    [...prefix, 'logs', 'delete-log-group', '--log-group-name', '/aws/lambda-microvms/factory-acme-a']]);
+});

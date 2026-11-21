@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
-import type { AccessDependencies, ConfiguredRepository, DetailPorts, ExecutionPorts } from '../../control/index.js';
+import type { AccessDependencies, ConfiguredRepository, DetailPorts, ExecutionPorts, RuntimeInventory } from '../../control/index.js';
 import { createIssueTracker } from '../../issue-tracker/index.js';
 import { createCodeRepository } from '../../code-repository/index.js';
-import { createPreparationVm, createSandbox, selectSandboxAdapter, type GuestAssetPin, type GuestTransport, type LambdaBootClock, type LambdaImageWait, type LambdaServiceFactory,
+import { createPreparationVm, createSandbox, inventoryRuntime, reconcileInterruptedCaches, reconcileLambdaRuntime, selectSandboxAdapter, type GuestAssetPin, type GuestTransport, type LambdaBootClock, type LambdaImageWait, type LambdaServiceFactory,
   type LambdaWorkerLauncher } from '../../sandbox/index.js';
 import { lstat, readdir, realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
@@ -45,6 +45,28 @@ export type ProductionInput = {
    */
   lambda?: { service?: LambdaServiceFactory; transport?: GuestTransport; clock?: LambdaBootClock; imageWait?: LambdaImageWait; workerLauncher?: LambdaWorkerLauncher };
 };
+
+/**
+ * The runtime inventory the controller owner takes after the exclusive lock and BEFORE the storage opens (ticket 26, spec §5.2 boot step
+ * 3): the host's own runtime resources, attributed and never ignored, with the repair-free reconciliation of host Git caches a dead owner
+ * left in preparation. v2 ticket 15 (V2-33): under the Lambda adapter the installation's MicroVMs come from the account, by the
+ * installation tag (`reconcileLambdaRuntime`): what a boot record still holds is listed like any own environment, so Control stops the
+ * survivors of Executions that are not alive; what the adapter could not end or attribute is an unknown resource. An account that could
+ * not be listed makes the WHOLE inventory `unknown` (dispatch stays closed), never an empty one. One function for the controller owner
+ * and the crash scenario test.
+ */
+export async function composeRuntimeInventory(input: { root: string; effective: { sandbox: unknown }; lambda?: Pick<NonNullable<ProductionInput['lambda']>, 'service' | 'clock'> }):
+  Promise<{ runtimeInventory: RuntimeInventory | 'unknown'; unavailable?: { code: string; detail: string } }> {
+  const caches = await reconcileInterruptedCaches(input.root);
+  const listed = await inventoryRuntime(input.root);
+  const account = await reconcileLambdaRuntime({ root: input.root, configuration: input.effective.sandbox,
+    ...(input.lambda?.service ? { lambdaService: input.lambda.service } : {}), ...(input.lambda?.clock ? { lambdaBootClock: input.lambda.clock } : {}) });
+  if (account.status === 'unavailable') return { runtimeInventory: 'unknown', unavailable: { code: account.code, detail: account.detail } };
+  const own = account.status === 'reconciled' ? account : { environments: [], unknown: [] };
+  return { runtimeInventory: { kind: 'listed', observedAt: new Date().toISOString(), environments: [...listed.environments, ...own.environments],
+    cache: listed.cache.map(item => ({ ...item, nextStep: caches.find(entry => entry.repositoryId === item.repositoryId)?.nextStep ?? null })),
+    unknown: [...listed.unknown, ...own.unknown] } };
+}
 
 /**
  * Production composition of Control's GitHub access (the owner's tracking/admission, questions, publication discovery, checks, readiness,

@@ -53,6 +53,11 @@ export type LambdaMicrovmRequest = { imageArn: string; maximumDurationSeconds: n
 /** GetMicrovm. States the adapter decides on: `PENDING`, `RUNNING`, `TERMINATING`, `TERMINATED`; any other value is passed through. */
 export type LambdaMicrovm = { microvmId: string; state: string; endpoint?: string; imageArn?: string; imageVersion?: string; stateReason?: string;
   /** ISO instants as the service gave them (with any offset); `terminatedAt` only once terminated. */ startedAt?: string; terminatedAt?: string };
+/**
+ * Ticket 15: one item of ListMicrovms. Observed fields: id, state, image and start; terminated MicroVMs stay listed. `tags` is present
+ * only when the service lists them: the observed answer has none, and whether a MicroVM carries tags at all is not proven (V2-33).
+ */
+export type LambdaListedMicrovm = { microvmId: string; state: string; imageArn?: string; startedAt?: string; tags?: Record<string, string> };
 export const microvmIngress = 'HTTP_INGRESS';
 export const microvmEgress = 'INTERNET_EGRESS';
 
@@ -82,10 +87,16 @@ export interface LambdaService {
   deleteImageVersion(input: { imageArn: string; version: string }): Promise<LambdaServiceResult<null>>;
   /** Lambda MicroVMs DeleteMicrovmImage (its versions first). Changes the account. */
   deleteImage(imageArn: string): Promise<LambdaServiceResult<null>>;
+  /** S3 DeleteObject: the build artifact of a removed image (ticket 15, explicit cleanup only). Idempotent. Changes the account. */
+  deleteBuildArtifact(input: { bucket: string; key: string }): Promise<LambdaServiceResult<null>>;
+  /** CloudWatch Logs DeleteLogGroup: the build log of a removed image (ticket 15, explicit cleanup only). Changes the account. */
+  deleteBuildLog(logGroup: string): Promise<LambdaServiceResult<null>>;
   /** Lambda MicroVMs RunMicrovm: a NEW MicroVM of the image, with HTTP ingress and internet egress, no execution role, no idle suspension. Changes the account. */
   runMicrovm(input: LambdaMicrovmRequest): Promise<LambdaServiceResult<{ microvmId: string; endpoint: string }>>;
   /** Lambda MicroVMs GetMicrovm: the service's own view of one MicroVM, readable by any process holding the id. Eventually consistent. */
   microvm(microvmId: string): Promise<LambdaServiceResult<LambdaMicrovm>>;
+  /** Lambda MicroVMs ListMicrovms: EVERY MicroVM of the account in the region, whoever created it (the caller filters by installation). */
+  listMicrovms(): Promise<LambdaServiceResult<LambdaListedMicrovm[]>>;
   /** Lambda MicroVMs TerminateMicrovm: only REQUESTS the end (empty answer, idempotent); cessation is what a later `microvm` read says. Changes the account. */
   terminateMicrovm(microvmId: string): Promise<LambdaServiceResult<null>>;
   /** Lambda MicroVMs CreateMicrovmAuthToken: the ingress token of ONE port of one MicroVM. A secret; needed only to OPEN a connection. */

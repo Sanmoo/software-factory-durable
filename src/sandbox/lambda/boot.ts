@@ -111,6 +111,13 @@ export async function listLambdaBoots(root: string, environment: EnvironmentRef)
   return records.filter((record): record is LambdaBootRecord => record !== null).sort((left, right) => left.begin.requestedAt.localeCompare(right.begin.requestedAt));
 }
 
+/** Ticket 15: every environment the Lambda adapter has host records for in this installation (an image record or boots). */
+export async function listLambdaEnvironments(root: string): Promise<EnvironmentRef[]> {
+  let names: string[];
+  try { names = await readdir(join(await realpath(root), 'lambda', 'works')); } catch (error) { if (missing(error)) return []; throw error; }
+  return names.filter(name => /^env-[a-f0-9]{64}$/.test(name)).sort() as EnvironmentRef[];
+}
+
 const iso = (clock: LambdaBootClock) => new Date(clock.now()).toISOString();
 const failureDetail = (failure: LambdaServiceFailure) => [failure.kind, failure.action, failure.detail].filter(Boolean).join(': ').slice(0, 400);
 const serviceOf = (dependencies: LambdaBootDependencies, record: Pick<LambdaBootRecord, 'awsProfile' | 'region'>): LambdaService =>
@@ -130,7 +137,7 @@ function ended(record: LambdaBootRecord, reason: BootEndReason, clock: LambdaBoo
 }
 
 /** TerminateMicrovm only asks; cessation is a later GetMicrovm saying `TERMINATED`. Not seen within the wait: NOT confirmed. */
-async function terminateAndConfirm(service: LambdaService, microvmId: string, clock: LambdaBootClock): Promise<{ confirmed: true; microvm: LambdaMicrovm } | { confirmed: false }> {
+export async function terminateAndConfirm(service: LambdaService, microvmId: string, clock: LambdaBootClock): Promise<{ confirmed: true; microvm: LambdaMicrovm } | { confirmed: false }> {
   await service.terminateMicrovm(microvmId);
   const deadline = clock.now() + lambdaBootWaits.cessationSeconds * 1000;
   for (;;) {
@@ -320,6 +327,19 @@ export async function observeLambdaBoot(dependencies: LambdaBootDependencies, { 
   }
   if (state === 'RUNNING' || state === 'PENDING') return { condition: 'active', cessationConfirmed: false, consumption: 'unavailable', ...correlated, lifecycle };
   return { condition: 'indeterminate', cessationConfirmed: false, consumption: 'unavailable', ...correlated, lifecycle };
+}
+
+/**
+ * Ticket 15: ends the record of a start whose RunMicrovm was never answered (`requested`, no MicroVM id), once the inventory of the
+ * installation accounted for every MicroVM that start could have left. Nothing else may close such a record: the host alone cannot
+ * tell whether a MicroVM exists. A record that has an id, or already ended, is left as it is.
+ */
+export async function closeUnansweredLambdaStart(dependencies: Pick<LambdaBootDependencies, 'root' | 'clock'>, { environment, boot }: { environment: EnvironmentRef; boot: BootRef }): Promise<boolean> {
+  const record = await readLambdaBoot(dependencies.root, environment, boot);
+  if (!record || record.phase !== 'requested' || record.microvmId) return false;
+  await rm(join(await bootDirectory(dependencies.root, environment, boot), identityName), { force: true });
+  await saveRecord(dependencies.root, ended(record, 'end', dependencies.clock, undefined, 'MICROVM_START_UNCONFIRMED'));
+  return true;
 }
 
 const stopReason = (reason: string): BootEndReason => reason === 'planned-swap' || reason === 'loss' ? reason : 'end';
