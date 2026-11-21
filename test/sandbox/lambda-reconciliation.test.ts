@@ -4,7 +4,7 @@ import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createSandbox, installationTagKey, planLambdaReconciliation, reconcileLambdaRuntime, workTagKey, type BootRef, type EnvironmentRef } from '../../src/sandbox/index.js';
-import { lambdaAccountFake } from './lambda-service-fake.js';
+import { accountClock, lambdaAccountFake } from './lambda-service-fake.js';
 import { lambdaGuestFake } from './lambda-guest-fake.js';
 
 // v2 ticket 15 (V2-33, V2-34): the inventory of the installation's MicroVMs taken when the controller starts, over the in-memory account
@@ -25,7 +25,7 @@ async function installation(t: TestContext) {
   const fake = lambdaAccountFake();
   const guest = lambdaGuestFake(fake);
   guest.world.origins[remote] = { commits: [startingCommit], token: checkout.credential.token };
-  const clock = { now: () => fake.account.clock.now, sleep: async (milliseconds: number) => { fake.account.clock.now += milliseconds; } };
+  const clock = accountClock(fake);
   const lambda = { lambdaService: fake.service, lambdaBootClock: clock };
   const sandbox = createSandbox({ root, ...lambda, lambdaTransport: guest.transport, lambdaImageWait: { intervalSeconds: 10, maxSeconds: 900, sleep: clock.sleep } });
   const prepared = await sandbox.prepare({ workId, configuration, environment: pinned });

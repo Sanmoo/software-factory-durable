@@ -44,7 +44,8 @@ Aprovada pelo Operador em 2026-11-21, em conversa com o orquestrador (fonte: not
    host pelo canal (o agente não escolhe o programa nem os parâmetros). É observação não autoritativa: detecta mudança durante a revisão.
    Neste perfil, a "identidade observada pelo Host" do MVP §6.4 passa a ser atestada pelo guest.
 2. Depois da rodada verificada, o Builder faz o push no MESMO boot. A Execução de implementação recebe acesso de escrita limitado à branch
-   do Trabalho. A Execução de publicação separada e posterior (que precisa do workspace preservado) não existe neste perfil.
+   do Trabalho. (Nota de 2026-11-21, decisão 10 do Operador: "limitado à branch do Trabalho" é a POLÍTICA de push do host, uma conferência
+   do texto do comando, não uma garantia imposta; ver `## Comments`.) A Execução de publicação separada e posterior (que precisa do workspace preservado) não existe neste perfil.
 3. A checagem autoritativa é a leitura do `origin` pelo próprio Controle: a ponta da branch é igual ao commit verificado antes de o PR
    ser aberto (a checagem que já existe em `rules/publication.ts`).
 
@@ -187,3 +188,20 @@ passam, 17 pulados, 5 falham, resultado FAIL. As 5 falhas são as conhecidas da 
 - **14 (consumo e quota):** códigos de recusa do Iniciar chegam como `START_<código>`; nada foi classificado como capacidade.
 - **15 (inventário):** `removal.json` e os registros de boot ficam; `image.json` não é apagado pelo Remover.
 - **11:** nada de `lambda/tools.ts` nem do contrato de resultado de ferramenta foi alterado aqui.
+
+## Comments
+
+**2026-11-21 — Passe de correções da revisão final (branch `implement/v2-lambda-review-fixes`).**
+- **Decisão 10 do Operador (2026-11-21): token de escrita do Builder durante toda a Execução, aceito** no perfil sem disco persistente
+  (ele precisa publicar WIP a qualquer momento, V2-07). A política de push do host (`src/workers/push-policy.ts`) confere o texto do
+  comando e **não é um sandbox**: os limites reais são a proteção da branch base no repositório (branch protection ou ruleset, agora
+  requisito de instalação em `docs/lambda-installation.md`) e a leitura do `origin` pelo Controle antes de vincular o PR. A redação
+  "acesso de escrita limitado à branch do Trabalho" da decisão 1A.2 vale como política, não como imposição. Nenhuma mudança no grant.
+  O `doctor` não confere a proteção da base (não lê proteção nem rulesets hoje); o Controle já bloqueia o pedido de publicação quando a
+  base não exige PR (`BASE_PROTECTION_NOT_VERIFIED`).
+- **Correção do que este Answer dizia:** a ativação de trabalho do Builder **passa a receber** política de push neste perfil (antes:
+  nenhuma): a `wip` do ticket 07 (`git -C /workspace/checkout push <remoto> HEAD:refs/heads/<branch>`, sem force). Com disco persistente
+  continua sem política. Teste: `test/control/inboot-publication-flow.test.ts`, `test/entrypoints/lambda-journey-composed.test.ts`.
+- Uma ponta de WIP que o próprio App da Factory empurrou (atividade de push lida pelo Controle no GitHub) é reconhecida como ponta
+  própria na publicação no mesmo boot; o commit verificado é publicado sobre ela com lease. Ponta empurrada por outra conta continua
+  `REMOTE_BRANCH_UNKNOWN_CHANGE`.

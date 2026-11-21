@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRecords } from '../../src/records/index.js';
 import { createSandbox, type BootRef, type EnvironmentRef, type ReadResult, type ToolCall, type ToolContext } from '../../src/sandbox/index.js';
-import { lambdaAccountFake } from './lambda-service-fake.js';
+import { accountClock, lambdaAccountFake } from './lambda-service-fake.js';
 import { lambdaGuestFake } from './lambda-guest-fake.js';
 import { renderGuestImage } from '../../src/sandbox/lambda/guest-image.js';
 import { channelPrelude, commitIdentityEnv, guestPath } from '../../src/sandbox/bash-tools.js';
@@ -31,7 +31,7 @@ async function activeBoot(t: TestContext) {
   const fake = lambdaAccountFake();
   const guests = lambdaGuestFake(fake);
   guests.world.origins[remote] = { commits: [startingCommit], token: builderToken };
-  const clock = { now: () => fake.account.clock.now, sleep: async (milliseconds: number) => { fake.account.clock.now += milliseconds; } };
+  const clock = accountClock(fake);
   const sandbox = createSandbox({ root, lambdaService: fake.service, lambdaTransport: guests.transport, lambdaBootClock: clock,
     lambdaImageWait: { intervalSeconds: 10, maxSeconds: 900, sleep: clock.sleep } });
   const prepared = await sandbox.prepare({ workId, configuration, environment: pinned });

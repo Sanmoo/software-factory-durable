@@ -5,9 +5,18 @@ Operador. A Factory **nunca cria IAM** e **não guarda credenciais AWS**: o Oper
 conta com o template da release e configura um perfil AWS nomeado; a Factory passa só o nome do
 perfil ao `aws` (CLI), que resolve as credenciais.
 
-Nesta release o adapter é **validado** por `factory doctor` e sabe **preparar** a imagem de
-MicroVM de um ambiente (seção 5). Iniciar Trabalhos nele ainda é recusado
-(`SANDBOX_ADAPTER_UNAVAILABLE`, check `sandbox-adapter`).
+Nesta release o adapter é **validado** por `factory doctor`, **prepara** a imagem de MicroVM de um
+ambiente (seção 5) e o controlador **executa Trabalhos** sob ele, do Ticket ao PR (seção 6).
+
+**Requisito da instalação: a branch base de cada repositório precisa estar protegida** por branch
+protection ou por um ruleset que exija pull request, sem bypass para a GitHub App da Factory. Neste
+perfil o Builder tem o token de escrita durante toda a Execução (ele precisa publicar trabalho em
+andamento a qualquer momento, porque o ambiente não guarda disco). A política de push do host é uma
+conferência do texto do comando, **não é um sandbox**: quem impede escrita fora da branch do
+Trabalho é a proteção do repositório. O Controle, por sua vez, só pede a publicação quando lê que a
+base exige pull request (senão bloqueia com `BASE_PROTECTION_NOT_VERIFIED`) e confere a ponta da
+branch no `origin` antes de vincular o PR. (Decisão 10 do Operador, 2026-11-21.) O `doctor` não
+confere a proteção da base.
 
 ## 1. Preparar a conta (uma vez por instalação)
 
@@ -145,8 +154,9 @@ arquivo e pin da release (o perfil da imagem, arquitetura e memória baseline, e
 
 ## 6. Boots (Iniciar, Observar, Parar)
 
-Nesta release o adapter inicia, observa e para um boot, mas o controlador ainda não executa
-Trabalhos sob ele (o `doctor` mostra `sandbox-adapter` bloqueado).
+O adapter inicia, observa e para cada boot, e o controlador executa Trabalhos sob ele: cada boot é
+uma MicroVM nova, o commit de partida é clonado do `origin` dentro do guest e nada do disco
+sobrevive ao fim do boot.
 
 - **Pré-requisitos do host:** `ssh` (cliente OpenSSH) e `websocat` no `PATH`, além do `aws`. O
   canal é SSH transportado em WebSocket pelo `HTTP_INGRESS` da MicroVM. O `doctor` ainda não
@@ -289,8 +299,14 @@ retomada operacional é consumida. O Trabalho mantém a posição na fila atrás
 de 15 s, depois 60 s, depois 300 s repetidos enquanto a recusa continuar (a mesma espera de falta de
 memória ou disco do host); a espera volta ao início quando um boot inicia. A causa fica visível em
 `factory show <trabalho>`: motivo de despacho `BOOT_CAPACITY_WAIT`, o campo `bootDeferral` (código
-`START_SERVICE_CAPACITY_REFUSED`, a causa devolvida pelo serviço em `detail`, `notBefore`, tentativa)
-e o evento `boot-deferred` no histórico.
+`START_SERVICE_CAPACITY_REFUSED`, a causa devolvida pelo serviço em `detail`, `notBefore`, tentativa),
+o resumo `dispatch.capacityWait` (código, causa, `notBefore`, tentativa) em `factory status` e na
+visão do Trabalho, e o evento `boot-deferred` no histórico.
+
+A mesma regra vale quando a recusa atinge o boot novo de uma **troca planejada**: o trabalho já está
+no `origin` e o boot anterior já cessou, então a Execução espera (15 s, 60 s, 300 s) e tenta de novo
+ali mesmo, sem consumir retomada operacional e mantendo a sessão; a causa fica na troca
+(`execution.swaps[].startWait`) e no evento `boot-deferred`. O timeout da Execução continua contando.
 
 Se a espera não termina, confira o que está ocupando a quota (boots de outros Trabalhos, MicroVMs
 deixadas para trás) e o que o `factory doctor` diz sobre concorrência contra a quota; liberar a quota
@@ -314,11 +330,32 @@ inalcançável, o que ele tinha e não estava no `origin` é perdido quando o bo
 traz esse motivo e `terminatedAt` nulo (foi a Factory que encerrou, não o serviço). O limite contra
 repetição é o orçamento de retomadas operacionais do Trabalho.
 
+A Factory também registra a perda quando é **ela mesma** que encerra um boot com trabalho não
+publicado: falha do Builder, fim do orçamento do Builder, timeout da Execução, limite de novas
+tentativas de um revisor e parada do controlador (`factory stop` ou sinal). Antes de encerrar, com o
+ambiente ainda vivo, ela confere uma única vez, sem pedir correção a ninguém: workspace limpo e
+`HEAD` na ponta da branch no `origin` **não é perda** (o commit fica confirmado e o próximo boot
+continua dele); um workspace limpo no próprio commit que o boot clonou também não é. Qualquer outra
+coisa é perda, com `cause: ended-unpublished` e o motivo do encerramento. Um boot que ficou para trás
+com o controlador fora do ar (crash) não pode ser inspecionado: na reconciliação ele é encerrado e
+registrado como perda com `cause: not-inspected`, a partir do que a Factory lê no `origin`. Em todos
+os casos o boot entra no histórico de boots do Trabalho e a próxima sessão recebe o pacote da sessão
+substituta. A parada limpa do controlador não consome retomada operacional; as demais seguem a regra
+do motivo que encerrou a Execução (o timeout continua bloqueando, como no MVP).
+
+**Sem progresso entre boots.** Dois boots seguidos do mesmo Trabalho encerrados por troca planejada
+ou perda sem nenhum commit novo no `origin` bloqueiam o Trabalho com `NO_PROGRESS_BETWEEN_BOOTS`
+em vez de um terceiro boot. Depois de corrigir a causa (em geral um passo maior que um boot),
+`factory resume <trabalho> --request-id <id>` retira o bloqueio, zera a sequência e devolve o
+Trabalho à fila como uma retomada operacional.
+
 Como melhor esforço, o hook de término do guest empurra o `HEAD` commitado para
 `refs/factory/lost/<trabalho>/<boot>`. O hook não aceita nenhum parâmetro de quem o chama: só aciona
 um processo que o host armou pelo canal, com o remoto, a ref e o token reduzido do Builder em
 ambiente de processo (nada gravado no guest, sem deploy key). Esse processo existe enquanto a
-credencial do Builder está entregue; ao ser retirada, ele é encerrado.
+credencial do Builder vale: ele é encerrado quando a Factory retira a credencial e antes de toda
+parada que não seja uma perda. Num boot que a Factory encerra como perda ele fica armado até o fim,
+para o hook ainda empurrar o marcador.
 
 - A ref de marcador **não é preservação**: não satisfaz o gate, não vira o commit confirmado e não é
   uma branch (nenhum PR a usa). Ela existe para a sessão substituta aproveitar em vez de refazer.

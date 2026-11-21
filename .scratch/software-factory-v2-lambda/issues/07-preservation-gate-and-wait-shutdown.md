@@ -124,3 +124,18 @@ valer. Decisão 7 do Operador: depois da terceira recusa o Controle encerra o bo
 `preservationGate` devolve `accepted` | `lost` | `stale`; `gateHold` saiu e `gateLossReason` entrou. Os cenários de três recusas e de remoto
 indisponível em `test/control/preservation-gate-flow.test.ts` e o teste negativo do marcador em `test/control/loss-flow.test.ts` foram
 reescritos para esse fluxo. Detalhes e limites no Answer do ticket 13.
+
+## Comments
+
+**2026-11-21 — Passe de correções da revisão final (branch `implement/v2-lambda-review-fixes`).**
+- **Must-fix 2 (V2-07 "o Builder pode publicar WIP"):** a ativação de trabalho do Builder, e não só a de correção do gate, recebe a
+  política `wip` neste perfil; o ponto 4 da conduta da substituta nomeia o comando exato. O critério 3 estava marcado mas só valia
+  dentro da ativação de correção.
+- **Must-fix 3 (regressão no Gondolin):** o relaxamento de `REMOTE_BRANCH_UNKNOWN_CHANGE` em `rules/publication.ts` usava
+  `known.heads` (que inclui cabeças vinculadas e de tentativas); agora só vale para cabeças confirmadas pelo gate (`preservedHeads`,
+  mais a ponta reescrita seguida pela decisão 8) ou, neste perfil, para ponta empurrada pelo App. Com disco persistente a decisão é
+  a do MVP. Regressão: `test/control/publication-rules.test.ts`, `test/control/inboot-publication-flow.test.ts`.
+- **Should-fix 6:** a recusa do gate volta à **MESMA sessão** que devolveu o controle (`continuation`), tanto em Pergunta quanto em
+  conclusão e na troca planejada; o fim da Execução registra a sessão como a correção a deixou. Sessão nova só quando não há sessão
+  devolvida ou quando o Host recusa a continuação (`SESSION_*`). O Answer deste ticket dizia "sessão nova (`builder-preservation`)".
+- Ocasião nova do registro do gate: `boot-end` (a checagem única, sem correção, antes de o Controle encerrar um boot: ver ticket 12).

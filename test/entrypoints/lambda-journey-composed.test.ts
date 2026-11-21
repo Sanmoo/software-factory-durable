@@ -14,7 +14,7 @@ import type { ReviewOpinion } from '../../src/contracts/index.js';
 import { createSandbox, type LambdaWorkerLauncher, type ReadResult, type ToolCall } from '../../src/sandbox/index.js';
 import { manualClock } from '../control/doubles.js';
 import { gate, summary } from '../control/publication-doubles.js';
-import { lambdaAccountFake } from '../sandbox/lambda-service-fake.js';
+import { accountClock, accountImageWait, lambdaAccountFake } from '../sandbox/lambda-service-fake.js';
 import { lambdaGuestFake, type FakeGuest } from '../sandbox/lambda-guest-fake.js';
 import { githubWorld, issue, worldScope } from './github-world-fixture.js';
 
@@ -172,10 +172,10 @@ test('v2 ticket 06: with the Lambda adapter, a Work without external waits goes 
   guests.world.origins[remoteUrl] = { commits: [tip], token: token => { cloneTokens.push(token); return token.startsWith('synthetic-installation-secret-'); },
     // v2 ticket 07: `ls-remote` from the guest answers what the gh world holds for the branch at that instant.
     tip: async branch => { let sha: string | null = null; await world.update(state => { sha = state.refs?.[branch] ?? null; }); return sha; } };
-  const clock = { now: () => fake.account.clock.now, sleep: async (milliseconds: number) => { fake.account.clock.now += milliseconds; } };
+  const clock = accountClock(fake);
   const workers = scriptedWorkers({ root: world.root, executable: world.executable, guests });
   const composed = await composeProductionExecution({ root: world.root, effective, guestAssets: { directory: join(world.root, 'guest'), manifestSha256: 'a'.repeat(64) }, github,
-    lambda: { service: fake.service, transport: guests.transport, clock, imageWait: { intervalSeconds: 10, maxSeconds: 900, sleep: clock.sleep }, workerLauncher: workers.launcher } });
+    lambda: { service: fake.service, transport: guests.transport, clock, imageWait: accountImageWait(clock), workerLauncher: workers.launcher } });
   assert.equal(composed.status, 'composed', JSON.stringify(composed));
   if (composed.status !== 'composed') return;
   const ports: ExecutionPorts = composed.ports;

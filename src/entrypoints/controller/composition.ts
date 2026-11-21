@@ -141,8 +141,8 @@ export async function composeProductionExecution(input: ProductionInput): Promis
   { status: 'composed'; ports: ExecutionPorts; summary: { guestAssets: GuestAssetPin; artifactSeeds: string[];
     profiles: Record<Role, { id: string; auth: string; providerId: string; modelId: string; api: string; systemPromptSha256: string }> } } |
   { status: 'refused'; code: 'WORKER_PROFILE_UNSUPPORTED'; roles: Role[] } |
-  /** v2 ticket 01 (V2-01/V2-04): the configured sandbox adapter cannot be composed by this release (never replaced by another one). */
-  { status: 'refused'; code: 'SANDBOX_ADAPTER_UNAVAILABLE' | 'SANDBOX_CONFIGURATION_INVALID'; roles: [] }> {
+  /** v2 ticket 01 (V2-01/V2-04): the sandbox section selects no adapter this release can compose (never replaced by another one). */
+  { status: 'refused'; code: 'SANDBOX_CONFIGURATION_INVALID'; roles: [] }> {
   const roles = ['builder', 'standards', 'spec'] as const;
   const unsupported = roles.filter(role => input.effective.models[role].provider !== productionProfile.model.providerId ||
     input.effective.models[role].model !== productionProfile.model.modelId);

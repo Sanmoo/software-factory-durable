@@ -22,7 +22,7 @@ Testes automáticos usam um fake do serviço Lambda MicroVMs: o CI não tem cont
 - [x] Não há reanexação à saída do processo órfão.
 - [x] Canal caído com ambiente encerrado segue o caminho do ticket 10, não o de reconexão.
 - [x] Efeitos de resultado indeterminado ficam registrados pelo Controle, para o pacote da substituta (ticket 13).
-- [x] Reconexão que falha repetidamente com ambiente ativo tem limite e vira impedimento visível, sem laço.
+- [x] Reconexão que falha repetidamente com ambiente ativo tem limite e, sem laço, encerra o boot como perda registrada e o Trabalho volta sozinho num boot novo consumindo uma retomada operacional. (Redação corrigida em 2026-11-21 pela decisão 6 do Operador; antes: "vira impedimento visível".)
 
 ## Answer
 
@@ -122,3 +122,17 @@ repetição é o orçamento de retomadas). `channelUnrecoverableImpediment` foi 
 
 `npm run test:ci` (2026-11-21, branch `implement/v2-lambda-fix-autonomy`): 2089 testes, 2067 passam, 17 pulados, 5 falham, resultado FAIL. As 5
 falhas são as conhecidas da base: `test/sandbox/audited-vfs-guard.test.ts` (4) e `test/sandbox/sandbox-adapter-diagnostics.test.ts` (1).
+
+**2026-11-21 — Passe de correções da revisão final (branch `implement/v2-lambda-review-fixes`).**
+- **Filtro de segredos (item 3 da revisão, MVP §12.2):** o texto do efeito incerto (comando Bash, caminho de escrita) passa pelo filtro
+  do Records do binding (`records.filterText`, o mesmo matcher das capturas) ANTES de ir para o arquivo do boot no host; dali vai
+  filtrado para o documento do Trabalho e para o prompt da substituta. Filtro que falha não libera o texto: a descrição vira
+  "(text withheld: the secret filter could not be applied)". Teste: `test/sandbox/lambda-tools.test.ts`.
+- **Relato de canal ilegível nunca vira "nenhum efeito incerto"** (standards 4): leitura ou gravação que falha fica no histórico
+  (`channel-report-unread`) e o pacote da substituta diz que o registro não pôde ser lido e que efeitos anteriores devem ser tratados
+  como incertos. Os dois `.catch` silenciosos saíram (`readChannelReport` em `dispatch.ts`).
+- **Should-fix 7:** o boot de canal irrecuperável agora é parado com o motivo `loss` (antes `builder execution ended`), então o registro
+  do adapter (`end.reason: loss`) concorda com o do Controle. O holder do marcador segue a credencial, não o worker: fica armado até
+  a retirada da credencial ou até uma parada que não seja perda (antes era encerrado quando o canal do worker fechava). Corrige a
+  nota "o holder é desarmado antes de todo Parar" acima.
+- A nota "só no caminho vivo do despacho" acima deixou de valer: a reconciliação depois de queda do controlador grava a perda (ticket 12).

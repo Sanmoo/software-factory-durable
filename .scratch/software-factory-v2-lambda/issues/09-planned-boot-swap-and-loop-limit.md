@@ -139,3 +139,27 @@ mudar de identidade, e dois boots seguidos sem commit novo publicado bloqueiam o
 2097 passam, 17 pulados, 5 falham, resultado FAIL. As 5 falhas são as conhecidas da base: `test/sandbox/audited-vfs-guard.test.ts` (4) e
 `test/sandbox/sandbox-adapter-diagnostics.test.ts` (1). Numa execução anterior, sob carga (595 s de 600 s), `test/entrypoints/journey-composed.test.ts`
 estourou o orçamento à espera de `merge-blocked`; sozinho passou em 10,6 s e não falhou nas outras duas execuções completas.
+
+## Comments
+
+**2026-11-21 — Passe de correções da revisão final (branch `implement/v2-lambda-review-fixes`).**
+- **Should-fix 5 (decisão 5 na troca):** recusa por quota ao iniciar o boot novo da troca não encerra mais a Execução
+  (`BOOT_SWAP_START_REFUSED` transitório consumia uma retomada): a Execução espera 15 s, 60 s, 300 s e tenta de novo, mantendo sessão e
+  Slot, com a causa em `swaps[].startWait` e no evento `boot-deferred`. Outras recusas definitivas seguem como antes.
+- **Should-fix 10 (V2-14):** `NO_PROGRESS_BETWEEN_BOOTS` ganhou saída do Operador pelo `factory resume <trabalho>` genérico: retira o
+  impedimento, zera `bootLedger` e devolve o Trabalho à fila como uma retomada operacional. O texto do impedimento nomeia o comando.
+- **Must-fix 1:** boots encerrados pelo próprio Controle com trabalho não publicado, e boots que ficaram para trás num crash do
+  controlador, entram no ledger como `loss` (item 26 da revisão).
+- **Should-fix 9 (troca nas fronteiras de fase) NÃO foi feito: exige redesenho.** Motivos, por fronteira:
+  1. *Antes de uma rodada de revisão:* o Builder está suspenso DENTRO da chamada `handoff`, e a ativação de trabalho continua viva. A
+     troca de hoje só começa quando essa ativação termina com `boot-swap` e devolve a sessão. Encerrar um handoff suspenso como
+     `boot-swap` não existe no Host dos Workers (seria uma diretiva nova), e a rodada já registrada (`recordHandoff`, estado
+     `reviewing`, identidade H1 e captura `/artifacts/review/r<N>`, que é por boot pela decisão 3D) teria de ser descartada e
+     recapturada no boot novo: estado novo de rodada e numeração, no Controle e no Host.
+  2. *Antes da publicação no mesmo boot:* a decisão 1A.2 manda publicar no MESMO boot que verificou, e a verificação está presa à
+     captura final e à identidade observada neste guest. Trocar antes exigiria levar a verificação para outro boot ou verificar de
+     novo, que é a Execução de publicação separada que a decisão 1A eliminou neste perfil. Mudaria um contrato decidido.
+  3. *Antes do gate de fim:* o gate já É a preservação; uma troca não acrescenta nada. O que resta é a correção estourar o boot, e aí
+     vale o caminho de perda (decisão 7), agora com registro e substituta em todos os casos (must-fix 1).
+  Enquanto isso, o que passa da margem nessas fases termina em `BOOT_DURATION_REACHED` como perda registrada. Fica para decisão do
+  Operador se a diretiva nova no Host e o descarte de rodada valem o custo.

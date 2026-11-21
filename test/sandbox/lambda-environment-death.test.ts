@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRecords } from '../../src/records/index.js';
 import { createSandbox, type BootRef, type EnvironmentRef, type ReadResult, type ToolCall, type ToolContext } from '../../src/sandbox/index.js';
-import { lambdaAccountFake } from './lambda-service-fake.js';
+import { accountClock, lambdaAccountFake } from './lambda-service-fake.js';
 import { lambdaGuestFake } from './lambda-guest-fake.js';
 import { manualObservationTimer } from './lambda-observation-timer.js';
 
@@ -28,7 +28,7 @@ async function watchedBoot(t: TestContext) {
   const fake = lambdaAccountFake();
   const guests = lambdaGuestFake(fake);
   guests.world.origins[remote] = { commits: [startingCommit], token: 'ghs_token' };
-  const clock = { now: () => fake.account.clock.now, sleep: async (milliseconds: number) => { fake.account.clock.now += milliseconds; } };
+  const clock = accountClock(fake);
   const watch = manualObservationTimer(milliseconds => { fake.account.clock.now += milliseconds; });
   const sandbox = createSandbox({ root, lambdaService: fake.service, lambdaTransport: guests.transport, lambdaBootClock: clock, lambdaObservationTimer: watch.timer,
     lambdaImageWait: { intervalSeconds: 10, maxSeconds: 900, sleep: clock.sleep } });

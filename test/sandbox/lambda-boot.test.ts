@@ -4,7 +4,7 @@ import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createSandbox, installationTagKey, selectSandboxAdapter, workTagKey, type BootRef, type EnvironmentRef, type GuestExecResult } from '../../src/sandbox/index.js';
-import { lambdaAccountFake } from './lambda-service-fake.js';
+import { accountClock, lambdaAccountFake } from './lambda-service-fake.js';
 import { lambdaGuestFake } from './lambda-guest-fake.js';
 
 // v2 ticket 04 (V2-02 Iniciar/Observar/Parar, V2-09, V2-10, V2-20, V2-22, V2-24, V2-25, V2-28, V2-34): a whole boot under the Lambda adapter,
@@ -28,7 +28,7 @@ async function installation(t: TestContext, profile: Record<string, unknown> = {
   const guest = lambdaGuestFake(fake);
   guest.world.origins[remote] = { commits: [startingCommit, '2'.repeat(40)], token: builderToken };
   /** The fake clock: every wait of the adapter only moves the account's time. */
-  const clock = { now: () => fake.account.clock.now, sleep: async (milliseconds: number) => { fake.account.clock.now += milliseconds; } };
+  const clock = accountClock(fake);
   /** A sandbox as ANOTHER host process would compose it: same root, nothing shared in memory. */
   const compose = () => createSandbox({ root, lambdaService: fake.service, lambdaTransport: guest.transport, lambdaBootClock: clock,
     lambdaImageWait: { intervalSeconds: 10, maxSeconds: 900, sleep: clock.sleep } });

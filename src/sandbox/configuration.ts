@@ -33,7 +33,7 @@ export type SandboxAdapterSelection =
   /** v2 ticket 02: the effective Lambda profile keeps `adapter: 'lambda'` (it is what tells the two effective configurations apart). */
   { status: 'selected'; adapter: 'lambda'; capabilities: SandboxCapabilities; configuration: LambdaProfile } |
   { status: 'refused'; /** The adapter the configuration names (`null`: it names none that exists). */ adapter: SandboxAdapter | null;
-    errors: { code: 'SANDBOX_CONFIGURATION_INVALID' | 'SANDBOX_ADAPTER_UNAVAILABLE'; path: string }[] };
+    errors: { code: 'SANDBOX_CONFIGURATION_INVALID'; path: string }[] };
 
 /**
  * V2-01 (pure): the ONE adapter the installation configuration selects, statically, for every repository, with its declared capabilities

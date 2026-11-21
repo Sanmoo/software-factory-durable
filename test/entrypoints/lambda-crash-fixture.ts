@@ -4,7 +4,7 @@ import { createGitHubAccess } from '../../src/platform/github/index.js';
 import { composeProductionExecution } from '../../src/entrypoints/controller/composition.js';
 import { productionProfile } from '../../src/entrypoints/release.js';
 import type { LambdaWorkerLauncher } from '../../src/sandbox/index.js';
-import { lambdaAccountFake } from '../sandbox/lambda-service-fake.js';
+import { accountClock, accountImageWait, lambdaAccountFake } from '../sandbox/lambda-service-fake.js';
 import { lambdaGuestFake } from '../sandbox/lambda-guest-fake.js';
 import { worldScope } from './github-world-fixture.js';
 
@@ -22,7 +22,7 @@ export async function composeCrashInstallation(input: { root: string; executable
   const fake = lambdaAccountFake({ stateFile: input.accountFile });
   const guests = lambdaGuestFake(fake);
   guests.world.origins[remoteUrl] = { commits: [tip], token: token => token.startsWith('synthetic-installation-secret-') };
-  const clock = { now: () => fake.account.clock.now, sleep: async (milliseconds: number) => { fake.account.clock.now += milliseconds; } };
+  const clock = accountClock(fake);
   const launched: string[] = [];
   /** The Builder's worker process: it reports its start and then works forever (the boot is in progress when the controller dies). */
   const workerLauncher: LambdaWorkerLauncher = async request => {
@@ -30,7 +30,7 @@ export async function composeCrashInstallation(input: { root: string; executable
     return { started: Promise.resolve({ receipt: { workId: request.context.workId, id: randomUUID() }, invocation: { executionId: request.context.executionId, invocationId: request.context.invocationId } }),
       completed: new Promise<never>(() => {}), deliver: async () => false };
   };
-  const lambda = { service: fake.service, transport: guests.transport, clock, imageWait: { intervalSeconds: 10, maxSeconds: 900, sleep: clock.sleep }, workerLauncher };
+  const lambda = { service: fake.service, transport: guests.transport, clock, imageWait: accountImageWait(clock), workerLauncher };
   const composed = await composeProductionExecution({ root: input.root, effective, guestAssets: { directory: join(input.root, 'guest'), manifestSha256: 'a'.repeat(64) }, github, lambda });
   if (composed.status !== 'composed') throw new Error(`not composed: ${JSON.stringify(composed)}`);
   return { github, fake, guests, clock, lambda, ports: composed.ports, launched };

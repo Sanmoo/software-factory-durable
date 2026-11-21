@@ -12,7 +12,7 @@ import { composeProductionAccess, composeProductionExecution } from '../../src/e
 import { productionProfile } from '../../src/entrypoints/release.js';
 import { createSandbox, type LambdaWorkerLauncher, type ToolCall } from '../../src/sandbox/index.js';
 import { manualClock } from '../control/doubles.js';
-import { lambdaAccountFake } from '../sandbox/lambda-service-fake.js';
+import { accountClock, accountImageWait, lambdaAccountFake } from '../sandbox/lambda-service-fake.js';
 import { lambdaGuestFake, type FakeGuest } from '../sandbox/lambda-guest-fake.js';
 import { manualObservationTimer } from '../sandbox/lambda-observation-timer.js';
 import { githubWorld, issue, worldScope } from './github-world-fixture.js';
@@ -59,7 +59,7 @@ test('MANDATORY (V2-17..V2-19): a loss with a tool call in flight; the substitut
   const origin = guests.world.origins[remoteUrl] = { commits: [tip], token: (token: string) => token.startsWith('synthetic-installation-secret-'),
     push: (ref: string, sha: string) => { pushes.push(world.update(state => { state.factoryRefs = { ...state.factoryRefs, [ref]: sha }; })); },
     tip: async (branch: string) => { let sha: string | null = null; await world.update(state => { sha = state.refs?.[branch] ?? null; }); return sha; } };
-  const clock = { now: () => fake.account.clock.now, sleep: async (milliseconds: number) => { fake.account.clock.now += milliseconds; } };
+  const clock = accountClock(fake);
   const watch = manualObservationTimer(milliseconds => { fake.account.clock.now += milliseconds; });
 
   const launched: { phaseId: string; boot: string; executionId: string; prompt: string }[] = [];
@@ -114,7 +114,7 @@ test('MANDATORY (V2-17..V2-19): a loss with a tool call in flight; the substitut
   };
 
   const composed = await composeProductionExecution({ root: world.root, effective, guestAssets: { directory: join(world.root, 'guest'), manifestSha256: 'a'.repeat(64) }, github,
-    lambda: { service: fake.service, transport: guests.transport, clock, imageWait: { intervalSeconds: 10, maxSeconds: 900, sleep: clock.sleep }, workerLauncher: launcher, observationTimer: watch.timer } });
+    lambda: { service: fake.service, transport: guests.transport, clock, imageWait: accountImageWait(clock), workerLauncher: launcher, observationTimer: watch.timer } });
   assert.equal(composed.status, 'composed', JSON.stringify(composed));
   if (composed.status !== 'composed') return;
   // The persisted recovery wait runs on the calendar: jumped by the test, never slept.

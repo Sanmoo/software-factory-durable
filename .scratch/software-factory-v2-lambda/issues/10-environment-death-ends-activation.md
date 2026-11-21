@@ -99,3 +99,10 @@ registro, falha de consulta), `test/control/environment-death-flow.test.ts` (Con
 - **14:** `startedAt` e `end.terminatedAt` do registro do boot são os instantes do serviço; `environmentEnd.terminatedAt` repete o segundo.
 - **09 (troca planejada):** o vigia fecha com `tools.close()`; um boot novo ganha o seu ao subir o dono.
 
+## Comments
+
+**2026-11-21 — Passe de correções da revisão final (branch `implement/v2-lambda-review-fixes`).**
+- Teste do item 8 da revisão: `ENVIRONMENT_ENDED_START_UNCONFIRMED` em `test/control/environment-death-flow.test.ts` (ambiente termina
+  antes do recibo de início: Execução retida com o Slot, nada encerrado por suposição, sem retomada aberta).
+- Cenário composto novo em `test/entrypoints/lambda-environment-death-composed.test.ts`: Builder falha com commit não publicado, o
+  Controle confere, encerra o boot como perda, o marcador é empurrado pelo hook e a substituta retoma num boot novo.

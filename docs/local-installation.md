@@ -61,9 +61,7 @@ mantém flags QEMU/modelo paralelo. Não existem prepare/start stubs neste incre
 `sandbox.adapter` (v2, opcional) escolhe o **único** adapter da instalação, para todos os
 repositórios: `gondolin` (default quando ausente; configurações anteriores continuam válidas
 sem edição e com a mesma configuração efetiva) ou `lambda`, que tem perfil próprio e conta AWS preparada pelo Operador: ver
-[instalação Lambda](lambda-installation.md). Nesta release o adapter `lambda` só é validado
-(`doctor`); preparar e iniciar Trabalhos nele ainda é recusado com `SANDBOX_ADAPTER_UNAVAILABLE`
-(check `sandbox-adapter`). Não há escolha por
+[instalação Lambda](lambda-installation.md). Não há escolha por
 repositório ou por Trabalho, seleção automática nem fallback. Cada adapter declara suas
 capacidades (Docker, disco que sobrevive ao boot, duração máxima do boot, saída de rede); um
 repositório cuja declaração de ambiente exige capacidade não declarada (por exemplo `images`

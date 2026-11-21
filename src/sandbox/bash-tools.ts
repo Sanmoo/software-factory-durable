@@ -27,8 +27,8 @@ export const credentialPrelude = 'IFS= read -r GH_TOKEN || exit 97; export GH_TO
  * delivered by the channel for this one program): it is in no argument, no stdin and no guest file. The prelude merges stderr into
  * stdout in the guest (the channel streams one ordered output), drops every inherited variable except the credential (the session's
  * ambient environment is not part of the contract), exports the given `NAME=value` arguments (commit identity, PATH) and, when there is
- * a credential, the Git credential helper that answers from that variable in memory. The guest pin has no `gh`: the helper is the
- * shell function the clone uses. NOT PROVEN in a real guest.
+ * a credential, the Git credential helper that answers from that variable in memory. The helper is the shell function the clone uses;
+ * `gh` (in the guest image since Operator decision 4) reads the same `GH_TOKEN`. NOT PROVEN in a real guest.
  */
 export const channelPrelude = ['exec 2>&1',
   'for name in $(compgen -e); do [ "$name" = GH_TOKEN ] || unset "$name" 2>/dev/null; done',

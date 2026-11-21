@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createSandbox, type BootRef, type EnvironmentRef } from '../../src/sandbox/index.js';
-import { lambdaAccountFake } from './lambda-service-fake.js';
+import { accountClock, lambdaAccountFake } from './lambda-service-fake.js';
 import { lambdaGuestFake } from './lambda-guest-fake.js';
 
 // v2 ticket 14 (V2-32): what each boot and each image build consumed, as the Lambda adapter reports it in adapter-neutral terms. The
@@ -25,7 +25,7 @@ async function installation(t: TestContext) {
   const fake = lambdaAccountFake();
   const guest = lambdaGuestFake(fake);
   guest.world.origins[remote] = { commits: [startingCommit], token };
-  const clock = { now: () => fake.account.clock.now, sleep: async (milliseconds: number) => { fake.account.clock.now += milliseconds; } };
+  const clock = accountClock(fake);
   const sandbox = createSandbox({ root, lambdaService: fake.service, lambdaTransport: guest.transport, lambdaBootClock: clock,
     lambdaImageWait: { intervalSeconds: 10, maxSeconds: 900, sleep: clock.sleep } });
   const prepare = (work = workId, environment = pinned) => sandbox.prepare({ workId: work, configuration, environment });

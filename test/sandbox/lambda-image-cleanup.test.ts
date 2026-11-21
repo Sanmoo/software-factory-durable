@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { cleanupLambdaImages, createSandbox, installationTagKey, planImageCleanup, type EnvironmentRef } from '../../src/sandbox/index.js';
-import { lambdaAccountFake } from './lambda-service-fake.js';
+import { accountClock, lambdaAccountFake } from './lambda-service-fake.js';
 import { lambdaGuestFake } from './lambda-guest-fake.js';
 
 // v2 ticket 15 (V2-33): MicroVM images stay while a Work holds them and leave only by the explicit cleanup, which refuses an image in
@@ -23,7 +23,7 @@ async function installation(t: TestContext) {
   const fake = lambdaAccountFake();
   const guest = lambdaGuestFake(fake);
   guest.world.origins[remote] = { commits: [checkout.commit], token: checkout.credential.token };
-  const clock = { now: () => fake.account.clock.now, sleep: async (milliseconds: number) => { fake.account.clock.now += milliseconds; } };
+  const clock = accountClock(fake);
   const sandbox = createSandbox({ root, lambdaService: fake.service, lambdaTransport: guest.transport, lambdaBootClock: clock, lambdaImageWait: { intervalSeconds: 10, maxSeconds: 900, sleep: clock.sleep } });
   const prepare = async (workId: string, version: string) => {
     const prepared = await sandbox.prepare({ workId, configuration, environment: declaration(version) });

@@ -141,3 +141,13 @@ Pergunta pelo relay → resposta → boot novo no commit publicado), `test/contr
 6): 2098 testes, 2076 passam, 17 pulados, 5 falham, resultado FAIL. As 5 falhas são as conhecidas da base:
 `test/sandbox/audited-vfs-guard.test.ts` (4) e `test/sandbox/sandbox-adapter-diagnostics.test.ts` (1). No merge, o ramo de falha por canal
 irrecuperável (decisão 6) ficou com o registro de perda da correção de autonomia; a checagem única da substituta não roda nesse caso.
+
+## Comments
+
+**2026-11-21 — Passe de correções da revisão final (branch `implement/v2-lambda-review-fixes`).**
+- O pacote da substituta agora segue TODA perda (inclusive as que o Controle declara ao encerrar um boot e a da reconciliação depois
+  de crash, itens 10 e 18 da revisão), com o texto da causa (`ended-unpublished`, `not-inspected`).
+- Ponto 4 da conduta nomeia o push exato que o Host aceita (política `wip` na ativação de trabalho); antes o Host recusava esse push.
+- Registro de canal ilegível: o pacote diz que não pôde ser lido, nunca "nenhum efeito registrado" (ver ticket 11).
+- **Should-fix 13:** a resposta "end" à Pergunta de branch ausente registra a origem verdadeira (evento `cancel-requested` com origem
+  `controller-dispatch` e "answer of Question <id>", impedimento "Ended by the accepted answer to Question <id>"), não `local-cli`.

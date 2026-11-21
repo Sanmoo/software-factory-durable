@@ -104,3 +104,27 @@ normal não deixa holder).
 `npm run test:ci` (2026-11-21, depois do merge da ponta de `integration/software-factory-v2-lambda` com os tickets 14 e 15): 2072 testes, 2050
 passam, 17 pulados, 5 falham, resultado FAIL. As 5 falhas são as conhecidas da base: `test/sandbox/audited-vfs-guard.test.ts` (4) e
 `test/sandbox/sandbox-adapter-diagnostics.test.ts` (1).
+
+## Comments
+
+**2026-11-21 — Passe de correções da revisão final (branch `implement/v2-lambda-review-fixes`).**
+- **Decisão 9 do Operador (2026-11-21), confirmação do que este ticket construiu:** a credencial do hook de término fica num processo
+  residente ("holder") no guest, como usuário do Builder, só em memória de processo (sem arquivo, sem deploy key, nada no payload do
+  hook); o hook não recebe entrada do chamador e só aciona um gatilho root-only; o holder empurra um programa fixo para uma ref validada
+  contra o padrão de marcador. Resíduo aceito: o token vive num processo residente durante a vida do grant, e esse push não passa pela
+  política de push do host. Sem marcador quando o grant foi retirado ou é somente leitura.
+- **Must-fix 1 (V2-17): perda em todo encerramento com trabalho não publicado.** Antes só três caminhos gravavam perda. Agora, antes de
+  o Controle encerrar um boot vivo fora de uma devolução de controle (falha do Builder, fim de orçamento, timeout da Execução, limite
+  de retry de revisor, parada limpa do controlador), ele roda UMA vez o `checkPreservation` sem correção (ocasião `boot-end`):
+  publicado e limpo confirma o commit e não é perda; workspace limpo no commit que o boot clonou também não; o resto é perda com
+  `cause: ended-unpublished`, boot parado com motivo `loss`, ledger do ticket 09 alimentado e pacote da substituta na próxima sessão.
+  Na reconciliação do início do controlador (crash) o ambiente não é inspecionado: perda com `cause: not-inspected`, a partir do que o
+  Controle sabe (ponta e marcador lidos por ele no `origin`, último commit confirmado). O resultado da checagem fica em
+  `execution.bootEndCheck`, para a reconciliação de uma parada que não pôde ser liquidada ao vivo.
+- **Não mudou a cobrança:** cada fim segue a regra do seu motivo. Parada limpa do controlador continua sem consumir retomada
+  operacional e timeout continua bloqueando (MVP); falha transitória e fim de orçamento com perda consomem uma retomada (V2-10).
+  Cancelamento e entrega confirmada não gravam perda (o Trabalho terminou).
+- `recordLoss` aceita o boot de qualquer Execução terminada nele (antes: só `failure`). `recordLossFrom` (`durable/loss.ts`) e
+  `readOriginOf` (`durable/origin-read.ts`) saíram do despacho para servir também à reconciliação.
+- Testes: `test/control/boot-end-loss-flow.test.ts`, `test/entrypoints/lambda-crash-reconciliation.test.ts`,
+  `test/entrypoints/lambda-environment-death-composed.test.ts` (inclui `keepMarker`, item 16).

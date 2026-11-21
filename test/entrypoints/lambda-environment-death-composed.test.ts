@@ -11,7 +11,7 @@ import { composeProductionAccess, composeProductionExecution } from '../../src/e
 import { productionProfile } from '../../src/entrypoints/release.js';
 import { createSandbox, type LambdaServiceFactory, type LambdaWorkerLauncher, type ReadResult, type ToolCall } from '../../src/sandbox/index.js';
 import { manualClock } from '../control/doubles.js';
-import { lambdaAccountFake } from '../sandbox/lambda-service-fake.js';
+import { accountClock, accountImageWait, lambdaAccountFake } from '../sandbox/lambda-service-fake.js';
 import { lambdaGuestFake } from '../sandbox/lambda-guest-fake.js';
 import { manualObservationTimer } from '../sandbox/lambda-observation-timer.js';
 import { githubWorld, issue, worldScope } from './github-world-fixture.js';
@@ -49,7 +49,7 @@ test('V2-15: the environment dies under a running Builder: no model request and 
   const pushes: Promise<void>[] = [];
   guests.world.origins[remoteUrl] = { commits: [tip], token: token => token.startsWith('synthetic-installation-secret-'),
     push: (ref, sha) => { pushes.push(world.update(state => { state.factoryRefs = { ...state.factoryRefs, [ref]: sha }; })); } };
-  const clock = { now: () => fake.account.clock.now, sleep: async (milliseconds: number) => { fake.account.clock.now += milliseconds; } };
+  const clock = accountClock(fake);
   const watch = manualObservationTimer(milliseconds => { fake.account.clock.now += milliseconds; });
   // ONE ordered log of everything the assertion is about: model requests, tool calls, and the instant the SERVICE confirms the cessation.
   const log: string[] = [];
@@ -97,7 +97,7 @@ test('V2-15: the environment dies under a running Builder: no model request and 
   };
 
   const composed = await composeProductionExecution({ root: world.root, effective, guestAssets: { directory: join(world.root, 'guest'), manifestSha256: 'a'.repeat(64) }, github,
-    lambda: { service, transport: guests.transport, clock, imageWait: { intervalSeconds: 10, maxSeconds: 900, sleep: clock.sleep }, workerLauncher: launcher, observationTimer: watch.timer } });
+    lambda: { service, transport: guests.transport, clock, imageWait: accountImageWait(clock), workerLauncher: launcher, observationTimer: watch.timer } });
   assert.equal(composed.status, 'composed', JSON.stringify(composed));
   if (composed.status !== 'composed') return;
   const ports: ExecutionPorts = composed.ports;
@@ -219,7 +219,7 @@ test('V2-17: a Builder that fails with unpublished work loses the boot visibly: 
   const pushes: Promise<void>[] = [];
   guests.world.origins[remoteUrl] = { commits: [tip], token: token => token.startsWith('synthetic-installation-secret-'), tip: () => null,
     push: (ref, sha) => { pushes.push(world.update(state => { state.factoryRefs = { ...state.factoryRefs, [ref]: sha }; })); } };
-  const clock = { now: () => fake.account.clock.now, sleep: async (milliseconds: number) => { fake.account.clock.now += milliseconds; } };
+  const clock = accountClock(fake);
   const watch = manualObservationTimer(milliseconds => { fake.account.clock.now += milliseconds; });
   // The guest's terminate hook runs when the SERVICE ends the MicroVM: whether a holder was still armed then is what `keepMarker` decides.
   const hooks: { microvmId: string; pushed: boolean }[] = [];
@@ -243,7 +243,7 @@ test('V2-17: a Builder that fails with unpublished work loses the boot visibly: 
     return { started, completed, deliver: async () => false };
   };
   const composed = await composeProductionExecution({ root: world.root, effective, guestAssets: { directory: join(world.root, 'guest'), manifestSha256: 'a'.repeat(64) }, github,
-    lambda: { service, transport: guests.transport, clock, imageWait: { intervalSeconds: 10, maxSeconds: 900, sleep: clock.sleep }, workerLauncher: launcher, observationTimer: watch.timer } });
+    lambda: { service, transport: guests.transport, clock, imageWait: accountImageWait(clock), workerLauncher: launcher, observationTimer: watch.timer } });
   assert.equal(composed.status, 'composed', JSON.stringify(composed));
   if (composed.status !== 'composed') return;
   const dir = await mkdtemp(join(tmpdir(), 'factory-lambda-control-loss-'));

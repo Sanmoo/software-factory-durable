@@ -44,7 +44,7 @@ retry não consome retomada. Tudo sobre o fake da conta: nenhuma chamada AWS, ne
   `running`/`unknown` são contados à parte e marcam `lowerBound`; nada medido dá `seconds: null`. `factory usage [<trabalho>]` mostra
   `works[].boots` (junto de tokens, orçamento e tempo) e, no escopo da instalação, `environmentBuilds`. Sem a porta (Gondolin) a view fica
   byte a byte como era. O acumulado não reinicia entre boots nem Execuções porque o ambiente é do Trabalho, e sobrevive ao Remover.
-- **Sem dólares.** Nenhum valor ou teto; `docs/lambda-installation.md` §7 diz como conferir o custo pela tag da instalação (cost
+- **Sem dólares.** Nenhum valor ou teto; `docs/lambda-installation.md` §9 (era §7 antes do merge com o ticket 15) diz como conferir o custo pela tag da instalação (cost
   allocation tags + Cost Explorer) e o que não foi conferido numa conta.
 - **Recusa por quota (V2-30).** O adapter devolve `SERVICE_CAPACITY_REFUSED` (era `MICROVM_CAPACITY_REFUSED`: renomeado porque a regra
   ESLint proíbe o Controle de nomear `microvm`). No Controle, `START_SERVICE_CAPACITY_REFUSED` (`serviceCapacityCodes` em
@@ -115,3 +115,8 @@ liberados, nenhuma retomada operacional é aberta ou consumida e a Factory tenta
 
 `npm run test:ci` (2026-11-21, branch `implement/v2-lambda-fix-autonomy`): 2089 testes, 2067 passam, 17 pulados, 5 falham, resultado FAIL. As 5
 falhas são as conhecidas da base: `test/sandbox/audited-vfs-guard.test.ts` (4) e `test/sandbox/sandbox-adapter-diagnostics.test.ts` (1).
+
+**2026-11-21 — Passe de correções da revisão final (branch `implement/v2-lambda-review-fixes`).**
+- **Should-fix 8:** a causa da espera de capacidade aparece na visão do Trabalho e no `factory status`: `dispatch.capacityWait`
+  (código, causa do serviço, `notBefore`, espera, tentativa). Antes só `BOOT_CAPACITY_WAIT`. Teste: `test/control/usage14-flow.test.ts`.
+- A decisão 5 foi estendida à troca planejada (ver ticket 09). Referência de seção corrigida no Answer (§9).

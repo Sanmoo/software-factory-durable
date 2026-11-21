@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { main } from '../../src/entrypoints/cli.js';
 import { cleanupImages, imageCleanupExitCode, imageCleanupText } from '../../src/entrypoints/image-cleanup.js';
 import { createSandbox, type EnvironmentRef } from '../../src/sandbox/index.js';
-import { lambdaAccountFake } from '../sandbox/lambda-service-fake.js';
+import { accountClock, lambdaAccountFake } from '../sandbox/lambda-service-fake.js';
 
 // v2 ticket 15: `factory cleanup-images`, composed in-process over the in-memory account (the CLI itself would run `aws`).
 const configuration = (sandbox: string) => `schemaVersion: 1
@@ -46,7 +46,7 @@ async function captured(run: () => Promise<number>) {
 test('cleanup-images shows the plan, refuses an image a Work still holds, and deletes it only with the confirmation once the Work\'s environment was removed', async t => {
   const root = await installed(t, '{adapter: lambda, schemaVersion: 1, awsProfile: factory, installation: acme}');
   const fake = lambdaAccountFake();
-  const clock = { now: () => fake.account.clock.now, sleep: async (milliseconds: number) => { fake.account.clock.now += milliseconds; } };
+  const clock = accountClock(fake);
   const sandbox = createSandbox({ root, lambdaService: fake.service, lambdaBootClock: clock, lambdaImageWait: { intervalSeconds: 10, maxSeconds: 900, sleep: clock.sleep } });
   const prepared = await sandbox.prepare({ workId, configuration: lambda, environment: pinned });
   assert.equal(prepared.status, 'success', JSON.stringify(prepared));

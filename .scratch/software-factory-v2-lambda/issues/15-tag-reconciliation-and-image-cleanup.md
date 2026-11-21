@@ -106,3 +106,15 @@ O que os tickets seguintes precisam saber:
 `npm run test:ci` (2026-11-21, depois do merge da ponta de `integration/software-factory-v2-lambda` com os tickets 07 e 10): 2038 testes,
 2016 passam, 17 pulados, 5 falham, resultado FAIL. As 5 falhas são as conhecidas da base: `test/sandbox/audited-vfs-guard.test.ts` (4) e
 `test/sandbox/sandbox-adapter-diagnostics.test.ts` (1).
+
+## Comments
+
+**2026-11-21 — Passe de correções da revisão final (branch `implement/v2-lambda-review-fixes`).**
+- **Itens 10, 18 e 26 da revisão:** o boot de uma Execução interrompida por queda do controlador, sem disco persistente e com Builder
+  ativado, é parado com motivo `loss` (antes `end`) e a perda é gravada na reconciliação (`cause: not-inspected`), com entrada no
+  ledger de boots. `reconcileBoot` recebe `access` para as leituras do `origin`. O teste de crash confere isso.
+- **Standards 3:** `test/entrypoints/lambda-crash-reconciliation.test.ts` usa `ended()` (filho `detached`) e o filho usa `untilHolds()`
+  do orçamento do runner; não há mais espera sem limite.
+- Seções 1 e 6 de `docs/lambda-installation.md` e `docs/local-installation.md` não dizem mais que o controlador recusa Trabalhos no
+  adapter (item 9, standards 2). `SANDBOX_ADAPTER_UNAVAILABLE` saiu dos tipos de recusa da seleção e da composição (standards 5); só a
+  guarda do ciclo Gondolin o emite.
