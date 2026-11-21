@@ -21,6 +21,12 @@ export type SandboxCapabilities = {
     publicTcp: boolean;
     /** v2 ticket 04 (V2-25): outbound UDP and outbound IPv6 exist; the guest reaches a private network of the Operator (a VPC). */
     udp: boolean; ipv6: boolean; privateNetwork: boolean };
+  /**
+   * v2 ticket 11 (V2-21): a dropped tool channel does not end the activation while the environment lives. The sandbox reconnects, ends
+   * the orphan call and returns it to the session as "indeterminate"; what it could not confirm is in its channel report of the boot.
+   * Absent or `false`: a lost channel ends the activation (the MVP rule) and there is no report to read.
+   */
+  channelRecovery?: boolean;
 };
 
 /** The capabilities a repository can REQUIRE (V2-04). Names are shown to the operator in diagnostics. */

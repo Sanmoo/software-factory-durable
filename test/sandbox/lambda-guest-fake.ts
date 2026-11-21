@@ -12,7 +12,11 @@ import type { lambdaAccountFake } from './lambda-service-fake.js';
  * It models a GUEST, not call scripts. Each MicroVM gets its own guest when it runs: a fresh host key, the session key authorized by the
  * run hook payload, an EMPTY disk (no repository, no caches, no Docker data) and the Docker images its MicroVM image declares, pulled by
  * digest at that boot. Tests change the world (`origins`, `pullFailures`, `sshReadySeconds`, a guest's `hostKey`/`files`) and add
- * programs with `programs`; ticket 11 adds orphan processes on the same guest.
+ * programs with `programs`.
+ *
+ * Ticket 11: a tool program that registers itself (`echo $$ > <marker>`) is a PROCESS of the guest (`processes`). It outlives its connection:
+ * `drop()` cuts open connections the way a network failure does (the client gets no exit status, the program keeps running), `end-call`
+ * kills the process group a marker names, and `world.channelDown` refuses new connections while the MicroVM stays alive.
  *
  * Ticket 05: the guest has the Unix users its IMAGE creates (read from the Dockerfile and `sshd_config` of the build artifact): who may
  * log in, who is in the `docker` group, who owns the workspace. The `tool` program is what the tool backends send (a quoted argument
@@ -32,14 +36,18 @@ export type FakeGuest = { microvmId: string;
   /** `/workspace/checkout` once cloned. */ repository: { remote: string; commit: string; branch: string | null } | null;
   logs: Record<string, string>;
   /** Every program that ran here, with the NAMES of its environment (values are checked by the handlers, never kept). */
-  executions: { program: string; user: string; script: string; environmentNames: string[] }[] };
+  executions: { program: string; user: string; script: string; environmentNames: string[] }[];
+  /** Tool programs that registered a call marker (ticket 11): each is one process group, alive until it exits or is killed. */
+  processes: { marker: string; user: string; state: 'running' | 'exited' | 'killed' }[] };
 export type FakeProgramResult = { exitCode: number; stdout?: string | Buffer; stderr?: string };
 /** A running program: its Unix user, output it writes before it ends, and whether its connection is still open. */
-export type FakeRun = { user: string; emit(data: string | Buffer): void; readonly connected: boolean; /** Resolves when the connection closes under the program. */ disconnected: Promise<void> };
+export type FakeRun = { user: string; emit(data: string | Buffer): void; readonly connected: boolean; /** Resolves when the connection closes under the program. */ disconnected: Promise<void>;
+  /** Resolves when the program's process group is killed (ticket 11); never for a program without a call marker. */ killed: Promise<void> };
 export type FakeProgram = (guest: FakeGuest, request: GuestExecRequest, run: FakeRun) => FakeProgramResult | Promise<FakeProgramResult>;
 /** A shell command of the Builder's Bash, by exact text: its environment is what the command sees, its return the exit status. */
 export type FakeCommand = (guest: FakeGuest, run: FakeRun & { environment: Record<string, string>; stdin: string }) => number | Promise<number>;
-export type FakeConnection = { microvmId: string; token: string; keepaliveSeconds: number; user: string; program: string; open: boolean };
+export type FakeConnection = { microvmId: string; token: string; keepaliveSeconds: number; user: string; program: string; open: boolean;
+  /** What the client presented and accepted on this connection (ticket 11: a reconnection uses the boot's own). */ identityFile: string; hostKey: string };
 
 /** One file of a stored (uncompressed) build artifact. */
 function artifactFile(zip: Uint8Array | undefined, wanted: string): string {
@@ -72,13 +80,15 @@ function quotedWords(text: string): string[] | null {
   if (open) words.push(word);
   return words;
 }
+/** A tool program as the host writes it: an optional call marker (ticket 11), the working directory and the quoted argument vector. */
+const toolScriptPattern = /^(?:echo \$\$ > '([^']*)' && )?cd '([^']*)' && exec (.*)$/s;
 const sha256 = (data: string | Buffer) => createHash('sha256').update(data).digest('hex');
 const roots = ['/workspace', '/artifacts'];
 
 /** The fixed guest programs of the tool backends, applied to the fake disk as `run.user`. Exit statuses are the programs' own. */
 async function toolProgram(guest: FakeGuest, request: GuestExecRequest, run: FakeRun, commands: Record<string, FakeCommand>): Promise<FakeProgramResult> {
-  const script = /^cd '([^']*)' && exec (.*)$/s.exec(request.script);
-  const argv = script ? quotedWords(script[2]!) : null;
+  const script = toolScriptPattern.exec(request.script);
+  const argv = script ? quotedWords(script[3]!) : null;
   if (!argv) return { exitCode: 2, stderr: 'not a tool program\n' };
   const stdin = Buffer.from(request.stdin ?? []).toString('utf8');
   const inside = (path: string) => roots.some(root => path.startsWith(`${root}/`)) && !path.split('/').includes('..');
@@ -141,6 +151,8 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
     sshReadySeconds: 7,
     /** Image references whose pull by digest fails at boot. */
     pullFailures: [] as string[],
+    /** Ticket 11: while set, no NEW connection reaches a guest although its MicroVM runs (a network failure between host and service). */
+    channelDown: false,
     /** Programs beyond the adapter's fixed ones, by `program` name; they also override a built-in. */
     programs: {} as Record<string, FakeProgram>,
     /** Shell commands of the Builder's Bash, by exact command text. */
@@ -171,7 +183,21 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
     },
     evidence: guest => ({ exitCode: 0, stdout: Object.entries(guest.logs).map(([file, text]) => `===== ${file}\n${text}\n`).join('') }),
     tool: (guest, request, run) => toolProgram(guest, request, run, world.commands),
+    // Ticket 11: ends the process group a call marker names. Only the owner of a process may kill it.
+    'end-call': (guest, request, run) => {
+      const marker = /^marker='([^']*)'$/m.exec(request.script)?.[1];
+      const process = guest.processes.find(candidate => candidate.marker === marker);
+      if (!process) return { exitCode: 0, stdout: 'call-not-started\n' };
+      if (process.state === 'running') {
+        if (process.user !== run.user) return { exitCode: 5, stdout: 'call-alive\n' };
+        process.state = 'killed';
+        kills.get(process)?.();
+      }
+      return { exitCode: 0, stdout: 'call-ended\n' };
+    },
   };
+  const kills = new Map<FakeGuest['processes'][number], () => void>();
+  const drops = new Set<() => void>();
 
   /** The guest of a running MicroVM, born on first contact from what the service handed to its run hook. */
   const guestOf = (endpoint: string): FakeGuest | null => {
@@ -193,7 +219,7 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
     const dockerImages = declared.filter(reference => !world.pullFailures.includes(reference));
     const pullFailed = dockerImages.length !== declared.length;
     const guest: FakeGuest = { microvmId: microvm.microvmId, hostKey: generateSessionKey().publicKey, authorized: payload.builder ? Object.fromEntries(Object.entries(users).filter(([, user]) => user.login).map(([name]) => [name, payload.builder!])) : {},
-      files: new Map(), modes: new Map(), directories: new Set(), users, owner, dockerImages, pullFailed, repository: null, executions: [],
+      files: new Map(), modes: new Map(), directories: new Set(), users, owner, dockerImages, pullFailed, repository: null, executions: [], processes: [],
       logs: { '/var/log/factory-done': `boot-done pull=${pullFailed ? 1 : 0}`, '/var/log/factory-pull.log': declared.map(reference => `pull ${reference}`).join('\n') } };
     guests.set(microvm.microvmId, guest);
     return guest;
@@ -203,6 +229,7 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
   const admit = (target: GuestTarget): { guest: FakeGuest } | GuestRefusal => {
     const admitted = fake.admits({ endpoint: target.endpoint, port: target.port, token: target.token });
     if (admitted === 'gone') return { status: 'refused', code: 'UNREACHABLE' };
+    if (world.channelDown) return { status: 'refused', code: 'UNREACHABLE' };
     if (admitted === 'forbidden') return { status: 'refused', code: 'TOKEN_REFUSED', detail: 'Received unexpected status code (403 Forbidden)' };
     const microvm = fake.account.microvms.find(candidate => candidate.endpoint === target.endpoint)!;
     if (fake.account.clock.now < microvm.runningAt + world.sshReadySeconds * 1000) return { status: 'refused', code: 'UNREACHABLE' };
@@ -224,7 +251,8 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
       const { guest } = admitted;
       // The client refuses a host key other than the pinned one before anything runs.
       if (guest.hostKey !== target.hostKey) return { status: 'refused', code: 'HOST_KEY_MISMATCH', detail: 'Host key verification failed.' };
-      const connection: FakeConnection = { microvmId: guest.microvmId, token: target.token, keepaliveSeconds: target.keepaliveSeconds, user: target.user, program: request.program, open: true };
+      const connection: FakeConnection = { microvmId: guest.microvmId, token: target.token, keepaliveSeconds: target.keepaliveSeconds, user: target.user, program: request.program, open: true,
+        identityFile: target.identityFile, hostKey: target.hostKey };
       connections.push(connection);
       guest.executions.push({ program: request.program, user: target.user, script: request.script, environmentNames: Object.keys(request.environment ?? {}) });
       const program = world.programs[request.program] ?? builtIn[request.program];
@@ -240,9 +268,20 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
         const aborted = new Promise<'aborted'>(resolve => {
           if (options.signal?.aborted) resolve('aborted'); else options.signal?.addEventListener('abort', () => resolve('aborted'), { once: true });
         });
+        // Cut from outside (ticket 11): the client loses the connection, nobody asked the program to stop.
+        let cut!: () => void;
+        const dropped = new Promise<'aborted'>(resolve => { cut = () => resolve('aborted'); });
+        drops.add(cut);
+        const gone = Promise.race([aborted, dropped]);
+        const marker = request.program === 'tool' ? toolScriptPattern.exec(request.script)?.[1] : undefined;
+        const process = marker ? { marker, user: target.user, state: 'running' as 'running' | 'exited' | 'killed' } : null;
+        const killed = new Promise<void>(resolve => { if (process) { guest.processes.push(process); kills.set(process, resolve); } });
         const run: FakeRun = { user: target.user, emit: deliver, get connected() { return connection.open; },
-          disconnected: aborted.then(() => { connection.open = false; }) };
-        const outcome = await Promise.race([Promise.resolve(program ? program(guest, request, run) : { exitCode: 127, stderr: `${request.program}: not found\n` }), aborted]);
+          disconnected: gone.then(() => { connection.open = false; }), killed };
+        const running = Promise.resolve(program ? program(guest, request, run) : { exitCode: 127, stderr: `${request.program}: not found\n` });
+        // The program is a process of the guest: it ends when IT ends, whatever happened to the connection that started it.
+        void running.then(() => { if (process?.state === 'running') process.state = 'exited'; }, () => {}).finally(() => drops.delete(cut));
+        const outcome = await Promise.race([running, gone]);
         // A closed connection or a dead MicroVM gives the client no exit status; the token's expiry alone ends nothing.
         if (outcome === 'aborted') return { status: 'lost' };
         fake.settle();
@@ -258,8 +297,10 @@ export function lambdaGuestFake(fake: ReturnType<typeof lambdaAccountFake>) {
    */
   const inside = async (microvmId: string, user: string, request: GuestExecRequest) => {
     let output = '';
-    const result = await builtIn.tool!(guests.get(microvmId)!, request, { user, emit: data => { output += data.toString('utf8'); }, connected: true, disconnected: new Promise(() => {}) });
+    const result = await builtIn.tool!(guests.get(microvmId)!, request, { user, emit: data => { output += data.toString('utf8'); }, connected: true, disconnected: new Promise(() => {}), killed: new Promise(() => {}) });
     return { exitCode: result.exitCode, output: output + (result.stdout?.toString('utf8') ?? '') };
   };
-  return { world, guests, connections, transport, inside, guestOf: (microvmId: string) => guests.get(microvmId) ?? null };
+  /** Ticket 11: cuts every open connection as a network failure does. The programs keep running in their guests. */
+  const drop = () => { for (const cut of [...drops]) cut(); };
+  return { world, guests, connections, transport, inside, drop, guestOf: (microvmId: string) => guests.get(microvmId) ?? null };
 }

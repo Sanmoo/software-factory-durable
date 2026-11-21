@@ -39,6 +39,9 @@ export const channelPrelude = ['exec 2>&1',
     'GH_CONFIG_DIR=/tmp/factory-gh-config; else unset GH_TOKEN; fi',
   'exec /bin/bash -c "$command"'].join('\n');
 
+/** v2 ticket 11 (V2-21): the command started, its channel dropped and its process group was ended. Effects may have happened. */
+export const bashResultIndeterminate = 'BASH_RESULT_INDETERMINATE';
+
 /** Fixed guest PATH exported to every Builder/guest command (Alpine guest profile directories). */
 export const guestPath = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
 /** Fixed Factory commit identity of every Builder command (never a human's, never chosen by the model); only Host configuration may replace it. */
@@ -129,6 +132,12 @@ export function boundBashTools(options: ReadBinding & { vm: GuestOwner }, valid:
         }
       }
       const result = await process.result;
+      // v2 ticket 11: the channel dropped under a command that had started. The host records the effect as uncertain; when the adapter
+      // ended the orphan, the session gets "indeterminate" and keeps this binding (nothing more can come from that command).
+      if (result.channel !== undefined && valid() && !lifetime.signal.aborted) {
+        await options.uncertainEffect?.({ tool: 'bash', callId: call.callId, description: call.command, outcome: result.channel });
+        if (result.channel === 'orphan-ended' && valid() && !lifetime.signal.aborted) return failure(bashResultIndeterminate);
+      }
       if (!valid() || lifetime.signal.aborted || !Number.isInteger(result.exitCode) || result.exitCode === null ||
           result.exitCode < 0 || result.exitCode > 255) throw new Error('BASH_EFFECTS_UNKNOWN');
       if (timer !== undefined) { clearTimeout(timer); timer = undefined; }

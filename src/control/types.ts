@@ -1,4 +1,4 @@
-import type { AccessDiagnostic, EnvironmentBaseIdentity, EnvironmentDeclarationError, PinnedEnvironment, BudgetEndProgress, BuilderBudgetConfiguration, BuilderCredentials, CheckoutFingerprint, BuilderGrantMetadata, GitHubScope, HandoffDeclarations, ProposalHandoff, ProposalIdentity, ReviewerRole, ReviewOpinion, RevocationResult, SandboxCapabilities, StartRetryRemedy } from '../contracts/index.js';
+import type { AccessDiagnostic, ChannelReport, IndeterminateEffect, EnvironmentBaseIdentity, EnvironmentDeclarationError, PinnedEnvironment, BudgetEndProgress, BuilderBudgetConfiguration, BuilderCredentials, CheckoutFingerprint, BuilderGrantMetadata, GitHubScope, HandoffDeclarations, ProposalHandoff, ProposalIdentity, ReviewerRole, ReviewOpinion, RevocationResult, SandboxCapabilities, StartRetryRemedy } from '../contracts/index.js';
 import type { CheckoutRequest, EnvironmentRef, PreparedWork, RemoveResult, StartResult, StopResult, BootRef } from '../sandbox/index.js';
 import type { ActivationDelivery, DeliveryResult, ActivationEvents, HandoffEvent, Invocation, WorkerDirective, WorkerCompletion, SessionObservation, WorkerSessionRef, OpinionObservation, QuestionObservation } from '../workers/index.js';
 export type { SessionObservation, WorkerSessionRef as SessionRef } from '../workers/index.js';
@@ -165,6 +165,9 @@ export type ExecutionPorts = {
     /** Ticket 48: Host fingerprint of the Work's checkout (confined reads of Git metadata + a bounded walk of the tree; no host git, no guest
      * command). Absent = progress after a budget end is never established (it goes to recovery). */
     observeCheckout?(input: { environment: EnvironmentRef }): Promise<CheckoutFingerprint>;
+    /** v2 ticket 11 (V2-21): what a dropped tool channel left unconfirmed on one boot. Read only when the sandbox declares
+     * `channelRecovery`, before the Execution's end is recorded and again before its boot is stopped; the result is recorded durably. */
+    channelReport?(input: { environment: EnvironmentRef; boot: BootRef }): Promise<ChannelReport>;
   };
   workers: { activate(invocation: Invocation, delivery?: ActivationDelivery, events?: ActivationEvents): Promise<{ worker: string;
     started: Promise<{ receipt: { workId: string; id: string }; invocation: { executionId: string; invocationId: string } }>; completed: Promise<WorkerCompletion>;
@@ -332,7 +335,12 @@ export type ExecutionView = {
   /** Ticket 48: the Host's fingerprint of the Work's checkout when this Execution was prepared and, after a budget end, when its boot ceased,
    * with the progress decided from them (never from the model's claim). */
   checkout?: { atStart: CheckoutFingerprint | null; atEnd?: CheckoutFingerprint | null; progress?: BudgetEndProgress | null; guestStop?: string | null };
+  /** v2 ticket 11 (V2-21): tool calls of this Execution that started and whose result never arrived (the channel dropped), as the sandbox
+   * reported them. Their effects may have happened; a substitute session is told of them and never repeats one by assumption (V2-19). */
+  indeterminateEffects?: IndeterminateEffectRecord[];
 };
+/** One indeterminate effect as Control keeps it: the sandbox's report plus the boot it ran in and when Control recorded it. */
+export type IndeterminateEffectRecord = IndeterminateEffect & { boot: string; recordedAt: string };
 /** Remote tip of the Work's own branch as observed by a complete read (`absent` = no such ref). */
 export type BranchObservation = { state: 'absent' } | { state: 'present'; sha: string };
 /** What one publication activation may publish (spec §9.1): fixed by Control, never chosen by the model. */

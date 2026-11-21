@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createEditTool, type ToolDefinition } from '#factory-pi';
 import type { ToolContext, ToolProjection, ReadResult } from '../sandbox/index.js';
+import { indeterminateResultText, isIndeterminateResult } from './indeterminate.js';
 
 // Optional private SDK capability, fixed at host construction, never model-selected.
 type LexicalEditOptions = NonNullable<Parameters<typeof createEditTool>[1]> & { mutationQueueMode: 'lexical' };
@@ -158,6 +159,8 @@ export function builderEdit(context: ToolContext, sandbox: ToolProjection, onCri
           const result = await rpc(call);
           check();
           if (result.status !== 'success') {
+            // v2 ticket 11: the commit's channel dropped and its process was ended; the source is spent, the session goes on.
+            if (isIndeterminateResult(result.code)) throw new Error(indeterminateResultText(result.code));
             if (result.code !== 'EDIT_SOURCE_CHANGED') critical();
             throw new Error(result.code);
           }

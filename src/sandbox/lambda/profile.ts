@@ -37,7 +37,9 @@ export function lambdaCapabilities(profile: LambdaProfile): SandboxCapabilities 
   return Object.freeze({ docker: true, persistentDisk: false,
     bootDuration: Object.freeze({ maxSeconds: profile.maxBootSeconds, rotationMarginSeconds: profile.rotationMarginSeconds }),
     // V2-25, `INTERNET_EGRESS`: any public IPv4 destination by TCP, unmediated and unfiltered; no outbound UDP or IPv6; no VPC.
-    egress: Object.freeze({ mediation: 'none', publicTcp: true, udp: false, ipv6: false, privateNetwork: false }) });
+    egress: Object.freeze({ mediation: 'none', publicTcp: true, udp: false, ipv6: false, privateNetwork: false }),
+    // V2-21: a dropped channel is recovered while the MicroVM lives (`lambda/tools.ts`).
+    channelRecovery: true });
 }
 
 /**
