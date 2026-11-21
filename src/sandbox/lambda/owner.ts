@@ -92,7 +92,10 @@ export async function serveLambdaOwner(dependencies: LambdaBootDependencies & { 
         if (bound.status !== 'bound') throw new Error(bound.code);
       },
       close: () => tools.close(),
-      credential: token => { void setMarker(token); },
+      // Final review (should-fix 7, `keepMarker`): the holder follows the GRANT, not the worker that carried it. A Builder whose activation
+      // ended (or failed) leaves the holder armed until Control withdraws the grant or the boot is stopped: only then can a boot that
+      // Control ends as a loss still push its marker from the terminate hook. A stop that is not a loss ends the holder first.
+      credential: (token, reason) => { if (token !== undefined || reason !== 'holder-closed') void setMarker(token); },
       launch: async (request, endpoint, lifetime, secrets, relay, onHandoff) => {
         // No worker starts on an environment that ended, and none outlives it.
         if (environmentGone.signal.aborted) throw new Error('ENVIRONMENT_ENDED');

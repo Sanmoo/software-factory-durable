@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { until } from '../runner/budget.js';
+import { ended, until } from '../runner/budget.js';
 import { openControl, type ControlStatus, type ListView, type WorkView } from '../../src/control/index.js';
 import { composeProductionAccess, composeRuntimeInventory } from '../../src/entrypoints/controller/composition.js';
 import { installationTagKey, workTagKey } from '../../src/sandbox/index.js';
@@ -32,12 +32,12 @@ test('v2 ticket 15: after a SIGKILL of the controller with a boot in progress, t
   const accountFile = join(dir, 'aws-account.json'), storagePath = join(dir, 'control.sqlite');
 
   // The controller dies with its boot in progress.
-  const child = spawn(process.execPath, [fileURLToPath(new URL('./lambda-crash-child.js', import.meta.url)), world.root, world.executable, accountFile, storagePath], { stdio: ['ignore', 'pipe', 'inherit'] });
+  // Detached and bounded by the runner's budget (docs/agents/testing.md): past it `ended` kills the child's whole group and names the stage.
+  const child = spawn(process.execPath, [fileURLToPath(new URL('./lambda-crash-child.js', import.meta.url)), world.root, world.executable, accountFile, storagePath], { stdio: ['ignore', 'pipe', 'inherit'], detached: true });
   let output = '';
-  await new Promise<void>((resolve, reject) => {
-    child.stdout!.on('data', (chunk: Buffer) => { output += chunk; if (output.includes('CUT')) child.kill('SIGKILL'); });
-    child.on('exit', (_code, signal) => signal === 'SIGKILL' ? resolve() : reject(new Error(`child exited without crash: ${output}`)));
-  });
+  child.stdout!.on('data', (chunk: Buffer) => { output += chunk; if (output.includes('CUT')) child.kill('SIGKILL'); });
+  const exit = await ended(child, () => `waiting for the child controller to reach its boot (output so far: ${output || 'none'})`);
+  assert.equal(exit.signal, 'SIGKILL', `child exited without crash: ${output}`);
 
   // What the dead controller left in the account: one running MicroVM, tagged with the installation and the Work, and nobody owning it.
   const left = lambdaAccountFake({ stateFile: accountFile });
@@ -70,17 +70,17 @@ test('v2 ticket 15: after a SIGKILL of the controller with a boot in progress, t
   const running = control.run(stop.signal);
   t.after(async () => { if (!stop.signal.aborted) { stop.abort(); await running; } });
   const crashedOf = (work: WorkView | undefined) => [...(work?.previousExecutions ?? []), ...(work?.execution ? [work.execution] : [])].find(execution => execution.recovery?.length);
-  const work = await until('the interrupted Execution is settled', async () => {
+  const work = await until('the interrupted Execution is settled and its loss recorded', async () => {
     const value = ((await control.inspect({ kind: 'list' })) as ListView).works[0] as WorkView | undefined;
-    if (crashedOf(value)) return value!;
+    if (value && crashedOf(value) && value.losses?.length && value.bootLedger?.length) return value;
     if (time.isSleeping()) time.advance();
     return undefined;
   }, 10);
   assert.equal(work.work_id, workId);
 
   // The MicroVM without a living Execution is ended, and the end is the service's own answer (GetMicrovm), not an assumption.
-  const ended = next.fake.account.microvms.find(microvm => microvm.microvmId === survivor.microvmId)!;
-  assert.equal(ended.state, 'TERMINATED');
+  const terminated = next.fake.account.microvms.find(microvm => microvm.microvmId === survivor.microvmId)!;
+  assert.equal(terminated.state, 'TERMINATED');
   assert.deepEqual(next.fake.mutations.filter(call => call.operation === 'terminateMicrovm').map(call => call.input).slice(0, 1), [survivor.microvmId]);
   const operations = next.fake.calls.filter(call => call.input === survivor.microvmId).map(call => call.operation);
   assert.equal(operations.lastIndexOf('microvm') > operations.indexOf('terminateMicrovm'), true, 'cessation was read from the service after the request');
@@ -91,8 +91,11 @@ test('v2 ticket 15: after a SIGKILL of the controller with a boot in progress, t
   assert.deepEqual([crashed.state, crashed.end?.code, crashed.end?.cessation, crashed.slot.held], ['ended', 'CONTROLLER_CRASH', 'confirmed', false]);
   const boot = JSON.parse(await readFile(join(world.root, 'lambda', 'works', crashed.dispatch.environment!, 'boots', crashed.dispatch.boot!, 'boot.json'), 'utf8')) as {
     phase: string; microvmId: string; stop: { reason: string; detail: string }; end: { reason: string; terminatedAt: string } };
-  assert.deepEqual([boot.phase, boot.microvmId, boot.end.reason, boot.end.terminatedAt], ['ended', survivor.microvmId, 'end', new Date(ended.terminatedAt!).toISOString()]);
-  assert.match(boot.stop.detail, /controller recovery/);
+  // Final review, must-fix 1 (items 10, 18, 26): the Builder was at work in that boot and nobody could inspect it, so its end is a LOSS in
+  // the adapter's record and in Control's (from its own reads of origin), and the boot is in the Work's ledger.
+  assert.deepEqual([boot.phase, boot.microvmId, boot.stop.reason, boot.end.reason, boot.end.terminatedAt], ['ended', survivor.microvmId, 'loss', 'loss', new Date(terminated.terminatedAt!).toISOString()]);
+  assert.deepEqual(work.losses?.map(item => [item.executionId, item.boot, item.cause, item.confirmed.commit]), [[crashed.executionId, crashed.dispatch.boot, 'not-inspected', null]]);
+  assert.deepEqual(work.bootLedger?.map(item => [item.boot, item.end]), [[crashed.dispatch.boot, 'loss']]);
   const inventories = await readdir(join(world.root, 'lambda', 'reconciliations'));
   assert.equal(inventories.length, 1);
   const inventory = JSON.parse(await readFile(join(world.root, 'lambda', 'reconciliations', inventories[0]!), 'utf8')) as { evidence: string; otherInstallations: number;

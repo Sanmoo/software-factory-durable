@@ -33,12 +33,16 @@ export type RecoveryDeps = { session: Session; ports: ExecutionPorts; controller
  * worked in it and no preservation gate confirmed that boot. The reconciliation ends such a boot without being able to inspect it, so
  * whatever it held beyond `origin` is a loss. Null otherwise (a persistent disk; no activation was requested; the gate accepted there).
  */
-export function unconfirmedBoot(ports: ExecutionPorts['sandbox'], work: Pick<WorkRecord, 'preservation' | 'losses'>, execution: ExecutionView): { boot: string; environment: string | null } | null {
+export function unconfirmedBoot(ports: ExecutionPorts['sandbox'], work: Pick<WorkRecord, 'preservation' | 'losses'>, execution: ExecutionView):
+  { boot: string; environment: string | null; /** What the live check before the stop had found, when one was made. */ checked: string | null } | null {
   const boot = execution.dispatch.boot;
   if (ports.capabilities?.persistentDisk !== false || !boot || (['reserved', 'prepared', 'booted'].includes(execution.dispatch.phase) && !execution.start)) return null;
   const preserved = work.preservation?.boot === boot && work.preservation.executionId === execution.executionId && execution.preservationGate?.attempts.at(-1)?.outcome === 'accepted';
   if (preserved || work.losses?.some(item => item.executionId === execution.executionId && item.boot === boot)) return null;
-  return { boot, environment: execution.dispatch.environment };
+  // The controller that ended (or tried to end) this boot checked it first, while it was alive: its finding stands.
+  const check = execution.bootEndCheck?.boot === boot ? execution.bootEndCheck : null;
+  if (check && check.outcome !== 'unpublished') return null;
+  return { boot, environment: execution.dispatch.environment, checked: check?.reason ?? null };
 }
 
 /** An Execution that still needs reconciliation: it may hold a Slot, a reservation or an activity whose cessation was never confirmed. */
@@ -361,12 +365,12 @@ export async function reconcileExecution(deps: Omit<RecoveryDeps, 'live'>, work:
  * Control knows (the Work branch tip and the marker refs by its own reads of `origin`, the last gate-confirmed commit), and the boot in
  * the Work's ledger. An Execution that proved never to have started has no end and records nothing.
  */
-async function recordUninspectedLoss(deps: Omit<RecoveryDeps, 'live'>, work: WorkRecord, execution: ExecutionView, lost: { boot: string; environment: string | null }) {
+async function recordUninspectedLoss(deps: Omit<RecoveryDeps, 'live'>, work: WorkRecord, execution: ExecutionView, lost: { boot: string; environment: string | null; checked: string | null }) {
   if (!deps.access) return;
   const branch = execution.request.branch;
   const recorded = await recordLossFrom({ session: deps.session, access: deps.access }, work, execution, lost,
-    { reason: 'The controller was not running when this boot ended; it was ended at the next controller start without inspection.', terminatedAt: null },
-    execution.timing?.lastActivity?.elapsedMs ?? null, 'not-inspected');
+    { reason: lost.checked ?? 'The controller was not running when this boot ended; it was ended at the next controller start without inspection.', terminatedAt: null },
+    execution.timing?.lastActivity?.elapsedMs ?? null, lost.checked ? 'ended-unpublished' : 'not-inspected');
   if (recorded.outcome !== 'recorded') return;
   const swapped = execution.swaps?.findLast(item => item.outcome?.toBoot === lost.boot)?.outcome ?? null;
   const startTip: OriginObservation = swapped?.commit ? { state: 'present', sha: swapped.commit } : execution.origin?.atStart ?? { state: 'unknown', code: 'ORIGIN_NOT_READ' };

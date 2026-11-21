@@ -34,7 +34,9 @@ test('a session key is an ed25519 pair: the public line for the run hook payload
   const directory = await scratch(t);
   await writeFile(join(directory, 'identity'), first.privateKey, { mode: 0o600 });
   const derived = local('ssh-keygen', ['-y', '-f', join(directory, 'identity')]);
-  if (derived.error) return t.skip('ssh-keygen is not installed on this host');
+  // Never a silent skip: the OpenSSH client tools are a prerequisite of the adapter's host (docs/lambda-installation.md, section 6), so a
+  // host without them fails here by name instead of reporting a test that proved nothing.
+  assert.equal(derived.error, undefined, `ssh-keygen (OpenSSH client tools) is required on the host that runs this suite: ${derived.error?.message}`);
   assert.equal(derived.stdout.trim().split(' ').slice(0, 2).join(' '), first.publicKey);
 });
 

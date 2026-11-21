@@ -42,3 +42,13 @@ export async function recordGateCorrection(session: Session, work_id: string, ex
     return 'recorded' as const;
   }, BACKGROUND_CONTEXT);
 }
+
+/** Final review, must-fix 1: the outcome of the single check Control made before ending a boot itself (`ExecutionView.bootEndCheck`). */
+export async function recordBootEndCheck(session: Session, work_id: string, executionId: string, check: Omit<NonNullable<ExecutionView['bootEndCheck']>, 'at'>) {
+  return session.commit(async tx => {
+    const execution = (await tx.doc(works, work_id, null)).work?.execution ?? null;
+    if (!execution || execution.executionId !== executionId) return 'stale' as const;
+    execution.bootEndCheck = { at: new Date().toISOString(), ...check, reason: check.reason?.slice(0, 512) ?? null };
+    return 'recorded' as const;
+  }, BACKGROUND_CONTEXT);
+}

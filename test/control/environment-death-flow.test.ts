@@ -89,3 +89,21 @@ test('V2-15: an Execution that ended normally stops watching its boot', async t 
   assert.deepEqual([h.watched.length, h.watched[0]!.signal.aborted], [1, true]);
   assert.deepEqual([(await h.work()).execution!.end?.outcome, (await h.work()).execution!.end?.code], ['completed', null]);
 });
+
+test('V2-15: an environment that ends before the Builder\'s start was confirmed ends nothing by guess: the Execution is held with its Slot under ENVIRONMENT_ENDED_START_UNCONFIRMED and the next controller start reconciles it', async t => {
+  // The worker was asked to start and never wrote its receipt: whether it started is unknown when the environment ends.
+  const h = await harness(t, [{ kind: 'no-receipt' }], { ...base, environmentWatch: true });
+  await h.until(async () => h.watched.length === 1 && h.activations.length === 1, 'the activation was requested and Control waits on the sandbox');
+  const requested = (await h.work()).execution!;
+  assert.deepEqual([requested.dispatch.phase, requested.start ?? null], ['activation-requested', null]);
+  h.watched[0]!.end('MicroVM exceeded maximum lifetime.');
+  await h.until(async () => (await h.work()).execution?.state === 'held', 'the Execution is held');
+  const held = (await h.work()).execution!;
+  assert.deepEqual([held.held?.code, held.slot.held, held.end ?? null, held.start ?? null], ['ENVIRONMENT_ENDED_START_UNCONFIRMED', true, null, null]);
+  assert.match(held.held!.nextStep, /the next controller boot reconciles it/);
+  // What the sandbox observed is on the record, the worker was interrupted and the boot was settled through the sandbox's Stop.
+  assert.deepEqual([held.environmentEnd?.boot, held.environmentEnd?.reason, h.activations[0]!.signal.aborted], [held.dispatch.boot, 'MicroVM exceeded maximum lifetime.', true]);
+  assert.deepEqual(readHost(h.dir).log.filter(entry => entry.kind === 'stop').map(entry => (entry.detail as { boot: string }).boot), [held.dispatch.boot]);
+  // No recovery is opened on a start nobody confirmed.
+  assert.equal((await h.work()).pendingRecovery ?? null, null);
+});

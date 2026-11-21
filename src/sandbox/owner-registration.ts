@@ -43,7 +43,7 @@ export type BootOwnerParts = { directory: string;
    * v2 ticket 12: told, in order, what the Builder credential of this boot is NOW: the value at each delivery and renewal, `undefined`
    * at its withdrawal and when its channel closes. For an adapter that keeps something in step with the grant's life; never awaited.
    */
-  credential?(token: string | undefined): void;
+  credential?(token: string | undefined, /** `holder-closed`: the worker that held the grant ended; Control did not withdraw it. */ reason?: 'holder-closed'): void;
   launch(request: Parameters<typeof launchWorker>[1], endpoint: string, signal: AbortSignal, secrets: Parameters<typeof launchWorker>[5],
     relay?: Parameters<typeof launchWorker>[6], onHandoff?: Parameters<typeof launchWorker>[7]): ReturnType<typeof launchWorker> };
 
@@ -205,7 +205,8 @@ export async function serveBootOwner(root: string, identity: { workId: string; e
     },
     closed(_error, _peer, channel) {
       const held = credentials.get(channel);
-      if (held && !held.withdrawn) try { parts.credential?.(undefined); } catch { /* As above. */ }
+      // The worker that held the grant is gone, but Control has not withdrawn the grant: the adapter is told which of the two happened.
+      if (held && !held.withdrawn) try { parts.credential?.(undefined, 'holder-closed'); } catch { /* As above. */ }
       lifetimes.get(channel)?.abort(); credentials.delete(channel); launched.delete(channel);
       for (const [id, pending] of questionAcks) if (pending.channel === channel) { questionAcks.delete(id); pending.reject(new Error('QUESTION_RELAY_CLOSED')); }
     },

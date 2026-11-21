@@ -248,7 +248,8 @@ test('v2 ticket 06: with the Lambda adapter, a Work without external waits goes 
   assert.equal(execution.credential?.purpose, 'builder-publish');
   const publishing = workers.launched.find(item => item.phaseId === 'builder-publication')!;
   assert.deepEqual(publishing.pushPolicy, { branch: published.branch, head, remote: remoteUrl, expected: null });
-  assert.equal(workers.launched.find(item => item.phaseId === 'builder-initial')!.pushPolicy, null, 'no push is allowed before the verification');
+  // Final review, must-fix 2 (V2-07): the working Builder may publish work in progress at any time, with the one unforced push of HEAD.
+  assert.deepEqual(workers.launched.find(item => item.phaseId === 'builder-initial')!.pushPolicy, { branch: published.branch, head: tip, expected: null, remote: remoteUrl, wip: true });
   assert.deepEqual([published.publication!.verified!.head, published.publication!.pullRequest?.headSha, published.publication!.pullRequest?.draft], [head, head, true]);
   assert.deepEqual(published.publication!.attempts!.map(item => item.executionId), [execution.executionId]);
   // No workspace on the host and no mounted bare cache; no checkpoint other than the Git remote.

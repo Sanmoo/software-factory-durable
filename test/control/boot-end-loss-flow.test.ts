@@ -153,7 +153,7 @@ test('V2-17: a graceful stop of the controller checks each running boot first: u
   assert.equal(work.budget?.recoveries.consumed ?? 0, 0);
 });
 
-test('V2-17: an Execution the controller left behind is reconciled at the next start as a loss recorded from what Control knows, since its boot can no longer be inspected', async t => {
+test('V2-17: an Execution whose stop could not be settled is reconciled at the next controller start: the loss its live check found is recorded then, from Control\'s own reads, without inspecting the guest again', async t => {
   const h = await harness(t);
   h.queue.push({ kind: 'hang', head: unpublished }, { kind: 'hang', head: unpublished });
   await h.settle('started', value => value?.execution?.state === 'started');
@@ -166,11 +166,22 @@ test('V2-17: an Execution the controller left behind is reconciled at the next s
   await h.settle('reconciled', value => h.executions(value).find(item => item.executionId === left.executionId)?.slot.held === false);
   let work = (await h.work())!;
   assert.equal(h.gates(), gatesBefore, 'the reconciliation inspects nothing in the guest');
-  assert.deepEqual(work.losses?.map(item => [item.executionId, item.boot, item.cause, item.confirmed.commit, item.marker.state]), [[left.executionId, left.dispatch.boot, 'not-inspected', null, 'absent']]);
+  assert.deepEqual(work.losses?.map(item => [item.executionId, item.boot, item.cause, item.confirmed.commit, item.marker.state]), [[left.executionId, left.dispatch.boot, 'ended-unpublished', null, 'absent']]);
   assert.deepEqual(h.stopReasons().at(-1), 'loss');
   assert.deepEqual(work.bootLedger?.map(item => [item.boot, item.end]), [[left.dispatch.boot, 'loss']]);
   await h.settle('substitute started', value => value?.execution?.executionId !== left.executionId && value?.execution?.state === 'started');
   work = (await h.work())!;
   assert.ok(h.activations().at(-1)!.prompt.includes(packageHeader));
-  assert.ok(h.activations().at(-1)!.prompt.includes('ended while the Factory controller was not running and could not be inspected'));
+  assert.ok(h.activations().at(-1)!.prompt.includes('was ended by the Factory because its work was not published (Ended by the Factory (the controller was stopped)'));
+});
+
+test('V2-17: a boot whose Builder left nothing behind (a clean workspace at the very commit the boot cloned) loses nothing when Control ends it', async t => {
+  const h = await harness(t);
+  h.queue.push({ kind: 'hang', head: main });
+  await h.settle('started', value => value?.execution?.state === 'started');
+  await h.halt();
+  assert.deepEqual([h.gates(), h.stopReasons()], [1, ['administrative stop']]);
+  await h.open();
+  const work = (await h.work())!;
+  assert.deepEqual([work.losses ?? [], work.bootLedger?.map(item => item.end), h.executions(work)[0]!.preservationGate ?? null], [[], ['end'], null]);
 });

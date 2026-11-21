@@ -25,7 +25,7 @@ import { bootNoticeDue, lastSessionBoot, newBootNotice, originContinuity, recrea
 import { continuationPrompt, guestCheckoutPath, initialPrompt, promptBudgetBytes, recoveryContext, scopeSection, sessionDecision } from '../rules/continuation.js';
 import { attemptsOf, decideDiscovery, otherPublications, publicationAttempted, publicationPrompt, publicationResumes, publicationStep, type DiscoveryObservation } from '../rules/publication.js';
 import { humanTips, authorizationInForce, comparisonBase, knownRemote, preservationTips, reconciliationNotice, reconciliationPrompt } from '../rules/divergence.js';
-import { recordGateCheck, recordGateCorrection } from './preservation.js';
+import { recordBootEndCheck, recordGateCheck, recordGateCorrection } from './preservation.js';
 import { beginSwap, completeSwap, endSwap, recordBootEnd, recordSwapContinuation, recordSwapNotice, recordSwapStartWait } from './boot-swap.js';
 import { bootSchedule, noProgressCode, swapContinuationPrompt, swapNoticePrompt } from '../rules/boot-rotation.js';
 import { inheritedFindings as findingsOf, inheritedRounds as roundsInherited } from '../rules/review.js';
@@ -906,6 +906,8 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     let bootMono = 0;
     let bootBegin: 'start' | 'planned-swap' = 'start';
     let bootStartTip: OriginObservation = { state: 'unknown', code: 'ORIGIN_NOT_READ' };
+    /** The commit the CURRENT boot cloned (Control's read of `origin`); null with a persistent disk. */
+    let bootStartCommit: string | null = null;
     let bootClock = new AbortController();
     /** `working`: the Builder activation doing the work of this Execution, while it runs (the only one a swap is asked of). */
     const rotation: { due: boolean; requested: boolean; interrupted: boolean; working: { worker: string; invocationId: string } | null } = { due: false, requested: false, interrupted: false, working: null };
@@ -1030,10 +1032,17 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     const checkBeforeStop = async (why: string) => {
       if (!diskless || !environment || !boot || !activated || unpublished || gateLoss || channelLost || bootCeased) return;
       const branch = execution.request.branch;
-      const { decision } = await checkPreservation(work, { environment, boot, branch });
+      const { observation, decision } = await checkPreservation(work, { environment, boot, branch });
+      // A clean workspace at the very commit this boot cloned holds nothing the Builder made: nothing to confirm and nothing to lose.
+      if (decision.outcome === 'refused' && observation.status === 'observed' && observation.head === bootStartCommit && observation.modified + observation.untracked + observation.stashes === 0) {
+        observe(work.work_id, 'boot-end-nothing-unpublished', [observation.head]);
+        await recordBootEndCheck(session, work.work_id, executionId, { boot, outcome: 'nothing-unpublished', reason: null }).catch(() => 'stale' as const);
+        return;
+      }
       await recordGateCheck(session, work.work_id, executionId, { occasion: 'boot-end', boot, branch, decision }).catch(() => 'stale' as const);
       observe(work.work_id, decision.outcome === 'accepted' ? 'preservation-accepted' : 'preservation-refused', [decision.outcome === 'accepted' ? decision.commit : decision.code]);
       if (decision.outcome === 'refused') unpublished = { reason: unpublishedLossReason({ why, refusal: decision }) };
+      await recordBootEndCheck(session, work.work_id, executionId, { boot, outcome: decision.outcome === 'refused' ? 'unpublished' : 'published', reason: unpublished?.reason ?? null }).catch(() => 'stale' as const);
     };
     /** The reason the sandbox is given for the stop: `loss` when the boot ends with work that is not on `origin` (its own record of the boot then agrees with Control's, and its loss marker holder stays armed). */
     const stopReasonOf = (ordinary: string) => unpublished || channelLost ? 'loss' : ordinary;
@@ -1373,6 +1382,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       const diskRemedy = remedy && isDiskRemedy(remedy.remedy) ? remedy.remedy : null;
       bootMono = clock.monotonic();
       if (originAtStart) bootStartTip = originAtStart;
+      bootStartCommit = clone?.commit ?? null;
       const started = await ports.sandbox.start({ environment, configuration: ports.configuration, ...(pass ? { pass } : {}), ...(diskRemedy ? { diskRemedy } : {}),
         ...(clone ? { checkout: clone } : {}) });
       if (started.status !== 'success') { await refused('start', started); return; }
@@ -1648,6 +1658,7 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         bootCeased = false;
         bootBegin = 'planned-swap';
         bootStartTip = origin.branch;
+        bootStartCommit = read.startCommit;
         watchEnvironment();
         armBootClock();
         const abandon = async () => { observe(work.work_id, 'stale'); await stopOwnBoot('boot swap abandoned'); return { kind: 'return' as const }; };

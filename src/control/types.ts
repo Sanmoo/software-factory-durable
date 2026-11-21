@@ -396,6 +396,12 @@ export type ExecutionView = {
   preservationGate?: { occasion: PreservationOccasion; attempts: { at: string; outcome: 'accepted' | 'refused'; code: string | null; detail?: string; commit?: string;
     /** The Builder activation (own invocation, same boot) the refusal was returned to, and how it ended. */
     correction?: { invocationId: string; status?: 'completed' | 'failure' | 'question' | 'not-started'; code?: string | null } }[] };
+  /**
+   * Final review, must-fix 1 (V2-17): what Control's single check found right before it ended `boot` itself (a failure, a timeout, a stop
+   * of the controller). `published`: clean and on `origin` (also in `preservationGate`); `nothing-unpublished`: a clean workspace at the
+   * commit the boot cloned; `unpublished`: a loss, with its reason. Read by the reconciliation when the end could not be settled live.
+   */
+  bootEndCheck?: { at: string; boot: string; outcome: 'published' | 'nothing-unpublished' | 'unpublished'; reason: string | null };
   /** v2 ticket 11 (V2-21): tool calls of this Execution that started and whose result never arrived (the channel dropped), as the sandbox
    * reported them. Their effects may have happened; a substitute session is told of them and never repeats one by assumption (V2-19). */
   indeterminateEffects?: IndeterminateEffectRecord[];
