@@ -160,3 +160,7 @@ At the end of this run Static metrics is pending by approval, so the engineering
 - **Not needed**: no `job` identifier existed to rename (the one occurrence is a comment in `src/sandbox/stop.ts`).
 - **Adopted**: Format, Lint, Secrets, Avoided terms; Types, Context boundaries, Dependency rule and Guide pointers re-proved on this tree — [GATE-PROOFS.md](GATE-PROOFS.md).
 - **Remains pending**: Unit tests, Integration tests, Dependency vulnerabilities (S3); E2E tests (S4); Mutation (S5); Static metrics (S6).
+
+### Correction of the S1 and S2 records (recorded during S3, 2026-11-21)
+
+The S1 and S2 records reported Context boundaries and Dependency rule as adopted. They were not: `.dependency-cruiser.cjs` excluded `(^|/)dist/` and `.scratch/` from the cruise, which also hid every package whose entry point lives in a `dist/` directory (`yaml`, `@earendil-works/pi-durable`, `@earendil-works/chord`). A domain module importing such a package passed (Dependency rule passed vacuously for package imports), and the `sdk:*-owner` rules could never see their targets. Both were **pending** through S1 and S2; the earlier Gate Proofs used source-path violations and could not show it. S3 fixes the exclusion (root-anchored; third-party code not followed but visible) and re-proves both.

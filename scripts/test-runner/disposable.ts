@@ -44,3 +44,26 @@ export function disposableCopy(project: string, name: string, fixture: (copy: Co
   git('switch', '-q', '-c', 'change');
   return copy;
 }
+
+/** Builds `copy` once (tsc, the private SDK staging, tsc again), so clones of it start from a warm tree like a working checkout. */
+export function warm(copy: Copy): Copy {
+  const node = process.execPath;
+  const tsc = () => {
+    try {
+      execFileSync(node, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json', '--incremental'], { cwd: copy.dir, stdio: 'ignore' });
+    } catch {
+      /* the first pass fails until the SDK types are staged */
+    }
+  };
+  tsc();
+  execFileSync(node, ['dist/src/workers/sdk-profile.js'], { cwd: copy.dir, stdio: 'ignore' });
+  execFileSync(node, ['dist/src/sandbox/gondolin-sdk-profile.js'], { cwd: copy.dir, stdio: 'ignore' });
+  tsc();
+  return copy;
+}
+
+/** Restores a copy's tracked and untracked files to its last commit (ignored build output stays warm). */
+export function restore(copy: Copy): void {
+  execFileSync('git', ['checkout', '-q', '--', '.'], { cwd: copy.dir, stdio: 'ignore' });
+  execFileSync('git', ['clean', '-fdq'], { cwd: copy.dir, stdio: 'ignore' });
+}

@@ -54,14 +54,22 @@ module.exports = {
     { name: 'worker-sandbox-types-only', severity: 'error', from: { path: '^src/workers/' }, to: { path: '^src/sandbox/', dependencyTypesNot: ['type-only'] } },
     { name: 'classified-source', severity: 'error', from: { pathNot: classified, orphan: true }, to: {} },
     { name: 'classified-source-origin', severity: 'error', from: { pathNot: classified }, to: {} },
-    { name: 'classified-source-target', severity: 'error', from: {}, to: { path: '^(?!node_modules/).+\\.(?:[cm]?[jt]s|[jt]sx)$', pathNot: classified } },
+    // The private SDK prepare-sdk stages under .scratch/factory-development-* is third-party code reached through #factory-* imports.
+    {
+      name: 'classified-source-target',
+      severity: 'error',
+      from: {},
+      to: { path: '^(?!node_modules/).+\\.(?:[cm]?[jt]s|[jt]sx)$', pathNot: `${classified}|^\\.scratch/factory-development-[^/]+/` },
+    },
     ...[
       ['sqlite', '^src/control/durable/', '(^|/)(node:sqlite|sqlite3|better-sqlite3)(/|$)'],
       ['durable', '^src/control/durable/', '(^|/)@earendil-works/pi-durable(/|$)'],
       ['coding-agent', '^src/workers/', '(^|/)@(mariozechner|earendil-works)/pi-coding-agent(/|$)'],
       ['gondolin', '^src/sandbox/', '(^|/)(@earendil-works/)?gondolin(/|$)'],
       ['github', '^src/(platform/github|issue-tracker|code-repository)/', '(^|/)(@octokit/|octokit(/|$))'],
-    ].map(([sdk, owner, dependency]) => ({ name: `sdk:${sdk}-owner`, severity: 'error', from: { pathNot: owner }, to: { path: dependency } })),
+      // Ownership of an SDK binds production code (src/); tests and fixtures may load the real SDK they exercise (maintainer
+      // decision, ADOPTION-PLAN.md S3, declared with the fix below that first made these package targets visible).
+    ].map(([sdk, owner, dependency]) => ({ name: `sdk:${sdk}-owner`, severity: 'error', from: { path: '^src/', pathNot: owner }, to: { path: dependency } })),
     { name: 'no-cycles', severity: 'error', from: {}, to: { circular: true } },
     ...zones.map(zone => ({
       name: `zone:${zone}`,
@@ -78,8 +86,10 @@ module.exports = {
     { name: 'unresolved-import', severity: 'error', from: {}, to: { couldNotResolve: true } },
   ],
   options: {
-    doNotFollow: { path: 'node_modules' },
-    exclude: { path: '(^|/)(dist|\\.git|\\.worktrees|\\.scratch)(/|$)' },
+    // Third-party code (node_modules, the staged SDK in .scratch) is not traversed but stays visible as a rule target; only the
+    // project's own build output, VCS data and worktrees are excluded, anchored at the root so no package's dist/ is hidden.
+    doNotFollow: { path: ['(^|/)node_modules/', '^\\.scratch/'] },
+    exclude: { path: '^(dist|\\.git|\\.worktrees)(/|$)' },
     tsConfig: { fileName: 'tsconfig.json' },
     tsPreCompilationDeps: true,
     enhancedResolveOptions: { exportsFields: ['exports'], conditionNames: ['import', 'node', 'default'] },

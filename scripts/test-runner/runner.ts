@@ -191,7 +191,14 @@ export async function runTier(options: RunOptions, steps: Steps): Promise<Outcom
       if (proceed) {
         const timings = await steps.loadTimings();
         const testEntries = (plan?.entries ?? []).filter(entry => entry.check.scope === 'affected-tests');
-        const selected = mode === 'change' ? [...new Set(testEntries.flatMap(entry => (entry.decision === 'run' ? entry.files : [])))].sort() : listed;
+        // fast: the Unit tests level (a filter, a convenience that is never a gate, may still reach any level); ci: the plan's
+        // affected tests of each level; full: every test.
+        const selected =
+          mode === 'change'
+            ? [...new Set(testEntries.flatMap(entry => (entry.decision === 'run' ? entry.files : [])))].sort()
+            : mode === undefined && !options.filters.length
+              ? listed.filter(file => levelOf(file) === 'unit')
+              : listed;
         const files = options.filters.length ? selected.filter(file => options.filters.some(filter => file.includes(filter))) : selected;
         const lanePlan = planLanes(tier, files, manifest, steps.cpus, timings);
         summary.quarantined = lanePlan.quarantined;

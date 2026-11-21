@@ -93,18 +93,12 @@ export interface StaticParts {
 }
 
 /**
- * The linters do not read dist/, so they run alongside the compiler. dependency-cruiser resolves the package.json
- * #factory-* imports to files of the staged SDK, which a fresh tree only has after prepare-sdk (part of compile):
- * there it waits for the compile stage instead of reporting them as unresolved.
+ * The linters do not read dist/, so they run alongside the compiler. dependency-cruiser waits for the compile stage: it
+ * resolves the #factory-* imports to the SDK prepare-sdk stages, and some tests import the build output in dist/ itself.
  */
 export async function composeStatic(parts: StaticParts): Promise<StepResult[]> {
   const compiling = parts.compile();
-  const [compiled, linted, cruised, quick] = await Promise.all([
-    compiling,
-    parts.lint(),
-    parts.staged ? parts.depcruise() : compiling.then(() => parts.depcruise()),
-    parts.quick(),
-  ]);
+  const [compiled, linted, cruised, quick] = await Promise.all([compiling, parts.lint(), compiling.then(() => parts.depcruise()), parts.quick()]);
   return [...compiled, linted, ...cruised, ...quick];
 }
 

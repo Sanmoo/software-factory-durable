@@ -16,7 +16,7 @@ Um comportamento novo é testado no nível mais baixo que o prova; um teste unit
 
 ## Entry Points
 
-- `npm run test:fast`: Entry Point rápido, do ciclo de TDD e do hook versionado em `.githooks/pre-commit` (instalá-lo, com `git config core.hooksPath .githooks`, é passo do operador). Verde cobre os quality gates rápidos e os testes sem `slow`; não substitui o completo.
+- `npm run test:fast`: Entry Point rápido, do ciclo de TDD e do hook versionado em `.githooks/pre-commit` (instalá-lo, com `git config core.hooksPath .githooks`, é passo do operador). Verde cobre os quality gates rápidos e os testes de nível unit; integração fica no Entry Point completo. Um filtro (conveniência, nunca um gate) ainda alcança qualquer teste no ciclo de TDD.
 - `npm run test:ci`: Entry Point completo em **validação por mudança**. O supervisor local o roda uma vez antes de entregar e de novo após rebase ([ADR 0001](../adr/0001-local-supervisor-is-the-change-mode-ci.md)); uma mudança só está pronta quando ele está verde. Verde cobre o escopo afetado que o relatório nomeia, nunca a aplicação inteira.
 - `npm run test:full`: Entry Point completo em **validação integral**, chamado pelo timer noturno. Roda todos os checks sobre a entrada inteira, inclusive os periódicos; seu resultado vale para aquela árvore, não é certificação permanente.
 
@@ -30,7 +30,7 @@ Quais checks cada modo roda, sobre qual escopo, com qual custo, cadência e orç
 
 ## Manifesto `test/tiers.json`
 
-Lista **apenas exceções**. Arquivo sem entrada é `fast` e paralelo.
+Lista **apenas exceções** de tempo e paralelismo. Arquivo sem entrada é paralelo; o nível (unit ou integration) vem de [test/levels.json](../../test/levels.json).
 
 ```json
 { "schemaVersion": 1, "files": {
@@ -41,7 +41,7 @@ Lista **apenas exceções**. Arquivo sem entrada é `fast` e paralelo.
 } }
 ```
 
-- `slow`: fica fora de `fast`, roda em `ci`/`full`. `serial`: roda na lane serial, depois da paralela.
+- `slow`: fica fora de um `fast` filtrado, roda em `ci`/`full`. `serial`: roda na lane serial, depois da paralela.
 - `full`: só no noturno (fora de `fast` e `ci`; o relatório lista como "full only"). Para arquivo caro demais
   para o gate de integração; a regra que ele prova precisa de um teste barato em `fast`/`ci`.
 - `quarantine`: o arquivo não roda em camada nenhuma e o relatório o lista como **não cobertura**;

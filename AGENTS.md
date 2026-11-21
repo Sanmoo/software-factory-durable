@@ -4,7 +4,7 @@ Software Factory: fábrica local que transforma tickets autorizados em PRs revis
 
 ## Engineering harness
 
-- Entry Point rápido: `npm run test:fast` (ciclo de TDD e hook `pre-commit`).
+- Entry Point rápido: `npm run test:fast` (ciclo de TDD e hook `pre-commit`); verde cobre os quality gates rápidos e os testes unit.
 - Entry Point completo: `npm run test:ci` é a **validação por mudança**; verde cobre só o escopo afetado que o relatório nomeia. `npm run test:full` é a **validação integral** noturna; verde vale para aquela árvore. Uma mudança só está pronta quando `npm run test:ci` está verde.
 - O código é a fonte da verdade: quando um Guide e o código divergem, o código vence e o Guide é corrigido; para nomes, [GLOSSARY.md](GLOSSARY.md) vence e o código é corrigido.
 - [GLOSSARY.md](GLOSSARY.md): antes de nomear algo do produto.

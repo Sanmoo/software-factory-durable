@@ -97,7 +97,7 @@ function fakeSteps(overrides: Partial<Steps> = {}) {
 }
 
 test('fast: no lock, slow excluded, parallel lane then serial lane', async () => {
-  const { steps, events } = fakeSteps();
+  const { steps, events } = fakeSteps({ loadLevels: async () => () => 'unit' });
   const outcome = await runTier({ tier: 'fast', filters: [] }, steps);
   assert.equal(outcome.exitCode, 0, outcome.report);
   assert.deepEqual(events, ['deps', 'manifest', 'static fast', 'shared', 'run test/a.test.ts', 'run test/serial.test.ts', 'timings', 'shared cleanup']);
@@ -181,7 +181,10 @@ test('static failure stops before tests and fails the gate', async () => {
 });
 
 test('a failing file fails the gate without retry', async () => {
-  const { steps, events } = fakeSteps({ runFile: async file => ({ file, ms: 1, ok: file !== 'test/a.test.ts', counts }) });
+  const { steps, events } = fakeSteps({
+    loadLevels: async () => () => 'unit',
+    runFile: async file => ({ file, ms: 1, ok: file !== 'test/a.test.ts', counts }),
+  });
   const runs: string[] = [];
   const outcome = await runTier(
     { tier: 'fast', filters: [] },
@@ -195,7 +198,7 @@ test('a failing file fails the gate without retry', async () => {
   );
   assert.equal(outcome.exitCode, 1);
   assert.deepEqual(runs, ['test/a.test.ts', 'test/serial.test.ts'], 'each file exactly once');
-  assert.match(outcome.report, /FAILURE: quality gate Integration tests \(tests\): test\/a\.test\.ts failed/);
+  assert.match(outcome.report, /FAILURE: quality gate Unit tests \(unit-tests\): test\/a\.test\.ts failed/);
   assert.ok(events.includes('timings'));
 });
 
@@ -206,7 +209,7 @@ test('budget overrun during the run aborts the running files and exits non-zero 
   const running = new Promise<void>(resolve => {
     started = resolve;
   });
-  const fake = fakeSteps();
+  const fake = fakeSteps({ loadLevels: async () => () => 'unit' });
   const aborted: string[] = [];
   const outcome = runTier(
     { tier: 'fast', filters: [] },
@@ -305,7 +308,7 @@ test('a finished test process leaves nothing behind: leaked processes in its gro
   assert.ok(observed === 'gone' || observed === 'dead', `the leaked grandchild was killed with its group: ${observed}`);
 });
 
-test('static stage: without the staged SDK depcruise waits for compile (prepare-sdk); with it, all three run together', async () => {
+test('static stage: depcruise waits for compile (staged SDK, build output), the other checks run alongside it', async () => {
   for (const staged of [false, true]) {
     const events: string[] = [];
     let finishCompile = () => {};
@@ -334,13 +337,13 @@ test('static stage: without the staged SDK depcruise waits for compile (prepare-
       },
     });
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(events.includes('depcruise'), staged, `staged=${staged}: depcruise before compile ends`);
+    assert.ok(!events.includes('depcruise') && events.includes('lint') && events.includes('quick'), `staged=${staged}`);
     finishCompile();
     assert.deepEqual(
       (await result).map(step => step.name),
       ['tsc', 'eslint', 'depcruise', 'guide-pointers'],
     );
-    if (!staged) assert.ok(events.indexOf('depcruise') > events.indexOf('compile end'));
+    assert.ok(events.indexOf('depcruise') > events.indexOf('compile end'));
   }
 });
 
@@ -473,4 +476,19 @@ test('a failing test file is reported under the quality gate of its level', asyn
   assert.equal(outcome.exitCode, 1);
   assert.match(outcome.report, /FAILURE: quality gate Unit tests \(unit-tests\): test\/a\.test\.ts failed/);
   assert.match(outcome.report, /FAILURE: quality gate Integration tests \(tests\): test\/serial\.test\.ts failed/);
+});
+
+test('fast runs the unit-level tests only; a filter (never a gate) may still reach any level', async () => {
+  const unit = fakeSteps({ loadLevels: async () => file => (file === 'test/a.test.ts' ? 'unit' : 'integration') });
+  assert.equal((await runTier({ tier: 'fast', filters: [] }, unit.steps)).exitCode, 0);
+  assert.deepEqual(
+    unit.events.filter(event => event.startsWith('run ')),
+    ['run test/a.test.ts'],
+  );
+  const filtered = fakeSteps({ loadLevels: async () => file => (file === 'test/a.test.ts' ? 'unit' : 'integration') });
+  await runTier({ tier: 'fast', filters: ['serial'] }, filtered.steps);
+  assert.deepEqual(
+    filtered.events.filter(event => event.startsWith('run ')),
+    ['run test/serial.test.ts'],
+  );
 });
