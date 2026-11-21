@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
+import type { ChannelReport, IndeterminateEffect } from '../../contracts/index.js';
 import type { BootRef, Observation } from '../lifecycle.js';
 import type { EnvironmentRef } from '../prepare.js';
 import type { StartResult } from '../start.js';
@@ -381,6 +382,34 @@ export async function openLambdaBootChannel(dependencies: LambdaBootDependencies
   if (!await stat(identityFile).then(() => true, () => false)) return { status: 'unavailable', code: 'BOOT_ACCESS_WITHDRAWN' };
   return { status: 'open', channel: openChannel({ service: serviceOf(dependencies, record), transport: dependencies.transport, microvmId: record.microvmId, endpoint: record.endpoint,
     identityFile, hostKey: record.hostKey, now: dependencies.clock.now, user }) };
+}
+
+const channelFile = 'channel.jsonl';
+const channelEntrySchema = z.union([
+  z.strictObject({ kind: z.literal('effect'), at: instant, executionId: z.string(), invocationId: z.string(), role: z.string(), tool: z.enum(['bash', 'write', 'edit-source']),
+    callId: z.string(), description: z.string(), outcome: z.enum(['orphan-ended', 'environment-ended', 'channel-unrecoverable']) }),
+  z.strictObject({ kind: z.literal('unrecoverable'), at: instant, attempts: z.number().int().positive() })]);
+export type LambdaChannelEntry = z.infer<typeof channelEntrySchema>;
+
+/**
+ * v2 ticket 11 (V2-21): the boot's durable record of what a dropped channel left unconfirmed, one JSON line per fact, written on the
+ * host BEFORE the tool call answers. It outlives the boot and the process that served its tools; Control reads it (`readLambdaChannelReport`).
+ */
+export async function recordLambdaChannelEntry(root: string, environment: EnvironmentRef, boot: BootRef, entry: LambdaChannelEntry): Promise<void> {
+  await appendFile(join(await bootDirectory(root, environment, boot), channelFile), `${JSON.stringify(channelEntrySchema.parse(entry))}\n`, { mode: 0o600 });
+}
+/** The channel report of one boot; empty when nothing was recorded. A line that cannot be read throws: an uncertain effect is never dropped silently. */
+export async function readLambdaChannelReport(root: string, environment: EnvironmentRef, boot: BootRef): Promise<ChannelReport> {
+  const report: ChannelReport = { indeterminateEffects: [], unrecoverable: null };
+  if (!/^env-[a-f0-9]{64}$/.test(environment) || !bootRecordSchema.shape.boot.safeParse(boot).success) return report;
+  let text: string;
+  try { text = await readFile(join(await bootDirectory(root, environment, boot), channelFile), 'utf8'); } catch (error) { if (missing(error)) return report; throw error; }
+  for (const line of text.split('\n').filter(Boolean)) {
+    const entry = channelEntrySchema.parse(JSON.parse(line));
+    if (entry.kind === 'effect') { const { kind: _kind, ...effect } = entry; report.indeterminateEffects.push(effect satisfies IndeterminateEffect); }
+    else report.unrecoverable ??= { at: entry.at, attempts: entry.attempts };
+  }
+  return report;
 }
 
 /** Whether `environment` belongs to the Lambda adapter in this installation (it has a recorded image or boots). */

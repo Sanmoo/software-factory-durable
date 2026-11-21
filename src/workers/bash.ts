@@ -74,6 +74,7 @@ type DrainAwareOptions = Parameters<BashOperations['exec']>[2] & {
  * copies completed native-truncated output. Host spill remains private SDK state. */
 import type { BashObservation } from './gates.js';
 import { pushDenied, type PushPolicy } from './push-policy.js';
+import { indeterminateResultText, isIndeterminateResult } from './indeterminate.js';
 /** The Bash tool's fixed working directory (Host policy): declared gate cwds must equal it; directory changes go inside the command. */
 export const bashCwd = '/workspace';
 export function builderBash(context: ToolContext, sandbox: ToolProjection, onCritical: () => void = () => {}, copyOutput = false,
@@ -87,7 +88,7 @@ export function builderBash(context: ToolContext, sandbox: ToolProjection, onCri
   let failed = false;
   let timeoutFailure = false;
   const critical = () => { failed = true; onCritical(); };
-  const native = (completed?: (result: Extract<ReadResult, { status: 'success' }>) => void) => createBashTool('/workspace', {
+  const native = (completed?: (result: Extract<ReadResult, { status: 'success' }>) => void, indeterminate?: (code: string) => void) => createBashTool('/workspace', {
     exposeSessionEnvironment: false,
     // Replace, never inherit the SDK's parent environment clone. Owner independently
     // selects EMPTY env and /workspace, regardless of this untrusted callback input.
@@ -102,6 +103,8 @@ export function builderBash(context: ToolContext, sandbox: ToolProjection, onCri
         // Ticket 46: recorded before critical() aborts the session, so the reachable message names the timeout. It stays critical:
         // the guest exec has no termination request, so the Host can neither stop the command nor confirm its cessation.
         if (result.code === 'BASH_TIMEOUT_EFFECTS_UNKNOWN') timeoutFailure = true;
+        // v2 ticket 11: the command's channel dropped and the sandbox ended its process. The invocation stays valid; the session is told.
+        if (isIndeterminateResult(result.code)) { indeterminate?.(result.code); throw new Error(result.code); }
         if (!['BASH_ROLE_DENIED', 'INVALID_TOOL_CALL'].includes(result.code)) critical();
         if (timeoutFailure) throw new Error(`timeout: ${options.timeout}`);
         if (options.signal?.aborted) throw new Error('aborted');
@@ -137,6 +140,8 @@ export function builderBash(context: ToolContext, sandbox: ToolProjection, onCri
       let afterSha: string | null = null;
       // Ticket 60: the closed code of a failed copy of THIS command's completed capture (recorded and thrown instead of "Command aborted").
       let copyFailure: string | undefined;
+      // v2 ticket 11: the code of an indeterminate result of THIS command (never critical; no "after" probe is taken as its evidence).
+      let indeterminateCode: string | undefined;
       const record = (code: string | null) => {
         if (observed || !observe) return;
         observed = true;
@@ -145,7 +150,7 @@ export function builderBash(context: ToolContext, sandbox: ToolProjection, onCri
       };
       try {
         if (snapshot && !signal?.aborted) beforeSha = await snapshot().catch(() => null);
-        let presented = await native(value => { completed = value; }).execute(callId, input, signal, onUpdate);
+        let presented = await native(value => { completed = value; }, code => { indeterminateCode = code; }).execute(callId, input, signal, onUpdate);
         if (copyEnabled && presented.details?.truncation?.truncated === true) {
           // Ticket 60: the copy runs BEFORE the "after" content probe. The probe is itself a Bash command through this binding, and every new
           // command spends the owner's latest capture, so a later copy was always BASH_COPY_DENIED. The copy writes only a new
@@ -170,6 +175,10 @@ export function builderBash(context: ToolContext, sandbox: ToolProjection, onCri
         return presented;
       }
       catch {
+        if (indeterminateCode !== undefined && !failed && !signal?.aborted) {
+          record(indeterminateCode);
+          throw new Error(indeterminateResultText(indeterminateCode));
+        }
         if (snapshot && !signal?.aborted) afterSha = await snapshot().catch(() => null);
         record('BASH_EFFECTS_OR_CAPTURE_UNKNOWN');
         // critical() aborts the session signal, so an OUTSIDE abort is read before it (ticket 60).

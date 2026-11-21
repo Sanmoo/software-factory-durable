@@ -1,11 +1,11 @@
 import { z } from 'zod';
 import { createHash, randomUUID } from 'node:crypto';
 import type { createRecords } from '../records/index.js';
-import { commandLifetime, type GuestOwner } from './tool-binding.js';
+import { commandLifetime, type GuestOwner, type ReadBinding } from './tool-binding.js';
 
 type Context = { workId: string; executionId: string; invocationId: string; role: 'builder' | 'standards' | 'spec'; environmentRef: string; bootRef: string; phaseId: string };
 type Options = { context: Context; signal: AbortSignal; records: Awaited<ReturnType<typeof createRecords>>;
-  vm: GuestOwner; guestConventions?: 'ssh-channel' };
+  vm: GuestOwner; guestConventions?: 'ssh-channel'; uncertainEffect?: ReadBinding['uncertainEffect'] };
 type Result = { status: 'failure'; code: string } | { status: 'success'; format: 'text'; reference: { workId: string; id: string }; bytes: number; encoding: 'base64'; data: string; nextOffset: number };
 
 const path = z.string().min(1).max(4096);
@@ -313,12 +313,19 @@ function boundMutation(options: Options, valid: () => boolean, revoke: () => voi
         outcome = 'not-applied';
         effects = 'source-changed-before-effect';
       }
+      // v2 ticket 11: the channel dropped under a mutation that had started and the adapter ended its process. Nothing more can come from
+      // it, so the binding stays usable; whether the file changed is unknown and the session is told exactly that.
+      const orphanEnded = result.channel === 'orphan-ended' && valid();
       // An uncertain conditional result must deny future effects even while evidence waits.
-      if (conditional && !complete && !mismatch) revoke();
+      if (conditional && !complete && !mismatch && !orphanEnded) revoke();
       persistingResult = true;
       const reference = await options.records.record(evidence, { kind: 'mutation-result', phaseId, operation: call.operation, outcome, effects });
       // A critical result await can overlap revocation; never publish late success.
       if (!valid()) { revoke(); return failure(`${prefix}_EFFECTS_UNCERTAIN`); }
+      if (result.channel !== undefined) {
+        await options.uncertainEffect?.({ tool: conditional ? 'edit-source' : 'write', callId: call.callId, description: `${call.operation} ${call.path}`, outcome: result.channel });
+        if (orphanEnded && valid()) return failure(`${prefix}_RESULT_INDETERMINATE`);
+      }
       if (mismatch) return failure('EDIT_SOURCE_CHANGED');
       if (!complete) { revoke(); return failure(`${prefix}_EFFECTS_UNCERTAIN`); }
       // Same protected-reference result envelope as read, with no file-content bytes.

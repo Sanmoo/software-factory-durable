@@ -11,6 +11,7 @@ import { selectSandboxAdapter, validateConfiguration } from './configuration.js'
 export { selectSandboxAdapter, sandboxAdapters, type SandboxAdapter, type SandboxAdapterSelection } from './configuration.js';
 // v2 ticket 02: the Lambda adapter's profile, the installation's account resources and the narrow port to the AWS account (CLI-backed in
 // production; tests compose the in-memory account of `test/sandbox/lambda-service-fake.ts` through `lambdaService`).
+import type { ChannelReport } from '../contracts/index.js';
 import { validateLambdaInstallation } from './lambda/validate.js';
 import { createLambdaCliService } from './lambda/cli-service.js';
 import type { LambdaServiceFactory } from './lambda/service.js';
@@ -23,7 +24,7 @@ export type { LambdaArchitecture, LambdaService, LambdaServiceFactory, LambdaSer
 export { lambdaBootSize, type LambdaProfile } from './lambda/profile.js';
 // v2 ticket 04: a boot under the Lambda adapter (RunMicrovm, channel, clone in the guest; observe and stop by the service) and the seam
 // to the guest: SSH over WebSocket in production (`createSshTransport`), an in-process guest in tests (`lambdaTransport`).
-import { currentLambdaBoot, defaultLambdaBootClock, isLambdaEnvironment, listLambdaBoots, observeLambdaBoot, openLambdaBootChannel, readLambdaBoot, startLambdaBoot, stopLambdaBoot,
+import { currentLambdaBoot, defaultLambdaBootClock, isLambdaEnvironment, listLambdaBoots, observeLambdaBoot, openLambdaBootChannel, readLambdaBoot, readLambdaChannelReport, startLambdaBoot, stopLambdaBoot,
   type BootBeginReason, type LambdaBootClock, type LambdaCheckout, type LambdaObservation } from './lambda/boot.js';
 import { createSshTransport } from './lambda/ssh-transport.js';
 // v2 ticket 05: the MVP role tools over a Lambda boot (`lambda/tools.ts`): the host binds each invocation to a role on the boot.
@@ -158,6 +159,12 @@ export function createSandbox({ root, guestAssets, toolEndpoint, repositoryFetch
      * `read` only and run in the guest as the read-only `reviewer` user.
      */
     async serveTools({ environment, boot }: { environment: EnvironmentRef; boot: BootRef }) { return serveLambdaTools(lambdaBoots(), { environment, boot }); },
+    /**
+     * v2 ticket 11 (V2-21): what a dropped tool channel left unconfirmed on one boot, read from the boot's host record by any process:
+     * the calls that started and whose result never arrived, and whether reconnection reached its limit. Empty for a boot without such
+     * a record (every boot of an adapter that does not declare `channelRecovery`).
+     */
+    async channelReport({ environment, boot }: { environment: EnvironmentRef; boot: BootRef }): Promise<ChannelReport> { return readLambdaChannelReport(root, environment, boot); },
     async executeTool(context: ToolContext, call: ToolCall, onData?: (data: Buffer) => void, signal?: AbortSignal): Promise<ReadResult> {
       const key = JSON.stringify(context);
       const previous = bindings.get(context.invocationId);

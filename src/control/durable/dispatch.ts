@@ -28,6 +28,8 @@ import { beginLivePublication, blockLivePublication, evaluateLivePublication, ev
 import { purposeOf } from './execution.js';
 import type { SessionRef } from '../types.js';
 import { interruptionRecoveryPrompt, isDiskRemedy, reviewerRetryLimitCode, refusedWithoutActivity } from '../rules/recovery.js';
+import { failureCodeAfter } from '../rules/channel-report.js';
+import { recordChannelReport } from './channel-report.js';
 import { budgetExhaustedCode, builderBudgetPolicy, stateSummary, type AnsweredQuestion, type SummaryInput } from '../rules/budget-continuation.js';
 import { reconcileExecution } from './recovery.js';
 import type { WorkerQuestion } from '../../workers/index.js';
@@ -954,7 +956,15 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
         observe(work.work_id, 'in-boot-publication-ended', [result.status]);
       } finally { publisher.close(); }
     };
-    const stopOwnBoot = async (reason: string) => environment && boot ? ports.sandbox.stop({ environment, boot, reason }).catch(() => ({ status: 'indeterminate' as const, cessationConfirmed: false as const, code: 'STOP_UNAVAILABLE' })) : undefined;
+    // v2 ticket 11 (V2-21): what a dropped tool channel left unconfirmed on this boot, recorded durably before the end and before the stop
+    // (idempotent). Only a sandbox that declares channel recovery is asked; a report that cannot be read is retried at the stop.
+    const channelReport = async () => {
+      if (!environment || !boot || !ports.sandbox.capabilities?.channelRecovery || !ports.sandbox.channelReport) return null;
+      const report = await ports.sandbox.channelReport({ environment, boot }).catch(() => null);
+      if (report) await recordChannelReport(session, work.work_id, executionId, boot, report).catch(() => {});
+      return report;
+    };
+    const stopOwnBoot = async (reason: string) => environment && boot ? (await channelReport(), ports.sandbox.stop({ environment, boot, reason }).catch(() => ({ status: 'indeterminate' as const, cessationConfirmed: false as const, code: 'STOP_UNAVAILABLE' }))) : undefined;
     try {
       checkStop();
       // Ticket 50: an operator remedy accepted with a retry (recreate the divergent artifact seeds) is applied by THIS preparation only.
@@ -1247,9 +1257,11 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
             }
           }
           timerStop.abort();
-          await recordEnd(session, work.work_id, executionId, completed.status === 'success' ? 'completed' : 'failure', completed.status === 'success' ? null : completed.code,
-            null, elapsed(), completed.status === 'success' ? completed.session ?? null : null);
-          if (completed.status === 'failure') endCode = completed.code;
+          // v2 ticket 11: a failure caused by a tool channel that could not be recovered ends under that name (not transient: no automatic retry).
+          const failureCode = completed.status === 'success' ? null : failureCodeAfter(completed.code, await channelReport());
+          await recordEnd(session, work.work_id, executionId, completed.status === 'success' ? 'completed' : 'failure', failureCode,
+          null, elapsed(), completed.status === 'success' ? completed.session ?? null : null);
+          if (completed.status === 'failure') endCode = failureCode;
           if (completed.status === 'failure') await questionUncertain();
         }
       } finally { timerStop.abort(); startCommitted(false); handle.close(); }

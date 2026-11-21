@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createWriteTool, type ToolDefinition } from '#factory-pi';
 import type { ToolContext, ToolProjection } from '../sandbox/index.js';
+import { indeterminateResultText, isIndeterminateResult } from './indeterminate.js';
 
 // Sound optional extension over upstream declarations; only host construction
 // supplies it. No model/context/env mode or SDK-version fallback exists.
@@ -19,6 +20,8 @@ export function builderWrite(context: ToolContext, sandbox: ToolProjection, onCr
       if (result.status === 'failure') {
         if (['PROTECTED_WRITE_UNAVAILABLE', 'WRITE_EFFECTS_UNCERTAIN', 'WRITE_EVIDENCE_OR_EFFECTS_UNCERTAIN',
           'TOOL_CHANNEL_CLOSED', 'STALE_TOOL_CONTEXT'].includes(result.code)) onCritical();
+        // v2 ticket 11: the write's channel dropped and its process was ended. Not critical: the session reads that the effect is unknown.
+        if (isIndeterminateResult(result.code)) throw new Error(indeterminateResultText(result.code));
         throw new Error(result.code);
       }
     };

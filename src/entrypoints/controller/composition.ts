@@ -160,7 +160,9 @@ export async function composeProductionExecution(input: ProductionInput): Promis
       // Ticket 13: confined Host confirmation of preserved-source authorizations (absent = none would ever correlate).
       verifyPreservedSource: input => sandbox.verifyPreservedSource(input),
       // Ticket 26: host observation (works without the old Gondolin owner) for boot reconciliation of survivors.
-      observe: input => sandbox.observe(input) },
+      observe: input => sandbox.observe(input),
+      // v2 ticket 11 (V2-21): asked only of a sandbox that declares channel recovery; the boot's own host record answers.
+      channelReport: input => sandbox.channelReport(input) },
     workers: { activate: (invocation, delivery, events) => workers.activate(invocation, delivery, events), deliver: (worker, directive) => workers.deliver(worker, directive),
       observe: input => workers.observe(input),
       // Ticket 26: protected start receipt of an invocation, discovered without its notification.

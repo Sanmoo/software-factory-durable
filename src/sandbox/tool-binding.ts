@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { createRecords } from '../records/index.js';
+import type { ChannelDropOutcome, IndeterminateEffect } from '../contracts/index.js';
 
 const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
 export const contextSchema = z.strictObject({ workId: identifier, executionId: identifier, invocationId: identifier,
@@ -36,7 +37,12 @@ export const profileQualified = (origin: string | undefined): boolean => origin 
 export type GuestOwner = { exec(argv: string[], options: { stdout: 'pipe'; stderr: 'ignore' | 'pipe'; signal: AbortSignal;
   windowBytes: number; env?: Record<string, string>; cwd?: string; stdin?: string | AsyncIterable<Buffer>; stdinCapacity?: { maxChunkBytes: number } }): {
   output(): AsyncIterable<{ stream: 'stdout' | 'stderr'; data: Buffer }>;
-  result: Promise<{ exitCode: number | null; signal?: number }>;
+  /**
+   * `channel` (v2 ticket 11, only an adapter that recovers a dropped channel sets it, with `exitCode: null`): the program STARTED and
+   * its exit status never arrived. `orphan-ended`: the adapter ended the program's process group, so the result is "indeterminate" and
+   * the binding stays usable; the other outcomes leave the MVP's "effects unknown".
+   */
+  result: Promise<{ exitCode: number | null; signal?: number; channel?: ChannelDropOutcome }>;
 } };
 export type ReadBinding = { endpoint: string; context: ToolContext; signal: AbortSignal;
   records: Awaited<ReturnType<typeof createRecords>>; imageSourceMaxBytes?: number;
@@ -60,5 +66,8 @@ export type ReadBinding = { endpoint: string; context: ToolContext; signal: Abor
    * Never accepted from tool JSON, never persisted. `current()` is read once at each NEW Builder Bash command, which receives it as explicit
    * environment via stdin; a renewal replaces it for later commands only and a withdrawal makes it undefined (ticket 20). */
   credential?: Readonly<{ current(): string | undefined }>;
+  /** Host-only (v2 ticket 11): told, before the call answers, of each mutating call whose channel dropped after it started. Never accepted
+   * from tool JSON. Absent: nothing is reported (an adapter that never sets `channel`). */
+  uncertainEffect?: (effect: Pick<IndeterminateEffect, 'tool' | 'callId' | 'description' | 'outcome'>) => Promise<void>;
   /** Host configuration only: replaces the fixed Factory commit identity of Builder commands (never accepted from tool JSON or the model). */
   commitIdentity?: Readonly<{ name: string; email: string }> };
