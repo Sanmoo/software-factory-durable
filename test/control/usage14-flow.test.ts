@@ -42,50 +42,45 @@ async function harness(t: { after(fn: () => Promise<void>): void }, refusals: Re
   const accept = (input: ControlInput) => control.accept(input);
   const retry = (work_id: string, code: string, request_id: string) => accept({ request_id, operation: 'resume', work_id, retry_blocked_start: code, origin: 'local-cli' });
   const completed = () => until(async () => (await work())?.execution?.end?.outcome === 'completed', 'completed');
-  return { control, doubles, work, show, until, retry, completed };
+  return { control, doubles, work, show, until, retry, completed, time };
 }
 
-test('a boot the service refuses for quota is a visible start impediment with the cause; retrying it consumes no operational recovery', async t => {
+test('a boot the service refuses for quota waits and is retried by itself: no impediment, no operational recovery, the service\'s cause visible as the wait reason', async t => {
   const code = 'START_SERVICE_CAPACITY_REFUSED';
   const cause = 'capacity: ServiceQuotaExceededException: allocated memory quota exceeded';
-  const h = await harness(t, [{ status: 'failure', code: 'SERVICE_CAPACITY_REFUSED', detail: cause }]);
-  await h.until(async () => (await h.work())?.impediments.length > 0, 'impediment');
-  const work = await h.work();
+  const refusal: Refusal = { status: 'failure', code: 'SERVICE_CAPACITY_REFUSED', detail: cause };
+  const h = await harness(t, [refusal, refusal]);
+  await h.until(async () => Boolean((await h.work())?.bootDeferral), 'capacity wait');
+  let work = await h.work();
   const refused = work.execution!;
-  assert.deepEqual([refused.state, refused.start, refused.slot.held, refused.charge?.state === 'consumed', refused.blockedStart!.code, refused.blockedStart!.detail],
-    ['released', null, false, false, code, cause], 'nothing started: Slot freed, nothing consumed, the cause is kept');
-  assert.deepEqual([work.pendingRecovery, work.budget!.recoveries.consumed, work.budget!.recoveries.reserved], [null, 0, null]);
-  const action = (await h.show(work.work_id)).work.limits.actions.find(item => item.code === 'RECOVERY_BLOCKED')!;
-  assert.match(action.nextStep, /quota or capacity/);
-  assert.ok(action.nextStep.includes(cause), action.nextStep);
-  assert.ok(action.nextStep.includes(`factory resume ${work.work_id} --retry-blocked-start ${code} --request-id <id>`), action.nextStep);
-  assert.match(action.nextStep, /no operational recovery/);
-  assert.doesNotMatch(action.nextStep, /one operational recovery unit/);
-  assert.equal(h.doubles.calls('activate').length, 0, 'nothing is retried automatically');
+  assert.deepEqual([refused.state, refused.start, refused.slot.held, refused.charge?.state === 'consumed', refused.blockedStart ?? null],
+    ['released', null, false, false, null], 'nothing started: Slot freed, nothing consumed, nothing blocked');
+  assert.deepEqual([work.impediments, work.pendingRecovery, work.budget!.recoveries.consumed, work.budget!.recoveries.reserved], [[], null, 0, null]);
+  assert.deepEqual([work.bootDeferral!.code, work.bootDeferral!.detail, work.bootDeferral!.waitSeconds, work.bootDeferral!.attempt, work.queue.pending], [code, cause, 15, 0, true]);
+  assert.ok(work.dispatch.reasons.includes('BOOT_CAPACITY_WAIT'), 'the wait is visible');
+  assert.ok(work.history.some(item => item.event === 'boot-deferred' && item.detail?.includes(code) && item.detail.includes(cause)), 'the cause is in the history');
 
-  const receipt = await h.retry(work.work_id, code, 'q14-accept') as { outcome?: string };
-  assert.equal(receipt.outcome, 'accepted');
-  let after = await h.work();
-  assert.deepEqual([after.impediments.length, after.pendingRecovery, after.execution!.blockedStart!.retry!.recoveryRequest], [0, null, 'not-required']);
+  // Not a hot loop: nothing is attempted again before the persisted wait ends, and a repeated refusal waits longer.
+  h.doubles.jumpCalendar(10_000);
+  for (let round = 0; round < 3; round += 1) { h.time.advance(); await h.time.sleeping(); }
+  assert.equal(h.doubles.calls('start-refused').length, 1, 'no attempt inside the wait');
+  h.doubles.jumpCalendar(10_000);
+  await h.until(async () => (await h.work()).bootDeferral?.attempt === 1, 'second wait');
+  work = await h.work();
+  assert.deepEqual([work.bootDeferral!.waitSeconds, work.impediments, work.pendingRecovery, h.doubles.calls('start-refused').length], [60, [], null, 2]);
+  h.doubles.jumpCalendar(61_000);
   await h.completed();
-  after = await h.work();
-  assert.deepEqual([h.doubles.calls('start').length, after.execution!.charge?.kind ?? 'none', after.budget!.recoveries.consumed, after.budget!.recoveries.reserved],
-    [1, 'none', 0, null], 'the Work started as what it was: no recovery unit reserved or consumed');
+  work = await h.work();
+  assert.deepEqual([h.doubles.calls('activate').length, work.bootDeferral, work.execution!.charge?.kind ?? 'none', work.budget!.recoveries.consumed, work.budget!.recoveries.reserved],
+    [1, null, 'none', 0, null], 'the Work started as what it was: no recovery unit reserved or consumed');
 });
 
-test('a second quota refusal blocks again with the same exit, still without consuming anything', async t => {
-  const code = 'START_SERVICE_CAPACITY_REFUSED';
-  const refusal: Refusal = { status: 'failure', code: 'SERVICE_CAPACITY_REFUSED' };
-  const h = await harness(t, [refusal, refusal]);
-  await h.until(async () => (await h.work())?.impediments.length > 0, 'first impediment');
-  const first = await h.work();
-  assert.equal((await h.retry(first.work_id, code, 'q14-one') as { outcome?: string }).outcome, 'accepted');
-  await h.until(async () => { const work = await h.work(); return work.execution!.executionId !== first.execution!.executionId && work.impediments.length > 0; }, 'second impediment');
-  const second = await h.work();
-  assert.deepEqual([second.execution!.blockedStart!.code, second.execution!.blockedStart!.retry, second.budget!.recoveries.consumed], [code, null, 0]);
-  assert.equal((await h.retry(second.work_id, code, 'q14-two') as { outcome?: string }).outcome, 'accepted');
-  await h.completed();
-  assert.equal((await h.work()).budget!.recoveries.consumed, 0);
+test('the Operator retry of a blocked start does not apply to a quota refusal: there is no block to lift', async t => {
+  const h = await harness(t, [{ status: 'failure', code: 'SERVICE_CAPACITY_REFUSED' }]);
+  await h.until(async () => Boolean((await h.work())?.bootDeferral), 'capacity wait');
+  const work = await h.work();
+  const receipt = await h.retry(work.work_id, 'START_SERVICE_CAPACITY_REFUSED', 'q14-none') as { outcome?: string; reason?: string | null };
+  assert.deepEqual([receipt.outcome, receipt.reason], ['not-applied', 'RECOVERY_NOT_BLOCKED']);
 });
 
 const boot = (id: string, change: Partial<BootUsage> = {}): BootUsage => ({ boot: `boot-${id}`, begin: 'start', end: 'end', size: 'large', startedAt: '2026-11-21T10:00:00.000Z',

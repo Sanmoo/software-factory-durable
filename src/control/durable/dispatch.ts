@@ -38,7 +38,7 @@ import { purposeOf } from './execution.js';
 import type { SessionRef } from '../types.js';
 import { environmentEndedCode, interruptionRecoveryPrompt, isDiskRemedy, reviewerRetryLimitCode, refusedWithoutActivity } from '../rules/recovery.js';
 import { recordEnvironmentEnd } from './environment-end.js';
-import { failureCodeAfter } from '../rules/channel-report.js';
+import { channelLossReason, channelUnrecoverableCode, failureCodeAfter } from '../rules/channel-report.js';
 import { recordChannelReport } from './channel-report.js';
 import { budgetExhaustedCode, builderBudgetPolicy, stateSummary, type AnsweredQuestion, type SummaryInput } from '../rules/budget-continuation.js';
 import { reconcileExecution } from './recovery.js';
@@ -1018,12 +1018,14 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
     let gateLoss: { occasion: PreservationOccasion; refusal: GateRefusal; refusals: number } | null = null;
     // v2 ticket 13 (V2-05 item 3, V2-19): this Execution starts the SUBSTITUTE session of a loss: the gate precedes the end of its activation.
     const substitute = diskless && Boolean(execution.interruption && (work.losses ?? []).some(loss => loss.executionId === execution.interruption!.previousExecutionId));
+    /** Operator decision 6: set when this Execution failed because its tool channel could not be recovered with the environment alive. */
+    let channelLost: { at: string; attempts: number } | null = null;
     /**
-     * v2 ticket 06 (Operator decision 1A): the publication of a LIVE basis in the boot that verified it. Evaluate the basis, discover the
-     * own publication with Control's read of `origin`, and when nothing is published request it from a publish-only Builder activation of
-     * THIS Execution (own invocation, the one leased push, `gh` for the draft pull request). Its effects are never assumed: the ordinary
-     * discovery after cessation links the pull request only at exactly the verified head.
-     */
+   * v2 ticket 06 (Operator decision 1A): the publication of a LIVE basis in the boot that verified it. Evaluate the basis, discover the
+   * own publication with Control's read of `origin`, and when nothing is published request it from a publish-only Builder activation of
+   * THIS Execution (own invocation, the one leased push, `gh` for the draft pull request). Its effects are never assumed: the ordinary
+   * discovery after cessation links the pull request only at exactly the verified head.
+   */
     const publishInBoot = async (checkoutPath: string) => {
       const evaluated = await evaluateLivePublication(session, work.work_id, executionId);
       if (evaluated === 'stale' || evaluated.state !== 'awaiting-discovery' || !evaluated.verified) { observe(work.work_id, 'publication-evaluated', evaluated === 'stale' ? ['STALE'] : evaluated.reasons); return; }
@@ -1528,11 +1530,14 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
             if (gated === 'lost') await endAsLoss(gateRefusedCode);
             if (gated !== 'accepted') return;
           }
-          // v2 ticket 11: a failure caused by a tool channel that could not be recovered ends under that name (not transient: no automatic retry).
-          const failureCode = completed.status === 'success' ? null : failureCodeAfter(completed.code, await channelReport());
+          // v2 ticket 11: a failure caused by a tool channel that could not be recovered ends under that name (transient, Operator decision 6).
+          const reported = completed.status === 'success' ? null : await channelReport();
+          const failureCode = completed.status === 'success' ? null : failureCodeAfter(completed.code, reported);
+          if (failureCode === channelUnrecoverableCode) channelLost = reported?.unrecoverable ?? null;
           // v2 ticket 13 (V2-05 item 3): a substitute activation that FAILED with its environment alive is checked once too. Nobody is left
           // to correct a refusal (the Builder is what failed), so an unpreserved workspace is a loss, visible, under the failure's own code.
-          if (substitute && completed.status === 'failure' && environment && boot && !interrupted()) {
+          // (A channel that could not be recovered is already a loss of its own, recorded below: Operator decision 6.)
+          if (substitute && completed.status === 'failure' && !channelLost && environment && boot && !interrupted()) {
             const { decision } = await wait(checkPreservation(work, { environment, boot, branch: execution.request.branch }));
             if (await recordGateCheck(session, work.work_id, executionId, { occasion: 'substitute-end', boot, branch: execution.request.branch, decision }) === 'stale') return;
             observe(work.work_id, decision.outcome === 'accepted' ? 'preservation-accepted' : 'preservation-refused', [decision.outcome === 'accepted' ? decision.commit : decision.code]);
@@ -1554,6 +1559,9 @@ export function createDispatcher(deps: { session: Session; access: AccessDepende
       phase = 'stop';
       // Ticket 47: the budget end stops through the same clean stop as every end (guest shutdown, root read-only, then the VMM).
       const stop = await stopOwnBoot('builder execution ended');
+      // Operator decision 6: the environment was alive and unreachable, so without a persistent disk ending its boot loses what it held
+      // and `origin` does not. Recorded as a loss (v2 ticket 12) before the Slot is released, so before the substitute can start.
+      if (diskless && boot && channelLost) await recordLossOf(work, execution, { environment: environment ?? null, boot }, { reason: channelLossReason(channelLost), terminatedAt: null }, elapsed()).catch(() => {});
       // Ticket 48: after a budget end whose boot ceased, the Host fingerprints the checkout again; progress decides continuation vs recovery.
       const budgetEnd = endCode === budgetExhaustedCode && stop?.cessationConfirmed && environment ? diskless ? {
         // v2 ticket 06 (decision 2a): the boot left nothing on the host; progress is the Work branch tip on `origin` having advanced.

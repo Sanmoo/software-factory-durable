@@ -61,13 +61,14 @@ export function applyContinuationRequest(work: WorkRecord, input: { executionId:
  * Inside a commit (ticket 50): a boot/preparation refused for lack of host memory/storage, with nothing started, keeps the Work's queue position
  * behind a persisted capacity wait that grows while the refusals repeat (reset by the next operational boot). No budget unit is touched.
  */
-export function applyBootDeferral(work: WorkRecord, input: { executionId: string; code: string; at: string }) {
+export function applyBootDeferral(work: WorkRecord, input: { executionId: string; code: string; detail?: string | null; at: string }) {
   const attempt = work.bootDeferral ? work.bootDeferral.attempt + 1 : 0;
   const waitSeconds = bootCapacityWait(attempt);
   const notBefore = new Date(Date.parse(input.at) + waitSeconds * 1000).toISOString();
-  work.bootDeferral = { code: input.code, executionId: input.executionId, requestedAt: input.at, notBefore, waitSeconds, attempt };
+  work.bootDeferral = { code: input.code, executionId: input.executionId, requestedAt: input.at, notBefore, waitSeconds, attempt,
+    ...(input.detail ? { detail: input.detail.slice(0, 512) } : {}) };
   work.history.push({ at: input.at, event: 'boot-deferred', origin: 'controller-recovery', executionId: input.executionId,
-    detail: `${input.code}; capacity wait ${waitSeconds}s (attempt ${attempt + 1}); nothing started, nothing charged` });
+    detail: `${input.code}${input.detail ? ` (${input.detail.slice(0, 256)})` : ''}; capacity wait ${waitSeconds}s (attempt ${attempt + 1}); nothing started, nothing charged` });
   work.queue = { ...work.queue, pending: true };
 }
 

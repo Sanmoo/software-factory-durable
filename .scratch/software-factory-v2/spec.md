@@ -182,6 +182,10 @@ pelo host a cada chamada. `SHELL_INGRESS` e servidor exec próprio não são usa
 canal sozinha não encerra a ativação. O adapter consulta o serviço; com o ambiente ativo, reconecta,
 encerra o grupo de processos da chamada órfã e devolve à sessão o resultado "indeterminado", nunca "não
 executada". Não há reanexação à saída do processo órfão.
+Nota (decisão 6 do Operador, 2026-11-21): esgotado o limite de reconexão com o ambiente vivo, não há
+impedimento à espera do Operador. A Execução termina, o boot é encerrado e o Trabalho volta sozinho
+num boot novo, consumindo uma retomada operacional; neste perfil o encerramento é registrado como
+perda (V2-17).
 
 **V2-22 — Retirada de acesso (provado: T4).** Token vencido não derruba conexão aberta. Retirar acesso
 significa fechar a conexão ou encerrar a MicroVM. O adapter mantém keepalive; ociosidade sem keepalive
@@ -242,6 +246,9 @@ concorrência de Builders já existente. A quota observada é de 8 GB de memóri
 perfil de aceite. `validate` diagnostica quando concorrência × tamanho excede a quota lida da conta,
 sem ajuste automático. Recusa do serviço por quota em execução é impedimento visível do início e não
 consome retomada operacional.
+Nota (decisão 5 do Operador, 2026-11-21): o "impedimento visível" é uma espera automática com nova
+tentativa (15 s, 60 s, depois 300 s repetidos), com a causa do serviço visível como motivo da espera;
+não bloqueia o Trabalho nem exige comando do Operador.
 
 **V2-31 — Instalação (decidido).** A release traz um template que o Operador aplica na própria conta
 para criar a role de operação com política mínima, a role de build e o bucket de artefatos de build.

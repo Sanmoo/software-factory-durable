@@ -94,3 +94,31 @@ Para os tickets seguintes:
 Testes: `test/sandbox/lambda-tools.test.ts` (quatro casos novos e o de perda estendido; fake em `lambda-guest-fake.ts`: processos,
 `drop()`, `channelDown`, `end-call`), `test/workers/indeterminate-result.test.ts`, `test/control/channel-report-flow.test.ts`,
 `test/control/channel-report-rules.test.ts`; ajuste em `lambda-profile.test.ts`.
+
+## Comments
+
+**2026-11-21 — Decisão 6 do Operador substitui o impedimento do canal irrecuperável (branch `implement/v2-lambda-fix-autonomy`).**
+Esgotado o limite de reconexão com o ambiente vivo, não há mais impedimento que só sai com `factory cancel`.
+`SANDBOX_CHANNEL_UNRECOVERABLE` entrou em `transient` (`src/control/rules/recovery.ts`): a Execução termina como falha com esse código,
+o boot é encerrado pelo Parar de sempre e o Trabalho volta pela fila num boot novo, consumindo uma retomada operacional (o limite contra
+repetição é o orçamento de retomadas). `channelUnrecoverableImpediment` foi removido e `recordChannelReport` só grava os efeitos incertos.
+
+- **Perda registrada (como no ticket 12).** Sem disco persistente, encerrar um boot vivo e inalcançável perde o que ele tinha e não
+  estava no `origin`. O despacho chama `recordLossOf` depois do Parar e antes de liberar o Slot: `work.losses[]` com o boot, o motivo
+  (`channelLossReason`: código, tentativas, "Control ended the boot"), `terminatedAt: null` (não foi o serviço que encerrou), o commit
+  confirmado e o marcador pelas leituras do próprio Controle, e a sessão como evidência. Por haver perda dessa Execução, a regra do 12
+  (`environmentLost` em `activationPlan`) faz a próxima ativação ser de sessão substituta. Com disco persistente (Gondolin) nada é
+  perdido e nenhuma perda é gravada; o Gondolin nem declara `channelRecovery`.
+- **Guarda de `recordLoss` afrouxada** (`src/control/durable/loss.ts`): aceitava só boot com `environmentEnd`; agora também o boot de
+  uma Execução terminada como falha (`end.outcome === 'failure'` e `dispatch.boot` igual). Os tickets 13 (três recusas do gate → perda)
+  e 09 mexem perto: manter as duas condições ao integrar.
+- **Marcador:** o hook de término roda no Parar, mas o holder é desarmado antes de todo Parar, e aqui o canal para desarmar está caído;
+  se sobra marcador ou não é o que a leitura do Controle disser (`present`/`absent`/`unknown`). Não provado em guest real.
+- **Só no caminho vivo do despacho**, como a perda do 12: a reconciliação depois de queda do controlador não grava `work.losses`.
+- Critério "vira impedimento visível, sem laço" deste ticket passa a ser: sem impedimento, limitado pelo orçamento de retomadas
+  (nota na V2-21 da spec). `docs/lambda-installation.md` §10 atualizado.
+- Testes: `test/control/loss-flow.test.ts` (caso novo, sem disco), `test/control/channel-report-flow.test.ts` (reescrito, com disco),
+  `test/control/channel-report-rules.test.ts`.
+
+`npm run test:ci` (2026-11-21, branch `implement/v2-lambda-fix-autonomy`): 2089 testes, 2067 passam, 17 pulados, 5 falham, resultado FAIL. As 5
+falhas são as conhecidas da base: `test/sandbox/audited-vfs-guard.test.ts` (4) e `test/sandbox/sandbox-adapter-diagnostics.test.ts` (1).

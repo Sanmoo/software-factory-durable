@@ -15,7 +15,10 @@ export async function recordLoss(session: Session, work_id: string, loss: LossRe
     const work = document.work;
     if (!work) return 'stale' as const;
     const known = [...work.previousExecutions, ...(work.execution ? [work.execution] : [])].find(item => item.executionId === loss.executionId);
-    if (!known || !known.environmentEnd || known.environmentEnd.boot !== loss.boot) return 'stale' as const;
+    // The boot is one the Execution lost: its environment ended by itself, or (Operator decision 6) the Execution ended as a failure on
+    // that boot and Control ended it while it was alive and unreachable.
+    const lostBoot = known?.environmentEnd?.boot === loss.boot || (known?.end?.outcome === 'failure' && known.dispatch.boot === loss.boot);
+    if (!known || !lostBoot) return 'stale' as const;
     if (work.losses?.some(item => item.executionId === loss.executionId && item.boot === loss.boot)) return 'recorded' as const;
     work.losses = recordLossOn(work.losses, loss);
     work.history.push({ at: loss.at, event: 'loss-recorded', origin: 'controller-dispatch', executionId: loss.executionId, detail: lossDetail(loss) });

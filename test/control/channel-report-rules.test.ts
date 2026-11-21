@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ChannelReport } from '../../src/contracts/index.js';
-import { channelUnrecoverableImpediment, failureCodeAfter, indeterminateEffectsLimit, mergeEffects } from '../../src/control/rules/channel-report.js';
+import { channelLossReason, failureCodeAfter, indeterminateEffectsLimit, mergeEffects } from '../../src/control/rules/channel-report.js';
+import { classifyInterruption } from '../../src/control/rules/recovery.js';
 
 // v2 ticket 11 (V2-21), pure rules: what Control keeps of a sandbox's channel report.
 const effect = (callId: string): ChannelReport['indeterminateEffects'][number] =>
@@ -24,13 +25,11 @@ test('the record is bounded and keeps the earliest effects', () => {
   assert.deepEqual([merged[0]!.callId, merged.at(-1)!.callId], ['call-0', 'call-63']);
 });
 
-test('only a channel that reached its reconnection limit renames a failure and blocks the Work', () => {
+test('only a channel that reached its reconnection limit renames a failure; that failure is transient (Operator decision 6) and names the loss it causes', () => {
   const unrecoverable = { at: '2026-11-21T10:01:00.000Z', attempts: 5 };
   assert.equal(failureCodeAfter('WORKER_INTERRUPTED', null), 'WORKER_INTERRUPTED');
   assert.equal(failureCodeAfter('WORKER_INTERRUPTED', { indeterminateEffects: [effect('a')], unrecoverable: null }), 'WORKER_INTERRUPTED');
   assert.equal(failureCodeAfter('WORKER_INTERRUPTED', { indeterminateEffects: [], unrecoverable }), 'SANDBOX_CHANNEL_UNRECOVERABLE');
-  const impediment = channelUnrecoverableImpediment(unrecoverable, { workId: 'work-1', boot: 'boot-1', effects: 2 });
-  assert.deepEqual([impediment.code, impediment.scope, impediment.since], ['SANDBOX_CHANNEL_UNRECOVERABLE', 'work', '2026-11-21T10:01:00.000Z']);
-  assert.match(impediment.nextStep, /boot-1.*5 attempts.*2 tool call\(s\).*may have happened.*Nothing is retried automatically.*factory cancel work-1/s);
-  assert.match(channelUnrecoverableImpediment(unrecoverable, { workId: 'work-1', boot: 'boot-1', effects: 0 }).nextStep, /No started tool call was left without a result/);
+  assert.deepEqual(classifyInterruption('SANDBOX_CHANNEL_UNRECOVERABLE'), { kind: 'recoverable' });
+  assert.equal(channelLossReason(unrecoverable), 'SANDBOX_CHANNEL_UNRECOVERABLE: the tool channel could not be re-established in 5 attempts with the environment alive; Control ended the boot');
 });

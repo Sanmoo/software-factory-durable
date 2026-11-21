@@ -88,7 +88,7 @@ export async function validateLambdaInstallation({ profile, concurrency, service
     if (!quota.ok && quota.failure.kind === 'access-denied') refused(quota.failure, 'servicequotas:ListServiceQuotas');
     capacity = ({ id: 'lambda-quota', status: 'unverified', message: !quota.ok ? `The account memory quota for ${profile.architecture} MicroVMs could not be read${describe(quota.failure)}; concurrency was not compared with it.`
       : 'Builder concurrency is unknown (invalid configuration); it was not compared with the account quota.',
-    nextStep: 'Read the quota in the Service Quotas console and keep concurrency x peak memory under it; a quota refusal at start is a visible impediment.' });
+    nextStep: 'Read the quota in the Service Quotas console and keep concurrency x peak memory under it; a quota refusal at start is a visible capacity wait, retried by itself.' });
   } else {
     const needed = concurrency * size.peakMemoryMiB;
     const sentence = `Builder concurrency ${concurrency} x ${size.peakMemoryMiB} MiB peak per MicroVM = ${needed} MiB; account quota ${quota.value.mebibytes} MiB of allocated memory (${profile.architecture}, ${profile.region}).`;

@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { openControl } from '../../src/control/index.js';
 import type { ExecutionView, ListView, WorkView } from '../../src/control/types.js';
 import type { LostMarkersObservation } from '../../src/code-repository/index.js';
+import type { ChannelReport } from '../../src/contracts/index.js';
 import { createDeliveryDesk } from '../../src/control/durable/delivery-desk.js';
 import { readWork, readWorks, works } from '../../src/control/durable/admission.js';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
@@ -18,7 +19,8 @@ import { untilHolds } from '../runner/budget.js';
 // listing of loss marker refs), the clock, a Sandbox that declares NO persistent disk and reports the end of its environment, Workers and
 // credentials. It shows what CONTROL records and deletes; the hook and the push are exercised in `test/sandbox/lambda-loss-marker.test.ts`.
 const main = 'b'.repeat(40), wip = 'e'.repeat(40), lost = 'c'.repeat(40);
-async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remote, scripts: Script[], markers: { read: (workId: string) => LostMarkersObservation | Promise<LostMarkersObservation> }) {
+async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remote, scripts: Script[], markers: { read: (workId: string) => LostMarkersObservation | Promise<LostMarkersObservation> },
+  /** Operator decision 6: the sandbox also declares channel recovery and answers this report for a boot. */ channel?: (boot: string) => ChannelReport) {
   const dir = await mkdtemp(join(tmpdir(), 'factory-loss-flow-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const github = githubDoubles(remote);
@@ -27,7 +29,8 @@ async function harness(t: { after(fn: () => Promise<void>): void }, remote: Remo
   const markerReads: string[] = [];
   const time = manualClock();
   const control = await openControl({ storagePath: join(dir, 'control.sqlite'), runtimeInventory: 'empty',
-    execution: { ...execution.ports, sandbox: { ...execution.ports.sandbox, capabilities: { ...execution.ports.sandbox.capabilities!, environmentWatch: true },
+    execution: { ...execution.ports, sandbox: { ...execution.ports.sandbox, capabilities: { ...execution.ports.sandbox.capabilities!, environmentWatch: true, ...(channel ? { channelRecovery: true } : {}) },
+      ...(channel ? { channelReport: async (input: { boot: string }) => channel(input.boot) } : {}),
       awaitEnvironmentEnd: input => new Promise(resolve => {
         watched.push({ boot: input.boot, end: reason => resolve({ reason, terminatedAt: '2026-11-21T10:00:00.000Z' }) });
         input.signal.addEventListener('abort', () => resolve(null), { once: true });
@@ -100,6 +103,32 @@ test('V2-17: with nothing ever pushed and no marker, the loss still is recorded:
   unread.watched[0]!.end('The service ended the MicroVM.');
   await unread.settle('loss recorded', value => value?.losses?.length === 1);
   assert.deepEqual((await unread.work())!.losses![0]!.marker.state === 'unknown' && (await unread.work())!.losses![0]!.marker, { ref: (await unread.work())!.losses![0]!.marker.ref, state: 'unknown', code: 'LOST_MARKER_READ_FAILED' });
+});
+
+test('Operator decision 6: a channel that cannot be recovered with the environment alive ends the boot as a recorded loss and the Work retries by itself on a new boot, with no impediment', async t => {
+  const remote: Remote = { pulls: {}, issues: [remoteIssue(3)], refs: { main } };
+  const boots: string[] = [];
+  // Only the first boot loses its channel for good; the boot that replaces it reports nothing.
+  const channel = (boot: string): ChannelReport => { if (!boots.includes(boot)) boots.push(boot); return boot === boots[0] ? { indeterminateEffects: [], unrecoverable: { at: '2026-11-21T10:01:00.000Z', attempts: 5 } } : { indeterminateEffects: [], unrecoverable: null }; };
+  const h = await harness(t, remote, [{ kind: 'implement', head: lost, failure: 'WORKER_INTERRUPTED' }, { kind: 'hang', head: lost }],
+    { read: () => ({ state: 'complete', observedAt: '2026-11-21T10:00:01.000Z', markers: [] }) }, channel);
+  await h.settle('loss recorded', value => value?.losses?.length === 1);
+  let work = (await h.work())!;
+  const [loss] = work.losses!;
+  const ended = h.executionOf(work, loss!.executionId)!;
+  assert.deepEqual([ended.end?.outcome, ended.end?.code], ['failure', 'SANDBOX_CHANNEL_UNRECOVERABLE']);
+  // The environment was alive and unreachable: what it held and `origin` does not is lost when Control ends the boot.
+  assert.deepEqual([loss!.boot, loss!.reason, loss!.terminatedAt, loss!.confirmed.commit, loss!.marker.state, loss!.session],
+    [ended.dispatch.boot, 'SANDBOX_CHANNEL_UNRECOVERABLE: the tool channel could not be re-established in 5 attempts with the environment alive; Control ended the boot',
+      null, null, 'absent', { invocationId: ended.invocationId, disposition: 'conserved-as-evidence' }]);
+  assert.ok(h.execution.calls.some(call => call.kind === 'stop'), 'the unreachable boot is ended');
+  assert.deepEqual(work.impediments, [], 'nothing waits for the Operator');
+  // It comes back through the queue as ONE operational recovery, on a new boot, with a substitute session.
+  await h.settle('retried', value => value?.execution?.executionId !== loss!.executionId && value?.execution?.state === 'started');
+  work = (await h.work())!;
+  assert.deepEqual([work.budget!.recoveries.consumed, work.impediments, work.losses!.length], [1, [], 1]);
+  assert.notEqual(work.execution!.dispatch.boot, loss!.boot);
+  assert.deepEqual(h.activations().map(item => item.continuation), [null, null], 'the lost session is not continued');
 });
 
 test('NEGATIVE (V2-16): a marker ref that holds the guest HEAD does not satisfy the preservation gate and nothing is recorded as preserved', async t => {
