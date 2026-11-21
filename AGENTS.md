@@ -22,3 +22,10 @@ no ciclo de TDD usar `npm run test:fast`. Isso substitui a regra antiga do hando
 "um arquivo compilado por vez". Teste lento ou não paralelizável ganha entrada justificada em
 `test/tiers.json`; relógio falso em vez de `sleep`; sem caminho ou porta fixos; crash/SIGKILL reais
 só fora de `fast`, com um cenário representativo por mecanismo e as variações como testes de regra pura.
+
+## Integração e push
+
+Depois de integrar o trabalho em `main` por fast-forward, conforme o fluxo global de conclusão, fazer
+`git push origin main` em seguida, sem pedir confirmação. Isso substitui, neste repositório, a regra
+global de só fazer push com autorização explícita. Continuam exigindo autorização: push de outras
+branches, qualquer push forçado e publicação de branches de protótipo.
