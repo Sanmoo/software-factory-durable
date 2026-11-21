@@ -8,7 +8,7 @@ import type { EnvironmentRef } from '../prepare.js';
 import type { StartResult } from '../start.js';
 import type { StopResult } from '../stop.js';
 import { bootReady, bootReadyProgram, clonedHead, cloneProgram, evidenceProgram } from './guest-programs.js';
-import { collectLambdaArtifacts, uploadLambdaSeeds } from './artifacts.js';
+import { collectLambdaArtifacts, restoreLambdaArtifacts, uploadLambdaSeeds } from './artifacts.js';
 import type { ArtifactSeed } from '../artifact-seeds.js';
 import { preserveEvidence } from '../../records/index.js';
 import { readWorkImage } from './image.js';
@@ -90,6 +90,8 @@ const bootRecordSchema = z.strictObject({
     z.strictObject({ status: z.literal('preserved'), at: instant, reference: z.strictObject({ workId: z.string(), id: z.string(), manifestSha256: z.string(), files: z.number().int(), bytes: z.number().int() }) }),
     z.strictObject({ status: z.literal('absent'), at: instant }),
     z.strictObject({ status: z.literal('lost'), at: instant, code: z.string() })]).optional(),
+  /** v2 ticket 08 (decision 3D): the `spec/`/`instructions/` versions the host re-sent into this boot at its start, their source boot and the boots whose versions were lost. */
+  restored: z.strictObject({ restored: z.array(z.string()), from: z.string().nullable(), lost: z.array(z.string()) }).optional(),
 });
 export type LambdaBootRecord = z.infer<typeof bootRecordSchema>;
 const currentSchema = z.strictObject({ version: z.literal(1), environment: z.string(), boot: bootRecordSchema.shape.boot });
@@ -186,6 +188,28 @@ async function collectArtifacts(dependencies: LambdaBootDependencies, record: La
   } }).catch(() => ({ status: 'failed' as const, code: 'EVIDENCE_PRESERVATION_FAILED' }));
   if (preserved.status !== 'preserved') return earlier ?? (preserved.code === 'EVIDENCE_ABSENT' ? { status: 'absent', at } : { status: 'lost', at, code: preserved.code });
   return { status: 'preserved', at, reference: preserved.reference };
+}
+
+/**
+ * v2 ticket 08 (Operator decision 3D): where the `spec/` and `instructions/` of a new boot come from. Walking the earlier boots of the
+ * environment from the newest: the first one that collected (`preserved`) is the source; one whose guest had no artifacts (`absent`) ends
+ * the search with nothing to send; one that ended before its collection is `lost` (what it wrote is gone) and the search goes on to what
+ * the host still holds. A boot that never became active (no clone) never had a Builder and is skipped. Null: no earlier boot at all.
+ */
+export async function previousLambdaArtifacts(root: string, environment: EnvironmentRef, boot: BootRef): Promise<{ from: BootRef | null; source: string | null; lost: BootRef[] } | null> {
+  const earlier = (await listLambdaBoots(root, environment)).filter(record => record.boot !== boot && record.checkout).reverse();
+  if (!earlier.length) return null;
+  const lost: BootRef[] = [];
+  for (const record of earlier) {
+    if (record.artifacts?.status === 'preserved') {
+      const { workId, id } = record.artifacts.reference;
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(workId) || !/^[a-f0-9-]{36}$/.test(id)) { lost.push(record.boot as BootRef); continue; }
+      return { from: record.boot as BootRef, source: join(root, workId, 'evidence', id, 'files'), lost };
+    }
+    if (record.artifacts?.status === 'absent') return { from: null, source: null, lost };
+    lost.push(record.boot as BootRef);
+  }
+  return { from: null, source: null, lost };
 }
 
 export type LambdaCheckout = { repository: string; commit: string; branch?: string;
@@ -301,9 +325,20 @@ export async function startLambdaBoot(dependencies: LambdaBootDependencies, { en
   // v2 ticket 06: the skill pack is Factory material of the release; nothing of an earlier boot exists, so it is written now.
   const seeded = await uploadLambdaSeeds(channel, seeds).catch(() => ({ status: 'failure' as const, code: 'ARTIFACT_SEED_UNAVAILABLE' }));
   if (seeded.status !== 'success') return fail('ARTIFACT_SEED_UPLOAD_FAILED', seeded.code);
+  // v2 ticket 08 (decision 3D): only `spec/` and `instructions/` of the latest collection come back; a failed re-send never starts a
+  // boot that would silently miss them.
+  const previous3d = await previousLambdaArtifacts(root, environment, boot).catch(() => 'unreadable' as const);
+  if (previous3d === 'unreadable') return fail('ARTIFACT_RESTORE_FAILED', 'ARTIFACT_RESTORE_RECORDS_UNREADABLE');
+  let artifacts: { restored: string[]; from: BootRef | null; lost: BootRef[] } | null = null;
+  if (previous3d) {
+    const restored = previous3d.source ? await restoreLambdaArtifacts(channel, previous3d.source).catch(() => ({ status: 'failure' as const, code: 'ARTIFACT_RESTORE_UNAVAILABLE' }))
+      : { status: 'restored' as const, versions: [], files: 0 };
+    if (restored.status !== 'restored') return fail('ARTIFACT_RESTORE_FAILED', restored.code);
+    artifacts = { restored: restored.versions, from: restored.versions.length ? previous3d.from : null, lost: previous3d.lost };
+  }
   await save(await collectEvidence(dependencies, record, channel, 'start').catch(() => null) ?? record);
-  await save({ ...record, phase: 'active', checkout: { repository: checkout.repository, commit: checkout.commit, ...(checkout.branch === undefined ? {} : { branch: checkout.branch }) } });
-  return { status: 'success', boot, seeds: seeded.seeds };
+  await save({ ...record, ...(artifacts ? { restored: artifacts } : {}), phase: 'active', checkout: { repository: checkout.repository, commit: checkout.commit, ...(checkout.branch === undefined ? {} : { branch: checkout.branch }) } });
+  return { status: 'success', boot, seeds: seeded.seeds, ...(artifacts ? { artifacts } : {}) };
 }
 
 export type LambdaObservation = Observation & {

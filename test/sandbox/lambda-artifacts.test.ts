@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { collectLambdaArtifacts, observeLambdaProposal, uploadLambdaSeeds, verifyLambdaPreservedSource, type GuestRoots } from '../../src/sandbox/lambda/artifacts.js';
+import { collectLambdaArtifacts, observeLambdaProposal, restoreLambdaArtifacts, uploadLambdaSeeds, verifyLambdaPreservedSource, type GuestRoots } from '../../src/sandbox/lambda/artifacts.js';
 import { observeProposal } from '../../src/sandbox/proposal-identity.js';
 import type { LambdaChannel } from '../../src/sandbox/index.js';
 import { remainingMs } from '../runner/budget.js';
@@ -143,4 +143,45 @@ test('a seed is written into the guest exactly as its manifest lists it and repo
   assert.deepEqual(await uploadLambdaSeeds(channel, seeds, disk.roots), { status: 'failure', code: 'ARTIFACT_SEED_VERSION_CONFLICT' });
   await writeFile(join(source, 'skills', 'pr', 'SKILL.md'), '# drifted\n');
   assert.deepEqual(await uploadLambdaSeeds(channel, [{ name: 'factory/skill-pack/pack-2', directory: source }], disk.roots), { status: 'failure', code: 'ARTIFACT_SEED_SOURCE_DRIFT' });
+});
+
+// v2 ticket 08 (Operator decision 3D): what one boot collected before its stop is what the next boot gets back, spec and instructions only.
+test('the next boot receives exactly the spec and instructions collected before the previous stop, and a preserved source of an earlier round verifies there again', async t => {
+  const disk = await guestDisk(t);
+  const channel = localChannel();
+  await mkdir(join(disk.artifacts, 'spec', 'v1'), { recursive: true });
+  await mkdir(join(disk.artifacts, 'spec', 'v2'), { recursive: true });
+  await mkdir(join(disk.artifacts, 'instructions', 'v1', 'docs'), { recursive: true });
+  await writeFile(join(disk.artifacts, 'spec', 'v1', 'sources.json'), JSON.stringify({ sources: [{ copy: './ticket.json' }] }));
+  await writeFile(join(disk.artifacts, 'spec', 'v1', 'ticket.json'), '{"body":"x"}');
+  await writeFile(join(disk.artifacts, 'spec', 'v2', 'sources.json'), JSON.stringify({ sources: [] }));
+  await writeFile(join(disk.artifacts, 'instructions', 'v1', 'docs', 'AGENTS.md'), Buffer.from([0, 255, 10, 13]));
+  await writeFile(join(disk.artifacts, 'factory-output-1.txt'), 'an output copy');
+  const collected = await mkdtemp(join(tmpdir(), 'factory-lambda-collected-'));
+  t.after(() => rm(collected, { recursive: true, force: true }));
+  assert.equal((await collectLambdaArtifacts(channel, collected, disk.roots)).status, 'success');
+
+  // The new boot: an empty guest that already received the skill pack.
+  const next = await mkdtemp(join(tmpdir(), 'factory-lambda-next-boot-'));
+  t.after(() => rm(next, { recursive: true, force: true }));
+  const roots: GuestRoots = { checkout: join(next, 'workspace', 'checkout'), artifacts: join(next, 'artifacts'), python: 'python3' };
+  await mkdir(join(roots.artifacts, 'factory', 'skill-pack', 'p1'), { recursive: true });
+  assert.deepEqual(await restoreLambdaArtifacts(channel, collected, roots), { status: 'restored', versions: ['spec/v1', 'spec/v2', 'instructions/v1'], files: 4 });
+  assert.deepEqual((await readdir(roots.artifacts)).sort(), ['factory', 'instructions', 'spec'], 'no review capture and no output copy comes back');
+  assert.equal(await readFile(join(roots.artifacts, 'spec', 'v1', 'ticket.json'), 'utf8'), '{"body":"x"}');
+  assert.deepEqual([...await readFile(join(roots.artifacts, 'instructions', 'v1', 'docs', 'AGENTS.md'))], [0, 255, 10, 13]);
+  // The end-of-Execution verification of an inherited round reads the same reference in the new boot.
+  assert.deepEqual(await verifyLambdaPreservedSource(channel, '/artifacts/spec/v1/ticket.json#body', roots), { status: 'verified', code: 'PRESERVED_SOURCE_VERIFIED' });
+  // The Builder can add the next version beside the restored ones.
+  await mkdir(join(roots.artifacts, 'spec', 'v3'));
+  // Never over a guest that already holds them, and a collection with neither tree restores nothing.
+  assert.deepEqual(await restoreLambdaArtifacts(channel, collected, roots), { status: 'failure', code: 'ARTIFACT_RESTORE_CONFLICT' });
+  const empty = await mkdtemp(join(tmpdir(), 'factory-lambda-collected-'));
+  t.after(() => rm(empty, { recursive: true, force: true }));
+  await mkdir(join(empty, 'review', 'r1'), { recursive: true });
+  await writeFile(join(empty, 'review', 'r1', 'index.json'), '{}');
+  assert.deepEqual(await restoreLambdaArtifacts(channel, empty, { ...roots, artifacts: join(next, 'other') }), { status: 'restored', versions: [], files: 0 });
+  // A link in the host copy is never followed.
+  await symlink('/etc/passwd', join(collected, 'spec', 'v1', 'link'));
+  assert.deepEqual(await restoreLambdaArtifacts(channel, collected, { ...roots, artifacts: join(next, 'third') }), { status: 'failure', code: 'ARTIFACT_RESTORE_SOURCE_UNSAFE' });
 });

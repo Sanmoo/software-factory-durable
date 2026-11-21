@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import type { ProposalIdentity } from '../../contracts/index.js';
@@ -292,4 +292,50 @@ export async function uploadLambdaSeeds(channel: LambdaChannel, seeds: readonly 
     sent.push({ name: seed.name, manifestSha256: sha(manifest), reused: false });
   }
   return { status: 'success', seeds: sent };
+}
+
+export const restoredTrees = Object.freeze(['spec', 'instructions'] as const);
+export type RestoredArtifacts = { status: 'restored'; /** `spec/v1`, `instructions/v2`…: the version directories written, in tree order. */ versions: string[]; files: number } | { status: 'failure'; code: string };
+/**
+ * v2 ticket 08 (Operator decision 3D): at the start of a boot the host re-sends ONLY `spec/` and `instructions/` from `source`, the host
+ * copy of what was collected before the previous stop (decision 2c). Returned as received: the host certifies nothing about the content.
+ * Review captures of earlier rounds and output copies are per boot and are never sent back. The same fixed write program as the seeds
+ * (each tree is created, never merged into an existing one); a link or a special file in the host copy sends nothing.
+ */
+export async function restoreLambdaArtifacts(channel: LambdaChannel, source: string, roots: GuestRoots = defaultRoots): Promise<RestoredArtifacts> {
+  const versions: string[] = [];
+  let total = 0;
+  const trees: { tree: string; files: { path: string; data: Buffer }[] }[] = [];
+  try {
+    for (const tree of restoredTrees) {
+      const files: { path: string; data: Buffer }[] = [];
+      const walk = async (relative: string): Promise<void> => {
+        for (const name of (await readdir(join(source, tree, relative))).sort()) {
+          const path = relative ? `${relative}/${name}` : name;
+          const info = await lstat(join(source, tree, path));
+          if (info.isDirectory()) { await walk(path); continue; }
+          if (!info.isFile() || info.nlink !== 1) throw new Error('ARTIFACT_RESTORE_SOURCE_UNSAFE');
+          total += info.size;
+          if (files.length + 1 > artifactCollectionBudget.files || total > artifactCollectionBudget.bytes) throw new Error('ARTIFACT_RESTORE_TOO_LARGE');
+          files.push({ path, data: await readFile(join(source, tree, path)) });
+        }
+      };
+      let top;
+      try { top = await lstat(join(source, tree)); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue; throw error; }
+      if (!top.isDirectory()) throw new Error('ARTIFACT_RESTORE_SOURCE_UNSAFE');
+      await walk('');
+      if (!files.length) continue;
+      trees.push({ tree, files });
+      versions.push(...[...new Set(files.map(file => file.path.split('/')[0]!))].map(version => `${tree}/${version}`));
+    }
+  } catch (error) { return { status: 'failure', code: error instanceof Error && /^ARTIFACT_RESTORE_[A-Z_]+$/.test(error.message) ? error.message : 'ARTIFACT_RESTORE_SOURCE_UNAVAILABLE' }; }
+  let files = 0;
+  for (const { tree, files: content } of trees) {
+    const written = writtenSchema.safeParse(answerOf(await channel.exec(seedProgram(tree, content, roots))));
+    if (!written.success) return { status: 'failure', code: 'ARTIFACT_RESTORE_UNAVAILABLE' };
+    if (written.data.status === 'failure') return { status: 'failure', code: written.data.code === 'ARTIFACT_SEED_VERSION_CONFLICT' ? 'ARTIFACT_RESTORE_CONFLICT' : 'ARTIFACT_RESTORE_FAILED' };
+    if (written.data.files !== content.length) return { status: 'failure', code: 'ARTIFACT_RESTORE_UNAVAILABLE' };
+    files += content.length;
+  }
+  return { status: 'restored', versions, files };
 }

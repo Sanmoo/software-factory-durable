@@ -23,7 +23,14 @@ export type StartResult = { status: 'success'; boot: BootRef;
   /** Ticket 47: the operator's disk remedy requested with this start and what it did. */
   remedy?: StartRemedyOutcome;
   /** v2 ticket 06: Factory material the adapter wrote into the guest of THIS boot (an adapter without a persistent disk seeds every boot). */
-  seeds?: { name: string; manifestSha256: string; reused: boolean }[] } |
+  seeds?: { name: string; manifestSha256: string; reused: boolean }[];
+  /**
+   * v2 ticket 08 (Operator decision 3D): what an adapter without a persistent disk re-sent into `/artifacts` of THIS boot from the
+   * collection of an earlier one: the `spec/<version>` and `instructions/<version>` directories written (`from` = the boot that collected
+   * them, null = nothing to send), and the earlier boots that ended before their collection (`lost`: the versions they wrote are gone).
+   * Absent on the first boot of an environment and on adapters that keep the disk.
+   */
+  artifacts?: { restored: string[]; from: BootRef | null; lost: BootRef[] } } |
   /** `detail` (ticket 50): what the operator must see to decide (e.g. the changed environment identity fields). */
   { status: 'failure' | 'indeterminate'; code: string; boot?: BootRef; failure?: StartupFailure; detail?: string };
 const run = promisify(execFile);

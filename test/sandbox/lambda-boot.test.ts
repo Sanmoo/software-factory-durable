@@ -353,3 +353,42 @@ test('the adapter declares its egress: any public IPv4 destination by TCP withou
   assert.ok(selection.status === 'selected');
   assert.deepEqual(selection.capabilities.egress, { mediation: 'none', publicTcp: true, udp: false, ipv6: false, privateNetwork: false });
 });
+
+// v2 ticket 08 (Operator decision 3D): `/artifacts` across boots.
+test('a new boot receives only the spec and instructions collected before the previous stop; a boot that died before its collection is declared lost and the host sends what it still holds', async t => {
+  const { fake, guest, sandbox, environment, start, microvm } = await installation(t);
+  // The first boot of an environment has nothing to receive and says nothing about artifacts.
+  const first = await start();
+  assert.ok(first.status === 'success');
+  assert.equal(first.artifacts, undefined);
+  const disk = guest.guestOf(microvm().microvmId)!;
+  disk.files.set('/artifacts/spec/v1/sources.json', '{"sources":[{"copy":"./ticket.json"}]}');
+  disk.files.set('/artifacts/spec/v1/ticket.json', '{"body":"x"}');
+  disk.files.set('/artifacts/instructions/v1/AGENTS.md', '# agents\n');
+  disk.files.set('/artifacts/review/r1/index.json', '{}');
+  disk.files.set('/artifacts/factory-output-1.txt', 'an output copy');
+  disk.files.set('/workspace/checkout/node_modules/x.js', 'ignored');
+  assert.equal((await sandbox.stop({ environment, boot: first.boot, reason: 'question' })).status, 'success');
+
+  const second = await start();
+  assert.ok(second.status === 'success', JSON.stringify(second));
+  assert.deepEqual(second.artifacts, { restored: ['spec/v1', 'instructions/v1'], from: first.boot, lost: [] });
+  const next = guest.guestOf(microvm().microvmId)!;
+  assert.notEqual(next, disk, 'nothing of the previous boot is adopted: another MicroVM, another disk');
+  assert.equal(next.files.get('/artifacts/spec/v1/ticket.json'), '{"body":"x"}');
+  assert.equal(next.files.get('/artifacts/instructions/v1/AGENTS.md'), '# agents\n');
+  assert.deepEqual([...next.files.keys()].filter(path => path.startsWith('/artifacts/review/') || path.includes('factory-output') || path.includes('node_modules')), []);
+  assert.deepEqual((await sandbox.bootRecord({ environment, boot: second.boot }))?.restored, { restored: ['spec/v1', 'instructions/v1'], from: first.boot, lost: [] });
+  // The preserved source of an inherited round verifies in the new boot (end-of-Execution verification).
+  assert.deepEqual(await sandbox.verifyPreservedSource({ environment, reference: '/artifacts/spec/v1/ticket.json#body' }), { status: 'verified', code: 'PRESERVED_SOURCE_VERIFIED' });
+
+  // The second boot writes v2 and dies before any collection: its versions are lost, v1 is still what the host holds.
+  next.files.set('/artifacts/spec/v2/ticket.json', '{"body":"y"}');
+  microvm().terminatesAt = fake.account.clock.now;
+  fake.account.clock.now += 1000;
+  assert.equal((await sandbox.observe({ environment, boot: second.boot })).cessationConfirmed, true);
+  const third = await start();
+  assert.ok(third.status === 'success', JSON.stringify(third));
+  assert.deepEqual(third.artifacts, { restored: ['spec/v1', 'instructions/v1'], from: first.boot, lost: [second.boot] });
+  assert.equal(guest.guestOf(microvm().microvmId)!.files.has('/artifacts/spec/v2/ticket.json'), false);
+});
