@@ -1,6 +1,6 @@
 # Spec da v2 — sandbox Lambda MicroVMs
 
-Status: proposta, pendente de aprovação do Operador.
+Status: aprovada pelo Operador em 2026-11-21.
 Fonte: [Consolidar o PRD e a spec da v2 para o sandbox Lambda MicroVMs](issues/03-revised-sandbox-contract.md#answer).
 
 ## 1. Autoridade e alcance

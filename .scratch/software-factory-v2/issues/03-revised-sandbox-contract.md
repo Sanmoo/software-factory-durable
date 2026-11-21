@@ -1,6 +1,6 @@
 # Consolidar o PRD e a spec da v2 para o sandbox Lambda MicroVMs
 
-Status: claimed
+Status: resolved
 Type: grilling
 Label: wayfinder:grilling
 Map: [Software Factory v2 — ambientes reconstruíveis em Lambda MicroVMs](../map.md)
@@ -44,6 +44,36 @@ com contratos e critérios de aceite sustentados pelas provas disponíveis. O ma
 quando suas lacunas de desenho estiverem resolvidas; se necessário, abrir filhos específicos.
 Não implementar o adapter nem alterar retroativamente o PRD/spec aprovado do MVP neste ticket.
 
+## Answer
+
+Aprovado pelo Operador em 2026-11-21. O documento é a [spec da v2](../spec.md): só as diferenças frente
+ao MVP, com requisitos V2-01 a V2-34 marcados como provados, decididos ou não provados, matriz de aceite
+e rastreio seção a seção. PRD, spec e interfaces do MVP ficam intactos. As 25 decisões foram tomadas com
+o Operador em quatro rodadas, todas conforme recomendado.
+
+- **Seleção e interface.** Lambda é um segundo adapter, escolhido por instalação. Mesmas sete operações;
+  o adapter declara capacidades, e "parar preserva disco" passa a ser consequência de uma delas.
+- **Preservação.** O gate no Git remoto vale só para adapter sem disco persistente: antes de toda espera
+  externa, da troca planejada e do fim de cada ativação da substituta. Três recusas seguidas geram Bloqueio.
+- **Boots.** Espera externa encerra a MicroVM, sem suspender. Troca planejada mantém Execução, Slot e
+  sessão; padrão de 3600 s com margem de 600 s. Dois boots sem commit novo geram Bloqueio.
+- **Morte e perda.** O adapter observa o ambiente pelo serviço e a cessação encerra a ativação. A perda
+  consome uma retomada; a substituta não repete o efeito incerto, conclui o resto, pergunta e publica.
+  O hook de término empurra o commit perdido para uma ref de marcador, como melhor esforço.
+- **Transporte, papéis e rede.** SSH sobre WebSocket; canal caído reconecta e devolve "indeterminado".
+  Revisores só com `read`, mais usuário Unix somente leitura. Credenciais como no MVP, AWS só no host.
+  Saída pública sem mediação é relaxamento aprovado; sem VPC.
+- **Ambiente e operação.** A declaração de ambiente do MVP vale sem mudança, com uma imagem de MicroVM
+  por chave a partir de Alpine. Instalação por template aplicado pelo Operador; quota conferida no
+  `validate`; consumo em MicroVM-segundos, sem dólares; cleanup por tags.
+
+**Não provado, com destino definido.** O guest Alpine depende do filho
+[Validar o guest Alpine com o ambiente declarado em Lambda MicroVMs](10-alpine-guest-on-lambda-proof.md),
+que bloqueia o fechamento do mapa. O resto é gate de validação da implementação na matriz de aceite,
+incluindo como obrigatórios os dois critérios reprovados na prova de continuidade. Suspend/resume, VPC,
+escolha de sandbox por repositório e teto em dólares ficam fora da v2. A implementação do adapter é
+esforço separado, fora deste mapa. Não é aceite da fábrica nem homologação de produção.
+
 ## Comments
 
 - Originalmente aberto como revisão de sandbox, bloqueada pela prova Lambda; sem resolução prévia.
@@ -53,3 +83,4 @@ Não implementar o adapter nem alterar retroativamente o PRD/spec aprovado do MV
 - 2026-11-20: reescopo do Operador. A v2 trata só do sandbox Lambda MicroVMs; harnesses substituíveis ficam para a v3. Removidos os itens de harness e a dependência da decisão de composição (08, fechado); passa a depender só da prova Lambda (02).
 - 2026-11-20: reivindicado pelo Operador (sessão Claude Code); branch `docs/v2-consolidation`, worktree `.worktrees/v2-consolidation/`, destino `main`.
 - 2026-11-20: 24 decisões tomadas com o Operador em três rodadas, todas conforme recomendado. Proposta a [spec da v2](../spec.md) (requisitos V2-01 a V2-34, matriz de aceite e rastreio frente ao MVP) e aberto o filho [Validar o guest Alpine com o ambiente declarado em Lambda MicroVMs](10-alpine-guest-on-lambda-proof.md). Pendente de aprovação do documento; a regra de três recusas do gate (V2-07) não foi perguntada nas rodadas e precisa de confirmação.
+- 2026-11-21: o Operador confirmou a regra de três recusas do gate (V2-07) e aprovou a spec da v2; resolvido.

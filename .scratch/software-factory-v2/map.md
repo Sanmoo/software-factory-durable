@@ -46,9 +46,9 @@ As dependências canônicas são os campos `Blocked by:` dos tickets.
 - [direção Lambda](issues/01-lambda-microvms-direction.md#answer) →
   [prova Docker e transporte](issues/02-lambda-microvms-prototype.md) →
   [prova de continuidade do agente entre boots](issues/09-agent-continuity-on-lambda-proof.md) →
-  [consolidar PRD/spec e contratos da v2](issues/03-revised-sandbox-contract.md).
-  Evidências adicionais e implementação/validação futura devem ganhar filhos quando o escopo
-  necessário estiver definido, sem inventar uma implementação já autorizada.
+  [consolidar PRD/spec e contratos da v2](issues/03-revised-sandbox-contract.md#answer) →
+  [prova do guest Alpine](issues/10-alpine-guest-on-lambda-proof.md).
+  O mapa fecha quando essa prova estiver resolvida e incorporada à [spec da v2](spec.md).
 
 ## Decisions so far
 
@@ -65,21 +65,23 @@ As dependências canônicas são os campos `Blocked by:` dos tickets.
   efeito ambíguo não é repetido; após perda, a sessão substituta não presume o que sumiu mas não concluiu a
   fase, e a ativação segue viva depois da morte do ambiente. Uma campanha; recursos das duas provas removidos.
 
+- [Consolidar o PRD e a spec da v2 para o sandbox Lambda MicroVMs](issues/03-revised-sandbox-contract.md#answer):
+  [spec da v2](spec.md) aprovada como diferenças frente ao MVP: adapter por instalação com capacidades
+  declaradas, gate Git antes de toda espera, troca e perda com limites, relaxamento de rede aprovado e
+  matriz de aceite; guest Alpine fica para prova própria e a implementação sai deste mapa.
+
 ## Not yet specified
 
-- Suspend/resume, execuções de oito horas, carga sustentada e o perfil de um repositório real em Lambda:
-  não cobertos pela prova de infraestrutura; decidir se a consolidação os exige como prova.
-- Detalhes do gate Git, reconstrução e rotação que a consolidação precisará fixar, incluindo o que a
-  prova de continuidade deixou em aberto: encerrar a ativação quando o ambiente morre, o que a sessão
-  substituta faz depois de um efeito incerto e como se reconcilia, e publicação obrigatória antes de
-  toda devolução de controle.
-- Configuração/instalação revisadas, custos/quotas, observabilidade/retenção, impacto nos contratos
-  existentes e matriz de aceite da v2.
+- Se a prova do guest Alpine falhar ou ficar inconclusiva: a forma da declaração de ambiente no perfil
+  Lambda, decisão que volta ao Operador.
 
 ## Out of scope
 
 - Alterar retroativamente o PRD/spec e as decisões aprovadas do MVP.
 - Implementar adapters de produção ou executar provas a partir desta aprovação de planejamento.
+  A implementação do adapter Lambda é esforço separado, derivado da [spec da v2](spec.md).
+- Suspend/resume, VPC, escolha de sandbox por repositório e teto de custo em dólares: fora da v2 pela
+  [consolidação](issues/03-revised-sandbox-contract.md#answer).
 - Compartilhar/intermediar assinatura, extrair tokens, contornar quotas ou fallback pago silencioso.
 - Comando de troca em operação, migração universal de transcripts, framework genérico de plugins,
   roteamento automático ou promessa de qualquer combinação harness/sandbox.
