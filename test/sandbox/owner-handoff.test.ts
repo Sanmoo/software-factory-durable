@@ -57,6 +57,17 @@ test('AC3: the owner forwards the suspended Builder handoff to the host-boot cha
   const result = (await messages.next()).value!;
   assert.deepEqual([result.kind, result.reply_to, result.payload], ['delivery-result', 'd2', { status: 'delivered' }]);
   assert.deepEqual(delivered, [listed], 'ticket 13: the listed finding ids reach the Builder process');
+  // v2 ticket 09 (V2-13): the boot-swap notice of the Host reaches the same launch, and only as exactly that directive.
+  await send('d4', 'deliver-directive', { directive: { kind: 'boot-swap', prompt: 'x' } }, 'l1');
+  assert.deepEqual((await messages.next()).value!.payload, { status: 'failure', code: 'DELIVERY_DENIED' }, 'the boot-swap directive carries nothing');
+  await send('d5', 'deliver-directive', { directive: { kind: 'boot-swap' } }, 'l1');
+  assert.deepEqual((await messages.next()).value!.payload, { status: 'delivered' });
+  assert.deepEqual(delivered, [listed, { kind: 'boot-swap' }]);
+  // The Builder that yielded completes `boot-swap`, forwarded with its preserved session as the owner observed it.
+  const yielded = { status: 'boot-swap', receipt: { workId, id: '99999999-2222-4333-8444-555555555555' } };
+  complete!(yielded);
+  const completion = (await messages.next()).value!;
+  assert.deepEqual([completion.kind, completion.reply_to, completion.payload], ['worker-completed', 'l1', yielded]);
 });
 
 test('review fix 8: the owner forwards a reviewer opinion only after redaction with EVERY secret it holds, including the live Builder grant', async t => {

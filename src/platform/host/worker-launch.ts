@@ -135,6 +135,8 @@ const completedSchema = z.discriminatedUnion('status', [
   z.strictObject({ status: z.literal('success'), receipt: reference, opinion: z.record(z.string(), z.json()).optional(), session: z.record(z.string(), z.json()).optional() }),
   z.strictObject({ status: z.literal('failure'), code: z.string() }),
   z.strictObject({ status: z.literal('question'), receipt: reference, question: askedSchema, session: z.record(z.string(), z.json()).optional() }),
+  // v2 ticket 09 (V2-13): the Builder yielded at a call boundary because its boot is about to be swapped; its session is preserved.
+  z.strictObject({ status: z.literal('boot-swap'), receipt: reference, session: z.record(z.string(), z.json()).optional() }),
 ]);
 /**
  * Ticket 13 (spec §6.4 "novas rodadas preferem sessões compatíveis"): a later round of the same reviewer role continues its previous
@@ -261,7 +263,7 @@ function superviseWorker(child: ReturnType<typeof spawn>, request: WorkerLaunch,
     }
     if ('kind' in message && message.kind === 'worker-result') {
       const parsed = z.discriminatedUnion('status', [
-        z.strictObject({ kind: z.literal('worker-result'), status: z.enum(['completed', 'interrupted']), receipt: reference, sessionFile: z.string().nullable().optional(),
+        z.strictObject({ kind: z.literal('worker-result'), status: z.enum(['completed', 'interrupted', 'boot-swap']), receipt: reference, sessionFile: z.string().nullable().optional(),
           sessionTools: z.array(z.string()).max(16).optional(), opinion: z.record(z.string(), z.json()).optional(), budgetExhausted: z.enum(['requests', 'tools']).optional(),
           providerUnavailable: z.literal(true).optional() }),
         z.strictObject({ kind: z.literal('worker-result'), status: z.literal('failure'), code: z.string() }),
@@ -279,6 +281,8 @@ function superviseWorker(child: ReturnType<typeof spawn>, request: WorkerLaunch,
           if (result.status === 'question' && own && request.context.role === 'builder' && result.question.reference.workId === request.context.workId) {
             completeResolve({ status: 'question', receipt: result.receipt, question: result.question, ...preserved });
           } else if (result.status === 'completed' && own) completeResolve({ status: 'success', receipt: result.receipt, ...(result.opinion ? { opinion: result.opinion } : {}), ...preserved });
+          // v2 ticket 09: only a Builder yields for a boot swap.
+          else if (result.status === 'boot-swap' && own && request.context.role === 'builder') completeResolve({ status: 'boot-swap', receipt: result.receipt, ...preserved });
           // Ticket 48: a Builder closed by its own budget count (worker Host fact) is told apart from any other interruption. Ticket 57: so is a
           // Builder whose model request failed without a Host abort (an operational recovery, bounded by the Work's recoveries; never retried here).
           else completeResolve({ status: 'failure', code: result.status !== 'interrupted' ? 'WORKER_EXECUTION_UNCERTAIN'
@@ -301,7 +305,8 @@ function superviseWorker(child: ReturnType<typeof spawn>, request: WorkerLaunch,
   child.send(bootstrap, error => { if (error) { lost(); abort(); } });
   if (signal.aborted) abort();
   const deliver = (directive: Record<string, unknown>) => new Promise<boolean>(resolve => {
-    if (!child.connected || signal.aborted || !startReference || !request.handoff) { resolve(false); return; }
+    // Review results reach only a Builder launched with a handoff policy; the boot-swap notice (v2 ticket 09) any started Builder.
+    if (!child.connected || signal.aborted || !startReference || request.context.role !== 'builder' || (directive.kind !== 'boot-swap' && !request.handoff)) { resolve(false); return; }
     child.send({ kind: 'deliver', directive }, error => resolve(!error));
   });
   return { started, completed, deliver };

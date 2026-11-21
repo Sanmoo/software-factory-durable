@@ -30,7 +30,10 @@ export type ActivationDelivery = { credential?: Readonly<{ token: string }> };
 /** `deliver` directives (Q6): a renewed transient Builder credential for NEW commands, or its final withdrawal. Never serialized/persisted. */
 export type WorkerDirective = { kind: 'credential'; credential: Readonly<{ token: string }> } | { kind: 'withdraw-credential' } |
   /** Ticket 12: the effective review results to the Builder session suspended at handoff (continuation of the SAME session). */
-  BuilderDirective;
+  BuilderDirective |
+  /** v2 ticket 09 (V2-13): the boot of this Builder crossed its rotation margin. The session is NOT interrupted: it yields at its next call
+   * boundary (the call in flight returns first) and the activation completes `boot-swap` with its session preserved. */
+  { kind: 'boot-swap' };
 /** Delivery is not proof of consumption by the SDK/tools; failure codes never carry the secret. */
 export type DeliveryResult = { status: 'delivered' | 'withdrawn' } | { status: 'failure'; code: string };
 
@@ -93,7 +96,9 @@ import type { SessionObservation, WorkerSessionRef } from './session-ref.js';
 /** `question`: the activation ended after asking; `acknowledged` says whether the worker saw a `recorded` ACK (lost ACK => false).
  * `session`: the preserved session (Builder), when its owner could observe it; absent = not recorded (never invented). */
 export type WorkerCompletion = { status: 'success'; receipt: { workId: string; id: string }; opinion?: ReviewOpinion; session?: WorkerSessionRef } | { status: 'failure'; code: string } |
-  { status: 'question'; receipt: { workId: string; id: string }; question: WorkerQuestion & { acknowledged: boolean }; session?: WorkerSessionRef };
+  { status: 'question'; receipt: { workId: string; id: string }; question: WorkerQuestion & { acknowledged: boolean }; session?: WorkerSessionRef } |
+  /** v2 ticket 09 (V2-13): the Builder yielded at a call boundary after a `boot-swap` directive; nothing of its work is concluded. */
+  { status: 'boot-swap'; receipt: { workId: string; id: string }; session?: WorkerSessionRef };
 
 /** `profiles` configures a model/profile per role (spec §6.1: explicit per role, may coincide; no silent fallback between roles). */
 /** `builderPrompt` (ticket 18): the Builder system prompt of ONE session, chosen from its mode (phase) and the exact tool set the SDK session
@@ -110,6 +115,7 @@ const completionSchema = z.discriminatedUnion('status', [
   z.strictObject({ status: z.literal('success'), receipt: reference, opinion: opinionSchema.optional(), session: sessionRefSchema.optional() }),
   z.strictObject({ status: z.literal('failure'), code: z.string() }),
   z.strictObject({ status: z.literal('question'), receipt: reference, question: workerQuestionSchema.extend({ acknowledged: z.boolean() }), session: sessionRefSchema.optional() }),
+  z.strictObject({ status: z.literal('boot-swap'), receipt: reference, session: sessionRefSchema.optional() }),
 ]);
 
 // Ticket 13: `closing` (the Host's capture after the session ended) and the Host-resolved `declarations` (treatments, gate evidence).
@@ -225,15 +231,16 @@ export function createWorkers(configuration?: Configuration) {
     }, async deliver(worker: string, directive: WorkerDirective): Promise<DeliveryResult> {
   const entry = live.get(worker);
   if (!entry || entry.inbox.ended) return { status: 'failure', code: 'WORKER_NOT_CURRENT' };
-  if (directive.kind === 'review-results') {
-    // Only to a Builder launched with a handoff policy; delivery is not proof of consumption by the SDK.
-    if (entry.context.role !== 'builder' || !entry.handoff) return { status: 'failure', code: 'DELIVERY_NOT_APPLICABLE' };
+  if (directive.kind === 'review-results' || directive.kind === 'boot-swap') {
+    // Review results only to a Builder launched with a handoff policy; delivery is not proof of consumption by the SDK.
+    if (entry.context.role !== 'builder' || (directive.kind === 'review-results' && !entry.handoff)) return { status: 'failure', code: 'DELIVERY_NOT_APPLICABLE' };
     const deliveryId = randomUUID();
     entry.inbox.expect(deliveryId);
     try {
       await entry.channel.send({ protocol_version: protocolVersion, controller_run_id: null, message_id: deliveryId, reply_to: entry.launchId,
-        kind: 'deliver-directive', payload: { directive: { kind: directive.kind, round: directive.round, prompt: directive.prompt, ...(directive.end ? { end: true } : {}),
-          ...(directive.findings ? { findings: { standards: [...directive.findings.standards], spec: [...directive.findings.spec] } } : {}) } } });
+        kind: 'deliver-directive', payload: { directive: directive.kind === 'boot-swap' ? { kind: directive.kind }
+          : { kind: directive.kind, round: directive.round, prompt: directive.prompt, ...(directive.end ? { end: true } : {}),
+            ...(directive.findings ? { findings: { standards: [...directive.findings.standards], spec: [...directive.findings.spec] } } : {}) } } });
     } catch { entry.inbox.release(deliveryId); return { status: 'failure', code: 'DELIVERY_UNCONFIRMED' }; }
     const reply = await entry.inbox.next(message => message.reply_to === deliveryId, 15000);
     entry.inbox.release(deliveryId);
@@ -376,6 +383,7 @@ export function createWorkers(configuration?: Configuration) {
               const parsed = completionSchema.parse(message.payload);
               // A preserved session is the Builder's only, under this installation's runtime tree (checked again by observe before any use).
               if (parsed.status !== 'failure' && parsed.session && context.role !== 'builder') throw new Error('WORKER_EXECUTION_UNCERTAIN');
+              if (parsed.status === 'boot-swap' && context.role !== 'builder') throw new Error('WORKER_EXECUTION_UNCERTAIN');
               if (parsed.status === 'question' && (context.role !== 'builder' || parsed.question.reference.workId !== context.workId)) throw new Error('WORKER_EXECUTION_UNCERTAIN');
               // A reviewer opinion must be THIS invocation's, of its role and round; a Builder never returns one.
               if (parsed.status === 'success' && parsed.opinion && (context.role === 'builder' || parsed.opinion.role !== context.role ||

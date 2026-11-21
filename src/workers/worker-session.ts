@@ -29,7 +29,13 @@ type Options = { profile: ReviewerProfile; sandbox: ToolProjection; records: Awa
   questions?: { send(question: WorkerQuestionRequest): Promise<{ status: 'recorded' } | { status: 'refused'; code: string } | { status: 'unacknowledged' }>;
     containsSecret(text: string): boolean };
   /** Builder with a `handoff` policy: notifies the suspended handoff and waits for the Host directive (review results). */
-  onHandoff?: (event: HandoffEvent) => Promise<BuilderDirective> };
+  onHandoff?: (event: HandoffEvent) => Promise<BuilderDirective>;
+  /**
+   * v2 ticket 09 (V2-13), Builder only: aborts when the Host says the boot crossed its rotation margin. The session is not interrupted
+   * by it: the call in flight returns first, then no further model request or tool call starts and the activation ends `boot-swap` with
+   * its session preserved (the swap notice continues it).
+   */
+  bootSwap?: AbortSignal };
 
 /** Opens the owner's copy of a preserved Builder session only if it is the expected file (name, private regular file, hash and header id). */
 async function reopenSession(sessionsDirectory: string, expected: { file: string; sha256: string; sessionId: string }) {
@@ -60,6 +66,9 @@ export async function executeSession(options: Options, invocation: Invocation, r
   const oauth = !('apiKey' in profile);
   // After a question no further model request or tool runs in this activation (spec §5.5: the activation ends, nothing waits).
   let asked: AskedQuestion | undefined;
+  // v2 ticket 09: set once this activation yielded for a boot swap (at a call boundary, never in the middle of a call).
+  let yielded = false;
+  const swapDue = () => options.bootSwap?.aborted === true && invocation.context.role === 'builder';
   const limits = budgetFor(invocation.context.role, invocation.modelBudget, invocation.builderBudget);
   const role = invocation.context.role;
   if (invocation.handoff !== undefined && (role !== 'builder' || !options.onHandoff)) throw new Error('WORKER_HANDOFF_UNAVAILABLE');
@@ -98,7 +107,13 @@ export async function executeSession(options: Options, invocation: Invocation, r
       const qualification = oauth ? qualifyOAuth(runtime, signal, options.oauth!.publicInputIsSafe, () => qualificationAbort.abort(), limits) : undefined;
       // After a question: no further model request of this activation, whatever the profile (outermost wrapper, before any auth/network).
       const stream = runtime.streamSimple.bind(runtime);
-      runtime.streamSimple = (...args: Parameters<typeof stream>) => { if (asked) throw new Error('ACTIVATION_ENDED_AFTER_QUESTION'); return stream(...args); };
+      runtime.streamSimple = (...args: Parameters<typeof stream>) => {
+        if (asked) throw new Error('ACTIVATION_ENDED_AFTER_QUESTION');
+        // v2 ticket 09: the boundary between a returned call and the next model request. A session suspended for review is left alone
+        // until its results arrive.
+        if (yielded || swapDue()) { yieldForSwap(); throw new Error('ACTIVATION_YIELDED_FOR_BOOT_SWAP'); }
+        return stream(...args);
+      };
       qualification?.check();
       const model = runtime.getModel(profile.providerId, profile.modelId);
       if (!model || (oauth && model.api !== 'openai-responses')) throw new Error('WORKER_MODEL_UNAVAILABLE');
@@ -128,6 +143,9 @@ export async function executeSession(options: Options, invocation: Invocation, r
       }
       let interrupted = false;
       let abortSession = () => {};
+      let inFlight = 0;
+      // After the yield no further model request or tool call starts; the abort only ends the SDK loop (like the end after a Question).
+      const yieldForSwap = () => { if (yielded) return; yielded = true; setImmediate(() => abortSession()); };
       const critical = () => { interrupted = true; abortSession(); };
       const observer = createReadObserver();
       // Ticket 13: the Host ledger of the Builder's own tool calls and real Bash results (the only source of gate evidence).
@@ -169,8 +187,14 @@ export async function executeSession(options: Options, invocation: Invocation, r
       // Gate: once a question is asked, every other tool call of this activation is refused before any effect.
       const gated = customTools.map(tool => tool.name === 'ask_user' ? tool : { ...tool, async execute(...args: Parameters<ToolDefinition['execute']>) {
         if (asked) throw new Error('ACTIVATION_ENDED_AFTER_QUESTION');
+        // v2 ticket 09: a call that had not started when the swap became due is not started (it had no effect; the session repeats it later).
+        if (yielded || swapDue()) { if (inFlight === 0) yieldForSwap(); throw new Error('NOT EXECUTED: the Factory is replacing this environment (planned boot swap). ' +
+          'This call had no effect; decide again after the Factory notice.'); }
         ledger?.begin(tool.name, args[0]);
-        return tool.execute(...args);
+        inFlight += 1;
+        try { return await tool.execute(...args); }
+        // The call in flight returned (or failed): with a swap due and nothing else running, the activation yields here.
+        finally { inFlight -= 1; if (swapDue() && inFlight === 0) yieldForSwap(); }
       } } as ToolDefinition);
       // Host suspension (spec §5.6): once the Builder hands off, EVERY Builder tool refuses and terminates the batch until the Host
       // delivers the review results; a new model turn while suspended interrupts the session (it is not merely a model phrase/agent_end).
@@ -207,8 +231,10 @@ export async function executeSession(options: Options, invocation: Invocation, r
         qualification?.check();
         let prompt = invocation.prompt;
         while (true) {
-          await session.prompt(prompt).catch(error => { if (!asked) throw error; });
+          await session.prompt(prompt).catch(error => { if (!asked && !yielded) throw error; });
           if (asked) return { status: 'question' as const, receipt, sessionFile: manager.getSessionFile() ?? null, sessionTools: [...tools].sort(), question: asked };
+          // v2 ticket 09: yielded at a call boundary for the boot swap (an outside abort, a critical failure or a closed budget still win).
+          if (yielded && !signal.aborted && !interrupted && !qualification?.failed()) return { status: 'boot-swap' as const, receipt, sessionFile: manager.getSessionFile() ?? null, sessionTools: [...tools].sort() };
           if (!gate || signal.aborted || interrupted || qualification?.failed()) break;
           // Ticket 13: after the session ended without a pending handoff, the Host captures once more (closing), with no model request.
           const closing = gate.pending() ? null : gate.closing();

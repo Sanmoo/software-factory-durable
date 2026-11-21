@@ -140,11 +140,17 @@ export async function run(input: unknown, parentSignal: AbortSignal, ipc?: Worke
     const aborted = () => { done(); reject(new Error('STALE_TOOL_CONTEXT')); };
     const stop = ipc.onMessage(value => {
       const parsed = deliverSchema.safeParse(value);
-      if (parsed.success && parsed.data.directive.round === event.round) { done(); resolve(parsed.data.directive); }
+      if (parsed.success && parsed.data.directive.kind === 'review-results' && parsed.data.directive.round === event.round) { done(); resolve(parsed.data.directive); }
     });
     signal.addEventListener('abort', aborted, { once: true });
     if (signal.aborted) { aborted(); return; }
     ipc.send({ kind: 'worker-handoff', event }).catch(() => aborted());
+  }) : undefined;
+  // v2 ticket 09 (V2-13): the Host's boot-swap notice. Nothing is interrupted here: the session yields at its next call boundary.
+  const swap = new AbortController();
+  const stopSwap = ipc && bootstrap.context.role === 'builder' ? ipc.onMessage(value => {
+    const parsed = deliverSchema.safeParse(value);
+    if (parsed.success && parsed.data.directive.kind === 'boot-swap') swap.abort();
   }) : undefined;
   // Sync protected receipt before even importing/creating the native SDK runtime.
   // Absent (production) leaves the publisher's own default ACK wait (5000 ms); a Host policy may only shorten it (ticket 37).
@@ -167,7 +173,7 @@ export async function run(input: unknown, parentSignal: AbortSignal, ipc?: Worke
         oauth: { factoryRoot: bootstrap.recordsRoot, acknowledgeSecrets: secretPublisher.acknowledgeSecrets,
           publicInputIsSafe: () => !containsSecret({ prompt: bootstrap.prompt, profile: publicProfile }),
           registerSecret(value) { records.registerSecret(value); if (!secrets.includes(value)) secrets.push(value); } },
-        ...(onHandoff ? { onHandoff } : {}) }, invocation, receipt);
+        ...(onHandoff ? { onHandoff } : {}), ...(stopSwap ? { bootSwap: swap.signal } : {}) }, invocation, receipt);
     } finally { tools.close(); }
-  } finally { secretPublisher.close(); }
+  } finally { stopSwap?.(); secretPublisher.close(); }
 }
