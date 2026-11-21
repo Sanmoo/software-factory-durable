@@ -172,15 +172,14 @@ test('the build records and the build log (unproven command shapes, isolated in 
 });
 
 // v2 ticket 04: the MicroVM operations.
-test('RunMicrovm names the image, both managed connectors, the maximum duration, the hook payload and the tags, and never a role or an idle policy', async () => {
+test('RunMicrovm names the image, both managed connectors, the maximum duration, the hook payload, and never tags, a role or an idle policy', async () => {
   const input = { imageArn, maximumDurationSeconds: 3600, runHookPayload: '{"builder":"ssh-ed25519 AAAA"}', tags: { 'software-factory-installation': 'acme', 'software-factory-work': 'w1' } };
-  // Proven shape (`bin/up`), plus `--tags` (NOT proven, isolated in `runMicrovmCommand`).
+  // Proven shape (`bin/up`). The CLI has no `--tags` on run-microvm (real account, 2026-11-21): the request's tags never reach the command.
   assert.deepEqual(runMicrovmCommand(input, 'us-east-1'), ['lambda-microvms', 'run-microvm', '--image-identifier', imageArn,
     '--ingress-network-connectors', 'arn:aws:lambda:us-east-1:aws:network-connector:aws-network-connector:HTTP_INGRESS',
     '--egress-network-connectors', 'arn:aws:lambda:us-east-1:aws:network-connector:aws-network-connector:INTERNET_EGRESS',
-    '--maximum-duration-in-seconds', '3600', '--run-hook-payload', '{"builder":"ssh-ed25519 AAAA"}',
-    '--tags', '{"software-factory-installation":"acme","software-factory-work":"w1"}']);
-  assert.doesNotMatch(runMicrovmCommand(input, 'us-east-1').join(' '), /execution-role|idle-policy|SHELL_INGRESS|vpc/i);
+    '--maximum-duration-in-seconds', '3600', '--run-hook-payload', '{"builder":"ssh-ed25519 AAAA"}']);
+  assert.doesNotMatch(runMicrovmCommand(input, 'us-east-1').join(' '), /--tags|execution-role|idle-policy|SHELL_INGRESS|vpc/i);
   const { service, invocations } = scripted({ 'lambda-microvms run-microvm': { stdout: { microvmId: 'microvm-1', endpoint: 'microvm-1.lambda-microvm.us-east-1.on.aws', state: 'PENDING' } } });
   assert.deepEqual(await service.runMicrovm(input), { ok: true, value: { microvmId: 'microvm-1', endpoint: 'microvm-1.lambda-microvm.us-east-1.on.aws' } });
   assert.deepEqual(invocations[0]!.slice(7), runMicrovmCommand(input, 'us-east-1'));

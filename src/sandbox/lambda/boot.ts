@@ -235,7 +235,7 @@ export type LambdaCheckout = { repository: string; commit: string; branch?: stri
   credential: { readonly token: string } };
 
 /**
- * Iniciar: RunMicrovm of the Work's image (installation and Work tags, no execution role, no idle suspension, `INTERNET_EGRESS`), then
+ * Iniciar: RunMicrovm of the Work's image (no tags: the service takes none; no execution role, no idle suspension, `INTERNET_EGRESS`), then
  * the channel (session key delivered in the run hook payload, host key pinned at first contact), then the clone of the starting commit
  * from `origin` in the guest. Success only with all three. Any failure after a MicroVM exists terminates it; an end the service does not
  * confirm is `indeterminate`, never a plain failure.

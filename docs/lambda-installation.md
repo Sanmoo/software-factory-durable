@@ -220,7 +220,11 @@ fica fechado e o controlador escreve `RUNTIME_INVENTORY_UNKNOWN` com a causa. Re
 (`factory doctor`) e reinicie. Uma MicroVM cujo fim o serviço não confirmou, ou cuja imagem não
 pôde ser lida, aparece como recurso desconhecido e também mantém o despacho fechado.
 
-Não provado em conta real: se o `RunMicrovm` aceita tags e se a listagem as mostra; a paginação do
+O `RunMicrovm` não aceita tags (observado em conta real em 2026-11-21: o comando é recusado inteiro com
+a opção `--tags`), então a MicroVM não leva tag própria: o inventário decide a quem ela pertence pelas
+tags da imagem e pelos registros de boot do host.
+
+Não provado em conta real: a paginação do
 `ListMicrovms` (50 por página); e a consistência da listagem logo depois de um `RunMicrovm` (uma
 MicroVM criada instantes antes do crash e ainda ausente da listagem só seria achada no inventário
 seguinte, ou encerrada pelo serviço na duração máxima). `tag:GetResources` não é usado nem está na
@@ -288,9 +292,9 @@ O custo é o que a AWS cobra, e a conferência é do Operador, na própria conta
 3. Compare com `factory usage`: os MicroVM-segundos por Trabalho e os builds por chave dizem o que
    a Factory pediu; a cobrança diz o que a AWS mediu.
 
-Limites conhecidos, nenhum deles conferido numa conta real: se o serviço atribui o uso de uma
-MicroVM às tags passadas no `RunMicrovm` (o campo de tags do `RunMicrovm` não é documentado); o
-bucket de artefatos e as imagens levam a tag, o log group do build não. Recursos sem a tag não
+Limites conhecidos: a MicroVM não leva tag (o `RunMicrovm` não aceita tags, observado em conta real em
+2026-11-21), então o uso de MicroVM não aparece no filtro por tag da cobrança; o bucket de artefatos e
+as imagens levam a tag, o log group do build não. Recursos sem a tag não
 entram no filtro: confira também o total do serviço na conta dedicada.
 
 ### Recusa por quota ao iniciar

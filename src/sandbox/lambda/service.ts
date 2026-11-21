@@ -55,7 +55,7 @@ export type LambdaMicrovm = { microvmId: string; state: string; endpoint?: strin
   /** ISO instants as the service gave them (with any offset); `terminatedAt` only once terminated. */ startedAt?: string; terminatedAt?: string };
 /**
  * Ticket 15: one item of ListMicrovms. Observed fields: id, state, image and start; terminated MicroVMs stay listed. `tags` is present
- * only when the service lists them: the observed answer has none, and whether a MicroVM carries tags at all is not proven (V2-33).
+ * only when the service lists them: the observed answer has none, and RunMicrovm takes no tags (real account, 2026-11-21; V2-33).
  */
 export type LambdaListedMicrovm = { microvmId: string; state: string; imageArn?: string; startedAt?: string; tags?: Record<string, string> };
 export const microvmIngress = 'HTTP_INGRESS';

@@ -165,16 +165,16 @@ export function createLambdaCliService({ awsProfile, region }: { awsProfile: str
  * hook payload. No `--execution-role-arn` (the guest has no AWS credentials) and no `--idle-policy`: omitting it is what kept automatic
  * suspension off in the proofs (inferred from the documentation, V2-09).
  *
- * NOT PROVEN, isolated here: `--tags`. RunMicrovm has no documented tags field and no proof ever tagged a MicroVM (V2-33 asks for
- * installation and Work tags on every resource). If the service refuses the flag, this is the one place to change, and the inventory of
- * ticket 15 falls back to the image tags plus the host's boot records.
+ * No `--tags`: the CLI's run-microvm has no such option and refuses the whole command with a usage error (observed in a real account on
+ * 2026-11-21, the first real RunMicrovm of the adapter). A MicroVM therefore carries no tag of its own: the inventory of ticket 15 decides
+ * ownership by the tags of its image and by the host's boot records, as it already did for a listing without tags. `input.tags` stays in
+ * the port's request for the record of the boot and for a service that accepts them.
  */
 export function runMicrovmCommand(input: LambdaMicrovmRequest, region: string): string[] {
   const connector = (name: string) => `arn:aws:lambda:${region}:aws:network-connector:aws-network-connector:${name}`;
   return ['lambda-microvms', 'run-microvm', '--image-identifier', input.imageArn,
     '--ingress-network-connectors', connector(microvmIngress), '--egress-network-connectors', connector(microvmEgress),
-    '--maximum-duration-in-seconds', String(input.maximumDurationSeconds), '--run-hook-payload', input.runHookPayload,
-    ...(Object.keys(input.tags).length > 0 ? ['--tags', JSON.stringify(input.tags)] : [])];
+    '--maximum-duration-in-seconds', String(input.maximumDurationSeconds), '--run-hook-payload', input.runHookPayload];
 }
 
 /**
