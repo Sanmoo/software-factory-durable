@@ -102,3 +102,7 @@ O que os tickets seguintes precisam saber:
 - **14:** `lambda/reconciliations/*.json` traz `startedAt`/`terminatedAt` das MicroVMs que nenhum registro de boot detinha: consumo
   que não aparece em nenhum `boot.json`.
 - **16:** validar em conta real as três formas não provadas acima.
+
+`npm run test:ci` (2026-11-21, depois do merge da ponta de `integration/software-factory-v2-lambda` com os tickets 07 e 10): 2038 testes,
+2016 passam, 17 pulados, 5 falham, resultado FAIL. As 5 falhas são as conhecidas da base: `test/sandbox/audited-vfs-guard.test.ts` (4) e
+`test/sandbox/sandbox-adapter-diagnostics.test.ts` (1).
